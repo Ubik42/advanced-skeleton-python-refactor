@@ -1,11 +1,13 @@
 {
   "host": "maya",
   "version": "2024",
-  "pid": 40144,
+  "pid": 12372,
   "slice": "body_arm_ik_to_fk_match",
   "preview_ready": true,
   "preview_clean": true,
   "body_pose_preserved": true,
+  "stretched_pose_was_tested": true,
+  "fk_segment_lengths_matched": true,
   "right_switched_to_fk": true,
   "left_blend_unchanged": true,
   "fk_controls_visible": true,
@@ -15,7 +17,12 @@
   "single_undo_restored_pose": true,
   "second_undo_removed_complete_arm_rig": true,
   "cleanup": true,
+  "target_stretch_ratio": 1.35,
+  "matched_fk_segments": [
+    4.05,
+    3.375
+  ],
   "remaining_nodes": [],
-  "duration_seconds": 4.593,
+  "duration_seconds": 4.88,
   "status": "passed"
 }

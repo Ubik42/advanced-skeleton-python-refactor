@@ -1305,7 +1305,42 @@ class MayaBodyBuildHost(MayaFitJointHost):
             if self._cmds.objExists(plug) and self._cmds.getAttr(plug, settable=True)
         )
         value = float(self._cmds.getAttr(plan.blend_plug)) if self._cmds.objExists(plan.blend_plug) else float("nan")
-        return BodyArmIkToFkSceneState(existing, writable, value)
+        positions = []
+        axes = []
+        for path in plan.body_joint_paths:
+            if not self._cmds.objExists(path):
+                break
+            positions.append(tuple(float(item) for item in self._cmds.xform(
+                path,
+                query=True,
+                worldSpace=True,
+                translation=True,
+            )))
+            matrix = self._cmds.xform(
+                path,
+                query=True,
+                worldSpace=True,
+                matrix=True,
+            )
+            axes.append(tuple(
+                self._normalized_vector(
+                    tuple(float(item) for item in matrix[index : index + 3])
+                )
+                for index in (0, 4, 8)
+            ))
+        segment_translations = tuple(
+            float(self._cmds.getAttr(plug))
+            for plug in plan.fk_segment_plugs
+            if self._cmds.objExists(plug)
+        )
+        return BodyArmIkToFkSceneState(
+            existing,
+            writable,
+            value,
+            tuple(positions),
+            tuple(axes),
+            segment_translations,
+        )
 
     def apply_body_arm_ik_to_fk(self, plan: BodyArmIkToFkPlan) -> None:
         self._require_transaction()
@@ -1320,6 +1355,11 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 x_axis, y_axis, z_axis = target_axes
                 matrix = (*x_axis, 0.0, *y_axis, 0.0, *z_axis, 0.0, *position, 1.0)
                 self._cmds.xform(path, worldSpace=True, matrix=matrix)
+            for plug, value in zip(
+                plan.fk_segment_plugs,
+                plan.fk_segment_translations,
+            ):
+                self._cmds.setAttr(plug, value)
             self._cmds.setAttr(plan.blend_plug, 0.0)
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)

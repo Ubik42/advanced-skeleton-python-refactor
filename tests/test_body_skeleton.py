@@ -142,6 +142,7 @@ class FakeBodySkeletonHost:
         self.faulty_arm_visibility = faulty_arm_visibility
         self.faulty_arm_match = faulty_arm_match
         self.arm_match_applied = False
+        self.arm_match_segment_translations = None
         self.faulty_arm_translation = faulty_arm_translation
         self.arm_stretch_snapshot = None
         self.faulty_arm_stretch = faulty_arm_stretch
@@ -211,6 +212,7 @@ class FakeBodySkeletonHost:
         before_arm_blend_snapshot = self.arm_blend_snapshot
         before_arm_visibility_snapshot = self.arm_visibility_snapshot
         before_arm_match_applied = self.arm_match_applied
+        before_arm_match_segment_translations = self.arm_match_segment_translations
         before_arm_stretch_snapshot = self.arm_stretch_snapshot
         before_twist_root = self.twist_root
         before_arm_twist_segments = list(self.arm_twist_segments)
@@ -232,6 +234,7 @@ class FakeBodySkeletonHost:
             self.arm_blend_snapshot = before_arm_blend_snapshot
             self.arm_visibility_snapshot = before_arm_visibility_snapshot
             self.arm_match_applied = before_arm_match_applied
+            self.arm_match_segment_translations = before_arm_match_segment_translations
             self.arm_stretch_snapshot = before_arm_stretch_snapshot
             self.twist_root = before_twist_root
             self.arm_twist_segments = before_arm_twist_segments
@@ -458,10 +461,18 @@ class FakeBodySkeletonHost:
 
     def capture_body_arm_ik_to_fk_state(self, plan):
         side = next(value for value in self.arm_blend_snapshot.sides if value.side is plan.side)
-        return BodyArmIkToFkSceneState(plan.required_paths, plan.required_writable_plugs, side.attribute_value)
+        return BodyArmIkToFkSceneState(
+            plan.required_paths,
+            plan.required_writable_plugs,
+            side.attribute_value,
+            plan.body_joint_positions,
+            plan.body_joint_axes,
+            self.arm_match_segment_translations or plan.fk_segment_translations,
+        )
 
     def apply_body_arm_ik_to_fk(self, plan):
         self.arm_match_applied = True
+        self.arm_match_segment_translations = plan.fk_segment_translations
         sides = tuple(
             replace(side, attribute_value=0.0) if side.side is plan.side else side
             for side in self.arm_blend_snapshot.sides
@@ -1146,6 +1157,10 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 4)
         self.assertEqual(values[FitBuildSide.RIGHT], 0.0)
         self.assertEqual(values[FitBuildSide.LEFT], 0.0)
+        self.assertEqual(
+            host.arm_match_segment_translations,
+            result.plan.match.fk_segment_translations,
+        )
 
     def test_ik_to_fk_requires_current_ik_mode_before_transaction(self):
         host = FakeBodySkeletonHost()
@@ -1165,6 +1180,7 @@ class BodySkeletonTests(unittest.TestCase):
             MatchBodyArmIkToFk(host).apply(FitBuildSide.RIGHT)
         right = next(side for side in host.arm_blend_snapshot.sides if side.side is FitBuildSide.RIGHT)
         self.assertEqual(right.attribute_value, 1.0)
+        self.assertIsNone(host.arm_match_segment_translations)
 
 
 if __name__ == "__main__":

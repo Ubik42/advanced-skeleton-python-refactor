@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import time
+from math import sqrt
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,9 +50,16 @@ def main(output: Path) -> int:
         rig = BuildBodyArmRig(host).apply(container)
 
         limb = next(state for state in rig.ik.limbs if state.side is FitBuildSide.RIGHT)
+        stretch = next(state for state in rig.plan.stretch.sides if state.side is FitBuildSide.RIGHT)
         wrist = list(cmds.xform(limb.wrist_control_path, query=True, worldSpace=True, translation=True))
-        elbow = next(joint.world_position for joint in rig.body.joints if joint.name == "Elbow_R")
-        target = tuple(value + (elbow[index] - value) * 0.22 for index, value in enumerate(wrist))
+        direction = tuple(value - start for value, start in zip(wrist, stretch.start_position))
+        direction_length = sqrt(sum(value * value for value in direction))
+        unit = tuple(value / direction_length for value in direction)
+        target_ratio = 1.35
+        target = tuple(
+            start + axis * stretch.rest_length * target_ratio
+            for start, axis in zip(stretch.start_position, unit)
+        )
         pole = list(cmds.xform(limb.pole_control_path, query=True, worldSpace=True, translation=True))
         pole[2] += 2.5
         cmds.undoInfo(stateWithoutFlush=False)
@@ -73,11 +81,24 @@ def main(output: Path) -> int:
             close(cmds.getAttr(f"{path}.translate")[0], (0.0, 0.0, 0.0), 1e-4)
             for path in result.plan.match.fk_control_paths
         )
+        matched_segments = tuple(
+            float(cmds.getAttr(plug)) for plug in result.plan.match.fk_segment_plugs
+        )
         shoulder_fk_offset = cmds.listRelatives(result.plan.match.fk_control_paths[0], parent=True, fullPath=True)[0]
         checks = {
             "preview_ready": preview.ready,
             "preview_clean": preview_clean,
             "body_pose_preserved": pose_matches(before, result.body),
+            "stretched_pose_was_tested": abs(
+                sum(abs(value) for value in result.plan.match.fk_segment_translations)
+                / stretch.rest_length
+                - target_ratio
+            ) < 2e-3,
+            "fk_segment_lengths_matched": close(
+                matched_segments,
+                result.plan.match.fk_segment_translations,
+                1e-4,
+            ),
             "right_switched_to_fk": values[FitBuildSide.RIGHT] == 0.0,
             "left_blend_unchanged": values[FitBuildSide.LEFT] == 0.0,
             "fk_controls_visible": cmds.getAttr(f"{shoulder_fk_offset}.visibility") == 1,
@@ -105,6 +126,8 @@ def main(output: Path) -> int:
             "pid": os.getpid(),
             "slice": "body_arm_ik_to_fk_match",
             **checks,
+            "target_stretch_ratio": target_ratio,
+            "matched_fk_segments": [round(value, 6) for value in matched_segments],
             "remaining_nodes": remaining,
             "duration_seconds": round(time.perf_counter() - started, 3),
             "status": "passed" if passed else "failed",
