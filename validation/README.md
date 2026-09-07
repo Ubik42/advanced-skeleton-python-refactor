@@ -39,7 +39,7 @@
 - Maya 双腿 RP IK 为左右 IK mechanisms 建立 Ankle/Pole Vector controls、ikRPsolver Handle 与 Ankle 朝向约束；笔直腿备用轴、真实目标求解、Body 隔离、选择保持和分层 Undo 均通过。
 - Maya Leg IK/FK 输出用左右独立属性和 reverse 节点驱动 8 个 Body 双源旋转约束及 Knee/Ankle 的 4 个位移约束；Toes FK 输出、FK/IK、0.5 权重、侧向隔离、选择保持和单次 Undo 均通过。
 - Maya Leg 模式显隐在 FK=0 时只显示同侧 Hip FK 层级，在 IK=1 时只显示 Ankle/PV 层级；左右隔离、只读预演、选择保持和单次 Undo 均通过。
-- Maya Leg Rig 在一个 Undo Chunk 内组合 mechanisms、FK controls、rotation/translation blend、Ankle/PV IK、模式显隐、双段 stretch、保持总长的 stretch bias 与双侧五级 Foot pivot；Ball pivot 驱动 Ankle IK 朝向，Toe pivot 驱动 Toes IK 朝向，真实 FK/IK/stretch/roll-bank 输出、自动分段 `footRoll`、手动通道叠加、左右隔离、末阶段整体回滚和一次 Undo 清理均通过。
+- Maya Leg Rig 在一个 Undo Chunk 内组合 mechanisms、FK controls、rotation/translation blend、Ankle/PV IK、模式显隐、双段 stretch、保持总长的 stretch bias、实时双段测距 knee pin 与双侧五级 Foot pivot；Ball pivot 驱动 Ankle IK 朝向，Toe pivot 驱动 Toes IK 朝向，真实 FK/IK/stretch/pin/roll-bank 输出、自动分段 `footRoll`、手动通道叠加、左右隔离、末阶段整体回滚和一次 Undo 清理均通过。
 - Maya Leg FK→IK 匹配从当前弯腿 Body 姿态对齐 Ankle IK 世界帧与 Pole Vector，再切换同侧 blend；Hip/Knee/Ankle 位置、Ankle 朝向、左右隔离、显隐、选择保持和单次 Undo 均通过。
 - Maya Leg FK→IK 匹配会先归零目标侧六个 Foot 通道，把 Ankle、Pole Vector 和三轴 Toe IK control 对齐到当前 Hip/Knee/Ankle/Toes FK 姿态，再切换同侧 blend；非中性 Toe FK 姿态、四关节位置与世界轴、左右隔离、显隐、选择保持和单次 Undo 均通过。
 - Maya Leg IK→FK 匹配把 Hip/Knee/Ankle/Toes 四层 FK controls 依次对齐到当前 IK 姿态，并把 Hip–Knee、Knee–Ankle 的实际主轴段长传入 FK drivers 后切换同侧 blend；拉伸态四关节位置与世界轴、左右隔离、显隐、零 FK control 本地平移、选择保持和单次 Undo 均通过。
@@ -122,6 +122,8 @@
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_leg_stretch_bias_smoke.py validation\results\maya2024-body-leg-stretch-bias.json
 
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_leg_knee_pin_smoke.py validation\results\maya2024-body-leg-knee-pin.json
+
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_arm_fk_mechanisms_smoke.py validation\results\maya2024-body-arm-fk-mechanisms.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_arm_ik_smoke.py validation\results\maya2024-body-arm-ik.json
@@ -169,7 +171,7 @@
 - Blender 基础约束当前只接受一个 source，且要求 `maintain_offset=False`。
 - `control` 在 Maya 中是带标记属性的 transform，在 Blender 中是 Empty；曲线形状尚未进入跨 DCC 合同。
 - 当前案例覆盖平移、骨骼 aim 与本地 Y-roll；非均匀缩放和镜像矩阵尚未验证。
-- IK/FK 案例覆盖最小三关节 limb，并验证 Maya Arm/Leg 控制显隐、末端 IK 朝向、旋转/位移输出、包含 IK stretch 段长传递的单侧双向匹配、显式全局比例补偿、Leg 上下段伸长量分配、每段两个轴向 twist helper，以及受 IK/FK 模式隔离的左右独立正交体积强度；完整角色总控层级尚未实现。
+- IK/FK 案例覆盖最小三关节 limb，并验证 Maya Arm/Leg 控制显隐、末端 IK 朝向、旋转/位移输出、包含 IK stretch/pin 段长传递的单侧双向匹配、显式全局比例补偿、Leg 上下段伸长量分配与 knee pin、每段两个轴向 twist helper，以及受 IK/FK 模式隔离的左右独立正交体积强度；完整角色总控层级尚未实现。
 - Skin Bind 案例使用代码生成的 72 顶点圆柱臂段和 2 个 Lower Arm twist helpers，覆盖预演、真实变形、重复绑定拦截、选择保持和单次 Undo；不代表自动权重质量、复杂角色拓扑或已有蒙皮迁移已经完成。
 - Skin Weight 案例在同类 72 顶点合成臂段上精确改写 3 个顶点，验证归一化结果、重复应用零修改、真实 twist 变形和单次 Undo 恢复原权重；尚未覆盖文件导入导出、批量网格或大规模权重性能。
 - Skin Weight I/O 案例导出同一合成臂段的全部 72 个顶点，改写 3 点后由带摘要的 JSON 恢复，覆盖拒绝覆盖文件、重复导入零修改、单次 Undo 和临时目录清理；未覆盖名称重映射、网络盘或大型角色性能。
@@ -185,7 +187,7 @@
 - 位置编辑只写本地 translate，不自动解锁、断开驱动、重算 jointOrient 或更新 Fit 可视化几何。
 - 朝向编辑支持唯一子级或调用方显式选择的直接分支子级；非零 rotate 和不可补偿后代会在预检阶段拒绝。
 - 对称计划表达输出名称、父子拓扑、YZ 平面世界位置及镜像行为世界轴；当前尚未覆盖非均匀缩放、World Match 或自定义逐关节镜像平面。
-- 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径；Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 默认主流程已把五关节 mechanisms、四层 FK controls、Ankle/PV/Toe IK controls、含 Toes 的旋转/位移 blend、模式显隐、全局比例补偿 stretch、保持总长的上下段 bias、主轴感知 twist/volume、Heel/Outer/Inner/Toe/Ball pivot、Ankle/Toes IK 朝向输出、自动分段 `footRoll`、四关节双向匹配及拉伸态 IK→FK 段长传递组合成原子 Rig；Leg knee pin、手指控制、完整变形系统或产品 UI 尚未实现，因此不是最终 Body rig。
+- 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径；Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 默认主流程已把五关节 mechanisms、四层 FK controls、Ankle/PV/Toe IK controls、含 Toes 的旋转/位移 blend、模式显隐、全局比例补偿 stretch、保持总长的上下段 bias、实时测距 knee pin、主轴感知 twist/volume、Heel/Outer/Inner/Toe/Ball pivot、Ankle/Toes IK 朝向输出、自动分段 `footRoll`、四关节双向匹配及 stretch/pin 态 IK→FK 段长传递组合成原子 Rig；角色总控层级、手指控制、完整变形系统或产品 UI 尚未实现，因此不是最终 Body rig。
 - provenance 只证明本工程写入的产物身份和声明数量；删除资格还必须通过当前 DAG 与外部连接安全评估，不能只凭标记直接删除。
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。

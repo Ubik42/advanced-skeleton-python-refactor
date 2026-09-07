@@ -51,6 +51,12 @@ from adv_py.core.body_leg_stretch_bias import (
     audit_body_leg_stretch_bias,
     plan_body_leg_stretch_bias,
 )
+from adv_py.core.body_leg_knee_pin import (
+    BodyLegKneePinPlan,
+    BodyLegKneePinSnapshot,
+    audit_body_leg_knee_pin,
+    plan_body_leg_knee_pin,
+)
 from adv_py.core.body_leg_twist import (
     BodyLegTwistJointSpec,
     BodyLegTwistPlan,
@@ -102,6 +108,8 @@ class BodyLegRigHost(BodyRebuildInspectionHost, Protocol):
     def capture_body_leg_stretch(self, plan: BodyLegStretchPlan) -> BodyLegStretchSnapshot: ...
     def create_body_leg_stretch_bias(self, plan: BodyLegStretchBiasPlan) -> None: ...
     def capture_body_leg_stretch_bias(self, plan: BodyLegStretchBiasPlan) -> BodyLegStretchBiasSnapshot: ...
+    def create_body_leg_knee_pin(self, plan: BodyLegKneePinPlan) -> None: ...
+    def capture_body_leg_knee_pin(self, plan: BodyLegKneePinPlan) -> BodyLegKneePinSnapshot: ...
     def prepare_body_leg_twist_runtime(self) -> None: ...
     def create_body_leg_twist_root(self, name: str) -> str: ...
     def create_body_leg_twist_segment(self, spec: BodyLegTwistSegmentSpec) -> None: ...
@@ -123,6 +131,7 @@ class BodyLegRigBuildPlan:
     visibility: BodyLegVisibilityPlan
     stretch: BodyLegStretchPlan
     stretch_bias: BodyLegStretchBiasPlan
+    knee_pin: BodyLegKneePinPlan
     twist: BodyLegTwistPlan
     volume: BodyLegVolumePlan
     foot: BodyLegFootPlan
@@ -152,6 +161,7 @@ class BodyLegRigBuildResult:
     visibility: BodyLegVisibilitySnapshot
     stretch: BodyLegStretchSnapshot
     stretch_bias: BodyLegStretchBiasSnapshot
+    knee_pin: BodyLegKneePinSnapshot
     twist: BodyLegTwistSnapshot
     volume: BodyLegVolumeSnapshot
     foot: BodyLegFootSnapshot
@@ -201,11 +211,20 @@ class BuildBodyLegRig:
         visibility = plan_body_leg_visibility(fk_controls, ik, blend)
         stretch = plan_body_leg_stretch(mechanisms, ik)
         stretch_bias = plan_body_leg_stretch_bias(stretch)
+        knee_pin = plan_body_leg_knee_pin(stretch, stretch_bias, ik)
         twist = plan_body_leg_twist(
             safety.body,
             joints_per_segment=twist_joints_per_segment,
         )
-        volume = plan_body_leg_volume(stretch, twist, blend)
+        volume = plan_body_leg_volume(
+            stretch,
+            twist,
+            blend,
+            stretch_ratio_sources_by_side={
+                spec.side: spec.total_ratio_source
+                for spec in knee_pin.sides
+            },
+        )
         foot = plan_body_leg_foot(safety.body, ik)
         names = [
             mechanisms.root_name,
@@ -251,6 +270,8 @@ class BuildBodyLegRig:
                 side.weights_name,
                 side.factors_name,
             ))
+        for side in knee_pin.sides:
+            names.extend(side.node_names)
         names.append(twist.root_name)
         for spec in twist.segments:
             names.extend((
@@ -299,6 +320,7 @@ class BuildBodyLegRig:
             visibility,
             stretch,
             stretch_bias,
+            knee_pin,
             twist,
             volume,
             foot,
@@ -409,6 +431,48 @@ class BuildBodyLegRig:
                     + "；".join(issue.message for issue in stretch_issues)
                 )
 
+            self._host.create_body_leg_knee_pin(plan.knee_pin)
+            knee_pin = self._host.capture_body_leg_knee_pin(plan.knee_pin)
+            knee_pin_issues = audit_body_leg_knee_pin(
+                plan.knee_pin,
+                knee_pin,
+            )
+            if knee_pin_issues:
+                raise RuntimeError(
+                    "Leg knee pin 阶段复检失败："
+                    + "；".join(issue.message for issue in knee_pin_issues)
+                )
+            stretch_bias = self._host.capture_body_leg_stretch_bias(
+                plan.stretch_bias
+            )
+            bias_issues = audit_body_leg_stretch_bias(
+                plan.stretch_bias,
+                stretch_bias,
+                expected_factor_destination_sources_by_side={
+                    spec.side: spec.factor_sources
+                    for spec in plan.knee_pin.sides
+                },
+            )
+            if bias_issues:
+                raise RuntimeError(
+                    "Leg knee pin 构建后 bias 网络复检失败："
+                    + "；".join(issue.message for issue in bias_issues)
+                )
+            stretch = self._host.capture_body_leg_stretch(plan.stretch)
+            stretch_issues = audit_body_leg_stretch(
+                plan.stretch,
+                stretch,
+                expected_segment_factor_sources_by_side={
+                    spec.side: spec.factor_sources
+                    for spec in plan.knee_pin.sides
+                },
+            )
+            if stretch_issues:
+                raise RuntimeError(
+                    "Leg knee pin 构建后基础网络复检失败："
+                    + "；".join(issue.message for issue in stretch_issues)
+                )
+
             if (
                 self._host.create_body_leg_twist_root(plan.twist.root_name)
                 != plan.twist.root_path
@@ -475,6 +539,7 @@ class BuildBodyLegRig:
             visibility,
             stretch,
             stretch_bias,
+            knee_pin,
             twist,
             volume,
             foot,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite, sqrt
+from typing import Mapping
 
 from .body_limb_blend import BodyLimbBlendPlan
 from .body_limb_stretch import BodyLimbStretchPlan
@@ -93,6 +94,7 @@ def plan_body_limb_volume(
     blend: BodyLimbBlendPlan,
     *,
     limb_label: str,
+    stretch_ratio_sources_by_side: Mapping[FitBuildSide, str] | None = None,
 ) -> BodyLimbVolumePlan:
     if (
         not isinstance(limb_label, str)
@@ -130,10 +132,17 @@ def plan_body_limb_volume(
                 f"{limb_label} 体积保持要求每侧唯一 stretch 输出和有效 twist helper"
             )
         stretch_side = stretch_sides[0]
+        stretch_ratio_source = f"{stretch_side.blend_name}.outputR"
+        if stretch_ratio_sources_by_side is not None:
+            stretch_ratio_source = stretch_ratio_sources_by_side.get(side, "")
+            if not isinstance(stretch_ratio_source, str) or not stretch_ratio_source:
+                raise BodyLimbVolumeValidationError(
+                    f"{limb_label} 体积保持缺少目标侧最终长度比例来源"
+                )
         sides.append(BodyLimbVolumeSideSpec(
             side=side,
             attribute=f"{limb_label.lower()}Volume_{suffix}",
-            stretch_ratio_source=f"{stretch_side.blend_name}.outputR",
+            stretch_ratio_source=stretch_ratio_source,
             mode_attribute=blend_sides[0].attribute,
             mode_blend_name=f"AdvPy_{limb_label}VolumeMode_{suffix}",
             power_name=f"AdvPy_{limb_label}VolumePower_{suffix}",

@@ -61,6 +61,11 @@ from adv_py.core.body_leg_stretch_bias import (
     BodyLegStretchBiasSideState,
     BodyLegStretchBiasSnapshot,
 )
+from adv_py.core.body_leg_knee_pin import (
+    BodyLegKneePinPlan,
+    BodyLegKneePinSideState,
+    BodyLegKneePinSnapshot,
+)
 from adv_py.core.body_arm_twist import (
     BodyArmTwistJointSpec,
     BodyArmTwistPlan,
@@ -1120,6 +1125,384 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 ),
             ))
         return BodyLegStretchBiasSnapshot(settings[0], tuple(states))
+
+    def create_body_leg_knee_pin(
+        self,
+        plan: BodyLegKneePinPlan,
+    ) -> None:
+        self._require_transaction()
+        selection = self._cmds.ls(selection=True, long=True) or []
+
+        def source(plug: str) -> str | None:
+            values = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+                plugs=True,
+            ) or []
+            return values[0] if len(values) == 1 else None
+
+        try:
+            settings = self._cmds.ls(
+                plan.settings_path,
+                long=True,
+                type="transform",
+            ) or []
+            if len(settings) != 1 or settings[0] != plan.settings_path:
+                raise FitSkeletonValidationError(
+                    "Leg knee pin 设置节点在执行前失效"
+                )
+            for spec in plan.sides:
+                plug = f"{plan.settings_path}.{spec.attribute}"
+                required = (
+                    spec.start_matrix_source,
+                    spec.pole_matrix_source,
+                    spec.ankle_matrix_source,
+                    spec.global_scale_source,
+                    *spec.normal_factor_sources,
+                    *spec.factor_destinations,
+                )
+                if (
+                    self._cmds.objExists(plug)
+                    or any(
+                        self.find_name_collisions(name)
+                        for name in spec.node_names
+                    )
+                    or any(not self._cmds.objExists(value) for value in required)
+                    or any(
+                        source(destination) != normal_source
+                        for destination, normal_source in zip(
+                            spec.factor_destinations,
+                            spec.normal_factor_sources,
+                        )
+                    )
+                ):
+                    raise FitSkeletonValidationError(
+                        "Leg knee pin 输入、名称或原始段长连接失效"
+                    )
+
+            self._transaction_changed = True
+            for spec in plan.sides:
+                plug = f"{plan.settings_path}.{spec.attribute}"
+                self._cmds.addAttr(
+                    plan.settings_path,
+                    longName=spec.attribute,
+                    attributeType="double",
+                    minValue=0.0,
+                    maxValue=1.0,
+                    defaultValue=spec.default_value,
+                    keyable=True,
+                )
+                upper_distance = self._cmds.createNode(
+                    "distanceBetween",
+                    name=spec.upper_distance_name,
+                    skipSelect=True,
+                )
+                lower_distance = self._cmds.createNode(
+                    "distanceBetween",
+                    name=spec.lower_distance_name,
+                    skipSelect=True,
+                )
+                local_lengths = self._cmds.createNode(
+                    "multiplyDivide",
+                    name=spec.local_lengths_name,
+                    skipSelect=True,
+                )
+                clamp = self._cmds.createNode(
+                    "clamp",
+                    name=spec.clamp_name,
+                    skipSelect=True,
+                )
+                pin_factors = self._cmds.createNode(
+                    "multiplyDivide",
+                    name=spec.pin_factors_name,
+                    skipSelect=True,
+                )
+                factors = self._cmds.createNode(
+                    "blendColors",
+                    name=spec.factors_name,
+                    skipSelect=True,
+                )
+                ratio_terms = self._cmds.createNode(
+                    "multiplyDivide",
+                    name=spec.ratio_terms_name,
+                    skipSelect=True,
+                )
+                total_ratio = self._cmds.createNode(
+                    "plusMinusAverage",
+                    name=spec.total_ratio_name,
+                    skipSelect=True,
+                )
+
+                self._cmds.connectAttr(
+                    spec.start_matrix_source,
+                    f"{upper_distance}.inMatrix1",
+                )
+                self._cmds.connectAttr(
+                    spec.pole_matrix_source,
+                    f"{upper_distance}.inMatrix2",
+                )
+                self._cmds.connectAttr(
+                    spec.pole_matrix_source,
+                    f"{lower_distance}.inMatrix1",
+                )
+                self._cmds.connectAttr(
+                    spec.ankle_matrix_source,
+                    f"{lower_distance}.inMatrix2",
+                )
+
+                self._cmds.setAttr(f"{local_lengths}.operation", 2)
+                self._cmds.connectAttr(
+                    f"{upper_distance}.distance",
+                    f"{local_lengths}.input1X",
+                )
+                self._cmds.connectAttr(
+                    f"{lower_distance}.distance",
+                    f"{local_lengths}.input1Y",
+                )
+                self._cmds.connectAttr(
+                    spec.global_scale_source,
+                    f"{local_lengths}.input2X",
+                )
+                self._cmds.connectAttr(
+                    spec.global_scale_source,
+                    f"{local_lengths}.input2Y",
+                )
+
+                self._cmds.connectAttr(
+                    f"{local_lengths}.outputX",
+                    f"{clamp}.inputR",
+                )
+                self._cmds.connectAttr(
+                    f"{local_lengths}.outputY",
+                    f"{clamp}.inputG",
+                )
+                self._cmds.setAttr(f"{clamp}.minR", spec.minimum_length)
+                self._cmds.setAttr(f"{clamp}.minG", spec.minimum_length)
+                self._cmds.setAttr(f"{clamp}.maxR", 1000000.0)
+                self._cmds.setAttr(f"{clamp}.maxG", 1000000.0)
+
+                self._cmds.setAttr(f"{pin_factors}.operation", 2)
+                self._cmds.connectAttr(
+                    f"{clamp}.outputR",
+                    f"{pin_factors}.input1X",
+                )
+                self._cmds.connectAttr(
+                    f"{clamp}.outputG",
+                    f"{pin_factors}.input1Y",
+                )
+                self._cmds.setAttr(
+                    f"{pin_factors}.input2X",
+                    spec.base_lengths[0],
+                )
+                self._cmds.setAttr(
+                    f"{pin_factors}.input2Y",
+                    spec.base_lengths[1],
+                )
+
+                self._cmds.connectAttr(
+                    f"{pin_factors}.outputX",
+                    f"{factors}.color1R",
+                )
+                self._cmds.connectAttr(
+                    f"{pin_factors}.outputY",
+                    f"{factors}.color1G",
+                )
+                self._cmds.connectAttr(
+                    spec.normal_factor_sources[0],
+                    f"{factors}.color2R",
+                )
+                self._cmds.connectAttr(
+                    spec.normal_factor_sources[1],
+                    f"{factors}.color2G",
+                )
+                self._cmds.connectAttr(plug, f"{factors}.blender")
+
+                self._cmds.setAttr(f"{ratio_terms}.operation", 1)
+                self._cmds.connectAttr(
+                    f"{factors}.outputR",
+                    f"{ratio_terms}.input1X",
+                )
+                self._cmds.connectAttr(
+                    f"{factors}.outputG",
+                    f"{ratio_terms}.input1Y",
+                )
+                self._cmds.setAttr(
+                    f"{ratio_terms}.input2X",
+                    spec.base_lengths[0] / spec.rest_length,
+                )
+                self._cmds.setAttr(
+                    f"{ratio_terms}.input2Y",
+                    spec.base_lengths[1] / spec.rest_length,
+                )
+                self._cmds.setAttr(f"{total_ratio}.operation", 1)
+                self._cmds.connectAttr(
+                    f"{ratio_terms}.outputX",
+                    f"{total_ratio}.input1D[0]",
+                )
+                self._cmds.connectAttr(
+                    f"{ratio_terms}.outputY",
+                    f"{total_ratio}.input1D[1]",
+                )
+
+                for old_source, destination, new_source in zip(
+                    spec.normal_factor_sources,
+                    spec.factor_destinations,
+                    spec.factor_sources,
+                ):
+                    self._cmds.disconnectAttr(old_source, destination)
+                    self._cmds.connectAttr(new_source, destination)
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+    def capture_body_leg_knee_pin(
+        self,
+        plan: BodyLegKneePinPlan,
+    ) -> BodyLegKneePinSnapshot:
+        def source(plug: str) -> str | None:
+            values = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+                plugs=True,
+            ) or []
+            if len(values) != 1:
+                return None
+            node, attribute = values[0].split(".", 1)
+            if attribute == "worldMatrix":
+                attribute = "worldMatrix[0]"
+            paths = self._cmds.ls(node, long=True) or [node]
+            return f"{paths[0]}.{attribute}"
+
+        settings = self._cmds.ls(
+            plan.settings_path,
+            long=True,
+            type="transform",
+        ) or []
+        if len(settings) != 1:
+            raise FitSkeletonValidationError("Leg knee pin 设置节点无效")
+        states = []
+        for spec in plan.sides:
+            typed = (
+                (spec.upper_distance_name, "distanceBetween"),
+                (spec.lower_distance_name, "distanceBetween"),
+                (spec.local_lengths_name, "multiplyDivide"),
+                (spec.clamp_name, "clamp"),
+                (spec.pin_factors_name, "multiplyDivide"),
+                (spec.factors_name, "blendColors"),
+                (spec.ratio_terms_name, "multiplyDivide"),
+                (spec.total_ratio_name, "plusMinusAverage"),
+            )
+            plug = f"{plan.settings_path}.{spec.attribute}"
+            if (
+                not self._cmds.objExists(plug)
+                or any(
+                    len(self._cmds.ls(name, type=node_type) or []) != 1
+                    for name, node_type in typed
+                )
+            ):
+                raise FitSkeletonValidationError(
+                    "Leg knee pin 节点集合无效"
+                )
+            states.append(BodyLegKneePinSideState(
+                side=spec.side,
+                attribute_plug=plug,
+                attribute_value=float(self._cmds.getAttr(plug)),
+                upper_distance_name=spec.upper_distance_name,
+                upper_matrix_sources=(
+                    source(f"{spec.upper_distance_name}.inMatrix1"),
+                    source(f"{spec.upper_distance_name}.inMatrix2"),
+                ),
+                lower_distance_name=spec.lower_distance_name,
+                lower_matrix_sources=(
+                    source(f"{spec.lower_distance_name}.inMatrix1"),
+                    source(f"{spec.lower_distance_name}.inMatrix2"),
+                ),
+                local_lengths_name=spec.local_lengths_name,
+                local_distance_sources=(
+                    source(f"{spec.local_lengths_name}.input1X"),
+                    source(f"{spec.local_lengths_name}.input1Y"),
+                ),
+                global_scale_sources=(
+                    source(f"{spec.local_lengths_name}.input2X"),
+                    source(f"{spec.local_lengths_name}.input2Y"),
+                ),
+                local_operation=int(self._cmds.getAttr(
+                    f"{spec.local_lengths_name}.operation"
+                )),
+                clamp_name=spec.clamp_name,
+                clamp_sources=(
+                    source(f"{spec.clamp_name}.inputR"),
+                    source(f"{spec.clamp_name}.inputG"),
+                ),
+                minimum_lengths=(
+                    float(self._cmds.getAttr(f"{spec.clamp_name}.minR")),
+                    float(self._cmds.getAttr(f"{spec.clamp_name}.minG")),
+                ),
+                maximum_lengths=(
+                    float(self._cmds.getAttr(f"{spec.clamp_name}.maxR")),
+                    float(self._cmds.getAttr(f"{spec.clamp_name}.maxG")),
+                ),
+                pin_factors_name=spec.pin_factors_name,
+                pin_length_sources=(
+                    source(f"{spec.pin_factors_name}.input1X"),
+                    source(f"{spec.pin_factors_name}.input1Y"),
+                ),
+                base_divisors=(
+                    float(self._cmds.getAttr(
+                        f"{spec.pin_factors_name}.input2X"
+                    )),
+                    float(self._cmds.getAttr(
+                        f"{spec.pin_factors_name}.input2Y"
+                    )),
+                ),
+                pin_operation=int(self._cmds.getAttr(
+                    f"{spec.pin_factors_name}.operation"
+                )),
+                factors_name=spec.factors_name,
+                pin_factor_sources=(
+                    source(f"{spec.factors_name}.color1R"),
+                    source(f"{spec.factors_name}.color1G"),
+                ),
+                normal_factor_sources=(
+                    source(f"{spec.factors_name}.color2R"),
+                    source(f"{spec.factors_name}.color2G"),
+                ),
+                weight_source=source(f"{spec.factors_name}.blender"),
+                ratio_terms_name=spec.ratio_terms_name,
+                ratio_factor_sources=(
+                    source(f"{spec.ratio_terms_name}.input1X"),
+                    source(f"{spec.ratio_terms_name}.input1Y"),
+                ),
+                ratio_weights=(
+                    float(self._cmds.getAttr(
+                        f"{spec.ratio_terms_name}.input2X"
+                    )),
+                    float(self._cmds.getAttr(
+                        f"{spec.ratio_terms_name}.input2Y"
+                    )),
+                ),
+                ratio_operation=int(self._cmds.getAttr(
+                    f"{spec.ratio_terms_name}.operation"
+                )),
+                total_ratio_name=spec.total_ratio_name,
+                ratio_term_sources=(
+                    source(f"{spec.total_ratio_name}.input1D[0]"),
+                    source(f"{spec.total_ratio_name}.input1D[1]"),
+                ),
+                total_operation=int(self._cmds.getAttr(
+                    f"{spec.total_ratio_name}.operation"
+                )),
+                factor_destinations=spec.factor_destinations,
+                factor_destination_sources=tuple(
+                    source(destination)
+                    for destination in spec.factor_destinations
+                ),
+            ))
+        return BodyLegKneePinSnapshot(settings[0], tuple(states))
 
     def prepare_body_arm_twist_runtime(self) -> None:
         self._prepare_body_limb_twist_runtime("Arm")

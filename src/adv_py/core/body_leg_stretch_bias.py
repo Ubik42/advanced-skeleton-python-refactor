@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from typing import Mapping
 
 from .body_leg_stretch import BodyLegStretchPlan
 from .fit_symmetry import FitBuildSide
@@ -176,6 +177,10 @@ def audit_body_leg_stretch_bias(
     snapshot: BodyLegStretchBiasSnapshot,
     *,
     tolerance: float = 1e-4,
+    expected_factor_destination_sources_by_side: Mapping[
+        FitBuildSide,
+        tuple[str, str],
+    ] | None = None,
 ) -> tuple[BodyLegStretchBiasIssue, ...]:
     issues = []
     if snapshot.settings_path != plan.settings_path:
@@ -194,6 +199,11 @@ def audit_body_leg_stretch_bias(
         if state is None:
             continue
         plug = f"{plan.settings_path}.{spec.attribute}"
+        expected_destination_sources = (
+            expected_factor_destination_sources_by_side.get(spec.side, ())
+            if expected_factor_destination_sources_by_side is not None
+            else spec.factor_sources
+        )
         checks = (
             (
                 state.attribute_plug == plug
@@ -251,7 +261,8 @@ def audit_body_leg_stretch_bias(
             ),
             (
                 state.factor_destinations == spec.factor_destinations
-                and state.factor_destination_sources == spec.factor_sources,
+                and state.factor_destination_sources
+                == expected_destination_sources,
                 "destination_mismatch",
                 "Leg stretch bias 输出目标不一致",
             ),

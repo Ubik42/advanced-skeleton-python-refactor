@@ -1,0 +1,51 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 28152,
+  "slice": "body_leg_knee_pin",
+  "two_knee_pin_sides": true,
+  "default_pin_is_zero": true,
+  "zero_pin_preserves_stretch_bias": true,
+  "zero_pin_does_not_force_pole_position": true,
+  "full_pin_uses_two_control_distances": true,
+  "full_pin_places_knee_at_pole": true,
+  "full_pin_keeps_ankle_on_target": true,
+  "full_total_ratio_matches_graph": true,
+  "partial_pin_is_continuous": true,
+  "partial_total_ratio_matches_graph": true,
+  "volume_uses_final_pin_total_ratio": true,
+  "left_side_isolated": true,
+  "twist_helpers_follow_pinned_segments": true,
+  "pinned_ik_to_fk_preserves_pose": true,
+  "pinned_ik_to_fk_transfers_lengths": true,
+  "selection_preserved": true,
+  "first_undo_restored_ik_mode": true,
+  "first_undo_restored_pinned_pose": true,
+  "second_undo_removed_complete_leg_rig": true,
+  "cleanup": true,
+  "target_stretch_ratio": 1.25,
+  "bias_value": 0.75,
+  "partial_pin_weight": 0.5,
+  "world_distances": [
+    7.211102550927978,
+    8.48528137423857
+  ],
+  "normal_segments": [
+    5.5,
+    4.5
+  ],
+  "full_pin_segments": [
+    7.211102485656738,
+    8.485280990600586
+  ],
+  "partial_pin_segments": [
+    6.355551242828369,
+    6.492640495300293
+  ],
+  "full_total_ratio": 1.9620479345321655,
+  "partial_total_ratio": 1.6060240268707275,
+  "remaining_rig_nodes_after_undo": [],
+  "remaining_nodes": [],
+  "duration_seconds": 4.185,
+  "status": "passed"
+}
