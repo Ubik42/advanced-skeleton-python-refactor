@@ -18,6 +18,12 @@ from .fit_metadata import (
     FitJointMetadataReader,
     InspectFitJoints,
 )
+from .fit_orientation import (
+    FitOrientationHost,
+    FitOrientationPlan,
+    FitOrientationResult,
+    OrientSimpleFitChain,
+)
 from .fit_position import (
     EditFitJointPositions,
     FitPositionEditPlan,
@@ -58,6 +64,9 @@ __all__ = [
     "FitJointEditResult",
     "FitJointMetadataHost",
     "FitJointMetadataReader",
+    "FitOrientationHost",
+    "FitOrientationPlan",
+    "FitOrientationResult",
     "FitPositionEditPlan",
     "FitPositionEditResult",
     "FitPositionHost",
@@ -71,4 +80,5 @@ __all__ = [
     "InspectFitHierarchy",
     "JointLabelHost",
     "JointLabelResult",
+    "OrientSimpleFitChain",
 ]

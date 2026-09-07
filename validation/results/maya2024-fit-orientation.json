@@ -1,0 +1,23 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 34948,
+  "slice": "simple_fit_chain_orientation",
+  "locked_joint_orient_blocked": true,
+  "locked_preflight_did_not_modify_scene": true,
+  "preview_change_count": 2,
+  "preview_did_not_modify_scene": true,
+  "world_positions_preserved": true,
+  "parallel_up_fallback_verified": true,
+  "rotate_channels_remained_zero": true,
+  "end_joint_orient_unchanged": true,
+  "selection_preserved": true,
+  "repeat_plan_is_noop": true,
+  "single_undo_restored_joint_orient": true,
+  "container_survived_undo": true,
+  "unrelated_node_survived": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 4.113,
+  "status": "passed"
+}

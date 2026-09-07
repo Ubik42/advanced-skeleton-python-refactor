@@ -22,6 +22,11 @@ from adv_py.core.fit_metadata import (
     FitJointMetadata,
     FitJointValidationError,
 )
+from adv_py.core.fit_orientation import (
+    FitJointOrientationState,
+    FitOrientationChange,
+    FitOrientationSnapshot,
+)
 from adv_py.core.fit_settings import (
     FitSkeletonField,
     FitSkeletonSetting,
@@ -386,6 +391,114 @@ class MayaFitJointHost:
             self._transaction_changed = True
             self._cmds.setAttr(f"{matches[0]}.t{axis}", values[axis])
 
+    def capture_fit_orientation(
+        self, container_name: str
+    ) -> FitOrientationSnapshot:
+        hierarchy = self.capture_fit_hierarchy(container_name)
+        states: list[FitJointOrientationState] = []
+        for node in hierarchy.joints:
+            joint_orient = self._cmds.getAttr(f"{node.path}.jointOrient")[0]
+            rotation = self._cmds.getAttr(f"{node.path}.rotate")[0]
+            matrix = self._cmds.xform(
+                node.path,
+                query=True,
+                worldSpace=True,
+                matrix=True,
+            )
+            world_axes = tuple(
+                self._normalized_vector(
+                    tuple(float(value) for value in matrix[index : index + 3])
+                )
+                for index in (0, 4, 8)
+            )
+            writable_axes = frozenset(
+                axis
+                for axis in ("x", "y", "z")
+                if self._cmds.getAttr(
+                    f"{node.path}.jointOrient{axis.upper()}",
+                    settable=True,
+                )
+            )
+            states.append(
+                FitJointOrientationState(
+                    joint=node.path,
+                    joint_orient=tuple(float(value) for value in joint_orient),
+                    rotation=tuple(float(value) for value in rotation),
+                    world_axes=world_axes,
+                    writable_joint_orient_axes=writable_axes,
+                )
+            )
+        return FitOrientationSnapshot(
+            hierarchy=hierarchy,
+            up_axis=self.scene_up_axis(),
+            joints=tuple(states),
+        )
+
+    def orient_fit_joint(self, change: FitOrientationChange) -> None:
+        self._require_transaction()
+        joint_matches = self._cmds.ls(change.joint, long=True, type="joint") or []
+        child_matches = self._cmds.ls(change.child, long=True, type="joint") or []
+        if len(joint_matches) != 1 or len(child_matches) != 1:
+            raise FitSkeletonValidationError("朝向目标 joint 在执行前失效")
+        joint = joint_matches[0]
+        child = child_matches[0]
+        if (self._cmds.listRelatives(child, parent=True, fullPath=True) or []) != [
+            joint
+        ]:
+            raise FitSkeletonValidationError("朝向目标的直接父子关系已变化")
+        if any(
+            not self._cmds.getAttr(
+                f"{joint}.jointOrient{axis.upper()}", settable=True
+            )
+            for axis in ("x", "y", "z")
+        ):
+            raise FitSkeletonValidationError("jointOrient 在执行前变为不可写")
+        if any(
+            not self._cmds.getAttr(f"{child}.t{axis}", settable=True)
+            for axis in ("x", "y", "z")
+        ):
+            raise FitSkeletonValidationError("子 joint translate 在执行前变为不可写")
+        if any(
+            not self._cmds.getAttr(
+                f"{child}.jointOrient{axis.upper()}", settable=True
+            )
+            for axis in ("x", "y", "z")
+        ):
+            raise FitSkeletonValidationError("子 joint jointOrient 在执行前变为不可写")
+        descendant_paths: list[tuple[str, tuple[float, float, float]]] = []
+        for descendant, position in change.descendant_world_positions:
+            matches = self._cmds.ls(descendant, long=True, type="joint") or []
+            if len(matches) != 1:
+                raise FitSkeletonValidationError("朝向补偿后代 joint 在执行前失效")
+            if any(
+                not self._cmds.getAttr(f"{matches[0]}.t{axis}", settable=True)
+                for axis in ("x", "y", "z")
+            ):
+                raise FitSkeletonValidationError(
+                    f"朝向补偿后代 translate 在执行前变为不可写：{matches[0]}"
+                )
+            descendant_paths.append((matches[0], position))
+
+        self._cmds.joint(
+            joint,
+            edit=True,
+            orientJoint="xyz",
+            secondaryAxisOrient=f"{change.secondary_world_axis.value}up",
+            children=False,
+            zeroScaleOrient=True,
+        )
+        self._transaction_changed = True
+        self._cmds.setAttr(
+            f"{child}.jointOrient",
+            *change.child_before_joint_orient,
+        )
+        for descendant, position in descendant_paths:
+            self._cmds.xform(
+                descendant,
+                worldSpace=True,
+                translation=position,
+            )
+
     def read_fit_skeleton_settings(
         self, container_name: str
     ) -> FitSkeletonSettings:
@@ -617,6 +730,15 @@ class MayaFitJointHost:
         if len(matches) != 1:
             raise error_type(f"FitSkeleton 容器名称不唯一：{name}")
         return matches[0]
+
+    @staticmethod
+    def _normalized_vector(
+        value: tuple[float, float, float],
+    ) -> tuple[float, float, float]:
+        length = sum(component * component for component in value) ** 0.5
+        if length <= 1e-10:
+            raise FitSkeletonValidationError("Maya joint 世界轴长度无效")
+        return tuple(component / length for component in value)
 
     def _require_transaction(self) -> None:
         if not self._transaction_active:

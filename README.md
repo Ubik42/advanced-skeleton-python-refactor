@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成八个 Maya-only FitSkeleton 切片：关节标签、可选元数据审计、声明式元数据变更、层级构建前校验、容器设置补齐、非破坏性容器创建、自生成 Root/Spine 基础模板，以及声明式位置编辑；尚未实现完整身体 FitSkeleton、蒙皮或产品 UI。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成九个 Maya-only FitSkeleton 切片：关节标签、可选元数据审计、声明式元数据变更、层级构建前校验、容器设置补齐、非破坏性容器创建、自生成 Root/Spine 基础模板、声明式位置编辑，以及简单单子链朝向；尚未实现完整身体 FitSkeleton、蒙皮或产品 UI。
 
 ## 当前完成
 
@@ -23,6 +23,7 @@
 - `CreateFitSkeleton` 根据 Maya 当前 Y/Z Up 创建根级圆环和完整默认设置，保持当前选择；任何同名节点都会在事务前阻止创建，不会被删除或自动改名。
 - `CreateMinimalFitTemplate` 在空容器内创建自生成的 `Root → Spine1 → Spine2` 基线，验证拓扑、局部位置和标签；完整身体模板仍由原授权安装提供，不进入仓库。
 - `EditFitJointPositions` 对显式关节提交本地位置 Patch，只写实际变化且可写的轴；锁定/驱动轴、Root 离中和无效层级会在批量事务前失败。
+- `OrientSimpleFitChain` 为单子链建立 X-Aim/Y-Secondary 朝向，自动选择与 Aim 正交的世界参考轴，并补偿 Maya 隐式产生的后代位置与子 jointOrient 变化。
 - 提供受限的 Legacy Bridge，供未来 Python 功能在 Maya 内调用尚未迁移的 MEL 过程。
 - 记录目标架构、迁移顺序、验收策略和许可边界。
 
@@ -59,4 +60,4 @@ py -3 -m unittest discover -s tests -v
 - Blender 将 Bind 与 FK/IK 机制骨链放在独立 Armature，避免跨骨链 blend 驱动形成依赖环；该差异留在适配器内部。
 - 当前 IK/FK 是最小可运行合同，尚无镜像 limb、IK/FK 无缝匹配、拉伸和 twist。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya FitSkeleton 已覆盖非破坏性容器与基础 Root/Spine 创建、标签、常用可选元数据、层级构建前校验、容器设置补齐和本地位置编辑；完整身体模板、自动朝向、镜像语义和其他几何编辑仍待后续切片。
+- 当前 Maya FitSkeleton 已覆盖非破坏性容器与基础 Root/Spine 创建、标签、常用可选元数据、层级构建前校验、容器设置补齐、本地位置编辑和简单单子链朝向；完整身体模板、分支朝向、镜像语义和其他几何编辑仍待后续切片。
