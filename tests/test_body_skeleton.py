@@ -2,7 +2,11 @@ import unittest
 from contextlib import contextmanager
 from dataclasses import replace
 
-from adv_py.application import BuildBodySkeleton, OrientBodySkeleton
+from adv_py.application import (
+    BuildBodySkeleton,
+    BuildOrientedBodySkeleton,
+    OrientBodySkeleton,
+)
 from adv_py.core import (
     IDENTITY_AXES,
     BodyJointState,
@@ -20,7 +24,12 @@ from adv_py.core import (
 
 
 class FakeBodySkeletonHost:
-    def __init__(self, *, faulty_capture=False):
+    def __init__(
+        self,
+        *,
+        faulty_capture=False,
+        faulty_after_orientation=False,
+    ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
         hierarchy = predict_fit_template_hierarchy(template, "|FitSkeleton")
         self.fit_snapshot = FitOrientationSnapshot(
@@ -60,6 +69,8 @@ class FakeBodySkeletonHost:
         self.body = []
         self.transaction_count = 0
         self.faulty_capture = faulty_capture
+        self.faulty_after_orientation = faulty_after_orientation
+        self.orientation_write_count = 0
         self.in_transaction = False
 
     def capture_fit_orientation(self, container_name):
@@ -108,13 +119,17 @@ class FakeBodySkeletonHost:
     def capture_body_skeleton(self, root_name):
         root = f"|{root_name}"
         joints = tuple(self.body)
-        if self.faulty_capture and self.in_transaction and joints:
+        should_corrupt = self.faulty_capture or (
+            self.faulty_after_orientation and self.orientation_write_count > 0
+        )
+        if should_corrupt and self.in_transaction and joints:
             joints = (
                 replace(joints[0], world_position=(99.0, 0.0, 0.0)),
             ) + joints[1:]
         return BodySkeletonSnapshot(root, joints)
 
     def set_body_joint_world_axes(self, change):
+        self.orientation_write_count += 1
         self.body = [
             replace(state, world_axes=change.desired_world_axes)
             if state.path == change.joint
@@ -221,6 +236,39 @@ class BodySkeletonTests(unittest.TestCase):
 
         self.assertEqual(host.transaction_count, 2)
         self.assertEqual(tuple(host.body), before)
+
+    def test_atomic_body_build_creates_and_orients_in_one_transaction(self):
+        host = FakeBodySkeletonHost()
+        use_case = BuildOrientedBodySkeleton(host)
+
+        preview = use_case.plan()
+
+        self.assertTrue(preview.ready)
+        self.assertFalse(host.body)
+        result = use_case.apply()
+        self.assertEqual(host.transaction_count, 1)
+        self.assertEqual(len(result.snapshot.joints), 30)
+        self.assertEqual(len(result.orientation_changes), 13)
+        self.assertFalse(OrientBodySkeleton(host).plan().changes)
+
+    def test_atomic_body_build_collision_stops_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        host.collisions["Hip_L"] = ("|Existing|Hip_L",)
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "同名"):
+            BuildOrientedBodySkeleton(host).apply()
+
+        self.assertEqual(host.transaction_count, 0)
+        self.assertFalse(host.body)
+
+    def test_atomic_orientation_failure_removes_created_body(self):
+        host = FakeBodySkeletonHost(faulty_after_orientation=True)
+
+        with self.assertRaisesRegex(RuntimeError, "朝向后复检失败"):
+            BuildOrientedBodySkeleton(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertFalse(host.body)
 
 
 if __name__ == "__main__":

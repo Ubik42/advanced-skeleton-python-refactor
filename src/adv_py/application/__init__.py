@@ -67,6 +67,12 @@ from .oriented_fit_template import (
     OrientedFitTemplateBuildResult,
     OrientedFitTemplateHost,
 )
+from .oriented_body_skeleton import (
+    BuildOrientedBodySkeleton,
+    OrientedBodySkeletonBuildPlan,
+    OrientedBodySkeletonBuildResult,
+    OrientedBodySkeletonHost,
+)
 from .upper_body_fit import (
     BodySourceFitBuildPlan,
     BodySourceFitBuildResult,
@@ -89,6 +95,7 @@ __all__ = [
     "BuildResult",
     "BuildRig",
     "BuildBodySkeleton",
+    "BuildOrientedBodySkeleton",
     "BuildOrientedFitTemplate",
     "BuildSyntheticBodySourceFit",
     "BuildSyntheticUpperBodyFit",
@@ -136,6 +143,9 @@ __all__ = [
     "OrientSimpleFitChain",
     "OrientBodySkeleton",
     "OrientWorldFitJoints",
+    "OrientedBodySkeletonBuildPlan",
+    "OrientedBodySkeletonBuildResult",
+    "OrientedBodySkeletonHost",
     "OrientedFitTemplateBuildPlan",
     "OrientedFitTemplateBuildResult",
     "OrientedFitTemplateHost",

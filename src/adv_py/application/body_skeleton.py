@@ -130,19 +130,11 @@ class BuildBodySkeleton:
         with self._host.transaction(
             f"创建 {len(plan.specs)} 个 Body skeleton joints"
         ):
-            for spec in plan.specs:
-                created = self._host.create_body_joint(spec)
-                if created != spec.path:
-                    raise RuntimeError(
-                        f"Body skeleton 创建路径漂移：{spec.name}"
-                    )
-            snapshot = self._host.capture_body_skeleton(root_name)
-            issues = audit_body_skeleton(plan.specs, snapshot)
-            if issues:
-                raise RuntimeError(
-                    "Body skeleton 构建后复检失败："
-                    + "；".join(issue.message for issue in issues)
-                )
+            snapshot = _materialize_body_skeleton(
+                self._host,
+                plan,
+                root_name,
+            )
             current_fit = self._host.capture_fit_orientation(
                 plan.symmetry.source.hierarchy.container
             )
@@ -154,3 +146,24 @@ class BuildBodySkeleton:
             if current_settings != plan.symmetry.settings:
                 raise RuntimeError("Body skeleton 构建后复检失败：容器设置被改写")
         return BodySkeletonBuildResult(plan, snapshot)
+
+
+def _materialize_body_skeleton(
+    host: BodySkeletonHost,
+    plan: BodySkeletonBuildPlan,
+    root_name: str,
+) -> BodySkeletonSnapshot:
+    """Create and audit a neutral Body skeleton inside an active transaction."""
+
+    for spec in plan.specs:
+        created = host.create_body_joint(spec)
+        if created != spec.path:
+            raise RuntimeError(f"Body skeleton 创建路径漂移：{spec.name}")
+    snapshot = host.capture_body_skeleton(root_name)
+    issues = audit_body_skeleton(plan.specs, snapshot)
+    if issues:
+        raise RuntimeError(
+            "Body skeleton 构建后复检失败："
+            + "；".join(issue.message for issue in issues)
+        )
+    return snapshot

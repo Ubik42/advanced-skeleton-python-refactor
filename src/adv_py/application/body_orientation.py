@@ -92,18 +92,11 @@ class OrientBodySkeleton:
         with self._host.transaction(
             f"更新 {len(plan.changes)} 个 Body joint 朝向"
         ):
-            for change in plan.changes:
-                self._host.set_body_joint_world_axes(change)
-            for state in sorted(
-                plan.before.joints,
-                key=lambda item: (item.path.count("|"), item.path),
-            ):
-                self._host.set_body_joint_world_position(
-                    state.path,
-                    state.world_position,
-                )
-            verified = self._host.capture_body_skeleton(root_name)
-            self._verify(plan, verified)
+            verified = _apply_body_orientation(
+                self._host,
+                plan,
+                root_name,
+            )
             current_fit = self._host.capture_fit_orientation(
                 plan.symmetry.source.hierarchy.container
             )
@@ -116,39 +109,58 @@ class OrientBodySkeleton:
                 raise RuntimeError("Body joint 朝向后复检失败：容器设置被改写")
         return BodyOrientationResult(plan, verified)
 
-    @staticmethod
-    def _verify(
-        plan: BodyOrientationPlan,
-        verified: BodySkeletonSnapshot,
-    ) -> None:
-        before = {state.path: state for state in plan.before.joints}
-        after = {state.path: state for state in verified.joints}
-        desired = {
-            instance.output_path: instance.world_axes
-            for instance in plan.symmetry.instances
-        }
-        if set(before) != set(after) or set(after) != set(desired):
-            raise RuntimeError("Body joint 朝向后复检失败：关节集合发生变化")
-        for path, state in after.items():
-            previous = before[path]
-            if not _body_state_structure_matches(previous, state):
-                raise RuntimeError(
-                    f"Body joint 朝向后复检失败：结构或标签变化：{path}"
-                )
-            if any(
-                abs(current - wanted) > 1e-5
-                for current, wanted in zip(
-                    state.world_position,
-                    previous.world_position,
-                )
-            ):
-                raise RuntimeError(
-                    f"Body joint 朝向后复检失败：世界位置变化：{path}"
-                )
-            if not body_orientation_matches(desired[path], state):
-                raise RuntimeError(
-                    f"Body joint 朝向后复检失败：世界轴不一致：{path}"
-                )
+
+def _apply_body_orientation(
+    host: BodyOrientationHost,
+    plan: BodyOrientationPlan,
+    root_name: str,
+) -> BodySkeletonSnapshot:
+    """Write and verify Body axes inside an active transaction."""
+
+    for change in plan.changes:
+        host.set_body_joint_world_axes(change)
+    for state in sorted(
+        plan.before.joints,
+        key=lambda item: (item.path.count("|"), item.path),
+    ):
+        host.set_body_joint_world_position(state.path, state.world_position)
+    verified = host.capture_body_skeleton(root_name)
+    _verify_body_orientation(plan, verified)
+    return verified
+
+
+def _verify_body_orientation(
+    plan: BodyOrientationPlan,
+    verified: BodySkeletonSnapshot,
+) -> None:
+    before = {state.path: state for state in plan.before.joints}
+    after = {state.path: state for state in verified.joints}
+    desired = {
+        instance.output_path: instance.world_axes
+        for instance in plan.symmetry.instances
+    }
+    if set(before) != set(after) or set(after) != set(desired):
+        raise RuntimeError("Body joint 朝向后复检失败：关节集合发生变化")
+    for path, state in after.items():
+        previous = before[path]
+        if not _body_state_structure_matches(previous, state):
+            raise RuntimeError(
+                f"Body joint 朝向后复检失败：结构或标签变化：{path}"
+            )
+        if any(
+            abs(current - wanted) > 1e-5
+            for current, wanted in zip(
+                state.world_position,
+                previous.world_position,
+            )
+        ):
+            raise RuntimeError(
+                f"Body joint 朝向后复检失败：世界位置变化：{path}"
+            )
+        if not body_orientation_matches(desired[path], state):
+            raise RuntimeError(
+                f"Body joint 朝向后复检失败：世界轴不一致：{path}"
+            )
 
 
 def _body_state_structure_matches(
