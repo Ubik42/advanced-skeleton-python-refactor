@@ -8,7 +8,7 @@ from adv_py.core.body_arm_blend import BodyArmBlendPlan, BodyArmBlendSnapshot, a
 from adv_py.core.body_arm_ik import BodyArmIkPlan, BodyArmIkSnapshot, BodyArmIkSpec, audit_body_arm_ik, plan_body_arm_ik
 from adv_py.core.body_arm_visibility import BodyArmVisibilityPlan, BodyArmVisibilitySnapshot, audit_body_arm_visibility, plan_body_arm_visibility
 from adv_py.core.body_arm_stretch import BodyArmStretchPlan, BodyArmStretchSnapshot, audit_body_arm_stretch, plan_body_arm_stretch
-from adv_py.core.body_arm_twist import BodyArmTwistJointSpec, BodyArmTwistPlan, BodyArmTwistSnapshot, audit_body_arm_twist, plan_body_arm_twist
+from adv_py.core.body_arm_twist import BodyArmTwistJointSpec, BodyArmTwistPlan, BodyArmTwistSegmentSpec, BodyArmTwistSnapshot, audit_body_arm_twist, plan_body_arm_twist
 from adv_py.core.body_arm_mechanisms import BodyArmMechanismJointSpec, BodyArmMechanismPlan, BodyArmMechanismRole, BodyArmMechanismSnapshot, audit_body_arm_mechanisms, plan_body_arm_mechanisms
 from adv_py.core.body_controls import BodyArmFkControlPlan, BodyArmFkControlSnapshot, BodyArmFkControlSpec, audit_body_arm_fk_controls, plan_body_arm_fk_controls
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
@@ -34,7 +34,9 @@ class BodyArmRigHost(BodyRebuildInspectionHost, Protocol):
     def capture_body_arm_visibility(self, plan: BodyArmVisibilityPlan) -> BodyArmVisibilitySnapshot: ...
     def create_body_arm_stretch(self, plan: BodyArmStretchPlan) -> None: ...
     def capture_body_arm_stretch(self, plan: BodyArmStretchPlan) -> BodyArmStretchSnapshot: ...
+    def prepare_body_arm_twist_runtime(self) -> None: ...
     def create_body_arm_twist_root(self, name: str) -> str: ...
+    def create_body_arm_twist_segment(self, spec: BodyArmTwistSegmentSpec) -> None: ...
     def create_body_arm_twist_joint(self, spec: BodyArmTwistJointSpec) -> None: ...
     def capture_body_arm_twist(self, plan: BodyArmTwistPlan) -> BodyArmTwistSnapshot: ...
 
@@ -101,14 +103,18 @@ class BuildBodyArmRig:
         for side in stretch.sides:
             names.extend((side.start_name, side.distance_name, side.ratio_name, side.clamp_name, side.blend_name, side.segment_name))
         names.append(twist.root_name)
+        for spec in twist.segments:
+            names.extend((spec.name, spec.constraint_name, spec.compose_name, spec.decompose_name, spec.quaternion_name))
         names.extend(spec.name for spec in twist.joints)
         names.extend(spec.constraint_name for spec in twist.joints)
+        names.extend(spec.multiplier_name for spec in twist.joints)
         collisions = tuple(sorted({path for name in names for path in self._host.find_name_collisions(name)}))
         return BodyArmRigBuildPlan(safety, mechanisms, fk_controls, blend, ik, visibility, stretch, twist, collisions)
 
     def apply(self, container_name="FitSkeleton", *, body_root_name="Root_M", control_radius=1.5, pole_distance_scale=0.75, twist_joints_per_segment=2, center_tolerance=0.01) -> BodyArmRigBuildResult:
         plan = self.plan(container_name, body_root_name=body_root_name, control_radius=control_radius, pole_distance_scale=pole_distance_scale, twist_joints_per_segment=twist_joints_per_segment, center_tolerance=center_tolerance)
         if not plan.ready: raise FitSkeletonValidationError("Arm Rig 构建预检失败，场景未修改：" + "；".join(plan.blockers))
+        self._host.prepare_body_arm_twist_runtime()
         with self._host.transaction("构建完整双臂 IK/FK"):
             if self._host.create_body_arm_mechanism_root(plan.mechanisms.root_name) != plan.mechanisms.root_path: raise RuntimeError("Arm mechanism 根路径漂移")
             for spec in plan.mechanisms.joints: self._host.create_body_arm_mechanism_joint(spec)
@@ -134,6 +140,8 @@ class BuildBodyArmRig:
                 raise RuntimeError("Arm stretch 阶段复检失败：" + "；".join(issue.message for issue in stretch_issues))
             if self._host.create_body_arm_twist_root(plan.twist.root_name) != plan.twist.root_path:
                 raise RuntimeError("Arm twist 根路径漂移")
+            for spec in plan.twist.segments:
+                self._host.create_body_arm_twist_segment(spec)
             for spec in plan.twist.joints:
                 self._host.create_body_arm_twist_joint(spec)
             twist = self._host.capture_body_arm_twist(plan.twist)

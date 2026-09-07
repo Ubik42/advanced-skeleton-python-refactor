@@ -1,0 +1,27 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 41060,
+  "slice": "body_arm_axial_twist_decomposition",
+  "quaternion_plugin_loaded": true,
+  "four_segment_drivers": true,
+  "eight_twist_helpers": true,
+  "axial_projection_matches_input": true,
+  "axial_twist_distributed": true,
+  "pure_swing_has_zero_twist": true,
+  "pure_swing_does_not_rotate_helpers": true,
+  "positions_follow_stretched_segments": true,
+  "selection_preserved": true,
+  "single_undo_removed_complete_arm_rig": true,
+  "body_restored": true,
+  "cleanup": true,
+  "axial_projection_degrees": 72.0,
+  "distributed_rotate_x_degrees": [
+    24.0,
+    48.0
+  ],
+  "pure_swing_projection_degrees": 0.0,
+  "remaining_nodes": [],
+  "duration_seconds": 3.964,
+  "status": "passed"
+}
