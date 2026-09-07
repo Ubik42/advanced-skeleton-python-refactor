@@ -29,6 +29,7 @@ from adv_py.core.fit_settings import (
     FitSkeletonValidationError,
     FitSkeletonValue,
 )
+from adv_py.core.fit_template import FitJointSpec
 from adv_py.core.joint_labels import JointLabel
 
 
@@ -292,6 +293,29 @@ class MayaFitJointHost:
             local_rotation=tuple(float(value) for value in rotation),
             bounding_size=bounding_size,
         )
+
+    def create_fit_joint(self, parent: str, spec: FitJointSpec) -> str:
+        self._require_transaction()
+        if self.find_name_collisions(spec.name):
+            raise FitSkeletonValidationError(
+                f"同名节点已存在，拒绝创建 Fit joint：{spec.name}"
+            )
+        parent_matches = self._cmds.ls(parent, long=True) or []
+        if len(parent_matches) != 1:
+            raise FitSkeletonValidationError(f"Fit joint 父级无效：{parent}")
+        if self._cmds.nodeType(parent_matches[0]) not in ("transform", "joint"):
+            raise FitSkeletonValidationError(f"Fit joint 父级类型无效：{parent}")
+
+        joint = self._cmds.createNode(
+            "joint",
+            name=spec.name,
+            parent=parent_matches[0],
+            skipSelect=True,
+        )
+        self._transaction_changed = True
+        path = (self._cmds.ls(joint, long=True) or [joint])[0]
+        self._cmds.setAttr(f"{path}.translate", *spec.local_position)
+        return path
 
     def capture_fit_hierarchy(self, container_name: str) -> FitHierarchySnapshot:
         container = self._resolve_transform(

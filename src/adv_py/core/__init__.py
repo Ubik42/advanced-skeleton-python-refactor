@@ -40,6 +40,15 @@ from .fit_settings import (
     audit_fit_skeleton_settings,
     default_fit_skeleton_settings,
 )
+from .fit_template import (
+    FitJointSpec,
+    FitTemplateIssue,
+    FitTemplateSpec,
+    audit_fit_template_snapshot,
+    minimal_body_fit_template,
+    ordered_fit_joints,
+    validate_fit_template,
+)
 from .joint_labels import JointLabel, JointLabelValidationError
 from .model import ConstraintSpec, LimbSpec, NodeSpec, RigPlan
 from .matrix import (
@@ -75,6 +84,7 @@ __all__ = [
     "FitJointFieldEdit",
     "FitJointMetadata",
     "FitJointPatch",
+    "FitJointSpec",
     "FitJointValidationError",
     "FitUpAxis",
     "FIT_GEOMETRY_TYPES",
@@ -84,6 +94,8 @@ __all__ = [
     "FitSkeletonSettings",
     "FitSkeletonValidationError",
     "FitSkeletonValue",
+    "FitTemplateIssue",
+    "FitTemplateSpec",
     "IDENTITY_MATRIX",
     "JointLabel",
     "JointLabelValidationError",
@@ -98,11 +110,14 @@ __all__ = [
     "audit_fit_container",
     "audit_fit_joint",
     "audit_fit_skeleton_settings",
+    "audit_fit_template_snapshot",
     "default_fit_skeleton_settings",
     "frame_from_y",
     "fit_joint_value",
     "matrix44",
+    "minimal_body_fit_template",
     "multiply",
+    "ordered_fit_joints",
     "predict_fit_joint_metadata",
     "rotation_y_matrix",
     "rotation_z_matrix",
@@ -110,5 +125,6 @@ __all__ = [
     "translation_matrix",
     "transpose_flat",
     "validate_plan",
+    "validate_fit_template",
     "with_translation",
 ]

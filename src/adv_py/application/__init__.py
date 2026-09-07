@@ -24,12 +24,19 @@ from .fit_settings import (
     FitSkeletonEnsureResult,
     FitSkeletonSettingsHost,
 )
+from .fit_template import (
+    CreateMinimalFitTemplate,
+    FitTemplateCreatePlan,
+    FitTemplateCreateResult,
+    FitTemplateHost,
+)
 from .joint_labels import EditJointLabels, JointLabelHost, JointLabelResult
 
 __all__ = [
     "BuildResult",
     "BuildRig",
     "CreateFitSkeleton",
+    "CreateMinimalFitTemplate",
     "EditJointLabels",
     "EditFitJointMetadata",
     "EnsureFitSkeletonSettings",
@@ -47,6 +54,9 @@ __all__ = [
     "FitSkeletonEnsurePlan",
     "FitSkeletonEnsureResult",
     "FitSkeletonSettingsHost",
+    "FitTemplateCreatePlan",
+    "FitTemplateCreateResult",
+    "FitTemplateHost",
     "InspectFitJoints",
     "InspectFitHierarchy",
     "JointLabelHost",
