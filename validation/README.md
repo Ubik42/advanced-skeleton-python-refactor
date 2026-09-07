@@ -116,6 +116,8 @@
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_skin_weight_io_smoke.py validation\results\maya2024-skin-weight-io.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_skin_weight_mapping_smoke.py validation\results\maya2024-skin-weight-mapping.json
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_skin_weight_mirror_smoke.py validation\results\maya2024-skin-weight-mirror.json
 ```
 
 正式自动化运行时应使用隐藏的独立进程、记录 PID、设置超时，并只终止本次启动的进程。结果 JSON 记录宿主版本、PID、耗时、预检和回滚结论。
@@ -131,6 +133,7 @@
 - Skin Weight 案例在同类 72 顶点合成臂段上精确改写 3 个顶点，验证归一化结果、重复应用零修改、真实 twist 变形和单次 Undo 恢复原权重；尚未覆盖文件导入导出、批量网格或大规模权重性能。
 - Skin Weight I/O 案例导出同一合成臂段的全部 72 个顶点，改写 3 点后由带摘要的 JSON 恢复，覆盖拒绝覆盖文件、重复导入零修改、单次 Undo 和临时目录清理；未覆盖名称重映射、网络盘或大型角色性能。
 - Skin Weight Mapping 案例使用两套不同命名的 8 顶点网格、skinCluster 和 joint，通过 2 条显式 influence 双射导入 3 个变化顶点，验证源权重隔离、幂等、单次 Undo 和清理；不会自动推断 namespace 或关节对应。
+- Skin Weight Mirror 案例在一个 8 顶点对称网格上使用 2 个显式顶点对和 3 条 influence 映射，覆盖中心身份映射、目标侧真实变形、源侧隔离、幂等与单次 Undo；不自动计算空间对称点。
 - 关节标签案例是 Maya-only 第一阶段切片，Blender 暂不提供对应实现。
 - Fit 元数据变更目前覆盖已进入 `FitJointMetadata` 的字段；约束目标、几何附着和曲线引导等关系型属性尚未进入合同。
 - Fit 层级校验尚未定义镜像配对后缀；世界位置仅作为后续规则的输入快照，不据此猜测名称。
@@ -144,4 +147,4 @@
 - provenance 只证明本工程写入的产物身份和声明数量；删除资格还必须通过当前 DAG 与外部连接安全评估，不能只凭标记直接删除。
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。
-- FK controls 与 RP IK controls 已通过双源 blend 输出到 Body，并完成控制显隐、双向匹配、stretch、基础 twist helper 分布、显式单网格 Skin Bind、稀疏顶点权重写入、JSON 往返和显式路径映射；尚未实现动画 bake、轴向 twist 隔离、体积保持、自动 namespace 推断、权重镜像或已有蒙皮迁移。
+- FK controls 与 RP IK controls 已通过双源 blend 输出到 Body，并完成控制显隐、双向匹配、stretch、基础 twist helper 分布、显式单网格 Skin Bind、稀疏顶点权重写入/镜像、JSON 往返和路径映射；尚未实现动画 bake、轴向 twist 隔离、体积保持、自动 namespace/空间配对推断或已有蒙皮迁移。

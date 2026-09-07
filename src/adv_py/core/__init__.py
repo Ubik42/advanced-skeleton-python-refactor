@@ -107,6 +107,13 @@ from .skin_weight_io import (
     skin_weight_document_from_state,
     skin_weight_document_to_json,
 )
+from .skin_weight_mirror import (
+    SkinWeightMirrorRequest,
+    SkinWeightVertexPair,
+    audit_skin_weight_mirror_input,
+    plan_skin_weight_mirror,
+    skin_weight_mirror_request,
+)
 from .body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -295,6 +302,8 @@ __all__ = [
     "SkinWeightDocument",
     "SkinWeightInfluenceMapping",
     "SkinWeightPathMapping",
+    "SkinWeightMirrorRequest",
+    "SkinWeightVertexPair",
     "BODY_PROVENANCE_KIND",
     "BODY_PROVENANCE_OWNER",
     "BODY_PROVENANCE_SCHEMA_VERSION",
@@ -401,7 +410,10 @@ __all__ = [
     "audit_skin_weight_input",
     "audit_skin_weight_result",
     "audit_skin_weight_document_target",
+    "audit_skin_weight_mirror_input",
     "remap_skin_weight_document",
+    "plan_skin_weight_mirror",
+    "skin_weight_mirror_request",
     "audit_body_arm_mechanisms",
     "audit_body_skeleton",
     "audit_body_arm_fk_controls",

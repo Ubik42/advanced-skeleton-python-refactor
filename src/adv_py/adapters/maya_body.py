@@ -808,6 +808,15 @@ class MayaBodyBuildHost(MayaFitJointHost):
         del mesh_path
         return self._capture_skin_weight_state(skin_name, None)
 
+    def capture_skin_vertices(
+        self,
+        skin_name: str,
+        mesh_path: str,
+        vertex_indices: tuple[int, ...],
+    ) -> SkinWeightInputState:
+        del mesh_path
+        return self._capture_skin_weight_state(skin_name, vertex_indices)
+
     def _capture_skin_weight_state(
         self,
         skin_name: str,
