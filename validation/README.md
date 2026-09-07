@@ -13,6 +13,7 @@
 - 测试进程退出后没有新增宿主 PID 存活。
 - 三关节 limb 的 FK 控制可改变末端姿态；切到 IK 后末端到达目标。
 - IK/FK blend 驱动有效，并在回滚后同时清理两套 Blender Armature。
+- Maya 关节标签支持标准类型与自定义文本，输入预检失败不产生部分修改，单次 Undo 可恢复。
 
 ## 本机命令
 
@@ -24,6 +25,8 @@
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_limb_smoke.py validation\results\maya2024-limb.json
 
 & 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' --background --factory-startup --python-exit-code 1 --python validation\blender_limb_smoke.py -- validation\results\blender5.2-limb.json
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_joint_labels_smoke.py validation\results\maya2024-joint-labels.json
 ```
 
 正式自动化运行时应使用隐藏的独立进程、记录 PID、设置超时，并只终止本次启动的进程。结果 JSON 记录宿主版本、PID、耗时、预检和回滚结论。
@@ -35,3 +38,4 @@
 - `control` 在 Maya 中是带标记属性的 transform，在 Blender 中是 Empty；曲线形状尚未进入跨 DCC 合同。
 - 当前案例覆盖平移、骨骼 aim 与本地 Y-roll；非均匀缩放和镜像矩阵尚未验证。
 - IK/FK 案例覆盖最小三关节 limb，不代表 twist、拉伸、镜像和无缝匹配已完成。
+- 关节标签案例是 Maya-only 第一阶段切片，Blender 暂不提供对应实现。

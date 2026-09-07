@@ -1,0 +1,16 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 29060,
+  "slice": "fit_joint_labels",
+  "built_in_label": true,
+  "custom_label": true,
+  "preflight_blocked": true,
+  "no_partial_change": true,
+  "single_undo_restored": true,
+  "clear_label": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 4.733,
+  "status": "passed"
+}

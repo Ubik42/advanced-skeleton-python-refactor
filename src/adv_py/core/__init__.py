@@ -1,5 +1,6 @@
 """DCC-neutral rig description and validation."""
 
+from .joint_labels import JointLabel, JointLabelValidationError
 from .model import ConstraintSpec, LimbSpec, NodeSpec, RigPlan
 from .matrix import (
     IDENTITY_MATRIX,
@@ -20,6 +21,8 @@ from .validation import PlanValidationError, validate_plan
 __all__ = [
     "ConstraintSpec",
     "IDENTITY_MATRIX",
+    "JointLabel",
+    "JointLabelValidationError",
     "LimbSpec",
     "Matrix44",
     "NodeSpec",
