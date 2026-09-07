@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成二十四个 Maya-only 切片：FitSkeleton 标签、元数据、层级、容器、设置、模板、位置与朝向；单侧 Right 身体源；构建期 M/R/L 对称展开；30 关节 Body skeleton 物化、镜像行为朝向与原子构建；带所有权、DAG、外部连接预检和失败恢复的 Body ReBuild；以及第一组可用的双侧 Shoulder/Elbow/Wrist FK 控制。当前尚未实现完整 Body IK/FK、腿/手指控制、蒙皮或产品 UI。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成二十五个 Maya-only 切片：FitSkeleton 标签、元数据、层级、容器、设置、模板、位置与朝向；单侧 Right 身体源；构建期 M/R/L 对称展开；30 关节 Body skeleton 物化、镜像行为朝向与原子构建；带所有权、DAG、外部连接预检和失败恢复的 Body ReBuild；第一组双侧手臂 FK 控制；以及左右独立的 FK/IK 驱动机制链。当前尚未接入 Arm IK Handle、Body 混合、腿/手指控制、蒙皮或产品 UI。
 
 ## 当前完成
 
@@ -33,6 +33,7 @@
 - `InspectBodyRebuildSafety` 组合当前 Fit 展开、Body provenance、实际 joint 父链、根下全部 DAG 节点和外部 DG 连接；用户 attachment、skinCluster、constraint、动画曲线或普通连接都会以稳定 issue 阻止替换。
 - `ReplaceOwnedBodySkeleton` 只替换通过安全评估的 Python Body。预检会忽略旧树自身的同名路径并保留外部冲突，事务内再次检查场景漂移后删除旧树、完整重建并复检；任一失败由同一 Undo 恢复旧 Body。
 - `BuildBodyArmFkControls` 从已验证的 Python Body 快照生成双侧 Shoulder/Elbow/Wrist FK 规格，在单个 Undo Chunk 内创建 6 个零通道 NURBS 控制器、offset 层级和 orientConstraint；名称、Body 所有权、Fit 输入或构建后连线异常都会阻止或回滚整套控制。
+- `BuildBodyArmMechanisms` 为左右手臂分别生成 FK 与 IK 的 Shoulder/Elbow/Wrist 驱动链，共 12 个机制 joint。每个 joint 保存到 Body 来源的 message 连线，初始世界帧与 source joint 一致，两套链可独立运动并由一次 Undo 完整移除。
 - `EditFitJointPositions` 对显式关节提交本地位置 Patch，只写实际变化且可写的轴；锁定/驱动轴、Root 离中和无效层级会在批量事务前失败。
 - `OrientSimpleFitChain` 为唯一子级或显式选择的分支子级建立 X-Aim/Y-Secondary 朝向，自动选择与 Aim 正交的世界参考轴，并补偿 Maya 隐式产生的后代位置与全部直接子级 jointOrient 变化。
 - worldOrient 元数据会解析为带正负号的本地 Up/Forward 轴策略；不完整、同轴冲突或当前写入器尚不支持的组合会在 Undo 事务前停止。
@@ -73,4 +74,4 @@ py -3 -m unittest discover -s tests -v
 - Blender 将 Bind 与 FK/IK 机制骨链放在独立 Armature，避免跨骨链 blend 驱动形成依赖环；该差异留在适配器内部。
 - 当前 IK/FK 是最小可运行合同，尚无镜像 limb、IK/FK 无缝匹配、拉伸和 twist。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya 主线已覆盖非破坏性 FitSkeleton、18 关节单侧 Right 身体源、30 实例 M/R/L 展开、一次 Undo 完成的 Body 物化与镜像行为朝向、受归属/DAG/外部连接审计保护的原子 ReBuild，以及双臂 FK 控制首个闭环；引用场景/文件状态策略、World Match、腿/手指控制、IK、FK/IK 切换和其他 Body Build 阶段仍待后续切片。
+- 当前 Maya 主线已覆盖非破坏性 FitSkeleton、18 关节单侧 Right 身体源、30 实例 M/R/L 展开、一次 Undo 完成的 Body 物化与镜像行为朝向、受归属/DAG/外部连接审计保护的原子 ReBuild，以及双臂 FK 控制与 FK/IK 机制链；引用场景/文件状态策略、World Match、Arm IK 求解与混合、腿/手指控制和其他 Body Build 阶段仍待后续切片。

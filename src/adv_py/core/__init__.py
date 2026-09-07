@@ -1,5 +1,16 @@
 """DCC-neutral rig description and validation."""
 
+from .body_arm_mechanisms import (
+    BodyArmMechanismIssue,
+    BodyArmMechanismJointSpec,
+    BodyArmMechanismJointState,
+    BodyArmMechanismPlan,
+    BodyArmMechanismRole,
+    BodyArmMechanismSnapshot,
+    BodyArmMechanismValidationError,
+    audit_body_arm_mechanisms,
+    plan_body_arm_mechanisms,
+)
 from .body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -146,6 +157,13 @@ __all__ = [
     "BODY_PROVENANCE_KIND",
     "BODY_PROVENANCE_OWNER",
     "BODY_PROVENANCE_SCHEMA_VERSION",
+    "BodyArmMechanismIssue",
+    "BodyArmMechanismJointSpec",
+    "BodyArmMechanismJointState",
+    "BodyArmMechanismPlan",
+    "BodyArmMechanismRole",
+    "BodyArmMechanismSnapshot",
+    "BodyArmMechanismValidationError",
     "BodyJointSpec",
     "BodyArmFkControlPlan",
     "BodyArmFkControlSnapshot",
@@ -222,6 +240,7 @@ __all__ = [
     "RigPlan",
     "TRANSLATION_AXES",
     "almost_equal",
+    "audit_body_arm_mechanisms",
     "audit_body_skeleton",
     "audit_body_arm_fk_controls",
     "audit_body_provenance",
@@ -245,6 +264,7 @@ __all__ = [
     "parse_fit_axis_direction",
     "plan_fit_joint_position_changes",
     "plan_body_joint_orientations",
+    "plan_body_arm_mechanisms",
     "plan_body_arm_fk_controls",
     "oriented_body_provenance",
     "plan_simple_fit_orientations",

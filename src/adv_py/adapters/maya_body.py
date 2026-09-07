@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from adv_py.core.body_arm_mechanisms import (
+    BodyArmMechanismJointSpec,
+    BodyArmMechanismJointState,
+    BodyArmMechanismPlan,
+    BodyArmMechanismSnapshot,
+)
 from adv_py.core.body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -279,6 +285,129 @@ class MayaBodyBuildHost(MayaFitJointHost):
             skipSelect=True,
         )
         return (self._cmds.ls(created, long=True) or [created])[0]
+
+    def create_body_arm_mechanism_root(self, name: str) -> str:
+        self._require_transaction()
+        if self.find_name_collisions(name):
+            raise FitSkeletonValidationError(f"Arm 机制链根名称冲突：{name}")
+        self._transaction_changed = True
+        created = self._cmds.createNode(
+            "transform",
+            name=name,
+            skipSelect=True,
+        )
+        return (self._cmds.ls(created, long=True) or [created])[0]
+
+    def create_body_arm_mechanism_joint(
+        self,
+        spec: BodyArmMechanismJointSpec,
+    ) -> str:
+        self._require_transaction()
+        if self.find_name_collisions(spec.name):
+            raise FitSkeletonValidationError(f"Arm 机制关节名称冲突：{spec.name}")
+        parents = self._cmds.ls(spec.parent_path, long=True) or []
+        sources = self._cmds.ls(spec.source_joint, long=True, type="joint") or []
+        if (
+            len(parents) != 1
+            or self._cmds.nodeType(parents[0]) not in {"transform", "joint"}
+            or len(sources) != 1
+            or sources[0] != spec.source_joint
+        ):
+            raise FitSkeletonValidationError(
+                f"Arm 机制关节父级或来源失效：{spec.name}"
+            )
+        self._transaction_changed = True
+        joint = self._cmds.createNode(
+            "joint",
+            name=spec.name,
+            parent=parents[0],
+            skipSelect=True,
+        )
+        joint = (self._cmds.ls(joint, long=True) or [joint])[0]
+        self._cmds.xform(
+            joint,
+            worldSpace=True,
+            translation=spec.world_position,
+        )
+        self._set_joint_world_axes(joint, spec.world_axes)
+        self._cmds.setAttr(f"{joint}.side", _MAYA_SIDE_FROM_CORE[spec.side])
+        self._cmds.addAttr(joint, longName="advPySourceJoint", attributeType="message")
+        self._cmds.connectAttr(
+            f"{sources[0]}.message",
+            f"{joint}.advPySourceJoint",
+        )
+        return joint
+
+    def capture_body_arm_mechanisms(
+        self,
+        plan: BodyArmMechanismPlan,
+    ) -> BodyArmMechanismSnapshot:
+        roots = self._cmds.ls(plan.root_path, long=True, type="transform") or []
+        if len(roots) != 1:
+            raise FitSkeletonValidationError("Arm 机制链根节点无效")
+        paths = self._cmds.listRelatives(
+            roots[0],
+            allDescendents=True,
+            type="joint",
+            fullPath=True,
+        ) or []
+        states: list[BodyArmMechanismJointState] = []
+        for path in sorted(set(paths), key=lambda value: (value.count("|"), value)):
+            parents = self._cmds.listRelatives(path, parent=True, fullPath=True) or []
+            position = self._cmds.xform(
+                path,
+                query=True,
+                worldSpace=True,
+                translation=True,
+            )
+            matrix = self._cmds.xform(
+                path,
+                query=True,
+                worldSpace=True,
+                matrix=True,
+            )
+            world_axes = tuple(
+                self._normalized_vector(
+                    tuple(float(value) for value in matrix[index : index + 3])
+                )
+                for index in (0, 4, 8)
+            )
+            source_nodes = []
+            if self._cmds.attributeQuery(
+                "advPySourceJoint",
+                node=path,
+                exists=True,
+            ):
+                source_nodes = self._cmds.listConnections(
+                    f"{path}.advPySourceJoint",
+                    source=True,
+                    destination=False,
+                    type="joint",
+                ) or []
+            source = None
+            if len(source_nodes) == 1:
+                source = (
+                    self._cmds.ls(source_nodes[0], long=True) or [source_nodes[0]]
+                )[0]
+            side_code = int(self._cmds.getAttr(f"{path}.side"))
+            side = _CORE_SIDE_FROM_MAYA.get(side_code)
+            if side is None:
+                raise FitSkeletonValidationError(
+                    f"Arm 机制关节侧向值无效：{path}.side={side_code}"
+                )
+            rotation = self._cmds.getAttr(f"{path}.rotate")[0]
+            states.append(
+                BodyArmMechanismJointState(
+                    path=path,
+                    parent_path=parents[0] if parents else None,
+                    side=side,
+                    source_joint=source,
+                    world_position=tuple(float(value) for value in position),
+                    world_axes=world_axes,
+                    rotation=tuple(float(value) for value in rotation),
+                )
+            )
+        return BodyArmMechanismSnapshot(roots[0], tuple(states))
 
     def create_body_arm_fk_control(self, spec: BodyArmFkControlSpec) -> None:
         self._require_transaction()

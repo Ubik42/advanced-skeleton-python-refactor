@@ -1,5 +1,11 @@
 """Host-independent application use cases."""
 
+from .body_arm_mechanisms import (
+    BodyArmMechanismBuildPlan,
+    BodyArmMechanismBuildResult,
+    BodyArmMechanismHost,
+    BuildBodyArmMechanisms,
+)
 from .body_arm_fk import (
     BodyArmFkBuildPlan,
     BodyArmFkBuildResult,
@@ -106,6 +112,9 @@ from .upper_body_fit import (
 )
 
 __all__ = [
+    "BodyArmMechanismBuildPlan",
+    "BodyArmMechanismBuildResult",
+    "BodyArmMechanismHost",
     "BodyArmFkBuildPlan",
     "BodyArmFkBuildResult",
     "BodyArmFkHost",
@@ -124,6 +133,7 @@ __all__ = [
     "BodySkeletonHost",
     "BuildResult",
     "BuildRig",
+    "BuildBodyArmMechanisms",
     "BuildBodySkeleton",
     "BuildBodyArmFkControls",
     "BuildOrientedBodySkeleton",
