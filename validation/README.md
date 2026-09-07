@@ -23,6 +23,7 @@
 - Maya Fit joint 位置编辑支持显式批量 Patch、锁定/不可写轴预检、Root 中心约束、事务后层级复检和一次 Undo。
 - Maya 简单单子链朝向支持 X-Aim/Y-Secondary、Up 平行回退、锁定预检、后代位置补偿、末端保护、幂等复检和一次 Undo。
 - Maya 自生成上半身可在场景零修改时预演 14 关节层级与 11 个朝向，并用一个 Undo 完成创建、显式分支朝向和完整复检。
+- Maya 全身源拓扑在上半身基础上加入单侧 Hip/Knee/Ankle 与足部三分支，预演 22 关节和 15 个朝向，并由一次 Undo 完整创建或移除。
 
 ## 本机命令
 
@@ -54,6 +55,8 @@
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_fit_orientation_smoke.py validation\results\maya2024-fit-orientation.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_upper_body_fit_smoke.py validation\results\maya2024-upper-body-fit.json
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_source_fit_smoke.py validation\results\maya2024-body-source-fit.json
 ```
 
 正式自动化运行时应使用隐藏的独立进程、记录 PID、设置超时，并只终止本次启动的进程。结果 JSON 记录宿主版本、PID、耗时、预检和回滚结论。
@@ -73,3 +76,4 @@
 - 当前基础模板只有 `Root → Spine1 → Spine2`，用于 Python Fit 工作流验证；不包含完整身体、左右肢体、手指或面部结构。
 - 位置编辑只写本地 translate，不自动解锁、断开驱动、重算 jointOrient 或更新 Fit 可视化几何。
 - 朝向编辑支持唯一子级或调用方显式选择的直接分支子级；非零 rotate 和不可补偿后代会在预检阶段拒绝。
+- 当前全身源拓扑只有一条待镜像的腿；它验证源侧语义和复杂分支，不表示左右腿镜像已完成。

@@ -77,8 +77,9 @@ from .fit_template import (
     minimal_body_fit_template,
     ordered_fit_joints,
     predict_fit_template_hierarchy,
-    validate_fit_template,
+    synthetic_body_source_fit_template,
     synthetic_upper_body_fit_template,
+    validate_fit_template,
 )
 from .joint_labels import JointLabel, JointLabelValidationError
 from .model import ConstraintSpec, LimbSpec, NodeSpec, RigPlan
@@ -180,8 +181,9 @@ __all__ = [
     "translation_matrix",
     "transpose_flat",
     "validate_plan",
-    "validate_fit_template",
+    "synthetic_body_source_fit_template",
     "synthetic_upper_body_fit_template",
+    "validate_fit_template",
     "with_translation",
     "world_axes_from_orientation_policy",
     "world_orientation_matches",

@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成十五个 Maya-only FitSkeleton 切片：关节标签、可选元数据审计、声明式元数据变更、层级构建前校验、容器设置补齐、非破坏性容器创建、通用模板事务、自生成 Root/Spine 与上半身模板、上半身单事务编排、声明式位置编辑、基础朝向、worldOrient 策略预检、固定 worldOrient、free Forward，以及显式分支子级朝向；尚未实现完整身体 FitSkeleton、蒙皮或产品 UI。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成十六个 Maya-only FitSkeleton 切片：关节标签、可选元数据审计、声明式元数据变更、层级构建前校验、容器设置补齐、非破坏性容器创建、通用模板事务、自生成 Root/Spine、上半身与单侧源腿模板、声明式模板/朝向单事务编排、位置编辑、基础朝向、worldOrient 策略预检、固定 worldOrient、free Forward，以及显式分支子级朝向；尚未实现镜像后的完整身体 FitSkeleton、蒙皮或产品 UI。
 
 ## 当前完成
 
@@ -24,6 +24,7 @@
 - `CreateFitTemplate` 可在空容器内原子创建任意已验证的 `FitTemplateSpec`；`CreateMinimalFitTemplate` 保留三关节兼容入口。
 - `synthetic_upper_body_fit_template` 生成 14 关节 T-pose 躯干、颈、头和双臂树，验证 Spine2 三分支、局部位置及 Maya 标签。该素材由代码独立生成，不读取授权安装中的身体模板。
 - `BuildSyntheticUpperBodyFit` 在空且已配置的 FitSkeleton 上先预演完整层级与 11 个朝向，再用一个 Undo 事务创建并朝向 14 关节上半身树；创建后的实际计划若与预演不同，会回滚整棵树。
+- `BuildOrientedFitTemplate` 把模板创建、真实场景计划复算与朝向提交组合成可复用的一次 Undo 用例；`BuildSyntheticBodySourceFit` 用它生成 22 关节的上半身与单侧 Hip/Knee/Ankle/Foot 源拓扑，为后续 Maya 镜像切片提供输入。
 - `EditFitJointPositions` 对显式关节提交本地位置 Patch，只写实际变化且可写的轴；锁定/驱动轴、Root 离中和无效层级会在批量事务前失败。
 - `OrientSimpleFitChain` 为唯一子级或显式选择的分支子级建立 X-Aim/Y-Secondary 朝向，自动选择与 Aim 正交的世界参考轴，并补偿 Maya 隐式产生的后代位置与全部直接子级 jointOrient 变化。
 - worldOrient 元数据会解析为带正负号的本地 Up/Forward 轴策略；不完整、同轴冲突或当前写入器尚不支持的组合会在 Undo 事务前停止。
@@ -64,4 +65,4 @@ py -3 -m unittest discover -s tests -v
 - Blender 将 Bind 与 FK/IK 机制骨链放在独立 Armature，避免跨骨链 blend 驱动形成依赖环；该差异留在适配器内部。
 - 当前 IK/FK 是最小可运行合同，尚无镜像 limb、IK/FK 无缝匹配、拉伸和 twist。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya FitSkeleton 已覆盖非破坏性容器、通用模板事务、自生成 Root/Spine 与 14 关节上半身树、上半身创建/朝向单事务、标签、常用可选元数据、层级构建前校验、容器设置补齐、本地位置编辑、显式分支 X-Aim，以及 Maya Y-Up 下固定与 free worldOrient 写入；World Match、骨盆腿部、手指、分支自动规则、镜像语义和其他几何编辑仍待后续切片。
+- 当前 Maya FitSkeleton 已覆盖非破坏性容器、通用模板事务、自生成 Root/Spine、14 关节上半身与 22 关节单侧源腿树、声明式创建/朝向单事务、标签、常用可选元数据、层级构建前校验、容器设置补齐、本地位置编辑、显式分支 X-Aim，以及 Maya Y-Up 下固定与 free worldOrient 写入；World Match、腿部镜像、手指、分支自动规则和其他几何编辑仍待后续切片。

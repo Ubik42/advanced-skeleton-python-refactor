@@ -13,6 +13,7 @@ from adv_py.core import (
     JointLabel,
     default_fit_skeleton_settings,
     minimal_body_fit_template,
+    synthetic_body_source_fit_template,
     synthetic_upper_body_fit_template,
 )
 
@@ -74,6 +75,22 @@ class FakeFitTemplateHost:
 
 
 class FitTemplateTests(unittest.TestCase):
+    def test_synthetic_body_source_adds_observable_leg_and_foot_topology(self):
+        template = synthetic_body_source_fit_template(FitUpAxis.Z, scale=2.0)
+        by_name = {joint.name: joint for joint in template.joints}
+
+        self.assertEqual(len(template.joints), 22)
+        self.assertEqual(by_name["Hip"].parent, "Root")
+        self.assertEqual(by_name["Knee"].local_position, (0.0, 0.0, -8.0))
+        self.assertEqual(
+            {joint.name for joint in template.joints if joint.parent == "Ankle"},
+            {"Heel", "Toes"},
+        )
+        self.assertEqual(
+            {joint.name for joint in template.joints if joint.parent == "Toes"},
+            {"FootSideInner", "FootSideOuter", "ToesEnd"},
+        )
+
     def test_synthetic_upper_body_has_bilateral_z_up_branches(self) -> None:
         template = synthetic_upper_body_fit_template(FitUpAxis.Z, scale=2.0)
         by_name = {joint.name: joint for joint in template.joints}

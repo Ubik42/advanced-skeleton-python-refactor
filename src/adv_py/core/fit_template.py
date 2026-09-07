@@ -144,6 +144,52 @@ def synthetic_upper_body_fit_template(
     )
 
 
+def synthetic_body_source_fit_template(
+    up_axis: FitUpAxis,
+    *,
+    scale: float = 1.0,
+) -> FitTemplateSpec:
+    """Return an independent upper body plus one source leg and foot tree."""
+
+    upper = synthetic_upper_body_fit_template(up_axis, scale=scale)
+    unit = float(scale)
+
+    def vertical(length: float) -> Vector3:
+        if up_axis is FitUpAxis.Y:
+            return (0.0, length * unit, 0.0)
+        return (0.0, 0.0, length * unit)
+
+    def hip_offset() -> Vector3:
+        if up_axis is FitUpAxis.Y:
+            return (1.5 * unit, -1.0 * unit, 0.0)
+        return (1.5 * unit, 0.0, -1.0 * unit)
+
+    def foot_offset(forward: float, down: float = 0.0) -> Vector3:
+        if up_axis is FitUpAxis.Y:
+            return (0.0, down * unit, forward * unit)
+        return (0.0, forward * unit, down * unit)
+
+    label = JointLabel.parse
+    source_leg = (
+        FitJointSpec("Hip", "Root", hip_offset(), label("Hip")),
+        FitJointSpec("Knee", "Hip", vertical(-4.0), label("Knee")),
+        FitJointSpec("Ankle", "Knee", vertical(-4.0), label("Foot")),
+        FitJointSpec("Heel", "Ankle", foot_offset(-1.0, -0.5), label("Foot")),
+        FitJointSpec("Toes", "Ankle", foot_offset(2.0, -0.5), label("Toe")),
+        FitJointSpec(
+            "FootSideInner", "Toes", (-0.6 * unit, 0.0, 0.0), label("Other")
+        ),
+        FitJointSpec(
+            "FootSideOuter", "Toes", (0.6 * unit, 0.0, 0.0), label("Other")
+        ),
+        FitJointSpec("ToesEnd", "Toes", foot_offset(2.0), label("Toe")),
+    )
+    return FitTemplateSpec(
+        name="synthetic_body_source",
+        joints=upper.joints + source_leg,
+    )
+
+
 def validate_fit_template(template: FitTemplateSpec) -> None:
     if not template.name.strip():
         raise FitSkeletonValidationError("Fit 模板名称不能为空")

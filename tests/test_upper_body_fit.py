@@ -2,7 +2,10 @@ import unittest
 from contextlib import contextmanager
 from dataclasses import replace
 
-from adv_py.application import BuildSyntheticUpperBodyFit
+from adv_py.application import (
+    BuildSyntheticBodySourceFit,
+    BuildSyntheticUpperBodyFit,
+)
 from adv_py.core import (
     IDENTITY_AXES,
     FitContainerDisplayStyle,
@@ -162,6 +165,26 @@ class FakeUpperBodyFitHost:
 
 
 class UpperBodyFitTests(unittest.TestCase):
+    def test_builds_source_leg_and_explicit_foot_branches_in_one_transaction(self):
+        host = FakeUpperBodyFitHost()
+        use_case = BuildSyntheticBodySourceFit(host)
+
+        preview = use_case.plan()
+        result = use_case.apply()
+
+        self.assertTrue(preview.ready)
+        self.assertEqual(len(preview.template_plan.template.joints), 22)
+        self.assertEqual(len(preview.predicted_orientation_changes), 15)
+        selections = {
+            item.joint: item.child
+            for item in preview.orientation_request.child_selections
+        }
+        self.assertEqual(selections["Root"], "Spine1")
+        self.assertEqual(selections["Ankle"], "Toes")
+        self.assertEqual(selections["Toes"], "ToesEnd")
+        self.assertEqual(len(result.template.hierarchy.joints), 22)
+        self.assertEqual(host.transaction_count, 1)
+
     def test_previews_then_builds_and_orients_in_one_transaction(self):
         host = FakeUpperBodyFitHost()
         use_case = BuildSyntheticUpperBodyFit(host)
