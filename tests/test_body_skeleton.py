@@ -128,6 +128,7 @@ class FakeBodySkeletonHost:
         faulty_arm_twist_runtime=False,
         faulty_leg_twist=False,
         faulty_leg_twist_runtime=False,
+        faulty_leg_volume=False,
         faulty_arm_volume=False,
     ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
@@ -228,6 +229,8 @@ class FakeBodySkeletonHost:
         self.leg_twist_states = []
         self.faulty_leg_twist = faulty_leg_twist
         self.faulty_leg_twist_runtime = faulty_leg_twist_runtime
+        self.leg_volume_snapshot = None
+        self.faulty_leg_volume = faulty_leg_volume
         self.arm_volume_snapshot = None
         self.faulty_arm_volume = faulty_arm_volume
 
@@ -337,6 +340,7 @@ class FakeBodySkeletonHost:
         before_leg_twist_root = self.leg_twist_root
         before_leg_twist_segments = list(self.leg_twist_segments)
         before_leg_twist_states = list(self.leg_twist_states)
+        before_leg_volume_snapshot = self.leg_volume_snapshot
         before_arm_volume_snapshot = self.arm_volume_snapshot
         self.transaction_count += 1
         self.in_transaction = True
@@ -374,6 +378,7 @@ class FakeBodySkeletonHost:
             self.leg_twist_root = before_leg_twist_root
             self.leg_twist_segments = before_leg_twist_segments
             self.leg_twist_states = before_leg_twist_states
+            self.leg_volume_snapshot = before_leg_volume_snapshot
             self.arm_volume_snapshot = before_arm_volume_snapshot
             raise
         finally:
@@ -1214,26 +1219,32 @@ class FakeBodySkeletonHost:
         )
 
     def create_body_arm_volume(self, plan):
+        self.arm_volume_snapshot = self._body_limb_volume_snapshot(plan)
+
+    def create_body_leg_volume(self, plan):
+        self.leg_volume_snapshot = self._body_limb_volume_snapshot(plan)
+
+    def _body_limb_volume_snapshot(self, plan):
         states = []
         for spec in plan.sides:
             plug = f"{plan.settings_path}.{spec.attribute}"
             states.append(BodyArmVolumeSideState(
-                spec.side,
-                plug,
-                1.0,
-                spec.mode_blend_name,
-                spec.stretch_ratio_source,
-                f"{plan.settings_path}.{spec.mode_attribute}",
-                1.0,
-                spec.power_name,
-                f"{spec.mode_blend_name}.outputR",
-                spec.exponent,
-                3,
-                spec.blend_name,
-                f"{spec.power_name}.outputX",
-                plug,
-                1.0,
-                tuple(
+                side=spec.side,
+                attribute_plug=plug,
+                attribute_value=1.0,
+                mode_blend_name=spec.mode_blend_name,
+                stretch_ratio_source=spec.stretch_ratio_source,
+                mode_weight_source=f"{plan.settings_path}.{spec.mode_attribute}",
+                mode_base_ratio=1.0,
+                power_name=spec.power_name,
+                ratio_source=f"{spec.mode_blend_name}.outputR",
+                exponent=spec.exponent,
+                power_operation=3,
+                blend_name=spec.blend_name,
+                power_source=f"{spec.power_name}.outputX",
+                volume_source=plug,
+                base_scale=1.0,
+                helper_scale_sources=tuple(
                     (
                         path,
                         f"{spec.blend_name}.outputR",
@@ -1241,8 +1252,9 @@ class FakeBodySkeletonHost:
                     )
                     for path in spec.helper_joints
                 ),
+                helper_scale_axes=spec.helper_scale_axes,
             ))
-        self.arm_volume_snapshot = BodyArmVolumeSnapshot(
+        return BodyArmVolumeSnapshot(
             plan.settings_path,
             tuple(states),
         )
@@ -1259,6 +1271,19 @@ class FakeBodySkeletonHost:
                 sides=(first,) + self.arm_volume_snapshot.sides[1:],
             )
         return self.arm_volume_snapshot
+
+    def capture_body_leg_volume(self, plan):
+        del plan
+        if self.faulty_leg_volume and self.leg_volume_snapshot:
+            first = replace(
+                self.leg_volume_snapshot.sides[0],
+                helper_scale_axes=(),
+            )
+            return replace(
+                self.leg_volume_snapshot,
+                sides=(first,) + self.leg_volume_snapshot.sides[1:],
+            )
+        return self.leg_volume_snapshot
 
 
 def build_basic_leg_without_foot(host):
@@ -1961,6 +1986,11 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.twist.segments), 4)
         self.assertEqual(len(result.twist.joints), 8)
         self.assertEqual(len(result.volume.sides), 2)
+        self.assertTrue(all(
+            axes == ("Y", "Z")
+            for side in result.plan.volume.sides
+            for axes in side.helper_scale_axes
+        ))
         self.assertEqual(len(result.visibility.sides), 2)
         self.assertTrue(all(side.fk_visibility_source.endswith(".outputX") for side in result.visibility.sides))
         self.assertEqual(result.body, body)
@@ -1982,6 +2012,12 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.stretch.sides), 2)
         self.assertEqual(len(result.twist.segments), 4)
         self.assertEqual(len(result.twist.joints), 8)
+        self.assertEqual(len(result.volume.sides), 2)
+        self.assertTrue(all(
+            axes == ("X", "Y")
+            for side in result.plan.volume.sides
+            for axes in side.helper_scale_axes
+        ))
         self.assertTrue(all(
             state.axis in "XYZ" for state in result.twist.segments
         ))
@@ -2033,6 +2069,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertIsNone(host.leg_twist_root)
         self.assertFalse(host.leg_twist_segments)
         self.assertFalse(host.leg_twist_states)
+        self.assertIsNone(host.leg_volume_snapshot)
         self.assertIsNone(host.leg_foot_snapshot)
 
     def test_complete_leg_rig_twist_failure_rolls_back_every_stage(self):
@@ -2051,6 +2088,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertIsNone(host.leg_twist_root)
         self.assertFalse(host.leg_twist_segments)
         self.assertFalse(host.leg_twist_states)
+        self.assertIsNone(host.leg_volume_snapshot)
 
     def test_leg_twist_runtime_failure_stops_before_rig_transaction(self):
         host = FakeBodySkeletonHost(faulty_leg_twist_runtime=True)
@@ -2076,6 +2114,36 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 1)
         self.assertIsNone(host.leg_mechanism_root)
         self.assertIsNone(host.leg_twist_root)
+
+    def test_complete_leg_rig_volume_failure_rolls_back_every_stage(self):
+        host = FakeBodySkeletonHost(faulty_leg_volume=True)
+        BuildOrientedBodySkeleton(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "体积保持阶段"):
+            BuildBodyLegRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertIsNone(host.leg_control_root)
+        self.assertIsNone(host.leg_blend_snapshot)
+        self.assertIsNone(host.leg_ik_root)
+        self.assertIsNone(host.leg_stretch_snapshot)
+        self.assertIsNone(host.leg_twist_root)
+        self.assertIsNone(host.leg_volume_snapshot)
+
+    def test_complete_leg_rig_volume_collision_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        host.collisions["AdvPy_LegVolumePower_L"] = (
+            "|User|AdvPy_LegVolumePower_L",
+        )
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "同名"):
+            BuildBodyLegRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertIsNone(host.leg_volume_snapshot)
 
     def test_complete_leg_rig_stretch_collision_blocks_before_transaction(self):
         host = FakeBodySkeletonHost()

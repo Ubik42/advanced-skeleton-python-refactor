@@ -1,0 +1,47 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 16608,
+  "slice": "body_leg_principal_axis_volume_preservation",
+  "two_volume_sides": true,
+  "four_helpers_per_side": true,
+  "orthogonal_axes_are_explicit": true,
+  "hidden_ik_does_not_change_fk_volume": true,
+  "stretch_ratio_reached": true,
+  "inverse_sqrt_scale_applied": true,
+  "axial_scale_is_untouched": true,
+  "volume_can_be_disabled": true,
+  "volume_strength_blends": true,
+  "left_side_isolated": true,
+  "foot_roll_does_not_change_volume": true,
+  "selection_preserved": true,
+  "single_undo_removed_complete_leg_rig": true,
+  "body_restored": true,
+  "cleanup": true,
+  "target_stretch_ratio": 1.44,
+  "evaluated_stretch_ratio": 1.44,
+  "full_volume_scale": 0.833333,
+  "half_volume_scale": 0.916667,
+  "right_helper_scale_axes": [
+    [
+      "Y",
+      "Z"
+    ],
+    [
+      "Y",
+      "Z"
+    ],
+    [
+      "Y",
+      "Z"
+    ],
+    [
+      "Y",
+      "Z"
+    ]
+  ],
+  "right_helper_count": 4,
+  "remaining_nodes": [],
+  "duration_seconds": 4.12,
+  "status": "passed"
+}

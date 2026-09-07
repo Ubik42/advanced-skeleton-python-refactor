@@ -53,6 +53,12 @@ from adv_py.core.body_leg_twist import (
     audit_body_leg_twist,
     plan_body_leg_twist,
 )
+from adv_py.core.body_leg_volume import (
+    BodyLegVolumePlan,
+    BodyLegVolumeSnapshot,
+    audit_body_leg_volume,
+    plan_body_leg_volume,
+)
 from adv_py.core.body_leg_visibility import (
     BodyLegVisibilityPlan,
     BodyLegVisibilitySnapshot,
@@ -93,6 +99,8 @@ class BodyLegRigHost(BodyRebuildInspectionHost, Protocol):
     def create_body_leg_twist_segment(self, spec: BodyLegTwistSegmentSpec) -> None: ...
     def create_body_leg_twist_joint(self, spec: BodyLegTwistJointSpec) -> None: ...
     def capture_body_leg_twist(self, plan: BodyLegTwistPlan) -> BodyLegTwistSnapshot: ...
+    def create_body_leg_volume(self, plan: BodyLegVolumePlan) -> None: ...
+    def capture_body_leg_volume(self, plan: BodyLegVolumePlan) -> BodyLegVolumeSnapshot: ...
     def create_body_leg_foot_side(self, spec: BodyLegFootSideSpec) -> None: ...
     def capture_body_leg_foot(self, plan: BodyLegFootPlan) -> BodyLegFootSnapshot: ...
 
@@ -107,6 +115,7 @@ class BodyLegRigBuildPlan:
     visibility: BodyLegVisibilityPlan
     stretch: BodyLegStretchPlan
     twist: BodyLegTwistPlan
+    volume: BodyLegVolumePlan
     foot: BodyLegFootPlan
     name_collisions: tuple[str, ...]
 
@@ -134,6 +143,7 @@ class BodyLegRigBuildResult:
     visibility: BodyLegVisibilitySnapshot
     stretch: BodyLegStretchSnapshot
     twist: BodyLegTwistSnapshot
+    volume: BodyLegVolumeSnapshot
     foot: BodyLegFootSnapshot
     body: BodySkeletonSnapshot
 
@@ -184,6 +194,7 @@ class BuildBodyLegRig:
             safety.body,
             joints_per_segment=twist_joints_per_segment,
         )
+        volume = plan_body_leg_volume(stretch, twist, blend)
         foot = plan_body_leg_foot(safety.body, ik)
         names = [
             mechanisms.root_name,
@@ -237,6 +248,12 @@ class BuildBodyLegRig:
                 spec.constraint_name,
                 spec.multiplier_name,
             ))
+        for spec in volume.sides:
+            names.extend((
+                spec.mode_blend_name,
+                spec.power_name,
+                spec.blend_name,
+            ))
         for side in foot.sides:
             names.extend(pivot.name for pivot in side.pivots)
             names.extend((
@@ -264,6 +281,7 @@ class BuildBodyLegRig:
             visibility,
             stretch,
             twist,
+            volume,
             foot,
             collisions,
         )
@@ -291,7 +309,7 @@ class BuildBodyLegRig:
                 "Leg Rig 构建预检失败，场景未修改：" + "；".join(plan.blockers)
             )
         self._host.prepare_body_leg_twist_runtime()
-        with self._host.transaction("构建含 Foot 的双腿 IK/FK"):
+        with self._host.transaction("构建完整双腿 IK/FK"):
             if (
                 self._host.create_body_leg_mechanism_root(plan.mechanisms.root_name)
                 != plan.mechanisms.root_path
@@ -361,6 +379,15 @@ class BuildBodyLegRig:
                     + "；".join(issue.message for issue in twist_issues)
                 )
 
+            self._host.create_body_leg_volume(plan.volume)
+            volume = self._host.capture_body_leg_volume(plan.volume)
+            volume_issues = audit_body_leg_volume(plan.volume, volume)
+            if volume_issues:
+                raise RuntimeError(
+                    "Leg 体积保持阶段复检失败："
+                    + "；".join(issue.message for issue in volume_issues)
+                )
+
             for spec in plan.foot.sides:
                 self._host.create_body_leg_foot_side(spec)
             foot = self._host.capture_body_leg_foot(plan.foot)
@@ -401,6 +428,7 @@ class BuildBodyLegRig:
             visibility,
             stretch,
             twist,
+            volume,
             foot,
             body,
         )

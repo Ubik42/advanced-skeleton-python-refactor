@@ -104,6 +104,10 @@ class BodyArmVolumeTests(unittest.TestCase):
                 "|Twist|Base_R|Helper2_R",
             ),
         )
+        self.assertEqual(
+            plan.sides[0].helper_scale_axes,
+            (("Y", "Z"), ("Y", "Z")),
+        )
 
     def test_rejects_invalid_ratio_or_strength(self):
         for ratio, strength in ((0.0, 1.0), (1.0, -0.1), (1.0, 1.1)):

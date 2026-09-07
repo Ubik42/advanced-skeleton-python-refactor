@@ -78,8 +78,16 @@ from adv_py.core.body_leg_twist import (
 )
 from adv_py.core.body_arm_volume import (
     BodyArmVolumePlan,
-    BodyArmVolumeSideState,
     BodyArmVolumeSnapshot,
+)
+from adv_py.core.body_limb_volume import (
+    BodyLimbVolumePlan,
+    BodyLimbVolumeSideState,
+    BodyLimbVolumeSnapshot,
+)
+from adv_py.core.body_leg_volume import (
+    BodyLegVolumePlan,
+    BodyLegVolumeSnapshot,
 )
 from adv_py.core.body_leg_mechanisms import (
     BodyLegMechanismJointSpec,
@@ -1162,6 +1170,16 @@ class MayaBodyBuildHost(MayaFitJointHost):
         )
 
     def create_body_arm_volume(self, plan: BodyArmVolumePlan) -> None:
+        self._create_body_limb_volume("Arm", plan)
+
+    def create_body_leg_volume(self, plan: BodyLegVolumePlan) -> None:
+        self._create_body_limb_volume("Leg", plan)
+
+    def _create_body_limb_volume(
+        self,
+        limb_label: str,
+        plan: BodyLimbVolumePlan,
+    ) -> None:
         self._require_transaction()
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
@@ -1171,7 +1189,9 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 type="transform",
             ) or []
             if len(settings) != 1 or settings[0] != plan.settings_path:
-                raise FitSkeletonValidationError("Arm 体积设置节点失效")
+                raise FitSkeletonValidationError(
+                    f"{limb_label} 体积设置节点失效"
+                )
             for spec in plan.sides:
                 plug = f"{plan.settings_path}.{spec.attribute}"
                 if (
@@ -1188,13 +1208,19 @@ class MayaBodyBuildHost(MayaFitJointHost):
                             spec.blend_name,
                         )
                     )
-                    or any(not self._cmds.objExists(path) for path in spec.helper_joints)
+                    or len(spec.helper_scale_axes) != len(spec.helper_joints)
+                    or any(
+                        not self._cmds.objExists(path)
+                        for path in spec.helper_joints
+                    )
                     or not self._cmds.objExists(spec.stretch_ratio_source)
                     or not self._cmds.objExists(
                         f"{plan.settings_path}.{spec.mode_attribute}"
                     )
                 ):
-                    raise FitSkeletonValidationError("Arm 体积输入或名称在执行前失效")
+                    raise FitSkeletonValidationError(
+                        f"{limb_label} 体积输入或名称在执行前失效"
+                    )
                 self._transaction_changed = True
                 self._cmds.addAttr(
                     plan.settings_path,
@@ -1232,9 +1258,15 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 self._cmds.connectAttr(f"{power}.outputX", f"{blend}.color1R")
                 self._cmds.setAttr(f"{blend}.color2R", 1.0)
                 self._cmds.connectAttr(plug, f"{blend}.blender")
-                for helper in spec.helper_joints:
-                    self._cmds.connectAttr(f"{blend}.outputR", f"{helper}.scaleY")
-                    self._cmds.connectAttr(f"{blend}.outputR", f"{helper}.scaleZ")
+                for helper, axes in zip(
+                    spec.helper_joints,
+                    spec.helper_scale_axes,
+                ):
+                    for axis in axes:
+                        self._cmds.connectAttr(
+                            f"{blend}.outputR",
+                            f"{helper}.scale{axis}",
+                        )
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
@@ -1242,6 +1274,19 @@ class MayaBodyBuildHost(MayaFitJointHost):
         self,
         plan: BodyArmVolumePlan,
     ) -> BodyArmVolumeSnapshot:
+        return self._capture_body_limb_volume("Arm", plan)
+
+    def capture_body_leg_volume(
+        self,
+        plan: BodyLegVolumePlan,
+    ) -> BodyLegVolumeSnapshot:
+        return self._capture_body_limb_volume("Leg", plan)
+
+    def _capture_body_limb_volume(
+        self,
+        limb_label: str,
+        plan: BodyLimbVolumePlan,
+    ) -> BodyLimbVolumeSnapshot:
         def source(plug: str) -> str | None:
             values = self._cmds.listConnections(
                 plug,
@@ -1261,7 +1306,9 @@ class MayaBodyBuildHost(MayaFitJointHost):
             type="transform",
         ) or []
         if len(settings) != 1:
-            raise FitSkeletonValidationError("Arm 体积设置节点无效")
+            raise FitSkeletonValidationError(
+                f"{limb_label} 体积设置节点无效"
+            )
         states = []
         for spec in plan.sides:
             plug = f"{plan.settings_path}.{spec.attribute}"
@@ -1277,37 +1324,56 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 or len(mode_blend) != 1
                 or len(power) != 1
                 or len(blend) != 1
+                or len(spec.helper_scale_axes) != len(spec.helper_joints)
                 or any(len(values) != 1 for values in helpers)
             ):
-                raise FitSkeletonValidationError("Arm 体积节点集合无效")
+                raise FitSkeletonValidationError(
+                    f"{limb_label} 体积节点集合无效"
+                )
             states.append(
-                BodyArmVolumeSideState(
-                    spec.side,
-                    plug,
-                    float(self._cmds.getAttr(plug)),
-                    spec.mode_blend_name,
-                    source(f"{spec.mode_blend_name}.color1R"),
-                    source(f"{spec.mode_blend_name}.blender"),
-                    float(self._cmds.getAttr(f"{spec.mode_blend_name}.color2R")),
-                    spec.power_name,
-                    source(f"{spec.power_name}.input1X"),
-                    float(self._cmds.getAttr(f"{spec.power_name}.input2X")),
-                    int(self._cmds.getAttr(f"{spec.power_name}.operation")),
-                    spec.blend_name,
-                    source(f"{spec.blend_name}.color1R"),
-                    source(f"{spec.blend_name}.blender"),
-                    float(self._cmds.getAttr(f"{spec.blend_name}.color2R")),
-                    tuple(
+                BodyLimbVolumeSideState(
+                    side=spec.side,
+                    attribute_plug=plug,
+                    attribute_value=float(self._cmds.getAttr(plug)),
+                    mode_blend_name=spec.mode_blend_name,
+                    stretch_ratio_source=source(
+                        f"{spec.mode_blend_name}.color1R"
+                    ),
+                    mode_weight_source=source(
+                        f"{spec.mode_blend_name}.blender"
+                    ),
+                    mode_base_ratio=float(self._cmds.getAttr(
+                        f"{spec.mode_blend_name}.color2R"
+                    )),
+                    power_name=spec.power_name,
+                    ratio_source=source(f"{spec.power_name}.input1X"),
+                    exponent=float(self._cmds.getAttr(
+                        f"{spec.power_name}.input2X"
+                    )),
+                    power_operation=int(self._cmds.getAttr(
+                        f"{spec.power_name}.operation"
+                    )),
+                    blend_name=spec.blend_name,
+                    power_source=source(f"{spec.blend_name}.color1R"),
+                    volume_source=source(f"{spec.blend_name}.blender"),
+                    base_scale=float(self._cmds.getAttr(
+                        f"{spec.blend_name}.color2R"
+                    )),
+                    helper_scale_sources=tuple(
                         (
                             path,
-                            source(f"{path}.scaleY"),
-                            source(f"{path}.scaleZ"),
+                            source(f"{path}.scale{axes[0]}"),
+                            source(f"{path}.scale{axes[1]}"),
                         )
-                        for path in spec.helper_joints
+                        for path, axes in zip(
+                            spec.helper_joints,
+                            spec.helper_scale_axes,
+                        )
                     ),
+                    helper_scale_axes=spec.helper_scale_axes,
                 )
             )
-        return BodyArmVolumeSnapshot(settings[0], tuple(states))
+        return BodyLimbVolumeSnapshot(settings[0], tuple(states))
 
     def capture_skin_bind_input(self, plan: SkinBindPlan) -> SkinBindInputState:
         meshes = self._cmds.ls(plan.mesh_path, long=True, type="transform") or []
