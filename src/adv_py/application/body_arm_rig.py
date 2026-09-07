@@ -15,6 +15,7 @@ from adv_py.core.body_controls import BodyArmFkControlPlan, BodyArmFkControlSnap
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from .body_rebuild import BodyRebuildInspectionHost, BodyRebuildSafetyAudit, InspectBodyRebuildSafety
+from .body_rig_validation import body_bind_pose_matches
 
 
 class BodyArmRigHost(BodyRebuildInspectionHost, Protocol):
@@ -162,26 +163,8 @@ class BuildBodyArmRig:
             if volume_issues:
                 raise RuntimeError("Arm 体积保持阶段复检失败：" + "；".join(issue.message for issue in volume_issues))
             body = self._host.capture_body_skeleton(body_root_name)
-            if not _body_bind_pose_matches(plan.safety.body, body):
+            if not body_bind_pose_matches(plan.safety.body, body):
                 raise RuntimeError("Arm Rig 绑定姿态下 Body 发生变化")
             container = plan.safety.symmetry.source.hierarchy.container
             if self._host.capture_fit_orientation(container) != plan.safety.symmetry.source or self._host.read_fit_skeleton_settings(container) != plan.safety.symmetry.settings: raise RuntimeError("Arm Rig 构建后 Fit 输入变化")
         return BodyArmRigBuildResult(plan, mechanisms, fk, blend, ik, visibility, stretch, twist, volume, body)
-
-
-def _body_bind_pose_matches(expected: BodySkeletonSnapshot, actual: BodySkeletonSnapshot) -> bool:
-    if expected.root != actual.root or expected.provenance != actual.provenance:
-        return False
-    wanted = {joint.path: joint for joint in expected.joints}
-    current = {joint.path: joint for joint in actual.joints}
-    if set(wanted) != set(current):
-        return False
-    for path, before in wanted.items():
-        after = current[path]
-        if (before.name, before.parent_path, before.side, before.label) != (after.name, after.parent_path, after.side, after.label):
-            return False
-        vectors = ((before.world_position, after.world_position), (before.rotation, after.rotation))
-        vectors += tuple(zip(before.world_axes, after.world_axes))
-        if any(any(abs(a - b) > 1e-4 for a, b in zip(left, right)) for left, right in vectors):
-            return False
-    return True

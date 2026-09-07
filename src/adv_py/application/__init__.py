@@ -70,6 +70,12 @@ from .body_leg_visibility import (
     BodyLegVisibilityHost,
     BuildBodyLegVisibility,
 )
+from .body_leg_rig import (
+    BodyLegRigBuildPlan,
+    BodyLegRigBuildResult,
+    BodyLegRigHost,
+    BuildBodyLegRig,
+)
 from .body_arm_rig import (
     BodyArmRigBuildPlan, BodyArmRigBuildResult, BodyArmRigHost,
     BuildBodyArmRig,
@@ -220,6 +226,7 @@ __all__ = [
     "BodyLegBlendBuildPlan", "BodyLegBlendBuildResult", "BodyLegBlendHost",
     "BodyLegVisibilityBuildPlan", "BodyLegVisibilityBuildResult",
     "BodyLegVisibilityHost",
+    "BodyLegRigBuildPlan", "BodyLegRigBuildResult", "BodyLegRigHost",
     "BodyArmIkBuildPlan",
     "BodyArmIkBuildResult",
     "BodyArmIkHost",
@@ -269,6 +276,7 @@ __all__ = [
     "BuildBodyArmBlend",
     "BuildBodyLegBlend",
     "BuildBodyLegVisibility",
+    "BuildBodyLegRig",
     "BuildBodyArmRig",
     "BindSkin",
     "EditSkinWeights",
