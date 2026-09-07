@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "advanced-skeleton-python-refactor"
+version = "0.1.0"
+description = "Private tooling and a portable Python core for incrementally studying rig behavior across Maya and Blender."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary internal tooling" }
+authors = [{ name = "Ubik" }]
+dependencies = []
+
+[project.scripts]
+adv-migrate = "adv_migration.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

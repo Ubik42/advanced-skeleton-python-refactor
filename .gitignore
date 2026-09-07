@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Generated inventories may contain proprietary procedure names and paths.
+reports/*.json
+reports/*.md
+!reports/.gitkeep
+
