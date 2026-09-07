@@ -16,6 +16,7 @@ from adv_py.application import (
     BuildBodyArmBlend,
     BuildBodyArmRig,
     MatchBodyArmFkToIk,
+    MatchBodyLegFkToIk,
     MatchBodyArmIkToFk,
     BuildBodySkeleton,
     BuildOrientedBodySkeleton,
@@ -48,6 +49,7 @@ from adv_py.core import (
     BodyArmVisibilitySideState,
     BodyArmVisibilitySnapshot,
     BodyArmFkToIkSceneState,
+    BodyLegFkToIkSceneState,
     BodyArmIkToFkSceneState,
     BodyArmStretchSideState,
     BodyArmStretchSnapshot,
@@ -95,6 +97,7 @@ class FakeBodySkeletonHost:
         faulty_leg_blend=False,
         faulty_leg_visibility=False,
         blocked_leg_visibility=False,
+        faulty_leg_match=False,
         faulty_arm_ik=False,
         faulty_arm_blend=False,
         faulty_arm_visibility=False,
@@ -172,6 +175,8 @@ class FakeBodySkeletonHost:
         self.leg_visibility_snapshot = None
         self.faulty_leg_visibility = faulty_leg_visibility
         self.blocked_leg_visibility = blocked_leg_visibility
+        self.faulty_leg_match = faulty_leg_match
+        self.leg_match_applied = False
         self.arm_ik_root = None
         self.arm_ik_states = []
         self.faulty_arm_ik = faulty_arm_ik
@@ -272,6 +277,7 @@ class FakeBodySkeletonHost:
         before_leg_ik_states = list(self.leg_ik_states)
         before_leg_blend_snapshot = self.leg_blend_snapshot
         before_leg_visibility_snapshot = self.leg_visibility_snapshot
+        before_leg_match_applied = self.leg_match_applied
         before_arm_ik_root = self.arm_ik_root
         before_arm_ik_states = list(self.arm_ik_states)
         before_arm_blend_snapshot = self.arm_blend_snapshot
@@ -302,6 +308,7 @@ class FakeBodySkeletonHost:
             self.leg_ik_states = before_leg_ik_states
             self.leg_blend_snapshot = before_leg_blend_snapshot
             self.leg_visibility_snapshot = before_leg_visibility_snapshot
+            self.leg_match_applied = before_leg_match_applied
             self.arm_ik_root = before_arm_ik_root
             self.arm_ik_states = before_arm_ik_states
             self.arm_blend_snapshot = before_arm_blend_snapshot
@@ -346,6 +353,13 @@ class FakeBodySkeletonHost:
             joints = tuple(
                 replace(joint, world_position=(99.0, 0.0, 0.0))
                 if joint.name == "Wrist_R"
+                else joint
+                for joint in joints
+            )
+        if self.faulty_leg_match and self.leg_match_applied and self.in_transaction:
+            joints = tuple(
+                replace(joint, world_position=(99.0, 0.0, 0.0))
+                if joint.name == "Ankle_R"
                 else joint
                 for joint in joints
             )
@@ -709,6 +723,30 @@ class FakeBodySkeletonHost:
             for side in self.arm_blend_snapshot.sides
         )
         self.arm_blend_snapshot = replace(self.arm_blend_snapshot, sides=sides)
+
+    def capture_body_leg_fk_to_ik_state(self, plan):
+        side = next(
+            value for value in self.leg_blend_snapshot.sides
+            if value.side is plan.side
+        )
+        return BodyLegFkToIkSceneState(
+            plan.required_paths,
+            plan.required_writable_plugs,
+            side.attribute_value,
+            plan.body_joint_positions,
+            plan.ankle_axes,
+        )
+
+    def apply_body_leg_fk_to_ik(self, plan):
+        self.leg_match_applied = True
+        sides = tuple(
+            replace(side, attribute_value=1.0)
+            if side.side is plan.side else side
+            for side in self.leg_blend_snapshot.sides
+        )
+        self.leg_blend_snapshot = replace(
+            self.leg_blend_snapshot, sides=sides
+        )
 
     def capture_body_arm_ik_to_fk_state(self, plan):
         side = next(value for value in self.arm_blend_snapshot.sides if value.side is plan.side)
@@ -1692,6 +1730,45 @@ class BodySkeletonTests(unittest.TestCase):
         right = next(side for side in host.arm_blend_snapshot.sides if side.side is FitBuildSide.RIGHT)
         self.assertEqual(right.attribute_value, 0.0)
         self.assertFalse(host.arm_match_applied)
+
+    def test_matches_right_leg_fk_to_ik_in_one_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegRig(host).apply()
+
+        result = MatchBodyLegFkToIk(host).apply(FitBuildSide.RIGHT)
+
+        values = {side.side: side.attribute_value for side in result.blend.sides}
+        self.assertEqual(host.transaction_count, 3)
+        self.assertEqual(values[FitBuildSide.RIGHT], 1.0)
+        self.assertEqual(values[FitBuildSide.LEFT], 0.0)
+
+    def test_leg_fk_to_ik_requires_current_fk_mode_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegRig(host).apply()
+        match = MatchBodyLegFkToIk(host).plan(FitBuildSide.RIGHT).match
+        host.apply_body_leg_fk_to_ik(match)
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "不是 FK 模式"):
+            MatchBodyLegFkToIk(host).apply(FitBuildSide.RIGHT)
+
+        self.assertEqual(host.transaction_count, 2)
+
+    def test_leg_fk_to_ik_pose_failure_rolls_back_blend(self):
+        host = FakeBodySkeletonHost(faulty_leg_match=True)
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegRig(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "关节位置跳变"):
+            MatchBodyLegFkToIk(host).apply(FitBuildSide.RIGHT)
+
+        right = next(
+            side for side in host.leg_blend_snapshot.sides
+            if side.side is FitBuildSide.RIGHT
+        )
+        self.assertEqual(right.attribute_value, 0.0)
+        self.assertFalse(host.leg_match_applied)
 
     def test_matches_right_arm_ik_to_fk_in_one_transaction(self):
         host = FakeBodySkeletonHost()

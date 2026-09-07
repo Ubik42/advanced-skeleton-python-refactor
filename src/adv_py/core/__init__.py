@@ -120,6 +120,14 @@ from .body_arm_match import (
     plan_body_arm_fk_to_ik,
     plan_body_arm_ik_to_fk,
 )
+from .body_leg_match import (
+    BodyLegFkToIkPlan,
+    BodyLegFkToIkSceneState,
+    BodyLegMatchIssue,
+    audit_body_leg_fk_to_ik_preflight,
+    audit_body_leg_fk_to_ik_result,
+    plan_body_leg_fk_to_ik,
+)
 from .body_arm_stretch import (
     BodyArmStretchIssue,
     BodyArmStretchPlan,
@@ -407,6 +415,9 @@ __all__ = [
     "BodyArmIkToFkPlan",
     "BodyArmIkToFkSceneState",
     "BodyArmMatchIssue",
+    "BodyLegFkToIkPlan",
+    "BodyLegFkToIkSceneState",
+    "BodyLegMatchIssue",
     "BodyArmStretchIssue",
     "BodyArmStretchPlan",
     "BodyArmStretchSideSpec",
@@ -589,6 +600,8 @@ __all__ = [
     "audit_body_arm_fk_to_ik_result",
     "audit_body_arm_ik_to_fk_preflight",
     "audit_body_arm_ik_to_fk_result",
+    "audit_body_leg_fk_to_ik_preflight",
+    "audit_body_leg_fk_to_ik_result",
     "audit_body_arm_stretch",
     "audit_body_arm_twist",
     "audit_body_arm_volume",
@@ -643,6 +656,7 @@ __all__ = [
     "plan_body_leg_visibility",
     "plan_body_arm_fk_to_ik",
     "plan_body_arm_ik_to_fk",
+    "plan_body_leg_fk_to_ik",
     "plan_body_arm_stretch",
     "compensated_stretch_ratio",
     "plan_body_arm_twist",

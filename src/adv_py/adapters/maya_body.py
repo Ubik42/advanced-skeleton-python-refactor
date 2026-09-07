@@ -39,6 +39,11 @@ from adv_py.core.body_arm_match import (
     BodyArmIkToFkPlan,
     BodyArmIkToFkSceneState,
 )
+from adv_py.core.body_leg_match import (
+    BodyLegFkToIkPlan,
+    BodyLegFkToIkSceneState,
+    audit_body_leg_fk_to_ik_preflight,
+)
 from adv_py.core.body_arm_stretch import (
     BodyArmStretchPlan,
     BodyArmStretchSideState,
@@ -1428,6 +1433,73 @@ class MayaBodyBuildHost(MayaFitJointHost):
             x_axis, y_axis, z_axis = plan.wrist_axes
             matrix = (*x_axis, 0.0, *y_axis, 0.0, *z_axis, 0.0, *plan.wrist_position, 1.0)
             self._cmds.xform(plan.wrist_control_path, worldSpace=True, matrix=matrix)
+            self._cmds.setAttr(plan.blend_plug, 1.0)
+        finally:
+            self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
+
+    def capture_body_leg_fk_to_ik_state(
+        self, plan: BodyLegFkToIkPlan
+    ) -> BodyLegFkToIkSceneState:
+        existing = tuple(
+            path for path in plan.required_paths if self._cmds.objExists(path)
+        )
+        writable = tuple(
+            plug
+            for plug in plan.required_writable_plugs
+            if self._cmds.objExists(plug)
+            and self._cmds.getAttr(plug, settable=True)
+        )
+        value = (
+            float(self._cmds.getAttr(plan.blend_plug))
+            if self._cmds.objExists(plan.blend_plug)
+            else float("nan")
+        )
+        positions = []
+        for path in plan.body_joint_paths:
+            if not self._cmds.objExists(path):
+                break
+            positions.append(tuple(float(item) for item in self._cmds.xform(
+                path, query=True, worldSpace=True, translation=True
+            )))
+        ankle_axes = ()
+        ankle_path = plan.body_joint_paths[2]
+        if self._cmds.objExists(ankle_path):
+            matrix = self._cmds.xform(
+                ankle_path, query=True, worldSpace=True, matrix=True
+            )
+            ankle_axes = tuple(
+                self._normalized_vector(
+                    tuple(float(item) for item in matrix[index:index + 3])
+                )
+                for index in (0, 4, 8)
+            )
+        return BodyLegFkToIkSceneState(
+            existing, writable, value, tuple(positions), ankle_axes
+        )
+
+    def apply_body_leg_fk_to_ik(self, plan: BodyLegFkToIkPlan) -> None:
+        self._require_transaction()
+        state = self.capture_body_leg_fk_to_ik_state(plan)
+        if audit_body_leg_fk_to_ik_preflight(plan, state):
+            raise FitSkeletonValidationError("Leg FK→IK 匹配输入在执行前失效")
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            self._transaction_changed = True
+            self._cmds.xform(
+                plan.pole_control_path,
+                worldSpace=True,
+                translation=plan.pole_position,
+            )
+            x_axis, y_axis, z_axis = plan.ankle_axes
+            matrix = (
+                *x_axis, 0.0,
+                *y_axis, 0.0,
+                *z_axis, 0.0,
+                *plan.ankle_position, 1.0,
+            )
+            self._cmds.xform(
+                plan.ankle_control_path, worldSpace=True, matrix=matrix
+            )
             self._cmds.setAttr(plan.blend_plug, 1.0)
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
