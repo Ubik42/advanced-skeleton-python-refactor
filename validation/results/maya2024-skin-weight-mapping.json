@@ -1,0 +1,23 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 43744,
+  "slice": "skin_weight_explicit_mapping",
+  "source_and_target_paths_differ": true,
+  "mapping_preflight_ready": true,
+  "target_document_rewritten": true,
+  "mapped_weights_imported": true,
+  "repeat_import_is_noop": true,
+  "selection_preserved": true,
+  "temporary_file_removed": true,
+  "source_weights_unchanged": true,
+  "single_undo_restored_target_weights": true,
+  "both_skins_preserved_after_undo": true,
+  "cleanup": true,
+  "vertex_count": 8,
+  "mapped_influence_count": 2,
+  "changed_vertex_count": 3,
+  "remaining_nodes": [],
+  "duration_seconds": 3.748,
+  "status": "passed"
+}

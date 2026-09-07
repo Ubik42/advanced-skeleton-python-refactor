@@ -9,8 +9,11 @@ from adv_py.application import ExportSkinWeights, ImportSkinWeights
 from adv_py.core import (
     SkinInfluenceWeight,
     SkinVertexWeights,
+    SkinWeightInfluenceMapping,
     SkinWeightInputState,
+    SkinWeightPathMapping,
     SkinWeightValidationError,
+    remap_skin_weight_document,
     skin_weight_document_from_json,
     skin_weight_document_from_state,
     skin_weight_document_to_json,
@@ -19,6 +22,8 @@ from adv_py.core import (
 
 A = "|JointA"
 B = "|JointB"
+C = "|TargetJointA"
+D = "|TargetJointB"
 
 
 def vertex(index, first, second):
@@ -27,6 +32,27 @@ def vertex(index, first, second):
         (
             SkinInfluenceWeight(A, first),
             SkinInfluenceWeight(B, second),
+        ),
+    )
+
+
+def target_vertex(index, first, second):
+    return SkinVertexWeights(
+        index,
+        (
+            SkinInfluenceWeight(C, first),
+            SkinInfluenceWeight(D, second),
+        ),
+    )
+
+
+def mapping():
+    return SkinWeightPathMapping(
+        "TargetSkin",
+        "|TargetMesh",
+        (
+            SkinWeightInfluenceMapping(A, C),
+            SkinWeightInfluenceMapping(B, D),
         ),
     )
 
@@ -161,6 +187,55 @@ class SkinWeightIoTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "顶点数"):
                 ImportSkinWeights(host).apply(target)
             self.assertEqual(host.transaction_count, 0)
+
+    def test_remaps_every_influence_and_rejects_non_bijection(self):
+        document = skin_weight_document_from_state(
+            FakeSkinWeightDocumentHost().state
+        )
+        target = remap_skin_weight_document(document, mapping())
+        self.assertEqual(target.skin_name, "TargetSkin")
+        self.assertEqual(target.mesh_path, "|TargetMesh")
+        self.assertEqual(target.influence_paths, (C, D))
+        self.assertEqual(
+            tuple(entry.influence_path for entry in target.vertices[0].weights),
+            (C, D),
+        )
+        invalid = replace(
+            mapping(),
+            influences=(
+                SkinWeightInfluenceMapping(A, C),
+                SkinWeightInfluenceMapping(B, C),
+            ),
+        )
+        with self.assertRaisesRegex(SkinWeightValidationError, "一一对应"):
+            remap_skin_weight_document(document, invalid)
+
+    def test_imports_into_explicit_mapped_target(self):
+        host = FakeSkinWeightDocumentHost()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "weights.json"
+            ExportSkinWeights(host).apply(
+                "AdvPy_BodySkin",
+                "|BodyMesh",
+                path,
+            )
+            host.state = SkinWeightInputState(
+                "TargetSkin",
+                "|TargetMesh",
+                2,
+                (C, D),
+                (),
+                2,
+                True,
+                (target_vertex(0, 0.1, 0.9), target_vertex(1, 0.9, 0.1)),
+            )
+            result = ImportSkinWeights(host).apply(path, mapping=mapping())
+            self.assertEqual(result.edit_result.changed_vertex_count, 2)
+            self.assertEqual(
+                host.state.vertices,
+                result.plan.target_document.vertices,
+            )
+            self.assertEqual(host.transaction_count, 1)
 
 
 if __name__ == "__main__":

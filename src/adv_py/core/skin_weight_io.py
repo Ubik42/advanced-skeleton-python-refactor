@@ -32,6 +32,19 @@ class SkinWeightDocument:
     format_name: str = SKIN_WEIGHT_DOCUMENT_FORMAT
 
 
+@dataclass(frozen=True, slots=True)
+class SkinWeightInfluenceMapping:
+    source_path: str
+    target_path: str
+
+
+@dataclass(frozen=True, slots=True)
+class SkinWeightPathMapping:
+    target_skin_name: str
+    target_mesh_path: str
+    influences: tuple[SkinWeightInfluenceMapping, ...]
+
+
 def skin_weight_document_from_state(
     state: SkinWeightInputState,
 ) -> SkinWeightDocument:
@@ -231,6 +244,74 @@ def audit_skin_weight_document_target(
             )
         )
     return tuple(issues)
+
+
+def remap_skin_weight_document(
+    document: SkinWeightDocument,
+    mapping: SkinWeightPathMapping,
+) -> SkinWeightDocument:
+    if (
+        not isinstance(mapping.target_skin_name, str)
+        or not mapping.target_skin_name.strip()
+        or "|" in mapping.target_skin_name
+    ):
+        raise SkinWeightValidationError("映射目标 skinCluster 必须是有效短名")
+    if (
+        not isinstance(mapping.target_mesh_path, str)
+        or not mapping.target_mesh_path.strip()
+    ):
+        raise SkinWeightValidationError("映射目标 mesh 路径不能为空")
+    if not mapping.influences:
+        raise SkinWeightValidationError("权重导入映射不能为空")
+    pairs = []
+    for entry in mapping.influences:
+        if (
+            not isinstance(entry.source_path, str)
+            or not entry.source_path.strip()
+            or not isinstance(entry.target_path, str)
+            or not entry.target_path.strip()
+        ):
+            raise SkinWeightValidationError("Influence 映射路径不能为空")
+        pairs.append((entry.source_path.strip(), entry.target_path.strip()))
+    sources = tuple(source for source, _ in pairs)
+    targets = tuple(target for _, target in pairs)
+    if len(set(sources)) != len(sources):
+        raise SkinWeightValidationError("Influence 映射包含重复源路径")
+    if len(set(targets)) != len(targets):
+        raise SkinWeightValidationError("Influence 映射必须是一一对应，目标路径不能重复")
+    if len(sources) != len(document.influence_paths) or set(sources) != set(
+        document.influence_paths
+    ):
+        raise SkinWeightValidationError("Influence 映射必须完整且只覆盖文档源集合")
+    target_by_source = dict(pairs)
+    target_influences = tuple(
+        target_by_source[source]
+        for source in document.influence_paths
+    )
+    target_vertices = tuple(
+        SkinVertexWeights(
+            vertex.vertex_index,
+            tuple(
+                SkinInfluenceWeight(
+                    target_by_source[entry.influence_path],
+                    entry.weight,
+                )
+                for entry in vertex.weights
+            ),
+        )
+        for vertex in document.vertices
+    )
+    target_state = SkinWeightInputState(
+        mapping.target_skin_name.strip(),
+        mapping.target_mesh_path.strip(),
+        document.vertex_count,
+        target_influences,
+        (),
+        document.maximum_influences,
+        document.maintain_maximum_influences,
+        target_vertices,
+    )
+    return skin_weight_document_from_state(target_state)
 
 
 def _document_payload(document: SkinWeightDocument) -> dict:

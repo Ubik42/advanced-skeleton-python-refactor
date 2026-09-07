@@ -9,7 +9,9 @@ from typing import Protocol
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.skin_weight_io import (
     SkinWeightDocument,
+    SkinWeightPathMapping,
     audit_skin_weight_document_target,
+    remap_skin_weight_document,
     skin_weight_document_from_json,
     skin_weight_document_from_state,
     skin_weight_document_to_json,
@@ -48,6 +50,7 @@ class SkinWeightExportResult:
 class SkinWeightImportPlan:
     source: Path
     document: SkinWeightDocument
+    target_document: SkinWeightDocument
     target_state: SkinWeightInputState
     edit_plan: SkinWeightEditPlan
 
@@ -126,48 +129,63 @@ class ImportSkinWeights:
     def plan(
         self,
         source: str | os.PathLike[str],
+        *,
+        mapping: SkinWeightPathMapping | None = None,
     ) -> SkinWeightImportPlan:
         path = _json_path(source)
         if not path.is_file():
             raise FitSkeletonValidationError("权重导入文件不存在")
         document = skin_weight_document_from_json(path.read_text(encoding="utf-8"))
-        state = self._host.capture_all_skin_weights(
-            document.skin_name,
-            document.mesh_path,
+        target_document = (
+            remap_skin_weight_document(document, mapping)
+            if mapping is not None
+            else document
         )
-        issues = audit_skin_weight_document_target(document, state)
+        state = self._host.capture_all_skin_weights(
+            target_document.skin_name,
+            target_document.mesh_path,
+        )
+        issues = audit_skin_weight_document_target(target_document, state)
         if issues:
             raise FitSkeletonValidationError(
                 "权重导入目标预检失败，场景未修改："
                 + "；".join(issue.message for issue in issues)
             )
         edit_plan = self._editor.plan(
-            document.skin_name,
-            document.mesh_path,
-            document.vertices,
+            target_document.skin_name,
+            target_document.mesh_path,
+            target_document.vertices,
         )
-        return SkinWeightImportPlan(path, document, state, edit_plan)
+        return SkinWeightImportPlan(
+            path,
+            document,
+            target_document,
+            state,
+            edit_plan,
+        )
 
     def apply(
         self,
         source: str | os.PathLike[str],
+        *,
+        mapping: SkinWeightPathMapping | None = None,
     ) -> SkinWeightImportResult:
-        plan = self.plan(source)
+        plan = self.plan(source, mapping=mapping)
         current_document = skin_weight_document_from_json(
             plan.source.read_text(encoding="utf-8")
         )
         if current_document != plan.document:
             raise FitSkeletonValidationError("权重导入文件在执行前发生变化")
         current_state = self._host.capture_all_skin_weights(
-            plan.document.skin_name,
-            plan.document.mesh_path,
+            plan.target_document.skin_name,
+            plan.target_document.mesh_path,
         )
         if current_state != plan.target_state:
             raise FitSkeletonValidationError("权重导入场景在执行前发生变化")
         result = self._editor.apply(
-            plan.document.skin_name,
-            plan.document.mesh_path,
-            plan.document.vertices,
+            plan.target_document.skin_name,
+            plan.target_document.mesh_path,
+            plan.target_document.vertices,
         )
         return SkinWeightImportResult(plan, result)
 
