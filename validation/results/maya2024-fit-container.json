@@ -1,0 +1,21 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 46012,
+  "slice": "fit_skeleton_container_create",
+  "preview_ready": true,
+  "preview_did_not_modify_scene": true,
+  "scene_up_axis_used": true,
+  "selection_preserved": true,
+  "created_exactly_once": true,
+  "settings_complete": true,
+  "defaults_verified": true,
+  "collision_blocked": true,
+  "collision_left_existing_node": true,
+  "single_undo_removed_creation": true,
+  "unrelated_node_survived": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 4.117,
+  "status": "passed"
+}

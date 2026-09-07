@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成五个 Maya-only FitSkeleton 切片：关节标签、可选元数据审计、声明式元数据变更、层级构建前校验，以及容器设置补齐；尚未实现完整 FitSkeleton、蒙皮或产品 UI。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成六个 Maya-only FitSkeleton 切片：关节标签、可选元数据审计、声明式元数据变更、层级构建前校验、容器设置补齐，以及非破坏性容器创建；尚未实现完整 FitSkeleton、蒙皮或产品 UI。
 
 ## 当前完成
 
@@ -20,6 +20,7 @@
 - `FitJointPatch` 可先生成逐字段变更计划，再在一个 Maya Undo Chunk 内创建、更新或删除属性，并重新读取目标字段完成复检。
 - `InspectFitHierarchy` 一次读取 FitSkeleton 完整 DAG，使用纯 Python 检查唯一根、根命名与中心位置、父链完整性、重复短名及已确认的名称限制。
 - `EnsureFitSkeletonSettings` 先预览缺失的容器字段，再在一个 Undo Chunk 内增量补齐显示、构建和 ReBuild 设置；已有值保持不变，脚本文本不会在该用例中执行。
+- `CreateFitSkeleton` 根据 Maya 当前 Y/Z Up 创建根级圆环和完整默认设置，保持当前选择；任何同名节点都会在事务前阻止创建，不会被删除或自动改名。
 - 提供受限的 Legacy Bridge，供未来 Python 功能在 Maya 内调用尚未迁移的 MEL 过程。
 - 记录目标架构、迁移顺序、验收策略和许可边界。
 
@@ -56,4 +57,4 @@ py -3 -m unittest discover -s tests -v
 - Blender 将 Bind 与 FK/IK 机制骨链放在独立 Armature，避免跨骨链 blend 驱动形成依赖环；该差异留在适配器内部。
 - 当前 IK/FK 是最小可运行合同，尚无镜像 limb、IK/FK 无缝匹配、拉伸和 twist。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya FitSkeleton 已覆盖标签、常用可选元数据、只读层级构建前校验和容器设置补齐；容器创建、镜像语义和几何编辑仍待后续切片。
+- 当前 Maya FitSkeleton 已覆盖非破坏性容器创建、标签、常用可选元数据、只读层级构建前校验和容器设置补齐；基础关节模板、镜像语义和几何编辑仍待后续切片。

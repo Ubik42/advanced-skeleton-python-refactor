@@ -4,6 +4,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Iterator, Sequence
 
+from adv_py.core.fit_container import (
+    FitContainerDisplayStyle,
+    FitContainerShape,
+    FitContainerSpec,
+    FitContainerState,
+    FitUpAxis,
+)
 from adv_py.core.fit_hierarchy import (
     FitHierarchyNode,
     FitHierarchySnapshot,
@@ -149,7 +156,7 @@ _KEYABLE_FIT_SKELETON_FIELDS = frozenset(
 
 
 class MayaFitJointHost:
-    """Maya adapter for explicit Fit joint queries and edits."""
+    """Maya adapter for FitSkeleton and explicit Fit joint operations."""
 
     def __init__(self) -> None:
         from maya import cmds  # type: ignore[import-not-found]
@@ -179,6 +186,112 @@ class MayaFitJointHost:
         if len(resolved) != len(set(resolved)):
             raise FitJointValidationError("多个名称解析到了同一个关节")
         return tuple(resolved)
+
+    def scene_up_axis(self) -> FitUpAxis:
+        try:
+            return FitUpAxis(self._cmds.upAxis(query=True, axis=True))
+        except ValueError as error:
+            raise FitSkeletonValidationError(
+                "当前 Maya Up Axis 不是受支持的 Y 或 Z"
+            ) from error
+
+    def find_name_collisions(self, name: str) -> tuple[str, ...]:
+        return tuple(sorted(set(self._cmds.ls(name, long=True) or [])))
+
+    def create_fit_container(self, spec: FitContainerSpec) -> str:
+        self._require_transaction()
+        if self.find_name_collisions(spec.name):
+            raise FitSkeletonValidationError(
+                f"同名节点已存在，拒绝创建或覆盖：{spec.name}"
+            )
+
+        selection = self._cmds.ls(selection=True, long=True) or []
+        normal = (0.0, 1.0, 0.0)
+        if spec.up_axis is FitUpAxis.Z:
+            normal = (0.0, 0.0, 1.0)
+        try:
+            created = self._cmds.circle(
+                name=spec.name,
+                center=(0.0, 0.0, 0.0),
+                normal=normal,
+                radius=float(spec.display_radius),
+                degree=3,
+                sections=8,
+                constructionHistory=False,
+            )
+            self._transaction_changed = True
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+        if not created:
+            raise RuntimeError("Maya 未返回新建的 FitSkeleton 容器")
+        container = (self._cmds.ls(created[0], long=True) or [created[0]])[0]
+        shapes = self._cmds.listRelatives(
+            container,
+            shapes=True,
+            noIntermediate=True,
+            fullPath=True,
+        ) or []
+        if len(shapes) != 1:
+            raise RuntimeError("FitSkeleton 圆环没有生成唯一 shape")
+        self._cmds.setAttr(f"{shapes[0]}.overrideEnabled", True)
+        self._cmds.setAttr(f"{shapes[0]}.overrideColor", 29)
+        for channel in ("tx", "ty", "tz", "rx", "ry", "rz"):
+            self._cmds.setAttr(
+                f"{container}.{channel}",
+                lock=True,
+                keyable=False,
+                channelBox=False,
+            )
+        return container
+
+    def inspect_fit_container(self, name: str) -> FitContainerState:
+        container = self._resolve_transform(name, FitSkeletonValidationError)
+        shapes = self._cmds.listRelatives(
+            container,
+            shapes=True,
+            noIntermediate=True,
+            fullPath=True,
+        ) or []
+        shape = None
+        display_style = None
+        if (
+            len(shapes) == 1
+            and self._cmds.nodeType(shapes[0]) == "nurbsCurve"
+            and int(self._cmds.getAttr(f"{shapes[0]}.form")) in (1, 2)
+        ):
+            shape = FitContainerShape.RING
+        if len(shapes) == 1 and (
+            bool(self._cmds.getAttr(f"{shapes[0]}.overrideEnabled"))
+            and int(self._cmds.getAttr(f"{shapes[0]}.overrideColor")) == 29
+        ):
+            display_style = FitContainerDisplayStyle.FIT
+
+        locked = frozenset(
+            channel
+            for channel in ("tx", "ty", "tz", "rx", "ry", "rz")
+            if self._cmds.getAttr(f"{container}.{channel}", lock=True)
+        )
+        translation = self._cmds.getAttr(f"{container}.translate")[0]
+        rotation = self._cmds.getAttr(f"{container}.rotate")[0]
+        bounds = self._cmds.exactWorldBoundingBox(container)
+        bounding_size = tuple(
+            float(bounds[index + 3] - bounds[index]) for index in range(3)
+        )
+        leaf = container.rsplit("|", 1)[-1]
+        return FitContainerState(
+            path=container,
+            short_name=leaf.rsplit(":", 1)[-1],
+            shape=shape,
+            display_style=display_style,
+            locked_channels=locked,
+            local_translation=tuple(float(value) for value in translation),
+            local_rotation=tuple(float(value) for value in rotation),
+            bounding_size=bounding_size,
+        )
 
     def capture_fit_hierarchy(self, container_name: str) -> FitHierarchySnapshot:
         container = self._resolve_transform(

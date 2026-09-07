@@ -1,5 +1,15 @@
 """DCC-neutral rig description and validation."""
 
+from .fit_container import (
+    LOCKED_FIT_CHANNELS,
+    FitContainerDisplayStyle,
+    FitContainerIssue,
+    FitContainerShape,
+    FitContainerSpec,
+    FitContainerState,
+    FitUpAxis,
+    audit_fit_container,
+)
 from .fit_hierarchy import (
     FitHierarchyIssue,
     FitHierarchyNode,
@@ -50,6 +60,11 @@ from .validation import PlanValidationError, validate_plan
 
 __all__ = [
     "ConstraintSpec",
+    "FitContainerDisplayStyle",
+    "FitContainerIssue",
+    "FitContainerShape",
+    "FitContainerSpec",
+    "FitContainerState",
     "FitHierarchyIssue",
     "FitHierarchyNode",
     "FitHierarchyPolicy",
@@ -61,6 +76,7 @@ __all__ = [
     "FitJointMetadata",
     "FitJointPatch",
     "FitJointValidationError",
+    "FitUpAxis",
     "FIT_GEOMETRY_TYPES",
     "FitSkeletonField",
     "FitSkeletonIssue",
@@ -71,6 +87,7 @@ __all__ = [
     "IDENTITY_MATRIX",
     "JointLabel",
     "JointLabelValidationError",
+    "LOCKED_FIT_CHANNELS",
     "LimbSpec",
     "Matrix44",
     "NodeSpec",
@@ -78,6 +95,7 @@ __all__ = [
     "RigPlan",
     "almost_equal",
     "audit_fit_hierarchy",
+    "audit_fit_container",
     "audit_fit_joint",
     "audit_fit_skeleton_settings",
     "default_fit_skeleton_settings",
