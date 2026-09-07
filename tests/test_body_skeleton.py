@@ -1019,6 +1019,15 @@ class FakeBodySkeletonHost:
         return self.arm_volume_snapshot
 
 
+def build_basic_leg_without_foot(host):
+    """Compose the pre-v0.60 Leg stages for the standalone Foot extension tests."""
+    BuildBodyLegMechanisms(host).apply()
+    BuildBodyLegFkMechanismControls(host).apply()
+    BuildBodyLegBlend(host).apply()
+    BuildBodyLegIkControls(host).apply()
+    BuildBodyLegVisibility(host).apply()
+
+
 class BodySkeletonTests(unittest.TestCase):
     def test_previews_and_builds_thirty_joints_in_one_transaction(self):
         host = FakeBodySkeletonHost()
@@ -1700,6 +1709,11 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.ik.limbs), 2)
         self.assertEqual(len(result.blend.sides), 2)
         self.assertEqual(len(result.visibility.sides), 2)
+        self.assertEqual(len(result.foot.sides), 2)
+        self.assertEqual(
+            sum(len(side.pivots) for side in result.foot.sides),
+            10,
+        )
         self.assertEqual(result.body, body)
 
     def test_complete_basic_leg_rig_collision_blocks_before_transaction(self):
@@ -1731,17 +1745,50 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertIsNone(host.leg_ik_root)
         self.assertFalse(host.leg_ik_states)
         self.assertIsNone(host.leg_visibility_snapshot)
+        self.assertIsNone(host.leg_foot_snapshot)
+
+    def test_complete_leg_rig_foot_collision_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        host.collisions["AdvPy_FootBallPivot_L"] = (
+            "|User|AdvPy_FootBallPivot_L",
+        )
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "同名"):
+            BuildBodyLegRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertIsNone(host.leg_foot_snapshot)
+
+    def test_complete_leg_rig_foot_failure_rolls_back_every_stage(self):
+        host = FakeBodySkeletonHost(faulty_leg_foot=True)
+        BuildOrientedBodySkeleton(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "Foot 阶段"):
+            BuildBodyLegRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertFalse(host.leg_mechanism_states)
+        self.assertIsNone(host.leg_control_root)
+        self.assertFalse(host.leg_fk_states)
+        self.assertIsNone(host.leg_blend_snapshot)
+        self.assertIsNone(host.leg_ik_root)
+        self.assertFalse(host.leg_ik_states)
+        self.assertIsNone(host.leg_visibility_snapshot)
+        self.assertIsNone(host.leg_foot_snapshot)
 
     def test_extends_basic_leg_rig_with_bilateral_foot_pivots(self):
         host = FakeBodySkeletonHost()
         body = BuildOrientedBodySkeleton(host).apply().snapshot
-        BuildBodyLegRig(host).apply()
+        build_basic_leg_without_foot(host)
 
         preview = BuildBodyLegFoot(host).plan()
         result = BuildBodyLegFoot(host).apply()
 
         self.assertTrue(preview.ready)
-        self.assertEqual(host.transaction_count, 3)
+        self.assertEqual(host.transaction_count, 7)
         self.assertEqual(len(result.snapshot.sides), 2)
         self.assertEqual(sum(len(side.pivots) for side in result.snapshot.sides), 10)
         expected_positions = {
@@ -1768,18 +1815,18 @@ class BodySkeletonTests(unittest.TestCase):
     def test_foot_existing_attribute_blocks_before_transaction(self):
         host = FakeBodySkeletonHost(blocked_leg_foot=True)
         BuildOrientedBodySkeleton(host).apply()
-        BuildBodyLegRig(host).apply()
+        build_basic_leg_without_foot(host)
 
         with self.assertRaisesRegex(FitSkeletonValidationError, "属性已存在"):
             BuildBodyLegFoot(host).apply()
 
-        self.assertEqual(host.transaction_count, 2)
+        self.assertEqual(host.transaction_count, 6)
         self.assertIsNone(host.leg_foot_snapshot)
 
     def test_foot_postcheck_failure_restores_original_handle_parent(self):
         host = FakeBodySkeletonHost(faulty_leg_foot=True)
         BuildOrientedBodySkeleton(host).apply()
-        BuildBodyLegRig(host).apply()
+        build_basic_leg_without_foot(host)
         original_parents = tuple(
             state.handle_parent_path for state in host.leg_ik_states
         )
@@ -1787,7 +1834,7 @@ class BodySkeletonTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "复检失败"):
             BuildBodyLegFoot(host).apply()
 
-        self.assertEqual(host.transaction_count, 3)
+        self.assertEqual(host.transaction_count, 7)
         self.assertIsNone(host.leg_foot_snapshot)
         self.assertEqual(
             tuple(state.handle_parent_path for state in host.leg_ik_states),

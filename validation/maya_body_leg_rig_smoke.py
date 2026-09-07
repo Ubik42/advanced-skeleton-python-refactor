@@ -127,6 +127,14 @@ def main(output: Path) -> int:
                 len(side.joints) for side in result.blend.sides
             ) == 6,
             "visibility_side_count": len(result.visibility.sides) == 2,
+            "foot_side_count": len(result.foot.sides) == 2,
+            "foot_pivot_count": sum(
+                len(side.pivots) for side in result.foot.sides
+            ) == 10,
+            "foot_handles_parented_to_ball": all(
+                side.handle_parent_path == side.pivots[-1].path
+                for side in result.foot.sides
+            ),
             "default_fk_only": default_fk_only,
             "fk_drives_body": fk_drives_body,
             "ik_drives_body": ik_drives_body,
@@ -136,7 +144,10 @@ def main(output: Path) -> int:
         }
 
         cmds.undo()
-        remaining_rig = cmds.ls("AdvPy_Leg*", long=True) or []
+        remaining_rig = (
+            (cmds.ls("AdvPy_Leg*", long=True) or [])
+            + (cmds.ls("AdvPy_Foot*", long=True) or [])
+        )
         checks["single_undo_removed_complete_leg_rig"] = not remaining_rig
         checks["body_restored"] = host.capture_body_skeleton("Root_M") == body
         checks["fit_preserved"] = host.capture_fit_orientation(container) == fit
@@ -147,7 +158,8 @@ def main(output: Path) -> int:
 
         cmds.delete("|Root_M", container, marker)
         remaining = cmds.ls(
-            "Root_M", "FitSkeleton", "AdvPy_Leg*", marker, long=True
+            "Root_M", "FitSkeleton", "AdvPy_Leg*", "AdvPy_Foot*", marker,
+            long=True,
         ) or []
         checks["cleanup"] = not remaining
         passed = all(checks.values())
@@ -155,7 +167,7 @@ def main(output: Path) -> int:
             "host": "maya",
             "version": str(cmds.about(version=True)),
             "pid": os.getpid(),
-            "slice": "complete_body_leg_rig_atomic",
+            "slice": "complete_body_leg_rig_with_foot_atomic",
             **checks,
             "remaining_rig_nodes_after_undo": remaining_rig,
             "remaining_nodes": remaining,

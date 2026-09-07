@@ -24,6 +24,13 @@ from adv_py.core.body_leg_ik import (
     audit_body_leg_ik,
     plan_body_leg_ik,
 )
+from adv_py.core.body_leg_foot import (
+    BodyLegFootPlan,
+    BodyLegFootSideSpec,
+    BodyLegFootSnapshot,
+    audit_body_leg_foot,
+    plan_body_leg_foot,
+)
 from adv_py.core.body_leg_mechanisms import (
     BodyLegMechanismJointSpec,
     BodyLegMechanismPlan,
@@ -65,6 +72,8 @@ class BodyLegRigHost(BodyRebuildInspectionHost, Protocol):
     def capture_body_leg_ik(self, plan: BodyLegIkPlan) -> BodyLegIkSnapshot: ...
     def create_body_leg_visibility(self, plan: BodyLegVisibilityPlan) -> None: ...
     def capture_body_leg_visibility(self, plan: BodyLegVisibilityPlan) -> BodyLegVisibilitySnapshot: ...
+    def create_body_leg_foot_side(self, spec: BodyLegFootSideSpec) -> None: ...
+    def capture_body_leg_foot(self, plan: BodyLegFootPlan) -> BodyLegFootSnapshot: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +84,7 @@ class BodyLegRigBuildPlan:
     blend: BodyLegBlendPlan
     ik: BodyLegIkPlan
     visibility: BodyLegVisibilityPlan
+    foot: BodyLegFootPlan
     name_collisions: tuple[str, ...]
 
     @property
@@ -99,6 +109,7 @@ class BodyLegRigBuildResult:
     blend: BodyLegBlendSnapshot
     ik: BodyLegIkSnapshot
     visibility: BodyLegVisibilitySnapshot
+    foot: BodyLegFootSnapshot
     body: BodySkeletonSnapshot
 
 
@@ -142,6 +153,7 @@ class BuildBodyLegRig:
             pole_distance_scale=pole_distance_scale,
         )
         visibility = plan_body_leg_visibility(fk_controls, ik, blend)
+        foot = plan_body_leg_foot(safety.body, ik)
         names = [
             mechanisms.root_name,
             fk_controls.root_name,
@@ -169,6 +181,13 @@ class BuildBodyLegRig:
                 spec.pole_constraint_name,
                 spec.ankle_constraint_name,
             ))
+        for side in foot.sides:
+            names.extend(pivot.name for pivot in side.pivots)
+            names.extend(
+                pivot.multiplier_name
+                for pivot in side.pivots
+                if pivot.multiplier_name
+            )
         collisions = tuple(sorted({
             path
             for name in names
@@ -181,6 +200,7 @@ class BuildBodyLegRig:
             blend,
             ik,
             visibility,
+            foot,
             collisions,
         )
 
@@ -204,7 +224,7 @@ class BuildBodyLegRig:
             raise FitSkeletonValidationError(
                 "Leg Rig 构建预检失败，场景未修改：" + "；".join(plan.blockers)
             )
-        with self._host.transaction("构建基础双腿 IK/FK"):
+        with self._host.transaction("构建含 Foot 的双腿 IK/FK"):
             if (
                 self._host.create_body_leg_mechanism_root(plan.mechanisms.root_name)
                 != plan.mechanisms.root_path
@@ -248,6 +268,19 @@ class BuildBodyLegRig:
             if audit_body_leg_visibility(plan.visibility, visibility):
                 raise RuntimeError("Leg 控制显隐阶段复检失败")
 
+            for spec in plan.foot.sides:
+                self._host.create_body_leg_foot_side(spec)
+            foot = self._host.capture_body_leg_foot(plan.foot)
+            if audit_body_leg_foot(plan.foot, foot):
+                raise RuntimeError("Leg Foot 阶段复检失败")
+            ik = self._host.capture_body_leg_ik(plan.ik)
+            if audit_body_leg_ik(
+                plan.ik,
+                ik,
+                check_handle_parent=False,
+            ):
+                raise RuntimeError("Leg Foot 构建后 IK 结构复检失败")
+
             body = self._host.capture_body_skeleton(body_root_name)
             if not body_bind_pose_matches(plan.safety.body, body):
                 raise RuntimeError("Leg Rig 绑定姿态下 Body 发生变化")
@@ -260,5 +293,5 @@ class BuildBodyLegRig:
             ):
                 raise RuntimeError("Leg Rig 构建后 Fit 输入变化")
         return BodyLegRigBuildResult(
-            plan, mechanisms, fk, blend, ik, visibility, body
+            plan, mechanisms, fk, blend, ik, visibility, foot, body
         )

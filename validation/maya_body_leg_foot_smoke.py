@@ -25,7 +25,6 @@ def main(output: Path) -> int:
 
         from adv_py.adapters import MayaBodyBuildHost
         from adv_py.application import (
-            BuildBodyLegFoot,
             BuildBodyLegRig,
             BuildOrientedBodySkeleton,
             BuildSyntheticBodySourceFit,
@@ -45,16 +44,14 @@ def main(output: Path) -> int:
         BuildSyntheticBodySourceFit(host).apply(container)
         BuildOrientedBodySkeleton(host).apply(container)
         cmds.select(marker, replace=True)
-        rig = BuildBodyLegRig(host).apply(container)
-
-        use_case = BuildBodyLegFoot(host)
+        use_case = BuildBodyLegRig(host)
         cmds.file(modified=False)
         preview = use_case.plan(container)
         preview_clean = not bool(cmds.file(query=True, modified=True))
         result = use_case.apply(container)
 
         right = next(
-            side for side in result.snapshot.sides
+            side for side in result.foot.sides
             if side.side is FitBuildSide.RIGHT
         )
         right_spec = next(
@@ -83,13 +80,13 @@ def main(output: Path) -> int:
         checks = {
             "preview_ready": preview.ready,
             "preview_did_not_modify_scene": preview_clean,
-            "two_sides_created": len(result.snapshot.sides) == 2,
+            "two_sides_created": len(result.foot.sides) == 2,
             "ten_pivots_created": sum(
-                len(side.pivots) for side in result.snapshot.sides
+                len(side.pivots) for side in result.foot.sides
             ) == 10,
             "handle_parented_to_ball": all(
                 side.handle_parent_path == side.pivots[-1].path
-                for side in result.snapshot.sides
+                for side in result.foot.sides
             ),
             "five_channels_move_handle": all(motion.values()),
             "inner_bank_sign_is_negative": next(
@@ -100,21 +97,9 @@ def main(output: Path) -> int:
         }
 
         cmds.undo()
-        handle = (cmds.ls(right_spec.handle_name, long=True, type="ikHandle") or [None])[0]
-        handle_parent = (
-            cmds.listRelatives(handle, parent=True, fullPath=True) or [None]
-        )[0]
-        checks["single_undo_removed_foot_only"] = (
+        checks["single_undo_removed_complete_leg_rig_with_foot"] = (
             not (cmds.ls("AdvPy_Foot*", long=True) or [])
-            and handle_parent == right_spec.ankle_control_path
-            and not cmds.attributeQuery(
-                "heelRoll", node=right_spec.ankle_control_path, exists=True
-            )
-            and bool(cmds.ls("AdvPy_Leg*", long=True))
-        )
-        cmds.undo()
-        checks["second_undo_removed_complete_leg_rig"] = not (
-            cmds.ls("AdvPy_Leg*", long=True) or []
+            and not (cmds.ls("AdvPy_Leg*", long=True) or [])
         )
 
         cmds.delete("|Root_M", container, marker)
@@ -128,7 +113,7 @@ def main(output: Path) -> int:
             "host": "maya",
             "version": str(cmds.about(version=True)),
             "pid": os.getpid(),
-            "slice": "body_leg_foot_pivots",
+            "slice": "complete_body_leg_rig_with_foot_atomic",
             **checks,
             "channel_motion": motion,
             "remaining_nodes": remaining,
