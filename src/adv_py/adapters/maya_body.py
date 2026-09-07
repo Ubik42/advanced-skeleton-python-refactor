@@ -18,6 +18,10 @@ from adv_py.core.body_arm_blend import (
     BodyArmBlendSideState,
     BodyArmBlendSnapshot,
 )
+from adv_py.core.body_leg_blend import (
+    BodyLegBlendPlan,
+    BodyLegBlendSnapshot,
+)
 from adv_py.core.body_arm_visibility import (
     BodyArmVisibilityPlan,
     BodyArmVisibilitySideState,
@@ -368,16 +372,30 @@ class MayaBodyBuildHost(MayaFitJointHost):
         return self.create_body_control_root(name)
 
     def create_body_arm_blend(self, plan: BodyArmBlendPlan) -> None:
+        self._create_body_limb_blend(plan, "Arm")
+
+    def create_body_leg_blend(self, plan: BodyLegBlendPlan) -> None:
+        self._create_body_limb_blend(plan, "Leg")
+
+    def _create_body_limb_blend(
+        self,
+        plan: BodyArmBlendPlan,
+        limb_label: str,
+    ) -> None:
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
-            self._create_body_arm_blend_nodes(plan)
+            self._create_body_limb_blend_nodes(plan, limb_label)
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
             else:
                 self._cmds.select(clear=True)
 
-    def _create_body_arm_blend_nodes(self, plan: BodyArmBlendPlan) -> None:
+    def _create_body_limb_blend_nodes(
+        self,
+        plan: BodyArmBlendPlan,
+        limb_label: str,
+    ) -> None:
         self._require_transaction()
         names = [plan.settings_name]
         for side in plan.sides:
@@ -385,12 +403,14 @@ class MayaBodyBuildHost(MayaFitJointHost):
             names.extend(joint.constraint_name for joint in side.joints)
             names.extend(joint.translation_constraint_name for joint in side.joints if joint.translation_constraint_name)
         if any(self.find_name_collisions(name) for name in names):
-            raise FitSkeletonValidationError("Arm IK/FK 输出名称冲突")
+            raise FitSkeletonValidationError(
+                f"{limb_label} IK/FK 输出名称冲突"
+            )
         self._transaction_changed = True
         settings = self._cmds.createNode("transform", name=plan.settings_name, skipSelect=True)
         settings = (self._cmds.ls(settings, long=True) or [settings])[0]
         if settings != plan.settings_path:
-            raise RuntimeError("Arm IK/FK 设置节点路径漂移")
+            raise RuntimeError(f"{limb_label} IK/FK 设置节点路径漂移")
         for side in plan.sides:
             self._cmds.addAttr(settings, longName=side.attribute, attributeType="double", minValue=0.0, maxValue=1.0, defaultValue=0.0, keyable=True)
             plug = f"{settings}.{side.attribute}"
@@ -398,11 +418,15 @@ class MayaBodyBuildHost(MayaFitJointHost):
             self._cmds.connectAttr(plug, f"{reverse}.inputX")
             for joint in side.joints:
                 if any(not self._cmds.objExists(path) for path in (joint.body_joint, joint.fk_driver, joint.ik_driver)):
-                    raise FitSkeletonValidationError("Arm IK/FK 驱动或 Body joint 失效")
+                    raise FitSkeletonValidationError(
+                        f"{limb_label} IK/FK 驱动或 Body joint 失效"
+                    )
                 constraint = self._cmds.orientConstraint(joint.fk_driver, joint.ik_driver, joint.body_joint, maintainOffset=False, name=joint.constraint_name)[0]
                 aliases = self._cmds.orientConstraint(constraint, query=True, weightAliasList=True) or []
                 if len(aliases) != 2:
-                    raise RuntimeError("Arm IK/FK 双源权重别名无效")
+                    raise RuntimeError(
+                        f"{limb_label} IK/FK 双源权重别名无效"
+                    )
                 self._cmds.connectAttr(f"{reverse}.outputX", f"{constraint}.{aliases[0]}")
                 self._cmds.connectAttr(plug, f"{constraint}.{aliases[1]}")
                 if joint.translation_constraint_name:
@@ -415,11 +439,23 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     )[0]
                     point_aliases = self._cmds.pointConstraint(point, query=True, weightAliasList=True) or []
                     if len(point_aliases) != 2:
-                        raise RuntimeError("Arm FK/IK 位移双源权重别名无效")
+                        raise RuntimeError(
+                            f"{limb_label} FK/IK 位移双源权重别名无效"
+                        )
                     self._cmds.connectAttr(f"{reverse}.outputX", f"{point}.{point_aliases[0]}")
                     self._cmds.connectAttr(plug, f"{point}.{point_aliases[1]}")
 
     def capture_body_arm_blend(self, plan: BodyArmBlendPlan) -> BodyArmBlendSnapshot:
+        return self._capture_body_limb_blend(plan, "Arm")
+
+    def capture_body_leg_blend(self, plan: BodyLegBlendPlan) -> BodyLegBlendSnapshot:
+        return self._capture_body_limb_blend(plan, "Leg")
+
+    def _capture_body_limb_blend(
+        self,
+        plan: BodyArmBlendPlan,
+        limb_label: str,
+    ) -> BodyArmBlendSnapshot:
         def normalized_plug(value: str | None) -> str | None:
             if value is None or "." not in value:
                 return value
@@ -429,21 +465,27 @@ class MayaBodyBuildHost(MayaFitJointHost):
 
         settings_nodes = self._cmds.ls(plan.settings_path, long=True, type="transform") or []
         if len(settings_nodes) != 1:
-            raise FitSkeletonValidationError("Arm IK/FK 设置节点无效")
+            raise FitSkeletonValidationError(
+                f"{limb_label} IK/FK 设置节点无效"
+            )
         settings = settings_nodes[0]
         side_states = []
         for side in plan.sides:
             plug = f"{settings}.{side.attribute}"
             reverse_nodes = self._cmds.ls(side.reverse_name, type="reverse") or []
             if len(reverse_nodes) != 1 or not self._cmds.objExists(plug):
-                raise FitSkeletonValidationError("Arm IK/FK 属性或 reverse 无效")
+                raise FitSkeletonValidationError(
+                    f"{limb_label} IK/FK 属性或 reverse 无效"
+                )
             reverse = reverse_nodes[0]
             reverse_sources = self._cmds.listConnections(f"{reverse}.inputX", source=True, destination=False, plugs=True) or []
             joint_states = []
             for spec in side.joints:
                 constraints = self._cmds.ls(spec.constraint_name, type="orientConstraint") or []
                 if len(constraints) != 1:
-                    raise FitSkeletonValidationError("Arm IK/FK 约束无效")
+                    raise FitSkeletonValidationError(
+                        f"{limb_label} IK/FK 约束无效"
+                    )
                 constraint = constraints[0]
                 targets = self._cmds.orientConstraint(constraint, query=True, targetList=True) or []
                 target_paths = tuple((self._cmds.ls(target, long=True) or [target])[0] for target in targets)
@@ -461,7 +503,9 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 if spec.translation_constraint_name:
                     point_constraints = self._cmds.ls(spec.translation_constraint_name, type="pointConstraint") or []
                     if len(point_constraints) != 1:
-                        raise FitSkeletonValidationError("Arm FK/IK 位移约束无效")
+                        raise FitSkeletonValidationError(
+                            f"{limb_label} FK/IK 位移约束无效"
+                        )
                     point = point_constraints[0]
                     point_targets = self._cmds.pointConstraint(point, query=True, targetList=True) or []
                     translation_targets = tuple((self._cmds.ls(target, long=True) or [target])[0] for target in point_targets)

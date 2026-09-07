@@ -58,6 +58,12 @@ from .body_arm_blend import (
     BodyArmBlendBuildPlan, BodyArmBlendBuildResult, BodyArmBlendHost,
     BuildBodyArmBlend,
 )
+from .body_leg_blend import (
+    BodyLegBlendBuildPlan,
+    BodyLegBlendBuildResult,
+    BodyLegBlendHost,
+    BuildBodyLegBlend,
+)
 from .body_arm_rig import (
     BodyArmRigBuildPlan, BodyArmRigBuildResult, BodyArmRigHost,
     BuildBodyArmRig,
@@ -205,6 +211,7 @@ __all__ = [
     "SkinWeightGeometryMirrorHost", "SkinWeightGeometryMirrorPlan",
     "SkinWeightGeometryMirrorResult",
     "BodyArmBlendBuildPlan", "BodyArmBlendBuildResult", "BodyArmBlendHost",
+    "BodyLegBlendBuildPlan", "BodyLegBlendBuildResult", "BodyLegBlendHost",
     "BodyArmIkBuildPlan",
     "BodyArmIkBuildResult",
     "BodyArmIkHost",
@@ -252,6 +259,7 @@ __all__ = [
     "BuildBodyArmIkControls",
     "BuildBodyLegIkControls",
     "BuildBodyArmBlend",
+    "BuildBodyLegBlend",
     "BuildBodyArmRig",
     "BindSkin",
     "EditSkinWeights",
