@@ -1,8 +1,8 @@
 {
   "host": "maya",
   "version": "2024",
-  "pid": 46368,
-  "slice": "minimal_fit_joint_template",
+  "pid": 16816,
+  "slice": "fit_joint_templates",
   "preview_ready": true,
   "preview_did_not_modify_scene": true,
   "joint_names": [
@@ -19,8 +19,17 @@
   "container_survived_undo": true,
   "settings_survived_undo": true,
   "unrelated_node_survived": true,
+  "upper_body_preview_ready": true,
+  "upper_body_preview_did_not_modify_scene": true,
+  "upper_body_joint_count": 14,
+  "upper_body_spine2_branches_verified": true,
+  "upper_body_labels_verified": true,
+  "upper_body_selection_preserved": true,
+  "upper_body_duplicate_create_blocked": true,
+  "upper_body_duplicate_left_hierarchy_unchanged": true,
+  "upper_body_single_undo_removed_joints": true,
   "cleanup": true,
   "remaining_nodes": [],
-  "duration_seconds": 4.121,
+  "duration_seconds": 3.755,
   "status": "passed"
 }

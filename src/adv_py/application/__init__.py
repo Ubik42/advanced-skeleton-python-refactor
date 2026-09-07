@@ -41,6 +41,7 @@ from .fit_settings import (
     FitSkeletonSettingsHost,
 )
 from .fit_template import (
+    CreateFitTemplate,
     CreateMinimalFitTemplate,
     FitTemplateCreatePlan,
     FitTemplateCreateResult,
@@ -52,6 +53,7 @@ __all__ = [
     "BuildResult",
     "BuildRig",
     "CreateFitSkeleton",
+    "CreateFitTemplate",
     "CreateMinimalFitTemplate",
     "EditJointLabels",
     "EditFitJointMetadata",

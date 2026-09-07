@@ -79,6 +79,67 @@ def minimal_body_fit_template(
     )
 
 
+def synthetic_upper_body_fit_template(
+    up_axis: FitUpAxis,
+    *,
+    scale: float = 1.0,
+) -> FitTemplateSpec:
+    """Return an independently designed T-pose torso and bilateral arm tree."""
+
+    if not isinstance(up_axis, FitUpAxis):
+        raise FitSkeletonValidationError("上半身 Fit 模板 Up Axis 仅支持 Y 或 Z")
+    if (
+        isinstance(scale, bool)
+        or not isinstance(scale, (int, float))
+        or not isfinite(float(scale))
+        or scale <= 0
+    ):
+        raise FitSkeletonValidationError("上半身 Fit 模板缩放必须是正有限数值")
+
+    unit = float(scale)
+
+    def up(length: float) -> Vector3:
+        if up_axis is FitUpAxis.Y:
+            return (0.0, length * unit, 0.0)
+        return (0.0, 0.0, length * unit)
+
+    def side(length: float) -> Vector3:
+        return (length * unit, 0.0, 0.0)
+
+    label = JointLabel.parse
+    return FitTemplateSpec(
+        name="synthetic_upper_body",
+        joints=(
+            FitJointSpec("Root", None, (0.0, 0.0, 0.0), label("Root")),
+            FitJointSpec("Spine1", "Root", up(3.0), label("Spine")),
+            FitJointSpec("Spine2", "Spine1", up(3.0), label("Spine")),
+            FitJointSpec("Neck", "Spine2", up(2.0), label("Neck")),
+            FitJointSpec("Head", "Neck", up(2.0), label("Head")),
+            FitJointSpec("HeadEnd", "Head", up(1.5), label("Head")),
+            FitJointSpec(
+                "ClavicleLeft", "Spine2", side(1.5), label("Collar")
+            ),
+            FitJointSpec(
+                "ShoulderLeft", "ClavicleLeft", side(1.5), label("Shoulder")
+            ),
+            FitJointSpec(
+                "ElbowLeft", "ShoulderLeft", side(3.0), label("Elbow")
+            ),
+            FitJointSpec("HandLeft", "ElbowLeft", side(2.5), label("Hand")),
+            FitJointSpec(
+                "ClavicleRight", "Spine2", side(-1.5), label("Collar")
+            ),
+            FitJointSpec(
+                "ShoulderRight", "ClavicleRight", side(-1.5), label("Shoulder")
+            ),
+            FitJointSpec(
+                "ElbowRight", "ShoulderRight", side(-3.0), label("Elbow")
+            ),
+            FitJointSpec("HandRight", "ElbowRight", side(-2.5), label("Hand")),
+        ),
+    )
+
+
 def validate_fit_template(template: FitTemplateSpec) -> None:
     if not template.name.strip():
         raise FitSkeletonValidationError("Fit 模板名称不能为空")

@@ -79,23 +79,17 @@ class FitTemplateCreateResult:
     joint_paths: tuple[str, ...]
 
 
-class CreateMinimalFitTemplate:
-    """Create an independent Root/Spine baseline inside an empty container."""
+class CreateFitTemplate:
+    """Create a validated, host-independent FitTemplateSpec in one transaction."""
 
     def __init__(self, host: FitTemplateHost) -> None:
         self._host = host
 
     def plan(
         self,
+        template: FitTemplateSpec,
         container_name: str = "FitSkeleton",
-        *,
-        template: FitTemplateSpec | None = None,
-        segment_length: float = 5.0,
     ) -> FitTemplateCreatePlan:
-        active_template = template or minimal_body_fit_template(
-            self._host.scene_up_axis(),
-            segment_length=segment_length,
-        )
         hierarchy = self._host.capture_fit_hierarchy(container_name)
         settings = self._host.read_fit_skeleton_settings(hierarchy.container)
         setting_errors = tuple(
@@ -104,11 +98,11 @@ class CreateMinimalFitTemplate:
         )
         collisions = tuple(
             path
-            for joint in active_template.joints
+            for joint in template.joints
             for path in self._host.find_name_collisions(joint.name)
         )
         return FitTemplateCreatePlan(
-            template=active_template,
+            template=template,
             before_hierarchy=hierarchy,
             before_settings=settings,
             name_collisions=collisions,
@@ -117,24 +111,18 @@ class CreateMinimalFitTemplate:
 
     def apply(
         self,
+        template: FitTemplateSpec,
         container_name: str = "FitSkeleton",
-        *,
-        template: FitTemplateSpec | None = None,
-        segment_length: float = 5.0,
     ) -> FitTemplateCreateResult:
-        plan = self.plan(
-            container_name,
-            template=template,
-            segment_length=segment_length,
-        )
+        plan = self.plan(template, container_name)
         if not plan.ready:
             raise FitSkeletonValidationError(
-                "基础 Fit 模板创建预检失败，场景未修改："
+                "Fit 模板创建预检失败，场景未修改："
                 + "；".join(plan.blockers)
             )
 
         paths: dict[str, str] = {}
-        with self._host.transaction("创建基础 Fit 关节模板"):
+        with self._host.transaction(f"创建 Fit 关节模板：{plan.template.name}"):
             for spec in ordered_fit_joints(plan.template):
                 parent = plan.before_hierarchy.container
                 if spec.parent is not None:
@@ -166,13 +154,47 @@ class CreateMinimalFitTemplate:
         issues = audit_fit_template_snapshot(plan.template, hierarchy)
         if issues:
             raise RuntimeError(
-                "基础 Fit 模板创建后复检失败："
+                "Fit 模板创建后复检失败："
                 + "；".join(issue.message for issue in issues)
             )
         if settings != plan.before_settings:
-            raise RuntimeError("基础 Fit 模板创建后复检失败：容器设置被意外改写")
+            raise RuntimeError("Fit 模板创建后复检失败：容器设置被意外改写")
         for spec in plan.template.joints:
             if self._host.read_joint_label(paths[spec.name]) != spec.label:
                 raise RuntimeError(
-                    f"基础 Fit 模板创建后复检失败：{spec.name} 标签不一致"
+                    f"Fit 模板创建后复检失败：{spec.name} 标签不一致"
                 )
+
+
+class CreateMinimalFitTemplate:
+    """Compatibility wrapper for the independent Root/Spine baseline."""
+
+    def __init__(self, host: FitTemplateHost) -> None:
+        self._host = host
+        self._creator = CreateFitTemplate(host)
+
+    def plan(
+        self,
+        container_name: str = "FitSkeleton",
+        *,
+        template: FitTemplateSpec | None = None,
+        segment_length: float = 5.0,
+    ) -> FitTemplateCreatePlan:
+        active_template = template or minimal_body_fit_template(
+            self._host.scene_up_axis(),
+            segment_length=segment_length,
+        )
+        return self._creator.plan(active_template, container_name)
+
+    def apply(
+        self,
+        container_name: str = "FitSkeleton",
+        *,
+        template: FitTemplateSpec | None = None,
+        segment_length: float = 5.0,
+    ) -> FitTemplateCreateResult:
+        active_template = template or minimal_body_fit_template(
+            self._host.scene_up_axis(),
+            segment_length=segment_length,
+        )
+        return self._creator.apply(active_template, container_name)

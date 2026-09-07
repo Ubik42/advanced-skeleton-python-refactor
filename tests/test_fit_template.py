@@ -1,7 +1,7 @@
 import unittest
 from contextlib import contextmanager
 
-from adv_py.application import CreateMinimalFitTemplate
+from adv_py.application import CreateFitTemplate, CreateMinimalFitTemplate
 from adv_py.core import (
     FitHierarchyNode,
     FitHierarchySnapshot,
@@ -13,6 +13,7 @@ from adv_py.core import (
     JointLabel,
     default_fit_skeleton_settings,
     minimal_body_fit_template,
+    synthetic_upper_body_fit_template,
 )
 
 
@@ -73,6 +74,29 @@ class FakeFitTemplateHost:
 
 
 class FitTemplateTests(unittest.TestCase):
+    def test_synthetic_upper_body_has_bilateral_z_up_branches(self) -> None:
+        template = synthetic_upper_body_fit_template(FitUpAxis.Z, scale=2.0)
+        by_name = {joint.name: joint for joint in template.joints}
+
+        self.assertEqual(len(template.joints), 14)
+        self.assertEqual(
+            {joint.name for joint in template.joints if joint.parent == "Spine2"},
+            {"Neck", "ClavicleLeft", "ClavicleRight"},
+        )
+        self.assertEqual(by_name["Spine1"].local_position, (0.0, 0.0, 6.0))
+        self.assertEqual(by_name["ElbowLeft"].local_position, (6.0, 0.0, 0.0))
+        self.assertEqual(by_name["ElbowRight"].local_position, (-6.0, 0.0, 0.0))
+
+    def test_generic_creator_builds_upper_body_in_one_transaction(self) -> None:
+        host = FakeFitTemplateHost()
+        template = synthetic_upper_body_fit_template(FitUpAxis.Z)
+
+        result = CreateFitTemplate(host).apply(template)
+
+        self.assertEqual(len(result.hierarchy.joints), 14)
+        self.assertEqual(len(host.labels), 14)
+        self.assertEqual(host.transaction_count, 1)
+
     def test_minimal_template_follows_z_up(self) -> None:
         template = minimal_body_fit_template(FitUpAxis.Z, segment_length=4.0)
 
