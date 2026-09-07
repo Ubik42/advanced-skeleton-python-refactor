@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Iterator, Sequence
 
-from adv_py.core.fit_metadata import FitJointMetadata, FitJointValidationError
+from adv_py.core.fit_metadata import (
+    FitJointField,
+    FitJointFieldEdit,
+    FitJointMetadata,
+    FitJointValidationError,
+)
 from adv_py.core.joint_labels import JointLabel
 
 
@@ -29,6 +35,51 @@ _MAYA_LABEL_NAMES = {
     18: "Other",
 }
 _MAYA_LABEL_TYPES = {name.casefold(): code for code, name in _MAYA_LABEL_NAMES.items()}
+
+
+@dataclass(frozen=True, slots=True)
+class _MayaFitAttribute:
+    name: str
+    kind: str
+    minimum: float | None = None
+    maximum: float | None = None
+    enum_names: tuple[str, ...] = ()
+
+
+_FIT_ATTRIBUTES = {
+    FitJointField.TWIST_JOINTS: _MayaFitAttribute("twistJoints", "long", 0),
+    FitJointField.BENDY_CONTROLS: _MayaFitAttribute("bendyCtrls", "long", 0),
+    FitJointField.INBETWEEN_JOINTS: _MayaFitAttribute("inbetweenJoints", "long", 0),
+    FitJointField.UNTWISTER: _MayaFitAttribute("unTwister", "bool"),
+    FitJointField.NO_MIRROR: _MayaFitAttribute("noMirror", "bool"),
+    FitJointField.NO_MIRROR_LEFT: _MayaFitAttribute("noMirrorLeft", "bool"),
+    FitJointField.CHILD_OF_PART: _MayaFitAttribute("childOfPart", "long", 1, 10),
+    FitJointField.GLOBAL_WEIGHT: _MayaFitAttribute("global", "double", 0, 10),
+    FitJointField.GLOBAL_TRANSLATE: _MayaFitAttribute("globalTranslate", "bool"),
+    FitJointField.WORLD_ORIENT_UP: _MayaFitAttribute(
+        "worldOrientUp",
+        "enum",
+        enum_names=("xUp", "yUp", "zUp", "xDown", "yDown", "zDown"),
+    ),
+    FitJointField.WORLD_ORIENT_FORWARD: _MayaFitAttribute(
+        "worldOrientForward",
+        "enum",
+        enum_names=(
+            "xForward",
+            "yForward",
+            "zForward",
+            "xBackward",
+            "yBackward",
+            "zBackward",
+            "free",
+        ),
+    ),
+    FitJointField.IK_LOCAL_MODE: _MayaFitAttribute(
+        "ikLocal",
+        "enum",
+        enum_names=("addCtrl", "nonZero", "localOrient"),
+    ),
+}
 
 
 class MayaFitJointHost:
@@ -64,6 +115,11 @@ class MayaFitJointHost:
         return tuple(resolved)
 
     def read_fit_joint_metadata(self, joint: str) -> FitJointMetadata:
+        present = frozenset(
+            field
+            for field, spec in _FIT_ATTRIBUTES.items()
+            if self._attribute_exists(joint, spec.name)
+        )
         return FitJointMetadata(
             joint=joint,
             twist_joints=self._optional_number(joint, "twistJoints", int),
@@ -78,7 +134,40 @@ class MayaFitJointHost:
             world_orient_up=self._optional_enum(joint, "worldOrientUp"),
             world_orient_forward=self._optional_enum(joint, "worldOrientForward"),
             ik_local_mode=self._optional_enum(joint, "ikLocal"),
+            present_fields=present,
         )
+
+    def apply_fit_joint_edit(self, joint: str, edit: FitJointFieldEdit) -> None:
+        self._require_transaction()
+        spec = _FIT_ATTRIBUTES[edit.field]
+        exists = self._attribute_exists(joint, spec.name)
+        if edit.value is None:
+            if exists:
+                self._transaction_changed = True
+                self._cmds.deleteAttr(f"{joint}.{spec.name}")
+            return
+
+        if not exists:
+            options = {
+                "longName": spec.name,
+                "attributeType": spec.kind,
+                "keyable": True,
+            }
+            if spec.minimum is not None:
+                options["minValue"] = spec.minimum
+            if spec.maximum is not None:
+                options["maxValue"] = spec.maximum
+            if spec.enum_names:
+                options["enumName"] = ":".join(spec.enum_names)
+            self._transaction_changed = True
+            self._cmds.addAttr(joint, **options)
+
+        self._transaction_changed = True
+        if spec.enum_names:
+            value = spec.enum_names.index(str(edit.value))
+        else:
+            value = edit.value
+        self._cmds.setAttr(f"{joint}.{spec.name}", value)
 
     @contextmanager
     def transaction(self, label: str) -> Iterator[None]:

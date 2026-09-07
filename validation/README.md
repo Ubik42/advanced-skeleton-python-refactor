@@ -15,6 +15,7 @@
 - IK/FK blend 驱动有效，并在回滚后同时清理两套 Blender Armature。
 - Maya 关节标签支持标准类型与自定义文本，输入预检失败不产生部分修改，单次 Undo 可恢复。
 - Maya Fit joint 元数据审计可读取常用动态属性、报告互斥配置，并保持场景未修改。
+- Maya Fit joint 声明式变更支持只读预览、单事务应用、构建后复检和一次 Undo 恢复。
 
 ## 本机命令
 
@@ -30,6 +31,8 @@
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_joint_labels_smoke.py validation\results\maya2024-joint-labels.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_fit_metadata_smoke.py validation\results\maya2024-fit-metadata.json
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_fit_metadata_edit_smoke.py validation\results\maya2024-fit-metadata-edit.json
 ```
 
 正式自动化运行时应使用隐藏的独立进程、记录 PID、设置超时，并只终止本次启动的进程。结果 JSON 记录宿主版本、PID、耗时、预检和回滚结论。
@@ -42,4 +45,4 @@
 - 当前案例覆盖平移、骨骼 aim 与本地 Y-roll；非均匀缩放和镜像矩阵尚未验证。
 - IK/FK 案例覆盖最小三关节 limb，不代表 twist、拉伸、镜像和无缝匹配已完成。
 - 关节标签案例是 Maya-only 第一阶段切片，Blender 暂不提供对应实现。
-- Fit 元数据案例当前只读；属性的声明式创建、更新与删除将在后续 Maya 切片实现。
+- Fit 元数据变更目前覆盖已进入 `FitJointMetadata` 的字段；约束目标、几何附着和曲线引导等关系型属性尚未进入合同。

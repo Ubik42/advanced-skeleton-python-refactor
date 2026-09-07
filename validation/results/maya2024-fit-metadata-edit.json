@@ -1,0 +1,17 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 31268,
+  "slice": "fit_joint_metadata_edit",
+  "preview_change_count": 7,
+  "preview_did_not_modify_scene": true,
+  "values_applied": true,
+  "post_verified": true,
+  "invalid_patch_blocked": true,
+  "invalid_patch_left_unchanged": true,
+  "single_undo_restored": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 5.235,
+  "status": "passed"
+}
