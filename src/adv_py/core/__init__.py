@@ -57,6 +57,7 @@ from .body_arm_stretch import (
     BodyArmStretchSnapshot,
     BodyArmStretchValidationError,
     audit_body_arm_stretch,
+    compensated_stretch_ratio,
     plan_body_arm_stretch,
 )
 from .body_arm_twist import (
@@ -483,6 +484,7 @@ __all__ = [
     "plan_body_arm_fk_to_ik",
     "plan_body_arm_ik_to_fk",
     "plan_body_arm_stretch",
+    "compensated_stretch_ratio",
     "plan_body_arm_twist",
     "plan_body_arm_volume",
     "project_twist_quaternion_x",

@@ -134,7 +134,7 @@
 - Blender 基础约束当前只接受一个 source，且要求 `maintain_offset=False`。
 - `control` 在 Maya 中是带标记属性的 transform，在 Blender 中是 Empty；曲线形状尚未进入跨 DCC 合同。
 - 当前案例覆盖平移、骨骼 aim 与本地 Y-roll；非均匀缩放和镜像矩阵尚未验证。
-- IK/FK 案例覆盖最小三关节 limb，并验证 Maya 双臂控制显隐、Wrist IK 朝向、旋转/位移输出、包含 IK stretch 段长传递的单侧双向匹配、每段两个轴向 twist helper，以及受 IK/FK 模式隔离的左右独立体积强度；全局缩放补偿尚未完成。
+- IK/FK 案例覆盖最小三关节 limb，并验证 Maya 双臂控制显隐、Wrist IK 朝向、旋转/位移输出、包含 IK stretch 段长传递的单侧双向匹配、显式全局比例补偿、每段两个轴向 twist helper，以及受 IK/FK 模式隔离的左右独立体积强度；完整角色总控层级尚未实现。
 - Skin Bind 案例使用代码生成的 72 顶点圆柱臂段和 2 个 Lower Arm twist helpers，覆盖预演、真实变形、重复绑定拦截、选择保持和单次 Undo；不代表自动权重质量、复杂角色拓扑或已有蒙皮迁移已经完成。
 - Skin Weight 案例在同类 72 顶点合成臂段上精确改写 3 个顶点，验证归一化结果、重复应用零修改、真实 twist 变形和单次 Undo 恢复原权重；尚未覆盖文件导入导出、批量网格或大规模权重性能。
 - Skin Weight I/O 案例导出同一合成臂段的全部 72 个顶点，改写 3 点后由带摘要的 JSON 恢复，覆盖拒绝覆盖文件、重复导入零修改、单次 Undo 和临时目录清理；未覆盖名称重映射、网络盘或大型角色性能。
@@ -154,4 +154,4 @@
 - provenance 只证明本工程写入的产物身份和声明数量；删除资格还必须通过当前 DAG 与外部连接安全评估，不能只凭标记直接删除。
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。
-- FK controls 与 RP IK controls 已通过双源 blend 输出到 Body，并完成控制显隐、含 stretch 段长传递的双向匹配、轴向 twist/volume helper、显式单网格 Skin Bind、稀疏顶点权重写入/镜像、JSON 往返和路径映射；尚未实现动画 bake、全局缩放补偿、自动 namespace/influence 推断、非对称空间配对或已有蒙皮迁移。
+- FK controls 与 RP IK controls 已通过双源 blend 输出到 Body，并完成控制显隐、含 stretch 段长传递的双向匹配、全局比例补偿、轴向 twist/volume helper、显式单网格 Skin Bind、稀疏顶点权重写入/镜像、JSON 往返和路径映射；尚未实现动画 bake、角色总控层级、自动 namespace/influence 推断、非对称空间配对或已有蒙皮迁移。

@@ -1,7 +1,7 @@
 {
   "host": "maya",
   "version": "2024",
-  "pid": 48108,
+  "pid": 28896,
   "slice": "body_arm_stretch",
   "stretch_side_count": true,
   "default_strength_one": true,
@@ -11,11 +11,18 @@
   "strength_zero_disables_stretch": true,
   "strength_half_blends_ratio": true,
   "left_side_isolated": true,
+  "global_scale_input_connectable": true,
+  "global_scale_avoids_false_stretch": true,
+  "compensated_volume_stays_one": true,
+  "scaled_character_can_still_stretch": true,
+  "scaled_stretch_updates_volume": true,
   "selection_preserved": true,
   "single_undo_removed_complete_arm_rig": true,
   "body_restored": true,
   "cleanup": true,
+  "global_scale": 1.35,
+  "scaled_stretch_ratio": 1.25,
   "remaining_nodes": [],
-  "duration_seconds": 3.126,
+  "duration_seconds": 4.006,
   "status": "passed"
 }

@@ -25,6 +25,7 @@ def stretch_side(side, suffix):
         f"|Wrist_{suffix}",
         f"Distance_{suffix}",
         f"Ratio_{suffix}",
+        f"RestScale_{suffix}",
         f"Clamp_{suffix}",
         f"StretchBlend_{suffix}",
         f"Segments_{suffix}",
@@ -60,6 +61,8 @@ class BodyArmVolumeTests(unittest.TestCase):
     def test_plans_bilateral_helper_scale_outputs(self):
         stretch = BodyArmStretchPlan(
             "|AdvPy_ArmSettings",
+            "armGlobalScale",
+            1.0,
             (
                 stretch_side(FitBuildSide.RIGHT, "R"),
                 stretch_side(FitBuildSide.LEFT, "L"),

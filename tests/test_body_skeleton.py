@@ -493,7 +493,11 @@ class FakeBodySkeletonHost:
                 (f"{spec.start_path}.worldMatrix[0]", f"{spec.wrist_control_path}.worldMatrix[0]"),
                 spec.ratio_name,
                 f"{spec.distance_name}.distance",
+                spec.rest_scale_name,
                 spec.rest_length,
+                f"{plan.settings_path}.{plan.global_scale_attribute}",
+                1,
+                f"{spec.rest_scale_name}.outputX",
                 2,
                 spec.clamp_name,
                 f"{spec.ratio_name}.outputX",
@@ -509,7 +513,12 @@ class FakeBodySkeletonHost:
                 (f"{spec.segment_name}.outputX", f"{spec.segment_name}.outputY"),
                 1,
             ))
-        self.arm_stretch_snapshot = BodyArmStretchSnapshot(plan.settings_path, tuple(states))
+        self.arm_stretch_snapshot = BodyArmStretchSnapshot(
+            plan.settings_path,
+            f"{plan.settings_path}.{plan.global_scale_attribute}",
+            plan.global_scale_default,
+            tuple(states),
+        )
 
     def capture_body_arm_stretch(self, plan):
         del plan

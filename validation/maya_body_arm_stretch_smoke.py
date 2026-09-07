@@ -88,6 +88,60 @@ def main(output: Path) -> int:
         )
 
         cmds.setAttr(attribute, 1.0)
+        scale_driver = cmds.createNode(
+            "transform",
+            name="PortableArmGlobalScaleDriver",
+            skipSelect=True,
+        )
+        global_scale_plug = (
+            f"{result.plan.stretch.settings_path}."
+            f"{result.plan.stretch.global_scale_attribute}"
+        )
+        cmds.connectAttr(f"{scale_driver}.scaleX", global_scale_plug)
+        global_scale = 1.35
+        cmds.setAttr(f"{scale_driver}.scaleX", global_scale)
+        cmds.xform(
+            spec.wrist_control_path,
+            worldSpace=True,
+            translation=target(global_scale),
+        )
+        compensated_values = tuple(
+            cmds.getAttr(f"{joint}.translateX") for joint in spec.segment_joints
+        )
+        compensated_ratio = float(cmds.getAttr(f"{spec.blend_name}.outputR"))
+        right_volume = next(
+            side
+            for side in result.plan.volume.sides
+            if side.side is FitBuildSide.RIGHT
+        )
+        compensated_volume = tuple(
+            cmds.getAttr(f"{helper}.scaleY")
+            for helper in right_volume.helper_joints
+        )
+        scaled_stretch_ratio = 1.25
+        cmds.xform(
+            spec.wrist_control_path,
+            worldSpace=True,
+            translation=target(global_scale * scaled_stretch_ratio),
+        )
+        scaled_stretch_values = tuple(
+            cmds.getAttr(f"{joint}.translateX") for joint in spec.segment_joints
+        )
+        scaled_volume = tuple(
+            cmds.getAttr(f"{helper}.scaleY")
+            for helper in right_volume.helper_joints
+        )
+        global_scale_connected = (
+            cmds.listConnections(
+                global_scale_plug,
+                source=True,
+                destination=False,
+                plugs=True,
+            )
+            or []
+        ) == [f"{scale_driver}.scaleX"]
+
+        cmds.setAttr(f"{scale_driver}.scaleX", 1.0)
         cmds.xform(spec.wrist_control_path, worldSpace=True, translation=wrist_initial)
         cmds.setAttr(blend_attribute, 0.0)
         cmds.undoInfo(stateWithoutFlush=True)
@@ -100,6 +154,22 @@ def main(output: Path) -> int:
             "strength_zero_disables_stretch": disabled,
             "strength_half_blends_ratio": half_stretch,
             "left_side_isolated": left_unchanged,
+            "global_scale_input_connectable": global_scale_connected,
+            "global_scale_avoids_false_stretch": near(compensated_ratio, 1.0) and all(
+                near(value, base)
+                for value, base in zip(compensated_values, spec.base_translations)
+            ),
+            "compensated_volume_stays_one": all(
+                near(value, 1.0) for value in compensated_volume
+            ),
+            "scaled_character_can_still_stretch": all(
+                near(value, base * scaled_stretch_ratio)
+                for value, base in zip(scaled_stretch_values, spec.base_translations)
+            ),
+            "scaled_stretch_updates_volume": all(
+                near(value, 1.0 / sqrt(scaled_stretch_ratio))
+                for value in scaled_volume
+            ),
             "selection_preserved": (cmds.ls(selection=True) or []) == [marker],
         }
         cmds.undo()
@@ -108,8 +178,8 @@ def main(output: Path) -> int:
             for path in ("|AdvPy_ArmMechanisms", "|AdvPy_ArmFKControls", "|AdvPy_ArmIKControls", "|AdvPy_ArmSettings")
         )
         checks["body_restored"] = skeleton_matches(body_before, host.capture_body_skeleton("Root_M"))
-        cmds.delete("|Root_M", container, marker)
-        remaining = cmds.ls("Root_M", "FitSkeleton", "AdvPy_Arm*", marker, long=True) or []
+        cmds.delete("|Root_M", container, marker, scale_driver)
+        remaining = cmds.ls("Root_M", "FitSkeleton", "AdvPy_Arm*", marker, scale_driver, long=True) or []
         checks["cleanup"] = not remaining
         passed = all(checks.values())
         payload = {
@@ -118,6 +188,8 @@ def main(output: Path) -> int:
             "pid": os.getpid(),
             "slice": "body_arm_stretch",
             **checks,
+            "global_scale": global_scale,
+            "scaled_stretch_ratio": scaled_stretch_ratio,
             "remaining_nodes": remaining,
             "duration_seconds": round(time.perf_counter() - started, 3),
             "status": "passed" if passed else "failed",

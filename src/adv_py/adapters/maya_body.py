@@ -527,9 +527,20 @@ class MayaBodyBuildHost(MayaFitJointHost):
         try:
             if not self._cmds.objExists(plan.settings_path):
                 raise FitSkeletonValidationError("Arm stretch 设置节点在执行前失效")
+            global_scale_plug = f"{plan.settings_path}.{plan.global_scale_attribute}"
+            if self._cmds.objExists(global_scale_plug):
+                raise FitSkeletonValidationError("Arm stretch 全局比例属性已存在")
             self._transaction_changed = True
+            self._cmds.addAttr(
+                plan.settings_path,
+                longName=plan.global_scale_attribute,
+                attributeType="double",
+                minValue=0.0001,
+                defaultValue=plan.global_scale_default,
+                keyable=True,
+            )
             for spec in plan.sides:
-                names = (spec.start_name, spec.distance_name, spec.ratio_name, spec.clamp_name, spec.blend_name, spec.segment_name)
+                names = (spec.start_name, spec.distance_name, spec.ratio_name, spec.rest_scale_name, spec.clamp_name, spec.blend_name, spec.segment_name)
                 if any(self.find_name_collisions(name) for name in names):
                     raise FitSkeletonValidationError("Arm stretch 输出名称冲突")
                 if any(not self._cmds.objExists(path) for path in (spec.wrist_control_path, *spec.segment_joints)):
@@ -545,6 +556,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     raise RuntimeError("Arm stretch 起点路径漂移")
                 distance = self._cmds.createNode("distanceBetween", name=spec.distance_name, skipSelect=True)
                 ratio = self._cmds.createNode("multiplyDivide", name=spec.ratio_name, skipSelect=True)
+                rest_scale = self._cmds.createNode("multiplyDivide", name=spec.rest_scale_name, skipSelect=True)
                 clamp = self._cmds.createNode("clamp", name=spec.clamp_name, skipSelect=True)
                 blend = self._cmds.createNode("blendColors", name=spec.blend_name, skipSelect=True)
                 segments = self._cmds.createNode("multiplyDivide", name=spec.segment_name, skipSelect=True)
@@ -552,7 +564,10 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 self._cmds.connectAttr(f"{spec.wrist_control_path}.worldMatrix[0]", f"{distance}.inMatrix2")
                 self._cmds.setAttr(f"{ratio}.operation", 2)
                 self._cmds.connectAttr(f"{distance}.distance", f"{ratio}.input1X")
-                self._cmds.setAttr(f"{ratio}.input2X", spec.rest_length)
+                self._cmds.setAttr(f"{rest_scale}.operation", 1)
+                self._cmds.setAttr(f"{rest_scale}.input1X", spec.rest_length)
+                self._cmds.connectAttr(global_scale_plug, f"{rest_scale}.input2X")
+                self._cmds.connectAttr(f"{rest_scale}.outputX", f"{ratio}.input2X")
                 self._cmds.setAttr(f"{clamp}.minR", 1.0)
                 self._cmds.setAttr(f"{clamp}.maxR", 1000000.0)
                 self._cmds.connectAttr(f"{ratio}.outputX", f"{clamp}.inputR")
@@ -586,12 +601,16 @@ class MayaBodyBuildHost(MayaFitJointHost):
         settings = (self._cmds.ls(plan.settings_path, long=True, type="transform") or [None])[0]
         if settings is None:
             raise FitSkeletonValidationError("Arm stretch 设置节点无效")
+        global_scale_plug = f"{settings}.{plan.global_scale_attribute}"
+        if not self._cmds.objExists(global_scale_plug):
+            raise FitSkeletonValidationError("Arm stretch 全局比例输入无效")
         states = []
         for spec in plan.sides:
             typed = (
                 (spec.start_path, "transform"),
                 (spec.distance_name, "distanceBetween"),
                 (spec.ratio_name, "multiplyDivide"),
+                (spec.rest_scale_name, "multiplyDivide"),
                 (spec.clamp_name, "clamp"),
                 (spec.blend_name, "blendColors"),
                 (spec.segment_name, "multiplyDivide"),
@@ -609,7 +628,11 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 (source(f"{spec.distance_name}.inMatrix1"), source(f"{spec.distance_name}.inMatrix2")),
                 spec.ratio_name,
                 source(f"{spec.ratio_name}.input1X"),
-                float(self._cmds.getAttr(f"{spec.ratio_name}.input2X")),
+                spec.rest_scale_name,
+                float(self._cmds.getAttr(f"{spec.rest_scale_name}.input1X")),
+                source(f"{spec.rest_scale_name}.input2X"),
+                int(self._cmds.getAttr(f"{spec.rest_scale_name}.operation")),
+                source(f"{spec.ratio_name}.input2X"),
                 int(self._cmds.getAttr(f"{spec.ratio_name}.operation")),
                 spec.clamp_name,
                 source(f"{spec.clamp_name}.inputR"),
@@ -625,7 +648,12 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 (source(f"{spec.segment_joints[0]}.translateX"), source(f"{spec.segment_joints[1]}.translateX")),
                 int(self._cmds.getAttr(f"{spec.segment_name}.operation")),
             ))
-        return BodyArmStretchSnapshot(settings, tuple(states))
+        return BodyArmStretchSnapshot(
+            settings,
+            global_scale_plug,
+            float(self._cmds.getAttr(global_scale_plug)),
+            tuple(states),
+        )
 
     def prepare_body_arm_twist_runtime(self) -> None:
         try:

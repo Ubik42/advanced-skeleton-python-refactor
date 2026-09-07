@@ -107,7 +107,7 @@ class BuildBodyArmRig:
             names.extend(j.translation_constraint_name for j in side.joints if j.translation_constraint_name)
         for spec in ik.limbs: names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name))
         for side in stretch.sides:
-            names.extend((side.start_name, side.distance_name, side.ratio_name, side.clamp_name, side.blend_name, side.segment_name))
+            names.extend((side.start_name, side.distance_name, side.ratio_name, side.rest_scale_name, side.clamp_name, side.blend_name, side.segment_name))
         names.append(twist.root_name)
         for spec in twist.segments:
             names.extend((spec.name, spec.constraint_name, spec.compose_name, spec.decompose_name, spec.quaternion_name))
