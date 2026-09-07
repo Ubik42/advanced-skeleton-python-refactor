@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成十八个 Maya-only 切片：FitSkeleton 标签、元数据、层级、容器、设置、模板、位置与朝向；单侧 Right 身体源；构建期 M/R/L 对称展开；以及 30 关节基础 Body skeleton 物化。当前 Body skeleton 尚未应用镜像行为朝向、控制器、IK/FK、蒙皮或产品 UI。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成十九个 Maya-only 切片：FitSkeleton 标签、元数据、层级、容器、设置、模板、位置与朝向；单侧 Right 身体源；构建期 M/R/L 对称展开；30 关节基础 Body skeleton 物化；以及镜像行为朝向写入。当前 Body skeleton 尚未加入控制器、IK/FK、蒙皮或产品 UI。
 
 ## 当前完成
 
@@ -27,6 +27,7 @@
 - `BuildOrientedFitTemplate` 把模板创建、真实场景计划复算与朝向提交组合成可复用的一次 Undo 用例；`BuildSyntheticBodySourceFit` 生成 18 关节的中心链与单侧 Right 臂/腿源拓扑。
 - `PlanFitSymmetry` 从完整 Fit 层级和镜像元数据生成 `_M/_R/_L` 构建实例。默认 18 个源关节展开为 30 个实例，`noMirror/noMirrorLeft` 沿父链继承，未标记的 Left 起始分支会在构建前拒绝。
 - `BuildBodySkeleton` 在全量名称与源标签预检后，把 30 个对称实例作为根级 Maya joint DAG 一次提交；构建后复检路径、父级、世界位置、Maya side、标签与中性朝向，并确认 Fit 源未改变。
+- `OrientBodySkeleton` 把 Fit 世界轴传递给 M/R 输出；L 输出反射 X Aim 与 Y Secondary 后用叉积重建右手 Z 轴。写入前检查完整 `jointOrient` 可写性，单事务写入后恢复全部世界位置，并复检拓扑、位置、朝向、Fit 输入和幂等性。
 - `EditFitJointPositions` 对显式关节提交本地位置 Patch，只写实际变化且可写的轴；锁定/驱动轴、Root 离中和无效层级会在批量事务前失败。
 - `OrientSimpleFitChain` 为唯一子级或显式选择的分支子级建立 X-Aim/Y-Secondary 朝向，自动选择与 Aim 正交的世界参考轴，并补偿 Maya 隐式产生的后代位置与全部直接子级 jointOrient 变化。
 - worldOrient 元数据会解析为带正负号的本地 Up/Forward 轴策略；不完整、同轴冲突或当前写入器尚不支持的组合会在 Undo 事务前停止。
@@ -62,9 +63,9 @@ py -3 -m unittest discover -s tests -v
 
 - Blender 约束目前只支持单 source 和 `maintain_offset=False`。
 - 控制器暂以 Maya transform / Blender Empty 表达，还没有可移植曲线形状。
-- 世界矩阵已经覆盖平移、骨骼朝向和本地 Y-roll；镜像当前覆盖 YZ 平面位置与拓扑展开，镜像行为朝向矩阵和非均匀缩放尚未进入合同。
+- 世界矩阵已经覆盖平移、骨骼朝向和本地 Y-roll；镜像合同已覆盖 YZ 平面位置、拓扑展开和右手行为朝向，非均匀缩放尚未进入合同。
 - 宿主事务提供确定性显式回滚，目前不依赖 Blender 后台模式下不稳定的全局 Undo Stack。
 - Blender 将 Bind 与 FK/IK 机制骨链放在独立 Armature，避免跨骨链 blend 驱动形成依赖环；该差异留在适配器内部。
 - 当前 IK/FK 是最小可运行合同，尚无镜像 limb、IK/FK 无缝匹配、拉伸和 twist。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya 主线已覆盖非破坏性 FitSkeleton、18 关节单侧 Right 身体源、30 实例 M/R/L 展开及 30 关节基础 Body skeleton 的单事务物化；镜像行为朝向、World Match、手指、控制器、IK/FK 和其他 Body Build 阶段仍待后续切片。
+- 当前 Maya 主线已覆盖非破坏性 FitSkeleton、18 关节单侧 Right 身体源、30 实例 M/R/L 展开、30 关节基础 Body skeleton 物化及镜像行为朝向；World Match、手指、控制器、IK/FK 和其他 Body Build 阶段仍待后续切片。

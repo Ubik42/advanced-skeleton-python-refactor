@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from adv_py.core.body_skeleton import (
+    BodyJointOrientationChange,
     BodyJointSpec,
     BodyJointState,
     BodySkeletonSnapshot,
@@ -87,6 +88,26 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 ) from error
             joint_orient = self._cmds.getAttr(f"{path}.jointOrient")[0]
             rotation = self._cmds.getAttr(f"{path}.rotate")[0]
+            matrix = self._cmds.xform(
+                path,
+                query=True,
+                worldSpace=True,
+                matrix=True,
+            )
+            world_axes = tuple(
+                self._normalized_vector(
+                    tuple(float(value) for value in matrix[index : index + 3])
+                )
+                for index in (0, 4, 8)
+            )
+            writable_axes = frozenset(
+                axis
+                for axis in ("x", "y", "z")
+                if self._cmds.getAttr(
+                    f"{path}.jointOrient{axis.upper()}",
+                    settable=True,
+                )
+            )
             states.append(
                 BodyJointState(
                     path=path,
@@ -97,6 +118,51 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     label=self.read_joint_label(path),
                     joint_orient=tuple(float(value) for value in joint_orient),
                     rotation=tuple(float(value) for value in rotation),
+                    world_axes=world_axes,
+                    writable_joint_orient_axes=writable_axes,
                 )
             )
         return BodySkeletonSnapshot(root, tuple(states))
+
+    def set_body_joint_world_axes(
+        self,
+        change: BodyJointOrientationChange,
+    ) -> None:
+        self._require_transaction()
+        matches = self._cmds.ls(change.joint, long=True, type="joint") or []
+        if len(matches) != 1 or matches[0] != change.joint:
+            raise FitSkeletonValidationError(
+                f"Body joint 在执行前失效：{change.joint}"
+            )
+        for axis in ("X", "Y", "Z"):
+            attribute = f"{matches[0]}.jointOrient{axis}"
+            if not self._cmds.getAttr(attribute, settable=True):
+                raise FitSkeletonValidationError(
+                    f"Body joint 朝向轴在执行前变为不可写：{attribute}"
+                )
+        self._transaction_changed = True
+        self._set_joint_world_axes(matches[0], change.desired_world_axes)
+
+    def set_body_joint_world_position(
+        self,
+        joint: str,
+        position: tuple[float, float, float],
+    ) -> None:
+        self._require_transaction()
+        matches = self._cmds.ls(joint, long=True, type="joint") or []
+        if len(matches) != 1 or matches[0] != joint:
+            raise FitSkeletonValidationError(
+                f"Body joint 在位置恢复前失效：{joint}"
+            )
+        for axis in ("x", "y", "z"):
+            attribute = f"{matches[0]}.t{axis}"
+            if not self._cmds.getAttr(attribute, settable=True):
+                raise FitSkeletonValidationError(
+                    f"Body joint 位置轴在执行前变为不可写：{attribute}"
+                )
+        self._transaction_changed = True
+        self._cmds.xform(
+            matches[0],
+            worldSpace=True,
+            translation=position,
+        )

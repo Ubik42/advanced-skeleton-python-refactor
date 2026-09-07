@@ -55,5 +55,8 @@ class PlanFitSymmetry:
             source.hierarchy,
             source.metadata,
             center_tolerance=center_tolerance,
+            world_axes_by_joint={
+                state.joint: state.world_axes for state in source.joints
+            },
         )
         return FitSymmetryPlan(source, settings, instances)

@@ -6,6 +6,12 @@ from .body_skeleton import (
     BodySkeletonHost,
     BuildBodySkeleton,
 )
+from .body_orientation import (
+    BodyOrientationHost,
+    BodyOrientationPlan,
+    BodyOrientationResult,
+    OrientBodySkeleton,
+)
 from .build_rig import BuildResult, BuildRig
 from .fit_container import (
     CreateFitSkeleton,
@@ -74,6 +80,9 @@ from .upper_body_fit import (
 )
 
 __all__ = [
+    "BodyOrientationHost",
+    "BodyOrientationPlan",
+    "BodyOrientationResult",
     "BodySkeletonBuildPlan",
     "BodySkeletonBuildResult",
     "BodySkeletonHost",
@@ -125,6 +134,7 @@ __all__ = [
     "JointLabelHost",
     "JointLabelResult",
     "OrientSimpleFitChain",
+    "OrientBodySkeleton",
     "OrientWorldFitJoints",
     "OrientedFitTemplateBuildPlan",
     "OrientedFitTemplateBuildResult",

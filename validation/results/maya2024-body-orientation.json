@@ -1,0 +1,23 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 22916,
+  "slice": "body_mirror_behavior_orientation",
+  "preview_did_not_modify_scene": true,
+  "planned_orientation_changes": 30,
+  "body_joint_count": 30,
+  "world_positions_preserved": true,
+  "rotate_channels_zero": true,
+  "left_frames_right_handed": true,
+  "scapula_behavior_mirrored": true,
+  "fit_source_preserved": true,
+  "selection_preserved": true,
+  "second_plan_idempotent": true,
+  "single_undo_restored_neutral_body": true,
+  "fit_source_survived_undo": true,
+  "unrelated_node_survived": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 3.927,
+  "status": "passed"
+}

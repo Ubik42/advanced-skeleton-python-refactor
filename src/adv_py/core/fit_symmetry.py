@@ -3,12 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from math import isfinite
+from typing import Mapping
 
 from .fit_hierarchy import FitHierarchySnapshot, audit_fit_hierarchy
 from .fit_metadata import FitJointMetadata, audit_fit_joint
 
 
 Vector3 = tuple[float, float, float]
+AxisFrame = tuple[Vector3, Vector3, Vector3]
+IDENTITY_FRAME: AxisFrame = (
+    (1.0, 0.0, 0.0),
+    (0.0, 1.0, 0.0),
+    (0.0, 0.0, 1.0),
+)
 
 
 class FitSymmetryValidationError(ValueError):
@@ -29,6 +36,7 @@ class FitSymmetryInstance:
     parent_output_path: str | None
     side: FitBuildSide
     world_position: Vector3
+    world_axes: AxisFrame
     mirrored: bool
 
 
@@ -37,6 +45,7 @@ def expand_fit_symmetry(
     metadata: tuple[FitJointMetadata, ...],
     *,
     center_tolerance: float = 0.01,
+    world_axes_by_joint: Mapping[str, AxisFrame] | None = None,
 ) -> tuple[FitSymmetryInstance, ...]:
     """Expand one center/right Fit source tree into M/R/L build instances."""
 
@@ -66,6 +75,15 @@ def expand_fit_symmetry(
             "Fit joint 镜像元数据无效："
             + "；".join(issue.message for issue in metadata_issues)
         )
+    if world_axes_by_joint is not None and set(world_axes_by_joint) != set(nodes):
+        raise FitSymmetryValidationError("镜像分析需要每个 Fit joint 的完整世界轴")
+    source_axes = {
+        path: _validated_frame(
+            world_axes_by_joint[path] if world_axes_by_joint is not None else IDENTITY_FRAME,
+            joint=path,
+        )
+        for path in nodes
+    }
 
     source_side: dict[str, FitBuildSide] = {}
     inherited_no_mirror: dict[str, bool] = {}
@@ -114,8 +132,10 @@ def expand_fit_symmetry(
                 side is FitBuildSide.RIGHT and target_side is FitBuildSide.LEFT
             )
             position = node.world_position
+            axes = source_axes[node.path]
             if mirrored:
                 position = (-position[0], position[1], position[2])
+                axes = mirror_behavior_axes_yz(axes)
             parent_output = None
             if parent is not None:
                 parent_target_side = target_side
@@ -137,7 +157,57 @@ def expand_fit_symmetry(
                     parent_output_path=parent_output,
                     side=target_side,
                     world_position=position,
+                    world_axes=axes,
                     mirrored=mirrored,
                 )
             )
     return tuple(instances)
+
+
+def mirror_behavior_axes_yz(axes: AxisFrame) -> AxisFrame:
+    """Reflect aim/secondary vectors across YZ and rebuild a right-handed Z."""
+
+    source = _validated_frame(axes, joint="镜像源")
+    aim = _normalize((-source[0][0], source[0][1], source[0][2]))
+    secondary = _normalize((-source[1][0], source[1][1], source[1][2]))
+    tertiary = _normalize(_cross(aim, secondary))
+    return (aim, secondary, tertiary)
+
+
+def _validated_frame(axes: AxisFrame, *, joint: str) -> AxisFrame:
+    if len(axes) != 3 or any(len(axis) != 3 for axis in axes):
+        raise FitSymmetryValidationError(f"{joint} 的世界轴必须是 3x3 向量")
+    normalized = tuple(_normalize(axis) for axis in axes)
+    if any(
+        abs(_dot(normalized[first], normalized[second])) > 1e-4
+        for first, second in ((0, 1), (0, 2), (1, 2))
+    ):
+        raise FitSymmetryValidationError(f"{joint} 的世界轴不正交")
+    if _dot(_cross(normalized[0], normalized[1]), normalized[2]) < 1.0 - 1e-4:
+        raise FitSymmetryValidationError(f"{joint} 的世界轴不是右手系")
+    return (normalized[0], normalized[1], normalized[2])
+
+
+def _normalize(vector: Vector3) -> Vector3:
+    if len(vector) != 3 or not all(isfinite(float(value)) for value in vector):
+        raise FitSymmetryValidationError("镜像世界轴包含无效向量")
+    length = sum(value * value for value in vector) ** 0.5
+    if length <= 1e-10:
+        raise FitSymmetryValidationError("镜像世界轴长度为零")
+    return (
+        vector[0] / length,
+        vector[1] / length,
+        vector[2] / length,
+    )
+
+
+def _dot(left: Vector3, right: Vector3) -> float:
+    return sum(a * b for a, b in zip(left, right))
+
+
+def _cross(left: Vector3, right: Vector3) -> Vector3:
+    return (
+        left[1] * right[2] - left[2] * right[1],
+        left[2] * right[0] - left[0] * right[2],
+        left[0] * right[1] - left[1] * right[0],
+    )

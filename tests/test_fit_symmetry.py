@@ -4,12 +4,15 @@ from dataclasses import replace
 from adv_py.application import PlanFitSymmetry
 from adv_py.core import (
     FitBuildSide,
+    FitJointOrientationState,
     FitJointMetadata,
     FitOrientationSnapshot,
     FitSymmetryValidationError,
     FitUpAxis,
+    IDENTITY_AXES,
     default_fit_skeleton_settings,
     expand_fit_symmetry,
+    mirror_behavior_axes_yz,
     predict_fit_template_hierarchy,
     synthetic_body_source_fit_template,
 )
@@ -30,7 +33,15 @@ class FakeSymmetryHost:
         self.snapshot = FitOrientationSnapshot(
             hierarchy,
             FitUpAxis.Z,
-            (),
+            tuple(
+                FitJointOrientationState(
+                    node.path,
+                    (0.0, 0.0, 0.0),
+                    (0.0, 0.0, 0.0),
+                    IDENTITY_AXES,
+                )
+                for node in hierarchy.joints
+            ),
             metadata,
         )
         self.settings = default_fit_skeleton_settings(hierarchy.container)
@@ -47,6 +58,25 @@ class FakeSymmetryHost:
 
 
 class FitSymmetryTests(unittest.TestCase):
+    def test_reflects_aim_and_secondary_then_rebuilds_right_handed_z(self):
+        source = (
+            (0.8, 0.6, 0.0),
+            (-0.6, 0.8, 0.0),
+            (0.0, 0.0, 1.0),
+        )
+
+        mirrored = mirror_behavior_axes_yz(source)
+
+        self.assertEqual(mirrored[0], (-0.8, 0.6, 0.0))
+        self.assertEqual(mirrored[1], (0.6, 0.8, 0.0))
+        self.assertAlmostEqual(mirrored[2][2], -1.0)
+        cross = (
+            mirrored[0][1] * mirrored[1][2] - mirrored[0][2] * mirrored[1][1],
+            mirrored[0][2] * mirrored[1][0] - mirrored[0][0] * mirrored[1][2],
+            mirrored[0][0] * mirrored[1][1] - mirrored[0][1] * mirrored[1][0],
+        )
+        self.assertEqual(cross, mirrored[2])
+
     def test_expands_center_and_right_sources_into_m_r_l_topology(self):
         hierarchy, metadata = source_snapshot()
 

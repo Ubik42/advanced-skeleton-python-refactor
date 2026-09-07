@@ -1,11 +1,15 @@
 """DCC-neutral rig description and validation."""
 
 from .body_skeleton import (
+    BodyJointOrientationChange,
     BodyJointSpec,
     BodyJointState,
     BodySkeletonIssue,
     BodySkeletonSnapshot,
+    BodySkeletonValidationError,
     audit_body_skeleton,
+    body_orientation_matches,
+    plan_body_joint_orientations,
 )
 from .fit_container import (
     LOCKED_FIT_CHANNELS,
@@ -74,6 +78,7 @@ from .fit_symmetry import (
     FitSymmetryInstance,
     FitSymmetryValidationError,
     expand_fit_symmetry,
+    mirror_behavior_axes_yz,
 )
 from .fit_position import (
     FitJointPositionChange,
@@ -114,9 +119,11 @@ from .validation import PlanValidationError, validate_plan
 
 __all__ = [
     "BodyJointSpec",
+    "BodyJointOrientationChange",
     "BodyJointState",
     "BodySkeletonIssue",
     "BodySkeletonSnapshot",
+    "BodySkeletonValidationError",
     "ConstraintSpec",
     "FitContainerDisplayStyle",
     "FitContainerIssue",
@@ -176,6 +183,7 @@ __all__ = [
     "TRANSLATION_AXES",
     "almost_equal",
     "audit_body_skeleton",
+    "body_orientation_matches",
     "audit_fit_hierarchy",
     "audit_fit_container",
     "audit_fit_joint",
@@ -188,10 +196,12 @@ __all__ = [
     "matrix44",
     "minimal_body_fit_template",
     "multiply",
+    "mirror_behavior_axes_yz",
     "orientation_matches",
     "parse_world_orientation_policy",
     "parse_fit_axis_direction",
     "plan_fit_joint_position_changes",
+    "plan_body_joint_orientations",
     "plan_simple_fit_orientations",
     "plan_world_fit_orientations",
     "ordered_fit_joints",
