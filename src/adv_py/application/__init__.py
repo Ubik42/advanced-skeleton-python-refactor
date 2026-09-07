@@ -24,6 +24,12 @@ from .body_arm_fk_to_ik import (
     BodyArmFkToIkResult,
     MatchBodyArmFkToIk,
 )
+from .body_arm_ik_to_fk import (
+    BodyArmIkToFkBuildPlan,
+    BodyArmIkToFkHost,
+    BodyArmIkToFkResult,
+    MatchBodyArmIkToFk,
+)
 from .body_arm_ik import (
     BodyArmIkBuildPlan,
     BodyArmIkBuildResult,
@@ -155,6 +161,9 @@ __all__ = [
     "BodyArmFkToIkBuildPlan",
     "BodyArmFkToIkHost",
     "BodyArmFkToIkResult",
+    "BodyArmIkToFkBuildPlan",
+    "BodyArmIkToFkHost",
+    "BodyArmIkToFkResult",
     "BodyOrientationHost",
     "BodyOrientationPlan",
     "BodyOrientationResult",
@@ -178,6 +187,7 @@ __all__ = [
     "BuildBodyArmFkControls",
     "BuildBodyArmFkMechanismControls",
     "MatchBodyArmFkToIk",
+    "MatchBodyArmIkToFk",
     "BuildOrientedBodySkeleton",
     "BuildOrientedFitTemplate",
     "BuildSyntheticBodySourceFit",

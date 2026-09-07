@@ -159,6 +159,7 @@ def audit_body_arm_fk_controls(
     snapshot: BodyArmFkControlSnapshot,
     *,
     tolerance: float = 1e-4,
+    check_initial_pose: bool = True,
 ) -> tuple[BodyControlIssue, ...]:
     issues: list[BodyControlIssue] = []
     if snapshot.root_path != plan.root_path:
@@ -199,25 +200,26 @@ def audit_body_arm_fk_controls(
             issues.append(
                 BodyControlIssue("control_shape_mismatch", "FK 控制缺少 NURBS 曲线", path)
             )
-        if not _vector_matches(state.world_position, spec.world_position, tolerance):
-            issues.append(
-                BodyControlIssue("control_position_mismatch", "FK 控制世界位置不一致", path)
-            )
-        if any(
-            not _vector_matches(current, wanted, tolerance)
-            for current, wanted in zip(state.world_axes, spec.world_axes)
-        ):
-            issues.append(
-                BodyControlIssue("control_axes_mismatch", "FK 控制世界轴不一致", path)
-            )
-        if not _vector_matches(state.local_translation, (0.0, 0.0, 0.0), tolerance):
-            issues.append(
-                BodyControlIssue("nonzero_control_translation", "FK 控制 translate 未归零", path)
-            )
-        if not _vector_matches(state.local_rotation, (0.0, 0.0, 0.0), tolerance):
-            issues.append(
-                BodyControlIssue("nonzero_control_rotation", "FK 控制 rotate 未归零", path)
-            )
+        if check_initial_pose:
+            if not _vector_matches(state.world_position, spec.world_position, tolerance):
+                issues.append(
+                    BodyControlIssue("control_position_mismatch", "FK 控制世界位置不一致", path)
+                )
+            if any(
+                not _vector_matches(current, wanted, tolerance)
+                for current, wanted in zip(state.world_axes, spec.world_axes)
+            ):
+                issues.append(
+                    BodyControlIssue("control_axes_mismatch", "FK 控制世界轴不一致", path)
+                )
+            if not _vector_matches(state.local_translation, (0.0, 0.0, 0.0), tolerance):
+                issues.append(
+                    BodyControlIssue("nonzero_control_translation", "FK 控制 translate 未归零", path)
+                )
+            if not _vector_matches(state.local_rotation, (0.0, 0.0, 0.0), tolerance):
+                issues.append(
+                    BodyControlIssue("nonzero_control_rotation", "FK 控制 rotate 未归零", path)
+                )
     return tuple(issues)
 
 
