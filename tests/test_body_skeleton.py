@@ -6,6 +6,7 @@ from adv_py.application import (
     BuildBodyArmMechanisms,
     BuildBodyArmFkControls,
     BuildBodyArmFkMechanismControls,
+    BuildBodyArmIkControls,
     BuildBodySkeleton,
     BuildOrientedBodySkeleton,
     InspectBodyRebuildSafety,
@@ -16,6 +17,8 @@ from adv_py.application import (
 from adv_py.core import (
     BodyArmMechanismJointState,
     BodyArmMechanismSnapshot,
+    BodyArmIkSnapshot,
+    BodyArmIkState,
     IDENTITY_AXES,
     BodyJointState,
     BodyExternalDependency,
@@ -48,6 +51,7 @@ class FakeBodySkeletonHost:
         faulty_provenance=False,
         faulty_arm_fk=False,
         faulty_arm_mechanisms=False,
+        faulty_arm_ik=False,
     ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
         hierarchy = predict_fit_template_hierarchy(template, "|FitSkeleton")
@@ -102,6 +106,9 @@ class FakeBodySkeletonHost:
         self.mechanism_root = None
         self.arm_mechanism_states = []
         self.faulty_arm_mechanisms = faulty_arm_mechanisms
+        self.arm_ik_root = None
+        self.arm_ik_states = []
+        self.faulty_arm_ik = faulty_arm_ik
 
     def capture_fit_orientation(self, container_name):
         del container_name
@@ -132,6 +139,8 @@ class FakeBodySkeletonHost:
         for state in self.arm_mechanism_states:
             if state.path.rsplit("|", 1)[-1] == name:
                 existing_controls.append(state.path)
+        if self.arm_ik_root and self.arm_ik_root.rsplit("|", 1)[-1] == name:
+            existing_controls.append(self.arm_ik_root)
         return (
             tuple(self.collisions.get(name, ()))
             + existing_body
@@ -147,6 +156,8 @@ class FakeBodySkeletonHost:
         before_arm_fk_states = list(self.arm_fk_states)
         before_mechanism_root = self.mechanism_root
         before_arm_mechanism_states = list(self.arm_mechanism_states)
+        before_arm_ik_root = self.arm_ik_root
+        before_arm_ik_states = list(self.arm_ik_states)
         self.transaction_count += 1
         self.in_transaction = True
         try:
@@ -158,6 +169,8 @@ class FakeBodySkeletonHost:
             self.arm_fk_states = before_arm_fk_states
             self.mechanism_root = before_mechanism_root
             self.arm_mechanism_states = before_arm_mechanism_states
+            self.arm_ik_root = before_arm_ik_root
+            self.arm_ik_states = before_arm_ik_states
             raise
         finally:
             self.in_transaction = False
@@ -286,6 +299,27 @@ class FakeBodySkeletonHost:
         if self.faulty_arm_mechanisms and states:
             states = (replace(states[0], source_joint=None),) + states[1:]
         return BodyArmMechanismSnapshot(self.mechanism_root, states)
+
+    def create_body_arm_ik_root(self, name):
+        self.arm_ik_root = f"|{name}"
+        return self.arm_ik_root
+
+    def create_body_arm_ik(self, spec):
+        self.arm_ik_states.append(BodyArmIkState(
+            spec.side, spec.wrist_control_path, spec.wrist_offset_path,
+            spec.pole_control_path, spec.pole_offset_path, spec.handle_name,
+            spec.pole_constraint_name, spec.wrist_control_path, spec.chain[:2],
+            spec.pole_control_path, spec.wrist_position, spec.pole_position,
+            "nurbsCurve", "nurbsCurve", (0.0, 0.0, 0.0), (0.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0), (0.0, 0.0, 0.0),
+        ))
+
+    def capture_body_arm_ik(self, plan):
+        del plan
+        states = tuple(self.arm_ik_states)
+        if self.faulty_arm_ik and states:
+            states = (replace(states[0], pole_source=None),) + states[1:]
+        return BodyArmIkSnapshot(self.arm_ik_root, states)
 
 
 class BodySkeletonTests(unittest.TestCase):
@@ -640,6 +674,37 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 3)
         self.assertIsNone(host.control_root)
         self.assertFalse(host.arm_fk_states)
+
+    def test_builds_bilateral_rp_ik_controls_on_ik_mechanisms(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyArmMechanisms(host).apply()
+
+        preview = BuildBodyArmIkControls(host).plan()
+        result = BuildBodyArmIkControls(host).apply()
+
+        self.assertTrue(preview.ready)
+        self.assertEqual(len(result.snapshot.limbs), 2)
+        self.assertEqual(host.transaction_count, 3)
+        self.assertTrue(all("IKDriver" in path for state in result.snapshot.limbs for path in state.joint_list))
+
+    def test_arm_ik_collision_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyArmMechanisms(host).apply()
+        host.collisions["AdvPy_ArmIK_R"] = ("|User|AdvPy_ArmIK_R",)
+        with self.assertRaisesRegex(FitSkeletonValidationError, "同名"):
+            BuildBodyArmIkControls(host).apply()
+        self.assertEqual(host.transaction_count, 2)
+
+    def test_arm_ik_postcheck_failure_rolls_back(self):
+        host = FakeBodySkeletonHost(faulty_arm_ik=True)
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyArmMechanisms(host).apply()
+        with self.assertRaisesRegex(RuntimeError, "复检失败"):
+            BuildBodyArmIkControls(host).apply()
+        self.assertEqual(host.transaction_count, 3)
+        self.assertIsNone(host.arm_ik_root)
 
 
 if __name__ == "__main__":

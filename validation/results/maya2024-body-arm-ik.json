@@ -1,0 +1,21 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 17480,
+  "slice": "body_bilateral_rp_ik_controls",
+  "preview_ready": true,
+  "preview_clean": true,
+  "two_sides": true,
+  "selection_preserved": true,
+  "ik_target_reached": true,
+  "body_isolated": true,
+  "single_undo_removed_ik": true,
+  "mechanisms_survived_ik_undo": true,
+  "body_survived": true,
+  "fit_survived": true,
+  "second_undo_removed_mechanisms": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 9.308,
+  "status": "passed"
+}
