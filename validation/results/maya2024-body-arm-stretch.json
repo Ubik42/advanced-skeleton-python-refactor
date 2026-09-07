@@ -1,0 +1,21 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 48108,
+  "slice": "body_arm_stretch",
+  "stretch_side_count": true,
+  "default_strength_one": true,
+  "no_compression_inside_rest_length": true,
+  "full_stretch_ratio": true,
+  "stretched_wrist_reaches_target": true,
+  "strength_zero_disables_stretch": true,
+  "strength_half_blends_ratio": true,
+  "left_side_isolated": true,
+  "selection_preserved": true,
+  "single_undo_removed_complete_arm_rig": true,
+  "body_restored": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 3.126,
+  "status": "passed"
+}

@@ -7,6 +7,7 @@ from typing import Protocol
 from adv_py.core.body_arm_blend import BodyArmBlendPlan, BodyArmBlendSnapshot, audit_body_arm_blend, plan_body_arm_blend
 from adv_py.core.body_arm_ik import BodyArmIkPlan, BodyArmIkSnapshot, BodyArmIkSpec, audit_body_arm_ik, plan_body_arm_ik
 from adv_py.core.body_arm_visibility import BodyArmVisibilityPlan, BodyArmVisibilitySnapshot, audit_body_arm_visibility, plan_body_arm_visibility
+from adv_py.core.body_arm_stretch import BodyArmStretchPlan, BodyArmStretchSnapshot, audit_body_arm_stretch, plan_body_arm_stretch
 from adv_py.core.body_arm_mechanisms import BodyArmMechanismJointSpec, BodyArmMechanismPlan, BodyArmMechanismRole, BodyArmMechanismSnapshot, audit_body_arm_mechanisms, plan_body_arm_mechanisms
 from adv_py.core.body_controls import BodyArmFkControlPlan, BodyArmFkControlSnapshot, BodyArmFkControlSpec, audit_body_arm_fk_controls, plan_body_arm_fk_controls
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
@@ -30,6 +31,8 @@ class BodyArmRigHost(BodyRebuildInspectionHost, Protocol):
     def capture_body_arm_ik(self, plan: BodyArmIkPlan) -> BodyArmIkSnapshot: ...
     def create_body_arm_visibility(self, plan: BodyArmVisibilityPlan) -> None: ...
     def capture_body_arm_visibility(self, plan: BodyArmVisibilityPlan) -> BodyArmVisibilitySnapshot: ...
+    def create_body_arm_stretch(self, plan: BodyArmStretchPlan) -> None: ...
+    def capture_body_arm_stretch(self, plan: BodyArmStretchPlan) -> BodyArmStretchSnapshot: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +43,7 @@ class BodyArmRigBuildPlan:
     blend: BodyArmBlendPlan
     ik: BodyArmIkPlan
     visibility: BodyArmVisibilityPlan
+    stretch: BodyArmStretchPlan
     name_collisions: tuple[str, ...]
 
     @property
@@ -62,6 +66,7 @@ class BodyArmRigBuildResult:
     blend: BodyArmBlendSnapshot
     ik: BodyArmIkSnapshot
     visibility: BodyArmVisibilitySnapshot
+    stretch: BodyArmStretchSnapshot
     body: BodySkeletonSnapshot
 
 
@@ -77,6 +82,7 @@ class BuildBodyArmRig:
         blend = plan_body_arm_blend(safety.body, mechanisms)
         ik = plan_body_arm_ik(safety.body, mechanisms, radius=control_radius, pole_distance_scale=pole_distance_scale)
         visibility = plan_body_arm_visibility(fk_controls, ik, blend)
+        stretch = plan_body_arm_stretch(mechanisms, ik)
         names = [mechanisms.root_name, fk_controls.root_name, blend.settings_name, ik.root_name]
         names.extend(spec.name for spec in mechanisms.joints)
         for spec in fk_controls.controls: names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
@@ -85,8 +91,10 @@ class BuildBodyArmRig:
             names.extend(j.constraint_name for j in side.joints)
             names.extend(j.translation_constraint_name for j in side.joints if j.translation_constraint_name)
         for spec in ik.limbs: names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name))
+        for side in stretch.sides:
+            names.extend((side.start_name, side.distance_name, side.ratio_name, side.clamp_name, side.blend_name, side.segment_name))
         collisions = tuple(sorted({path for name in names for path in self._host.find_name_collisions(name)}))
-        return BodyArmRigBuildPlan(safety, mechanisms, fk_controls, blend, ik, visibility, collisions)
+        return BodyArmRigBuildPlan(safety, mechanisms, fk_controls, blend, ik, visibility, stretch, collisions)
 
     def apply(self, container_name="FitSkeleton", *, body_root_name="Root_M", control_radius=1.5, pole_distance_scale=0.75, center_tolerance=0.01) -> BodyArmRigBuildResult:
         plan = self.plan(container_name, body_root_name=body_root_name, control_radius=control_radius, pole_distance_scale=pole_distance_scale, center_tolerance=center_tolerance)
@@ -109,12 +117,17 @@ class BuildBodyArmRig:
             self._host.create_body_arm_visibility(plan.visibility)
             visibility = self._host.capture_body_arm_visibility(plan.visibility)
             if audit_body_arm_visibility(plan.visibility, visibility): raise RuntimeError("Arm 控制显隐阶段复检失败")
+            self._host.create_body_arm_stretch(plan.stretch)
+            stretch = self._host.capture_body_arm_stretch(plan.stretch)
+            stretch_issues = audit_body_arm_stretch(plan.stretch, stretch)
+            if stretch_issues:
+                raise RuntimeError("Arm stretch 阶段复检失败：" + "；".join(issue.message for issue in stretch_issues))
             body = self._host.capture_body_skeleton(body_root_name)
             if not _body_bind_pose_matches(plan.safety.body, body):
                 raise RuntimeError("Arm Rig 绑定姿态下 Body 发生变化")
             container = plan.safety.symmetry.source.hierarchy.container
             if self._host.capture_fit_orientation(container) != plan.safety.symmetry.source or self._host.read_fit_skeleton_settings(container) != plan.safety.symmetry.settings: raise RuntimeError("Arm Rig 构建后 Fit 输入变化")
-        return BodyArmRigBuildResult(plan, mechanisms, fk, blend, ik, visibility, body)
+        return BodyArmRigBuildResult(plan, mechanisms, fk, blend, ik, visibility, stretch, body)
 
 
 def _body_bind_pose_matches(expected: BodySkeletonSnapshot, actual: BodySkeletonSnapshot) -> bool:

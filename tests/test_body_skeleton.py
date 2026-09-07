@@ -30,6 +30,8 @@ from adv_py.core import (
     BodyArmVisibilitySnapshot,
     BodyArmFkToIkSceneState,
     BodyArmIkToFkSceneState,
+    BodyArmStretchSideState,
+    BodyArmStretchSnapshot,
     IDENTITY_AXES,
     BodyJointState,
     BodyExternalDependency,
@@ -68,6 +70,7 @@ class FakeBodySkeletonHost:
         faulty_arm_visibility=False,
         faulty_arm_match=False,
         faulty_arm_translation=False,
+        faulty_arm_stretch=False,
     ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
         hierarchy = predict_fit_template_hierarchy(template, "|FitSkeleton")
@@ -132,6 +135,8 @@ class FakeBodySkeletonHost:
         self.faulty_arm_match = faulty_arm_match
         self.arm_match_applied = False
         self.faulty_arm_translation = faulty_arm_translation
+        self.arm_stretch_snapshot = None
+        self.faulty_arm_stretch = faulty_arm_stretch
 
     def capture_fit_orientation(self, container_name):
         del container_name
@@ -184,6 +189,7 @@ class FakeBodySkeletonHost:
         before_arm_blend_snapshot = self.arm_blend_snapshot
         before_arm_visibility_snapshot = self.arm_visibility_snapshot
         before_arm_match_applied = self.arm_match_applied
+        before_arm_stretch_snapshot = self.arm_stretch_snapshot
         self.transaction_count += 1
         self.in_transaction = True
         try:
@@ -200,6 +206,7 @@ class FakeBodySkeletonHost:
             self.arm_blend_snapshot = before_arm_blend_snapshot
             self.arm_visibility_snapshot = before_arm_visibility_snapshot
             self.arm_match_applied = before_arm_match_applied
+            self.arm_stretch_snapshot = before_arm_stretch_snapshot
             raise
         finally:
             self.in_transaction = False
@@ -430,6 +437,45 @@ class FakeBodySkeletonHost:
             for side in self.arm_blend_snapshot.sides
         )
         self.arm_blend_snapshot = replace(self.arm_blend_snapshot, sides=sides)
+
+    def create_body_arm_stretch(self, plan):
+        states = []
+        for spec in plan.sides:
+            plug = f"{plan.settings_path}.{spec.attribute}"
+            states.append(BodyArmStretchSideState(
+                spec.side,
+                plug,
+                1.0,
+                spec.start_path,
+                spec.start_position,
+                spec.distance_name,
+                (f"{spec.start_path}.worldMatrix[0]", f"{spec.wrist_control_path}.worldMatrix[0]"),
+                spec.ratio_name,
+                f"{spec.distance_name}.distance",
+                spec.rest_length,
+                2,
+                spec.clamp_name,
+                f"{spec.ratio_name}.outputX",
+                1.0,
+                1000000.0,
+                spec.blend_name,
+                f"{spec.clamp_name}.outputR",
+                plug,
+                1.0,
+                spec.segment_name,
+                spec.base_translations,
+                (f"{spec.blend_name}.outputR", f"{spec.blend_name}.outputR"),
+                (f"{spec.segment_name}.outputX", f"{spec.segment_name}.outputY"),
+                1,
+            ))
+        self.arm_stretch_snapshot = BodyArmStretchSnapshot(plan.settings_path, tuple(states))
+
+    def capture_body_arm_stretch(self, plan):
+        del plan
+        if self.faulty_arm_stretch and self.arm_stretch_snapshot:
+            first = replace(self.arm_stretch_snapshot.sides[0], clamp_input_source=None)
+            return replace(self.arm_stretch_snapshot, sides=(first,) + self.arm_stretch_snapshot.sides[1:])
+        return self.arm_stretch_snapshot
 
 
 class BodySkeletonTests(unittest.TestCase):
@@ -851,6 +897,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.fk_controls.controls), 6)
         self.assertEqual(len(result.ik.limbs), 2)
         self.assertEqual(sum(joint.translation_constraint_name is not None for side in result.blend.sides for joint in side.joints), 4)
+        self.assertEqual(len(result.stretch.sides), 2)
         self.assertEqual(len(result.visibility.sides), 2)
         self.assertTrue(all(side.fk_visibility_source.endswith(".outputX") for side in result.visibility.sides))
         self.assertEqual(result.body, body)
@@ -875,6 +922,18 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertIsNone(host.arm_blend_snapshot)
         self.assertIsNone(host.arm_ik_root)
         self.assertIsNone(host.arm_visibility_snapshot)
+
+    def test_complete_arm_rig_stretch_failure_rolls_back_every_stage(self):
+        host = FakeBodySkeletonHost(faulty_arm_stretch=True)
+        BuildOrientedBodySkeleton(host).apply()
+        with self.assertRaisesRegex(RuntimeError, "stretch 阶段"):
+            BuildBodyArmRig(host).apply()
+        self.assertIsNone(host.mechanism_root)
+        self.assertIsNone(host.control_root)
+        self.assertIsNone(host.arm_blend_snapshot)
+        self.assertIsNone(host.arm_ik_root)
+        self.assertIsNone(host.arm_visibility_snapshot)
+        self.assertIsNone(host.arm_stretch_snapshot)
 
     def test_matches_right_arm_fk_to_ik_in_one_transaction(self):
         host = FakeBodySkeletonHost()

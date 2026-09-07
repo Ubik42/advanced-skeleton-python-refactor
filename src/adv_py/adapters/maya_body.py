@@ -29,6 +29,11 @@ from adv_py.core.body_arm_match import (
     BodyArmIkToFkPlan,
     BodyArmIkToFkSceneState,
 )
+from adv_py.core.body_arm_stretch import (
+    BodyArmStretchPlan,
+    BodyArmStretchSideState,
+    BodyArmStretchSnapshot,
+)
 from adv_py.core.body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -484,6 +489,112 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 )
             )
         return BodyArmVisibilitySnapshot(tuple(states))
+
+    def create_body_arm_stretch(self, plan: BodyArmStretchPlan) -> None:
+        self._require_transaction()
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            if not self._cmds.objExists(plan.settings_path):
+                raise FitSkeletonValidationError("Arm stretch 设置节点在执行前失效")
+            self._transaction_changed = True
+            for spec in plan.sides:
+                names = (spec.start_name, spec.distance_name, spec.ratio_name, spec.clamp_name, spec.blend_name, spec.segment_name)
+                if any(self.find_name_collisions(name) for name in names):
+                    raise FitSkeletonValidationError("Arm stretch 输出名称冲突")
+                if any(not self._cmds.objExists(path) for path in (spec.wrist_control_path, *spec.segment_joints)):
+                    raise FitSkeletonValidationError("Arm stretch 控制或 IK mechanism 在执行前失效")
+                plug = f"{plan.settings_path}.{spec.attribute}"
+                if self._cmds.objExists(plug):
+                    raise FitSkeletonValidationError("Arm stretch 属性已存在")
+                self._cmds.addAttr(plan.settings_path, longName=spec.attribute, attributeType="double", minValue=0.0, maxValue=1.0, defaultValue=1.0, keyable=True)
+                start = self._cmds.createNode("transform", name=spec.start_name, parent="|AdvPy_ArmMechanisms", skipSelect=True)
+                start = (self._cmds.ls(start, long=True) or [start])[0]
+                self._cmds.xform(start, worldSpace=True, translation=spec.start_position)
+                if start != spec.start_path:
+                    raise RuntimeError("Arm stretch 起点路径漂移")
+                distance = self._cmds.createNode("distanceBetween", name=spec.distance_name, skipSelect=True)
+                ratio = self._cmds.createNode("multiplyDivide", name=spec.ratio_name, skipSelect=True)
+                clamp = self._cmds.createNode("clamp", name=spec.clamp_name, skipSelect=True)
+                blend = self._cmds.createNode("blendColors", name=spec.blend_name, skipSelect=True)
+                segments = self._cmds.createNode("multiplyDivide", name=spec.segment_name, skipSelect=True)
+                self._cmds.connectAttr(f"{start}.worldMatrix[0]", f"{distance}.inMatrix1")
+                self._cmds.connectAttr(f"{spec.wrist_control_path}.worldMatrix[0]", f"{distance}.inMatrix2")
+                self._cmds.setAttr(f"{ratio}.operation", 2)
+                self._cmds.connectAttr(f"{distance}.distance", f"{ratio}.input1X")
+                self._cmds.setAttr(f"{ratio}.input2X", spec.rest_length)
+                self._cmds.setAttr(f"{clamp}.minR", 1.0)
+                self._cmds.setAttr(f"{clamp}.maxR", 1000000.0)
+                self._cmds.connectAttr(f"{ratio}.outputX", f"{clamp}.inputR")
+                self._cmds.connectAttr(f"{clamp}.outputR", f"{blend}.color1R")
+                self._cmds.setAttr(f"{blend}.color2R", 1.0)
+                self._cmds.connectAttr(plug, f"{blend}.blender")
+                self._cmds.setAttr(f"{segments}.operation", 1)
+                self._cmds.setAttr(f"{segments}.input1X", spec.base_translations[0])
+                self._cmds.setAttr(f"{segments}.input1Y", spec.base_translations[1])
+                self._cmds.connectAttr(f"{blend}.outputR", f"{segments}.input2X")
+                self._cmds.connectAttr(f"{blend}.outputR", f"{segments}.input2Y")
+                self._cmds.connectAttr(f"{segments}.outputX", f"{spec.segment_joints[0]}.translateX")
+                self._cmds.connectAttr(f"{segments}.outputY", f"{spec.segment_joints[1]}.translateX")
+        finally:
+            self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
+
+    def capture_body_arm_stretch(self, plan: BodyArmStretchPlan) -> BodyArmStretchSnapshot:
+        def source(plug: str) -> str | None:
+            values = self._cmds.listConnections(plug, source=True, destination=False, plugs=True) or []
+            if len(values) != 1:
+                return None
+            value = values[0]
+            if "." not in value:
+                return value
+            node, attribute = value.split(".", 1)
+            if attribute == "worldMatrix":
+                attribute = "worldMatrix[0]"
+            nodes = self._cmds.ls(node, long=True) or [node]
+            return f"{nodes[0]}.{attribute}"
+
+        settings = (self._cmds.ls(plan.settings_path, long=True, type="transform") or [None])[0]
+        if settings is None:
+            raise FitSkeletonValidationError("Arm stretch 设置节点无效")
+        states = []
+        for spec in plan.sides:
+            typed = (
+                (spec.start_path, "transform"),
+                (spec.distance_name, "distanceBetween"),
+                (spec.ratio_name, "multiplyDivide"),
+                (spec.clamp_name, "clamp"),
+                (spec.blend_name, "blendColors"),
+                (spec.segment_name, "multiplyDivide"),
+            )
+            if any(len(self._cmds.ls(name, type=node_type) or []) != 1 for name, node_type in typed):
+                raise FitSkeletonValidationError("Arm stretch 节点集合无效")
+            plug = f"{settings}.{spec.attribute}"
+            states.append(BodyArmStretchSideState(
+                spec.side,
+                plug,
+                float(self._cmds.getAttr(plug)),
+                spec.start_path,
+                tuple(float(value) for value in self._cmds.xform(spec.start_path, query=True, worldSpace=True, translation=True)),
+                spec.distance_name,
+                (source(f"{spec.distance_name}.inMatrix1"), source(f"{spec.distance_name}.inMatrix2")),
+                spec.ratio_name,
+                source(f"{spec.ratio_name}.input1X"),
+                float(self._cmds.getAttr(f"{spec.ratio_name}.input2X")),
+                int(self._cmds.getAttr(f"{spec.ratio_name}.operation")),
+                spec.clamp_name,
+                source(f"{spec.clamp_name}.inputR"),
+                float(self._cmds.getAttr(f"{spec.clamp_name}.minR")),
+                float(self._cmds.getAttr(f"{spec.clamp_name}.maxR")),
+                spec.blend_name,
+                source(f"{spec.blend_name}.color1R"),
+                source(f"{spec.blend_name}.blender"),
+                float(self._cmds.getAttr(f"{spec.blend_name}.color2R")),
+                spec.segment_name,
+                (float(self._cmds.getAttr(f"{spec.segment_name}.input1X")), float(self._cmds.getAttr(f"{spec.segment_name}.input1Y"))),
+                (source(f"{spec.segment_name}.input2X"), source(f"{spec.segment_name}.input2Y")),
+                (source(f"{spec.segment_joints[0]}.translateX"), source(f"{spec.segment_joints[1]}.translateX")),
+                int(self._cmds.getAttr(f"{spec.segment_name}.operation")),
+            ))
+        return BodyArmStretchSnapshot(settings, tuple(states))
 
     def capture_body_arm_fk_to_ik_state(self, plan: BodyArmFkToIkPlan) -> BodyArmFkToIkSceneState:
         existing = tuple(path for path in plan.required_paths if self._cmds.objExists(path))
