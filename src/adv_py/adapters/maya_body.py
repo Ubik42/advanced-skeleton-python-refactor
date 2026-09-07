@@ -47,6 +47,13 @@ from adv_py.core.skin_bind import (
     SkinBindSnapshot,
     SkinWeightNormalization,
 )
+from adv_py.core.skin_weights import (
+    SkinInfluenceWeight,
+    SkinVertexWeights,
+    SkinWeightChange,
+    SkinWeightEditRequest,
+    SkinWeightInputState,
+)
 from adv_py.core.body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -783,6 +790,97 @@ class MayaBodyBuildHost(MayaFitJointHost):
             bind_method,
             normalization,
         )
+
+    def capture_skin_weight_input(
+        self,
+        request: SkinWeightEditRequest,
+    ) -> SkinWeightInputState:
+        clusters = self._cmds.ls(request.skin_name, type="skinCluster") or []
+        if len(clusters) != 1:
+            return SkinWeightInputState(None, None, 0, (), (), 0, False, ())
+        skin = clusters[0]
+        geometry = []
+        for shape in self._cmds.skinCluster(skin, query=True, geometry=True) or []:
+            shape_paths = self._cmds.ls(shape, long=True, type="mesh") or []
+            parents = (
+                self._cmds.listRelatives(
+                    shape_paths[0],
+                    parent=True,
+                    fullPath=True,
+                ) or []
+                if len(shape_paths) == 1
+                else []
+            )
+            if len(parents) == 1:
+                geometry.append(parents[0])
+        mesh = geometry[0] if len(geometry) == 1 else None
+        vertex_count = int(self._cmds.polyEvaluate(mesh, vertex=True)) if mesh else 0
+        influences = []
+        locked = []
+        for joint in self._cmds.skinCluster(skin, query=True, influence=True) or []:
+            matches = self._cmds.ls(joint, long=True, type="joint") or []
+            if len(matches) != 1:
+                continue
+            path = matches[0]
+            influences.append(path)
+            if self._cmds.attributeQuery(
+                "lockInfluenceWeights",
+                node=path,
+                exists=True,
+            ) and self._cmds.getAttr(f"{path}.lockInfluenceWeights"):
+                locked.append(path)
+        vertices = []
+        if mesh:
+            for requested in request.vertices:
+                if requested.vertex_index >= vertex_count:
+                    continue
+                component = f"{mesh}.vtx[{requested.vertex_index}]"
+                weights = []
+                for influence in influences:
+                    value = float(self._cmds.skinPercent(
+                        skin,
+                        component,
+                        query=True,
+                        transform=influence,
+                    ))
+                    if value > 1e-8:
+                        weights.append(SkinInfluenceWeight(influence, value))
+                vertices.append(SkinVertexWeights(requested.vertex_index, tuple(weights)))
+        return SkinWeightInputState(
+            skin,
+            mesh,
+            vertex_count,
+            tuple(influences),
+            tuple(locked),
+            int(self._cmds.getAttr(f"{skin}.maxInfluences")),
+            bool(self._cmds.getAttr(f"{skin}.maintainMaxInfluences")),
+            tuple(vertices),
+        )
+
+    def apply_skin_weight_changes(
+        self,
+        request: SkinWeightEditRequest,
+        changes: tuple[SkinWeightChange, ...],
+    ) -> None:
+        self._require_transaction()
+        if not changes:
+            return
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            self._transaction_changed = True
+            for change in changes:
+                self._cmds.skinPercent(
+                    request.skin_name,
+                    f"{request.mesh_path}.vtx[{change.vertex_index}]",
+                    transformValue=[
+                        (entry.influence_path, entry.weight)
+                        for entry in change.after
+                    ],
+                    normalize=False,
+                    zeroRemainingInfluences=True,
+                )
+        finally:
+            self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
     def capture_body_arm_fk_to_ik_state(self, plan: BodyArmFkToIkPlan) -> BodyArmFkToIkSceneState:
         existing = tuple(path for path in plan.required_paths if self._cmds.objExists(path))

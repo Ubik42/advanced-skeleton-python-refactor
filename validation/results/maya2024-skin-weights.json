@@ -1,0 +1,21 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 45892,
+  "slice": "explicit_skin_weights",
+  "preflight_ready": true,
+  "exact_weights_written": true,
+  "repeat_is_noop": true,
+  "weighted_vertices_deform": true,
+  "selection_preserved": true,
+  "single_undo_restored_weights": true,
+  "skin_preserved_after_weight_undo": true,
+  "cleanup": true,
+  "vertex_count": 72,
+  "edited_vertex_count": 3,
+  "influence_count": 2,
+  "maximum_displacement": 0.262185,
+  "remaining_nodes": [],
+  "duration_seconds": 3.926,
+  "status": "passed"
+}

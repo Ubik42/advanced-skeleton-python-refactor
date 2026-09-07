@@ -50,6 +50,12 @@ from .skin_bind import (
     SkinBindBuildResult,
     SkinBindHost,
 )
+from .skin_weights import (
+    EditSkinWeights,
+    SkinWeightEditPlan,
+    SkinWeightEditResult,
+    SkinWeightHost,
+)
 from .body_skeleton import (
     BodySkeletonBuildPlan,
     BodySkeletonBuildResult,
@@ -152,6 +158,7 @@ from .upper_body_fit import (
 __all__ = [
     "BodyArmRigBuildPlan", "BodyArmRigBuildResult", "BodyArmRigHost",
     "SkinBindBuildPlan", "SkinBindBuildResult", "SkinBindHost",
+    "SkinWeightEditPlan", "SkinWeightEditResult", "SkinWeightHost",
     "BodyArmBlendBuildPlan", "BodyArmBlendBuildResult", "BodyArmBlendHost",
     "BodyArmIkBuildPlan",
     "BodyArmIkBuildResult",
@@ -191,6 +198,7 @@ __all__ = [
     "BuildBodyArmBlend",
     "BuildBodyArmRig",
     "BindSkin",
+    "EditSkinWeights",
     "BuildBodySkeleton",
     "BuildBodyArmFkControls",
     "BuildBodyArmFkMechanismControls",
