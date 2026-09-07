@@ -1,0 +1,19 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 38636,
+  "slice": "fit_skeleton_settings",
+  "preview_addition_count": 18,
+  "preview_did_not_modify_scene": true,
+  "complete_settings": true,
+  "existing_values_preserved": true,
+  "defaults_applied": true,
+  "stored_script_not_executed": true,
+  "single_undo_restored": true,
+  "invalid_schema_blocked": true,
+  "invalid_preflight_did_not_modify_scene": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 5.431,
+  "status": "passed"
+}

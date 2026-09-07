@@ -12,6 +12,12 @@ from .fit_metadata import (
     FitJointMetadataReader,
     InspectFitJoints,
 )
+from .fit_settings import (
+    EnsureFitSkeletonSettings,
+    FitSkeletonEnsurePlan,
+    FitSkeletonEnsureResult,
+    FitSkeletonSettingsHost,
+)
 from .joint_labels import EditJointLabels, JointLabelHost, JointLabelResult
 
 __all__ = [
@@ -19,6 +25,7 @@ __all__ = [
     "BuildRig",
     "EditJointLabels",
     "EditFitJointMetadata",
+    "EnsureFitSkeletonSettings",
     "FitHierarchyAudit",
     "FitHierarchyReader",
     "FitJointAudit",
@@ -27,6 +34,9 @@ __all__ = [
     "FitJointEditResult",
     "FitJointMetadataHost",
     "FitJointMetadataReader",
+    "FitSkeletonEnsurePlan",
+    "FitSkeletonEnsureResult",
+    "FitSkeletonSettingsHost",
     "InspectFitJoints",
     "InspectFitHierarchy",
     "JointLabelHost",

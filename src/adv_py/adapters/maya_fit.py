@@ -15,6 +15,13 @@ from adv_py.core.fit_metadata import (
     FitJointMetadata,
     FitJointValidationError,
 )
+from adv_py.core.fit_settings import (
+    FitSkeletonField,
+    FitSkeletonSetting,
+    FitSkeletonSettings,
+    FitSkeletonValidationError,
+    FitSkeletonValue,
+)
 from adv_py.core.joint_labels import JointLabel
 
 
@@ -86,6 +93,60 @@ _FIT_ATTRIBUTES = {
     ),
 }
 
+_FIT_SKELETON_ATTRIBUTES = {
+    FitSkeletonField.VIS_GEOMETRY: _MayaFitAttribute("visGeo", "bool"),
+    FitSkeletonField.VIS_GEOMETRY_TYPE: _MayaFitAttribute(
+        "visGeoType",
+        "enum",
+        enum_names=("cylinders", "boxes", "spheres", "bones"),
+    ),
+    FitSkeletonField.VIS_CYLINDERS: _MayaFitAttribute("visCylinders", "bool"),
+    FitSkeletonField.VIS_BOXES: _MayaFitAttribute("visBoxes", "bool"),
+    FitSkeletonField.VIS_SPHERES: _MayaFitAttribute("visSpheres", "bool"),
+    FitSkeletonField.VIS_BONES: _MayaFitAttribute("visBones", "bool"),
+    FitSkeletonField.LOCK_CENTER_JOINTS: _MayaFitAttribute(
+        "lockCenterJoints", "bool"
+    ),
+    FitSkeletonField.VIS_GAP: _MayaFitAttribute("visGap", "double", 0, 1),
+    FitSkeletonField.VIS_POLE_VECTOR: _MayaFitAttribute("visPoleVector", "bool"),
+    FitSkeletonField.VIS_JOINT_ORIENT: _MayaFitAttribute("visJointOrient", "bool"),
+    FitSkeletonField.VIS_JOINT_AXIS: _MayaFitAttribute("visJointAxis", "bool"),
+    FitSkeletonField.OBJECTS_SKIN: _MayaFitAttribute("objectsSkin", "string"),
+    FitSkeletonField.OBJECTS_ALL: _MayaFitAttribute("objectsAll", "string"),
+    FitSkeletonField.OBJECTS_RIGHT_EYE: _MayaFitAttribute(
+        "objectsRightEye", "string"
+    ),
+    FitSkeletonField.OBJECTS_LEFT_EYE: _MayaFitAttribute(
+        "objectsLeftEye", "string"
+    ),
+    FitSkeletonField.GAME_ENGINE: _MayaFitAttribute("gameEngine", "bool"),
+    FitSkeletonField.USE_OFFSET_PARENT_MATRIX: _MayaFitAttribute(
+        "useOffsetParentMatrix", "bool"
+    ),
+    FitSkeletonField.SUB_CONTROLLERS: _MayaFitAttribute("subControllers", "bool"),
+    FitSkeletonField.EXTRA_CONTROLLERS: _MayaFitAttribute(
+        "extraControllers", "bool"
+    ),
+    FitSkeletonField.PRE_REBUILD_SCRIPT: _MayaFitAttribute(
+        "preRebuildScript", "string"
+    ),
+    FitSkeletonField.POST_REBUILD_SCRIPT: _MayaFitAttribute(
+        "postRebuildScript", "string"
+    ),
+}
+
+_KEYABLE_FIT_SKELETON_FIELDS = frozenset(
+    {
+        FitSkeletonField.VIS_GEOMETRY,
+        FitSkeletonField.VIS_GEOMETRY_TYPE,
+        FitSkeletonField.LOCK_CENTER_JOINTS,
+        FitSkeletonField.VIS_GAP,
+        FitSkeletonField.VIS_POLE_VECTOR,
+        FitSkeletonField.VIS_JOINT_ORIENT,
+        FitSkeletonField.VIS_JOINT_AXIS,
+    }
+)
+
 
 class MayaFitJointHost:
     """Maya adapter for explicit Fit joint queries and edits."""
@@ -120,16 +181,10 @@ class MayaFitJointHost:
         return tuple(resolved)
 
     def capture_fit_hierarchy(self, container_name: str) -> FitHierarchySnapshot:
-        matches = self._cmds.ls(container_name, long=True, type="transform") or []
-        if not matches:
-            raise FitHierarchyValidationError(
-                f"FitSkeleton 容器不存在：{container_name}"
-            )
-        if len(matches) != 1:
-            raise FitHierarchyValidationError(
-                f"FitSkeleton 容器名称不唯一：{container_name}"
-            )
-        container = matches[0]
+        container = self._resolve_transform(
+            container_name,
+            FitHierarchyValidationError,
+        )
         joint_paths = self._cmds.listRelatives(
             container,
             allDescendents=True,
@@ -155,6 +210,57 @@ class MayaFitJointHost:
                 )
             )
         return FitHierarchySnapshot(container=container, joints=tuple(nodes))
+
+    def read_fit_skeleton_settings(
+        self, container_name: str
+    ) -> FitSkeletonSettings:
+        container = self._resolve_transform(
+            container_name,
+            FitSkeletonValidationError,
+        )
+        settings: list[FitSkeletonSetting] = []
+        for field, spec in _FIT_SKELETON_ATTRIBUTES.items():
+            if not self._attribute_exists(container, spec.name):
+                continue
+            settings.append(
+                FitSkeletonSetting(
+                    field=field,
+                    value=self._read_fit_skeleton_value(container, spec),
+                )
+            )
+        return FitSkeletonSettings(container=container, settings=tuple(settings))
+
+    def add_fit_skeleton_setting(
+        self,
+        container: str,
+        setting: FitSkeletonSetting,
+    ) -> None:
+        self._require_transaction()
+        spec = _FIT_SKELETON_ATTRIBUTES[setting.field]
+        if self._attribute_exists(container, spec.name):
+            raise FitSkeletonValidationError(
+                f"FitSkeleton 设置已存在，拒绝覆盖：{spec.name}"
+            )
+
+        options = {
+            "longName": spec.name,
+            "keyable": setting.field in _KEYABLE_FIT_SKELETON_FIELDS,
+        }
+        if spec.kind == "string":
+            options["dataType"] = "string"
+        else:
+            options["attributeType"] = spec.kind
+            if spec.enum_names:
+                options["enumName"] = ":".join(spec.enum_names)
+                options["defaultValue"] = spec.enum_names.index(str(setting.value))
+            else:
+                options["defaultValue"] = setting.value
+            if spec.minimum is not None:
+                options["minValue"] = spec.minimum
+            if spec.maximum is not None:
+                options["maxValue"] = spec.maximum
+        self._transaction_changed = True
+        self._cmds.addAttr(container, **options)
 
     def read_fit_joint_metadata(self, joint: str) -> FitJointMetadata:
         present = frozenset(
@@ -290,9 +396,56 @@ class MayaFitJointHost:
             )
         return options[index]
 
+    def _read_fit_skeleton_value(
+        self,
+        container: str,
+        spec: _MayaFitAttribute,
+    ) -> FitSkeletonValue:
+        attribute = f"{container}.{spec.name}"
+        actual_kind = self._cmds.getAttr(attribute, type=True)
+        if actual_kind != spec.kind:
+            raise FitSkeletonValidationError(
+                f"FitSkeleton.{spec.name} 类型应为 {spec.kind}，当前为 {actual_kind}"
+            )
+        if spec.kind == "bool":
+            return bool(self._cmds.getAttr(attribute))
+        if spec.kind == "double":
+            return float(self._cmds.getAttr(attribute))
+        if spec.kind == "string":
+            return self._cmds.getAttr(attribute) or ""
+
+        names = self._cmds.attributeQuery(
+            spec.name,
+            node=container,
+            listEnum=True,
+        )
+        if not names:
+            raise FitSkeletonValidationError(
+                f"FitSkeleton.{spec.name} 缺少 enum 定义"
+            )
+        options = names[0].split(":")
+        index = int(self._cmds.getAttr(attribute))
+        if not 0 <= index < len(options):
+            raise FitSkeletonValidationError(
+                f"FitSkeleton.{spec.name} 的 enum 值越界：{index}"
+            )
+        return options[index]
+
+    def _resolve_transform(
+        self,
+        name: str,
+        error_type: type[ValueError],
+    ) -> str:
+        matches = self._cmds.ls(name, long=True, type="transform") or []
+        if not matches:
+            raise error_type(f"FitSkeleton 容器不存在：{name}")
+        if len(matches) != 1:
+            raise error_type(f"FitSkeleton 容器名称不唯一：{name}")
+        return matches[0]
+
     def _require_transaction(self) -> None:
         if not self._transaction_active:
-            raise RuntimeError("Fit joint 修改必须发生在事务内")
+            raise RuntimeError("Maya Fit 修改必须发生在事务内")
 
 
 MayaJointLabelHost = MayaFitJointHost

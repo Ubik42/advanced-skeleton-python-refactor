@@ -19,6 +19,17 @@ from .fit_metadata import (
     fit_joint_value,
     predict_fit_joint_metadata,
 )
+from .fit_settings import (
+    FIT_GEOMETRY_TYPES,
+    FitSkeletonField,
+    FitSkeletonIssue,
+    FitSkeletonSetting,
+    FitSkeletonSettings,
+    FitSkeletonValidationError,
+    FitSkeletonValue,
+    audit_fit_skeleton_settings,
+    default_fit_skeleton_settings,
+)
 from .joint_labels import JointLabel, JointLabelValidationError
 from .model import ConstraintSpec, LimbSpec, NodeSpec, RigPlan
 from .matrix import (
@@ -50,6 +61,13 @@ __all__ = [
     "FitJointMetadata",
     "FitJointPatch",
     "FitJointValidationError",
+    "FIT_GEOMETRY_TYPES",
+    "FitSkeletonField",
+    "FitSkeletonIssue",
+    "FitSkeletonSetting",
+    "FitSkeletonSettings",
+    "FitSkeletonValidationError",
+    "FitSkeletonValue",
     "IDENTITY_MATRIX",
     "JointLabel",
     "JointLabelValidationError",
@@ -61,6 +79,8 @@ __all__ = [
     "almost_equal",
     "audit_fit_hierarchy",
     "audit_fit_joint",
+    "audit_fit_skeleton_settings",
+    "default_fit_skeleton_settings",
     "frame_from_y",
     "fit_joint_value",
     "matrix44",
