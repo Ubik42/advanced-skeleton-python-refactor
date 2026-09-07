@@ -1,0 +1,23 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 45744,
+  "slice": "fit_hierarchy_preflight",
+  "joint_count": 2,
+  "valid_hierarchy": true,
+  "stable_parent_first_order": true,
+  "full_dag_paths": true,
+  "valid_capture_did_not_modify_scene": true,
+  "invalid_issue_codes": [
+    "duplicate_short_name",
+    "non_joint_parent",
+    "root_count",
+    "underscore_in_name"
+  ],
+  "invalid_hierarchy_reported": true,
+  "invalid_capture_did_not_modify_scene": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 4.195,
+  "status": "passed"
+}

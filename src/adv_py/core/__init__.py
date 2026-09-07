@@ -1,5 +1,13 @@
 """DCC-neutral rig description and validation."""
 
+from .fit_hierarchy import (
+    FitHierarchyIssue,
+    FitHierarchyNode,
+    FitHierarchyPolicy,
+    FitHierarchySnapshot,
+    FitHierarchyValidationError,
+    audit_fit_hierarchy,
+)
 from .fit_metadata import (
     FitJointIssue,
     FitJointField,
@@ -31,6 +39,11 @@ from .validation import PlanValidationError, validate_plan
 
 __all__ = [
     "ConstraintSpec",
+    "FitHierarchyIssue",
+    "FitHierarchyNode",
+    "FitHierarchyPolicy",
+    "FitHierarchySnapshot",
+    "FitHierarchyValidationError",
     "FitJointIssue",
     "FitJointField",
     "FitJointFieldEdit",
@@ -46,6 +59,7 @@ __all__ = [
     "PlanValidationError",
     "RigPlan",
     "almost_equal",
+    "audit_fit_hierarchy",
     "audit_fit_joint",
     "frame_from_y",
     "fit_joint_value",

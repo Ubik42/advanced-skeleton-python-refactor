@@ -4,6 +4,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Iterator, Sequence
 
+from adv_py.core.fit_hierarchy import (
+    FitHierarchyNode,
+    FitHierarchySnapshot,
+    FitHierarchyValidationError,
+)
 from adv_py.core.fit_metadata import (
     FitJointField,
     FitJointFieldEdit,
@@ -113,6 +118,43 @@ class MayaFitJointHost:
         if len(resolved) != len(set(resolved)):
             raise FitJointValidationError("多个名称解析到了同一个关节")
         return tuple(resolved)
+
+    def capture_fit_hierarchy(self, container_name: str) -> FitHierarchySnapshot:
+        matches = self._cmds.ls(container_name, long=True, type="transform") or []
+        if not matches:
+            raise FitHierarchyValidationError(
+                f"FitSkeleton 容器不存在：{container_name}"
+            )
+        if len(matches) != 1:
+            raise FitHierarchyValidationError(
+                f"FitSkeleton 容器名称不唯一：{container_name}"
+            )
+        container = matches[0]
+        joint_paths = self._cmds.listRelatives(
+            container,
+            allDescendents=True,
+            type="joint",
+            fullPath=True,
+        ) or []
+        joint_paths = sorted(set(joint_paths), key=lambda path: (path.count("|"), path))
+        nodes: list[FitHierarchyNode] = []
+        for path in joint_paths:
+            parents = self._cmds.listRelatives(path, parent=True, fullPath=True) or []
+            local = self._cmds.getAttr(f"{path}.translate")[0]
+            world = self._cmds.xform(
+                path, query=True, worldSpace=True, translation=True
+            )
+            leaf = path.rsplit("|", 1)[-1]
+            nodes.append(
+                FitHierarchyNode(
+                    path=path,
+                    short_name=leaf.rsplit(":", 1)[-1],
+                    dag_parent=parents[0] if parents else None,
+                    local_position=tuple(float(value) for value in local),
+                    world_position=tuple(float(value) for value in world),
+                )
+            )
+        return FitHierarchySnapshot(container=container, joints=tuple(nodes))
 
     def read_fit_joint_metadata(self, joint: str) -> FitJointMetadata:
         present = frozenset(
