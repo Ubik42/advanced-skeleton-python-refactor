@@ -17,6 +17,15 @@ def close(left, right, tolerance=1e-3):
     return all(abs(a - b) <= tolerance for a, b in zip(left, right))
 
 
+def axes(cmds, path):
+    matrix = cmds.xform(path, query=True, worldSpace=True, matrix=True)
+    return tuple(tuple(float(value) for value in matrix[index:index + 3]) for index in (0, 4, 8))
+
+
+def axes_close(left, right, tolerance=1e-3):
+    return all(close(a, b, tolerance) for a, b in zip(left, right))
+
+
 def main(output: Path) -> int:
     started = time.perf_counter()
     maya.standalone.initialize(name="python")
@@ -72,6 +81,24 @@ def main(output: Path) -> int:
             ))
             motion[attribute] = not close(current, original_position)
             cmds.setAttr(plug, 0.0)
+        ankle_axes = axes(cmds, right_spec.ankle_driver_path)
+        toe_axes = axes(cmds, right_spec.toe_driver_path)
+        cmds.setAttr(f"{right_spec.ankle_control_path}.ballRoll", 12.0)
+        ball_rotates_ankle = not axes_close(
+            axes(cmds, right_spec.ankle_driver_path), ankle_axes
+        )
+        ball_keeps_toe_planted = axes_close(
+            axes(cmds, right_spec.toe_driver_path), toe_axes
+        )
+        cmds.setAttr(f"{right_spec.ankle_control_path}.ballRoll", 0.0)
+        cmds.setAttr(f"{right_spec.ankle_control_path}.toeRoll", 12.0)
+        toe_rotates_ankle = not axes_close(
+            axes(cmds, right_spec.ankle_driver_path), ankle_axes
+        )
+        toe_rotates_toes = not axes_close(
+            axes(cmds, right_spec.toe_driver_path), toe_axes
+        )
+        cmds.setAttr(f"{right_spec.ankle_control_path}.toeRoll", 0.0)
         cmds.undoInfo(stateWithoutFlush=True)
 
         match_preview = MatchBodyLegFkToIk(host).plan(
@@ -89,6 +116,10 @@ def main(output: Path) -> int:
                 for side in result.foot.sides
             ),
             "five_channels_move_handle": all(motion.values()),
+            "ball_roll_rotates_ankle": ball_rotates_ankle,
+            "ball_roll_keeps_toe_planted": ball_keeps_toe_planted,
+            "toe_roll_rotates_ankle": toe_rotates_ankle,
+            "toe_roll_rotates_toes": toe_rotates_toes,
             "inner_bank_sign_is_negative": next(
                 pivot for pivot in right.pivots if pivot.multiplier_value is not None
             ).multiplier_value == -1.0,
@@ -113,7 +144,7 @@ def main(output: Path) -> int:
             "host": "maya",
             "version": str(cmds.about(version=True)),
             "pid": os.getpid(),
-            "slice": "complete_body_leg_rig_with_foot_atomic",
+            "slice": "body_leg_foot_orientation_outputs",
             **checks,
             "channel_motion": motion,
             "remaining_nodes": remaining,

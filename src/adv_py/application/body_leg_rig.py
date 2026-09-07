@@ -183,6 +183,7 @@ class BuildBodyLegRig:
             ))
         for side in foot.sides:
             names.extend(pivot.name for pivot in side.pivots)
+            names.append(side.toe_constraint_name)
             names.extend(
                 pivot.multiplier_name
                 for pivot in side.pivots
@@ -277,7 +278,14 @@ class BuildBodyLegRig:
             if audit_body_leg_ik(
                 plan.ik,
                 ik,
-                check_handle_parent=False,
+                expected_handle_parent_by_side={
+                    side.side: side.final_handle_parent_path
+                    for side in plan.foot.sides
+                },
+                expected_ankle_source_by_side={
+                    side.side: side.ankle_orientation_source_path
+                    for side in plan.foot.sides
+                },
             ):
                 raise RuntimeError("Leg Foot 构建后 IK 结构复检失败")
 

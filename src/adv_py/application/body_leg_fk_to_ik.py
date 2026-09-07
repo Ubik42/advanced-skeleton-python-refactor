@@ -18,6 +18,13 @@ from adv_py.core.body_leg_ik import (
     audit_body_leg_ik,
     plan_body_leg_ik,
 )
+from adv_py.core.body_leg_foot import (
+    BodyLegFootIssue,
+    BodyLegFootPlan,
+    BodyLegFootSnapshot,
+    audit_body_leg_foot,
+    plan_body_leg_foot,
+)
 from adv_py.core.body_leg_match import (
     BodyLegFkToIkPlan,
     BodyLegFkToIkSceneState,
@@ -43,6 +50,7 @@ class BodyLegFkToIkHost(FitSymmetryHost, Protocol):
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot: ...
     def capture_body_leg_ik(self, plan: BodyLegIkPlan) -> BodyLegIkSnapshot: ...
     def capture_body_leg_blend(self, plan: BodyLegBlendPlan) -> BodyLegBlendSnapshot: ...
+    def capture_body_leg_foot(self, plan: BodyLegFootPlan) -> BodyLegFootSnapshot: ...
     def capture_body_leg_fk_to_ik_state(self, plan: BodyLegFkToIkPlan) -> BodyLegFkToIkSceneState: ...
     def apply_body_leg_fk_to_ik(self, plan: BodyLegFkToIkPlan) -> None: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
@@ -54,11 +62,13 @@ class BodyLegFkToIkBuildPlan:
     body: BodySkeletonSnapshot
     ik: BodyLegIkPlan
     blend: BodyLegBlendPlan
+    foot: BodyLegFootPlan
     match: BodyLegFkToIkPlan
     scene_state: BodyLegFkToIkSceneState
     provenance_issues: tuple[BodySkeletonIssue, ...]
     ik_issues: tuple[BodyLegIkIssue, ...]
     blend_issues: tuple[BodyLegBlendIssue, ...]
+    foot_issues: tuple[BodyLegFootIssue, ...]
     match_issues: tuple[BodyLegMatchIssue, ...]
     other_blend_values: tuple[tuple[FitBuildSide, float], ...]
 
@@ -68,6 +78,7 @@ class BodyLegFkToIkBuildPlan:
             self.provenance_issues
             or self.ik_issues
             or self.blend_issues
+            or self.foot_issues
             or self.match_issues
         )
 
@@ -77,6 +88,7 @@ class BodyLegFkToIkBuildPlan:
             *self.provenance_issues,
             *self.ik_issues,
             *self.blend_issues,
+            *self.foot_issues,
             *self.match_issues,
         )
         return tuple(issue.message for issue in issues)
@@ -118,6 +130,7 @@ class MatchBodyLegFkToIk:
             body, mechanisms, pole_distance_scale=pole_distance_scale
         )
         blend = plan_body_leg_blend(body, mechanisms)
+        foot = plan_body_leg_foot(body, ik)
         match = plan_body_leg_fk_to_ik(
             body,
             ik,
@@ -131,10 +144,23 @@ class MatchBodyLegFkToIk:
             ik,
             ik_snapshot,
             check_initial_pose=False,
-            check_handle_parent=False,
+            expected_handle_parent_by_side={
+                value.side: value.final_handle_parent_path
+                for value in foot.sides
+            },
+            expected_ankle_source_by_side={
+                value.side: value.ankle_orientation_source_path
+                for value in foot.sides
+            },
         )
         blend_issues = audit_body_leg_blend(
             blend, blend_snapshot, expected_attribute_value=None
+        )
+        foot_issues = audit_body_leg_foot(
+            foot,
+            self._host.capture_body_leg_foot(foot),
+            check_initial_pose=False,
+            expected_attribute_value=None,
         )
         state = self._host.capture_body_leg_fk_to_ik_state(match)
         match_issues = audit_body_leg_fk_to_ik_preflight(match, state)
@@ -148,11 +174,13 @@ class MatchBodyLegFkToIk:
             body,
             ik,
             blend,
+            foot,
             match,
             state,
             provenance,
             ik_issues,
             blend_issues,
+            foot_issues,
             match_issues,
             other,
         )

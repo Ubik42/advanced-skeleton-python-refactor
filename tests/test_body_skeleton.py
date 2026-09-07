@@ -663,6 +663,7 @@ class FakeBodySkeletonHost:
             for name in (
                 *(pivot.name for pivot in side.pivots),
                 *(pivot.multiplier_name for pivot in side.pivots if pivot.multiplier_name),
+                side.toe_constraint_name,
             )
             if self.find_name_collisions(name)
         )
@@ -696,11 +697,21 @@ class FakeBodySkeletonHost:
             ),
             pivots,
             spec.final_handle_parent_path,
+            spec.ankle_constraint_name,
+            spec.ankle_orientation_source_path,
+            spec.ankle_driver_path,
+            spec.toe_constraint_name,
+            spec.toe_orientation_source_path,
+            spec.toe_driver_path,
         )
         sides = self.leg_foot_snapshot.sides if self.leg_foot_snapshot else ()
         self.leg_foot_snapshot = BodyLegFootSnapshot((*sides, state))
         self.leg_ik_states = [
-            replace(value, handle_parent_path=spec.final_handle_parent_path)
+            replace(
+                value,
+                handle_parent_path=spec.final_handle_parent_path,
+                ankle_source=spec.ankle_orientation_source_path,
+            )
             if value.side is spec.side else value
             for value in self.leg_ik_states
         ]
@@ -1792,6 +1803,19 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertIsNone(host.leg_mechanism_root)
         self.assertIsNone(host.leg_foot_snapshot)
 
+    def test_complete_leg_rig_toe_orientation_collision_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        host.collisions["AdvPy_LegIKToesOrient_R"] = (
+            "|User|AdvPy_LegIKToesOrient_R",
+        )
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "同名"):
+            BuildBodyLegRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertIsNone(host.leg_mechanism_root)
+
     def test_complete_leg_rig_foot_failure_rolls_back_every_stage(self):
         host = FakeBodySkeletonHost(faulty_leg_foot=True)
         BuildOrientedBodySkeleton(host).apply()
@@ -1840,6 +1864,21 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertTrue(all(
             len(side.attribute_values) == 5
             and all(value == 0.0 for _, value in side.attribute_values)
+            for side in result.snapshot.sides
+        ))
+        self.assertTrue(all(
+            side.ankle_orientation_source == side.pivots[-1].path
+            and side.ankle_driven_joint.endswith(
+                f"AdvPy_AnkleIKDriver_{side.side.value}"
+            )
+            and side.toe_orientation_source
+            == next(
+                pivot.path for pivot in side.pivots
+                if pivot.role.value == "toe"
+            )
+            and side.toe_driven_joint.endswith(
+                f"AdvPy_ToesIKDriver_{side.side.value}"
+            )
             for side in result.snapshot.sides
         ))
 

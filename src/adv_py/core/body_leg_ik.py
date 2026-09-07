@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from typing import Mapping
 
 from .body_leg_mechanisms import BodyLegMechanismPlan, BodyLegMechanismRole
 from .body_limb_ik import BodyLimbIkValidationError, solve_limb_pole_position
@@ -33,6 +34,7 @@ class BodyLegIkSpec:
     pole_position: Vector3
     radius: float
     ankle_constraint_name: str
+    toe_driver_path: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,12 +124,18 @@ def plan_body_leg_ik(
         )
         if any(source.side is not side for source in sources):
             raise BodyLegIkValidationError("Leg Body side 与名称不一致")
+        toe_source = body_by_name.get(f"Toes_{suffix}")
         try:
             drivers = tuple(ik_by_source[source.path] for source in sources)
+            toe_driver = ik_by_source[toe_source.path] if toe_source else None
         except KeyError as exc:
             raise BodyLegIkValidationError(
-                "Leg IK mechanism 必须为每侧提供完整三关节链"
+                "Leg IK mechanism 必须为每侧提供完整 Hip/Knee/Ankle/Toes 链"
             ) from exc
+        if toe_driver is None:
+            raise BodyLegIkValidationError(
+                "Leg IK mechanism 必须为每侧提供完整 Hip/Knee/Ankle/Toes 链"
+            )
         hip, knee, ankle = (joint.world_position for joint in sources)
         fallback_axis = _least_parallel_axis(
             hip,
@@ -167,6 +175,7 @@ def plan_body_leg_ik(
             pole_position=pole,
             radius=float(radius),
             ankle_constraint_name=f"AdvPy_LegIKAnkleOrient_{suffix}",
+            toe_driver_path=toe_driver,
         ))
     return BodyLegIkPlan(root_path, root_name, tuple(limbs))
 
@@ -178,6 +187,8 @@ def audit_body_leg_ik(
     tolerance: float = 1e-4,
     check_initial_pose: bool = True,
     check_handle_parent: bool = True,
+    expected_handle_parent_by_side: Mapping[FitBuildSide, str] | None = None,
+    expected_ankle_source_by_side: Mapping[FitBuildSide, str] | None = None,
 ) -> tuple[BodyLegIkIssue, ...]:
     issues = []
     if snapshot.root_path != plan.root_path:
@@ -207,7 +218,14 @@ def audit_body_leg_ik(
                 state.handle_name == spec.handle_name
                 and (
                     not check_handle_parent
-                    or state.handle_parent_path == spec.ankle_control_path
+                    or state.handle_parent_path
+                    == (
+                        expected_handle_parent_by_side.get(
+                            spec.side, spec.ankle_control_path
+                        )
+                        if expected_handle_parent_by_side is not None
+                        else spec.ankle_control_path
+                    )
                 ),
                 "ik_handle_mismatch",
                 "IK Handle 或父级不一致",
@@ -219,7 +237,14 @@ def audit_body_leg_ik(
             ),
             (
                 state.ankle_constraint_name == spec.ankle_constraint_name
-                and state.ankle_source == spec.ankle_control_path
+                and state.ankle_source
+                == (
+                    expected_ankle_source_by_side.get(
+                        spec.side, spec.ankle_control_path
+                    )
+                    if expected_ankle_source_by_side is not None
+                    else spec.ankle_control_path
+                )
                 and state.ankle_driven_joint == spec.chain[2],
                 "ik_ankle_orientation",
                 "Ankle IK 朝向驱动不一致",

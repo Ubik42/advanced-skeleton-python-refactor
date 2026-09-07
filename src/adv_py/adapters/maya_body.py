@@ -2020,9 +2020,16 @@ class MayaBodyBuildHost(MayaFitJointHost):
         collisions = []
         non_writable = []
         existing_attributes = []
+        occupied_rotations = []
+        invalid_ankle_constraints = []
         for side in plan.sides:
             handles = self._cmds.ls(side.handle_name, long=True, type="ikHandle") or []
-            required.append(side.ankle_control_path)
+            required.extend((
+                side.ankle_control_path,
+                side.ankle_driver_path,
+                side.toe_driver_path,
+                side.ankle_constraint_name,
+            ))
             if len(handles) == 1:
                 required.append(handles[0])
             else:
@@ -2033,10 +2040,17 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 for pivot in side.pivots
                 if pivot.multiplier_name
             )
+            names.append(side.toe_constraint_name)
             collisions.extend(
                 name for name in names if self.find_name_collisions(name)
             )
-            for path in (side.ankle_control_path, *handles):
+            for path in (
+                side.ankle_control_path,
+                side.ankle_driver_path,
+                side.toe_driver_path,
+                side.ankle_constraint_name,
+                *handles,
+            ):
                 if not self._cmds.objExists(path):
                     continue
                 locked = bool((self._cmds.lockNode(path, query=True, lock=True) or [False])[0])
@@ -2050,12 +2064,53 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     attribute, node=side.ankle_control_path, exists=True
                 )
             )
+            ankle_constraints = self._cmds.ls(
+                side.ankle_constraint_name,
+                type="orientConstraint",
+            ) or []
+            if len(ankle_constraints) == 1:
+                targets = self._cmds.orientConstraint(
+                    ankle_constraints[0], query=True, targetList=True
+                ) or []
+                target = (
+                    (self._cmds.ls(targets[0], long=True) or [targets[0]])[0]
+                    if len(targets) == 1 else None
+                )
+                outputs = self._cmds.listConnections(
+                    f"{ankle_constraints[0]}.constraintRotateX",
+                    source=False,
+                    destination=True,
+                    plugs=True,
+                ) or []
+                driven = (
+                    self._resolve_connected_node(outputs[0])
+                    if len(outputs) == 1 else None
+                )
+                if (
+                    target != side.ankle_control_path
+                    or driven != side.ankle_driver_path
+                ):
+                    invalid_ankle_constraints.append(side.ankle_constraint_name)
+            elif self._cmds.objExists(side.ankle_constraint_name):
+                invalid_ankle_constraints.append(side.ankle_constraint_name)
+            for axis in "XYZ":
+                plug = f"{side.toe_driver_path}.rotate{axis}"
+                sources = self._cmds.listConnections(
+                    plug,
+                    source=True,
+                    destination=False,
+                    plugs=True,
+                ) or []
+                if sources:
+                    occupied_rotations.append(plug)
         missing = tuple(path for path in required if not self._cmds.objExists(path))
         return BodyLegFootInputState(
             missing_required_paths=missing,
             name_collisions=tuple(collisions),
             non_writable_paths=tuple(non_writable),
             existing_attribute_plugs=tuple(existing_attributes),
+            occupied_rotation_plugs=tuple(occupied_rotations),
+            invalid_ankle_constraints=tuple(invalid_ankle_constraints),
         )
 
     def create_body_leg_foot_side(self, spec: BodyLegFootSideSpec) -> None:
@@ -2067,6 +2122,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
             state.non_writable_paths,
             state.existing_attribute_plugs,
             state.occupied_rotation_plugs,
+            state.invalid_ankle_constraints,
         )):
             raise FitSkeletonValidationError("Foot pivot 输入在执行前失效")
         selection = self._cmds.ls(selection=True, long=True) or []
@@ -2111,6 +2167,25 @@ class MayaBodyBuildHost(MayaFitJointHost):
             if len(handles) != 1:
                 raise FitSkeletonValidationError("Leg IK Handle 在执行前失效")
             self._cmds.parent(handles[0], spec.final_handle_parent_path, absolute=True)
+            ankle_constraints = self._cmds.ls(
+                spec.ankle_constraint_name,
+                type="orientConstraint",
+            ) or []
+            if len(ankle_constraints) != 1:
+                raise FitSkeletonValidationError("Ankle IK 朝向约束在执行前失效")
+            self._cmds.delete(ankle_constraints[0])
+            self._cmds.orientConstraint(
+                spec.ankle_orientation_source_path,
+                spec.ankle_driver_path,
+                maintainOffset=False,
+                name=spec.ankle_constraint_name,
+            )
+            self._cmds.orientConstraint(
+                spec.toe_orientation_source_path,
+                spec.toe_driver_path,
+                maintainOffset=True,
+                name=spec.toe_constraint_name,
+            )
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
@@ -2186,11 +2261,40 @@ class MayaBodyBuildHost(MayaFitJointHost):
             parents = self._cmds.listRelatives(
                 handles[0], parent=True, fullPath=True
             ) or []
+
+            def orientation_state(name):
+                constraints = self._cmds.ls(name, type="orientConstraint") or []
+                if len(constraints) != 1:
+                    return (None, None, None)
+                constraint = constraints[0]
+                targets = self._cmds.orientConstraint(
+                    constraint, query=True, targetList=True
+                ) or []
+                source = (
+                    (self._cmds.ls(targets[0], long=True) or [targets[0]])[0]
+                    if len(targets) == 1 else None
+                )
+                outputs = self._cmds.listConnections(
+                    f"{constraint}.constraintRotateX",
+                    source=False,
+                    destination=True,
+                    plugs=True,
+                ) or []
+                driven = (
+                    self._resolve_connected_node(outputs[0])
+                    if len(outputs) == 1 else None
+                )
+                return (constraint, source, driven)
+
+            ankle_orientation = orientation_state(spec.ankle_constraint_name)
+            toe_orientation = orientation_state(spec.toe_constraint_name)
             sides.append(BodyLegFootSideState(
                 spec.side,
                 values,
                 tuple(pivots),
                 parents[0] if parents else None,
+                *ankle_orientation,
+                *toe_orientation,
             ))
         return BodyLegFootSnapshot(tuple(sides))
 
