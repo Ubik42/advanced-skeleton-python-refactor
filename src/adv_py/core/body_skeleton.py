@@ -14,6 +14,9 @@ IDENTITY_FRAME: AxisFrame = (
     (0.0, 0.0, 1.0),
 )
 ALL_ORIENT_AXES = frozenset({"x", "y", "z"})
+BODY_PROVENANCE_OWNER = "advanced-skeleton-python-refactor"
+BODY_PROVENANCE_KIND = "oriented_body_skeleton"
+BODY_PROVENANCE_SCHEMA_VERSION = 1
 
 
 class BodySkeletonValidationError(ValueError):
@@ -75,9 +78,54 @@ class BodyJointState:
 
 
 @dataclass(frozen=True, slots=True)
+class BodySkeletonProvenance:
+    owner: str
+    artifact_kind: str
+    schema_version: int
+    source_container: str
+    body_joint_count: int
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.owner, str)
+            or not self.owner
+            or not isinstance(self.artifact_kind, str)
+            or not self.artifact_kind
+        ):
+            raise BodySkeletonValidationError("Body provenance 所有者和类型不能为空")
+        if (
+            isinstance(self.schema_version, bool)
+            or not isinstance(self.schema_version, int)
+            or self.schema_version < 1
+        ):
+            raise BodySkeletonValidationError("Body provenance schema 必须大于零")
+        if (
+            not isinstance(self.source_container, str)
+            or not self.source_container.startswith("|")
+        ):
+            raise BodySkeletonValidationError("Body provenance Fit 来源必须是完整路径")
+        if (
+            isinstance(self.body_joint_count, bool)
+            or not isinstance(self.body_joint_count, int)
+            or self.body_joint_count < 1
+        ):
+            raise BodySkeletonValidationError("Body provenance 关节数量必须大于零")
+
+
+@dataclass(frozen=True, slots=True)
+class BodySkeletonProvenanceState:
+    owner: str | None
+    artifact_kind: str | None
+    schema_version: int | None
+    source_container: str | None
+    body_joint_count: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class BodySkeletonSnapshot:
     root: str
     joints: tuple[BodyJointState, ...]
+    provenance: BodySkeletonProvenanceState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +141,58 @@ class BodyJointOrientationChange:
     before_world_axes: AxisFrame
     desired_world_axes: AxisFrame
     world_position: Vector3
+
+
+def oriented_body_provenance(
+    source_container: str,
+    body_joint_count: int,
+) -> BodySkeletonProvenance:
+    return BodySkeletonProvenance(
+        owner=BODY_PROVENANCE_OWNER,
+        artifact_kind=BODY_PROVENANCE_KIND,
+        schema_version=BODY_PROVENANCE_SCHEMA_VERSION,
+        source_container=source_container,
+        body_joint_count=body_joint_count,
+    )
+
+
+def audit_body_provenance(
+    expected: BodySkeletonProvenance,
+    actual: BodySkeletonProvenanceState | None,
+) -> tuple[BodySkeletonIssue, ...]:
+    if actual is None:
+        return (
+            BodySkeletonIssue(
+                "missing_provenance",
+                "Body skeleton 缺少 Python 所有权标记",
+            ),
+        )
+    issues: list[BodySkeletonIssue] = []
+    fields = (
+        ("owner", "所有者"),
+        ("artifact_kind", "产物类型"),
+        ("schema_version", "schema 版本"),
+        ("source_container", "Fit 来源"),
+        ("body_joint_count", "关节数量"),
+    )
+    for field, label in fields:
+        current = getattr(actual, field)
+        wanted = getattr(expected, field)
+        if current is None:
+            issues.append(
+                BodySkeletonIssue(
+                    f"missing_provenance_{field}",
+                    f"Body provenance 缺少{label}",
+                )
+            )
+        elif current != wanted:
+            issues.append(
+                BodySkeletonIssue(
+                    f"provenance_{field}_mismatch",
+                    f"Body provenance {label}不一致",
+                )
+            )
+    return tuple(issues)
 
 
 def audit_body_skeleton(

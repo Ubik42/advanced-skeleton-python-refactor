@@ -4,6 +4,8 @@ from adv_py.core.body_skeleton import (
     BodyJointOrientationChange,
     BodyJointSpec,
     BodyJointState,
+    BodySkeletonProvenance,
+    BodySkeletonProvenanceState,
     BodySkeletonSnapshot,
 )
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -18,6 +20,13 @@ _MAYA_SIDE_FROM_CORE = {
     FitBuildSide.RIGHT: 2,
 }
 _CORE_SIDE_FROM_MAYA = {value: key for key, value in _MAYA_SIDE_FROM_CORE.items()}
+_BODY_PROVENANCE_ATTRIBUTES = {
+    "owner": "advPyOwner",
+    "artifact_kind": "advPyArtifactKind",
+    "schema_version": "advPySchemaVersion",
+    "source_container": "advPySourceContainer",
+    "body_joint_count": "advPyBodyJointCount",
+}
 
 
 class MayaBodyBuildHost(MayaFitJointHost):
@@ -122,7 +131,48 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     writable_joint_orient_axes=writable_axes,
                 )
             )
-        return BodySkeletonSnapshot(root, tuple(states))
+        return BodySkeletonSnapshot(
+            root,
+            tuple(states),
+            self._capture_body_provenance(root),
+        )
+
+    def write_body_provenance(
+        self,
+        root: str,
+        provenance: BodySkeletonProvenance,
+    ) -> None:
+        self._require_transaction()
+        matches = self._cmds.ls(root, long=True, type="joint") or []
+        if len(matches) != 1 or matches[0] != root:
+            raise FitSkeletonValidationError(
+                f"Body provenance 根关节在执行前失效：{root}"
+            )
+        if any(
+            self._cmds.attributeQuery(attribute, node=root, exists=True)
+            for attribute in _BODY_PROVENANCE_ATTRIBUTES.values()
+        ):
+            raise FitSkeletonValidationError(
+                "Body provenance 属性已存在，拒绝覆盖"
+            )
+        self._transaction_changed = True
+        for field in ("owner", "artifact_kind", "source_container"):
+            attribute = _BODY_PROVENANCE_ATTRIBUTES[field]
+            self._cmds.addAttr(root, longName=attribute, dataType="string")
+            self._cmds.setAttr(
+                f"{root}.{attribute}",
+                getattr(provenance, field),
+                type="string",
+            )
+        for field in ("schema_version", "body_joint_count"):
+            attribute = _BODY_PROVENANCE_ATTRIBUTES[field]
+            self._cmds.addAttr(root, longName=attribute, attributeType="long")
+            self._cmds.setAttr(
+                f"{root}.{attribute}",
+                getattr(provenance, field),
+            )
+        for attribute in _BODY_PROVENANCE_ATTRIBUTES.values():
+            self._cmds.setAttr(f"{root}.{attribute}", lock=True)
 
     def set_body_joint_world_axes(
         self,
@@ -165,4 +215,32 @@ class MayaBodyBuildHost(MayaFitJointHost):
             matches[0],
             worldSpace=True,
             translation=position,
+        )
+
+    def _capture_body_provenance(
+        self,
+        root: str,
+    ) -> BodySkeletonProvenanceState | None:
+        exists = {
+            field: bool(
+                self._cmds.attributeQuery(attribute, node=root, exists=True)
+            )
+            for field, attribute in _BODY_PROVENANCE_ATTRIBUTES.items()
+        }
+        if not any(exists.values()):
+            return None
+
+        def value(field: str):
+            if not exists[field]:
+                return None
+            return self._cmds.getAttr(
+                f"{root}.{_BODY_PROVENANCE_ATTRIBUTES[field]}"
+            )
+
+        return BodySkeletonProvenanceState(
+            owner=value("owner"),
+            artifact_kind=value("artifact_kind"),
+            schema_version=value("schema_version"),
+            source_container=value("source_container"),
+            body_joint_count=value("body_joint_count"),
         )

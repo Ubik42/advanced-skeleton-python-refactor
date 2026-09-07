@@ -5,7 +5,10 @@ from typing import Protocol
 
 from adv_py.core.body_skeleton import (
     BodyJointOrientationChange,
+    BodySkeletonProvenance,
     BodySkeletonSnapshot,
+    audit_body_provenance,
+    oriented_body_provenance,
     plan_body_joint_orientations,
 )
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -14,6 +17,7 @@ from .body_orientation import (
     BodyOrientationHost,
     BodyOrientationPlan,
     _apply_body_orientation,
+    _verify_body_orientation,
 )
 from .body_skeleton import (
     BodySkeletonBuildPlan,
@@ -30,10 +34,17 @@ class OrientedBodySkeletonHost(
 ):
     """Combined host contract for the atomic Body build path."""
 
+    def write_body_provenance(
+        self,
+        root: str,
+        provenance: BodySkeletonProvenance,
+    ) -> None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class OrientedBodySkeletonBuildPlan:
     build: BodySkeletonBuildPlan
+    provenance: BodySkeletonProvenance
 
     @property
     def ready(self) -> bool:
@@ -65,11 +76,16 @@ class BuildOrientedBodySkeleton:
         *,
         center_tolerance: float = 0.01,
     ) -> OrientedBodySkeletonBuildPlan:
+        build = self._builder.plan(
+            container_name,
+            center_tolerance=center_tolerance,
+        )
         return OrientedBodySkeletonBuildPlan(
-            self._builder.plan(
-                container_name,
-                center_tolerance=center_tolerance,
-            )
+            build,
+            oriented_body_provenance(
+                build.symmetry.source.hierarchy.container,
+                len(build.symmetry.instances),
+            ),
         )
 
     def apply(
@@ -107,11 +123,26 @@ class BuildOrientedBodySkeleton:
                 neutral,
                 changes,
             )
-            snapshot = _apply_body_orientation(
+            _apply_body_orientation(
                 self._host,
                 orientation,
                 root_name,
             )
+            self._host.write_body_provenance(
+                neutral.root,
+                plan.provenance,
+            )
+            snapshot = self._host.capture_body_skeleton(root_name)
+            _verify_body_orientation(orientation, snapshot)
+            provenance_issues = audit_body_provenance(
+                plan.provenance,
+                snapshot.provenance,
+            )
+            if provenance_issues:
+                raise RuntimeError(
+                    "Body skeleton 原子构建后复检失败："
+                    + "；".join(issue.message for issue in provenance_issues)
+                )
             current_fit = self._host.capture_fit_orientation(
                 build.symmetry.source.hierarchy.container
             )

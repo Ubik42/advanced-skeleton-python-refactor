@@ -5,12 +5,14 @@ from dataclasses import replace
 from adv_py.application import (
     BuildBodySkeleton,
     BuildOrientedBodySkeleton,
+    InspectBodySkeletonProvenance,
     OrientBodySkeleton,
 )
 from adv_py.core import (
     IDENTITY_AXES,
     BodyJointState,
     BodySkeletonSnapshot,
+    BodySkeletonProvenanceState,
     BodySkeletonValidationError,
     FitJointMetadata,
     FitJointOrientationState,
@@ -29,6 +31,7 @@ class FakeBodySkeletonHost:
         *,
         faulty_capture=False,
         faulty_after_orientation=False,
+        faulty_provenance=False,
     ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
         hierarchy = predict_fit_template_hierarchy(template, "|FitSkeleton")
@@ -71,6 +74,8 @@ class FakeBodySkeletonHost:
         self.faulty_capture = faulty_capture
         self.faulty_after_orientation = faulty_after_orientation
         self.orientation_write_count = 0
+        self.faulty_provenance = faulty_provenance
+        self.provenance = None
         self.in_transaction = False
 
     def capture_fit_orientation(self, container_name):
@@ -91,12 +96,14 @@ class FakeBodySkeletonHost:
     def transaction(self, label):
         del label
         before = list(self.body)
+        before_provenance = self.provenance
         self.transaction_count += 1
         self.in_transaction = True
         try:
             yield
         except Exception:
             self.body = before
+            self.provenance = before_provenance
             raise
         finally:
             self.in_transaction = False
@@ -126,7 +133,7 @@ class FakeBodySkeletonHost:
             joints = (
                 replace(joints[0], world_position=(99.0, 0.0, 0.0)),
             ) + joints[1:]
-        return BodySkeletonSnapshot(root, joints)
+        return BodySkeletonSnapshot(root, joints, self.provenance)
 
     def set_body_joint_world_axes(self, change):
         self.orientation_write_count += 1
@@ -144,6 +151,19 @@ class FakeBodySkeletonHost:
             else state
             for state in self.body
         ]
+
+    def write_body_provenance(self, root, provenance):
+        del root
+        count = provenance.body_joint_count
+        if self.faulty_provenance:
+            count += 1
+        self.provenance = BodySkeletonProvenanceState(
+            provenance.owner,
+            provenance.artifact_kind,
+            provenance.schema_version,
+            provenance.source_container,
+            count,
+        )
 
 
 class BodySkeletonTests(unittest.TestCase):
@@ -250,6 +270,9 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.snapshot.joints), 30)
         self.assertEqual(len(result.orientation_changes), 13)
         self.assertFalse(OrientBodySkeleton(host).plan().changes)
+        audit = InspectBodySkeletonProvenance(host).execute()
+        self.assertTrue(audit.owned)
+        self.assertEqual(audit.snapshot.provenance, result.snapshot.provenance)
 
     def test_atomic_body_build_collision_stops_before_transaction(self):
         host = FakeBodySkeletonHost()
@@ -269,6 +292,16 @@ class BodySkeletonTests(unittest.TestCase):
 
         self.assertEqual(host.transaction_count, 1)
         self.assertFalse(host.body)
+
+    def test_atomic_provenance_failure_removes_created_body(self):
+        host = FakeBodySkeletonHost(faulty_provenance=True)
+
+        with self.assertRaisesRegex(RuntimeError, "关节数量不一致"):
+            BuildOrientedBodySkeleton(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertFalse(host.body)
+        self.assertIsNone(host.provenance)
 
 
 if __name__ == "__main__":

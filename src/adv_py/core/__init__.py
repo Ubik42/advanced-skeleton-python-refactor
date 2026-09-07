@@ -1,15 +1,22 @@
 """DCC-neutral rig description and validation."""
 
 from .body_skeleton import (
+    BODY_PROVENANCE_KIND,
+    BODY_PROVENANCE_OWNER,
+    BODY_PROVENANCE_SCHEMA_VERSION,
     BodyJointOrientationChange,
     BodyJointSpec,
     BodyJointState,
     BodySkeletonIssue,
     BodySkeletonSnapshot,
+    BodySkeletonProvenance,
+    BodySkeletonProvenanceState,
     BodySkeletonValidationError,
     audit_body_skeleton,
+    audit_body_provenance,
     body_orientation_matches,
     plan_body_joint_orientations,
+    oriented_body_provenance,
 )
 from .fit_container import (
     LOCKED_FIT_CHANNELS,
@@ -118,11 +125,16 @@ from .matrix import (
 from .validation import PlanValidationError, validate_plan
 
 __all__ = [
+    "BODY_PROVENANCE_KIND",
+    "BODY_PROVENANCE_OWNER",
+    "BODY_PROVENANCE_SCHEMA_VERSION",
     "BodyJointSpec",
     "BodyJointOrientationChange",
     "BodyJointState",
     "BodySkeletonIssue",
     "BodySkeletonSnapshot",
+    "BodySkeletonProvenance",
+    "BodySkeletonProvenanceState",
     "BodySkeletonValidationError",
     "ConstraintSpec",
     "FitContainerDisplayStyle",
@@ -183,6 +195,7 @@ __all__ = [
     "TRANSLATION_AXES",
     "almost_equal",
     "audit_body_skeleton",
+    "audit_body_provenance",
     "body_orientation_matches",
     "audit_fit_hierarchy",
     "audit_fit_container",
@@ -202,6 +215,7 @@ __all__ = [
     "parse_fit_axis_direction",
     "plan_fit_joint_position_changes",
     "plan_body_joint_orientations",
+    "oriented_body_provenance",
     "plan_simple_fit_orientations",
     "plan_world_fit_orientations",
     "ordered_fit_joints",

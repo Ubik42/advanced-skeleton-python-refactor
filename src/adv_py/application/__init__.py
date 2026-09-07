@@ -12,6 +12,11 @@ from .body_orientation import (
     BodyOrientationResult,
     OrientBodySkeleton,
 )
+from .body_provenance import (
+    BodyProvenanceAudit,
+    BodyProvenanceHost,
+    InspectBodySkeletonProvenance,
+)
 from .build_rig import BuildResult, BuildRig
 from .fit_container import (
     CreateFitSkeleton,
@@ -89,6 +94,8 @@ __all__ = [
     "BodyOrientationHost",
     "BodyOrientationPlan",
     "BodyOrientationResult",
+    "BodyProvenanceAudit",
+    "BodyProvenanceHost",
     "BodySkeletonBuildPlan",
     "BodySkeletonBuildResult",
     "BodySkeletonHost",
@@ -138,6 +145,7 @@ __all__ = [
     "FitTemplateHost",
     "InspectFitJoints",
     "InspectFitHierarchy",
+    "InspectBodySkeletonProvenance",
     "JointLabelHost",
     "JointLabelResult",
     "OrientSimpleFitChain",
