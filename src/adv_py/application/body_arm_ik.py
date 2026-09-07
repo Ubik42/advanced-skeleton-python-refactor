@@ -32,12 +32,22 @@ class BodyArmIkBuildPlan:
     name_collisions: tuple[str, ...]
 
     @property
-    def ready(self): return not (self.provenance_issues or self.mechanism_issues or self.name_collisions)
+    def ready(self) -> bool:
+        return not (
+            self.provenance_issues
+            or self.mechanism_issues
+            or self.name_collisions
+        )
+
     @property
-    def blockers(self):
+    def blockers(self) -> tuple[str, ...]:
         values = [issue.message for issue in self.provenance_issues]
         values.extend(issue.message for issue in self.mechanism_issues)
-        if self.name_collisions: values.append("场景中存在 Arm IK 同名节点：" + "、".join(self.name_collisions))
+        if self.name_collisions:
+            values.append(
+                "场景中存在 Arm IK 同名节点："
+                + "、".join(self.name_collisions)
+            )
         return tuple(values)
 
 
@@ -48,35 +58,93 @@ class BodyArmIkBuildResult:
 
 
 class BuildBodyArmIkControls:
-    def __init__(self, host: BodyArmIkHost):
+    def __init__(self, host: BodyArmIkHost) -> None:
         self._host, self._symmetry = host, PlanFitSymmetry(host)
 
-    def plan(self, container_name="FitSkeleton", *, body_root_name="Root_M", control_radius=1.5, pole_distance_scale=0.75, center_tolerance=0.01):
-        symmetry = self._symmetry.execute(container_name, center_tolerance=center_tolerance)
+    def plan(
+        self,
+        container_name: str = "FitSkeleton",
+        *,
+        body_root_name: str = "Root_M",
+        control_radius: float = 1.5,
+        pole_distance_scale: float = 0.75,
+        center_tolerance: float = 0.01,
+    ) -> BodyArmIkBuildPlan:
+        symmetry = self._symmetry.execute(
+            container_name,
+            center_tolerance=center_tolerance,
+        )
         body = self._host.capture_body_skeleton(body_root_name)
-        provenance_issues = audit_body_provenance(oriented_body_provenance(symmetry.source.hierarchy.container, len(symmetry.instances)), body.provenance)
+        provenance_issues = audit_body_provenance(
+            oriented_body_provenance(
+                symmetry.source.hierarchy.container,
+                len(symmetry.instances),
+            ),
+            body.provenance,
+        )
         mechanism_plan = plan_body_arm_mechanisms(body)
         mechanisms = self._host.capture_body_arm_mechanisms(mechanism_plan)
         mechanism_issues = audit_body_arm_mechanisms(mechanism_plan, mechanisms)
-        ik = plan_body_arm_ik(body, mechanism_plan, radius=control_radius, pole_distance_scale=pole_distance_scale)
+        ik = plan_body_arm_ik(
+            body,
+            mechanism_plan,
+            radius=control_radius,
+            pole_distance_scale=pole_distance_scale,
+        )
         names = [ik.root_name]
         for spec in ik.limbs:
             names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name))
-        collisions = tuple(sorted({path for name in names for path in self._host.find_name_collisions(name)}))
-        return BodyArmIkBuildPlan(symmetry, body, mechanisms, ik, provenance_issues, mechanism_issues, collisions)
+        collisions = tuple(
+            sorted(
+                {
+                    path
+                    for name in names
+                    for path in self._host.find_name_collisions(name)
+                }
+            )
+        )
+        return BodyArmIkBuildPlan(
+            symmetry,
+            body,
+            mechanisms,
+            ik,
+            provenance_issues,
+            mechanism_issues,
+            collisions,
+        )
 
-    def apply(self, container_name="FitSkeleton", *, body_root_name="Root_M", control_radius=1.5, pole_distance_scale=0.75, center_tolerance=0.01):
-        plan = self.plan(container_name, body_root_name=body_root_name, control_radius=control_radius, pole_distance_scale=pole_distance_scale, center_tolerance=center_tolerance)
+    def apply(
+        self,
+        container_name: str = "FitSkeleton",
+        *,
+        body_root_name: str = "Root_M",
+        control_radius: float = 1.5,
+        pole_distance_scale: float = 0.75,
+        center_tolerance: float = 0.01,
+    ) -> BodyArmIkBuildResult:
+        plan = self.plan(
+            container_name,
+            body_root_name=body_root_name,
+            control_radius=control_radius,
+            pole_distance_scale=pole_distance_scale,
+            center_tolerance=center_tolerance,
+        )
         if not plan.ready:
             raise FitSkeletonValidationError("Arm IK 构建预检失败，场景未修改：" + "；".join(plan.blockers))
         with self._host.transaction("创建双臂 RP IK 控制"):
             if self._host.create_body_arm_ik_root(plan.ik.root_name) != plan.ik.root_path:
                 raise RuntimeError("Arm IK 控制根路径漂移")
-            for spec in plan.ik.limbs: self._host.create_body_arm_ik(spec)
+            for spec in plan.ik.limbs:
+                self._host.create_body_arm_ik(spec)
             snapshot = self._host.capture_body_arm_ik(plan.ik)
             issues = audit_body_arm_ik(plan.ik, snapshot)
-            if issues: raise RuntimeError("Arm IK 构建后复检失败：" + "；".join(issue.message for issue in issues))
-            if self._host.capture_body_skeleton(body_root_name) != plan.body: raise RuntimeError("Arm IK 构建后 Body 发生变化")
+            if issues:
+                raise RuntimeError(
+                    "Arm IK 构建后复检失败："
+                    + "；".join(issue.message for issue in issues)
+                )
+            if self._host.capture_body_skeleton(body_root_name) != plan.body:
+                raise RuntimeError("Arm IK 构建后 Body 发生变化")
             current_mechanisms = self._host.capture_body_arm_mechanisms(
                 plan_body_arm_mechanisms(plan.body)
             )
