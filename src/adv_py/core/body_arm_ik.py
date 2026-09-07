@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isfinite, sqrt
+from math import isfinite
 
 from .body_arm_mechanisms import BodyArmMechanismPlan, BodyArmMechanismRole
+from .body_limb_ik import BodyLimbIkValidationError, solve_limb_pole_position
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
 
@@ -11,8 +12,7 @@ from .fit_symmetry import AxisFrame, FitBuildSide
 Vector3 = tuple[float, float, float]
 
 
-class BodyArmIkValidationError(ValueError):
-    pass
+BodyArmIkValidationError = BodyLimbIkValidationError
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,26 +176,14 @@ def solve_arm_pole_position(
     *,
     distance_scale: float = 0.75,
 ) -> Vector3:
-    if isinstance(distance_scale, bool) or not isinstance(distance_scale, (int, float)) or not isfinite(float(distance_scale)) or distance_scale <= 0:
-        raise BodyArmIkValidationError("Pole Vector 距离比例必须是正有限数值")
-    line = _subtract(wrist, shoulder)
-    length2 = _dot(line, line)
-    if length2 <= 1e-10:
-        raise BodyArmIkValidationError("Arm IK 起止关节不能重合")
-    projection = _add(shoulder, _scale(line, _dot(_subtract(elbow, shoulder), line) / length2))
-    bend = _subtract(elbow, projection)
-    bend_length = sqrt(_dot(bend, bend))
-    if bend_length <= 1e-6:
-        bend = fallback_axis
-        bend_length = sqrt(_dot(bend, bend))
-    if bend_length <= 1e-10:
-        raise BodyArmIkValidationError("直臂匹配缺少有效的 Pole Vector 备用方向")
-    total = sqrt(_dot(_subtract(elbow, shoulder), _subtract(elbow, shoulder))) + sqrt(_dot(_subtract(wrist, elbow), _subtract(wrist, elbow)))
-    return _add(elbow, _scale(bend, total * float(distance_scale) / bend_length))
+    return solve_limb_pole_position(
+        shoulder,
+        elbow,
+        wrist,
+        fallback_axis,
+        limb_label="Arm",
+        distance_scale=distance_scale,
+    )
 
 
-def _add(a, b): return tuple(x + y for x, y in zip(a, b))
-def _subtract(a, b): return tuple(x - y for x, y in zip(a, b))
-def _scale(a, value): return tuple(x * value for x in a)
-def _dot(a, b): return sum(x * y for x, y in zip(a, b))
 def _close(a, b, tolerance): return all(abs(x - y) <= tolerance for x, y in zip(a, b))

@@ -57,6 +57,12 @@ from adv_py.core.body_leg_controls import (
     BodyLegFkControlSnapshot,
     BodyLegFkControlSpec,
 )
+from adv_py.core.body_leg_ik import (
+    BodyLegIkPlan,
+    BodyLegIkSnapshot,
+    BodyLegIkSpec,
+    BodyLegIkState,
+)
 from adv_py.core.skin_bind import (
     SkinBindInputState,
     SkinBindMethod,
@@ -346,7 +352,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
     def create_body_control_root(self, name: str) -> str:
         self._require_transaction()
         if self.find_name_collisions(name):
-            raise FitSkeletonValidationError(f"Arm FK 控制根名称冲突：{name}")
+            raise FitSkeletonValidationError(f"Body 控制根名称冲突：{name}")
         self._transaction_changed = True
         created = self._cmds.createNode(
             "transform",
@@ -356,6 +362,9 @@ class MayaBodyBuildHost(MayaFitJointHost):
         return (self._cmds.ls(created, long=True) or [created])[0]
 
     def create_body_arm_ik_root(self, name: str) -> str:
+        return self.create_body_control_root(name)
+
+    def create_body_leg_ik_root(self, name: str) -> str:
         return self.create_body_control_root(name)
 
     def create_body_arm_blend(self, plan: BodyArmBlendPlan) -> None:
@@ -1476,6 +1485,263 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 wrist_constraints[0], wrist_source, wrist_driven,
             ))
         return BodyArmIkSnapshot(roots[0], tuple(states))
+
+    def create_body_leg_ik(self, spec: BodyLegIkSpec) -> None:
+        self._require_transaction()
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            names = (
+                spec.ankle_offset_name,
+                spec.ankle_control_name,
+                spec.pole_offset_name,
+                spec.pole_control_name,
+                spec.handle_name,
+                spec.pole_constraint_name,
+                spec.ankle_constraint_name,
+            )
+            if any(self.find_name_collisions(name) for name in names):
+                raise FitSkeletonValidationError("Leg IK 名称冲突")
+            if any(not self._cmds.objExists(path) for path in spec.chain):
+                raise FitSkeletonValidationError(
+                    "Leg IK mechanism chain 在执行前失效"
+                )
+            self._transaction_changed = True
+            ankle_offset = self._cmds.createNode(
+                "transform",
+                name=spec.ankle_offset_name,
+                parent=spec.root_path,
+                skipSelect=True,
+            )
+            ankle_offset = (
+                self._cmds.ls(ankle_offset, long=True) or [ankle_offset]
+            )[0]
+            x_axis, y_axis, z_axis = spec.ankle_axes
+            matrix = (
+                *x_axis,
+                0.0,
+                *y_axis,
+                0.0,
+                *z_axis,
+                0.0,
+                *spec.ankle_position,
+                1.0,
+            )
+            self._cmds.xform(ankle_offset, worldSpace=True, matrix=matrix)
+            ankle = self._cmds.circle(
+                name=spec.ankle_control_name,
+                normal=(1.0, 0.0, 0.0),
+                radius=spec.radius,
+                degree=3,
+                sections=12,
+                constructionHistory=False,
+            )[0]
+            ankle = self._cmds.parent(ankle, ankle_offset, relative=True)[0]
+            ankle = (self._cmds.ls(ankle, long=True) or [ankle])[0]
+            pole_offset = self._cmds.createNode(
+                "transform",
+                name=spec.pole_offset_name,
+                parent=spec.root_path,
+                skipSelect=True,
+            )
+            pole_offset = (
+                self._cmds.ls(pole_offset, long=True) or [pole_offset]
+            )[0]
+            self._cmds.xform(
+                pole_offset,
+                worldSpace=True,
+                translation=spec.pole_position,
+            )
+            pole = self._cmds.circle(
+                name=spec.pole_control_name,
+                normal=(0.0, 0.0, 1.0),
+                radius=spec.radius * 0.65,
+                degree=3,
+                sections=8,
+                constructionHistory=False,
+            )[0]
+            pole = self._cmds.parent(pole, pole_offset, relative=True)[0]
+            pole = (self._cmds.ls(pole, long=True) or [pole])[0]
+            if (
+                ankle != spec.ankle_control_path
+                or pole != spec.pole_control_path
+            ):
+                raise RuntimeError("Leg IK 控制路径漂移")
+            handle, _ = self._cmds.ikHandle(
+                name=spec.handle_name,
+                startJoint=spec.chain[0],
+                endEffector=spec.chain[2],
+                solver="ikRPsolver",
+            )
+            self._cmds.parent(handle, ankle, absolute=True)
+            self._cmds.poleVectorConstraint(
+                pole,
+                handle,
+                name=spec.pole_constraint_name,
+            )
+            self._cmds.orientConstraint(
+                ankle,
+                spec.chain[2],
+                maintainOffset=False,
+                name=spec.ankle_constraint_name,
+            )
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+    def capture_body_leg_ik(self, plan: BodyLegIkPlan) -> BodyLegIkSnapshot:
+        roots = self._cmds.ls(plan.root_path, long=True, type="transform") or []
+        if len(roots) != 1:
+            raise FitSkeletonValidationError("Leg IK 控制根节点无效")
+        states = []
+        for spec in plan.limbs:
+            ankle = (
+                self._cmds.ls(
+                    spec.ankle_control_path,
+                    long=True,
+                    type="transform",
+                )
+                or [None]
+            )[0]
+            pole = (
+                self._cmds.ls(
+                    spec.pole_control_path,
+                    long=True,
+                    type="transform",
+                )
+                or [None]
+            )[0]
+            handles = self._cmds.ls(
+                spec.handle_name,
+                long=True,
+                type="ikHandle",
+            ) or []
+            pole_constraints = self._cmds.ls(
+                spec.pole_constraint_name,
+                type="poleVectorConstraint",
+            ) or []
+            ankle_constraints = self._cmds.ls(
+                spec.ankle_constraint_name,
+                type="orientConstraint",
+            ) or []
+            if (
+                ankle is None
+                or pole is None
+                or len(handles) != 1
+                or len(pole_constraints) != 1
+                or len(ankle_constraints) != 1
+            ):
+                raise FitSkeletonValidationError("Leg IK 节点集合无效")
+            handle = handles[0]
+            ankle_parent = self._cmds.listRelatives(
+                ankle, parent=True, fullPath=True
+            ) or []
+            pole_parent = self._cmds.listRelatives(
+                pole, parent=True, fullPath=True
+            ) or []
+            handle_parent = self._cmds.listRelatives(
+                handle, parent=True, fullPath=True
+            ) or []
+            joint_list = tuple(
+                (self._cmds.ls(value, long=True) or [value])[0]
+                for value in (
+                    self._cmds.ikHandle(handle, query=True, jointList=True) or []
+                )
+            )
+            pole_targets = self._cmds.poleVectorConstraint(
+                pole_constraints[0],
+                query=True,
+                targetList=True,
+            ) or []
+            pole_source = (
+                (self._cmds.ls(pole_targets[0], long=True) or [pole_targets[0]])[0]
+                if len(pole_targets) == 1
+                else None
+            )
+            ankle_targets = self._cmds.orientConstraint(
+                ankle_constraints[0],
+                query=True,
+                targetList=True,
+            ) or []
+            ankle_source = (
+                (self._cmds.ls(ankle_targets[0], long=True) or [ankle_targets[0]])[0]
+                if len(ankle_targets) == 1
+                else None
+            )
+            outputs = self._cmds.listConnections(
+                f"{ankle_constraints[0]}.constraintRotateX",
+                source=False,
+                destination=True,
+                plugs=True,
+            ) or []
+            ankle_driven = (
+                self._resolve_connected_node(outputs[0])
+                if len(outputs) == 1
+                else None
+            )
+
+            def shape_type(node):
+                shapes = self._cmds.listRelatives(
+                    node,
+                    shapes=True,
+                    noIntermediate=True,
+                    fullPath=True,
+                ) or []
+                return (
+                    self._cmds.nodeType(shapes[0])
+                    if len(shapes) == 1
+                    else None
+                )
+
+            def vector(node, attribute):
+                return tuple(
+                    float(value)
+                    for value in self._cmds.getAttr(
+                        f"{node}.{attribute}"
+                    )[0]
+                )
+
+            states.append(BodyLegIkState(
+                side=spec.side,
+                ankle_control_path=ankle,
+                ankle_parent_path=(ankle_parent[0] if ankle_parent else None),
+                pole_control_path=pole,
+                pole_parent_path=(pole_parent[0] if pole_parent else None),
+                handle_name=spec.handle_name,
+                pole_constraint_name=pole_constraints[0],
+                handle_parent_path=(handle_parent[0] if handle_parent else None),
+                joint_list=joint_list,
+                pole_source=pole_source,
+                ankle_position=tuple(
+                    float(value)
+                    for value in self._cmds.xform(
+                        ankle,
+                        query=True,
+                        worldSpace=True,
+                        translation=True,
+                    )
+                ),
+                pole_position=tuple(
+                    float(value)
+                    for value in self._cmds.xform(
+                        pole,
+                        query=True,
+                        worldSpace=True,
+                        translation=True,
+                    )
+                ),
+                ankle_shape=shape_type(ankle),
+                pole_shape=shape_type(pole),
+                ankle_translation=vector(ankle, "translate"),
+                ankle_rotation=vector(ankle, "rotate"),
+                pole_translation=vector(pole, "translate"),
+                pole_rotation=vector(pole, "rotate"),
+                ankle_constraint_name=ankle_constraints[0],
+                ankle_source=ankle_source,
+                ankle_driven_joint=ankle_driven,
+            ))
+        return BodyLegIkSnapshot(roots[0], tuple(states))
 
     def create_body_arm_mechanism_root(self, name: str) -> str:
         self._require_transaction()

@@ -6,6 +6,7 @@ from adv_py.application import (
     BuildBodyArmMechanisms,
     BuildBodyLegMechanisms,
     BuildBodyLegFkMechanismControls,
+    BuildBodyLegIkControls,
     BuildBodyArmFkControls,
     BuildBodyArmFkMechanismControls,
     BuildBodyArmIkControls,
@@ -28,6 +29,8 @@ from adv_py.core import (
     BodyLegMechanismSnapshot,
     BodyLegFkControlSnapshot,
     BodyLegFkControlState,
+    BodyLegIkSnapshot,
+    BodyLegIkState,
     BodyArmIkSnapshot,
     BodyArmIkState,
     BodyArmBlendJointState,
@@ -79,6 +82,7 @@ class FakeBodySkeletonHost:
         faulty_arm_mechanisms=False,
         faulty_leg_mechanisms=False,
         faulty_leg_fk=False,
+        faulty_leg_ik=False,
         faulty_arm_ik=False,
         faulty_arm_blend=False,
         faulty_arm_visibility=False,
@@ -148,6 +152,9 @@ class FakeBodySkeletonHost:
         self.leg_control_root = None
         self.leg_fk_states = []
         self.faulty_leg_fk = faulty_leg_fk
+        self.leg_ik_root = None
+        self.leg_ik_states = []
+        self.faulty_leg_ik = faulty_leg_ik
         self.arm_ik_root = None
         self.arm_ik_states = []
         self.faulty_arm_ik = faulty_arm_ik
@@ -214,6 +221,8 @@ class FakeBodySkeletonHost:
                     existing_controls.append(path)
             if state.constraint_name == name:
                 existing_controls.append(name)
+        if self.leg_ik_root and self.leg_ik_root.rsplit("|", 1)[-1] == name:
+            existing_controls.append(self.leg_ik_root)
         if self.arm_ik_root and self.arm_ik_root.rsplit("|", 1)[-1] == name:
             existing_controls.append(self.arm_ik_root)
         if self.twist_root and self.twist_root.rsplit("|", 1)[-1] == name:
@@ -242,6 +251,8 @@ class FakeBodySkeletonHost:
         before_leg_mechanism_states = list(self.leg_mechanism_states)
         before_leg_control_root = self.leg_control_root
         before_leg_fk_states = list(self.leg_fk_states)
+        before_leg_ik_root = self.leg_ik_root
+        before_leg_ik_states = list(self.leg_ik_states)
         before_arm_ik_root = self.arm_ik_root
         before_arm_ik_states = list(self.arm_ik_states)
         before_arm_blend_snapshot = self.arm_blend_snapshot
@@ -268,6 +279,8 @@ class FakeBodySkeletonHost:
             self.leg_mechanism_states = before_leg_mechanism_states
             self.leg_control_root = before_leg_control_root
             self.leg_fk_states = before_leg_fk_states
+            self.leg_ik_root = before_leg_ik_root
+            self.leg_ik_states = before_leg_ik_states
             self.arm_ik_root = before_arm_ik_root
             self.arm_ik_states = before_arm_ik_states
             self.arm_blend_snapshot = before_arm_blend_snapshot
@@ -463,6 +476,42 @@ class FakeBodySkeletonHost:
         if self.faulty_leg_fk and states:
             states = (replace(states[0], shape_type=None),) + states[1:]
         return BodyLegFkControlSnapshot(self.leg_control_root, states)
+
+    def create_body_leg_ik_root(self, name):
+        self.leg_ik_root = f"|{name}"
+        return self.leg_ik_root
+
+    def create_body_leg_ik(self, spec):
+        self.leg_ik_states.append(BodyLegIkState(
+            spec.side,
+            spec.ankle_control_path,
+            spec.ankle_offset_path,
+            spec.pole_control_path,
+            spec.pole_offset_path,
+            spec.handle_name,
+            spec.pole_constraint_name,
+            spec.ankle_control_path,
+            spec.chain[:2],
+            spec.pole_control_path,
+            spec.ankle_position,
+            spec.pole_position,
+            "nurbsCurve",
+            "nurbsCurve",
+            (0.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
+            spec.ankle_constraint_name,
+            spec.ankle_control_path,
+            spec.chain[2],
+        ))
+
+    def capture_body_leg_ik(self, plan):
+        del plan
+        states = tuple(self.leg_ik_states)
+        if self.faulty_leg_ik and states:
+            states = (replace(states[0], pole_source=None),) + states[1:]
+        return BodyLegIkSnapshot(self.leg_ik_root, states)
 
     def create_body_arm_ik_root(self, name):
         self.arm_ik_root = f"|{name}"
@@ -1108,6 +1157,54 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 3)
         self.assertIsNone(host.leg_control_root)
         self.assertFalse(host.leg_fk_states)
+
+    def test_builds_bilateral_leg_rp_ik_controls(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegMechanisms(host).apply()
+
+        preview = BuildBodyLegIkControls(host).plan(control_radius=2.25)
+        result = BuildBodyLegIkControls(host).apply(control_radius=2.25)
+
+        self.assertTrue(preview.ready)
+        self.assertEqual(host.transaction_count, 3)
+        self.assertEqual(len(result.snapshot.limbs), 2)
+        self.assertTrue(all(
+            "IKDriver" in path
+            for state in result.snapshot.limbs
+            for path in state.joint_list
+        ))
+        self.assertTrue(all(
+            state.ankle_source == state.ankle_control_path
+            and state.ankle_driven_joint.endswith(
+                f"AdvPy_AnkleIKDriver_{state.side.value}"
+            )
+            for state in result.snapshot.limbs
+        ))
+
+    def test_leg_ik_collision_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegMechanisms(host).apply()
+        host.collisions["AdvPy_LegPV_L"] = ("|User|AdvPy_LegPV_L",)
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "同名"):
+            BuildBodyLegIkControls(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertIsNone(host.leg_ik_root)
+
+    def test_leg_ik_postcheck_failure_rolls_back(self):
+        host = FakeBodySkeletonHost(faulty_leg_ik=True)
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegMechanisms(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "复检失败"):
+            BuildBodyLegIkControls(host).apply()
+
+        self.assertEqual(host.transaction_count, 3)
+        self.assertIsNone(host.leg_ik_root)
+        self.assertFalse(host.leg_ik_states)
 
     def test_fk_controls_drive_fk_mechanisms_instead_of_body(self):
         host = FakeBodySkeletonHost()
