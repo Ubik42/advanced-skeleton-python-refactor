@@ -52,6 +52,11 @@ from adv_py.core.body_leg_mechanisms import (
     BodyLegMechanismPlan,
     BodyLegMechanismSnapshot,
 )
+from adv_py.core.body_leg_controls import (
+    BodyLegFkControlPlan,
+    BodyLegFkControlSnapshot,
+    BodyLegFkControlSpec,
+)
 from adv_py.core.skin_bind import (
     SkinBindInputState,
     SkinBindMethod,
@@ -1611,16 +1616,28 @@ class MayaBodyBuildHost(MayaFitJointHost):
         return self.capture_body_arm_mechanisms(plan)
 
     def create_body_arm_fk_control(self, spec: BodyArmFkControlSpec) -> None:
+        self._create_body_limb_fk_control(spec, "Arm")
+
+    def create_body_leg_fk_control(self, spec: BodyLegFkControlSpec) -> None:
+        self._create_body_limb_fk_control(spec, "Leg")
+
+    def _create_body_limb_fk_control(
+        self,
+        spec: BodyArmFkControlSpec,
+        limb_label: str,
+    ) -> None:
         self._require_transaction()
         selection = self._cmds.ls(selection=True, long=True) or []
         for name in (spec.offset_name, spec.control_name, spec.constraint_name):
             if self.find_name_collisions(name):
-                raise FitSkeletonValidationError(f"Arm FK 控制名称冲突：{name}")
+                raise FitSkeletonValidationError(
+                    f"{limb_label} FK 控制名称冲突：{name}"
+                )
         parent = self._cmds.ls(spec.parent_path, long=True, type="transform") or []
         driven = self._cmds.ls(spec.driven_joint, long=True, type="joint") or []
         if len(parent) != 1 or len(driven) != 1:
             raise FitSkeletonValidationError(
-                f"Arm FK 控制父级或驱动关节失效：{spec.control_name}"
+                f"{limb_label} FK 控制父级或驱动关节失效：{spec.control_name}"
             )
         self._transaction_changed = True
         try:
@@ -1654,7 +1671,9 @@ class MayaBodyBuildHost(MayaFitJointHost):
             control = self._cmds.parent(control, offset, relative=True)[0]
             control = (self._cmds.ls(control, long=True) or [control])[0]
             if offset != spec.offset_path or control != spec.control_path:
-                raise RuntimeError(f"Arm FK 控制路径漂移：{spec.control_name}")
+                raise RuntimeError(
+                    f"{limb_label} FK 控制路径漂移：{spec.control_name}"
+                )
             self._cmds.orientConstraint(
                 control,
                 driven[0],
@@ -1671,9 +1690,24 @@ class MayaBodyBuildHost(MayaFitJointHost):
         self,
         plan: BodyArmFkControlPlan,
     ) -> BodyArmFkControlSnapshot:
+        return self._capture_body_limb_fk_controls(plan, "Arm")
+
+    def capture_body_leg_fk_controls(
+        self,
+        plan: BodyLegFkControlPlan,
+    ) -> BodyLegFkControlSnapshot:
+        return self._capture_body_limb_fk_controls(plan, "Leg")
+
+    def _capture_body_limb_fk_controls(
+        self,
+        plan: BodyArmFkControlPlan,
+        limb_label: str,
+    ) -> BodyArmFkControlSnapshot:
         roots = self._cmds.ls(plan.root_path, long=True, type="transform") or []
         if len(roots) != 1:
-            raise FitSkeletonValidationError("Arm FK 控制根节点无效")
+            raise FitSkeletonValidationError(
+                f"{limb_label} FK 控制根节点无效"
+            )
         states: list[BodyArmFkControlState] = []
         for spec in plan.controls:
             offsets = self._cmds.ls(spec.offset_path, long=True, type="transform") or []
@@ -1681,7 +1715,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
             constraints = self._cmds.ls(spec.constraint_name, type="orientConstraint") or []
             if len(offsets) != 1 or len(controls) != 1 or len(constraints) != 1:
                 raise FitSkeletonValidationError(
-                    f"Arm FK 控制或约束无效：{spec.control_name}"
+                    f"{limb_label} FK 控制或约束无效：{spec.control_name}"
                 )
             offset, control, constraint = offsets[0], controls[0], constraints[0]
             offset_parent = self._cmds.listRelatives(

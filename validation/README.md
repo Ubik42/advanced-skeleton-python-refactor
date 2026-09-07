@@ -34,7 +34,8 @@
 - Maya 双臂 FK 从当前 Body 世界帧建立 Shoulder/Elbow/Wrist 的 6 个 NURBS 控制、offset 层级和 orientConstraint；控制可改变真实关节姿态，一次 Undo 会完整移除控制系统并恢复 Body ReBuild 安全状态。
 - Maya 双臂机制链从 Body 世界帧建立左右各一套 FK/IK Shoulder→Elbow→Wrist 驱动链；12 个 joint 的来源连线、零 rotate、链间独立运动、一次 Undo 和 ReBuild 安全恢复均通过。
 - Maya 双腿机制链复用同一 limb 合同，从 Body 世界帧建立左右各一套 FK/IK Hip→Knee→Ankle 驱动链；12 个 joint 的来源连线、零 rotate、链间独立运动、失败回滚、一次 Undo 和 ReBuild 安全恢复均通过。
-- Maya FK mechanism controls 在构建前核对 Body provenance 和机制链快照，6 个控制只驱动 FK driver joints；真实姿态、Body/IK 隔离、选择保持及控制层/机制层分步 Undo 均通过。
+- Maya Arm FK mechanism controls 在构建前核对 Body provenance 和机制链快照，6 个控制只驱动 Arm FK driver joints；真实姿态、Body/IK 隔离、选择保持及控制层/机制层分步 Undo 均通过。
+- Maya Leg FK mechanism controls 复用同一通用控制合同，为左右 Hip/Knee/Ankle 建立 6 个 NURBS controls；零通道、FK driver 连线、Body/IK 隔离、选择保持和两层 Undo 均通过。
 - Maya 双臂 RP IK 创建 Wrist/Pole Vector 曲线控制、ikRPsolver Handle 与 poleVectorConstraint；可达目标求解、Body 隔离、选择保持和单次 Undo 均通过。
 - Maya Arm IK/FK 输出用左右独立属性和 reverse 节点驱动 6 个 Body 双源约束；FK、IK、0.5 权重、侧向隔离、选择保持与单次 Undo 均通过。
 - Maya 完整 Arm Rig 在一个 Undo Chunk 内组合 mechanisms、FK、blend 与 RP IK；后段失败整套回滚，成品一次 Undo 后 Body/Fit 保留且 ReBuild 再次安全。
@@ -89,6 +90,8 @@
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_arm_mechanisms_smoke.py validation\results\maya2024-body-arm-mechanisms.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_leg_mechanisms_smoke.py validation\results\maya2024-body-leg-mechanisms.json
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_leg_fk_mechanisms_smoke.py validation\results\maya2024-body-leg-fk-mechanisms.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_arm_fk_mechanisms_smoke.py validation\results\maya2024-body-arm-fk-mechanisms.json
 
@@ -153,7 +156,7 @@
 - 位置编辑只写本地 translate，不自动解锁、断开驱动、重算 jointOrient 或更新 Fit 可视化几何。
 - 朝向编辑支持唯一子级或调用方显式选择的直接分支子级；非零 rotate 和不可补偿后代会在预检阶段拒绝。
 - 对称计划表达输出名称、父子拓扑、YZ 平面世界位置及镜像行为世界轴；当前尚未覆盖非均匀缩放、World Match 或自定义逐关节镜像平面。
-- 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径；Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 当前只到双侧 Hip/Knee/Ankle FK/IK 机制链，尚无腿/手指控制、Foot、完整变形系统或产品 UI，因此不是最终 Body rig。
+- 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径；Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 当前覆盖双侧 Hip/Knee/Ankle FK/IK 机制链和 FK controls，尚无腿部 IK/Pole Vector、Foot、手指控制、完整变形系统或产品 UI，因此不是最终 Body rig。
 - provenance 只证明本工程写入的产物身份和声明数量；删除资格还必须通过当前 DAG 与外部连接安全评估，不能只凭标记直接删除。
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。

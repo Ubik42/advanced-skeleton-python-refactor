@@ -15,40 +15,40 @@ from .body_limb_controls import (
 from .body_skeleton import BodySkeletonSnapshot
 
 
-BodyArmFkControlPlan = BodyLimbFkControlPlan
-BodyArmFkControlSnapshot = BodyLimbFkControlSnapshot
-BodyArmFkControlSpec = BodyLimbFkControlSpec
-BodyArmFkControlState = BodyLimbFkControlState
-BodyControlIssue = BodyLimbControlIssue
-BodyControlValidationError = BodyLimbControlValidationError
+BodyLegFkControlPlan = BodyLimbFkControlPlan
+BodyLegFkControlSnapshot = BodyLimbFkControlSnapshot
+BodyLegFkControlSpec = BodyLimbFkControlSpec
+BodyLegFkControlState = BodyLimbFkControlState
+BodyLegControlIssue = BodyLimbControlIssue
+BodyLegControlValidationError = BodyLimbControlValidationError
 
 
-def plan_body_arm_fk_controls(
+def plan_body_leg_fk_controls(
     body: BodySkeletonSnapshot,
     *,
-    radius: float = 1.5,
+    radius: float = 1.75,
     driven_joint_by_source: Mapping[str, str] | None = None,
-) -> BodyArmFkControlPlan:
+) -> BodyLegFkControlPlan:
     return plan_body_limb_fk_controls(
         body,
-        limb_label="Arm",
-        joint_names=("Shoulder", "Elbow", "Wrist"),
+        limb_label="Leg",
+        joint_names=("Hip", "Knee", "Ankle"),
         radius=radius,
         driven_joint_by_source=driven_joint_by_source,
     )
 
 
-def audit_body_arm_fk_controls(
-    plan: BodyArmFkControlPlan,
-    snapshot: BodyArmFkControlSnapshot,
+def audit_body_leg_fk_controls(
+    plan: BodyLegFkControlPlan,
+    snapshot: BodyLegFkControlSnapshot,
     *,
     tolerance: float = 1e-4,
     check_initial_pose: bool = True,
-) -> tuple[BodyControlIssue, ...]:
+) -> tuple[BodyLegControlIssue, ...]:
     return audit_body_limb_fk_controls(
         plan,
         snapshot,
-        limb_label="Arm",
+        limb_label="Leg",
         tolerance=tolerance,
         check_initial_pose=check_initial_pose,
     )

@@ -5,6 +5,7 @@ from dataclasses import replace
 from adv_py.application import (
     BuildBodyArmMechanisms,
     BuildBodyLegMechanisms,
+    BuildBodyLegFkMechanismControls,
     BuildBodyArmFkControls,
     BuildBodyArmFkMechanismControls,
     BuildBodyArmIkControls,
@@ -25,6 +26,8 @@ from adv_py.core import (
     BodyLegMechanismJointState,
     BodyLegMechanismRole,
     BodyLegMechanismSnapshot,
+    BodyLegFkControlSnapshot,
+    BodyLegFkControlState,
     BodyArmIkSnapshot,
     BodyArmIkState,
     BodyArmBlendJointState,
@@ -75,6 +78,7 @@ class FakeBodySkeletonHost:
         faulty_arm_fk=False,
         faulty_arm_mechanisms=False,
         faulty_leg_mechanisms=False,
+        faulty_leg_fk=False,
         faulty_arm_ik=False,
         faulty_arm_blend=False,
         faulty_arm_visibility=False,
@@ -141,6 +145,9 @@ class FakeBodySkeletonHost:
         self.leg_mechanism_root = None
         self.leg_mechanism_states = []
         self.faulty_leg_mechanisms = faulty_leg_mechanisms
+        self.leg_control_root = None
+        self.leg_fk_states = []
+        self.faulty_leg_fk = faulty_leg_fk
         self.arm_ik_root = None
         self.arm_ik_states = []
         self.faulty_arm_ik = faulty_arm_ik
@@ -196,6 +203,17 @@ class FakeBodySkeletonHost:
         for state in self.leg_mechanism_states:
             if state.path.rsplit("|", 1)[-1] == name:
                 existing_controls.append(state.path)
+        if (
+            self.leg_control_root
+            and self.leg_control_root.rsplit("|", 1)[-1] == name
+        ):
+            existing_controls.append(self.leg_control_root)
+        for state in self.leg_fk_states:
+            for path in (state.offset_path, state.control_path):
+                if path.rsplit("|", 1)[-1] == name:
+                    existing_controls.append(path)
+            if state.constraint_name == name:
+                existing_controls.append(name)
         if self.arm_ik_root and self.arm_ik_root.rsplit("|", 1)[-1] == name:
             existing_controls.append(self.arm_ik_root)
         if self.twist_root and self.twist_root.rsplit("|", 1)[-1] == name:
@@ -222,6 +240,8 @@ class FakeBodySkeletonHost:
         before_arm_mechanism_states = list(self.arm_mechanism_states)
         before_leg_mechanism_root = self.leg_mechanism_root
         before_leg_mechanism_states = list(self.leg_mechanism_states)
+        before_leg_control_root = self.leg_control_root
+        before_leg_fk_states = list(self.leg_fk_states)
         before_arm_ik_root = self.arm_ik_root
         before_arm_ik_states = list(self.arm_ik_states)
         before_arm_blend_snapshot = self.arm_blend_snapshot
@@ -246,6 +266,8 @@ class FakeBodySkeletonHost:
             self.arm_mechanism_states = before_arm_mechanism_states
             self.leg_mechanism_root = before_leg_mechanism_root
             self.leg_mechanism_states = before_leg_mechanism_states
+            self.leg_control_root = before_leg_control_root
+            self.leg_fk_states = before_leg_fk_states
             self.arm_ik_root = before_arm_ik_root
             self.arm_ik_states = before_arm_ik_states
             self.arm_blend_snapshot = before_arm_blend_snapshot
@@ -340,6 +362,9 @@ class FakeBodySkeletonHost:
         self.provenance = None
 
     def create_body_control_root(self, name):
+        if name == "AdvPy_LegFKControls":
+            self.leg_control_root = f"|{name}"
+            return self.leg_control_root
         self.control_root = f"|{name}"
         return self.control_root
 
@@ -415,6 +440,29 @@ class FakeBodySkeletonHost:
         if self.faulty_leg_mechanisms and states:
             states = (replace(states[0], source_joint=None),) + states[1:]
         return BodyLegMechanismSnapshot(self.leg_mechanism_root, states)
+
+    def create_body_leg_fk_control(self, spec):
+        self.leg_fk_states.append(BodyLegFkControlState(
+            offset_path=spec.offset_path,
+            offset_parent_path=spec.parent_path,
+            control_path=spec.control_path,
+            control_parent_path=spec.offset_path,
+            constraint_name=spec.constraint_name,
+            source_control=spec.control_path,
+            driven_joint=spec.driven_joint,
+            world_position=spec.world_position,
+            world_axes=spec.world_axes,
+            local_translation=(0.0, 0.0, 0.0),
+            local_rotation=(0.0, 0.0, 0.0),
+            shape_type="nurbsCurve",
+        ))
+
+    def capture_body_leg_fk_controls(self, plan):
+        del plan
+        states = tuple(self.leg_fk_states)
+        if self.faulty_leg_fk and states:
+            states = (replace(states[0], shape_type=None),) + states[1:]
+        return BodyLegFkControlSnapshot(self.leg_control_root, states)
 
     def create_body_arm_ik_root(self, name):
         self.arm_ik_root = f"|{name}"
@@ -1010,6 +1058,56 @@ class BodySkeletonTests(unittest.TestCase):
 
         self.assertIsNone(host.leg_mechanism_root)
         self.assertFalse(host.leg_mechanism_states)
+
+    def test_leg_fk_controls_drive_only_fk_mechanisms(self):
+        host = FakeBodySkeletonHost()
+        body = BuildOrientedBodySkeleton(host).apply().snapshot
+        mechanisms = BuildBodyLegMechanisms(host).apply().snapshot
+
+        preview = BuildBodyLegFkMechanismControls(host).plan(control_radius=2.25)
+        result = BuildBodyLegFkMechanismControls(host).apply(control_radius=2.25)
+
+        self.assertTrue(preview.ready)
+        self.assertEqual(host.transaction_count, 3)
+        self.assertEqual(len(result.snapshot.controls), 6)
+        body_paths = {state.path for state in body.joints}
+        ik_paths = {
+            state.path for state in mechanisms.joints if "IKDriver" in state.path
+        }
+        self.assertTrue(all(
+            "FKDriver" in state.driven_joint
+            and state.driven_joint not in body_paths | ik_paths
+            for state in result.snapshot.controls
+        ))
+        knee_left = next(
+            state for state in result.snapshot.controls
+            if state.control_path.endswith("AdvPy_KneeFK_L")
+        )
+        self.assertTrue(knee_left.offset_parent_path.endswith("AdvPy_HipFK_L"))
+
+    def test_leg_fk_control_collision_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegMechanisms(host).apply()
+        host.collisions["AdvPy_KneeFK_L"] = ("|User|AdvPy_KneeFK_L",)
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "同名"):
+            BuildBodyLegFkMechanismControls(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertIsNone(host.leg_control_root)
+
+    def test_leg_fk_control_postcheck_failure_rolls_back_controls(self):
+        host = FakeBodySkeletonHost(faulty_leg_fk=True)
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegMechanisms(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "复检失败"):
+            BuildBodyLegFkMechanismControls(host).apply()
+
+        self.assertEqual(host.transaction_count, 3)
+        self.assertIsNone(host.leg_control_root)
+        self.assertFalse(host.leg_fk_states)
 
     def test_fk_controls_drive_fk_mechanisms_instead_of_body(self):
         host = FakeBodySkeletonHost()
