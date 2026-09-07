@@ -2,21 +2,12 @@ import unittest
 
 from adv_py.application import BuildRig
 from adv_py.adapters import InMemoryRigHost
-from adv_py.core import ConstraintSpec, NodeSpec, PlanValidationError, RigPlan, validate_plan
+from adv_py.core import NodeSpec, PlanValidationError, RigPlan, transpose_flat, translation_matrix, validate_plan
+from adv_py.examples import two_joint_plan
 
 
 def sample_plan() -> RigPlan:
-    return RigPlan(
-        name="两节测试骨架",
-        nodes=(
-            NodeSpec(key="root", name="Root", kind="joint"),
-            NodeSpec(key="tip", name="Tip", kind="joint", parent="root"),
-            NodeSpec(key="ctrl", name="Root_CTRL", kind="control"),
-        ),
-        constraints=(
-            ConstraintSpec(kind="parent", sources=("ctrl",), target="root"),
-        ),
-    )
+    return two_joint_plan()
 
 
 class PortableCoreTests(unittest.TestCase):
@@ -25,9 +16,9 @@ class PortableCoreTests(unittest.TestCase):
 
         result = BuildRig(host).execute(sample_plan())
 
-        self.assertEqual(result.created_nodes, 3)
+        self.assertEqual(result.created_nodes, 4)
         self.assertEqual(host.nodes["tip"].parent, "root")
-        self.assertEqual(len(host.constraints), 1)
+        self.assertEqual(len(host.constraints), 2)
 
     def test_dry_run_does_not_mutate_host(self) -> None:
         host = InMemoryRigHost()
@@ -36,6 +27,15 @@ class PortableCoreTests(unittest.TestCase):
 
         self.assertTrue(result.dry_run)
         self.assertEqual(host.nodes, {})
+
+    def test_rolls_back_the_last_successful_transaction(self) -> None:
+        host = InMemoryRigHost()
+        BuildRig(host).execute(sample_plan())
+
+        host.rollback_last()
+
+        self.assertEqual(host.nodes, {})
+        self.assertEqual(host.constraints, [])
 
     def test_rejects_parent_cycle_before_mutation(self) -> None:
         invalid = RigPlan(
@@ -49,3 +49,7 @@ class PortableCoreTests(unittest.TestCase):
         with self.assertRaises(PlanValidationError):
             validate_plan(invalid)
 
+    def test_matrix_translation_survives_maya_layout_roundtrip(self) -> None:
+        matrix = translation_matrix(1.0, 2.0, 3.0)
+
+        self.assertEqual(transpose_flat(transpose_flat(matrix)), matrix)

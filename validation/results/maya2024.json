@@ -1,0 +1,13 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 46392,
+  "plan": "两节跨DCC骨架",
+  "created_nodes": 4,
+  "created_constraints": 2,
+  "duplicate_preflight_blocked": true,
+  "rollback_clean": true,
+  "remaining_nodes": [],
+  "duration_seconds": 4.471,
+  "status": "passed"
+}

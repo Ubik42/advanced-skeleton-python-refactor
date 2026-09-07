@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from .matrix import IDENTITY_MATRIX, Matrix44
+
 
 NodeKind = Literal["joint", "transform", "control"]
 ConstraintKind = Literal["parent", "point", "orient", "scale"]
@@ -16,6 +18,8 @@ class NodeSpec:
     name: str
     kind: NodeKind
     parent: str | None = None
+    world_matrix: Matrix44 = IDENTITY_MATRIX
+    extent: float = 1.0
     metadata: dict[str, str] = field(default_factory=dict)
 
 
@@ -36,4 +40,3 @@ class RigPlan:
     name: str
     nodes: tuple[NodeSpec, ...]
     constraints: tuple[ConstraintSpec, ...] = ()
-

@@ -1,0 +1,13 @@
+{
+  "host": "blender",
+  "version": "5.2.0 LTS",
+  "pid": 14228,
+  "plan": "两节跨DCC骨架",
+  "created_nodes": 4,
+  "created_constraints": 2,
+  "duplicate_preflight_blocked": true,
+  "rollback_clean": true,
+  "remaining_nodes": [],
+  "duration_seconds": 0.004,
+  "status": "passed"
+}

@@ -22,6 +22,7 @@ class InMemoryRigHost:
     def __init__(self) -> None:
         self.nodes: dict[str, _MemoryNode] = {}
         self.constraints: list[ConstraintSpec] = []
+        self._last_snapshot: tuple[dict[str, _MemoryNode], list[ConstraintSpec]] | None = None
 
     @contextmanager
     def transaction(self, label: str) -> Iterator[None]:
@@ -34,6 +35,8 @@ class InMemoryRigHost:
             self.nodes = nodes_before
             self.constraints = constraints_before
             raise
+        else:
+            self._last_snapshot = (nodes_before, constraints_before)
 
     def preflight(self, plan: RigPlan) -> tuple[str, ...]:
         conflicts = [node.name for node in plan.nodes if any(item.spec.name == node.name for item in self.nodes.values())]
@@ -62,3 +65,8 @@ class InMemoryRigHost:
             errors.append("约束数量不足")
         return tuple(errors)
 
+    def rollback_last(self) -> None:
+        if self._last_snapshot is None:
+            raise RuntimeError("没有可回滚的构建事务")
+        self.nodes, self.constraints = self._last_snapshot
+        self._last_snapshot = None
