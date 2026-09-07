@@ -252,6 +252,16 @@ class MayaBodyBuildHost(MayaFitJointHost):
             ),
         )
 
+    def delete_owned_body(self, root: str) -> None:
+        self._require_transaction()
+        matches = self._cmds.ls(root, long=True, type="joint") or []
+        if len(matches) != 1 or matches[0] != root:
+            raise FitSkeletonValidationError(
+                f"待替换 Body 根关节在执行前失效：{root}"
+            )
+        self._transaction_changed = True
+        self._cmds.delete(matches[0])
+
     def set_body_joint_world_axes(
         self,
         change: BodyJointOrientationChange,

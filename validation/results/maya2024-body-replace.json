@@ -1,0 +1,23 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 33044,
+  "slice": "owned_body_atomic_replace",
+  "preview_ready": true,
+  "preview_did_not_modify_scene": true,
+  "owned_name_collision_count": 30,
+  "foreign_name_collision_count": 0,
+  "root_uuid_changed": true,
+  "edited_fit_position_applied": true,
+  "replacement_joint_count": 30,
+  "replacement_safety_audit_passed": true,
+  "selection_preserved": true,
+  "fit_source_preserved": true,
+  "single_undo_restored_previous_root_uuid_and_position": true,
+  "edited_fit_survived_undo": true,
+  "unrelated_node_survived": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 4.026,
+  "status": "passed"
+}

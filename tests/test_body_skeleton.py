@@ -8,6 +8,7 @@ from adv_py.application import (
     InspectBodyRebuildSafety,
     InspectBodySkeletonProvenance,
     OrientBodySkeleton,
+    ReplaceOwnedBodySkeleton,
 )
 from adv_py.core import (
     IDENTITY_AXES,
@@ -83,6 +84,7 @@ class FakeBodySkeletonHost:
         self.in_transaction = False
         self.extra_dag_paths = ()
         self.external_dependencies = ()
+        self.delete_count = 0
 
     def capture_fit_orientation(self, container_name):
         del container_name
@@ -96,7 +98,10 @@ class FakeBodySkeletonHost:
         return self.labels.get(joint)
 
     def find_name_collisions(self, name):
-        return tuple(self.collisions.get(name, ()))
+        existing_body = tuple(
+            state.path for state in self.body if state.name == name
+        )
+        return tuple(self.collisions.get(name, ())) + existing_body
 
     @contextmanager
     def transaction(self, label):
@@ -178,6 +183,12 @@ class FakeBodySkeletonHost:
             tuple(state.path for state in self.body) + self.extra_dag_paths,
             self.external_dependencies,
         )
+
+    def delete_owned_body(self, root):
+        del root
+        self.delete_count += 1
+        self.body = []
+        self.provenance = None
 
 
 class BodySkeletonTests(unittest.TestCase):
@@ -346,6 +357,54 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertFalse(audit.safe_to_replace)
         self.assertIn("unexpected_dag_descendant", codes)
         self.assertIn("external_connection", codes)
+
+    def test_replaces_owned_body_and_ignores_only_its_name_collisions(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        use_case = ReplaceOwnedBodySkeleton(host)
+
+        preview = use_case.plan()
+
+        self.assertTrue(preview.ready)
+        self.assertEqual(len(preview.owned_name_collisions), 30)
+        self.assertFalse(preview.build.build.name_collisions)
+        result = use_case.apply()
+        self.assertEqual(host.transaction_count, 2)
+        self.assertEqual(host.delete_count, 1)
+        self.assertEqual(len(result.build.snapshot.joints), 30)
+        self.assertTrue(InspectBodyRebuildSafety(host).execute().safe_to_replace)
+
+    def test_rebuild_dependency_blocks_before_replacement_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        host.external_dependencies = (
+            BodyExternalDependency(
+                BodyExternalDependencyKind.CONNECTION,
+                "|Root_M.message",
+                "ExternalConsumer.input",
+            ),
+        )
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "外部依赖"):
+            ReplaceOwnedBodySkeleton(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertEqual(host.delete_count, 0)
+        self.assertEqual(len(host.body), 30)
+
+    def test_rebuild_failure_restores_previous_owned_body(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        previous_body = tuple(host.body)
+        previous_provenance = host.provenance
+        host.faulty_provenance = True
+
+        with self.assertRaisesRegex(RuntimeError, "关节数量不一致"):
+            ReplaceOwnedBodySkeleton(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertEqual(tuple(host.body), previous_body)
+        self.assertEqual(host.provenance, previous_provenance)
 
 
 if __name__ == "__main__":

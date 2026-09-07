@@ -20,7 +20,11 @@ from .body_provenance import (
 from .body_rebuild import (
     BodyRebuildInspectionHost,
     BodyRebuildSafetyAudit,
+    BodyReplacementHost,
+    BodyReplacementPlan,
+    BodyReplacementResult,
     InspectBodyRebuildSafety,
+    ReplaceOwnedBodySkeleton,
 )
 from .build_rig import BuildResult, BuildRig
 from .fit_container import (
@@ -103,6 +107,9 @@ __all__ = [
     "BodyProvenanceHost",
     "BodyRebuildInspectionHost",
     "BodyRebuildSafetyAudit",
+    "BodyReplacementHost",
+    "BodyReplacementPlan",
+    "BodyReplacementResult",
     "BodySkeletonBuildPlan",
     "BodySkeletonBuildResult",
     "BodySkeletonHost",
@@ -166,6 +173,7 @@ __all__ = [
     "OrientedFitTemplateBuildResult",
     "OrientedFitTemplateHost",
     "PlanFitSymmetry",
+    "ReplaceOwnedBodySkeleton",
     "UpperBodyFitBuildPlan",
     "UpperBodyFitBuildResult",
     "UpperBodyFitHost",

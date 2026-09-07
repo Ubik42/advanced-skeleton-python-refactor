@@ -105,61 +105,60 @@ class BuildOrientedBodySkeleton:
             )
 
         build = plan.build
-        root_name = build.specs[0].name
         with self._host.transaction(
             f"创建并朝向 {len(build.specs)} 个 Body skeleton joints"
         ):
-            neutral = _materialize_body_skeleton(
+            result = _build_oriented_body_skeleton_in_transaction(
                 self._host,
-                build,
-                root_name,
+                plan,
             )
-            changes = plan_body_joint_orientations(
-                build.symmetry.instances,
-                neutral,
-            )
-            orientation = BodyOrientationPlan(
-                build.symmetry,
-                neutral,
-                changes,
-            )
-            _apply_body_orientation(
-                self._host,
-                orientation,
-                root_name,
-            )
-            self._host.write_body_provenance(
-                neutral.root,
-                plan.provenance,
-            )
-            snapshot = self._host.capture_body_skeleton(root_name)
-            _verify_body_orientation(orientation, snapshot)
-            provenance_issues = audit_body_provenance(
-                plan.provenance,
-                snapshot.provenance,
-            )
-            if provenance_issues:
-                raise RuntimeError(
-                    "Body skeleton 原子构建后复检失败："
-                    + "；".join(issue.message for issue in provenance_issues)
-                )
-            current_fit = self._host.capture_fit_orientation(
-                build.symmetry.source.hierarchy.container
-            )
-            current_settings = self._host.read_fit_skeleton_settings(
-                build.symmetry.source.hierarchy.container
-            )
-            if current_fit != build.symmetry.source:
-                raise RuntimeError(
-                    "Body skeleton 原子构建后复检失败：Fit joints 被改写"
-                )
-            if current_settings != build.symmetry.settings:
-                raise RuntimeError(
-                    "Body skeleton 原子构建后复检失败：容器设置被改写"
-                )
-        return OrientedBodySkeletonBuildResult(
-            plan,
-            neutral,
-            changes,
-            snapshot,
+        return result
+
+
+def _build_oriented_body_skeleton_in_transaction(
+    host: OrientedBodySkeletonHost,
+    plan: OrientedBodySkeletonBuildPlan,
+) -> OrientedBodySkeletonBuildResult:
+    """Build, orient, mark and verify Body inside an active transaction."""
+
+    build = plan.build
+    root_name = build.specs[0].name
+    neutral = _materialize_body_skeleton(host, build, root_name)
+    changes = plan_body_joint_orientations(
+        build.symmetry.instances,
+        neutral,
+    )
+    orientation = BodyOrientationPlan(
+        build.symmetry,
+        neutral,
+        changes,
+    )
+    _apply_body_orientation(host, orientation, root_name)
+    host.write_body_provenance(neutral.root, plan.provenance)
+    snapshot = host.capture_body_skeleton(root_name)
+    _verify_body_orientation(orientation, snapshot)
+    provenance_issues = audit_body_provenance(
+        plan.provenance,
+        snapshot.provenance,
+    )
+    if provenance_issues:
+        raise RuntimeError(
+            "Body skeleton 原子构建后复检失败："
+            + "；".join(issue.message for issue in provenance_issues)
         )
+    current_fit = host.capture_fit_orientation(
+        build.symmetry.source.hierarchy.container
+    )
+    current_settings = host.read_fit_skeleton_settings(
+        build.symmetry.source.hierarchy.container
+    )
+    if current_fit != build.symmetry.source:
+        raise RuntimeError("Body skeleton 原子构建后复检失败：Fit joints 被改写")
+    if current_settings != build.symmetry.settings:
+        raise RuntimeError("Body skeleton 原子构建后复检失败：容器设置被改写")
+    return OrientedBodySkeletonBuildResult(
+        plan,
+        neutral,
+        changes,
+        snapshot,
+    )
