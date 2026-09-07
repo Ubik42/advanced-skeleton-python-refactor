@@ -17,6 +17,7 @@ from adv_py.application import (
     BuildBodyArmRig,
     MatchBodyArmFkToIk,
     MatchBodyLegFkToIk,
+    MatchBodyLegIkToFk,
     MatchBodyArmIkToFk,
     BuildBodySkeleton,
     BuildOrientedBodySkeleton,
@@ -50,6 +51,7 @@ from adv_py.core import (
     BodyArmVisibilitySnapshot,
     BodyArmFkToIkSceneState,
     BodyLegFkToIkSceneState,
+    BodyLegIkToFkSceneState,
     BodyArmIkToFkSceneState,
     BodyArmStretchSideState,
     BodyArmStretchSnapshot,
@@ -741,6 +743,30 @@ class FakeBodySkeletonHost:
         self.leg_match_applied = True
         sides = tuple(
             replace(side, attribute_value=1.0)
+            if side.side is plan.side else side
+            for side in self.leg_blend_snapshot.sides
+        )
+        self.leg_blend_snapshot = replace(
+            self.leg_blend_snapshot, sides=sides
+        )
+
+    def capture_body_leg_ik_to_fk_state(self, plan):
+        side = next(
+            value for value in self.leg_blend_snapshot.sides
+            if value.side is plan.side
+        )
+        return BodyLegIkToFkSceneState(
+            plan.required_paths,
+            plan.required_writable_plugs,
+            side.attribute_value,
+            plan.body_joint_positions,
+            plan.body_joint_axes,
+        )
+
+    def apply_body_leg_ik_to_fk(self, plan):
+        self.leg_match_applied = True
+        sides = tuple(
+            replace(side, attribute_value=0.0)
             if side.side is plan.side else side
             for side in self.leg_blend_snapshot.sides
         )
@@ -1769,6 +1795,45 @@ class BodySkeletonTests(unittest.TestCase):
         )
         self.assertEqual(right.attribute_value, 0.0)
         self.assertFalse(host.leg_match_applied)
+
+    def test_matches_right_leg_ik_to_fk_in_one_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegRig(host).apply()
+        MatchBodyLegFkToIk(host).apply(FitBuildSide.RIGHT)
+
+        result = MatchBodyLegIkToFk(host).apply(FitBuildSide.RIGHT)
+
+        values = {side.side: side.attribute_value for side in result.blend.sides}
+        self.assertEqual(host.transaction_count, 4)
+        self.assertEqual(values[FitBuildSide.RIGHT], 0.0)
+        self.assertEqual(values[FitBuildSide.LEFT], 0.0)
+
+    def test_leg_ik_to_fk_requires_current_ik_mode_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegRig(host).apply()
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "不是 IK 模式"):
+            MatchBodyLegIkToFk(host).apply(FitBuildSide.RIGHT)
+
+        self.assertEqual(host.transaction_count, 2)
+
+    def test_leg_ik_to_fk_pose_failure_rolls_back_blend(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegRig(host).apply()
+        MatchBodyLegFkToIk(host).apply(FitBuildSide.RIGHT)
+        host.faulty_leg_match = True
+
+        with self.assertRaisesRegex(RuntimeError, "关节位置跳变"):
+            MatchBodyLegIkToFk(host).apply(FitBuildSide.RIGHT)
+
+        right = next(
+            side for side in host.leg_blend_snapshot.sides
+            if side.side is FitBuildSide.RIGHT
+        )
+        self.assertEqual(right.attribute_value, 1.0)
 
     def test_matches_right_arm_ik_to_fk_in_one_transaction(self):
         host = FakeBodySkeletonHost()

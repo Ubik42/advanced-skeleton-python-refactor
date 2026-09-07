@@ -1,0 +1,22 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 35976,
+  "slice": "body_leg_ik_to_fk_match",
+  "preview_ready": true,
+  "preview_did_not_modify_scene": true,
+  "target_pose_preserved": true,
+  "left_pose_preserved": true,
+  "right_switched_to_fk": true,
+  "left_blend_unchanged": true,
+  "fk_controls_visible": true,
+  "fk_control_translations_remain_zero": true,
+  "selection_preserved": true,
+  "single_undo_restored_ik_mode": true,
+  "single_undo_restored_pose": true,
+  "second_undo_removed_complete_leg_rig": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 4.158,
+  "status": "passed"
+}
