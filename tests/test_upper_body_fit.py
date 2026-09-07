@@ -173,8 +173,8 @@ class UpperBodyFitTests(unittest.TestCase):
         result = use_case.apply()
 
         self.assertTrue(preview.ready)
-        self.assertEqual(len(preview.template_plan.template.joints), 22)
-        self.assertEqual(len(preview.predicted_orientation_changes), 15)
+        self.assertEqual(len(preview.template_plan.template.joints), 18)
+        self.assertEqual(len(preview.predicted_orientation_changes), 12)
         selections = {
             item.joint: item.child
             for item in preview.orientation_request.child_selections
@@ -182,7 +182,7 @@ class UpperBodyFitTests(unittest.TestCase):
         self.assertEqual(selections["Root"], "Spine1")
         self.assertEqual(selections["Ankle"], "Toes")
         self.assertEqual(selections["Toes"], "ToesEnd")
-        self.assertEqual(len(result.template.hierarchy.joints), 22)
+        self.assertEqual(len(result.template.hierarchy.joints), 18)
         self.assertEqual(host.transaction_count, 1)
 
     def test_previews_then_builds_and_orients_in_one_transaction(self):

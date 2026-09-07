@@ -149,9 +149,17 @@ def synthetic_body_source_fit_template(
     *,
     scale: float = 1.0,
 ) -> FitTemplateSpec:
-    """Return an independent upper body plus one source leg and foot tree."""
+    """Return an independent center chain plus one right arm and leg source."""
 
-    upper = synthetic_upper_body_fit_template(up_axis, scale=scale)
+    if not isinstance(up_axis, FitUpAxis):
+        raise FitSkeletonValidationError("全身源 Fit 模板 Up Axis 仅支持 Y 或 Z")
+    if (
+        isinstance(scale, bool)
+        or not isinstance(scale, (int, float))
+        or not isfinite(float(scale))
+        or scale <= 0
+    ):
+        raise FitSkeletonValidationError("全身源 Fit 模板缩放必须是正有限数值")
     unit = float(scale)
 
     def vertical(length: float) -> Vector3:
@@ -161,8 +169,8 @@ def synthetic_body_source_fit_template(
 
     def hip_offset() -> Vector3:
         if up_axis is FitUpAxis.Y:
-            return (1.5 * unit, -1.0 * unit, 0.0)
-        return (1.5 * unit, 0.0, -1.0 * unit)
+            return (-1.5 * unit, -1.0 * unit, 0.0)
+        return (-1.5 * unit, 0.0, -1.0 * unit)
 
     def foot_offset(forward: float, down: float = 0.0) -> Vector3:
         if up_axis is FitUpAxis.Y:
@@ -170,23 +178,56 @@ def synthetic_body_source_fit_template(
         return (0.0, forward * unit, down * unit)
 
     label = JointLabel.parse
-    source_leg = (
-        FitJointSpec("Hip", "Root", hip_offset(), label("Hip")),
-        FitJointSpec("Knee", "Hip", vertical(-4.0), label("Knee")),
-        FitJointSpec("Ankle", "Knee", vertical(-4.0), label("Foot")),
-        FitJointSpec("Heel", "Ankle", foot_offset(-1.0, -0.5), label("Foot")),
-        FitJointSpec("Toes", "Ankle", foot_offset(2.0, -0.5), label("Toe")),
-        FitJointSpec(
-            "FootSideInner", "Toes", (-0.6 * unit, 0.0, 0.0), label("Other")
-        ),
-        FitJointSpec(
-            "FootSideOuter", "Toes", (0.6 * unit, 0.0, 0.0), label("Other")
-        ),
-        FitJointSpec("ToesEnd", "Toes", foot_offset(2.0), label("Toe")),
-    )
     return FitTemplateSpec(
         name="synthetic_body_source",
-        joints=upper.joints + source_leg,
+        joints=(
+            FitJointSpec("Root", None, (0.0, 0.0, 0.0), label("Root")),
+            FitJointSpec("Spine1", "Root", vertical(3.0), label("Spine")),
+            FitJointSpec("Chest", "Spine1", vertical(3.0), label("Spine")),
+            FitJointSpec("Neck", "Chest", vertical(2.0), label("Neck")),
+            FitJointSpec("Head", "Neck", vertical(2.0), label("Head")),
+            FitJointSpec("HeadEnd", "Head", vertical(1.5), label("Head")),
+            FitJointSpec(
+                "Scapula",
+                "Chest",
+                (-1.5 * unit, 0.0, 0.0),
+                label("Collar"),
+            ),
+            FitJointSpec(
+                "Shoulder",
+                "Scapula",
+                (-1.5 * unit, 0.0, 0.0),
+                label("Shoulder"),
+            ),
+            FitJointSpec(
+                "Elbow", "Shoulder", (-3.0 * unit, 0.0, 0.0), label("Elbow")
+            ),
+            FitJointSpec(
+                "Wrist", "Elbow", (-2.5 * unit, 0.0, 0.0), label("Hand")
+            ),
+            FitJointSpec("Hip", "Root", hip_offset(), label("Hip")),
+            FitJointSpec("Knee", "Hip", vertical(-4.0), label("Knee")),
+            FitJointSpec("Ankle", "Knee", vertical(-4.0), label("Foot")),
+            FitJointSpec(
+                "Heel", "Ankle", foot_offset(-1.0, -0.5), label("Foot")
+            ),
+            FitJointSpec(
+                "Toes", "Ankle", foot_offset(2.0, -0.5), label("Toe")
+            ),
+            FitJointSpec(
+                "FootSideInner",
+                "Toes",
+                (0.6 * unit, 0.0, 0.0),
+                label("Other"),
+            ),
+            FitJointSpec(
+                "FootSideOuter",
+                "Toes",
+                (-0.6 * unit, 0.0, 0.0),
+                label("Other"),
+            ),
+            FitJointSpec("ToesEnd", "Toes", foot_offset(2.0), label("Toe")),
+        ),
     )
 
 

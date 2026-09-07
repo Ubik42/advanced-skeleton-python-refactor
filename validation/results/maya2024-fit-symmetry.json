@@ -1,0 +1,28 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 29652,
+  "slice": "fit_symmetry_expansion",
+  "source_joint_count": 18,
+  "right_source_verified": true,
+  "preview_did_not_modify_scene": true,
+  "expanded_instance_count": 30,
+  "side_counts": {
+    "M": 6,
+    "R": 12,
+    "L": 12
+  },
+  "output_topology_verified": true,
+  "yz_plane_position_reflection_verified": true,
+  "selection_preserved": true,
+  "inherited_left_only_verified": true,
+  "metadata_undo_restored_default_expansion": true,
+  "source_single_undo_removed_tree": true,
+  "container_survived_undo": true,
+  "settings_survived_undo": true,
+  "unrelated_node_survived": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 7.373,
+  "status": "passed"
+}

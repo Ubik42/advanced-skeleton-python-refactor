@@ -62,6 +62,12 @@ from .fit_settings import (
     audit_fit_skeleton_settings,
     default_fit_skeleton_settings,
 )
+from .fit_symmetry import (
+    FitBuildSide,
+    FitSymmetryInstance,
+    FitSymmetryValidationError,
+    expand_fit_symmetry,
+)
 from .fit_position import (
     FitJointPositionChange,
     FitJointPositionEdit,
@@ -106,6 +112,7 @@ __all__ = [
     "FitContainerShape",
     "FitContainerSpec",
     "FitContainerState",
+    "FitBuildSide",
     "FitHierarchyIssue",
     "FitHierarchyNode",
     "FitHierarchyPolicy",
@@ -143,6 +150,8 @@ __all__ = [
     "FitPositionValidationError",
     "FitTemplateIssue",
     "FitTemplateSpec",
+    "FitSymmetryInstance",
+    "FitSymmetryValidationError",
     "IDENTITY_AXES",
     "IDENTITY_MATRIX",
     "JointLabel",
@@ -161,6 +170,7 @@ __all__ = [
     "audit_fit_skeleton_settings",
     "audit_fit_template_snapshot",
     "default_fit_skeleton_settings",
+    "expand_fit_symmetry",
     "frame_from_y",
     "fit_joint_value",
     "matrix44",

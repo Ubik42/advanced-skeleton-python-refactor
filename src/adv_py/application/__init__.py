@@ -40,6 +40,7 @@ from .fit_settings import (
     FitSkeletonEnsureResult,
     FitSkeletonSettingsHost,
 )
+from .fit_symmetry import FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry
 from .fit_template import (
     CreateFitTemplate,
     CreateMinimalFitTemplate,
@@ -104,6 +105,8 @@ __all__ = [
     "FitSkeletonEnsurePlan",
     "FitSkeletonEnsureResult",
     "FitSkeletonSettingsHost",
+    "FitSymmetryHost",
+    "FitSymmetryPlan",
     "FitTemplateCreatePlan",
     "FitTemplateCreateResult",
     "FitTemplateHost",
@@ -116,6 +119,7 @@ __all__ = [
     "OrientedFitTemplateBuildPlan",
     "OrientedFitTemplateBuildResult",
     "OrientedFitTemplateHost",
+    "PlanFitSymmetry",
     "UpperBodyFitBuildPlan",
     "UpperBodyFitBuildResult",
     "UpperBodyFitHost",
