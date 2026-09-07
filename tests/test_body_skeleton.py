@@ -35,6 +35,8 @@ from adv_py.core import (
     BodyArmTwistJointState,
     BodyArmTwistSegmentState,
     BodyArmTwistSnapshot,
+    BodyArmVolumeSideState,
+    BodyArmVolumeSnapshot,
     IDENTITY_AXES,
     BodyJointState,
     BodyExternalDependency,
@@ -76,6 +78,7 @@ class FakeBodySkeletonHost:
         faulty_arm_stretch=False,
         faulty_arm_twist=False,
         faulty_arm_twist_runtime=False,
+        faulty_arm_volume=False,
     ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
         hierarchy = predict_fit_template_hierarchy(template, "|FitSkeleton")
@@ -147,6 +150,8 @@ class FakeBodySkeletonHost:
         self.arm_twist_states = []
         self.faulty_arm_twist = faulty_arm_twist
         self.faulty_arm_twist_runtime = faulty_arm_twist_runtime
+        self.arm_volume_snapshot = None
+        self.faulty_arm_volume = faulty_arm_volume
 
     def capture_fit_orientation(self, container_name):
         del container_name
@@ -210,6 +215,7 @@ class FakeBodySkeletonHost:
         before_twist_root = self.twist_root
         before_arm_twist_segments = list(self.arm_twist_segments)
         before_arm_twist_states = list(self.arm_twist_states)
+        before_arm_volume_snapshot = self.arm_volume_snapshot
         self.transaction_count += 1
         self.in_transaction = True
         try:
@@ -230,6 +236,7 @@ class FakeBodySkeletonHost:
             self.twist_root = before_twist_root
             self.arm_twist_segments = before_arm_twist_segments
             self.arm_twist_states = before_arm_twist_states
+            self.arm_volume_snapshot = before_arm_volume_snapshot
             raise
         finally:
             self.in_transaction = False
@@ -555,6 +562,53 @@ class FakeBodySkeletonHost:
             tuple(self.arm_twist_segments),
             states,
         )
+
+    def create_body_arm_volume(self, plan):
+        states = []
+        for spec in plan.sides:
+            plug = f"{plan.settings_path}.{spec.attribute}"
+            states.append(BodyArmVolumeSideState(
+                spec.side,
+                plug,
+                1.0,
+                spec.mode_blend_name,
+                spec.stretch_ratio_source,
+                f"{plan.settings_path}.{spec.mode_attribute}",
+                1.0,
+                spec.power_name,
+                f"{spec.mode_blend_name}.outputR",
+                spec.exponent,
+                3,
+                spec.blend_name,
+                f"{spec.power_name}.outputX",
+                plug,
+                1.0,
+                tuple(
+                    (
+                        path,
+                        f"{spec.blend_name}.outputR",
+                        f"{spec.blend_name}.outputR",
+                    )
+                    for path in spec.helper_joints
+                ),
+            ))
+        self.arm_volume_snapshot = BodyArmVolumeSnapshot(
+            plan.settings_path,
+            tuple(states),
+        )
+
+    def capture_body_arm_volume(self, plan):
+        del plan
+        if self.faulty_arm_volume and self.arm_volume_snapshot:
+            first = replace(
+                self.arm_volume_snapshot.sides[0],
+                power_operation=1,
+            )
+            return replace(
+                self.arm_volume_snapshot,
+                sides=(first,) + self.arm_volume_snapshot.sides[1:],
+            )
+        return self.arm_volume_snapshot
 
 
 class BodySkeletonTests(unittest.TestCase):
@@ -979,6 +1033,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.stretch.sides), 2)
         self.assertEqual(len(result.twist.segments), 4)
         self.assertEqual(len(result.twist.joints), 8)
+        self.assertEqual(len(result.volume.sides), 2)
         self.assertEqual(len(result.visibility.sides), 2)
         self.assertTrue(all(side.fk_visibility_source.endswith(".outputX") for side in result.visibility.sides))
         self.assertEqual(result.body, body)
@@ -1040,6 +1095,17 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 1)
         self.assertIsNone(host.mechanism_root)
         self.assertIsNone(host.twist_root)
+
+    def test_complete_arm_rig_volume_failure_rolls_back_every_stage(self):
+        host = FakeBodySkeletonHost(faulty_arm_volume=True)
+        BuildOrientedBodySkeleton(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "体积保持阶段"):
+            BuildBodyArmRig(host).apply()
+
+        self.assertIsNone(host.mechanism_root)
+        self.assertIsNone(host.twist_root)
+        self.assertIsNone(host.arm_volume_snapshot)
 
     def test_matches_right_arm_fk_to_ik_in_one_transaction(self):
         host = FakeBodySkeletonHost()

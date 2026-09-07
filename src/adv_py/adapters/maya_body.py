@@ -42,6 +42,11 @@ from adv_py.core.body_arm_twist import (
     BodyArmTwistSegmentState,
     BodyArmTwistSnapshot,
 )
+from adv_py.core.body_arm_volume import (
+    BodyArmVolumePlan,
+    BodyArmVolumeSideState,
+    BodyArmVolumeSnapshot,
+)
 from adv_py.core.skin_bind import (
     SkinBindInputState,
     SkinBindMethod,
@@ -861,6 +866,154 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 ),
             ))
         return BodyArmTwistSnapshot(roots[0], tuple(segment_states), tuple(states))
+
+    def create_body_arm_volume(self, plan: BodyArmVolumePlan) -> None:
+        self._require_transaction()
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            settings = self._cmds.ls(
+                plan.settings_path,
+                long=True,
+                type="transform",
+            ) or []
+            if len(settings) != 1 or settings[0] != plan.settings_path:
+                raise FitSkeletonValidationError("Arm 体积设置节点失效")
+            for spec in plan.sides:
+                plug = f"{plan.settings_path}.{spec.attribute}"
+                if (
+                    self._cmds.attributeQuery(
+                        spec.attribute,
+                        node=plan.settings_path,
+                        exists=True,
+                    )
+                    or any(
+                        self.find_name_collisions(name)
+                        for name in (
+                            spec.mode_blend_name,
+                            spec.power_name,
+                            spec.blend_name,
+                        )
+                    )
+                    or any(not self._cmds.objExists(path) for path in spec.helper_joints)
+                    or not self._cmds.objExists(spec.stretch_ratio_source)
+                    or not self._cmds.objExists(
+                        f"{plan.settings_path}.{spec.mode_attribute}"
+                    )
+                ):
+                    raise FitSkeletonValidationError("Arm 体积输入或名称在执行前失效")
+                self._transaction_changed = True
+                self._cmds.addAttr(
+                    plan.settings_path,
+                    longName=spec.attribute,
+                    attributeType="double",
+                    minValue=0.0,
+                    maxValue=1.0,
+                    defaultValue=1.0,
+                    keyable=True,
+                )
+                mode_blend = self._cmds.createNode(
+                    "blendColors",
+                    name=spec.mode_blend_name,
+                )
+                self._cmds.connectAttr(
+                    spec.stretch_ratio_source,
+                    f"{mode_blend}.color1R",
+                )
+                self._cmds.setAttr(f"{mode_blend}.color2R", 1.0)
+                self._cmds.connectAttr(
+                    f"{plan.settings_path}.{spec.mode_attribute}",
+                    f"{mode_blend}.blender",
+                )
+                power = self._cmds.createNode(
+                    "multiplyDivide",
+                    name=spec.power_name,
+                )
+                self._cmds.setAttr(f"{power}.operation", 3)
+                self._cmds.setAttr(f"{power}.input2X", spec.exponent)
+                self._cmds.connectAttr(f"{mode_blend}.outputR", f"{power}.input1X")
+                blend = self._cmds.createNode(
+                    "blendColors",
+                    name=spec.blend_name,
+                )
+                self._cmds.connectAttr(f"{power}.outputX", f"{blend}.color1R")
+                self._cmds.setAttr(f"{blend}.color2R", 1.0)
+                self._cmds.connectAttr(plug, f"{blend}.blender")
+                for helper in spec.helper_joints:
+                    self._cmds.connectAttr(f"{blend}.outputR", f"{helper}.scaleY")
+                    self._cmds.connectAttr(f"{blend}.outputR", f"{helper}.scaleZ")
+        finally:
+            self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
+
+    def capture_body_arm_volume(
+        self,
+        plan: BodyArmVolumePlan,
+    ) -> BodyArmVolumeSnapshot:
+        def source(plug: str) -> str | None:
+            values = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+                plugs=True,
+            ) or []
+            if len(values) != 1:
+                return None
+            node, attribute = values[0].split(".", 1)
+            paths = self._cmds.ls(node, long=True) or [node]
+            return f"{paths[0]}.{attribute}"
+
+        settings = self._cmds.ls(
+            plan.settings_path,
+            long=True,
+            type="transform",
+        ) or []
+        if len(settings) != 1:
+            raise FitSkeletonValidationError("Arm 体积设置节点无效")
+        states = []
+        for spec in plan.sides:
+            plug = f"{plan.settings_path}.{spec.attribute}"
+            mode_blend = self._cmds.ls(spec.mode_blend_name, type="blendColors") or []
+            power = self._cmds.ls(spec.power_name, type="multiplyDivide") or []
+            blend = self._cmds.ls(spec.blend_name, type="blendColors") or []
+            helpers = tuple(
+                self._cmds.ls(path, long=True, type="joint") or []
+                for path in spec.helper_joints
+            )
+            if (
+                not self._cmds.objExists(plug)
+                or len(mode_blend) != 1
+                or len(power) != 1
+                or len(blend) != 1
+                or any(len(values) != 1 for values in helpers)
+            ):
+                raise FitSkeletonValidationError("Arm 体积节点集合无效")
+            states.append(
+                BodyArmVolumeSideState(
+                    spec.side,
+                    plug,
+                    float(self._cmds.getAttr(plug)),
+                    spec.mode_blend_name,
+                    source(f"{spec.mode_blend_name}.color1R"),
+                    source(f"{spec.mode_blend_name}.blender"),
+                    float(self._cmds.getAttr(f"{spec.mode_blend_name}.color2R")),
+                    spec.power_name,
+                    source(f"{spec.power_name}.input1X"),
+                    float(self._cmds.getAttr(f"{spec.power_name}.input2X")),
+                    int(self._cmds.getAttr(f"{spec.power_name}.operation")),
+                    spec.blend_name,
+                    source(f"{spec.blend_name}.color1R"),
+                    source(f"{spec.blend_name}.blender"),
+                    float(self._cmds.getAttr(f"{spec.blend_name}.color2R")),
+                    tuple(
+                        (
+                            path,
+                            source(f"{path}.scaleY"),
+                            source(f"{path}.scaleZ"),
+                        )
+                        for path in spec.helper_joints
+                    ),
+                )
+            )
+        return BodyArmVolumeSnapshot(settings[0], tuple(states))
 
     def capture_skin_bind_input(self, plan: SkinBindPlan) -> SkinBindInputState:
         meshes = self._cmds.ls(plan.mesh_path, long=True, type="transform") or []
