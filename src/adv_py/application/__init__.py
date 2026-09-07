@@ -22,7 +22,11 @@ from .fit_orientation import (
     FitOrientationHost,
     FitOrientationPlan,
     FitOrientationResult,
+    FitWorldOrientationPlan,
+    FitWorldOrientationHost,
+    FitWorldOrientationResult,
     OrientSimpleFitChain,
+    OrientWorldFitJoints,
 )
 from .fit_position import (
     EditFitJointPositions,
@@ -67,6 +71,9 @@ __all__ = [
     "FitOrientationHost",
     "FitOrientationPlan",
     "FitOrientationResult",
+    "FitWorldOrientationPlan",
+    "FitWorldOrientationHost",
+    "FitWorldOrientationResult",
     "FitPositionEditPlan",
     "FitPositionEditResult",
     "FitPositionHost",
@@ -81,4 +88,5 @@ __all__ = [
     "JointLabelHost",
     "JointLabelResult",
     "OrientSimpleFitChain",
+    "OrientWorldFitJoints",
 ]

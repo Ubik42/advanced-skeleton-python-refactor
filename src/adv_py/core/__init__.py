@@ -39,10 +39,14 @@ from .fit_orientation import (
     FitOrientationSnapshot,
     FitOrientationValidationError,
     FitWorldAxis,
+    FitWorldOrientationChange,
     FitWorldOrientationPolicy,
     orientation_matches,
     parse_world_orientation_policy,
     plan_simple_fit_orientations,
+    plan_world_fit_orientations,
+    world_axes_from_orientation_policy,
+    world_orientation_matches,
 )
 from .fit_settings import (
     FIT_GEOMETRY_TYPES,
@@ -119,6 +123,7 @@ __all__ = [
     "FitOrientationValidationError",
     "FitUpAxis",
     "FitWorldAxis",
+    "FitWorldOrientationChange",
     "FitWorldOrientationPolicy",
     "FIT_GEOMETRY_TYPES",
     "FitSkeletonField",
@@ -157,6 +162,7 @@ __all__ = [
     "parse_world_orientation_policy",
     "plan_fit_joint_position_changes",
     "plan_simple_fit_orientations",
+    "plan_world_fit_orientations",
     "ordered_fit_joints",
     "predict_fit_joint_metadata",
     "rotation_y_matrix",
@@ -167,4 +173,6 @@ __all__ = [
     "validate_plan",
     "validate_fit_template",
     "with_translation",
+    "world_axes_from_orientation_policy",
+    "world_orientation_matches",
 ]

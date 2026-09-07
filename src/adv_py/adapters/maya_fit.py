@@ -26,6 +26,7 @@ from adv_py.core.fit_orientation import (
     FitJointOrientationState,
     FitOrientationChange,
     FitOrientationSnapshot,
+    FitWorldOrientationChange,
 )
 from adv_py.core.fit_settings import (
     FitSkeletonField,
@@ -500,6 +501,87 @@ class MayaFitJointHost:
                 descendant,
                 worldSpace=True,
                 translation=position,
+            )
+
+    def orient_world_fit_joint(self, change: FitWorldOrientationChange) -> None:
+        self._require_transaction()
+        joint_matches = self._cmds.ls(change.joint, long=True, type="joint") or []
+        child_matches = self._cmds.ls(change.child, long=True, type="joint") or []
+        if len(joint_matches) != 1 or len(child_matches) != 1:
+            raise FitSkeletonValidationError("worldOrient 目标 joint 在执行前失效")
+        joint = joint_matches[0]
+        child = child_matches[0]
+        if (self._cmds.listRelatives(child, parent=True, fullPath=True) or []) != [
+            joint
+        ]:
+            raise FitSkeletonValidationError("worldOrient 目标的父子关系已变化")
+        if any(
+            not self._cmds.getAttr(
+                f"{joint}.jointOrient{axis.upper()}", settable=True
+            )
+            for axis in ("x", "y", "z")
+        ):
+            raise FitSkeletonValidationError("worldOrient jointOrient 在执行前不可写")
+        if any(
+            not self._cmds.getAttr(
+                f"{child}.jointOrient{axis.upper()}", settable=True
+            )
+            for axis in ("x", "y", "z")
+        ):
+            raise FitSkeletonValidationError("子 joint jointOrient 在执行前不可写")
+
+        descendants: list[tuple[str, tuple[float, float, float]]] = []
+        for descendant, position in change.descendant_world_positions:
+            matches = self._cmds.ls(descendant, long=True, type="joint") or []
+            if len(matches) != 1:
+                raise FitSkeletonValidationError("worldOrient 补偿后代在执行前失效")
+            if any(
+                not self._cmds.getAttr(f"{matches[0]}.t{axis}", settable=True)
+                for axis in ("x", "y", "z")
+            ):
+                raise FitSkeletonValidationError(
+                    f"worldOrient 补偿 translate 在执行前不可写：{matches[0]}"
+                )
+            descendants.append((matches[0], position))
+
+        position = self._cmds.xform(
+            joint,
+            query=True,
+            worldSpace=True,
+            translation=True,
+        )
+        x_axis, y_axis, z_axis = change.desired_world_axes
+        matrix = (
+            *x_axis,
+            0.0,
+            *y_axis,
+            0.0,
+            *z_axis,
+            0.0,
+            float(position[0]),
+            float(position[1]),
+            float(position[2]),
+            1.0,
+        )
+        self._transaction_changed = True
+        self._cmds.xform(joint, worldSpace=True, matrix=matrix)
+        self._cmds.makeIdentity(
+            joint,
+            apply=True,
+            translate=False,
+            rotate=True,
+            scale=False,
+            normal=False,
+        )
+        self._cmds.setAttr(
+            f"{child}.jointOrient",
+            *change.child_before_joint_orient,
+        )
+        for descendant, descendant_position in descendants:
+            self._cmds.xform(
+                descendant,
+                worldSpace=True,
+                translation=descendant_position,
             )
 
     def read_fit_skeleton_settings(

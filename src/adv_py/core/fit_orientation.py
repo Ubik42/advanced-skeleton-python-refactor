@@ -7,6 +7,7 @@ from math import isfinite, sqrt
 from .fit_container import FitUpAxis
 from .fit_hierarchy import (
     TRANSLATION_AXES,
+    FitHierarchyNode,
     FitHierarchySnapshot,
     audit_fit_hierarchy,
 )
@@ -142,6 +143,117 @@ class FitOrientationChange:
     desired_primary_world: Vector3
     desired_secondary_world: Vector3
     secondary_world_axis: FitWorldAxis
+
+
+@dataclass(frozen=True, slots=True)
+class FitWorldOrientationChange:
+    joint: str
+    child: str
+    before_joint_orient: Vector3
+    child_before_joint_orient: Vector3
+    descendant_world_positions: tuple[tuple[str, Vector3], ...]
+    desired_world_axes: tuple[Vector3, Vector3, Vector3]
+    policy: FitWorldOrientationPolicy
+
+
+def world_axes_from_orientation_policy(
+    policy: FitWorldOrientationPolicy,
+) -> tuple[Vector3, Vector3, Vector3]:
+    if policy.forward_local_direction is None:
+        raise FitOrientationValidationError(
+            "自由 Forward 尚不能生成确定的世界朝向"
+        )
+
+    axes: dict[FitWorldAxis, Vector3] = {}
+    axes[policy.up_local_direction.unsigned_axis] = _signed_world_direction(
+        policy.up_local_direction,
+        (0.0, 1.0, 0.0),
+    )
+    axes[policy.forward_local_direction.unsigned_axis] = _signed_world_direction(
+        policy.forward_local_direction,
+        (0.0, 0.0, 1.0),
+    )
+    if FitWorldAxis.X not in axes:
+        axes[FitWorldAxis.X] = _cross(axes[FitWorldAxis.Y], axes[FitWorldAxis.Z])
+    elif FitWorldAxis.Y not in axes:
+        axes[FitWorldAxis.Y] = _cross(axes[FitWorldAxis.Z], axes[FitWorldAxis.X])
+    else:
+        axes[FitWorldAxis.Z] = _cross(axes[FitWorldAxis.X], axes[FitWorldAxis.Y])
+    return (axes[FitWorldAxis.X], axes[FitWorldAxis.Y], axes[FitWorldAxis.Z])
+
+
+def plan_world_fit_orientations(
+    snapshot: FitOrientationSnapshot,
+    request: FitOrientationRequest,
+    *,
+    tolerance: float = 1e-5,
+) -> tuple[FitWorldOrientationChange, ...]:
+    _validate_orientation_snapshot(snapshot, tolerance)
+    if snapshot.up_axis is not FitUpAxis.Y:
+        raise FitOrientationValidationError(
+            "固定 worldOrient 当前只支持 Maya Y-Up 场景"
+        )
+
+    hierarchy = {node.path: node for node in snapshot.hierarchy.joints}
+    orientations = {state.joint: state for state in snapshot.joints}
+    metadata = {item.joint: item for item in snapshot.metadata}
+    if not snapshot.metadata or set(metadata) != set(hierarchy):
+        raise FitOrientationValidationError("worldOrient 计划需要完整的 Fit joint 元数据")
+    children = _joint_children(snapshot.hierarchy)
+    resolved = _resolve_orientation_targets(snapshot.hierarchy, request)
+
+    changes: list[FitWorldOrientationChange] = []
+    for path in sorted(resolved, key=lambda item: (item.count("|"), item)):
+        node = hierarchy[path]
+        state = orientations[path]
+        policy = parse_world_orientation_policy(
+            metadata[path].world_orient_up,
+            metadata[path].world_orient_forward,
+            joint=node.short_name,
+        )
+        if policy is None:
+            raise FitOrientationValidationError(
+                f"{node.short_name} 没有 worldOrient 策略"
+            )
+        if policy.forward_local_direction is None:
+            raise FitOrientationValidationError(
+                f"{node.short_name} 使用自由 Forward；当前只支持固定 Forward"
+            )
+        direct_children = children[path]
+        if len(direct_children) != 1:
+            raise FitOrientationValidationError(
+                f"{node.short_name} 必须有且只有一个直接 joint 子级"
+            )
+        _validate_orientation_target(
+            snapshot,
+            path,
+            direct_children[0],
+            tolerance=tolerance,
+        )
+        desired = world_axes_from_orientation_policy(policy)
+        if all(
+            _dot(_normalize(current, "当前世界轴无效"), wanted)
+            >= 1.0 - tolerance
+            for current, wanted in zip(state.world_axes, desired)
+        ):
+            continue
+        child_path = direct_children[0]
+        descendant_paths = _descendant_paths(hierarchy, path)
+        changes.append(
+            FitWorldOrientationChange(
+                joint=path,
+                child=child_path,
+                before_joint_orient=state.joint_orient,
+                child_before_joint_orient=orientations[child_path].joint_orient,
+                descendant_world_positions=tuple(
+                    (descendant, hierarchy[descendant].world_position)
+                    for descendant in descendant_paths
+                ),
+                desired_world_axes=desired,
+                policy=policy,
+            )
+        )
+    return tuple(changes)
 
 
 def plan_simple_fit_orientations(
@@ -290,6 +402,117 @@ def orientation_matches(
     )
 
 
+def world_orientation_matches(
+    change: FitWorldOrientationChange,
+    state: FitJointOrientationState,
+    *,
+    tolerance: float = 1e-4,
+) -> bool:
+    return all(
+        _dot(_normalize(current, "复检世界轴无效"), wanted) >= 1.0 - tolerance
+        for current, wanted in zip(state.world_axes, change.desired_world_axes)
+    ) and all(abs(value) <= tolerance for value in state.rotation)
+
+
+def _validate_orientation_snapshot(
+    snapshot: FitOrientationSnapshot,
+    tolerance: float,
+) -> None:
+    if (
+        isinstance(tolerance, bool)
+        or not isinstance(tolerance, (int, float))
+        or not isfinite(float(tolerance))
+        or tolerance <= 0
+    ):
+        raise FitOrientationValidationError("朝向比较容差必须是正有限数值")
+    issues = audit_fit_hierarchy(snapshot.hierarchy)
+    if issues:
+        raise FitOrientationValidationError(
+            "FitSkeleton 层级无效：" + "；".join(item.message for item in issues)
+        )
+    hierarchy = {node.path for node in snapshot.hierarchy.joints}
+    orientations = {state.joint for state in snapshot.joints}
+    if len(orientations) != len(snapshot.joints) or orientations != hierarchy:
+        raise FitOrientationValidationError("朝向快照与 FitSkeleton 层级不一致")
+    metadata = {item.joint for item in snapshot.metadata}
+    if snapshot.metadata and (
+        len(metadata) != len(snapshot.metadata) or metadata != hierarchy
+    ):
+        raise FitOrientationValidationError("朝向元数据与 FitSkeleton 层级不一致")
+
+
+def _joint_children(snapshot: FitHierarchySnapshot) -> dict[str, list[str]]:
+    children: dict[str, list[str]] = {node.path: [] for node in snapshot.joints}
+    for node in snapshot.joints:
+        if node.dag_parent in children:
+            children[node.dag_parent].append(node.path)
+    return children
+
+
+def _resolve_orientation_targets(
+    snapshot: FitHierarchySnapshot,
+    request: FitOrientationRequest,
+) -> tuple[str, ...]:
+    hierarchy = {node.path: node for node in snapshot.joints}
+    by_name = {node.short_name: node for node in snapshot.joints}
+    resolved: list[str] = []
+    for name in request.joints:
+        node = hierarchy.get(name) or by_name.get(name)
+        if node is None:
+            raise FitOrientationValidationError(
+                f"朝向目标不在 FitSkeleton 中：{name}"
+            )
+        if node.path in resolved:
+            raise FitOrientationValidationError(
+                f"多个朝向目标解析到同一关节：{node.path}"
+            )
+        resolved.append(node.path)
+    return tuple(resolved)
+
+
+def _descendant_paths(
+    hierarchy: dict[str, FitHierarchyNode],
+    path: str,
+) -> tuple[str, ...]:
+    return tuple(
+        item
+        for item in sorted(hierarchy, key=lambda value: (value.count("|"), value))
+        if item.startswith(path + "|")
+    )
+
+
+def _validate_orientation_target(
+    snapshot: FitOrientationSnapshot,
+    path: str,
+    child_path: str,
+    *,
+    tolerance: float,
+) -> None:
+    hierarchy = {node.path: node for node in snapshot.hierarchy.joints}
+    orientations = {state.joint: state for state in snapshot.joints}
+    node = hierarchy[path]
+    state = orientations[path]
+    if any(abs(value) > tolerance for value in state.rotation):
+        raise FitOrientationValidationError(
+            f"{node.short_name} 的 rotate 必须先归零"
+        )
+    if state.writable_joint_orient_axes != TRANSLATION_AXES:
+        raise FitOrientationValidationError(
+            f"{node.short_name} 的 jointOrient 不可完整写入"
+        )
+    for descendant_path in _descendant_paths(hierarchy, path):
+        descendant = hierarchy[descendant_path]
+        if descendant.writable_translation_axes != TRANSLATION_AXES:
+            raise FitOrientationValidationError(
+                f"{descendant.short_name} 的 translate 无法用于朝向补偿"
+            )
+    child = hierarchy[child_path]
+    if orientations[child_path].writable_joint_orient_axes != TRANSLATION_AXES:
+        raise FitOrientationValidationError(
+            f"{child.short_name} 的 jointOrient 无法恢复"
+        )
+
+
 def _secondary_reference(
     up_axis: FitUpAxis,
     primary: Vector3,
@@ -313,6 +536,22 @@ def _subtract(a: Vector3, b: Vector3) -> Vector3:
 
 def _scale(value: Vector3, factor: float) -> Vector3:
     return (value[0] * factor, value[1] * factor, value[2] * factor)
+
+
+def _signed_world_direction(
+    local_direction: FitLocalDirection,
+    world_direction: Vector3,
+) -> Vector3:
+    factor = -1.0 if local_direction.value.startswith("-") else 1.0
+    return _scale(world_direction, factor)
+
+
+def _cross(a: Vector3, b: Vector3) -> Vector3:
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
 
 
 def _dot(a: Vector3, b: Vector3) -> float:

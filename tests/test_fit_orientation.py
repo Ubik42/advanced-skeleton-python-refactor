@@ -2,7 +2,7 @@ import unittest
 from contextlib import contextmanager
 from dataclasses import replace
 
-from adv_py.application import OrientSimpleFitChain
+from adv_py.application import OrientSimpleFitChain, OrientWorldFitJoints
 from adv_py.core import (
     IDENTITY_AXES,
     FitHierarchyNode,
@@ -15,9 +15,12 @@ from adv_py.core import (
     FitOrientationValidationError,
     FitUpAxis,
     FitWorldAxis,
+    FitWorldOrientationPolicy,
     default_fit_skeleton_settings,
     plan_simple_fit_orientations,
+    plan_world_fit_orientations,
     parse_world_orientation_policy,
+    world_axes_from_orientation_policy,
 )
 
 
@@ -64,6 +67,24 @@ def orientation_snapshot(*, locked_joint=None):
         FitHierarchySnapshot(container, nodes),
         FitUpAxis.Z,
         states,
+    )
+
+
+def world_orientation_snapshot(*, forward="zForward"):
+    snapshot = orientation_snapshot()
+    return replace(
+        snapshot,
+        up_axis=FitUpAxis.Y,
+        metadata=tuple(
+            FitJointMetadata(
+                joint=state.joint,
+                world_orient_up="xDown" if state.joint.endswith("|Root") else None,
+                world_orient_forward=forward
+                if state.joint.endswith("|Root")
+                else None,
+            )
+            for state in snapshot.joints
+        ),
     )
 
 
@@ -115,8 +136,75 @@ class FakeFitOrientationHost:
             ),
         )
 
+    def orient_world_fit_joint(self, change):
+        self.orient_count += 1
+        self.snapshot = replace(
+            self.snapshot,
+            joints=tuple(
+                replace(
+                    state,
+                    joint_orient=(0.0, 0.0, -90.0),
+                    world_axes=change.desired_world_axes,
+                )
+                if state.joint == change.joint
+                else state
+                for state in self.snapshot.joints
+            ),
+        )
+
 
 class FitOrientationTests(unittest.TestCase):
+    def test_builds_right_handed_world_axes_from_fixed_policy(self) -> None:
+        axes = world_axes_from_orientation_policy(
+            FitWorldOrientationPolicy(
+                FitLocalDirection.NEGATIVE_X,
+                FitLocalDirection.POSITIVE_Z,
+            )
+        )
+
+        self.assertEqual(
+            axes,
+            ((0.0, -1.0, 0.0), (1.0, 0.0, -0.0), (0.0, 0.0, 1.0)),
+        )
+
+    def test_world_plan_rejects_free_forward_and_non_y_up_scene(self) -> None:
+        with self.assertRaisesRegex(FitOrientationValidationError, "固定 Forward"):
+            plan_world_fit_orientations(
+                world_orientation_snapshot(forward="free"),
+                FitOrientationRequest(("Root",)),
+            )
+        with self.assertRaisesRegex(FitOrientationValidationError, "Y-Up"):
+            plan_world_fit_orientations(
+                replace(world_orientation_snapshot(), up_axis=FitUpAxis.Z),
+                FitOrientationRequest(("Root",)),
+            )
+
+    def test_applies_fixed_world_orientation_in_one_transaction(self) -> None:
+        host = FakeFitOrientationHost(world_orientation_snapshot())
+        result = OrientWorldFitJoints(host).apply(
+            FitOrientationRequest(("Root",))
+        )
+
+        self.assertEqual(len(result.plan.changes), 1)
+        self.assertEqual(host.orient_count, 1)
+        self.assertEqual(host.transaction_count, 1)
+        self.assertFalse(
+            OrientWorldFitJoints(host).plan(FitOrientationRequest(("Root",))).changes
+        )
+
+    def test_failed_world_orientation_verification_rolls_back(self) -> None:
+        class FaultyWorldHost(FakeFitOrientationHost):
+            def orient_world_fit_joint(self, change):
+                del change
+                self.orient_count += 1
+
+        host = FaultyWorldHost(world_orientation_snapshot())
+        before = host.snapshot
+        with self.assertRaisesRegex(RuntimeError, "世界轴不一致"):
+            OrientWorldFitJoints(host).apply(FitOrientationRequest(("Root",)))
+
+        self.assertEqual(host.snapshot, before)
+
     def test_parses_fixed_and_free_world_orientation_policies(self) -> None:
         fixed = parse_world_orientation_policy("xDown", "zForward")
         free = parse_world_orientation_policy("yUp", "free")
