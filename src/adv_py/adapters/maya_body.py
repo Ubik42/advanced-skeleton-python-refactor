@@ -328,6 +328,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
         for side in plan.sides:
             names.append(side.reverse_name)
             names.extend(joint.constraint_name for joint in side.joints)
+            names.extend(joint.translation_constraint_name for joint in side.joints if joint.translation_constraint_name)
         if any(self.find_name_collisions(name) for name in names):
             raise FitSkeletonValidationError("Arm IK/FK 输出名称冲突")
         self._transaction_changed = True
@@ -349,6 +350,19 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     raise RuntimeError("Arm IK/FK 双源权重别名无效")
                 self._cmds.connectAttr(f"{reverse}.outputX", f"{constraint}.{aliases[0]}")
                 self._cmds.connectAttr(plug, f"{constraint}.{aliases[1]}")
+                if joint.translation_constraint_name:
+                    point = self._cmds.pointConstraint(
+                        joint.fk_driver,
+                        joint.ik_driver,
+                        joint.body_joint,
+                        maintainOffset=False,
+                        name=joint.translation_constraint_name,
+                    )[0]
+                    point_aliases = self._cmds.pointConstraint(point, query=True, weightAliasList=True) or []
+                    if len(point_aliases) != 2:
+                        raise RuntimeError("Arm FK/IK 位移双源权重别名无效")
+                    self._cmds.connectAttr(f"{reverse}.outputX", f"{point}.{point_aliases[0]}")
+                    self._cmds.connectAttr(plug, f"{point}.{point_aliases[1]}")
 
     def capture_body_arm_blend(self, plan: BodyArmBlendPlan) -> BodyArmBlendSnapshot:
         def normalized_plug(value: str | None) -> str | None:
@@ -385,7 +399,41 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 ]
                 outputs = self._cmds.listConnections(f"{constraint}.constraintRotateX", source=False, destination=True, plugs=True) or []
                 driven = self._resolve_connected_node(outputs[0]) if len(outputs) == 1 else None
-                joint_states.append(BodyArmBlendJointState(constraint, driven, target_paths, weight_sources[0] if len(weight_sources) > 0 else None, weight_sources[1] if len(weight_sources) > 1 else None))
+                translation_name = None
+                translation_targets = ()
+                translation_weights = (None, None)
+                translation_driven = None
+                if spec.translation_constraint_name:
+                    point_constraints = self._cmds.ls(spec.translation_constraint_name, type="pointConstraint") or []
+                    if len(point_constraints) != 1:
+                        raise FitSkeletonValidationError("Arm FK/IK 位移约束无效")
+                    point = point_constraints[0]
+                    point_targets = self._cmds.pointConstraint(point, query=True, targetList=True) or []
+                    translation_targets = tuple((self._cmds.ls(target, long=True) or [target])[0] for target in point_targets)
+                    point_aliases = self._cmds.pointConstraint(point, query=True, weightAliasList=True) or []
+                    sources = tuple(
+                        normalized_plug((self._cmds.listConnections(f"{point}.{alias}", source=True, destination=False, plugs=True) or [None])[0])
+                        for alias in point_aliases
+                    )
+                    translation_weights = (
+                        sources[0] if len(sources) > 0 else None,
+                        sources[1] if len(sources) > 1 else None,
+                    )
+                    point_outputs = self._cmds.listConnections(f"{point}.constraintTranslateX", source=False, destination=True, plugs=True) or []
+                    translation_driven = self._resolve_connected_node(point_outputs[0]) if len(point_outputs) == 1 else None
+                    translation_name = point
+                joint_states.append(BodyArmBlendJointState(
+                    constraint,
+                    driven,
+                    target_paths,
+                    weight_sources[0] if len(weight_sources) > 0 else None,
+                    weight_sources[1] if len(weight_sources) > 1 else None,
+                    translation_name,
+                    translation_targets,
+                    translation_weights[0],
+                    translation_weights[1],
+                    translation_driven,
+                ))
             side_states.append(BodyArmBlendSideState(side.side, plug, float(self._cmds.getAttr(plug)), reverse, normalized_plug(reverse_sources[0]) if len(reverse_sources) == 1 else None, tuple(joint_states)))
         return BodyArmBlendSnapshot(settings, tuple(side_states))
 

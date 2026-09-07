@@ -64,6 +64,7 @@ class BuildBodyArmBlend:
         names = [blend.settings_name]
         for side in blend.sides:
             names.append(side.reverse_name); names.extend(j.constraint_name for j in side.joints)
+            names.extend(j.translation_constraint_name for j in side.joints if j.translation_constraint_name)
         collisions = tuple(sorted({path for name in names for path in self._host.find_name_collisions(name)}))
         return BodyArmBlendBuildPlan(symmetry, body, mechanisms, blend, provenance_issues, mechanism_issues, collisions)
 

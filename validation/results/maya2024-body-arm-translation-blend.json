@@ -1,0 +1,18 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 11096,
+  "slice": "body_arm_translation_blend",
+  "translation_constraint_count": true,
+  "translation_wiring_audited": true,
+  "bind_pose_unchanged": true,
+  "fk_translation_reaches_body": true,
+  "ik_translation_reaches_body": true,
+  "selection_preserved": true,
+  "single_undo_removed_complete_arm_rig": true,
+  "body_restored": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 3.833,
+  "status": "passed"
+}

@@ -67,6 +67,7 @@ class FakeBodySkeletonHost:
         faulty_arm_blend=False,
         faulty_arm_visibility=False,
         faulty_arm_match=False,
+        faulty_arm_translation=False,
     ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
         hierarchy = predict_fit_template_hierarchy(template, "|FitSkeleton")
@@ -130,6 +131,7 @@ class FakeBodySkeletonHost:
         self.faulty_arm_visibility = faulty_arm_visibility
         self.faulty_arm_match = faulty_arm_match
         self.arm_match_applied = False
+        self.faulty_arm_translation = faulty_arm_translation
 
     def capture_fit_orientation(self, container_name):
         del container_name
@@ -360,7 +362,18 @@ class FakeBodySkeletonHost:
         sides = []
         for side in plan.sides:
             plug = f"{plan.settings_path}.{side.attribute}"
-            joints = tuple(BodyArmBlendJointState(j.constraint_name, j.body_joint, (j.fk_driver, j.ik_driver), f"{side.reverse_name}.outputX", plug) for j in side.joints)
+            joints = tuple(BodyArmBlendJointState(
+                j.constraint_name,
+                j.body_joint,
+                (j.fk_driver, j.ik_driver),
+                f"{side.reverse_name}.outputX",
+                plug,
+                j.translation_constraint_name,
+                (j.fk_driver, j.ik_driver) if j.translation_constraint_name else (),
+                f"{side.reverse_name}.outputX" if j.translation_constraint_name else None,
+                plug if j.translation_constraint_name else None,
+                j.body_joint if j.translation_constraint_name else None,
+            ) for j in side.joints)
             sides.append(BodyArmBlendSideState(side.side, plug, 0.0, side.reverse_name, plug, joints))
         self.arm_blend_snapshot = BodyArmBlendSnapshot(plan.settings_path, tuple(sides))
 
@@ -369,6 +382,12 @@ class FakeBodySkeletonHost:
         if self.faulty_arm_blend and self.arm_blend_snapshot:
             first = replace(self.arm_blend_snapshot.sides[0], reverse_input_source=None)
             return replace(self.arm_blend_snapshot, sides=(first,) + self.arm_blend_snapshot.sides[1:])
+        if self.faulty_arm_translation and self.arm_blend_snapshot:
+            side = self.arm_blend_snapshot.sides[0]
+            joints = list(side.joints)
+            index = next(index for index, joint in enumerate(joints) if joint.translation_constraint_name)
+            joints[index] = replace(joints[index], translation_ik_weight_source=None)
+            return replace(self.arm_blend_snapshot, sides=(replace(side, joints=tuple(joints)),) + self.arm_blend_snapshot.sides[1:])
         return self.arm_blend_snapshot
 
     def create_body_arm_visibility(self, plan):
@@ -815,6 +834,14 @@ class BodySkeletonTests(unittest.TestCase):
             BuildBodyArmBlend(host).apply()
         self.assertIsNone(host.arm_blend_snapshot)
 
+    def test_arm_translation_blend_postcheck_failure_rolls_back(self):
+        host = FakeBodySkeletonHost(faulty_arm_translation=True)
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyArmMechanisms(host).apply()
+        with self.assertRaisesRegex(RuntimeError, "位移权重"):
+            BuildBodyArmBlend(host).apply()
+        self.assertIsNone(host.arm_blend_snapshot)
+
     def test_complete_arm_rig_builds_in_one_transaction(self):
         host = FakeBodySkeletonHost()
         body = BuildOrientedBodySkeleton(host).apply().snapshot
@@ -823,6 +850,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.mechanisms.joints), 12)
         self.assertEqual(len(result.fk_controls.controls), 6)
         self.assertEqual(len(result.ik.limbs), 2)
+        self.assertEqual(sum(joint.translation_constraint_name is not None for side in result.blend.sides for joint in side.joints), 4)
         self.assertEqual(len(result.visibility.sides), 2)
         self.assertTrue(all(side.fk_visibility_source.endswith(".outputX") for side in result.visibility.sides))
         self.assertEqual(result.body, body)

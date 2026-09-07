@@ -13,6 +13,7 @@ class BodyArmBlendJointSpec:
     fk_driver: str
     ik_driver: str
     constraint_name: str
+    translation_constraint_name: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +38,11 @@ class BodyArmBlendJointState:
     targets: tuple[str, ...]
     fk_weight_source: str | None
     ik_weight_source: str | None
+    translation_constraint_name: str | None
+    translation_targets: tuple[str, ...]
+    translation_fk_weight_source: str | None
+    translation_ik_weight_source: str | None
+    translation_driven_joint: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +80,13 @@ def plan_body_arm_blend(
             body_path = body_by_name[f"{part}_{suffix}"]
             fk = next(spec.path for spec in mechanisms.joints if spec.source_joint == body_path and spec.role is BodyArmMechanismRole.FK)
             ik = next(spec.path for spec in mechanisms.joints if spec.source_joint == body_path and spec.role is BodyArmMechanismRole.IK)
-            joints.append(BodyArmBlendJointSpec(body_path, fk, ik, f"AdvPy_{part}IKFKBlend_{suffix}"))
+            joints.append(BodyArmBlendJointSpec(
+                body_path,
+                fk,
+                ik,
+                f"AdvPy_{part}IKFKBlend_{suffix}",
+                None if part == "Shoulder" else f"AdvPy_{part}IKFKTranslate_{suffix}",
+            ))
         sides.append(BodyArmBlendSideSpec(side, f"armIkFk_{suffix}", f"AdvPy_ArmIKFKReverse_{suffix}", tuple(joints)))
     return BodyArmBlendPlan("|AdvPy_ArmSettings", "AdvPy_ArmSettings", tuple(sides))
 
@@ -100,4 +112,15 @@ def audit_body_arm_blend(plan: BodyArmBlendPlan, snapshot: BodyArmBlendSnapshot,
             current = actual[name]
             if current.body_joint != wanted.body_joint or current.targets != (wanted.fk_driver, wanted.ik_driver) or current.fk_weight_source != f"{spec.reverse_name}.outputX" or current.ik_weight_source != plug:
                 issues.append(BodyArmBlendIssue("constraint_wiring_mismatch", "Arm IK/FK 双源权重连线不一致", name))
+            if wanted.translation_constraint_name is None:
+                if current.translation_constraint_name is not None or current.translation_targets:
+                    issues.append(BodyArmBlendIssue("unexpected_translation_blend", "Shoulder 存在计划外位移 blend", name))
+            elif (
+                current.translation_constraint_name != wanted.translation_constraint_name
+                or current.translation_targets != (wanted.fk_driver, wanted.ik_driver)
+                or current.translation_fk_weight_source != f"{spec.reverse_name}.outputX"
+                or current.translation_ik_weight_source != plug
+                or current.translation_driven_joint != wanted.body_joint
+            ):
+                issues.append(BodyArmBlendIssue("translation_wiring_mismatch", "Arm FK/IK 位移权重连线不一致", wanted.translation_constraint_name))
     return tuple(issues)
