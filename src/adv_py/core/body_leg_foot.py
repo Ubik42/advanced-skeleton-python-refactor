@@ -5,7 +5,7 @@ from enum import Enum
 
 from .body_leg_ik import BodyLegIkPlan
 from .body_skeleton import BodySkeletonSnapshot
-from .fit_symmetry import FitBuildSide
+from .fit_symmetry import AxisFrame, FitBuildSide
 
 
 Vector3 = tuple[float, float, float]
@@ -48,6 +48,13 @@ class BodyLegFootSideSpec:
     toe_driver_path: str
     ankle_constraint_name: str
     toe_constraint_name: str
+    toe_offset_name: str
+    toe_offset_path: str
+    toe_control_name: str
+    toe_control_path: str
+    toe_control_position: Vector3
+    toe_control_axes: AxisFrame
+    toe_control_radius: float
     pivots: tuple[BodyLegFootPivotSpec, ...]
 
     @property
@@ -64,10 +71,7 @@ class BodyLegFootSideSpec:
 
     @property
     def toe_orientation_source_path(self) -> str:
-        return next(
-            pivot.path for pivot in self.pivots
-            if pivot.role is BodyLegFootPivotRole.TOE
-        )
+        return self.toe_control_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +112,15 @@ class BodyLegFootSideState:
     toe_constraint_name: str | None
     toe_orientation_source: str | None
     toe_driven_joint: str | None
+    toe_offset_path: str | None
+    toe_offset_parent_path: str | None
+    toe_control_path: str | None
+    toe_control_parent_path: str | None
+    toe_control_position: Vector3
+    toe_control_axes: AxisFrame
+    toe_control_translation: Vector3
+    toe_control_rotation: Vector3
+    toe_control_shape: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +190,13 @@ def plan_body_leg_foot(
                 multiplier=multiplier,
             ))
             parent = path
+        toe_pivot_path = next(
+            pivot.path for pivot in pivots
+            if pivot.role is BodyLegFootPivotRole.TOE
+        )
+        toe_offset_name = f"AdvPy_ToeIKOffset_{suffix}"
+        toe_offset_path = f"{toe_pivot_path}|{toe_offset_name}"
+        toe_control_name = f"AdvPy_ToeIK_{suffix}"
         sides.append(BodyLegFootSideSpec(
             side=limb.side,
             ankle_control_path=limb.ankle_control_path,
@@ -186,6 +206,13 @@ def plan_body_leg_foot(
             toe_driver_path=limb.toe_driver_path,
             ankle_constraint_name=limb.ankle_constraint_name,
             toe_constraint_name=f"AdvPy_LegIKToesOrient_{suffix}",
+            toe_offset_name=toe_offset_name,
+            toe_offset_path=toe_offset_path,
+            toe_control_name=toe_control_name,
+            toe_control_path=f"{toe_offset_path}|{toe_control_name}",
+            toe_control_position=body_by_name[f"Toes_{suffix}"].world_position,
+            toe_control_axes=body_by_name[f"Toes_{suffix}"].world_axes,
+            toe_control_radius=limb.radius * 0.65,
             pivots=tuple(pivots),
         ))
     return BodyLegFootPlan(tuple(sides))
@@ -279,6 +306,51 @@ def audit_body_leg_foot(
                 "Ball pivot 未正确驱动 Ankle IK 朝向",
                 spec.side.value,
             ))
+        toe_pivot_path = next(
+            pivot.path for pivot in spec.pivots
+            if pivot.role is BodyLegFootPivotRole.TOE
+        )
+        if (
+            state.toe_offset_path != spec.toe_offset_path
+            or state.toe_offset_parent_path != toe_pivot_path
+            or state.toe_control_path != spec.toe_control_path
+            or state.toe_control_parent_path != spec.toe_offset_path
+        ):
+            issues.append(BodyLegFootIssue(
+                "foot_toe_control_hierarchy",
+                "Toe IK 控制层级不一致",
+                spec.side.value,
+            ))
+        if state.toe_control_shape != "nurbsCurve":
+            issues.append(BodyLegFootIssue(
+                "foot_toe_control_shape",
+                "Toe IK 控制缺少 NURBS 曲线",
+                spec.side.value,
+            ))
+        if check_initial_pose and (
+            not _close(
+                state.toe_control_position,
+                spec.toe_control_position,
+                tolerance,
+            )
+            or not all(
+                _close(actual, expected, tolerance)
+                for actual, expected in zip(
+                    state.toe_control_axes, spec.toe_control_axes
+                )
+            )
+            or not _close(
+                state.toe_control_translation, (0.0, 0.0, 0.0), tolerance
+            )
+            or not _close(
+                state.toe_control_rotation, (0.0, 0.0, 0.0), tolerance
+            )
+        ):
+            issues.append(BodyLegFootIssue(
+                "foot_toe_control_pose",
+                "Toe IK 控制初始世界帧或本地通道不一致",
+                spec.side.value,
+            ))
         if (
             state.toe_constraint_name != spec.toe_constraint_name
             or state.toe_orientation_source != spec.toe_orientation_source_path
@@ -286,7 +358,7 @@ def audit_body_leg_foot(
         ):
             issues.append(BodyLegFootIssue(
                 "foot_toe_orientation",
-                "Toe pivot 未正确驱动 Toes IK 朝向",
+                "Toe IK 控制未正确驱动 Toes IK 朝向",
                 spec.side.value,
             ))
     return tuple(issues)

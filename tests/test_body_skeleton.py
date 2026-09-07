@@ -664,6 +664,8 @@ class FakeBodySkeletonHost:
                 *(pivot.name for pivot in side.pivots),
                 *(pivot.multiplier_name for pivot in side.pivots if pivot.multiplier_name),
                 side.toe_constraint_name,
+                side.toe_offset_name,
+                side.toe_control_name,
             )
             if self.find_name_collisions(name)
         )
@@ -703,6 +705,18 @@ class FakeBodySkeletonHost:
             spec.toe_constraint_name,
             spec.toe_orientation_source_path,
             spec.toe_driver_path,
+            spec.toe_offset_path,
+            next(
+                pivot.path for pivot in spec.pivots
+                if pivot.role.value == "toe"
+            ),
+            spec.toe_control_path,
+            spec.toe_offset_path,
+            spec.toe_control_position,
+            spec.toe_control_axes,
+            (0.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
+            "nurbsCurve",
         )
         sides = self.leg_foot_snapshot.sides if self.leg_foot_snapshot else ()
         self.leg_foot_snapshot = BodyLegFootSnapshot((*sides, state))
@@ -822,12 +836,30 @@ class FakeBodySkeletonHost:
             side.attribute_value,
             plan.body_joint_positions,
             plan.ankle_axes,
-            plan.ankle_axes,
             plan.toe_body_axes,
+            next(
+                value.attribute_values
+                for value in self.leg_foot_snapshot.sides
+                if value.side is plan.side
+            ),
         )
 
     def apply_body_leg_fk_to_ik(self, plan):
         self.leg_match_applied = True
+        foot_sides = tuple(
+            replace(
+                side,
+                attribute_values=tuple(
+                    (plug, 0.0)
+                    for plug in plan.foot_attribute_plugs
+                ),
+            )
+            if side.side is plan.side else side
+            for side in self.leg_foot_snapshot.sides
+        )
+        self.leg_foot_snapshot = replace(
+            self.leg_foot_snapshot, sides=foot_sides
+        )
         sides = tuple(
             replace(side, attribute_value=1.0)
             if side.side is plan.side else side
@@ -1872,10 +1904,7 @@ class BodySkeletonTests(unittest.TestCase):
                 f"AdvPy_AnkleIKDriver_{side.side.value}"
             )
             and side.toe_orientation_source
-            == next(
-                pivot.path for pivot in side.pivots
-                if pivot.role.value == "toe"
-            )
+            == side.toe_control_path
             and side.toe_driven_joint.endswith(
                 f"AdvPy_ToesIKDriver_{side.side.value}"
             )
@@ -2033,7 +2062,7 @@ class BodySkeletonTests(unittest.TestCase):
 
         self.assertEqual(host.transaction_count, 2)
 
-    def test_leg_fk_to_ik_rejects_toe_pose_without_ik_equivalent(self):
+    def test_leg_fk_to_ik_detects_toe_pose_drift_before_transaction(self):
         host = FakeBodySkeletonHost()
         BuildOrientedBodySkeleton(host).apply()
         BuildBodyLegRig(host).apply()
@@ -2041,13 +2070,33 @@ class BodySkeletonTests(unittest.TestCase):
         state = host.capture_body_leg_fk_to_ik_state(plan)
         state = replace(
             state,
-            toe_ik_axes=((0.0, 1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
+            toe_body_axes=((0.0, 1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
         )
-
         issues = audit_body_leg_fk_to_ik_preflight(plan, state)
 
-        self.assertIn("toe_pose_unrepresentable", {issue.code for issue in issues})
+        self.assertIn("pose_drift", {issue.code for issue in issues})
         self.assertEqual(host.transaction_count, 2)
+
+    def test_leg_fk_to_ik_matches_through_explicit_toe_ik_control(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegRig(host).apply()
+        build = MatchBodyLegFkToIk(host).plan(FitBuildSide.RIGHT)
+        plan = build.match
+
+        self.assertTrue(build.ready)
+        self.assertTrue(plan.toe_control_path.endswith("AdvPy_ToeIK_R"))
+        self.assertEqual(
+            {
+                f"{plan.toe_control_path}.rotate{axis}"
+                for axis in "XYZ"
+            }
+            & set(plan.required_writable_plugs),
+            {
+                f"{plan.toe_control_path}.rotate{axis}"
+                for axis in "XYZ"
+            },
+        )
 
     def test_leg_fk_to_ik_pose_failure_rolls_back_blend(self):
         host = FakeBodySkeletonHost(faulty_leg_match=True)

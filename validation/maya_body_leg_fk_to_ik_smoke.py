@@ -90,6 +90,7 @@ def main(output: Path) -> int:
         cmds.setAttr(f"{controls['HipFK_R']}.rotateZ", 23.0)
         cmds.setAttr(f"{controls['KneeFK_R']}.rotateY", -31.0)
         cmds.setAttr(f"{controls['AnkleFK_R']}.rotateX", 17.0)
+        cmds.setAttr(f"{controls['ToesFK_R']}.rotateY", 28.0)
         cmds.undoInfo(stateWithoutFlush=True)
         before = host.capture_body_skeleton("Root_M")
 
@@ -98,6 +99,12 @@ def main(output: Path) -> int:
         preview = use_case.plan(FitBuildSide.RIGHT, container)
         preview_clean = not bool(cmds.file(query=True, modified=True))
         result = use_case.apply(FitBuildSide.RIGHT, container)
+        target_foot_values = tuple(
+            value
+            for side in result.foot.sides
+            if side.side is FitBuildSide.RIGHT
+            for plug, value in side.attribute_values
+        )
 
         values = {side.side: side.attribute_value for side in result.blend.sides}
         target_visibility = next(
@@ -112,6 +119,12 @@ def main(output: Path) -> int:
             "preview_ready": preview.ready,
             "preview_did_not_modify_scene": preview_clean,
             "target_pose_preserved": target_pose_matches(before, result.body),
+            "toe_ik_control_used": preview.match.toe_control_path.endswith(
+                "AdvPy_ToeIK_R"
+            ),
+            "target_foot_channels_reset": all(
+                abs(value) <= 1e-6 for value in target_foot_values
+            ),
             "left_pose_preserved": left_pose_matches(before, result.body),
             "right_switched_to_ik": values[FitBuildSide.RIGHT] == 1.0,
             "left_blend_unchanged": values[FitBuildSide.LEFT] == 0.0,
@@ -140,6 +153,12 @@ def main(output: Path) -> int:
         checks["single_undo_restored_pose"] = target_pose_matches(
             before, after_undo
         )
+        checks["single_undo_restored_foot_values"] = all(
+            abs(cmds.getAttr(
+                f"{preview.match.ankle_control_path}.{attribute}"
+            )) <= 1e-6
+            for attribute in ("heelRoll", "outerBank", "innerBank", "toeRoll", "ballRoll")
+        )
         cmds.undo()
         checks["second_undo_removed_complete_leg_rig"] = not (
             cmds.ls("AdvPy_Leg*", long=True) or []
@@ -155,7 +174,7 @@ def main(output: Path) -> int:
             "host": "maya",
             "version": str(cmds.about(version=True)),
             "pid": os.getpid(),
-            "slice": "body_leg_fk_to_ik_match",
+            "slice": "body_leg_fk_to_ik_foot_match",
             **checks,
             "remaining_nodes": remaining,
             "duration_seconds": round(time.perf_counter() - started, 3),

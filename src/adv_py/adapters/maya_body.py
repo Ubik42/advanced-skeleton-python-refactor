@@ -84,6 +84,7 @@ from adv_py.core.body_leg_ik import (
 from adv_py.core.body_leg_foot import (
     BodyLegFootInputState,
     BodyLegFootPlan,
+    BodyLegFootPivotRole,
     BodyLegFootPivotState,
     BodyLegFootSideSpec,
     BodyLegFootSideState,
@@ -1484,42 +1485,33 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 )
                 for index in (0, 4, 8)
             )
-        toe_ik_parent_axes = ()
-        if self._cmds.objExists(plan.ankle_ik_driver_path):
+        toe_body_axes = ()
+        if self._cmds.objExists(plan.toe_body_path):
             matrix = self._cmds.xform(
-                plan.ankle_ik_driver_path,
+                plan.toe_body_path,
                 query=True,
                 worldSpace=True,
                 matrix=True,
             )
-            toe_ik_parent_axes = tuple(
+            toe_body_axes = tuple(
                 self._normalized_vector(
                     tuple(float(item) for item in matrix[index:index + 3])
                 )
                 for index in (0, 4, 8)
             )
-        toe_ik_axes = ()
-        if self._cmds.objExists(plan.toe_ik_driver_path):
-            matrix = self._cmds.xform(
-                plan.toe_ik_driver_path,
-                query=True,
-                worldSpace=True,
-                matrix=True,
-            )
-            toe_ik_axes = tuple(
-                self._normalized_vector(
-                    tuple(float(item) for item in matrix[index:index + 3])
-                )
-                for index in (0, 4, 8)
-            )
+        foot_values = tuple(
+            (plug, float(self._cmds.getAttr(plug)))
+            for plug in plan.foot_attribute_plugs
+            if self._cmds.objExists(plug)
+        )
         return BodyLegFkToIkSceneState(
             existing,
             writable,
             value,
             tuple(positions),
             ankle_axes,
-            toe_ik_parent_axes,
-            toe_ik_axes,
+            toe_body_axes,
+            foot_values,
         )
 
     def apply_body_leg_fk_to_ik(self, plan: BodyLegFkToIkPlan) -> None:
@@ -1530,6 +1522,8 @@ class MayaBodyBuildHost(MayaFitJointHost):
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self._transaction_changed = True
+            for plug in plan.foot_attribute_plugs:
+                self._cmds.setAttr(plug, 0.0)
             self._cmds.xform(
                 plan.pole_control_path,
                 worldSpace=True,
@@ -1544,6 +1538,22 @@ class MayaBodyBuildHost(MayaFitJointHost):
             )
             self._cmds.xform(
                 plan.ankle_control_path, worldSpace=True, matrix=matrix
+            )
+            toe_position = tuple(float(value) for value in self._cmds.xform(
+                plan.toe_control_path,
+                query=True,
+                worldSpace=True,
+                translation=True,
+            ))
+            toe_x, toe_y, toe_z = plan.toe_body_axes
+            toe_matrix = (
+                *toe_x, 0.0,
+                *toe_y, 0.0,
+                *toe_z, 0.0,
+                *toe_position, 1.0,
+            )
+            self._cmds.xform(
+                plan.toe_control_path, worldSpace=True, matrix=toe_matrix
             )
             self._cmds.setAttr(plan.blend_plug, 1.0)
         finally:
@@ -2041,6 +2051,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 if pivot.multiplier_name
             )
             names.append(side.toe_constraint_name)
+            names.extend((side.toe_offset_name, side.toe_control_name))
             collisions.extend(
                 name for name in names if self.find_name_collisions(name)
             )
@@ -2163,6 +2174,48 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     self._cmds.connectAttr(f"{multiplier}.output", pivot.target_plug)
                 else:
                     self._cmds.connectAttr(attribute_plug, pivot.target_plug)
+            toe_pivot = next(
+                pivot.path for pivot in spec.pivots
+                if pivot.role is BodyLegFootPivotRole.TOE
+            )
+            toe_offset = self._cmds.createNode(
+                "transform",
+                name=spec.toe_offset_name,
+                parent=toe_pivot,
+                skipSelect=True,
+            )
+            toe_offset = (
+                self._cmds.ls(toe_offset, long=True) or [toe_offset]
+            )[0]
+            toe_x, toe_y, toe_z = spec.toe_control_axes
+            toe_matrix = (
+                *toe_x, 0.0,
+                *toe_y, 0.0,
+                *toe_z, 0.0,
+                *spec.toe_control_position, 1.0,
+            )
+            self._cmds.xform(
+                toe_offset, worldSpace=True, matrix=toe_matrix
+            )
+            toe_control = self._cmds.circle(
+                name=spec.toe_control_name,
+                normal=(0.0, 1.0, 0.0),
+                radius=spec.toe_control_radius,
+                degree=3,
+                sections=8,
+                constructionHistory=False,
+            )[0]
+            toe_control = self._cmds.parent(
+                toe_control, toe_offset, relative=True
+            )[0]
+            toe_control = (
+                self._cmds.ls(toe_control, long=True) or [toe_control]
+            )[0]
+            if (
+                toe_offset != spec.toe_offset_path
+                or toe_control != spec.toe_control_path
+            ):
+                raise RuntimeError("Toe IK 控制路径漂移")
             handles = self._cmds.ls(spec.handle_name, long=True, type="ikHandle") or []
             if len(handles) != 1:
                 raise FitSkeletonValidationError("Leg IK Handle 在执行前失效")
@@ -2183,7 +2236,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
             self._cmds.orientConstraint(
                 spec.toe_orientation_source_path,
                 spec.toe_driver_path,
-                maintainOffset=True,
+                maintainOffset=False,
                 name=spec.toe_constraint_name,
             )
         finally:
@@ -2288,6 +2341,37 @@ class MayaBodyBuildHost(MayaFitJointHost):
 
             ankle_orientation = orientation_state(spec.ankle_constraint_name)
             toe_orientation = orientation_state(spec.toe_constraint_name)
+            toe_offsets = self._cmds.ls(
+                spec.toe_offset_path, long=True, type="transform"
+            ) or []
+            toe_controls = self._cmds.ls(
+                spec.toe_control_path, long=True, type="transform"
+            ) or []
+            if len(toe_offsets) != 1 or len(toe_controls) != 1:
+                raise FitSkeletonValidationError("Toe IK 控制节点集合无效")
+            toe_offset_parent = self._cmds.listRelatives(
+                toe_offsets[0], parent=True, fullPath=True
+            ) or []
+            toe_control_parent = self._cmds.listRelatives(
+                toe_controls[0], parent=True, fullPath=True
+            ) or []
+            toe_control_matrix = self._cmds.xform(
+                toe_controls[0], query=True, worldSpace=True, matrix=True
+            )
+            toe_shapes = self._cmds.listRelatives(
+                toe_controls[0],
+                shapes=True,
+                noIntermediate=True,
+                fullPath=True,
+            ) or []
+
+            def control_vector(attribute):
+                return tuple(
+                    float(value) for value in self._cmds.getAttr(
+                        f"{toe_controls[0]}.{attribute}"
+                    )[0]
+                )
+
             sides.append(BodyLegFootSideState(
                 spec.side,
                 values,
@@ -2295,6 +2379,29 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 parents[0] if parents else None,
                 *ankle_orientation,
                 *toe_orientation,
+                toe_offsets[0],
+                toe_offset_parent[0] if toe_offset_parent else None,
+                toe_controls[0],
+                toe_control_parent[0] if toe_control_parent else None,
+                tuple(float(value) for value in self._cmds.xform(
+                    toe_controls[0],
+                    query=True,
+                    worldSpace=True,
+                    translation=True,
+                )),
+                tuple(
+                    self._normalized_vector(tuple(
+                        float(value)
+                        for value in toe_control_matrix[index:index + 3]
+                    ))
+                    for index in (0, 4, 8)
+                ),
+                control_vector("translate"),
+                control_vector("rotate"),
+                (
+                    self._cmds.nodeType(toe_shapes[0])
+                    if len(toe_shapes) == 1 else None
+                ),
             ))
         return BodyLegFootSnapshot(tuple(sides))
 

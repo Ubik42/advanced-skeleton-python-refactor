@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from .body_leg_blend import BodyLegBlendPlan
 from .body_leg_ik import BodyLegIkPlan
 from .body_leg_controls import BodyLegFkControlPlan
+from .body_leg_foot import BodyLegFootPlan, BodyLegFootSnapshot
 from .body_limb_ik import solve_limb_pole_position
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
@@ -29,7 +30,8 @@ class BodyLegFkToIkPlan:
     toe_ik_driver_path: str
     toe_body_position: Vector3
     toe_body_axes: AxisFrame
-    toe_relative_axes: AxisFrame
+    toe_control_path: str
+    foot_attribute_plugs: tuple[str, ...]
     required_paths: tuple[str, ...]
     required_writable_plugs: tuple[str, ...]
 
@@ -41,8 +43,8 @@ class BodyLegFkToIkSceneState:
     blend_value: float
     body_joint_positions: tuple[Vector3, ...]
     ankle_axes: tuple[Vector3, ...]
-    toe_ik_parent_axes: tuple[Vector3, ...]
-    toe_ik_axes: tuple[Vector3, ...]
+    toe_body_axes: tuple[Vector3, ...]
+    foot_attribute_values: tuple[tuple[str, float], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +80,7 @@ def plan_body_leg_fk_to_ik(
     body: BodySkeletonSnapshot,
     ik: BodyLegIkPlan,
     blend: BodyLegBlendPlan,
+    foot: BodyLegFootPlan,
     side: FitBuildSide,
     *,
     pole_distance_scale: float = 0.75,
@@ -89,6 +92,10 @@ def plan_body_leg_fk_to_ik(
     if len(limbs) != 1 or len(blend_sides) != 1:
         raise ValueError("Leg FK→IK 匹配要求唯一的目标侧")
     limb, blend_side = limbs[0], blend_sides[0]
+    foot_sides = tuple(spec for spec in foot.sides if spec.side is side)
+    if len(foot_sides) != 1:
+        raise ValueError("Leg FK→IK 匹配要求唯一的目标侧 Foot")
+    foot_side = foot_sides[0]
     by_path = {joint.path: joint for joint in body.joints}
     by_name = {joint.name: joint for joint in body.joints}
     wanted_names = tuple(
@@ -133,6 +140,10 @@ def plan_body_leg_fk_to_ik(
         distance_scale=pole_distance_scale,
     )
     blend_plug = f"{blend.settings_path}.{blend_side.attribute}"
+    foot_plugs = tuple(
+        f"{foot_side.ankle_control_path}.{attribute}"
+        for attribute in foot_side.attributes
+    )
     writable = tuple(
         f"{path}.{channel}"
         for path, channels in (
@@ -146,32 +157,36 @@ def plan_body_leg_fk_to_ik(
             (limb.pole_control_path, ("translateX", "translateY", "translateZ")),
         )
         for channel in channels
-    ) + (blend_plug,)
+    ) + tuple(
+        f"{foot_side.toe_control_path}.rotate{axis}" for axis in "XYZ"
+    ) + foot_plugs + (blend_plug,)
     return BodyLegFkToIkPlan(
-        side,
-        blend_plug,
-        limb.ankle_control_path,
-        limb.pole_control_path,
-        joints[2].world_position,
-        joints[2].world_axes,
-        pole,
-        paths,
-        tuple(joint.world_position for joint in joints),
-        toe.path,
-        limb.chain[2],
-        toe_blend.ik_driver,
-        toe.world_position,
-        toe.world_axes,
-        _relative_axes(joints[2].world_axes, toe.world_axes),
-        (
+        side=side,
+        blend_plug=blend_plug,
+        ankle_control_path=limb.ankle_control_path,
+        pole_control_path=limb.pole_control_path,
+        ankle_position=joints[2].world_position,
+        ankle_axes=joints[2].world_axes,
+        pole_position=pole,
+        body_joint_paths=paths,
+        body_joint_positions=tuple(joint.world_position for joint in joints),
+        toe_body_path=toe.path,
+        ankle_ik_driver_path=limb.chain[2],
+        toe_ik_driver_path=toe_blend.ik_driver,
+        toe_body_position=toe.world_position,
+        toe_body_axes=toe.world_axes,
+        toe_control_path=foot_side.toe_control_path,
+        foot_attribute_plugs=foot_plugs,
+        required_paths=(
             limb.ankle_control_path,
             limb.pole_control_path,
+            foot_side.toe_control_path,
             *paths,
             toe.path,
             limb.chain[2],
             toe_blend.ik_driver,
         ),
-        writable,
+        required_writable_plugs=writable,
     )
 
 
@@ -199,6 +214,15 @@ def audit_body_leg_fk_to_ik_preflight(
             "not_in_fk_mode", "目标腿当前不是 FK 模式", plan.side.value
         ))
     if (
+        tuple(plug for plug, _ in state.foot_attribute_values)
+        != plan.foot_attribute_plugs
+    ):
+        issues.append(BodyLegMatchIssue(
+            "foot_state_incomplete",
+            "Leg FK→IK 匹配缺少完整 Foot 属性状态",
+            plan.side.value,
+        ))
+    if (
         len(state.body_joint_positions) != len(plan.body_joint_positions)
         or any(
             not _close(actual, expected, tolerance)
@@ -216,19 +240,17 @@ def audit_body_leg_fk_to_ik_preflight(
             "pose_drift", "Leg FK→IK 匹配姿态已变化", plan.side.value
         ))
     if (
-        len(state.toe_ik_parent_axes) != 3
-        or len(state.toe_ik_axes) != 3
+        len(state.toe_body_axes) != 3
         or any(
             not _close(actual, expected, tolerance)
             for actual, expected in zip(
-                _relative_axes(state.toe_ik_parent_axes, state.toe_ik_axes),
-                plan.toe_relative_axes,
+                state.toe_body_axes, plan.toe_body_axes
             )
         )
     ):
         issues.append(BodyLegMatchIssue(
-            "toe_pose_unrepresentable",
-            "当前 Toes FK 姿态尚无对应 IK 控制，请先恢复中性 Toe 姿态",
+            "pose_drift",
+            "Leg FK→IK 匹配 Toes 姿态已变化",
             plan.side.value,
         ))
     return tuple(issues)
@@ -285,6 +307,41 @@ def audit_body_leg_fk_to_ik_result(
             plan.toe_body_path,
         ))
     return tuple(issues)
+
+
+def audit_body_leg_fk_to_ik_foot_result(
+    plan: BodyLegFkToIkPlan,
+    snapshot: BodyLegFootSnapshot,
+    *,
+    tolerance: float = 1e-4,
+) -> tuple[BodyLegMatchIssue, ...]:
+    state = next(
+        (value for value in snapshot.sides if value.side is plan.side), None
+    )
+    if state is None:
+        return (BodyLegMatchIssue(
+            "foot_match_state_missing",
+            "Leg FK→IK 匹配后缺少目标侧 Foot 状态",
+            plan.side.value,
+        ),)
+    expected = tuple(
+        (plug, 0.0)
+        for plug in plan.foot_attribute_plugs
+    )
+    if (
+        tuple(plug for plug, _ in state.attribute_values)
+        != tuple(plug for plug, _ in expected)
+        or any(
+            abs(actual - wanted) > tolerance
+            for (_, actual), (_, wanted) in zip(state.attribute_values, expected)
+        )
+    ):
+        return (BodyLegMatchIssue(
+            "foot_match_values",
+            "Leg FK→IK 匹配后的 Foot 属性不一致",
+            plan.side.value,
+        ),)
+    return ()
 
 
 def plan_body_leg_ik_to_fk(
@@ -436,13 +493,3 @@ def audit_body_leg_ik_to_fk_result(
 
 def _close(left, right, tolerance):
     return all(abs(a - b) <= tolerance for a, b in zip(left, right))
-
-
-def _relative_axes(parent: AxisFrame, child: AxisFrame) -> AxisFrame:
-    return tuple(
-        tuple(
-            sum(parent_axis[index] * child_axis[index] for index in range(3))
-            for child_axis in child
-        )
-        for parent_axis in parent
-    )

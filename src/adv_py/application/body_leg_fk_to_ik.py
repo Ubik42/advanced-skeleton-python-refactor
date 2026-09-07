@@ -30,6 +30,7 @@ from adv_py.core.body_leg_match import (
     BodyLegFkToIkSceneState,
     BodyLegMatchIssue,
     audit_body_leg_fk_to_ik_preflight,
+    audit_body_leg_fk_to_ik_foot_result,
     audit_body_leg_fk_to_ik_result,
     plan_body_leg_fk_to_ik,
 )
@@ -71,6 +72,9 @@ class BodyLegFkToIkBuildPlan:
     foot_issues: tuple[BodyLegFootIssue, ...]
     match_issues: tuple[BodyLegMatchIssue, ...]
     other_blend_values: tuple[tuple[FitBuildSide, float], ...]
+    other_foot_attribute_values: tuple[
+        tuple[FitBuildSide, tuple[tuple[str, float], ...]], ...
+    ]
 
     @property
     def ready(self) -> bool:
@@ -99,6 +103,7 @@ class BodyLegFkToIkResult:
     plan: BodyLegFkToIkBuildPlan
     body: BodySkeletonSnapshot
     blend: BodyLegBlendSnapshot
+    foot: BodyLegFootSnapshot
 
 
 class MatchBodyLegFkToIk:
@@ -135,6 +140,7 @@ class MatchBodyLegFkToIk:
             body,
             ik,
             blend,
+            foot,
             side,
             pole_distance_scale=pole_distance_scale,
         )
@@ -156,9 +162,10 @@ class MatchBodyLegFkToIk:
         blend_issues = audit_body_leg_blend(
             blend, blend_snapshot, expected_attribute_value=None
         )
+        foot_snapshot = self._host.capture_body_leg_foot(foot)
         foot_issues = audit_body_leg_foot(
             foot,
-            self._host.capture_body_leg_foot(foot),
+            foot_snapshot,
             check_initial_pose=False,
             expected_attribute_value=None,
         )
@@ -167,6 +174,11 @@ class MatchBodyLegFkToIk:
         other = tuple(
             (value.side, value.attribute_value)
             for value in blend_snapshot.sides
+            if value.side is not side
+        )
+        other_foot = tuple(
+            (value.side, value.attribute_values)
+            for value in foot_snapshot.sides
             if value.side is not side
         )
         return BodyLegFkToIkBuildPlan(
@@ -183,6 +195,7 @@ class MatchBodyLegFkToIk:
             foot_issues,
             match_issues,
             other,
+            other_foot,
         )
 
     def apply(
@@ -212,10 +225,12 @@ class MatchBodyLegFkToIk:
             self._host.apply_body_leg_fk_to_ik(plan.match)
             body = self._host.capture_body_skeleton(body_root_name)
             blend = self._host.capture_body_leg_blend(plan.blend)
+            foot = self._host.capture_body_leg_foot(plan.foot)
             target = next(value for value in blend.sides if value.side is side)
             issues = audit_body_leg_fk_to_ik_result(
                 plan.match, body, target.attribute_value
             )
+            issues += audit_body_leg_fk_to_ik_foot_result(plan.match, foot)
             current_other = tuple(
                 (value.side, value.attribute_value)
                 for value in blend.sides
@@ -224,6 +239,16 @@ class MatchBodyLegFkToIk:
             if current_other != plan.other_blend_values:
                 issues += (BodyLegMatchIssue(
                     "other_side_changed", "Leg FK→IK 匹配改变了另一侧 blend"
+                ),)
+            current_other_foot = tuple(
+                (value.side, value.attribute_values)
+                for value in foot.sides
+                if value.side is not side
+            )
+            if current_other_foot != plan.other_foot_attribute_values:
+                issues += (BodyLegMatchIssue(
+                    "other_foot_changed",
+                    "Leg FK→IK 匹配改变了另一侧 Foot 属性",
                 ),)
             if issues:
                 raise RuntimeError(
@@ -238,4 +263,4 @@ class MatchBodyLegFkToIk:
                 != plan.symmetry.settings
             ):
                 raise RuntimeError("Leg FK→IK 匹配后 Fit 输入变化")
-        return BodyLegFkToIkResult(plan, body, blend)
+        return BodyLegFkToIkResult(plan, body, blend, foot)
