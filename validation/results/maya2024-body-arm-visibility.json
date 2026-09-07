@@ -1,0 +1,16 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 44816,
+  "slice": "body_arm_control_visibility",
+  "default_fk_visible_ik_hidden": true,
+  "right_ik_mode_visibility": true,
+  "left_side_isolated": true,
+  "visibility_wiring_audited": true,
+  "selection_preserved": true,
+  "single_undo_removed_complete_arm_rig": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 3.842,
+  "status": "passed"
+}

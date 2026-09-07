@@ -24,6 +24,8 @@ from adv_py.core import (
     BodyArmBlendJointState,
     BodyArmBlendSideState,
     BodyArmBlendSnapshot,
+    BodyArmVisibilitySideState,
+    BodyArmVisibilitySnapshot,
     IDENTITY_AXES,
     BodyJointState,
     BodyExternalDependency,
@@ -58,6 +60,7 @@ class FakeBodySkeletonHost:
         faulty_arm_mechanisms=False,
         faulty_arm_ik=False,
         faulty_arm_blend=False,
+        faulty_arm_visibility=False,
     ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
         hierarchy = predict_fit_template_hierarchy(template, "|FitSkeleton")
@@ -117,6 +120,8 @@ class FakeBodySkeletonHost:
         self.faulty_arm_ik = faulty_arm_ik
         self.arm_blend_snapshot = None
         self.faulty_arm_blend = faulty_arm_blend
+        self.arm_visibility_snapshot = None
+        self.faulty_arm_visibility = faulty_arm_visibility
 
     def capture_fit_orientation(self, container_name):
         del container_name
@@ -167,6 +172,7 @@ class FakeBodySkeletonHost:
         before_arm_ik_root = self.arm_ik_root
         before_arm_ik_states = list(self.arm_ik_states)
         before_arm_blend_snapshot = self.arm_blend_snapshot
+        before_arm_visibility_snapshot = self.arm_visibility_snapshot
         self.transaction_count += 1
         self.in_transaction = True
         try:
@@ -181,6 +187,7 @@ class FakeBodySkeletonHost:
             self.arm_ik_root = before_arm_ik_root
             self.arm_ik_states = before_arm_ik_states
             self.arm_blend_snapshot = before_arm_blend_snapshot
+            self.arm_visibility_snapshot = before_arm_visibility_snapshot
             raise
         finally:
             self.in_transaction = False
@@ -345,6 +352,23 @@ class FakeBodySkeletonHost:
             first = replace(self.arm_blend_snapshot.sides[0], reverse_input_source=None)
             return replace(self.arm_blend_snapshot, sides=(first,) + self.arm_blend_snapshot.sides[1:])
         return self.arm_blend_snapshot
+
+    def create_body_arm_visibility(self, plan):
+        self.arm_visibility_snapshot = BodyArmVisibilitySnapshot(tuple(
+            BodyArmVisibilitySideState(
+                side.side,
+                side.reverse_output_plug,
+                (side.blend_plug, side.blend_plug),
+            )
+            for side in plan.sides
+        ))
+
+    def capture_body_arm_visibility(self, plan):
+        del plan
+        if self.faulty_arm_visibility and self.arm_visibility_snapshot:
+            first = replace(self.arm_visibility_snapshot.sides[0], fk_visibility_source=None)
+            return replace(self.arm_visibility_snapshot, sides=(first,) + self.arm_visibility_snapshot.sides[1:])
+        return self.arm_visibility_snapshot
 
 
 class BodySkeletonTests(unittest.TestCase):
@@ -756,6 +780,8 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.mechanisms.joints), 12)
         self.assertEqual(len(result.fk_controls.controls), 6)
         self.assertEqual(len(result.ik.limbs), 2)
+        self.assertEqual(len(result.visibility.sides), 2)
+        self.assertTrue(all(side.fk_visibility_source.endswith(".outputX") for side in result.visibility.sides))
         self.assertEqual(result.body, body)
 
     def test_complete_arm_rig_late_failure_rolls_back_every_stage(self):
@@ -767,6 +793,17 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertIsNone(host.control_root)
         self.assertIsNone(host.arm_blend_snapshot)
         self.assertIsNone(host.arm_ik_root)
+
+    def test_complete_arm_rig_visibility_failure_rolls_back_every_stage(self):
+        host = FakeBodySkeletonHost(faulty_arm_visibility=True)
+        BuildOrientedBodySkeleton(host).apply()
+        with self.assertRaisesRegex(RuntimeError, "显隐阶段"):
+            BuildBodyArmRig(host).apply()
+        self.assertIsNone(host.mechanism_root)
+        self.assertIsNone(host.control_root)
+        self.assertIsNone(host.arm_blend_snapshot)
+        self.assertIsNone(host.arm_ik_root)
+        self.assertIsNone(host.arm_visibility_snapshot)
 
 
 if __name__ == "__main__":

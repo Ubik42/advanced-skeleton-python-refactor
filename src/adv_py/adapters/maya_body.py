@@ -18,6 +18,11 @@ from adv_py.core.body_arm_blend import (
     BodyArmBlendSideState,
     BodyArmBlendSnapshot,
 )
+from adv_py.core.body_arm_visibility import (
+    BodyArmVisibilityPlan,
+    BodyArmVisibilitySideState,
+    BodyArmVisibilitySnapshot,
+)
 from adv_py.core.body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -377,6 +382,54 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 joint_states.append(BodyArmBlendJointState(constraint, driven, target_paths, weight_sources[0] if len(weight_sources) > 0 else None, weight_sources[1] if len(weight_sources) > 1 else None))
             side_states.append(BodyArmBlendSideState(side.side, plug, float(self._cmds.getAttr(plug)), reverse, normalized_plug(reverse_sources[0]) if len(reverse_sources) == 1 else None, tuple(joint_states)))
         return BodyArmBlendSnapshot(settings, tuple(side_states))
+
+    def create_body_arm_visibility(self, plan: BodyArmVisibilityPlan) -> None:
+        self._require_transaction()
+        targets = tuple(
+            path
+            for side in plan.sides
+            for path in (side.fk_offset_path, *side.ik_offset_paths)
+        )
+        sources = tuple(
+            plug
+            for side in plan.sides
+            for plug in (side.reverse_output_plug, side.blend_plug)
+        )
+        if any(not self._cmds.objExists(value) for value in (*targets, *sources)):
+            raise FitSkeletonValidationError("Arm 控制显隐节点或属性在执行前失效")
+        self._transaction_changed = True
+        for side in plan.sides:
+            self._cmds.connectAttr(side.reverse_output_plug, f"{side.fk_offset_path}.visibility")
+            for path in side.ik_offset_paths:
+                self._cmds.connectAttr(side.blend_plug, f"{path}.visibility")
+
+    def capture_body_arm_visibility(self, plan: BodyArmVisibilityPlan) -> BodyArmVisibilitySnapshot:
+        def source(path: str) -> str | None:
+            values = self._cmds.listConnections(
+                f"{path}.visibility",
+                source=True,
+                destination=False,
+                plugs=True,
+            ) or []
+            if len(values) != 1:
+                return None
+            value = values[0]
+            if "." not in value:
+                return value
+            node, attribute = value.split(".", 1)
+            nodes = self._cmds.ls(node, long=True) or [node]
+            return f"{nodes[0]}.{attribute}"
+
+        states = []
+        for side in plan.sides:
+            states.append(
+                BodyArmVisibilitySideState(
+                    side.side,
+                    source(side.fk_offset_path),
+                    tuple(source(path) for path in side.ik_offset_paths),
+                )
+            )
+        return BodyArmVisibilitySnapshot(tuple(states))
 
     def create_body_arm_ik(self, spec: BodyArmIkSpec) -> None:
         self._require_transaction()
