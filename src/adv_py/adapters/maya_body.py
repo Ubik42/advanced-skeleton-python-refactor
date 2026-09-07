@@ -12,6 +12,12 @@ from adv_py.core.body_arm_ik import (
     BodyArmIkSpec,
     BodyArmIkState,
 )
+from adv_py.core.body_arm_blend import (
+    BodyArmBlendJointState,
+    BodyArmBlendPlan,
+    BodyArmBlendSideState,
+    BodyArmBlendSnapshot,
+)
 from adv_py.core.body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -294,6 +300,83 @@ class MayaBodyBuildHost(MayaFitJointHost):
 
     def create_body_arm_ik_root(self, name: str) -> str:
         return self.create_body_control_root(name)
+
+    def create_body_arm_blend(self, plan: BodyArmBlendPlan) -> None:
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            self._create_body_arm_blend_nodes(plan)
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+    def _create_body_arm_blend_nodes(self, plan: BodyArmBlendPlan) -> None:
+        self._require_transaction()
+        names = [plan.settings_name]
+        for side in plan.sides:
+            names.append(side.reverse_name)
+            names.extend(joint.constraint_name for joint in side.joints)
+        if any(self.find_name_collisions(name) for name in names):
+            raise FitSkeletonValidationError("Arm IK/FK 输出名称冲突")
+        self._transaction_changed = True
+        settings = self._cmds.createNode("transform", name=plan.settings_name, skipSelect=True)
+        settings = (self._cmds.ls(settings, long=True) or [settings])[0]
+        if settings != plan.settings_path:
+            raise RuntimeError("Arm IK/FK 设置节点路径漂移")
+        for side in plan.sides:
+            self._cmds.addAttr(settings, longName=side.attribute, attributeType="double", minValue=0.0, maxValue=1.0, defaultValue=0.0, keyable=True)
+            plug = f"{settings}.{side.attribute}"
+            reverse = self._cmds.createNode("reverse", name=side.reverse_name)
+            self._cmds.connectAttr(plug, f"{reverse}.inputX")
+            for joint in side.joints:
+                if any(not self._cmds.objExists(path) for path in (joint.body_joint, joint.fk_driver, joint.ik_driver)):
+                    raise FitSkeletonValidationError("Arm IK/FK 驱动或 Body joint 失效")
+                constraint = self._cmds.orientConstraint(joint.fk_driver, joint.ik_driver, joint.body_joint, maintainOffset=False, name=joint.constraint_name)[0]
+                aliases = self._cmds.orientConstraint(constraint, query=True, weightAliasList=True) or []
+                if len(aliases) != 2:
+                    raise RuntimeError("Arm IK/FK 双源权重别名无效")
+                self._cmds.connectAttr(f"{reverse}.outputX", f"{constraint}.{aliases[0]}")
+                self._cmds.connectAttr(plug, f"{constraint}.{aliases[1]}")
+
+    def capture_body_arm_blend(self, plan: BodyArmBlendPlan) -> BodyArmBlendSnapshot:
+        def normalized_plug(value: str | None) -> str | None:
+            if value is None or "." not in value:
+                return value
+            node, attribute = value.split(".", 1)
+            paths = self._cmds.ls(node, long=True) or [node]
+            return f"{paths[0]}.{attribute}"
+
+        settings_nodes = self._cmds.ls(plan.settings_path, long=True, type="transform") or []
+        if len(settings_nodes) != 1:
+            raise FitSkeletonValidationError("Arm IK/FK 设置节点无效")
+        settings = settings_nodes[0]
+        side_states = []
+        for side in plan.sides:
+            plug = f"{settings}.{side.attribute}"
+            reverse_nodes = self._cmds.ls(side.reverse_name, type="reverse") or []
+            if len(reverse_nodes) != 1 or not self._cmds.objExists(plug):
+                raise FitSkeletonValidationError("Arm IK/FK 属性或 reverse 无效")
+            reverse = reverse_nodes[0]
+            reverse_sources = self._cmds.listConnections(f"{reverse}.inputX", source=True, destination=False, plugs=True) or []
+            joint_states = []
+            for spec in side.joints:
+                constraints = self._cmds.ls(spec.constraint_name, type="orientConstraint") or []
+                if len(constraints) != 1:
+                    raise FitSkeletonValidationError("Arm IK/FK 约束无效")
+                constraint = constraints[0]
+                targets = self._cmds.orientConstraint(constraint, query=True, targetList=True) or []
+                target_paths = tuple((self._cmds.ls(target, long=True) or [target])[0] for target in targets)
+                aliases = self._cmds.orientConstraint(constraint, query=True, weightAliasList=True) or []
+                weight_sources = [
+                    normalized_plug((self._cmds.listConnections(f"{constraint}.{alias}", source=True, destination=False, plugs=True) or [None])[0])
+                    for alias in aliases
+                ]
+                outputs = self._cmds.listConnections(f"{constraint}.constraintRotateX", source=False, destination=True, plugs=True) or []
+                driven = self._resolve_connected_node(outputs[0]) if len(outputs) == 1 else None
+                joint_states.append(BodyArmBlendJointState(constraint, driven, target_paths, weight_sources[0] if len(weight_sources) > 0 else None, weight_sources[1] if len(weight_sources) > 1 else None))
+            side_states.append(BodyArmBlendSideState(side.side, plug, float(self._cmds.getAttr(plug)), reverse, normalized_plug(reverse_sources[0]) if len(reverse_sources) == 1 else None, tuple(joint_states)))
+        return BodyArmBlendSnapshot(settings, tuple(side_states))
 
     def create_body_arm_ik(self, spec: BodyArmIkSpec) -> None:
         self._require_transaction()

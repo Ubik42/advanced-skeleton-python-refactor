@@ -24,6 +24,10 @@ from .body_arm_ik import (
     BodyArmIkHost,
     BuildBodyArmIkControls,
 )
+from .body_arm_blend import (
+    BodyArmBlendBuildPlan, BodyArmBlendBuildResult, BodyArmBlendHost,
+    BuildBodyArmBlend,
+)
 from .body_skeleton import (
     BodySkeletonBuildPlan,
     BodySkeletonBuildResult,
@@ -124,6 +128,7 @@ from .upper_body_fit import (
 )
 
 __all__ = [
+    "BodyArmBlendBuildPlan", "BodyArmBlendBuildResult", "BodyArmBlendHost",
     "BodyArmIkBuildPlan",
     "BodyArmIkBuildResult",
     "BodyArmIkHost",
@@ -153,6 +158,7 @@ __all__ = [
     "BuildRig",
     "BuildBodyArmMechanisms",
     "BuildBodyArmIkControls",
+    "BuildBodyArmBlend",
     "BuildBodySkeleton",
     "BuildBodyArmFkControls",
     "BuildBodyArmFkMechanismControls",

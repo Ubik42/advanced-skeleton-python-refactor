@@ -21,6 +21,11 @@ from .body_arm_ik import (
     audit_body_arm_ik,
     plan_body_arm_ik,
 )
+from .body_arm_blend import (
+    BodyArmBlendIssue, BodyArmBlendJointSpec, BodyArmBlendJointState,
+    BodyArmBlendPlan, BodyArmBlendSideSpec, BodyArmBlendSideState,
+    BodyArmBlendSnapshot, audit_body_arm_blend, plan_body_arm_blend,
+)
 from .body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -164,6 +169,9 @@ from .matrix import (
 from .validation import PlanValidationError, validate_plan
 
 __all__ = [
+    "BodyArmBlendIssue", "BodyArmBlendJointSpec", "BodyArmBlendJointState",
+    "BodyArmBlendPlan", "BodyArmBlendSideSpec", "BodyArmBlendSideState",
+    "BodyArmBlendSnapshot",
     "BODY_PROVENANCE_KIND",
     "BODY_PROVENANCE_OWNER",
     "BODY_PROVENANCE_SCHEMA_VERSION",
@@ -257,6 +265,7 @@ __all__ = [
     "TRANSLATION_AXES",
     "almost_equal",
     "audit_body_arm_ik",
+    "audit_body_arm_blend",
     "audit_body_arm_mechanisms",
     "audit_body_skeleton",
     "audit_body_arm_fk_controls",
@@ -282,6 +291,7 @@ __all__ = [
     "plan_fit_joint_position_changes",
     "plan_body_joint_orientations",
     "plan_body_arm_ik",
+    "plan_body_arm_blend",
     "plan_body_arm_mechanisms",
     "plan_body_arm_fk_controls",
     "oriented_body_provenance",

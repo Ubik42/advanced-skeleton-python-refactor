@@ -7,6 +7,7 @@ from adv_py.application import (
     BuildBodyArmFkControls,
     BuildBodyArmFkMechanismControls,
     BuildBodyArmIkControls,
+    BuildBodyArmBlend,
     BuildBodySkeleton,
     BuildOrientedBodySkeleton,
     InspectBodyRebuildSafety,
@@ -19,6 +20,9 @@ from adv_py.core import (
     BodyArmMechanismSnapshot,
     BodyArmIkSnapshot,
     BodyArmIkState,
+    BodyArmBlendJointState,
+    BodyArmBlendSideState,
+    BodyArmBlendSnapshot,
     IDENTITY_AXES,
     BodyJointState,
     BodyExternalDependency,
@@ -52,6 +56,7 @@ class FakeBodySkeletonHost:
         faulty_arm_fk=False,
         faulty_arm_mechanisms=False,
         faulty_arm_ik=False,
+        faulty_arm_blend=False,
     ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
         hierarchy = predict_fit_template_hierarchy(template, "|FitSkeleton")
@@ -109,6 +114,8 @@ class FakeBodySkeletonHost:
         self.arm_ik_root = None
         self.arm_ik_states = []
         self.faulty_arm_ik = faulty_arm_ik
+        self.arm_blend_snapshot = None
+        self.faulty_arm_blend = faulty_arm_blend
 
     def capture_fit_orientation(self, container_name):
         del container_name
@@ -158,6 +165,7 @@ class FakeBodySkeletonHost:
         before_arm_mechanism_states = list(self.arm_mechanism_states)
         before_arm_ik_root = self.arm_ik_root
         before_arm_ik_states = list(self.arm_ik_states)
+        before_arm_blend_snapshot = self.arm_blend_snapshot
         self.transaction_count += 1
         self.in_transaction = True
         try:
@@ -171,6 +179,7 @@ class FakeBodySkeletonHost:
             self.arm_mechanism_states = before_arm_mechanism_states
             self.arm_ik_root = before_arm_ik_root
             self.arm_ik_states = before_arm_ik_states
+            self.arm_blend_snapshot = before_arm_blend_snapshot
             raise
         finally:
             self.in_transaction = False
@@ -320,6 +329,21 @@ class FakeBodySkeletonHost:
         if self.faulty_arm_ik and states:
             states = (replace(states[0], pole_source=None),) + states[1:]
         return BodyArmIkSnapshot(self.arm_ik_root, states)
+
+    def create_body_arm_blend(self, plan):
+        sides = []
+        for side in plan.sides:
+            plug = f"{plan.settings_path}.{side.attribute}"
+            joints = tuple(BodyArmBlendJointState(j.constraint_name, j.body_joint, (j.fk_driver, j.ik_driver), f"{side.reverse_name}.outputX", plug) for j in side.joints)
+            sides.append(BodyArmBlendSideState(side.side, plug, 0.0, side.reverse_name, plug, joints))
+        self.arm_blend_snapshot = BodyArmBlendSnapshot(plan.settings_path, tuple(sides))
+
+    def capture_body_arm_blend(self, plan):
+        del plan
+        if self.faulty_arm_blend and self.arm_blend_snapshot:
+            first = replace(self.arm_blend_snapshot.sides[0], reverse_input_source=None)
+            return replace(self.arm_blend_snapshot, sides=(first,) + self.arm_blend_snapshot.sides[1:])
+        return self.arm_blend_snapshot
 
 
 class BodySkeletonTests(unittest.TestCase):
@@ -705,6 +729,23 @@ class BodySkeletonTests(unittest.TestCase):
             BuildBodyArmIkControls(host).apply()
         self.assertEqual(host.transaction_count, 3)
         self.assertIsNone(host.arm_ik_root)
+
+    def test_builds_independent_arm_fk_ik_body_blends(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyArmMechanisms(host).apply()
+        result = BuildBodyArmBlend(host).apply()
+        self.assertEqual(len(result.snapshot.sides), 2)
+        self.assertEqual(sum(len(side.joints) for side in result.snapshot.sides), 6)
+        self.assertEqual(host.transaction_count, 3)
+
+    def test_arm_blend_postcheck_failure_rolls_back(self):
+        host = FakeBodySkeletonHost(faulty_arm_blend=True)
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyArmMechanisms(host).apply()
+        with self.assertRaisesRegex(RuntimeError, "复检失败"):
+            BuildBodyArmBlend(host).apply()
+        self.assertIsNone(host.arm_blend_snapshot)
 
 
 if __name__ == "__main__":
