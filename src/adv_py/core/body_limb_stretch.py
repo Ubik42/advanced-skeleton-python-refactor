@@ -207,6 +207,10 @@ def audit_body_limb_stretch(
     snapshot: BodyLimbStretchSnapshot,
     *,
     tolerance: float = 1e-4,
+    expected_segment_factor_sources_by_side: Mapping[
+        FitBuildSide,
+        tuple[str, str],
+    ] | None = None,
 ) -> tuple[BodyLimbStretchIssue, ...]:
     label = plan.limb_label
     issues = []
@@ -231,6 +235,14 @@ def audit_body_limb_stretch(
             ))
             continue
         plug = f"{plan.settings_path}.{spec.attribute}"
+        expected_factor_sources = (
+            expected_segment_factor_sources_by_side.get(spec.side, ())
+            if expected_segment_factor_sources_by_side is not None
+            else (
+                f"{spec.blend_name}.outputR",
+                f"{spec.blend_name}.outputR",
+            )
+        )
         checks = (
             (state.attribute_plug == plug and abs(state.attribute_value - 1.0) <= tolerance, "attribute_mismatch", f"{label} stretch 属性不一致"),
             (state.start_path == spec.start_path and _close(state.start_position, spec.start_position, tolerance), "start_mismatch", f"{label} stretch 起点不一致"),
@@ -240,7 +252,7 @@ def audit_body_limb_stretch(
             (state.clamp_name == spec.clamp_name and state.clamp_input_source == f"{spec.ratio_name}.outputX" and abs(state.clamp_minimum - 1.0) <= tolerance and state.clamp_maximum >= 1000.0, "clamp_wiring", f"{label} stretch no-compression 连线不一致"),
             (state.blend_name == spec.blend_name and state.blend_ratio_source == f"{spec.clamp_name}.outputR" and state.blend_weight_source == plug and abs(state.blend_base_value - 1.0) <= tolerance, "blend_wiring", f"{label} stretch 强度连线不一致"),
             (state.segment_name == spec.segment_name and _close(state.base_translations, spec.base_translations, tolerance), "segment_values", f"{label} stretch 基准段长不一致"),
-            (state.segment_factor_sources == (f"{spec.blend_name}.outputR", f"{spec.blend_name}.outputR"), "segment_factor_wiring", f"{label} stretch 段长比例连线不一致"),
+            (state.segment_factor_sources == expected_factor_sources, "segment_factor_wiring", f"{label} stretch 段长比例连线不一致"),
             (state.segment_destination_sources == (f"{spec.segment_name}.outputX", f"{spec.segment_name}.outputY") and state.segment_operation == 1, "segment_output_wiring", f"{label} stretch 输出目标连线不一致"),
         )
         for passed, code, message in checks:

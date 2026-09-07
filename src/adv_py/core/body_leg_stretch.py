@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Mapping
+
 from .body_leg_ik import BodyLegIkPlan
 from .body_leg_mechanisms import BodyLegMechanismPlan
 from .body_limb_stretch import (
@@ -13,6 +15,7 @@ from .body_limb_stretch import (
     compensated_stretch_ratio,
     plan_body_limb_stretch,
 )
+from .fit_symmetry import FitBuildSide
 
 
 BodyLegStretchIssue = BodyLimbStretchIssue
@@ -43,5 +46,16 @@ def audit_body_leg_stretch(
     snapshot: BodyLegStretchSnapshot,
     *,
     tolerance: float = 1e-4,
+    expected_segment_factor_sources_by_side: Mapping[
+        FitBuildSide,
+        tuple[str, str],
+    ] | None = None,
 ) -> tuple[BodyLegStretchIssue, ...]:
-    return audit_body_limb_stretch(plan, snapshot, tolerance=tolerance)
+    return audit_body_limb_stretch(
+        plan,
+        snapshot,
+        tolerance=tolerance,
+        expected_segment_factor_sources_by_side=(
+            expected_segment_factor_sources_by_side
+        ),
+    )

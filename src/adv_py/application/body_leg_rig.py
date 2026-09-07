@@ -45,6 +45,12 @@ from adv_py.core.body_leg_stretch import (
     audit_body_leg_stretch,
     plan_body_leg_stretch,
 )
+from adv_py.core.body_leg_stretch_bias import (
+    BodyLegStretchBiasPlan,
+    BodyLegStretchBiasSnapshot,
+    audit_body_leg_stretch_bias,
+    plan_body_leg_stretch_bias,
+)
 from adv_py.core.body_leg_twist import (
     BodyLegTwistJointSpec,
     BodyLegTwistPlan,
@@ -94,6 +100,8 @@ class BodyLegRigHost(BodyRebuildInspectionHost, Protocol):
     def capture_body_leg_visibility(self, plan: BodyLegVisibilityPlan) -> BodyLegVisibilitySnapshot: ...
     def create_body_leg_stretch(self, plan: BodyLegStretchPlan) -> None: ...
     def capture_body_leg_stretch(self, plan: BodyLegStretchPlan) -> BodyLegStretchSnapshot: ...
+    def create_body_leg_stretch_bias(self, plan: BodyLegStretchBiasPlan) -> None: ...
+    def capture_body_leg_stretch_bias(self, plan: BodyLegStretchBiasPlan) -> BodyLegStretchBiasSnapshot: ...
     def prepare_body_leg_twist_runtime(self) -> None: ...
     def create_body_leg_twist_root(self, name: str) -> str: ...
     def create_body_leg_twist_segment(self, spec: BodyLegTwistSegmentSpec) -> None: ...
@@ -114,6 +122,7 @@ class BodyLegRigBuildPlan:
     ik: BodyLegIkPlan
     visibility: BodyLegVisibilityPlan
     stretch: BodyLegStretchPlan
+    stretch_bias: BodyLegStretchBiasPlan
     twist: BodyLegTwistPlan
     volume: BodyLegVolumePlan
     foot: BodyLegFootPlan
@@ -142,6 +151,7 @@ class BodyLegRigBuildResult:
     ik: BodyLegIkSnapshot
     visibility: BodyLegVisibilitySnapshot
     stretch: BodyLegStretchSnapshot
+    stretch_bias: BodyLegStretchBiasSnapshot
     twist: BodyLegTwistSnapshot
     volume: BodyLegVolumeSnapshot
     foot: BodyLegFootSnapshot
@@ -190,6 +200,7 @@ class BuildBodyLegRig:
         )
         visibility = plan_body_leg_visibility(fk_controls, ik, blend)
         stretch = plan_body_leg_stretch(mechanisms, ik)
+        stretch_bias = plan_body_leg_stretch_bias(stretch)
         twist = plan_body_leg_twist(
             safety.body,
             joints_per_segment=twist_joints_per_segment,
@@ -232,6 +243,13 @@ class BuildBodyLegRig:
                 side.clamp_name,
                 side.blend_name,
                 side.segment_name,
+            ))
+        for side in stretch_bias.sides:
+            names.extend((
+                side.delta_name,
+                side.candidates_name,
+                side.weights_name,
+                side.factors_name,
             ))
         names.append(twist.root_name)
         for spec in twist.segments:
@@ -280,6 +298,7 @@ class BuildBodyLegRig:
             ik,
             visibility,
             stretch,
+            stretch_bias,
             twist,
             volume,
             foot,
@@ -362,6 +381,34 @@ class BuildBodyLegRig:
                     + "；".join(issue.message for issue in stretch_issues)
                 )
 
+            self._host.create_body_leg_stretch_bias(plan.stretch_bias)
+            stretch_bias = self._host.capture_body_leg_stretch_bias(
+                plan.stretch_bias
+            )
+            bias_issues = audit_body_leg_stretch_bias(
+                plan.stretch_bias,
+                stretch_bias,
+            )
+            if bias_issues:
+                raise RuntimeError(
+                    "Leg stretch bias 阶段复检失败："
+                    + "；".join(issue.message for issue in bias_issues)
+                )
+            stretch = self._host.capture_body_leg_stretch(plan.stretch)
+            stretch_issues = audit_body_leg_stretch(
+                plan.stretch,
+                stretch,
+                expected_segment_factor_sources_by_side={
+                    spec.side: spec.factor_sources
+                    for spec in plan.stretch_bias.sides
+                },
+            )
+            if stretch_issues:
+                raise RuntimeError(
+                    "Leg stretch bias 构建后基础网络复检失败："
+                    + "；".join(issue.message for issue in stretch_issues)
+                )
+
             if (
                 self._host.create_body_leg_twist_root(plan.twist.root_name)
                 != plan.twist.root_path
@@ -427,6 +474,7 @@ class BuildBodyLegRig:
             ik,
             visibility,
             stretch,
+            stretch_bias,
             twist,
             volume,
             foot,

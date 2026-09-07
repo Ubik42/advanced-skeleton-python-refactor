@@ -65,6 +65,8 @@ from adv_py.core import (
     BodyArmStretchSnapshot,
     BodyLegStretchSideState,
     BodyLegStretchSnapshot,
+    BodyLegStretchBiasSideState,
+    BodyLegStretchBiasSnapshot,
     BodyArmTwistJointState,
     BodyArmTwistSegmentState,
     BodyArmTwistSnapshot,
@@ -114,6 +116,7 @@ class FakeBodySkeletonHost:
         faulty_leg_blend=False,
         faulty_leg_visibility=False,
         faulty_leg_stretch=False,
+        faulty_leg_stretch_bias=False,
         blocked_leg_visibility=False,
         faulty_leg_match=False,
         faulty_leg_foot=False,
@@ -199,6 +202,8 @@ class FakeBodySkeletonHost:
         self.faulty_leg_visibility = faulty_leg_visibility
         self.leg_stretch_snapshot = None
         self.faulty_leg_stretch = faulty_leg_stretch
+        self.leg_stretch_bias_snapshot = None
+        self.faulty_leg_stretch_bias = faulty_leg_stretch_bias
         self.blocked_leg_visibility = blocked_leg_visibility
         self.faulty_leg_match = faulty_leg_match
         self.leg_match_applied = False
@@ -326,6 +331,7 @@ class FakeBodySkeletonHost:
         before_leg_match_applied = self.leg_match_applied
         before_leg_match_segment_translations = self.leg_match_segment_translations
         before_leg_stretch_snapshot = self.leg_stretch_snapshot
+        before_leg_stretch_bias_snapshot = self.leg_stretch_bias_snapshot
         before_leg_foot_snapshot = self.leg_foot_snapshot
         before_arm_ik_root = self.arm_ik_root
         before_arm_ik_states = list(self.arm_ik_states)
@@ -364,6 +370,7 @@ class FakeBodySkeletonHost:
             self.leg_match_applied = before_leg_match_applied
             self.leg_match_segment_translations = before_leg_match_segment_translations
             self.leg_stretch_snapshot = before_leg_stretch_snapshot
+            self.leg_stretch_bias_snapshot = before_leg_stretch_bias_snapshot
             self.leg_foot_snapshot = before_leg_foot_snapshot
             self.arm_ik_root = before_arm_ik_root
             self.arm_ik_states = before_arm_ik_states
@@ -763,6 +770,72 @@ class FakeBodySkeletonHost:
                 sides=(first,) + self.leg_stretch_snapshot.sides[1:],
             )
         return self.leg_stretch_snapshot
+
+    def create_body_leg_stretch_bias(self, plan):
+        states = []
+        factor_sources = {
+            spec.side: spec.factor_sources for spec in plan.sides
+        }
+        for spec in plan.sides:
+            plug = f"{plan.settings_path}.{spec.attribute}"
+            states.append(BodyLegStretchBiasSideState(
+                side=spec.side,
+                attribute_plug=plug,
+                attribute_value=spec.default_value,
+                delta_name=spec.delta_name,
+                delta_ratio_source=spec.ratio_source,
+                delta_base_value=1.0,
+                delta_operation=2,
+                candidates_name=spec.candidates_name,
+                candidate_sources=(
+                    f"{spec.delta_name}.output1D",
+                    f"{spec.delta_name}.output1D",
+                ),
+                candidate_multipliers=spec.candidate_multipliers,
+                candidate_operation=1,
+                weights_name=spec.weights_name,
+                upper_candidate_source=f"{spec.candidates_name}.outputX",
+                upper_zero=0.0,
+                lower_zero=0.0,
+                lower_candidate_source=f"{spec.candidates_name}.outputY",
+                bias_source=plug,
+                factors_name=spec.factors_name,
+                base_factors=(1.0, 1.0),
+                weighted_sources=(
+                    f"{spec.weights_name}.outputR",
+                    f"{spec.weights_name}.outputG",
+                ),
+                factor_operation=1,
+                factor_destinations=spec.factor_destinations,
+                factor_destination_sources=spec.factor_sources,
+            ))
+        self.leg_stretch_bias_snapshot = BodyLegStretchBiasSnapshot(
+            plan.settings_path,
+            tuple(states),
+        )
+        self.leg_stretch_snapshot = replace(
+            self.leg_stretch_snapshot,
+            sides=tuple(
+                replace(
+                    state,
+                    segment_factor_sources=factor_sources[state.side],
+                )
+                for state in self.leg_stretch_snapshot.sides
+            ),
+        )
+
+    def capture_body_leg_stretch_bias(self, plan):
+        del plan
+        if self.faulty_leg_stretch_bias and self.leg_stretch_bias_snapshot:
+            first = replace(
+                self.leg_stretch_bias_snapshot.sides[0],
+                factor_destination_sources=(None, None),
+            )
+            return replace(
+                self.leg_stretch_bias_snapshot,
+                sides=(first,) + self.leg_stretch_bias_snapshot.sides[1:],
+            )
+        return self.leg_stretch_bias_snapshot
 
     def capture_body_leg_foot_input(self, plan):
         collisions = tuple(
@@ -2010,6 +2083,11 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.blend.sides), 2)
         self.assertEqual(len(result.visibility.sides), 2)
         self.assertEqual(len(result.stretch.sides), 2)
+        self.assertEqual(len(result.stretch_bias.sides), 2)
+        self.assertTrue(all(
+            0.0 < spec.default_value < 1.0
+            for spec in result.plan.stretch_bias.sides
+        ))
         self.assertEqual(len(result.twist.segments), 4)
         self.assertEqual(len(result.twist.joints), 8)
         self.assertEqual(len(result.volume.sides), 2)
@@ -2066,6 +2144,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertFalse(host.leg_ik_states)
         self.assertIsNone(host.leg_visibility_snapshot)
         self.assertIsNone(host.leg_stretch_snapshot)
+        self.assertIsNone(host.leg_stretch_bias_snapshot)
         self.assertIsNone(host.leg_twist_root)
         self.assertFalse(host.leg_twist_segments)
         self.assertFalse(host.leg_twist_states)
@@ -2176,7 +2255,37 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertFalse(host.leg_ik_states)
         self.assertIsNone(host.leg_visibility_snapshot)
         self.assertIsNone(host.leg_stretch_snapshot)
+        self.assertIsNone(host.leg_stretch_bias_snapshot)
         self.assertIsNone(host.leg_foot_snapshot)
+
+    def test_complete_leg_rig_stretch_bias_failure_rolls_back_every_stage(self):
+        host = FakeBodySkeletonHost(faulty_leg_stretch_bias=True)
+        BuildOrientedBodySkeleton(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "stretch bias 阶段"):
+            BuildBodyLegRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertIsNone(host.leg_control_root)
+        self.assertIsNone(host.leg_blend_snapshot)
+        self.assertIsNone(host.leg_ik_root)
+        self.assertIsNone(host.leg_stretch_snapshot)
+        self.assertIsNone(host.leg_stretch_bias_snapshot)
+
+    def test_complete_leg_rig_stretch_bias_collision_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        host.collisions["AdvPy_LegStretchBiasFactors_R"] = (
+            "|User|AdvPy_LegStretchBiasFactors_R",
+        )
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "同名"):
+            BuildBodyLegRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertIsNone(host.leg_stretch_bias_snapshot)
 
     def test_complete_leg_rig_foot_collision_blocks_before_transaction(self):
         host = FakeBodySkeletonHost()

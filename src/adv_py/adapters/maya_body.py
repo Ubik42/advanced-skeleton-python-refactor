@@ -56,6 +56,11 @@ from adv_py.core.body_leg_stretch import (
     BodyLegStretchPlan,
     BodyLegStretchSnapshot,
 )
+from adv_py.core.body_leg_stretch_bias import (
+    BodyLegStretchBiasPlan,
+    BodyLegStretchBiasSideState,
+    BodyLegStretchBiasSnapshot,
+)
 from adv_py.core.body_arm_twist import (
     BodyArmTwistJointSpec,
     BodyArmTwistPlan,
@@ -850,6 +855,271 @@ class MayaBodyBuildHost(MayaFitJointHost):
             float(self._cmds.getAttr(global_scale_plug)),
             tuple(states),
         )
+
+    def create_body_leg_stretch_bias(
+        self,
+        plan: BodyLegStretchBiasPlan,
+    ) -> None:
+        self._require_transaction()
+        selection = self._cmds.ls(selection=True, long=True) or []
+
+        def source(plug: str) -> str | None:
+            values = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+                plugs=True,
+            ) or []
+            return values[0] if len(values) == 1 else None
+
+        try:
+            settings = self._cmds.ls(
+                plan.settings_path,
+                long=True,
+                type="transform",
+            ) or []
+            if len(settings) != 1 or settings[0] != plan.settings_path:
+                raise FitSkeletonValidationError(
+                    "Leg stretch bias 设置节点在执行前失效"
+                )
+            for spec in plan.sides:
+                plug = f"{plan.settings_path}.{spec.attribute}"
+                names = (
+                    spec.delta_name,
+                    spec.candidates_name,
+                    spec.weights_name,
+                    spec.factors_name,
+                )
+                segments = self._cmds.ls(
+                    spec.segment_name,
+                    type="multiplyDivide",
+                ) or []
+                if (
+                    self._cmds.objExists(plug)
+                    or any(self.find_name_collisions(name) for name in names)
+                    or len(segments) != 1
+                    or not self._cmds.objExists(spec.ratio_source)
+                    or any(
+                        source(destination) != spec.original_factor_source
+                        for destination in spec.factor_destinations
+                    )
+                ):
+                    raise FitSkeletonValidationError(
+                        "Leg stretch bias 输入、名称或原始段长连接失效"
+                    )
+
+            self._transaction_changed = True
+            for spec in plan.sides:
+                plug = f"{plan.settings_path}.{spec.attribute}"
+                self._cmds.addAttr(
+                    plan.settings_path,
+                    longName=spec.attribute,
+                    attributeType="double",
+                    minValue=0.0,
+                    maxValue=1.0,
+                    defaultValue=spec.default_value,
+                    keyable=True,
+                )
+                delta = self._cmds.createNode(
+                    "plusMinusAverage",
+                    name=spec.delta_name,
+                    skipSelect=True,
+                )
+                candidates = self._cmds.createNode(
+                    "multiplyDivide",
+                    name=spec.candidates_name,
+                    skipSelect=True,
+                )
+                weights = self._cmds.createNode(
+                    "blendColors",
+                    name=spec.weights_name,
+                    skipSelect=True,
+                )
+                factors = self._cmds.createNode(
+                    "plusMinusAverage",
+                    name=spec.factors_name,
+                    skipSelect=True,
+                )
+
+                self._cmds.setAttr(f"{delta}.operation", 2)
+                self._cmds.connectAttr(
+                    spec.ratio_source,
+                    f"{delta}.input1D[0]",
+                )
+                self._cmds.setAttr(f"{delta}.input1D[1]", 1.0)
+
+                self._cmds.setAttr(f"{candidates}.operation", 1)
+                self._cmds.connectAttr(
+                    f"{delta}.output1D",
+                    f"{candidates}.input1X",
+                )
+                self._cmds.connectAttr(
+                    f"{delta}.output1D",
+                    f"{candidates}.input1Y",
+                )
+                self._cmds.setAttr(
+                    f"{candidates}.input2X",
+                    spec.candidate_multipliers[0],
+                )
+                self._cmds.setAttr(
+                    f"{candidates}.input2Y",
+                    spec.candidate_multipliers[1],
+                )
+
+                self._cmds.connectAttr(
+                    f"{candidates}.outputX",
+                    f"{weights}.color1R",
+                )
+                self._cmds.setAttr(f"{weights}.color2R", 0.0)
+                self._cmds.setAttr(f"{weights}.color1G", 0.0)
+                self._cmds.connectAttr(
+                    f"{candidates}.outputY",
+                    f"{weights}.color2G",
+                )
+                self._cmds.connectAttr(plug, f"{weights}.blender")
+
+                self._cmds.setAttr(f"{factors}.operation", 1)
+                self._cmds.setAttr(
+                    f"{factors}.input2D[0].input2Dx",
+                    1.0,
+                )
+                self._cmds.setAttr(
+                    f"{factors}.input2D[0].input2Dy",
+                    1.0,
+                )
+                self._cmds.connectAttr(
+                    f"{weights}.outputR",
+                    f"{factors}.input2D[1].input2Dx",
+                )
+                self._cmds.connectAttr(
+                    f"{weights}.outputG",
+                    f"{factors}.input2D[1].input2Dy",
+                )
+
+                for old_source, destination, new_source in zip(
+                    (spec.original_factor_source,) * 2,
+                    spec.factor_destinations,
+                    spec.factor_sources,
+                ):
+                    self._cmds.disconnectAttr(old_source, destination)
+                    self._cmds.connectAttr(new_source, destination)
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+    def capture_body_leg_stretch_bias(
+        self,
+        plan: BodyLegStretchBiasPlan,
+    ) -> BodyLegStretchBiasSnapshot:
+        def source(plug: str) -> str | None:
+            values = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+                plugs=True,
+            ) or []
+            if len(values) != 1:
+                return None
+            node, attribute = values[0].split(".", 1)
+            paths = self._cmds.ls(node, long=True) or [node]
+            return f"{paths[0]}.{attribute}"
+
+        settings = self._cmds.ls(
+            plan.settings_path,
+            long=True,
+            type="transform",
+        ) or []
+        if len(settings) != 1:
+            raise FitSkeletonValidationError(
+                "Leg stretch bias 设置节点无效"
+            )
+        states = []
+        for spec in plan.sides:
+            typed = (
+                (spec.delta_name, "plusMinusAverage"),
+                (spec.candidates_name, "multiplyDivide"),
+                (spec.weights_name, "blendColors"),
+                (spec.factors_name, "plusMinusAverage"),
+                (spec.segment_name, "multiplyDivide"),
+            )
+            plug = f"{plan.settings_path}.{spec.attribute}"
+            if (
+                not self._cmds.objExists(plug)
+                or any(
+                    len(self._cmds.ls(name, type=node_type) or []) != 1
+                    for name, node_type in typed
+                )
+            ):
+                raise FitSkeletonValidationError(
+                    "Leg stretch bias 节点集合无效"
+                )
+            states.append(BodyLegStretchBiasSideState(
+                side=spec.side,
+                attribute_plug=plug,
+                attribute_value=float(self._cmds.getAttr(plug)),
+                delta_name=spec.delta_name,
+                delta_ratio_source=source(f"{spec.delta_name}.input1D[0]"),
+                delta_base_value=float(self._cmds.getAttr(
+                    f"{spec.delta_name}.input1D[1]"
+                )),
+                delta_operation=int(self._cmds.getAttr(
+                    f"{spec.delta_name}.operation"
+                )),
+                candidates_name=spec.candidates_name,
+                candidate_sources=(
+                    source(f"{spec.candidates_name}.input1X"),
+                    source(f"{spec.candidates_name}.input1Y"),
+                ),
+                candidate_multipliers=(
+                    float(self._cmds.getAttr(
+                        f"{spec.candidates_name}.input2X"
+                    )),
+                    float(self._cmds.getAttr(
+                        f"{spec.candidates_name}.input2Y"
+                    )),
+                ),
+                candidate_operation=int(self._cmds.getAttr(
+                    f"{spec.candidates_name}.operation"
+                )),
+                weights_name=spec.weights_name,
+                upper_candidate_source=source(
+                    f"{spec.weights_name}.color1R"
+                ),
+                upper_zero=float(self._cmds.getAttr(
+                    f"{spec.weights_name}.color2R"
+                )),
+                lower_zero=float(self._cmds.getAttr(
+                    f"{spec.weights_name}.color1G"
+                )),
+                lower_candidate_source=source(
+                    f"{spec.weights_name}.color2G"
+                ),
+                bias_source=source(f"{spec.weights_name}.blender"),
+                factors_name=spec.factors_name,
+                base_factors=(
+                    float(self._cmds.getAttr(
+                        f"{spec.factors_name}.input2D[0].input2Dx"
+                    )),
+                    float(self._cmds.getAttr(
+                        f"{spec.factors_name}.input2D[0].input2Dy"
+                    )),
+                ),
+                weighted_sources=(
+                    source(f"{spec.factors_name}.input2D[1].input2Dx"),
+                    source(f"{spec.factors_name}.input2D[1].input2Dy"),
+                ),
+                factor_operation=int(self._cmds.getAttr(
+                    f"{spec.factors_name}.operation"
+                )),
+                factor_destinations=spec.factor_destinations,
+                factor_destination_sources=tuple(
+                    source(destination)
+                    for destination in spec.factor_destinations
+                ),
+            ))
+        return BodyLegStretchBiasSnapshot(settings[0], tuple(states))
 
     def prepare_body_arm_twist_runtime(self) -> None:
         self._prepare_body_limb_twist_runtime("Arm")

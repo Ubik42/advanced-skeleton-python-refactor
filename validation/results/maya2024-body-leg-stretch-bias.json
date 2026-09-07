@@ -1,0 +1,48 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 36084,
+  "slice": "body_leg_stretch_bias_distribution",
+  "two_bias_sides": true,
+  "default_share_matches_rest_lengths": true,
+  "default_preserves_uniform_stretch": true,
+  "upper_only_distribution": true,
+  "lower_only_distribution": true,
+  "partial_distribution": true,
+  "upper_only_still_reaches_target": true,
+  "lower_only_still_reaches_target": true,
+  "total_length_is_preserved": true,
+  "volume_uses_total_ratio_only": true,
+  "left_side_isolated": true,
+  "twist_helpers_follow_redistributed_segments": true,
+  "biased_ik_to_fk_preserves_pose": true,
+  "biased_ik_to_fk_transfers_lengths": true,
+  "selection_preserved": true,
+  "first_undo_restored_ik_mode": true,
+  "first_undo_restored_biased_pose": true,
+  "second_undo_removed_complete_leg_rig": true,
+  "cleanup": true,
+  "target_stretch_ratio": 1.4,
+  "default_upper_extra_share": 0.5,
+  "final_upper_extra_share": 0.75,
+  "base_translations": [
+    4.0,
+    4.0
+  ],
+  "upper_only_segments": [
+    7.199999809265137,
+    4.0
+  ],
+  "lower_only_segments": [
+    4.0,
+    7.199999809265137
+  ],
+  "partial_segments": [
+    6.399999618530273,
+    4.800000190734863
+  ],
+  "remaining_rig_nodes_after_undo": [],
+  "remaining_nodes": [],
+  "duration_seconds": 4.296,
+  "status": "passed"
+}
