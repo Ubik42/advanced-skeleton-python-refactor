@@ -52,6 +52,10 @@ from adv_py.core.body_arm_stretch import (
     BodyArmStretchSideState,
     BodyArmStretchSnapshot,
 )
+from adv_py.core.body_leg_stretch import (
+    BodyLegStretchPlan,
+    BodyLegStretchSnapshot,
+)
 from adv_py.core.body_arm_twist import (
     BodyArmTwistJointSpec,
     BodyArmTwistJointState,
@@ -648,14 +652,25 @@ class MayaBodyBuildHost(MayaFitJointHost):
         return snapshot_type(tuple(states))
 
     def create_body_arm_stretch(self, plan: BodyArmStretchPlan) -> None:
+        self._create_body_limb_stretch(plan)
+
+    def create_body_leg_stretch(self, plan: BodyLegStretchPlan) -> None:
+        self._create_body_limb_stretch(plan)
+
+    def _create_body_limb_stretch(self, plan) -> None:
         self._require_transaction()
+        label = plan.limb_label
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             if not self._cmds.objExists(plan.settings_path):
-                raise FitSkeletonValidationError("Arm stretch 设置节点在执行前失效")
+                raise FitSkeletonValidationError(
+                    f"{label} stretch 设置节点在执行前失效"
+                )
             global_scale_plug = f"{plan.settings_path}.{plan.global_scale_attribute}"
             if self._cmds.objExists(global_scale_plug):
-                raise FitSkeletonValidationError("Arm stretch 全局比例属性已存在")
+                raise FitSkeletonValidationError(
+                    f"{label} stretch 全局比例属性已存在"
+                )
             self._transaction_changed = True
             self._cmds.addAttr(
                 plan.settings_path,
@@ -668,18 +683,28 @@ class MayaBodyBuildHost(MayaFitJointHost):
             for spec in plan.sides:
                 names = (spec.start_name, spec.distance_name, spec.ratio_name, spec.rest_scale_name, spec.clamp_name, spec.blend_name, spec.segment_name)
                 if any(self.find_name_collisions(name) for name in names):
-                    raise FitSkeletonValidationError("Arm stretch 输出名称冲突")
-                if any(not self._cmds.objExists(path) for path in (spec.wrist_control_path, *spec.segment_joints)):
-                    raise FitSkeletonValidationError("Arm stretch 控制或 IK mechanism 在执行前失效")
+                    raise FitSkeletonValidationError(
+                        f"{label} stretch 输出名称冲突"
+                    )
+                if any(
+                    not self._cmds.objExists(path)
+                    for path in (spec.target_control_path, *spec.segment_joints)
+                ):
+                    raise FitSkeletonValidationError(
+                        f"{label} stretch 控制或 IK mechanism 在执行前失效"
+                    )
                 plug = f"{plan.settings_path}.{spec.attribute}"
                 if self._cmds.objExists(plug):
-                    raise FitSkeletonValidationError("Arm stretch 属性已存在")
+                    raise FitSkeletonValidationError(
+                        f"{label} stretch 属性已存在"
+                    )
                 self._cmds.addAttr(plan.settings_path, longName=spec.attribute, attributeType="double", minValue=0.0, maxValue=1.0, defaultValue=1.0, keyable=True)
-                start = self._cmds.createNode("transform", name=spec.start_name, parent="|AdvPy_ArmMechanisms", skipSelect=True)
+                start_parent = spec.start_path.rsplit("|", 1)[0]
+                start = self._cmds.createNode("transform", name=spec.start_name, parent=start_parent, skipSelect=True)
                 start = (self._cmds.ls(start, long=True) or [start])[0]
                 self._cmds.xform(start, worldSpace=True, translation=spec.start_position)
                 if start != spec.start_path:
-                    raise RuntimeError("Arm stretch 起点路径漂移")
+                    raise RuntimeError(f"{label} stretch 起点路径漂移")
                 distance = self._cmds.createNode("distanceBetween", name=spec.distance_name, skipSelect=True)
                 ratio = self._cmds.createNode("multiplyDivide", name=spec.ratio_name, skipSelect=True)
                 rest_scale = self._cmds.createNode("multiplyDivide", name=spec.rest_scale_name, skipSelect=True)
@@ -687,7 +712,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 blend = self._cmds.createNode("blendColors", name=spec.blend_name, skipSelect=True)
                 segments = self._cmds.createNode("multiplyDivide", name=spec.segment_name, skipSelect=True)
                 self._cmds.connectAttr(f"{start}.worldMatrix[0]", f"{distance}.inMatrix1")
-                self._cmds.connectAttr(f"{spec.wrist_control_path}.worldMatrix[0]", f"{distance}.inMatrix2")
+                self._cmds.connectAttr(f"{spec.target_control_path}.worldMatrix[0]", f"{distance}.inMatrix2")
                 self._cmds.setAttr(f"{ratio}.operation", 2)
                 self._cmds.connectAttr(f"{distance}.distance", f"{ratio}.input1X")
                 self._cmds.setAttr(f"{rest_scale}.operation", 1)
@@ -705,12 +730,24 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 self._cmds.setAttr(f"{segments}.input1Y", spec.base_translations[1])
                 self._cmds.connectAttr(f"{blend}.outputR", f"{segments}.input2X")
                 self._cmds.connectAttr(f"{blend}.outputR", f"{segments}.input2Y")
-                self._cmds.connectAttr(f"{segments}.outputX", f"{spec.segment_joints[0]}.translateX")
-                self._cmds.connectAttr(f"{segments}.outputY", f"{spec.segment_joints[1]}.translateX")
+                self._cmds.connectAttr(
+                    f"{segments}.outputX",
+                    f"{spec.segment_joints[0]}.translate{spec.segment_channels[0]}",
+                )
+                self._cmds.connectAttr(
+                    f"{segments}.outputY",
+                    f"{spec.segment_joints[1]}.translate{spec.segment_channels[1]}",
+                )
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
     def capture_body_arm_stretch(self, plan: BodyArmStretchPlan) -> BodyArmStretchSnapshot:
+        return self._capture_body_limb_stretch(plan)
+
+    def capture_body_leg_stretch(self, plan: BodyLegStretchPlan) -> BodyLegStretchSnapshot:
+        return self._capture_body_limb_stretch(plan)
+
+    def _capture_body_limb_stretch(self, plan):
         def source(plug: str) -> str | None:
             values = self._cmds.listConnections(plug, source=True, destination=False, plugs=True) or []
             if len(values) != 1:
@@ -726,10 +763,14 @@ class MayaBodyBuildHost(MayaFitJointHost):
 
         settings = (self._cmds.ls(plan.settings_path, long=True, type="transform") or [None])[0]
         if settings is None:
-            raise FitSkeletonValidationError("Arm stretch 设置节点无效")
+            raise FitSkeletonValidationError(
+                f"{plan.limb_label} stretch 设置节点无效"
+            )
         global_scale_plug = f"{settings}.{plan.global_scale_attribute}"
         if not self._cmds.objExists(global_scale_plug):
-            raise FitSkeletonValidationError("Arm stretch 全局比例输入无效")
+            raise FitSkeletonValidationError(
+                f"{plan.limb_label} stretch 全局比例输入无效"
+            )
         states = []
         for spec in plan.sides:
             typed = (
@@ -742,7 +783,9 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 (spec.segment_name, "multiplyDivide"),
             )
             if any(len(self._cmds.ls(name, type=node_type) or []) != 1 for name, node_type in typed):
-                raise FitSkeletonValidationError("Arm stretch 节点集合无效")
+                raise FitSkeletonValidationError(
+                    f"{plan.limb_label} stretch 节点集合无效"
+                )
             plug = f"{settings}.{spec.attribute}"
             states.append(BodyArmStretchSideState(
                 spec.side,
@@ -771,7 +814,14 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 spec.segment_name,
                 (float(self._cmds.getAttr(f"{spec.segment_name}.input1X")), float(self._cmds.getAttr(f"{spec.segment_name}.input1Y"))),
                 (source(f"{spec.segment_name}.input2X"), source(f"{spec.segment_name}.input2Y")),
-                (source(f"{spec.segment_joints[0]}.translateX"), source(f"{spec.segment_joints[1]}.translateX")),
+                (
+                    source(
+                        f"{spec.segment_joints[0]}.translate{spec.segment_channels[0]}"
+                    ),
+                    source(
+                        f"{spec.segment_joints[1]}.translate{spec.segment_channels[1]}"
+                    ),
+                ),
                 int(self._cmds.getAttr(f"{spec.segment_name}.operation")),
             ))
         return BodyArmStretchSnapshot(
@@ -1595,8 +1645,18 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 )
                 for index in (0, 4, 8)
             ))
+        segment_translations = tuple(
+            float(self._cmds.getAttr(plug))
+            for plug in plan.fk_segment_plugs
+            if self._cmds.objExists(plug)
+        )
         return BodyLegIkToFkSceneState(
-            existing, writable, value, tuple(positions), tuple(axes)
+            existing,
+            writable,
+            value,
+            tuple(positions),
+            tuple(axes),
+            segment_translations,
         )
 
     def apply_body_leg_ik_to_fk(self, plan: BodyLegIkToFkPlan) -> None:
@@ -1621,6 +1681,11 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     *position, 1.0,
                 )
                 self._cmds.xform(path, worldSpace=True, matrix=matrix)
+            for plug, value in zip(
+                plan.fk_segment_plugs,
+                plan.fk_segment_translations,
+            ):
+                self._cmds.setAttr(plug, value)
             self._cmds.setAttr(plan.blend_plug, 0.0)
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)

@@ -180,9 +180,15 @@ class MatchBodyLegIkToFk:
             self._host.apply_body_leg_ik_to_fk(plan.match)
             body = self._host.capture_body_skeleton(body_root_name)
             blend = self._host.capture_body_leg_blend(plan.blend)
+            match_state = self._host.capture_body_leg_ik_to_fk_state(
+                plan.match
+            )
             target = next(value for value in blend.sides if value.side is side)
             issues = audit_body_leg_ik_to_fk_result(
-                plan.match, body, target.attribute_value
+                plan.match,
+                body,
+                target.attribute_value,
+                match_state.fk_segment_translations,
             )
             current_other = tuple(
                 (value.side, value.attribute_value)

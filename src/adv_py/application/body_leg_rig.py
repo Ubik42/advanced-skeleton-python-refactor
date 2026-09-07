@@ -39,6 +39,12 @@ from adv_py.core.body_leg_mechanisms import (
     audit_body_leg_mechanisms,
     plan_body_leg_mechanisms,
 )
+from adv_py.core.body_leg_stretch import (
+    BodyLegStretchPlan,
+    BodyLegStretchSnapshot,
+    audit_body_leg_stretch,
+    plan_body_leg_stretch,
+)
 from adv_py.core.body_leg_visibility import (
     BodyLegVisibilityPlan,
     BodyLegVisibilitySnapshot,
@@ -72,6 +78,8 @@ class BodyLegRigHost(BodyRebuildInspectionHost, Protocol):
     def capture_body_leg_ik(self, plan: BodyLegIkPlan) -> BodyLegIkSnapshot: ...
     def create_body_leg_visibility(self, plan: BodyLegVisibilityPlan) -> None: ...
     def capture_body_leg_visibility(self, plan: BodyLegVisibilityPlan) -> BodyLegVisibilitySnapshot: ...
+    def create_body_leg_stretch(self, plan: BodyLegStretchPlan) -> None: ...
+    def capture_body_leg_stretch(self, plan: BodyLegStretchPlan) -> BodyLegStretchSnapshot: ...
     def create_body_leg_foot_side(self, spec: BodyLegFootSideSpec) -> None: ...
     def capture_body_leg_foot(self, plan: BodyLegFootPlan) -> BodyLegFootSnapshot: ...
 
@@ -84,6 +92,7 @@ class BodyLegRigBuildPlan:
     blend: BodyLegBlendPlan
     ik: BodyLegIkPlan
     visibility: BodyLegVisibilityPlan
+    stretch: BodyLegStretchPlan
     foot: BodyLegFootPlan
     name_collisions: tuple[str, ...]
 
@@ -109,6 +118,7 @@ class BodyLegRigBuildResult:
     blend: BodyLegBlendSnapshot
     ik: BodyLegIkSnapshot
     visibility: BodyLegVisibilitySnapshot
+    stretch: BodyLegStretchSnapshot
     foot: BodyLegFootSnapshot
     body: BodySkeletonSnapshot
 
@@ -153,6 +163,7 @@ class BuildBodyLegRig:
             pole_distance_scale=pole_distance_scale,
         )
         visibility = plan_body_leg_visibility(fk_controls, ik, blend)
+        stretch = plan_body_leg_stretch(mechanisms, ik)
         foot = plan_body_leg_foot(safety.body, ik)
         names = [
             mechanisms.root_name,
@@ -181,6 +192,16 @@ class BuildBodyLegRig:
                 spec.pole_constraint_name,
                 spec.ankle_constraint_name,
             ))
+        for side in stretch.sides:
+            names.extend((
+                side.start_name,
+                side.distance_name,
+                side.ratio_name,
+                side.rest_scale_name,
+                side.clamp_name,
+                side.blend_name,
+                side.segment_name,
+            ))
         for side in foot.sides:
             names.extend(pivot.name for pivot in side.pivots)
             names.extend((
@@ -206,6 +227,7 @@ class BuildBodyLegRig:
             blend,
             ik,
             visibility,
+            stretch,
             foot,
             collisions,
         )
@@ -274,6 +296,15 @@ class BuildBodyLegRig:
             if audit_body_leg_visibility(plan.visibility, visibility):
                 raise RuntimeError("Leg 控制显隐阶段复检失败")
 
+            self._host.create_body_leg_stretch(plan.stretch)
+            stretch = self._host.capture_body_leg_stretch(plan.stretch)
+            stretch_issues = audit_body_leg_stretch(plan.stretch, stretch)
+            if stretch_issues:
+                raise RuntimeError(
+                    "Leg stretch 阶段复检失败："
+                    + "；".join(issue.message for issue in stretch_issues)
+                )
+
             for spec in plan.foot.sides:
                 self._host.create_body_leg_foot_side(spec)
             foot = self._host.capture_body_leg_foot(plan.foot)
@@ -306,5 +337,5 @@ class BuildBodyLegRig:
             ):
                 raise RuntimeError("Leg Rig 构建后 Fit 输入变化")
         return BodyLegRigBuildResult(
-            plan, mechanisms, fk, blend, ik, visibility, foot, body
+            plan, mechanisms, fk, blend, ik, visibility, stretch, foot, body
         )

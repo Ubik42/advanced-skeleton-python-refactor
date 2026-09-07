@@ -63,6 +63,8 @@ from adv_py.core import (
     BodyArmIkToFkSceneState,
     BodyArmStretchSideState,
     BodyArmStretchSnapshot,
+    BodyLegStretchSideState,
+    BodyLegStretchSnapshot,
     BodyArmTwistJointState,
     BodyArmTwistSegmentState,
     BodyArmTwistSnapshot,
@@ -108,6 +110,7 @@ class FakeBodySkeletonHost:
         faulty_leg_ik=False,
         faulty_leg_blend=False,
         faulty_leg_visibility=False,
+        faulty_leg_stretch=False,
         blocked_leg_visibility=False,
         faulty_leg_match=False,
         faulty_leg_foot=False,
@@ -188,6 +191,8 @@ class FakeBodySkeletonHost:
         self.faulty_leg_blend = faulty_leg_blend
         self.leg_visibility_snapshot = None
         self.faulty_leg_visibility = faulty_leg_visibility
+        self.leg_stretch_snapshot = None
+        self.faulty_leg_stretch = faulty_leg_stretch
         self.blocked_leg_visibility = blocked_leg_visibility
         self.faulty_leg_match = faulty_leg_match
         self.leg_match_applied = False
@@ -204,6 +209,7 @@ class FakeBodySkeletonHost:
         self.faulty_arm_match = faulty_arm_match
         self.arm_match_applied = False
         self.arm_match_segment_translations = None
+        self.leg_match_segment_translations = None
         self.faulty_arm_translation = faulty_arm_translation
         self.arm_stretch_snapshot = None
         self.faulty_arm_stretch = faulty_arm_stretch
@@ -295,6 +301,8 @@ class FakeBodySkeletonHost:
         before_leg_blend_snapshot = self.leg_blend_snapshot
         before_leg_visibility_snapshot = self.leg_visibility_snapshot
         before_leg_match_applied = self.leg_match_applied
+        before_leg_match_segment_translations = self.leg_match_segment_translations
+        before_leg_stretch_snapshot = self.leg_stretch_snapshot
         before_leg_foot_snapshot = self.leg_foot_snapshot
         before_arm_ik_root = self.arm_ik_root
         before_arm_ik_states = list(self.arm_ik_states)
@@ -327,6 +335,8 @@ class FakeBodySkeletonHost:
             self.leg_blend_snapshot = before_leg_blend_snapshot
             self.leg_visibility_snapshot = before_leg_visibility_snapshot
             self.leg_match_applied = before_leg_match_applied
+            self.leg_match_segment_translations = before_leg_match_segment_translations
+            self.leg_stretch_snapshot = before_leg_stretch_snapshot
             self.leg_foot_snapshot = before_leg_foot_snapshot
             self.arm_ik_root = before_arm_ik_root
             self.arm_ik_states = before_arm_ik_states
@@ -660,6 +670,69 @@ class FakeBodySkeletonHost:
             )
         return self.leg_visibility_snapshot
 
+    def create_body_leg_stretch(self, plan):
+        states = []
+        for spec in plan.sides:
+            plug = f"{plan.settings_path}.{spec.attribute}"
+            states.append(BodyLegStretchSideState(
+                spec.side,
+                plug,
+                1.0,
+                spec.start_path,
+                spec.start_position,
+                spec.distance_name,
+                (
+                    f"{spec.start_path}.worldMatrix[0]",
+                    f"{spec.target_control_path}.worldMatrix[0]",
+                ),
+                spec.ratio_name,
+                f"{spec.distance_name}.distance",
+                spec.rest_scale_name,
+                spec.rest_length,
+                f"{plan.settings_path}.{plan.global_scale_attribute}",
+                1,
+                f"{spec.rest_scale_name}.outputX",
+                2,
+                spec.clamp_name,
+                f"{spec.ratio_name}.outputX",
+                1.0,
+                1000000.0,
+                spec.blend_name,
+                f"{spec.clamp_name}.outputR",
+                plug,
+                1.0,
+                spec.segment_name,
+                spec.base_translations,
+                (
+                    f"{spec.blend_name}.outputR",
+                    f"{spec.blend_name}.outputR",
+                ),
+                (
+                    f"{spec.segment_name}.outputX",
+                    f"{spec.segment_name}.outputY",
+                ),
+                1,
+            ))
+        self.leg_stretch_snapshot = BodyLegStretchSnapshot(
+            plan.settings_path,
+            f"{plan.settings_path}.{plan.global_scale_attribute}",
+            plan.global_scale_default,
+            tuple(states),
+        )
+
+    def capture_body_leg_stretch(self, plan):
+        del plan
+        if self.faulty_leg_stretch and self.leg_stretch_snapshot:
+            first = replace(
+                self.leg_stretch_snapshot.sides[0],
+                clamp_input_source=None,
+            )
+            return replace(
+                self.leg_stretch_snapshot,
+                sides=(first,) + self.leg_stretch_snapshot.sides[1:],
+            )
+        return self.leg_stretch_snapshot
+
     def capture_body_leg_foot_input(self, plan):
         collisions = tuple(
             name
@@ -904,10 +977,13 @@ class FakeBodySkeletonHost:
             side.attribute_value,
             plan.body_joint_positions,
             plan.body_joint_axes,
+            self.leg_match_segment_translations
+            or plan.fk_segment_translations,
         )
 
     def apply_body_leg_ik_to_fk(self, plan):
         self.leg_match_applied = True
+        self.leg_match_segment_translations = plan.fk_segment_translations
         sides = tuple(
             replace(side, attribute_value=0.0)
             if side.side is plan.side else side
@@ -1807,6 +1883,15 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.ik.limbs), 2)
         self.assertEqual(len(result.blend.sides), 2)
         self.assertEqual(len(result.visibility.sides), 2)
+        self.assertEqual(len(result.stretch.sides), 2)
+        self.assertTrue(all(
+            spec.target_control_path.endswith(f"AdvPy_LegIK_{spec.side.value}")
+            for spec in result.plan.stretch.sides
+        ))
+        self.assertTrue(all(
+            spec.segment_channels == ("Z", "Z")
+            for spec in result.plan.stretch.sides
+        ))
         self.assertEqual(len(result.foot.sides), 2)
         self.assertEqual(
             sum(len(side.pivots) for side in result.foot.sides),
@@ -1843,6 +1928,40 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertIsNone(host.leg_ik_root)
         self.assertFalse(host.leg_ik_states)
         self.assertIsNone(host.leg_visibility_snapshot)
+        self.assertIsNone(host.leg_stretch_snapshot)
+        self.assertIsNone(host.leg_foot_snapshot)
+
+    def test_complete_leg_rig_stretch_collision_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        host.collisions["AdvPy_LegStretchRatio_R"] = (
+            "|User|AdvPy_LegStretchRatio_R",
+        )
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "同名"):
+            BuildBodyLegRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertIsNone(host.leg_stretch_snapshot)
+
+    def test_complete_leg_rig_stretch_failure_rolls_back_every_stage(self):
+        host = FakeBodySkeletonHost(faulty_leg_stretch=True)
+        BuildOrientedBodySkeleton(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "stretch 阶段"):
+            BuildBodyLegRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertFalse(host.leg_mechanism_states)
+        self.assertIsNone(host.leg_control_root)
+        self.assertFalse(host.leg_fk_states)
+        self.assertIsNone(host.leg_blend_snapshot)
+        self.assertIsNone(host.leg_ik_root)
+        self.assertFalse(host.leg_ik_states)
+        self.assertIsNone(host.leg_visibility_snapshot)
+        self.assertIsNone(host.leg_stretch_snapshot)
         self.assertIsNone(host.leg_foot_snapshot)
 
     def test_complete_leg_rig_foot_collision_blocks_before_transaction(self):
@@ -1888,6 +2007,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertIsNone(host.leg_ik_root)
         self.assertFalse(host.leg_ik_states)
         self.assertIsNone(host.leg_visibility_snapshot)
+        self.assertIsNone(host.leg_stretch_snapshot)
         self.assertIsNone(host.leg_foot_snapshot)
 
     def test_extends_basic_leg_rig_with_bilateral_foot_pivots(self):
@@ -2167,6 +2287,10 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(values[FitBuildSide.RIGHT], 0.0)
         self.assertEqual(values[FitBuildSide.LEFT], 0.0)
         self.assertEqual(len(result.plan.match.fk_control_paths), 4)
+        self.assertEqual(
+            host.leg_match_segment_translations,
+            result.plan.match.fk_segment_translations,
+        )
 
     def test_leg_ik_to_fk_requires_current_ik_mode_before_transaction(self):
         host = FakeBodySkeletonHost()

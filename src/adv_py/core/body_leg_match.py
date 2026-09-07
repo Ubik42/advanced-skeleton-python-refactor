@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite, sqrt
 
 from .body_leg_blend import BodyLegBlendPlan
 from .body_leg_ik import BodyLegIkPlan
@@ -53,6 +54,8 @@ class BodyLegIkToFkPlan:
     blend_plug: str
     fk_control_paths: tuple[str, ...]
     fk_control_axes: tuple[AxisFrame, ...]
+    fk_segment_plugs: tuple[str, str]
+    fk_segment_translations: tuple[float, float]
     body_joint_paths: tuple[str, ...]
     body_joint_positions: tuple[Vector3, ...]
     body_joint_axes: tuple[AxisFrame, ...]
@@ -67,6 +70,7 @@ class BodyLegIkToFkSceneState:
     blend_value: float
     body_joint_positions: tuple[Vector3, ...]
     body_joint_axes: tuple[AxisFrame, ...]
+    fk_segment_translations: tuple[float, float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -388,17 +392,30 @@ def plan_body_leg_ik_to_fk(
     joints = tuple(by_path[path] for path in paths)
     control_paths = tuple(control.control_path for control in controls)
     driver_paths = tuple(control.driven_joint for control in controls)
+    segment_axes_and_values = tuple(
+        _signed_local_axis_distance(parent, child)
+        for parent, child in zip(joints, joints[1:3])
+    )
+    segment_plugs = tuple(
+        f"{path}.translate{axis}"
+        for path, (axis, _) in zip(driver_paths[1:3], segment_axes_and_values)
+    )
+    segment_translations = tuple(
+        value for _, value in segment_axes_and_values
+    )
     blend_plug = f"{blend.settings_path}.{blend_sides[0].attribute}"
     writable = tuple(
         f"{path}.rotate{axis}"
         for path in control_paths
         for axis in "XYZ"
-    ) + (blend_plug,)
+    ) + segment_plugs + (blend_plug,)
     return BodyLegIkToFkPlan(
         side,
         blend_plug,
         control_paths,
         tuple(joint.world_axes for joint in joints),
+        segment_plugs,
+        segment_translations,
         paths,
         tuple(joint.world_position for joint in joints),
         tuple(joint.world_axes for joint in joints),
@@ -459,6 +476,7 @@ def audit_body_leg_ik_to_fk_result(
     plan: BodyLegIkToFkPlan,
     body: BodySkeletonSnapshot,
     blend_value: float,
+    fk_segment_translations: tuple[float, float],
     *,
     position_tolerance: float = 1e-3,
     axis_tolerance: float = 1e-3,
@@ -467,6 +485,19 @@ def audit_body_leg_ik_to_fk_result(
     if abs(blend_value) > 1e-6:
         issues.append(BodyLegMatchIssue(
             "blend_not_fk", "Leg IK→FK 切换后 blend 未到 FK", plan.side.value
+        ))
+    if (
+        len(fk_segment_translations) != len(plan.fk_segment_translations)
+        or not _close(
+            fk_segment_translations,
+            plan.fk_segment_translations,
+            position_tolerance,
+        )
+    ):
+        issues.append(BodyLegMatchIssue(
+            "segment_length_mismatch",
+            "Leg IK→FK 切换后 FK 段长不一致",
+            plan.side.value,
         ))
     by_path = {joint.path: joint for joint in body.joints}
     for path, expected_position, expected_axes in zip(
@@ -493,3 +524,31 @@ def audit_body_leg_ik_to_fk_result(
 
 def _close(left, right, tolerance):
     return all(abs(a - b) <= tolerance for a, b in zip(left, right))
+
+
+def _signed_local_axis_distance(
+    parent, child, *, tolerance: float = 1e-3
+) -> tuple[str, float]:
+    delta = tuple(
+        child_value - parent_value
+        for parent_value, child_value in zip(
+            parent.world_position, child.world_position
+        )
+    )
+    length = sqrt(sum(value * value for value in delta))
+    projections = tuple(
+        sum(value * component for value, component in zip(delta, axis))
+        for axis in parent.world_axes
+    )
+    axis_index = max(range(3), key=lambda index: abs(projections[index]))
+    projected = projections[axis_index]
+    if (
+        not isfinite(length)
+        or not isfinite(projected)
+        or length <= 1e-6
+        or abs(abs(projected) - length) > tolerance
+    ):
+        raise ValueError(
+            "Leg IK→FK 匹配要求 Body 段沿父关节一个明确的本地主轴"
+        )
+    return "XYZ"[axis_index], projected

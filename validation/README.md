@@ -39,10 +39,10 @@
 - Maya 双腿 RP IK 为左右 IK mechanisms 建立 Ankle/Pole Vector controls、ikRPsolver Handle 与 Ankle 朝向约束；笔直腿备用轴、真实目标求解、Body 隔离、选择保持和分层 Undo 均通过。
 - Maya Leg IK/FK 输出用左右独立属性和 reverse 节点驱动 8 个 Body 双源旋转约束及 Knee/Ankle 的 4 个位移约束；Toes FK 输出、FK/IK、0.5 权重、侧向隔离、选择保持和单次 Undo 均通过。
 - Maya Leg 模式显隐在 FK=0 时只显示同侧 Hip FK 层级，在 IK=1 时只显示 Ankle/PV 层级；左右隔离、只读预演、选择保持和单次 Undo 均通过。
-- Maya Leg Rig 在一个 Undo Chunk 内组合 mechanisms、FK controls、rotation/translation blend、Ankle/PV IK、模式显隐与双侧五级 Foot pivot；Ball pivot 驱动 Ankle IK 朝向，Toe pivot 驱动 Toes IK 朝向，真实 FK/IK/roll-bank 输出、自动分段 `footRoll`、手动通道叠加、左右隔离、Foot 末阶段整体回滚和一次 Undo 清理均通过。
+- Maya Leg Rig 在一个 Undo Chunk 内组合 mechanisms、FK controls、rotation/translation blend、Ankle/PV IK、模式显隐、双段 stretch 与双侧五级 Foot pivot；Ball pivot 驱动 Ankle IK 朝向，Toe pivot 驱动 Toes IK 朝向，真实 FK/IK/stretch/roll-bank 输出、自动分段 `footRoll`、手动通道叠加、左右隔离、末阶段整体回滚和一次 Undo 清理均通过。
 - Maya Leg FK→IK 匹配从当前弯腿 Body 姿态对齐 Ankle IK 世界帧与 Pole Vector，再切换同侧 blend；Hip/Knee/Ankle 位置、Ankle 朝向、左右隔离、显隐、选择保持和单次 Undo 均通过。
 - Maya Leg FK→IK 匹配会先归零目标侧六个 Foot 通道，把 Ankle、Pole Vector 和三轴 Toe IK control 对齐到当前 Hip/Knee/Ankle/Toes FK 姿态，再切换同侧 blend；非中性 Toe FK 姿态、四关节位置与世界轴、左右隔离、显隐、选择保持和单次 Undo 均通过。
-- Maya Leg IK→FK 匹配把 Hip/Knee/Ankle/Toes 四层 FK controls 依次对齐到当前固定链长 IK 姿态，再切换同侧 blend；四关节位置与世界轴、左右隔离、显隐、零 FK 本地平移、选择保持和单次 Undo 均通过。
+- Maya Leg IK→FK 匹配把 Hip/Knee/Ankle/Toes 四层 FK controls 依次对齐到当前 IK 姿态，并把 Hip–Knee、Knee–Ankle 的实际主轴段长传入 FK drivers 后切换同侧 blend；拉伸态四关节位置与世界轴、左右隔离、显隐、零 FK control 本地平移、选择保持和单次 Undo 均通过。
 - Maya 双臂 RP IK 创建 Wrist/Pole Vector 曲线控制、ikRPsolver Handle 与 poleVectorConstraint；可达目标求解、Body 隔离、选择保持和单次 Undo 均通过。
 - Maya Arm IK/FK 输出用左右独立属性和 reverse 节点驱动 6 个 Body 双源约束；FK、IK、0.5 权重、侧向隔离、选择保持与单次 Undo 均通过。
 - Maya 完整 Arm Rig 在一个 Undo Chunk 内组合 mechanisms、FK、blend 与 RP IK；后段失败整套回滚，成品一次 Undo 后 Body/Fit 保留且 ReBuild 再次安全。
@@ -114,6 +114,8 @@
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_leg_foot_smoke.py validation\results\maya2024-body-leg-foot.json
 
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_leg_stretch_smoke.py validation\results\maya2024-body-leg-stretch.json
+
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_arm_fk_mechanisms_smoke.py validation\results\maya2024-body-arm-fk-mechanisms.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_arm_ik_smoke.py validation\results\maya2024-body-arm-ik.json
@@ -177,7 +179,7 @@
 - 位置编辑只写本地 translate，不自动解锁、断开驱动、重算 jointOrient 或更新 Fit 可视化几何。
 - 朝向编辑支持唯一子级或调用方显式选择的直接分支子级；非零 rotate 和不可补偿后代会在预检阶段拒绝。
 - 对称计划表达输出名称、父子拓扑、YZ 平面世界位置及镜像行为世界轴；当前尚未覆盖非均匀缩放、World Match 或自定义逐关节镜像平面。
-- 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径；Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 默认主流程已把五关节 mechanisms、四层 FK controls、Ankle/PV/Toe IK controls、含 Toes 的旋转/位移 blend、模式显隐、Heel/Outer/Inner/Toe/Ball pivot、Ankle/Toes IK 朝向输出、自动分段 `footRoll` 及四关节双向匹配组合成原子 Rig；腿部 stretch/twist、手指控制、完整变形系统或产品 UI 尚未实现，因此不是最终 Body rig。
+- 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径；Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 默认主流程已把五关节 mechanisms、四层 FK controls、Ankle/PV/Toe IK controls、含 Toes 的旋转/位移 blend、模式显隐、全局比例补偿 stretch、Heel/Outer/Inner/Toe/Ball pivot、Ankle/Toes IK 朝向输出、自动分段 `footRoll`、四关节双向匹配及拉伸态 IK→FK 段长传递组合成原子 Rig；腿部 twist/volume、手指控制、完整变形系统或产品 UI 尚未实现，因此不是最终 Body rig。
 - provenance 只证明本工程写入的产物身份和声明数量；删除资格还必须通过当前 DAG 与外部连接安全评估，不能只凭标记直接删除。
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。
