@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成四十一个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、30 关节 Body 构建与安全 ReBuild，以及双臂 FK/IK 机制链、控制、RP IK、Wrist 朝向、旋转/位移 blend、模式显隐、双向匹配、IK stretch、Arm twist helper、显式 Skin Bind、稀疏顶点权重写入、JSON 权重往返、路径映射及显式权重镜像。`BuildBodyArmRig`、蒙皮绑定、权重编辑与权重文件各自拥有明确边界。腿/手指控制、轴向 twist 分解、自动权重和产品 UI 尚未实现。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成四十二个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、30 关节 Body 构建与安全 ReBuild，以及双臂 FK/IK 机制链、控制、RP IK、Wrist 朝向、旋转/位移 blend、模式显隐、双向匹配、IK stretch、Arm twist helper、显式 Skin Bind、稀疏顶点权重写入、JSON 权重往返、路径映射、显式权重镜像及严格几何配对。`BuildBodyArmRig`、蒙皮绑定、权重编辑与权重文件各自拥有明确边界。腿/手指控制、轴向 twist 分解、自动权重和产品 UI 尚未实现。
 
 ## 当前完成
 
@@ -48,6 +48,7 @@
 - `ExportSkinWeights` 将全部顶点写成带 schema v1 与 SHA-256 内容摘要的独立 JSON，使用同目录临时文件复检后原子落盘并拒绝覆盖；`ImportSkinWeights` 严格匹配 skin、mesh、顶点数、influence 集合和最大影响数，再复用权重事务恢复。
 - `SkinWeightPathMapping` 允许导入到不同的目标 skinCluster、mesh 和 influence 路径；所有源 influence 必须完整且只出现一次，目标必须一一对应，映射后的文档重新通过完整权重与摘要校验。
 - `MirrorSkinWeights` 根据显式且互不重叠的源/目标顶点对复制权重，并通过 influence 双射重写目标；中心 influence 可使用身份映射，未映射源权重、锁定目标或重复对应都会在写入前失败。
+- `MirrorSkinWeightsByGeometry` 读取单个 mesh 的完整世界空间顶点位置，按调用方指定的 X 镜像平面、方向和容差生成严格一一对应的顶点对，再复用显式镜像的预检、权重事务与复检。
 - `BuildBodyArmRig` 在场景零修改预演后，用一个事务依次构建 mechanisms、FK controls、Body blend、RP IK 和左右独立的模式显隐；FK=0 仅显示 FK 层级，IK=1 显示 Wrist/PV，最后阶段失败会回滚此前全部 Arm 节点，一个 Undo 也能完整移除成品。
 - `EditFitJointPositions` 对显式关节提交本地位置 Patch，只写实际变化且可写的轴；锁定/驱动轴、Root 离中和无效层级会在批量事务前失败。
 - `OrientSimpleFitChain` 为唯一子级或显式选择的分支子级建立 X-Aim/Y-Secondary 朝向，自动选择与 Aim 正交的世界参考轴，并补偿 Maya 隐式产生的后代位置与全部直接子级 jointOrient 变化。
@@ -88,6 +89,6 @@ py -3 -m unittest discover -s tests -v
 - 宿主事务提供确定性显式回滚，目前不依赖 Blender 后台模式下不稳定的全局 Undo Stack。
 - Blender 将 Bind 与 FK/IK 机制骨链放在独立 Armature，避免跨骨链 blend 驱动形成依赖环；该差异留在适配器内部。
 - 当前 Maya Arm 已支持单侧 FK→IK 与 IK→FK 无跳变匹配、左右独立 IK stretch 和基础 twist helper 分布；全局缩放补偿、stretch 状态下的 IK→FK 匹配、轴向 swing/twist 分解、镜像 limb 和体积保持尚未完成。
-- 当前 Skin Bind 只接受调用方明确给出的单个 mesh 与 joint 列表；JSON 和权重镜像都要求调用方给出完整路径及对应关系，不会自动猜测 namespace、短名、左右 influence 或空间顶点配对。尚不支持权重模板、热区/测地线算法、批量绑定或解绑迁移。
+- 当前 Skin Bind 只接受调用方明确给出的单个 mesh 与 joint 列表；JSON 和 influence 映射都要求调用方给出完整路径及对应关系，不会自动猜测 namespace、短名或左右 influence。几何镜像只接受严格 X 平面对称顶点，不处理拓扑不对称或近似重采样。尚不支持权重模板、热区/测地线算法、批量绑定或解绑迁移。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya 主线已形成双臂 FK control / RP IK control → stretch mechanisms → rotation/translation blend → Body → twist helpers → 显式 Skin Bind → 精确权重写入/镜像 → JSON 往返/路径映射的可运行路径，并完成控制显隐与非拉伸姿态的双向匹配。下一步回到 Arm 轴向 twist 语义，或补充显式几何镜像配对生成；腿/手指、World Match 与 Blender 迁移仍待 Maya 阶段稳定后进入。
+- 当前 Maya 主线已形成双臂 FK control / RP IK control → stretch mechanisms → rotation/translation blend → Body → twist helpers → 显式 Skin Bind → 精确权重写入/几何镜像 → JSON 往返/路径映射的可运行路径，并完成控制显隐与非拉伸姿态的双向匹配。下一步回到 Arm 轴向 twist 语义；腿/手指、World Match 与 Blender 迁移仍待 Maya 阶段稳定后进入。

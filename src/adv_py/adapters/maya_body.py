@@ -54,6 +54,10 @@ from adv_py.core.skin_weights import (
     SkinWeightEditRequest,
     SkinWeightInputState,
 )
+from adv_py.core.skin_weight_geometry import (
+    SkinMeshGeometryState,
+    SkinMeshVertexPosition,
+)
 from adv_py.core.body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -816,6 +820,35 @@ class MayaBodyBuildHost(MayaFitJointHost):
     ) -> SkinWeightInputState:
         del mesh_path
         return self._capture_skin_weight_state(skin_name, vertex_indices)
+
+    def capture_mesh_vertex_positions(self, mesh_path: str) -> SkinMeshGeometryState:
+        matches = self._cmds.ls(mesh_path, long=True, type="transform") or []
+        if len(matches) != 1 or matches[0] != mesh_path:
+            return SkinMeshGeometryState(None, 0, ())
+        shapes = self._cmds.listRelatives(
+            mesh_path,
+            shapes=True,
+            noIntermediate=True,
+            fullPath=True,
+            type="mesh",
+        ) or []
+        if len(shapes) != 1:
+            return SkinMeshGeometryState(None, 0, ())
+        vertex_count = int(self._cmds.polyEvaluate(mesh_path, vertex=True))
+        vertices = tuple(
+            SkinMeshVertexPosition(
+                index,
+                tuple(
+                    float(value)
+                    for value in self._cmds.pointPosition(
+                        f"{mesh_path}.vtx[{index}]",
+                        world=True,
+                    )
+                ),
+            )
+            for index in range(vertex_count)
+        )
+        return SkinMeshGeometryState(mesh_path, vertex_count, vertices)
 
     def _capture_skin_weight_state(
         self,

@@ -118,6 +118,8 @@
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_skin_weight_mapping_smoke.py validation\results\maya2024-skin-weight-mapping.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_skin_weight_mirror_smoke.py validation\results\maya2024-skin-weight-mirror.json
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_skin_weight_geometry_smoke.py validation\results\maya2024-skin-weight-geometry.json
 ```
 
 正式自动化运行时应使用隐藏的独立进程、记录 PID、设置超时，并只终止本次启动的进程。结果 JSON 记录宿主版本、PID、耗时、预检和回滚结论。
@@ -134,6 +136,7 @@
 - Skin Weight I/O 案例导出同一合成臂段的全部 72 个顶点，改写 3 点后由带摘要的 JSON 恢复，覆盖拒绝覆盖文件、重复导入零修改、单次 Undo 和临时目录清理；未覆盖名称重映射、网络盘或大型角色性能。
 - Skin Weight Mapping 案例使用两套不同命名的 8 顶点网格、skinCluster 和 joint，通过 2 条显式 influence 双射导入 3 个变化顶点，验证源权重隔离、幂等、单次 Undo 和清理；不会自动推断 namespace 或关节对应。
 - Skin Weight Mirror 案例在一个 8 顶点对称网格上使用 2 个显式顶点对和 3 条 influence 映射，覆盖中心身份映射、目标侧真实变形、源侧隔离、幂等与单次 Undo；不自动计算空间对称点。
+- Skin Weight Geometry Mirror 案例读取同类 8 顶点网格的完整世界位置，自动生成 4 个严格 X 平面对称顶点对，再验证目标侧变形、源侧隔离、幂等、单次 Undo 与场景清理。该入口不支持非对称拓扑、近似最近点、拓扑映射或 influence 名称猜测。
 - 关节标签案例是 Maya-only 第一阶段切片，Blender 暂不提供对应实现。
 - Fit 元数据变更目前覆盖已进入 `FitJointMetadata` 的字段；约束目标、几何附着和曲线引导等关系型属性尚未进入合同。
 - Fit 层级校验尚未定义镜像配对后缀；世界位置仅作为后续规则的输入快照，不据此猜测名称。

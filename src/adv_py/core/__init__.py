@@ -114,6 +114,14 @@ from .skin_weight_mirror import (
     plan_skin_weight_mirror,
     skin_weight_mirror_request,
 )
+from .skin_weight_geometry import (
+    SkinMeshGeometryState,
+    SkinMeshVertexPosition,
+    SkinWeightGeometryMirrorRequest,
+    SkinWeightMirrorDirection,
+    plan_skin_weight_geometry_pairs,
+    skin_weight_geometry_mirror_request,
+)
 from .body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -297,6 +305,10 @@ __all__ = [
     "SkinWeightInputState",
     "SkinWeightIssue",
     "SkinWeightValidationError",
+    "SkinMeshGeometryState",
+    "SkinMeshVertexPosition",
+    "SkinWeightGeometryMirrorRequest",
+    "SkinWeightMirrorDirection",
     "SKIN_WEIGHT_DOCUMENT_FORMAT",
     "SKIN_WEIGHT_DOCUMENT_SCHEMA_VERSION",
     "SkinWeightDocument",
@@ -414,6 +426,8 @@ __all__ = [
     "remap_skin_weight_document",
     "plan_skin_weight_mirror",
     "skin_weight_mirror_request",
+    "plan_skin_weight_geometry_pairs",
+    "skin_weight_geometry_mirror_request",
     "audit_body_arm_mechanisms",
     "audit_body_skeleton",
     "audit_body_arm_fk_controls",
