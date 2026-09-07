@@ -120,24 +120,38 @@ class CreateFitTemplate:
                 "Fit 模板创建预检失败，场景未修改："
                 + "；".join(plan.blockers)
             )
+        with self._host.transaction(f"创建 Fit 关节模板：{plan.template.name}"):
+            result = self.apply_plan_in_transaction(plan)
+        return result
+
+    def apply_plan_in_transaction(
+        self,
+        plan: FitTemplateCreatePlan,
+    ) -> FitTemplateCreateResult:
+        """Execute an already validated plan inside a caller-owned transaction."""
+
+        if not plan.ready:
+            raise FitSkeletonValidationError(
+                "Fit 模板创建预检失败，场景未修改："
+                + "；".join(plan.blockers)
+            )
 
         paths: dict[str, str] = {}
-        with self._host.transaction(f"创建 Fit 关节模板：{plan.template.name}"):
-            for spec in ordered_fit_joints(plan.template):
-                parent = plan.before_hierarchy.container
-                if spec.parent is not None:
-                    parent = paths[spec.parent]
-                path = self._host.create_fit_joint(parent, spec)
-                self._host.set_joint_label(path, spec.label)
-                paths[spec.name] = path
+        for spec in ordered_fit_joints(plan.template):
+            parent = plan.before_hierarchy.container
+            if spec.parent is not None:
+                parent = paths[spec.parent]
+            path = self._host.create_fit_joint(parent, spec)
+            self._host.set_joint_label(path, spec.label)
+            paths[spec.name] = path
 
-            hierarchy = self._host.capture_fit_hierarchy(
-                plan.before_hierarchy.container
-            )
-            settings = self._host.read_fit_skeleton_settings(
-                plan.before_hierarchy.container
-            )
-            self._verify(plan, hierarchy, settings, paths)
+        hierarchy = self._host.capture_fit_hierarchy(
+            plan.before_hierarchy.container
+        )
+        settings = self._host.read_fit_skeleton_settings(
+            plan.before_hierarchy.container
+        )
+        self._verify(plan, hierarchy, settings, paths)
         return FitTemplateCreateResult(
             plan=plan,
             hierarchy=hierarchy,

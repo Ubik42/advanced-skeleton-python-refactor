@@ -113,15 +113,26 @@ class OrientSimpleFitChain:
         with self._host.transaction(
             f"更新 {len(plan.changes)} 个 Fit joint 朝向"
         ):
-            for change in plan.changes:
-                self._host.orient_fit_joint(change)
-            verified = self._host.capture_fit_orientation(
-                plan.before.hierarchy.container
-            )
-            settings = self._host.read_fit_skeleton_settings(
-                plan.before.hierarchy.container
-            )
-            self._verify(plan, verified, settings)
+            result = self.apply_plan_in_transaction(plan)
+        return result
+
+    def apply_plan_in_transaction(
+        self,
+        plan: FitOrientationPlan,
+    ) -> FitOrientationResult:
+        """Execute an orientation plan inside a caller-owned transaction."""
+
+        if not plan.changes:
+            return FitOrientationResult(plan, plan.before)
+        for change in plan.changes:
+            self._host.orient_fit_joint(change)
+        verified = self._host.capture_fit_orientation(
+            plan.before.hierarchy.container
+        )
+        settings = self._host.read_fit_skeleton_settings(
+            plan.before.hierarchy.container
+        )
+        self._verify(plan, verified, settings)
         return FitOrientationResult(plan, verified)
 
     @staticmethod

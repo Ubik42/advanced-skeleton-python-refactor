@@ -63,6 +63,7 @@ class FitContainerState:
     local_translation: Vector3
     local_rotation: Vector3
     bounding_size: Vector3
+    local_scale: Vector3 = (1.0, 1.0, 1.0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +100,8 @@ def audit_fit_container(
         issues.append(FitContainerIssue("nonzero_translation", "容器平移必须为零"))
     if any(abs(value) > tolerance for value in state.local_rotation):
         issues.append(FitContainerIssue("nonzero_rotation", "容器旋转必须为零"))
+    if any(abs(value - 1.0) > tolerance for value in state.local_scale):
+        issues.append(FitContainerIssue("nonidentity_scale", "容器缩放必须为一"))
 
     expected_diameter = float(spec.display_radius) * 2.0
     flat_axis = 1 if spec.up_axis is FitUpAxis.Y else 2

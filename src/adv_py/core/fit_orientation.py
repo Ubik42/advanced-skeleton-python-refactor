@@ -549,6 +549,8 @@ def _joint_children(snapshot: FitHierarchySnapshot) -> dict[str, list[str]]:
     for node in snapshot.joints:
         if node.dag_parent in children:
             children[node.dag_parent].append(node.path)
+    for paths in children.values():
+        paths.sort()
     return children
 
 

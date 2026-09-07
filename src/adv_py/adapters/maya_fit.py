@@ -286,6 +286,7 @@ class MayaFitJointHost:
         )
         translation = self._cmds.getAttr(f"{container}.translate")[0]
         rotation = self._cmds.getAttr(f"{container}.rotate")[0]
+        scale = self._cmds.getAttr(f"{container}.scale")[0]
         bounds = self._cmds.exactWorldBoundingBox(container)
         bounding_size = tuple(
             float(bounds[index + 3] - bounds[index]) for index in range(3)
@@ -300,6 +301,7 @@ class MayaFitJointHost:
             local_translation=tuple(float(value) for value in translation),
             local_rotation=tuple(float(value) for value in rotation),
             bounding_size=bounding_size,
+            local_scale=tuple(float(value) for value in scale),
         )
 
     def create_fit_joint(self, parent: str, spec: FitJointSpec) -> str:

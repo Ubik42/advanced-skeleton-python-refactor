@@ -76,6 +76,7 @@ from .fit_template import (
     audit_fit_template_snapshot,
     minimal_body_fit_template,
     ordered_fit_joints,
+    predict_fit_template_hierarchy,
     validate_fit_template,
     synthetic_upper_body_fit_template,
 )
@@ -171,6 +172,7 @@ __all__ = [
     "plan_simple_fit_orientations",
     "plan_world_fit_orientations",
     "ordered_fit_joints",
+    "predict_fit_template_hierarchy",
     "predict_fit_joint_metadata",
     "rotation_y_matrix",
     "rotation_z_matrix",

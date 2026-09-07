@@ -5,7 +5,11 @@ from math import isfinite
 import re
 
 from .fit_container import FitUpAxis
-from .fit_hierarchy import FitHierarchySnapshot, audit_fit_hierarchy
+from .fit_hierarchy import (
+    FitHierarchyNode,
+    FitHierarchySnapshot,
+    audit_fit_hierarchy,
+)
 from .fit_settings import FitSkeletonValidationError
 from .joint_labels import JointLabel
 
@@ -188,6 +192,41 @@ def ordered_fit_joints(template: FitTemplateSpec) -> tuple[FitJointSpec, ...]:
     for joint in template.joints:
         visit(joint.name)
     return tuple(ordered)
+
+
+def predict_fit_template_hierarchy(
+    template: FitTemplateSpec,
+    container_path: str,
+) -> FitHierarchySnapshot:
+    if not container_path.startswith("|") or container_path.endswith("|"):
+        raise FitSkeletonValidationError("Fit 模板预测需要根级容器完整路径")
+    paths: dict[str, str] = {}
+    world_positions: dict[str, Vector3] = {}
+    nodes: list[FitHierarchyNode] = []
+    for spec in ordered_fit_joints(template):
+        parent_path = container_path
+        parent_world = (0.0, 0.0, 0.0)
+        if spec.parent is not None:
+            parent_path = paths[spec.parent]
+            parent_world = world_positions[spec.parent]
+        path = f"{parent_path}|{spec.name}"
+        world: Vector3 = (
+            parent_world[0] + spec.local_position[0],
+            parent_world[1] + spec.local_position[1],
+            parent_world[2] + spec.local_position[2],
+        )
+        paths[spec.name] = path
+        world_positions[spec.name] = world
+        nodes.append(
+            FitHierarchyNode(
+                path=path,
+                short_name=spec.name,
+                dag_parent=parent_path,
+                local_position=spec.local_position,
+                world_position=world,
+            )
+        )
+    return FitHierarchySnapshot(container_path, tuple(nodes))
 
 
 def audit_fit_template_snapshot(

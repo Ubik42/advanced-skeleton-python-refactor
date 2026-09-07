@@ -48,10 +48,18 @@ from .fit_template import (
     FitTemplateHost,
 )
 from .joint_labels import EditJointLabels, JointLabelHost, JointLabelResult
+from .upper_body_fit import (
+    BuildSyntheticUpperBodyFit,
+    UpperBodyFitBuildPlan,
+    UpperBodyFitBuildResult,
+    UpperBodyFitHost,
+    upper_body_orientation_request,
+)
 
 __all__ = [
     "BuildResult",
     "BuildRig",
+    "BuildSyntheticUpperBodyFit",
     "CreateFitSkeleton",
     "CreateFitTemplate",
     "CreateMinimalFitTemplate",
@@ -91,4 +99,8 @@ __all__ = [
     "JointLabelResult",
     "OrientSimpleFitChain",
     "OrientWorldFitJoints",
+    "UpperBodyFitBuildPlan",
+    "UpperBodyFitBuildResult",
+    "UpperBodyFitHost",
+    "upper_body_orientation_request",
 ]
