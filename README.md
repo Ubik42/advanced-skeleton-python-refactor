@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成十一个 Maya-only FitSkeleton 切片：关节标签、可选元数据审计、声明式元数据变更、层级构建前校验、容器设置补齐、非破坏性容器创建、自生成 Root/Spine 基础模板、声明式位置编辑、简单单子链朝向、worldOrient 策略预检，以及固定 worldOrient 写入；尚未实现完整身体 FitSkeleton、蒙皮或产品 UI。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成十二个 Maya-only FitSkeleton 切片：关节标签、可选元数据审计、声明式元数据变更、层级构建前校验、容器设置补齐、非破坏性容器创建、自生成 Root/Spine 基础模板、声明式位置编辑、简单单子链朝向、worldOrient 策略预检、固定 worldOrient 写入，以及 free Forward；尚未实现完整身体 FitSkeleton、蒙皮或产品 UI。
 
 ## 当前完成
 
@@ -25,7 +25,7 @@
 - `EditFitJointPositions` 对显式关节提交本地位置 Patch，只写实际变化且可写的轴；锁定/驱动轴、Root 离中和无效层级会在批量事务前失败。
 - `OrientSimpleFitChain` 为单子链建立 X-Aim/Y-Secondary 朝向，自动选择与 Aim 正交的世界参考轴，并补偿 Maya 隐式产生的后代位置与子 jointOrient 变化。
 - worldOrient 元数据会解析为带正负号的本地 Up/Forward 轴策略；不完整、同轴冲突或当前写入器尚不支持的组合会在 Undo 事务前停止。
-- `OrientWorldFitJoints` 在 Maya Y-Up 单子链中应用固定 Up/Forward 策略，写入完整右手系世界朝向并补偿后代位置；自由 Forward 与其他复杂分支继续由预检阻止。
+- `OrientWorldFitJoints` 在 Maya Y-Up 单子链中应用固定 Up/Forward，或用全局 `secondaryAxis` 与子级水平投影解算 free Forward；两者都写入完整右手系世界朝向并补偿后代位置。
 - 提供受限的 Legacy Bridge，供未来 Python 功能在 Maya 内调用尚未迁移的 MEL 过程。
 - 记录目标架构、迁移顺序、验收策略和许可边界。
 
@@ -62,4 +62,4 @@ py -3 -m unittest discover -s tests -v
 - Blender 将 Bind 与 FK/IK 机制骨链放在独立 Armature，避免跨骨链 blend 驱动形成依赖环；该差异留在适配器内部。
 - 当前 IK/FK 是最小可运行合同，尚无镜像 limb、IK/FK 无缝匹配、拉伸和 twist。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya FitSkeleton 已覆盖非破坏性容器与基础 Root/Spine 创建、标签、常用可选元数据、层级构建前校验、容器设置补齐、本地位置编辑、简单单子链朝向，以及 Maya Y-Up 下的固定 worldOrient 写入；自由 Forward、完整身体模板、分支朝向、镜像语义和其他几何编辑仍待后续切片。
+- 当前 Maya FitSkeleton 已覆盖非破坏性容器与基础 Root/Spine 创建、标签、常用可选元数据、层级构建前校验、容器设置补齐、本地位置编辑、简单单子链朝向，以及 Maya Y-Up 下固定与 free worldOrient 写入；World Match、完整身体模板、分支朝向、镜像语义和其他几何编辑仍待后续切片。

@@ -53,6 +53,40 @@ class FitWorldOrientationPolicy:
     forward_local_direction: FitLocalDirection | None
 
 
+@dataclass(frozen=True, slots=True)
+class FitOrientationAxisConfiguration:
+    primary: FitLocalDirection = FitLocalDirection.POSITIVE_X
+    secondary: FitLocalDirection = FitLocalDirection.POSITIVE_Y
+    world_match: bool = False
+
+    def __post_init__(self) -> None:
+        if self.primary.unsigned_axis is self.secondary.unsigned_axis:
+            raise FitOrientationValidationError(
+                "FitSkeleton primaryAxis 与 secondaryAxis 不能使用同一本地轴"
+            )
+
+
+def parse_fit_axis_direction(
+    value: str,
+    *,
+    field: str,
+) -> FitLocalDirection:
+    values = {
+        "X": FitLocalDirection.POSITIVE_X,
+        "Y": FitLocalDirection.POSITIVE_Y,
+        "Z": FitLocalDirection.POSITIVE_Z,
+        "-X": FitLocalDirection.NEGATIVE_X,
+        "-Y": FitLocalDirection.NEGATIVE_Y,
+        "-Z": FitLocalDirection.NEGATIVE_Z,
+    }
+    try:
+        return values[value]
+    except KeyError as error:
+        raise FitOrientationValidationError(
+            f"{field} 不是受支持的轴方向：{value}"
+        ) from error
+
+
 def parse_world_orientation_policy(
     world_orient_up: str | None,
     world_orient_forward: str | None,
@@ -118,6 +152,9 @@ class FitOrientationSnapshot:
     up_axis: FitUpAxis
     joints: tuple[FitJointOrientationState, ...]
     metadata: tuple[FitJointMetadata, ...] = ()
+    axis_configuration: FitOrientationAxisConfiguration = (
+        FitOrientationAxisConfiguration()
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,20 +195,35 @@ class FitWorldOrientationChange:
 
 def world_axes_from_orientation_policy(
     policy: FitWorldOrientationPolicy,
+    *,
+    free_secondary_local: FitLocalDirection | None = None,
+    free_secondary_world: Vector3 | None = None,
 ) -> tuple[Vector3, Vector3, Vector3]:
-    if policy.forward_local_direction is None:
-        raise FitOrientationValidationError(
-            "自由 Forward 尚不能生成确定的世界朝向"
-        )
-
     axes: dict[FitWorldAxis, Vector3] = {}
     axes[policy.up_local_direction.unsigned_axis] = _signed_world_direction(
         policy.up_local_direction,
         (0.0, 1.0, 0.0),
     )
-    axes[policy.forward_local_direction.unsigned_axis] = _signed_world_direction(
-        policy.forward_local_direction,
-        (0.0, 0.0, 1.0),
+    if policy.forward_local_direction is None:
+        if free_secondary_local is None or free_secondary_world is None:
+            raise FitOrientationValidationError(
+                "自由 Forward 需要 secondaryAxis 和水平参考方向"
+            )
+        reference_local = free_secondary_local
+        reference_world = _normalize(
+            free_secondary_world,
+            "自由 Forward 的水平参考方向无效",
+        )
+    else:
+        reference_local = policy.forward_local_direction
+        reference_world = (0.0, 0.0, 1.0)
+    if reference_local.unsigned_axis is policy.up_local_direction.unsigned_axis:
+        raise FitOrientationValidationError(
+            "worldOrient Up 与 secondary 不能使用同一本地轴"
+        )
+    axes[reference_local.unsigned_axis] = _signed_world_direction(
+        reference_local,
+        reference_world,
     )
     if FitWorldAxis.X not in axes:
         axes[FitWorldAxis.X] = _cross(axes[FitWorldAxis.Y], axes[FitWorldAxis.Z])
@@ -192,6 +244,10 @@ def plan_world_fit_orientations(
     if snapshot.up_axis is not FitUpAxis.Y:
         raise FitOrientationValidationError(
             "固定 worldOrient 当前只支持 Maya Y-Up 场景"
+        )
+    if snapshot.axis_configuration.world_match:
+        raise FitOrientationValidationError(
+            "World Match 已启用；当前 worldOrient 写入器不处理该分支"
         )
 
     hierarchy = {node.path: node for node in snapshot.hierarchy.joints}
@@ -215,10 +271,6 @@ def plan_world_fit_orientations(
             raise FitOrientationValidationError(
                 f"{node.short_name} 没有 worldOrient 策略"
             )
-        if policy.forward_local_direction is None:
-            raise FitOrientationValidationError(
-                f"{node.short_name} 使用自由 Forward；当前只支持固定 Forward"
-            )
         direct_children = children[path]
         if len(direct_children) != 1:
             raise FitOrientationValidationError(
@@ -230,7 +282,17 @@ def plan_world_fit_orientations(
             direct_children[0],
             tolerance=tolerance,
         )
-        desired = world_axes_from_orientation_policy(policy)
+        if policy.forward_local_direction is None:
+            child_position = hierarchy[direct_children[0]].world_position
+            direction = _subtract(child_position, node.world_position)
+            horizontal = (direction[0], 0.0, direction[2])
+            desired = world_axes_from_orientation_policy(
+                policy,
+                free_secondary_local=snapshot.axis_configuration.secondary,
+                free_secondary_world=horizontal,
+            )
+        else:
+            desired = world_axes_from_orientation_policy(policy)
         if all(
             _dot(_normalize(current, "当前世界轴无效"), wanted)
             >= 1.0 - tolerance

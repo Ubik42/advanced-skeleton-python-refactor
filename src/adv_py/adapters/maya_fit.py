@@ -24,9 +24,11 @@ from adv_py.core.fit_metadata import (
 )
 from adv_py.core.fit_orientation import (
     FitJointOrientationState,
+    FitOrientationAxisConfiguration,
     FitOrientationChange,
     FitOrientationSnapshot,
     FitWorldOrientationChange,
+    parse_fit_axis_direction,
 )
 from adv_py.core.fit_settings import (
     FitSkeletonField,
@@ -435,6 +437,17 @@ class MayaFitJointHost:
             joints=tuple(states),
             metadata=tuple(
                 self.read_fit_joint_metadata(node.path) for node in hierarchy.joints
+            ),
+            axis_configuration=FitOrientationAxisConfiguration(
+                primary=parse_fit_axis_direction(
+                    self._optional_enum(hierarchy.container, "primaryAxis") or "X",
+                    field="FitSkeleton.primaryAxis",
+                ),
+                secondary=parse_fit_axis_direction(
+                    self._optional_enum(hierarchy.container, "secondaryAxis") or "Y",
+                    field="FitSkeleton.secondaryAxis",
+                ),
+                world_match=self._optional_bool(hierarchy.container, "worldmatch"),
             ),
         )
 

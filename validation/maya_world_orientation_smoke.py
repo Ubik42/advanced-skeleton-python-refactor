@@ -46,6 +46,8 @@ def main(output: Path) -> int:
         ).state.path
         CreateMinimalFitTemplate(host).apply(container, segment_length=4.0)
         root = f"{container}|Root"
+        spine1 = f"{root}|Spine1"
+        cmds.setAttr(f"{spine1}.translateZ", 2.0)
         marker = cmds.createNode(
             "transform",
             name="PortableWorldOrientationSelection",
@@ -118,12 +120,64 @@ def main(output: Path) -> int:
             FitJointPatch.from_values(world_orient_forward="free"),
         )
         cmds.file(modified=False)
-        free_forward_blocked = False
+        free_before = host.capture_fit_orientation(container)
+        free_before_positions = {
+            node.path: node.world_position for node in free_before.hierarchy.joints
+        }
+        free_preview = use_case.plan(request, container)
+        free_preview_clean = not bool(cmds.file(query=True, modified=True))
+        free_expected_axes = (
+            (0.0, -1.0, 0.0),
+            (0.0, 0.0, 1.0),
+            (-1.0, 0.0, 0.0),
+        )
+        free_planned_axes_match = len(free_preview.changes) == 1 and all(
+            vectors_match(current, expected)
+            for current, expected in zip(
+                free_preview.changes[0].desired_world_axes,
+                free_expected_axes,
+            )
+        )
+        free_result = use_case.apply(request, container)
+        free_state = next(item for item in free_result.verified.joints if item.joint == root)
+        free_world_axes_match = all(
+            vectors_match(current, expected)
+            for current, expected in zip(free_state.world_axes, free_expected_axes)
+        )
+        free_positions_preserved = all(
+            vectors_match(node.world_position, free_before_positions[node.path])
+            for node in free_result.verified.hierarchy.joints
+        )
+        free_idempotent = not use_case.plan(request, container).changes
+        cmds.undo()
+        free_undo_restored = all(
+            vectors_match(current, previous)
+            for current, previous in zip(
+                next(
+                    item
+                    for item in host.capture_fit_orientation(container).joints
+                    if item.joint == root
+                ).world_axes,
+                next(
+                    item for item in free_before.joints if item.joint == root
+                ).world_axes,
+            )
+        )
+
+        cmds.addAttr(
+            container,
+            longName="worldmatch",
+            attributeType="bool",
+            defaultValue=True,
+            keyable=True,
+        )
+        cmds.file(modified=False)
+        world_match_blocked = False
         try:
             use_case.apply(request, container)
         except FitOrientationValidationError:
-            free_forward_blocked = True
-        free_preflight_clean = not bool(cmds.file(query=True, modified=True))
+            world_match_blocked = True
+        world_match_preflight_clean = not bool(cmds.file(query=True, modified=True))
 
         container_survived = cmds.objExists(container)
         marker_survived = cmds.objExists(marker)
@@ -141,8 +195,14 @@ def main(output: Path) -> int:
                 idempotent,
                 single_undo_restored,
                 metadata_survived_undo,
-                free_forward_blocked,
-                free_preflight_clean,
+                free_preview_clean,
+                free_planned_axes_match,
+                free_world_axes_match,
+                free_positions_preserved,
+                free_idempotent,
+                free_undo_restored,
+                world_match_blocked,
+                world_match_preflight_clean,
                 container_survived,
                 marker_survived,
                 not remaining,
@@ -152,7 +212,7 @@ def main(output: Path) -> int:
             "host": "maya",
             "version": str(cmds.about(version=True)),
             "pid": os.getpid(),
-            "slice": "fixed_world_fit_orientation",
+            "slice": "world_fit_orientation",
             "preview_did_not_modify_scene": preview_clean,
             "planned_axes_match": planned_axes_match,
             "world_axes_match": world_axes_match,
@@ -163,8 +223,14 @@ def main(output: Path) -> int:
             "repeat_plan_is_noop": idempotent,
             "single_undo_restored_orientation": single_undo_restored,
             "metadata_survived_undo": metadata_survived_undo,
-            "free_forward_blocked": free_forward_blocked,
-            "free_forward_preflight_did_not_modify_scene": free_preflight_clean,
+            "free_preview_did_not_modify_scene": free_preview_clean,
+            "free_planned_axes_match": free_planned_axes_match,
+            "free_world_axes_match": free_world_axes_match,
+            "free_world_positions_preserved": free_positions_preserved,
+            "free_repeat_plan_is_noop": free_idempotent,
+            "free_single_undo_restored_orientation": free_undo_restored,
+            "world_match_blocked": world_match_blocked,
+            "world_match_preflight_did_not_modify_scene": world_match_preflight_clean,
             "container_survived_undo": container_survived,
             "unrelated_node_survived": marker_survived,
             "cleanup": not remaining,

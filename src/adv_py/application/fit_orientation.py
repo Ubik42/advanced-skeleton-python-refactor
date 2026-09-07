@@ -140,6 +140,8 @@ class OrientSimpleFitChain:
             raise RuntimeError("Fit joint 朝向修改后复检失败：容器设置被改写")
         if verified.metadata != plan.before.metadata:
             raise RuntimeError("Fit joint 朝向修改后复检失败：元数据被改写")
+        if verified.axis_configuration != plan.before.axis_configuration:
+            raise RuntimeError("Fit joint 朝向修改后复检失败：全局轴配置被改写")
 
         before_nodes = {node.path: node for node in plan.before.hierarchy.joints}
         after_nodes = {node.path: node for node in verified.hierarchy.joints}
@@ -247,6 +249,8 @@ class OrientWorldFitJoints:
             raise RuntimeError("worldOrient 修改后复检失败：容器设置被改写")
         if verified.metadata != plan.before.metadata:
             raise RuntimeError("worldOrient 修改后复检失败：元数据被改写")
+        if verified.axis_configuration != plan.before.axis_configuration:
+            raise RuntimeError("worldOrient 修改后复检失败：全局轴配置被改写")
 
         before_nodes = {node.path: node for node in plan.before.hierarchy.joints}
         after_nodes = {node.path: node for node in verified.hierarchy.joints}

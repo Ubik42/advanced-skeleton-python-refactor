@@ -10,6 +10,7 @@ from adv_py.core import (
     FitJointOrientationState,
     FitJointMetadata,
     FitLocalDirection,
+    FitOrientationAxisConfiguration,
     FitOrientationRequest,
     FitOrientationSnapshot,
     FitOrientationValidationError,
@@ -167,10 +168,41 @@ class FitOrientationTests(unittest.TestCase):
             ((0.0, -1.0, 0.0), (1.0, 0.0, -0.0), (0.0, 0.0, 1.0)),
         )
 
-    def test_world_plan_rejects_free_forward_and_non_y_up_scene(self) -> None:
-        with self.assertRaisesRegex(FitOrientationValidationError, "固定 Forward"):
+    def test_world_plan_uses_child_horizontal_direction_for_free_forward(self) -> None:
+        snapshot = world_orientation_snapshot(forward="free")
+        changes = plan_world_fit_orientations(
+            snapshot,
+            FitOrientationRequest(("Root",)),
+        )
+
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(
+            changes[0].desired_world_axes,
+            ((0.0, -1.0, 0.0), (0.0, 0.0, 1.0), (-1.0, 0.0, 0.0)),
+        )
+        custom = plan_world_fit_orientations(
+            replace(
+                snapshot,
+                axis_configuration=FitOrientationAxisConfiguration(
+                    secondary=FitLocalDirection.POSITIVE_Z
+                ),
+            ),
+            FitOrientationRequest(("Root",)),
+        )
+        self.assertEqual(
+            custom[0].desired_world_axes,
+            ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+        )
+
+    def test_world_plan_rejects_world_match_and_non_y_up_scene(self) -> None:
+        with self.assertRaisesRegex(FitOrientationValidationError, "World Match"):
             plan_world_fit_orientations(
-                world_orientation_snapshot(forward="free"),
+                replace(
+                    world_orientation_snapshot(),
+                    axis_configuration=FitOrientationAxisConfiguration(
+                        world_match=True
+                    ),
+                ),
                 FitOrientationRequest(("Root",)),
             )
         with self.assertRaisesRegex(FitOrientationValidationError, "Y-Up"):
