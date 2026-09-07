@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from adv_py.core.body_rebuild import (
+    BodyExternalDependency,
+    BodyExternalDependencyKind,
+    BodyRebuildSceneState,
+)
 from adv_py.core.body_skeleton import (
     BodyJointOrientationChange,
     BodyJointSpec,
@@ -174,6 +179,79 @@ class MayaBodyBuildHost(MayaFitJointHost):
         for attribute in _BODY_PROVENANCE_ATTRIBUTES.values():
             self._cmds.setAttr(f"{root}.{attribute}", lock=True)
 
+    def capture_body_rebuild_state(
+        self,
+        root_name: str,
+    ) -> BodyRebuildSceneState:
+        roots = self._cmds.ls(root_name, long=True, type="joint") or []
+        if len(roots) != 1:
+            raise FitSkeletonValidationError(
+                f"Body ReBuild 根关节无效：{root_name}"
+            )
+        root = roots[0]
+        descendants = self._cmds.listRelatives(
+            root,
+            allDescendents=True,
+            fullPath=True,
+        ) or []
+        dag_paths = tuple(
+            sorted(set(descendants + [root]), key=lambda path: (path.count("|"), path))
+        )
+        body_joints = set(
+            self._cmds.listRelatives(
+                root,
+                allDescendents=True,
+                type="joint",
+                fullPath=True,
+            )
+            or []
+        )
+        body_joints.add(root)
+        dependencies: set[BodyExternalDependency] = set()
+        for joint in sorted(body_joints):
+            pairs = self._cmds.listConnections(
+                joint,
+                source=True,
+                destination=True,
+                connections=True,
+                plugs=True,
+            ) or []
+            for index in range(0, len(pairs) - 1, 2):
+                first, second = pairs[index], pairs[index + 1]
+                first_node = self._resolve_connected_node(first)
+                second_node = self._resolve_connected_node(second)
+                if first_node in body_joints:
+                    body_plug, external_plug = first, second
+                    external_node = second_node
+                elif second_node in body_joints:
+                    body_plug, external_plug = second, first
+                    external_node = first_node
+                else:
+                    continue
+                if external_node in body_joints:
+                    continue
+                dependencies.add(
+                    BodyExternalDependency(
+                        self._dependency_kind(external_node),
+                        body_plug,
+                        external_plug,
+                    )
+                )
+        return BodyRebuildSceneState(
+            root,
+            dag_paths,
+            tuple(
+                sorted(
+                    dependencies,
+                    key=lambda item: (
+                        item.kind.value,
+                        item.body_plug,
+                        item.external_plug,
+                    ),
+                )
+            ),
+        )
+
     def set_body_joint_world_axes(
         self,
         change: BodyJointOrientationChange,
@@ -244,3 +322,19 @@ class MayaBodyBuildHost(MayaFitJointHost):
             source_container=value("source_container"),
             body_joint_count=value("body_joint_count"),
         )
+
+    def _resolve_connected_node(self, plug: str) -> str:
+        node = plug.split(".", 1)[0]
+        matches = self._cmds.ls(node, long=True) or [node]
+        return matches[0]
+
+    def _dependency_kind(self, node: str) -> BodyExternalDependencyKind:
+        node_type = self._cmds.nodeType(node)
+        inherited = set(self._cmds.nodeType(node, inherited=True) or [])
+        if node_type == "skinCluster":
+            return BodyExternalDependencyKind.SKIN_CLUSTER
+        if "constraint" in inherited:
+            return BodyExternalDependencyKind.CONSTRAINT
+        if node_type.startswith("animCurve"):
+            return BodyExternalDependencyKind.ANIMATION
+        return BodyExternalDependencyKind.CONNECTION

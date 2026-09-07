@@ -5,12 +5,16 @@ from dataclasses import replace
 from adv_py.application import (
     BuildBodySkeleton,
     BuildOrientedBodySkeleton,
+    InspectBodyRebuildSafety,
     InspectBodySkeletonProvenance,
     OrientBodySkeleton,
 )
 from adv_py.core import (
     IDENTITY_AXES,
     BodyJointState,
+    BodyExternalDependency,
+    BodyExternalDependencyKind,
+    BodyRebuildSceneState,
     BodySkeletonSnapshot,
     BodySkeletonProvenanceState,
     BodySkeletonValidationError,
@@ -77,6 +81,8 @@ class FakeBodySkeletonHost:
         self.faulty_provenance = faulty_provenance
         self.provenance = None
         self.in_transaction = False
+        self.extra_dag_paths = ()
+        self.external_dependencies = ()
 
     def capture_fit_orientation(self, container_name):
         del container_name
@@ -163,6 +169,14 @@ class FakeBodySkeletonHost:
             provenance.schema_version,
             provenance.source_container,
             count,
+        )
+
+    def capture_body_rebuild_state(self, root_name):
+        root = f"|{root_name}"
+        return BodyRebuildSceneState(
+            root,
+            tuple(state.path for state in self.body) + self.extra_dag_paths,
+            self.external_dependencies,
         )
 
 
@@ -302,6 +316,36 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 1)
         self.assertFalse(host.body)
         self.assertIsNone(host.provenance)
+
+    def test_rebuild_safety_accepts_an_unmodified_owned_body(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        before_transactions = host.transaction_count
+
+        audit = InspectBodyRebuildSafety(host).execute()
+
+        self.assertTrue(audit.safe_to_replace)
+        self.assertFalse(audit.issues)
+        self.assertEqual(host.transaction_count, before_transactions)
+
+    def test_rebuild_safety_reports_dag_and_external_dependencies(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        host.extra_dag_paths = ("|Root_M|UserAttachment",)
+        host.external_dependencies = (
+            BodyExternalDependency(
+                BodyExternalDependencyKind.CONNECTION,
+                "|Root_M.message",
+                "ExternalConsumer.input",
+            ),
+        )
+
+        audit = InspectBodyRebuildSafety(host).execute()
+        codes = {issue.code for issue in audit.issues}
+
+        self.assertFalse(audit.safe_to_replace)
+        self.assertIn("unexpected_dag_descendant", codes)
+        self.assertIn("external_connection", codes)
 
 
 if __name__ == "__main__":

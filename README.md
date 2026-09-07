@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成二十一个 Maya-only 切片：FitSkeleton 标签、元数据、层级、容器、设置、模板、位置与朝向；单侧 Right 身体源；构建期 M/R/L 对称展开；30 关节 Body skeleton 物化、镜像行为朝向与原子构建；以及 ReBuild 前置的版本化所有权审计。当前 Body skeleton 尚未加入控制器、IK/FK、蒙皮或产品 UI。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成二十二个 Maya-only 切片：FitSkeleton 标签、元数据、层级、容器、设置、模板、位置与朝向；单侧 Right 身体源；构建期 M/R/L 对称展开；30 关节 Body skeleton 物化、镜像行为朝向与原子构建；以及 ReBuild 前置的所有权、DAG 和外部连接审计。当前 Body skeleton 尚未加入控制器、IK/FK、蒙皮或产品 UI。
 
 ## 当前完成
 
@@ -30,6 +30,7 @@
 - `OrientBodySkeleton` 把 Fit 世界轴传递给 M/R 输出；L 输出反射 X Aim 与 Y Secondary 后用叉积重建右手 Z 轴。写入前检查完整 `jointOrient` 可写性，单事务写入后恢复全部世界位置，并复检拓扑、位置、朝向、Fit 输入和幂等性。
 - `BuildOrientedBodySkeleton` 复用同一套物化与朝向步骤，在一个 Maya Undo Chunk 内完成 30 joints 的创建、朝向、位置恢复和复检；朝向阶段失败时，新建骨架也会一并撤销。
 - 原子 Body 根节点保存锁定的 owner、artifact kind、schema、Fit 来源和 joint 数量；`InspectBodySkeletonProvenance` 只读判断现有骨架是否属于本工程的当前合同，为后续安全 ReBuild 提供明确边界。
+- `InspectBodyRebuildSafety` 组合当前 Fit 展开、Body provenance、实际 joint 父链、根下全部 DAG 节点和外部 DG 连接；用户 attachment、skinCluster、constraint、动画曲线或普通连接都会以稳定 issue 阻止替换。
 - `EditFitJointPositions` 对显式关节提交本地位置 Patch，只写实际变化且可写的轴；锁定/驱动轴、Root 离中和无效层级会在批量事务前失败。
 - `OrientSimpleFitChain` 为唯一子级或显式选择的分支子级建立 X-Aim/Y-Secondary 朝向，自动选择与 Aim 正交的世界参考轴，并补偿 Maya 隐式产生的后代位置与全部直接子级 jointOrient 变化。
 - worldOrient 元数据会解析为带正负号的本地 Up/Forward 轴策略；不完整、同轴冲突或当前写入器尚不支持的组合会在 Undo 事务前停止。
@@ -70,4 +71,4 @@ py -3 -m unittest discover -s tests -v
 - Blender 将 Bind 与 FK/IK 机制骨链放在独立 Armature，避免跨骨链 blend 驱动形成依赖环；该差异留在适配器内部。
 - 当前 IK/FK 是最小可运行合同，尚无镜像 limb、IK/FK 无缝匹配、拉伸和 twist。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya 主线已覆盖非破坏性 FitSkeleton、18 关节单侧 Right 身体源、30 实例 M/R/L 展开、一次 Undo 完成的 Body 物化与镜像行为朝向，以及版本化产物归属审计；安全 ReBuild 替换、World Match、手指、控制器、IK/FK 和其他 Body Build 阶段仍待后续切片。
+- 当前 Maya 主线已覆盖非破坏性 FitSkeleton、18 关节单侧 Right 身体源、30 实例 M/R/L 展开、一次 Undo 完成的 Body 物化与镜像行为朝向，以及版本化归属、DAG 和外部连接审计；安全 ReBuild 替换、World Match、手指、控制器、IK/FK 和其他 Body Build 阶段仍待后续切片。

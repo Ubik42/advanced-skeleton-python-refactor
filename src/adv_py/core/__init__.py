@@ -1,5 +1,13 @@
 """DCC-neutral rig description and validation."""
 
+from .body_rebuild import (
+    BodyExternalDependency,
+    BodyExternalDependencyKind,
+    BodyRebuildIssue,
+    BodyRebuildSceneState,
+    audit_body_rebuild_safety,
+)
+
 from .body_skeleton import (
     BODY_PROVENANCE_KIND,
     BODY_PROVENANCE_OWNER,
@@ -129,6 +137,10 @@ __all__ = [
     "BODY_PROVENANCE_OWNER",
     "BODY_PROVENANCE_SCHEMA_VERSION",
     "BodyJointSpec",
+    "BodyExternalDependency",
+    "BodyExternalDependencyKind",
+    "BodyRebuildIssue",
+    "BodyRebuildSceneState",
     "BodyJointOrientationChange",
     "BodyJointState",
     "BodySkeletonIssue",
@@ -196,6 +208,7 @@ __all__ = [
     "almost_equal",
     "audit_body_skeleton",
     "audit_body_provenance",
+    "audit_body_rebuild_safety",
     "body_orientation_matches",
     "audit_fit_hierarchy",
     "audit_fit_container",

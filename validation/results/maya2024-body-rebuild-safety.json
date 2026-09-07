@@ -1,0 +1,22 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 29884,
+  "slice": "body_rebuild_safety_inspection",
+  "clean_body_safe_to_replace": true,
+  "clean_audit_did_not_modify_scene": true,
+  "clean_external_dependency_count": 0,
+  "attached_body_blocked": true,
+  "unexpected_dag_descendant_detected": true,
+  "external_connection_detected": true,
+  "restored_body_safe_to_replace": true,
+  "selection_preserved": true,
+  "fit_source_preserved": true,
+  "single_undo_removed_owned_body": true,
+  "fit_source_survived_undo": true,
+  "unrelated_node_survived": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 3.927,
+  "status": "passed"
+}
