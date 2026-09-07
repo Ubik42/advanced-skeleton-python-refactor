@@ -79,7 +79,7 @@ def plan_body_arm_blend(
     return BodyArmBlendPlan("|AdvPy_ArmSettings", "AdvPy_ArmSettings", tuple(sides))
 
 
-def audit_body_arm_blend(plan: BodyArmBlendPlan, snapshot: BodyArmBlendSnapshot) -> tuple[BodyArmBlendIssue, ...]:
+def audit_body_arm_blend(plan: BodyArmBlendPlan, snapshot: BodyArmBlendSnapshot, *, expected_attribute_value: float | None = 0.0) -> tuple[BodyArmBlendIssue, ...]:
     issues = []
     if snapshot.settings_path != plan.settings_path:
         issues.append(BodyArmBlendIssue("settings_mismatch", "Arm IK/FK 设置节点不一致"))
@@ -89,7 +89,8 @@ def audit_body_arm_blend(plan: BodyArmBlendPlan, snapshot: BodyArmBlendSnapshot)
         if state is None:
             issues.append(BodyArmBlendIssue("missing_side", "缺少 Arm IK/FK 侧", spec.side.value)); continue
         plug = f"{plan.settings_path}.{spec.attribute}"
-        if state.attribute_plug != plug or abs(state.attribute_value) > 1e-6 or state.reverse_name != spec.reverse_name or state.reverse_input_source != plug:
+        value_mismatch = expected_attribute_value is not None and abs(state.attribute_value - expected_attribute_value) > 1e-6
+        if state.attribute_plug != plug or value_mismatch or state.reverse_name != spec.reverse_name or state.reverse_input_source != plug:
             issues.append(BodyArmBlendIssue("blend_driver_mismatch", "Arm IK/FK 属性或 reverse 连线不一致", spec.side.value))
         expected = {joint.constraint_name: joint for joint in spec.joints}
         actual = {joint.constraint_name: joint for joint in state.joints}

@@ -20,6 +20,7 @@ from .body_arm_ik import (
     BodyArmIkValidationError,
     audit_body_arm_ik,
     plan_body_arm_ik,
+    solve_arm_pole_position,
 )
 from .body_arm_blend import (
     BodyArmBlendIssue, BodyArmBlendJointSpec, BodyArmBlendJointState,
@@ -34,6 +35,14 @@ from .body_arm_visibility import (
     BodyArmVisibilitySnapshot,
     audit_body_arm_visibility,
     plan_body_arm_visibility,
+)
+from .body_arm_match import (
+    BodyArmFkToIkPlan,
+    BodyArmFkToIkSceneState,
+    BodyArmMatchIssue,
+    audit_body_arm_fk_to_ik_preflight,
+    audit_body_arm_fk_to_ik_result,
+    plan_body_arm_fk_to_ik,
 )
 from .body_controls import (
     BodyArmFkControlPlan,
@@ -186,6 +195,9 @@ __all__ = [
     "BodyArmVisibilitySideSpec",
     "BodyArmVisibilitySideState",
     "BodyArmVisibilitySnapshot",
+    "BodyArmFkToIkPlan",
+    "BodyArmFkToIkSceneState",
+    "BodyArmMatchIssue",
     "BODY_PROVENANCE_KIND",
     "BODY_PROVENANCE_OWNER",
     "BODY_PROVENANCE_SCHEMA_VERSION",
@@ -281,6 +293,8 @@ __all__ = [
     "audit_body_arm_ik",
     "audit_body_arm_blend",
     "audit_body_arm_visibility",
+    "audit_body_arm_fk_to_ik_preflight",
+    "audit_body_arm_fk_to_ik_result",
     "audit_body_arm_mechanisms",
     "audit_body_skeleton",
     "audit_body_arm_fk_controls",
@@ -306,8 +320,10 @@ __all__ = [
     "plan_fit_joint_position_changes",
     "plan_body_joint_orientations",
     "plan_body_arm_ik",
+    "solve_arm_pole_position",
     "plan_body_arm_blend",
     "plan_body_arm_visibility",
+    "plan_body_arm_fk_to_ik",
     "plan_body_arm_mechanisms",
     "plan_body_arm_fk_controls",
     "oriented_body_provenance",

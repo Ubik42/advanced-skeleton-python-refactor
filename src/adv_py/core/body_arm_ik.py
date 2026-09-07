@@ -111,18 +111,13 @@ def plan_body_arm_ik(
         if len(drivers) != 3:
             raise BodyArmIkValidationError("IK mechanism 必须为每侧提供三关节链")
         shoulder, elbow, wrist = (joint.world_position for joint in sources)
-        line = _subtract(wrist, shoulder)
-        length2 = _dot(line, line)
-        if length2 <= 1e-10:
-            raise BodyArmIkValidationError("Arm IK 起止关节不能重合")
-        projection = _add(shoulder, _scale(line, _dot(_subtract(elbow, shoulder), line) / length2))
-        bend = _subtract(elbow, projection)
-        bend_length = sqrt(_dot(bend, bend))
-        if bend_length <= 1e-6:
-            bend = sources[1].world_axes[2]
-            bend_length = sqrt(_dot(bend, bend))
-        total = sqrt(_dot(_subtract(elbow, shoulder), _subtract(elbow, shoulder))) + sqrt(_dot(_subtract(wrist, elbow), _subtract(wrist, elbow)))
-        pole = _add(elbow, _scale(bend, total * float(pole_distance_scale) / bend_length))
+        pole = solve_arm_pole_position(
+            shoulder,
+            elbow,
+            wrist,
+            sources[1].world_axes[2],
+            distance_scale=float(pole_distance_scale),
+        )
         wrist_offset_name = f"AdvPy_ArmIKOffset_{side_name}"
         wrist_control_name = f"AdvPy_ArmIK_{side_name}"
         pole_offset_name = f"AdvPy_ArmPVOffset_{side_name}"
@@ -142,7 +137,7 @@ def plan_body_arm_ik(
     return BodyArmIkPlan(root_path, root_name, tuple(limbs))
 
 
-def audit_body_arm_ik(plan: BodyArmIkPlan, snapshot: BodyArmIkSnapshot, *, tolerance: float = 1e-4) -> tuple[BodyArmIkIssue, ...]:
+def audit_body_arm_ik(plan: BodyArmIkPlan, snapshot: BodyArmIkSnapshot, *, tolerance: float = 1e-4, check_initial_pose: bool = True) -> tuple[BodyArmIkIssue, ...]:
     issues = []
     if snapshot.root_path != plan.root_path:
         issues.append(BodyArmIkIssue("ik_root_mismatch", "Arm IK 控制根不一致"))
@@ -161,13 +156,42 @@ def audit_body_arm_ik(plan: BodyArmIkPlan, snapshot: BodyArmIkSnapshot, *, toler
             (state.joint_list == spec.chain[:2], "ik_chain_mismatch", "RP IK 求解链不一致"),
             (state.pole_source == spec.pole_control_path, "ik_pole_wiring", "Pole Vector 连线不一致"),
             (state.wrist_shape == "nurbsCurve" and state.pole_shape == "nurbsCurve", "ik_shape_mismatch", "IK 控制缺少 NURBS 曲线"),
-            (_close(state.wrist_position, spec.wrist_position, tolerance) and _close(state.pole_position, spec.pole_position, tolerance), "ik_position_mismatch", "IK 控制初始位置不一致"),
-            (all(_close(value, (0.0, 0.0, 0.0), tolerance) for value in (state.wrist_translation, state.wrist_rotation, state.pole_translation, state.pole_rotation)), "ik_channels_nonzero", "IK 控制本地通道未归零"),
         )
+        if check_initial_pose:
+            checks += (
+                (_close(state.wrist_position, spec.wrist_position, tolerance) and _close(state.pole_position, spec.pole_position, tolerance), "ik_position_mismatch", "IK 控制初始位置不一致"),
+                (all(_close(value, (0.0, 0.0, 0.0), tolerance) for value in (state.wrist_translation, state.wrist_rotation, state.pole_translation, state.pole_rotation)), "ik_channels_nonzero", "IK 控制本地通道未归零"),
+            )
         for passed, code, message in checks:
             if not passed:
                 issues.append(BodyArmIkIssue(code, message, spec.side.value))
     return tuple(issues)
+
+
+def solve_arm_pole_position(
+    shoulder: Vector3,
+    elbow: Vector3,
+    wrist: Vector3,
+    fallback_axis: Vector3,
+    *,
+    distance_scale: float = 0.75,
+) -> Vector3:
+    if isinstance(distance_scale, bool) or not isinstance(distance_scale, (int, float)) or not isfinite(float(distance_scale)) or distance_scale <= 0:
+        raise BodyArmIkValidationError("Pole Vector 距离比例必须是正有限数值")
+    line = _subtract(wrist, shoulder)
+    length2 = _dot(line, line)
+    if length2 <= 1e-10:
+        raise BodyArmIkValidationError("Arm IK 起止关节不能重合")
+    projection = _add(shoulder, _scale(line, _dot(_subtract(elbow, shoulder), line) / length2))
+    bend = _subtract(elbow, projection)
+    bend_length = sqrt(_dot(bend, bend))
+    if bend_length <= 1e-6:
+        bend = fallback_axis
+        bend_length = sqrt(_dot(bend, bend))
+    if bend_length <= 1e-10:
+        raise BodyArmIkValidationError("直臂匹配缺少有效的 Pole Vector 备用方向")
+    total = sqrt(_dot(_subtract(elbow, shoulder), _subtract(elbow, shoulder))) + sqrt(_dot(_subtract(wrist, elbow), _subtract(wrist, elbow)))
+    return _add(elbow, _scale(bend, total * float(distance_scale) / bend_length))
 
 
 def _add(a, b): return tuple(x + y for x, y in zip(a, b))
