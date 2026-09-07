@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成三十五个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、30 关节 Body 构建与安全 ReBuild，以及双臂 FK/IK 机制链、控制、RP IK、Wrist 朝向、旋转/位移 blend、模式显隐、双向匹配和 IK stretch。`BuildBodyArmRig` 现在用一个 Undo Chunk 完成整套双臂 IK/FK。腿/手指控制、twist、蒙皮和产品 UI 尚未实现。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成三十六个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、30 关节 Body 构建与安全 ReBuild，以及双臂 FK/IK 机制链、控制、RP IK、Wrist 朝向、旋转/位移 blend、模式显隐、双向匹配、IK stretch 和 Arm twist helper 层。`BuildBodyArmRig` 现在用一个 Undo Chunk 完成整套双臂 IK/FK。腿/手指控制、轴向 twist 分解、蒙皮和产品 UI 尚未实现。
 
 ## 当前完成
 
@@ -42,6 +42,7 @@
 - `BuildBodyArmBlend` 创建左右独立的 `armIkFk_R/L` 属性、reverse 权重和 6 个双源 orientConstraint；FK=0、IK=1 与 0.5 混合均在 Maya 2024 中验证。
 - Arm blend 同时为两侧 Elbow/Wrist 建立 4 个双源 pointConstraint，使 FK/IK driver 的段长和世界位置变化能传到最终 Body；Shoulder 保持固定位置。
 - `BodyArmStretchPlan` 为左右臂分别定义绑定长度、Wrist 测距、no-compression、0–1 stretch 强度和两段本地 X 输出；Maya DG 网络在 Wrist 超出原长时按比例伸长，短于原长时不压缩。
+- `BodyArmTwistPlan` 在独立 helper 根下为每侧 Upper/Lower Arm 各生成 2 个分布关节；端点 parentConstraint 权重、最短旋转插值、路径和初始位置均进入核心审计，并会随 stretch 后的 Body 段实时更新。
 - `BuildBodyArmRig` 在场景零修改预演后，用一个事务依次构建 mechanisms、FK controls、Body blend、RP IK 和左右独立的模式显隐；FK=0 仅显示 FK 层级，IK=1 显示 Wrist/PV，最后阶段失败会回滚此前全部 Arm 节点，一个 Undo 也能完整移除成品。
 - `EditFitJointPositions` 对显式关节提交本地位置 Patch，只写实际变化且可写的轴；锁定/驱动轴、Root 离中和无效层级会在批量事务前失败。
 - `OrientSimpleFitChain` 为唯一子级或显式选择的分支子级建立 X-Aim/Y-Secondary 朝向，自动选择与 Aim 正交的世界参考轴，并补偿 Maya 隐式产生的后代位置与全部直接子级 jointOrient 变化。
@@ -81,6 +82,6 @@ py -3 -m unittest discover -s tests -v
 - 世界矩阵已经覆盖平移、骨骼朝向和本地 Y-roll；镜像合同已覆盖 YZ 平面位置、拓扑展开和右手行为朝向，非均匀缩放尚未进入合同。
 - 宿主事务提供确定性显式回滚，目前不依赖 Blender 后台模式下不稳定的全局 Undo Stack。
 - Blender 将 Bind 与 FK/IK 机制骨链放在独立 Armature，避免跨骨链 blend 驱动形成依赖环；该差异留在适配器内部。
-- 当前 Maya Arm 已支持单侧 FK→IK 与 IK→FK 无跳变匹配以及左右独立 IK stretch；全局缩放补偿、stretch 状态下的 IK→FK 匹配、镜像 limb 和 twist 尚未完成。
+- 当前 Maya Arm 已支持单侧 FK→IK 与 IK→FK 无跳变匹配、左右独立 IK stretch 和基础 twist helper 分布；全局缩放补偿、stretch 状态下的 IK→FK 匹配、轴向 swing/twist 分解、镜像 limb 和体积保持尚未完成。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya 主线已形成双臂 FK control / RP IK control → stretch mechanisms → rotation/translation blend → Body 的单事务黄金路径，并完成控制显隐与非拉伸姿态的双向匹配。下一步进入 Arm twist；腿/手指、World Match 与其他阶段仍待后续切片。
+- 当前 Maya 主线已形成双臂 FK control / RP IK control → stretch mechanisms → rotation/translation blend → Body → twist helpers 的单事务黄金路径，并完成控制显隐与非拉伸姿态的双向匹配。下一步继续收敛 Arm 轴向 twist 语义和基础变形合同；腿/手指、World Match 与 Blender 迁移仍待 Maya 阶段稳定后进入。

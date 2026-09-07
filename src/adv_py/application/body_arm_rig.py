@@ -8,6 +8,7 @@ from adv_py.core.body_arm_blend import BodyArmBlendPlan, BodyArmBlendSnapshot, a
 from adv_py.core.body_arm_ik import BodyArmIkPlan, BodyArmIkSnapshot, BodyArmIkSpec, audit_body_arm_ik, plan_body_arm_ik
 from adv_py.core.body_arm_visibility import BodyArmVisibilityPlan, BodyArmVisibilitySnapshot, audit_body_arm_visibility, plan_body_arm_visibility
 from adv_py.core.body_arm_stretch import BodyArmStretchPlan, BodyArmStretchSnapshot, audit_body_arm_stretch, plan_body_arm_stretch
+from adv_py.core.body_arm_twist import BodyArmTwistJointSpec, BodyArmTwistPlan, BodyArmTwistSnapshot, audit_body_arm_twist, plan_body_arm_twist
 from adv_py.core.body_arm_mechanisms import BodyArmMechanismJointSpec, BodyArmMechanismPlan, BodyArmMechanismRole, BodyArmMechanismSnapshot, audit_body_arm_mechanisms, plan_body_arm_mechanisms
 from adv_py.core.body_controls import BodyArmFkControlPlan, BodyArmFkControlSnapshot, BodyArmFkControlSpec, audit_body_arm_fk_controls, plan_body_arm_fk_controls
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
@@ -33,6 +34,9 @@ class BodyArmRigHost(BodyRebuildInspectionHost, Protocol):
     def capture_body_arm_visibility(self, plan: BodyArmVisibilityPlan) -> BodyArmVisibilitySnapshot: ...
     def create_body_arm_stretch(self, plan: BodyArmStretchPlan) -> None: ...
     def capture_body_arm_stretch(self, plan: BodyArmStretchPlan) -> BodyArmStretchSnapshot: ...
+    def create_body_arm_twist_root(self, name: str) -> str: ...
+    def create_body_arm_twist_joint(self, spec: BodyArmTwistJointSpec) -> None: ...
+    def capture_body_arm_twist(self, plan: BodyArmTwistPlan) -> BodyArmTwistSnapshot: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +48,7 @@ class BodyArmRigBuildPlan:
     ik: BodyArmIkPlan
     visibility: BodyArmVisibilityPlan
     stretch: BodyArmStretchPlan
+    twist: BodyArmTwistPlan
     name_collisions: tuple[str, ...]
 
     @property
@@ -67,6 +72,7 @@ class BodyArmRigBuildResult:
     ik: BodyArmIkSnapshot
     visibility: BodyArmVisibilitySnapshot
     stretch: BodyArmStretchSnapshot
+    twist: BodyArmTwistSnapshot
     body: BodySkeletonSnapshot
 
 
@@ -74,7 +80,7 @@ class BuildBodyArmRig:
     def __init__(self, host: BodyArmRigHost) -> None:
         self._host, self._inspector = host, InspectBodyRebuildSafety(host)
 
-    def plan(self, container_name="FitSkeleton", *, body_root_name="Root_M", control_radius=1.5, pole_distance_scale=0.75, center_tolerance=0.01) -> BodyArmRigBuildPlan:
+    def plan(self, container_name="FitSkeleton", *, body_root_name="Root_M", control_radius=1.5, pole_distance_scale=0.75, twist_joints_per_segment=2, center_tolerance=0.01) -> BodyArmRigBuildPlan:
         safety = self._inspector.execute(container_name, root_name=body_root_name, center_tolerance=center_tolerance)
         mechanisms = plan_body_arm_mechanisms(safety.body)
         fk_drivers = {spec.source_joint: spec.path for spec in mechanisms.joints if spec.role is BodyArmMechanismRole.FK}
@@ -83,6 +89,7 @@ class BuildBodyArmRig:
         ik = plan_body_arm_ik(safety.body, mechanisms, radius=control_radius, pole_distance_scale=pole_distance_scale)
         visibility = plan_body_arm_visibility(fk_controls, ik, blend)
         stretch = plan_body_arm_stretch(mechanisms, ik)
+        twist = plan_body_arm_twist(safety.body, joints_per_segment=twist_joints_per_segment)
         names = [mechanisms.root_name, fk_controls.root_name, blend.settings_name, ik.root_name]
         names.extend(spec.name for spec in mechanisms.joints)
         for spec in fk_controls.controls: names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
@@ -93,11 +100,14 @@ class BuildBodyArmRig:
         for spec in ik.limbs: names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name))
         for side in stretch.sides:
             names.extend((side.start_name, side.distance_name, side.ratio_name, side.clamp_name, side.blend_name, side.segment_name))
+        names.append(twist.root_name)
+        names.extend(spec.name for spec in twist.joints)
+        names.extend(spec.constraint_name for spec in twist.joints)
         collisions = tuple(sorted({path for name in names for path in self._host.find_name_collisions(name)}))
-        return BodyArmRigBuildPlan(safety, mechanisms, fk_controls, blend, ik, visibility, stretch, collisions)
+        return BodyArmRigBuildPlan(safety, mechanisms, fk_controls, blend, ik, visibility, stretch, twist, collisions)
 
-    def apply(self, container_name="FitSkeleton", *, body_root_name="Root_M", control_radius=1.5, pole_distance_scale=0.75, center_tolerance=0.01) -> BodyArmRigBuildResult:
-        plan = self.plan(container_name, body_root_name=body_root_name, control_radius=control_radius, pole_distance_scale=pole_distance_scale, center_tolerance=center_tolerance)
+    def apply(self, container_name="FitSkeleton", *, body_root_name="Root_M", control_radius=1.5, pole_distance_scale=0.75, twist_joints_per_segment=2, center_tolerance=0.01) -> BodyArmRigBuildResult:
+        plan = self.plan(container_name, body_root_name=body_root_name, control_radius=control_radius, pole_distance_scale=pole_distance_scale, twist_joints_per_segment=twist_joints_per_segment, center_tolerance=center_tolerance)
         if not plan.ready: raise FitSkeletonValidationError("Arm Rig 构建预检失败，场景未修改：" + "；".join(plan.blockers))
         with self._host.transaction("构建完整双臂 IK/FK"):
             if self._host.create_body_arm_mechanism_root(plan.mechanisms.root_name) != plan.mechanisms.root_path: raise RuntimeError("Arm mechanism 根路径漂移")
@@ -122,12 +132,20 @@ class BuildBodyArmRig:
             stretch_issues = audit_body_arm_stretch(plan.stretch, stretch)
             if stretch_issues:
                 raise RuntimeError("Arm stretch 阶段复检失败：" + "；".join(issue.message for issue in stretch_issues))
+            if self._host.create_body_arm_twist_root(plan.twist.root_name) != plan.twist.root_path:
+                raise RuntimeError("Arm twist 根路径漂移")
+            for spec in plan.twist.joints:
+                self._host.create_body_arm_twist_joint(spec)
+            twist = self._host.capture_body_arm_twist(plan.twist)
+            twist_issues = audit_body_arm_twist(plan.twist, twist)
+            if twist_issues:
+                raise RuntimeError("Arm twist 阶段复检失败：" + "；".join(issue.message for issue in twist_issues))
             body = self._host.capture_body_skeleton(body_root_name)
             if not _body_bind_pose_matches(plan.safety.body, body):
                 raise RuntimeError("Arm Rig 绑定姿态下 Body 发生变化")
             container = plan.safety.symmetry.source.hierarchy.container
             if self._host.capture_fit_orientation(container) != plan.safety.symmetry.source or self._host.read_fit_skeleton_settings(container) != plan.safety.symmetry.settings: raise RuntimeError("Arm Rig 构建后 Fit 输入变化")
-        return BodyArmRigBuildResult(plan, mechanisms, fk, blend, ik, visibility, stretch, body)
+        return BodyArmRigBuildResult(plan, mechanisms, fk, blend, ik, visibility, stretch, twist, body)
 
 
 def _body_bind_pose_matches(expected: BodySkeletonSnapshot, actual: BodySkeletonSnapshot) -> bool:

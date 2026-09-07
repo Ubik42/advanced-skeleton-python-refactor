@@ -34,6 +34,12 @@ from adv_py.core.body_arm_stretch import (
     BodyArmStretchSideState,
     BodyArmStretchSnapshot,
 )
+from adv_py.core.body_arm_twist import (
+    BodyArmTwistJointSpec,
+    BodyArmTwistJointState,
+    BodyArmTwistPlan,
+    BodyArmTwistSnapshot,
+)
 from adv_py.core.body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -595,6 +601,77 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 int(self._cmds.getAttr(f"{spec.segment_name}.operation")),
             ))
         return BodyArmStretchSnapshot(settings, tuple(states))
+
+    def create_body_arm_twist_root(self, name: str) -> str:
+        self._require_transaction()
+        if self.find_name_collisions(name):
+            raise FitSkeletonValidationError(f"Arm twist 根名称冲突：{name}")
+        self._transaction_changed = True
+        root = self._cmds.createNode("transform", name=name, skipSelect=True)
+        return (self._cmds.ls(root, long=True) or [root])[0]
+
+    def create_body_arm_twist_joint(self, spec: BodyArmTwistJointSpec) -> None:
+        self._require_transaction()
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            if any(self.find_name_collisions(name) for name in (spec.name, spec.constraint_name)):
+                raise FitSkeletonValidationError("Arm twist joint 或约束名称冲突")
+            if any(not self._cmds.objExists(path) for path in (spec.parent_path, spec.start_joint, spec.end_joint)):
+                raise FitSkeletonValidationError("Arm twist 父级或 Body 端点在执行前失效")
+            self._transaction_changed = True
+            joint = self._cmds.createNode("joint", name=spec.name, parent=spec.parent_path, skipSelect=True)
+            joint = (self._cmds.ls(joint, long=True) or [joint])[0]
+            self._cmds.xform(joint, worldSpace=True, translation=spec.world_position)
+            self._cmds.setAttr(f"{joint}.side", _MAYA_SIDE_FROM_CORE[spec.side])
+            if joint != spec.path:
+                raise RuntimeError("Arm twist joint 路径漂移")
+            constraint = self._cmds.parentConstraint(
+                spec.start_joint,
+                spec.end_joint,
+                joint,
+                maintainOffset=False,
+                name=spec.constraint_name,
+            )[0]
+            aliases = self._cmds.parentConstraint(constraint, query=True, weightAliasList=True) or []
+            if len(aliases) != 2:
+                raise RuntimeError("Arm twist 双端权重别名无效")
+            self._cmds.setAttr(f"{constraint}.{aliases[0]}", 1.0 - spec.fraction)
+            self._cmds.setAttr(f"{constraint}.{aliases[1]}", spec.fraction)
+            self._cmds.setAttr(f"{constraint}.interpType", 2)
+        finally:
+            self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
+
+    def capture_body_arm_twist(self, plan: BodyArmTwistPlan) -> BodyArmTwistSnapshot:
+        roots = self._cmds.ls(plan.root_path, long=True, type="transform") or []
+        if len(roots) != 1:
+            raise FitSkeletonValidationError("Arm twist 根节点无效")
+        states = []
+        for spec in plan.joints:
+            joints = self._cmds.ls(spec.path, long=True, type="joint") or []
+            constraints = self._cmds.ls(spec.constraint_name, type="parentConstraint") or []
+            if len(joints) != 1 or len(constraints) != 1:
+                raise FitSkeletonValidationError("Arm twist joint 或约束无效")
+            joint, constraint = joints[0], constraints[0]
+            parents = self._cmds.listRelatives(joint, parent=True, fullPath=True) or []
+            targets = self._cmds.parentConstraint(constraint, query=True, targetList=True) or []
+            target_paths = tuple((self._cmds.ls(target, long=True) or [target])[0] for target in targets)
+            aliases = self._cmds.parentConstraint(constraint, query=True, weightAliasList=True) or []
+            weights = tuple(float(self._cmds.getAttr(f"{constraint}.{alias}")) for alias in aliases)
+            outputs = self._cmds.listConnections(f"{constraint}.constraintTranslateX", source=False, destination=True, plugs=True) or []
+            driven = self._resolve_connected_node(outputs[0]) if len(outputs) == 1 else None
+            states.append(BodyArmTwistJointState(
+                spec.side,
+                spec.segment,
+                joint,
+                parents[0] if parents else None,
+                tuple(float(value) for value in self._cmds.xform(joint, query=True, worldSpace=True, translation=True)),
+                constraint,
+                target_paths,
+                weights,
+                driven,
+                int(self._cmds.getAttr(f"{constraint}.interpType")),
+            ))
+        return BodyArmTwistSnapshot(roots[0], tuple(states))
 
     def capture_body_arm_fk_to_ik_state(self, plan: BodyArmFkToIkPlan) -> BodyArmFkToIkSceneState:
         existing = tuple(path for path in plan.required_paths if self._cmds.objExists(path))

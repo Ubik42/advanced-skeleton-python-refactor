@@ -1,0 +1,21 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 4012,
+  "slice": "body_arm_twist_helpers",
+  "twist_joint_count": true,
+  "two_joints_per_segment": true,
+  "wrist_rotation_distributed": true,
+  "positions_follow_stretched_segments": true,
+  "selection_preserved": true,
+  "single_undo_removed_complete_arm_rig": true,
+  "body_restored": true,
+  "cleanup": true,
+  "rotation_deltas_radians": [
+    0.418879,
+    0.837758
+  ],
+  "remaining_nodes": [],
+  "duration_seconds": 3.956,
+  "status": "passed"
+}

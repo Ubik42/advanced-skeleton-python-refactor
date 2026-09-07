@@ -32,6 +32,8 @@ from adv_py.core import (
     BodyArmIkToFkSceneState,
     BodyArmStretchSideState,
     BodyArmStretchSnapshot,
+    BodyArmTwistJointState,
+    BodyArmTwistSnapshot,
     IDENTITY_AXES,
     BodyJointState,
     BodyExternalDependency,
@@ -71,6 +73,7 @@ class FakeBodySkeletonHost:
         faulty_arm_match=False,
         faulty_arm_translation=False,
         faulty_arm_stretch=False,
+        faulty_arm_twist=False,
     ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
         hierarchy = predict_fit_template_hierarchy(template, "|FitSkeleton")
@@ -137,6 +140,9 @@ class FakeBodySkeletonHost:
         self.faulty_arm_translation = faulty_arm_translation
         self.arm_stretch_snapshot = None
         self.faulty_arm_stretch = faulty_arm_stretch
+        self.twist_root = None
+        self.arm_twist_states = []
+        self.faulty_arm_twist = faulty_arm_twist
 
     def capture_fit_orientation(self, container_name):
         del container_name
@@ -169,6 +175,13 @@ class FakeBodySkeletonHost:
                 existing_controls.append(state.path)
         if self.arm_ik_root and self.arm_ik_root.rsplit("|", 1)[-1] == name:
             existing_controls.append(self.arm_ik_root)
+        if self.twist_root and self.twist_root.rsplit("|", 1)[-1] == name:
+            existing_controls.append(self.twist_root)
+        for state in self.arm_twist_states:
+            if state.path.rsplit("|", 1)[-1] == name:
+                existing_controls.append(state.path)
+            if state.constraint_name == name:
+                existing_controls.append(name)
         return (
             tuple(self.collisions.get(name, ()))
             + existing_body
@@ -190,6 +203,8 @@ class FakeBodySkeletonHost:
         before_arm_visibility_snapshot = self.arm_visibility_snapshot
         before_arm_match_applied = self.arm_match_applied
         before_arm_stretch_snapshot = self.arm_stretch_snapshot
+        before_twist_root = self.twist_root
+        before_arm_twist_states = list(self.arm_twist_states)
         self.transaction_count += 1
         self.in_transaction = True
         try:
@@ -207,6 +222,8 @@ class FakeBodySkeletonHost:
             self.arm_visibility_snapshot = before_arm_visibility_snapshot
             self.arm_match_applied = before_arm_match_applied
             self.arm_stretch_snapshot = before_arm_stretch_snapshot
+            self.twist_root = before_twist_root
+            self.arm_twist_states = before_arm_twist_states
             raise
         finally:
             self.in_transaction = False
@@ -476,6 +493,31 @@ class FakeBodySkeletonHost:
             first = replace(self.arm_stretch_snapshot.sides[0], clamp_input_source=None)
             return replace(self.arm_stretch_snapshot, sides=(first,) + self.arm_stretch_snapshot.sides[1:])
         return self.arm_stretch_snapshot
+
+    def create_body_arm_twist_root(self, name):
+        self.twist_root = f"|{name}"
+        return self.twist_root
+
+    def create_body_arm_twist_joint(self, spec):
+        self.arm_twist_states.append(BodyArmTwistJointState(
+            spec.side,
+            spec.segment,
+            spec.path,
+            spec.parent_path,
+            spec.world_position,
+            spec.constraint_name,
+            (spec.start_joint, spec.end_joint),
+            (1.0 - spec.fraction, spec.fraction),
+            spec.path,
+            2,
+        ))
+
+    def capture_body_arm_twist(self, plan):
+        del plan
+        states = tuple(self.arm_twist_states)
+        if self.faulty_arm_twist and states:
+            states = (replace(states[0], interpolation_type=0),) + states[1:]
+        return BodyArmTwistSnapshot(self.twist_root, states)
 
 
 class BodySkeletonTests(unittest.TestCase):
@@ -898,6 +940,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.ik.limbs), 2)
         self.assertEqual(sum(joint.translation_constraint_name is not None for side in result.blend.sides for joint in side.joints), 4)
         self.assertEqual(len(result.stretch.sides), 2)
+        self.assertEqual(len(result.twist.joints), 8)
         self.assertEqual(len(result.visibility.sides), 2)
         self.assertTrue(all(side.fk_visibility_source.endswith(".outputX") for side in result.visibility.sides))
         self.assertEqual(result.body, body)
@@ -934,6 +977,19 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertIsNone(host.arm_ik_root)
         self.assertIsNone(host.arm_visibility_snapshot)
         self.assertIsNone(host.arm_stretch_snapshot)
+
+    def test_complete_arm_rig_twist_failure_rolls_back_every_stage(self):
+        host = FakeBodySkeletonHost(faulty_arm_twist=True)
+        BuildOrientedBodySkeleton(host).apply()
+        with self.assertRaisesRegex(RuntimeError, "twist 阶段"):
+            BuildBodyArmRig(host).apply()
+        self.assertIsNone(host.mechanism_root)
+        self.assertIsNone(host.control_root)
+        self.assertIsNone(host.arm_blend_snapshot)
+        self.assertIsNone(host.arm_ik_root)
+        self.assertIsNone(host.arm_stretch_snapshot)
+        self.assertIsNone(host.twist_root)
+        self.assertFalse(host.arm_twist_states)
 
     def test_matches_right_arm_fk_to_ik_in_one_transaction(self):
         host = FakeBodySkeletonHost()

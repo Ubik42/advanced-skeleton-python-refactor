@@ -106,6 +106,8 @@
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_arm_translation_blend_smoke.py validation\results\maya2024-body-arm-translation-blend.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_arm_stretch_smoke.py validation\results\maya2024-body-arm-stretch.json
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_arm_twist_smoke.py validation\results\maya2024-body-arm-twist.json
 ```
 
 正式自动化运行时应使用隐藏的独立进程、记录 PID、设置超时，并只终止本次启动的进程。结果 JSON 记录宿主版本、PID、耗时、预检和回滚结论。
@@ -116,7 +118,7 @@
 - Blender 基础约束当前只接受一个 source，且要求 `maintain_offset=False`。
 - `control` 在 Maya 中是带标记属性的 transform，在 Blender 中是 Empty；曲线形状尚未进入跨 DCC 合同。
 - 当前案例覆盖平移、骨骼 aim 与本地 Y-roll；非均匀缩放和镜像矩阵尚未验证。
-- IK/FK 案例覆盖最小三关节 limb，并验证 Maya 双臂控制显隐、Wrist IK 朝向、旋转/位移输出、单侧双向匹配和 IK stretch；twist、全局缩放补偿及 stretch 状态下的 IK→FK 匹配尚未完成。
+- IK/FK 案例覆盖最小三关节 limb，并验证 Maya 双臂控制显隐、Wrist IK 朝向、旋转/位移输出、单侧双向匹配、IK stretch 和每段两个 twist helper；轴向 swing/twist 分解、体积保持、全局缩放补偿及 stretch 状态下的 IK→FK 匹配尚未完成。
 - 关节标签案例是 Maya-only 第一阶段切片，Blender 暂不提供对应实现。
 - Fit 元数据变更目前覆盖已进入 `FitJointMetadata` 的字段；约束目标、几何附着和曲线引导等关系型属性尚未进入合同。
 - Fit 层级校验尚未定义镜像配对后缀；世界位置仅作为后续规则的输入快照，不据此猜测名称。
@@ -130,4 +132,4 @@
 - provenance 只证明本工程写入的产物身份和声明数量；删除资格还必须通过当前 DAG 与外部连接安全评估，不能只凭标记直接删除。
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。
-- FK controls 与 RP IK controls 已通过双源 blend 输出到 Body；尚未实现 IK/FK 无缝匹配、控制可见性、stretch 或 twist。
+- FK controls 与 RP IK controls 已通过双源 blend 输出到 Body，并完成控制显隐、双向匹配、stretch 与基础 twist helper 分布；尚未实现动画 bake、轴向 twist 隔离、体积保持或蒙皮合同。
