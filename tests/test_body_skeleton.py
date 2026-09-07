@@ -68,6 +68,9 @@ from adv_py.core import (
     BodyArmTwistJointState,
     BodyArmTwistSegmentState,
     BodyArmTwistSnapshot,
+    BodyLegTwistJointState,
+    BodyLegTwistSegmentState,
+    BodyLegTwistSnapshot,
     BodyArmVolumeSideState,
     BodyArmVolumeSnapshot,
     IDENTITY_AXES,
@@ -123,6 +126,8 @@ class FakeBodySkeletonHost:
         faulty_arm_stretch=False,
         faulty_arm_twist=False,
         faulty_arm_twist_runtime=False,
+        faulty_leg_twist=False,
+        faulty_leg_twist_runtime=False,
         faulty_arm_volume=False,
     ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
@@ -218,6 +223,11 @@ class FakeBodySkeletonHost:
         self.arm_twist_states = []
         self.faulty_arm_twist = faulty_arm_twist
         self.faulty_arm_twist_runtime = faulty_arm_twist_runtime
+        self.leg_twist_root = None
+        self.leg_twist_segments = []
+        self.leg_twist_states = []
+        self.faulty_leg_twist = faulty_leg_twist
+        self.faulty_leg_twist_runtime = faulty_leg_twist_runtime
         self.arm_volume_snapshot = None
         self.faulty_arm_volume = faulty_arm_volume
 
@@ -277,6 +287,16 @@ class FakeBodySkeletonHost:
                 existing_controls.append(state.path)
             if state.constraint_name == name:
                 existing_controls.append(name)
+        if (
+            self.leg_twist_root
+            and self.leg_twist_root.rsplit("|", 1)[-1] == name
+        ):
+            existing_controls.append(self.leg_twist_root)
+        for state in self.leg_twist_states:
+            if state.path.rsplit("|", 1)[-1] == name:
+                existing_controls.append(state.path)
+            if state.constraint_name == name:
+                existing_controls.append(name)
         return (
             tuple(self.collisions.get(name, ()))
             + existing_body
@@ -314,6 +334,9 @@ class FakeBodySkeletonHost:
         before_twist_root = self.twist_root
         before_arm_twist_segments = list(self.arm_twist_segments)
         before_arm_twist_states = list(self.arm_twist_states)
+        before_leg_twist_root = self.leg_twist_root
+        before_leg_twist_segments = list(self.leg_twist_segments)
+        before_leg_twist_states = list(self.leg_twist_states)
         before_arm_volume_snapshot = self.arm_volume_snapshot
         self.transaction_count += 1
         self.in_transaction = True
@@ -348,6 +371,9 @@ class FakeBodySkeletonHost:
             self.twist_root = before_twist_root
             self.arm_twist_segments = before_arm_twist_segments
             self.arm_twist_states = before_arm_twist_states
+            self.leg_twist_root = before_leg_twist_root
+            self.leg_twist_segments = before_leg_twist_segments
+            self.leg_twist_states = before_leg_twist_states
             self.arm_volume_snapshot = before_arm_volume_snapshot
             raise
         finally:
@@ -1071,49 +1097,119 @@ class FakeBodySkeletonHost:
 
     def create_body_arm_twist_segment(self, spec):
         self.arm_twist_segments.append(BodyArmTwistSegmentState(
-            spec.side,
-            spec.segment,
-            spec.path,
-            spec.parent_path,
-            spec.constraint_name,
-            (spec.start_joint,),
-            spec.path,
-            spec.compose_name,
-            f"{spec.end_joint}.rotate",
-            f"{spec.end_joint}.rotateOrder",
-            spec.decompose_name,
-            f"{spec.compose_name}.outputMatrix",
-            spec.quaternion_name,
-            f"{spec.decompose_name}.outputQuatX",
-            f"{spec.decompose_name}.outputQuatW",
+            side=spec.side,
+            segment=spec.segment,
+            path=spec.path,
+            parent_path=spec.parent_path,
+            constraint_name=spec.constraint_name,
+            targets=(spec.start_joint,),
+            driven_path=spec.path,
+            compose_name=spec.compose_name,
+            rotate_source=f"{spec.end_joint}.rotate",
+            rotate_order_source=f"{spec.end_joint}.rotateOrder",
+            decompose_name=spec.decompose_name,
+            decompose_source=f"{spec.compose_name}.outputMatrix",
+            quaternion_name=spec.quaternion_name,
+            quaternion_axis_source=(
+                f"{spec.decompose_name}.outputQuat{spec.axis}"
+            ),
+            quaternion_w_source=f"{spec.decompose_name}.outputQuatW",
+            axis=spec.axis,
         ))
 
     def create_body_arm_twist_joint(self, spec):
         self.arm_twist_states.append(BodyArmTwistJointState(
-            spec.side,
-            spec.segment,
-            spec.path,
-            spec.parent_path,
-            spec.world_position,
-            spec.constraint_name,
-            (spec.start_joint, spec.end_joint),
-            (1.0 - spec.fraction, spec.fraction),
-            spec.path,
-            spec.multiplier_name,
-            f"{spec.quaternion_name}.outputRotateX",
-            spec.fraction,
-            f"{spec.multiplier_name}.output",
-            (0.0, 0.0),
+            side=spec.side,
+            segment=spec.segment,
+            path=spec.path,
+            parent_path=spec.parent_path,
+            world_position=spec.world_position,
+            constraint_name=spec.constraint_name,
+            targets=(spec.start_joint, spec.end_joint),
+            weights=(1.0 - spec.fraction, spec.fraction),
+            driven_joint=spec.path,
+            multiplier_name=spec.multiplier_name,
+            twist_source=f"{spec.quaternion_name}.outputRotate{spec.axis}",
+            multiplier_scale=spec.fraction,
+            rotate_axis_source=f"{spec.multiplier_name}.output",
+            orthogonal_rotations=(0.0, 0.0),
+            axis=spec.axis,
         ))
 
     def capture_body_arm_twist(self, plan):
         del plan
         states = tuple(self.arm_twist_states)
         if self.faulty_arm_twist and states:
-            states = (replace(states[0], rotate_yz=(1.0, 0.0)),) + states[1:]
+            states = (
+                replace(states[0], orthogonal_rotations=(1.0, 0.0)),
+            ) + states[1:]
         return BodyArmTwistSnapshot(
             self.twist_root,
             tuple(self.arm_twist_segments),
+            states,
+        )
+
+    def create_body_leg_twist_root(self, name):
+        self.leg_twist_root = f"|{name}"
+        return self.leg_twist_root
+
+    def prepare_body_leg_twist_runtime(self):
+        if self.faulty_leg_twist_runtime:
+            raise FitSkeletonValidationError(
+                "Leg twist 需要 Maya 自带 quatNodes 插件"
+            )
+
+    def create_body_leg_twist_segment(self, spec):
+        self.leg_twist_segments.append(BodyLegTwistSegmentState(
+            side=spec.side,
+            segment=spec.segment,
+            path=spec.path,
+            parent_path=spec.parent_path,
+            constraint_name=spec.constraint_name,
+            targets=(spec.start_joint,),
+            driven_path=spec.path,
+            compose_name=spec.compose_name,
+            rotate_source=f"{spec.end_joint}.rotate",
+            rotate_order_source=f"{spec.end_joint}.rotateOrder",
+            decompose_name=spec.decompose_name,
+            decompose_source=f"{spec.compose_name}.outputMatrix",
+            quaternion_name=spec.quaternion_name,
+            quaternion_axis_source=(
+                f"{spec.decompose_name}.outputQuat{spec.axis}"
+            ),
+            quaternion_w_source=f"{spec.decompose_name}.outputQuatW",
+            axis=spec.axis,
+        ))
+
+    def create_body_leg_twist_joint(self, spec):
+        self.leg_twist_states.append(BodyLegTwistJointState(
+            side=spec.side,
+            segment=spec.segment,
+            path=spec.path,
+            parent_path=spec.parent_path,
+            world_position=spec.world_position,
+            constraint_name=spec.constraint_name,
+            targets=(spec.start_joint, spec.end_joint),
+            weights=(1.0 - spec.fraction, spec.fraction),
+            driven_joint=spec.path,
+            multiplier_name=spec.multiplier_name,
+            twist_source=f"{spec.quaternion_name}.outputRotate{spec.axis}",
+            multiplier_scale=spec.fraction,
+            rotate_axis_source=f"{spec.multiplier_name}.output",
+            orthogonal_rotations=(0.0, 0.0),
+            axis=spec.axis,
+        ))
+
+    def capture_body_leg_twist(self, plan):
+        del plan
+        states = tuple(self.leg_twist_states)
+        if self.faulty_leg_twist and states:
+            states = (
+                replace(states[0], orthogonal_rotations=(1.0, 0.0)),
+            ) + states[1:]
+        return BodyLegTwistSnapshot(
+            self.leg_twist_root,
+            tuple(self.leg_twist_segments),
             states,
         )
 
@@ -1884,6 +1980,11 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.blend.sides), 2)
         self.assertEqual(len(result.visibility.sides), 2)
         self.assertEqual(len(result.stretch.sides), 2)
+        self.assertEqual(len(result.twist.segments), 4)
+        self.assertEqual(len(result.twist.joints), 8)
+        self.assertTrue(all(
+            state.axis in "XYZ" for state in result.twist.segments
+        ))
         self.assertTrue(all(
             spec.target_control_path.endswith(f"AdvPy_LegIK_{spec.side.value}")
             for spec in result.plan.stretch.sides
@@ -1929,7 +2030,52 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertFalse(host.leg_ik_states)
         self.assertIsNone(host.leg_visibility_snapshot)
         self.assertIsNone(host.leg_stretch_snapshot)
+        self.assertIsNone(host.leg_twist_root)
+        self.assertFalse(host.leg_twist_segments)
+        self.assertFalse(host.leg_twist_states)
         self.assertIsNone(host.leg_foot_snapshot)
+
+    def test_complete_leg_rig_twist_failure_rolls_back_every_stage(self):
+        host = FakeBodySkeletonHost(faulty_leg_twist=True)
+        BuildOrientedBodySkeleton(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "twist 阶段"):
+            BuildBodyLegRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertIsNone(host.leg_control_root)
+        self.assertIsNone(host.leg_blend_snapshot)
+        self.assertIsNone(host.leg_ik_root)
+        self.assertIsNone(host.leg_stretch_snapshot)
+        self.assertIsNone(host.leg_twist_root)
+        self.assertFalse(host.leg_twist_segments)
+        self.assertFalse(host.leg_twist_states)
+
+    def test_leg_twist_runtime_failure_stops_before_rig_transaction(self):
+        host = FakeBodySkeletonHost(faulty_leg_twist_runtime=True)
+        BuildOrientedBodySkeleton(host).apply()
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "quatNodes"):
+            BuildBodyLegRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertIsNone(host.leg_twist_root)
+
+    def test_complete_leg_rig_twist_collision_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        host.collisions["AdvPy_LowerLegTwistProject_R"] = (
+            "|User|AdvPy_LowerLegTwistProject_R",
+        )
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "同名"):
+            BuildBodyLegRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertIsNone(host.leg_twist_root)
 
     def test_complete_leg_rig_stretch_collision_blocks_before_transaction(self):
         host = FakeBodySkeletonHost()

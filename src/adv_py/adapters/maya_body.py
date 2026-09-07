@@ -58,11 +58,23 @@ from adv_py.core.body_leg_stretch import (
 )
 from adv_py.core.body_arm_twist import (
     BodyArmTwistJointSpec,
-    BodyArmTwistJointState,
     BodyArmTwistPlan,
     BodyArmTwistSegmentSpec,
-    BodyArmTwistSegmentState,
     BodyArmTwistSnapshot,
+)
+from adv_py.core.body_limb_twist import (
+    BodyLimbTwistJointSpec,
+    BodyLimbTwistJointState,
+    BodyLimbTwistPlan,
+    BodyLimbTwistSegmentSpec,
+    BodyLimbTwistSegmentState,
+    BodyLimbTwistSnapshot,
+)
+from adv_py.core.body_leg_twist import (
+    BodyLegTwistJointSpec,
+    BodyLegTwistPlan,
+    BodyLegTwistSegmentSpec,
+    BodyLegTwistSnapshot,
 )
 from adv_py.core.body_arm_volume import (
     BodyArmVolumePlan,
@@ -832,27 +844,59 @@ class MayaBodyBuildHost(MayaFitJointHost):
         )
 
     def prepare_body_arm_twist_runtime(self) -> None:
+        self._prepare_body_limb_twist_runtime("Arm")
+
+    def prepare_body_leg_twist_runtime(self) -> None:
+        self._prepare_body_limb_twist_runtime("Leg")
+
+    def _prepare_body_limb_twist_runtime(self, limb_label: str) -> None:
         try:
             if not self._cmds.pluginInfo("quatNodes", query=True, loaded=True):
                 self._cmds.loadPlugin("quatNodes", quiet=True)
         except Exception as exc:
             raise FitSkeletonValidationError(
-                "Arm twist 需要 Maya 自带 quatNodes 插件"
+                f"{limb_label} twist 需要 Maya 自带 quatNodes 插件"
             ) from exc
         if "quatToEuler" not in (self._cmds.allNodeTypes() or []):
-            raise FitSkeletonValidationError("Arm twist 缺少 quatToEuler 节点")
+            raise FitSkeletonValidationError(
+                f"{limb_label} twist 缺少 quatToEuler 节点"
+            )
 
     def create_body_arm_twist_root(self, name: str) -> str:
+        return self._create_body_limb_twist_root("Arm", name)
+
+    def create_body_leg_twist_root(self, name: str) -> str:
+        return self._create_body_limb_twist_root("Leg", name)
+
+    def _create_body_limb_twist_root(
+        self,
+        limb_label: str,
+        name: str,
+    ) -> str:
         self._require_transaction()
         if self.find_name_collisions(name):
-            raise FitSkeletonValidationError(f"Arm twist 根名称冲突：{name}")
+            raise FitSkeletonValidationError(
+                f"{limb_label} twist 根名称冲突：{name}"
+            )
         if "quatToEuler" not in (self._cmds.allNodeTypes() or []):
-            raise FitSkeletonValidationError("Arm twist 运行依赖在执行前失效")
+            raise FitSkeletonValidationError(
+                f"{limb_label} twist 运行依赖在执行前失效"
+            )
         self._transaction_changed = True
         root = self._cmds.createNode("transform", name=name, skipSelect=True)
         return (self._cmds.ls(root, long=True) or [root])[0]
 
     def create_body_arm_twist_segment(self, spec: BodyArmTwistSegmentSpec) -> None:
+        self._create_body_limb_twist_segment("Arm", spec)
+
+    def create_body_leg_twist_segment(self, spec: BodyLegTwistSegmentSpec) -> None:
+        self._create_body_limb_twist_segment("Leg", spec)
+
+    def _create_body_limb_twist_segment(
+        self,
+        limb_label: str,
+        spec: BodyLimbTwistSegmentSpec,
+    ) -> None:
         self._require_transaction()
         selection = self._cmds.ls(selection=True, long=True) or []
         names = (
@@ -864,19 +908,25 @@ class MayaBodyBuildHost(MayaFitJointHost):
         )
         try:
             if any(self.find_name_collisions(name) for name in names):
-                raise FitSkeletonValidationError("Arm twist 段驱动名称冲突")
+                raise FitSkeletonValidationError(
+                    f"{limb_label} twist 段驱动名称冲突"
+                )
             if any(
                 not self._cmds.objExists(path)
                 for path in (spec.parent_path, spec.start_joint, spec.end_joint)
             ):
-                raise FitSkeletonValidationError("Arm twist 段父级或 Body 端点失效")
+                raise FitSkeletonValidationError(
+                    f"{limb_label} twist 段父级或 Body 端点失效"
+                )
             end_parents = self._cmds.listRelatives(
                 spec.end_joint,
                 parent=True,
                 fullPath=True,
             ) or []
             if end_parents != [spec.start_joint]:
-                raise FitSkeletonValidationError("Arm twist 端点不再是直接父子链")
+                raise FitSkeletonValidationError(
+                    f"{limb_label} twist 端点不再是直接父子链"
+                )
             self._transaction_changed = True
             base = self._cmds.createNode(
                 "transform",
@@ -896,7 +946,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 ),
             )
             if base != spec.path:
-                raise RuntimeError("Arm twist 段基座路径漂移")
+                raise RuntimeError(f"{limb_label} twist 段基座路径漂移")
             self._cmds.parentConstraint(
                 spec.start_joint,
                 base,
@@ -913,8 +963,8 @@ class MayaBodyBuildHost(MayaFitJointHost):
             )
             self._cmds.connectAttr(f"{compose}.outputMatrix", f"{decompose}.inputMatrix")
             self._cmds.connectAttr(
-                f"{decompose}.outputQuatX",
-                f"{quaternion}.inputQuatX",
+                f"{decompose}.outputQuat{spec.axis}",
+                f"{quaternion}.inputQuat{spec.axis}",
             )
             self._cmds.connectAttr(
                 f"{decompose}.outputQuatW",
@@ -924,6 +974,16 @@ class MayaBodyBuildHost(MayaFitJointHost):
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
     def create_body_arm_twist_joint(self, spec: BodyArmTwistJointSpec) -> None:
+        self._create_body_limb_twist_joint("Arm", spec)
+
+    def create_body_leg_twist_joint(self, spec: BodyLegTwistJointSpec) -> None:
+        self._create_body_limb_twist_joint("Leg", spec)
+
+    def _create_body_limb_twist_joint(
+        self,
+        limb_label: str,
+        spec: BodyLimbTwistJointSpec,
+    ) -> None:
         self._require_transaction()
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
@@ -931,16 +991,20 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 self.find_name_collisions(name)
                 for name in (spec.name, spec.constraint_name, spec.multiplier_name)
             ):
-                raise FitSkeletonValidationError("Arm twist joint、约束或角度节点名称冲突")
+                raise FitSkeletonValidationError(
+                    f"{limb_label} twist joint、约束或角度节点名称冲突"
+                )
             if any(not self._cmds.objExists(path) for path in (spec.parent_path, spec.start_joint, spec.end_joint)):
-                raise FitSkeletonValidationError("Arm twist 父级或 Body 端点在执行前失效")
+                raise FitSkeletonValidationError(
+                    f"{limb_label} twist 父级或 Body 端点在执行前失效"
+                )
             self._transaction_changed = True
             joint = self._cmds.createNode("joint", name=spec.name, parent=spec.parent_path, skipSelect=True)
             joint = (self._cmds.ls(joint, long=True) or [joint])[0]
             self._cmds.xform(joint, worldSpace=True, translation=spec.world_position)
             self._cmds.setAttr(f"{joint}.side", _MAYA_SIDE_FROM_CORE[spec.side])
             if joint != spec.path:
-                raise RuntimeError("Arm twist joint 路径漂移")
+                raise RuntimeError(f"{limb_label} twist joint 路径漂移")
             constraint = self._cmds.pointConstraint(
                 spec.start_joint,
                 spec.end_joint,
@@ -950,7 +1014,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
             )[0]
             aliases = self._cmds.pointConstraint(constraint, query=True, weightAliasList=True) or []
             if len(aliases) != 2:
-                raise RuntimeError("Arm twist 双端权重别名无效")
+                raise RuntimeError(f"{limb_label} twist 双端权重别名无效")
             self._cmds.setAttr(f"{constraint}.{aliases[0]}", 1.0 - spec.fraction)
             self._cmds.setAttr(f"{constraint}.{aliases[1]}", spec.fraction)
             multiplier = self._cmds.createNode(
@@ -959,17 +1023,30 @@ class MayaBodyBuildHost(MayaFitJointHost):
             )
             self._cmds.setAttr(f"{multiplier}.conversionFactor", spec.fraction)
             self._cmds.connectAttr(
-                f"{spec.quaternion_name}.outputRotateX",
+                f"{spec.quaternion_name}.outputRotate{spec.axis}",
                 f"{multiplier}.input",
             )
-            self._cmds.connectAttr(f"{multiplier}.output", f"{joint}.rotateX")
+            self._cmds.connectAttr(
+                f"{multiplier}.output",
+                f"{joint}.rotate{spec.axis}",
+            )
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
     def capture_body_arm_twist(self, plan: BodyArmTwistPlan) -> BodyArmTwistSnapshot:
+        return self._capture_body_limb_twist("Arm", plan)
+
+    def capture_body_leg_twist(self, plan: BodyLegTwistPlan) -> BodyLegTwistSnapshot:
+        return self._capture_body_limb_twist("Leg", plan)
+
+    def _capture_body_limb_twist(
+        self,
+        limb_label: str,
+        plan: BodyLimbTwistPlan,
+    ) -> BodyLimbTwistSnapshot:
         roots = self._cmds.ls(plan.root_path, long=True, type="transform") or []
         if len(roots) != 1:
-            raise FitSkeletonValidationError("Arm twist 根节点无效")
+            raise FitSkeletonValidationError(f"{limb_label} twist 根节点无效")
         def source(plug: str) -> str | None:
             values = self._cmds.listConnections(
                 plug,
@@ -997,7 +1074,9 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 or len(constraints) != 1
                 or any(len(self._cmds.ls(name, type=node_type) or []) != 1 for name, node_type in typed_nodes)
             ):
-                raise FitSkeletonValidationError("Arm twist 段驱动节点无效")
+                raise FitSkeletonValidationError(
+                    f"{limb_label} twist 段驱动节点无效"
+                )
             base, constraint = bases[0], constraints[0]
             parents = self._cmds.listRelatives(base, parent=True, fullPath=True) or []
             targets = self._cmds.parentConstraint(
@@ -1016,22 +1095,25 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 plugs=True,
             ) or []
             segment_states.append(
-                BodyArmTwistSegmentState(
-                    spec.side,
-                    spec.segment,
-                    base,
-                    parents[0] if parents else None,
-                    constraint,
-                    target_paths,
-                    self._resolve_connected_node(outputs[0]) if len(outputs) == 1 else None,
-                    spec.compose_name,
-                    source(f"{spec.compose_name}.inputRotate"),
-                    source(f"{spec.compose_name}.inputRotateOrder"),
-                    spec.decompose_name,
-                    source(f"{spec.decompose_name}.inputMatrix"),
-                    spec.quaternion_name,
-                    source(f"{spec.quaternion_name}.inputQuatX"),
-                    source(f"{spec.quaternion_name}.inputQuatW"),
+                BodyLimbTwistSegmentState(
+                    side=spec.side,
+                    segment=spec.segment,
+                    path=base,
+                    parent_path=parents[0] if parents else None,
+                    constraint_name=constraint,
+                    targets=target_paths,
+                    driven_path=self._resolve_connected_node(outputs[0]) if len(outputs) == 1 else None,
+                    compose_name=spec.compose_name,
+                    rotate_source=source(f"{spec.compose_name}.inputRotate"),
+                    rotate_order_source=source(f"{spec.compose_name}.inputRotateOrder"),
+                    decompose_name=spec.decompose_name,
+                    decompose_source=source(f"{spec.decompose_name}.inputMatrix"),
+                    quaternion_name=spec.quaternion_name,
+                    quaternion_axis_source=source(
+                        f"{spec.quaternion_name}.inputQuat{spec.axis}"
+                    ),
+                    quaternion_w_source=source(f"{spec.quaternion_name}.inputQuatW"),
+                    axis=spec.axis,
                 )
             )
 
@@ -1041,7 +1123,9 @@ class MayaBodyBuildHost(MayaFitJointHost):
             constraints = self._cmds.ls(spec.constraint_name, type="pointConstraint") or []
             multipliers = self._cmds.ls(spec.multiplier_name, type="unitConversion") or []
             if len(joints) != 1 or len(constraints) != 1 or len(multipliers) != 1:
-                raise FitSkeletonValidationError("Arm twist joint、位置约束或角度节点无效")
+                raise FitSkeletonValidationError(
+                    f"{limb_label} twist joint、位置约束或角度节点无效"
+                )
             joint, constraint = joints[0], constraints[0]
             parents = self._cmds.listRelatives(joint, parent=True, fullPath=True) or []
             targets = self._cmds.pointConstraint(constraint, query=True, targetList=True) or []
@@ -1050,26 +1134,32 @@ class MayaBodyBuildHost(MayaFitJointHost):
             weights = tuple(float(self._cmds.getAttr(f"{constraint}.{alias}")) for alias in aliases)
             outputs = self._cmds.listConnections(f"{constraint}.constraintTranslateX", source=False, destination=True, plugs=True) or []
             driven = self._resolve_connected_node(outputs[0]) if len(outputs) == 1 else None
-            states.append(BodyArmTwistJointState(
-                spec.side,
-                spec.segment,
-                joint,
-                parents[0] if parents else None,
-                tuple(float(value) for value in self._cmds.xform(joint, query=True, worldSpace=True, translation=True)),
-                constraint,
-                target_paths,
-                weights,
-                driven,
-                spec.multiplier_name,
-                source(f"{spec.multiplier_name}.input"),
-                float(self._cmds.getAttr(f"{spec.multiplier_name}.conversionFactor")),
-                source(f"{joint}.rotateX"),
-                (
-                    float(self._cmds.getAttr(f"{joint}.rotateY")),
-                    float(self._cmds.getAttr(f"{joint}.rotateZ")),
+            orthogonal_axes = tuple(axis for axis in "XYZ" if axis != spec.axis)
+            states.append(BodyLimbTwistJointState(
+                side=spec.side,
+                segment=spec.segment,
+                path=joint,
+                parent_path=parents[0] if parents else None,
+                world_position=tuple(float(value) for value in self._cmds.xform(joint, query=True, worldSpace=True, translation=True)),
+                constraint_name=constraint,
+                targets=target_paths,
+                weights=weights,
+                driven_joint=driven,
+                multiplier_name=spec.multiplier_name,
+                twist_source=source(f"{spec.multiplier_name}.input"),
+                multiplier_scale=float(self._cmds.getAttr(f"{spec.multiplier_name}.conversionFactor")),
+                rotate_axis_source=source(f"{joint}.rotate{spec.axis}"),
+                orthogonal_rotations=tuple(
+                    float(self._cmds.getAttr(f"{joint}.rotate{axis}"))
+                    for axis in orthogonal_axes
                 ),
+                axis=spec.axis,
             ))
-        return BodyArmTwistSnapshot(roots[0], tuple(segment_states), tuple(states))
+        return BodyLimbTwistSnapshot(
+            roots[0],
+            tuple(segment_states),
+            tuple(states),
+        )
 
     def create_body_arm_volume(self, plan: BodyArmVolumePlan) -> None:
         self._require_transaction()

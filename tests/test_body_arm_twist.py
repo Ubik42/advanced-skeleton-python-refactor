@@ -3,7 +3,9 @@ from math import cos, isclose, pi, sin
 
 from adv_py.core import (
     BodyArmTwistValidationError,
+    project_twist_quaternion,
     project_twist_quaternion_x,
+    twist_angle,
     twist_angle_x,
 )
 
@@ -36,6 +38,21 @@ class BodyArmTwistTests(unittest.TestCase):
 
         self.assertEqual(project_twist_quaternion_x(pure_swing), (0.0, 0.0, 0.0, 1.0))
         self.assertEqual(project_twist_quaternion_x(half_turn_swing), (0.0, 0.0, 0.0, 1.0))
+
+    def test_projects_twist_onto_a_selected_principal_axis(self):
+        twist = (0.0, 0.0, sin(pi / 5.0), cos(pi / 5.0))
+        swing = (sin(pi / 7.0), 0.0, 0.0, cos(pi / 7.0))
+        mixed = quaternion_product(swing, twist)
+
+        projected = project_twist_quaternion(mixed, "Z")
+
+        self.assertTrue(all(
+            isclose(a, b, abs_tol=1e-8)
+            for a, b in zip(projected, twist)
+        ))
+        self.assertTrue(
+            isclose(twist_angle(mixed, "Z"), 2.0 * pi / 5.0, abs_tol=1e-8)
+        )
 
     def test_rejects_non_finite_quaternion(self):
         with self.assertRaisesRegex(BodyArmTwistValidationError, "四元数"):

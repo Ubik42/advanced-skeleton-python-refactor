@@ -45,6 +45,14 @@ from adv_py.core.body_leg_stretch import (
     audit_body_leg_stretch,
     plan_body_leg_stretch,
 )
+from adv_py.core.body_leg_twist import (
+    BodyLegTwistJointSpec,
+    BodyLegTwistPlan,
+    BodyLegTwistSegmentSpec,
+    BodyLegTwistSnapshot,
+    audit_body_leg_twist,
+    plan_body_leg_twist,
+)
 from adv_py.core.body_leg_visibility import (
     BodyLegVisibilityPlan,
     BodyLegVisibilitySnapshot,
@@ -80,6 +88,11 @@ class BodyLegRigHost(BodyRebuildInspectionHost, Protocol):
     def capture_body_leg_visibility(self, plan: BodyLegVisibilityPlan) -> BodyLegVisibilitySnapshot: ...
     def create_body_leg_stretch(self, plan: BodyLegStretchPlan) -> None: ...
     def capture_body_leg_stretch(self, plan: BodyLegStretchPlan) -> BodyLegStretchSnapshot: ...
+    def prepare_body_leg_twist_runtime(self) -> None: ...
+    def create_body_leg_twist_root(self, name: str) -> str: ...
+    def create_body_leg_twist_segment(self, spec: BodyLegTwistSegmentSpec) -> None: ...
+    def create_body_leg_twist_joint(self, spec: BodyLegTwistJointSpec) -> None: ...
+    def capture_body_leg_twist(self, plan: BodyLegTwistPlan) -> BodyLegTwistSnapshot: ...
     def create_body_leg_foot_side(self, spec: BodyLegFootSideSpec) -> None: ...
     def capture_body_leg_foot(self, plan: BodyLegFootPlan) -> BodyLegFootSnapshot: ...
 
@@ -93,6 +106,7 @@ class BodyLegRigBuildPlan:
     ik: BodyLegIkPlan
     visibility: BodyLegVisibilityPlan
     stretch: BodyLegStretchPlan
+    twist: BodyLegTwistPlan
     foot: BodyLegFootPlan
     name_collisions: tuple[str, ...]
 
@@ -119,6 +133,7 @@ class BodyLegRigBuildResult:
     ik: BodyLegIkSnapshot
     visibility: BodyLegVisibilitySnapshot
     stretch: BodyLegStretchSnapshot
+    twist: BodyLegTwistSnapshot
     foot: BodyLegFootSnapshot
     body: BodySkeletonSnapshot
 
@@ -137,6 +152,7 @@ class BuildBodyLegRig:
         body_root_name: str = "Root_M",
         control_radius: float = 1.75,
         pole_distance_scale: float = 0.75,
+        twist_joints_per_segment: int = 2,
         center_tolerance: float = 0.01,
     ) -> BodyLegRigBuildPlan:
         safety = self._inspector.execute(
@@ -164,6 +180,10 @@ class BuildBodyLegRig:
         )
         visibility = plan_body_leg_visibility(fk_controls, ik, blend)
         stretch = plan_body_leg_stretch(mechanisms, ik)
+        twist = plan_body_leg_twist(
+            safety.body,
+            joints_per_segment=twist_joints_per_segment,
+        )
         foot = plan_body_leg_foot(safety.body, ik)
         names = [
             mechanisms.root_name,
@@ -202,6 +222,21 @@ class BuildBodyLegRig:
                 side.blend_name,
                 side.segment_name,
             ))
+        names.append(twist.root_name)
+        for spec in twist.segments:
+            names.extend((
+                spec.name,
+                spec.constraint_name,
+                spec.compose_name,
+                spec.decompose_name,
+                spec.quaternion_name,
+            ))
+        for spec in twist.joints:
+            names.extend((
+                spec.name,
+                spec.constraint_name,
+                spec.multiplier_name,
+            ))
         for side in foot.sides:
             names.extend(pivot.name for pivot in side.pivots)
             names.extend((
@@ -228,6 +263,7 @@ class BuildBodyLegRig:
             ik,
             visibility,
             stretch,
+            twist,
             foot,
             collisions,
         )
@@ -239,6 +275,7 @@ class BuildBodyLegRig:
         body_root_name: str = "Root_M",
         control_radius: float = 1.75,
         pole_distance_scale: float = 0.75,
+        twist_joints_per_segment: int = 2,
         center_tolerance: float = 0.01,
     ) -> BodyLegRigBuildResult:
         plan = self.plan(
@@ -246,12 +283,14 @@ class BuildBodyLegRig:
             body_root_name=body_root_name,
             control_radius=control_radius,
             pole_distance_scale=pole_distance_scale,
+            twist_joints_per_segment=twist_joints_per_segment,
             center_tolerance=center_tolerance,
         )
         if not plan.ready:
             raise FitSkeletonValidationError(
                 "Leg Rig 构建预检失败，场景未修改：" + "；".join(plan.blockers)
             )
+        self._host.prepare_body_leg_twist_runtime()
         with self._host.transaction("构建含 Foot 的双腿 IK/FK"):
             if (
                 self._host.create_body_leg_mechanism_root(plan.mechanisms.root_name)
@@ -305,6 +344,23 @@ class BuildBodyLegRig:
                     + "；".join(issue.message for issue in stretch_issues)
                 )
 
+            if (
+                self._host.create_body_leg_twist_root(plan.twist.root_name)
+                != plan.twist.root_path
+            ):
+                raise RuntimeError("Leg twist 根路径漂移")
+            for spec in plan.twist.segments:
+                self._host.create_body_leg_twist_segment(spec)
+            for spec in plan.twist.joints:
+                self._host.create_body_leg_twist_joint(spec)
+            twist = self._host.capture_body_leg_twist(plan.twist)
+            twist_issues = audit_body_leg_twist(plan.twist, twist)
+            if twist_issues:
+                raise RuntimeError(
+                    "Leg twist 阶段复检失败："
+                    + "；".join(issue.message for issue in twist_issues)
+                )
+
             for spec in plan.foot.sides:
                 self._host.create_body_leg_foot_side(spec)
             foot = self._host.capture_body_leg_foot(plan.foot)
@@ -337,5 +393,14 @@ class BuildBodyLegRig:
             ):
                 raise RuntimeError("Leg Rig 构建后 Fit 输入变化")
         return BodyLegRigBuildResult(
-            plan, mechanisms, fk, blend, ik, visibility, stretch, foot, body
+            plan,
+            mechanisms,
+            fk,
+            blend,
+            ik,
+            visibility,
+            stretch,
+            twist,
+            foot,
+            body,
         )
