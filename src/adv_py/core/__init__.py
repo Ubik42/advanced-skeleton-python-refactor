@@ -64,6 +64,10 @@ from .body_leg_foot import (
     BodyLegFootPivotRole,
     BodyLegFootPivotSpec,
     BodyLegFootPivotState,
+    BodyLegFootRollNodeSpec,
+    BodyLegFootRollNodeState,
+    BodyLegFootRollSpec,
+    BodyLegFootRollState,
     BodyLegFootPlan,
     BodyLegFootSideSpec,
     BodyLegFootSideState,
@@ -72,6 +76,7 @@ from .body_leg_foot import (
     audit_body_leg_foot,
     audit_body_leg_foot_input,
     plan_body_leg_foot,
+    segmented_foot_roll,
 )
 from .body_arm_blend import (
     BodyArmBlendIssue, BodyArmBlendJointSpec, BodyArmBlendJointState,

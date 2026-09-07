@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from math import isfinite
 
 from .body_leg_ik import BodyLegIkPlan
 from .body_skeleton import BodySkeletonSnapshot
@@ -39,6 +40,24 @@ class BodyLegFootPivotSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyLegFootRollNodeSpec:
+    name: str
+    node_type: str
+    input_connections: tuple[tuple[str, str], ...]
+    numeric_values: tuple[tuple[str, float], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class BodyLegFootRollSpec:
+    master_attribute: str
+    master_plug: str
+    minimum: float
+    maximum: float
+    ball_break_angle: float
+    nodes: tuple[BodyLegFootRollNodeSpec, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BodyLegFootSideSpec:
     side: FitBuildSide
     ankle_control_path: str
@@ -55,11 +74,14 @@ class BodyLegFootSideSpec:
     toe_control_position: Vector3
     toe_control_axes: AxisFrame
     toe_control_radius: float
+    roll: BodyLegFootRollSpec
     pivots: tuple[BodyLegFootPivotSpec, ...]
 
     @property
     def attributes(self) -> tuple[str, ...]:
-        return tuple(pivot.attribute for pivot in self.pivots)
+        return (self.roll.master_attribute,) + tuple(
+            pivot.attribute for pivot in self.pivots
+        )
 
     @property
     def final_handle_parent_path(self) -> str:
@@ -101,6 +123,21 @@ class BodyLegFootPivotState:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyLegFootRollNodeState:
+    name: str
+    node_type: str | None
+    input_connections: tuple[tuple[str, str | None], ...]
+    numeric_values: tuple[tuple[str, float | None], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BodyLegFootRollState:
+    master_plug: str
+    master_value: float
+    nodes: tuple[BodyLegFootRollNodeState, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BodyLegFootSideState:
     side: FitBuildSide
     attribute_values: tuple[tuple[str, float], ...]
@@ -121,6 +158,7 @@ class BodyLegFootSideState:
     toe_control_translation: Vector3
     toe_control_rotation: Vector3
     toe_control_shape: str | None
+    roll: BodyLegFootRollState
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +191,23 @@ def plan_body_leg_foot(
     sides = []
     for limb in ik.limbs:
         suffix = limb.side.value
+        master_attribute = "footRoll"
+        master_plug = f"{limb.ankle_control_path}.{master_attribute}"
+        minimum, maximum, ball_break = -360.0, 360.0, 45.0
+        heel_clamp = f"AdvPy_FootRollHeelClamp_{suffix}"
+        ball_clamp = f"AdvPy_FootRollBallClamp_{suffix}"
+        toe_subtract = f"AdvPy_FootRollToeSubtract_{suffix}"
+        toe_clamp = f"AdvPy_FootRollToeClamp_{suffix}"
+        sum_names = {
+            BodyLegFootPivotRole.HEEL: f"AdvPy_FootRollHeelSum_{suffix}",
+            BodyLegFootPivotRole.TOE: f"AdvPy_FootRollToeSum_{suffix}",
+            BodyLegFootPivotRole.BALL: f"AdvPy_FootRollBallSum_{suffix}",
+        }
+        automatic_sources = {
+            BodyLegFootPivotRole.HEEL: f"{heel_clamp}.outputR",
+            BodyLegFootPivotRole.TOE: f"{toe_clamp}.outputR",
+            BodyLegFootPivotRole.BALL: f"{ball_clamp}.outputR",
+        }
         required = tuple(f"{marker}_{suffix}" for _, marker, *_ in marker_roles)
         if any(name not in body_by_name for name in required):
             raise BodyLegFootValidationError(
@@ -171,10 +226,14 @@ def plan_body_leg_foot(
                 if multiplier != 1.0
                 else None
             )
+            manual_source = f"{limb.ankle_control_path}.{attribute}"
             source = (
-                f"{multiplier_name}.output"
-                if multiplier_name
-                else f"{limb.ankle_control_path}.{attribute}"
+                f"{sum_names[role]}.output1D"
+                if role in sum_names
+                else (
+                    f"{multiplier_name}.output"
+                    if multiplier_name else manual_source
+                )
             )
             pivots.append(BodyLegFootPivotSpec(
                 role=role,
@@ -197,6 +256,53 @@ def plan_body_leg_foot(
         toe_offset_name = f"AdvPy_ToeIKOffset_{suffix}"
         toe_offset_path = f"{toe_pivot_path}|{toe_offset_name}"
         toe_control_name = f"AdvPy_ToeIK_{suffix}"
+        roll_nodes = (
+            BodyLegFootRollNodeSpec(
+                heel_clamp,
+                "clamp",
+                ((master_plug, f"{heel_clamp}.inputR"),),
+                ((f"{heel_clamp}.minR", minimum), (f"{heel_clamp}.maxR", 0.0)),
+            ),
+            BodyLegFootRollNodeSpec(
+                ball_clamp,
+                "clamp",
+                ((master_plug, f"{ball_clamp}.inputR"),),
+                ((f"{ball_clamp}.minR", 0.0), (f"{ball_clamp}.maxR", ball_break)),
+            ),
+            BodyLegFootRollNodeSpec(
+                toe_subtract,
+                "addDoubleLinear",
+                ((master_plug, f"{toe_subtract}.input1"),),
+                ((f"{toe_subtract}.input2", -ball_break),),
+            ),
+            BodyLegFootRollNodeSpec(
+                toe_clamp,
+                "clamp",
+                ((f"{toe_subtract}.output", f"{toe_clamp}.inputR"),),
+                ((f"{toe_clamp}.minR", 0.0), (f"{toe_clamp}.maxR", maximum)),
+            ),
+            *(
+                BodyLegFootRollNodeSpec(
+                    sum_names[role],
+                    "plusMinusAverage",
+                    (
+                        (
+                            f"{limb.ankle_control_path}.{next(p.attribute for p in pivots if p.role is role)}",
+                            f"{sum_names[role]}.input1D[0]",
+                        ),
+                        (
+                            automatic_sources[role],
+                            f"{sum_names[role]}.input1D[1]",
+                        ),
+                    ),
+                )
+                for role in (
+                    BodyLegFootPivotRole.HEEL,
+                    BodyLegFootPivotRole.TOE,
+                    BodyLegFootPivotRole.BALL,
+                )
+            ),
+        )
         sides.append(BodyLegFootSideSpec(
             side=limb.side,
             ankle_control_path=limb.ankle_control_path,
@@ -213,6 +319,14 @@ def plan_body_leg_foot(
             toe_control_position=body_by_name[f"Toes_{suffix}"].world_position,
             toe_control_axes=body_by_name[f"Toes_{suffix}"].world_axes,
             toe_control_radius=limb.radius * 0.65,
+            roll=BodyLegFootRollSpec(
+                master_attribute,
+                master_plug,
+                minimum,
+                maximum,
+                ball_break,
+                roll_nodes,
+            ),
             pivots=tuple(pivots),
         ))
     return BodyLegFootPlan(tuple(sides))
@@ -306,6 +420,54 @@ def audit_body_leg_foot(
                 "Ball pivot 未正确驱动 Ankle IK 朝向",
                 spec.side.value,
             ))
+        master_value_mismatch = (
+            expected_attribute_value is not None
+            and abs(
+                state.roll.master_value - expected_attribute_value
+            ) > tolerance
+        )
+        if (
+            state.roll.master_plug != spec.roll.master_plug
+            or master_value_mismatch
+        ):
+            issues.append(BodyLegFootIssue(
+                "foot_roll_master",
+                "自动 footRoll 主属性不一致",
+                spec.side.value,
+            ))
+        actual_roll_nodes = {node.name: node for node in state.roll.nodes}
+        for expected_node in spec.roll.nodes:
+            actual_node = actual_roll_nodes.get(expected_node.name)
+            if actual_node is None:
+                issues.append(BodyLegFootIssue(
+                    "foot_roll_node_missing",
+                    "自动 footRoll 节点缺失",
+                    expected_node.name,
+                ))
+                continue
+            if (
+                actual_node.node_type != expected_node.node_type
+                or actual_node.input_connections
+                != tuple(
+                    (target, source)
+                    for source, target in expected_node.input_connections
+                )
+                or any(
+                    actual is None or abs(actual - wanted) > tolerance
+                    for (actual_plug, actual), (wanted_plug, wanted) in zip(
+                        actual_node.numeric_values,
+                        expected_node.numeric_values,
+                    )
+                    if actual_plug == wanted_plug
+                )
+                or tuple(plug for plug, _ in actual_node.numeric_values)
+                != tuple(plug for plug, _ in expected_node.numeric_values)
+            ):
+                issues.append(BodyLegFootIssue(
+                    "foot_roll_node",
+                    "自动 footRoll 节点类型、输入或参数不一致",
+                    expected_node.name,
+                ))
         toe_pivot_path = next(
             pivot.path for pivot in spec.pivots
             if pivot.role is BodyLegFootPivotRole.TOE
@@ -366,3 +528,28 @@ def audit_body_leg_foot(
 
 def _close(left: Vector3, right: Vector3, tolerance: float) -> bool:
     return all(abs(a - b) <= tolerance for a, b in zip(left, right))
+
+
+def segmented_foot_roll(
+    value: float,
+    *,
+    ball_break_angle: float = 45.0,
+    minimum: float = -360.0,
+    maximum: float = 360.0,
+) -> tuple[float, float, float]:
+    values = (value, ball_break_angle, minimum, maximum)
+    if any(
+        isinstance(item, bool)
+        or not isinstance(item, (int, float))
+        or not isfinite(float(item))
+        for item in values
+    ):
+        raise BodyLegFootValidationError("footRoll 参数必须是有限数值")
+    if minimum >= 0.0 or maximum <= 0.0 or not 0.0 < ball_break_angle < maximum:
+        raise BodyLegFootValidationError("footRoll 范围与 Ball 分段角度无效")
+    bounded = min(max(float(value), float(minimum)), float(maximum))
+    heel = min(bounded, 0.0)
+    positive = max(bounded, 0.0)
+    ball = min(positive, float(ball_break_angle))
+    toe = max(positive - float(ball_break_angle), 0.0)
+    return heel, ball, toe

@@ -157,7 +157,10 @@ def main(output: Path) -> int:
             abs(cmds.getAttr(
                 f"{preview.match.ankle_control_path}.{attribute}"
             )) <= 1e-6
-            for attribute in ("heelRoll", "outerBank", "innerBank", "toeRoll", "ballRoll")
+            for attribute in (
+                "footRoll", "heelRoll", "outerBank",
+                "innerBank", "toeRoll", "ballRoll",
+            )
         )
         cmds.undo()
         checks["second_undo_removed_complete_leg_rig"] = not (

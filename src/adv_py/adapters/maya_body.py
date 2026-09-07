@@ -86,6 +86,8 @@ from adv_py.core.body_leg_foot import (
     BodyLegFootPlan,
     BodyLegFootPivotRole,
     BodyLegFootPivotState,
+    BodyLegFootRollNodeState,
+    BodyLegFootRollState,
     BodyLegFootSideSpec,
     BodyLegFootSideState,
     BodyLegFootSnapshot,
@@ -2052,6 +2054,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
             )
             names.append(side.toe_constraint_name)
             names.extend((side.toe_offset_name, side.toe_control_name))
+            names.extend(node.name for node in side.roll.nodes)
             collisions.extend(
                 name for name in names if self.find_name_collisions(name)
             )
@@ -2140,13 +2143,30 @@ class MayaBodyBuildHost(MayaFitJointHost):
         try:
             self._transaction_changed = True
             for attribute in spec.attributes:
+                options = {}
+                if attribute == spec.roll.master_attribute:
+                    options = {
+                        "minValue": spec.roll.minimum,
+                        "maxValue": spec.roll.maximum,
+                    }
                 self._cmds.addAttr(
                     spec.ankle_control_path,
                     longName=attribute,
                     attributeType="double",
                     defaultValue=0.0,
                     keyable=True,
+                    **options,
                 )
+            for node in spec.roll.nodes:
+                created = self._cmds.createNode(
+                    node.node_type, name=node.name, skipSelect=True
+                )
+                if created != node.name:
+                    raise RuntimeError("自动 footRoll 节点名称漂移")
+                for plug, value in node.numeric_values:
+                    self._cmds.setAttr(plug, value)
+                for source, target in node.input_connections:
+                    self._cmds.connectAttr(source, target)
             for pivot in spec.pivots:
                 created = self._cmds.createNode(
                     "transform",
@@ -2173,7 +2193,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     self._cmds.setAttr(f"{multiplier}.input2", pivot.multiplier)
                     self._cmds.connectAttr(f"{multiplier}.output", pivot.target_plug)
                 else:
-                    self._cmds.connectAttr(attribute_plug, pivot.target_plug)
+                    self._cmds.connectAttr(pivot.source_plug, pivot.target_plug)
             toe_pivot = next(
                 pivot.path for pivot in spec.pivots
                 if pivot.role is BodyLegFootPivotRole.TOE
@@ -2372,6 +2392,46 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     )[0]
                 )
 
+            roll_nodes = []
+            for node_spec in spec.roll.nodes:
+                nodes = self._cmds.ls(node_spec.name) or []
+                node_type = (
+                    self._cmds.nodeType(nodes[0]) if len(nodes) == 1 else None
+                )
+                connections = []
+                for _, target in node_spec.input_connections:
+                    sources = self._cmds.listConnections(
+                        target,
+                        source=True,
+                        destination=False,
+                        plugs=True,
+                        skipConversionNodes=True,
+                    ) or []
+                    connections.append((
+                        target,
+                        self._canonical_plug(sources[0])
+                        if len(sources) == 1 else None,
+                    ))
+                numeric_values = tuple(
+                    (
+                        plug,
+                        float(self._cmds.getAttr(plug))
+                        if self._cmds.objExists(plug) else None,
+                    )
+                    for plug, _ in node_spec.numeric_values
+                )
+                roll_nodes.append(BodyLegFootRollNodeState(
+                    node_spec.name,
+                    node_type,
+                    tuple(connections),
+                    numeric_values,
+                ))
+            roll_state = BodyLegFootRollState(
+                spec.roll.master_plug,
+                float(self._cmds.getAttr(spec.roll.master_plug)),
+                tuple(roll_nodes),
+            )
+
             sides.append(BodyLegFootSideState(
                 spec.side,
                 values,
@@ -2402,6 +2462,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     self._cmds.nodeType(toe_shapes[0])
                     if len(toe_shapes) == 1 else None
                 ),
+                roll_state,
             ))
         return BodyLegFootSnapshot(tuple(sides))
 

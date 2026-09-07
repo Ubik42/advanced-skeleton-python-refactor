@@ -188,6 +188,7 @@ class BuildBodyLegRig:
                 side.toe_offset_name,
                 side.toe_control_name,
             ))
+            names.extend(node.name for node in side.roll.nodes)
             names.extend(
                 pivot.multiplier_name
                 for pivot in side.pivots

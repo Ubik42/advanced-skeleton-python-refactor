@@ -81,6 +81,25 @@ def main(output: Path) -> int:
             ))
             motion[attribute] = not close(current, original_position)
             cmds.setAttr(plug, 0.0)
+        pivot_by_role = {pivot.role.value: pivot for pivot in right_spec.pivots}
+
+        def roll_outputs(value, manual_ball=0.0):
+            cmds.setAttr(f"{right_spec.ankle_control_path}.footRoll", value)
+            cmds.setAttr(
+                f"{right_spec.ankle_control_path}.ballRoll", manual_ball
+            )
+            result = tuple(
+                float(cmds.getAttr(pivot_by_role[role].target_plug))
+                for role in ("heel", "ball", "toe")
+            )
+            cmds.setAttr(f"{right_spec.ankle_control_path}.footRoll", 0.0)
+            cmds.setAttr(f"{right_spec.ankle_control_path}.ballRoll", 0.0)
+            return result
+
+        negative_roll = roll_outputs(-30.0)
+        ball_phase = roll_outputs(20.0)
+        toe_phase = roll_outputs(70.0)
+        additive_ball = roll_outputs(20.0, manual_ball=5.0)
         ankle_axes = axes(cmds, right_spec.ankle_driver_path)
         toe_axes = axes(cmds, right_spec.toe_driver_path)
         cmds.setAttr(f"{right_spec.ankle_control_path}.ballRoll", 12.0)
@@ -115,7 +134,19 @@ def main(output: Path) -> int:
                 side.handle_parent_path == side.pivots[-1].path
                 for side in result.foot.sides
             ),
-            "five_channels_move_handle": all(motion.values()),
+            "six_channels_move_handle": all(motion.values()),
+            "negative_roll_uses_heel": close(
+                negative_roll, (-30.0, 0.0, 0.0)
+            ),
+            "positive_roll_starts_on_ball": close(
+                ball_phase, (0.0, 20.0, 0.0)
+            ),
+            "roll_after_break_reaches_toe": close(
+                toe_phase, (0.0, 45.0, 25.0)
+            ),
+            "manual_ball_roll_is_additive": close(
+                additive_ball, (0.0, 25.0, 0.0)
+            ),
             "ball_roll_rotates_ankle": ball_rotates_ankle,
             "ball_roll_keeps_toe_planted": ball_keeps_toe_planted,
             "toe_roll_rotates_ankle": toe_rotates_ankle,
@@ -144,7 +175,7 @@ def main(output: Path) -> int:
             "host": "maya",
             "version": str(cmds.about(version=True)),
             "pid": os.getpid(),
-            "slice": "body_leg_foot_orientation_outputs",
+            "slice": "body_leg_segmented_foot_roll",
             **checks,
             "channel_motion": motion,
             "remaining_nodes": remaining,

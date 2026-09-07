@@ -44,7 +44,10 @@ from adv_py.core import (
     BodyLegVisibilitySideState,
     BodyLegVisibilitySnapshot,
     BodyLegFootInputState,
+    BodyLegFootValidationError,
     BodyLegFootPivotState,
+    BodyLegFootRollNodeState,
+    BodyLegFootRollState,
     BodyLegFootSideState,
     BodyLegFootSnapshot,
     BodyArmIkSnapshot,
@@ -87,6 +90,7 @@ from adv_py.core import (
     synthetic_body_source_fit_template,
     plan_body_arm_fk_controls,
     audit_body_leg_fk_to_ik_preflight,
+    segmented_foot_roll,
 )
 
 
@@ -666,6 +670,7 @@ class FakeBodySkeletonHost:
                 side.toe_constraint_name,
                 side.toe_offset_name,
                 side.toe_control_name,
+                *(node.name for node in side.roll.nodes),
             )
             if self.find_name_collisions(name)
         )
@@ -717,6 +722,25 @@ class FakeBodySkeletonHost:
             (0.0, 0.0, 0.0),
             (0.0, 0.0, 0.0),
             "nurbsCurve",
+            BodyLegFootRollState(
+                spec.roll.master_plug,
+                0.0,
+                tuple(
+                    BodyLegFootRollNodeState(
+                        node.name,
+                        node.node_type,
+                        tuple(
+                            (target, source)
+                            for source, target in node.input_connections
+                        ),
+                        tuple(
+                            (plug, value)
+                            for plug, value in node.numeric_values
+                        ),
+                    )
+                    for node in spec.roll.nodes
+                ),
+            ),
         )
         sides = self.leg_foot_snapshot.sides if self.leg_foot_snapshot else ()
         self.leg_foot_snapshot = BodyLegFootSnapshot((*sides, state))
@@ -1894,8 +1918,13 @@ class BodySkeletonTests(unittest.TestCase):
             for side in result.snapshot.sides
         ))
         self.assertTrue(all(
-            len(side.attribute_values) == 5
+            len(side.attribute_values) == 6
             and all(value == 0.0 for _, value in side.attribute_values)
+            for side in result.snapshot.sides
+        ))
+        self.assertTrue(all(
+            len(side.roll.nodes) == 7
+            and side.roll.master_plug.endswith(".footRoll")
             for side in result.snapshot.sides
         ))
         self.assertTrue(all(
@@ -1921,6 +1950,18 @@ class BodySkeletonTests(unittest.TestCase):
 
         self.assertEqual(host.transaction_count, 6)
         self.assertIsNone(host.leg_foot_snapshot)
+
+    def test_segmented_foot_roll_profile_keeps_manual_phases_explicit(self):
+        self.assertEqual(segmented_foot_roll(-30.0), (-30.0, 0.0, 0.0))
+        self.assertEqual(segmented_foot_roll(20.0), (0.0, 20.0, 0.0))
+        self.assertEqual(segmented_foot_roll(70.0), (0.0, 45.0, 25.0))
+        self.assertEqual(segmented_foot_roll(500.0), (0.0, 45.0, 315.0))
+
+    def test_segmented_foot_roll_rejects_invalid_profile(self):
+        with self.assertRaises(BodyLegFootValidationError):
+            segmented_foot_roll(10.0, ball_break_angle=0.0)
+        with self.assertRaises(BodyLegFootValidationError):
+            segmented_foot_roll(float("nan"))
 
     def test_foot_postcheck_failure_restores_original_handle_parent(self):
         host = FakeBodySkeletonHost(faulty_leg_foot=True)
