@@ -795,7 +795,25 @@ class MayaBodyBuildHost(MayaFitJointHost):
         self,
         request: SkinWeightEditRequest,
     ) -> SkinWeightInputState:
-        clusters = self._cmds.ls(request.skin_name, type="skinCluster") or []
+        return self._capture_skin_weight_state(
+            request.skin_name,
+            tuple(vertex.vertex_index for vertex in request.vertices),
+        )
+
+    def capture_all_skin_weights(
+        self,
+        skin_name: str,
+        mesh_path: str,
+    ) -> SkinWeightInputState:
+        del mesh_path
+        return self._capture_skin_weight_state(skin_name, None)
+
+    def _capture_skin_weight_state(
+        self,
+        skin_name: str,
+        vertex_indices: tuple[int, ...] | None,
+    ) -> SkinWeightInputState:
+        clusters = self._cmds.ls(skin_name, type="skinCluster") or []
         if len(clusters) != 1:
             return SkinWeightInputState(None, None, 0, (), (), 0, False, ())
         skin = clusters[0]
@@ -831,10 +849,15 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 locked.append(path)
         vertices = []
         if mesh:
-            for requested in request.vertices:
-                if requested.vertex_index >= vertex_count:
+            indices = (
+                range(vertex_count)
+                if vertex_indices is None
+                else vertex_indices
+            )
+            for vertex_index in indices:
+                if vertex_index >= vertex_count:
                     continue
-                component = f"{mesh}.vtx[{requested.vertex_index}]"
+                component = f"{mesh}.vtx[{vertex_index}]"
                 weights = []
                 for influence in influences:
                     value = float(self._cmds.skinPercent(
@@ -845,7 +868,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     ))
                     if value > 1e-8:
                         weights.append(SkinInfluenceWeight(influence, value))
-                vertices.append(SkinVertexWeights(requested.vertex_index, tuple(weights)))
+                vertices.append(SkinVertexWeights(vertex_index, tuple(weights)))
         return SkinWeightInputState(
             skin,
             mesh,

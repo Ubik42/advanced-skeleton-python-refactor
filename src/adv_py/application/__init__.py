@@ -56,6 +56,15 @@ from .skin_weights import (
     SkinWeightEditResult,
     SkinWeightHost,
 )
+from .skin_weight_io import (
+    ExportSkinWeights,
+    ImportSkinWeights,
+    SkinWeightDocumentHost,
+    SkinWeightExportPlan,
+    SkinWeightExportResult,
+    SkinWeightImportPlan,
+    SkinWeightImportResult,
+)
 from .body_skeleton import (
     BodySkeletonBuildPlan,
     BodySkeletonBuildResult,
@@ -159,6 +168,9 @@ __all__ = [
     "BodyArmRigBuildPlan", "BodyArmRigBuildResult", "BodyArmRigHost",
     "SkinBindBuildPlan", "SkinBindBuildResult", "SkinBindHost",
     "SkinWeightEditPlan", "SkinWeightEditResult", "SkinWeightHost",
+    "SkinWeightDocumentHost",
+    "SkinWeightExportPlan", "SkinWeightExportResult",
+    "SkinWeightImportPlan", "SkinWeightImportResult",
     "BodyArmBlendBuildPlan", "BodyArmBlendBuildResult", "BodyArmBlendHost",
     "BodyArmIkBuildPlan",
     "BodyArmIkBuildResult",
@@ -199,6 +211,8 @@ __all__ = [
     "BuildBodyArmRig",
     "BindSkin",
     "EditSkinWeights",
+    "ExportSkinWeights",
+    "ImportSkinWeights",
     "BuildBodySkeleton",
     "BuildBodyArmFkControls",
     "BuildBodyArmFkMechanismControls",

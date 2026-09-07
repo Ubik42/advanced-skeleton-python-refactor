@@ -95,6 +95,15 @@ from .skin_weights import (
     plan_skin_weight_changes,
     skin_weight_request,
 )
+from .skin_weight_io import (
+    SKIN_WEIGHT_DOCUMENT_FORMAT,
+    SKIN_WEIGHT_DOCUMENT_SCHEMA_VERSION,
+    SkinWeightDocument,
+    audit_skin_weight_document_target,
+    skin_weight_document_from_json,
+    skin_weight_document_from_state,
+    skin_weight_document_to_json,
+)
 from .body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -278,6 +287,9 @@ __all__ = [
     "SkinWeightInputState",
     "SkinWeightIssue",
     "SkinWeightValidationError",
+    "SKIN_WEIGHT_DOCUMENT_FORMAT",
+    "SKIN_WEIGHT_DOCUMENT_SCHEMA_VERSION",
+    "SkinWeightDocument",
     "BODY_PROVENANCE_KIND",
     "BODY_PROVENANCE_OWNER",
     "BODY_PROVENANCE_SCHEMA_VERSION",
@@ -383,6 +395,7 @@ __all__ = [
     "audit_skin_bind_result",
     "audit_skin_weight_input",
     "audit_skin_weight_result",
+    "audit_skin_weight_document_target",
     "audit_body_arm_mechanisms",
     "audit_body_skeleton",
     "audit_body_arm_fk_controls",
@@ -418,6 +431,9 @@ __all__ = [
     "plan_skin_bind",
     "plan_skin_weight_changes",
     "skin_weight_request",
+    "skin_weight_document_from_json",
+    "skin_weight_document_from_state",
+    "skin_weight_document_to_json",
     "plan_body_arm_mechanisms",
     "plan_body_arm_fk_controls",
     "oriented_body_provenance",
