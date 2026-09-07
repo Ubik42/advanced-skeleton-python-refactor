@@ -1,0 +1,47 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 25500,
+  "slice": "body_character_global_control",
+  "arm_and_leg_built_together": true,
+  "global_hierarchy_and_shape": true,
+  "nine_owned_roots_are_driven": true,
+  "body_follows_global_trs": true,
+  "arm_and_leg_scale_compensation_are_wired": true,
+  "arm_stretch_is_scale_invariant": true,
+  "leg_stretch_is_scale_invariant": true,
+  "arm_wrist_reaches_scaled_target": true,
+  "leg_ankle_reaches_scaled_target": true,
+  "leg_pin_divides_world_distance_by_global_scale": true,
+  "leg_pin_reaches_scaled_pole_and_ankle": true,
+  "selection_preserved": true,
+  "single_undo_removed_complete_character_rig": true,
+  "single_undo_restored_body_bind_pose": true,
+  "single_undo_restored_rebuild_safety": true,
+  "cleanup": true,
+  "driven_root_count": 9,
+  "global_translate": [
+    3.0,
+    -2.0,
+    5.0
+  ],
+  "global_rotate_z": 25.0,
+  "global_scale": 1.5,
+  "target_stretch_ratio": 1.25,
+  "arm_segments": [
+    3.75,
+    3.125
+  ],
+  "leg_segments": [
+    5.0,
+    5.0
+  ],
+  "leg_pin_segments": [
+    7.2111029624938965,
+    8.485281944274902
+  ],
+  "remaining_rig_nodes_after_undo": [],
+  "remaining_nodes": [],
+  "duration_seconds": 4.611,
+  "status": "passed"
+}

@@ -98,6 +98,12 @@ from .body_arm_rig import (
     BodyArmRigBuildPlan, BodyArmRigBuildResult, BodyArmRigHost,
     BuildBodyArmRig,
 )
+from .body_character_rig import (
+    BodyCharacterRigBuildPlan,
+    BodyCharacterRigBuildResult,
+    BodyCharacterRigHost,
+    BuildBodyCharacterRig,
+)
 from .skin_bind import (
     BindSkin,
     SkinBindBuildPlan,
@@ -232,6 +238,8 @@ from .upper_body_fit import (
 
 __all__ = [
     "BodyArmRigBuildPlan", "BodyArmRigBuildResult", "BodyArmRigHost",
+    "BodyCharacterRigBuildPlan", "BodyCharacterRigBuildResult",
+    "BodyCharacterRigHost",
     "SkinBindBuildPlan", "SkinBindBuildResult", "SkinBindHost",
     "SkinWeightEditPlan", "SkinWeightEditResult", "SkinWeightHost",
     "SkinWeightDocumentHost",
@@ -306,6 +314,7 @@ __all__ = [
     "BuildBodyLegVisibility",
     "BuildBodyLegRig",
     "BuildBodyArmRig",
+    "BuildBodyCharacterRig",
     "BindSkin",
     "EditSkinWeights",
     "ExportSkinWeights",

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -345,12 +345,28 @@ class BuildBodyLegRig:
             twist_joints_per_segment=twist_joints_per_segment,
             center_tolerance=center_tolerance,
         )
+        return self._apply_plan(plan, body_root_name=body_root_name)
+
+    def _apply_plan(
+        self,
+        plan: BodyLegRigBuildPlan,
+        *,
+        body_root_name: str,
+        manage_transaction: bool = True,
+        prepare_runtime: bool = True,
+    ) -> BodyLegRigBuildResult:
         if not plan.ready:
             raise FitSkeletonValidationError(
                 "Leg Rig 构建预检失败，场景未修改：" + "；".join(plan.blockers)
             )
-        self._host.prepare_body_leg_twist_runtime()
-        with self._host.transaction("构建完整双腿 IK/FK"):
+        if prepare_runtime:
+            self._host.prepare_body_leg_twist_runtime()
+        transaction = (
+            self._host.transaction("构建完整双腿 IK/FK")
+            if manage_transaction
+            else nullcontext()
+        )
+        with transaction:
             if (
                 self._host.create_body_leg_mechanism_root(plan.mechanisms.root_name)
                 != plan.mechanisms.root_path

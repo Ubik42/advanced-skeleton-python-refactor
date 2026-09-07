@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成六十五个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、30 关节 Body 构建与安全 ReBuild，以及双臂完整 FK/IK 路径和双腿原子 FK/IK/Foot Rig。Arm 已覆盖模式显隐、含拉伸段长的双向匹配、带全局比例补偿的 IK stretch、轴向 twist 与横向体积保持；Leg 主流程在一个事务内建立五关节 FK/IK mechanisms、Hip/Knee/Ankle/Toes FK controls、Ankle/Pole Vector/Toe IK controls、包含 Toes 的旋转 blend、模式显隐、带全局比例补偿和额外长度分配的双段 IK stretch、knee pin、主轴感知 twist/volume helpers 和双侧 reverse-foot pivot。Ball pivot 与 Toe IK control 分别形成 Ankle/Toes IK 朝向输出，Foot 提供五个可叠加的手动 roll/bank 通道与自动分段 `footRoll`；`legStretchBias_R/L` 可重新分配伸长量，`legKneePin_R/L` 则把上下段长度连续混合到 Hip→PV 与 PV→Ankle 的实时距离，满权重时 Knee 到达 Pole Vector。拉伸或 pin 状态的 IK→FK 会把实际 Hip–Knee–Ankle 段长传入 FK mechanisms，保持四关节姿态。Skin 已覆盖显式绑定、稀疏权重写入、JSON 往返、路径映射、显式镜像及严格几何配对。角色总控层级、手指控制、自动权重和产品 UI 尚未实现。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成六十六个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、30 关节 Body 构建与安全 ReBuild，以及双臂完整 FK/IK 路径、双腿原子 FK/IK/Foot Rig 和统一角色总控。Arm 已覆盖模式显隐、含拉伸段长的双向匹配、带全局比例补偿的 IK stretch、轴向 twist 与横向体积保持；Leg 主流程覆盖五关节 mechanisms、四层 FK controls、Ankle/Pole Vector/Toe IK controls、包含 Toes 的旋转 blend、双段 IK stretch、stretch bias、knee pin、主轴感知 twist/volume helpers 和双侧 reverse-foot pivot。`BuildBodyCharacterRig` 现在会从同一份安全输入预演 Arm 与 Leg，在一个顶层 Undo Chunk 内构建两套 limb，并创建 `GlobalOffset → Global` 总控；Global 的 TRS 驱动 Body 根和八个 Arm/Leg 顶层根，统一 `globalScale` 同时接入九个根的三轴比例及 `armGlobalScale`/`legGlobalScale` 补偿。任一阶段失败都会恢复干净 Body、Fit 与 ReBuild 安全状态。Skin 已覆盖显式绑定、稀疏权重写入、JSON 往返、路径映射、显式镜像及严格几何配对。手指控制、自动权重和产品 UI 尚未实现。
 
 ## 当前完成
 
@@ -41,6 +41,7 @@
 - `BuildBodyLegBlend` 创建左右独立的 `legIkFk_R/L`、reverse 节点、8 个双源 orientConstraint 和 Knee/Ankle 的 4 个双源 pointConstraint；Toes 旋转由同侧 FK/IK Toes driver 进入 Body，FK=0、IK=1、0.5 权重及左右隔离均在 Maya 2024 中验证。
 - `BuildBodyLegVisibility` 复用通用 limb 显隐合同，把每侧 reverse 输出连接到 Hip FK 根层级，并把 `legIkFk_R/L` 连接到对应 Ankle/PV IK 根层级；执行前拒绝缺失源和不可写或已有输入的 visibility，构建失败由单一事务回滚。
 - `BuildBodyLegRig` 在场景零修改预演后，用一个 Undo Chunk 依次创建 Leg mechanisms、FK controls、Body blend、Ankle/PV IK、模式显隐、双段 stretch、stretch bias、knee pin、主轴感知 twist/volume 与双侧 Foot pivot；全部属性和节点名进入统一碰撞预检，任一阶段失败会移除此前所有 Leg/Foot 产物，一次 Undo 可恢复干净 Body 和 ReBuild 安全状态。
+- `BuildBodyCharacterRig` 从同一份 Body/Fit 快照预演完整 Arm 与 Leg 计划，并在一个外层 Undo Chunk 中复用两套构建步骤而不嵌套事务；随后建立 `AdvPy_CharacterControls → AdvPy_GlobalOffset → AdvPy_Global` 层级，以统一 TRS 驱动 Body 和八个 limb 顶层根，并把正值 `globalScale` 接入全部九个根及 Arm/Leg stretch 比例补偿。构建后逐项核对层级、曲线、来源连接、Body 绑定姿态和 Fit 不变性，任何异常都会撤销完整角色 Rig。
 - `MatchBodyLegFkToIk` 从当前 Hip/Knee/Ankle/Toes Body 姿态计算 Ankle IK、Pole Vector 与 Toe IK control 的目标世界帧；事务内先把目标侧 Foot 通道归零，再依次匹配三个控制目标并切换 blend，复检四关节位置/朝向、Foot 值和另一侧状态。
 - `MatchBodyLegIkToFk` 按 Hip→Knee→Ankle→Toes 父子顺序把四层 FK controls 对齐到当前 Body 世界轴，并把当前 Hip–Knee、Knee–Ankle 的有符号本地主轴长度写入 FK drivers 后再切换；提交后复检段长、四关节位置/朝向、另一侧 blend、Fit 输入和 FK 控制本地平移。
 - `BuildBodyLegFoot` 仍可为独立组合的 pre-Foot Leg stages 追加双侧五级 reverse-foot pivot；默认成品入口已经由 `BuildBodyLegRig` 原子包含该阶段。Ankle IK control 暴露 `footRoll/heelRoll/outerBank/innerBank/toeRoll/ballRoll`：自动 `footRoll` 由每侧 4 个分段节点和 3 个加法节点生成 Heel/Ball/Toe 输出，五个手动通道仍可叠加，inner bank 继续通过显式负号节点保持正值语义。RP IK Handle 挂到 Ball pivot；原 Ankle 朝向约束会在同一事务内安全改接到 Ball pivot，Toe pivot 下的零通道三轴 Toe IK control 直接驱动 Toes IK driver。
@@ -99,7 +100,7 @@ py -3 -m unittest discover -s tests -v
 - 世界矩阵已经覆盖平移、骨骼朝向和本地 Y-roll；镜像合同已覆盖 YZ 平面位置、拓扑展开和右手行为朝向，非均匀缩放尚未进入合同。
 - 宿主事务提供确定性显式回滚，目前不依赖 Blender 后台模式下不稳定的全局 Undo Stack。
 - Blender 将 Bind 与 FK/IK 机制骨链放在独立 Armature，避免跨骨链 blend 驱动形成依赖环；该差异留在适配器内部。
-- 当前 Maya Arm 与 Leg 均支持左右独立 IK stretch、主轴感知 twist helper 和只在 IK 模式响应的可调正交体积保持；Leg 还支持保持总长度的上下段 stretch bias，以及由 Pole Vector 与 Ankle 控制实时测距的 knee pin。两套 limb 的切换与段长合同仍各自保留明确边界，完整角色总控层级和镜像 limb 尚未完成。
+- 当前 Maya Arm 与 Leg 均支持左右独立 IK stretch、主轴感知 twist helper 和只在 IK 模式响应的可调正交体积保持；Leg 还支持保持总长度的上下段 stretch bias，以及由 Pole Vector 与 Ankle 控制实时测距的 knee pin。完整 Character 入口已用统一 Global TRS 和正值等比 `globalScale` 串联 Body、Arm 与 Leg，同时保留两套 limb 各自的切换和段长合同；非均匀缩放、shear、World Match 与镜像 limb 尚未完成。
 - 当前 Skin Bind 只接受调用方明确给出的单个 mesh 与 joint 列表；JSON 和 influence 映射都要求调用方给出完整路径及对应关系，不会自动猜测 namespace、短名或左右 influence。几何镜像只接受严格 X 平面对称顶点，不处理拓扑不对称或近似重采样。尚不支持权重模板、热区/测地线算法、批量绑定或解绑迁移。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya 主线已形成双臂 FK control / RP IK control → global-scale compensated stretch mechanisms → rotation/translation blend → Body → axial twist/volume helpers → 显式 Skin Bind → 精确权重写入/几何镜像 → JSON 往返/路径映射的可运行路径，并完成控制显隐与包含 IK stretch 的双向匹配；双腿 FK/IK/Foot 也已能一次事务完整构建和撤销，五关节 mechanisms、Toes FK/IK controls、Toes Body blend、全局比例补偿 stretch、上下段增量分配、knee pin、主轴感知 twist/volume、拉伸态 IK→FK、Foot 朝向输出和自动分段 `footRoll` 已运行。下一步继续在 Maya 内评估角色总控层级与 Arm/Leg 全局缩放接线；手指、World Match 与 Blender 迁移仍待 Maya 阶段稳定后进入。
+- 当前 Maya 主线已经有完整 Character 入口：双臂与双腿 FK/IK/Foot 在同一事务构建，统一 Global control 驱动 Body 和九个已拥有根层级，并把等比缩放接入 Arm/Leg 的 stretch 与 knee pin 比例补偿；一次 Undo 可整体移除角色 Rig 并恢复 Body/Fit。下一步继续在 Maya 内建立 Hand/手指 Fit 与控制的最小稳定合同，再逐步补齐变形和产品入口；World Match、非均匀缩放与 Blender 迁移仍待 Maya 第一阶段达到门槛后进入。

@@ -16,6 +16,7 @@ from adv_py.application import (
     BuildBodyArmIkControls,
     BuildBodyArmBlend,
     BuildBodyArmRig,
+    BuildBodyCharacterRig,
     MatchBodyArmFkToIk,
     MatchBodyLegFkToIk,
     MatchBodyLegIkToFk,
@@ -69,6 +70,8 @@ from adv_py.core import (
     BodyLegStretchBiasSnapshot,
     BodyLegKneePinSideState,
     BodyLegKneePinSnapshot,
+    BodyCharacterDrivenRootState,
+    BodyCharacterGlobalSnapshot,
     BodyArmTwistJointState,
     BodyArmTwistSegmentState,
     BodyArmTwistSnapshot,
@@ -136,6 +139,7 @@ class FakeBodySkeletonHost:
         faulty_leg_twist_runtime=False,
         faulty_leg_volume=False,
         faulty_arm_volume=False,
+        faulty_character_global=False,
     ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
         hierarchy = predict_fit_template_hierarchy(template, "|FitSkeleton")
@@ -180,6 +184,8 @@ class FakeBodySkeletonHost:
         self.orientation_write_count = 0
         self.faulty_provenance = faulty_provenance
         self.provenance = None
+        self.character_global_snapshot = None
+        self.faulty_character_global = faulty_character_global
         self.in_transaction = False
         self.extra_dag_paths = ()
         self.external_dependencies = ()
@@ -243,6 +249,9 @@ class FakeBodySkeletonHost:
         self.faulty_leg_volume = faulty_leg_volume
         self.arm_volume_snapshot = None
         self.faulty_arm_volume = faulty_arm_volume
+
+    def scene_up_axis(self):
+        return self.fit_snapshot.up_axis
 
     def capture_fit_orientation(self, container_name):
         del container_name
@@ -321,6 +330,7 @@ class FakeBodySkeletonHost:
         del label
         before = list(self.body)
         before_provenance = self.provenance
+        before_character_global_snapshot = self.character_global_snapshot
         before_control_root = self.control_root
         before_arm_fk_states = list(self.arm_fk_states)
         before_mechanism_root = self.mechanism_root
@@ -361,6 +371,7 @@ class FakeBodySkeletonHost:
         except Exception:
             self.body = before
             self.provenance = before_provenance
+            self.character_global_snapshot = before_character_global_snapshot
             self.control_root = before_control_root
             self.arm_fk_states = before_arm_fk_states
             self.mechanism_root = before_mechanism_root
@@ -489,6 +500,65 @@ class FakeBodySkeletonHost:
             return self.leg_control_root
         self.control_root = f"|{name}"
         return self.control_root
+
+    def create_body_character_global(self, plan):
+        translate_sources = tuple(
+            f"{plan.control_path}.translate{axis}" for axis in "XYZ"
+        )
+        rotate_sources = tuple(
+            f"{plan.control_path}.rotate{axis}" for axis in "XYZ"
+        )
+        scale_sources = (plan.scale_source,) * 3
+        self.character_global_snapshot = BodyCharacterGlobalSnapshot(
+            root_path=plan.root_path,
+            root_parent_path=None,
+            root_translation=(0.0, 0.0, 0.0),
+            root_rotation=(0.0, 0.0, 0.0),
+            root_scale=(1.0, 1.0, 1.0),
+            offset_path=plan.offset_path,
+            offset_parent_path=plan.root_path,
+            offset_translation=(0.0, 0.0, 0.0),
+            offset_rotation=(0.0, 0.0, 0.0),
+            offset_scale=(1.0, 1.0, 1.0),
+            control_path=plan.control_path,
+            control_parent_path=plan.offset_path,
+            control_shape_type="nurbsCurve",
+            control_translation=(0.0, 0.0, 0.0),
+            control_rotation=(0.0, 0.0, 0.0),
+            control_scale=(1.0, 1.0, 1.0),
+            scale_attribute_plug=plan.scale_source,
+            scale_attribute_value=plan.scale_default,
+            scale_attribute_minimum=plan.scale_minimum,
+            control_scale_sources=scale_sources,
+            driven_roots=tuple(
+                BodyCharacterDrivenRootState(
+                    path=path,
+                    parent_path=None,
+                    translation_sources=translate_sources,
+                    rotation_sources=rotate_sources,
+                    scale_sources=scale_sources,
+                )
+                for path in plan.driven_roots
+            ),
+            scale_destination_sources=tuple(
+                (plug, plan.scale_source)
+                for plug in plan.scale_destinations
+            ),
+        )
+
+    def capture_body_character_global(self, plan):
+        del plan
+        if self.faulty_character_global and self.character_global_snapshot:
+            first = replace(
+                self.character_global_snapshot.driven_roots[0],
+                scale_sources=(None, None, None),
+            )
+            return replace(
+                self.character_global_snapshot,
+                driven_roots=(first,)
+                + self.character_global_snapshot.driven_roots[1:],
+            )
+        return self.character_global_snapshot
 
     def create_body_arm_fk_control(self, spec):
         self.arm_fk_states.append(
@@ -2237,6 +2307,58 @@ class BodySkeletonTests(unittest.TestCase):
             10,
         )
         self.assertEqual(result.body, body)
+
+    def test_complete_character_rig_builds_arm_leg_and_global_in_one_transaction(self):
+        host = FakeBodySkeletonHost()
+        body = BuildOrientedBodySkeleton(host).apply().snapshot
+
+        preview = BuildBodyCharacterRig(host).plan()
+        result = BuildBodyCharacterRig(host).apply()
+
+        self.assertTrue(preview.ready)
+        self.assertEqual(host.transaction_count, 2)
+        self.assertEqual(len(result.arm.mechanisms.joints), 12)
+        self.assertEqual(len(result.leg.mechanisms.joints), 20)
+        self.assertEqual(len(result.global_control.driven_roots), 9)
+        self.assertEqual(
+            result.global_control.scale_destination_sources,
+            tuple(
+                (plug, result.plan.global_control.scale_source)
+                for plug in result.plan.global_control.scale_destinations
+            ),
+        )
+        self.assertEqual(result.body, body)
+
+    def test_character_global_collision_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        host.collisions["AdvPy_Global"] = ("|User|AdvPy_Global",)
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "总控同名"):
+            BuildBodyCharacterRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertIsNone(host.mechanism_root)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertIsNone(host.character_global_snapshot)
+
+    def test_character_global_failure_rolls_back_arm_and_leg(self):
+        host = FakeBodySkeletonHost(faulty_character_global=True)
+        BuildOrientedBodySkeleton(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "角色总控阶段"):
+            BuildBodyCharacterRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertIsNone(host.mechanism_root)
+        self.assertIsNone(host.control_root)
+        self.assertIsNone(host.arm_blend_snapshot)
+        self.assertIsNone(host.arm_ik_root)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertIsNone(host.leg_control_root)
+        self.assertIsNone(host.leg_blend_snapshot)
+        self.assertIsNone(host.leg_ik_root)
+        self.assertIsNone(host.character_global_snapshot)
 
     def test_complete_basic_leg_rig_collision_blocks_before_transaction(self):
         host = FakeBodySkeletonHost()

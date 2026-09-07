@@ -66,6 +66,11 @@ from adv_py.core.body_leg_knee_pin import (
     BodyLegKneePinSideState,
     BodyLegKneePinSnapshot,
 )
+from adv_py.core.body_character_global import (
+    BodyCharacterDrivenRootState,
+    BodyCharacterGlobalPlan,
+    BodyCharacterGlobalSnapshot,
+)
 from adv_py.core.body_arm_twist import (
     BodyArmTwistJointSpec,
     BodyArmTwistPlan,
@@ -423,6 +428,271 @@ class MayaBodyBuildHost(MayaFitJointHost):
             skipSelect=True,
         )
         return (self._cmds.ls(created, long=True) or [created])[0]
+
+    def create_body_character_global(
+        self,
+        plan: BodyCharacterGlobalPlan,
+    ) -> None:
+        self._require_transaction()
+        selection = self._cmds.ls(selection=True, long=True) or []
+
+        def source(plug: str) -> str | None:
+            values = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+                plugs=True,
+            ) or []
+            return values[0] if len(values) == 1 else None
+
+        def values_close(left, right, tolerance=1e-4) -> bool:
+            return len(left) == len(right) and all(
+                abs(a - b) <= tolerance for a, b in zip(left, right)
+            )
+
+        try:
+            if any(
+                self.find_name_collisions(name)
+                for name in plan.node_names
+            ):
+                raise FitSkeletonValidationError(
+                    "角色总控名称在执行前发生冲突"
+                )
+            for path in plan.driven_roots:
+                matches = self._cmds.ls(path, long=True) or []
+                parent = self._cmds.listRelatives(
+                    path,
+                    parent=True,
+                    fullPath=True,
+                ) or []
+                channels = tuple(
+                    f"{path}.{kind}{axis}"
+                    for kind in ("translate", "rotate", "scale")
+                    for axis in "XYZ"
+                )
+                values = tuple(
+                    float(self._cmds.getAttr(plug))
+                    for plug in channels
+                ) if len(matches) == 1 else ()
+                if (
+                    len(matches) != 1
+                    or matches[0] != path
+                    or self._cmds.nodeType(path) not in ("transform", "joint")
+                    or parent
+                    or any(source(plug) is not None for plug in channels)
+                    or any(
+                        not bool(self._cmds.getAttr(plug, settable=True))
+                        for plug in channels
+                    )
+                    or not values_close(
+                        values,
+                        (0.0,) * 6 + (1.0,) * 3,
+                    )
+                ):
+                    raise FitSkeletonValidationError(
+                        f"角色总控根节点不可安全接线：{path}"
+                    )
+            for plug in plan.scale_destinations:
+                if (
+                    not self._cmds.objExists(plug)
+                    or source(plug) is not None
+                    or not bool(self._cmds.getAttr(plug, settable=True))
+                    or abs(float(self._cmds.getAttr(plug)) - 1.0) > 1e-4
+                ):
+                    raise FitSkeletonValidationError(
+                        f"角色总控比例补偿输入不可安全接线：{plug}"
+                    )
+
+            self._transaction_changed = True
+            root = self._cmds.createNode(
+                "transform",
+                name=plan.root_name,
+                skipSelect=True,
+            )
+            offset = self._cmds.createNode(
+                "transform",
+                name=plan.offset_name,
+                parent=root,
+                skipSelect=True,
+            )
+            control = self._cmds.circle(
+                name=plan.control_name,
+                normal=plan.circle_normal,
+                radius=plan.radius,
+                constructionHistory=False,
+            )[0]
+            control = self._cmds.parent(control, offset)[0]
+            root = (self._cmds.ls(root, long=True) or [root])[0]
+            offset = (self._cmds.ls(offset, long=True) or [offset])[0]
+            control = (self._cmds.ls(control, long=True) or [control])[0]
+            shapes = self._cmds.listRelatives(
+                control,
+                shapes=True,
+                fullPath=True,
+            ) or []
+            if len(shapes) != 1:
+                raise RuntimeError("角色总控曲线 shape 创建失败")
+            shape = self._cmds.rename(shapes[0], plan.shape_name)
+            if (
+                root != plan.root_path
+                or offset != plan.offset_path
+                or control != plan.control_path
+                or shape.rsplit("|", 1)[-1] != plan.shape_name
+            ):
+                raise RuntimeError("角色总控层级路径漂移")
+
+            self._cmds.addAttr(
+                control,
+                longName=plan.scale_attribute,
+                attributeType="double",
+                minValue=plan.scale_minimum,
+                defaultValue=plan.scale_default,
+                keyable=True,
+            )
+            for axis in "XYZ":
+                self._cmds.connectAttr(
+                    plan.scale_source,
+                    f"{control}.scale{axis}",
+                )
+                self._cmds.setAttr(
+                    f"{control}.scale{axis}",
+                    keyable=False,
+                    channelBox=False,
+                )
+            for path in plan.driven_roots:
+                for axis in "XYZ":
+                    self._cmds.connectAttr(
+                        f"{control}.translate{axis}",
+                        f"{path}.translate{axis}",
+                    )
+                    self._cmds.connectAttr(
+                        f"{control}.rotate{axis}",
+                        f"{path}.rotate{axis}",
+                    )
+                    self._cmds.connectAttr(
+                        plan.scale_source,
+                        f"{path}.scale{axis}",
+                    )
+            for plug in plan.scale_destinations:
+                self._cmds.connectAttr(plan.scale_source, plug)
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+    def capture_body_character_global(
+        self,
+        plan: BodyCharacterGlobalPlan,
+    ) -> BodyCharacterGlobalSnapshot:
+        def one_path(path: str, node_type: str) -> str:
+            values = self._cmds.ls(path, long=True, type=node_type) or []
+            if len(values) != 1 or values[0] != path:
+                raise FitSkeletonValidationError(
+                    f"角色总控节点无效：{path}"
+                )
+            return values[0]
+
+        def parent(path: str) -> str | None:
+            values = self._cmds.listRelatives(
+                path,
+                parent=True,
+                fullPath=True,
+            ) or []
+            return values[0] if len(values) == 1 else None
+
+        def source(plug: str) -> str | None:
+            values = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+                plugs=True,
+            ) or []
+            if len(values) != 1:
+                return None
+            node, attribute = values[0].split(".", 1)
+            paths = self._cmds.ls(node, long=True) or [node]
+            return f"{paths[0]}.{attribute}"
+
+        def vector(path: str, kind: str) -> tuple[float, float, float]:
+            return tuple(
+                float(self._cmds.getAttr(f"{path}.{kind}{axis}"))
+                for axis in "XYZ"
+            )
+
+        root = one_path(plan.root_path, "transform")
+        offset = one_path(plan.offset_path, "transform")
+        control = one_path(plan.control_path, "transform")
+        shapes = self._cmds.listRelatives(
+            control,
+            shapes=True,
+            fullPath=True,
+        ) or []
+        shape_type = None
+        if (
+            len(shapes) == 1
+            and shapes[0].rsplit("|", 1)[-1] == plan.shape_name
+        ):
+            shape_type = self._cmds.nodeType(shapes[0])
+        scale_plug = plan.scale_source
+        if not self._cmds.objExists(scale_plug):
+            raise FitSkeletonValidationError("角色总控 uniform scale 属性缺失")
+        minimum = self._cmds.attributeQuery(
+            plan.scale_attribute,
+            node=control,
+            minimum=True,
+        ) or []
+        driven = []
+        for path in plan.driven_roots:
+            values = self._cmds.ls(path, long=True) or []
+            if len(values) != 1 or values[0] != path:
+                raise FitSkeletonValidationError(
+                    f"角色总控被驱动根节点无效：{path}"
+                )
+            driven.append(BodyCharacterDrivenRootState(
+                path=path,
+                parent_path=parent(path),
+                translation_sources=tuple(
+                    source(f"{path}.translate{axis}") for axis in "XYZ"
+                ),
+                rotation_sources=tuple(
+                    source(f"{path}.rotate{axis}") for axis in "XYZ"
+                ),
+                scale_sources=tuple(
+                    source(f"{path}.scale{axis}") for axis in "XYZ"
+                ),
+            ))
+        return BodyCharacterGlobalSnapshot(
+            root_path=root,
+            root_parent_path=parent(root),
+            root_translation=vector(root, "translate"),
+            root_rotation=vector(root, "rotate"),
+            root_scale=vector(root, "scale"),
+            offset_path=offset,
+            offset_parent_path=parent(offset),
+            offset_translation=vector(offset, "translate"),
+            offset_rotation=vector(offset, "rotate"),
+            offset_scale=vector(offset, "scale"),
+            control_path=control,
+            control_parent_path=parent(control),
+            control_shape_type=shape_type,
+            control_translation=vector(control, "translate"),
+            control_rotation=vector(control, "rotate"),
+            control_scale=vector(control, "scale"),
+            scale_attribute_plug=scale_plug,
+            scale_attribute_value=float(self._cmds.getAttr(scale_plug)),
+            scale_attribute_minimum=(
+                float(minimum[0]) if len(minimum) == 1 else None
+            ),
+            control_scale_sources=tuple(
+                source(f"{control}.scale{axis}") for axis in "XYZ"
+            ),
+            driven_roots=tuple(driven),
+            scale_destination_sources=tuple(
+                (plug, source(plug))
+                for plug in plan.scale_destinations
+            ),
+        )
 
     def create_body_arm_ik_root(self, name: str) -> str:
         return self.create_body_control_root(name)
