@@ -79,6 +79,39 @@ def with_translation(matrix: Matrix44, x: float, y: float, z: float) -> Matrix44
     return matrix44(values)
 
 
+def frame_from_y(
+    position: tuple[float, float, float],
+    y_direction: tuple[float, float, float],
+    z_hint: tuple[float, float, float] = (0.0, 0.0, 1.0),
+) -> Matrix44:
+    """Build a right-handed affine frame whose local Y aims along a limb segment."""
+
+    def normalize(vector: tuple[float, float, float]) -> tuple[float, float, float]:
+        length = sum(value * value for value in vector) ** 0.5
+        if length <= 1e-8:
+            raise ValueError("方向向量长度必须大于零")
+        return tuple(value / length for value in vector)  # type: ignore[return-value]
+
+    def cross(
+        left: tuple[float, float, float], right: tuple[float, float, float]
+    ) -> tuple[float, float, float]:
+        return (
+            left[1] * right[2] - left[2] * right[1],
+            left[2] * right[0] - left[0] * right[2],
+            left[0] * right[1] - left[1] * right[0],
+        )
+
+    y_axis = normalize(y_direction)
+    x_axis = normalize(cross(y_axis, normalize(z_hint)))
+    z_axis = normalize(cross(x_axis, y_axis))
+    return (
+        x_axis[0], y_axis[0], z_axis[0], float(position[0]),
+        x_axis[1], y_axis[1], z_axis[1], float(position[1]),
+        x_axis[2], y_axis[2], z_axis[2], float(position[2]),
+        0.0, 0.0, 0.0, 1.0,
+    )
+
+
 def rows(matrix: Matrix44) -> tuple[tuple[float, float, float, float], ...]:
     return tuple(tuple(matrix[index:index + 4]) for index in range(0, 16, 4))
 

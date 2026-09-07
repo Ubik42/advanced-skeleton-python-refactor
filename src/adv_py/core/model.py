@@ -34,9 +34,25 @@ class ConstraintSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class LimbSpec:
+    """Host-independent three-joint IK/FK limb semantics."""
+
+    key: str
+    bind_chain: tuple[str, str, str]
+    fk_chain: tuple[str, str, str]
+    ik_chain: tuple[str, str, str]
+    fk_controls: tuple[str, str, str]
+    ik_target: str
+    pole_vector: str
+    settings: str
+    blend_attribute: str = "ik_fk"
+
+
+@dataclass(frozen=True, slots=True)
 class RigPlan:
     """A declarative rig slice that can be validated before touching a DCC scene."""
 
     name: str
     nodes: tuple[NodeSpec, ...]
     constraints: tuple[ConstraintSpec, ...] = ()
+    limbs: tuple[LimbSpec, ...] = ()

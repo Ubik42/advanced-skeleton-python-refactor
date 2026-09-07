@@ -6,7 +6,7 @@ import importlib.util
 from typing import Iterable, Iterator
 
 from adv_py.core.matrix import almost_equal, matrix44, transpose_flat
-from adv_py.core.model import ConstraintSpec, NodeSpec, RigPlan
+from adv_py.core.model import ConstraintSpec, LimbSpec, NodeSpec, RigPlan
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +31,7 @@ class MayaRigHost:
         self._cmds = cmds
         self._nodes: dict[str, str] = {}
         self._constraints: list[str] = []
+        self._limb_artifacts: dict[str, dict[str, object]] = {}
         self._active_created: list[str] | None = None
         self._last_created: tuple[str, ...] = ()
 
@@ -104,6 +105,79 @@ class MayaRigHost:
         self._constraints.append(created)
         self._remember(created)
 
+    def create_limb(self, limb: LimbSpec) -> None:
+        settings = self._nodes[limb.settings]
+        attribute = f"{settings}.{limb.blend_attribute}"
+        self._cmds.addAttr(
+            settings,
+            longName=limb.blend_attribute,
+            attributeType="double",
+            minValue=0.0,
+            maxValue=1.0,
+            defaultValue=0.0,
+            keyable=True,
+        )
+
+        fk_constraints: list[str] = []
+        for control_key, joint_key in zip(limb.fk_controls, limb.fk_chain):
+            constraint = self._cmds.orientConstraint(
+                self._nodes[control_key],
+                self._nodes[joint_key],
+                maintainOffset=False,
+            )[0]
+            fk_constraints.append(constraint)
+            self._constraints.append(constraint)
+            self._remember(constraint)
+
+        ik_handle, effector = self._cmds.ikHandle(
+            name=f"{limb.key}_IKH",
+            startJoint=self._nodes[limb.ik_chain[0]],
+            endEffector=self._nodes[limb.ik_chain[-1]],
+            solver="ikRPsolver",
+        )
+        self._remember(ik_handle)
+        self._remember(effector)
+        self._cmds.parent(ik_handle, self._nodes[limb.ik_target], absolute=True)
+        pole_constraint = self._cmds.poleVectorConstraint(
+            self._nodes[limb.pole_vector], ik_handle
+        )[0]
+        self._constraints.append(pole_constraint)
+        self._remember(pole_constraint)
+
+        reverse = self._cmds.createNode("reverse", name=f"{limb.key}_IKFK_REV")
+        self._remember(reverse)
+        self._cmds.connectAttr(attribute, f"{reverse}.inputX", force=True)
+        self._cmds.connectAttr(attribute, f"{ik_handle}.ikBlend", force=True)
+
+        blend_constraints: list[str] = []
+        for bind_key, fk_key, ik_key in zip(
+            limb.bind_chain, limb.fk_chain, limb.ik_chain
+        ):
+            constraint = self._cmds.orientConstraint(
+                self._nodes[fk_key],
+                self._nodes[ik_key],
+                self._nodes[bind_key],
+                maintainOffset=False,
+            )[0]
+            aliases = self._cmds.orientConstraint(
+                constraint, query=True, weightAliasList=True
+            )
+            self._cmds.connectAttr(f"{reverse}.outputX", f"{constraint}.{aliases[0]}")
+            self._cmds.connectAttr(attribute, f"{constraint}.{aliases[1]}")
+            blend_constraints.append(constraint)
+            self._constraints.append(constraint)
+            self._remember(constraint)
+
+        self._limb_artifacts[limb.key] = {
+            "ik_handle": ik_handle,
+            "effector": effector,
+            "pole_constraint": pole_constraint,
+            "reverse": reverse,
+            "fk_constraints": tuple(fk_constraints),
+            "blend_constraints": tuple(blend_constraints),
+            "blend_attribute": attribute,
+        }
+
     def verify(self, plan: RigPlan) -> tuple[str, ...]:
         errors: list[str] = []
         for node in plan.nodes:
@@ -125,6 +199,17 @@ class MayaRigHost:
         for constraint in self._constraints:
             if not self._cmds.objExists(constraint):
                 errors.append(f"缺少约束 {constraint!r}")
+        for limb in plan.limbs:
+            artifacts = self._limb_artifacts.get(limb.key)
+            if artifacts is None:
+                errors.append(f"缺少 Limb {limb.key!r}")
+                continue
+            for role in ("ik_handle", "effector", "pole_constraint", "reverse"):
+                node = artifacts[role]
+                if not self._cmds.objExists(node):
+                    errors.append(f"Limb {limb.key!r} 缺少 {role}")
+            if not self._cmds.objExists(artifacts["blend_attribute"]):
+                errors.append(f"Limb {limb.key!r} 缺少 blend 属性")
         return tuple(errors)
 
     def rollback_last(self) -> None:
@@ -133,6 +218,7 @@ class MayaRigHost:
         self._delete_existing(reversed(self._last_created))
         self._nodes.clear()
         self._constraints.clear()
+        self._limb_artifacts.clear()
         self._last_created = ()
 
     def _remember(self, node: str) -> None:

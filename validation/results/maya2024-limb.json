@@ -1,0 +1,17 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 25880,
+  "plan": "三段IKFK跨DCC肢体",
+  "created_nodes": 15,
+  "created_limbs": 1,
+  "fk_pose_changed": true,
+  "fk_end_delta": 1.399996,
+  "ik_pose_reached": true,
+  "ik_end_error": 0.0,
+  "duplicate_preflight_blocked": true,
+  "rollback_clean": true,
+  "remaining_nodes": [],
+  "duration_seconds": 4.181,
+  "status": "passed"
+}

@@ -14,6 +14,7 @@ class BuildResult:
     plan: str
     created_nodes: int
     created_constraints: int
+    created_limbs: int
     dry_run: bool
 
 
@@ -38,6 +39,8 @@ class BuildRig:
                         self._host.parent_node(node.key, node.parent)
                 for constraint in plan.constraints:
                     self._host.create_constraint(constraint)
+                for limb in plan.limbs:
+                    self._host.create_limb(limb)
                 verification_errors = self._host.verify(plan)
                 if verification_errors:
                     raise RuntimeError("构建后复检失败：" + "；".join(verification_errors))
@@ -47,5 +50,6 @@ class BuildRig:
             plan=plan.name,
             created_nodes=0 if dry_run else len(plan.nodes),
             created_constraints=0 if dry_run else len(plan.constraints),
+            created_limbs=0 if dry_run else len(plan.limbs),
             dry_run=dry_run,
         )

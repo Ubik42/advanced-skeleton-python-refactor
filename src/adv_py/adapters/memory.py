@@ -5,7 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Iterator
 
-from adv_py.core.model import ConstraintSpec, NodeSpec, RigPlan
+from adv_py.core.model import ConstraintSpec, LimbSpec, NodeSpec, RigPlan
 
 
 @dataclass(slots=True)
@@ -22,21 +22,26 @@ class InMemoryRigHost:
     def __init__(self) -> None:
         self.nodes: dict[str, _MemoryNode] = {}
         self.constraints: list[ConstraintSpec] = []
-        self._last_snapshot: tuple[dict[str, _MemoryNode], list[ConstraintSpec]] | None = None
+        self.limbs: list[LimbSpec] = []
+        self._last_snapshot: tuple[
+            dict[str, _MemoryNode], list[ConstraintSpec], list[LimbSpec]
+        ] | None = None
 
     @contextmanager
     def transaction(self, label: str) -> Iterator[None]:
         del label
         nodes_before = deepcopy(self.nodes)
         constraints_before = list(self.constraints)
+        limbs_before = list(self.limbs)
         try:
             yield
         except Exception:
             self.nodes = nodes_before
             self.constraints = constraints_before
+            self.limbs = limbs_before
             raise
         else:
-            self._last_snapshot = (nodes_before, constraints_before)
+            self._last_snapshot = (nodes_before, constraints_before, limbs_before)
 
     def preflight(self, plan: RigPlan) -> tuple[str, ...]:
         conflicts = [node.name for node in plan.nodes if any(item.spec.name == node.name for item in self.nodes.values())]
@@ -53,6 +58,9 @@ class InMemoryRigHost:
     def create_constraint(self, constraint: ConstraintSpec) -> None:
         self.constraints.append(constraint)
 
+    def create_limb(self, limb: LimbSpec) -> None:
+        self.limbs.append(limb)
+
     def verify(self, plan: RigPlan) -> tuple[str, ...]:
         errors: list[str] = []
         for node in plan.nodes:
@@ -63,10 +71,12 @@ class InMemoryRigHost:
                 errors.append(f"节点 {node.key!r} 的父级不一致")
         if len(self.constraints) < len(plan.constraints):
             errors.append("约束数量不足")
+        if len(self.limbs) < len(plan.limbs):
+            errors.append("Limb 数量不足")
         return tuple(errors)
 
     def rollback_last(self) -> None:
         if self._last_snapshot is None:
             raise RuntimeError("没有可回滚的构建事务")
-        self.nodes, self.constraints = self._last_snapshot
+        self.nodes, self.constraints, self.limbs = self._last_snapshot
         self._last_snapshot = None

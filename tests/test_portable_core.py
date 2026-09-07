@@ -14,7 +14,7 @@ from adv_py.core import (
     translation_matrix,
     validate_plan,
 )
-from adv_py.examples import two_joint_plan
+from adv_py.examples import ik_fk_limb_plan, two_joint_plan
 
 
 def sample_plan() -> RigPlan:
@@ -70,3 +70,12 @@ class PortableCoreTests(unittest.TestCase):
         inverse = multiply(rotation_y_matrix(-20.0), rotation_z_matrix(-30.0))
 
         self.assertTrue(almost_equal(multiply(rotation, inverse), translation_matrix(0, 0, 0)))
+
+    def test_builds_portable_ik_fk_limb_semantics(self) -> None:
+        host = InMemoryRigHost()
+
+        result = BuildRig(host).execute(ik_fk_limb_plan())
+
+        self.assertEqual(result.created_nodes, 15)
+        self.assertEqual(result.created_limbs, 1)
+        self.assertEqual(host.limbs[0].blend_attribute, "ik_fk")

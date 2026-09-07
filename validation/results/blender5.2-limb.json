@@ -1,0 +1,42 @@
+{
+  "host": "blender",
+  "version": "5.2.0 LTS",
+  "pid": 10016,
+  "plan": "三段IKFK跨DCC肢体",
+  "created_nodes": 15,
+  "created_limbs": 1,
+  "fk_pose_changed": true,
+  "fk_end_delta": 1.399996,
+  "ik_pose_reached": true,
+  "ik_end_error": 1e-06,
+  "ik_target_position": [
+    1.25,
+    3.4,
+    1.0
+  ],
+  "ik_lower_tail": [
+    1.250000238418579,
+    3.40000057220459,
+    1.0000004768371582
+  ],
+  "ik_end_head": [
+    1.250000238418579,
+    3.40000057220459,
+    1.0000004768371582
+  ],
+  "bind_end_head": [
+    1.250000238418579,
+    3.40000057220459,
+    1.0000004768371582
+  ],
+  "bind_end_constraint_influences": {
+    "PortableRig_portable_limb_BindFK": 0.0,
+    "PortableRig_portable_limb_BindIK": 1.0
+  },
+  "drivers_valid": true,
+  "duplicate_preflight_blocked": true,
+  "rollback_clean": true,
+  "remaining_nodes": [],
+  "duration_seconds": 0.01,
+  "status": "passed"
+}
