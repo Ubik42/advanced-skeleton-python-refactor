@@ -1,5 +1,11 @@
 """DCC-neutral rig description and validation."""
 
+from .fit_metadata import (
+    FitJointIssue,
+    FitJointMetadata,
+    FitJointValidationError,
+    audit_fit_joint,
+)
 from .joint_labels import JointLabel, JointLabelValidationError
 from .model import ConstraintSpec, LimbSpec, NodeSpec, RigPlan
 from .matrix import (
@@ -20,6 +26,9 @@ from .validation import PlanValidationError, validate_plan
 
 __all__ = [
     "ConstraintSpec",
+    "FitJointIssue",
+    "FitJointMetadata",
+    "FitJointValidationError",
     "IDENTITY_MATRIX",
     "JointLabel",
     "JointLabelValidationError",
@@ -29,6 +38,7 @@ __all__ = [
     "PlanValidationError",
     "RigPlan",
     "almost_equal",
+    "audit_fit_joint",
     "frame_from_y",
     "matrix44",
     "multiply",

@@ -2,7 +2,7 @@
 
 from .blender import BlenderAdapterStatus, BlenderRigHost
 from .maya import MayaAdapterStatus, MayaRigHost
-from .maya_joint_labels import MayaJointLabelHost
+from .maya_fit import MayaFitJointHost, MayaJointLabelHost
 from .memory import InMemoryRigHost
 
 __all__ = [
@@ -10,6 +10,7 @@ __all__ = [
     "BlenderRigHost",
     "InMemoryRigHost",
     "MayaAdapterStatus",
+    "MayaFitJointHost",
     "MayaJointLabelHost",
     "MayaRigHost",
 ]

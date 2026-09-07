@@ -3,7 +3,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Iterator, Sequence
 
-from adv_py.core.joint_labels import JointLabel, JointLabelValidationError
+from adv_py.core.fit_metadata import FitJointMetadata, FitJointValidationError
+from adv_py.core.joint_labels import JointLabel
 
 
 _MAYA_LABEL_NAMES = {
@@ -30,8 +31,8 @@ _MAYA_LABEL_NAMES = {
 _MAYA_LABEL_TYPES = {name.casefold(): code for code, name in _MAYA_LABEL_NAMES.items()}
 
 
-class MayaJointLabelHost:
-    """Maya attribute adapter for the joint-label application use case."""
+class MayaFitJointHost:
+    """Maya adapter for explicit Fit joint queries and edits."""
 
     def __init__(self) -> None:
         from maya import cmds  # type: ignore[import-not-found]
@@ -57,15 +58,32 @@ class MayaJointLabelHost:
                 continue
             resolved.append(joint)
         if errors:
-            raise JointLabelValidationError("；".join(errors))
+            raise FitJointValidationError("；".join(errors))
         if len(resolved) != len(set(resolved)):
-            raise JointLabelValidationError("多个名称解析到了同一个关节")
+            raise FitJointValidationError("多个名称解析到了同一个关节")
         return tuple(resolved)
+
+    def read_fit_joint_metadata(self, joint: str) -> FitJointMetadata:
+        return FitJointMetadata(
+            joint=joint,
+            twist_joints=self._optional_number(joint, "twistJoints", int),
+            bendy_controls=self._optional_number(joint, "bendyCtrls", int),
+            inbetween_joints=self._optional_number(joint, "inbetweenJoints", int),
+            untwister=self._optional_bool(joint, "unTwister"),
+            no_mirror=self._optional_bool(joint, "noMirror"),
+            no_mirror_left=self._optional_bool(joint, "noMirrorLeft"),
+            child_of_part=self._optional_number(joint, "childOfPart", int),
+            global_weight=self._optional_number(joint, "global", float),
+            global_translate=self._optional_bool(joint, "globalTranslate"),
+            world_orient_up=self._optional_enum(joint, "worldOrientUp"),
+            world_orient_forward=self._optional_enum(joint, "worldOrientForward"),
+            ik_local_mode=self._optional_enum(joint, "ikLocal"),
+        )
 
     @contextmanager
     def transaction(self, label: str) -> Iterator[None]:
         if self._transaction_active:
-            raise RuntimeError("MayaJointLabelHost 不支持嵌套事务")
+            raise RuntimeError("MayaFitJointHost 不支持嵌套事务")
         self._transaction_active = True
         self._transaction_changed = False
         self._cmds.undoInfo(openChunk=True, chunkName=label)
@@ -108,6 +126,42 @@ class MayaJointLabelHost:
                 raise RuntimeError(f"不支持的 Maya joint label type：{code}")
         return JointLabel.parse(text)
 
+    def _attribute_exists(self, joint: str, attribute: str) -> bool:
+        return bool(self._cmds.attributeQuery(attribute, node=joint, exists=True))
+
+    def _optional_number(self, joint: str, attribute: str, cast):
+        if not self._attribute_exists(joint, attribute):
+            return None
+        value = self._cmds.getAttr(f"{joint}.{attribute}")
+        try:
+            return cast(value)
+        except (TypeError, ValueError) as error:
+            raise FitJointValidationError(
+                f"{joint}.{attribute} 不是有效数值：{value!r}"
+            ) from error
+
+    def _optional_bool(self, joint: str, attribute: str) -> bool:
+        if not self._attribute_exists(joint, attribute):
+            return False
+        return bool(self._cmds.getAttr(f"{joint}.{attribute}"))
+
+    def _optional_enum(self, joint: str, attribute: str) -> str | None:
+        if not self._attribute_exists(joint, attribute):
+            return None
+        names = self._cmds.attributeQuery(attribute, node=joint, listEnum=True)
+        if not names:
+            raise FitJointValidationError(f"{joint}.{attribute} 不是 enum 属性")
+        options = names[0].split(":")
+        index = int(self._cmds.getAttr(f"{joint}.{attribute}"))
+        if not 0 <= index < len(options):
+            raise FitJointValidationError(
+                f"{joint}.{attribute} 的 enum 值越界：{index}"
+            )
+        return options[index]
+
     def _require_transaction(self) -> None:
         if not self._transaction_active:
-            raise RuntimeError("关节标签修改必须发生在事务内")
+            raise RuntimeError("Fit joint 修改必须发生在事务内")
+
+
+MayaJointLabelHost = MayaFitJointHost

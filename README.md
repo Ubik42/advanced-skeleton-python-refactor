@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成第一个 Maya-only FitSkeleton 切片：显式、事务化的关节标签读写；尚未实现完整 FitSkeleton、蒙皮或产品 UI。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成两个 Maya-only FitSkeleton 切片：关节标签读写，以及 Fit joint 可选元数据读取与审计；尚未实现完整 FitSkeleton、蒙皮或产品 UI。
 
 ## 当前完成
 
@@ -16,6 +16,7 @@
 - 同一份自生成两节骨架计划已在 Maya 2024 和 Blender 5.2 后台构建并清理。
 - 同一份 `LimbSpec` 已在两边创建 Bind/FK/IK 三链、FK 控制、IK 目标、Pole Vector 和 blend，并完成真实姿态验收。
 - Maya 关节标签用例已移除 UI 当前值和当前选择依赖，支持内置标签、自定义标签、批量预检、单次 Undo、读取与隐藏。
+- `MayaFitJointHost` 可显式批量读取 Twist、Bendy、Inbetween、镜像、层级、世界朝向与 IK Local 等元数据，并在纯 Python 层报告冲突和范围问题。
 - 提供受限的 Legacy Bridge，供未来 Python 功能在 Maya 内调用尚未迁移的 MEL 过程。
 - 记录目标架构、迁移顺序、验收策略和许可边界。
 
@@ -52,4 +53,4 @@ py -3 -m unittest discover -s tests -v
 - Blender 将 Bind 与 FK/IK 机制骨链放在独立 Armature，避免跨骨链 blend 驱动形成依赖环；该差异留在适配器内部。
 - 当前 IK/FK 是最小可运行合同，尚无镜像 limb、IK/FK 无缝匹配、拉伸和 twist。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya FitSkeleton 只迁移了关节标签边界；Fit 属性、层级校验和编辑动作仍待后续切片。
+- 当前 Maya FitSkeleton 已覆盖标签与一组常用可选元数据；元数据创建/删除、完整层级校验和编辑动作仍待后续切片。

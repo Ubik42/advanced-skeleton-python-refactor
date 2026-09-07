@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
+from adv_py.core.fit_metadata import FitJointValidationError
 from adv_py.core.joint_labels import JointLabel, JointLabelValidationError
 
 
@@ -58,4 +59,7 @@ class EditJointLabels:
             raise JointLabelValidationError("关节名称不能为空")
         if len(names) != len(set(names)):
             raise JointLabelValidationError("关节列表不能包含重复项")
-        return self._host.resolve_joints(names)
+        try:
+            return self._host.resolve_joints(names)
+        except FitJointValidationError as error:
+            raise JointLabelValidationError(str(error)) from error

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .fit_metadata import FitJointValidationError
 
-class JointLabelValidationError(ValueError):
+
+class JointLabelValidationError(FitJointValidationError):
     """Raised before a host scene is modified."""
 
 

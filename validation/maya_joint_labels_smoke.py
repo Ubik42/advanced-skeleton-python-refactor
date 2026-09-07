@@ -19,7 +19,7 @@ def main(output: Path) -> int:
     try:
         from maya import cmds
 
-        from adv_py.adapters import MayaJointLabelHost
+        from adv_py.adapters import MayaFitJointHost
         from adv_py.application import EditJointLabels
         from adv_py.core import JointLabelValidationError
 
@@ -28,7 +28,7 @@ def main(output: Path) -> int:
         root = cmds.createNode("joint", name="PortableLabelRoot_JNT")
         child = cmds.createNode("joint", name="PortableLabelChest_JNT", parent=root)
         not_a_joint = cmds.createNode("transform", name="PortableLabel_NOT_JOINT")
-        labels = EditJointLabels(MayaJointLabelHost())
+        labels = EditJointLabels(MayaFitJointHost())
 
         labels.apply((root,), "Hip")
         labels.apply((child,), "Chest")
