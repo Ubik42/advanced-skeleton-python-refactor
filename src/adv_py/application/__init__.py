@@ -18,6 +18,12 @@ from .fit_metadata import (
     FitJointMetadataReader,
     InspectFitJoints,
 )
+from .fit_position import (
+    EditFitJointPositions,
+    FitPositionEditPlan,
+    FitPositionEditResult,
+    FitPositionHost,
+)
 from .fit_settings import (
     EnsureFitSkeletonSettings,
     FitSkeletonEnsurePlan,
@@ -39,6 +45,7 @@ __all__ = [
     "CreateMinimalFitTemplate",
     "EditJointLabels",
     "EditFitJointMetadata",
+    "EditFitJointPositions",
     "EnsureFitSkeletonSettings",
     "FitContainerCreatePlan",
     "FitContainerCreateResult",
@@ -51,6 +58,9 @@ __all__ = [
     "FitJointEditResult",
     "FitJointMetadataHost",
     "FitJointMetadataReader",
+    "FitPositionEditPlan",
+    "FitPositionEditResult",
+    "FitPositionHost",
     "FitSkeletonEnsurePlan",
     "FitSkeletonEnsureResult",
     "FitSkeletonSettingsHost",

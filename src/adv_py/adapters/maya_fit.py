@@ -337,6 +337,16 @@ class MayaFitJointHost:
                 path, query=True, worldSpace=True, translation=True
             )
             leaf = path.rsplit("|", 1)[-1]
+            locked_axes = frozenset(
+                axis
+                for axis in ("x", "y", "z")
+                if self._cmds.getAttr(f"{path}.t{axis}", lock=True)
+            )
+            writable_axes = frozenset(
+                axis
+                for axis in ("x", "y", "z")
+                if self._cmds.getAttr(f"{path}.t{axis}", settable=True)
+            )
             nodes.append(
                 FitHierarchyNode(
                     path=path,
@@ -344,9 +354,37 @@ class MayaFitJointHost:
                     dag_parent=parents[0] if parents else None,
                     local_position=tuple(float(value) for value in local),
                     world_position=tuple(float(value) for value in world),
+                    locked_translation_axes=locked_axes,
+                    writable_translation_axes=writable_axes,
                 )
             )
         return FitHierarchySnapshot(container=container, joints=tuple(nodes))
+
+    def set_fit_joint_local_position(
+        self,
+        joint: str,
+        position: tuple[float, float, float],
+        changed_axes: tuple[str, ...],
+    ) -> None:
+        self._require_transaction()
+        matches = self._cmds.ls(joint, long=True) or []
+        if len(matches) != 1 or self._cmds.nodeType(matches[0]) != "joint":
+            raise FitSkeletonValidationError(f"Fit joint 无效：{joint}")
+        if len(changed_axes) != len(set(changed_axes)) or any(
+            axis not in ("x", "y", "z") for axis in changed_axes
+        ):
+            raise FitSkeletonValidationError("Fit joint 位置轴列表无效")
+
+        values = dict(zip(("x", "y", "z"), position))
+        for axis in changed_axes:
+            attribute = f"{matches[0]}.t{axis}"
+            if not self._cmds.getAttr(attribute, settable=True):
+                raise FitSkeletonValidationError(
+                    f"Fit joint 位置轴在执行前变为不可写：{attribute}"
+                )
+        for axis in changed_axes:
+            self._transaction_changed = True
+            self._cmds.setAttr(f"{matches[0]}.t{axis}", values[axis])
 
     def read_fit_skeleton_settings(
         self, container_name: str

@@ -11,6 +11,7 @@ from .fit_container import (
     audit_fit_container,
 )
 from .fit_hierarchy import (
+    TRANSLATION_AXES,
     FitHierarchyIssue,
     FitHierarchyNode,
     FitHierarchyPolicy,
@@ -39,6 +40,13 @@ from .fit_settings import (
     FitSkeletonValue,
     audit_fit_skeleton_settings,
     default_fit_skeleton_settings,
+)
+from .fit_position import (
+    FitJointPositionChange,
+    FitJointPositionEdit,
+    FitJointPositionPatch,
+    FitPositionValidationError,
+    plan_fit_joint_position_changes,
 )
 from .fit_template import (
     FitJointSpec,
@@ -84,6 +92,9 @@ __all__ = [
     "FitJointFieldEdit",
     "FitJointMetadata",
     "FitJointPatch",
+    "FitJointPositionChange",
+    "FitJointPositionEdit",
+    "FitJointPositionPatch",
     "FitJointSpec",
     "FitJointValidationError",
     "FitUpAxis",
@@ -94,6 +105,7 @@ __all__ = [
     "FitSkeletonSettings",
     "FitSkeletonValidationError",
     "FitSkeletonValue",
+    "FitPositionValidationError",
     "FitTemplateIssue",
     "FitTemplateSpec",
     "IDENTITY_MATRIX",
@@ -105,6 +117,7 @@ __all__ = [
     "NodeSpec",
     "PlanValidationError",
     "RigPlan",
+    "TRANSLATION_AXES",
     "almost_equal",
     "audit_fit_hierarchy",
     "audit_fit_container",
@@ -117,6 +130,7 @@ __all__ = [
     "matrix44",
     "minimal_body_fit_template",
     "multiply",
+    "plan_fit_joint_position_changes",
     "ordered_fit_joints",
     "predict_fit_joint_metadata",
     "rotation_y_matrix",

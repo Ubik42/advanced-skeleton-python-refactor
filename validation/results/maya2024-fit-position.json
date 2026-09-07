@@ -1,0 +1,22 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 43528,
+  "slice": "fit_joint_position_edit",
+  "root_center_preflight_blocked": true,
+  "root_preflight_did_not_modify_scene": true,
+  "locked_axis_preflight_blocked": true,
+  "locked_preflight_did_not_modify_scene": true,
+  "preview_change_count": 2,
+  "preview_did_not_modify_scene": true,
+  "positions_applied": true,
+  "selection_preserved": true,
+  "hierarchy_unchanged": true,
+  "single_undo_restored_positions": true,
+  "container_survived_undo": true,
+  "unrelated_node_survived": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 4.033,
+  "status": "passed"
+}

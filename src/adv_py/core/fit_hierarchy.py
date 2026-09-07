@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 
 Vector3 = tuple[float, float, float]
+TRANSLATION_AXES = frozenset({"x", "y", "z"})
 
 
 class FitHierarchyValidationError(ValueError):
@@ -19,6 +20,8 @@ class FitHierarchyNode:
     dag_parent: str | None
     local_position: Vector3
     world_position: Vector3
+    locked_translation_axes: frozenset[str] = frozenset()
+    writable_translation_axes: frozenset[str] = TRANSLATION_AXES
 
 
 @dataclass(frozen=True, slots=True)
