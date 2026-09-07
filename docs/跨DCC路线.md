@@ -29,14 +29,16 @@
 | Maya standalone | 2024 | 4 个逻辑节点 | parent + orient | 通过 | 无残留 |
 | Blender background | 5.2.0 LTS | 4 个逻辑节点 | Copy Transforms + Copy Rotation | 通过 | 无残留 |
 
-矩阵合同使用“行主序存储、列向量计算”。Maya 适配器在 `xform` 边界转置，Blender 适配器直接构造 `mathutils.Matrix`。当前实测姿态是平移矩阵；旋转矩阵、Maya jointOrient 和 Blender bone roll 的等价性仍是下一阶段内容。
+矩阵合同使用“行主序存储、列向量计算”。Maya 适配器在 `xform` 边界转置，Blender 适配器直接构造 `mathutils.Matrix`。当前实测矩阵同时包含平移、绕 Z 的骨骼 aim 和绕本地 Y 的 roll。
+
+两边不比较底层 Euler 数值，而比较最终静态世界矩阵：Maya 将旋转冻结进 `jointOrient` 并保持 `rotate` 为零；子关节因父空间分解，其 `jointOrient` 数值不需要等于世界矩阵输入角。Blender 将相同静态方向写入 EditBone matrix，实测 roll 为 `20°` 与 `-10°`。两边构建后复检均通过。
 
 ## 推荐开发顺序
 
 1. 已完成：用自生成的两节骨架，在 Maya 与 Blender 构建同一 RigPlan。
-2. 当前：验证旋转矩阵和坐标系转换，明确 Maya jointOrient 与 Blender bone roll 的差异。
-3. 随后：加入控制器形状、point 约束和可重复更新。
-4. 加入 IK/FK limb，分别做姿态与动画验收。
+2. 已完成：验证旋转矩阵和坐标系转换，明确 Maya jointOrient 与 Blender bone roll 的差异。
+3. 当前：定义三段 IK/FK limb、IK 目标、Pole Vector 和 blend 语义，并分别做姿态验收。
+4. 随后：加入可移植控制器形状、可重复更新和 point 约束的独立用例。
 5. 迁移蒙皮数据模型和导出，而后再进入高级身体模块。
 6. Face 保持独立子系统，等身体核心稳定后再设计 Blender shape key/driver 映射。
 

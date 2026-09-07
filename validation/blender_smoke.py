@@ -22,6 +22,17 @@ def main(output: Path) -> int:
     plan = two_joint_plan()
     host = BlenderRigHost()
     result = BuildRig(host).execute(plan)
+    armature = bpy.data.objects["PortableRig_Armature"]
+    bpy.context.view_layer.objects.active = armature
+    armature.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bone_roll = {
+        node.name: armature.data.edit_bones[node.name].roll
+        for node in plan.nodes
+        if node.kind == "joint"
+    }
+    bpy.ops.object.mode_set(mode="OBJECT")
+    orientation_encoded = all(abs(value) > 1e-4 for value in bone_roll.values())
     duplicate_blocked = False
     try:
         BuildRig(BlenderRigHost()).execute(plan)
@@ -42,11 +53,13 @@ def main(output: Path) -> int:
         "plan": result.plan,
         "created_nodes": result.created_nodes,
         "created_constraints": result.created_constraints,
+        "bone_roll_radians": bone_roll,
+        "orientation_encoded_in_rest_state": orientation_encoded,
         "duplicate_preflight_blocked": duplicate_blocked,
         "rollback_clean": not remaining,
         "remaining_nodes": remaining,
         "duration_seconds": round(time.perf_counter() - started, 3),
-        "status": "passed" if duplicate_blocked and not remaining else "failed",
+        "status": "passed" if duplicate_blocked and not remaining and orientation_encoded else "failed",
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

@@ -6,6 +6,7 @@
 
 - 创建两个关节和两个控制对象；
 - 保持 Root -> Tip 层级与世界矩阵；
+- 以非零 aim 与本地 Y-roll 验证 Maya jointOrient 和 Blender bone roll；
 - 创建 parent 与 orient 两种约束；
 - 再次构建同名计划时，在修改场景前由预检拦截；
 - 调用宿主事务的 `rollback_last()` 后不留下节点或 Armature；
@@ -26,4 +27,4 @@
 - 这是数据 API / standalone 验证，不包含 GUI 生命周期。
 - Blender 基础约束当前只接受一个 source，且要求 `maintain_offset=False`。
 - `control` 在 Maya 中是带标记属性的 transform，在 Blender 中是 Empty；曲线形状尚未进入跨 DCC 合同。
-- 当前案例验证平移世界矩阵。jointOrient 与 bone roll 的旋转等价性仍需下一切片覆盖。
+- 当前案例覆盖平移、骨骼 aim 与本地 Y-roll；非均匀缩放和镜像矩阵尚未验证。

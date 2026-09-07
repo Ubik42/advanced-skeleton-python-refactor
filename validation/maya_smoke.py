@@ -27,6 +27,20 @@ def main(output: Path) -> int:
         host = MayaRigHost()
         plan = two_joint_plan()
         result = BuildRig(host).execute(plan)
+        joint_orient = {
+            node.name: list(cmds.getAttr(f"{node.name}.jointOrient")[0])
+            for node in plan.nodes
+            if node.kind == "joint"
+        }
+        rotate_channels = {
+            node.name: list(cmds.getAttr(f"{node.name}.rotate")[0])
+            for node in plan.nodes
+            if node.kind == "joint"
+        }
+        orientation_encoded = (
+            all(any(abs(value) > 1e-4 for value in values) for values in joint_orient.values())
+            and all(all(abs(value) < 1e-4 for value in values) for values in rotate_channels.values())
+        )
         duplicate_blocked = False
         try:
             BuildRig(MayaRigHost()).execute(plan)
@@ -41,11 +55,14 @@ def main(output: Path) -> int:
             "plan": result.plan,
             "created_nodes": result.created_nodes,
             "created_constraints": result.created_constraints,
+            "joint_orient_degrees": joint_orient,
+            "joint_rotate_degrees": rotate_channels,
+            "orientation_encoded_in_rest_state": orientation_encoded,
             "duplicate_preflight_blocked": duplicate_blocked,
             "rollback_clean": not remaining,
             "remaining_nodes": remaining,
             "duration_seconds": round(time.perf_counter() - started, 3),
-            "status": "passed" if duplicate_blocked and not remaining else "failed",
+            "status": "passed" if duplicate_blocked and not remaining and orientation_encoded else "failed",
         }
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

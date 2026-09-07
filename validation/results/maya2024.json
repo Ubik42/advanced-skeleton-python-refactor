@@ -1,13 +1,38 @@
 {
   "host": "maya",
   "version": "2024",
-  "pid": 46392,
+  "pid": 40208,
   "plan": "两节跨DCC骨架",
   "created_nodes": 4,
   "created_constraints": 2,
+  "joint_orient_degrees": {
+    "PortableRoot_JNT": [
+      0.0,
+      20.000000000000007,
+      30.00000000000003
+    ],
+    "PortableTip_JNT": [
+      15.31014965854917,
+      -23.66238224674822,
+      -49.48925382236732
+    ]
+  },
+  "joint_rotate_degrees": {
+    "PortableRoot_JNT": [
+      9.541664044390552e-15,
+      -3.578124016646454e-15,
+      -2.454990644754652e-14
+    ],
+    "PortableTip_JNT": [
+      6.3611093629270335e-15,
+      1.5902773407317578e-15,
+      1.2125864723079659e-14
+    ]
+  },
+  "orientation_encoded_in_rest_state": true,
   "duplicate_preflight_blocked": true,
   "rollback_clean": true,
   "remaining_nodes": [],
-  "duration_seconds": 4.471,
+  "duration_seconds": 4.024,
   "status": "passed"
 }

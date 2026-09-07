@@ -73,7 +73,9 @@ class MayaRigHost:
             worldSpace=True,
             matrix=list(transpose_flat(node.world_matrix)),
         )
-        if node.kind == "control":
+        if node.kind == "joint":
+            self._cmds.makeIdentity(created, apply=True, rotate=True)
+        elif node.kind == "control":
             self._cmds.addAttr(created, longName="portableRigControl", attributeType="bool")
             self._cmds.setAttr(f"{created}.portableRigControl", True)
         self._nodes[node.key] = created
@@ -142,4 +144,3 @@ class MayaRigHost:
         existing = [node for node in nodes if self._cmds.objExists(node)]
         if existing:
             self._cmds.delete(existing)
-

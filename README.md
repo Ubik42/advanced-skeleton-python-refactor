@@ -2,7 +2,7 @@
 
 这是一个面向本机已授权 AdvancedSkeleton 安装的私有研究与迁移工程。长期目标是把绑定意图表达为 DCC 无关的 Python 数据与用例，再通过独立适配器落到 Maya 和 Blender。当前阶段先分析单体 MEL，并建立不会绑定到 `maya.cmds` 的最小核心合同。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成两节骨架、世界矩阵、基础 parent/orient 约束、预检、复检与显式回滚；尚未实现 IK/FK、蒙皮或产品 UI。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成两节骨架、包含 aim 与 roll 的世界矩阵、基础 parent/orient 约束、预检、复检与显式回滚；尚未实现 IK/FK、蒙皮或产品 UI。
 
 ## 当前完成
 
@@ -43,5 +43,6 @@ py -3 -m unittest discover -s tests -v
 
 - Blender 约束目前只支持单 source 和 `maintain_offset=False`。
 - 控制器暂以 Maya transform / Blender Empty 表达，还没有可移植曲线形状。
-- 验证案例覆盖平移矩阵；jointOrient 与 bone roll 的旋转映射尚未验收。
+- 世界矩阵已经覆盖平移、骨骼朝向和本地 Y-roll；非均匀缩放与镜像矩阵尚未进入合同。
 - 宿主事务提供确定性显式回滚，目前不依赖 Blender 后台模式下不稳定的全局 Undo Stack。
+- 下一纵向切片是三段 IK/FK limb，不在当前版本中声明可用。

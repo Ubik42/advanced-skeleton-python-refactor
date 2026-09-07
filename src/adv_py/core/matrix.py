@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from math import isclose
+from math import cos, isclose, radians, sin
 from typing import Iterable
 
 
@@ -35,6 +35,48 @@ def translation_matrix(x: float, y: float, z: float) -> Matrix44:
         0.0, 0.0, 1.0, float(z),
         0.0, 0.0, 0.0, 1.0,
     )
+
+
+def rotation_y_matrix(degrees: float) -> Matrix44:
+    angle = radians(degrees)
+    cosine = cos(angle)
+    sine = sin(angle)
+    return (
+        cosine, 0.0, sine, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        -sine, 0.0, cosine, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    )
+
+
+def rotation_z_matrix(degrees: float) -> Matrix44:
+    angle = radians(degrees)
+    cosine = cos(angle)
+    sine = sin(angle)
+    return (
+        cosine, -sine, 0.0, 0.0,
+        sine, cosine, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    )
+
+
+def multiply(left: Matrix44, right: Matrix44) -> Matrix44:
+    left_rows = rows(left)
+    right_rows = rows(right)
+    return matrix44(
+        sum(left_rows[row][inner] * right_rows[inner][column] for inner in range(4))
+        for row in range(4)
+        for column in range(4)
+    )
+
+
+def with_translation(matrix: Matrix44, x: float, y: float, z: float) -> Matrix44:
+    values = list(matrix)
+    values[3] = float(x)
+    values[7] = float(y)
+    values[11] = float(z)
+    return matrix44(values)
 
 
 def rows(matrix: Matrix44) -> tuple[tuple[float, float, float, float], ...]:

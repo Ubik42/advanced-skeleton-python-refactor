@@ -2,7 +2,18 @@ import unittest
 
 from adv_py.application import BuildRig
 from adv_py.adapters import InMemoryRigHost
-from adv_py.core import NodeSpec, PlanValidationError, RigPlan, transpose_flat, translation_matrix, validate_plan
+from adv_py.core import (
+    NodeSpec,
+    PlanValidationError,
+    RigPlan,
+    almost_equal,
+    multiply,
+    rotation_y_matrix,
+    rotation_z_matrix,
+    transpose_flat,
+    translation_matrix,
+    validate_plan,
+)
 from adv_py.examples import two_joint_plan
 
 
@@ -53,3 +64,9 @@ class PortableCoreTests(unittest.TestCase):
         matrix = translation_matrix(1.0, 2.0, 3.0)
 
         self.assertEqual(transpose_flat(transpose_flat(matrix)), matrix)
+
+    def test_rotation_composition_is_orthogonal(self) -> None:
+        rotation = multiply(rotation_z_matrix(30.0), rotation_y_matrix(20.0))
+        inverse = multiply(rotation_y_matrix(-20.0), rotation_z_matrix(-30.0))
+
+        self.assertTrue(almost_equal(multiply(rotation, inverse), translation_matrix(0, 0, 0)))

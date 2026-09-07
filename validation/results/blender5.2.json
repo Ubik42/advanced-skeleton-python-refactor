@@ -1,10 +1,15 @@
 {
   "host": "blender",
   "version": "5.2.0 LTS",
-  "pid": 14228,
+  "pid": 46180,
   "plan": "两节跨DCC骨架",
   "created_nodes": 4,
   "created_constraints": 2,
+  "bone_roll_radians": {
+    "PortableRoot_JNT": 0.3490658402442932,
+    "PortableTip_JNT": -0.1745329350233078
+  },
+  "orientation_encoded_in_rest_state": true,
   "duplicate_preflight_blocked": true,
   "rollback_clean": true,
   "remaining_nodes": [],
