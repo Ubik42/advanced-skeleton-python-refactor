@@ -40,6 +40,13 @@ from adv_py.core.body_arm_twist import (
     BodyArmTwistPlan,
     BodyArmTwistSnapshot,
 )
+from adv_py.core.skin_bind import (
+    SkinBindInputState,
+    SkinBindMethod,
+    SkinBindPlan,
+    SkinBindSnapshot,
+    SkinWeightNormalization,
+)
 from adv_py.core.body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -672,6 +679,110 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 int(self._cmds.getAttr(f"{constraint}.interpType")),
             ))
         return BodyArmTwistSnapshot(roots[0], tuple(states))
+
+    def capture_skin_bind_input(self, plan: SkinBindPlan) -> SkinBindInputState:
+        meshes = self._cmds.ls(plan.mesh_path, long=True, type="transform") or []
+        mesh = meshes[0] if len(meshes) == 1 else None
+        shapes = tuple(
+            self._cmds.listRelatives(
+                mesh,
+                shapes=True,
+                noIntermediate=True,
+                fullPath=True,
+                type="mesh",
+            ) or []
+        ) if mesh else ()
+        vertex_count = (
+            int(self._cmds.polyEvaluate(mesh, vertex=True))
+            if mesh and len(shapes) == 1
+            else 0
+        )
+        available = []
+        for path in plan.influence_paths:
+            matches = self._cmds.ls(path, long=True, type="joint") or []
+            if len(matches) == 1 and matches[0] == path:
+                available.append(path)
+        history = (
+            self._cmds.listHistory(shapes[0], pruneDagObjects=True) or []
+            if len(shapes) == 1
+            else []
+        )
+        skin_clusters = tuple(
+            sorted(
+                node
+                for node in history
+                if self._cmds.nodeType(node) == "skinCluster"
+            )
+        )
+        return SkinBindInputState(
+            mesh,
+            shapes,
+            vertex_count,
+            tuple(available),
+            skin_clusters,
+        )
+
+    def create_skin_bind(self, plan: SkinBindPlan) -> None:
+        self._require_transaction()
+        if self.find_name_collisions(plan.skin_name):
+            raise FitSkeletonValidationError(f"Skin Bind 节点名称冲突：{plan.skin_name}")
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            self._transaction_changed = True
+            created = self._cmds.skinCluster(
+                list(plan.influence_paths),
+                plan.mesh_path,
+                toSelectedBones=True,
+                bindMethod=0,
+                normalizeWeights=1,
+                maximumInfluences=plan.maximum_influences,
+                obeyMaxInfluences=True,
+                name=plan.skin_name,
+            )
+            if not created or created[0] != plan.skin_name:
+                raise RuntimeError("Maya 未按计划创建 skinCluster")
+        finally:
+            self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
+
+    def capture_skin_bind(self, plan: SkinBindPlan) -> SkinBindSnapshot:
+        clusters = self._cmds.ls(plan.skin_name, type="skinCluster") or []
+        if len(clusters) != 1:
+            raise FitSkeletonValidationError("Skin Bind 结果节点无效")
+        skin = clusters[0]
+        geometry = []
+        for shape in self._cmds.skinCluster(skin, query=True, geometry=True) or []:
+            shape_paths = self._cmds.ls(shape, long=True, type="mesh") or []
+            parents = (
+                self._cmds.listRelatives(
+                    shape_paths[0],
+                    parent=True,
+                    fullPath=True,
+                ) or []
+                if len(shape_paths) == 1
+                else []
+            )
+            if len(parents) == 1:
+                geometry.append(parents[0])
+        influences = []
+        for joint in self._cmds.skinCluster(skin, query=True, influence=True) or []:
+            matches = self._cmds.ls(joint, long=True, type="joint") or []
+            if len(matches) == 1:
+                influences.append(matches[0])
+        bind_method = {0: SkinBindMethod.CLOSEST_DISTANCE}.get(
+            int(self._cmds.getAttr(f"{skin}.bindMethod"))
+        )
+        normalization = {1: SkinWeightNormalization.INTERACTIVE}.get(
+            int(self._cmds.getAttr(f"{skin}.normalizeWeights"))
+        )
+        return SkinBindSnapshot(
+            skin,
+            tuple(geometry),
+            tuple(influences),
+            int(self._cmds.getAttr(f"{skin}.maxInfluences")),
+            bool(self._cmds.getAttr(f"{skin}.maintainMaxInfluences")),
+            bind_method,
+            normalization,
+        )
 
     def capture_body_arm_fk_to_ik_state(self, plan: BodyArmFkToIkPlan) -> BodyArmFkToIkSceneState:
         existing = tuple(path for path in plan.required_paths if self._cmds.objExists(path))

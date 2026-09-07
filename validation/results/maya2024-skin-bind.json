@@ -1,0 +1,23 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 44568,
+  "slice": "explicit_skin_bind",
+  "preflight_ready": true,
+  "explicit_geometry": true,
+  "explicit_influences": true,
+  "maximum_two_influences": true,
+  "repeat_bind_blocked": true,
+  "twist_pose_deforms_mesh": true,
+  "selection_preserved": true,
+  "single_undo_removed_skin": true,
+  "undo_restored_mesh": true,
+  "rig_preserved_after_skin_undo": true,
+  "cleanup": true,
+  "vertex_count": 72,
+  "influence_count": 2,
+  "maximum_displacement": 0.297098,
+  "remaining_nodes": [],
+  "duration_seconds": 3.886,
+  "status": "passed"
+}
