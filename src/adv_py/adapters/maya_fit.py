@@ -432,6 +432,9 @@ class MayaFitJointHost:
             hierarchy=hierarchy,
             up_axis=self.scene_up_axis(),
             joints=tuple(states),
+            metadata=tuple(
+                self.read_fit_joint_metadata(node.path) for node in hierarchy.joints
+            ),
         )
 
     def orient_fit_joint(self, change: FitOrientationChange) -> None:

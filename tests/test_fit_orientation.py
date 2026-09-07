@@ -8,6 +8,8 @@ from adv_py.core import (
     FitHierarchyNode,
     FitHierarchySnapshot,
     FitJointOrientationState,
+    FitJointMetadata,
+    FitLocalDirection,
     FitOrientationRequest,
     FitOrientationSnapshot,
     FitOrientationValidationError,
@@ -15,6 +17,7 @@ from adv_py.core import (
     FitWorldAxis,
     default_fit_skeleton_settings,
     plan_simple_fit_orientations,
+    parse_world_orientation_policy,
 )
 
 
@@ -114,6 +117,45 @@ class FakeFitOrientationHost:
 
 
 class FitOrientationTests(unittest.TestCase):
+    def test_parses_fixed_and_free_world_orientation_policies(self) -> None:
+        fixed = parse_world_orientation_policy("xDown", "zForward")
+        free = parse_world_orientation_policy("yUp", "free")
+
+        self.assertEqual(fixed.up_local_direction, FitLocalDirection.NEGATIVE_X)
+        self.assertEqual(
+            fixed.forward_local_direction, FitLocalDirection.POSITIVE_Z
+        )
+        self.assertEqual(free.up_local_direction, FitLocalDirection.POSITIVE_Y)
+        self.assertIsNone(free.forward_local_direction)
+
+    def test_rejects_incomplete_or_conflicting_world_orientation_policy(self) -> None:
+        with self.assertRaisesRegex(FitOrientationValidationError, "缺少"):
+            parse_world_orientation_policy(None, "zForward")
+        with self.assertRaisesRegex(FitOrientationValidationError, "同一本地轴"):
+            parse_world_orientation_policy("xUp", "xBackward")
+
+    def test_world_orientation_is_blocked_before_simple_chain_writes(self) -> None:
+        snapshot = orientation_snapshot()
+        snapshot = replace(
+            snapshot,
+            metadata=tuple(
+                FitJointMetadata(
+                    joint=state.joint,
+                    world_orient_up="yUp" if state.joint.endswith("|Root") else None,
+                    world_orient_forward="zForward"
+                    if state.joint.endswith("|Root")
+                    else None,
+                )
+                for state in snapshot.joints
+            ),
+        )
+
+        with self.assertRaisesRegex(FitOrientationValidationError, "尚不支持"):
+            plan_simple_fit_orientations(
+                snapshot,
+                FitOrientationRequest(("Root",)),
+            )
+
     def test_z_up_parallel_chain_uses_world_y_as_fallback(self) -> None:
         changes = plan_simple_fit_orientations(
             orientation_snapshot(),

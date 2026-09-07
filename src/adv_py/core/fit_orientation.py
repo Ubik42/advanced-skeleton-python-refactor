@@ -10,6 +10,7 @@ from .fit_hierarchy import (
     FitHierarchySnapshot,
     audit_fit_hierarchy,
 )
+from .fit_metadata import FitJointMetadata
 
 
 Vector3 = tuple[float, float, float]
@@ -30,6 +31,77 @@ class FitWorldAxis(str, Enum):
     Z = "z"
 
 
+class FitLocalDirection(str, Enum):
+    POSITIVE_X = "+x"
+    POSITIVE_Y = "+y"
+    POSITIVE_Z = "+z"
+    NEGATIVE_X = "-x"
+    NEGATIVE_Y = "-y"
+    NEGATIVE_Z = "-z"
+
+    @property
+    def unsigned_axis(self) -> FitWorldAxis:
+        return FitWorldAxis(self.value[-1])
+
+
+@dataclass(frozen=True, slots=True)
+class FitWorldOrientationPolicy:
+    """Local axes requested to face world up and forward directions."""
+
+    up_local_direction: FitLocalDirection
+    forward_local_direction: FitLocalDirection | None
+
+
+def parse_world_orientation_policy(
+    world_orient_up: str | None,
+    world_orient_forward: str | None,
+    *,
+    joint: str = "Fit joint",
+) -> FitWorldOrientationPolicy | None:
+    if world_orient_up is None:
+        if world_orient_forward is not None:
+            raise FitOrientationValidationError(
+                f"{joint} 设置了 worldOrientForward，但缺少 worldOrientUp"
+            )
+        return None
+
+    up_values = {
+        "xUp": FitLocalDirection.POSITIVE_X,
+        "yUp": FitLocalDirection.POSITIVE_Y,
+        "zUp": FitLocalDirection.POSITIVE_Z,
+        "xDown": FitLocalDirection.NEGATIVE_X,
+        "yDown": FitLocalDirection.NEGATIVE_Y,
+        "zDown": FitLocalDirection.NEGATIVE_Z,
+    }
+    forward_values = {
+        "xForward": FitLocalDirection.POSITIVE_X,
+        "yForward": FitLocalDirection.POSITIVE_Y,
+        "zForward": FitLocalDirection.POSITIVE_Z,
+        "xBackward": FitLocalDirection.NEGATIVE_X,
+        "yBackward": FitLocalDirection.NEGATIVE_Y,
+        "zBackward": FitLocalDirection.NEGATIVE_Z,
+    }
+    try:
+        up = up_values[world_orient_up]
+    except KeyError as error:
+        raise FitOrientationValidationError(
+            f"{joint} 的 worldOrientUp 值无效：{world_orient_up}"
+        ) from error
+    if world_orient_forward in (None, "free"):
+        return FitWorldOrientationPolicy(up, None)
+    try:
+        forward = forward_values[world_orient_forward]
+    except KeyError as error:
+        raise FitOrientationValidationError(
+            f"{joint} 的 worldOrientForward 值无效：{world_orient_forward}"
+        ) from error
+    if forward.unsigned_axis is up.unsigned_axis:
+        raise FitOrientationValidationError(
+            f"{joint} 的 worldOrientUp 与 worldOrientForward 不能使用同一本地轴"
+        )
+    return FitWorldOrientationPolicy(up, forward)
+
+
 @dataclass(frozen=True, slots=True)
 class FitJointOrientationState:
     joint: str
@@ -44,6 +116,7 @@ class FitOrientationSnapshot:
     hierarchy: FitHierarchySnapshot
     up_axis: FitUpAxis
     joints: tuple[FitJointOrientationState, ...]
+    metadata: tuple[FitJointMetadata, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +170,11 @@ def plan_simple_fit_orientations(
         hierarchy
     ):
         raise FitOrientationValidationError("朝向快照与 FitSkeleton 层级不一致")
+    metadata = {item.joint: item for item in snapshot.metadata}
+    if snapshot.metadata and (
+        len(metadata) != len(snapshot.metadata) or set(metadata) != set(hierarchy)
+    ):
+        raise FitOrientationValidationError("朝向元数据与 FitSkeleton 层级不一致")
 
     children: dict[str, list[str]] = {path: [] for path in hierarchy}
     for node in snapshot.hierarchy.joints:
@@ -117,6 +195,20 @@ def plan_simple_fit_orientations(
     changes: list[FitOrientationChange] = []
     for path in sorted(resolved, key=lambda item: (item.count("|"), item)):
         state = orientations[path]
+        item_metadata = metadata.get(path)
+        if item_metadata is not None:
+            policy = parse_world_orientation_policy(
+                item_metadata.world_orient_up,
+                item_metadata.world_orient_forward,
+                joint=hierarchy[path].short_name,
+            )
+            if policy is not None:
+                raise FitOrientationValidationError(
+                    f"{hierarchy[path].short_name} 使用 worldOrient 策略 "
+                    f"({policy.up_local_direction.value}, "
+                    f"{policy.forward_local_direction.value if policy.forward_local_direction else 'free'})；"
+                    "当前单子链写入器尚不支持该策略"
+                )
         direct_children = children[path]
         if len(direct_children) != 1:
             raise FitOrientationValidationError(

@@ -60,6 +60,35 @@ def main(output: Path) -> int:
         locked_preflight_clean = not bool(cmds.file(query=True, modified=True))
         cmds.setAttr(f"{spine1}.jointOrientZ", lock=False)
 
+        root = "|PortableFitOrientation|Root"
+        cmds.addAttr(
+            root,
+            longName="worldOrientUp",
+            attributeType="enum",
+            enumName="xUp:yUp:zUp:xDown:yDown:zDown",
+            defaultValue=3,
+            keyable=True,
+        )
+        cmds.addAttr(
+            root,
+            longName="worldOrientForward",
+            attributeType="enum",
+            enumName=(
+                "xForward:yForward:zForward:xBackward:yBackward:zBackward:free"
+            ),
+            defaultValue=2,
+            keyable=True,
+        )
+        cmds.file(modified=False)
+        world_policy_blocked = False
+        try:
+            use_case.apply(FitOrientationRequest(("Root",)), container)
+        except FitOrientationValidationError:
+            world_policy_blocked = True
+        world_policy_preflight_clean = not bool(cmds.file(query=True, modified=True))
+        cmds.deleteAttr(f"{root}.worldOrientForward")
+        cmds.deleteAttr(f"{root}.worldOrientUp")
+
         before = host.capture_fit_orientation(container)
         before_positions = tuple(
             node.world_position for node in before.hierarchy.joints
@@ -107,6 +136,8 @@ def main(output: Path) -> int:
             (
                 locked_blocked,
                 locked_preflight_clean,
+                world_policy_blocked,
+                world_policy_preflight_clean,
                 len(preview.changes) == 2,
                 preview_clean,
                 positions_preserved,
@@ -128,6 +159,8 @@ def main(output: Path) -> int:
             "slice": "simple_fit_chain_orientation",
             "locked_joint_orient_blocked": locked_blocked,
             "locked_preflight_did_not_modify_scene": locked_preflight_clean,
+            "world_orient_policy_recognized_and_blocked": world_policy_blocked,
+            "world_orient_preflight_did_not_modify_scene": world_policy_preflight_clean,
             "preview_change_count": len(preview.changes),
             "preview_did_not_modify_scene": preview_clean,
             "world_positions_preserved": positions_preserved,
