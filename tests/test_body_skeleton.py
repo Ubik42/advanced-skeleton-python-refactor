@@ -8,6 +8,7 @@ from adv_py.application import (
     BuildBodyArmFkMechanismControls,
     BuildBodyArmIkControls,
     BuildBodyArmBlend,
+    BuildBodyArmRig,
     BuildBodySkeleton,
     BuildOrientedBodySkeleton,
     InspectBodyRebuildSafety,
@@ -746,6 +747,26 @@ class BodySkeletonTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "复检失败"):
             BuildBodyArmBlend(host).apply()
         self.assertIsNone(host.arm_blend_snapshot)
+
+    def test_complete_arm_rig_builds_in_one_transaction(self):
+        host = FakeBodySkeletonHost()
+        body = BuildOrientedBodySkeleton(host).apply().snapshot
+        result = BuildBodyArmRig(host).apply()
+        self.assertEqual(host.transaction_count, 2)
+        self.assertEqual(len(result.mechanisms.joints), 12)
+        self.assertEqual(len(result.fk_controls.controls), 6)
+        self.assertEqual(len(result.ik.limbs), 2)
+        self.assertEqual(result.body, body)
+
+    def test_complete_arm_rig_late_failure_rolls_back_every_stage(self):
+        host = FakeBodySkeletonHost(faulty_arm_ik=True)
+        BuildOrientedBodySkeleton(host).apply()
+        with self.assertRaisesRegex(RuntimeError, "IK 阶段"):
+            BuildBodyArmRig(host).apply()
+        self.assertIsNone(host.mechanism_root)
+        self.assertIsNone(host.control_root)
+        self.assertIsNone(host.arm_blend_snapshot)
+        self.assertIsNone(host.arm_ik_root)
 
 
 if __name__ == "__main__":

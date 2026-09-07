@@ -1,0 +1,23 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 36960,
+  "slice": "complete_body_arm_rig_atomic",
+  "preview_ready": true,
+  "preview_clean": true,
+  "mechanism_count": true,
+  "fk_control_count": true,
+  "ik_side_count": true,
+  "blend_constraint_count": true,
+  "fk_drives_body": true,
+  "ik_drives_body": true,
+  "selection_preserved": true,
+  "single_undo_removed_complete_arm_rig": true,
+  "body_restored": true,
+  "fit_preserved": true,
+  "body_rebuild_safe_after_undo": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 3.89,
+  "status": "passed"
+}
