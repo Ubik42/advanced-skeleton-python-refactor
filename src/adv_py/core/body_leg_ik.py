@@ -177,6 +177,7 @@ def audit_body_leg_ik(
     *,
     tolerance: float = 1e-4,
     check_initial_pose: bool = True,
+    check_handle_parent: bool = True,
 ) -> tuple[BodyLegIkIssue, ...]:
     issues = []
     if snapshot.root_path != plan.root_path:
@@ -204,7 +205,10 @@ def audit_body_leg_ik(
             ),
             (
                 state.handle_name == spec.handle_name
-                and state.handle_parent_path == spec.ankle_control_path,
+                and (
+                    not check_handle_parent
+                    or state.handle_parent_path == spec.ankle_control_path
+                ),
                 "ik_handle_mismatch",
                 "IK Handle 或父级不一致",
             ),

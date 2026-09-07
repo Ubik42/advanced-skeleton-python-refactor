@@ -10,6 +10,7 @@ from adv_py.application import (
     BuildBodyLegBlend,
     BuildBodyLegVisibility,
     BuildBodyLegRig,
+    BuildBodyLegFoot,
     BuildBodyArmFkControls,
     BuildBodyArmFkMechanismControls,
     BuildBodyArmIkControls,
@@ -42,6 +43,10 @@ from adv_py.core import (
     BodyLegVisibilityInputState,
     BodyLegVisibilitySideState,
     BodyLegVisibilitySnapshot,
+    BodyLegFootInputState,
+    BodyLegFootPivotState,
+    BodyLegFootSideState,
+    BodyLegFootSnapshot,
     BodyArmIkSnapshot,
     BodyArmIkState,
     BodyArmBlendJointState,
@@ -100,6 +105,8 @@ class FakeBodySkeletonHost:
         faulty_leg_visibility=False,
         blocked_leg_visibility=False,
         faulty_leg_match=False,
+        faulty_leg_foot=False,
+        blocked_leg_foot=False,
         faulty_arm_ik=False,
         faulty_arm_blend=False,
         faulty_arm_visibility=False,
@@ -179,6 +186,9 @@ class FakeBodySkeletonHost:
         self.blocked_leg_visibility = blocked_leg_visibility
         self.faulty_leg_match = faulty_leg_match
         self.leg_match_applied = False
+        self.leg_foot_snapshot = None
+        self.faulty_leg_foot = faulty_leg_foot
+        self.blocked_leg_foot = blocked_leg_foot
         self.arm_ik_root = None
         self.arm_ik_states = []
         self.faulty_arm_ik = faulty_arm_ik
@@ -280,6 +290,7 @@ class FakeBodySkeletonHost:
         before_leg_blend_snapshot = self.leg_blend_snapshot
         before_leg_visibility_snapshot = self.leg_visibility_snapshot
         before_leg_match_applied = self.leg_match_applied
+        before_leg_foot_snapshot = self.leg_foot_snapshot
         before_arm_ik_root = self.arm_ik_root
         before_arm_ik_states = list(self.arm_ik_states)
         before_arm_blend_snapshot = self.arm_blend_snapshot
@@ -311,6 +322,7 @@ class FakeBodySkeletonHost:
             self.leg_blend_snapshot = before_leg_blend_snapshot
             self.leg_visibility_snapshot = before_leg_visibility_snapshot
             self.leg_match_applied = before_leg_match_applied
+            self.leg_foot_snapshot = before_leg_foot_snapshot
             self.arm_ik_root = before_arm_ik_root
             self.arm_ik_states = before_arm_ik_states
             self.arm_blend_snapshot = before_arm_blend_snapshot
@@ -642,6 +654,67 @@ class FakeBodySkeletonHost:
                 sides=(first,) + self.leg_visibility_snapshot.sides[1:],
             )
         return self.leg_visibility_snapshot
+
+    def capture_body_leg_foot_input(self, plan):
+        collisions = tuple(
+            name
+            for side in plan.sides
+            for name in (
+                *(pivot.name for pivot in side.pivots),
+                *(pivot.multiplier_name for pivot in side.pivots if pivot.multiplier_name),
+            )
+            if self.find_name_collisions(name)
+        )
+        existing = (
+            (f"{plan.sides[0].ankle_control_path}.heelRoll",)
+            if self.blocked_leg_foot else ()
+        )
+        return BodyLegFootInputState(
+            name_collisions=collisions,
+            existing_attribute_plugs=existing,
+        )
+
+    def create_body_leg_foot_side(self, spec):
+        pivots = tuple(BodyLegFootPivotState(
+            pivot.role,
+            pivot.path,
+            pivot.parent_path,
+            pivot.world_position,
+            pivot.source_plug,
+            (
+                f"{spec.ankle_control_path}.{pivot.attribute}"
+                if pivot.multiplier_name else None
+            ),
+            pivot.multiplier if pivot.multiplier_name else None,
+        ) for pivot in spec.pivots)
+        state = BodyLegFootSideState(
+            spec.side,
+            tuple(
+                (f"{spec.ankle_control_path}.{attribute}", 0.0)
+                for attribute in spec.attributes
+            ),
+            pivots,
+            spec.final_handle_parent_path,
+        )
+        sides = self.leg_foot_snapshot.sides if self.leg_foot_snapshot else ()
+        self.leg_foot_snapshot = BodyLegFootSnapshot((*sides, state))
+        self.leg_ik_states = [
+            replace(value, handle_parent_path=spec.final_handle_parent_path)
+            if value.side is spec.side else value
+            for value in self.leg_ik_states
+        ]
+
+    def capture_body_leg_foot(self, plan):
+        del plan
+        if self.faulty_leg_foot and self.leg_foot_snapshot:
+            side = self.leg_foot_snapshot.sides[0]
+            pivot = replace(side.pivots[0], rotation_source=None)
+            side = replace(side, pivots=(pivot,) + side.pivots[1:])
+            return replace(
+                self.leg_foot_snapshot,
+                sides=(side,) + self.leg_foot_snapshot.sides[1:],
+            )
+        return self.leg_foot_snapshot
 
     def create_body_arm_ik_root(self, name):
         self.arm_ik_root = f"|{name}"
@@ -1658,6 +1731,68 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertIsNone(host.leg_ik_root)
         self.assertFalse(host.leg_ik_states)
         self.assertIsNone(host.leg_visibility_snapshot)
+
+    def test_extends_basic_leg_rig_with_bilateral_foot_pivots(self):
+        host = FakeBodySkeletonHost()
+        body = BuildOrientedBodySkeleton(host).apply().snapshot
+        BuildBodyLegRig(host).apply()
+
+        preview = BuildBodyLegFoot(host).plan()
+        result = BuildBodyLegFoot(host).apply()
+
+        self.assertTrue(preview.ready)
+        self.assertEqual(host.transaction_count, 3)
+        self.assertEqual(len(result.snapshot.sides), 2)
+        self.assertEqual(sum(len(side.pivots) for side in result.snapshot.sides), 10)
+        expected_positions = {
+            joint.world_position
+            for joint in body.joints
+            if joint.name.rsplit("_", 1)[0] in {
+                "Heel", "FootSideOuter", "FootSideInner", "ToesEnd", "Toes"
+            }
+        }
+        self.assertEqual(
+            {pivot.world_position for side in result.snapshot.sides for pivot in side.pivots},
+            expected_positions,
+        )
+        self.assertTrue(all(
+            side.handle_parent_path == side.pivots[-1].path
+            for side in result.snapshot.sides
+        ))
+        self.assertTrue(all(
+            len(side.attribute_values) == 5
+            and all(value == 0.0 for _, value in side.attribute_values)
+            for side in result.snapshot.sides
+        ))
+
+    def test_foot_existing_attribute_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost(blocked_leg_foot=True)
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegRig(host).apply()
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "属性已存在"):
+            BuildBodyLegFoot(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertIsNone(host.leg_foot_snapshot)
+
+    def test_foot_postcheck_failure_restores_original_handle_parent(self):
+        host = FakeBodySkeletonHost(faulty_leg_foot=True)
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegRig(host).apply()
+        original_parents = tuple(
+            state.handle_parent_path for state in host.leg_ik_states
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "复检失败"):
+            BuildBodyLegFoot(host).apply()
+
+        self.assertEqual(host.transaction_count, 3)
+        self.assertIsNone(host.leg_foot_snapshot)
+        self.assertEqual(
+            tuple(state.handle_parent_path for state in host.leg_ik_states),
+            original_parents,
+        )
 
     def test_complete_arm_rig_late_failure_rolls_back_every_stage(self):
         host = FakeBodySkeletonHost(faulty_arm_ik=True)

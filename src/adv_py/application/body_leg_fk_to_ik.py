@@ -127,7 +127,12 @@ class MatchBodyLegFkToIk:
         )
         ik_snapshot = self._host.capture_body_leg_ik(ik)
         blend_snapshot = self._host.capture_body_leg_blend(blend)
-        ik_issues = audit_body_leg_ik(ik, ik_snapshot, check_initial_pose=False)
+        ik_issues = audit_body_leg_ik(
+            ik,
+            ik_snapshot,
+            check_initial_pose=False,
+            check_handle_parent=False,
+        )
         blend_issues = audit_body_leg_blend(
             blend, blend_snapshot, expected_attribute_value=None
         )

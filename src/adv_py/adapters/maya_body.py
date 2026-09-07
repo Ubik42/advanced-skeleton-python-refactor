@@ -81,6 +81,14 @@ from adv_py.core.body_leg_ik import (
     BodyLegIkSpec,
     BodyLegIkState,
 )
+from adv_py.core.body_leg_foot import (
+    BodyLegFootInputState,
+    BodyLegFootPlan,
+    BodyLegFootPivotState,
+    BodyLegFootSideSpec,
+    BodyLegFootSideState,
+    BodyLegFootSnapshot,
+)
 from adv_py.core.skin_bind import (
     SkinBindInputState,
     SkinBindMethod,
@@ -1969,6 +1977,193 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 ankle_driven_joint=ankle_driven,
             ))
         return BodyLegIkSnapshot(roots[0], tuple(states))
+
+    def capture_body_leg_foot_input(
+        self,
+        plan: BodyLegFootPlan,
+    ) -> BodyLegFootInputState:
+        required = []
+        collisions = []
+        non_writable = []
+        existing_attributes = []
+        for side in plan.sides:
+            handles = self._cmds.ls(side.handle_name, long=True, type="ikHandle") or []
+            required.append(side.ankle_control_path)
+            if len(handles) == 1:
+                required.append(handles[0])
+            else:
+                required.append(side.handle_name)
+            names = [pivot.name for pivot in side.pivots]
+            names.extend(
+                pivot.multiplier_name
+                for pivot in side.pivots
+                if pivot.multiplier_name
+            )
+            collisions.extend(
+                name for name in names if self.find_name_collisions(name)
+            )
+            for path in (side.ankle_control_path, *handles):
+                if not self._cmds.objExists(path):
+                    continue
+                locked = bool((self._cmds.lockNode(path, query=True, lock=True) or [False])[0])
+                referenced = bool(self._cmds.referenceQuery(path, isNodeReferenced=True))
+                if locked or referenced:
+                    non_writable.append(path)
+            existing_attributes.extend(
+                f"{side.ankle_control_path}.{attribute}"
+                for attribute in side.attributes
+                if self._cmds.attributeQuery(
+                    attribute, node=side.ankle_control_path, exists=True
+                )
+            )
+        missing = tuple(path for path in required if not self._cmds.objExists(path))
+        return BodyLegFootInputState(
+            missing_required_paths=missing,
+            name_collisions=tuple(collisions),
+            non_writable_paths=tuple(non_writable),
+            existing_attribute_plugs=tuple(existing_attributes),
+        )
+
+    def create_body_leg_foot_side(self, spec: BodyLegFootSideSpec) -> None:
+        self._require_transaction()
+        state = self.capture_body_leg_foot_input(BodyLegFootPlan((spec,)))
+        if any((
+            state.missing_required_paths,
+            state.name_collisions,
+            state.non_writable_paths,
+            state.existing_attribute_plugs,
+            state.occupied_rotation_plugs,
+        )):
+            raise FitSkeletonValidationError("Foot pivot 输入在执行前失效")
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            self._transaction_changed = True
+            for attribute in spec.attributes:
+                self._cmds.addAttr(
+                    spec.ankle_control_path,
+                    longName=attribute,
+                    attributeType="double",
+                    defaultValue=0.0,
+                    keyable=True,
+                )
+            for pivot in spec.pivots:
+                created = self._cmds.createNode(
+                    "transform",
+                    name=pivot.name,
+                    parent=pivot.parent_path,
+                    skipSelect=True,
+                )
+                created = (self._cmds.ls(created, long=True) or [created])[0]
+                if created != pivot.path:
+                    raise RuntimeError("Foot pivot 路径漂移")
+                self._cmds.xform(
+                    created,
+                    worldSpace=True,
+                    translation=pivot.world_position,
+                )
+                attribute_plug = f"{spec.ankle_control_path}.{pivot.attribute}"
+                if pivot.multiplier_name:
+                    multiplier = self._cmds.createNode(
+                        "multDoubleLinear",
+                        name=pivot.multiplier_name,
+                        skipSelect=True,
+                    )
+                    self._cmds.connectAttr(attribute_plug, f"{multiplier}.input1")
+                    self._cmds.setAttr(f"{multiplier}.input2", pivot.multiplier)
+                    self._cmds.connectAttr(f"{multiplier}.output", pivot.target_plug)
+                else:
+                    self._cmds.connectAttr(attribute_plug, pivot.target_plug)
+            handles = self._cmds.ls(spec.handle_name, long=True, type="ikHandle") or []
+            if len(handles) != 1:
+                raise FitSkeletonValidationError("Leg IK Handle 在执行前失效")
+            self._cmds.parent(handles[0], spec.final_handle_parent_path, absolute=True)
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+    def capture_body_leg_foot(
+        self,
+        plan: BodyLegFootPlan,
+    ) -> BodyLegFootSnapshot:
+        sides = []
+        for spec in plan.sides:
+            values = tuple(
+                (
+                    f"{spec.ankle_control_path}.{attribute}",
+                    float(self._cmds.getAttr(
+                        f"{spec.ankle_control_path}.{attribute}"
+                    )),
+                )
+                for attribute in spec.attributes
+            )
+            pivots = []
+            for pivot in spec.pivots:
+                nodes = self._cmds.ls(pivot.path, long=True, type="transform") or []
+                if len(nodes) != 1:
+                    raise FitSkeletonValidationError("Foot pivot 节点集合无效")
+                node = nodes[0]
+                parents = self._cmds.listRelatives(
+                    node, parent=True, fullPath=True
+                ) or []
+                sources = self._cmds.listConnections(
+                    pivot.target_plug,
+                    source=True,
+                    destination=False,
+                    plugs=True,
+                    skipConversionNodes=True,
+                ) or []
+                source = self._canonical_plug(sources[0]) if len(sources) == 1 else None
+                multiplier_input = None
+                multiplier_value = None
+                if pivot.multiplier_name:
+                    inputs = self._cmds.listConnections(
+                        f"{pivot.multiplier_name}.input1",
+                        source=True,
+                        destination=False,
+                        plugs=True,
+                    ) or []
+                    multiplier_input = (
+                        self._canonical_plug(inputs[0]) if len(inputs) == 1 else None
+                    )
+                    multiplier_value = float(
+                        self._cmds.getAttr(f"{pivot.multiplier_name}.input2")
+                    )
+                pivots.append(BodyLegFootPivotState(
+                    role=pivot.role,
+                    path=node,
+                    parent_path=parents[0] if parents else None,
+                    world_position=tuple(
+                        float(value) for value in self._cmds.xform(
+                            node,
+                            query=True,
+                            worldSpace=True,
+                            translation=True,
+                        )
+                    ),
+                    rotation_source=source,
+                    multiplier_input_source=multiplier_input,
+                    multiplier_value=multiplier_value,
+                ))
+            handles = self._cmds.ls(spec.handle_name, long=True, type="ikHandle") or []
+            if len(handles) != 1:
+                raise FitSkeletonValidationError("Foot IK Handle 节点集合无效")
+            parents = self._cmds.listRelatives(
+                handles[0], parent=True, fullPath=True
+            ) or []
+            sides.append(BodyLegFootSideState(
+                spec.side,
+                values,
+                tuple(pivots),
+                parents[0] if parents else None,
+            ))
+        return BodyLegFootSnapshot(tuple(sides))
+
+    def _canonical_plug(self, plug: str) -> str:
+        node, attribute = plug.split(".", 1)
+        paths = self._cmds.ls(node, long=True) or [node]
+        return f"{paths[0]}.{attribute}"
 
     def create_body_arm_mechanism_root(self, name: str) -> str:
         self._require_transaction()
