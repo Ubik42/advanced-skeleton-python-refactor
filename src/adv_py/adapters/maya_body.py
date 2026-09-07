@@ -47,6 +47,11 @@ from adv_py.core.body_arm_volume import (
     BodyArmVolumeSideState,
     BodyArmVolumeSnapshot,
 )
+from adv_py.core.body_leg_mechanisms import (
+    BodyLegMechanismJointSpec,
+    BodyLegMechanismPlan,
+    BodyLegMechanismSnapshot,
+)
 from adv_py.core.skin_bind import (
     SkinBindInputState,
     SkinBindMethod,
@@ -1589,6 +1594,21 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 )
             )
         return BodyArmMechanismSnapshot(roots[0], tuple(states))
+
+    def create_body_leg_mechanism_root(self, name: str) -> str:
+        return self.create_body_arm_mechanism_root(name)
+
+    def create_body_leg_mechanism_joint(
+        self,
+        spec: BodyLegMechanismJointSpec,
+    ) -> str:
+        return self.create_body_arm_mechanism_joint(spec)
+
+    def capture_body_leg_mechanisms(
+        self,
+        plan: BodyLegMechanismPlan,
+    ) -> BodyLegMechanismSnapshot:
+        return self.capture_body_arm_mechanisms(plan)
 
     def create_body_arm_fk_control(self, spec: BodyArmFkControlSpec) -> None:
         self._require_transaction()

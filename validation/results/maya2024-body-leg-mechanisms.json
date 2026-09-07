@@ -1,0 +1,36 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 7948,
+  "slice": "body_bilateral_leg_fk_ik_mechanisms",
+  "preview_ready": true,
+  "preview_clean": true,
+  "planned_twelve_joints": true,
+  "created_twelve_joints": true,
+  "bilateral_six_per_side": true,
+  "six_fk_and_six_ik": true,
+  "source_links_verified": true,
+  "driver_rotations_zero": true,
+  "body_preserved": true,
+  "fit_preserved": true,
+  "selection_preserved": true,
+  "rebuild_blocked_while_source_links_exist": true,
+  "fk_and_ik_chains_are_independent": true,
+  "single_undo_removed_leg_mechanisms": true,
+  "body_survived_undo": true,
+  "body_rebuild_safe_after_undo": true,
+  "fit_survived_undo": true,
+  "unrelated_node_survived": true,
+  "cleanup": true,
+  "side_counts": {
+    "R": 6,
+    "L": 6
+  },
+  "role_counts": {
+    "fk": 6,
+    "ik": 6
+  },
+  "remaining_nodes": [],
+  "duration_seconds": 4.081,
+  "status": "passed"
+}

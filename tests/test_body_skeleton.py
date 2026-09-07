@@ -4,6 +4,7 @@ from dataclasses import replace
 
 from adv_py.application import (
     BuildBodyArmMechanisms,
+    BuildBodyLegMechanisms,
     BuildBodyArmFkControls,
     BuildBodyArmFkMechanismControls,
     BuildBodyArmIkControls,
@@ -21,6 +22,9 @@ from adv_py.application import (
 from adv_py.core import (
     BodyArmMechanismJointState,
     BodyArmMechanismSnapshot,
+    BodyLegMechanismJointState,
+    BodyLegMechanismRole,
+    BodyLegMechanismSnapshot,
     BodyArmIkSnapshot,
     BodyArmIkState,
     BodyArmBlendJointState,
@@ -70,6 +74,7 @@ class FakeBodySkeletonHost:
         faulty_provenance=False,
         faulty_arm_fk=False,
         faulty_arm_mechanisms=False,
+        faulty_leg_mechanisms=False,
         faulty_arm_ik=False,
         faulty_arm_blend=False,
         faulty_arm_visibility=False,
@@ -133,6 +138,9 @@ class FakeBodySkeletonHost:
         self.mechanism_root = None
         self.arm_mechanism_states = []
         self.faulty_arm_mechanisms = faulty_arm_mechanisms
+        self.leg_mechanism_root = None
+        self.leg_mechanism_states = []
+        self.faulty_leg_mechanisms = faulty_leg_mechanisms
         self.arm_ik_root = None
         self.arm_ik_states = []
         self.faulty_arm_ik = faulty_arm_ik
@@ -183,6 +191,11 @@ class FakeBodySkeletonHost:
         for state in self.arm_mechanism_states:
             if state.path.rsplit("|", 1)[-1] == name:
                 existing_controls.append(state.path)
+        if self.leg_mechanism_root and self.leg_mechanism_root.rsplit("|", 1)[-1] == name:
+            existing_controls.append(self.leg_mechanism_root)
+        for state in self.leg_mechanism_states:
+            if state.path.rsplit("|", 1)[-1] == name:
+                existing_controls.append(state.path)
         if self.arm_ik_root and self.arm_ik_root.rsplit("|", 1)[-1] == name:
             existing_controls.append(self.arm_ik_root)
         if self.twist_root and self.twist_root.rsplit("|", 1)[-1] == name:
@@ -207,6 +220,8 @@ class FakeBodySkeletonHost:
         before_arm_fk_states = list(self.arm_fk_states)
         before_mechanism_root = self.mechanism_root
         before_arm_mechanism_states = list(self.arm_mechanism_states)
+        before_leg_mechanism_root = self.leg_mechanism_root
+        before_leg_mechanism_states = list(self.leg_mechanism_states)
         before_arm_ik_root = self.arm_ik_root
         before_arm_ik_states = list(self.arm_ik_states)
         before_arm_blend_snapshot = self.arm_blend_snapshot
@@ -229,6 +244,8 @@ class FakeBodySkeletonHost:
             self.arm_fk_states = before_arm_fk_states
             self.mechanism_root = before_mechanism_root
             self.arm_mechanism_states = before_arm_mechanism_states
+            self.leg_mechanism_root = before_leg_mechanism_root
+            self.leg_mechanism_states = before_leg_mechanism_states
             self.arm_ik_root = before_arm_ik_root
             self.arm_ik_states = before_arm_ik_states
             self.arm_blend_snapshot = before_arm_blend_snapshot
@@ -375,6 +392,29 @@ class FakeBodySkeletonHost:
         if self.faulty_arm_mechanisms and states:
             states = (replace(states[0], source_joint=None),) + states[1:]
         return BodyArmMechanismSnapshot(self.mechanism_root, states)
+
+    def create_body_leg_mechanism_root(self, name):
+        self.leg_mechanism_root = f"|{name}"
+        return self.leg_mechanism_root
+
+    def create_body_leg_mechanism_joint(self, spec):
+        self.leg_mechanism_states.append(BodyLegMechanismJointState(
+            spec.path,
+            spec.parent_path,
+            spec.side,
+            spec.source_joint,
+            spec.world_position,
+            spec.world_axes,
+            (0.0, 0.0, 0.0),
+        ))
+        return spec.path
+
+    def capture_body_leg_mechanisms(self, plan):
+        del plan
+        states = tuple(self.leg_mechanism_states)
+        if self.faulty_leg_mechanisms and states:
+            states = (replace(states[0], source_joint=None),) + states[1:]
+        return BodyLegMechanismSnapshot(self.leg_mechanism_root, states)
 
     def create_body_arm_ik_root(self, name):
         self.arm_ik_root = f"|{name}"
@@ -930,6 +970,46 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 2)
         self.assertIsNone(host.mechanism_root)
         self.assertFalse(host.arm_mechanism_states)
+
+    def test_builds_bilateral_fk_ik_leg_mechanism_chains_atomically(self):
+        host = FakeBodySkeletonHost()
+        body = BuildOrientedBodySkeleton(host).apply().snapshot
+
+        result = BuildBodyLegMechanisms(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertEqual(result.body, body)
+        self.assertEqual(result.snapshot.root_path, "|AdvPy_LegMechanisms")
+        self.assertEqual(len(result.snapshot.joints), 12)
+        self.assertEqual(
+            {state.side for state in result.snapshot.joints},
+            {FitBuildSide.RIGHT, FitBuildSide.LEFT},
+        )
+        self.assertEqual(
+            {spec.role for spec in result.plan.mechanisms.joints},
+            {BodyLegMechanismRole.FK, BodyLegMechanismRole.IK},
+        )
+
+    def test_leg_mechanism_collision_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        host.collisions["AdvPy_HipFKDriver_R"] = ("|Existing|AdvPy_HipFKDriver_R",)
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "同名节点"):
+            BuildBodyLegMechanisms(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertIsNone(host.leg_mechanism_root)
+
+    def test_leg_mechanism_postcheck_failure_rolls_back_all_drivers(self):
+        host = FakeBodySkeletonHost(faulty_leg_mechanisms=True)
+        BuildOrientedBodySkeleton(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "复检失败"):
+            BuildBodyLegMechanisms(host).apply()
+
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertFalse(host.leg_mechanism_states)
 
     def test_fk_controls_drive_fk_mechanisms_instead_of_body(self):
         host = FakeBodySkeletonHost()
