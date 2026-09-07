@@ -34,6 +34,7 @@ class BodyArmIkSpec:
     wrist_axes: AxisFrame
     pole_position: Vector3
     radius: float
+    wrist_constraint_name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +64,9 @@ class BodyArmIkState:
     wrist_rotation: Vector3
     pole_translation: Vector3
     pole_rotation: Vector3
+    wrist_constraint_name: str
+    wrist_source: str | None
+    wrist_driven_joint: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +137,7 @@ def plan_body_arm_ik(
             f"{pole_offset_path}|{pole_control_name}", pole_control_name,
             f"AdvPy_ArmIKHandle_{side_name}", f"AdvPy_ArmPVConstraint_{side_name}",
             wrist, sources[2].world_axes, pole, float(radius),
+            f"AdvPy_ArmIKWristOrient_{side_name}",
         ))
     return BodyArmIkPlan(root_path, root_name, tuple(limbs))
 
@@ -152,6 +157,7 @@ def audit_body_arm_ik(plan: BodyArmIkPlan, snapshot: BodyArmIkSnapshot, *, toler
             (state.pole_control_path == spec.pole_control_path and state.pole_parent_path == spec.pole_offset_path, "ik_pole_hierarchy", "Pole Vector 控制父链不一致"),
             (state.handle_name == spec.handle_name and state.handle_parent_path == spec.wrist_control_path, "ik_handle_mismatch", "IK Handle 或父级不一致"),
             (state.pole_constraint_name == spec.pole_constraint_name, "ik_pole_constraint", "Pole Vector 约束名称不一致"),
+            (state.wrist_constraint_name == spec.wrist_constraint_name and state.wrist_source == spec.wrist_control_path and state.wrist_driven_joint == spec.chain[2], "ik_wrist_orientation", "Wrist IK 朝向驱动不一致"),
             (state.joint_list == spec.chain[:2], "ik_chain_mismatch", "RP IK 求解链不一致"),
             (state.pole_source == spec.pole_control_path, "ik_pole_wiring", "Pole Vector 连线不一致"),
             (state.wrist_shape == "nurbsCurve" and state.pole_shape == "nurbsCurve", "ik_shape_mismatch", "IK 控制缺少 NURBS 曲线"),

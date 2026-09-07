@@ -435,7 +435,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
         self._require_transaction()
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
-            for name in (spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name):
+            for name in (spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name):
                 if self.find_name_collisions(name):
                     raise FitSkeletonValidationError(f"Arm IK 名称冲突：{name}")
             if any(not self._cmds.objExists(path) for path in spec.chain):
@@ -460,6 +460,12 @@ class MayaBodyBuildHost(MayaFitJointHost):
             handle, _ = self._cmds.ikHandle(name=spec.handle_name, startJoint=spec.chain[0], endEffector=spec.chain[2], solver="ikRPsolver")
             self._cmds.parent(handle, wrist, absolute=True)
             self._cmds.poleVectorConstraint(pole, handle, name=spec.pole_constraint_name)
+            self._cmds.orientConstraint(
+                wrist,
+                spec.chain[2],
+                maintainOffset=False,
+                name=spec.wrist_constraint_name,
+            )
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
@@ -472,7 +478,8 @@ class MayaBodyBuildHost(MayaFitJointHost):
             pole = (self._cmds.ls(spec.pole_control_path, long=True, type="transform") or [None])[0]
             handles = self._cmds.ls(spec.handle_name, long=True, type="ikHandle") or []
             constraints = self._cmds.ls(spec.pole_constraint_name, type="poleVectorConstraint") or []
-            if wrist is None or pole is None or len(handles) != 1 or len(constraints) != 1:
+            wrist_constraints = self._cmds.ls(spec.wrist_constraint_name, type="orientConstraint") or []
+            if wrist is None or pole is None or len(handles) != 1 or len(constraints) != 1 or len(wrist_constraints) != 1:
                 raise FitSkeletonValidationError("Arm IK 节点集合无效")
             handle = handles[0]
             wp = self._cmds.listRelatives(wrist, parent=True, fullPath=True) or []
@@ -481,6 +488,10 @@ class MayaBodyBuildHost(MayaFitJointHost):
             joint_list = tuple((self._cmds.ls(value, long=True) or [value])[0] for value in (self._cmds.ikHandle(handle, query=True, jointList=True) or []))
             targets = self._cmds.poleVectorConstraint(constraints[0], query=True, targetList=True) or []
             pole_source = (self._cmds.ls(targets[0], long=True) or [targets[0]])[0] if len(targets) == 1 else None
+            wrist_targets = self._cmds.orientConstraint(wrist_constraints[0], query=True, targetList=True) or []
+            wrist_source = (self._cmds.ls(wrist_targets[0], long=True) or [wrist_targets[0]])[0] if len(wrist_targets) == 1 else None
+            wrist_outputs = self._cmds.listConnections(f"{wrist_constraints[0]}.constraintRotateX", source=False, destination=True, plugs=True) or []
+            wrist_driven = self._resolve_connected_node(wrist_outputs[0]) if len(wrist_outputs) == 1 else None
             def shape_type(node):
                 shapes = self._cmds.listRelatives(node, shapes=True, noIntermediate=True, fullPath=True) or []
                 return self._cmds.nodeType(shapes[0]) if len(shapes) == 1 else None
@@ -491,6 +502,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 tuple(float(v) for v in self._cmds.xform(wrist, query=True, worldSpace=True, translation=True)),
                 tuple(float(v) for v in self._cmds.xform(pole, query=True, worldSpace=True, translation=True)),
                 shape_type(wrist), shape_type(pole), vector(wrist, "translate"), vector(wrist, "rotate"), vector(pole, "translate"), vector(pole, "rotate"),
+                wrist_constraints[0], wrist_source, wrist_driven,
             ))
         return BodyArmIkSnapshot(roots[0], tuple(states))
 

@@ -93,7 +93,7 @@ class BuildBodyArmIkControls:
         )
         names = [ik.root_name]
         for spec in ik.limbs:
-            names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name))
+            names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name))
         collisions = tuple(
             sorted(
                 {

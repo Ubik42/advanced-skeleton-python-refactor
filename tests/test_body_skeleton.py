@@ -329,6 +329,7 @@ class FakeBodySkeletonHost:
             spec.pole_control_path, spec.wrist_position, spec.pole_position,
             "nurbsCurve", "nurbsCurve", (0.0, 0.0, 0.0), (0.0, 0.0, 0.0),
             (0.0, 0.0, 0.0), (0.0, 0.0, 0.0),
+            spec.wrist_constraint_name, spec.wrist_control_path, spec.chain[2],
         ))
 
     def capture_body_arm_ik(self, plan):
@@ -736,6 +737,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.snapshot.limbs), 2)
         self.assertEqual(host.transaction_count, 3)
         self.assertTrue(all("IKDriver" in path for state in result.snapshot.limbs for path in state.joint_list))
+        self.assertTrue(all(state.wrist_source == state.wrist_control_path for state in result.snapshot.limbs))
 
     def test_arm_ik_collision_blocks_before_transaction(self):
         host = FakeBodySkeletonHost()

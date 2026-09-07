@@ -81,7 +81,7 @@ class BuildBodyArmRig:
         names.extend(spec.name for spec in mechanisms.joints)
         for spec in fk_controls.controls: names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
         for side in blend.sides: names.append(side.reverse_name); names.extend(j.constraint_name for j in side.joints)
-        for spec in ik.limbs: names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name))
+        for spec in ik.limbs: names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name))
         collisions = tuple(sorted({path for name in names for path in self._host.find_name_collisions(name)}))
         return BodyArmRigBuildPlan(safety, mechanisms, fk_controls, blend, ik, visibility, collisions)
 

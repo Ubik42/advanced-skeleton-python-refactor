@@ -1,0 +1,16 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 33232,
+  "slice": "body_arm_ik_wrist_orientation",
+  "wrist_constraint_captured": true,
+  "wrist_control_changes_orientation": true,
+  "wrist_control_drives_ik_driver": true,
+  "ik_driver_drives_body_wrist": true,
+  "selection_preserved": true,
+  "single_undo_removed_complete_arm_rig": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 3.867,
+  "status": "passed"
+}

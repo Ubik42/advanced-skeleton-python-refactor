@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成三十个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、30 关节 Body 构建与安全 ReBuild，以及双臂 FK/IK 机制链、控制、RP IK、Body blend 和模式显隐。`BuildBodyArmRig` 现在用一个 Undo Chunk 完成整套双臂 IK/FK。腿/手指控制、无缝匹配、蒙皮和产品 UI 尚未实现。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成三十一个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、30 关节 Body 构建与安全 ReBuild，以及双臂 FK/IK 机制链、控制、RP IK、Wrist 朝向、Body blend 和模式显隐。`BuildBodyArmRig` 现在用一个 Undo Chunk 完成整套双臂 IK/FK。腿/手指控制、无缝匹配、蒙皮和产品 UI 尚未实现。
 
 ## 当前完成
 
@@ -36,6 +36,7 @@
 - `BuildBodyArmMechanisms` 为左右手臂分别生成 FK 与 IK 的 Shoulder/Elbow/Wrist 驱动链，共 12 个机制 joint。每个 joint 保存到 Body 来源的 message 连线，初始世界帧与 source joint 一致，两套链可独立运动并由一次 Undo 完整移除。
 - `BuildBodyArmFkMechanismControls` 先核对 Body provenance 与完整 mechanism 快照，再让 6 个 FK controls 驱动对应 FK driver joints；Body 和 IK 链保持不受 FK 操作直接影响，控制层与机制层可分别 Undo。
 - `BuildBodyArmIkControls` 根据 Shoulder/Elbow/Wrist 几何计算稳定 Pole Vector 位置，为左右 IK mechanism 创建 Wrist/PV NURBS controls、RP IK Handle 和 poleVectorConstraint；可达目标位置经过真实 Maya 求解验证。
+- Wrist IK control 通过独立 orientConstraint 驱动对应 Wrist IK driver；约束名称、source 和 driven joint 进入核心规格与构建后审计，为后续 FK→IK 姿态匹配提供手腕朝向合同。
 - `BuildBodyArmBlend` 创建左右独立的 `armIkFk_R/L` 属性、reverse 权重和 6 个双源 orientConstraint；FK=0、IK=1 与 0.5 混合均在 Maya 2024 中验证。
 - `BuildBodyArmRig` 在场景零修改预演后，用一个事务依次构建 mechanisms、FK controls、Body blend、RP IK 和左右独立的模式显隐；FK=0 仅显示 FK 层级，IK=1 显示 Wrist/PV，最后阶段失败会回滚此前全部 Arm 节点，一个 Undo 也能完整移除成品。
 - `EditFitJointPositions` 对显式关节提交本地位置 Patch，只写实际变化且可写的轴；锁定/驱动轴、Root 离中和无效层级会在批量事务前失败。
