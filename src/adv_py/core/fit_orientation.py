@@ -158,8 +158,24 @@ class FitOrientationSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class FitOrientationChildSelection:
+    joint: str
+    child: str
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.joint, str)
+            or not self.joint.strip()
+            or not isinstance(self.child, str)
+            or not self.child.strip()
+        ):
+            raise FitOrientationValidationError("分支朝向的关节和子级名称不能为空")
+
+
+@dataclass(frozen=True, slots=True)
 class FitOrientationRequest:
     joints: tuple[str, ...]
+    child_selections: tuple[FitOrientationChildSelection, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.joints:
@@ -168,6 +184,9 @@ class FitOrientationRequest:
             raise FitOrientationValidationError("朝向目标关节名称不能为空")
         if len(self.joints) != len(set(self.joints)):
             raise FitOrientationValidationError("朝向目标关节不能重复")
+        selection_joints = tuple(item.joint for item in self.child_selections)
+        if len(selection_joints) != len(set(selection_joints)):
+            raise FitOrientationValidationError("同一分支朝向目标不能重复指定子级")
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,7 +194,7 @@ class FitOrientationChange:
     joint: str
     child: str
     before_joint_orient: Vector3
-    child_before_joint_orient: Vector3
+    preserved_child_joint_orients: tuple[tuple[str, Vector3], ...]
     descendant_world_positions: tuple[tuple[str, Vector3], ...]
     desired_primary_world: Vector3
     desired_secondary_world: Vector3
@@ -187,7 +206,7 @@ class FitWorldOrientationChange:
     joint: str
     child: str
     before_joint_orient: Vector3
-    child_before_joint_orient: Vector3
+    preserved_child_joint_orients: tuple[tuple[str, Vector3], ...]
     descendant_world_positions: tuple[tuple[str, Vector3], ...]
     desired_world_axes: tuple[Vector3, Vector3, Vector3]
     policy: FitWorldOrientationPolicy
@@ -241,9 +260,13 @@ def plan_world_fit_orientations(
     tolerance: float = 1e-5,
 ) -> tuple[FitWorldOrientationChange, ...]:
     _validate_orientation_snapshot(snapshot, tolerance)
+    if request.child_selections:
+        raise FitOrientationValidationError(
+            "worldOrient 写入器当前不接受分支子级选择"
+        )
     if snapshot.up_axis is not FitUpAxis.Y:
         raise FitOrientationValidationError(
-            "固定 worldOrient 当前只支持 Maya Y-Up 场景"
+            "worldOrient 当前只支持 Maya Y-Up 场景"
         )
     if snapshot.axis_configuration.world_match:
         raise FitOrientationValidationError(
@@ -306,7 +329,9 @@ def plan_world_fit_orientations(
                 joint=path,
                 child=child_path,
                 before_joint_orient=state.joint_orient,
-                child_before_joint_orient=orientations[child_path].joint_orient,
+                preserved_child_joint_orients=(
+                    (child_path, orientations[child_path].joint_orient),
+                ),
                 descendant_world_positions=tuple(
                     (descendant, hierarchy[descendant].world_position)
                     for descendant in descendant_paths
@@ -350,10 +375,7 @@ def plan_simple_fit_orientations(
     ):
         raise FitOrientationValidationError("朝向元数据与 FitSkeleton 层级不一致")
 
-    children: dict[str, list[str]] = {path: [] for path in hierarchy}
-    for node in snapshot.hierarchy.joints:
-        if node.dag_parent in children:
-            children[node.dag_parent].append(node.path)
+    children = _joint_children(snapshot.hierarchy)
 
     resolved: list[str] = []
     for name in request.joints:
@@ -365,6 +387,11 @@ def plan_simple_fit_orientations(
                 f"多个朝向目标解析到同一关节：{node.path}"
             )
         resolved.append(node.path)
+    child_selections = _resolve_child_selections(
+        snapshot.hierarchy,
+        request,
+        frozenset(resolved),
+    )
 
     changes: list[FitOrientationChange] = []
     for path in sorted(resolved, key=lambda item: (item.count("|"), item)):
@@ -384,10 +411,18 @@ def plan_simple_fit_orientations(
                     "当前单子链写入器尚不支持该策略"
                 )
         direct_children = children[path]
-        if len(direct_children) != 1:
+        if not direct_children:
             raise FitOrientationValidationError(
-                f"{hierarchy[path].short_name} 必须有且只有一个直接 joint 子级"
+                f"{hierarchy[path].short_name} 必须至少有一个直接 joint 子级"
             )
+        child_path = child_selections.get(path)
+        if len(direct_children) > 1 and child_path is None:
+            raise FitOrientationValidationError(
+                f"{hierarchy[path].short_name} 有多个直接 joint 子级，"
+                "必须显式指定朝向子级"
+            )
+        if child_path is None:
+            child_path = direct_children[0]
         if any(abs(value) > tolerance for value in state.rotation):
             raise FitOrientationValidationError(
                 f"{hierarchy[path].short_name} 的 rotate 必须先归零"
@@ -397,7 +432,6 @@ def plan_simple_fit_orientations(
                 f"{hierarchy[path].short_name} 的 jointOrient 不可完整写入"
             )
 
-        child_path = direct_children[0]
         child = hierarchy[child_path]
         descendant_paths = tuple(
             item
@@ -410,11 +444,15 @@ def plan_simple_fit_orientations(
                 raise FitOrientationValidationError(
                     f"{descendant.short_name} 的 translate 无法用于朝向补偿"
                 )
-        child_orientation = orientations[child_path]
-        if child_orientation.writable_joint_orient_axes != TRANSLATION_AXES:
-            raise FitOrientationValidationError(
-                f"{child.short_name} 的 jointOrient 无法恢复"
-            )
+        for direct_child_path in direct_children:
+            direct_child = hierarchy[direct_child_path]
+            if (
+                orientations[direct_child_path].writable_joint_orient_axes
+                != TRANSLATION_AXES
+            ):
+                raise FitOrientationValidationError(
+                    f"{direct_child.short_name} 的 jointOrient 无法恢复"
+                )
         primary = _normalize(
             _subtract(child.world_position, hierarchy[path].world_position),
             f"{hierarchy[path].short_name} 与子级位置重合",
@@ -436,7 +474,10 @@ def plan_simple_fit_orientations(
                 joint=path,
                 child=child_path,
                 before_joint_orient=state.joint_orient,
-                child_before_joint_orient=child_orientation.joint_orient,
+                preserved_child_joint_orients=tuple(
+                    (direct_child_path, orientations[direct_child_path].joint_orient)
+                    for direct_child_path in direct_children
+                ),
                 descendant_world_positions=tuple(
                     (descendant_path, hierarchy[descendant_path].world_position)
                     for descendant_path in descendant_paths
@@ -530,6 +571,41 @@ def _resolve_orientation_targets(
             )
         resolved.append(node.path)
     return tuple(resolved)
+
+
+def _resolve_child_selections(
+    snapshot: FitHierarchySnapshot,
+    request: FitOrientationRequest,
+    requested_paths: frozenset[str],
+) -> dict[str, str]:
+    hierarchy = {node.path: node for node in snapshot.joints}
+    by_name = {node.short_name: node for node in snapshot.joints}
+    resolved: dict[str, str] = {}
+    for selection in request.child_selections:
+        parent = hierarchy.get(selection.joint) or by_name.get(selection.joint)
+        if parent is None:
+            raise FitOrientationValidationError(
+                f"分支朝向父关节不在 FitSkeleton 中：{selection.joint}"
+            )
+        child = hierarchy.get(selection.child) or by_name.get(selection.child)
+        if child is None:
+            raise FitOrientationValidationError(
+                f"分支朝向子关节不在 FitSkeleton 中：{selection.child}"
+            )
+        if parent.path not in requested_paths:
+            raise FitOrientationValidationError(
+                f"分支选择的父关节未包含在朝向目标中：{parent.short_name}"
+            )
+        if parent.path in resolved:
+            raise FitOrientationValidationError(
+                f"同一分支朝向目标解析出多个子级：{parent.short_name}"
+            )
+        if child.dag_parent != parent.path:
+            raise FitOrientationValidationError(
+                f"{child.short_name} 不是 {parent.short_name} 的直接 joint 子级"
+            )
+        resolved[parent.path] = child.path
+    return resolved
 
 
 def _descendant_paths(

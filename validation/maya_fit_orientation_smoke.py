@@ -27,6 +27,7 @@ def main(output: Path) -> int:
         )
         from adv_py.core import (
             FitOrientationRequest,
+            FitOrientationChildSelection,
             FitOrientationValidationError,
             FitWorldAxis,
         )
@@ -129,6 +130,75 @@ def main(output: Path) -> int:
         container_survived = cmds.objExists(container)
         marker_survived = cmds.objExists(marker)
 
+        root = "|PortableFitOrientation|Root"
+        clavicle = cmds.createNode(
+            "joint",
+            name="Clavicle",
+            parent=root,
+            skipSelect=True,
+        )
+        cmds.setAttr(
+            f"{clavicle}.translate", 3.0, 0.0, 2.0, type="double3"
+        )
+        clavicle_end = cmds.createNode(
+            "joint",
+            name="ClavicleEnd",
+            parent=clavicle,
+            skipSelect=True,
+        )
+        cmds.setAttr(
+            f"{clavicle_end}.translate", 2.0, 0.0, 0.0, type="double3"
+        )
+        cmds.setAttr(
+            f"{clavicle}.jointOrient", 10.0, 0.0, 0.0, type="double3"
+        )
+        cmds.select(marker, replace=True)
+        cmds.file(modified=False)
+        branch_without_selection_blocked = False
+        try:
+            use_case.apply(FitOrientationRequest(("Root",)), container)
+        except FitOrientationValidationError:
+            branch_without_selection_blocked = True
+        branch_preflight_clean = not bool(cmds.file(query=True, modified=True))
+
+        branch_before = host.capture_fit_orientation(container)
+        branch_positions = {
+            node.path: node.world_position for node in branch_before.hierarchy.joints
+        }
+        branch_orients = {
+            state.joint: state.joint_orient for state in branch_before.joints
+        }
+        branch_request = FitOrientationRequest(
+            ("Root",),
+            (FitOrientationChildSelection("Root", "Clavicle"),),
+        )
+        branch_preview = use_case.plan(branch_request, container)
+        branch_result = use_case.apply(branch_request, container)
+        branch_selected_child = (
+            len(branch_preview.changes) == 1
+            and branch_preview.changes[0].child.endswith("|Clavicle")
+        )
+        branch_positions_preserved = all(
+            all(abs(a - b) <= 1e-5 for a, b in zip(
+                node.world_position,
+                branch_positions[node.path],
+            ))
+            for node in branch_result.verified.hierarchy.joints
+        )
+        branch_child_orients_preserved = all(
+            state.joint_orient == branch_orients[state.joint]
+            for state in branch_result.verified.joints
+            if state.joint != root
+        )
+        branch_selection_preserved = (cmds.ls(selection=True) or []) == [marker]
+        branch_idempotent = not use_case.plan(branch_request, container).changes
+        cmds.undo()
+        branch_restored_snapshot = host.capture_fit_orientation(container)
+        branch_undo_restored = all(
+            state.joint_orient == branch_orients[state.joint]
+            for state in branch_restored_snapshot.joints
+        )
+
         cmds.delete(container, marker)
         remaining = cmds.ls("PortableFitOrientation*", long=True) or []
         remaining += cmds.ls("PortableOrientationSelection", long=True) or []
@@ -149,6 +219,14 @@ def main(output: Path) -> int:
                 restored,
                 container_survived,
                 marker_survived,
+                branch_without_selection_blocked,
+                branch_preflight_clean,
+                branch_selected_child,
+                branch_positions_preserved,
+                branch_child_orients_preserved,
+                branch_selection_preserved,
+                branch_idempotent,
+                branch_undo_restored,
                 not remaining,
             )
         )
@@ -172,6 +250,14 @@ def main(output: Path) -> int:
             "single_undo_restored_joint_orient": restored,
             "container_survived_undo": container_survived,
             "unrelated_node_survived": marker_survived,
+            "branch_without_selection_blocked": branch_without_selection_blocked,
+            "branch_preflight_did_not_modify_scene": branch_preflight_clean,
+            "branch_selected_child_used": branch_selected_child,
+            "branch_world_positions_preserved": branch_positions_preserved,
+            "all_branch_child_orients_preserved": branch_child_orients_preserved,
+            "branch_selection_preserved": branch_selection_preserved,
+            "branch_repeat_plan_is_noop": branch_idempotent,
+            "branch_single_undo_restored_orientation": branch_undo_restored,
             "cleanup": not remaining,
             "remaining_nodes": remaining,
             "duration_seconds": round(time.perf_counter() - started, 3),

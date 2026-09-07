@@ -1,7 +1,7 @@
 {
   "host": "maya",
   "version": "2024",
-  "pid": 45724,
+  "pid": 34520,
   "slice": "simple_fit_chain_orientation",
   "locked_joint_orient_blocked": true,
   "locked_preflight_did_not_modify_scene": true,
@@ -18,8 +18,16 @@
   "single_undo_restored_joint_orient": true,
   "container_survived_undo": true,
   "unrelated_node_survived": true,
+  "branch_without_selection_blocked": true,
+  "branch_preflight_did_not_modify_scene": true,
+  "branch_selected_child_used": true,
+  "branch_world_positions_preserved": true,
+  "all_branch_child_orients_preserved": true,
+  "branch_selection_preserved": true,
+  "branch_repeat_plan_is_noop": true,
+  "branch_single_undo_restored_orientation": true,
   "cleanup": true,
   "remaining_nodes": [],
-  "duration_seconds": 3.733,
+  "duration_seconds": 3.114,
   "status": "passed"
 }

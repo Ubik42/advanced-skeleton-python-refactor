@@ -78,7 +78,7 @@ class FitWorldOrientationResult:
 
 
 class OrientSimpleFitChain:
-    """Aim local X at the sole child while keeping a stable local Y reference."""
+    """Aim local X at the sole or explicitly selected direct child."""
 
     def __init__(self, host: FitOrientationHost) -> None:
         self._host = host

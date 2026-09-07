@@ -11,6 +11,7 @@ from adv_py.core import (
     FitJointMetadata,
     FitLocalDirection,
     FitOrientationAxisConfiguration,
+    FitOrientationChildSelection,
     FitOrientationRequest,
     FitOrientationSnapshot,
     FitOrientationValidationError,
@@ -89,6 +90,33 @@ def world_orientation_snapshot(*, forward="zForward"):
     )
 
 
+def branch_orientation_snapshot():
+    snapshot = orientation_snapshot()
+    branch = FitHierarchyNode(
+        f"{snapshot.hierarchy.container}|Root|Clavicle",
+        "Clavicle",
+        f"{snapshot.hierarchy.container}|Root",
+        (4.0, 0.0, 2.0),
+        (4.0, 0.0, 2.0),
+    )
+    return replace(
+        snapshot,
+        hierarchy=replace(
+            snapshot.hierarchy,
+            joints=snapshot.hierarchy.joints + (branch,),
+        ),
+        joints=snapshot.joints
+        + (
+            FitJointOrientationState(
+                joint=branch.path,
+                joint_orient=(5.0, 0.0, 0.0),
+                rotation=(0.0, 0.0, 0.0),
+                world_axes=IDENTITY_AXES,
+            ),
+        ),
+    )
+
+
 class FakeFitOrientationHost:
     def __init__(self, snapshot=None):
         self.snapshot = snapshot or orientation_snapshot()
@@ -155,6 +183,42 @@ class FakeFitOrientationHost:
 
 
 class FitOrientationTests(unittest.TestCase):
+    def test_branch_orientation_requires_a_direct_child_selection(self) -> None:
+        snapshot = branch_orientation_snapshot()
+        with self.assertRaisesRegex(FitOrientationValidationError, "显式指定"):
+            plan_simple_fit_orientations(
+                snapshot,
+                FitOrientationRequest(("Root",)),
+            )
+        with self.assertRaisesRegex(FitOrientationValidationError, "不是.*直接"):
+            plan_simple_fit_orientations(
+                snapshot,
+                FitOrientationRequest(
+                    ("Root",),
+                    (FitOrientationChildSelection("Root", "Spine2"),),
+                ),
+            )
+
+    def test_branch_orientation_aims_at_selected_child_and_preserves_siblings(
+        self,
+    ) -> None:
+        request = FitOrientationRequest(
+            ("Root",),
+            (FitOrientationChildSelection("Root", "Clavicle"),),
+        )
+        host = FakeFitOrientationHost(branch_orientation_snapshot())
+        preview = OrientSimpleFitChain(host).plan(request)
+        result = OrientSimpleFitChain(host).apply(request)
+
+        self.assertEqual(preview.changes[0].child.rsplit("|", 1)[-1], "Clavicle")
+        self.assertEqual(len(preview.changes[0].preserved_child_joint_orients), 2)
+        self.assertAlmostEqual(
+            preview.changes[0].desired_primary_world[0],
+            4.0 / (20.0 ** 0.5),
+        )
+        self.assertEqual(len(result.plan.changes), 1)
+        self.assertEqual(host.transaction_count, 1)
+
     def test_builds_right_handed_world_axes_from_fixed_policy(self) -> None:
         axes = world_axes_from_orientation_policy(
             FitWorldOrientationPolicy(
