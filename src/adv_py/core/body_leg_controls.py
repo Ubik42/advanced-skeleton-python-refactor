@@ -32,7 +32,7 @@ def plan_body_leg_fk_controls(
     return plan_body_limb_fk_controls(
         body,
         limb_label="Leg",
-        joint_names=("Hip", "Knee", "Ankle"),
+        joint_names=("Hip", "Knee", "Ankle", "Toes"),
         radius=radius,
         driven_joint_by_source=driven_joint_by_source,
     )

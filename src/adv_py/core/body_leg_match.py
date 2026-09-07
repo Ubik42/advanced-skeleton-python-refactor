@@ -24,6 +24,12 @@ class BodyLegFkToIkPlan:
     pole_position: Vector3
     body_joint_paths: tuple[str, str, str]
     body_joint_positions: tuple[Vector3, Vector3, Vector3]
+    toe_body_path: str
+    ankle_ik_driver_path: str
+    toe_ik_driver_path: str
+    toe_body_position: Vector3
+    toe_body_axes: AxisFrame
+    toe_relative_axes: AxisFrame
     required_paths: tuple[str, ...]
     required_writable_plugs: tuple[str, ...]
 
@@ -35,17 +41,19 @@ class BodyLegFkToIkSceneState:
     blend_value: float
     body_joint_positions: tuple[Vector3, ...]
     ankle_axes: tuple[Vector3, ...]
+    toe_ik_parent_axes: tuple[Vector3, ...]
+    toe_ik_axes: tuple[Vector3, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class BodyLegIkToFkPlan:
     side: FitBuildSide
     blend_plug: str
-    fk_control_paths: tuple[str, str, str]
-    fk_control_axes: tuple[AxisFrame, AxisFrame, AxisFrame]
-    body_joint_paths: tuple[str, str, str]
-    body_joint_positions: tuple[Vector3, Vector3, Vector3]
-    body_joint_axes: tuple[AxisFrame, AxisFrame, AxisFrame]
+    fk_control_paths: tuple[str, ...]
+    fk_control_axes: tuple[AxisFrame, ...]
+    body_joint_paths: tuple[str, ...]
+    body_joint_positions: tuple[Vector3, ...]
+    body_joint_axes: tuple[AxisFrame, ...]
     required_paths: tuple[str, ...]
     required_writable_plugs: tuple[str, ...]
 
@@ -82,10 +90,32 @@ def plan_body_leg_fk_to_ik(
         raise ValueError("Leg FK→IK 匹配要求唯一的目标侧")
     limb, blend_side = limbs[0], blend_sides[0]
     by_path = {joint.path: joint for joint in body.joints}
-    paths = tuple(joint.body_joint for joint in blend_side.joints)
-    if len(paths) != 3 or any(path not in by_path for path in paths):
+    by_name = {joint.name: joint for joint in body.joints}
+    wanted_names = tuple(
+        f"{name}_{side.value}" for name in ("Hip", "Knee", "Ankle")
+    )
+    paths = tuple(
+        by_name[name].path for name in wanted_names if name in by_name
+    )
+    blended_paths = {joint.body_joint for joint in blend_side.joints}
+    if (
+        len(paths) != 3
+        or any(path not in by_path for path in paths)
+        or any(path not in blended_paths for path in paths)
+    ):
         raise ValueError("Leg FK→IK 匹配要求完整的 Hip/Knee/Ankle Body 链")
     joints = tuple(by_path[path] for path in paths)
+    toe_name = f"Toes_{side.value}"
+    toe = by_name.get(toe_name)
+    toe_blend = next(
+        (
+            joint for joint in blend_side.joints
+            if toe is not None and joint.body_joint == toe.path
+        ),
+        None,
+    )
+    if toe is None or toe_blend is None:
+        raise ValueError("Leg FK→IK 匹配要求 Toes Body 与 IK driver 输出")
     line = tuple(
         end - start
         for start, end in zip(joints[0].world_position, joints[2].world_position)
@@ -127,7 +157,20 @@ def plan_body_leg_fk_to_ik(
         pole,
         paths,
         tuple(joint.world_position for joint in joints),
-        (limb.ankle_control_path, limb.pole_control_path, *paths),
+        toe.path,
+        limb.chain[2],
+        toe_blend.ik_driver,
+        toe.world_position,
+        toe.world_axes,
+        _relative_axes(joints[2].world_axes, toe.world_axes),
+        (
+            limb.ankle_control_path,
+            limb.pole_control_path,
+            *paths,
+            toe.path,
+            limb.chain[2],
+            toe_blend.ik_driver,
+        ),
         writable,
     )
 
@@ -172,6 +215,22 @@ def audit_body_leg_fk_to_ik_preflight(
         issues.append(BodyLegMatchIssue(
             "pose_drift", "Leg FK→IK 匹配姿态已变化", plan.side.value
         ))
+    if (
+        len(state.toe_ik_parent_axes) != 3
+        or len(state.toe_ik_axes) != 3
+        or any(
+            not _close(actual, expected, tolerance)
+            for actual, expected in zip(
+                _relative_axes(state.toe_ik_parent_axes, state.toe_ik_axes),
+                plan.toe_relative_axes,
+            )
+        )
+    ):
+        issues.append(BodyLegMatchIssue(
+            "toe_pose_unrepresentable",
+            "当前 Toes FK 姿态尚无对应 IK 控制，请先恢复中性 Toe 姿态",
+            plan.side.value,
+        ))
     return tuple(issues)
 
 
@@ -207,6 +266,24 @@ def audit_body_leg_fk_to_ik_result(
             "Leg FK→IK 切换后 Ankle 朝向跳变",
             plan.body_joint_paths[2],
         ))
+    toe = by_path.get(plan.toe_body_path)
+    if toe is None or not _close(
+        toe.world_position, plan.toe_body_position, position_tolerance
+    ):
+        issues.append(BodyLegMatchIssue(
+            "toe_position_pop",
+            "Leg FK→IK 切换后 Toes 位置跳变",
+            plan.toe_body_path,
+        ))
+    if toe is None or any(
+        not _close(actual, expected, axis_tolerance)
+        for actual, expected in zip(toe.world_axes, plan.toe_body_axes)
+    ):
+        issues.append(BodyLegMatchIssue(
+            "toe_orientation_pop",
+            "Leg FK→IK 切换后 Toes 朝向跳变",
+            plan.toe_body_path,
+        ))
     return tuple(issues)
 
 
@@ -218,16 +295,39 @@ def plan_body_leg_ik_to_fk(
 ) -> BodyLegIkToFkPlan:
     if side not in (FitBuildSide.RIGHT, FitBuildSide.LEFT):
         raise ValueError("Leg IK→FK 匹配只接受 Left 或 Right")
+    control_by_name = {
+        spec.control_name: spec
+        for spec in fk_controls.controls
+        if spec.side is side
+    }
     controls = tuple(
-        spec for spec in fk_controls.controls if spec.side is side
+        control_by_name[name]
+        for name in (
+            f"AdvPy_HipFK_{side.value}",
+            f"AdvPy_KneeFK_{side.value}",
+            f"AdvPy_AnkleFK_{side.value}",
+            f"AdvPy_ToesFK_{side.value}",
+        )
+        if name in control_by_name
     )
     blend_sides = tuple(spec for spec in blend.sides if spec.side is side)
-    if len(controls) != 3 or len(blend_sides) != 1:
-        raise ValueError("Leg IK→FK 匹配要求唯一的三层 FK 控制链")
+    if len(controls) != 4 or len(blend_sides) != 1:
+        raise ValueError("Leg IK→FK 匹配要求唯一的四层 FK 控制链")
     by_path = {joint.path: joint for joint in body.joints}
-    paths = tuple(joint.body_joint for joint in blend_sides[0].joints)
-    if len(paths) != 3 or any(path not in by_path for path in paths):
-        raise ValueError("Leg IK→FK 匹配要求完整的 Hip/Knee/Ankle Body 链")
+    by_name = {joint.name: joint for joint in body.joints}
+    wanted_names = tuple(
+        f"{name}_{side.value}" for name in ("Hip", "Knee", "Ankle", "Toes")
+    )
+    paths = tuple(
+        by_name[name].path for name in wanted_names if name in by_name
+    )
+    blended_paths = {joint.body_joint for joint in blend_sides[0].joints}
+    if (
+        len(paths) != 4
+        or any(path not in by_path for path in paths)
+        or any(path not in blended_paths for path in paths)
+    ):
+        raise ValueError("Leg IK→FK 匹配要求完整的 Hip/Knee/Ankle/Toes Body 链")
     joints = tuple(by_path[path] for path in paths)
     control_paths = tuple(control.control_path for control in controls)
     driver_paths = tuple(control.driven_joint for control in controls)
@@ -336,3 +436,13 @@ def audit_body_leg_ik_to_fk_result(
 
 def _close(left, right, tolerance):
     return all(abs(a - b) <= tolerance for a, b in zip(left, right))
+
+
+def _relative_axes(parent: AxisFrame, child: AxisFrame) -> AxisFrame:
+    return tuple(
+        tuple(
+            sum(parent_axis[index] * child_axis[index] for index in range(3))
+            for child_axis in child
+        )
+        for parent_axis in parent
+    )

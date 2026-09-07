@@ -18,7 +18,7 @@ def close(left, right, tolerance=1e-3):
 
 
 def target_pose_matches(before, after):
-    names = {"Hip_R", "Knee_R", "Ankle_R"}
+    names = {"Hip_R", "Knee_R", "Ankle_R", "Toes_R"}
     wanted = {joint.name: joint for joint in before.joints if joint.name in names}
     current = {joint.name: joint for joint in after.joints if joint.name in names}
     return set(wanted) == set(current) and all(
@@ -34,7 +34,7 @@ def target_pose_matches(before, after):
 
 
 def left_pose_matches(before, after):
-    names = {"Hip_L", "Knee_L", "Ankle_L"}
+    names = {"Hip_L", "Knee_L", "Ankle_L", "Toes_L"}
     wanted = {joint.name: joint for joint in before.joints if joint.name in names}
     current = {joint.name: joint for joint in after.joints if joint.name in names}
     return set(wanted) == set(current) and all(

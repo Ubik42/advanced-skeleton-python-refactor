@@ -67,9 +67,9 @@ def plan_body_limb_mechanisms(
     body: BodySkeletonSnapshot,
     *,
     limb_label: str,
-    joint_names: tuple[str, str, str],
+    joint_names: tuple[str, ...],
 ) -> BodyLimbMechanismPlan:
-    if not limb_label.isalpha() or len(joint_names) != 3 or len(set(joint_names)) != 3 or any(
+    if not limb_label.isalpha() or len(joint_names) < 2 or len(set(joint_names)) != len(joint_names) or any(
         not name.isalpha() for name in joint_names
     ):
         raise BodyLimbMechanismValidationError("Limb 机制定义无效")
@@ -81,7 +81,7 @@ def plan_body_limb_mechanisms(
     )
     if len(by_name) != len(body.joints) or any(name not in by_name for name in required):
         raise BodyLimbMechanismValidationError(
-            f"Body 缺少唯一的双侧 {limb_label} 三关节链"
+            f"Body 缺少唯一的双侧 {limb_label} 机制链"
         )
 
     root_name = f"AdvPy_{limb_label}Mechanisms"

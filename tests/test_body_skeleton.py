@@ -86,6 +86,7 @@ from adv_py.core import (
     predict_fit_template_hierarchy,
     synthetic_body_source_fit_template,
     plan_body_arm_fk_controls,
+    audit_body_leg_fk_to_ik_preflight,
 )
 
 
@@ -810,6 +811,8 @@ class FakeBodySkeletonHost:
             side.attribute_value,
             plan.body_joint_positions,
             plan.ankle_axes,
+            plan.ankle_axes,
+            plan.toe_body_axes,
         )
 
     def apply_body_leg_fk_to_ik(self, plan):
@@ -1337,7 +1340,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 2)
         self.assertEqual(result.body, body)
         self.assertEqual(result.snapshot.root_path, "|AdvPy_LegMechanisms")
-        self.assertEqual(len(result.snapshot.joints), 12)
+        self.assertEqual(len(result.snapshot.joints), 20)
         self.assertEqual(
             {state.side for state in result.snapshot.joints},
             {FitBuildSide.RIGHT, FitBuildSide.LEFT},
@@ -1345,6 +1348,13 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(
             {spec.role for spec in result.plan.mechanisms.joints},
             {BodyLegMechanismRole.FK, BodyLegMechanismRole.IK},
+        )
+        toes_end_ik = next(
+            state for state in result.snapshot.joints
+            if state.path.endswith("AdvPy_ToesEndIKDriver_R")
+        )
+        self.assertTrue(
+            toes_end_ik.parent_path.endswith("AdvPy_ToesIKDriver_R")
         )
 
     def test_leg_mechanism_collision_blocks_before_transaction(self):
@@ -1378,7 +1388,7 @@ class BodySkeletonTests(unittest.TestCase):
 
         self.assertTrue(preview.ready)
         self.assertEqual(host.transaction_count, 3)
-        self.assertEqual(len(result.snapshot.controls), 6)
+        self.assertEqual(len(result.snapshot.controls), 8)
         body_paths = {state.path for state in body.joints}
         ik_paths = {
             state.path for state in mechanisms.joints if "IKDriver" in state.path
@@ -1393,6 +1403,14 @@ class BodySkeletonTests(unittest.TestCase):
             if state.control_path.endswith("AdvPy_KneeFK_L")
         )
         self.assertTrue(knee_left.offset_parent_path.endswith("AdvPy_HipFK_L"))
+        toes_right = next(
+            state for state in result.snapshot.controls
+            if state.control_path.endswith("AdvPy_ToesFK_R")
+        )
+        self.assertTrue(
+            toes_right.offset_parent_path.endswith("AdvPy_AnkleFK_R")
+            and toes_right.driven_joint.endswith("AdvPy_ToesFKDriver_R")
+        )
 
     def test_leg_fk_control_collision_blocks_before_transaction(self):
         host = FakeBodySkeletonHost()
@@ -1485,7 +1503,7 @@ class BodySkeletonTests(unittest.TestCase):
             },
         )
         for side in result.snapshot.sides:
-            self.assertEqual(len(side.joints), 3)
+            self.assertEqual(len(side.joints), 4)
             translated = {
                 joint.translation_driven_joint.rsplit("|", 1)[-1]
                 for joint in side.joints
@@ -1494,6 +1512,19 @@ class BodySkeletonTests(unittest.TestCase):
             self.assertEqual(
                 translated,
                 {f"Knee_{side.side.value}", f"Ankle_{side.side.value}"},
+            )
+            toes = next(
+                joint for joint in side.joints
+                if joint.body_joint.endswith(f"Toes_{side.side.value}")
+            )
+            self.assertTrue(
+                toes.targets[0].endswith(
+                    f"AdvPy_ToesFKDriver_{side.side.value}"
+                )
+                and toes.targets[1].endswith(
+                    f"AdvPy_ToesIKDriver_{side.side.value}"
+                )
+                and toes.translation_constraint_name is None
             )
 
     def test_leg_blend_collision_blocks_before_transaction(self):
@@ -1704,8 +1735,8 @@ class BodySkeletonTests(unittest.TestCase):
 
         self.assertTrue(preview.ready)
         self.assertEqual(host.transaction_count, 2)
-        self.assertEqual(len(result.mechanisms.joints), 12)
-        self.assertEqual(len(result.fk_controls.controls), 6)
+        self.assertEqual(len(result.mechanisms.joints), 20)
+        self.assertEqual(len(result.fk_controls.controls), 8)
         self.assertEqual(len(result.ik.limbs), 2)
         self.assertEqual(len(result.blend.sides), 2)
         self.assertEqual(len(result.visibility.sides), 2)
@@ -1963,6 +1994,22 @@ class BodySkeletonTests(unittest.TestCase):
 
         self.assertEqual(host.transaction_count, 2)
 
+    def test_leg_fk_to_ik_rejects_toe_pose_without_ik_equivalent(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegRig(host).apply()
+        plan = MatchBodyLegFkToIk(host).plan(FitBuildSide.RIGHT).match
+        state = host.capture_body_leg_fk_to_ik_state(plan)
+        state = replace(
+            state,
+            toe_ik_axes=((0.0, 1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
+        )
+
+        issues = audit_body_leg_fk_to_ik_preflight(plan, state)
+
+        self.assertIn("toe_pose_unrepresentable", {issue.code for issue in issues})
+        self.assertEqual(host.transaction_count, 2)
+
     def test_leg_fk_to_ik_pose_failure_rolls_back_blend(self):
         host = FakeBodySkeletonHost(faulty_leg_match=True)
         BuildOrientedBodySkeleton(host).apply()
@@ -1990,6 +2037,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 4)
         self.assertEqual(values[FitBuildSide.RIGHT], 0.0)
         self.assertEqual(values[FitBuildSide.LEFT], 0.0)
+        self.assertEqual(len(result.plan.match.fk_control_paths), 4)
 
     def test_leg_ik_to_fk_requires_current_ik_mode_before_transaction(self):
         host = FakeBodySkeletonHost()

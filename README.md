@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成五十六个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、30 关节 Body 构建与安全 ReBuild，以及双臂完整 FK/IK 路径和双腿原子 FK/IK/Foot Rig。Arm 已覆盖模式显隐、含拉伸段长的双向匹配、带全局比例补偿的 IK stretch、轴向 twist 与横向体积保持；Leg 主流程在一个事务内建立 mechanisms、FK controls、Ankle/Pole Vector IK、旋转/位移 blend、模式显隐和双侧 reverse-foot pivot，支持固定链长范围内的单侧 FK↔IK 无跳变匹配及显式 roll/bank 通道；Skin 已覆盖显式绑定、稀疏权重写入、JSON 往返、路径映射、显式镜像及严格几何配对。自动分段 footRoll、独立 Toe IK、Leg stretch、手指控制、自动权重和产品 UI 尚未实现。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成五十七个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、30 关节 Body 构建与安全 ReBuild，以及双臂完整 FK/IK 路径和双腿原子 FK/IK/Foot Rig。Arm 已覆盖模式显隐、含拉伸段长的双向匹配、带全局比例补偿的 IK stretch、轴向 twist 与横向体积保持；Leg 主流程在一个事务内建立五关节 FK/IK mechanisms、Hip/Knee/Ankle/Toes FK controls、Ankle/Pole Vector IK、包含 Toes 的旋转 blend、模式显隐和双侧 reverse-foot pivot，支持固定链长范围内的单侧 FK↔IK 匹配及显式 roll/bank 通道；Skin 已覆盖显式绑定、稀疏权重写入、JSON 往返、路径映射、显式镜像及严格几何配对。独立 Toe IK、Foot 输出朝向、自动分段 footRoll、Leg stretch、手指控制、自动权重和产品 UI 尚未实现。
 
 ## 当前完成
 
@@ -34,15 +34,15 @@
 - `ReplaceOwnedBodySkeleton` 只替换通过安全评估的 Python Body。预检会忽略旧树自身的同名路径并保留外部冲突，事务内再次检查场景漂移后删除旧树、完整重建并复检；任一失败由同一 Undo 恢复旧 Body。
 - `BuildBodyArmFkControls` 从已验证的 Python Body 快照生成双侧 Shoulder/Elbow/Wrist FK 规格，在单个 Undo Chunk 内创建 6 个零通道 NURBS 控制器、offset 层级和 orientConstraint；名称、Body 所有权、Fit 输入或构建后连线异常都会阻止或回滚整套控制。
 - `BuildBodyArmMechanisms` 为左右手臂分别生成 FK 与 IK 的 Shoulder/Elbow/Wrist 驱动链，共 12 个机制 joint。每个 joint 保存到 Body 来源的 message 连线，初始世界帧与 source joint 一致，两套链可独立运动并由一次 Undo 完整移除。
-- `BuildBodyLegMechanisms` 复用 DCC 无关的 limb mechanism 合同，为左右腿分别生成 Hip/Knee/Ankle FK 与 IK 驱动链；共 12 个 joint 在单一事务内创建并复检，失败或一次 Undo 都会完整移除。
+- `BuildBodyLegMechanisms` 复用可变长度的 DCC 无关 limb mechanism 合同，为左右腿分别生成 Hip→Knee→Ankle→Toes→ToesEnd FK 与 IK 驱动链；共 20 个 joint 在单一事务内创建并复检，失败或一次 Undo 都会完整移除。
 - `BuildBodyArmFkMechanismControls` 先核对 Body provenance 与完整 mechanism 快照，再让 6 个 FK controls 驱动对应 FK driver joints；Body 和 IK 链保持不受 FK 操作直接影响，控制层与机制层可分别 Undo。
-- `BuildBodyLegFkMechanismControls` 复用通用 limb FK 控制规格，为左右 Hip/Knee/Ankle 建立 6 个零通道 NURBS controls；它们只约束 Leg FK drivers，IK 链与 Body 保持隔离，控制层和机制层可分两次 Undo。
+- `BuildBodyLegFkMechanismControls` 复用可变长度 limb FK 控制规格，为左右 Hip/Knee/Ankle/Toes 建立 8 个零通道 NURBS controls；Toes control 只驱动同侧 Toes FK driver，IK 链与 Body 继续保持隔离，控制层和机制层可分两次 Undo。
 - `BuildBodyLegIkControls` 为左右 Leg IK mechanisms 建立 Ankle/Pole Vector controls、RP IK Handle 和 Ankle orientConstraint；笔直腿会从 Knee 世界轴中确定性选择非共线备用方向，真实目标求解与 Body 隔离已经 Maya 验证。
-- `BuildBodyLegBlend` 创建左右独立的 `legIkFk_R/L`、reverse 节点、6 个双源 orientConstraint 和 Knee/Ankle 的 4 个双源 pointConstraint；FK=0、IK=1、0.5 权重及左右隔离均在 Maya 2024 中验证。
+- `BuildBodyLegBlend` 创建左右独立的 `legIkFk_R/L`、reverse 节点、8 个双源 orientConstraint 和 Knee/Ankle 的 4 个双源 pointConstraint；Toes 旋转由同侧 FK/IK Toes driver 进入 Body，FK=0、IK=1、0.5 权重及左右隔离均在 Maya 2024 中验证。
 - `BuildBodyLegVisibility` 复用通用 limb 显隐合同，把每侧 reverse 输出连接到 Hip FK 根层级，并把 `legIkFk_R/L` 连接到对应 Ankle/PV IK 根层级；执行前拒绝缺失源和不可写或已有输入的 visibility，构建失败由单一事务回滚。
 - `BuildBodyLegRig` 在场景零修改预演后，用一个 Undo Chunk 依次创建 Leg mechanisms、FK controls、Body blend、Ankle/PV IK、模式显隐与双侧 Foot pivot；Foot 名称也进入统一碰撞预检，任一阶段失败会移除此前所有 Leg/Foot 产物，一次 Undo 可恢复干净 Body 和 ReBuild 安全状态。
-- `MatchBodyLegFkToIk` 从当前 Hip/Knee/Ankle Body 姿态计算 Ankle IK 世界帧和 Pole Vector 位置；只允许目标侧处于 FK 模式且相关通道可写，提交前复查姿态漂移，单事务切换后验证三关节位置、Ankle 朝向和另一侧 blend。
-- `MatchBodyLegIkToFk` 按 Hip→Knee→Ankle 父子顺序把三层 FK controls 对齐到当前 Body 世界轴，再切回 FK；当前固定链长合同不写 driver translate，提交后复检三关节位置/朝向、另一侧 blend、Fit 输入和 FK 控制本地平移。
+- `MatchBodyLegFkToIk` 从当前 Hip/Knee/Ankle Body 姿态计算 Ankle IK 世界帧和 Pole Vector，并核对 Body 与 IK driver 的 Ankle→Toes 相对朝向；当前 Toes FK 姿态没有 IK 等价表示时会在事务前拒绝，支持的中性 Toe 姿态切换后复检 Toes 朝向。
+- `MatchBodyLegIkToFk` 按 Hip→Knee→Ankle→Toes 父子顺序把四层 FK controls 对齐到当前 Body 世界轴，再切回 FK；当前固定链长合同不写 driver translate，提交后复检四关节位置/朝向、另一侧 blend、Fit 输入和 FK 控制本地平移。
 - `BuildBodyLegFoot` 仍可为独立组合的 pre-Foot Leg stages 追加双侧五级 reverse-foot pivot；默认成品入口已经由 `BuildBodyLegRig` 原子包含该阶段。Ankle IK control 暴露 `heelRoll/outerBank/innerBank/toeRoll/ballRoll`，inner bank 通过显式负号节点保持正值语义，现有 RP IK Handle 保持世界位置后挂到 Ball pivot。
 - `BuildBodyArmIkControls` 根据 Shoulder/Elbow/Wrist 几何计算稳定 Pole Vector 位置，为左右 IK mechanism 创建 Wrist/PV NURBS controls、RP IK Handle 和 poleVectorConstraint；可达目标位置经过真实 Maya 求解验证。
 - Wrist IK control 通过独立 orientConstraint 驱动对应 Wrist IK driver；约束名称、source 和 driven joint 进入核心规格与构建后审计，为后续 FK→IK 姿态匹配提供手腕朝向合同。
@@ -101,4 +101,4 @@ py -3 -m unittest discover -s tests -v
 - 当前 Maya Arm 已支持单侧 FK→IK 与 IK→FK 无跳变匹配（含 IK stretch 段长传递）、带显式全局比例输入的左右独立 IK stretch、四元数投影的轴向 twist helper 分布，以及只在 IK 模式响应的可调横向体积保持；完整角色总控层级和镜像 limb 尚未完成。
 - 当前 Skin Bind 只接受调用方明确给出的单个 mesh 与 joint 列表；JSON 和 influence 映射都要求调用方给出完整路径及对应关系，不会自动猜测 namespace、短名或左右 influence。几何镜像只接受严格 X 平面对称顶点，不处理拓扑不对称或近似重采样。尚不支持权重模板、热区/测地线算法、批量绑定或解绑迁移。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya 主线已形成双臂 FK control / RP IK control → global-scale compensated stretch mechanisms → rotation/translation blend → Body → axial twist/volume helpers → 显式 Skin Bind → 精确权重写入/几何镜像 → JSON 往返/路径映射的可运行路径，并完成控制显隐与包含 IK stretch 的双向匹配；双腿 FK/IK/Foot 也已能一次事务完整构建和撤销，在固定链长内双向无跳变匹配。下一步继续在 Maya 内补足 Toe mechanism、Foot 输出朝向与自动分段 footRoll；Leg stretch、手指、World Match 与 Blender 迁移仍待 Maya 阶段稳定后进入。
+- 当前 Maya 主线已形成双臂 FK control / RP IK control → global-scale compensated stretch mechanisms → rotation/translation blend → Body → axial twist/volume helpers → 显式 Skin Bind → 精确权重写入/几何镜像 → JSON 往返/路径映射的可运行路径，并完成控制显隐与包含 IK stretch 的双向匹配；双腿 FK/IK/Foot 也已能一次事务完整构建和撤销，五关节 mechanisms、Toes FK control、Toes Body blend 和四层 IK→FK 匹配已运行。下一步继续在 Maya 内补足独立 Toe IK、Foot 输出朝向与自动分段 footRoll；Leg stretch、手指、World Match 与 Blender 迁移仍待 Maya 阶段稳定后进入。

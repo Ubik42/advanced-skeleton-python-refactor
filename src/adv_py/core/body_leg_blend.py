@@ -34,7 +34,7 @@ def plan_body_leg_blend(
         body,
         mechanisms,
         limb_label="Leg",
-        joint_names=("Hip", "Knee", "Ankle"),
+        joint_names=("Hip", "Knee", "Ankle", "Toes"),
         translated_joint_names=("Knee", "Ankle"),
     )
 

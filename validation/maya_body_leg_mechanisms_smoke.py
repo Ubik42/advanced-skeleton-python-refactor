@@ -121,10 +121,10 @@ def main(output: Path) -> int:
         checks = {
             "preview_ready": preview.ready,
             "preview_clean": preview_clean,
-            "planned_twelve_joints": len(preview.mechanisms.joints) == 12,
-            "created_twelve_joints": len(snapshot.joints) == 12,
-            "bilateral_six_per_side": side_counts == {"R": 6, "L": 6},
-            "six_fk_and_six_ik": role_counts == {"fk": 6, "ik": 6},
+            "planned_twenty_joints": len(preview.mechanisms.joints) == 20,
+            "created_twenty_joints": len(snapshot.joints) == 20,
+            "bilateral_ten_per_side": side_counts == {"R": 10, "L": 10},
+            "ten_fk_and_ten_ik": role_counts == {"fk": 10, "ik": 10},
             "source_links_verified": sources_verified,
             "driver_rotations_zero": zero_rotations,
             "body_preserved": host.capture_body_skeleton("Root_M") == body_before,
@@ -136,7 +136,7 @@ def main(output: Path) -> int:
 
         cmds.undo()
         checks["single_undo_removed_leg_mechanisms"] = not (
-            cmds.ls("AdvPy_LegMechanisms", "AdvPy_Hip*Driver_*", "AdvPy_Knee*Driver_*", "AdvPy_Ankle*Driver_*", long=True)
+            cmds.ls("AdvPy_LegMechanisms", "AdvPy_Hip*Driver_*", "AdvPy_Knee*Driver_*", "AdvPy_Ankle*Driver_*", "AdvPy_Toes*Driver_*", long=True)
             or []
         )
         checks["body_survived_undo"] = len(host.capture_body_skeleton("Root_M").joints) == 30
@@ -152,6 +152,7 @@ def main(output: Path) -> int:
             "AdvPy_Hip*Driver_*",
             "AdvPy_Knee*Driver_*",
             "AdvPy_Ankle*Driver_*",
+            "AdvPy_Toes*Driver_*",
             marker,
             long=True,
         ) or []

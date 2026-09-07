@@ -154,9 +154,9 @@ def main(output: Path) -> int:
         checks = {
             "preview_ready": preview.ready,
             "preview_did_not_modify_scene": preview_clean,
-            "six_rotation_constraints": sum(
+            "eight_rotation_constraints": sum(
                 len(side.joints) for side in blend.snapshot.sides
-            ) == 6,
+            ) == 8,
             "four_translation_constraints": sum(
                 joint.translation_constraint_name is not None
                 for side in blend.snapshot.sides

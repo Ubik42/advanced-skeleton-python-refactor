@@ -77,13 +77,13 @@ def plan_body_limb_blend(
     mechanisms: BodyLimbMechanismPlan,
     *,
     limb_label: str,
-    joint_names: tuple[str, str, str],
+    joint_names: tuple[str, ...],
     translated_joint_names: tuple[str, ...],
 ) -> BodyLimbBlendPlan:
     if (
         not limb_label.isalpha()
-        or len(joint_names) != 3
-        or len(set(joint_names)) != 3
+        or len(joint_names) < 2
+        or len(set(joint_names)) != len(joint_names)
         or any(not name.isalpha() for name in joint_names)
         or not set(translated_joint_names).issubset(joint_names)
     ):
@@ -98,7 +98,7 @@ def plan_body_limb_blend(
         name not in body_by_name for name in required
     ):
         raise BodyLimbBlendValidationError(
-            f"Body 缺少唯一的双侧 {limb_label} 三关节链"
+            f"Body 缺少唯一的双侧 {limb_label} 输出链"
         )
     drivers = {
         (spec.source_joint, spec.role): spec.path

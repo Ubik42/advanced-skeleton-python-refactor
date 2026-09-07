@@ -27,7 +27,7 @@ def plan_body_leg_mechanisms(body: BodySkeletonSnapshot) -> BodyLegMechanismPlan
     return plan_body_limb_mechanisms(
         body,
         limb_label="Leg",
-        joint_names=("Hip", "Knee", "Ankle"),
+        joint_names=("Hip", "Knee", "Ankle", "Toes", "ToesEnd"),
     )
 
 

@@ -1484,8 +1484,42 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 )
                 for index in (0, 4, 8)
             )
+        toe_ik_parent_axes = ()
+        if self._cmds.objExists(plan.ankle_ik_driver_path):
+            matrix = self._cmds.xform(
+                plan.ankle_ik_driver_path,
+                query=True,
+                worldSpace=True,
+                matrix=True,
+            )
+            toe_ik_parent_axes = tuple(
+                self._normalized_vector(
+                    tuple(float(item) for item in matrix[index:index + 3])
+                )
+                for index in (0, 4, 8)
+            )
+        toe_ik_axes = ()
+        if self._cmds.objExists(plan.toe_ik_driver_path):
+            matrix = self._cmds.xform(
+                plan.toe_ik_driver_path,
+                query=True,
+                worldSpace=True,
+                matrix=True,
+            )
+            toe_ik_axes = tuple(
+                self._normalized_vector(
+                    tuple(float(item) for item in matrix[index:index + 3])
+                )
+                for index in (0, 4, 8)
+            )
         return BodyLegFkToIkSceneState(
-            existing, writable, value, tuple(positions), ankle_axes
+            existing,
+            writable,
+            value,
+            tuple(positions),
+            ankle_axes,
+            toe_ik_parent_axes,
+            toe_ik_axes,
         )
 
     def apply_body_leg_fk_to_ik(self, plan: BodyLegFkToIkPlan) -> None:

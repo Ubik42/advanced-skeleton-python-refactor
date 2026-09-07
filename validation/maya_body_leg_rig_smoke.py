@@ -25,6 +25,40 @@ def visible(cmds, path):
     return bool(cmds.getAttr(f"{path}.visibility"))
 
 
+def joints_match(before, after, names):
+    wanted = {joint.name: joint for joint in before.joints if joint.name in names}
+    current = {joint.name: joint for joint in after.joints if joint.name in names}
+    return set(wanted) == set(current) and all(
+        close(wanted[name].world_position, current[name].world_position)
+        and all(
+            close(actual, expected)
+            for actual, expected in zip(
+                wanted[name].world_axes, current[name].world_axes
+            )
+        )
+        for name in wanted
+    )
+
+
+def fk_to_ik_output_matches(before, after):
+    names = {"Hip_R", "Knee_R", "Ankle_R", "Toes_R"}
+    wanted = {joint.name: joint for joint in before.joints if joint.name in names}
+    current = {joint.name: joint for joint in after.joints if joint.name in names}
+    return set(wanted) == set(current) and all(
+        close(wanted[name].world_position, current[name].world_position)
+        and (
+            name not in {"Ankle_R", "Toes_R"}
+            or all(
+                close(actual, expected)
+                for actual, expected in zip(
+                    wanted[name].world_axes, current[name].world_axes
+                )
+            )
+        )
+        for name in wanted
+    )
+
+
 def main(output: Path) -> int:
     started = time.perf_counter()
     maya.standalone.initialize(name="python")
@@ -38,7 +72,10 @@ def main(output: Path) -> int:
             BuildSyntheticBodySourceFit,
             CreateFitSkeleton,
             InspectBodyRebuildSafety,
+            MatchBodyLegFkToIk,
+            MatchBodyLegIkToFk,
         )
+        from adv_py.core import FitBuildSide
 
         cmds.file(new=True, force=True)
         cmds.undoInfo(state=True)
@@ -70,6 +107,14 @@ def main(output: Path) -> int:
         )
         bind_right = position(cmds, right_ankle)
         bind_left = position(cmds, left_ankle)
+        right_toes_end = next(
+            joint.path for joint in body.joints if joint.name == "ToesEnd_R"
+        )
+        left_toes_end = next(
+            joint.path for joint in body.joints if joint.name == "ToesEnd_L"
+        )
+        bind_right_toes_end = position(cmds, right_toes_end)
+        bind_left_toes_end = position(cmds, left_toes_end)
         right_fk = next(
             state.control_path
             for state in result.fk_controls.controls
@@ -79,6 +124,11 @@ def main(output: Path) -> int:
             state.ankle_control_path
             for state in result.ik.limbs
             if state.side.value == "R"
+        )
+        right_toes_fk = next(
+            state.control_path
+            for state in result.fk_controls.controls
+            if state.control_path.endswith("AdvPy_ToesFK_R")
         )
         visibility = {side.side.value: side for side in result.plan.visibility.sides}
         default_fk_only = all(
@@ -91,6 +141,14 @@ def main(output: Path) -> int:
         cmds.setAttr(f"{right_fk}.rotateZ", 20.0)
         fk_drives_body = not close(position(cmds, right_ankle), bind_right)
         cmds.setAttr(f"{right_fk}.rotateZ", 0.0)
+        cmds.setAttr(f"{right_toes_fk}.rotateY", 20.0)
+        toe_fk_drives_body = not close(
+            position(cmds, right_toes_end), bind_right_toes_end
+        )
+        toe_left_independent = close(
+            position(cmds, left_toes_end), bind_left_toes_end
+        )
+        cmds.setAttr(f"{right_toes_fk}.rotateY", 0.0)
 
         right_plug = f"{result.blend.settings_path}.legIkFk_R"
         left_plug = f"{result.blend.settings_path}.legIkFk_L"
@@ -117,15 +175,35 @@ def main(output: Path) -> int:
         cmds.xform(right_ik, worldSpace=True, translation=bind_right)
         cmds.undoInfo(stateWithoutFlush=True)
 
+        fk_to_ik = MatchBodyLegFkToIk(host).apply(
+            FitBuildSide.RIGHT, container
+        )
+        ik_to_fk = MatchBodyLegIkToFk(host).apply(
+            FitBuildSide.RIGHT, container
+        )
+        fk_to_ik_toe_preserved = fk_to_ik_output_matches(body, fk_to_ik.body)
+        ik_to_fk_toe_preserved = joints_match(
+                fk_to_ik.body,
+                host.capture_body_skeleton("Root_M"),
+                {"Hip_R", "Knee_R", "Ankle_R", "Toes_R"},
+            )
+        toe_match_round_trip = (
+            fk_to_ik_toe_preserved
+            and len(ik_to_fk.plan.match.fk_control_paths) == 4
+            and ik_to_fk_toe_preserved
+        )
+        cmds.undo()
+        cmds.undo()
+
         checks = {
             "preview_ready": preview.ready,
             "preview_did_not_modify_scene": preview_clean,
-            "mechanism_count": len(result.mechanisms.joints) == 12,
-            "fk_control_count": len(result.fk_controls.controls) == 6,
+            "mechanism_count": len(result.mechanisms.joints) == 20,
+            "fk_control_count": len(result.fk_controls.controls) == 8,
             "ik_side_count": len(result.ik.limbs) == 2,
             "blend_constraint_count": sum(
                 len(side.joints) for side in result.blend.sides
-            ) == 6,
+            ) == 8,
             "visibility_side_count": len(result.visibility.sides) == 2,
             "foot_side_count": len(result.foot.sides) == 2,
             "foot_pivot_count": sum(
@@ -137,6 +215,11 @@ def main(output: Path) -> int:
             ),
             "default_fk_only": default_fk_only,
             "fk_drives_body": fk_drives_body,
+            "toe_fk_drives_body": toe_fk_drives_body,
+            "toe_left_side_independent": toe_left_independent,
+            "toe_match_round_trip": toe_match_round_trip,
+            "fk_to_ik_toe_preserved": fk_to_ik_toe_preserved,
+            "ik_to_fk_toe_preserved": ik_to_fk_toe_preserved,
             "ik_drives_body": ik_drives_body,
             "right_ik_only": right_ik_only,
             "left_side_independent": left_independent,
@@ -167,7 +250,7 @@ def main(output: Path) -> int:
             "host": "maya",
             "version": str(cmds.about(version=True)),
             "pid": os.getpid(),
-            "slice": "complete_body_leg_rig_with_foot_atomic",
+            "slice": "complete_body_leg_rig_with_toe_output",
             **checks,
             "remaining_rig_nodes_after_undo": remaining_rig,
             "remaining_nodes": remaining,

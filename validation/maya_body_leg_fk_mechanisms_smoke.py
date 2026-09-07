@@ -108,7 +108,7 @@ def main(output: Path) -> int:
         checks = {
             "preview_ready": preview.ready,
             "preview_did_not_modify_scene": preview_clean,
-            "created_six_controls": len(snapshot.controls) == 6,
+            "created_eight_controls": len(snapshot.controls) == 8,
             "fk_driver_targets_verified": fk_targets_verified,
             "body_not_directly_driven": body_not_directly_driven,
             "zero_control_channels": zero_channels,
@@ -132,7 +132,7 @@ def main(output: Path) -> int:
             host.capture_body_leg_mechanisms(
                 BuildBodyLegMechanisms(host).plan(container).mechanisms
             ).joints
-        ) == 12
+        ) == 20
         checks["body_still_blocked_by_mechanism_links"] = not (
             InspectBodyRebuildSafety(host).execute(container).safe_to_replace
         )

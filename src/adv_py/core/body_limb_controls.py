@@ -70,14 +70,14 @@ def plan_body_limb_fk_controls(
     body: BodySkeletonSnapshot,
     *,
     limb_label: str,
-    joint_names: tuple[str, str, str],
+    joint_names: tuple[str, ...],
     radius: float = 1.5,
     driven_joint_by_source: Mapping[str, str] | None = None,
 ) -> BodyLimbFkControlPlan:
     if (
         not limb_label.isalpha()
-        or len(joint_names) != 3
-        or len(set(joint_names)) != 3
+        or len(joint_names) < 2
+        or len(set(joint_names)) != len(joint_names)
         or any(not name.isalpha() for name in joint_names)
     ):
         raise BodyLimbControlValidationError("Limb FK 控制定义无效")
@@ -101,7 +101,7 @@ def plan_body_limb_fk_controls(
         name not in by_name for name in required_names
     ):
         raise BodyLimbControlValidationError(
-            f"Body 缺少唯一的双侧 {limb_label} 三关节链"
+            f"Body 缺少唯一的双侧 {limb_label} FK 控制链"
         )
     if driven_joint_by_source is not None:
         source_paths = tuple(by_name[name].path for name in required_names)

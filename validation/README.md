@@ -33,15 +33,15 @@
 - Maya 原子 Body ReBuild 在删除前复核全部计划快照，只忽略旧 Body 自身造成的同名冲突；新树构建或复检失败会恢复旧树，一次 Undo 也能恢复替换前 UUID 和位置。
 - Maya 双臂 FK 从当前 Body 世界帧建立 Shoulder/Elbow/Wrist 的 6 个 NURBS 控制、offset 层级和 orientConstraint；控制可改变真实关节姿态，一次 Undo 会完整移除控制系统并恢复 Body ReBuild 安全状态。
 - Maya 双臂机制链从 Body 世界帧建立左右各一套 FK/IK Shoulder→Elbow→Wrist 驱动链；12 个 joint 的来源连线、零 rotate、链间独立运动、一次 Undo 和 ReBuild 安全恢复均通过。
-- Maya 双腿机制链复用同一 limb 合同，从 Body 世界帧建立左右各一套 FK/IK Hip→Knee→Ankle 驱动链；12 个 joint 的来源连线、零 rotate、链间独立运动、失败回滚、一次 Undo 和 ReBuild 安全恢复均通过。
+- Maya 双腿机制链复用可变长度 limb 合同，从 Body 世界帧建立左右各一套 FK/IK Hip→Knee→Ankle→Toes→ToesEnd 驱动链；20 个 joint 的来源连线、零 rotate、链间独立运动、失败回滚、一次 Undo 和 ReBuild 安全恢复均通过。
 - Maya Arm FK mechanism controls 在构建前核对 Body provenance 和机制链快照，6 个控制只驱动 Arm FK driver joints；真实姿态、Body/IK 隔离、选择保持及控制层/机制层分步 Undo 均通过。
-- Maya Leg FK mechanism controls 复用同一通用控制合同，为左右 Hip/Knee/Ankle 建立 6 个 NURBS controls；零通道、FK driver 连线、Body/IK 隔离、选择保持和两层 Undo 均通过。
+- Maya Leg FK mechanism controls 复用可变长度控制合同，为左右 Hip/Knee/Ankle/Toes 建立 8 个 NURBS controls；零通道、FK driver 连线、Toes 真实输出、Body/IK 隔离、选择保持和两层 Undo 均通过。
 - Maya 双腿 RP IK 为左右 IK mechanisms 建立 Ankle/Pole Vector controls、ikRPsolver Handle 与 Ankle 朝向约束；笔直腿备用轴、真实目标求解、Body 隔离、选择保持和分层 Undo 均通过。
-- Maya Leg IK/FK 输出用左右独立属性和 reverse 节点驱动 6 个 Body 双源旋转约束及 Knee/Ankle 的 4 个位移约束；FK、IK、0.5 权重、侧向隔离、选择保持和单次 Undo 均通过。
+- Maya Leg IK/FK 输出用左右独立属性和 reverse 节点驱动 8 个 Body 双源旋转约束及 Knee/Ankle 的 4 个位移约束；Toes FK 输出、FK/IK、0.5 权重、侧向隔离、选择保持和单次 Undo 均通过。
 - Maya Leg 模式显隐在 FK=0 时只显示同侧 Hip FK 层级，在 IK=1 时只显示 Ankle/PV 层级；左右隔离、只读预演、选择保持和单次 Undo 均通过。
 - Maya Leg Rig 在一个 Undo Chunk 内组合 mechanisms、FK controls、rotation/translation blend、Ankle/PV IK、模式显隐与双侧五级 Foot pivot；真实 FK/IK/roll-bank 驱动、左右隔离、Foot 末阶段整体回滚和一次 Undo 清理均通过。
 - Maya Leg FK→IK 匹配从当前弯腿 Body 姿态对齐 Ankle IK 世界帧与 Pole Vector，再切换同侧 blend；Hip/Knee/Ankle 位置、Ankle 朝向、左右隔离、显隐、选择保持和单次 Undo 均通过。
-- Maya Leg IK→FK 匹配把三层 FK controls 依次对齐到当前固定链长 IK 姿态，再切换同侧 blend；Hip/Knee/Ankle 位置与世界轴、左右隔离、显隐、零 FK 本地平移、选择保持和单次 Undo 均通过。
+- Maya Leg IK→FK 匹配把 Hip/Knee/Ankle/Toes 四层 FK controls 依次对齐到当前固定链长 IK 姿态，再切换同侧 blend；四关节位置与世界轴、左右隔离、显隐、零 FK 本地平移、选择保持和单次 Undo 均通过。FK→IK 会拒绝尚无 IK 等价表示的非中性 Toe FK 姿态。
 - Maya 双臂 RP IK 创建 Wrist/Pole Vector 曲线控制、ikRPsolver Handle 与 poleVectorConstraint；可达目标求解、Body 隔离、选择保持和单次 Undo 均通过。
 - Maya Arm IK/FK 输出用左右独立属性和 reverse 节点驱动 6 个 Body 双源约束；FK、IK、0.5 权重、侧向隔离、选择保持与单次 Undo 均通过。
 - Maya 完整 Arm Rig 在一个 Undo Chunk 内组合 mechanisms、FK、blend 与 RP IK；后段失败整套回滚，成品一次 Undo 后 Body/Fit 保留且 ReBuild 再次安全。
@@ -176,7 +176,7 @@
 - 位置编辑只写本地 translate，不自动解锁、断开驱动、重算 jointOrient 或更新 Fit 可视化几何。
 - 朝向编辑支持唯一子级或调用方显式选择的直接分支子级；非零 rotate 和不可补偿后代会在预检阶段拒绝。
 - 对称计划表达输出名称、父子拓扑、YZ 平面世界位置及镜像行为世界轴；当前尚未覆盖非均匀缩放、World Match 或自定义逐关节镜像平面。
-- 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径；Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 默认主流程已把双侧 mechanisms、FK/Ankle/PV controls、旋转/位移 blend、模式显隐和 Heel/Outer/Inner/Toe/Ball pivot 组合成原子 Rig，并支持固定链长 FK↔IK 匹配与显式 roll/bank；自动分段 footRoll、独立 Toe IK、腿部 stretch/twist、手指控制、完整变形系统或产品 UI 尚未实现，因此不是最终 Body rig。
+- 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径；Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 默认主流程已把五关节 mechanisms、四层 FK controls、Ankle/PV IK、含 Toes 的旋转/位移 blend、模式显隐和 Heel/Outer/Inner/Toe/Ball pivot 组合成原子 Rig；独立 Toe IK、Foot 输出朝向、自动分段 footRoll、腿部 stretch/twist、手指控制、完整变形系统或产品 UI 尚未实现，因此不是最终 Body rig。
 - provenance 只证明本工程写入的产物身份和声明数量；删除资格还必须通过当前 DAG 与外部连接安全评估，不能只凭标记直接删除。
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。
