@@ -1,0 +1,18 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 29624,
+  "slice": "body_leg_fk_ik_mode_visibility",
+  "preview_ready": true,
+  "preview_did_not_modify_scene": true,
+  "two_independent_sides": true,
+  "default_fk_only": true,
+  "right_switches_to_ik": true,
+  "left_side_independent": true,
+  "selection_preserved": true,
+  "single_undo_removes_only_visibility": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 4.413,
+  "status": "passed"
+}

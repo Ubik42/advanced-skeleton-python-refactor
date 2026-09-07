@@ -36,5 +36,11 @@ def audit_body_leg_mechanisms(
     snapshot: BodyLegMechanismSnapshot,
     *,
     tolerance: float = 1e-4,
+    check_initial_pose: bool = True,
 ) -> tuple[BodyLegMechanismIssue, ...]:
-    return audit_body_limb_mechanisms(plan, snapshot, tolerance=tolerance)
+    return audit_body_limb_mechanisms(
+        plan,
+        snapshot,
+        tolerance=tolerance,
+        check_initial_pose=check_initial_pose,
+    )

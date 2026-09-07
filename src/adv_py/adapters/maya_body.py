@@ -27,6 +27,12 @@ from adv_py.core.body_arm_visibility import (
     BodyArmVisibilitySideState,
     BodyArmVisibilitySnapshot,
 )
+from adv_py.core.body_leg_visibility import (
+    BodyLegVisibilityInputState,
+    BodyLegVisibilityPlan,
+    BodyLegVisibilitySideState,
+    BodyLegVisibilitySnapshot,
+)
 from adv_py.core.body_arm_match import (
     BodyArmFkToIkPlan,
     BodyArmFkToIkSceneState,
@@ -537,6 +543,12 @@ class MayaBodyBuildHost(MayaFitJointHost):
         return BodyArmBlendSnapshot(settings, tuple(side_states))
 
     def create_body_arm_visibility(self, plan: BodyArmVisibilityPlan) -> None:
+        self._create_body_limb_visibility(plan, "Arm")
+
+    def create_body_leg_visibility(self, plan: BodyLegVisibilityPlan) -> None:
+        self._create_body_limb_visibility(plan, "Leg")
+
+    def _create_body_limb_visibility(self, plan, limb_label: str) -> None:
         self._require_transaction()
         targets = tuple(
             path
@@ -549,7 +561,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
             for plug in (side.reverse_output_plug, side.blend_plug)
         )
         if any(not self._cmds.objExists(value) for value in (*targets, *sources)):
-            raise FitSkeletonValidationError("Arm 控制显隐节点或属性在执行前失效")
+            raise FitSkeletonValidationError(f"{limb_label} 控制显隐节点或属性在执行前失效")
         self._transaction_changed = True
         for side in plan.sides:
             self._cmds.connectAttr(side.reverse_output_plug, f"{side.fk_offset_path}.visibility")
@@ -557,6 +569,38 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 self._cmds.connectAttr(side.blend_plug, f"{path}.visibility")
 
     def capture_body_arm_visibility(self, plan: BodyArmVisibilityPlan) -> BodyArmVisibilitySnapshot:
+        return self._capture_body_limb_visibility(
+            plan, BodyArmVisibilitySideState, BodyArmVisibilitySnapshot
+        )
+
+    def capture_body_leg_visibility(self, plan: BodyLegVisibilityPlan) -> BodyLegVisibilitySnapshot:
+        return self._capture_body_limb_visibility(
+            plan, BodyLegVisibilitySideState, BodyLegVisibilitySnapshot
+        )
+
+    def capture_body_leg_visibility_input(
+        self, plan: BodyLegVisibilityPlan
+    ) -> BodyLegVisibilityInputState:
+        sources = tuple(
+            plug
+            for side in plan.sides
+            for plug in (side.reverse_output_plug, side.blend_plug)
+            if self._cmds.objExists(plug)
+        )
+        target_plugs = tuple(
+            f"{path}.visibility"
+            for side in plan.sides
+            for path in (side.fk_offset_path, *side.ik_offset_paths)
+        )
+        writable = tuple(
+            plug
+            for plug in target_plugs
+            if self._cmds.objExists(plug)
+            and bool(self._cmds.getAttr(plug, settable=True))
+        )
+        return BodyLegVisibilityInputState(sources, writable)
+
+    def _capture_body_limb_visibility(self, plan, side_state_type, snapshot_type):
         def source(path: str) -> str | None:
             values = self._cmds.listConnections(
                 f"{path}.visibility",
@@ -576,13 +620,13 @@ class MayaBodyBuildHost(MayaFitJointHost):
         states = []
         for side in plan.sides:
             states.append(
-                BodyArmVisibilitySideState(
+                side_state_type(
                     side.side,
                     source(side.fk_offset_path),
                     tuple(source(path) for path in side.ik_offset_paths),
                 )
             )
-        return BodyArmVisibilitySnapshot(tuple(states))
+        return snapshot_type(tuple(states))
 
     def create_body_arm_stretch(self, plan: BodyArmStretchPlan) -> None:
         self._require_transaction()

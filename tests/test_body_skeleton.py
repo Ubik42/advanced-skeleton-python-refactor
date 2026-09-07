@@ -8,6 +8,7 @@ from adv_py.application import (
     BuildBodyLegFkMechanismControls,
     BuildBodyLegIkControls,
     BuildBodyLegBlend,
+    BuildBodyLegVisibility,
     BuildBodyArmFkControls,
     BuildBodyArmFkMechanismControls,
     BuildBodyArmIkControls,
@@ -35,6 +36,9 @@ from adv_py.core import (
     BodyLegBlendJointState,
     BodyLegBlendSideState,
     BodyLegBlendSnapshot,
+    BodyLegVisibilityInputState,
+    BodyLegVisibilitySideState,
+    BodyLegVisibilitySnapshot,
     BodyArmIkSnapshot,
     BodyArmIkState,
     BodyArmBlendJointState,
@@ -88,6 +92,8 @@ class FakeBodySkeletonHost:
         faulty_leg_fk=False,
         faulty_leg_ik=False,
         faulty_leg_blend=False,
+        faulty_leg_visibility=False,
+        blocked_leg_visibility=False,
         faulty_arm_ik=False,
         faulty_arm_blend=False,
         faulty_arm_visibility=False,
@@ -162,6 +168,9 @@ class FakeBodySkeletonHost:
         self.faulty_leg_ik = faulty_leg_ik
         self.leg_blend_snapshot = None
         self.faulty_leg_blend = faulty_leg_blend
+        self.leg_visibility_snapshot = None
+        self.faulty_leg_visibility = faulty_leg_visibility
+        self.blocked_leg_visibility = blocked_leg_visibility
         self.arm_ik_root = None
         self.arm_ik_states = []
         self.faulty_arm_ik = faulty_arm_ik
@@ -261,6 +270,7 @@ class FakeBodySkeletonHost:
         before_leg_ik_root = self.leg_ik_root
         before_leg_ik_states = list(self.leg_ik_states)
         before_leg_blend_snapshot = self.leg_blend_snapshot
+        before_leg_visibility_snapshot = self.leg_visibility_snapshot
         before_arm_ik_root = self.arm_ik_root
         before_arm_ik_states = list(self.arm_ik_states)
         before_arm_blend_snapshot = self.arm_blend_snapshot
@@ -290,6 +300,7 @@ class FakeBodySkeletonHost:
             self.leg_ik_root = before_leg_ik_root
             self.leg_ik_states = before_leg_ik_states
             self.leg_blend_snapshot = before_leg_blend_snapshot
+            self.leg_visibility_snapshot = before_leg_visibility_snapshot
             self.arm_ik_root = before_arm_ik_root
             self.arm_ik_states = before_arm_ik_states
             self.arm_blend_snapshot = before_arm_blend_snapshot
@@ -578,6 +589,42 @@ class FakeBodySkeletonHost:
                 + self.leg_blend_snapshot.sides[1:],
             )
         return self.leg_blend_snapshot
+
+    def capture_body_leg_visibility_input(self, plan):
+        sources = tuple(
+            plug for side in plan.sides
+            for plug in (side.reverse_output_plug, side.blend_plug)
+        )
+        targets = tuple(
+            f"{path}.visibility" for side in plan.sides
+            for path in (side.fk_offset_path, *side.ik_offset_paths)
+        )
+        if self.blocked_leg_visibility:
+            targets = targets[1:]
+        return BodyLegVisibilityInputState(sources, targets)
+
+    def create_body_leg_visibility(self, plan):
+        self.leg_visibility_snapshot = BodyLegVisibilitySnapshot(tuple(
+            BodyLegVisibilitySideState(
+                side.side,
+                side.reverse_output_plug,
+                (side.blend_plug, side.blend_plug),
+            )
+            for side in plan.sides
+        ))
+
+    def capture_body_leg_visibility(self, plan):
+        del plan
+        if self.faulty_leg_visibility and self.leg_visibility_snapshot:
+            first = replace(
+                self.leg_visibility_snapshot.sides[0],
+                fk_visibility_source=None,
+            )
+            return replace(
+                self.leg_visibility_snapshot,
+                sides=(first,) + self.leg_visibility_snapshot.sides[1:],
+            )
+        return self.leg_visibility_snapshot
 
     def create_body_arm_ik_root(self, name):
         self.arm_ik_root = f"|{name}"
@@ -1324,6 +1371,55 @@ class BodySkeletonTests(unittest.TestCase):
 
         self.assertEqual(host.transaction_count, 3)
         self.assertIsNone(host.leg_blend_snapshot)
+
+    def test_builds_bilateral_leg_fk_ik_mode_visibility(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegMechanisms(host).apply()
+        BuildBodyLegFkMechanismControls(host).apply()
+        BuildBodyLegIkControls(host).apply()
+        BuildBodyLegBlend(host).apply()
+
+        preview = BuildBodyLegVisibility(host).plan()
+        result = BuildBodyLegVisibility(host).apply()
+
+        self.assertTrue(preview.ready)
+        self.assertEqual(host.transaction_count, 6)
+        self.assertEqual(len(result.snapshot.sides), 2)
+        for side in result.snapshot.sides:
+            self.assertTrue(side.fk_visibility_source.endswith(".outputX"))
+            self.assertEqual(len(set(side.ik_visibility_sources)), 1)
+            self.assertTrue(side.ik_visibility_sources[0].endswith(
+                f".legIkFk_{side.side.value}"
+            ))
+
+    def test_leg_visibility_unwritable_target_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost(blocked_leg_visibility=True)
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegMechanisms(host).apply()
+        BuildBodyLegFkMechanismControls(host).apply()
+        BuildBodyLegIkControls(host).apply()
+        BuildBodyLegBlend(host).apply()
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "不可写"):
+            BuildBodyLegVisibility(host).apply()
+
+        self.assertEqual(host.transaction_count, 5)
+        self.assertIsNone(host.leg_visibility_snapshot)
+
+    def test_leg_visibility_postcheck_failure_rolls_back(self):
+        host = FakeBodySkeletonHost(faulty_leg_visibility=True)
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyLegMechanisms(host).apply()
+        BuildBodyLegFkMechanismControls(host).apply()
+        BuildBodyLegIkControls(host).apply()
+        BuildBodyLegBlend(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "复检失败"):
+            BuildBodyLegVisibility(host).apply()
+
+        self.assertEqual(host.transaction_count, 6)
+        self.assertIsNone(host.leg_visibility_snapshot)
 
     def test_fk_controls_drive_fk_mechanisms_instead_of_body(self):
         host = FakeBodySkeletonHost()

@@ -123,6 +123,7 @@ def audit_body_limb_mechanisms(
     snapshot: BodyLimbMechanismSnapshot,
     *,
     tolerance: float = 1e-4,
+    check_initial_pose: bool = True,
 ) -> tuple[BodyLimbMechanismIssue, ...]:
     issues = []
     if snapshot.root_path != plan.root_path:
@@ -139,10 +140,13 @@ def audit_body_limb_mechanisms(
             (state.parent_path == spec.parent_path, "driver_parent_mismatch", f"{plan.limb_label} 驱动父链不一致"),
             (state.side is spec.side, "driver_side_mismatch", f"{plan.limb_label} 驱动 side 不一致"),
             (state.source_joint == spec.source_joint, "driver_source_mismatch", f"{plan.limb_label} 驱动来源不一致"),
-            (_vector_matches(state.world_position, spec.world_position, tolerance), "driver_position_mismatch", f"{plan.limb_label} 驱动位置不一致"),
-            (all(_vector_matches(current, wanted, tolerance) for current, wanted in zip(state.world_axes, spec.world_axes)), "driver_axes_mismatch", f"{plan.limb_label} 驱动世界轴不一致"),
-            (_vector_matches(state.rotation, (0.0, 0.0, 0.0), tolerance), "driver_rotation_nonzero", f"{plan.limb_label} 驱动 rotate 未归零"),
         )
+        if check_initial_pose:
+            checks += (
+                (_vector_matches(state.world_position, spec.world_position, tolerance), "driver_position_mismatch", f"{plan.limb_label} 驱动位置不一致"),
+                (all(_vector_matches(current, wanted, tolerance) for current, wanted in zip(state.world_axes, spec.world_axes)), "driver_axes_mismatch", f"{plan.limb_label} 驱动世界轴不一致"),
+                (_vector_matches(state.rotation, (0.0, 0.0, 0.0), tolerance), "driver_rotation_nonzero", f"{plan.limb_label} 驱动 rotate 未归零"),
+            )
         for passed, code, message in checks:
             if not passed:
                 issues.append(BodyLimbMechanismIssue(code, message, path))
