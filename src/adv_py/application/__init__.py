@@ -1,5 +1,11 @@
 """Host-independent application use cases."""
 
+from .body_skeleton import (
+    BodySkeletonBuildPlan,
+    BodySkeletonBuildResult,
+    BodySkeletonHost,
+    BuildBodySkeleton,
+)
 from .build_rig import BuildResult, BuildRig
 from .fit_container import (
     CreateFitSkeleton,
@@ -68,8 +74,12 @@ from .upper_body_fit import (
 )
 
 __all__ = [
+    "BodySkeletonBuildPlan",
+    "BodySkeletonBuildResult",
+    "BodySkeletonHost",
     "BuildResult",
     "BuildRig",
+    "BuildBodySkeleton",
     "BuildOrientedFitTemplate",
     "BuildSyntheticBodySourceFit",
     "BuildSyntheticUpperBodyFit",

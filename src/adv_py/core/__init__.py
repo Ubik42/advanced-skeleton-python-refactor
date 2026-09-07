@@ -1,5 +1,12 @@
 """DCC-neutral rig description and validation."""
 
+from .body_skeleton import (
+    BodyJointSpec,
+    BodyJointState,
+    BodySkeletonIssue,
+    BodySkeletonSnapshot,
+    audit_body_skeleton,
+)
 from .fit_container import (
     LOCKED_FIT_CHANNELS,
     FitContainerDisplayStyle,
@@ -106,6 +113,10 @@ from .matrix import (
 from .validation import PlanValidationError, validate_plan
 
 __all__ = [
+    "BodyJointSpec",
+    "BodyJointState",
+    "BodySkeletonIssue",
+    "BodySkeletonSnapshot",
     "ConstraintSpec",
     "FitContainerDisplayStyle",
     "FitContainerIssue",
@@ -164,6 +175,7 @@ __all__ = [
     "RigPlan",
     "TRANSLATION_AXES",
     "almost_equal",
+    "audit_body_skeleton",
     "audit_fit_hierarchy",
     "audit_fit_container",
     "audit_fit_joint",

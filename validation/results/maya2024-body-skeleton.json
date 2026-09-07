@@ -1,0 +1,32 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 48308,
+  "slice": "body_skeleton_materialization",
+  "source_joint_count": 18,
+  "preview_ready": true,
+  "preview_did_not_modify_scene": true,
+  "planned_joint_count": 30,
+  "created_joint_count": 30,
+  "side_counts": {
+    "M": 6,
+    "R": 12,
+    "L": 12
+  },
+  "topology_verified": true,
+  "world_positions_verified": true,
+  "neutral_orientation_verified": true,
+  "labels_verified": true,
+  "fit_source_preserved": true,
+  "selection_preserved": true,
+  "duplicate_build_blocked": true,
+  "duplicate_left_body_unchanged": true,
+  "single_undo_removed_body_skeleton": true,
+  "fit_source_survived_undo": true,
+  "container_survived_undo": true,
+  "unrelated_node_survived": true,
+  "cleanup": true,
+  "remaining_nodes": [],
+  "duration_seconds": 3.857,
+  "status": "passed"
+}

@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成十七个 Maya-only FitSkeleton 切片：关节标签、可选元数据审计与变更、层级/容器/设置、通用模板事务、自生成 Root/Spine、上半身与单侧 Right 源身体、声明式模板/朝向单事务编排、位置与多种朝向，以及构建期 M/R/L 对称拓扑展开；尚未把展开计划物化为完整 Body rig、蒙皮或产品 UI。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本在既有可移植骨架基线上，完成十八个 Maya-only 切片：FitSkeleton 标签、元数据、层级、容器、设置、模板、位置与朝向；单侧 Right 身体源；构建期 M/R/L 对称展开；以及 30 关节基础 Body skeleton 物化。当前 Body skeleton 尚未应用镜像行为朝向、控制器、IK/FK、蒙皮或产品 UI。
 
 ## 当前完成
 
@@ -26,6 +26,7 @@
 - `BuildSyntheticUpperBodyFit` 在空且已配置的 FitSkeleton 上先预演完整层级与 11 个朝向，再用一个 Undo 事务创建并朝向 14 关节上半身树；创建后的实际计划若与预演不同，会回滚整棵树。
 - `BuildOrientedFitTemplate` 把模板创建、真实场景计划复算与朝向提交组合成可复用的一次 Undo 用例；`BuildSyntheticBodySourceFit` 生成 18 关节的中心链与单侧 Right 臂/腿源拓扑。
 - `PlanFitSymmetry` 从完整 Fit 层级和镜像元数据生成 `_M/_R/_L` 构建实例。默认 18 个源关节展开为 30 个实例，`noMirror/noMirrorLeft` 沿父链继承，未标记的 Left 起始分支会在构建前拒绝。
+- `BuildBodySkeleton` 在全量名称与源标签预检后，把 30 个对称实例作为根级 Maya joint DAG 一次提交；构建后复检路径、父级、世界位置、Maya side、标签与中性朝向，并确认 Fit 源未改变。
 - `EditFitJointPositions` 对显式关节提交本地位置 Patch，只写实际变化且可写的轴；锁定/驱动轴、Root 离中和无效层级会在批量事务前失败。
 - `OrientSimpleFitChain` 为唯一子级或显式选择的分支子级建立 X-Aim/Y-Secondary 朝向，自动选择与 Aim 正交的世界参考轴，并补偿 Maya 隐式产生的后代位置与全部直接子级 jointOrient 变化。
 - worldOrient 元数据会解析为带正负号的本地 Up/Forward 轴策略；不完整、同轴冲突或当前写入器尚不支持的组合会在 Undo 事务前停止。
@@ -66,4 +67,4 @@ py -3 -m unittest discover -s tests -v
 - Blender 将 Bind 与 FK/IK 机制骨链放在独立 Armature，避免跨骨链 blend 驱动形成依赖环；该差异留在适配器内部。
 - 当前 IK/FK 是最小可运行合同，尚无镜像 limb、IK/FK 无缝匹配、拉伸和 twist。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya FitSkeleton 已覆盖非破坏性容器、通用模板事务、自生成 Root/Spine、14 关节上半身、18 关节单侧 Right 源身体、声明式创建/朝向单事务、标签、常用可选元数据、层级/设置/位置、显式分支 X-Aim、固定与 free worldOrient，以及 30 实例的 M/R/L 位置和拓扑展开；构建骨架物化、镜像行为朝向、World Match、手指和其他几何编辑仍待后续切片。
+- 当前 Maya 主线已覆盖非破坏性 FitSkeleton、18 关节单侧 Right 身体源、30 实例 M/R/L 展开及 30 关节基础 Body skeleton 的单事务物化；镜像行为朝向、World Match、手指、控制器、IK/FK 和其他 Body Build 阶段仍待后续切片。
