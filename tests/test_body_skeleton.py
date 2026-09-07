@@ -5,6 +5,7 @@ from dataclasses import replace
 from adv_py.application import (
     BuildBodyArmMechanisms,
     BuildBodyArmFkControls,
+    BuildBodyArmFkMechanismControls,
     BuildBodySkeleton,
     BuildOrientedBodySkeleton,
     InspectBodyRebuildSafety,
@@ -21,6 +22,7 @@ from adv_py.core import (
     BodyExternalDependencyKind,
     BodyArmFkControlSnapshot,
     BodyArmFkControlState,
+    BodyControlValidationError,
     BodyRebuildSceneState,
     BodySkeletonSnapshot,
     BodySkeletonProvenanceState,
@@ -33,6 +35,7 @@ from adv_py.core import (
     default_fit_skeleton_settings,
     predict_fit_template_hierarchy,
     synthetic_body_source_fit_template,
+    plan_body_arm_fk_controls,
 )
 
 
@@ -584,6 +587,59 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 2)
         self.assertIsNone(host.mechanism_root)
         self.assertFalse(host.arm_mechanism_states)
+
+    def test_fk_controls_drive_fk_mechanisms_instead_of_body(self):
+        host = FakeBodySkeletonHost()
+        body = BuildOrientedBodySkeleton(host).apply().snapshot
+        BuildBodyArmMechanisms(host).apply()
+
+        preview = BuildBodyArmFkMechanismControls(host).plan(control_radius=2.0)
+        result = BuildBodyArmFkMechanismControls(host).apply(control_radius=2.0)
+
+        self.assertTrue(preview.ready)
+        self.assertEqual(len(result.snapshot.controls), 6)
+        self.assertEqual(host.transaction_count, 3)
+        self.assertTrue(
+            all("FKDriver" in state.driven_joint for state in result.snapshot.controls)
+        )
+        body_paths = {state.path for state in body.joints}
+        self.assertFalse(
+            any(state.driven_joint in body_paths for state in result.snapshot.controls)
+        )
+
+    def test_fk_control_explicit_driver_mapping_must_be_complete(self):
+        host = FakeBodySkeletonHost()
+        body = BuildOrientedBodySkeleton(host).apply().snapshot
+
+        with self.assertRaisesRegex(BodyControlValidationError, "缺少来源"):
+            plan_body_arm_fk_controls(body, driven_joint_by_source={})
+
+    def test_fk_mechanism_control_preflight_rejects_tampered_driver(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyArmMechanisms(host).apply()
+        host.arm_mechanism_states[0] = replace(
+            host.arm_mechanism_states[0],
+            source_joint=None,
+        )
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "来源"):
+            BuildBodyArmFkMechanismControls(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertIsNone(host.control_root)
+
+    def test_fk_mechanism_control_postcheck_failure_rolls_back_controls(self):
+        host = FakeBodySkeletonHost(faulty_arm_fk=True)
+        BuildOrientedBodySkeleton(host).apply()
+        BuildBodyArmMechanisms(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "复检失败"):
+            BuildBodyArmFkMechanismControls(host).apply()
+
+        self.assertEqual(host.transaction_count, 3)
+        self.assertIsNone(host.control_root)
+        self.assertFalse(host.arm_fk_states)
 
 
 if __name__ == "__main__":

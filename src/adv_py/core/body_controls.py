@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from typing import Mapping
 
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
@@ -69,6 +70,7 @@ def plan_body_arm_fk_controls(
     body: BodySkeletonSnapshot,
     *,
     radius: float = 1.5,
+    driven_joint_by_source: Mapping[str, str] | None = None,
 ) -> BodyArmFkControlPlan:
     if (
         isinstance(radius, bool)
@@ -88,6 +90,22 @@ def plan_body_arm_fk_controls(
         name not in by_name for name in required_names
     ):
         raise BodyControlValidationError("Body 缺少唯一的双臂 Shoulder/Elbow/Wrist")
+    if driven_joint_by_source is not None:
+        source_paths = tuple(by_name[name].path for name in required_names)
+        missing = tuple(
+            path for path in source_paths if path not in driven_joint_by_source
+        )
+        targets = tuple(
+            driven_joint_by_source[path]
+            for path in source_paths
+            if path in driven_joint_by_source
+        )
+        if missing:
+            raise BodyControlValidationError("Arm FK 显式驱动映射缺少来源关节")
+        if any(not isinstance(path, str) or not path.startswith("|") for path in targets):
+            raise BodyControlValidationError("Arm FK 显式驱动目标必须是完整 DAG 路径")
+        if len(set(targets)) != len(targets):
+            raise BodyControlValidationError("Arm FK 显式驱动目标不能重复")
 
     root_name = "AdvPy_ArmFKControls"
     root_path = f"|{root_name}"
@@ -115,7 +133,11 @@ def plan_body_arm_fk_controls(
             controls.append(
                 BodyArmFkControlSpec(
                     side=side_value,
-                    driven_joint=state.path,
+                    driven_joint=(
+                        driven_joint_by_source[state.path]
+                        if driven_joint_by_source is not None
+                        else state.path
+                    ),
                     offset_path=offset_path,
                     offset_name=offset_name,
                     control_path=control_path,

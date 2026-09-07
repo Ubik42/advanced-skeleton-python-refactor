@@ -12,6 +12,12 @@ from .body_arm_fk import (
     BodyArmFkHost,
     BuildBodyArmFkControls,
 )
+from .body_arm_fk_mechanisms import (
+    BodyArmFkMechanismBuildPlan,
+    BodyArmFkMechanismBuildResult,
+    BodyArmFkMechanismHost,
+    BuildBodyArmFkMechanismControls,
+)
 from .body_skeleton import (
     BodySkeletonBuildPlan,
     BodySkeletonBuildResult,
@@ -118,6 +124,9 @@ __all__ = [
     "BodyArmFkBuildPlan",
     "BodyArmFkBuildResult",
     "BodyArmFkHost",
+    "BodyArmFkMechanismBuildPlan",
+    "BodyArmFkMechanismBuildResult",
+    "BodyArmFkMechanismHost",
     "BodyOrientationHost",
     "BodyOrientationPlan",
     "BodyOrientationResult",
@@ -136,6 +145,7 @@ __all__ = [
     "BuildBodyArmMechanisms",
     "BuildBodySkeleton",
     "BuildBodyArmFkControls",
+    "BuildBodyArmFkMechanismControls",
     "BuildOrientedBodySkeleton",
     "BuildOrientedFitTemplate",
     "BuildSyntheticBodySourceFit",
