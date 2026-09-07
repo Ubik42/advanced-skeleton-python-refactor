@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 
 from adv_py.application import (
+    BuildBodyArmFkControls,
     BuildBodySkeleton,
     BuildOrientedBodySkeleton,
     InspectBodyRebuildSafety,
@@ -15,6 +16,8 @@ from adv_py.core import (
     BodyJointState,
     BodyExternalDependency,
     BodyExternalDependencyKind,
+    BodyArmFkControlSnapshot,
+    BodyArmFkControlState,
     BodyRebuildSceneState,
     BodySkeletonSnapshot,
     BodySkeletonProvenanceState,
@@ -37,6 +40,7 @@ class FakeBodySkeletonHost:
         faulty_capture=False,
         faulty_after_orientation=False,
         faulty_provenance=False,
+        faulty_arm_fk=False,
     ):
         template = synthetic_body_source_fit_template(FitUpAxis.Z)
         hierarchy = predict_fit_template_hierarchy(template, "|FitSkeleton")
@@ -85,6 +89,9 @@ class FakeBodySkeletonHost:
         self.extra_dag_paths = ()
         self.external_dependencies = ()
         self.delete_count = 0
+        self.control_root = None
+        self.arm_fk_states = []
+        self.faulty_arm_fk = faulty_arm_fk
 
     def capture_fit_orientation(self, container_name):
         del container_name
@@ -101,13 +108,28 @@ class FakeBodySkeletonHost:
         existing_body = tuple(
             state.path for state in self.body if state.name == name
         )
-        return tuple(self.collisions.get(name, ())) + existing_body
+        existing_controls = []
+        if self.control_root and self.control_root.rsplit("|", 1)[-1] == name:
+            existing_controls.append(self.control_root)
+        for state in self.arm_fk_states:
+            for path in (state.offset_path, state.control_path):
+                if path.rsplit("|", 1)[-1] == name:
+                    existing_controls.append(path)
+            if state.constraint_name == name:
+                existing_controls.append(name)
+        return (
+            tuple(self.collisions.get(name, ()))
+            + existing_body
+            + tuple(existing_controls)
+        )
 
     @contextmanager
     def transaction(self, label):
         del label
         before = list(self.body)
         before_provenance = self.provenance
+        before_control_root = self.control_root
+        before_arm_fk_states = list(self.arm_fk_states)
         self.transaction_count += 1
         self.in_transaction = True
         try:
@@ -115,6 +137,8 @@ class FakeBodySkeletonHost:
         except Exception:
             self.body = before
             self.provenance = before_provenance
+            self.control_root = before_control_root
+            self.arm_fk_states = before_arm_fk_states
             raise
         finally:
             self.in_transaction = False
@@ -189,6 +213,35 @@ class FakeBodySkeletonHost:
         self.delete_count += 1
         self.body = []
         self.provenance = None
+
+    def create_body_control_root(self, name):
+        self.control_root = f"|{name}"
+        return self.control_root
+
+    def create_body_arm_fk_control(self, spec):
+        self.arm_fk_states.append(
+            BodyArmFkControlState(
+                offset_path=spec.offset_path,
+                offset_parent_path=spec.parent_path,
+                control_path=spec.control_path,
+                control_parent_path=spec.offset_path,
+                constraint_name=spec.constraint_name,
+                source_control=spec.control_path,
+                driven_joint=spec.driven_joint,
+                world_position=spec.world_position,
+                world_axes=spec.world_axes,
+                local_translation=(0.0, 0.0, 0.0),
+                local_rotation=(0.0, 0.0, 0.0),
+                shape_type="nurbsCurve",
+            )
+        )
+
+    def capture_body_arm_fk_controls(self, plan):
+        del plan
+        states = tuple(self.arm_fk_states)
+        if self.faulty_arm_fk and states:
+            states = (replace(states[0], shape_type=None),) + states[1:]
+        return BodyArmFkControlSnapshot(self.control_root, states)
 
 
 class BodySkeletonTests(unittest.TestCase):
@@ -405,6 +458,50 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 2)
         self.assertEqual(tuple(host.body), previous_body)
         self.assertEqual(host.provenance, previous_provenance)
+
+    def test_builds_bilateral_arm_fk_controls_in_one_transaction(self):
+        host = FakeBodySkeletonHost()
+        body = BuildOrientedBodySkeleton(host).apply().snapshot
+        use_case = BuildBodyArmFkControls(host)
+
+        preview = use_case.plan(control_radius=2.0)
+
+        self.assertTrue(preview.ready)
+        self.assertEqual(len(preview.controls.controls), 6)
+        result = use_case.apply(control_radius=2.0)
+        self.assertEqual(host.transaction_count, 2)
+        self.assertEqual(len(result.snapshot.controls), 6)
+        self.assertEqual(result.body, body)
+        elbow_right = next(
+            state
+            for state in result.snapshot.controls
+            if state.control_path.endswith("AdvPy_ElbowFK_R")
+        )
+        self.assertTrue(
+            elbow_right.offset_parent_path.endswith("AdvPy_ShoulderFK_R")
+        )
+
+    def test_arm_fk_name_collision_blocks_before_transaction(self):
+        host = FakeBodySkeletonHost()
+        BuildOrientedBodySkeleton(host).apply()
+        host.collisions["AdvPy_ElbowFK_L"] = ("|User|AdvPy_ElbowFK_L",)
+
+        with self.assertRaisesRegex(FitSkeletonValidationError, "同名"):
+            BuildBodyArmFkControls(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertIsNone(host.control_root)
+
+    def test_arm_fk_postcheck_failure_rolls_back_controls(self):
+        host = FakeBodySkeletonHost(faulty_arm_fk=True)
+        BuildOrientedBodySkeleton(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "复检失败"):
+            BuildBodyArmFkControls(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertIsNone(host.control_root)
+        self.assertFalse(host.arm_fk_states)
 
 
 if __name__ == "__main__":

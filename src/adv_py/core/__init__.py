@@ -1,5 +1,15 @@
 """DCC-neutral rig description and validation."""
 
+from .body_controls import (
+    BodyArmFkControlPlan,
+    BodyArmFkControlSnapshot,
+    BodyArmFkControlSpec,
+    BodyArmFkControlState,
+    BodyControlIssue,
+    BodyControlValidationError,
+    audit_body_arm_fk_controls,
+    plan_body_arm_fk_controls,
+)
 from .body_rebuild import (
     BodyExternalDependency,
     BodyExternalDependencyKind,
@@ -137,6 +147,12 @@ __all__ = [
     "BODY_PROVENANCE_OWNER",
     "BODY_PROVENANCE_SCHEMA_VERSION",
     "BodyJointSpec",
+    "BodyArmFkControlPlan",
+    "BodyArmFkControlSnapshot",
+    "BodyArmFkControlSpec",
+    "BodyArmFkControlState",
+    "BodyControlIssue",
+    "BodyControlValidationError",
     "BodyExternalDependency",
     "BodyExternalDependencyKind",
     "BodyRebuildIssue",
@@ -207,6 +223,7 @@ __all__ = [
     "TRANSLATION_AXES",
     "almost_equal",
     "audit_body_skeleton",
+    "audit_body_arm_fk_controls",
     "audit_body_provenance",
     "audit_body_rebuild_safety",
     "body_orientation_matches",
@@ -228,6 +245,7 @@ __all__ = [
     "parse_fit_axis_direction",
     "plan_fit_joint_position_changes",
     "plan_body_joint_orientations",
+    "plan_body_arm_fk_controls",
     "oriented_body_provenance",
     "plan_simple_fit_orientations",
     "plan_world_fit_orientations",

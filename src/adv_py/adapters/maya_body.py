@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from adv_py.core.body_controls import (
+    BodyArmFkControlPlan,
+    BodyArmFkControlSnapshot,
+    BodyArmFkControlSpec,
+    BodyArmFkControlState,
+)
 from adv_py.core.body_rebuild import (
     BodyExternalDependency,
     BodyExternalDependencyKind,
@@ -261,6 +267,153 @@ class MayaBodyBuildHost(MayaFitJointHost):
             )
         self._transaction_changed = True
         self._cmds.delete(matches[0])
+
+    def create_body_control_root(self, name: str) -> str:
+        self._require_transaction()
+        if self.find_name_collisions(name):
+            raise FitSkeletonValidationError(f"Arm FK 控制根名称冲突：{name}")
+        self._transaction_changed = True
+        created = self._cmds.createNode(
+            "transform",
+            name=name,
+            skipSelect=True,
+        )
+        return (self._cmds.ls(created, long=True) or [created])[0]
+
+    def create_body_arm_fk_control(self, spec: BodyArmFkControlSpec) -> None:
+        self._require_transaction()
+        selection = self._cmds.ls(selection=True, long=True) or []
+        for name in (spec.offset_name, spec.control_name, spec.constraint_name):
+            if self.find_name_collisions(name):
+                raise FitSkeletonValidationError(f"Arm FK 控制名称冲突：{name}")
+        parent = self._cmds.ls(spec.parent_path, long=True, type="transform") or []
+        driven = self._cmds.ls(spec.driven_joint, long=True, type="joint") or []
+        if len(parent) != 1 or len(driven) != 1:
+            raise FitSkeletonValidationError(
+                f"Arm FK 控制父级或驱动关节失效：{spec.control_name}"
+            )
+        self._transaction_changed = True
+        try:
+            offset = self._cmds.createNode(
+                "transform",
+                name=spec.offset_name,
+                parent=parent[0],
+                skipSelect=True,
+            )
+            offset = (self._cmds.ls(offset, long=True) or [offset])[0]
+            x_axis, y_axis, z_axis = spec.world_axes
+            matrix = (
+                *x_axis,
+                0.0,
+                *y_axis,
+                0.0,
+                *z_axis,
+                0.0,
+                *spec.world_position,
+                1.0,
+            )
+            self._cmds.xform(offset, worldSpace=True, matrix=matrix)
+            control = self._cmds.circle(
+                name=spec.control_name,
+                normal=(1.0, 0.0, 0.0),
+                radius=spec.radius,
+                degree=3,
+                sections=12,
+                constructionHistory=False,
+            )[0]
+            control = self._cmds.parent(control, offset, relative=True)[0]
+            control = (self._cmds.ls(control, long=True) or [control])[0]
+            if offset != spec.offset_path or control != spec.control_path:
+                raise RuntimeError(f"Arm FK 控制路径漂移：{spec.control_name}")
+            self._cmds.orientConstraint(
+                control,
+                driven[0],
+                maintainOffset=False,
+                name=spec.constraint_name,
+            )
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+    def capture_body_arm_fk_controls(
+        self,
+        plan: BodyArmFkControlPlan,
+    ) -> BodyArmFkControlSnapshot:
+        roots = self._cmds.ls(plan.root_path, long=True, type="transform") or []
+        if len(roots) != 1:
+            raise FitSkeletonValidationError("Arm FK 控制根节点无效")
+        states: list[BodyArmFkControlState] = []
+        for spec in plan.controls:
+            offsets = self._cmds.ls(spec.offset_path, long=True, type="transform") or []
+            controls = self._cmds.ls(spec.control_path, long=True, type="transform") or []
+            constraints = self._cmds.ls(spec.constraint_name, type="orientConstraint") or []
+            if len(offsets) != 1 or len(controls) != 1 or len(constraints) != 1:
+                raise FitSkeletonValidationError(
+                    f"Arm FK 控制或约束无效：{spec.control_name}"
+                )
+            offset, control, constraint = offsets[0], controls[0], constraints[0]
+            offset_parent = self._cmds.listRelatives(
+                offset, parent=True, fullPath=True
+            ) or []
+            control_parent = self._cmds.listRelatives(
+                control, parent=True, fullPath=True
+            ) or []
+            position = self._cmds.xform(
+                control, query=True, worldSpace=True, translation=True
+            )
+            matrix = self._cmds.xform(
+                control, query=True, worldSpace=True, matrix=True
+            )
+            world_axes = tuple(
+                self._normalized_vector(
+                    tuple(float(value) for value in matrix[index : index + 3])
+                )
+                for index in (0, 4, 8)
+            )
+            local_translation = self._cmds.getAttr(f"{control}.translate")[0]
+            local_rotation = self._cmds.getAttr(f"{control}.rotate")[0]
+            shapes = self._cmds.listRelatives(
+                control,
+                shapes=True,
+                noIntermediate=True,
+                fullPath=True,
+            ) or []
+            targets = self._cmds.orientConstraint(
+                constraint,
+                query=True,
+                targetList=True,
+            ) or []
+            source = None
+            if len(targets) == 1:
+                source = (self._cmds.ls(targets[0], long=True) or [targets[0]])[0]
+            outputs = self._cmds.listConnections(
+                f"{constraint}.constraintRotateX",
+                source=False,
+                destination=True,
+                plugs=True,
+            ) or []
+            driven_joint = None
+            if len(outputs) == 1:
+                driven_joint = self._resolve_connected_node(outputs[0])
+            states.append(
+                BodyArmFkControlState(
+                    offset_path=offset,
+                    offset_parent_path=offset_parent[0] if offset_parent else None,
+                    control_path=control,
+                    control_parent_path=control_parent[0] if control_parent else None,
+                    constraint_name=constraint,
+                    source_control=source,
+                    driven_joint=driven_joint,
+                    world_position=tuple(float(value) for value in position),
+                    world_axes=world_axes,
+                    local_translation=tuple(float(value) for value in local_translation),
+                    local_rotation=tuple(float(value) for value in local_rotation),
+                    shape_type=(self._cmds.nodeType(shapes[0]) if len(shapes) == 1 else None),
+                )
+            )
+        return BodyArmFkControlSnapshot(roots[0], tuple(states))
 
     def set_body_joint_world_axes(
         self,
