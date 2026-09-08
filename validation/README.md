@@ -83,6 +83,8 @@
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_fit_symmetry_smoke.py validation\results\maya2024-fit-symmetry.json
 
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_fit_skeleton_io_smoke.py validation\results\maya2024-fit-skeleton-io.json
+
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_skeleton_smoke.py validation\results\maya2024-body-skeleton.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_hand_fit_smoke.py validation\results\maya2024-body-hand-fit.json
@@ -206,6 +208,7 @@
 - 关节标签案例是 Maya-only 第一阶段切片，Blender 暂不提供对应实现。
 - Fit 元数据变更目前覆盖已进入 `FitJointMetadata` 的字段；约束目标、几何附着和曲线引导等关系型属性尚未进入合同。
 - Fit 层级校验尚未定义镜像配对后缀；世界位置仅作为后续规则的输入快照，不据此猜测名称。
+- FitSkeleton I/O schema v1 已用自行生成的 38 关节五指源验证路径无关导出、摘要复检、空容器导入、设置/标签/元数据/位置/行为轴恢复、重复拒绝与一次 Undo。目标容器必须已经存在、为空且具有相同 Up Axis 与轴配置；当前不合并既有 Fit，不自动创建容器，也不迁移场景对象列表或 ReBuild 脚本文本。
 - 容器设置用例不会创建或删除 FitSkeleton，也不会执行 pre/post ReBuild 脚本文本；容器生命周期与脚本执行策略需要独立切片。
 - 容器创建只提供空的 FitSkeleton 入口；Root/Spine 需要单独调用基础模板用例，身体 limb 尚未包含。
 - 最小兼容模板仍只有 `Root → Spine1 → Spine2`；全身源模板另有 18 关节基础版本和 38 关节五指版本。五指版本只定义身体与一侧可镜像手部，不包含面部、手掌变形层或控制系统。

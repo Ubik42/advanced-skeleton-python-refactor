@@ -6,7 +6,7 @@
 
 可跨 Maya 与 Blender 复用的是绑定意图和数据，而不是具体命令：骨骼层级、控制器语义、IK/FK 关系、命名规则、构建阶段、驱动关系、校验规则与导出契约都应进入纯 Python 核心。
 
-Maya 第一阶段已经产出首个面向完整角色动画的可迁移合同：Hand Pose schema v1 以左右侧、手指、节段和数值表达 14 个聚合属性与 30 个 FK 旋转，不包含 Maya DAG 路径。Maya namespace 也只存在于应用层的显式角色根解析和 adapter 完整路径中，不进入文档摘要。核心已经区分只读、静态写入和当前帧写键三种访问意图，并用语义文档合并表达双手、显式单侧及左右镜像目标；镜像聚合值保持同号，行为坐标系中的 FK 旋转使用 `(-X, -Y, Z)`。命名预设库同样位于 DCC 无关的应用/文件边界：`.handpose.json`、安全中文名称、原子保存、完整清单校验与按名解析都不依赖 Maya，未来 Blender 可直接复用。当前仍只有 Maya adapter 把预设应用与写键落实为原生 animCurve，并负责场景解析、目标侧可写性预检、事务和 Undo。第二阶段进入 Blender 时，应保持 schema、预设目录合同、访问、目标侧与镜像结果语义不变，只新增 Armature/PoseBone/ID Property、FCurve 的显式目标解析与写入，不反向改变已验证的 Maya 行为。
+Maya 第一阶段已经产出两类可迁移合同。FitSkeleton schema v1 用 Up Axis、轴配置、安全设置、短名拓扑、局部位置、行为世界轴、标签与元数据表达可编辑源骨架，不包含 Maya DAG 路径、场景对象列表或 ReBuild 脚本文本；当前 Maya 导入只落到调用方明确给出的空容器并要求轴配置一致，Blender 第二阶段可以复用文档与校验，但必须另行实现 EditBone 层级、矩阵和 roll 的适配。面向完整角色动画的 Hand Pose schema v1 则以左右侧、手指、节段和数值表达 14 个聚合属性与 30 个 FK 旋转，同样不包含 Maya DAG 路径。Maya namespace 只存在于应用层的显式角色根解析和 adapter 完整路径中，不进入文档摘要。核心已经区分只读、静态写入和当前帧写键三种访问意图，并用语义文档合并表达双手、显式单侧及左右镜像目标；镜像聚合值保持同号，行为坐标系中的 FK 旋转使用 `(-X, -Y, Z)`。命名预设库同样位于 DCC 无关的应用/文件边界：`.handpose.json`、安全中文名称、原子保存、完整清单校验与按名解析都不依赖 Maya，未来 Blender 可直接复用。当前仍只有 Maya adapter 负责两类文档的场景解析、可写性预检、事务和 Undo，并把预设应用与写键落实为原生 animCurve。第二阶段进入 Blender 时，应保持 schema、预设目录合同、访问、目标侧与镜像结果语义不变，只新增 Armature/EditBone/PoseBone/ID Property、FCurve 的显式目标解析与写入，不反向改变已验证的 Maya 行为。
 
 ## 必须分别实现的部分
 

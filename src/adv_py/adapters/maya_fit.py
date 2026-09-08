@@ -37,6 +37,7 @@ from adv_py.core.fit_settings import (
     FitSkeletonValidationError,
     FitSkeletonValue,
 )
+from adv_py.core.fit_skeleton_io import FitSkeletonSettingChannelState
 from adv_py.core.fit_template import FitJointSpec
 from adv_py.core.joint_labels import JointLabel
 
@@ -624,6 +625,83 @@ class MayaFitJointHost:
             )
         return FitSkeletonSettings(container=container, settings=tuple(settings))
 
+    def capture_fit_skeleton_setting_channels(
+        self,
+        container_name: str,
+    ) -> tuple[FitSkeletonSettingChannelState, ...]:
+        container = self._resolve_transform(
+            container_name,
+            FitSkeletonValidationError,
+        )
+        channels = []
+        for field, spec in _FIT_SKELETON_ATTRIBUTES.items():
+            if not self._attribute_exists(container, spec.name):
+                continue
+            attribute = f"{container}.{spec.name}"
+            channels.append(
+                FitSkeletonSettingChannelState(
+                    field,
+                    self._read_fit_skeleton_value(container, spec),
+                    bool(self._cmds.getAttr(attribute, settable=True)),
+                    tuple(
+                        sorted(
+                            set(
+                                self._cmds.listConnections(
+                                    attribute,
+                                    source=True,
+                                    destination=False,
+                                    plugs=True,
+                                )
+                                or []
+                            )
+                        )
+                    ),
+                )
+            )
+        return tuple(channels)
+
+    def set_fit_skeleton_setting(
+        self,
+        container: str,
+        setting: FitSkeletonSetting,
+    ) -> None:
+        self._require_transaction()
+        container_path = self._resolve_transform(
+            container,
+            FitSkeletonValidationError,
+        )
+        spec = _FIT_SKELETON_ATTRIBUTES.get(setting.field)
+        if spec is None or not self._attribute_exists(container_path, spec.name):
+            raise FitSkeletonValidationError(
+                f"FitSkeleton 设置不存在：{setting.field.value}"
+            )
+        attribute = f"{container_path}.{spec.name}"
+        if not self._cmds.getAttr(attribute, settable=True) or (
+            self._cmds.listConnections(
+                attribute,
+                source=True,
+                destination=False,
+                plugs=True,
+            )
+            or []
+        ):
+            raise FitSkeletonValidationError(
+                f"FitSkeleton 设置在执行前变为不可写：{setting.field.value}"
+            )
+        self._transaction_changed = True
+        if spec.kind == "string":
+            self._cmds.setAttr(attribute, setting.value, type="string")
+        elif spec.enum_names:
+            try:
+                value = spec.enum_names.index(str(setting.value))
+            except ValueError as error:
+                raise FitSkeletonValidationError(
+                    f"FitSkeleton enum 设置无效：{setting.field.value}"
+                ) from error
+            self._cmds.setAttr(attribute, value)
+        else:
+            self._cmds.setAttr(attribute, setting.value)
+
     def add_fit_skeleton_setting(
         self,
         container: str,
@@ -710,6 +788,43 @@ class MayaFitJointHost:
         else:
             value = edit.value
         self._cmds.setAttr(f"{joint}.{spec.name}", value)
+
+    def set_fit_joint_world_axes(
+        self,
+        joint: str,
+        world_axes: tuple[
+            tuple[float, float, float],
+            tuple[float, float, float],
+            tuple[float, float, float],
+        ],
+    ) -> None:
+        self._require_transaction()
+        matches = self._cmds.ls(joint, long=True, type="joint") or []
+        if len(matches) != 1:
+            raise FitSkeletonValidationError(
+                "Fit joint 朝向目标在执行前失效"
+            )
+        path = matches[0]
+        if self._cmds.listRelatives(path, children=True, fullPath=True) or []:
+            raise FitSkeletonValidationError(
+                "Fit joint 必须在创建子级前恢复世界轴"
+            )
+        if len(world_axes) != 3 or any(len(axis) != 3 for axis in world_axes):
+            raise FitSkeletonValidationError("Fit joint 世界轴格式无效")
+        required = tuple(
+            f"{path}.{attribute}{axis.upper()}"
+            for attribute in ("translate", "rotate", "jointOrient")
+            for axis in ("x", "y", "z")
+        )
+        if any(
+            not self._cmds.getAttr(attribute, settable=True)
+            for attribute in required
+        ):
+            raise FitSkeletonValidationError(
+                "Fit joint 朝向通道在执行前变为不可写"
+            )
+        self._transaction_changed = True
+        self._set_joint_world_axes(path, world_axes)
 
     @contextmanager
     def transaction(self, label: str) -> Iterator[None]:

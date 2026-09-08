@@ -242,6 +242,17 @@ from .fit_settings import (
     FitSkeletonEnsureResult,
     FitSkeletonSettingsHost,
 )
+from .fit_skeleton_io import (
+    ExportFitSkeleton,
+    FitSkeletonDocumentHost,
+    FitSkeletonExportPlan,
+    FitSkeletonExportResult,
+    FitSkeletonImportPlan,
+    FitSkeletonImportResult,
+    FitSkeletonSceneInspection,
+    FitSkeletonSettingChange,
+    ImportFitSkeleton,
+)
 from .fit_symmetry import FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry
 from .fit_template import (
     CreateFitTemplate,
@@ -406,6 +417,8 @@ __all__ = [
     "EditFitJointMetadata",
     "EditFitJointPositions",
     "EnsureFitSkeletonSettings",
+    "ExportFitSkeleton",
+    "ImportFitSkeleton",
     "FitContainerCreatePlan",
     "FitContainerCreateResult",
     "FitContainerHost",
@@ -429,6 +442,13 @@ __all__ = [
     "FitSkeletonEnsurePlan",
     "FitSkeletonEnsureResult",
     "FitSkeletonSettingsHost",
+    "FitSkeletonDocumentHost",
+    "FitSkeletonExportPlan",
+    "FitSkeletonExportResult",
+    "FitSkeletonImportPlan",
+    "FitSkeletonImportResult",
+    "FitSkeletonSceneInspection",
+    "FitSkeletonSettingChange",
     "FitSymmetryHost",
     "FitSymmetryPlan",
     "FitTemplateCreatePlan",
