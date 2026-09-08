@@ -19,9 +19,18 @@ FBX_BINARY_MAGIC = b"Kaydara FBX Binary"
 
 
 @dataclass(frozen=True, slots=True)
+class BodyFbxPublishedNode:
+    scene_path: str
+    published_name: str
+    published_path: str
+
+
+@dataclass(frozen=True, slots=True)
 class BodyFbxExportSelection:
     root_path: str
     node_paths: tuple[str, ...]
+    published_root_path: str
+    published_nodes: tuple[BodyFbxPublishedNode, ...]
     start_frame: int
     end_frame: int
     sample_by: int
@@ -29,6 +38,10 @@ class BodyFbxExportSelection:
     @property
     def node_count(self) -> int:
         return len(self.node_paths)
+
+    @property
+    def published_paths(self) -> tuple[str, ...]:
+        return tuple(node.published_path for node in self.published_nodes)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +53,8 @@ class BodyFbxArtifact:
 
 def plan_body_fbx_export_selection(
     bake: BodyExportSkeletonBakePlan,
+    *,
+    published_root_name: str = "RootMotion",
 ) -> BodyFbxExportSelection:
     export = bake.export_skeleton
     paths = (export.root_motion_path,) + tuple(
@@ -47,9 +62,42 @@ def plan_body_fbx_export_selection(
     )
     if len(set(paths)) != len(paths) or any(not path.startswith("|") for path in paths):
         raise ValueError("FBX 导出选择集包含重复或非完整 DAG 路径")
+    if not _is_portable_node_name(published_root_name):
+        raise ValueError("FBX 发布 Root Motion 名称无效")
+
+    published_by_scene_path = {
+        export.root_motion_path: f"|{published_root_name}"
+    }
+    nodes = [BodyFbxPublishedNode(
+        scene_path=export.root_motion_path,
+        published_name=published_root_name,
+        published_path=f"|{published_root_name}",
+    )]
+    for joint in export.joints:
+        published_name = joint.source_path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if not _is_portable_node_name(published_name):
+            raise ValueError(
+                f"FBX 发布 joint 名称无效：{published_name}"
+            )
+        try:
+            published_parent = published_by_scene_path[joint.output_parent_path]
+        except KeyError as error:
+            raise ValueError("FBX 发布 joint 父级不在导出选择集") from error
+        published_path = f"{published_parent}|{published_name}"
+        published_by_scene_path[joint.output_path] = published_path
+        nodes.append(BodyFbxPublishedNode(
+            scene_path=joint.output_path,
+            published_name=published_name,
+            published_path=published_path,
+        ))
+    published_paths = tuple(node.published_path for node in nodes)
+    if len(set(published_paths)) != len(published_paths):
+        raise ValueError("FBX 发布名称映射产生重复 DAG 路径")
     return BodyFbxExportSelection(
         root_path=export.root_motion_path,
         node_paths=paths,
+        published_root_path=f"|{published_root_name}",
+        published_nodes=tuple(nodes),
         start_frame=bake.root_motion.start_frame,
         end_frame=bake.root_motion.end_frame,
         sample_by=bake.root_motion.sample_by,
@@ -199,3 +247,13 @@ def _audit_channels(
                 f"{label} 关键帧切线不是 linear",
                 subject,
             ))
+
+
+def _is_portable_node_name(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and not value[0].isdigit()
+        and value.replace("_", "a").isalnum()
+        and value.isascii()
+    )

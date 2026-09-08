@@ -38,6 +38,9 @@ class BodyFbxExportHost(Protocol):
     def capture_body_export_dependency_plugs(
         self, body_root: str, export_paths: tuple[str, ...]
     ) -> tuple[str, ...]: ...
+    def capture_body_fbx_published_collisions(
+        self, selection: BodyFbxExportSelection
+    ) -> tuple[str, ...]: ...
     def prepare_fbx_export_runtime(self) -> str: ...
     def export_fbx_selection(
         self, destination: Path, selection: BodyFbxExportSelection
@@ -52,6 +55,7 @@ class BodyFbxExportPlan:
     baked: BodyExportSkeletonBakedSnapshot
     selection: BodyFbxExportSelection
     body_dependency_plugs: tuple[str, ...]
+    published_name_collisions: tuple[str, ...]
     blockers: tuple[str, ...]
 
     @property
@@ -83,6 +87,7 @@ class ExportBodyFbx:
         source_container: str = "|FitSkeleton",
         root_motion_basename: str = "AdvPy_GameRootMotion",
         output_prefix: str = "AdvPy_EXP_",
+        published_root_name: str = "RootMotion",
     ) -> BodyFbxExportPlan:
         path = Path(destination)
         if not path.is_absolute() or path.suffix.casefold() != ".fbx":
@@ -107,11 +112,14 @@ class ExportBodyFbx:
             end_frame=end_frame,
             sample_by=sample_by,
         )
-        selection = plan_body_fbx_export_selection(bake)
+        selection = plan_body_fbx_export_selection(
+            bake, published_root_name=published_root_name
+        )
         baked = self._host.capture_baked_body_export_skeleton(bake)
         dependencies = self._host.capture_body_export_dependency_plugs(
             body.root, selection.node_paths
         )
+        collisions = self._host.capture_body_fbx_published_collisions(selection)
         issues = audit_body_fbx_export_readiness(bake, baked, dependencies)
         return BodyFbxExportPlan(
             destination=path,
@@ -120,9 +128,12 @@ class ExportBodyFbx:
             baked=baked,
             selection=selection,
             body_dependency_plugs=dependencies,
+            published_name_collisions=collisions,
             blockers=tuple(
                 issue.message + (f"（{issue.subject}）" if issue.subject else "")
                 for issue in (*audit_body_provenance(provenance, body.provenance), *issues)
+            ) + tuple(
+                f"FBX 发布名称路径已存在：{path}" for path in collisions
             ),
         )
 
@@ -152,6 +163,9 @@ class ExportBodyFbx:
                 or self._host.capture_body_export_dependency_plugs(
                     plan.body.root, plan.selection.node_paths
                 ) != plan.body_dependency_plugs
+                or self._host.capture_body_fbx_published_collisions(
+                    plan.selection
+                ) != plan.published_name_collisions
             ):
                 raise RuntimeError("FBX 导出执行前场景输入发生变化")
             self._host.export_fbx_selection(temporary, plan.selection)

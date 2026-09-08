@@ -75,6 +75,7 @@ def main(output: Path) -> int:
         original_selection = cmds.ls(selection=True, long=True) or []
         original_time = float(cmds.currentTime(query=True))
         original_modified = bool(cmds.file(query=True, modified=True))
+        original_undo_name = str(cmds.undoInfo(query=True, undoName=True) or "")
         with tempfile.TemporaryDirectory(prefix="advpy-fbx-") as directory:
             destination = Path(directory) / "synthetic-character.fbx"
             result = ExportBodyFbx(host).apply(
@@ -86,6 +87,13 @@ def main(output: Path) -> int:
             checks = {
                 "live_body_dependencies_detected": bool(live_dependencies),
                 "explicit_31_node_selection": result.plan.selection.node_count == 31,
+                "published_names_are_canonical": (
+                    result.plan.selection.published_root_path == "|RootMotion"
+                    and not any(
+                        "AdvPy_EXP_" in path or ":" in path
+                        for path in result.plan.selection.published_paths
+                    )
+                ),
                 "zero_body_dependencies": not result.plan.body_dependency_plugs,
                 "binary_fbx_written": (
                     result.artifact.encoding == "binary"
@@ -95,7 +103,20 @@ def main(output: Path) -> int:
                 "selection_preserved": (cmds.ls(selection=True, long=True) or []) == original_selection,
                 "current_time_preserved": abs(float(cmds.currentTime(query=True)) - original_time) < 1e-6,
                 "modified_state_preserved": bool(cmds.file(query=True, modified=True)) == original_modified,
+                "undo_top_preserved": str(
+                    cmds.undoInfo(query=True, undoName=True) or ""
+                ) == original_undo_name,
                 "plugin_version_recorded": bool(result.plugin_version),
+                "original_scene_paths_restored": (
+                    len(cmds.ls("AdvPy_EXP_*", long=True, type="joint") or []) == 30
+                    and (cmds.ls("AdvPy_GameRootMotion", long=True, type="joint") or [])
+                    == ["|AdvPy_GameRootMotion"]
+                    and not (cmds.ls("|RootMotion", long=True) or [])
+                ),
+                "bake_metadata_restored": (
+                    host.capture_baked_body_export_skeleton(result.plan.bake)
+                    == result.plan.baked
+                ),
             }
             try:
                 ExportBodyFbx(host).apply(
@@ -119,13 +140,15 @@ def main(output: Path) -> int:
                 options="fbx",
             )
             imported_joints = cmds.ls(type="joint", long=True) or []
-            root_motion = cmds.ls("AdvPy_GameRootMotion", long=True, type="joint") or []
-            export_joints = cmds.ls("AdvPy_EXP_*", long=True, type="joint") or []
+            root_motion = cmds.ls("RootMotion", long=True, type="joint") or []
+            export_joints = [
+                path for path in imported_joints if path != "|RootMotion"
+            ]
             root_motion_keys = cmds.keyframe(
-                "AdvPy_GameRootMotion.translateX", query=True, timeChange=True
+                "RootMotion.translateX", query=True, timeChange=True
             ) or []
             shoulder_keys = cmds.keyframe(
-                "AdvPy_EXP_Shoulder_R.rotateX", query=True, timeChange=True
+                "Shoulder_R.rotateX", query=True, timeChange=True
             ) or []
             checks.update({
                 "fresh_import_has_31_joints": len(imported_joints) == 31,
@@ -134,13 +157,33 @@ def main(output: Path) -> int:
                     and not (cmds.listRelatives(root_motion[0], parent=True) or [])
                 ),
                 "fresh_import_has_30_export_joints": len(export_joints) == 30,
+                "fresh_import_names_are_canonical": (
+                    (cmds.ls("|RootMotion|Root_M", long=True, type="joint") or [])
+                    == ["|RootMotion|Root_M"]
+                    and not (cmds.ls("AdvPy_EXP_*", long=True) or [])
+                    and not any(":" in path for path in imported_joints)
+                ),
+                "internal_metadata_not_exported": not any(
+                    cmds.objExists(f"|RootMotion|Root_M.{attribute}")
+                    for attribute in (
+                        "advPyOwner",
+                        "advPyArtifactKind",
+                        "advPySchemaVersion",
+                        "advPySourceBodyRoot",
+                        "advPyExportJointCount",
+                        "advPyBakeSchemaVersion",
+                        "advPyBakeStartFrame",
+                        "advPyBakeEndFrame",
+                        "advPyBakeSampleBy",
+                    )
+                ),
                 "fresh_import_animation_range": (
                     tuple(round(float(value)) for value in root_motion_keys) == (1, 2, 3, 4, 5)
                     and tuple(round(float(value)) for value in shoulder_keys) == (1, 2, 3, 4, 5)
                 ),
                 "no_fit_body_or_control_leakage": not any(
                     cmds.ls(pattern, long=True) or []
-                    for pattern in ("FitSkeleton", "Root_M", "*_CTRL", "AdvPy_CharacterControls")
+                    for pattern in ("FitSkeleton", "|Root_M", "*_CTRL", "AdvPy_CharacterControls")
                 ),
             })
 

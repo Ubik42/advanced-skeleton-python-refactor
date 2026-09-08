@@ -1663,12 +1663,28 @@ class MayaBodyBuildHost(MayaFitJointHost):
             raise RuntimeError("Maya FBX 插件加载失败")
         return str(self._cmds.pluginInfo(plugin, query=True, version=True))
 
+    def capture_body_fbx_published_collisions(
+        self,
+        selection: BodyFbxExportSelection,
+    ) -> tuple[str, ...]:
+        scene_paths = set(selection.node_paths)
+        collisions = {
+            path
+            for node in selection.published_nodes
+            for path in (self._cmds.ls(node.published_path, long=True) or [])
+            if path not in scene_paths
+        }
+        return tuple(sorted(collisions))
+
     def export_fbx_selection(
         self,
         destination: Path,
         selection: BodyFbxExportSelection,
     ) -> None:
         from maya import mel
+
+        class _PublishedNamesRestored(Exception):
+            pass
 
         if destination.exists() or destination.is_symlink():
             raise FitSkeletonValidationError("FBX 临时导出目标已存在")
@@ -1678,9 +1694,21 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 raise FitSkeletonValidationError(
                     f"FBX 明确选择集在执行前失效：{path}"
                 )
+        collisions = self.capture_body_fbx_published_collisions(selection)
+        if collisions:
+            raise FitSkeletonValidationError(
+                "FBX 发布名称路径已存在：" + "、".join(collisions)
+            )
+        if not self._cmds.undoInfo(query=True, state=True):
+            raise FitSkeletonValidationError(
+                "FBX 临时发布名称需要启用 Maya Undo"
+            )
         original_selection = self._cmds.ls(selection=True, long=True) or []
         original_time = float(self._cmds.currentTime(query=True))
         original_modified = bool(self._cmds.file(query=True, modified=True))
+        original_undo_name = str(
+            self._cmds.undoInfo(query=True, undoName=True) or ""
+        )
         pushed = False
         try:
             mel.eval("FBXPushSettings;")
@@ -1695,22 +1723,70 @@ class MayaBodyBuildHost(MayaFitJointHost):
             mel.eval("FBXExportSkins -v false;")
             mel.eval("FBXExportInAscii -v false;")
             mel.eval("FBXExportGenerateLog -v false;")
-            self._cmds.select(selection.node_paths, replace=True, noExpand=True)
-            destination_literal = json.dumps(
-                destination.as_posix(), ensure_ascii=False
-            )
-            mel.eval(f"FBXExport -f {destination_literal} -s;")
-            if not destination.is_file():
-                raise RuntimeError("Maya FBX 导出未生成临时文件")
+            try:
+                with self.transaction("临时规范化 FBX 发布名称"):
+                    self._transaction_changed = True
+                    export_root = selection.node_paths[1]
+                    for attribute in (
+                        *_BODY_EXPORT_PROVENANCE_ATTRIBUTES.values(),
+                        *_BODY_EXPORT_BAKE_ATTRIBUTES.values(),
+                    ):
+                        plug = f"{export_root}.{attribute}"
+                        if self._cmds.objExists(plug):
+                            self._cmds.setAttr(plug, lock=False)
+                            self._cmds.deleteAttr(plug)
+                    for node in sorted(
+                        selection.published_nodes,
+                        key=lambda item: item.scene_path.count("|"),
+                        reverse=True,
+                    ):
+                        self._cmds.rename(
+                            node.scene_path,
+                            node.published_name,
+                            ignoreShape=True,
+                        )
+                    if any(
+                        (self._cmds.ls(path, long=True, type="joint") or [])
+                        != [path]
+                        for path in selection.published_paths
+                    ):
+                        raise RuntimeError("FBX 发布名称临时映射复检失败")
+                    self._cmds.select(
+                        selection.published_paths,
+                        replace=True,
+                        noExpand=True,
+                    )
+                    destination_literal = json.dumps(
+                        destination.as_posix(), ensure_ascii=False
+                    )
+                    mel.eval(f"FBXExport -f {destination_literal} -s;")
+                    if not destination.is_file():
+                        raise RuntimeError("Maya FBX 导出未生成临时文件")
+                    raise _PublishedNamesRestored()
+            except _PublishedNamesRestored:
+                pass
+            if any(
+                (self._cmds.ls(path, long=True, type="joint") or []) != [path]
+                for path in selection.node_paths
+            ):
+                raise RuntimeError("FBX 导出后原始场景路径恢复失败")
         finally:
-            if pushed:
-                mel.eval("FBXPopSettings;")
-            self._cmds.currentTime(original_time, edit=True, update=True)
-            if original_selection:
-                self._cmds.select(original_selection, replace=True)
-            else:
-                self._cmds.select(clear=True)
-            self._cmds.file(modified=original_modified)
+            try:
+                if pushed:
+                    mel.eval("FBXPopSettings;")
+            finally:
+                self._cmds.undoInfo(stateWithoutFlush=False)
+                try:
+                    self._cmds.currentTime(original_time, edit=True, update=True)
+                    if original_selection:
+                        self._cmds.select(original_selection, replace=True)
+                    else:
+                        self._cmds.select(clear=True)
+                    self._cmds.file(modified=original_modified)
+                finally:
+                    self._cmds.undoInfo(stateWithoutFlush=True)
+        if str(self._cmds.undoInfo(query=True, undoName=True) or "") != original_undo_name:
+            raise RuntimeError("FBX 导出改变了 Maya 原有 Undo 队列顶部")
 
     def create_body_arm_ik_root(self, name: str) -> str:
         return self.create_body_control_root(name)
