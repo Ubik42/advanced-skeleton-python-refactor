@@ -2,21 +2,33 @@ import unittest
 from contextlib import contextmanager
 from dataclasses import replace
 
-from adv_py.application import BuildBodyExportSkeleton
+from adv_py.application import BakeBodyExportSkeleton, BuildBodyExportSkeleton
 from adv_py.core import (
+    BODY_EXPORT_BAKE_SCHEMA_VERSION,
+    BODY_EXPORT_CHANNEL_ATTRIBUTES,
     BODY_EXPORT_KIND,
     BODY_EXPORT_OWNER,
     BODY_EXPORT_SCHEMA_VERSION,
+    BodyExportBakedJointState,
+    BodyExportJointSample,
     BodyExportJointState,
+    BodyExportSkeletonBakedSnapshot,
+    BodyExportSkeletonSample,
     BodyExportSkeletonSnapshot,
     BodyJointState,
+    BodyRootMotionBakedChannelState,
+    BodyRootMotionBakedSnapshot,
+    BodyRootMotionKeyState,
+    BodyRootMotionSample,
     BodyRootMotionSnapshot,
     BodySkeletonSnapshot,
     FitBuildSide,
     FitUpAxis,
+    audit_baked_body_export_skeleton,
     audit_body_export_skeleton,
     oriented_body_provenance,
     plan_body_export_skeleton,
+    plan_body_export_skeleton_bake,
     plan_body_root_motion,
 )
 from adv_py.core.body_skeleton import BodySkeletonProvenanceState
@@ -144,12 +156,121 @@ def make_export_snapshot(plan):
     )
 
 
+def make_bake_samples(plan):
+    samples = []
+    for frame in plan.frames:
+        joints = tuple(
+            BodyExportJointSample(
+                output_path=spec.output_path,
+                translation=(float(frame), float(index), 0.0),
+                rotation=(0.0, float(index), float(frame * 2)),
+                scale=(1.0, 1.0, 1.0),
+            )
+            for index, spec in enumerate(plan.export_skeleton.joints)
+        )
+        samples.append(BodyExportSkeletonSample(
+            frame=frame,
+            root_motion=BodyRootMotionSample(
+                frame=frame,
+                translation=(float(frame), float(frame * 2), 0.0),
+                rotation=(0.0, 0.0, float(frame * 3)),
+            ),
+            joints=joints,
+        ))
+    return tuple(samples)
+
+
+def make_channel(attribute, frames, values):
+    return BodyRootMotionBakedChannelState(
+        attribute=attribute,
+        source_kind="animation_curve",
+        keys=tuple(
+            BodyRootMotionKeyState(frame, value, "linear", "linear")
+            for frame, value in zip(frames, values)
+        ),
+    )
+
+
+def make_baked_export_snapshot(plan, samples):
+    root_motion = plan.root_motion
+    root_channels = (
+        make_channel(
+            "translateX",
+            plan.frames,
+            tuple(sample.root_motion.translation[0] for sample in samples),
+        ),
+        make_channel(
+            "translateY",
+            plan.frames,
+            tuple(sample.root_motion.translation[1] for sample in samples),
+        ),
+        make_channel(
+            "rotateZ",
+            plan.frames,
+            tuple(sample.root_motion.rotation[2] for sample in samples),
+        ),
+    )
+    baked_joints = []
+    for index, spec in enumerate(plan.export_skeleton.joints):
+        joint_samples = tuple(sample.joints[index] for sample in samples)
+        values = {
+            **{
+                f"translate{axis}": tuple(
+                    sample.translation[i] for sample in joint_samples
+                )
+                for i, axis in enumerate("XYZ")
+            },
+            **{
+                f"rotate{axis}": tuple(
+                    sample.rotation[i] for sample in joint_samples
+                )
+                for i, axis in enumerate("XYZ")
+            },
+            **{
+                f"scale{axis}": tuple(
+                    sample.scale[i] for sample in joint_samples
+                )
+                for i, axis in enumerate("XYZ")
+            },
+        }
+        baked_joints.append(BodyExportBakedJointState(
+            output_path=spec.output_path,
+            source_message_exists=False,
+            channels=tuple(
+                make_channel(attribute, plan.frames, values[attribute])
+                for attribute in BODY_EXPORT_CHANNEL_ATTRIBUTES
+            ),
+        ))
+    export = plan.export_skeleton
+    return BodyExportSkeletonBakedSnapshot(
+        root_path=export.root.output_path,
+        owner=BODY_EXPORT_OWNER,
+        artifact_kind=BODY_EXPORT_KIND,
+        schema_version=BODY_EXPORT_SCHEMA_VERSION,
+        source_body_root=export.source_body_root,
+        joint_count=len(export.joints),
+        bake_schema_version=BODY_EXPORT_BAKE_SCHEMA_VERSION,
+        start_frame=root_motion.start_frame,
+        end_frame=root_motion.end_frame,
+        sample_by=root_motion.sample_by,
+        root_constraint_exists=False,
+        root_motion=BodyRootMotionBakedSnapshot(
+            output_path=root_motion.root_motion.output_path,
+            point_constraint_exists=False,
+            orient_constraint_exists=False,
+            channels=root_channels,
+        ),
+        joints=tuple(baked_joints),
+    )
+
+
 class FakeExportHost:
     def __init__(self, *, owned=True, collision=False):
         self.body = make_body(owned=owned)
         self.root_motion_plan = make_root_motion_plan()
         self.root_motion = make_root_motion_snapshot(self.root_motion_plan)
         self.export = None
+        self.baked = None
         self.collision = collision
         self.transactions = 0
 
@@ -169,10 +290,12 @@ class FakeExportHost:
     def transaction(self, label):
         self.transactions += 1
         before = self.export
+        before_baked = self.baked
         try:
             yield
         except Exception:
             self.export = before
+            self.baked = before_baked
             raise
 
     def create_body_export_skeleton(self, plan):
@@ -180,6 +303,15 @@ class FakeExportHost:
 
     def capture_body_export_skeleton(self, plan):
         return self.export
+
+    def sample_body_export_skeleton(self, plan):
+        return make_bake_samples(plan)
+
+    def bake_body_export_skeleton(self, plan, samples):
+        self.baked = make_baked_export_snapshot(plan, samples)
+
+    def capture_baked_body_export_skeleton(self, plan):
+        return self.baked
 
 
 class BodyExportSkeletonTests(unittest.TestCase):
@@ -236,6 +368,68 @@ class BodyExportSkeletonTests(unittest.TestCase):
                 self.assertEqual(host.transactions, 0)
                 self.assertIsNone(host.export)
 
+    def test_bake_plan_and_audit_cover_root_motion_and_every_joint_trs(self):
+        export = plan_body_export_skeleton(make_body(), make_root_motion_plan())
+        plan = plan_body_export_skeleton_bake(
+            export,
+            make_root_motion_plan(),
+            start_frame=1,
+            end_frame=3,
+        )
+        samples = make_bake_samples(plan)
+        snapshot = make_baked_export_snapshot(plan, samples)
+
+        self.assertEqual(plan.frames, (1, 2, 3))
+        self.assertEqual(
+            audit_baked_body_export_skeleton(plan, samples, snapshot),
+            (),
+        )
+        self.assertEqual(len(snapshot.joints[0].channels), 9)
+
+    def test_baked_audit_rejects_remaining_source_dependency(self):
+        export = plan_body_export_skeleton(make_body(), make_root_motion_plan())
+        plan = plan_body_export_skeleton_bake(
+            export,
+            make_root_motion_plan(),
+            start_frame=1,
+            end_frame=2,
+        )
+        samples = make_bake_samples(plan)
+        snapshot = make_baked_export_snapshot(plan, samples)
+        broken = replace(
+            snapshot,
+            joints=(
+                replace(snapshot.joints[0], source_message_exists=True),
+            ) + snapshot.joints[1:],
+        )
+
+        self.assertIn(
+            "source_message_remains",
+            {issue.code for issue in audit_baked_body_export_skeleton(
+                plan,
+                samples,
+                broken,
+            )},
+        )
+
+    def test_application_bakes_live_export_hierarchy_atomically(self):
+        host = FakeExportHost()
+        BuildBodyExportSkeleton(host).apply()
+
+        result = BakeBodyExportSkeleton(host).apply(
+            start_frame=1,
+            end_frame=3,
+        )
+
+        self.assertEqual(len(result.samples), 3)
+        self.assertEqual(len(result.verified.joints), 3)
+        self.assertEqual(host.transactions, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
+    BodyRootMotionBakedChannelState,
+    BodyRootMotionBakedSnapshot,
+    BodyRootMotionKeyState,
+    BodyRootMotionSample,
+    audit_baked_body_export_skeleton,

@@ -1,8 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 
-from .body_root_motion import BodyRootMotionPlan
+from .body_root_motion import (
+    BodyRootMotionBakePlan,
+    BodyRootMotionBakedChannelState,
+    BodyRootMotionBakedSnapshot,
+    BodyRootMotionPlan,
+    BodyRootMotionSample,
+    audit_baked_body_root_motion,
+    audit_body_root_motion_samples,
+    plan_body_root_motion_bake,
+)
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
 from .joint_labels import JointLabel
@@ -12,6 +22,10 @@ Vector3 = tuple[float, float, float]
 BODY_EXPORT_OWNER = "advanced-skeleton-python-refactor"
 BODY_EXPORT_KIND = "body_export_skeleton"
 BODY_EXPORT_SCHEMA_VERSION = 1
+BODY_EXPORT_BAKE_SCHEMA_VERSION = 1
+BODY_EXPORT_CHANNEL_ATTRIBUTES = tuple(
+    f"{kind}{axis}" for kind in ("translate", "rotate", "scale") for axis in "XYZ"
+)
 
 
 class BodyExportSkeletonValidationError(ValueError):
@@ -90,6 +104,83 @@ class BodyExportSkeletonIssue:
     subject: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class BodyExportJointSample:
+    output_path: str
+    translation: Vector3
+    rotation: Vector3
+    scale: Vector3
+
+    def __post_init__(self) -> None:
+        values = self.translation + self.rotation + self.scale
+        if (
+            not isinstance(self.output_path, str)
+            or not self.output_path.startswith("|")
+            or any(len(vector) != 3 for vector in (
+                self.translation,
+                self.rotation,
+                self.scale,
+            ))
+            or not all(isfinite(float(value)) for value in values)
+        ):
+            raise BodyExportSkeletonValidationError(
+                "Export Skeleton joint 样本无效"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class BodyExportSkeletonSample:
+    frame: int
+    root_motion: BodyRootMotionSample
+    joints: tuple[BodyExportJointSample, ...]
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.frame, bool)
+            or not isinstance(self.frame, int)
+            or self.root_motion.frame != self.frame
+            or not self.joints
+            or len({joint.output_path for joint in self.joints}) != len(self.joints)
+        ):
+            raise BodyExportSkeletonValidationError(
+                "Export Skeleton 帧样本结构无效"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class BodyExportSkeletonBakePlan:
+    export_skeleton: BodyExportSkeletonPlan
+    root_motion: BodyRootMotionBakePlan
+
+    @property
+    def frames(self) -> tuple[int, ...]:
+        return self.root_motion.frames
+
+
+@dataclass(frozen=True, slots=True)
+class BodyExportBakedJointState:
+    output_path: str
+    source_message_exists: bool
+    channels: tuple[BodyRootMotionBakedChannelState, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BodyExportSkeletonBakedSnapshot:
+    root_path: str
+    owner: str | None
+    artifact_kind: str | None
+    schema_version: int | None
+    source_body_root: str | None
+    joint_count: int | None
+    bake_schema_version: int | None
+    start_frame: int | None
+    end_frame: int | None
+    sample_by: int | None
+    root_constraint_exists: bool
+    root_motion: BodyRootMotionBakedSnapshot
+    joints: tuple[BodyExportBakedJointState, ...]
+
+
 def plan_body_export_skeleton(
     body: BodySkeletonSnapshot,
     root_motion: BodyRootMotionPlan,
@@ -160,6 +251,203 @@ def plan_body_export_skeleton(
         output_prefix=output_prefix,
         joints=tuple(specs),
     )
+
+
+def plan_body_export_skeleton_bake(
+    export_skeleton: BodyExportSkeletonPlan,
+    root_motion: BodyRootMotionPlan,
+    *,
+    start_frame: int,
+    end_frame: int,
+    sample_by: int = 1,
+) -> BodyExportSkeletonBakePlan:
+    if (
+        export_skeleton.root_motion_path != root_motion.output_path
+        or export_skeleton.source_body_root != root_motion.source_root_path
+    ):
+        raise BodyExportSkeletonValidationError(
+            "Export Skeleton 与 Root Motion bake 输入不一致"
+        )
+    return BodyExportSkeletonBakePlan(
+        export_skeleton=export_skeleton,
+        root_motion=plan_body_root_motion_bake(
+            root_motion,
+            start_frame=start_frame,
+            end_frame=end_frame,
+            sample_by=sample_by,
+        ),
+    )
+
+
+def audit_body_export_skeleton_samples(
+    plan: BodyExportSkeletonBakePlan,
+    samples: tuple[BodyExportSkeletonSample, ...],
+) -> tuple[BodyExportSkeletonIssue, ...]:
+    issues: list[BodyExportSkeletonIssue] = []
+    if tuple(sample.frame for sample in samples) != plan.frames:
+        return (
+            BodyExportSkeletonIssue(
+                "sample_frames_mismatch",
+                "Export Skeleton 采样帧与 bake 计划不一致",
+            ),
+        )
+    expected_paths = tuple(
+        joint.output_path for joint in plan.export_skeleton.joints
+    )
+    root_samples = tuple(sample.root_motion for sample in samples)
+    if audit_body_root_motion_samples(plan.root_motion, root_samples):
+        issues.append(BodyExportSkeletonIssue(
+            "root_motion_samples_mismatch",
+            "Export Skeleton 的 Root Motion 样本无效",
+        ))
+    for sample in samples:
+        if tuple(joint.output_path for joint in sample.joints) != expected_paths:
+            issues.append(BodyExportSkeletonIssue(
+                "joint_sample_set_mismatch",
+                "Export Skeleton joint 样本集合或顺序不一致",
+                str(sample.frame),
+            ))
+    return tuple(issues)
+
+
+def audit_baked_body_export_skeleton(
+    plan: BodyExportSkeletonBakePlan,
+    samples: tuple[BodyExportSkeletonSample, ...],
+    snapshot: BodyExportSkeletonBakedSnapshot,
+    *,
+    tolerance: float = 1e-5,
+) -> tuple[BodyExportSkeletonIssue, ...]:
+    issues = list(audit_body_export_skeleton_samples(plan, samples))
+    if any(issue.code in {
+        "sample_frames_mismatch",
+        "joint_sample_set_mismatch",
+    } for issue in issues):
+        return tuple(issues)
+    export = plan.export_skeleton
+    if (
+        snapshot.root_path != export.root.output_path
+        or snapshot.owner != BODY_EXPORT_OWNER
+        or snapshot.artifact_kind != BODY_EXPORT_KIND
+        or snapshot.schema_version != BODY_EXPORT_SCHEMA_VERSION
+        or snapshot.source_body_root != export.source_body_root
+        or snapshot.joint_count != len(export.joints)
+        or snapshot.bake_schema_version != BODY_EXPORT_BAKE_SCHEMA_VERSION
+        or snapshot.start_frame != plan.root_motion.start_frame
+        or snapshot.end_frame != plan.root_motion.end_frame
+        or snapshot.sample_by != plan.root_motion.sample_by
+    ):
+        issues.append(BodyExportSkeletonIssue(
+            "bake_provenance_mismatch",
+            "Export Skeleton bake provenance 或帧范围不一致",
+            export.root.output_path,
+        ))
+    if snapshot.root_constraint_exists:
+        issues.append(BodyExportSkeletonIssue(
+            "root_constraint_remains",
+            "Export Skeleton bake 后 root constraint 仍存在",
+            export.root.output_path,
+        ))
+    root_samples = tuple(sample.root_motion for sample in samples)
+    if audit_baked_body_root_motion(
+        plan.root_motion,
+        root_samples,
+        snapshot.root_motion,
+        tolerance=tolerance,
+    ):
+        issues.append(BodyExportSkeletonIssue(
+            "root_motion_bake_mismatch",
+            "Export Skeleton 的 Root Motion bake 结果不一致",
+            export.root_motion_path,
+        ))
+
+    actual = {state.output_path: state for state in snapshot.joints}
+    expected_paths = {joint.output_path for joint in export.joints}
+    if len(actual) != len(snapshot.joints) or set(actual) != expected_paths:
+        issues.append(BodyExportSkeletonIssue(
+            "baked_joint_set_mismatch",
+            "Export Skeleton bake joint 集合不一致",
+        ))
+        return tuple(issues)
+
+    samples_by_path = {
+        joint.output_path: tuple(
+            next(item for item in sample.joints if item.output_path == joint.output_path)
+            for sample in samples
+        )
+        for joint in export.joints
+    }
+    for spec in export.joints:
+        state = actual[spec.output_path]
+        if state.source_message_exists:
+            issues.append(BodyExportSkeletonIssue(
+                "source_message_remains",
+                "Export Skeleton bake 后仍有 Body source message",
+                spec.output_path,
+            ))
+        channels = {channel.attribute: channel for channel in state.channels}
+        if (
+            len(channels) != len(state.channels)
+            or set(channels) != set(BODY_EXPORT_CHANNEL_ATTRIBUTES)
+        ):
+            issues.append(BodyExportSkeletonIssue(
+                "baked_channel_set_mismatch",
+                "Export Skeleton bake 通道集合不一致",
+                spec.output_path,
+            ))
+            continue
+        joint_samples = samples_by_path[spec.output_path]
+        values_by_attribute = {
+            **{
+                f"translate{axis}": tuple(
+                    sample.translation[index] for sample in joint_samples
+                )
+                for index, axis in enumerate("XYZ")
+            },
+            **{
+                f"rotate{axis}": tuple(
+                    sample.rotation[index] for sample in joint_samples
+                )
+                for index, axis in enumerate("XYZ")
+            },
+            **{
+                f"scale{axis}": tuple(
+                    sample.scale[index] for sample in joint_samples
+                )
+                for index, axis in enumerate("XYZ")
+            },
+        }
+        for attribute in BODY_EXPORT_CHANNEL_ATTRIBUTES:
+            channel = channels[attribute]
+            wanted = values_by_attribute[attribute]
+            if channel.source_kind != "animation_curve":
+                issues.append(BodyExportSkeletonIssue(
+                    "baked_channel_source_mismatch",
+                    "Export Skeleton bake 通道不是独立动画曲线",
+                    f"{spec.output_path}.{attribute}",
+                ))
+            if (
+                tuple(key.frame for key in channel.keys) != plan.frames
+                or len(channel.keys) != len(wanted)
+                or any(
+                    abs(key.value - value) > tolerance
+                    for key, value in zip(channel.keys, wanted)
+                )
+            ):
+                issues.append(BodyExportSkeletonIssue(
+                    "baked_key_values_mismatch",
+                    "Export Skeleton bake key 时间或数值不一致",
+                    f"{spec.output_path}.{attribute}",
+                ))
+            if any(
+                key.in_tangent != "linear" or key.out_tangent != "linear"
+                for key in channel.keys
+            ):
+                issues.append(BodyExportSkeletonIssue(
+                    "baked_key_tangent_mismatch",
+                    "Export Skeleton bake key 切线不是 linear",
+                    f"{spec.output_path}.{attribute}",
+                ))
+    return tuple(issues)
 
 
 def audit_body_export_skeleton(

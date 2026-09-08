@@ -81,11 +81,18 @@ from adv_py.core.body_root_motion import (
     BodyRootMotionSnapshot,
 )
 from adv_py.core.body_export_skeleton import (
+    BODY_EXPORT_BAKE_SCHEMA_VERSION,
+    BODY_EXPORT_CHANNEL_ATTRIBUTES,
     BODY_EXPORT_KIND,
     BODY_EXPORT_OWNER,
     BODY_EXPORT_SCHEMA_VERSION,
+    BodyExportBakedJointState,
+    BodyExportJointSample,
     BodyExportJointState,
+    BodyExportSkeletonBakePlan,
+    BodyExportSkeletonBakedSnapshot,
     BodyExportSkeletonPlan,
+    BodyExportSkeletonSample,
     BodyExportSkeletonSnapshot,
 )
 from adv_py.core.body_hand_controls import (
@@ -235,6 +242,12 @@ _BODY_EXPORT_PROVENANCE_ATTRIBUTES = {
     "schema_version": "advPySchemaVersion",
     "source_body_root": "advPySourceBodyRoot",
     "joint_count": "advPyExportJointCount",
+}
+_BODY_EXPORT_BAKE_ATTRIBUTES = {
+    "bake_schema_version": "advPyBakeSchemaVersion",
+    "start_frame": "advPyBakeStartFrame",
+    "end_frame": "advPyBakeEndFrame",
+    "sample_by": "advPyBakeSampleBy",
 }
 
 
@@ -1260,6 +1273,340 @@ class MayaBodyBuildHost(MayaFitJointHost):
             schema_version=provenance("schema_version"),
             source_body_root=provenance("source_body_root"),
             joint_count=provenance("joint_count"),
+        )
+
+    def sample_body_export_skeleton(
+        self,
+        plan: BodyExportSkeletonBakePlan,
+    ) -> tuple[BodyExportSkeletonSample, ...]:
+        original_time = float(self._cmds.currentTime(query=True))
+
+        def vector(path: str, kind: str) -> tuple[float, float, float]:
+            return tuple(
+                float(self._cmds.getAttr(f"{path}.{kind}{axis}"))
+                for axis in "XYZ"
+            )
+
+        samples = []
+        try:
+            for frame in plan.frames:
+                self._cmds.currentTime(frame, edit=True, update=True)
+                root_motion = BodyRootMotionSample(
+                    frame=frame,
+                    translation=vector(
+                        plan.root_motion.root_motion.output_path,
+                        "translate",
+                    ),
+                    rotation=vector(
+                        plan.root_motion.root_motion.output_path,
+                        "rotate",
+                    ),
+                )
+                joints = tuple(
+                    BodyExportJointSample(
+                        output_path=spec.output_path,
+                        translation=vector(spec.output_path, "translate"),
+                        rotation=vector(spec.output_path, "rotate"),
+                        scale=vector(spec.output_path, "scale"),
+                    )
+                    for spec in plan.export_skeleton.joints
+                )
+                samples.append(BodyExportSkeletonSample(
+                    frame=frame,
+                    root_motion=root_motion,
+                    joints=joints,
+                ))
+        finally:
+            self._cmds.currentTime(original_time, edit=True, update=True)
+        return tuple(samples)
+
+    def bake_body_export_skeleton(
+        self,
+        plan: BodyExportSkeletonBakePlan,
+        samples: tuple[BodyExportSkeletonSample, ...],
+    ) -> None:
+        self._require_transaction()
+        if tuple(sample.frame for sample in samples) != plan.frames:
+            raise FitSkeletonValidationError(
+                "Export Skeleton bake 样本帧在执行前失效"
+            )
+        export_root = plan.export_skeleton.root.output_path
+        if any(
+            self._cmds.attributeQuery(attribute, node=export_root, exists=True)
+            for attribute in _BODY_EXPORT_BAKE_ATTRIBUTES.values()
+        ):
+            raise FitSkeletonValidationError(
+                "Export Skeleton bake 标记已存在，拒绝覆盖"
+            )
+        constraint_names = (
+            plan.root_motion.root_motion.point_constraint_name,
+            plan.root_motion.root_motion.orient_constraint_name,
+            plan.export_skeleton.root.root_constraint_name,
+        )
+        constraints = []
+        for name in constraint_names:
+            values = self._cmds.ls(name) or []
+            if len(values) != 1:
+                raise FitSkeletonValidationError(
+                    f"Export Skeleton bake 约束输入失效：{name}"
+                )
+            constraints.append(values[0])
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            self._transaction_changed = True
+            self._cmds.delete(constraints)
+            for spec in plan.export_skeleton.joints:
+                output = spec.output_path
+                for attribute in BODY_EXPORT_CHANNEL_ATTRIBUTES:
+                    destination = f"{output}.{attribute}"
+                    sources = self._cmds.listConnections(
+                        destination,
+                        source=True,
+                        destination=False,
+                        plugs=True,
+                    ) or []
+                    if len(sources) > 1:
+                        raise RuntimeError(
+                            f"Export Skeleton bake 通道来源不唯一：{destination}"
+                        )
+                    if sources:
+                        self._cmds.disconnectAttr(sources[0], destination)
+                source_attribute = f"{output}.{_BODY_EXPORT_SOURCE_ATTRIBUTE}"
+                if not self._cmds.objExists(source_attribute):
+                    raise RuntimeError(
+                        f"Export Skeleton bake source message 缺失：{output}"
+                    )
+                self._cmds.deleteAttr(source_attribute)
+
+            root_motion_output = plan.root_motion.root_motion.output_path
+            root_translate_indices = {
+                f"translate{axis.upper()}": "xyz".index(axis)
+                for axis in plan.root_motion.root_motion.translation_axes
+            }
+            root_rotate_attribute = (
+                f"rotate{plan.root_motion.root_motion.rotation_axis.upper()}"
+            )
+            joint_samples = {
+                spec.output_path: tuple(
+                    next(
+                        joint
+                        for joint in sample.joints
+                        if joint.output_path == spec.output_path
+                    )
+                    for sample in samples
+                )
+                for spec in plan.export_skeleton.joints
+            }
+            for sample in samples:
+                for attribute, index in root_translate_indices.items():
+                    self._cmds.setKeyframe(
+                        root_motion_output,
+                        attribute=attribute,
+                        time=sample.frame,
+                        value=sample.root_motion.translation[index],
+                    )
+                self._cmds.setKeyframe(
+                    root_motion_output,
+                    attribute=root_rotate_attribute,
+                    time=sample.frame,
+                    value=sample.root_motion.rotation[
+                        "xyz".index(
+                            plan.root_motion.root_motion.rotation_axis
+                        )
+                    ],
+                )
+            for spec in plan.export_skeleton.joints:
+                for sample, joint in zip(samples, joint_samples[spec.output_path]):
+                    values = {
+                        **{
+                            f"translate{axis}": joint.translation[index]
+                            for index, axis in enumerate("XYZ")
+                        },
+                        **{
+                            f"rotate{axis}": joint.rotation[index]
+                            for index, axis in enumerate("XYZ")
+                        },
+                        **{
+                            f"scale{axis}": joint.scale[index]
+                            for index, axis in enumerate("XYZ")
+                        },
+                    }
+                    for attribute, value in values.items():
+                        self._cmds.setKeyframe(
+                            spec.output_path,
+                            attribute=attribute,
+                            time=sample.frame,
+                            value=value,
+                        )
+            for attribute in plan.root_motion.channel_attributes:
+                self._cmds.keyTangent(
+                    root_motion_output,
+                    attribute=attribute,
+                    time=(
+                        plan.root_motion.start_frame,
+                        plan.root_motion.end_frame,
+                    ),
+                    inTangentType="linear",
+                    outTangentType="linear",
+                )
+            for spec in plan.export_skeleton.joints:
+                for attribute in BODY_EXPORT_CHANNEL_ATTRIBUTES:
+                    self._cmds.keyTangent(
+                        spec.output_path,
+                        attribute=attribute,
+                        time=(
+                            plan.root_motion.start_frame,
+                            plan.root_motion.end_frame,
+                        ),
+                        inTangentType="linear",
+                        outTangentType="linear",
+                    )
+
+            metadata = {
+                "bake_schema_version": BODY_EXPORT_BAKE_SCHEMA_VERSION,
+                "start_frame": plan.root_motion.start_frame,
+                "end_frame": plan.root_motion.end_frame,
+                "sample_by": plan.root_motion.sample_by,
+            }
+            for field, attribute in _BODY_EXPORT_BAKE_ATTRIBUTES.items():
+                self._cmds.addAttr(
+                    export_root,
+                    longName=attribute,
+                    attributeType="long",
+                )
+                self._cmds.setAttr(f"{export_root}.{attribute}", metadata[field])
+                self._cmds.setAttr(f"{export_root}.{attribute}", lock=True)
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+    def capture_baked_body_export_skeleton(
+        self,
+        plan: BodyExportSkeletonBakePlan,
+    ) -> BodyExportSkeletonBakedSnapshot:
+        def read_attribute(node: str, attribute: str):
+            plug = f"{node}.{attribute}"
+            return self._cmds.getAttr(plug) if self._cmds.objExists(plug) else None
+
+        def channel(path: str, attribute: str) -> BodyRootMotionBakedChannelState:
+            plug = f"{path}.{attribute}"
+            sources = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+            ) or []
+            source_kind = None
+            if len(sources) == 1:
+                node_type = self._cmds.nodeType(sources[0])
+                source_kind = (
+                    "animation_curve"
+                    if node_type.startswith("animCurve")
+                    else node_type
+                )
+            times = self._cmds.keyframe(
+                plug,
+                query=True,
+                time=(
+                    plan.root_motion.start_frame,
+                    plan.root_motion.end_frame,
+                ),
+                timeChange=True,
+            ) or []
+            values = self._cmds.keyframe(
+                plug,
+                query=True,
+                time=(
+                    plan.root_motion.start_frame,
+                    plan.root_motion.end_frame,
+                ),
+                valueChange=True,
+            ) or []
+            keys = []
+            for frame, value in zip(times, values):
+                incoming = self._cmds.keyTangent(
+                    plug,
+                    query=True,
+                    time=(frame, frame),
+                    inTangentType=True,
+                ) or []
+                outgoing = self._cmds.keyTangent(
+                    plug,
+                    query=True,
+                    time=(frame, frame),
+                    outTangentType=True,
+                ) or []
+                keys.append(BodyRootMotionKeyState(
+                    frame=int(round(float(frame))),
+                    value=float(value),
+                    in_tangent=incoming[0] if len(incoming) == 1 else "",
+                    out_tangent=outgoing[0] if len(outgoing) == 1 else "",
+                ))
+            return BodyRootMotionBakedChannelState(
+                attribute=attribute,
+                source_kind=source_kind,
+                keys=tuple(keys),
+            )
+
+        export = plan.export_skeleton
+        root = export.root.output_path
+        joints = tuple(
+            BodyExportBakedJointState(
+                output_path=spec.output_path,
+                source_message_exists=self._cmds.objExists(
+                    f"{spec.output_path}.{_BODY_EXPORT_SOURCE_ATTRIBUTE}"
+                ),
+                channels=tuple(
+                    channel(spec.output_path, attribute)
+                    for attribute in BODY_EXPORT_CHANNEL_ATTRIBUTES
+                ),
+            )
+            for spec in export.joints
+        )
+        return BodyExportSkeletonBakedSnapshot(
+            root_path=root,
+            owner=read_attribute(
+                root,
+                _BODY_EXPORT_PROVENANCE_ATTRIBUTES["owner"],
+            ),
+            artifact_kind=read_attribute(
+                root,
+                _BODY_EXPORT_PROVENANCE_ATTRIBUTES["artifact_kind"],
+            ),
+            schema_version=read_attribute(
+                root,
+                _BODY_EXPORT_PROVENANCE_ATTRIBUTES["schema_version"],
+            ),
+            source_body_root=read_attribute(
+                root,
+                _BODY_EXPORT_PROVENANCE_ATTRIBUTES["source_body_root"],
+            ),
+            joint_count=read_attribute(
+                root,
+                _BODY_EXPORT_PROVENANCE_ATTRIBUTES["joint_count"],
+            ),
+            bake_schema_version=read_attribute(
+                root,
+                _BODY_EXPORT_BAKE_ATTRIBUTES["bake_schema_version"],
+            ),
+            start_frame=read_attribute(
+                root,
+                _BODY_EXPORT_BAKE_ATTRIBUTES["start_frame"],
+            ),
+            end_frame=read_attribute(
+                root,
+                _BODY_EXPORT_BAKE_ATTRIBUTES["end_frame"],
+            ),
+            sample_by=read_attribute(
+                root,
+                _BODY_EXPORT_BAKE_ATTRIBUTES["sample_by"],
+            ),
+            root_constraint_exists=bool(
+                self._cmds.ls(export.root.root_constraint_name) or []
+            ),
+            root_motion=self.capture_baked_body_root_motion(plan.root_motion),
+            joints=joints,
         )
 
     def create_body_arm_ik_root(self, name: str) -> str:

@@ -114,6 +114,9 @@ from .body_root_motion import (
     BuildBodyRootMotion,
 )
 from .body_export_skeleton import (
+    BakeBodyExportSkeleton,
+    BodyExportSkeletonBakeBuildPlan,
+    BodyExportSkeletonBakeResult,
     BodyExportSkeletonBuildPlan,
     BodyExportSkeletonBuildResult,
     BodyExportSkeletonHost,
@@ -316,6 +319,7 @@ __all__ = [
     "BodyRootMotionBakeBuildPlan", "BodyRootMotionBakeResult",
     "BodyExportSkeletonBuildPlan", "BodyExportSkeletonBuildResult",
     "BodyExportSkeletonHost",
+    "BodyExportSkeletonBakeBuildPlan", "BodyExportSkeletonBakeResult",
     "BodyHandSourceFitBuildPlan",
     "BodyHandSourceFitBuildResult",
     "BodyHandSourceFitHost",
@@ -410,6 +414,7 @@ __all__ = [
     "BuildBodyRootMotion",
     "BakeBodyRootMotion",
     "BuildBodyExportSkeleton",
+    "BakeBodyExportSkeleton",
     "BuildSyntheticBodyWithHandSourceFit",
     "BuildBodyHandFkControls",
     "ExportBodyHandPose",
