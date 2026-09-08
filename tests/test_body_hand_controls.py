@@ -6,10 +6,14 @@ from contextlib import contextmanager
 from dataclasses import replace
 
 from adv_py.application import (
+    BODY_HAND_POSE_PRESET_SUFFIX,
+    ApplyBodyHandPosePreset,
     BuildBodyHandFkControls,
     ExportBodyHandPose,
     ImportBodyHandPose,
+    InspectBodyHandPosePresetLibrary,
     MirrorBodyHandPose,
+    SaveBodyHandPosePreset,
 )
 from adv_py.core import (
     BODY_HAND_DIGITS,
@@ -675,6 +679,113 @@ class BodyHandControlTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "拒绝覆盖"):
                 ExportBodyHandPose(host).apply(target)
+
+    def test_named_pose_library_saves_lists_and_applies_a_chinese_preset(self):
+        host = FakeBodyHandPoseDocumentHost()
+        aggregate = next(
+            item for item in host.channels.aggregates
+            if item.side is FitBuildSide.RIGHT
+        )
+        control = next(
+            item for item in host.channels.controls
+            if item.side is FitBuildSide.RIGHT
+        )
+        host.channels = replace(
+            host.channels,
+            aggregates=tuple(
+                replace(item, value=25.0) if item is aggregate else item
+                for item in host.channels.aggregates
+            ),
+            controls=tuple(
+                replace(item, rotation=(3.0, 4.0, 5.0))
+                if item is control
+                else item
+                for item in host.channels.controls
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            for invalid_name in (
+                "../pose",
+                "CON",
+                " pose",
+                "pose\u202e",
+            ):
+                with self.assertRaises(ValueError):
+                    SaveBodyHandPosePreset(host).plan(
+                        directory,
+                        invalid_name,
+                    )
+            self.assertFalse(tuple(Path(directory).iterdir()))
+
+            saved = SaveBodyHandPosePreset(host).apply(directory, "握拳Test")
+            snapshot = InspectBodyHandPosePresetLibrary().execute(directory)
+            with self.assertRaisesRegex(ValueError, "拒绝覆盖"):
+                SaveBodyHandPosePreset(host).apply(directory, "握拳test")
+
+            self.assertEqual(saved.plan.name, "握拳Test")
+            self.assertEqual(
+                saved.plan.destination.name,
+                f"握拳Test{BODY_HAND_POSE_PRESET_SUFFIX}",
+            )
+            self.assertEqual(len(snapshot.presets), 1)
+            self.assertEqual(snapshot.presets[0].name, "握拳Test")
+            self.assertEqual(
+                snapshot.presets[0].document,
+                saved.export_result.plan.document,
+            )
+            self.assertEqual(host.transaction_count, 0)
+
+            host.channels = replace(
+                host.channels,
+                aggregates=tuple(
+                    replace(item, value=-10.0)
+                    if item.side is FitBuildSide.RIGHT
+                    and item.name == aggregate.name
+                    else item
+                    for item in host.channels.aggregates
+                ),
+                controls=tuple(
+                    replace(item, rotation=(-1.0, -2.0, -3.0))
+                    if item.side is FitBuildSide.RIGHT
+                    and item.digit is control.digit
+                    and item.segment == control.segment
+                    else item
+                    for item in host.channels.controls
+                ),
+            )
+            preview = ApplyBodyHandPosePreset(host).plan(
+                directory,
+                "握拳test",
+                target_side=FitBuildSide.RIGHT,
+            )
+            applied = ApplyBodyHandPosePreset(host).apply(
+                directory,
+                "握拳test",
+                target_side=FitBuildSide.RIGHT,
+            )
+            repeated = ApplyBodyHandPosePreset(host).apply(
+                directory,
+                "握拳test",
+                target_side=FitBuildSide.RIGHT,
+            )
+            corrupt = Path(directory) / (
+                f"损坏{BODY_HAND_POSE_PRESET_SUFFIX}"
+            )
+            corrupt.write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "损坏"):
+                InspectBodyHandPosePresetLibrary().execute(directory)
+            with self.assertRaisesRegex(ValueError, "损坏"):
+                ApplyBodyHandPosePreset(host).apply(directory, "损坏")
+
+        self.assertEqual(preview.changed_channel_count, 2)
+        self.assertEqual(preview.preset.name, "握拳Test")
+        self.assertEqual(applied.changed_channel_count, 2)
+        self.assertEqual(repeated.changed_channel_count, 0)
+        self.assertEqual(host.transaction_count, 1)
+        self.assertEqual(
+            body_hand_pose_document_from_snapshot(host.channels),
+            applied.import_result.plan.expected_document,
+        )
 
     def test_pose_import_restores_values_once_and_repeat_is_noop(self):
         host = FakeBodyHandPoseDocumentHost()
