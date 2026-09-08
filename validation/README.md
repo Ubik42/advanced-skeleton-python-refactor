@@ -29,6 +29,7 @@
 - Maya Body 朝向把源 Fit 世界轴写入 M/R joints，并为 L joints 反射 X/Y 行为轴后重建右手 Z 轴；写入后恢复全部位置，支持幂等规划和一次 Undo。
 - Maya 原子 Body 构建在一个 Undo Chunk 内完成 30 joints 的物化与朝向；任一阶段失败会移除整棵新建骨架，一次 Undo 同样只移除 Body 并保留 Fit 输入。
 - Maya 五指 Body 源在 Right Wrist 下建立 Thumb/Index/Middle/Ring/Pinky 各四个 Fit joints，显式选择 Middle 分支解算 Wrist 朝向；38 个源 joints 一次事务创建和朝向后，通用镜像 Body 用例生成 70 joints，其中左右手指共 40 个。五指父链、Finger 标签、YZ 镜像位置与行为朝向、重复构建拦截、选择保持，以及 Body/Fit 各自一次 Undo 均通过。
+- Maya 双手 Hand FK 在 Wrist_R/L 下各建立一个零通道根，每指前三节生成 1→2→3 分层曲线控制，共 30 个 orientConstraint 输出。目标 rotate 可写/无输入预检、控制跟随指节、右 Index 真实姿态、左手隔离、重复构建拦截、ReBuild 依赖保护、选择保持和一次 Undo 后恢复安全均通过。
 - Maya Body provenance 在根 joint 写入并锁定 owner、产物类型、schema、Fit 来源和 joint 数量；只读审计能识别当前合同及数量不匹配，且不修改场景。
 - Maya ReBuild 安全评估核对 Body joint/DAG 集合与父链，并分类读取 animation、constraint、skinCluster 和普通外部连接；计划外 attachment 或连接会阻止替换。
 - Maya 原子 Body ReBuild 在删除前复核全部计划快照，只忽略旧 Body 自身造成的同名冲突；新树构建或复检失败会恢复旧树，一次 Undo 也能恢复替换前 UUID 和位置。
@@ -85,6 +86,8 @@
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_skeleton_smoke.py validation\results\maya2024-body-skeleton.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_hand_fit_smoke.py validation\results\maya2024-body-hand-fit.json
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_hand_fk_controls_smoke.py validation\results\maya2024-body-hand-fk-controls.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_orientation_smoke.py validation\results\maya2024-body-orientation.json
 
@@ -193,8 +196,8 @@
 - 位置编辑只写本地 translate，不自动解锁、断开驱动、重算 jointOrient 或更新 Fit 可视化几何。
 - 朝向编辑支持唯一子级或调用方显式选择的直接分支子级；非零 rotate 和不可补偿后代会在预检阶段拒绝。
 - 对称计划表达输出名称、父子拓扑、YZ 平面世界位置及镜像行为世界轴；当前尚未覆盖非均匀缩放、World Match 或自定义逐关节镜像平面。
-- 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径，并可从五指源生成 70 关节 Body；Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 默认主流程已组合五关节 mechanisms、四层 FK controls、Ankle/PV/Toe IK、blend、显隐、stretch bias、knee pin、twist/volume、五级 Foot pivot、自动 `footRoll` 和双向匹配。Character 入口进一步用一个外层事务和统一 Global control 组合 Arm/Leg；手指 FK controls、完整变形系统或产品 UI 尚未实现，因此仍不是最终 Body rig。
+- 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径，并可从五指源生成 70 关节 Body；Hand 已有双侧 30 个分层 FK controls。Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 默认主流程已组合 mechanisms、FK/IK、blend、显隐、stretch bias、knee pin、twist/volume、五级 Foot pivot、自动 `footRoll` 和双向匹配。Character 入口目前用一个外层事务组合 Arm/Leg/Global，Hand 仍是独立事务；curl/spread、完整变形系统或产品 UI 尚未实现。
 - provenance 只证明本工程写入的产物身份和声明数量；删除资格还必须通过当前 DAG 与外部连接安全评估，不能只凭标记直接删除。
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。
-- FK controls 与 RP IK controls 已通过双源 blend 输出到 Body，并完成控制显隐、含 stretch 段长传递的双向匹配、统一角色等比缩放、轴向 twist/volume helper、显式单网格 Skin Bind、稀疏顶点权重写入/镜像、JSON 往返和路径映射；尚未实现动画 bake、手指控制、自动 namespace/influence 推断、非对称空间配对或已有蒙皮迁移。
+- Limb FK controls 与 RP IK controls 已通过双源 blend 输出到 Body，并完成控制显隐、含 stretch 段长传递的双向匹配、统一角色等比缩放和轴向 twist/volume helper；Hand FK controls 直接驱动 30 个 Body 指节。Skin 已覆盖显式单网格绑定、稀疏权重写入/镜像、JSON 往返和路径映射；尚未实现动画 bake、手指聚合属性、自动 namespace/influence 推断、非对称空间配对或已有蒙皮迁移。

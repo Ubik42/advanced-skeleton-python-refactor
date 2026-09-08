@@ -71,6 +71,15 @@ from adv_py.core.body_character_global import (
     BodyCharacterGlobalPlan,
     BodyCharacterGlobalSnapshot,
 )
+from adv_py.core.body_hand_controls import (
+    BodyHandFkControlPlan,
+    BodyHandFkControlSnapshot,
+    BodyHandFkControlSpec,
+    BodyHandFkInputSnapshot,
+    BodyHandFkJointInputState,
+    BodyHandFkRootSpec,
+    BodyHandFkRootState,
+)
 from adv_py.core.body_arm_twist import (
     BodyArmTwistJointSpec,
     BodyArmTwistPlan,
@@ -3759,6 +3768,85 @@ class MayaBodyBuildHost(MayaFitJointHost):
     def create_body_leg_fk_control(self, spec: BodyLegFkControlSpec) -> None:
         self._create_body_limb_fk_control(spec, "Leg")
 
+    def capture_body_hand_fk_input(
+        self,
+        plan: BodyHandFkControlPlan,
+    ) -> BodyHandFkInputSnapshot:
+        states = []
+        for path in dict.fromkeys(
+            control.driven_joint for control in plan.controls
+        ):
+            matches = self._cmds.ls(path, long=True, type="joint") or []
+            if len(matches) != 1 or matches[0] != path:
+                raise FitSkeletonValidationError(
+                    f"Hand FK 输入关节无效：{path}"
+                )
+            sources = []
+            writable = set()
+            for axis in "XYZ":
+                plug = f"{path}.rotate{axis}"
+                values = self._cmds.listConnections(
+                    plug,
+                    source=True,
+                    destination=False,
+                    plugs=True,
+                ) or []
+                source = None
+                if len(values) == 1:
+                    node, attribute = values[0].split(".", 1)
+                    source = f"{self._resolve_connected_node(node)}.{attribute}"
+                elif len(values) > 1:
+                    source = "<multiple>"
+                sources.append(source)
+                if self._cmds.getAttr(plug, settable=True):
+                    writable.add(axis.lower())
+            states.append(BodyHandFkJointInputState(
+                joint=path,
+                writable_rotation_axes=frozenset(writable),
+                rotation_sources=tuple(sources),
+            ))
+        return BodyHandFkInputSnapshot(tuple(states))
+
+    def create_body_hand_fk_root(self, spec: BodyHandFkRootSpec) -> str:
+        self._require_transaction()
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            if self.find_name_collisions(spec.name):
+                raise FitSkeletonValidationError(
+                    f"Hand FK 根节点名称冲突：{spec.name}"
+                )
+            parents = self._cmds.ls(
+                spec.parent_path,
+                long=True,
+                type="joint",
+            ) or []
+            if len(parents) != 1 or parents[0] != spec.parent_path:
+                raise FitSkeletonValidationError(
+                    f"Hand FK Wrist 父级失效：{spec.parent_path}"
+                )
+            self._transaction_changed = True
+            root = self._cmds.createNode(
+                "transform",
+                name=spec.name,
+                parent=parents[0],
+                skipSelect=True,
+            )
+            root = (self._cmds.ls(root, long=True) or [root])[0]
+            if root != spec.path:
+                raise RuntimeError(f"Hand FK 根节点路径漂移：{spec.name}")
+            return root
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+    def create_body_hand_fk_control(
+        self,
+        spec: BodyHandFkControlSpec,
+    ) -> None:
+        self._create_body_limb_fk_control(spec, "Hand")
+
     def _create_body_limb_fk_control(
         self,
         spec: BodyArmFkControlSpec,
@@ -3836,6 +3924,62 @@ class MayaBodyBuildHost(MayaFitJointHost):
     ) -> BodyLegFkControlSnapshot:
         return self._capture_body_limb_fk_controls(plan, "Leg")
 
+    def capture_body_hand_fk_controls(
+        self,
+        plan: BodyHandFkControlPlan,
+    ) -> BodyHandFkControlSnapshot:
+        roots = []
+        for spec in plan.roots:
+            matches = self._cmds.ls(
+                spec.path,
+                long=True,
+                type="transform",
+            ) or []
+            if len(matches) != 1 or matches[0] != spec.path:
+                raise FitSkeletonValidationError(
+                    f"Hand FK 根节点无效：{spec.path}"
+                )
+            path = matches[0]
+            parent = self._cmds.listRelatives(
+                path,
+                parent=True,
+                fullPath=True,
+            ) or []
+            matrix = self._cmds.xform(
+                path,
+                query=True,
+                worldSpace=True,
+                matrix=True,
+            )
+            roots.append(BodyHandFkRootState(
+                path=path,
+                parent_path=parent[0] if len(parent) == 1 else None,
+                world_position=tuple(float(value) for value in matrix[12:15]),
+                world_axes=tuple(
+                    self._normalized_vector(
+                        tuple(float(value) for value in matrix[index:index + 3])
+                    )
+                    for index in (0, 4, 8)
+                ),
+                local_translation=tuple(
+                    float(value)
+                    for value in self._cmds.getAttr(f"{path}.translate")[0]
+                ),
+                local_rotation=tuple(
+                    float(value)
+                    for value in self._cmds.getAttr(f"{path}.rotate")[0]
+                ),
+                local_scale=tuple(
+                    float(value)
+                    for value in self._cmds.getAttr(f"{path}.scale")[0]
+                ),
+            ))
+        controls = self._capture_body_limb_fk_control_states(
+            plan.controls,
+            "Hand",
+        )
+        return BodyHandFkControlSnapshot(tuple(roots), controls)
+
     def _capture_body_limb_fk_controls(
         self,
         plan: BodyArmFkControlPlan,
@@ -3846,16 +3990,37 @@ class MayaBodyBuildHost(MayaFitJointHost):
             raise FitSkeletonValidationError(
                 f"{limb_label} FK 控制根节点无效"
             )
+        states = self._capture_body_limb_fk_control_states(
+            plan.controls,
+            limb_label,
+        )
+        return BodyArmFkControlSnapshot(roots[0], states)
+
+    def _capture_body_limb_fk_control_states(
+        self,
+        specs: tuple[BodyArmFkControlSpec, ...],
+        limb_label: str,
+    ) -> tuple[BodyArmFkControlState, ...]:
         states: list[BodyArmFkControlState] = []
-        for spec in plan.controls:
+        for spec in specs:
             offsets = self._cmds.ls(spec.offset_path, long=True, type="transform") or []
-            controls = self._cmds.ls(spec.control_path, long=True, type="transform") or []
+            control_nodes = self._cmds.ls(
+                spec.control_path,
+                long=True,
+                type="transform",
+            ) or []
             constraints = self._cmds.ls(spec.constraint_name, type="orientConstraint") or []
-            if len(offsets) != 1 or len(controls) != 1 or len(constraints) != 1:
+            if (
+                len(offsets) != 1
+                or len(control_nodes) != 1
+                or len(constraints) != 1
+            ):
                 raise FitSkeletonValidationError(
                     f"{limb_label} FK 控制或约束无效：{spec.control_name}"
                 )
-            offset, control, constraint = offsets[0], controls[0], constraints[0]
+            offset = offsets[0]
+            control = control_nodes[0]
+            constraint = constraints[0]
             offset_parent = self._cmds.listRelatives(
                 offset, parent=True, fullPath=True
             ) or []
@@ -3915,7 +4080,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     shape_type=(self._cmds.nodeType(shapes[0]) if len(shapes) == 1 else None),
                 )
             )
-        return BodyArmFkControlSnapshot(roots[0], tuple(states))
+        return tuple(states)
 
     def set_body_joint_world_axes(
         self,
