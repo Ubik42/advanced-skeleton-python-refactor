@@ -257,11 +257,13 @@ def audit_body_hand_pose_channels(
     *,
     tolerance: float = 1e-4,
     access_mode: BodyHandPoseAccessMode = BodyHandPoseAccessMode.STATIC_WRITE,
+    target_side: FitBuildSide | None = None,
 ) -> tuple[BodyHandControlIssue, ...]:
     if not isinstance(access_mode, BodyHandPoseAccessMode):
         raise BodyHandPoseDocumentValidationError(
             "Hand Pose 通道访问模式无效"
         )
+    target_sides = _target_sides(target_side)
     issues = []
     expected_attributes = {
         (spec.side, spec.name): spec for spec in pose.attributes
@@ -290,8 +292,12 @@ def audit_body_hand_pose_channels(
             and state.maximum is not None
             and abs(state.maximum - spec.maximum) <= tolerance
         )
+        access_required = (
+            access_mode is not BodyHandPoseAccessMode.READ_ONLY
+            and state.side in target_sides
+        )
         access_valid = (
-            access_mode is BodyHandPoseAccessMode.READ_ONLY
+            not access_required
             or (
                 access_mode is BodyHandPoseAccessMode.STATIC_WRITE
                 and state.writable
@@ -329,8 +335,12 @@ def audit_body_hand_pose_channels(
             state.control_path == spec.control_path
             and _is_vector3(state.rotation)
         )
+        access_required = (
+            access_mode is not BodyHandPoseAccessMode.READ_ONLY
+            and state.side in target_sides
+        )
         access_valid = (
-            access_mode is BodyHandPoseAccessMode.READ_ONLY
+            not access_required
             or (
                 access_mode is BodyHandPoseAccessMode.STATIC_WRITE
                 and state.writable_rotation_axes == TRANSLATION_AXES
@@ -350,6 +360,41 @@ def audit_body_hand_pose_channels(
                 spec.control_path,
             ))
     return tuple(issues)
+
+
+def merge_body_hand_pose_document(
+    target: BodyHandPoseDocument,
+    current: BodyHandPoseDocument,
+    *,
+    target_side: FitBuildSide | None = None,
+) -> BodyHandPoseDocument:
+    """Keep current values outside an explicitly selected target side."""
+
+    _validate_document(target)
+    _validate_document(current)
+    target_sides = _target_sides(target_side)
+    if len(target_sides) == 2:
+        return target
+    current_aggregates = {
+        (item.side, item.name): item for item in current.aggregates
+    }
+    current_controls = {
+        (item.side, item.digit, item.segment): item
+        for item in current.controls
+    }
+    aggregates = tuple(
+        item
+        if item.side in target_sides
+        else current_aggregates[(item.side, item.name)]
+        for item in target.aggregates
+    )
+    controls = tuple(
+        item
+        if item.side in target_sides
+        else current_controls[(item.side, item.digit, item.segment)]
+        for item in target.controls
+    )
+    return _make_document(aggregates, controls)
 
 
 def body_hand_pose_changes(
@@ -497,6 +542,21 @@ def _expected_control_keys(
         for digit in BODY_HAND_DIGITS
         for segment in BODY_HAND_POSE_FK_SEGMENTS
     )
+
+
+def _target_sides(
+    target_side: FitBuildSide | None,
+) -> tuple[FitBuildSide, ...]:
+    if target_side is None:
+        return (FitBuildSide.RIGHT, FitBuildSide.LEFT)
+    if (
+        not isinstance(target_side, FitBuildSide)
+        or target_side not in (FitBuildSide.RIGHT, FitBuildSide.LEFT)
+    ):
+        raise BodyHandPoseDocumentValidationError(
+            "Hand Pose 目标侧必须是 R、L 或 None"
+        )
+    return (target_side,)
 
 
 def _document_payload(document: BodyHandPoseDocument) -> dict:

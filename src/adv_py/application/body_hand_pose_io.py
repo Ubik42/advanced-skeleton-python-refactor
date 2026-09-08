@@ -27,6 +27,7 @@ from adv_py.core.body_hand_pose_io import (
     body_hand_pose_document_from_json,
     body_hand_pose_document_from_snapshot,
     body_hand_pose_document_to_json,
+    merge_body_hand_pose_document,
 )
 from adv_py.core.body_skeleton import (
     BodySkeletonSnapshot,
@@ -34,6 +35,7 @@ from adv_py.core.body_skeleton import (
     oriented_body_provenance,
 )
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from adv_py.core.fit_symmetry import FitBuildSide
 
 
 class BodyHandPoseDocumentHost(Protocol):
@@ -87,9 +89,11 @@ class BodyHandPoseExportResult:
 class BodyHandPoseImportPlan:
     source: Path
     document: BodyHandPoseDocument
+    expected_document: BodyHandPoseDocument
     rig: BodyHandPoseRigInspection
     changes: BodyHandPoseChangeSet
     access_mode: BodyHandPoseAccessMode
+    target_side: FitBuildSide | None
 
     @property
     def changed_channel_count(self) -> int:
@@ -120,6 +124,7 @@ class InspectBodyHandPoseRig:
         expected_joint_count: int = 70,
         control_radius: float = 0.3,
         access_mode: BodyHandPoseAccessMode = BodyHandPoseAccessMode.READ_ONLY,
+        target_side: FitBuildSide | None = None,
     ) -> BodyHandPoseRigInspection:
         body = self._host.capture_body_skeleton(body_root_name)
         provenance_issues = audit_body_provenance(
@@ -156,6 +161,7 @@ class InspectBodyHandPoseRig:
             pose,
             channels,
             access_mode=access_mode,
+            target_side=target_side,
         )
         issues = hand_issues + pose_issues + channel_issues
         if issues:
@@ -244,11 +250,25 @@ class ImportBodyHandPose:
         source: str | os.PathLike[str],
         *,
         keyframe: bool = False,
+        target_side: FitBuildSide | None = None,
         **inspection_options,
     ) -> BodyHandPoseImportPlan:
         if not isinstance(keyframe, bool):
             raise FitSkeletonValidationError(
                 "Hand Pose keyframe 选项必须是布尔值"
+            )
+        if (
+            target_side is not None
+            and (
+                not isinstance(target_side, FitBuildSide)
+                or target_side not in (
+                    FitBuildSide.RIGHT,
+                    FitBuildSide.LEFT,
+                )
+            )
+        ):
+            raise FitSkeletonValidationError(
+                "Hand Pose 目标侧必须是 R、L 或 None"
             )
         path = _json_path(source)
         if not path.is_file():
@@ -263,15 +283,24 @@ class ImportBodyHandPose:
         )
         rig = self._inspector.execute(
             access_mode=access_mode,
+            target_side=target_side,
             **inspection_options,
         )
-        changes = body_hand_pose_changes(document, rig.channels)
+        current_document = body_hand_pose_document_from_snapshot(rig.channels)
+        expected_document = merge_body_hand_pose_document(
+            document,
+            current_document,
+            target_side=target_side,
+        )
+        changes = body_hand_pose_changes(expected_document, rig.channels)
         return BodyHandPoseImportPlan(
             path,
             document,
+            expected_document,
             rig,
             changes,
             access_mode,
+            target_side,
         )
 
     def apply(
@@ -279,11 +308,13 @@ class ImportBodyHandPose:
         source: str | os.PathLike[str],
         *,
         keyframe: bool = False,
+        target_side: FitBuildSide | None = None,
         **inspection_options,
     ) -> BodyHandPoseImportResult:
         plan = self.plan(
             source,
             keyframe=keyframe,
+            target_side=target_side,
             **inspection_options,
         )
         current_document = body_hand_pose_document_from_json(
@@ -295,6 +326,7 @@ class ImportBodyHandPose:
             )
         current_rig = self._inspector.execute(
             access_mode=plan.access_mode,
+            target_side=plan.target_side,
             **inspection_options,
         )
         if current_rig != plan.rig:
@@ -304,10 +336,15 @@ class ImportBodyHandPose:
         if plan.changed_channel_count == 0:
             return BodyHandPoseImportResult(plan, current_rig)
 
+        hand_label = {
+            None: "双手",
+            FitBuildSide.RIGHT: "右手",
+            FitBuildSide.LEFT: "左手",
+        }[plan.target_side]
         label = (
-            "在当前帧导入双手 Hand Pose"
+            f"在当前帧导入{hand_label} Hand Pose"
             if plan.access_mode is BodyHandPoseAccessMode.KEYFRAME_WRITE
-            else "导入双手 Hand Pose"
+            else f"导入{hand_label} Hand Pose"
         )
         with self._host.transaction(label):
             transaction_document = body_hand_pose_document_from_json(
@@ -317,6 +354,7 @@ class ImportBodyHandPose:
                 raise RuntimeError("Hand Pose 事务开始后导入文件发生变化")
             transaction_rig = self._inspector.execute(
                 access_mode=plan.access_mode,
+                target_side=plan.target_side,
                 **inspection_options,
             )
             if transaction_rig != plan.rig:
@@ -329,12 +367,13 @@ class ImportBodyHandPose:
             )
             result_rig = self._inspector.execute(
                 access_mode=plan.access_mode,
+                target_side=plan.target_side,
                 **inspection_options,
             )
             result_document = body_hand_pose_document_from_snapshot(
                 result_rig.channels
             )
-            if result_document != plan.document:
+            if result_document != plan.expected_document:
                 raise RuntimeError("Hand Pose 导入后姿态复检失败")
         return BodyHandPoseImportResult(plan, result_rig)
 

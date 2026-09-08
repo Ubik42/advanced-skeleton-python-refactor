@@ -273,6 +273,7 @@ from .body_hand_pose_io import (
     body_hand_pose_document_from_json,
     body_hand_pose_document_from_snapshot,
     body_hand_pose_document_to_json,
+    merge_body_hand_pose_document,
 )
 from .body_limb_twist import (
     BodyLimbTwistIssue,
@@ -996,6 +997,7 @@ __all__ = [
     "body_hand_pose_document_from_json",
     "body_hand_pose_document_from_snapshot",
     "body_hand_pose_document_to_json",
+    "merge_body_hand_pose_document",
     "body_hand_source_joint_names",
     "oriented_body_provenance",
     "plan_simple_fit_orientations",

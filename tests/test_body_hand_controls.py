@@ -34,6 +34,7 @@ from adv_py.core import (
     BodySkeletonProvenanceState,
     FitJointMetadata,
     FitJointOrientationState,
+    FitBuildSide,
     FitOrientationSnapshot,
     FitSkeletonValidationError,
     FitUpAxis,
@@ -726,6 +727,131 @@ class BodyHandControlTests(unittest.TestCase):
                 ImportBodyHandPose(host).apply(target)
 
         self.assertEqual(host.transaction_count, 0)
+
+    def test_pose_import_targets_one_side_and_ignores_other_side_drivers(self):
+        host = FakeBodyHandPoseDocumentHost()
+        right_aggregate = next(
+            item for item in host.channels.aggregates
+            if item.side is FitBuildSide.RIGHT
+        )
+        left_aggregate = next(
+            item for item in host.channels.aggregates
+            if item.side is FitBuildSide.LEFT
+        )
+        right_control = next(
+            item for item in host.channels.controls
+            if item.side is FitBuildSide.RIGHT
+        )
+        left_control = next(
+            item for item in host.channels.controls
+            if item.side is FitBuildSide.LEFT
+        )
+        host.channels = replace(
+            host.channels,
+            aggregates=tuple(
+                replace(item, value=25.0)
+                if item is right_aggregate
+                else replace(item, value=-12.0)
+                if item is left_aggregate
+                else item
+                for item in host.channels.aggregates
+            ),
+            controls=tuple(
+                replace(item, rotation=(3.0, 4.0, 5.0))
+                if item is right_control
+                else replace(item, rotation=(6.0, 7.0, 8.0))
+                if item is left_control
+                else item
+                for item in host.channels.controls
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "bilateral-hand-pose.json"
+            ExportBodyHandPose(host).apply(target)
+            host.channels = replace(
+                host.channels,
+                aggregates=tuple(
+                    replace(item, value=-10.0)
+                    if item.side is FitBuildSide.RIGHT
+                    and item.name == right_aggregate.name
+                    else replace(
+                        item,
+                        value=5.0,
+                        writable=False,
+                        incoming_source="LeftDriver.output",
+                        incoming_source_type="multiplyDivide",
+                        keyframe_writable=False,
+                    )
+                    if item.side is FitBuildSide.LEFT
+                    and item.name == left_aggregate.name
+                    else item
+                    for item in host.channels.aggregates
+                ),
+                controls=tuple(
+                    replace(item, rotation=(-1.0, -2.0, -3.0))
+                    if item.side is FitBuildSide.RIGHT
+                    and item.digit is right_control.digit
+                    and item.segment == right_control.segment
+                    else replace(
+                        item,
+                        rotation=(-4.0, -5.0, -6.0),
+                        writable_rotation_axes=frozenset(),
+                        rotation_sources=(
+                            "LeftX.output",
+                            "LeftY.output",
+                            "LeftZ.output",
+                        ),
+                        rotation_source_types=(
+                            "expression",
+                            "expression",
+                            "expression",
+                        ),
+                        keyframe_writable_rotation_axes=frozenset(),
+                    )
+                    if item.side is FitBuildSide.LEFT
+                    and item.digit is left_control.digit
+                    and item.segment == left_control.segment
+                    else item
+                    for item in host.channels.controls
+                ),
+            )
+            left_before = tuple(
+                item for item in (
+                    *host.channels.aggregates,
+                    *host.channels.controls,
+                )
+                if item.side is FitBuildSide.LEFT
+            )
+
+            with self.assertRaisesRegex(ValueError, "请求模式"):
+                ImportBodyHandPose(host).plan(target)
+            with self.assertRaisesRegex(ValueError, "目标侧"):
+                ImportBodyHandPose(host).plan(target, target_side="R")
+            result = ImportBodyHandPose(host).apply(
+                target,
+                target_side=FitBuildSide.RIGHT,
+            )
+            repeated = ImportBodyHandPose(host).apply(
+                target,
+                target_side=FitBuildSide.RIGHT,
+            )
+
+        left_after = tuple(
+            item for item in (
+                *host.channels.aggregates,
+                *host.channels.controls,
+            )
+            if item.side is FitBuildSide.LEFT
+        )
+        self.assertEqual(result.changed_channel_count, 2)
+        self.assertEqual(repeated.changed_channel_count, 0)
+        self.assertIs(result.plan.target_side, FitBuildSide.RIGHT)
+        self.assertEqual(
+            body_hand_pose_document_from_snapshot(host.channels),
+            result.plan.expected_document,
+        )
+        self.assertEqual(left_after, left_before)
+        self.assertEqual(host.transaction_count, 1)
 
     def test_pose_import_keys_native_animation_sources(self):
         host = FakeBodyHandPoseDocumentHost()
