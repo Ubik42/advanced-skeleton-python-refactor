@@ -4,6 +4,28 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
+## v0.94 阶段展示
+
+| 项目 | 当前结果 |
+| --- | --- |
+| Maya 重构 | 90 个纵向切片，覆盖 Fit、Body、Arm/Leg/Hand FK/IK、Skin、Root Motion、FBX 与 MoCap 临时驱动 |
+| 可移植结构 | 业务规则位于纯 Python core，用例编排与 Maya 场景写入分层；宿主修改采用预检、单事务与读回复检 |
+| 合成验证 | 30 关节基础 Body、70 关节五指 Body、31 关节独立导出骨架和五关节 MoCap 来源均由代码生成 |
+| 验证基线 | 272 项 Python 回归测试；Maya 2024 standalone 已验证当前 MoCap 连接、断开与 Undo 生命周期 |
+| Blender 状态 | 第二阶段冻结；只保留早期架构可行性代码，不与 Maya 主线并行扩展 |
+
+```mermaid
+flowchart LR
+    A[已授权 ADV 行为研究] --> B[安全清单与行为边界]
+    B --> C[纯 Python Core]
+    C --> D[Application 用例]
+    D --> E[Maya Adapter]
+    E --> F[真实场景读回与 Undo]
+    C -. Maya 第一阶段稳定后 .-> G[Blender Adapter 第二阶段]
+```
+
+阶段发布说明见 [v0.94 展示版](docs/阶段发布-v0.94.md)。仓库不包含 ADV 原始 MEL、模板、图标或场景；全部提交实现与验证素材均为独立 Python 代码和确定性合成数据。
+
 已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成九十个 Maya-only 切片：FitSkeleton 数据、朝向、路径无关文档往返、安全增量合并、空场景新建导入与非默认轴配置恢复，M/R/L 对称展开，基础 30 关节与五指 70 关节 Body 构建、安全 ReBuild、双臂完整 FK/IK、双腿原子 FK/IK/Foot Rig、双手分层 FK controls、Hand curl/spread 聚合姿态、语义 Hand Pose 保存/加载、命名预设库、统一角色总控、游戏导出 Root Motion、动画 bake、完整实时 Export Skeleton、独立动画 bake、安全 FBX 写入、规范发布命名、显式 FBX Profile、MoCap 来源检查、显式 Body 映射与临时驱动/断开。FitSkeleton schema v1 以 `.fit.json` 保存 Up Axis、轴配置、可移植安全设置、短名拓扑、局部位置、标签、行为世界轴及受支持元数据，不携带 Maya DAG 路径、场景对象列表或 ReBuild 脚本文本；导出只读且原子落盘，完整导入既可落到轴配置一致的现有空容器，也可在空场景一次创建容器、六方向 Primary/Secondary enum、World Match、21 项设置与完整关节树，增量合并则要求全部共享关节语义一致并只创建缺失分支。所有场景写入路径都在一个 Undo 事务内完成恢复与全量复检；FBX 文件使用拒绝覆盖的原子发布边界。五指源模板在 Right Wrist 下定义 Thumb/Index/Middle/Ring/Pinky 各四个 Fit joints，38 个源 joints 展开成 70 个 Body joints。`BuildBodyHandFkControls` 在 Wrist_R/L 下分别建立控制根，每根手指由 1→2→3 三层曲线控制，并在绑定 offset 与 FK control 之间加入零通道 Pose 层；每侧 `handCurl`、五个单指 curl 与 `handSpread` 通过显式 DG 网络驱动 Pose 层，手动 FK rotate 仍可叠加。`ExportBodyHandPose`/`ImportBodyHandPose` 用不含 Maya 路径的 schema v1 保存这 14 个聚合值和 30 个 FK 旋转，调用方可通过 `RigA:Root_M` 这类明确角色根在多个 Maya namespace 实例间迁移同一姿态。导出允许只读捕获动画状态；导入默认保持严格静态写入，也可显式使用当前帧写键模式，并能只恢复明确指定的左手或右手。`MirrorBodyHandPose` 在场景内把一侧当前姿态镜像到对侧，保持聚合语义并按行为坐标系转换 FK 旋转。`SaveBodyHandPosePreset`、`InspectBodyHandPosePresetLibrary` 与 `ApplyBodyHandPosePreset` 再用安全中文名称和 `.handpose.json` 后缀组成 DCC 无关的目录预设库；保存原子落盘且不覆盖，清单只读校验全部文件，应用支持规范名称查询与单侧目标。只有目标侧需要满足写入条件，源侧与非目标侧仍做完整结构与结果复检。`BuildBodyCharacterRig` 保持 30 关节 Body 的 Arm/Leg/Global 行为，并在完整 70 关节五指 Body 上把 Hand 纳入同一个顶层事务。Skin 已覆盖显式绑定、稀疏权重写入、JSON 往返、路径映射、显式镜像及严格几何配对。当前尚未包含 FitSkeleton 冲突覆盖、重父级、删除式同步、场景对象列表与 ReBuild 脚本文本，也未包含持久 export objectSet、曲线简化、自动手指权重和产品 UI。
 
 ## 当前完成
