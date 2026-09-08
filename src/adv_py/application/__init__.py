@@ -243,8 +243,11 @@ from .fit_settings import (
     FitSkeletonSettingsHost,
 )
 from .fit_skeleton_io import (
+    CreateAndImportFitSkeleton,
     ExportFitSkeleton,
     FitSkeletonDocumentHost,
+    FitSkeletonCreateImportPlan,
+    FitSkeletonCreateImportResult,
     FitSkeletonExportPlan,
     FitSkeletonExportResult,
     FitSkeletonImportPlan,
@@ -420,6 +423,7 @@ __all__ = [
     "EditFitJointMetadata",
     "EditFitJointPositions",
     "EnsureFitSkeletonSettings",
+    "CreateAndImportFitSkeleton",
     "ExportFitSkeleton",
     "ImportFitSkeleton",
     "MergeFitSkeleton",
@@ -447,6 +451,8 @@ __all__ = [
     "FitSkeletonEnsureResult",
     "FitSkeletonSettingsHost",
     "FitSkeletonDocumentHost",
+    "FitSkeletonCreateImportPlan",
+    "FitSkeletonCreateImportResult",
     "FitSkeletonExportPlan",
     "FitSkeletonExportResult",
     "FitSkeletonImportPlan",

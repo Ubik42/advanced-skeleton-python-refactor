@@ -11,17 +11,23 @@ from adv_py.core.fit_container import (
     LOCKED_FIT_CHANNELS,
     FitContainerDisplayStyle,
     FitContainerShape,
+    FitContainerSpec,
     FitContainerState,
     FitUpAxis,
+    audit_fit_container,
 )
 from adv_py.core.fit_metadata import FitJointFieldEdit
-from adv_py.core.fit_orientation import FitOrientationSnapshot
+from adv_py.core.fit_orientation import (
+    FitOrientationAxisConfiguration,
+    FitOrientationSnapshot,
+)
 from adv_py.core.fit_settings import (
     FitSkeletonField,
     FitSkeletonSetting,
     FitSkeletonSettings,
     FitSkeletonValidationError,
     audit_fit_skeleton_settings,
+    default_fit_skeleton_settings,
 )
 from adv_py.core.fit_skeleton_io import (
     FIT_SKELETON_DOCUMENT_SUFFIX,
@@ -29,6 +35,7 @@ from adv_py.core.fit_skeleton_io import (
     FIT_SKELETON_PORTABLE_SETTING_FIELDS,
     FitSkeletonDocument,
     FitSkeletonDocumentMergePlan,
+    FitSkeletonJointDocument,
     FitSkeletonSettingChannelState,
     fit_skeleton_document_from_json,
     fit_skeleton_document_from_snapshot,
@@ -65,6 +72,12 @@ class FitSkeletonDocumentHost(Protocol):
     ) -> tuple[FitSkeletonSettingChannelState, ...]: ...
     def find_name_collisions(self, name: str) -> tuple[str, ...]: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
+    def create_fit_container(self, spec: FitContainerSpec) -> str: ...
+    def add_fit_skeleton_setting(
+        self,
+        container: str,
+        setting: FitSkeletonSetting,
+    ) -> None: ...
     def set_fit_skeleton_setting(
         self,
         container: str,
@@ -138,6 +151,32 @@ class FitSkeletonImportPlan:
 @dataclass(frozen=True, slots=True)
 class FitSkeletonImportResult:
     plan: FitSkeletonImportPlan
+    verified: FitSkeletonSceneInspection
+    verified_document: FitSkeletonDocument
+    joint_paths: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FitSkeletonCreateImportPlan:
+    source: Path
+    document: FitSkeletonDocument
+    container_spec: FitContainerSpec
+    settings: FitSkeletonSettings
+    name_collisions: tuple[str, ...]
+    blockers: tuple[str, ...]
+
+    @property
+    def ready(self) -> bool:
+        return not self.blockers
+
+    @property
+    def joint_count(self) -> int:
+        return len(self.document.joints)
+
+
+@dataclass(frozen=True, slots=True)
+class FitSkeletonCreateImportResult:
+    plan: FitSkeletonCreateImportPlan
     verified: FitSkeletonSceneInspection
     verified_document: FitSkeletonDocument
     joint_paths: tuple[str, ...]
@@ -339,28 +378,11 @@ class ImportFitSkeleton:
                     settings[change.field],
                 )
 
-            paths: dict[str, str] = {}
-            for joint in plan.document.joints:
-                parent = plan.target.container.path
-                if joint.parent is not None:
-                    parent = paths[joint.parent]
-                path = self._host.create_fit_joint(
-                    parent,
-                    FitJointSpec(
-                        joint.name,
-                        joint.parent,
-                        joint.local_position,
-                        joint.label,
-                    ),
-                )
-                self._host.set_joint_label(path, joint.label)
-                for value in joint.metadata:
-                    self._host.apply_fit_joint_edit(
-                        path,
-                        FitJointFieldEdit(value.field, value.value),
-                    )
-                self._host.set_fit_joint_world_axes(path, joint.world_axes)
-                paths[joint.name] = path
+            paths, created_paths = _materialize_fit_joints(
+                self._host,
+                plan.target.container.path,
+                plan.document.joints,
+            )
 
             try:
                 current_document = fit_skeleton_document_from_json(
@@ -394,7 +416,166 @@ class ImportFitSkeleton:
             plan,
             verified,
             verified_document,
-            tuple(paths[joint.name] for joint in plan.document.joints),
+            created_paths,
+        )
+
+
+class CreateAndImportFitSkeleton:
+    """Create a new root container and materialize one document atomically."""
+
+    def __init__(self, host: FitSkeletonDocumentHost) -> None:
+        self._host = host
+
+    def plan(
+        self,
+        source: str | os.PathLike[str],
+        container_name: str = "FitSkeleton",
+        *,
+        display_radius: float = 3.0,
+    ) -> FitSkeletonCreateImportPlan:
+        path = _fit_document_path(source)
+        if path.is_symlink() or not path.is_file():
+            raise FitSkeletonValidationError(
+                "FitSkeleton 新建导入文件不存在或不是普通文件"
+            )
+        try:
+            document = fit_skeleton_document_from_json(
+                path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError, ValueError) as error:
+            raise FitSkeletonValidationError(
+                f"FitSkeleton 新建导入文件损坏：{path.name}"
+            ) from error
+
+        spec = FitContainerSpec(
+            name=container_name,
+            display_radius=display_radius,
+            up_axis=document.up_axis,
+        )
+        portable = {item.field: item for item in document.settings}
+        defaults = default_fit_skeleton_settings(f"|{spec.name}")
+        settings = FitSkeletonSettings(
+            f"|{spec.name}",
+            tuple(
+                portable.get(setting.field, setting)
+                for setting in defaults.settings
+            ),
+        )
+        names = (spec.name,) + tuple(
+            joint.name for joint in document.joints
+        )
+        collisions = tuple(
+            sorted(
+                {
+                    collision
+                    for name in names
+                    for collision in self._host.find_name_collisions(name)
+                }
+            )
+        )
+        blockers = []
+        if self._host.scene_up_axis() is not document.up_axis:
+            blockers.append("文档与 Maya 场景 Up Axis 不一致")
+        if document.axis_configuration != FitOrientationAxisConfiguration():
+            blockers.append(
+                "新建容器导入暂只支持默认 X/Y 且关闭 World Match 的轴配置"
+            )
+        if collisions:
+            blockers.append(
+                "容器或待创建关节与场景节点重名："
+                + "、".join(collisions)
+            )
+        return FitSkeletonCreateImportPlan(
+            path,
+            document,
+            spec,
+            settings,
+            collisions,
+            tuple(blockers),
+        )
+
+    def apply(
+        self,
+        source: str | os.PathLike[str],
+        container_name: str = "FitSkeleton",
+        *,
+        display_radius: float = 3.0,
+    ) -> FitSkeletonCreateImportResult:
+        plan = self.plan(
+            source,
+            container_name,
+            display_radius=display_radius,
+        )
+        if not plan.ready:
+            raise FitSkeletonValidationError(
+                "FitSkeleton 新建导入预检失败，场景未修改："
+                + "；".join(plan.blockers)
+            )
+
+        with self._host.transaction(
+            f"新建并导入 {plan.joint_count} 个 FitSkeleton 关节"
+        ):
+            current = self.plan(
+                plan.source,
+                plan.container_spec.name,
+                display_radius=plan.container_spec.display_radius,
+            )
+            if current != plan:
+                raise FitSkeletonValidationError(
+                    "FitSkeleton 新建导入文件或场景在执行前发生变化"
+                )
+            container = self._host.create_fit_container(plan.container_spec)
+            if container != plan.settings.container:
+                raise RuntimeError(
+                    "FitSkeleton 新建导入容器路径与计划不一致"
+                )
+            for setting in plan.settings.settings:
+                self._host.add_fit_skeleton_setting(container, setting)
+            _, created_paths = _materialize_fit_joints(
+                self._host,
+                container,
+                plan.document.joints,
+            )
+
+            try:
+                current_document = fit_skeleton_document_from_json(
+                    plan.source.read_text(encoding="utf-8")
+                )
+            except (OSError, UnicodeError, ValueError) as error:
+                raise RuntimeError(
+                    "FitSkeleton 新建导入文件在事务中失效"
+                ) from error
+            if current_document != plan.document:
+                raise RuntimeError(
+                    "FitSkeleton 新建导入文件在事务中发生变化"
+                )
+            verified = _inspect_scene(self._host, container)
+            container_issues = audit_fit_container(
+                verified.container,
+                plan.container_spec,
+            )
+            if container_issues:
+                raise RuntimeError(
+                    "FitSkeleton 新建导入容器复检失败："
+                    + "；".join(issue.message for issue in container_issues)
+                )
+            verified_document = fit_skeleton_document_from_snapshot(
+                verified.orientation,
+                verified.settings,
+                verified.labels,
+            )
+            if not fit_skeleton_documents_match(
+                verified_document,
+                plan.document,
+            ):
+                raise RuntimeError(
+                    "FitSkeleton 新建导入后语义复检失败"
+                )
+        return FitSkeletonCreateImportResult(
+            plan,
+            verified,
+            verified_document,
+            created_paths,
         )
 
 
@@ -479,11 +660,14 @@ class MergeFitSkeleton:
         incoming = {
             joint.name: joint for joint in plan.incoming_document.joints
         }
-        paths = {
+        additions = tuple(
+            incoming[name]
+            for name in plan.document_merge.added_joint_names
+        )
+        existing_paths = {
             node.short_name: node.path
             for node in plan.target.orientation.hierarchy.joints
         }
-        created_paths: list[str] = []
         with self._host.transaction(
             f"合并 {plan.added_joint_count} 个 FitSkeleton 关节"
         ):
@@ -492,30 +676,12 @@ class MergeFitSkeleton:
                 raise FitSkeletonValidationError(
                     "FitSkeleton 合并文件或目标场景在执行前发生变化"
                 )
-            for name in plan.document_merge.added_joint_names:
-                joint = incoming[name]
-                if joint.parent is None or joint.parent not in paths:
-                    raise RuntimeError(
-                        f"FitSkeleton 合并计划缺少已创建父级：{name}"
-                    )
-                path = self._host.create_fit_joint(
-                    paths[joint.parent],
-                    FitJointSpec(
-                        joint.name,
-                        joint.parent,
-                        joint.local_position,
-                        joint.label,
-                    ),
-                )
-                self._host.set_joint_label(path, joint.label)
-                for value in joint.metadata:
-                    self._host.apply_fit_joint_edit(
-                        path,
-                        FitJointFieldEdit(value.field, value.value),
-                    )
-                self._host.set_fit_joint_world_axes(path, joint.world_axes)
-                paths[joint.name] = path
-                created_paths.append(path)
+            _, created_paths = _materialize_fit_joints(
+                self._host,
+                plan.target.container.path,
+                additions,
+                existing_paths=existing_paths,
+            )
 
             try:
                 current_incoming = fit_skeleton_document_from_json(
@@ -549,8 +715,50 @@ class MergeFitSkeleton:
             plan,
             verified,
             verified_document,
-            tuple(created_paths),
+            created_paths,
         )
+
+
+def _materialize_fit_joints(
+    host: FitSkeletonDocumentHost,
+    container: str,
+    joints: tuple[FitSkeletonJointDocument, ...],
+    *,
+    existing_paths: dict[str, str] | None = None,
+) -> tuple[dict[str, str], tuple[str, ...]]:
+    paths = dict(existing_paths or {})
+    created_paths = []
+    for joint in joints:
+        if joint.name in paths:
+            raise RuntimeError(
+                f"FitSkeleton 物化计划重复创建关节：{joint.name}"
+            )
+        parent = container
+        if joint.parent is not None:
+            parent = paths.get(joint.parent, "")
+            if not parent:
+                raise RuntimeError(
+                    f"FitSkeleton 物化计划缺少已创建父级：{joint.name}"
+                )
+        path = host.create_fit_joint(
+            parent,
+            FitJointSpec(
+                joint.name,
+                joint.parent,
+                joint.local_position,
+                joint.label,
+            ),
+        )
+        host.set_joint_label(path, joint.label)
+        for value in joint.metadata:
+            host.apply_fit_joint_edit(
+                path,
+                FitJointFieldEdit(value.field, value.value),
+            )
+        host.set_fit_joint_world_axes(path, joint.world_axes)
+        paths[joint.name] = path
+        created_paths.append(path)
+    return paths, tuple(created_paths)
 
 
 def _inspect_scene(

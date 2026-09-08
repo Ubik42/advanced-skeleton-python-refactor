@@ -10,6 +10,8 @@ Maya 第一阶段已经产出两类可迁移合同。FitSkeleton schema v1 用 U
 
 FitSkeleton 的增量联合也已进入纯 Python 核心：共享关节必须保持父级、位置、行为轴、标签和元数据一致，宿主只能物化缺失分支。该规则未来可由 Blender EditBone adapter 复用，但第一阶段不据此扩展 Blender；Maya 中尚未验证的冲突覆盖、重父级或删除式同步不会提前成为跨 DCC 合同。
 
+空场景新建导入进一步明确了宿主边界：文件解析、完整设置合成、名称预检和关节物化顺序位于应用层，Maya 圆环容器、通道属性与 Undo Chunk 位于 adapter。未来 Blender 可以把同一计划落到 Armature/EditBone，但不能照搬 Maya 容器形状或属性实现；当前仍不新增 Blender 代码。
+
 ## 必须分别实现的部分
 
 | 语义 | Maya | Blender |

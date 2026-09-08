@@ -1,0 +1,20 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 13652,
+  "slice": "fit_skeleton_create_and_import",
+  "preview_ready_and_read_only": true,
+  "created_container_settings_and_full_document": true,
+  "custom_display_radius_verified": true,
+  "selection_preserved": true,
+  "one_undo_removed_container_and_tree": true,
+  "global_name_collision_refused_read_only": true,
+  "scene_up_axis_mismatch_refused_read_only": true,
+  "temporary_directory_removed": true,
+  "scene_cleanup": true,
+  "joint_count": 38,
+  "setting_count": 21,
+  "display_radius": 4.0,
+  "duration_seconds": 4.391,
+  "status": "passed"
+}

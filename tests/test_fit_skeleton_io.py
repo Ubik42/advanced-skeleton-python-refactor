@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 from adv_py.application import (
+    CreateAndImportFitSkeleton,
     ExportFitSkeleton,
     ImportFitSkeleton,
     MergeFitSkeleton,
@@ -298,6 +299,61 @@ class FakeFitSkeletonDocumentHost:
         )
 
 
+class FakeNewFitSkeletonHost(FakeFitSkeletonDocumentHost):
+    def __init__(self):
+        super().__init__(populated=False)
+        self.container_exists = False
+        self.settings = replace(self.settings, settings=())
+
+    def inspect_fit_container(self, name):
+        if not self.container_exists:
+            raise ValueError(f"容器不存在：{name}")
+        return super().inspect_fit_container(name)
+
+    def find_name_collisions(self, name):
+        collisions = list(super().find_name_collisions(name))
+        if self.container_exists and name == self.container.rsplit("|", 1)[-1]:
+            collisions.append(self.container)
+        return tuple(collisions)
+
+    @contextmanager
+    def transaction(self, label):
+        del label
+        before = (
+            self.container,
+            self.container_exists,
+            self.joints,
+            self.settings,
+        )
+        self.transaction_count += 1
+        try:
+            yield
+        except Exception:
+            (
+                self.container,
+                self.container_exists,
+                self.joints,
+                self.settings,
+            ) = before
+            raise
+
+    def create_fit_container(self, spec):
+        if self.container_exists:
+            raise ValueError("容器已经存在")
+        self.container = f"|{spec.name}"
+        self.container_exists = True
+        self.settings = replace(self.settings, container=self.container)
+        return self.container
+
+    def add_fit_skeleton_setting(self, container, setting):
+        if not self.container_exists or container != self.container:
+            raise ValueError("容器不存在")
+        self.settings = replace(
+            self.settings,
+            settings=self.settings.settings + (setting,),
+        )
+
+
 def _document(host):
     snapshot = host.capture_fit_orientation(host.container)
     labels = tuple(
@@ -471,6 +527,84 @@ class FitSkeletonIoTests(unittest.TestCase):
 
         self.assertEqual(target.transaction_count, 1)
         self.assertEqual(target.joints, before)
+
+    def test_create_and_import_builds_container_settings_and_joints_once(self):
+        source = FakeFitSkeletonDocumentHost(populated=True)
+        target = FakeNewFitSkeletonHost()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "新角色.fit.json"
+            exported = ExportFitSkeleton(source).apply(path)
+            preview = CreateAndImportFitSkeleton(target).plan(path)
+            created = CreateAndImportFitSkeleton(target).apply(path)
+
+            self.assertTrue(preview.ready)
+            self.assertEqual(preview.joint_count, 3)
+            self.assertEqual(target.scene_read_count, 1)
+            self.assertTrue(target.container_exists)
+            self.assertEqual(
+                len(target.settings.settings),
+                len(FitSkeletonField),
+            )
+            self.assertTrue(
+                fit_skeleton_documents_match(
+                    created.verified_document,
+                    exported.plan.document,
+                )
+            )
+            self.assertEqual(target.transaction_count, 1)
+
+            repeated = CreateAndImportFitSkeleton(target).plan(path)
+            self.assertFalse(repeated.ready)
+            with self.assertRaisesRegex(ValueError, "场景节点重名"):
+                CreateAndImportFitSkeleton(target).apply(path)
+            self.assertEqual(target.transaction_count, 1)
+
+    def test_create_import_axis_and_name_conflicts_stop_before_transaction(self):
+        source = FakeFitSkeletonDocumentHost(populated=True)
+        target = FakeNewFitSkeletonHost()
+        target.external_collisions["Root"] = ("|Other|Root",)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "新角色.fit.json"
+            ExportFitSkeleton(source).apply(path)
+            collision = CreateAndImportFitSkeleton(target).plan(path)
+            self.assertFalse(collision.ready)
+            self.assertEqual(target.transaction_count, 0)
+            self.assertFalse(target.container_exists)
+
+            source.axis_configuration = FitOrientationAxisConfiguration(
+                FitLocalDirection.POSITIVE_Y,
+                FitLocalDirection.POSITIVE_Z,
+                False,
+            )
+            nondefault_path = Path(directory) / "非默认轴.fit.json"
+            ExportFitSkeleton(source).apply(nondefault_path)
+            target.external_collisions.clear()
+            nondefault = CreateAndImportFitSkeleton(target).plan(
+                nondefault_path
+            )
+            self.assertFalse(nondefault.ready)
+            self.assertIn("默认 X/Y", "；".join(nondefault.blockers))
+            self.assertEqual(target.transaction_count, 0)
+            self.assertFalse(target.container_exists)
+
+    def test_create_import_postcheck_failure_removes_container_and_tree(self):
+        class FaultyCreateHost(FakeNewFitSkeletonHost):
+            def set_fit_joint_world_axes(self, joint, world_axes):
+                del world_axes
+                super().set_fit_joint_world_axes(joint, IDENTITY_AXES)
+
+        source = FakeFitSkeletonDocumentHost(populated=True)
+        target = FaultyCreateHost()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "新角色.fit.json"
+            ExportFitSkeleton(source).apply(path)
+            with self.assertRaisesRegex(RuntimeError, "语义复检失败"):
+                CreateAndImportFitSkeleton(target).apply(path)
+
+        self.assertEqual(target.transaction_count, 1)
+        self.assertFalse(target.container_exists)
+        self.assertFalse(target.joints)
+        self.assertFalse(target.settings.settings)
 
 
 if __name__ == "__main__":
