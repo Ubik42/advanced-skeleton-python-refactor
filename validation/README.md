@@ -137,6 +137,8 @@
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_hand_pose_smoke.py validation\results\maya2024-body-hand-pose.json
 
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_hand_pose_io_smoke.py validation\results\maya2024-body-hand-pose-io.json
+
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_arm_fk_mechanisms_smoke.py validation\results\maya2024-body-arm-fk-mechanisms.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_arm_ik_smoke.py validation\results\maya2024-body-arm-ik.json
@@ -200,8 +202,8 @@
 - 位置编辑只写本地 translate，不自动解锁、断开驱动、重算 jointOrient 或更新 Fit 可视化几何。
 - 朝向编辑支持唯一子级或调用方显式选择的直接分支子级；非零 rotate 和不可补偿后代会在预检阶段拒绝。
 - 对称计划表达输出名称、父子拓扑、YZ 平面世界位置及镜像行为世界轴；当前尚未覆盖非均匀缩放、World Match 或自定义逐关节镜像平面。
-- 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径，并可从五指源生成 70 关节 Body；Hand 已有双侧 30 个分层 FK controls、30 个零通道 Pose 层，以及每侧全局/单指 curl 和全局 spread。Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 默认主流程已组合 mechanisms、FK/IK、blend、显隐、stretch bias、knee pin、twist/volume、五级 Foot pivot、自动 `footRoll` 和双向匹配。Character 入口用一个外层事务组合 Arm/Leg/Global，并在完整五指 Body 上自动纳入 Hand；30 关节 Body 保持兼容，残缺五指会被预检拒绝。手势预设、逐指 spread、完整变形系统或产品 UI 尚未实现。
+- 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径，并可从五指源生成 70 关节 Body；Hand 已有双侧 30 个分层 FK controls、30 个零通道 Pose 层，以及每侧全局/单指 curl 和全局 spread。Hand Pose schema v1 已验证无 Maya 路径导出、摘要复检、五个变化通道导入、重复导入零修改和单次 Undo。Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 默认主流程已组合 mechanisms、FK/IK、blend、显隐、stretch bias、knee pin、twist/volume、五级 Foot pivot、自动 `footRoll` 和双向匹配。Character 入口用一个外层事务组合 Arm/Leg/Global，并在完整五指 Body 上自动纳入 Hand；30 关节 Body 保持兼容，残缺五指会被预检拒绝。命名手势库、逐指 spread、动画曲线写入、完整变形系统或产品 UI 尚未实现。
 - provenance 只证明本工程写入的产物身份和声明数量；删除资格还必须通过当前 DAG 与外部连接安全评估，不能只凭标记直接删除。
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。
-- Limb FK controls 与 RP IK controls 已通过双源 blend 输出到 Body，并完成控制显隐、含 stretch 段长传递的双向匹配、统一角色等比缩放和轴向 twist/volume helper；Hand FK controls 直接驱动 30 个 Body 指节。Skin 已覆盖显式单网格绑定、稀疏权重写入/镜像、JSON 往返和路径映射；尚未实现动画 bake、手指聚合属性、自动 namespace/influence 推断、非对称空间配对或已有蒙皮迁移。
+- Limb FK controls 与 RP IK controls 已通过双源 blend 输出到 Body，并完成控制显隐、含 stretch 段长传递的双向匹配、统一角色等比缩放和轴向 twist/volume helper；Hand FK controls 直接驱动 30 个 Body 指节，并具备 curl/spread 聚合属性及语义 Pose JSON 往返。Skin 已覆盖显式单网格绑定、稀疏权重写入/镜像、JSON 往返和路径映射；尚未实现动画 bake、自动 namespace/influence 推断、非对称空间配对或已有蒙皮迁移。

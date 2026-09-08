@@ -422,6 +422,7 @@ def audit_body_hand_pose_controls(
     snapshot: BodyHandPoseSnapshot,
     *,
     tolerance: float = 1e-4,
+    check_initial_pose: bool = True,
 ) -> tuple[BodyHandControlIssue, ...]:
     issues = []
     expected_layers = {spec.path: spec for spec in plan.layers}
@@ -442,8 +443,11 @@ def audit_body_hand_pose_controls(
             and _vector_matches(
                 state.local_translation, (0.0, 0.0, 0.0), tolerance
             )
-            and _vector_matches(
-                state.local_rotation, (0.0, 0.0, 0.0), tolerance
+            and (
+                not check_initial_pose
+                or _vector_matches(
+                    state.local_rotation, (0.0, 0.0, 0.0), tolerance
+                )
             )
             and _vector_matches(
                 state.local_scale, (1.0, 1.0, 1.0), tolerance
@@ -468,7 +472,7 @@ def audit_body_hand_pose_controls(
         spec = expected_attributes[plug]
         state = actual_attributes[plug]
         if not (
-            abs(state.value - spec.default) <= tolerance
+            (not check_initial_pose or abs(state.value - spec.default) <= tolerance)
             and state.minimum is not None
             and abs(state.minimum - spec.minimum) <= tolerance
             and state.maximum is not None

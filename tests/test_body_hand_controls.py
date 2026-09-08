@@ -1,12 +1,20 @@
+import json
+from pathlib import Path
+import tempfile
 import unittest
 from contextlib import contextmanager
 from dataclasses import replace
 
-from adv_py.application import BuildBodyHandFkControls
+from adv_py.application import (
+    BuildBodyHandFkControls,
+    ExportBodyHandPose,
+    ImportBodyHandPose,
+)
 from adv_py.core import (
     BODY_HAND_DIGITS,
     BODY_HAND_CURL_WEIGHTS,
     BodyHandCurlState,
+    BodyHandAggregatePoseChannelState,
     BodyHandFkControlSnapshot,
     BodyHandFkControlState,
     BodyHandFkInputSnapshot,
@@ -15,6 +23,9 @@ from adv_py.core import (
     BodyHandPoseAttributeState,
     BodyHandPoseLayerState,
     BodyHandPoseSnapshot,
+    BodyHandFkPoseChannelState,
+    BodyHandPoseChannelSnapshot,
+    BodyHandPoseDocumentValidationError,
     BodyHandSpreadState,
     BodyJointState,
     BodyRebuildSceneState,
@@ -29,6 +40,9 @@ from adv_py.core import (
     audit_body_hand_fk_controls,
     audit_body_hand_fk_input,
     audit_body_hand_pose_controls,
+    body_hand_pose_document_from_json,
+    body_hand_pose_document_from_snapshot,
+    body_hand_pose_document_to_json,
     default_fit_skeleton_settings,
     expand_fit_symmetry,
     oriented_body_provenance,
@@ -264,6 +278,96 @@ class FakeBodyHandFkHost:
         return self.pose
 
 
+class FakeBodyHandPoseDocumentHost(FakeBodyHandFkHost):
+    def __init__(self):
+        super().__init__()
+        self.channels = None
+        built = BuildBodyHandFkControls(self).apply()
+        self.transaction_count = 0
+        self.channels = BodyHandPoseChannelSnapshot(
+            aggregates=tuple(
+                BodyHandAggregatePoseChannelState(
+                    spec.side,
+                    spec.name,
+                    spec.plug,
+                    spec.default,
+                    spec.minimum,
+                    spec.maximum,
+                    True,
+                    None,
+                )
+                for spec in built.plan.pose.attributes
+            ),
+            controls=tuple(
+                BodyHandFkPoseChannelState(
+                    spec.side,
+                    next(
+                        digit
+                        for digit in BODY_HAND_DIGITS
+                        if digit.value in spec.control_name
+                    ),
+                    next(
+                        segment
+                        for segment in ("1", "2", "3")
+                        if f"{segment}FK_" in spec.control_name
+                    ),
+                    spec.control_path,
+                    (0.0, 0.0, 0.0),
+                    frozenset({"x", "y", "z"}),
+                    (None, None, None),
+                )
+                for spec in built.plan.controls.controls
+            ),
+        )
+
+    def capture_body_hand_pose_channels(self, hand, pose):
+        del hand, pose
+        return self.channels
+
+    @contextmanager
+    def transaction(self, label):
+        del label
+        before = self.channels
+        self.transaction_count += 1
+        try:
+            yield
+        except Exception:
+            self.channels = before
+            raise
+
+    def apply_body_hand_pose_changes(self, changes):
+        aggregate_targets = {
+            (change.side, change.name): change.after
+            for change in changes.aggregates
+        }
+        control_targets = {
+            (change.side, change.digit, change.segment): change.after
+            for change in changes.controls
+        }
+        self.channels = BodyHandPoseChannelSnapshot(
+            aggregates=tuple(
+                replace(
+                    state,
+                    value=aggregate_targets.get(
+                        (state.side, state.name),
+                        state.value,
+                    ),
+                )
+                for state in self.channels.aggregates
+            ),
+            controls=tuple(
+                replace(
+                    state,
+                    rotation=control_targets.get(
+                        (state.side, state.digit, state.segment),
+                        state.rotation,
+                    ),
+                )
+                for state in self.channels.controls
+            ),
+        )
+
+
 class BodyHandControlTests(unittest.TestCase):
     def test_plans_two_wrist_roots_and_thirty_hierarchical_controls(self):
         _, body = _hand_scene()
@@ -340,6 +444,29 @@ class BodyHandControlTests(unittest.TestCase):
                 for issue in audit_body_hand_pose_controls(pose, broken)
             },
         )
+
+    def test_pose_structure_audit_can_ignore_current_animation_values(self):
+        _, body = _hand_scene()
+        pose = plan_body_hand_pose_controls(plan_body_hand_fk_controls(body))
+        ready = _pose_snapshot(pose)
+        posed = replace(
+            ready,
+            layers=(replace(
+                ready.layers[0],
+                local_rotation=(0.0, 0.0, 20.0),
+            ),) + ready.layers[1:],
+            attributes=(replace(
+                ready.attributes[0],
+                value=30.0,
+            ),) + ready.attributes[1:],
+        )
+
+        self.assertTrue(audit_body_hand_pose_controls(pose, posed))
+        self.assertFalse(audit_body_hand_pose_controls(
+            pose,
+            posed,
+            check_initial_pose=False,
+        ))
 
     def test_input_audit_reports_locked_or_connected_rotation(self):
         _, body = _hand_scene()
@@ -425,6 +552,90 @@ class BodyHandControlTests(unittest.TestCase):
         self.assertFalse(host.roots)
         self.assertFalse(host.controls)
         self.assertIsNone(host.pose)
+
+    def test_pose_document_round_trip_is_semantic_and_tamper_evident(self):
+        host = FakeBodyHandPoseDocumentHost()
+        document = body_hand_pose_document_from_snapshot(host.channels)
+        text = body_hand_pose_document_to_json(document)
+
+        self.assertEqual(body_hand_pose_document_from_json(text), document)
+        self.assertNotIn("|Root_M", text)
+        self.assertNotIn("AdvPy_", text)
+        data = json.loads(text)
+        data["aggregates"][0]["value"] = 10.0
+        with self.assertRaisesRegex(
+            BodyHandPoseDocumentValidationError,
+            "摘要",
+        ):
+            body_hand_pose_document_from_json(json.dumps(data))
+
+    def test_pose_export_is_atomic_and_refuses_overwrite(self):
+        host = FakeBodyHandPoseDocumentHost()
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "hand-pose.json"
+            result = ExportBodyHandPose(host).apply(target)
+
+            self.assertGreater(result.bytes_written, 0)
+            self.assertEqual(host.transaction_count, 0)
+            self.assertEqual(
+                body_hand_pose_document_from_json(target.read_text("utf-8")),
+                result.plan.document,
+            )
+            with self.assertRaisesRegex(ValueError, "拒绝覆盖"):
+                ExportBodyHandPose(host).apply(target)
+
+    def test_pose_import_restores_values_once_and_repeat_is_noop(self):
+        host = FakeBodyHandPoseDocumentHost()
+        first_aggregate = host.channels.aggregates[0]
+        first_control = host.channels.controls[0]
+        host.channels = replace(
+            host.channels,
+            aggregates=(replace(first_aggregate, value=25.0),)
+            + host.channels.aggregates[1:],
+            controls=(replace(
+                first_control,
+                rotation=(3.0, 4.0, 5.0),
+            ),) + host.channels.controls[1:],
+        )
+        saved = host.channels
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "hand-pose.json"
+            ExportBodyHandPose(host).apply(target)
+            host.channels = replace(
+                host.channels,
+                aggregates=(replace(first_aggregate, value=-10.0),)
+                + host.channels.aggregates[1:],
+                controls=(replace(
+                    first_control,
+                    rotation=(-1.0, -2.0, -3.0),
+                ),) + host.channels.controls[1:],
+            )
+
+            result = ImportBodyHandPose(host).apply(target)
+            repeated = ImportBodyHandPose(host).apply(target)
+
+        self.assertEqual(result.changed_channel_count, 2)
+        self.assertEqual(repeated.changed_channel_count, 0)
+        self.assertEqual(host.channels, saved)
+        self.assertEqual(host.transaction_count, 1)
+
+    def test_pose_import_rejects_unsafe_channel_before_transaction(self):
+        host = FakeBodyHandPoseDocumentHost()
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "hand-pose.json"
+            ExportBodyHandPose(host).apply(target)
+            host.channels = replace(
+                host.channels,
+                controls=(replace(
+                    host.channels.controls[0],
+                    writable_rotation_axes=frozenset({"x", "y"}),
+                ),) + host.channels.controls[1:],
+            )
+
+            with self.assertRaisesRegex(ValueError, "rotate"):
+                ImportBodyHandPose(host).apply(target)
+
+        self.assertEqual(host.transaction_count, 0)
 
 
 if __name__ == "__main__":

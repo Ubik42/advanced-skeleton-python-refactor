@@ -6,6 +6,8 @@
 
 可跨 Maya 与 Blender 复用的是绑定意图和数据，而不是具体命令：骨骼层级、控制器语义、IK/FK 关系、命名规则、构建阶段、驱动关系、校验规则与导出契约都应进入纯 Python 核心。
 
+Maya 第一阶段已经产出首个面向完整角色动画的可迁移合同：Hand Pose schema v1 以左右侧、手指、节段和数值表达 14 个聚合属性与 30 个 FK 旋转，不包含 Maya DAG 路径。当前只有 Maya adapter 负责场景解析、可写性预检、事务和 Undo；第二阶段进入 Blender 时，应保持该 schema 不变，只新增 PoseBone/ID Property 的解析与写入，不反向改变已验证的 Maya 语义。
+
 ## 必须分别实现的部分
 
 | 语义 | Maya | Blender |

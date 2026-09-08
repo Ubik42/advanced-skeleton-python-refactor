@@ -117,6 +117,17 @@ from .body_hand_controls import (
     BodyHandFkHost,
     BuildBodyHandFkControls,
 )
+from .body_hand_pose_io import (
+    BodyHandPoseDocumentHost,
+    BodyHandPoseExportPlan,
+    BodyHandPoseExportResult,
+    BodyHandPoseImportPlan,
+    BodyHandPoseImportResult,
+    BodyHandPoseRigInspection,
+    ExportBodyHandPose,
+    ImportBodyHandPose,
+    InspectBodyHandPoseRig,
+)
 from .skin_bind import (
     BindSkin,
     SkinBindBuildPlan,
@@ -259,6 +270,10 @@ __all__ = [
     "BodyHandFkBuildPlan",
     "BodyHandFkBuildResult",
     "BodyHandFkHost",
+    "BodyHandPoseDocumentHost",
+    "BodyHandPoseExportPlan", "BodyHandPoseExportResult",
+    "BodyHandPoseImportPlan", "BodyHandPoseImportResult",
+    "BodyHandPoseRigInspection",
     "SkinBindBuildPlan", "SkinBindBuildResult", "SkinBindHost",
     "SkinWeightEditPlan", "SkinWeightEditResult", "SkinWeightHost",
     "SkinWeightDocumentHost",
@@ -336,6 +351,9 @@ __all__ = [
     "BuildBodyCharacterRig",
     "BuildSyntheticBodyWithHandSourceFit",
     "BuildBodyHandFkControls",
+    "ExportBodyHandPose",
+    "ImportBodyHandPose",
+    "InspectBodyHandPoseRig",
     "BindSkin",
     "EditSkinWeights",
     "ExportSkinWeights",

@@ -86,6 +86,14 @@ from adv_py.core.body_hand_controls import (
     BodyHandPoseSnapshot,
     BodyHandSpreadState,
 )
+from adv_py.core.body_hand_pose_io import (
+    BODY_HAND_POSE_FK_SEGMENTS,
+    BodyHandAggregatePoseChannelState,
+    BodyHandFkPoseChannelState,
+    BodyHandPoseChangeSet,
+    BodyHandPoseChannelSnapshot,
+)
+from adv_py.core.body_hand_fit import BODY_HAND_DIGITS
 from adv_py.core.body_arm_twist import (
     BodyArmTwistJointSpec,
     BodyArmTwistPlan,
@@ -3953,7 +3961,9 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 plugs=True,
                 skipConversionNodes=skip_conversion,
             ) or []
-            return self._canonical_plug(values[0]) if len(values) == 1 else None
+            if len(values) == 1:
+                return self._canonical_plug(values[0])
+            return "<multiple>" if values else None
 
         layers = []
         for spec in plan.layers:
@@ -4067,6 +4077,149 @@ class MayaBodyBuildHost(MayaFitJointHost):
             tuple(curls),
             tuple(spreads),
         )
+
+    def capture_body_hand_pose_channels(
+        self,
+        hand: BodyHandFkControlPlan,
+        pose: BodyHandPosePlan,
+    ) -> BodyHandPoseChannelSnapshot:
+        def source(plug: str) -> str | None:
+            values = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+                plugs=True,
+            ) or []
+            if len(values) == 1:
+                return self._canonical_plug(values[0])
+            return "<multiple>" if values else None
+
+        aggregates = []
+        for spec in pose.attributes:
+            if not self._cmds.objExists(spec.plug):
+                raise FitSkeletonValidationError(
+                    f"Hand Pose 聚合通道缺失：{spec.plug}"
+                )
+            minimum = self._cmds.attributeQuery(
+                spec.name,
+                node=spec.root_path,
+                minimum=True,
+            ) or []
+            maximum = self._cmds.attributeQuery(
+                spec.name,
+                node=spec.root_path,
+                maximum=True,
+            ) or []
+            aggregates.append(BodyHandAggregatePoseChannelState(
+                side=spec.side,
+                name=spec.name,
+                plug=spec.plug,
+                value=float(self._cmds.getAttr(spec.plug)),
+                minimum=float(minimum[0]) if len(minimum) == 1 else None,
+                maximum=float(maximum[0]) if len(maximum) == 1 else None,
+                writable=bool(self._cmds.getAttr(spec.plug, settable=True)),
+                incoming_source=source(spec.plug),
+            ))
+
+        by_name = {spec.control_name: spec for spec in hand.controls}
+        controls = []
+        for side in (FitBuildSide.RIGHT, FitBuildSide.LEFT):
+            for digit in BODY_HAND_DIGITS:
+                for segment in BODY_HAND_POSE_FK_SEGMENTS:
+                    name = f"AdvPy_{digit.value}{segment}FK_{side.value}"
+                    spec = by_name.get(name)
+                    if spec is None or spec.side is not side:
+                        raise FitSkeletonValidationError(
+                            f"Hand Pose FK 语义控制缺失：{name}"
+                        )
+                    nodes = self._cmds.ls(
+                        spec.control_path,
+                        long=True,
+                        type="transform",
+                    ) or []
+                    if len(nodes) != 1 or nodes[0] != spec.control_path:
+                        raise FitSkeletonValidationError(
+                            f"Hand Pose FK 控制缺失：{spec.control_path}"
+                        )
+                    path = nodes[0]
+                    controls.append(BodyHandFkPoseChannelState(
+                        side=side,
+                        digit=digit,
+                        segment=segment,
+                        control_path=path,
+                        rotation=tuple(
+                            float(value)
+                            for value in self._cmds.getAttr(f"{path}.rotate")[0]
+                        ),
+                        writable_rotation_axes=frozenset(
+                            axis.lower()
+                            for axis in ("X", "Y", "Z")
+                            if self._cmds.getAttr(
+                                f"{path}.rotate{axis}",
+                                settable=True,
+                            )
+                        ),
+                        rotation_sources=tuple(
+                            source(f"{path}.rotate{axis}")
+                            for axis in ("X", "Y", "Z")
+                        ),
+                    ))
+        return BodyHandPoseChannelSnapshot(tuple(aggregates), tuple(controls))
+
+    def apply_body_hand_pose_changes(
+        self,
+        changes: BodyHandPoseChangeSet,
+    ) -> None:
+        self._require_transaction()
+        for change in changes.aggregates:
+            if (
+                not self._cmds.objExists(change.plug)
+                or not self._cmds.getAttr(change.plug, settable=True)
+                or abs(float(self._cmds.getAttr(change.plug)) - change.before)
+                > 1e-6
+            ):
+                raise FitSkeletonValidationError(
+                    f"Hand Pose 聚合通道执行前失效：{change.plug}"
+                )
+        for change in changes.controls:
+            nodes = self._cmds.ls(
+                change.control_path,
+                long=True,
+                type="transform",
+            ) or []
+            if len(nodes) != 1 or nodes[0] != change.control_path:
+                raise FitSkeletonValidationError(
+                    f"Hand Pose FK 控制执行前失效：{change.control_path}"
+                )
+            current = tuple(
+                float(value)
+                for value in self._cmds.getAttr(f"{change.control_path}.rotate")[0]
+            )
+            if any(abs(a - b) > 1e-6 for a, b in zip(current, change.before)):
+                raise FitSkeletonValidationError(
+                    f"Hand Pose FK rotate 执行前变化：{change.control_path}"
+                )
+            if any(
+                not self._cmds.getAttr(
+                    f"{change.control_path}.rotate{axis}",
+                    settable=True,
+                )
+                for axis in ("X", "Y", "Z")
+            ):
+                raise FitSkeletonValidationError(
+                    f"Hand Pose FK rotate 执行前不可写：{change.control_path}"
+                )
+        if not changes.changed_channel_count:
+            return
+        self._transaction_changed = True
+        for change in changes.aggregates:
+            self._cmds.setAttr(change.plug, change.after)
+        for change in changes.controls:
+            for axis, value in zip(("X", "Y", "Z"), change.after):
+                self._cmds.setAttr(
+                    f"{change.control_path}.rotate{axis}",
+                    value,
+                )
 
     def _create_body_limb_fk_control(
         self,
