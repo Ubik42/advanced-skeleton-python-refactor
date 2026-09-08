@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -99,6 +99,16 @@ class BuildBodyHandFkControls:
             root_name=body_root_name,
             center_tolerance=center_tolerance,
         )
+        return self.plan_from_safety(safety, control_radius=control_radius)
+
+    def plan_from_safety(
+        self,
+        safety: BodyRebuildSafetyAudit,
+        *,
+        control_radius: float = 0.3,
+    ) -> BodyHandFkBuildPlan:
+        """Plan Hand FK from an already captured shared Character input."""
+
         controls = plan_body_hand_fk_controls(
             safety.body,
             radius=control_radius,
@@ -132,17 +142,43 @@ class BuildBodyHandFkControls:
             control_radius=control_radius,
             center_tolerance=center_tolerance,
         )
+        return self._apply_plan(
+            plan,
+            body_root_name=body_root_name,
+            container_name=container_name,
+            center_tolerance=center_tolerance,
+        )
+
+    def _apply_plan(
+        self,
+        plan: BodyHandFkBuildPlan,
+        *,
+        body_root_name: str,
+        container_name: str = "FitSkeleton",
+        center_tolerance: float = 0.01,
+        manage_transaction: bool = True,
+        revalidate_safety: bool = True,
+    ) -> BodyHandFkBuildResult:
         if not plan.ready:
             raise FitSkeletonValidationError(
                 "Hand FK 控制构建预检失败，场景未修改："
                 + "；".join(plan.blockers)
             )
 
-        with self._host.transaction("创建双手五指分层 FK 控制"):
-            current_safety = self._inspector.execute(
-                container_name,
-                root_name=body_root_name,
-                center_tolerance=center_tolerance,
+        transaction = (
+            self._host.transaction("创建双手五指分层 FK 控制")
+            if manage_transaction
+            else nullcontext()
+        )
+        with transaction:
+            current_safety = (
+                self._inspector.execute(
+                    container_name,
+                    root_name=body_root_name,
+                    center_tolerance=center_tolerance,
+                )
+                if revalidate_safety
+                else plan.safety
             )
             current_input = self._host.capture_body_hand_fk_input(
                 plan.controls

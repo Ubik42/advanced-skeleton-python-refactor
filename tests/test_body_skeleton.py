@@ -72,6 +72,11 @@ from adv_py.core import (
     BodyLegKneePinSnapshot,
     BodyCharacterDrivenRootState,
     BodyCharacterGlobalSnapshot,
+    BodyHandFkControlSnapshot,
+    BodyHandFkControlState,
+    BodyHandFkInputSnapshot,
+    BodyHandFkJointInputState,
+    BodyHandFkRootState,
     BodyArmTwistJointState,
     BodyArmTwistSegmentState,
     BodyArmTwistSnapshot,
@@ -100,6 +105,7 @@ from adv_py.core import (
     default_fit_skeleton_settings,
     predict_fit_template_hierarchy,
     synthetic_body_source_fit_template,
+    synthetic_body_with_hand_source_fit_template,
     plan_body_arm_fk_controls,
     audit_body_leg_fk_to_ik_preflight,
     segmented_foot_roll,
@@ -140,8 +146,14 @@ class FakeBodySkeletonHost:
         faulty_leg_volume=False,
         faulty_arm_volume=False,
         faulty_character_global=False,
+        with_hand=False,
+        faulty_hand_fk=False,
     ):
-        template = synthetic_body_source_fit_template(FitUpAxis.Z)
+        template = (
+            synthetic_body_with_hand_source_fit_template(FitUpAxis.Z)
+            if with_hand
+            else synthetic_body_source_fit_template(FitUpAxis.Z)
+        )
         hierarchy = predict_fit_template_hierarchy(template, "|FitSkeleton")
         self.fit_snapshot = FitOrientationSnapshot(
             hierarchy,
@@ -186,6 +198,9 @@ class FakeBodySkeletonHost:
         self.provenance = None
         self.character_global_snapshot = None
         self.faulty_character_global = faulty_character_global
+        self.hand_fk_roots = []
+        self.hand_fk_states = []
+        self.faulty_hand_fk = faulty_hand_fk
         self.in_transaction = False
         self.extra_dag_paths = ()
         self.external_dependencies = ()
@@ -319,6 +334,15 @@ class FakeBodySkeletonHost:
                 existing_controls.append(state.path)
             if state.constraint_name == name:
                 existing_controls.append(name)
+        for state in self.hand_fk_roots:
+            if state.path.rsplit("|", 1)[-1] == name:
+                existing_controls.append(state.path)
+        for state in self.hand_fk_states:
+            for path in (state.offset_path, state.control_path):
+                if path.rsplit("|", 1)[-1] == name:
+                    existing_controls.append(path)
+            if state.constraint_name == name:
+                existing_controls.append(name)
         return (
             tuple(self.collisions.get(name, ()))
             + existing_body
@@ -331,6 +355,8 @@ class FakeBodySkeletonHost:
         before = list(self.body)
         before_provenance = self.provenance
         before_character_global_snapshot = self.character_global_snapshot
+        before_hand_fk_roots = list(self.hand_fk_roots)
+        before_hand_fk_states = list(self.hand_fk_states)
         before_control_root = self.control_root
         before_arm_fk_states = list(self.arm_fk_states)
         before_mechanism_root = self.mechanism_root
@@ -372,6 +398,8 @@ class FakeBodySkeletonHost:
             self.body = before
             self.provenance = before_provenance
             self.character_global_snapshot = before_character_global_snapshot
+            self.hand_fk_roots = before_hand_fk_roots
+            self.hand_fk_states = before_hand_fk_states
             self.control_root = before_control_root
             self.arm_fk_states = before_arm_fk_states
             self.mechanism_root = before_mechanism_root
@@ -559,6 +587,54 @@ class FakeBodySkeletonHost:
                 + self.character_global_snapshot.driven_roots[1:],
             )
         return self.character_global_snapshot
+
+    def capture_body_hand_fk_input(self, plan):
+        return BodyHandFkInputSnapshot(tuple(
+            BodyHandFkJointInputState(
+                joint=control.driven_joint,
+                writable_rotation_axes=frozenset({"x", "y", "z"}),
+                rotation_sources=(None, None, None),
+            )
+            for control in plan.controls
+        ))
+
+    def create_body_hand_fk_root(self, spec):
+        self.hand_fk_roots.append(BodyHandFkRootState(
+            path=spec.path,
+            parent_path=spec.parent_path,
+            world_position=spec.world_position,
+            world_axes=spec.world_axes,
+            local_translation=(0.0, 0.0, 0.0),
+            local_rotation=(0.0, 0.0, 0.0),
+            local_scale=(1.0, 1.0, 1.0),
+        ))
+        return spec.path
+
+    def create_body_hand_fk_control(self, spec):
+        self.hand_fk_states.append(BodyHandFkControlState(
+            offset_path=spec.offset_path,
+            offset_parent_path=spec.parent_path,
+            control_path=spec.control_path,
+            control_parent_path=spec.offset_path,
+            constraint_name=spec.constraint_name,
+            source_control=spec.control_path,
+            driven_joint=spec.driven_joint,
+            world_position=spec.world_position,
+            world_axes=spec.world_axes,
+            local_translation=(0.0, 0.0, 0.0),
+            local_rotation=(0.0, 0.0, 0.0),
+            shape_type="nurbsCurve",
+        ))
+
+    def capture_body_hand_fk_controls(self, plan):
+        del plan
+        states = tuple(self.hand_fk_states)
+        if self.faulty_hand_fk and states:
+            states = (replace(states[0], shape_type=None),) + states[1:]
+        return BodyHandFkControlSnapshot(
+            tuple(self.hand_fk_roots),
+            states,
+        )
 
     def create_body_arm_fk_control(self, spec):
         self.arm_fk_states.append(
@@ -2308,6 +2384,59 @@ class BodySkeletonTests(unittest.TestCase):
         )
         self.assertEqual(result.body, body)
 
+    def test_complete_character_rig_auto_builds_hand_for_seventy_joint_body(self):
+        host = FakeBodySkeletonHost(with_hand=True)
+        body = BuildOrientedBodySkeleton(host).apply().snapshot
+
+        preview = BuildBodyCharacterRig(host).plan()
+        result = BuildBodyCharacterRig(host).apply()
+
+        self.assertTrue(preview.ready)
+        self.assertIsNotNone(preview.hand)
+        self.assertIsNotNone(result.hand)
+        self.assertEqual(len(body.joints), 70)
+        self.assertEqual(host.transaction_count, 2)
+        self.assertEqual(len(result.hand.snapshot.roots), 2)
+        self.assertEqual(len(result.hand.snapshot.controls), 30)
+        self.assertEqual(result.body, body)
+
+    def test_partial_hand_blocks_character_before_transaction(self):
+        host = FakeBodySkeletonHost(with_hand=True)
+        BuildOrientedBodySkeleton(host).apply()
+        host.body = [
+            joint for joint in host.body if joint.name != "PinkyEnd_L"
+        ]
+
+        preview = BuildBodyCharacterRig(host).plan()
+        with self.assertRaisesRegex(FitSkeletonValidationError, "不完整的双侧五指"):
+            BuildBodyCharacterRig(host).apply()
+
+        self.assertFalse(preview.ready)
+        self.assertEqual(len(preview.hand_schema_blockers), 1)
+        self.assertEqual(host.transaction_count, 1)
+        self.assertIsNone(host.mechanism_root)
+        self.assertFalse(host.hand_fk_roots)
+
+    def test_hand_failure_rolls_back_other_character_stages(self):
+        host = FakeBodySkeletonHost(with_hand=True, faulty_hand_fk=True)
+        BuildOrientedBodySkeleton(host).apply()
+
+        with self.assertRaisesRegex(RuntimeError, "Hand FK 控制构建后复检失败"):
+            BuildBodyCharacterRig(host).apply()
+
+        self.assertEqual(host.transaction_count, 2)
+        self.assertIsNone(host.mechanism_root)
+        self.assertIsNone(host.control_root)
+        self.assertIsNone(host.arm_blend_snapshot)
+        self.assertIsNone(host.arm_ik_root)
+        self.assertIsNone(host.leg_mechanism_root)
+        self.assertIsNone(host.leg_control_root)
+        self.assertIsNone(host.leg_blend_snapshot)
+        self.assertIsNone(host.leg_ik_root)
+        self.assertFalse(host.hand_fk_roots)
+        self.assertFalse(host.hand_fk_states)
+        self.assertIsNone(host.character_global_snapshot)
+
     def test_complete_character_rig_builds_arm_leg_and_global_in_one_transaction(self):
         host = FakeBodySkeletonHost()
         body = BuildOrientedBodySkeleton(host).apply().snapshot
@@ -2316,6 +2445,8 @@ class BodySkeletonTests(unittest.TestCase):
         result = BuildBodyCharacterRig(host).apply()
 
         self.assertTrue(preview.ready)
+        self.assertIsNone(preview.hand)
+        self.assertIsNone(result.hand)
         self.assertEqual(host.transaction_count, 2)
         self.assertEqual(len(result.arm.mechanisms.joints), 12)
         self.assertEqual(len(result.leg.mechanisms.joints), 20)

@@ -10,6 +10,7 @@ from adv_py.core.body_character_global import (
     audit_body_character_global,
     plan_body_character_global,
 )
+from adv_py.core.body_hand_fit import body_hand_source_joint_names
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -26,11 +27,22 @@ from .body_leg_rig import (
     BodyLegRigHost,
     BuildBodyLegRig,
 )
+from .body_hand_controls import (
+    BodyHandFkBuildPlan,
+    BodyHandFkBuildResult,
+    BodyHandFkHost,
+    BuildBodyHandFkControls,
+)
 from .body_rebuild import InspectBodyRebuildSafety
 from .body_rig_validation import body_bind_pose_matches
 
 
-class BodyCharacterRigHost(BodyArmRigHost, BodyLegRigHost, Protocol):
+class BodyCharacterRigHost(
+    BodyArmRigHost,
+    BodyLegRigHost,
+    BodyHandFkHost,
+    Protocol,
+):
     def scene_up_axis(self) -> FitUpAxis: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
     def create_body_character_global(self, plan: BodyCharacterGlobalPlan) -> None: ...
@@ -44,6 +56,8 @@ class BodyCharacterRigHost(BodyArmRigHost, BodyLegRigHost, Protocol):
 class BodyCharacterRigBuildPlan:
     arm: BodyArmRigBuildPlan
     leg: BodyLegRigBuildPlan
+    hand: BodyHandFkBuildPlan | None
+    hand_schema_blockers: tuple[str, ...]
     global_control: BodyCharacterGlobalPlan
     global_name_collisions: tuple[str, ...]
     shared_input_stable: bool
@@ -53,6 +67,8 @@ class BodyCharacterRigBuildPlan:
         return (
             self.arm.ready
             and self.leg.ready
+            and (self.hand is None or self.hand.ready)
+            and not self.hand_schema_blockers
             and not self.global_name_collisions
             and self.shared_input_stable
         )
@@ -63,13 +79,20 @@ class BodyCharacterRigBuildPlan:
         values.extend(
             blocker for blocker in self.leg.blockers if blocker not in values
         )
+        if self.hand is not None:
+            values.extend(
+                blocker for blocker in self.hand.blockers if blocker not in values
+            )
+        values.extend(
+            blocker for blocker in self.hand_schema_blockers if blocker not in values
+        )
         if self.global_name_collisions:
             values.append(
                 "场景中存在角色总控同名节点："
                 + "、".join(self.global_name_collisions)
             )
         if not self.shared_input_stable:
-            values.append("Arm/Leg 预演之间 Body 或 Fit 输入发生变化")
+            values.append("Arm/Leg/Hand 预演之间 Body 或 Fit 输入发生变化")
         return tuple(values)
 
 
@@ -78,17 +101,19 @@ class BodyCharacterRigBuildResult:
     plan: BodyCharacterRigBuildPlan
     arm: BodyArmRigBuildResult
     leg: BodyLegRigBuildResult
+    hand: BodyHandFkBuildResult | None
     global_control: BodyCharacterGlobalSnapshot
     body: BodySkeletonSnapshot
 
 
 class BuildBodyCharacterRig:
-    """Build the Maya-first Arm, Leg, and character global rig atomically."""
+    """Build Maya-first limbs, optional complete hands, and global atomically."""
 
     def __init__(self, host: BodyCharacterRigHost) -> None:
         self._host = host
         self._arm = BuildBodyArmRig(host)
         self._leg = BuildBodyLegRig(host)
+        self._hand = BuildBodyHandFkControls(host)
         self._inspector = InspectBodyRebuildSafety(host)
 
     def plan(
@@ -98,6 +123,7 @@ class BuildBodyCharacterRig:
         body_root_name: str = "Root_M",
         arm_control_radius: float = 1.5,
         leg_control_radius: float = 1.75,
+        hand_control_radius: float = 0.3,
         global_control_radius: float = 12.0,
         pole_distance_scale: float = 0.75,
         twist_joints_per_segment: int = 2,
@@ -119,6 +145,26 @@ class BuildBodyCharacterRig:
             twist_joints_per_segment=twist_joints_per_segment,
             center_tolerance=center_tolerance,
         )
+        expected_hand_names = {
+            f"{source_name}_{suffix}"
+            for source_name in body_hand_source_joint_names()
+            for suffix in ("R", "L")
+        }
+        body_names = {joint.name for joint in arm.safety.body.joints}
+        present_hand_names = body_names & expected_hand_names
+        hand = None
+        hand_schema_blockers = ()
+        if present_hand_names == expected_hand_names:
+            hand = self._hand.plan_from_safety(
+                arm.safety,
+                control_radius=hand_control_radius,
+            )
+        elif present_hand_names:
+            missing = sorted(expected_hand_names - present_hand_names)
+            hand_schema_blockers = (
+                "Body 包含不完整的双侧五指集合，Hand FK 不会静默跳过；"
+                f"缺少 {len(missing)} 个关节：" + "、".join(missing),
+            )
         driven_roots = (
             arm.safety.body.root,
             arm.mechanisms.root_path,
@@ -150,9 +196,14 @@ class BuildBodyCharacterRig:
         return BodyCharacterRigBuildPlan(
             arm=arm,
             leg=leg,
+            hand=hand,
+            hand_schema_blockers=hand_schema_blockers,
             global_control=global_control,
             global_name_collisions=collisions,
-            shared_input_stable=arm.safety == leg.safety,
+            shared_input_stable=(
+                arm.safety == leg.safety
+                and (hand is None or hand.safety == arm.safety)
+            ),
         )
 
     def apply(
@@ -162,6 +213,7 @@ class BuildBodyCharacterRig:
         body_root_name: str = "Root_M",
         arm_control_radius: float = 1.5,
         leg_control_radius: float = 1.75,
+        hand_control_radius: float = 0.3,
         global_control_radius: float = 12.0,
         pole_distance_scale: float = 0.75,
         twist_joints_per_segment: int = 2,
@@ -172,6 +224,7 @@ class BuildBodyCharacterRig:
             body_root_name=body_root_name,
             arm_control_radius=arm_control_radius,
             leg_control_radius=leg_control_radius,
+            hand_control_radius=hand_control_radius,
             global_control_radius=global_control_radius,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
@@ -185,7 +238,7 @@ class BuildBodyCharacterRig:
 
         self._host.prepare_body_arm_twist_runtime()
         self._host.prepare_body_leg_twist_runtime()
-        with self._host.transaction("构建完整角色 Arm/Leg 与总控"):
+        with self._host.transaction("构建完整角色 Arm/Leg/Hand 与总控"):
             current = self._inspector.execute(
                 container_name,
                 root_name=body_root_name,
@@ -206,6 +259,18 @@ class BuildBodyCharacterRig:
                 body_root_name=body_root_name,
                 manage_transaction=False,
                 prepare_runtime=False,
+            )
+            hand = (
+                self._hand._apply_plan(
+                    plan.hand,
+                    body_root_name=body_root_name,
+                    container_name=container_name,
+                    center_tolerance=center_tolerance,
+                    manage_transaction=False,
+                    revalidate_safety=False,
+                )
+                if plan.hand is not None
+                else None
             )
             self._host.create_body_character_global(plan.global_control)
             global_control = self._host.capture_body_character_global(
@@ -232,9 +297,10 @@ class BuildBodyCharacterRig:
             ):
                 raise RuntimeError("Character Rig 构建后 Fit 输入变化")
         return BodyCharacterRigBuildResult(
-            plan,
-            arm,
-            leg,
-            global_control,
-            body,
+            plan=plan,
+            arm=arm,
+            leg=leg,
+            hand=hand,
+            global_control=global_control,
+            body=body,
         )
