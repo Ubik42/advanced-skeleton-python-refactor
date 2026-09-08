@@ -71,6 +71,10 @@ from adv_py.core.body_character_global import (
     BodyCharacterGlobalPlan,
     BodyCharacterGlobalSnapshot,
 )
+from adv_py.core.body_root_motion import (
+    BodyRootMotionPlan,
+    BodyRootMotionSnapshot,
+)
 from adv_py.core.body_hand_controls import (
     BodyHandFkControlPlan,
     BodyHandFkControlSnapshot,
@@ -714,6 +718,126 @@ class MayaBodyBuildHost(MayaFitJointHost):
             scale_destination_sources=tuple(
                 (plug, source(plug))
                 for plug in plan.scale_destinations
+            ),
+        )
+
+    def create_body_root_motion(self, plan: BodyRootMotionPlan) -> None:
+        self._require_transaction()
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            if any(self.find_name_collisions(name) for name in plan.node_names):
+                raise FitSkeletonValidationError(
+                    "Root Motion 名称在执行前发生冲突"
+                )
+            sources = self._cmds.ls(
+                plan.source_root_path,
+                long=True,
+                type="joint",
+            ) or []
+            if len(sources) != 1 or sources[0] != plan.source_root_path:
+                raise FitSkeletonValidationError(
+                    "Root Motion 来源 Body root 在执行前失效"
+                )
+
+            self._transaction_changed = True
+            output = self._cmds.createNode(
+                "joint",
+                name=plan.output_name,
+                skipSelect=True,
+            )
+            output = (self._cmds.ls(output, long=True) or [output])[0]
+            if output != plan.output_path:
+                raise RuntimeError("Root Motion 输出路径漂移")
+            self._cmds.pointConstraint(
+                plan.source_root_path,
+                output,
+                maintainOffset=False,
+                skip=plan.skipped_translation_axis,
+                name=plan.point_constraint_name,
+            )
+            self._cmds.orientConstraint(
+                plan.source_root_path,
+                output,
+                maintainOffset=False,
+                skip=plan.skipped_rotation_axes,
+                name=plan.orient_constraint_name,
+            )
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+    def capture_body_root_motion(
+        self,
+        plan: BodyRootMotionPlan,
+    ) -> BodyRootMotionSnapshot:
+        outputs = self._cmds.ls(plan.output_path, long=True, type="joint") or []
+        if len(outputs) != 1 or outputs[0] != plan.output_path:
+            raise FitSkeletonValidationError("Root Motion 输出 joint 无效")
+        output = outputs[0]
+        parents = self._cmds.listRelatives(
+            output,
+            parent=True,
+            fullPath=True,
+        ) or []
+
+        def source(plug: str) -> str | None:
+            values = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+                plugs=True,
+            ) or []
+            return values[0] if len(values) == 1 else None
+
+        def vector(attribute: str) -> tuple[float, float, float]:
+            return tuple(
+                float(self._cmds.getAttr(f"{output}.{attribute}{axis}"))
+                for axis in "XYZ"
+            )
+
+        def targets(name: str, command) -> tuple[str, ...]:
+            constraints = self._cmds.ls(name) or []
+            if len(constraints) != 1:
+                return ()
+            values = command(
+                constraints[0],
+                query=True,
+                targetList=True,
+            ) or []
+            resolved = []
+            for value in values:
+                paths = self._cmds.ls(value, long=True) or []
+                if len(paths) != 1:
+                    return ()
+                resolved.append(paths[0])
+            return tuple(resolved)
+
+        return BodyRootMotionSnapshot(
+            output_path=output,
+            output_parent_path=parents[0] if len(parents) == 1 else None,
+            output_type=self._cmds.nodeType(output),
+            translation=vector("translate"),
+            rotation=vector("rotate"),
+            scale=vector("scale"),
+            joint_orient=tuple(
+                float(value)
+                for value in self._cmds.getAttr(f"{output}.jointOrient")[0]
+            ),
+            translation_sources=tuple(
+                source(f"{output}.translate{axis}") for axis in "XYZ"
+            ),
+            rotation_sources=tuple(
+                source(f"{output}.rotate{axis}") for axis in "XYZ"
+            ),
+            point_targets=targets(
+                plan.point_constraint_name,
+                self._cmds.pointConstraint,
+            ),
+            orient_targets=targets(
+                plan.orient_constraint_name,
+                self._cmds.orientConstraint,
             ),
         )
 

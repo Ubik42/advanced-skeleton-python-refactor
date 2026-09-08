@@ -8,6 +8,7 @@ local/
 build/
 dist/
 *.egg-info/
+validation/results/.*.log
 
 # Generated inventories may contain proprietary procedure names and paths.
 reports/*.json

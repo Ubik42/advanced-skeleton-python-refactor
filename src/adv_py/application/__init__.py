@@ -104,6 +104,12 @@ from .body_character_rig import (
     BodyCharacterRigHost,
     BuildBodyCharacterRig,
 )
+from .body_root_motion import (
+    BodyRootMotionBuildPlan,
+    BodyRootMotionBuildResult,
+    BodyRootMotionHost,
+    BuildBodyRootMotion,
+)
 from .body_hand_fit import (
     BodyHandSourceFitBuildPlan,
     BodyHandSourceFitBuildResult,
@@ -296,6 +302,8 @@ __all__ = [
     "BodyArmRigBuildPlan", "BodyArmRigBuildResult", "BodyArmRigHost",
     "BodyCharacterRigBuildPlan", "BodyCharacterRigBuildResult",
     "BodyCharacterRigHost",
+    "BodyRootMotionBuildPlan", "BodyRootMotionBuildResult",
+    "BodyRootMotionHost",
     "BodyHandSourceFitBuildPlan",
     "BodyHandSourceFitBuildResult",
     "BodyHandSourceFitHost",
@@ -387,6 +395,7 @@ __all__ = [
     "BuildBodyLegRig",
     "BuildBodyArmRig",
     "BuildBodyCharacterRig",
+    "BuildBodyRootMotion",
     "BuildSyntheticBodyWithHandSourceFit",
     "BuildBodyHandFkControls",
     "ExportBodyHandPose",

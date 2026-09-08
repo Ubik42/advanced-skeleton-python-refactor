@@ -1,0 +1,166 @@
+import unittest
+from contextlib import contextmanager
+from dataclasses import replace
+
+from adv_py.application import BuildBodyRootMotion
+from adv_py.core import (
+    BodyJointState,
+    BodyRootMotionSnapshot,
+    BodyRootMotionValidationError,
+    BodySkeletonSnapshot,
+    FitBuildSide,
+    FitUpAxis,
+    audit_body_root_motion,
+    oriented_body_provenance,
+    plan_body_root_motion,
+)
+from adv_py.core.body_skeleton import BodySkeletonProvenanceState
+from adv_py.core.fit_settings import FitSkeletonValidationError
+
+
+def make_plan(up_axis=FitUpAxis.Z, source="|Root_M"):
+    return plan_body_root_motion(source_root_path=source, up_axis=up_axis)
+
+
+def make_snapshot(plan):
+    return BodyRootMotionSnapshot(
+        output_path=plan.output_path,
+        output_parent_path=None,
+        output_type="joint",
+        translation=(4.0, 2.0, 0.0),
+        rotation=(0.0, 0.0, 35.0),
+        scale=(1.0, 1.0, 1.0),
+        joint_orient=(0.0, 0.0, 0.0),
+        translation_sources=(
+            f"{plan.point_constraint_name}.constraintTranslateX",
+            f"{plan.point_constraint_name}.constraintTranslateY",
+            None,
+        ),
+        rotation_sources=(
+            None,
+            None,
+            f"{plan.orient_constraint_name}.constraintRotateZ",
+        ),
+        point_targets=(plan.source_root_path,),
+        orient_targets=(plan.source_root_path,),
+    )
+
+
+def make_body(owned=True):
+    provenance = oriented_body_provenance("|FitSkeleton", 1)
+    state = BodySkeletonProvenanceState(
+        owner=provenance.owner if owned else "foreign",
+        artifact_kind=provenance.artifact_kind,
+        schema_version=provenance.schema_version,
+        source_container=provenance.source_container,
+        body_joint_count=provenance.body_joint_count,
+    )
+    joint = BodyJointState(
+        path="|Root_M",
+        name="Root_M",
+        parent_path=None,
+        side=FitBuildSide.MIDDLE,
+        world_position=(0.0, 0.0, 0.0),
+        label=None,
+        joint_orient=(0.0, 0.0, 0.0),
+        rotation=(0.0, 0.0, 0.0),
+    )
+    return BodySkeletonSnapshot("|Root_M", (joint,), state)
+
+
+class FakeRootMotionHost:
+    def __init__(self, *, owned=True, collision=False):
+        self.body = make_body(owned)
+        self.collision = collision
+        self.snapshot = None
+        self.transactions = 0
+
+    def scene_up_axis(self):
+        return FitUpAxis.Z
+
+    def capture_body_skeleton(self, root_name):
+        return self.body
+
+    def find_name_collisions(self, name):
+        return (f"|{name}",) if self.collision else ()
+
+    @contextmanager
+    def transaction(self, label):
+        self.transactions += 1
+        before = self.snapshot
+        try:
+            yield
+        except Exception:
+            self.snapshot = before
+            raise
+
+    def create_body_root_motion(self, plan):
+        self.snapshot = make_snapshot(plan)
+
+    def capture_body_root_motion(self, plan):
+        return self.snapshot
+
+
+class BodyRootMotionTests(unittest.TestCase):
+    def test_plan_maps_z_up_to_xy_translation_and_z_yaw(self):
+        plan = make_plan()
+
+        self.assertEqual(plan.translation_axes, ("x", "y"))
+        self.assertEqual(plan.rotation_axis, "z")
+        self.assertEqual(plan.skipped_translation_axis, "z")
+        self.assertEqual(plan.skipped_rotation_axes, ("x", "y"))
+
+    def test_plan_maps_y_up_and_preserves_source_namespace(self):
+        plan = make_plan(FitUpAxis.Y, "|Hero:Root_M")
+
+        self.assertEqual(plan.translation_axes, ("x", "z"))
+        self.assertEqual(plan.rotation_axis, "y")
+        self.assertEqual(plan.output_path, "|Hero:AdvPy_GameRootMotion")
+
+    def test_plan_rejects_nested_source_and_qualified_output_basename(self):
+        with self.assertRaises(BodyRootMotionValidationError):
+            make_plan(source="|Group|Root_M")
+        with self.assertRaises(BodyRootMotionValidationError):
+            plan_body_root_motion(
+                source_root_path="|Root_M",
+                up_axis=FitUpAxis.Z,
+                output_basename="Hero:RootMotion",
+            )
+
+    def test_audit_reports_filtered_axis_and_wiring_damage(self):
+        plan = make_plan()
+        snapshot = make_snapshot(plan)
+        self.assertEqual(audit_body_root_motion(plan, snapshot), ())
+
+        broken = replace(
+            snapshot,
+            translation=(4.0, 2.0, 1.0),
+            rotation_sources=(None, None, None),
+        )
+        self.assertEqual(
+            {issue.code for issue in audit_body_root_motion(plan, broken)},
+            {"rotation_wiring_mismatch", "vertical_motion_mismatch"},
+        )
+
+    def test_application_builds_owned_body_in_one_transaction(self):
+        host = FakeRootMotionHost()
+
+        result = BuildBodyRootMotion(host).apply()
+
+        self.assertEqual(result.verified.output_path, "|AdvPy_GameRootMotion")
+        self.assertEqual(host.transactions, 1)
+
+    def test_application_blocks_foreign_body_and_collisions_before_transaction(self):
+        for host in (
+            FakeRootMotionHost(owned=False),
+            FakeRootMotionHost(collision=True),
+        ):
+            with self.subTest(host=host):
+                with self.assertRaises(FitSkeletonValidationError):
+                    BuildBodyRootMotion(host).apply()
+                self.assertEqual(host.transactions, 0)
+                self.assertIsNone(host.snapshot)
+
+
+if __name__ == "__main__":
+    unittest.main()

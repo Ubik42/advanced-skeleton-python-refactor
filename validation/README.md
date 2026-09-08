@@ -139,6 +139,8 @@
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_character_global_smoke.py validation\results\maya2024-body-character-global.json
 
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_root_motion_smoke.py validation\results\maya2024-body-root-motion.json
+
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_character_hand_smoke.py validation\results\maya2024-body-character-hand.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_hand_pose_smoke.py validation\results\maya2024-body-hand-pose.json
@@ -220,6 +222,7 @@
 - 朝向编辑支持唯一子级或调用方显式选择的直接分支子级；非零 rotate 和不可补偿后代会在预检阶段拒绝。
 - 对称计划表达输出名称、父子拓扑、YZ 平面世界位置及镜像行为世界轴；当前尚未覆盖非均匀缩放、World Match 或自定义逐关节镜像平面。
 - 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径，并可从五指源生成 70 关节 Body；Hand 已有双侧 30 个分层 FK controls、30 个零通道 Pose 层，以及每侧全局/单指 curl 和全局 spread。Hand Pose schema v1 已验证无 Maya 路径导出、摘要复检、五个变化通道静态导入、当前帧原生 animCurve 写键、显式单侧恢复、左右镜像、重复执行零修改和单次 Undo；同一合成资产的 `RigA`/`RigB` 双引用验证还覆盖显式 namespace 解析、跨实例迁移和源实例隔离。命名预设库额外覆盖安全中文名称、原子保存、大小写冲突拒绝、规范名称查询、完整目录校验、单侧应用，以及场景 Undo 后文件仍保留。单侧与镜像只要求目标侧可写，源侧或非目标侧驱动保持不变；写键只接受未连接通道或 Maya 原生 animCurve，目标侧的约束、表达式和未知驱动会在事务前拒绝。预设重命名/删除/缩略图、动画区间 bake、切线策略和动画片段管理尚未实现。Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 默认主流程已组合 mechanisms、FK/IK、blend、显隐、stretch bias、knee pin、twist/volume、五级 Foot pivot、自动 `footRoll` 和双向匹配。Character 入口用一个外层事务组合 Arm/Leg/Global，并在完整五指 Body 上自动纳入 Hand；30 关节 Body 保持兼容，残缺五指会被预检拒绝。自动角色发现、逐指 spread、完整变形系统或产品 UI 尚未实现。
+- Root Motion 案例覆盖本工程 owned Body 的 Y-Up/Z-Up 平面位移与 yaw 实时驱动、选择保持和单次 Undo；尚未包含动画 bake、完整导出骨架、FBX 文件写入或游戏引擎坐标转换。
 - provenance 只证明本工程写入的产物身份和声明数量；删除资格还必须通过当前 DAG 与外部连接安全评估，不能只凭标记直接删除。
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。

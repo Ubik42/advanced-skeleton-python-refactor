@@ -216,6 +216,14 @@ from .body_character_global import (
     audit_body_character_global,
     plan_body_character_global,
 )
+from .body_root_motion import (
+    BodyRootMotionIssue,
+    BodyRootMotionPlan,
+    BodyRootMotionSnapshot,
+    BodyRootMotionValidationError,
+    audit_body_root_motion,
+    plan_body_root_motion,
+)
 from .body_hand_fit import (
     BODY_HAND_DIGITS,
     BODY_HAND_SEGMENTS,
@@ -652,6 +660,8 @@ __all__ = [
     "BodyLegKneePinValidationError",
     "BodyCharacterDrivenRootState",
     "BodyCharacterGlobalIssue",
+    "BodyRootMotionIssue", "BodyRootMotionPlan", "BodyRootMotionSnapshot",
+    "BodyRootMotionValidationError",
     "BodyCharacterGlobalPlan",
     "BodyCharacterGlobalSnapshot",
     "BodyCharacterGlobalValidationError",
@@ -928,6 +938,7 @@ __all__ = [
     "audit_body_leg_stretch_bias",
     "audit_body_leg_knee_pin",
     "audit_body_character_global",
+    "audit_body_root_motion",
     "audit_body_limb_stretch",
     "audit_body_limb_twist",
     "audit_body_arm_twist",
@@ -999,6 +1010,7 @@ __all__ = [
     "plan_body_leg_stretch_bias",
     "plan_body_leg_knee_pin",
     "plan_body_character_global",
+    "plan_body_root_motion",
     "plan_body_limb_stretch",
     "compensated_stretch_ratio",
     "biased_stretch_factors",

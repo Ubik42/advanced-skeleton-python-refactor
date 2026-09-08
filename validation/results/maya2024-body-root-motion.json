@@ -1,0 +1,46 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 31372,
+  "slice": "body_game_root_motion",
+  "axes": [
+    {
+      "up_axis": "Y",
+      "joint_count": 1,
+      "translation_axes": [
+        "x",
+        "z"
+      ],
+      "rotation_axis": "y",
+      "source_drives_planar_yaw": true,
+      "audit_passes_after_motion": true,
+      "body_hierarchy_preserved": true,
+      "selection_preserved": true,
+      "single_undo_removed_root_motion": true,
+      "body_survived_undo": true,
+      "fit_survived_undo": true,
+      "marker_survived_undo": true,
+      "cleanup": true
+    },
+    {
+      "up_axis": "Z",
+      "joint_count": 1,
+      "translation_axes": [
+        "x",
+        "y"
+      ],
+      "rotation_axis": "z",
+      "source_drives_planar_yaw": true,
+      "audit_passes_after_motion": true,
+      "body_hierarchy_preserved": true,
+      "selection_preserved": true,
+      "single_undo_removed_root_motion": true,
+      "body_survived_undo": true,
+      "fit_survived_undo": true,
+      "marker_survived_undo": true,
+      "cleanup": true
+    }
+  ],
+  "duration_seconds": 4.093,
+  "status": "passed"
+}
