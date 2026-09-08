@@ -28,6 +28,7 @@ from adv_py.core.body_hand_pose_io import (
     body_hand_pose_document_from_snapshot,
     body_hand_pose_document_to_json,
     merge_body_hand_pose_document,
+    mirror_body_hand_pose_document,
 )
 from adv_py.core.body_skeleton import (
     BodySkeletonSnapshot,
@@ -103,6 +104,31 @@ class BodyHandPoseImportPlan:
 @dataclass(frozen=True, slots=True)
 class BodyHandPoseImportResult:
     plan: BodyHandPoseImportPlan
+    rig: BodyHandPoseRigInspection
+
+    @property
+    def changed_channel_count(self) -> int:
+        return self.plan.changed_channel_count
+
+
+@dataclass(frozen=True, slots=True)
+class BodyHandPoseMirrorPlan:
+    source_side: FitBuildSide
+    target_side: FitBuildSide
+    current_document: BodyHandPoseDocument
+    expected_document: BodyHandPoseDocument
+    rig: BodyHandPoseRigInspection
+    changes: BodyHandPoseChangeSet
+    access_mode: BodyHandPoseAccessMode
+
+    @property
+    def changed_channel_count(self) -> int:
+        return self.changes.changed_channel_count
+
+
+@dataclass(frozen=True, slots=True)
+class BodyHandPoseMirrorResult:
+    plan: BodyHandPoseMirrorPlan
     rig: BodyHandPoseRigInspection
 
     @property
@@ -376,6 +402,114 @@ class ImportBodyHandPose:
             if result_document != plan.expected_document:
                 raise RuntimeError("Hand Pose 导入后姿态复检失败")
         return BodyHandPoseImportResult(plan, result_rig)
+
+
+class MirrorBodyHandPose:
+    def __init__(self, host: BodyHandPoseDocumentHost) -> None:
+        self._host = host
+        self._inspector = InspectBodyHandPoseRig(host)
+
+    def plan(
+        self,
+        *,
+        source_side: FitBuildSide,
+        keyframe: bool = False,
+        **inspection_options,
+    ) -> BodyHandPoseMirrorPlan:
+        if not isinstance(keyframe, bool):
+            raise FitSkeletonValidationError(
+                "Hand Pose keyframe 选项必须是布尔值"
+            )
+        if source_side is FitBuildSide.RIGHT:
+            target_side = FitBuildSide.LEFT
+        elif source_side is FitBuildSide.LEFT:
+            target_side = FitBuildSide.RIGHT
+        else:
+            raise FitSkeletonValidationError(
+                "Hand Pose 镜像源侧必须是 R 或 L"
+            )
+        access_mode = (
+            BodyHandPoseAccessMode.KEYFRAME_WRITE
+            if keyframe
+            else BodyHandPoseAccessMode.STATIC_WRITE
+        )
+        rig = self._inspector.execute(
+            access_mode=access_mode,
+            target_side=target_side,
+            **inspection_options,
+        )
+        current_document = body_hand_pose_document_from_snapshot(rig.channels)
+        expected_document = mirror_body_hand_pose_document(
+            current_document,
+            source_side=source_side,
+        )
+        changes = body_hand_pose_changes(expected_document, rig.channels)
+        return BodyHandPoseMirrorPlan(
+            source_side,
+            target_side,
+            current_document,
+            expected_document,
+            rig,
+            changes,
+            access_mode,
+        )
+
+    def apply(
+        self,
+        *,
+        source_side: FitBuildSide,
+        keyframe: bool = False,
+        **inspection_options,
+    ) -> BodyHandPoseMirrorResult:
+        plan = self.plan(
+            source_side=source_side,
+            keyframe=keyframe,
+            **inspection_options,
+        )
+        current_rig = self._inspector.execute(
+            access_mode=plan.access_mode,
+            target_side=plan.target_side,
+            **inspection_options,
+        )
+        if current_rig != plan.rig:
+            raise FitSkeletonValidationError(
+                "Hand Pose 镜像场景在执行前发生变化"
+            )
+        if plan.changed_channel_count == 0:
+            return BodyHandPoseMirrorResult(plan, current_rig)
+
+        side_label = {
+            FitBuildSide.RIGHT: "右手",
+            FitBuildSide.LEFT: "左手",
+        }
+        action = (
+            f"把{side_label[plan.source_side]} Hand Pose "
+            f"镜像到{side_label[plan.target_side]}"
+        )
+        label = f"在当前帧{action}" if keyframe else action
+        with self._host.transaction(label):
+            transaction_rig = self._inspector.execute(
+                access_mode=plan.access_mode,
+                target_side=plan.target_side,
+                **inspection_options,
+            )
+            if transaction_rig != plan.rig:
+                raise RuntimeError("Hand Pose 镜像事务开始后场景发生变化")
+            self._host.apply_body_hand_pose_changes(
+                plan.changes,
+                keyframe=keyframe,
+            )
+            result_rig = self._inspector.execute(
+                access_mode=plan.access_mode,
+                target_side=plan.target_side,
+                **inspection_options,
+            )
+            result_document = body_hand_pose_document_from_snapshot(
+                result_rig.channels
+            )
+            if result_document != plan.expected_document:
+                raise RuntimeError("Hand Pose 镜像后姿态复检失败")
+        return BodyHandPoseMirrorResult(plan, result_rig)
 
 
 def _json_path(value: str | os.PathLike[str]) -> Path:

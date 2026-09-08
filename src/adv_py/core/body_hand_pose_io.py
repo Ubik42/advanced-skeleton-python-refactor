@@ -397,6 +397,43 @@ def merge_body_hand_pose_document(
     return _make_document(aggregates, controls)
 
 
+def mirror_body_hand_pose_document(
+    document: BodyHandPoseDocument,
+    *,
+    source_side: FitBuildSide,
+) -> BodyHandPoseDocument:
+    """Mirror one hand's semantic values into its behavior-frame counterpart."""
+
+    _validate_document(document)
+    target_side = _opposite_hand_side(source_side)
+    source_aggregates = {
+        item.name: item for item in document.aggregates
+        if item.side is source_side
+    }
+    source_controls = {
+        (item.digit, item.segment): item for item in document.controls
+        if item.side is source_side
+    }
+    aggregates = tuple(
+        replace(item, value=source_aggregates[item.name].value)
+        if item.side is target_side
+        else item
+        for item in document.aggregates
+    )
+    controls = tuple(
+        replace(
+            item,
+            rotation=_mirror_body_hand_fk_rotation(
+                source_controls[(item.digit, item.segment)].rotation
+            ),
+        )
+        if item.side is target_side
+        else item
+        for item in document.controls
+    )
+    return _make_document(aggregates, controls)
+
+
 def body_hand_pose_changes(
     document: BodyHandPoseDocument,
     snapshot: BodyHandPoseChannelSnapshot,
@@ -557,6 +594,28 @@ def _target_sides(
             "Hand Pose 目标侧必须是 R、L 或 None"
         )
     return (target_side,)
+
+
+def _opposite_hand_side(source_side: FitBuildSide) -> FitBuildSide:
+    if not isinstance(source_side, FitBuildSide):
+        raise BodyHandPoseDocumentValidationError(
+            "Hand Pose 镜像源侧必须是 R 或 L"
+        )
+    if source_side is FitBuildSide.RIGHT:
+        return FitBuildSide.LEFT
+    if source_side is FitBuildSide.LEFT:
+        return FitBuildSide.RIGHT
+    raise BodyHandPoseDocumentValidationError(
+        "Hand Pose 镜像源侧必须是 R 或 L"
+    )
+
+
+def _mirror_body_hand_fk_rotation(rotation: Vector3) -> Vector3:
+    # Left behavior frames are S * Right * diag(1, 1, -1), where S is
+    # reflection across world X. Conjugating local rotation by the final
+    # diagonal maps Euler components to (-X, -Y, Z) for the shared order.
+    mirrored = (-rotation[0], -rotation[1], rotation[2])
+    return tuple(0.0 if value == 0.0 else value for value in mirrored)
 
 
 def _document_payload(document: BodyHandPoseDocument) -> dict:

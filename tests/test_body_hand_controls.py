@@ -9,6 +9,7 @@ from adv_py.application import (
     BuildBodyHandFkControls,
     ExportBodyHandPose,
     ImportBodyHandPose,
+    MirrorBodyHandPose,
 )
 from adv_py.core import (
     BODY_HAND_DIGITS,
@@ -851,6 +852,142 @@ class BodyHandControlTests(unittest.TestCase):
             result.plan.expected_document,
         )
         self.assertEqual(left_after, left_before)
+        self.assertEqual(host.transaction_count, 1)
+
+    def test_pose_mirror_copies_source_semantics_to_the_other_side(self):
+        host = FakeBodyHandPoseDocumentHost()
+        right_aggregate = next(
+            item for item in host.channels.aggregates
+            if item.side is FitBuildSide.RIGHT
+            and item.name == "handCurl"
+        )
+        left_aggregate = next(
+            item for item in host.channels.aggregates
+            if item.side is FitBuildSide.LEFT
+            and item.name == right_aggregate.name
+        )
+        right_control = next(
+            item for item in host.channels.controls
+            if item.side is FitBuildSide.RIGHT
+        )
+        left_control = next(
+            item for item in host.channels.controls
+            if item.side is FitBuildSide.LEFT
+            and item.digit is right_control.digit
+            and item.segment == right_control.segment
+        )
+        host.channels = replace(
+            host.channels,
+            aggregates=tuple(
+                replace(
+                    item,
+                    value=25.0,
+                    writable=False,
+                    incoming_source="SourceCurl.output",
+                    incoming_source_type="multiplyDivide",
+                    keyframe_writable=False,
+                )
+                if item is right_aggregate
+                else replace(item, value=-10.0)
+                if item is left_aggregate
+                else item
+                for item in host.channels.aggregates
+            ),
+            controls=tuple(
+                replace(
+                    item,
+                    rotation=(3.0, 4.0, 5.0),
+                    writable_rotation_axes=frozenset(),
+                    rotation_sources=(
+                        "SourceX.output",
+                        "SourceY.output",
+                        "SourceZ.output",
+                    ),
+                    rotation_source_types=(
+                        "expression",
+                        "expression",
+                        "expression",
+                    ),
+                    keyframe_writable_rotation_axes=frozenset(),
+                )
+                if item is right_control
+                else replace(item, rotation=(-1.0, -2.0, -3.0))
+                if item is left_control
+                else item
+                for item in host.channels.controls
+            ),
+        )
+        source_before = (right_aggregate, right_control)
+        source_before = tuple(
+            next(
+                item for item in values
+                if item.side is FitBuildSide.RIGHT
+                and getattr(item, "name", None)
+                == getattr(reference, "name", None)
+                and getattr(item, "digit", None)
+                == getattr(reference, "digit", None)
+                and getattr(item, "segment", None)
+                == getattr(reference, "segment", None)
+            )
+            for reference, values in zip(
+                source_before,
+                (host.channels.aggregates, host.channels.controls),
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "镜像源侧"):
+            MirrorBodyHandPose(host).plan(source_side="R")
+        result = MirrorBodyHandPose(host).apply(
+            source_side=FitBuildSide.RIGHT,
+        )
+        repeated = MirrorBodyHandPose(host).apply(
+            source_side=FitBuildSide.RIGHT,
+        )
+
+        source_after = tuple(
+            next(
+                item for item in values
+                if item.side is FitBuildSide.RIGHT
+                and getattr(item, "name", None)
+                == getattr(reference, "name", None)
+                and getattr(item, "digit", None)
+                == getattr(reference, "digit", None)
+                and getattr(item, "segment", None)
+                == getattr(reference, "segment", None)
+            )
+            for reference, values in zip(
+                source_before,
+                (host.channels.aggregates, host.channels.controls),
+            )
+        )
+        mirrored_aggregate = next(
+            item for item in host.channels.aggregates
+            if item.side is FitBuildSide.LEFT
+            and item.name == right_aggregate.name
+        )
+        mirrored_control = next(
+            item for item in host.channels.controls
+            if item.side is FitBuildSide.LEFT
+            and item.digit is right_control.digit
+            and item.segment == right_control.segment
+        )
+        self.assertEqual(result.changed_channel_count, 2)
+        self.assertEqual(repeated.changed_channel_count, 0)
+        self.assertIs(result.plan.target_side, FitBuildSide.LEFT)
+        self.assertTrue(all(
+            change.side is FitBuildSide.LEFT
+            for change in (
+                *result.plan.changes.aggregates,
+                *result.plan.changes.controls,
+            )
+        ))
+        self.assertEqual(mirrored_aggregate.value, 25.0)
+        self.assertEqual(mirrored_control.rotation, (-3.0, -4.0, 5.0))
+        self.assertEqual(source_after, source_before)
+        self.assertEqual(
+            body_hand_pose_document_from_snapshot(host.channels),
+            result.plan.expected_document,
+        )
         self.assertEqual(host.transaction_count, 1)
 
     def test_pose_import_keys_native_animation_sources(self):
