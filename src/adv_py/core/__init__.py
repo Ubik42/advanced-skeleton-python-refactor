@@ -216,6 +216,13 @@ from .body_character_global import (
     audit_body_character_global,
     plan_body_character_global,
 )
+from .body_hand_fit import (
+    BODY_HAND_DIGITS,
+    BODY_HAND_SEGMENTS,
+    BodyHandDigit,
+    body_hand_source_joint_names,
+    synthetic_body_with_hand_source_fit_template,
+)
 from .body_limb_twist import (
     BodyLimbTwistIssue,
     BodyLimbTwistJointSpec,
@@ -575,6 +582,9 @@ __all__ = [
     "BodyCharacterGlobalPlan",
     "BodyCharacterGlobalSnapshot",
     "BodyCharacterGlobalValidationError",
+    "BODY_HAND_DIGITS",
+    "BODY_HAND_SEGMENTS",
+    "BodyHandDigit",
     "BodyLimbStretchIssue",
     "BodyLimbStretchPlan",
     "BodyLimbStretchSideSpec",
@@ -888,6 +898,7 @@ __all__ = [
     "plan_body_arm_fk_controls",
     "plan_body_limb_fk_controls",
     "plan_body_leg_fk_controls",
+    "body_hand_source_joint_names",
     "oriented_body_provenance",
     "plan_simple_fit_orientations",
     "plan_world_fit_orientations",
@@ -901,6 +912,7 @@ __all__ = [
     "transpose_flat",
     "validate_plan",
     "synthetic_body_source_fit_template",
+    "synthetic_body_with_hand_source_fit_template",
     "synthetic_upper_body_fit_template",
     "validate_fit_template",
     "with_translation",

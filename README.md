@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成六十六个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、30 关节 Body 构建与安全 ReBuild，以及双臂完整 FK/IK 路径、双腿原子 FK/IK/Foot Rig 和统一角色总控。Arm 已覆盖模式显隐、含拉伸段长的双向匹配、带全局比例补偿的 IK stretch、轴向 twist 与横向体积保持；Leg 主流程覆盖五关节 mechanisms、四层 FK controls、Ankle/Pole Vector/Toe IK controls、包含 Toes 的旋转 blend、双段 IK stretch、stretch bias、knee pin、主轴感知 twist/volume helpers 和双侧 reverse-foot pivot。`BuildBodyCharacterRig` 现在会从同一份安全输入预演 Arm 与 Leg，在一个顶层 Undo Chunk 内构建两套 limb，并创建 `GlobalOffset → Global` 总控；Global 的 TRS 驱动 Body 根和八个 Arm/Leg 顶层根，统一 `globalScale` 同时接入九个根的三轴比例及 `armGlobalScale`/`legGlobalScale` 补偿。任一阶段失败都会恢复干净 Body、Fit 与 ReBuild 安全状态。Skin 已覆盖显式绑定、稀疏权重写入、JSON 往返、路径映射、显式镜像及严格几何配对。手指控制、自动权重和产品 UI 尚未实现。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成六十七个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、基础 30 关节与五指 70 关节 Body 构建、安全 ReBuild、双臂完整 FK/IK、双腿原子 FK/IK/Foot Rig 和统一角色总控。新的五指源模板在现有 Right Wrist 下定义 Thumb/Index/Middle/Ring/Pinky 各四个 Fit joints，以 Middle 为 Wrist 明确朝向分支；38 个源 joints 会展开成 6 个中心、32 个右侧和 32 个左侧 Body joints，其中 40 个是左右手指。`BuildBodyCharacterRig` 会从同一份安全输入预演 Arm 与 Leg，在一个顶层 Undo Chunk 内构建两套 limb，并创建统一 Global control；Global 的 TRS 驱动 Body 根和八个 Arm/Leg 顶层根，`globalScale` 同时接入九个根及 Arm/Leg 比例补偿。Skin 已覆盖显式绑定、稀疏权重写入、JSON 往返、路径映射、显式镜像及严格几何配对。手指控制、自动权重和产品 UI 尚未实现。
 
 ## 当前完成
 
@@ -24,7 +24,7 @@
 - `CreateFitTemplate` 可在空容器内原子创建任意已验证的 `FitTemplateSpec`；`CreateMinimalFitTemplate` 保留三关节兼容入口。
 - `synthetic_upper_body_fit_template` 生成 14 关节 T-pose 躯干、颈、头和双臂树，验证 Spine2 三分支、局部位置及 Maya 标签。该素材由代码独立生成，不读取授权安装中的身体模板。
 - `BuildSyntheticUpperBodyFit` 在空且已配置的 FitSkeleton 上先预演完整层级与 11 个朝向，再用一个 Undo 事务创建并朝向 14 关节上半身树；创建后的实际计划若与预演不同，会回滚整棵树。
-- `BuildOrientedFitTemplate` 把模板创建、真实场景计划复算与朝向提交组合成可复用的一次 Undo 用例；`BuildSyntheticBodySourceFit` 生成 18 关节的中心链与单侧 Right 臂/腿源拓扑。
+- `BuildOrientedFitTemplate` 把模板创建、真实场景计划复算与朝向提交组合成可复用的一次 Undo 用例；`BuildSyntheticBodySourceFit` 保留 18 关节基础源拓扑，`BuildSyntheticBodyWithHandSourceFit` 则在同一身体上增加一个可镜像的完整五指源。五个四关节链都使用 Finger 标签，Wrist 显式选择 Middle 分支朝向；预演、38 关节创建、28 个朝向写入、复检和失败回滚位于一个事务。
 - `PlanFitSymmetry` 从完整 Fit 层级和镜像元数据生成 `_M/_R/_L` 构建实例。默认 18 个源关节展开为 30 个实例，`noMirror/noMirrorLeft` 沿父链继承，未标记的 Left 起始分支会在构建前拒绝。
 - `BuildBodySkeleton` 在全量名称与源标签预检后，把 30 个对称实例作为根级 Maya joint DAG 一次提交；构建后复检路径、父级、世界位置、Maya side、标签与中性朝向，并确认 Fit 源未改变。
 - `OrientBodySkeleton` 把 Fit 世界轴传递给 M/R 输出；L 输出反射 X Aim 与 Y Secondary 后用叉积重建右手 Z 轴。写入前检查完整 `jointOrient` 可写性，单事务写入后恢复全部世界位置，并复检拓扑、位置、朝向、Fit 输入和幂等性。
@@ -103,4 +103,4 @@ py -3 -m unittest discover -s tests -v
 - 当前 Maya Arm 与 Leg 均支持左右独立 IK stretch、主轴感知 twist helper 和只在 IK 模式响应的可调正交体积保持；Leg 还支持保持总长度的上下段 stretch bias，以及由 Pole Vector 与 Ankle 控制实时测距的 knee pin。完整 Character 入口已用统一 Global TRS 和正值等比 `globalScale` 串联 Body、Arm 与 Leg，同时保留两套 limb 各自的切换和段长合同；非均匀缩放、shear、World Match 与镜像 limb 尚未完成。
 - 当前 Skin Bind 只接受调用方明确给出的单个 mesh 与 joint 列表；JSON 和 influence 映射都要求调用方给出完整路径及对应关系，不会自动猜测 namespace、短名或左右 influence。几何镜像只接受严格 X 平面对称顶点，不处理拓扑不对称或近似重采样。尚不支持权重模板、热区/测地线算法、批量绑定或解绑迁移。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya 主线已经有完整 Character 入口：双臂与双腿 FK/IK/Foot 在同一事务构建，统一 Global control 驱动 Body 和九个已拥有根层级，并把等比缩放接入 Arm/Leg 的 stretch 与 knee pin 比例补偿；一次 Undo 可整体移除角色 Rig 并恢复 Body/Fit。下一步继续在 Maya 内建立 Hand/手指 Fit 与控制的最小稳定合同，再逐步补齐变形和产品入口；World Match、非均匀缩放与 Blender 迁移仍待 Maya 第一阶段达到门槛后进入。
+- 当前 Maya 主线已经有完整 Character 入口：双臂与双腿 FK/IK/Foot 在同一事务构建，统一 Global control 驱动 Body 和九个已拥有根层级，并把等比缩放接入 Arm/Leg 的 stretch 与 knee pin 比例补偿；一次 Undo 可整体移除角色 Rig 并恢复 Body/Fit。Hand 第一段已完成五指 Fit、明确 Wrist 分支朝向、左右镜像和 70 关节 Body 物化；下一步继续在 Maya 内建立分层手指 FK controls，再接入 Character 事务。World Match、非均匀缩放与 Blender 迁移仍待 Maya 第一阶段达到门槛后进入。

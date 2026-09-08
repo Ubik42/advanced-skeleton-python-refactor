@@ -4,6 +4,7 @@ from dataclasses import replace
 
 from adv_py.application import (
     BuildSyntheticBodySourceFit,
+    BuildSyntheticBodyWithHandSourceFit,
     BuildSyntheticUpperBodyFit,
 )
 from adv_py.core import (
@@ -165,6 +166,20 @@ class FakeUpperBodyFitHost:
 
 
 class UpperBodyFitTests(unittest.TestCase):
+    def test_builds_five_digit_body_source_in_one_transaction(self):
+        host = FakeUpperBodyFitHost()
+        use_case = BuildSyntheticBodyWithHandSourceFit(host)
+
+        preview = use_case.plan()
+        result = use_case.apply()
+
+        self.assertTrue(preview.ready)
+        self.assertEqual(len(preview.template_plan.template.joints), 38)
+        self.assertEqual(len(preview.predicted_orientation_changes), 28)
+        self.assertEqual(len(result.template.hierarchy.joints), 38)
+        self.assertEqual(len(result.orientation.plan.changes), 28)
+        self.assertEqual(host.transaction_count, 1)
+
     def test_builds_source_leg_and_explicit_foot_branches_in_one_transaction(self):
         host = FakeUpperBodyFitHost()
         use_case = BuildSyntheticBodySourceFit(host)
