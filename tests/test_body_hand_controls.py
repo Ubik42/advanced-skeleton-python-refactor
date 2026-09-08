@@ -39,6 +39,7 @@ from adv_py.core import (
     IDENTITY_AXES,
     audit_body_hand_fk_controls,
     audit_body_hand_fk_input,
+    audit_body_hand_pose_channels,
     audit_body_hand_pose_controls,
     body_hand_pose_document_from_json,
     body_hand_pose_document_from_snapshot,
@@ -105,6 +106,31 @@ def _hand_scene():
         provenance=provenance_state,
     )
     return fit, body
+
+
+def _namespace_path(path, namespace):
+    if path is None:
+        return None
+    return "|" + "|".join(
+        f"{namespace}:{part}"
+        for part in path.split("|")
+        if part
+    )
+
+
+def _namespaced_body(body, namespace):
+    return replace(
+        body,
+        root=_namespace_path(body.root, namespace),
+        joints=tuple(
+            replace(
+                joint,
+                path=_namespace_path(joint.path, namespace),
+                parent_path=_namespace_path(joint.parent_path, namespace),
+            )
+            for joint in body.joints
+        ),
+    )
 
 
 def _pose_snapshot(plan):
@@ -391,6 +417,63 @@ class BodyHandControlTests(unittest.TestCase):
             self.assertEqual(controls[2].parent_path, controls[1].control_path)
             self.assertGreater(controls[0].radius, controls[1].radius)
             self.assertGreater(controls[1].radius, controls[2].radius)
+
+    def test_namespaced_hand_plan_keeps_semantic_channel_keys(self):
+        _, body = _hand_scene()
+        hand = plan_body_hand_fk_controls(
+            _namespaced_body(body, "Shot:Hero"),
+            namespace="Shot:Hero",
+        )
+        pose = plan_body_hand_pose_controls(hand)
+        channels = BodyHandPoseChannelSnapshot(
+            aggregates=tuple(
+                BodyHandAggregatePoseChannelState(
+                    spec.side,
+                    spec.name,
+                    spec.plug,
+                    0.0,
+                    spec.minimum,
+                    spec.maximum,
+                    True,
+                    None,
+                )
+                for spec in pose.attributes
+            ),
+            controls=tuple(
+                BodyHandFkPoseChannelState(
+                    spec.side,
+                    next(
+                        digit
+                        for digit in BODY_HAND_DIGITS
+                        if digit.value in spec.control_name
+                    ),
+                    next(
+                        segment
+                        for segment in ("1", "2", "3")
+                        if f"{segment}FK_" in spec.control_name
+                    ),
+                    spec.control_path,
+                    (0.0, 0.0, 0.0),
+                    frozenset({"x", "y", "z"}),
+                    (None, None, None),
+                )
+                for spec in hand.controls
+            ),
+        )
+
+        self.assertTrue(all(
+            root.name.startswith("Shot:Hero:")
+            for root in hand.roots
+        ))
+        self.assertTrue(all(
+            spec.node_name.startswith("Shot:Hero:")
+            for spec in pose.curls + pose.spreads
+        ))
+        self.assertFalse(audit_body_hand_pose_channels(hand, pose, channels))
+        document = body_hand_pose_document_from_snapshot(channels)
+        self.assertNotIn("Shot:Hero", body_hand_pose_document_to_json(document))
+        with self.assertRaisesRegex(ValueError, "namespace"):
+            plan_body_hand_fk_controls(body, namespace="Shot::Hero")
 
     def test_pose_plan_layers_curl_and_spread_on_fk_offsets(self):
         _, body = _hand_scene()

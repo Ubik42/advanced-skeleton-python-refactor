@@ -4121,7 +4121,10 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 incoming_source=source(spec.plug),
             ))
 
-        by_name = {spec.control_name: spec for spec in hand.controls}
+        by_name = {
+            spec.control_name.rsplit(":", 1)[-1]: spec
+            for spec in hand.controls
+        }
         controls = []
         for side in (FitBuildSide.RIGHT, FitBuildSide.LEFT):
             for digit in BODY_HAND_DIGITS:

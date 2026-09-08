@@ -126,7 +126,12 @@ class InspectBodyHandPoseRig:
                 "Hand Pose 需要本工程拥有的完整 70 关节 Body："
                 + "；".join(issue.message for issue in provenance_issues)
             )
-        hand = plan_body_hand_fk_controls(body, radius=control_radius)
+        namespace = _body_namespace(body)
+        hand = plan_body_hand_fk_controls(
+            body,
+            radius=control_radius,
+            namespace=namespace,
+        )
         pose = plan_body_hand_pose_controls(hand)
         hand_snapshot = self._host.capture_body_hand_fk_controls(hand)
         hand_issues = audit_body_hand_fk_controls(
@@ -284,3 +289,22 @@ def _json_path(value: str | os.PathLike[str]) -> Path:
     if path.suffix.casefold() != ".json":
         raise FitSkeletonValidationError("Hand Pose 文件必须使用 .json 扩展名")
     return path
+
+
+def _body_namespace(body: BodySkeletonSnapshot) -> str | None:
+    root_leaf = body.root.rsplit("|", 1)[-1]
+    namespace, separator, root_name = root_leaf.rpartition(":")
+    if root_name != "Root_M":
+        raise FitSkeletonValidationError(
+            "Hand Pose Body 根必须使用 Root_M 基名"
+        )
+    expected = namespace if separator else None
+    for joint in body.joints:
+        leaf = joint.path.rsplit("|", 1)[-1]
+        current, has_namespace, _name = leaf.rpartition(":")
+        actual = current if has_namespace else None
+        if actual != expected:
+            raise FitSkeletonValidationError(
+                "Hand Pose Body joints 必须位于同一 Maya namespace"
+            )
+    return expected

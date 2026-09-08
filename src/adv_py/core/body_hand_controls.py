@@ -206,6 +206,7 @@ def plan_body_hand_fk_controls(
     body: BodySkeletonSnapshot,
     *,
     radius: float = 0.3,
+    namespace: str | None = None,
 ) -> BodyHandFkControlPlan:
     if (
         isinstance(radius, bool)
@@ -216,6 +217,7 @@ def plan_body_hand_fk_controls(
         raise BodyHandControlValidationError(
             "Hand FK 控制半径必须是正有限数值"
         )
+    prefix = _namespace_prefix(namespace)
     by_name = {joint.name: joint for joint in body.joints}
     if len(by_name) != len(body.joints):
         raise BodyHandControlValidationError("Body joint 名称不唯一")
@@ -229,7 +231,7 @@ def plan_body_hand_fk_controls(
             raise BodyHandControlValidationError(
                 f"Body 缺少唯一的 Wrist_{suffix}"
             )
-        root_name = f"AdvPy_HandFKControls_{suffix}"
+        root_name = f"{prefix}AdvPy_HandFKControls_{suffix}"
         root_path = f"{wrist.path}|{root_name}"
         roots.append(BodyHandFkRootSpec(
             side=side,
@@ -260,11 +262,15 @@ def plan_body_hand_fk_controls(
             parent_path = root_path
             for index, state in enumerate(states[:-1], start=1):
                 offset_name = (
-                    f"AdvPy_{digit.value}{index}FKOffset_{suffix}"
+                    f"{prefix}AdvPy_{digit.value}{index}FKOffset_{suffix}"
                 )
-                control_name = f"AdvPy_{digit.value}{index}FK_{suffix}"
+                control_name = (
+                    f"{prefix}AdvPy_{digit.value}{index}FK_{suffix}"
+                )
                 offset_path = f"{parent_path}|{offset_name}"
-                pose_name = f"AdvPy_{digit.value}{index}Pose_{suffix}"
+                pose_name = (
+                    f"{prefix}AdvPy_{digit.value}{index}Pose_{suffix}"
+                )
                 pose_path = f"{offset_path}|{pose_name}"
                 control_path = f"{pose_path}|{control_name}"
                 controls.append(BodyHandFkControlSpec(
@@ -276,7 +282,7 @@ def plan_body_hand_fk_controls(
                     control_name=control_name,
                     parent_path=parent_path,
                     constraint_name=(
-                        f"AdvPy_{digit.value}{index}FKOrient_{suffix}"
+                        f"{prefix}AdvPy_{digit.value}{index}FKOrient_{suffix}"
                     ),
                     world_position=state.world_position,
                     world_axes=state.world_axes,
@@ -291,7 +297,24 @@ def plan_body_hand_pose_controls(
     hand: BodyHandFkControlPlan,
 ) -> BodyHandPosePlan:
     roots = {root.side: root for root in hand.roots}
-    controls = {control.control_name: control for control in hand.controls}
+    namespaces = {_node_namespace(root.name) for root in hand.roots}
+    if len(namespaces) != 1:
+        raise BodyHandControlValidationError(
+            "Hand 聚合姿态的双侧根必须位于同一 namespace"
+        )
+    namespace = next(iter(namespaces))
+    if any(
+        _node_namespace(control.control_name) != namespace
+        for control in hand.controls
+    ):
+        raise BodyHandControlValidationError(
+            "Hand 聚合姿态的 FK controls 必须位于同一 namespace"
+        )
+    prefix = _namespace_prefix(namespace)
+    controls = {
+        _base_node_name(control.control_name): control
+        for control in hand.controls
+    }
     if len(roots) != 2 or set(roots) != {
         FitBuildSide.RIGHT,
         FitBuildSide.LEFT,
@@ -359,7 +382,8 @@ def plan_body_hand_pose_controls(
                     digit=digit,
                     segment=segment,
                     node_name=(
-                        f"AdvPy_HandCurl_{digit.value}{segment}_{suffix}"
+                        f"{prefix}AdvPy_HandCurl_"
+                        f"{digit.value}{segment}_{suffix}"
                     ),
                     source_plugs=(hand_curl, digit_curl),
                     weights=(weight, weight),
@@ -373,7 +397,9 @@ def plan_body_hand_pose_controls(
                 spreads.append(BodyHandSpreadSpec(
                     side=side,
                     digit=digit,
-                    node_name=f"AdvPy_HandSpread_{digit.value}_{suffix}",
+                    node_name=(
+                        f"{prefix}AdvPy_HandSpread_{digit.value}_{suffix}"
+                    ),
                     source_plug=hand_spread,
                     factor=spread_factor,
                     destination_plug=(
@@ -607,3 +633,28 @@ def _axes_match(left: AxisFrame, right: AxisFrame, tolerance: float) -> bool:
         _vector_matches(current, wanted, tolerance)
         for current, wanted in zip(left, right)
     )
+
+
+def _namespace_prefix(namespace: str | None) -> str:
+    if namespace is None:
+        return ""
+    if (
+        not isinstance(namespace, str)
+        or not namespace
+        or namespace.startswith(":")
+        or namespace.endswith(":")
+        or "::" in namespace
+        or any(character.isspace() for character in namespace)
+        or any(character in namespace for character in "|.")
+    ):
+        raise BodyHandControlValidationError("Hand namespace 无效")
+    return f"{namespace}:"
+
+
+def _node_namespace(name: str) -> str | None:
+    namespace, separator, _base = name.rpartition(":")
+    return namespace if separator else None
+
+
+def _base_node_name(name: str) -> str:
+    return name.rsplit(":", 1)[-1]

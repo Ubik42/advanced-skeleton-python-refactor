@@ -422,7 +422,10 @@ def _validate_document(
 
 
 def _control_spec_by_key(hand: BodyHandFkControlPlan) -> dict:
-    by_name = {spec.control_name: spec for spec in hand.controls}
+    by_name = {
+        spec.control_name.rsplit(":", 1)[-1]: spec
+        for spec in hand.controls
+    }
     if len(by_name) != len(hand.controls):
         return {}
     values = {}
