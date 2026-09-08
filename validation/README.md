@@ -151,6 +151,8 @@
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_source_smoke.py validation\results\maya2024-mocap-source.json
 
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_mapping_smoke.py validation\results\maya2024-mocap-mapping.json
+
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_character_hand_smoke.py validation\results\maya2024-body-character-hand.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_hand_pose_smoke.py validation\results\maya2024-body-hand-pose.json
@@ -234,6 +236,7 @@
 - 原子 Body 构建和 ReBuild 已形成一次 Undo 黄金路径，并可从五指源生成 70 关节 Body；Hand 已有双侧 30 个分层 FK controls、30 个零通道 Pose 层，以及每侧全局/单指 curl 和全局 spread。Hand Pose schema v1 已验证无 Maya 路径导出、摘要复检、五个变化通道静态导入、当前帧原生 animCurve 写键、显式单侧恢复、左右镜像、重复执行零修改和单次 Undo；同一合成资产的 `RigA`/`RigB` 双引用验证还覆盖显式 namespace 解析、跨实例迁移和源实例隔离。命名预设库额外覆盖安全中文名称、原子保存、大小写冲突拒绝、规范名称查询、完整目录校验、单侧应用，以及场景 Undo 后文件仍保留。单侧与镜像只要求目标侧可写，源侧或非目标侧驱动保持不变；写键只接受未连接通道或 Maya 原生 animCurve，目标侧的约束、表达式和未知驱动会在事务前拒绝。预设重命名/删除/缩略图、动画区间 bake、切线策略和动画片段管理尚未实现。Arm 已覆盖完整 FK/IK 控制、切换、匹配、stretch、twist 与 volume，Leg 默认主流程已组合 mechanisms、FK/IK、blend、显隐、stretch bias、knee pin、twist/volume、五级 Foot pivot、自动 `footRoll` 和双向匹配。Character 入口用一个外层事务组合 Arm/Leg/Global，并在完整五指 Body 上自动纳入 Hand；30 关节 Body 保持兼容，残缺五指会被预检拒绝。自动角色发现、逐指 spread、完整变形系统或产品 UI 尚未实现。
 - Root Motion 案例覆盖本工程 owned Body 的 Y-Up/Z-Up 平面位移与 yaw 实时驱动、选择保持和单次 Undo；Export Skeleton 案例覆盖 Root Motion 下完整 30 关节输出层级、实时世界姿态、来源/provenance、ReBuild 阻断与 Undo。统一 bake 案例再覆盖 Root Motion 三通道与 30×9 个 joint TRS 通道逐帧 linear keys、全部 Body 依赖移除、独立回放和 Undo 恢复；FBX 案例用显式 31-joint 选择写入临时文件，在专用临时 Undo 事务中规范发布名称并剥离内部属性，验证原场景/Undo 顶部恢复和文件摘要后拒绝覆盖发布，再由新场景回读确认无开发前缀、namespace、Fit/Body/control 或内部元数据泄漏。显式 Profile 再覆盖 FBX2018/2020、Y/Z Up、cm/m、binary/ASCII，复检 exporter 回读和文件头版本；默认保持场景轴与单位。尚未包含持久 export objectSet、曲线简化、更多线性单位、自动引擎 Profile 或游戏引擎专用骨名表。
 - MoCap Source 案例只读检查调用方明确指定的 joint 根，要求连续 joint 父链、统一 namespace、唯一可移植名和直接 animation curve，并报告动画范围。当前不导入外部文件，不猜测厂商命名，不创建映射、约束、重定向或 bake。
+- MoCap Mapping 案例把调用方显式 source/target 短名解析到已验证来源和 owned Body，检查一一对应、根通道、非根平移及最近映射祖先顺序。当前只生成只读计划，不创建约束、重定向或 bake，也不提供厂商自动映射。
 - provenance 只证明本工程写入的产物身份和声明数量；删除资格还必须通过当前 DAG 与外部连接安全评估，不能只凭标记直接删除。
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。

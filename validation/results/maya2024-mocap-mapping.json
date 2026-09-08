@@ -1,0 +1,22 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 32444,
+  "slice": "mocap_body_mapping",
+  "owned_body_detected": true,
+  "explicit_mapping_valid": true,
+  "five_entries_resolved": true,
+  "source_namespace_preserved": true,
+  "clip_range_preserved": true,
+  "root_paths_resolved": true,
+  "animated_attributes_resolved": true,
+  "reversed_topology_detected": true,
+  "inspection_is_read_only": true,
+  "scene_cleanup": true,
+  "body_joint_count": 30,
+  "mapping_count": 5,
+  "start_time": 1.0,
+  "end_time": 20.0,
+  "duration_seconds": 4.154,
+  "status": "passed"
+}

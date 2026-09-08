@@ -8,6 +8,7 @@ from adv_py.core.mocap_source import (
     MocapSourceSnapshot,
     MocapSourceValidationError,
 )
+from adv_py.core.body_skeleton import BodySkeletonSnapshot
 
 
 class MayaMocapSourceReader:
@@ -94,3 +95,19 @@ class MayaMocapSourceReader:
             joints=tuple(joints),
             channels=tuple(channels),
         )
+
+
+class MayaMocapMappingReader:
+    """Compose the dedicated MoCap reader with the canonical Body reader."""
+
+    def __init__(self) -> None:
+        from .maya_body import MayaBodyBuildHost
+
+        self._source_reader = MayaMocapSourceReader()
+        self._body_reader = MayaBodyBuildHost()
+
+    def capture_mocap_source(self, root_name: str) -> MocapSourceSnapshot:
+        return self._source_reader.capture_mocap_source(root_name)
+
+    def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot:
+        return self._body_reader.capture_body_skeleton(root_name)

@@ -283,6 +283,15 @@ from .mocap_source import (
     audit_mocap_source,
     summarize_mocap_source,
 )
+from .mocap_mapping import (
+    MocapBodyMappingPlan,
+    MocapJointMapping,
+    MocapMappingIssue,
+    MocapMappingValidationError,
+    ResolvedMocapJointMapping,
+    audit_mocap_body_mapping,
+    plan_mocap_body_mapping,
+)
 from .body_hand_fit import (
     BODY_HAND_DIGITS,
     BODY_HAND_SEGMENTS,
@@ -740,6 +749,8 @@ __all__ = [
     "MocapDriverKind", "MocapJointSnapshot", "MocapSourceIssue",
     "MocapSourceSnapshot", "MocapSourceSummary",
     "MocapSourceValidationError",
+    "MocapBodyMappingPlan", "MocapJointMapping", "MocapMappingIssue",
+    "MocapMappingValidationError", "ResolvedMocapJointMapping",
     "BodyCharacterGlobalPlan",
     "BodyCharacterGlobalSnapshot",
     "BodyCharacterGlobalValidationError",
@@ -1024,6 +1035,8 @@ __all__ = [
     "audit_body_fbx_profile",
     "audit_mocap_source",
     "summarize_mocap_source",
+    "audit_mocap_body_mapping",
+    "plan_mocap_body_mapping",
     "audit_body_limb_stretch",
     "audit_body_limb_twist",
     "audit_body_arm_twist",

@@ -4,7 +4,7 @@ from .blender import BlenderAdapterStatus, BlenderRigHost
 from .maya import MayaAdapterStatus, MayaRigHost
 from .maya_body import MayaBodyBuildHost
 from .maya_fit import MayaFitJointHost, MayaJointLabelHost
-from .maya_mocap import MayaMocapSourceReader
+from .maya_mocap import MayaMocapMappingReader, MayaMocapSourceReader
 from .memory import InMemoryRigHost
 
 __all__ = [
@@ -16,5 +16,6 @@ __all__ = [
     "MayaFitJointHost",
     "MayaJointLabelHost",
     "MayaMocapSourceReader",
+    "MayaMocapMappingReader",
     "MayaRigHost",
 ]
