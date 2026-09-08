@@ -78,6 +78,11 @@ class FitSkeletonDocumentHost(Protocol):
         container: str,
         setting: FitSkeletonSetting,
     ) -> None: ...
+    def add_fit_orientation_axis_configuration(
+        self,
+        container: str,
+        configuration: FitOrientationAxisConfiguration,
+    ) -> None: ...
     def set_fit_skeleton_setting(
         self,
         container: str,
@@ -476,10 +481,6 @@ class CreateAndImportFitSkeleton:
         blockers = []
         if self._host.scene_up_axis() is not document.up_axis:
             blockers.append("文档与 Maya 场景 Up Axis 不一致")
-        if document.axis_configuration != FitOrientationAxisConfiguration():
-            blockers.append(
-                "新建容器导入暂只支持默认 X/Y 且关闭 World Match 的轴配置"
-            )
         if collisions:
             blockers.append(
                 "容器或待创建关节与场景节点重名："
@@ -531,6 +532,10 @@ class CreateAndImportFitSkeleton:
                 )
             for setting in plan.settings.settings:
                 self._host.add_fit_skeleton_setting(container, setting)
+            self._host.add_fit_orientation_axis_configuration(
+                container,
+                plan.document.axis_configuration,
+            )
             _, created_paths = _materialize_fit_joints(
                 self._host,
                 container,

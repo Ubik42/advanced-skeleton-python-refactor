@@ -31,6 +31,8 @@ def main(output: Path) -> int:
         from adv_py.core import (
             FitJointField,
             FitJointPatch,
+            FitLocalDirection,
+            FitOrientationAxisConfiguration,
             FitSkeletonField,
             fit_skeleton_documents_match,
         )
@@ -66,6 +68,16 @@ def main(output: Path) -> int:
                 [source_root],
                 FitJointPatch.from_values(global_translate=True),
             )
+            axis_configuration = FitOrientationAxisConfiguration(
+                FitLocalDirection.NEGATIVE_X,
+                FitLocalDirection.POSITIVE_Z,
+                True,
+            )
+            with host.transaction("配置测试 FitSkeleton 轴"):
+                host.add_fit_orientation_axis_configuration(
+                    source_container,
+                    axis_configuration,
+                )
             cmds.setAttr(f"{source_container}.visGap", 0.35)
             cmds.setAttr(f"{source_container}.visGeo", True)
             exported = ExportFitSkeleton(host).apply(
@@ -100,6 +112,26 @@ def main(output: Path) -> int:
                 if node.short_name == "Root"
             )
             root_metadata = host.read_fit_joint_metadata(target_root)
+            restored_axis_configuration = (
+                imported.verified.orientation.axis_configuration
+            )
+            axis_enum_layout_restored = (
+                cmds.attributeQuery(
+                    "primaryAxis",
+                    node=target,
+                    listEnum=True,
+                )
+                == ["X:Y:Z:-X:-Y:-Z"]
+                and cmds.attributeQuery(
+                    "secondaryAxis",
+                    node=target,
+                    listEnum=True,
+                )
+                == ["X:Y:Z:-X:-Y:-Z"]
+                and int(cmds.getAttr(f"{target}.primaryAxis")) == 3
+                and int(cmds.getAttr(f"{target}.secondaryAxis")) == 2
+                and bool(cmds.getAttr(f"{target}.worldmatch"))
+            )
             selection_preserved = (cmds.ls(selection=True) or []) == [marker]
 
             cmds.undo()
@@ -156,6 +188,10 @@ def main(output: Path) -> int:
                     in root_metadata.present_fields
                     and root_metadata.global_translate is True
                 ),
+                "nondefault_axis_configuration_restored": (
+                    restored_axis_configuration == axis_configuration
+                    and axis_enum_layout_restored
+                ),
                 "custom_display_radius_verified": (
                     abs(imported.verified.container.bounding_size[0] - 8.0)
                     <= 1e-5
@@ -209,6 +245,9 @@ def main(output: Path) -> int:
             "joint_count": 38,
             "setting_count": len(target_settings.settings),
             "display_radius": 4.0,
+            "primary_axis": axis_configuration.primary.value,
+            "secondary_axis": axis_configuration.secondary.value,
+            "world_match": axis_configuration.world_match,
             "duration_seconds": round(time.perf_counter() - started, 3),
             "status": "passed" if passed else "failed",
         }

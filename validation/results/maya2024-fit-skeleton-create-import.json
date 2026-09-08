@@ -1,10 +1,11 @@
 {
   "host": "maya",
   "version": "2024",
-  "pid": 13652,
+  "pid": 37492,
   "slice": "fit_skeleton_create_and_import",
   "preview_ready_and_read_only": true,
   "created_container_settings_and_full_document": true,
+  "nondefault_axis_configuration_restored": true,
   "custom_display_radius_verified": true,
   "selection_preserved": true,
   "one_undo_removed_container_and_tree": true,
@@ -15,6 +16,9 @@
   "joint_count": 38,
   "setting_count": 21,
   "display_radius": 4.0,
-  "duration_seconds": 4.391,
+  "primary_axis": "-x",
+  "secondary_axis": "+z",
+  "world_match": true,
+  "duration_seconds": 5.07,
   "status": "passed"
 }

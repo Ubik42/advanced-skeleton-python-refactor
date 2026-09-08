@@ -12,6 +12,8 @@ FitSkeleton 的增量联合也已进入纯 Python 核心：共享关节必须保
 
 空场景新建导入进一步明确了宿主边界：文件解析、完整设置合成、名称预检和关节物化顺序位于应用层，Maya 圆环容器、通道属性与 Undo Chunk 位于 adapter。未来 Blender 可以把同一计划落到 Armature/EditBone，但不能照搬 Maya 容器形状或属性实现；当前仍不新增 Blender 代码。
 
+非默认 Primary/Secondary/World Match 也遵循这一边界。核心文档保存六方向语义，Maya adapter 用 enum/bool 属性表达；未来 Blender 必须将同一语义转换为 EditBone 矩阵与 roll 规则，不能复制 Maya 的属性布局。第一阶段仍只验证 Maya 写入与读取闭环。
+
 ## 必须分别实现的部分
 
 | 语义 | Maya | Blender |

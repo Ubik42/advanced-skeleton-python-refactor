@@ -164,6 +164,16 @@ _KEYABLE_FIT_SKELETON_FIELDS = frozenset(
     }
 )
 
+_FIT_AXIS_ENUM_NAMES = ("X", "Y", "Z", "-X", "-Y", "-Z")
+_FIT_AXIS_ENUM_INDEX = {
+    "+x": 0,
+    "+y": 1,
+    "+z": 2,
+    "-x": 3,
+    "-y": 4,
+    "-z": 5,
+}
+
 
 class MayaFitJointHost:
     """Maya adapter for FitSkeleton and explicit Fit joint operations."""
@@ -257,6 +267,57 @@ class MayaFitJointHost:
                 channelBox=False,
             )
         return container
+
+    def add_fit_orientation_axis_configuration(
+        self,
+        container: str,
+        configuration: FitOrientationAxisConfiguration,
+    ) -> None:
+        self._require_transaction()
+        if not isinstance(configuration, FitOrientationAxisConfiguration):
+            raise FitSkeletonValidationError(
+                "FitSkeleton 轴配置类型无效"
+            )
+        container_path = self._resolve_transform(
+            container,
+            FitSkeletonValidationError,
+        )
+        attributes = ("primaryAxis", "secondaryAxis", "worldmatch")
+        existing = tuple(
+            attribute
+            for attribute in attributes
+            if self._attribute_exists(container_path, attribute)
+        )
+        if existing:
+            raise FitSkeletonValidationError(
+                "FitSkeleton 轴配置属性已存在，拒绝覆盖："
+                + "、".join(existing)
+            )
+        self._transaction_changed = True
+        enum_names = ":".join(_FIT_AXIS_ENUM_NAMES)
+        self._cmds.addAttr(
+            container_path,
+            longName="primaryAxis",
+            attributeType="enum",
+            enumName=enum_names,
+            defaultValue=_FIT_AXIS_ENUM_INDEX[configuration.primary.value],
+            keyable=True,
+        )
+        self._cmds.addAttr(
+            container_path,
+            longName="secondaryAxis",
+            attributeType="enum",
+            enumName=enum_names,
+            defaultValue=_FIT_AXIS_ENUM_INDEX[configuration.secondary.value],
+            keyable=True,
+        )
+        self._cmds.addAttr(
+            container_path,
+            longName="worldmatch",
+            attributeType="bool",
+            defaultValue=configuration.world_match,
+            keyable=True,
+        )
 
     def inspect_fit_container(self, name: str) -> FitContainerState:
         container = self._resolve_transform(name, FitSkeletonValidationError)

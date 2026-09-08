@@ -298,6 +298,15 @@ class FakeFitSkeletonDocumentHost:
             world_axes=world_axes,
         )
 
+    def add_fit_orientation_axis_configuration(
+        self,
+        container,
+        configuration,
+    ):
+        if container != self.container:
+            raise ValueError("容器不存在")
+        self.axis_configuration = configuration
+
 
 class FakeNewFitSkeletonHost(FakeFitSkeletonDocumentHost):
     def __init__(self):
@@ -324,6 +333,7 @@ class FakeNewFitSkeletonHost(FakeFitSkeletonDocumentHost):
             self.container_exists,
             self.joints,
             self.settings,
+            self.axis_configuration,
         )
         self.transaction_count += 1
         try:
@@ -334,6 +344,7 @@ class FakeNewFitSkeletonHost(FakeFitSkeletonDocumentHost):
                 self.container_exists,
                 self.joints,
                 self.settings,
+                self.axis_configuration,
             ) = before
             raise
 
@@ -559,7 +570,7 @@ class FitSkeletonIoTests(unittest.TestCase):
                 CreateAndImportFitSkeleton(target).apply(path)
             self.assertEqual(target.transaction_count, 1)
 
-    def test_create_import_axis_and_name_conflicts_stop_before_transaction(self):
+    def test_create_import_restores_nondefault_axes_and_rejects_conflicts(self):
         source = FakeFitSkeletonDocumentHost(populated=True)
         target = FakeNewFitSkeletonHost()
         target.external_collisions["Root"] = ("|Other|Root",)
@@ -582,10 +593,27 @@ class FitSkeletonIoTests(unittest.TestCase):
             nondefault = CreateAndImportFitSkeleton(target).plan(
                 nondefault_path
             )
-            self.assertFalse(nondefault.ready)
-            self.assertIn("默认 X/Y", "；".join(nondefault.blockers))
-            self.assertEqual(target.transaction_count, 0)
-            self.assertFalse(target.container_exists)
+            self.assertTrue(nondefault.ready)
+            created = CreateAndImportFitSkeleton(target).apply(
+                nondefault_path
+            )
+            self.assertEqual(
+                created.verified.orientation.axis_configuration,
+                source.axis_configuration,
+            )
+            self.assertEqual(target.transaction_count, 1)
+            self.assertTrue(target.container_exists)
+
+            class YUpNewHost(FakeNewFitSkeletonHost):
+                def scene_up_axis(self):
+                    return FitUpAxis.Y
+
+            mismatch = YUpNewHost()
+            mismatch_preview = CreateAndImportFitSkeleton(mismatch).plan(path)
+            self.assertFalse(mismatch_preview.ready)
+            self.assertIn("Up Axis", "；".join(mismatch_preview.blockers))
+            self.assertEqual(mismatch.transaction_count, 0)
+            self.assertFalse(mismatch.container_exists)
 
     def test_create_import_postcheck_failure_removes_container_and_tree(self):
         class FaultyCreateHost(FakeNewFitSkeletonHost):
