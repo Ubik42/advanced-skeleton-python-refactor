@@ -80,6 +80,14 @@ from adv_py.core.body_root_motion import (
     BodyRootMotionSample,
     BodyRootMotionSnapshot,
 )
+from adv_py.core.body_export_skeleton import (
+    BODY_EXPORT_KIND,
+    BODY_EXPORT_OWNER,
+    BODY_EXPORT_SCHEMA_VERSION,
+    BodyExportJointState,
+    BodyExportSkeletonPlan,
+    BodyExportSkeletonSnapshot,
+)
 from adv_py.core.body_hand_controls import (
     BodyHandFkControlPlan,
     BodyHandFkControlSnapshot,
@@ -218,6 +226,15 @@ _BODY_PROVENANCE_ATTRIBUTES = {
     "schema_version": "advPySchemaVersion",
     "source_container": "advPySourceContainer",
     "body_joint_count": "advPyBodyJointCount",
+}
+
+_BODY_EXPORT_SOURCE_ATTRIBUTE = "advPyExportSource"
+_BODY_EXPORT_PROVENANCE_ATTRIBUTES = {
+    "owner": "advPyOwner",
+    "artifact_kind": "advPyArtifactKind",
+    "schema_version": "advPySchemaVersion",
+    "source_body_root": "advPySourceBodyRoot",
+    "joint_count": "advPyExportJointCount",
 }
 
 
@@ -1002,6 +1019,247 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 ) or []
             ),
             channels=tuple(channels),
+        )
+
+    def create_body_export_skeleton(
+        self,
+        plan: BodyExportSkeletonPlan,
+    ) -> None:
+        self._require_transaction()
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            if any(self.find_name_collisions(name) for name in plan.node_names):
+                raise FitSkeletonValidationError(
+                    "Export Skeleton 名称在执行前发生冲突"
+                )
+            root_motion = self._cmds.ls(
+                plan.root_motion_path,
+                long=True,
+                type="joint",
+            ) or []
+            if len(root_motion) != 1 or root_motion[0] != plan.root_motion_path:
+                raise FitSkeletonValidationError(
+                    "Export Skeleton 的 Root Motion 父级失效"
+                )
+
+            self._transaction_changed = True
+            for spec in plan.joints:
+                sources = self._cmds.ls(
+                    spec.source_path,
+                    long=True,
+                    type="joint",
+                ) or []
+                parents = self._cmds.ls(
+                    spec.output_parent_path,
+                    long=True,
+                    type="joint",
+                ) or []
+                if (
+                    len(sources) != 1
+                    or sources[0] != spec.source_path
+                    or len(parents) != 1
+                    or parents[0] != spec.output_parent_path
+                ):
+                    raise FitSkeletonValidationError(
+                        f"Export Skeleton joint 输入失效：{spec.source_path}"
+                    )
+                output = self._cmds.createNode(
+                    "joint",
+                    name=spec.output_name,
+                    parent=spec.output_parent_path,
+                    skipSelect=True,
+                )
+                output = (self._cmds.ls(output, long=True) or [output])[0]
+                if output != spec.output_path:
+                    raise RuntimeError(
+                        f"Export Skeleton joint 路径漂移：{spec.output_name}"
+                    )
+                self._cmds.setAttr(
+                    f"{output}.jointOrient",
+                    *spec.joint_orient,
+                    type="double3",
+                )
+                self._cmds.setAttr(
+                    f"{output}.rotateOrder",
+                    int(self._cmds.getAttr(f"{spec.source_path}.rotateOrder")),
+                )
+                self._cmds.setAttr(
+                    f"{output}.segmentScaleCompensate",
+                    bool(self._cmds.getAttr(
+                        f"{spec.source_path}.segmentScaleCompensate"
+                    )),
+                )
+                if spec.label is None:
+                    self.clear_joint_label(output)
+                else:
+                    self.set_joint_label(output, spec.label)
+                self._cmds.setAttr(
+                    f"{output}.side",
+                    _MAYA_SIDE_FROM_CORE[spec.side],
+                )
+                self._cmds.addAttr(
+                    output,
+                    longName=_BODY_EXPORT_SOURCE_ATTRIBUTE,
+                    attributeType="message",
+                )
+                self._cmds.connectAttr(
+                    f"{spec.source_path}.message",
+                    f"{output}.{_BODY_EXPORT_SOURCE_ATTRIBUTE}",
+                )
+                for axis in "XYZ":
+                    self._cmds.connectAttr(
+                        f"{spec.source_path}.scale{axis}",
+                        f"{output}.scale{axis}",
+                    )
+                if spec.is_root:
+                    self._cmds.parentConstraint(
+                        spec.source_path,
+                        output,
+                        maintainOffset=False,
+                        name=spec.root_constraint_name,
+                    )
+                else:
+                    for kind in ("translate", "rotate"):
+                        for axis in "XYZ":
+                            self._cmds.connectAttr(
+                                f"{spec.source_path}.{kind}{axis}",
+                                f"{output}.{kind}{axis}",
+                            )
+
+            root = plan.root.output_path
+            values = {
+                "owner": BODY_EXPORT_OWNER,
+                "artifact_kind": BODY_EXPORT_KIND,
+                "schema_version": BODY_EXPORT_SCHEMA_VERSION,
+                "source_body_root": plan.source_body_root,
+                "joint_count": len(plan.joints),
+            }
+            for field in ("owner", "artifact_kind", "source_body_root"):
+                attribute = _BODY_EXPORT_PROVENANCE_ATTRIBUTES[field]
+                self._cmds.addAttr(root, longName=attribute, dataType="string")
+                self._cmds.setAttr(
+                    f"{root}.{attribute}",
+                    values[field],
+                    type="string",
+                )
+            for field in ("schema_version", "joint_count"):
+                attribute = _BODY_EXPORT_PROVENANCE_ATTRIBUTES[field]
+                self._cmds.addAttr(
+                    root,
+                    longName=attribute,
+                    attributeType="long",
+                )
+                self._cmds.setAttr(f"{root}.{attribute}", values[field])
+            for attribute in _BODY_EXPORT_PROVENANCE_ATTRIBUTES.values():
+                self._cmds.setAttr(f"{root}.{attribute}", lock=True)
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+    def capture_body_export_skeleton(
+        self,
+        plan: BodyExportSkeletonPlan,
+    ) -> BodyExportSkeletonSnapshot:
+        def source(plug: str) -> str | None:
+            values = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+                plugs=True,
+            ) or []
+            if len(values) != 1:
+                return None
+            node, attribute = values[0].split(".", 1)
+            paths = self._cmds.ls(node, long=True) or [node]
+            return f"{paths[0]}.{attribute}"
+
+        states = []
+        for spec in plan.joints:
+            outputs = self._cmds.ls(
+                spec.output_path,
+                long=True,
+                type="joint",
+            ) or []
+            if len(outputs) != 1 or outputs[0] != spec.output_path:
+                raise FitSkeletonValidationError(
+                    f"Export Skeleton joint 无效：{spec.output_path}"
+                )
+            output = outputs[0]
+            parents = self._cmds.listRelatives(
+                output,
+                parent=True,
+                fullPath=True,
+            ) or []
+            source_nodes = self._cmds.listConnections(
+                f"{output}.{_BODY_EXPORT_SOURCE_ATTRIBUTE}",
+                source=True,
+                destination=False,
+            ) or []
+            source_path = None
+            if len(source_nodes) == 1:
+                source_paths = self._cmds.ls(source_nodes[0], long=True) or []
+                if len(source_paths) == 1:
+                    source_path = source_paths[0]
+            position = self._cmds.xform(
+                output,
+                query=True,
+                worldSpace=True,
+                translation=True,
+            )
+            matrix = self._cmds.xform(
+                output,
+                query=True,
+                worldSpace=True,
+                matrix=True,
+            )
+            side_code = int(self._cmds.getAttr(f"{output}.side"))
+            states.append(BodyExportJointState(
+                source_path=source_path,
+                output_name=output.rsplit("|", 1)[-1],
+                output_path=output,
+                output_parent_path=parents[0] if len(parents) == 1 else None,
+                side=_CORE_SIDE_FROM_MAYA[side_code],
+                label=self.read_joint_label(output),
+                joint_orient=tuple(
+                    float(value)
+                    for value in self._cmds.getAttr(
+                        f"{output}.jointOrient"
+                    )[0]
+                ),
+                world_position=tuple(float(value) for value in position),
+                world_axes=tuple(
+                    self._normalized_vector(
+                        tuple(float(value) for value in matrix[index:index + 3])
+                    )
+                    for index in (0, 4, 8)
+                ),
+                translation_sources=tuple(
+                    source(f"{output}.translate{axis}") for axis in "XYZ"
+                ),
+                rotation_sources=tuple(
+                    source(f"{output}.rotate{axis}") for axis in "XYZ"
+                ),
+                scale_sources=tuple(
+                    source(f"{output}.scale{axis}") for axis in "XYZ"
+                ),
+            ))
+
+        root = plan.root.output_path
+        def provenance(field: str):
+            attribute = _BODY_EXPORT_PROVENANCE_ATTRIBUTES[field]
+            plug = f"{root}.{attribute}"
+            return self._cmds.getAttr(plug) if self._cmds.objExists(plug) else None
+
+        return BodyExportSkeletonSnapshot(
+            root_path=root,
+            joints=tuple(states),
+            owner=provenance("owner"),
+            artifact_kind=provenance("artifact_kind"),
+            schema_version=provenance("schema_version"),
+            source_body_root=provenance("source_body_root"),
+            joint_count=provenance("joint_count"),
         )
 
     def create_body_arm_ik_root(self, name: str) -> str:
