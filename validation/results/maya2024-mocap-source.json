@@ -1,0 +1,22 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 50584,
+  "slice": "mocap_source_inspection",
+  "valid_source_accepted": true,
+  "namespace_detected": true,
+  "five_joint_hierarchy": true,
+  "portable_names_are_path_free": true,
+  "three_direct_animation_channels": true,
+  "two_animated_joints": true,
+  "clip_range_detected": true,
+  "non_curve_driver_detected": true,
+  "inspection_is_read_only": true,
+  "scene_cleanup": true,
+  "joint_count": 5,
+  "channel_count": 3,
+  "start_time": 1.0,
+  "end_time": 20.0,
+  "duration_seconds": 4.065,
+  "status": "passed"
+}

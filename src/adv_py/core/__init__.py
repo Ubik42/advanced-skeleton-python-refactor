@@ -271,6 +271,18 @@ from .body_fbx_export import (
     inspect_body_fbx_bytes,
     plan_body_fbx_export_selection,
 )
+from .mocap_source import (
+    MOCAP_TRANSFORM_ATTRIBUTES,
+    MocapChannelSnapshot,
+    MocapDriverKind,
+    MocapJointSnapshot,
+    MocapSourceIssue,
+    MocapSourceSnapshot,
+    MocapSourceSummary,
+    MocapSourceValidationError,
+    audit_mocap_source,
+    summarize_mocap_source,
+)
 from .body_hand_fit import (
     BODY_HAND_DIGITS,
     BODY_HAND_SEGMENTS,
@@ -724,6 +736,10 @@ __all__ = [
     "BodyFbxAppliedProfile", "BodyFbxArtifact", "BodyFbxEncoding",
     "BodyFbxExportProfile", "BodyFbxExportSelection", "BodyFbxFileVersion",
     "BodyFbxLinearUnit", "BodyFbxPublishedNode",
+    "MOCAP_TRANSFORM_ATTRIBUTES", "MocapChannelSnapshot",
+    "MocapDriverKind", "MocapJointSnapshot", "MocapSourceIssue",
+    "MocapSourceSnapshot", "MocapSourceSummary",
+    "MocapSourceValidationError",
     "BodyCharacterGlobalPlan",
     "BodyCharacterGlobalSnapshot",
     "BodyCharacterGlobalValidationError",
@@ -1006,6 +1022,8 @@ __all__ = [
     "audit_body_export_skeleton_samples", "audit_baked_body_export_skeleton",
     "audit_body_fbx_export_readiness",
     "audit_body_fbx_profile",
+    "audit_mocap_source",
+    "summarize_mocap_source",
     "audit_body_limb_stretch",
     "audit_body_limb_twist",
     "audit_body_arm_twist",

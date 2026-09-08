@@ -128,6 +128,11 @@ from .body_fbx_export import (
     BodyFbxExportResult,
     ExportBodyFbx,
 )
+from .mocap_source import (
+    InspectMocapSource,
+    MocapSourceInspection,
+    MocapSourceReader,
+)
 from .body_hand_fit import (
     BodyHandSourceFitBuildPlan,
     BodyHandSourceFitBuildResult,
@@ -447,6 +452,9 @@ __all__ = [
     "MatchBodyLegIkToFk",
     "BuildOrientedBodySkeleton",
     "ExportBodyFbx",
+    "InspectMocapSource",
+    "MocapSourceInspection",
+    "MocapSourceReader",
     "BuildOrientedFitTemplate",
     "BuildSyntheticBodySourceFit",
     "BuildSyntheticUpperBodyFit",
