@@ -18,6 +18,7 @@ from adv_py.core.body_hand_controls import (
     plan_body_hand_pose_controls,
 )
 from adv_py.core.body_hand_pose_io import (
+    BodyHandPoseAccessMode,
     BodyHandPoseChangeSet,
     BodyHandPoseChannelSnapshot,
     BodyHandPoseDocument,
@@ -54,6 +55,8 @@ class BodyHandPoseDocumentHost(Protocol):
     def apply_body_hand_pose_changes(
         self,
         changes: BodyHandPoseChangeSet,
+        *,
+        keyframe: bool = False,
     ) -> None: ...
 
 
@@ -86,6 +89,7 @@ class BodyHandPoseImportPlan:
     document: BodyHandPoseDocument
     rig: BodyHandPoseRigInspection
     changes: BodyHandPoseChangeSet
+    access_mode: BodyHandPoseAccessMode
 
     @property
     def changed_channel_count(self) -> int:
@@ -115,6 +119,7 @@ class InspectBodyHandPoseRig:
         source_container: str = "|FitSkeleton",
         expected_joint_count: int = 70,
         control_radius: float = 0.3,
+        access_mode: BodyHandPoseAccessMode = BodyHandPoseAccessMode.READ_ONLY,
     ) -> BodyHandPoseRigInspection:
         body = self._host.capture_body_skeleton(body_root_name)
         provenance_issues = audit_body_provenance(
@@ -146,7 +151,12 @@ class InspectBodyHandPoseRig:
             check_initial_pose=False,
         )
         channels = self._host.capture_body_hand_pose_channels(hand, pose)
-        channel_issues = audit_body_hand_pose_channels(hand, pose, channels)
+        channel_issues = audit_body_hand_pose_channels(
+            hand,
+            pose,
+            channels,
+            access_mode=access_mode,
+        )
         issues = hand_issues + pose_issues + channel_issues
         if issues:
             raise FitSkeletonValidationError(
@@ -181,7 +191,10 @@ class ExportBodyHandPose:
             raise FitSkeletonValidationError("Hand Pose 导出目录不存在")
         if path.exists():
             raise FitSkeletonValidationError("Hand Pose 导出目标已存在，拒绝覆盖")
-        rig = self._inspector.execute(**inspection_options)
+        rig = self._inspector.execute(
+            access_mode=BodyHandPoseAccessMode.READ_ONLY,
+            **inspection_options,
+        )
         document = body_hand_pose_document_from_snapshot(rig.channels)
         return BodyHandPoseExportPlan(path, rig, document)
 
@@ -229,24 +242,50 @@ class ImportBodyHandPose:
     def plan(
         self,
         source: str | os.PathLike[str],
+        *,
+        keyframe: bool = False,
         **inspection_options,
     ) -> BodyHandPoseImportPlan:
+        if not isinstance(keyframe, bool):
+            raise FitSkeletonValidationError(
+                "Hand Pose keyframe 选项必须是布尔值"
+            )
         path = _json_path(source)
         if not path.is_file():
             raise FitSkeletonValidationError("Hand Pose 导入文件不存在")
         document = body_hand_pose_document_from_json(
             path.read_text(encoding="utf-8")
         )
-        rig = self._inspector.execute(**inspection_options)
+        access_mode = (
+            BodyHandPoseAccessMode.KEYFRAME_WRITE
+            if keyframe
+            else BodyHandPoseAccessMode.STATIC_WRITE
+        )
+        rig = self._inspector.execute(
+            access_mode=access_mode,
+            **inspection_options,
+        )
         changes = body_hand_pose_changes(document, rig.channels)
-        return BodyHandPoseImportPlan(path, document, rig, changes)
+        return BodyHandPoseImportPlan(
+            path,
+            document,
+            rig,
+            changes,
+            access_mode,
+        )
 
     def apply(
         self,
         source: str | os.PathLike[str],
+        *,
+        keyframe: bool = False,
         **inspection_options,
     ) -> BodyHandPoseImportResult:
-        plan = self.plan(source, **inspection_options)
+        plan = self.plan(
+            source,
+            keyframe=keyframe,
+            **inspection_options,
+        )
         current_document = body_hand_pose_document_from_json(
             plan.source.read_text(encoding="utf-8")
         )
@@ -254,7 +293,10 @@ class ImportBodyHandPose:
             raise FitSkeletonValidationError(
                 "Hand Pose 导入文件在执行前发生变化"
             )
-        current_rig = self._inspector.execute(**inspection_options)
+        current_rig = self._inspector.execute(
+            access_mode=plan.access_mode,
+            **inspection_options,
+        )
         if current_rig != plan.rig:
             raise FitSkeletonValidationError(
                 "Hand Pose 导入场景在执行前发生变化"
@@ -262,17 +304,33 @@ class ImportBodyHandPose:
         if plan.changed_channel_count == 0:
             return BodyHandPoseImportResult(plan, current_rig)
 
-        with self._host.transaction("导入双手 Hand Pose"):
+        label = (
+            "在当前帧导入双手 Hand Pose"
+            if plan.access_mode is BodyHandPoseAccessMode.KEYFRAME_WRITE
+            else "导入双手 Hand Pose"
+        )
+        with self._host.transaction(label):
             transaction_document = body_hand_pose_document_from_json(
                 plan.source.read_text(encoding="utf-8")
             )
             if transaction_document != plan.document:
                 raise RuntimeError("Hand Pose 事务开始后导入文件发生变化")
-            transaction_rig = self._inspector.execute(**inspection_options)
+            transaction_rig = self._inspector.execute(
+                access_mode=plan.access_mode,
+                **inspection_options,
+            )
             if transaction_rig != plan.rig:
                 raise RuntimeError("Hand Pose 事务开始后场景发生变化")
-            self._host.apply_body_hand_pose_changes(plan.changes)
-            result_rig = self._inspector.execute(**inspection_options)
+            self._host.apply_body_hand_pose_changes(
+                plan.changes,
+                keyframe=(
+                    plan.access_mode is BodyHandPoseAccessMode.KEYFRAME_WRITE
+                ),
+            )
+            result_rig = self._inspector.execute(
+                access_mode=plan.access_mode,
+                **inspection_options,
+            )
             result_document = body_hand_pose_document_from_snapshot(
                 result_rig.channels
             )

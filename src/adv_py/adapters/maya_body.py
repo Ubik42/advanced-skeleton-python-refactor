@@ -4083,7 +4083,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
         hand: BodyHandFkControlPlan,
         pose: BodyHandPosePlan,
     ) -> BodyHandPoseChannelSnapshot:
-        def source(plug: str) -> str | None:
+        def source_info(plug: str) -> tuple[str | None, str | None]:
             values = self._cmds.listConnections(
                 plug,
                 source=True,
@@ -4091,8 +4091,21 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 plugs=True,
             ) or []
             if len(values) == 1:
-                return self._canonical_plug(values[0])
-            return "<multiple>" if values else None
+                node = values[0].split(".", 1)[0]
+                return self._canonical_plug(values[0]), self._cmds.nodeType(node)
+            if values:
+                return "<multiple>", "<multiple>"
+            return None, None
+
+        def keyframe_writable(plug: str, source_type: str | None) -> bool:
+            return (
+                not self._cmds.getAttr(plug, lock=True)
+                and bool(self._cmds.getAttr(plug, keyable=True))
+                and (
+                    source_type is None
+                    or source_type.startswith("animCurve")
+                )
+            )
 
         aggregates = []
         for spec in pose.attributes:
@@ -4110,6 +4123,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 node=spec.root_path,
                 maximum=True,
             ) or []
+            incoming_source, incoming_source_type = source_info(spec.plug)
             aggregates.append(BodyHandAggregatePoseChannelState(
                 side=spec.side,
                 name=spec.name,
@@ -4118,7 +4132,12 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 minimum=float(minimum[0]) if len(minimum) == 1 else None,
                 maximum=float(maximum[0]) if len(maximum) == 1 else None,
                 writable=bool(self._cmds.getAttr(spec.plug, settable=True)),
-                incoming_source=source(spec.plug),
+                incoming_source=incoming_source,
+                incoming_source_type=incoming_source_type,
+                keyframe_writable=keyframe_writable(
+                    spec.plug,
+                    incoming_source_type,
+                ),
             ))
 
         by_name = {
@@ -4145,6 +4164,10 @@ class MayaBodyBuildHost(MayaFitJointHost):
                             f"Hand Pose FK 控制缺失：{spec.control_path}"
                         )
                     path = nodes[0]
+                    source_infos = tuple(
+                        source_info(f"{path}.rotate{axis}")
+                        for axis in ("X", "Y", "Z")
+                    )
                     controls.append(BodyHandFkPoseChannelState(
                         side=side,
                         digit=digit,
@@ -4163,8 +4186,21 @@ class MayaBodyBuildHost(MayaFitJointHost):
                             )
                         ),
                         rotation_sources=tuple(
-                            source(f"{path}.rotate{axis}")
-                            for axis in ("X", "Y", "Z")
+                            info[0] for info in source_infos
+                        ),
+                        rotation_source_types=tuple(
+                            info[1] for info in source_infos
+                        ),
+                        keyframe_writable_rotation_axes=frozenset(
+                            axis.lower()
+                            for axis, info in zip(
+                                ("X", "Y", "Z"),
+                                source_infos,
+                            )
+                            if keyframe_writable(
+                                f"{path}.rotate{axis}",
+                                info[1],
+                            )
                         ),
                     ))
         return BodyHandPoseChannelSnapshot(tuple(aggregates), tuple(controls))
@@ -4172,12 +4208,22 @@ class MayaBodyBuildHost(MayaFitJointHost):
     def apply_body_hand_pose_changes(
         self,
         changes: BodyHandPoseChangeSet,
+        *,
+        keyframe: bool = False,
     ) -> None:
         self._require_transaction()
+        if not isinstance(keyframe, bool):
+            raise FitSkeletonValidationError(
+                "Hand Pose keyframe 选项必须是布尔值"
+            )
         for change in changes.aggregates:
             if (
                 not self._cmds.objExists(change.plug)
-                or not self._cmds.getAttr(change.plug, settable=True)
+                or (
+                    not self._body_hand_pose_keyframe_writable(change.plug)
+                    if keyframe
+                    else not self._cmds.getAttr(change.plug, settable=True)
+                )
                 or abs(float(self._cmds.getAttr(change.plug)) - change.before)
                 > 1e-6
             ):
@@ -4202,27 +4248,71 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 raise FitSkeletonValidationError(
                     f"Hand Pose FK rotate 执行前变化：{change.control_path}"
                 )
-            if any(
-                not self._cmds.getAttr(
+            if any((
+                not self._body_hand_pose_keyframe_writable(
+                    f"{change.control_path}.rotate{axis}"
+                )
+                if keyframe
+                else not self._cmds.getAttr(
                     f"{change.control_path}.rotate{axis}",
                     settable=True,
                 )
-                for axis in ("X", "Y", "Z")
-            ):
+            ) for axis in ("X", "Y", "Z")):
                 raise FitSkeletonValidationError(
                     f"Hand Pose FK rotate 执行前不可写：{change.control_path}"
                 )
         if not changes.changed_channel_count:
             return
         self._transaction_changed = True
+        current_time = float(self._cmds.currentTime(query=True))
         for change in changes.aggregates:
-            self._cmds.setAttr(change.plug, change.after)
+            if keyframe:
+                self._cmds.setKeyframe(
+                    change.plug,
+                    time=(current_time,),
+                    value=change.after,
+                )
+            else:
+                self._cmds.setAttr(change.plug, change.after)
         for change in changes.controls:
             for axis, value in zip(("X", "Y", "Z"), change.after):
-                self._cmds.setAttr(
-                    f"{change.control_path}.rotate{axis}",
-                    value,
-                )
+                plug = f"{change.control_path}.rotate{axis}"
+                if keyframe:
+                    self._cmds.setKeyframe(
+                        plug,
+                        time=(current_time,),
+                        value=value,
+                    )
+                else:
+                    self._cmds.setAttr(plug, value)
+        if keyframe:
+            # Maya does not immediately expose a setKeyframe(value=...) result
+            # at an unchanged current time. Re-evaluate once before postcheck.
+            self._cmds.currentTime(
+                current_time,
+                edit=True,
+                update=True,
+            )
+
+    def _body_hand_pose_keyframe_writable(self, plug: str) -> bool:
+        if (
+            not self._cmds.objExists(plug)
+            or self._cmds.getAttr(plug, lock=True)
+            or not self._cmds.getAttr(plug, keyable=True)
+        ):
+            return False
+        sources = self._cmds.listConnections(
+            plug,
+            source=True,
+            destination=False,
+            plugs=True,
+        ) or []
+        if not sources:
+            return True
+        if len(sources) != 1:
+            return False
+        node = sources[0].split(".", 1)[0]
+        return self._cmds.nodeType(node).startswith("animCurve")
 
     def _create_body_limb_fk_control(
         self,

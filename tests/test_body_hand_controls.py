@@ -25,6 +25,7 @@ from adv_py.core import (
     BodyHandPoseSnapshot,
     BodyHandFkPoseChannelState,
     BodyHandPoseChannelSnapshot,
+    BodyHandPoseAccessMode,
     BodyHandPoseDocumentValidationError,
     BodyHandSpreadState,
     BodyJointState,
@@ -308,6 +309,7 @@ class FakeBodyHandPoseDocumentHost(FakeBodyHandFkHost):
     def __init__(self):
         super().__init__()
         self.channels = None
+        self.last_keyframe = None
         built = BuildBodyHandFkControls(self).apply()
         self.transaction_count = 0
         self.channels = BodyHandPoseChannelSnapshot(
@@ -321,6 +323,8 @@ class FakeBodyHandPoseDocumentHost(FakeBodyHandFkHost):
                     spec.maximum,
                     True,
                     None,
+                    None,
+                    True,
                 )
                 for spec in built.plan.pose.attributes
             ),
@@ -341,6 +345,8 @@ class FakeBodyHandPoseDocumentHost(FakeBodyHandFkHost):
                     (0.0, 0.0, 0.0),
                     frozenset({"x", "y", "z"}),
                     (None, None, None),
+                    (None, None, None),
+                    frozenset({"x", "y", "z"}),
                 )
                 for spec in built.plan.controls.controls
             ),
@@ -361,7 +367,8 @@ class FakeBodyHandPoseDocumentHost(FakeBodyHandFkHost):
             self.channels = before
             raise
 
-    def apply_body_hand_pose_changes(self, changes):
+    def apply_body_hand_pose_changes(self, changes, *, keyframe=False):
+        self.last_keyframe = keyframe
         aggregate_targets = {
             (change.side, change.name): change.after
             for change in changes.aggregates
@@ -717,6 +724,94 @@ class BodyHandControlTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "rotate"):
                 ImportBodyHandPose(host).apply(target)
+
+        self.assertEqual(host.transaction_count, 0)
+
+    def test_pose_import_keys_native_animation_sources(self):
+        host = FakeBodyHandPoseDocumentHost()
+        source_aggregate = host.channels.aggregates[0]
+        source_control = host.channels.controls[0]
+        host.channels = replace(
+            host.channels,
+            aggregates=(replace(source_aggregate, value=25.0),)
+            + host.channels.aggregates[1:],
+            controls=(replace(
+                source_control,
+                rotation=(3.0, 4.0, 5.0),
+            ),) + host.channels.controls[1:],
+        )
+        desired = body_hand_pose_document_from_snapshot(host.channels)
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "animated-hand-pose.json"
+            ExportBodyHandPose(host).apply(target)
+            host.channels = replace(
+                host.channels,
+                aggregates=(replace(
+                    source_aggregate,
+                    value=-10.0,
+                    writable=False,
+                    incoming_source="AnimCurl.output",
+                    incoming_source_type="animCurveTU",
+                    keyframe_writable=True,
+                ),) + host.channels.aggregates[1:],
+                controls=(replace(
+                    source_control,
+                    rotation=(-1.0, -2.0, -3.0),
+                    writable_rotation_axes=frozenset(),
+                    rotation_sources=(
+                        "AnimX.output",
+                        "AnimY.output",
+                        "AnimZ.output",
+                    ),
+                    rotation_source_types=(
+                        "animCurveTA",
+                        "animCurveTA",
+                        "animCurveTA",
+                    ),
+                    keyframe_writable_rotation_axes=frozenset({"x", "y", "z"}),
+                ),) + host.channels.controls[1:],
+            )
+
+            with self.assertRaisesRegex(ValueError, "请求模式"):
+                ImportBodyHandPose(host).apply(target)
+            keyed = ImportBodyHandPose(host).apply(target, keyframe=True)
+            repeated = ImportBodyHandPose(host).apply(target, keyframe=True)
+
+        self.assertEqual(keyed.changed_channel_count, 2)
+        self.assertEqual(
+            keyed.plan.access_mode,
+            BodyHandPoseAccessMode.KEYFRAME_WRITE,
+        )
+        self.assertEqual(repeated.changed_channel_count, 0)
+        self.assertEqual(
+            body_hand_pose_document_from_snapshot(host.channels),
+            desired,
+        )
+        self.assertTrue(host.last_keyframe)
+        self.assertEqual(host.transaction_count, 1)
+
+    def test_pose_keyframe_rejects_non_animation_driver_before_transaction(self):
+        host = FakeBodyHandPoseDocumentHost()
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "driven-hand-pose.json"
+            ExportBodyHandPose(host).apply(target)
+            first = host.channels.aggregates[0]
+            host.channels = replace(
+                host.channels,
+                aggregates=(replace(
+                    first,
+                    value=10.0,
+                    writable=False,
+                    incoming_source="Driven.output",
+                    incoming_source_type="multiplyDivide",
+                    keyframe_writable=False,
+                ),) + host.channels.aggregates[1:],
+            )
+            capture = Path(directory) / "driven-capture.json"
+
+            ExportBodyHandPose(host).apply(capture)
+            with self.assertRaisesRegex(ValueError, "请求模式"):
+                ImportBodyHandPose(host).apply(target, keyframe=True)
 
         self.assertEqual(host.transaction_count, 0)
 

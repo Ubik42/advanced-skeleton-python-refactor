@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from enum import Enum
 from hashlib import sha256
 import json
 from math import isfinite
@@ -30,6 +31,12 @@ BODY_HAND_POSE_FK_SEGMENTS = ("1", "2", "3")
 
 class BodyHandPoseDocumentValidationError(ValueError):
     """Raised when a semantic Hand Pose document is unsafe to use."""
+
+
+class BodyHandPoseAccessMode(str, Enum):
+    READ_ONLY = "read_only"
+    STATIC_WRITE = "static_write"
+    KEYFRAME_WRITE = "keyframe_write"
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +73,8 @@ class BodyHandAggregatePoseChannelState:
     maximum: float | None
     writable: bool
     incoming_source: str | None
+    incoming_source_type: str | None = None
+    keyframe_writable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +86,12 @@ class BodyHandFkPoseChannelState:
     rotation: Vector3
     writable_rotation_axes: frozenset[str]
     rotation_sources: tuple[str | None, str | None, str | None]
+    rotation_source_types: tuple[str | None, str | None, str | None] = (
+        None,
+        None,
+        None,
+    )
+    keyframe_writable_rotation_axes: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,7 +256,12 @@ def audit_body_hand_pose_channels(
     snapshot: BodyHandPoseChannelSnapshot,
     *,
     tolerance: float = 1e-4,
+    access_mode: BodyHandPoseAccessMode = BodyHandPoseAccessMode.STATIC_WRITE,
 ) -> tuple[BodyHandControlIssue, ...]:
+    if not isinstance(access_mode, BodyHandPoseAccessMode):
+        raise BodyHandPoseDocumentValidationError(
+            "Hand Pose 通道访问模式无效"
+        )
     issues = []
     expected_attributes = {
         (spec.side, spec.name): spec for spec in pose.attributes
@@ -261,7 +281,7 @@ def audit_body_hand_pose_channels(
     for key in sorted(set(expected_attributes) & set(actual_attributes), key=_key_sort):
         spec = expected_attributes[key]
         state = actual_attributes[key]
-        if not (
+        common_valid = (
             state.plug == spec.plug
             and _is_finite_number(state.value)
             and spec.minimum - tolerance <= state.value <= spec.maximum + tolerance
@@ -269,12 +289,23 @@ def audit_body_hand_pose_channels(
             and abs(state.minimum - spec.minimum) <= tolerance
             and state.maximum is not None
             and abs(state.maximum - spec.maximum) <= tolerance
-            and state.writable
-            and state.incoming_source is None
-        ):
+        )
+        access_valid = (
+            access_mode is BodyHandPoseAccessMode.READ_ONLY
+            or (
+                access_mode is BodyHandPoseAccessMode.STATIC_WRITE
+                and state.writable
+                and state.incoming_source is None
+            )
+            or (
+                access_mode is BodyHandPoseAccessMode.KEYFRAME_WRITE
+                and state.keyframe_writable
+            )
+        )
+        if not (common_valid and access_valid):
             issues.append(BodyHandControlIssue(
                 "hand_pose_io_aggregate_unsafe",
-                "Hand Pose 聚合通道配置、范围或可写性无效",
+                "Hand Pose 聚合通道配置、范围或请求模式可写性无效",
                 spec.plug,
             ))
 
@@ -294,15 +325,28 @@ def audit_body_hand_pose_channels(
     for key in sorted(set(expected_controls) & set(actual_controls), key=_key_sort):
         spec = expected_controls[key]
         state = actual_controls[key]
-        if not (
+        common_valid = (
             state.control_path == spec.control_path
             and _is_vector3(state.rotation)
-            and state.writable_rotation_axes == TRANSLATION_AXES
-            and not any(source is not None for source in state.rotation_sources)
-        ):
+        )
+        access_valid = (
+            access_mode is BodyHandPoseAccessMode.READ_ONLY
+            or (
+                access_mode is BodyHandPoseAccessMode.STATIC_WRITE
+                and state.writable_rotation_axes == TRANSLATION_AXES
+                and not any(
+                    source is not None for source in state.rotation_sources
+                )
+            )
+            or (
+                access_mode is BodyHandPoseAccessMode.KEYFRAME_WRITE
+                and state.keyframe_writable_rotation_axes == TRANSLATION_AXES
+            )
+        )
+        if not (common_valid and access_valid):
             issues.append(BodyHandControlIssue(
                 "hand_pose_io_fk_unsafe",
-                "Hand Pose FK rotate 通道不可完整安全写入",
+                "Hand Pose FK rotate 通道不可按请求模式完整安全写入",
                 spec.control_path,
             ))
     return tuple(issues)
