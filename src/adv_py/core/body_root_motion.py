@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 
 from .fit_container import FitUpAxis
 
@@ -62,6 +63,66 @@ class BodyRootMotionIssue:
     subject: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class BodyRootMotionSample:
+    frame: int
+    translation: Vector3
+    rotation: Vector3
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.frame, bool)
+            or not isinstance(self.frame, int)
+            or len(self.translation) != 3
+            or len(self.rotation) != 3
+            or not all(
+                isfinite(float(value))
+                for value in self.translation + self.rotation
+            )
+        ):
+            raise BodyRootMotionValidationError(
+                "Root Motion 采样必须包含整数帧和有限 TR 值"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class BodyRootMotionBakePlan:
+    root_motion: BodyRootMotionPlan
+    start_frame: int
+    end_frame: int
+    sample_by: int
+    frames: tuple[int, ...]
+
+    @property
+    def channel_attributes(self) -> tuple[str, str, str]:
+        return tuple(
+            f"translate{axis.upper()}" for axis in self.root_motion.translation_axes
+        ) + (f"rotate{self.root_motion.rotation_axis.upper()}",)
+
+
+@dataclass(frozen=True, slots=True)
+class BodyRootMotionKeyState:
+    frame: int
+    value: float
+    in_tangent: str
+    out_tangent: str
+
+
+@dataclass(frozen=True, slots=True)
+class BodyRootMotionBakedChannelState:
+    attribute: str
+    source_kind: str | None
+    keys: tuple[BodyRootMotionKeyState, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BodyRootMotionBakedSnapshot:
+    output_path: str
+    point_constraint_exists: bool
+    orient_constraint_exists: bool
+    channels: tuple[BodyRootMotionBakedChannelState, ...]
+
+
 def plan_body_root_motion(
     *,
     source_root_path: str,
@@ -104,6 +165,148 @@ def plan_body_root_motion(
         translation_axes=planar_axes,
         rotation_axis=rotation_axis,
     )
+
+
+def plan_body_root_motion_bake(
+    root_motion: BodyRootMotionPlan,
+    *,
+    start_frame: int,
+    end_frame: int,
+    sample_by: int = 1,
+) -> BodyRootMotionBakePlan:
+    values = (start_frame, end_frame, sample_by)
+    if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
+        raise BodyRootMotionValidationError(
+            "Root Motion bake 帧范围与采样步长必须是整数"
+        )
+    if start_frame > end_frame or sample_by < 1:
+        raise BodyRootMotionValidationError(
+            "Root Motion bake 帧范围或采样步长无效"
+        )
+    if (end_frame - start_frame) % sample_by:
+        raise BodyRootMotionValidationError(
+            "Root Motion bake 结束帧必须落在采样步长上"
+        )
+    frames = tuple(range(start_frame, end_frame + 1, sample_by))
+    return BodyRootMotionBakePlan(
+        root_motion=root_motion,
+        start_frame=start_frame,
+        end_frame=end_frame,
+        sample_by=sample_by,
+        frames=frames,
+    )
+
+
+def audit_body_root_motion_samples(
+    plan: BodyRootMotionBakePlan,
+    samples: tuple[BodyRootMotionSample, ...],
+    *,
+    tolerance: float = 1e-5,
+) -> tuple[BodyRootMotionIssue, ...]:
+    issues: list[BodyRootMotionIssue] = []
+    if tuple(sample.frame for sample in samples) != plan.frames:
+        issues.append(BodyRootMotionIssue(
+            "sample_frames_mismatch",
+            "Root Motion 采样帧与 bake 计划不一致",
+        ))
+        return tuple(issues)
+    vertical = "xyz".index(plan.root_motion.skipped_translation_axis)
+    tilt = tuple(
+        "xyz".index(axis) for axis in plan.root_motion.skipped_rotation_axes
+    )
+    for sample in samples:
+        if abs(sample.translation[vertical]) > tolerance:
+            issues.append(BodyRootMotionIssue(
+                "sample_vertical_motion_mismatch",
+                "Root Motion bake 样本包含垂直位移",
+                str(sample.frame),
+            ))
+        if any(abs(sample.rotation[index]) > tolerance for index in tilt):
+            issues.append(BodyRootMotionIssue(
+                "sample_tilt_mismatch",
+                "Root Motion bake 样本包含倾斜旋转",
+                str(sample.frame),
+            ))
+    return tuple(issues)
+
+
+def audit_baked_body_root_motion(
+    plan: BodyRootMotionBakePlan,
+    samples: tuple[BodyRootMotionSample, ...],
+    snapshot: BodyRootMotionBakedSnapshot,
+    *,
+    tolerance: float = 1e-5,
+) -> tuple[BodyRootMotionIssue, ...]:
+    issues = list(audit_body_root_motion_samples(plan, samples, tolerance=tolerance))
+    if snapshot.output_path != plan.root_motion.output_path:
+        issues.append(BodyRootMotionIssue(
+            "baked_output_mismatch",
+            "Root Motion bake 输出路径不一致",
+            plan.root_motion.output_path,
+        ))
+    if snapshot.point_constraint_exists or snapshot.orient_constraint_exists:
+        issues.append(BodyRootMotionIssue(
+            "baked_constraint_remains",
+            "Root Motion bake 后仍有实时约束",
+            plan.root_motion.output_path,
+        ))
+    actual_channels = {state.attribute: state for state in snapshot.channels}
+    if (
+        len(actual_channels) != len(snapshot.channels)
+        or set(actual_channels) != set(plan.channel_attributes)
+    ):
+        issues.append(BodyRootMotionIssue(
+            "baked_channel_set_mismatch",
+            "Root Motion bake 通道集合不一致",
+            plan.root_motion.output_path,
+        ))
+        return tuple(issues)
+
+    translate_indices = {
+        f"translate{axis.upper()}": "xyz".index(axis)
+        for axis in plan.root_motion.translation_axes
+    }
+    for attribute in plan.channel_attributes:
+        state = actual_channels[attribute]
+        if state.source_kind != "animation_curve":
+            issues.append(BodyRootMotionIssue(
+                "baked_channel_source_mismatch",
+                "Root Motion bake 通道不是独立动画曲线",
+                attribute,
+            ))
+        expected_values = tuple(
+            (
+                sample.translation[translate_indices[attribute]]
+                if attribute in translate_indices
+                else sample.rotation[
+                    "xyz".index(plan.root_motion.rotation_axis)
+                ]
+            )
+            for sample in samples
+        )
+        if (
+            tuple(key.frame for key in state.keys) != plan.frames
+            or len(state.keys) != len(expected_values)
+            or any(
+                abs(key.value - value) > tolerance
+                for key, value in zip(state.keys, expected_values)
+            )
+        ):
+            issues.append(BodyRootMotionIssue(
+                "baked_key_values_mismatch",
+                "Root Motion bake 关键帧时间或数值不一致",
+                attribute,
+            ))
+        if any(
+            key.in_tangent != "linear" or key.out_tangent != "linear"
+            for key in state.keys
+        ):
+            issues.append(BodyRootMotionIssue(
+                "baked_key_tangent_mismatch",
+                "Root Motion bake 关键帧切线不是 linear",
+                attribute,
+            ))
+    return tuple(issues)
 
 
 def audit_body_root_motion(

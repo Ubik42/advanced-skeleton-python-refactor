@@ -2,17 +2,23 @@ import unittest
 from contextlib import contextmanager
 from dataclasses import replace
 
-from adv_py.application import BuildBodyRootMotion
+from adv_py.application import BakeBodyRootMotion, BuildBodyRootMotion
 from adv_py.core import (
     BodyJointState,
+    BodyRootMotionBakedChannelState,
+    BodyRootMotionBakedSnapshot,
+    BodyRootMotionKeyState,
+    BodyRootMotionSample,
     BodyRootMotionSnapshot,
     BodyRootMotionValidationError,
     BodySkeletonSnapshot,
     FitBuildSide,
     FitUpAxis,
+    audit_baked_body_root_motion,
     audit_body_root_motion,
     oriented_body_provenance,
     plan_body_root_motion,
+    plan_body_root_motion_bake,
 )
 from adv_py.core.body_skeleton import BodySkeletonProvenanceState
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -68,11 +74,52 @@ def make_body(owned=True):
     return BodySkeletonSnapshot("|Root_M", (joint,), state)
 
 
+def make_samples(plan):
+    return tuple(
+        BodyRootMotionSample(
+            frame=frame,
+            translation=(float(frame), float(frame * 2), 0.0),
+            rotation=(0.0, 0.0, float(frame * 3)),
+        )
+        for frame in plan.frames
+    )
+
+
+def make_baked_snapshot(plan, samples):
+    translate_indices = {
+        f"translate{axis.upper()}": "xyz".index(axis)
+        for axis in plan.root_motion.translation_axes
+    }
+    channels = []
+    for attribute in plan.channel_attributes:
+        values = tuple(
+            sample.translation[translate_indices[attribute]]
+            if attribute in translate_indices
+            else sample.rotation["xyz".index(plan.root_motion.rotation_axis)]
+            for sample in samples
+        )
+        channels.append(BodyRootMotionBakedChannelState(
+            attribute=attribute,
+            source_kind="animation_curve",
+            keys=tuple(
+                BodyRootMotionKeyState(frame, value, "linear", "linear")
+                for frame, value in zip(plan.frames, values)
+            ),
+        ))
+    return BodyRootMotionBakedSnapshot(
+        output_path=plan.root_motion.output_path,
+        point_constraint_exists=False,
+        orient_constraint_exists=False,
+        channels=tuple(channels),
+    )
+
+
 class FakeRootMotionHost:
     def __init__(self, *, owned=True, collision=False):
         self.body = make_body(owned)
         self.collision = collision
         self.snapshot = None
+        self.baked_snapshot = None
         self.transactions = 0
 
     def scene_up_axis(self):
@@ -88,10 +135,12 @@ class FakeRootMotionHost:
     def transaction(self, label):
         self.transactions += 1
         before = self.snapshot
+        before_baked = self.baked_snapshot
         try:
             yield
         except Exception:
             self.snapshot = before
+            self.baked_snapshot = before_baked
             raise
 
     def create_body_root_motion(self, plan):
@@ -99,6 +148,15 @@ class FakeRootMotionHost:
 
     def capture_body_root_motion(self, plan):
         return self.snapshot
+
+    def sample_body_root_motion(self, plan):
+        return make_samples(plan)
+
+    def bake_body_root_motion(self, plan, samples):
+        self.baked_snapshot = make_baked_snapshot(plan, samples)
+
+    def capture_baked_body_root_motion(self, plan):
+        return self.baked_snapshot
 
 
 class BodyRootMotionTests(unittest.TestCase):
@@ -160,6 +218,72 @@ class BodyRootMotionTests(unittest.TestCase):
                     BuildBodyRootMotion(host).apply()
                 self.assertEqual(host.transactions, 0)
                 self.assertIsNone(host.snapshot)
+
+    def test_bake_plan_defines_inclusive_integer_samples(self):
+        plan = plan_body_root_motion_bake(
+            make_plan(),
+            start_frame=1,
+            end_frame=9,
+            sample_by=2,
+        )
+
+        self.assertEqual(plan.frames, (1, 3, 5, 7, 9))
+        self.assertEqual(
+            plan.channel_attributes,
+            ("translateX", "translateY", "rotateZ"),
+        )
+        for invalid in (
+            {"start_frame": 5, "end_frame": 1, "sample_by": 1},
+            {"start_frame": 1, "end_frame": 6, "sample_by": 2},
+            {"start_frame": True, "end_frame": 5, "sample_by": 1},
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(BodyRootMotionValidationError):
+                    plan_body_root_motion_bake(make_plan(), **invalid)
+
+    def test_baked_audit_requires_exact_linear_keys_and_no_constraints(self):
+        plan = plan_body_root_motion_bake(
+            make_plan(),
+            start_frame=1,
+            end_frame=3,
+        )
+        samples = make_samples(plan)
+        snapshot = make_baked_snapshot(plan, samples)
+        self.assertEqual(
+            audit_baked_body_root_motion(plan, samples, snapshot),
+            (),
+        )
+
+        first = snapshot.channels[0]
+        broken_key = replace(first.keys[0], out_tangent="spline")
+        broken = replace(
+            snapshot,
+            point_constraint_exists=True,
+            channels=(
+                replace(first, keys=(broken_key,) + first.keys[1:]),
+            ) + snapshot.channels[1:],
+        )
+        self.assertEqual(
+            {issue.code for issue in audit_baked_body_root_motion(
+                plan,
+                samples,
+                broken,
+            )},
+            {"baked_constraint_remains", "baked_key_tangent_mismatch"},
+        )
+
+    def test_application_bakes_existing_driver_in_one_more_transaction(self):
+        host = FakeRootMotionHost()
+        BuildBodyRootMotion(host).apply()
+
+        result = BakeBodyRootMotion(host).apply(
+            start_frame=1,
+            end_frame=3,
+        )
+
+        self.assertEqual(tuple(sample.frame for sample in result.samples), (1, 2, 3))
+        self.assertEqual(len(result.verified.channels), 3)
+        self.assertEqual(host.transactions, 2)
 
 
 if __name__ == "__main__":

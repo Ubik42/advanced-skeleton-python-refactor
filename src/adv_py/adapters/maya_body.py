@@ -72,7 +72,12 @@ from adv_py.core.body_character_global import (
     BodyCharacterGlobalSnapshot,
 )
 from adv_py.core.body_root_motion import (
+    BodyRootMotionBakePlan,
+    BodyRootMotionBakedChannelState,
+    BodyRootMotionBakedSnapshot,
+    BodyRootMotionKeyState,
     BodyRootMotionPlan,
+    BodyRootMotionSample,
     BodyRootMotionSnapshot,
 )
 from adv_py.core.body_hand_controls import (
@@ -839,6 +844,164 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 plan.orient_constraint_name,
                 self._cmds.orientConstraint,
             ),
+        )
+
+    def sample_body_root_motion(
+        self,
+        plan: BodyRootMotionBakePlan,
+    ) -> tuple[BodyRootMotionSample, ...]:
+        output = plan.root_motion.output_path
+        if not self._cmds.objExists(output):
+            raise FitSkeletonValidationError("Root Motion bake 输出 joint 缺失")
+        original_time = float(self._cmds.currentTime(query=True))
+        samples = []
+        try:
+            for frame in plan.frames:
+                self._cmds.currentTime(frame, edit=True, update=True)
+                translation = self._cmds.getAttr(f"{output}.translate")[0]
+                rotation = self._cmds.getAttr(f"{output}.rotate")[0]
+                samples.append(BodyRootMotionSample(
+                    frame=frame,
+                    translation=tuple(float(value) for value in translation),
+                    rotation=tuple(float(value) for value in rotation),
+                ))
+        finally:
+            self._cmds.currentTime(original_time, edit=True, update=True)
+        return tuple(samples)
+
+    def bake_body_root_motion(
+        self,
+        plan: BodyRootMotionBakePlan,
+        samples: tuple[BodyRootMotionSample, ...],
+    ) -> None:
+        self._require_transaction()
+        output = plan.root_motion.output_path
+        point = self._cmds.ls(
+            plan.root_motion.point_constraint_name,
+            type="pointConstraint",
+        ) or []
+        orient = self._cmds.ls(
+            plan.root_motion.orient_constraint_name,
+            type="orientConstraint",
+        ) or []
+        if (
+            len(point) != 1
+            or len(orient) != 1
+            or not self._cmds.objExists(output)
+            or tuple(sample.frame for sample in samples) != plan.frames
+        ):
+            raise FitSkeletonValidationError(
+                "Root Motion bake 输入在执行前失效"
+            )
+
+        translate_indices = {
+            f"translate{axis.upper()}": "xyz".index(axis)
+            for axis in plan.root_motion.translation_axes
+        }
+        rotate_attribute = f"rotate{plan.root_motion.rotation_axis.upper()}"
+        self._transaction_changed = True
+        self._cmds.delete(point + orient)
+        for sample in samples:
+            for attribute, index in translate_indices.items():
+                self._cmds.setKeyframe(
+                    output,
+                    attribute=attribute,
+                    time=sample.frame,
+                    value=sample.translation[index],
+                )
+            self._cmds.setKeyframe(
+                output,
+                attribute=rotate_attribute,
+                time=sample.frame,
+                value=sample.rotation[
+                    "xyz".index(plan.root_motion.rotation_axis)
+                ],
+            )
+        for attribute in plan.channel_attributes:
+            self._cmds.keyTangent(
+                output,
+                attribute=attribute,
+                time=(plan.start_frame, plan.end_frame),
+                inTangentType="linear",
+                outTangentType="linear",
+            )
+
+    def capture_baked_body_root_motion(
+        self,
+        plan: BodyRootMotionBakePlan,
+    ) -> BodyRootMotionBakedSnapshot:
+        output = plan.root_motion.output_path
+        outputs = self._cmds.ls(output, long=True, type="joint") or []
+        if len(outputs) != 1 or outputs[0] != output:
+            raise FitSkeletonValidationError("Root Motion bake 输出 joint 无效")
+        channels = []
+        for attribute in plan.channel_attributes:
+            plug = f"{output}.{attribute}"
+            sources = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+            ) or []
+            source_kind = None
+            if len(sources) == 1:
+                node_type = self._cmds.nodeType(sources[0])
+                source_kind = (
+                    "animation_curve"
+                    if node_type.startswith("animCurve")
+                    else node_type
+                )
+            times = self._cmds.keyframe(
+                plug,
+                query=True,
+                time=(plan.start_frame, plan.end_frame),
+                timeChange=True,
+            ) or []
+            values = self._cmds.keyframe(
+                plug,
+                query=True,
+                time=(plan.start_frame, plan.end_frame),
+                valueChange=True,
+            ) or []
+            keys = []
+            for time, value in zip(times, values):
+                incoming = self._cmds.keyTangent(
+                    plug,
+                    query=True,
+                    time=(time, time),
+                    inTangentType=True,
+                ) or []
+                outgoing = self._cmds.keyTangent(
+                    plug,
+                    query=True,
+                    time=(time, time),
+                    outTangentType=True,
+                ) or []
+                keys.append(BodyRootMotionKeyState(
+                    frame=int(round(float(time))),
+                    value=float(value),
+                    in_tangent=incoming[0] if len(incoming) == 1 else "",
+                    out_tangent=outgoing[0] if len(outgoing) == 1 else "",
+                ))
+            channels.append(BodyRootMotionBakedChannelState(
+                attribute=attribute,
+                source_kind=source_kind,
+                keys=tuple(keys),
+            ))
+        return BodyRootMotionBakedSnapshot(
+            output_path=output,
+            point_constraint_exists=bool(
+                self._cmds.ls(
+                    plan.root_motion.point_constraint_name,
+                    type="pointConstraint",
+                ) or []
+            ),
+            orient_constraint_exists=bool(
+                self._cmds.ls(
+                    plan.root_motion.orient_constraint_name,
+                    type="orientConstraint",
+                ) or []
+            ),
+            channels=tuple(channels),
         )
 
     def create_body_arm_ik_root(self, name: str) -> str:
