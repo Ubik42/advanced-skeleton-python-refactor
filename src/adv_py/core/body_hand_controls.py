@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 
-from .body_hand_fit import BODY_HAND_DIGITS, BODY_HAND_SEGMENTS
+from .body_hand_fit import BODY_HAND_DIGITS, BODY_HAND_SEGMENTS, BodyHandDigit
 from .body_limb_controls import (
     BodyLimbControlIssue,
     BodyLimbFkControlPlan,
@@ -27,6 +27,16 @@ class BodyHandControlValidationError(ValueError):
 BodyHandFkControlSpec = BodyLimbFkControlSpec
 BodyHandFkControlState = BodyLimbFkControlState
 BodyHandControlIssue = BodyLimbControlIssue
+
+
+BODY_HAND_CURL_WEIGHTS = (("1", 0.45), ("2", 0.75), ("3", 1.0))
+BODY_HAND_SPREAD_FACTORS = (
+    (BodyHandDigit.THUMB, 1.0),
+    (BodyHandDigit.INDEX, 0.5),
+    (BodyHandDigit.MIDDLE, 0.0),
+    (BodyHandDigit.RING, -0.5),
+    (BodyHandDigit.PINKY, -1.0),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +64,13 @@ class BodyHandFkControlPlan:
                 control.control_name,
                 control.constraint_name,
             ))
+            if (
+                control.control_parent_path is not None
+                and control.control_parent_path != control.offset_path
+            ):
+                values.append(
+                    control.control_parent_path.rsplit("|", 1)[-1]
+                )
         return tuple(values)
 
 
@@ -84,6 +101,105 @@ class BodyHandFkJointInputState:
 @dataclass(frozen=True, slots=True)
 class BodyHandFkInputSnapshot:
     joints: tuple[BodyHandFkJointInputState, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BodyHandPoseAttributeSpec:
+    side: FitBuildSide
+    root_path: str
+    name: str
+    plug: str
+    minimum: float
+    maximum: float
+    default: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class BodyHandPoseLayerSpec:
+    path: str
+    name: str
+    parent_path: str
+
+
+@dataclass(frozen=True, slots=True)
+class BodyHandCurlSpec:
+    side: FitBuildSide
+    digit: BodyHandDigit
+    segment: str
+    node_name: str
+    source_plugs: tuple[str, str]
+    weights: tuple[float, float]
+    destination_plug: str
+
+
+@dataclass(frozen=True, slots=True)
+class BodyHandSpreadSpec:
+    side: FitBuildSide
+    digit: BodyHandDigit
+    node_name: str
+    source_plug: str
+    factor: float
+    destination_plug: str
+
+
+@dataclass(frozen=True, slots=True)
+class BodyHandPosePlan:
+    layers: tuple[BodyHandPoseLayerSpec, ...]
+    attributes: tuple[BodyHandPoseAttributeSpec, ...]
+    curls: tuple[BodyHandCurlSpec, ...]
+    spreads: tuple[BodyHandSpreadSpec, ...]
+
+    @property
+    def node_names(self) -> tuple[str, ...]:
+        return tuple(
+            spec.node_name for spec in self.curls + self.spreads
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BodyHandPoseAttributeState:
+    plug: str
+    value: float
+    minimum: float | None
+    maximum: float | None
+    keyable: bool
+
+
+@dataclass(frozen=True, slots=True)
+class BodyHandPoseLayerState:
+    path: str
+    parent_path: str | None
+    local_translation: Vector3
+    local_rotation: Vector3
+    local_scale: Vector3
+
+
+@dataclass(frozen=True, slots=True)
+class BodyHandCurlState:
+    node_name: str
+    node_type: str | None
+    source_plugs: tuple[str | None, str | None]
+    weights: tuple[float, float]
+    destination_plug: str
+    destination_source: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class BodyHandSpreadState:
+    node_name: str
+    node_type: str | None
+    source_plug: str | None
+    factor: float
+    destination_plug: str
+    destination_source: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class BodyHandPoseSnapshot:
+    layers: tuple[BodyHandPoseLayerState, ...]
+    attributes: tuple[BodyHandPoseAttributeState, ...]
+    curls: tuple[BodyHandCurlState, ...]
+    spreads: tuple[BodyHandSpreadState, ...]
 
 
 def plan_body_hand_fk_controls(
@@ -148,7 +264,9 @@ def plan_body_hand_fk_controls(
                 )
                 control_name = f"AdvPy_{digit.value}{index}FK_{suffix}"
                 offset_path = f"{parent_path}|{offset_name}"
-                control_path = f"{offset_path}|{control_name}"
+                pose_name = f"AdvPy_{digit.value}{index}Pose_{suffix}"
+                pose_path = f"{offset_path}|{pose_name}"
+                control_path = f"{pose_path}|{control_name}"
                 controls.append(BodyHandFkControlSpec(
                     side=side,
                     driven_joint=state.path,
@@ -163,9 +281,111 @@ def plan_body_hand_fk_controls(
                     world_position=state.world_position,
                     world_axes=state.world_axes,
                     radius=float(radius) * radius_factors[index - 1],
+                    control_parent_path=pose_path,
                 ))
                 parent_path = control_path
     return BodyHandFkControlPlan(tuple(roots), tuple(controls))
+
+
+def plan_body_hand_pose_controls(
+    hand: BodyHandFkControlPlan,
+) -> BodyHandPosePlan:
+    roots = {root.side: root for root in hand.roots}
+    controls = {control.control_name: control for control in hand.controls}
+    if len(roots) != 2 or set(roots) != {
+        FitBuildSide.RIGHT,
+        FitBuildSide.LEFT,
+    }:
+        raise BodyHandControlValidationError(
+            "Hand 聚合姿态需要唯一的双侧 Hand FK 根"
+        )
+    if len(controls) != len(hand.controls):
+        raise BodyHandControlValidationError(
+            "Hand 聚合姿态需要唯一的 FK control 名称"
+        )
+
+    attributes = []
+    layers = []
+    curls = []
+    spreads = []
+    spread_by_digit = dict(BODY_HAND_SPREAD_FACTORS)
+    for suffix, side, side_factor in (
+        ("R", FitBuildSide.RIGHT, 1.0),
+        ("L", FitBuildSide.LEFT, -1.0),
+    ):
+        root = roots[side]
+        attribute_ranges = (
+            ("handCurl", -90.0, 90.0),
+            *((f"{digit.value.lower()}Curl", -45.0, 45.0)
+              for digit in BODY_HAND_DIGITS),
+            ("handSpread", -30.0, 30.0),
+        )
+        attributes.extend(
+            BodyHandPoseAttributeSpec(
+                side,
+                root.path,
+                name,
+                f"{root.path}.{name}",
+                minimum,
+                maximum,
+            )
+            for name, minimum, maximum in attribute_ranges
+        )
+        hand_curl = f"{root.path}.handCurl"
+        hand_spread = f"{root.path}.handSpread"
+        for digit in BODY_HAND_DIGITS:
+            digit_curl = f"{root.path}.{digit.value.lower()}Curl"
+            for segment, weight in BODY_HAND_CURL_WEIGHTS:
+                control_name = f"AdvPy_{digit.value}{segment}FK_{suffix}"
+                control = controls.get(control_name)
+                if control is None or control.side is not side:
+                    raise BodyHandControlValidationError(
+                        f"Hand 聚合姿态缺少 {control_name}"
+                    )
+                if (
+                    control.control_parent_path is None
+                    or control.control_parent_path == control.offset_path
+                ):
+                    raise BodyHandControlValidationError(
+                        f"Hand 聚合姿态缺少零通道 Pose 层：{control_name}"
+                    )
+                layers.append(BodyHandPoseLayerSpec(
+                    path=control.control_parent_path,
+                    name=control.control_parent_path.rsplit("|", 1)[-1],
+                    parent_path=control.offset_path,
+                ))
+                curls.append(BodyHandCurlSpec(
+                    side=side,
+                    digit=digit,
+                    segment=segment,
+                    node_name=(
+                        f"AdvPy_HandCurl_{digit.value}{segment}_{suffix}"
+                    ),
+                    source_plugs=(hand_curl, digit_curl),
+                    weights=(weight, weight),
+                    destination_plug=(
+                        f"{control.control_parent_path}.rotateZ"
+                    ),
+                ))
+            spread_factor = spread_by_digit[digit] * side_factor
+            if abs(spread_factor) > 1e-10:
+                first = controls[f"AdvPy_{digit.value}1FK_{suffix}"]
+                spreads.append(BodyHandSpreadSpec(
+                    side=side,
+                    digit=digit,
+                    node_name=f"AdvPy_HandSpread_{digit.value}_{suffix}",
+                    source_plug=hand_spread,
+                    factor=spread_factor,
+                    destination_plug=(
+                        f"{first.control_parent_path}.rotateY"
+                    ),
+                ))
+    return BodyHandPosePlan(
+        tuple(layers),
+        tuple(attributes),
+        tuple(curls),
+        tuple(spreads),
+    )
 
 
 def audit_body_hand_fk_input(
@@ -193,6 +413,124 @@ def audit_body_hand_fk_input(
                 "hand_input_rotation_connected",
                 "Hand FK 目标 rotate 已有输入连接",
                 path,
+            ))
+    return tuple(issues)
+
+
+def audit_body_hand_pose_controls(
+    plan: BodyHandPosePlan,
+    snapshot: BodyHandPoseSnapshot,
+    *,
+    tolerance: float = 1e-4,
+) -> tuple[BodyHandControlIssue, ...]:
+    issues = []
+    expected_layers = {spec.path: spec for spec in plan.layers}
+    actual_layers = {state.path: state for state in snapshot.layers}
+    if (
+        len(actual_layers) != len(snapshot.layers)
+        or set(actual_layers) != set(expected_layers)
+    ):
+        issues.append(BodyHandControlIssue(
+            "hand_pose_layer_set_mismatch",
+            "Hand Pose 层集合不一致",
+        ))
+    for path in sorted(set(expected_layers) & set(actual_layers)):
+        spec = expected_layers[path]
+        state = actual_layers[path]
+        if not (
+            state.parent_path == spec.parent_path
+            and _vector_matches(
+                state.local_translation, (0.0, 0.0, 0.0), tolerance
+            )
+            and _vector_matches(
+                state.local_rotation, (0.0, 0.0, 0.0), tolerance
+            )
+            and _vector_matches(
+                state.local_scale, (1.0, 1.0, 1.0), tolerance
+            )
+        ):
+            issues.append(BodyHandControlIssue(
+                "hand_pose_layer_mismatch",
+                "Hand Pose 层父级或中性通道不一致",
+                path,
+            ))
+    expected_attributes = {spec.plug: spec for spec in plan.attributes}
+    actual_attributes = {state.plug: state for state in snapshot.attributes}
+    if (
+        len(actual_attributes) != len(snapshot.attributes)
+        or set(actual_attributes) != set(expected_attributes)
+    ):
+        issues.append(BodyHandControlIssue(
+            "hand_pose_attribute_set_mismatch",
+            "Hand 聚合姿态属性集合不一致",
+        ))
+    for plug in sorted(set(expected_attributes) & set(actual_attributes)):
+        spec = expected_attributes[plug]
+        state = actual_attributes[plug]
+        if not (
+            abs(state.value - spec.default) <= tolerance
+            and state.minimum is not None
+            and abs(state.minimum - spec.minimum) <= tolerance
+            and state.maximum is not None
+            and abs(state.maximum - spec.maximum) <= tolerance
+            and state.keyable
+        ):
+            issues.append(BodyHandControlIssue(
+                "hand_pose_attribute_mismatch",
+                "Hand 聚合姿态属性配置不一致",
+                plug,
+            ))
+
+    expected_curls = {spec.node_name: spec for spec in plan.curls}
+    actual_curls = {state.node_name: state for state in snapshot.curls}
+    if (
+        len(actual_curls) != len(snapshot.curls)
+        or set(actual_curls) != set(expected_curls)
+    ):
+        issues.append(BodyHandControlIssue(
+            "hand_curl_node_set_mismatch",
+            "Hand curl 节点集合不一致",
+        ))
+    for name in sorted(set(expected_curls) & set(actual_curls)):
+        spec = expected_curls[name]
+        state = actual_curls[name]
+        if not (
+            state.node_type == "blendWeighted"
+            and state.source_plugs == spec.source_plugs
+            and _vector_matches(state.weights, spec.weights, tolerance)
+            and state.destination_plug == spec.destination_plug
+            and state.destination_source == f"{spec.node_name}.output"
+        ):
+            issues.append(BodyHandControlIssue(
+                "hand_curl_wiring_mismatch",
+                "Hand curl 聚合节点配置或连接不一致",
+                name,
+            ))
+
+    expected_spreads = {spec.node_name: spec for spec in plan.spreads}
+    actual_spreads = {state.node_name: state for state in snapshot.spreads}
+    if (
+        len(actual_spreads) != len(snapshot.spreads)
+        or set(actual_spreads) != set(expected_spreads)
+    ):
+        issues.append(BodyHandControlIssue(
+            "hand_spread_node_set_mismatch",
+            "Hand spread 节点集合不一致",
+        ))
+    for name in sorted(set(expected_spreads) & set(actual_spreads)):
+        spec = expected_spreads[name]
+        state = actual_spreads[name]
+        if not (
+            state.node_type == "multDoubleLinear"
+            and state.source_plug == spec.source_plug
+            and abs(state.factor - spec.factor) <= tolerance
+            and state.destination_plug == spec.destination_plug
+            and state.destination_source == f"{spec.node_name}.output"
+        ):
+            issues.append(BodyHandControlIssue(
+                "hand_spread_wiring_mismatch",
+                "Hand spread 节点配置或连接不一致",
+                name,
             ))
     return tuple(issues)
 

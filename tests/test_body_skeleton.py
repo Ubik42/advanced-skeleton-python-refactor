@@ -77,6 +77,11 @@ from adv_py.core import (
     BodyHandFkInputSnapshot,
     BodyHandFkJointInputState,
     BodyHandFkRootState,
+    BodyHandCurlState,
+    BodyHandPoseAttributeState,
+    BodyHandPoseLayerState,
+    BodyHandPoseSnapshot,
+    BodyHandSpreadState,
     BodyArmTwistJointState,
     BodyArmTwistSegmentState,
     BodyArmTwistSnapshot,
@@ -200,6 +205,7 @@ class FakeBodySkeletonHost:
         self.faulty_character_global = faulty_character_global
         self.hand_fk_roots = []
         self.hand_fk_states = []
+        self.hand_pose_snapshot = None
         self.faulty_hand_fk = faulty_hand_fk
         self.in_transaction = False
         self.extra_dag_paths = ()
@@ -357,6 +363,7 @@ class FakeBodySkeletonHost:
         before_character_global_snapshot = self.character_global_snapshot
         before_hand_fk_roots = list(self.hand_fk_roots)
         before_hand_fk_states = list(self.hand_fk_states)
+        before_hand_pose_snapshot = self.hand_pose_snapshot
         before_control_root = self.control_root
         before_arm_fk_states = list(self.arm_fk_states)
         before_mechanism_root = self.mechanism_root
@@ -400,6 +407,7 @@ class FakeBodySkeletonHost:
             self.character_global_snapshot = before_character_global_snapshot
             self.hand_fk_roots = before_hand_fk_roots
             self.hand_fk_states = before_hand_fk_states
+            self.hand_pose_snapshot = before_hand_pose_snapshot
             self.control_root = before_control_root
             self.arm_fk_states = before_arm_fk_states
             self.mechanism_root = before_mechanism_root
@@ -615,7 +623,9 @@ class FakeBodySkeletonHost:
             offset_path=spec.offset_path,
             offset_parent_path=spec.parent_path,
             control_path=spec.control_path,
-            control_parent_path=spec.offset_path,
+            control_parent_path=(
+                spec.control_parent_path or spec.offset_path
+            ),
             constraint_name=spec.constraint_name,
             source_control=spec.control_path,
             driven_joint=spec.driven_joint,
@@ -635,6 +645,56 @@ class FakeBodySkeletonHost:
             tuple(self.hand_fk_roots),
             states,
         )
+
+    def create_body_hand_pose(self, plan):
+        self.hand_pose_snapshot = BodyHandPoseSnapshot(
+            layers=tuple(
+                BodyHandPoseLayerState(
+                    spec.path,
+                    spec.parent_path,
+                    (0.0, 0.0, 0.0),
+                    (0.0, 0.0, 0.0),
+                    (1.0, 1.0, 1.0),
+                )
+                for spec in plan.layers
+            ),
+            attributes=tuple(
+                BodyHandPoseAttributeState(
+                    spec.plug,
+                    spec.default,
+                    spec.minimum,
+                    spec.maximum,
+                    True,
+                )
+                for spec in plan.attributes
+            ),
+            curls=tuple(
+                BodyHandCurlState(
+                    spec.node_name,
+                    "blendWeighted",
+                    spec.source_plugs,
+                    spec.weights,
+                    spec.destination_plug,
+                    f"{spec.node_name}.output",
+                )
+                for spec in plan.curls
+            ),
+            spreads=tuple(
+                BodyHandSpreadState(
+                    spec.node_name,
+                    "multDoubleLinear",
+                    spec.source_plug,
+                    spec.factor,
+                    spec.destination_plug,
+                    f"{spec.node_name}.output",
+                )
+                for spec in plan.spreads
+            ),
+        )
+
+    def capture_body_hand_pose(self, plan):
+        del plan
+        return self.hand_pose_snapshot
 
     def create_body_arm_fk_control(self, spec):
         self.arm_fk_states.append(
@@ -2398,6 +2458,10 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 2)
         self.assertEqual(len(result.hand.snapshot.roots), 2)
         self.assertEqual(len(result.hand.snapshot.controls), 30)
+        self.assertEqual(len(result.hand.pose.layers), 30)
+        self.assertEqual(len(result.hand.pose.attributes), 14)
+        self.assertEqual(len(result.hand.pose.curls), 30)
+        self.assertEqual(len(result.hand.pose.spreads), 8)
         self.assertEqual(result.body, body)
 
     def test_partial_hand_blocks_character_before_transaction(self):
@@ -2435,6 +2499,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertIsNone(host.leg_ik_root)
         self.assertFalse(host.hand_fk_roots)
         self.assertFalse(host.hand_fk_states)
+        self.assertIsNone(host.hand_pose_snapshot)
         self.assertIsNone(host.character_global_snapshot)
 
     def test_complete_character_rig_builds_arm_leg_and_global_in_one_transaction(self):

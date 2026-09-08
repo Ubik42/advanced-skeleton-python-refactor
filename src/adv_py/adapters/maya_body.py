@@ -79,6 +79,12 @@ from adv_py.core.body_hand_controls import (
     BodyHandFkJointInputState,
     BodyHandFkRootSpec,
     BodyHandFkRootState,
+    BodyHandCurlState,
+    BodyHandPoseAttributeState,
+    BodyHandPoseLayerState,
+    BodyHandPosePlan,
+    BodyHandPoseSnapshot,
+    BodyHandSpreadState,
 )
 from adv_py.core.body_arm_twist import (
     BodyArmTwistJointSpec,
@@ -3847,6 +3853,221 @@ class MayaBodyBuildHost(MayaFitJointHost):
     ) -> None:
         self._create_body_limb_fk_control(spec, "Hand")
 
+    def create_body_hand_pose(self, plan: BodyHandPosePlan) -> None:
+        self._require_transaction()
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            if any(
+                self.find_name_collisions(name) for name in plan.node_names
+            ):
+                raise FitSkeletonValidationError(
+                    "Hand 聚合姿态节点名称发生冲突"
+                )
+            for spec in plan.attributes:
+                roots = self._cmds.ls(
+                    spec.root_path,
+                    long=True,
+                    type="transform",
+                ) or []
+                if len(roots) != 1 or roots[0] != spec.root_path:
+                    raise FitSkeletonValidationError(
+                        f"Hand 聚合姿态根节点失效：{spec.root_path}"
+                    )
+                if self._cmds.attributeQuery(
+                    spec.name,
+                    node=spec.root_path,
+                    exists=True,
+                ):
+                    raise FitSkeletonValidationError(
+                        f"Hand 聚合姿态属性已存在：{spec.plug}"
+                    )
+            for destination in (
+                *(spec.destination_plug for spec in plan.curls),
+                *(spec.destination_plug for spec in plan.spreads),
+            ):
+                sources = self._cmds.listConnections(
+                    destination,
+                    source=True,
+                    destination=False,
+                    plugs=True,
+                ) or []
+                if (
+                    not self._cmds.objExists(destination)
+                    or not self._cmds.getAttr(destination, settable=True)
+                    or sources
+                ):
+                    raise FitSkeletonValidationError(
+                        f"Hand 聚合姿态目标通道不可写：{destination}"
+                    )
+
+            self._transaction_changed = True
+            for spec in plan.attributes:
+                self._cmds.addAttr(
+                    spec.root_path,
+                    longName=spec.name,
+                    attributeType="double",
+                    minValue=spec.minimum,
+                    maxValue=spec.maximum,
+                    defaultValue=spec.default,
+                    keyable=True,
+                )
+            for spec in plan.curls:
+                node = self._cmds.createNode(
+                    "blendWeighted",
+                    name=spec.node_name,
+                )
+                self._cmds.connectAttr(spec.source_plugs[0], f"{node}.input[0]")
+                self._cmds.connectAttr(spec.source_plugs[1], f"{node}.input[1]")
+                self._cmds.setAttr(f"{node}.weight[0]", spec.weights[0])
+                self._cmds.setAttr(f"{node}.weight[1]", spec.weights[1])
+                self._cmds.connectAttr(
+                    f"{node}.output",
+                    spec.destination_plug,
+                )
+            for spec in plan.spreads:
+                node = self._cmds.createNode(
+                    "multDoubleLinear",
+                    name=spec.node_name,
+                )
+                self._cmds.connectAttr(spec.source_plug, f"{node}.input1")
+                self._cmds.setAttr(f"{node}.input2", spec.factor)
+                self._cmds.connectAttr(
+                    f"{node}.output",
+                    spec.destination_plug,
+                )
+        finally:
+            if selection:
+                self._cmds.select(selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+
+    def capture_body_hand_pose(
+        self,
+        plan: BodyHandPosePlan,
+    ) -> BodyHandPoseSnapshot:
+        def source(plug: str, *, skip_conversion=False) -> str | None:
+            values = self._cmds.listConnections(
+                plug,
+                source=True,
+                destination=False,
+                plugs=True,
+                skipConversionNodes=skip_conversion,
+            ) or []
+            return self._canonical_plug(values[0]) if len(values) == 1 else None
+
+        layers = []
+        for spec in plan.layers:
+            nodes = self._cmds.ls(
+                spec.path,
+                long=True,
+                type="transform",
+            ) or []
+            if len(nodes) != 1 or nodes[0] != spec.path:
+                raise FitSkeletonValidationError(
+                    f"Hand Pose 层缺失：{spec.path}"
+                )
+            node = nodes[0]
+            parent = self._cmds.listRelatives(
+                node,
+                parent=True,
+                fullPath=True,
+            ) or []
+            layers.append(BodyHandPoseLayerState(
+                path=node,
+                parent_path=parent[0] if len(parent) == 1 else None,
+                local_translation=tuple(
+                    float(value)
+                    for value in self._cmds.getAttr(f"{node}.translate")[0]
+                ),
+                local_rotation=tuple(
+                    float(value)
+                    for value in self._cmds.getAttr(f"{node}.rotate")[0]
+                ),
+                local_scale=tuple(
+                    float(value)
+                    for value in self._cmds.getAttr(f"{node}.scale")[0]
+                ),
+            ))
+
+        attributes = []
+        for spec in plan.attributes:
+            if not self._cmds.objExists(spec.plug):
+                raise FitSkeletonValidationError(
+                    f"Hand 聚合姿态属性缺失：{spec.plug}"
+                )
+            minimum = self._cmds.attributeQuery(
+                spec.name,
+                node=spec.root_path,
+                minimum=True,
+            ) or []
+            maximum = self._cmds.attributeQuery(
+                spec.name,
+                node=spec.root_path,
+                maximum=True,
+            ) or []
+            attributes.append(BodyHandPoseAttributeState(
+                plug=spec.plug,
+                value=float(self._cmds.getAttr(spec.plug)),
+                minimum=float(minimum[0]) if len(minimum) == 1 else None,
+                maximum=float(maximum[0]) if len(maximum) == 1 else None,
+                keyable=bool(self._cmds.getAttr(spec.plug, keyable=True)),
+            ))
+
+        curls = []
+        for spec in plan.curls:
+            nodes = self._cmds.ls(spec.node_name, type="blendWeighted") or []
+            if len(nodes) != 1:
+                raise FitSkeletonValidationError(
+                    f"Hand curl 节点缺失：{spec.node_name}"
+                )
+            node = nodes[0]
+            curls.append(BodyHandCurlState(
+                node_name=node,
+                node_type=self._cmds.nodeType(node),
+                source_plugs=(
+                    source(f"{node}.input[0]"),
+                    source(f"{node}.input[1]"),
+                ),
+                weights=(
+                    float(self._cmds.getAttr(f"{node}.weight[0]")),
+                    float(self._cmds.getAttr(f"{node}.weight[1]")),
+                ),
+                destination_plug=spec.destination_plug,
+                destination_source=source(
+                    spec.destination_plug,
+                    skip_conversion=True,
+                ),
+            ))
+
+        spreads = []
+        for spec in plan.spreads:
+            nodes = self._cmds.ls(
+                spec.node_name,
+                type="multDoubleLinear",
+            ) or []
+            if len(nodes) != 1:
+                raise FitSkeletonValidationError(
+                    f"Hand spread 节点缺失：{spec.node_name}"
+                )
+            node = nodes[0]
+            spreads.append(BodyHandSpreadState(
+                node_name=node,
+                node_type=self._cmds.nodeType(node),
+                source_plug=source(f"{node}.input1"),
+                factor=float(self._cmds.getAttr(f"{node}.input2")),
+                destination_plug=spec.destination_plug,
+                destination_source=source(
+                    spec.destination_plug,
+                    skip_conversion=True,
+                ),
+            ))
+        return BodyHandPoseSnapshot(
+            tuple(layers),
+            tuple(attributes),
+            tuple(curls),
+            tuple(spreads),
+        )
+
     def _create_body_limb_fk_control(
         self,
         spec: BodyArmFkControlSpec,
@@ -3854,7 +4075,18 @@ class MayaBodyBuildHost(MayaFitJointHost):
     ) -> None:
         self._require_transaction()
         selection = self._cmds.ls(selection=True, long=True) or []
-        for name in (spec.offset_name, spec.control_name, spec.constraint_name):
+        pose_name = (
+            spec.control_parent_path.rsplit("|", 1)[-1]
+            if spec.control_parent_path is not None
+            and spec.control_parent_path != spec.offset_path
+            else None
+        )
+        for name in (
+            spec.offset_name,
+            *((pose_name,) if pose_name is not None else ()),
+            spec.control_name,
+            spec.constraint_name,
+        ):
             if self.find_name_collisions(name):
                 raise FitSkeletonValidationError(
                     f"{limb_label} FK 控制名称冲突：{name}"
@@ -3886,6 +4118,22 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 1.0,
             )
             self._cmds.xform(offset, worldSpace=True, matrix=matrix)
+            control_parent = offset
+            if pose_name is not None:
+                control_parent = self._cmds.createNode(
+                    "transform",
+                    name=pose_name,
+                    parent=offset,
+                    skipSelect=True,
+                )
+                control_parent = (
+                    self._cmds.ls(control_parent, long=True)
+                    or [control_parent]
+                )[0]
+                if control_parent != spec.control_parent_path:
+                    raise RuntimeError(
+                        f"{limb_label} FK Pose 层路径漂移：{pose_name}"
+                    )
             control = self._cmds.circle(
                 name=spec.control_name,
                 normal=(1.0, 0.0, 0.0),
@@ -3894,7 +4142,11 @@ class MayaBodyBuildHost(MayaFitJointHost):
                 sections=12,
                 constructionHistory=False,
             )[0]
-            control = self._cmds.parent(control, offset, relative=True)[0]
+            control = self._cmds.parent(
+                control,
+                control_parent,
+                relative=True,
+            )[0]
             control = (self._cmds.ls(control, long=True) or [control])[0]
             if offset != spec.offset_path or control != spec.control_path:
                 raise RuntimeError(

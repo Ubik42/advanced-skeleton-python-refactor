@@ -4,7 +4,7 @@
 
 开发顺序严格采用 **Maya-first、Blender-second**：第一阶段以现有 ADV/MEL 行为为基准，在 Maya 内完成分模块 Python 重构；第二阶段只迁移已经在 Maya 稳定并形成清晰语义合同的能力。现有 Blender 代码是冻结的架构可行性验证，不代表两条产品线并行开发。
 
-已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成六十九个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、基础 30 关节与五指 70 关节 Body 构建、安全 ReBuild、双臂完整 FK/IK、双腿原子 FK/IK/Foot Rig、双手分层 FK controls 和统一角色总控。五指源模板在 Right Wrist 下定义 Thumb/Index/Middle/Ring/Pinky 各四个 Fit joints，38 个源 joints 展开成 70 个 Body joints。`BuildBodyHandFkControls` 在 Wrist_R/L 下分别建立控制根，每根手指由 1→2→3 三层零通道曲线控制，共 30 个 orientConstraint 输出；控制随 Wrist 运动，左右侧保持隔离。`BuildBodyCharacterRig` 保持 30 关节 Body 的 Arm/Leg/Global 行为，并在检测到完整 70 关节五指 Body 时把 Hand FK 自动纳入同一个顶层事务；部分五指集合会在修改场景前失败。`globalScale` 继续接入九个根及 Arm/Leg 比例补偿。Skin 已覆盖显式绑定、稀疏权重写入、JSON 往返、路径映射、显式镜像及严格几何配对。当前尚未包含 curl/spread 聚合通道、自动手指权重和产品 UI。
+已验证环境：Windows、Maya 2024 standalone、Blender 5.2.0 LTS background、Python 3.10/3.14。当前版本完成七十个 Maya-only 切片：FitSkeleton 数据与朝向、M/R/L 对称展开、基础 30 关节与五指 70 关节 Body 构建、安全 ReBuild、双臂完整 FK/IK、双腿原子 FK/IK/Foot Rig、双手分层 FK controls、Hand curl/spread 聚合姿态和统一角色总控。五指源模板在 Right Wrist 下定义 Thumb/Index/Middle/Ring/Pinky 各四个 Fit joints，38 个源 joints 展开成 70 个 Body joints。`BuildBodyHandFkControls` 在 Wrist_R/L 下分别建立控制根，每根手指由 1→2→3 三层曲线控制，并在绑定 offset 与 FK control 之间加入零通道 Pose 层；每侧 `handCurl`、五个单指 curl 与 `handSpread` 通过显式 DG 网络驱动 Pose 层，手动 FK rotate 仍可叠加。`BuildBodyCharacterRig` 保持 30 关节 Body 的 Arm/Leg/Global 行为，并在完整 70 关节五指 Body 上把 Hand FK 与聚合姿态纳入同一个顶层事务；部分五指集合会在修改场景前失败。Skin 已覆盖显式绑定、稀疏权重写入、JSON 往返、路径映射、显式镜像及严格几何配对。当前尚未包含手势预设、逐指 spread、自动手指权重和产品 UI。
 
 ## 当前完成
 
@@ -25,7 +25,7 @@
 - `synthetic_upper_body_fit_template` 生成 14 关节 T-pose 躯干、颈、头和双臂树，验证 Spine2 三分支、局部位置及 Maya 标签。该素材由代码独立生成，不读取授权安装中的身体模板。
 - `BuildSyntheticUpperBodyFit` 在空且已配置的 FitSkeleton 上先预演完整层级与 11 个朝向，再用一个 Undo 事务创建并朝向 14 关节上半身树；创建后的实际计划若与预演不同，会回滚整棵树。
 - `BuildOrientedFitTemplate` 把模板创建、真实场景计划复算与朝向提交组合成可复用的一次 Undo 用例；`BuildSyntheticBodySourceFit` 保留 18 关节基础源拓扑，`BuildSyntheticBodyWithHandSourceFit` 则在同一身体上增加一个可镜像的完整五指源。五个四关节链都使用 Finger 标签，Wrist 显式选择 Middle 分支朝向；预演、38 关节创建、28 个朝向写入、复检和失败回滚位于一个事务。
-- `BuildBodyHandFkControls` 从已验证的 70 关节 Body 规划双侧五指控制。两个 Hand FK roots 直接挂在 Wrist_R/L 下；每指前三节建立逐级嵌套的 offset/control 与 orientConstraint，共 30 个 NURBS controls。计划阶段核对完整五指父链、side、全部节点名，以及 30 个目标 rotate 的可写性和既有输入；构建后复检 Wrist 父级、零通道、曲线、约束、Body 绑定姿态和 Fit 不变性，失败或一次 Undo 会完整移除控制系统。
+- `BuildBodyHandFkControls` 从已验证的 70 关节 Body 规划双侧五指控制。两个 Hand FK roots 直接挂在 Wrist_R/L 下；每指前三节建立逐级嵌套的 offset/Pose/control 与 orientConstraint，共 30 个零通道 Pose 层和 30 个 NURBS controls。每侧 Hand root 提供 `handCurl`、五个单指 curl 和 `handSpread`；30 个 `blendWeighted` 按 0.45/0.75/1.0 分段叠加全局与单指 curl，8 个 `multDoubleLinear` 为外侧四指提供带左右镜像符号的 spread。网络只驱动 Pose.rotateY/Z，控制器自身 rotate 保持可写。计划阶段核对完整父链、全部节点名和 30 个 Body 目标 rotate 输入；构建后复检 Pose 层、属性、DG 连线、Body 绑定姿态和 Fit 不变性，失败或一次 Undo 会完整移除控制系统。
 - `PlanFitSymmetry` 从完整 Fit 层级和镜像元数据生成 `_M/_R/_L` 构建实例。默认 18 个源关节展开为 30 个实例，`noMirror/noMirrorLeft` 沿父链继承，未标记的 Left 起始分支会在构建前拒绝。
 - `BuildBodySkeleton` 在全量名称与源标签预检后，把 30 个对称实例作为根级 Maya joint DAG 一次提交；构建后复检路径、父级、世界位置、Maya side、标签与中性朝向，并确认 Fit 源未改变。
 - `OrientBodySkeleton` 把 Fit 世界轴传递给 M/R 输出；L 输出反射 X Aim 与 Y Secondary 后用叉积重建右手 Z 轴。写入前检查完整 `jointOrient` 可写性，单事务写入后恢复全部世界位置，并复检拓扑、位置、朝向、Fit 输入和幂等性。
@@ -42,7 +42,7 @@
 - `BuildBodyLegBlend` 创建左右独立的 `legIkFk_R/L`、reverse 节点、8 个双源 orientConstraint 和 Knee/Ankle 的 4 个双源 pointConstraint；Toes 旋转由同侧 FK/IK Toes driver 进入 Body，FK=0、IK=1、0.5 权重及左右隔离均在 Maya 2024 中验证。
 - `BuildBodyLegVisibility` 复用通用 limb 显隐合同，把每侧 reverse 输出连接到 Hip FK 根层级，并把 `legIkFk_R/L` 连接到对应 Ankle/PV IK 根层级；执行前拒绝缺失源和不可写或已有输入的 visibility，构建失败由单一事务回滚。
 - `BuildBodyLegRig` 在场景零修改预演后，用一个 Undo Chunk 依次创建 Leg mechanisms、FK controls、Body blend、Ankle/PV IK、模式显隐、双段 stretch、stretch bias、knee pin、主轴感知 twist/volume 与双侧 Foot pivot；全部属性和节点名进入统一碰撞预检，任一阶段失败会移除此前所有 Leg/Foot 产物，一次 Undo 可恢复干净 Body 和 ReBuild 安全状态。
-- `BuildBodyCharacterRig` 从同一份 Body/Fit 快照预演 Arm、Leg 与可选 Hand 计划，并在一个外层 Undo Chunk 中复用各阶段而不嵌套事务。30 关节 Body 继续只组合 Arm/Leg/Global；完整 70 关节五指 Body 自动增加两个 Wrist 子根和 30 个 Hand FK controls，残缺五指在事务前拒绝。随后建立 `AdvPy_CharacterControls → AdvPy_GlobalOffset → AdvPy_Global` 层级，以统一 TRS 驱动 Body 和八个 limb 顶层根，并把正值 `globalScale` 接入全部九个根及 Arm/Leg stretch 比例补偿。构建后逐项核对所有阶段、Body 绑定姿态和 Fit 不变性，任何异常都会撤销完整角色 Rig。
+- `BuildBodyCharacterRig` 从同一份 Body/Fit 快照预演 Arm、Leg 与可选 Hand 计划，并在一个外层 Undo Chunk 中复用各阶段而不嵌套事务。30 关节 Body 继续只组合 Arm/Leg/Global；完整 70 关节五指 Body 自动增加两个 Wrist 子根、30 个 Pose 层、30 个 Hand FK controls 与 curl/spread 网络，残缺五指在事务前拒绝。随后建立 `AdvPy_CharacterControls → AdvPy_GlobalOffset → AdvPy_Global` 层级，以统一 TRS 驱动 Body 和八个 limb 顶层根，并把正值 `globalScale` 接入全部九个根及 Arm/Leg stretch 比例补偿。构建后逐项核对所有阶段、Body 绑定姿态和 Fit 不变性，任何异常都会撤销完整角色 Rig。
 - `MatchBodyLegFkToIk` 从当前 Hip/Knee/Ankle/Toes Body 姿态计算 Ankle IK、Pole Vector 与 Toe IK control 的目标世界帧；事务内先把目标侧 Foot 通道归零，再依次匹配三个控制目标并切换 blend，复检四关节位置/朝向、Foot 值和另一侧状态。
 - `MatchBodyLegIkToFk` 按 Hip→Knee→Ankle→Toes 父子顺序把四层 FK controls 对齐到当前 Body 世界轴，并把当前 Hip–Knee、Knee–Ankle 的有符号本地主轴长度写入 FK drivers 后再切换；提交后复检段长、四关节位置/朝向、另一侧 blend、Fit 输入和 FK 控制本地平移。
 - `BuildBodyLegFoot` 仍可为独立组合的 pre-Foot Leg stages 追加双侧五级 reverse-foot pivot；默认成品入口已经由 `BuildBodyLegRig` 原子包含该阶段。Ankle IK control 暴露 `footRoll/heelRoll/outerBank/innerBank/toeRoll/ballRoll`：自动 `footRoll` 由每侧 4 个分段节点和 3 个加法节点生成 Heel/Ball/Toe 输出，五个手动通道仍可叠加，inner bank 继续通过显式负号节点保持正值语义。RP IK Handle 挂到 Ball pivot；原 Ankle 朝向约束会在同一事务内安全改接到 Ball pivot，Toe pivot 下的零通道三轴 Toe IK control 直接驱动 Toes IK driver。
@@ -104,4 +104,4 @@ py -3 -m unittest discover -s tests -v
 - 当前 Maya Arm 与 Leg 均支持左右独立 IK stretch、主轴感知 twist helper 和只在 IK 模式响应的可调正交体积保持；Leg 还支持保持总长度的上下段 stretch bias，以及由 Pole Vector 与 Ankle 控制实时测距的 knee pin。完整 Character 入口已用统一 Global TRS 和正值等比 `globalScale` 串联 Body、Arm 与 Leg，70 关节 Body 会在同一事务增加 Hand FK；非均匀缩放、shear、World Match 与镜像 limb 尚未完成。
 - 当前 Skin Bind 只接受调用方明确给出的单个 mesh 与 joint 列表；JSON 和 influence 映射都要求调用方给出完整路径及对应关系，不会自动猜测 namespace、短名或左右 influence。几何镜像只接受严格 X 平面对称顶点，不处理拓扑不对称或近似重采样。尚不支持权重模板、热区/测地线算法、批量绑定或解绑迁移。
 - Maya 重构阶段达到门槛前，不继续扩展 Blender 功能；Blender 适配器只做防回归维护。
-- 当前 Maya 主线已有 Arm/Leg/Hand/Global 的完整 Character 入口：双臂、双腿 FK/IK/Foot 与完整五指 Hand FK 在同一事务构建，统一 Global control 驱动 Body 和九个根级目标，Hand roots 作为 Wrist 子级跟随 Arm FK/IK。30 关节旧 Body 不强制 Hand，70 关节五指 Body 自动启用 Hand，残缺五指会在事务前停止。curl/spread、World Match、非均匀缩放与 Blender 迁移仍待后续 Maya 阶段。
+- 当前 Maya 主线已有 Arm/Leg/Hand/Global 的完整 Character 入口：双臂、双腿 FK/IK/Foot、完整五指 Hand FK 与 curl/spread 聚合层在同一事务构建，统一 Global control 驱动 Body 和九个根级目标，Hand roots 作为 Wrist 子级跟随 Arm FK/IK。30 关节旧 Body 不强制 Hand，70 关节五指 Body 自动启用 Hand，残缺五指会在事务前停止。手势预设、逐指 spread、World Match、非均匀缩放与 Blender 迁移仍待后续 Maya 阶段。

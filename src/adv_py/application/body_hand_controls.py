@@ -11,9 +11,13 @@ from adv_py.core.body_hand_controls import (
     BodyHandFkControlSpec,
     BodyHandFkInputSnapshot,
     BodyHandFkRootSpec,
+    BodyHandPosePlan,
+    BodyHandPoseSnapshot,
     audit_body_hand_fk_controls,
     audit_body_hand_fk_input,
+    audit_body_hand_pose_controls,
     plan_body_hand_fk_controls,
+    plan_body_hand_pose_controls,
 )
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -39,12 +43,18 @@ class BodyHandFkHost(BodyRebuildInspectionHost, Protocol):
         self,
         plan: BodyHandFkControlPlan,
     ) -> BodyHandFkControlSnapshot: ...
+    def create_body_hand_pose(self, plan: BodyHandPosePlan) -> None: ...
+    def capture_body_hand_pose(
+        self,
+        plan: BodyHandPosePlan,
+    ) -> BodyHandPoseSnapshot: ...
 
 
 @dataclass(frozen=True, slots=True)
 class BodyHandFkBuildPlan:
     safety: BodyRebuildSafetyAudit
     controls: BodyHandFkControlPlan
+    pose: BodyHandPosePlan
     input_snapshot: BodyHandFkInputSnapshot
     input_issues: tuple[BodyHandControlIssue, ...]
     name_collisions: tuple[str, ...]
@@ -76,6 +86,7 @@ class BodyHandFkBuildPlan:
 class BodyHandFkBuildResult:
     plan: BodyHandFkBuildPlan
     snapshot: BodyHandFkControlSnapshot
+    pose: BodyHandPoseSnapshot
     body: BodySkeletonSnapshot
 
 
@@ -113,16 +124,18 @@ class BuildBodyHandFkControls:
             safety.body,
             radius=control_radius,
         )
+        pose = plan_body_hand_pose_controls(controls)
         input_snapshot = self._host.capture_body_hand_fk_input(controls)
         input_issues = audit_body_hand_fk_input(controls, input_snapshot)
         collisions = tuple(sorted({
             path
-            for name in controls.node_names
+            for name in controls.node_names + pose.node_names
             for path in self._host.find_name_collisions(name)
         }))
         return BodyHandFkBuildPlan(
             safety,
             controls,
+            pose,
             input_snapshot,
             input_issues,
             collisions,
@@ -196,12 +209,20 @@ class BuildBodyHandFkControls:
                     raise RuntimeError("Hand FK 根节点路径漂移")
             for spec in plan.controls.controls:
                 self._host.create_body_hand_fk_control(spec)
+            self._host.create_body_hand_pose(plan.pose)
             snapshot = self._host.capture_body_hand_fk_controls(plan.controls)
             issues = audit_body_hand_fk_controls(plan.controls, snapshot)
             if issues:
                 raise RuntimeError(
                     "Hand FK 控制构建后复检失败："
                     + "；".join(issue.message for issue in issues)
+                )
+            pose = self._host.capture_body_hand_pose(plan.pose)
+            pose_issues = audit_body_hand_pose_controls(plan.pose, pose)
+            if pose_issues:
+                raise RuntimeError(
+                    "Hand 聚合姿态构建后复检失败："
+                    + "；".join(issue.message for issue in pose_issues)
                 )
             body = self._host.capture_body_skeleton(body_root_name)
             if not body_bind_pose_matches(plan.safety.body, body):
@@ -216,4 +237,4 @@ class BuildBodyHandFkControls:
                 != plan.safety.symmetry.settings
             ):
                 raise RuntimeError("Hand FK 控制构建后 Fit 输入变化")
-        return BodyHandFkBuildResult(plan, snapshot, body)
+        return BodyHandFkBuildResult(plan, snapshot, pose, body)

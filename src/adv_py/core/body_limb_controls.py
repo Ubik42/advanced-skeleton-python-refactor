@@ -28,6 +28,7 @@ class BodyLimbFkControlSpec:
     world_position: Vector3
     world_axes: AxisFrame
     radius: float
+    control_parent_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,7 +200,8 @@ def audit_body_limb_fk_controls(
         if (
             state.offset_path != spec.offset_path
             or state.offset_parent_path != spec.parent_path
-            or state.control_parent_path != spec.offset_path
+            or state.control_parent_path
+            != (spec.control_parent_path or spec.offset_path)
         ):
             issues.append(BodyLimbControlIssue(
                 "control_hierarchy_mismatch", "FK 控制父链不一致", path

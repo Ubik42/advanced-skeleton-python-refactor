@@ -5,11 +5,17 @@ from dataclasses import replace
 from adv_py.application import BuildBodyHandFkControls
 from adv_py.core import (
     BODY_HAND_DIGITS,
+    BODY_HAND_CURL_WEIGHTS,
+    BodyHandCurlState,
     BodyHandFkControlSnapshot,
     BodyHandFkControlState,
     BodyHandFkInputSnapshot,
     BodyHandFkJointInputState,
     BodyHandFkRootState,
+    BodyHandPoseAttributeState,
+    BodyHandPoseLayerState,
+    BodyHandPoseSnapshot,
+    BodyHandSpreadState,
     BodyJointState,
     BodyRebuildSceneState,
     BodySkeletonSnapshot,
@@ -22,10 +28,12 @@ from adv_py.core import (
     IDENTITY_AXES,
     audit_body_hand_fk_controls,
     audit_body_hand_fk_input,
+    audit_body_hand_pose_controls,
     default_fit_skeleton_settings,
     expand_fit_symmetry,
     oriented_body_provenance,
     plan_body_hand_fk_controls,
+    plan_body_hand_pose_controls,
     predict_fit_template_hierarchy,
     synthetic_body_with_hand_source_fit_template,
 )
@@ -85,16 +93,71 @@ def _hand_scene():
     return fit, body
 
 
+def _pose_snapshot(plan):
+    return BodyHandPoseSnapshot(
+        layers=tuple(
+            BodyHandPoseLayerState(
+                spec.path,
+                spec.parent_path,
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0),
+                (1.0, 1.0, 1.0),
+            )
+            for spec in plan.layers
+        ),
+        attributes=tuple(
+            BodyHandPoseAttributeState(
+                spec.plug,
+                spec.default,
+                spec.minimum,
+                spec.maximum,
+                True,
+            )
+            for spec in plan.attributes
+        ),
+        curls=tuple(
+            BodyHandCurlState(
+                spec.node_name,
+                "blendWeighted",
+                spec.source_plugs,
+                spec.weights,
+                spec.destination_plug,
+                f"{spec.node_name}.output",
+            )
+            for spec in plan.curls
+        ),
+        spreads=tuple(
+            BodyHandSpreadState(
+                spec.node_name,
+                "multDoubleLinear",
+                spec.source_plug,
+                spec.factor,
+                spec.destination_plug,
+                f"{spec.node_name}.output",
+            )
+            for spec in plan.spreads
+        ),
+    )
+
+
 class FakeBodyHandFkHost:
-    def __init__(self, *, faulty_capture=False, locked_joint=None):
+    def __init__(
+        self,
+        *,
+        faulty_capture=False,
+        faulty_pose=False,
+        locked_joint=None,
+    ):
         self.fit, body = _hand_scene()
         self.body = body
         self.settings = default_fit_skeleton_settings("|FitSkeleton")
         self.collisions = {}
         self.roots = []
         self.controls = []
+        self.pose = None
         self.transaction_count = 0
         self.faulty_capture = faulty_capture
+        self.faulty_pose = faulty_pose
         self.locked_joint = locked_joint
 
     def capture_fit_orientation(self, container_name):
@@ -138,12 +201,14 @@ class FakeBodyHandFkHost:
         del label
         before_roots = list(self.roots)
         before_controls = list(self.controls)
+        before_pose = self.pose
         self.transaction_count += 1
         try:
             yield
         except Exception:
             self.roots = before_roots
             self.controls = before_controls
+            self.pose = before_pose
             raise
 
     def create_body_hand_fk_root(self, spec):
@@ -163,7 +228,9 @@ class FakeBodyHandFkHost:
             offset_path=spec.offset_path,
             offset_parent_path=spec.parent_path,
             control_path=spec.control_path,
-            control_parent_path=spec.offset_path,
+            control_parent_path=(
+                spec.control_parent_path or spec.offset_path
+            ),
             constraint_name=spec.constraint_name,
             source_control=spec.control_path,
             driven_joint=spec.driven_joint,
@@ -180,6 +247,21 @@ class FakeBodyHandFkHost:
         if self.faulty_capture and controls:
             controls = (replace(controls[0], shape_type=None),) + controls[1:]
         return BodyHandFkControlSnapshot(tuple(self.roots), controls)
+
+    def create_body_hand_pose(self, plan):
+        self.pose = _pose_snapshot(plan)
+
+    def capture_body_hand_pose(self, plan):
+        del plan
+        if self.faulty_pose and self.pose and self.pose.curls:
+            return replace(
+                self.pose,
+                curls=(replace(
+                    self.pose.curls[0],
+                    destination_source=None,
+                ),) + self.pose.curls[1:],
+            )
+        return self.pose
 
 
 class BodyHandControlTests(unittest.TestCase):
@@ -205,6 +287,59 @@ class BodyHandControlTests(unittest.TestCase):
             self.assertEqual(controls[2].parent_path, controls[1].control_path)
             self.assertGreater(controls[0].radius, controls[1].radius)
             self.assertGreater(controls[1].radius, controls[2].radius)
+
+    def test_pose_plan_layers_curl_and_spread_on_fk_offsets(self):
+        _, body = _hand_scene()
+        hand = plan_body_hand_fk_controls(body)
+        pose = plan_body_hand_pose_controls(hand)
+
+        self.assertEqual(len(pose.layers), 30)
+        self.assertEqual(len(pose.attributes), 14)
+        self.assertEqual(len(pose.curls), 30)
+        self.assertEqual(len(pose.spreads), 8)
+        self.assertEqual(
+            {spec.weights[0] for spec in pose.curls},
+            {weight for _, weight in BODY_HAND_CURL_WEIGHTS},
+        )
+        self.assertTrue(all(
+            spec.destination_plug.endswith(".rotateZ")
+            for spec in pose.curls
+        ))
+        self.assertTrue(all(
+            spec.destination_plug.endswith(".rotateY")
+            for spec in pose.spreads
+        ))
+        factors = {
+            (spec.side.value, spec.digit.value): spec.factor
+            for spec in pose.spreads
+        }
+        self.assertEqual(factors[("R", "Thumb")], 1.0)
+        self.assertEqual(factors[("L", "Thumb")], -1.0)
+        self.assertEqual(factors[("R", "Pinky")], -1.0)
+        self.assertEqual(factors[("L", "Pinky")], 1.0)
+
+    def test_pose_audit_reports_wrong_curl_output(self):
+        _, body = _hand_scene()
+        pose = plan_body_hand_pose_controls(
+            plan_body_hand_fk_controls(body)
+        )
+        ready = _pose_snapshot(pose)
+        broken = replace(
+            ready,
+            curls=(replace(
+                ready.curls[0],
+                destination_source="Wrong.output",
+            ),) + ready.curls[1:],
+        )
+
+        self.assertFalse(audit_body_hand_pose_controls(pose, ready))
+        self.assertIn(
+            "hand_curl_wiring_mismatch",
+            {
+                issue.code
+                for issue in audit_body_hand_pose_controls(pose, broken)
+            },
+        )
 
     def test_input_audit_reports_locked_or_connected_rotation(self):
         _, body = _hand_scene()
@@ -244,14 +379,18 @@ class BodyHandControlTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 1)
         self.assertEqual(len(result.snapshot.roots), 2)
         self.assertEqual(len(result.snapshot.controls), 30)
+        self.assertEqual(len(result.pose.layers), 30)
+        self.assertEqual(len(result.pose.attributes), 14)
+        self.assertEqual(len(result.pose.curls), 30)
+        self.assertEqual(len(result.pose.spreads), 8)
         self.assertFalse(
             audit_body_hand_fk_controls(preview.controls, result.snapshot)
         )
 
     def test_collision_or_locked_target_blocks_before_transaction(self):
         collision_host = FakeBodyHandFkHost()
-        collision_host.collisions["AdvPy_Index2FK_L"] = (
-            "|User|AdvPy_Index2FK_L",
+        collision_host.collisions["AdvPy_HandCurl_Index2_L"] = (
+            "AdvPy_HandCurl_Index2_L",
         )
         locked_host = FakeBodyHandFkHost()
         plan = plan_body_hand_fk_controls(locked_host.body)
@@ -274,6 +413,18 @@ class BodyHandControlTests(unittest.TestCase):
         self.assertEqual(host.transaction_count, 1)
         self.assertFalse(host.roots)
         self.assertFalse(host.controls)
+        self.assertIsNone(host.pose)
+
+    def test_pose_postcheck_failure_rolls_back_complete_hand(self):
+        host = FakeBodyHandFkHost(faulty_pose=True)
+
+        with self.assertRaisesRegex(RuntimeError, "聚合姿态构建后复检失败"):
+            BuildBodyHandFkControls(host).apply()
+
+        self.assertEqual(host.transaction_count, 1)
+        self.assertFalse(host.roots)
+        self.assertFalse(host.controls)
+        self.assertIsNone(host.pose)
 
 
 if __name__ == "__main__":

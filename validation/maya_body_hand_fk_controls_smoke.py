@@ -69,7 +69,8 @@ def main(output: Path) -> int:
             and state.source_control == spec.control_path
             and state.driven_joint == spec.driven_joint
             and state.offset_parent_path == spec.parent_path
-            and state.control_parent_path == spec.offset_path
+            and state.control_parent_path
+            == (spec.control_parent_path or spec.offset_path)
             for state, spec in zip(
                 snapshot.controls,
                 preview.controls.controls,
