@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from hashlib import sha256
+import re
 
 from .body_export_skeleton import (
     BODY_EXPORT_BAKE_SCHEMA_VERSION,
@@ -13,9 +15,70 @@ from .body_export_skeleton import (
     BodyExportSkeletonBakedSnapshot,
     BodyExportSkeletonIssue,
 )
+from .fit_container import FitUpAxis
 
 
 FBX_BINARY_MAGIC = b"Kaydara FBX Binary"
+FBX_BINARY_HEADER = b"Kaydara FBX Binary  \x00\x1a\x00"
+
+
+class BodyFbxFileVersion(str, Enum):
+    FBX_2018 = "FBX201800"
+    FBX_2020 = "FBX202000"
+
+
+class BodyFbxLinearUnit(str, Enum):
+    CENTIMETER = "cm"
+    METER = "m"
+
+
+class BodyFbxEncoding(str, Enum):
+    BINARY = "binary"
+    ASCII = "ascii"
+
+
+@dataclass(frozen=True, slots=True)
+class BodyFbxExportProfile:
+    file_version: BodyFbxFileVersion
+    up_axis: FitUpAxis
+    linear_unit: BodyFbxLinearUnit
+    encoding: BodyFbxEncoding = BodyFbxEncoding.BINARY
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.file_version, BodyFbxFileVersion)
+            or not isinstance(self.up_axis, FitUpAxis)
+            or not isinstance(self.linear_unit, BodyFbxLinearUnit)
+            or not isinstance(self.encoding, BodyFbxEncoding)
+        ):
+            raise ValueError("FBX 导出 Profile 字段无效")
+
+    @property
+    def format_version(self) -> int:
+        return {
+            BodyFbxFileVersion.FBX_2018: 7500,
+            BodyFbxFileVersion.FBX_2020: 7700,
+        }[self.file_version]
+
+    def scale_factor_from(self, source_unit: BodyFbxLinearUnit) -> float:
+        if not isinstance(source_unit, BodyFbxLinearUnit):
+            raise ValueError("FBX 导出源场景单位无效")
+        centimeters_per_unit = {
+            BodyFbxLinearUnit.CENTIMETER: 1.0,
+            BodyFbxLinearUnit.METER: 100.0,
+        }
+        return (
+            centimeters_per_unit[self.linear_unit]
+            / centimeters_per_unit[source_unit]
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BodyFbxAppliedProfile:
+    file_version: str
+    up_axis: str
+    scale_factor: float
+    encoding: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +112,7 @@ class BodyFbxArtifact:
     byte_count: int
     content_sha256: str
     encoding: str
+    format_version: int
 
 
 def plan_body_fbx_export_selection(
@@ -196,15 +260,53 @@ def inspect_body_fbx_bytes(data: bytes) -> BodyFbxArtifact:
     prefix = data[:256].lstrip(b"\xef\xbb\xbf\x00\t\r\n ")
     if prefix.startswith(FBX_BINARY_MAGIC):
         encoding = "binary"
+        if not data.startswith(FBX_BINARY_HEADER) or len(data) < 27:
+            raise ValueError("FBX binary 文件头不完整")
+        format_version = int.from_bytes(data[23:27], "little")
     elif prefix.startswith(b"; FBX"):
         encoding = "ascii"
+        match = re.search(rb"\bFBXVersion:\s*(\d+)", data[:32768])
+        if match is None:
+            raise ValueError("FBX ASCII 文件缺少格式版本")
+        format_version = int(match.group(1))
     else:
         raise ValueError("FBX 临时文件头无效")
+    if format_version < 7000:
+        raise ValueError("FBX 文件格式版本过旧或无效")
     return BodyFbxArtifact(
         byte_count=len(data),
         content_sha256=sha256(data).hexdigest(),
         encoding=encoding,
+        format_version=format_version,
     )
+
+
+def audit_body_fbx_profile(
+    profile: BodyFbxExportProfile,
+    source_unit: BodyFbxLinearUnit,
+    applied: BodyFbxAppliedProfile,
+    artifact: BodyFbxArtifact,
+    *,
+    tolerance: float = 1e-9,
+) -> tuple[str, ...]:
+    issues = []
+    if applied.file_version != profile.file_version.value:
+        issues.append("FBX exporter 文件版本回读不一致")
+    if applied.up_axis.casefold() != profile.up_axis.value.casefold():
+        issues.append("FBX exporter Up Axis 回读不一致")
+    expected_scale = profile.scale_factor_from(source_unit)
+    if abs(applied.scale_factor - expected_scale) > tolerance:
+        issues.append(
+            "FBX exporter 单位比例回读不一致"
+            f"（期望 {expected_scale:g}，实际 {applied.scale_factor:g}）"
+        )
+    if applied.encoding.casefold() != profile.encoding.value:
+        issues.append("FBX exporter 编码回读不一致")
+    if artifact.encoding != profile.encoding.value:
+        issues.append("FBX 文件编码与 Profile 不一致")
+    if artifact.format_version != profile.format_version:
+        issues.append("FBX 文件头版本与 Profile 不一致")
+    return tuple(issues)
 
 
 def _audit_channels(

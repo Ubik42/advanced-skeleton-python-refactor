@@ -98,7 +98,12 @@ from adv_py.core.body_export_skeleton import (
     BodyExportSkeletonSample,
     BodyExportSkeletonSnapshot,
 )
-from adv_py.core.body_fbx_export import BodyFbxExportSelection
+from adv_py.core.body_fbx_export import (
+    BodyFbxAppliedProfile,
+    BodyFbxExportProfile,
+    BodyFbxExportSelection,
+    BodyFbxLinearUnit,
+)
 from adv_py.core.body_hand_controls import (
     BodyHandFkControlPlan,
     BodyHandFkControlSnapshot,
@@ -289,6 +294,15 @@ class MayaBodyBuildHost(MayaFitJointHost):
         self.set_joint_label(path, spec.label)
         self._cmds.setAttr(f"{path}.side", _MAYA_SIDE_FROM_CORE[spec.side])
         return path
+
+    def scene_linear_unit(self) -> BodyFbxLinearUnit:
+        value = str(self._cmds.currentUnit(query=True, linear=True))
+        try:
+            return BodyFbxLinearUnit(value)
+        except ValueError as error:
+            raise FitSkeletonValidationError(
+                "FBX Profile 当前只支持 Maya centimeter 或 meter 场景单位"
+            ) from error
 
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot:
         roots = self._cmds.ls(root_name, long=True, type="joint") or []
@@ -1680,7 +1694,8 @@ class MayaBodyBuildHost(MayaFitJointHost):
         self,
         destination: Path,
         selection: BodyFbxExportSelection,
-    ) -> None:
+        profile: BodyFbxExportProfile,
+    ) -> BodyFbxAppliedProfile:
         from maya import mel
 
         class _PublishedNamesRestored(Exception):
@@ -1710,6 +1725,7 @@ class MayaBodyBuildHost(MayaFitJointHost):
             self._cmds.undoInfo(query=True, undoName=True) or ""
         )
         pushed = False
+        applied_profile: BodyFbxAppliedProfile | None = None
         try:
             mel.eval("FBXPushSettings;")
             pushed = True
@@ -1721,8 +1737,31 @@ class MayaBodyBuildHost(MayaFitJointHost):
             mel.eval("FBXExportLights -v false;")
             mel.eval("FBXExportShapes -v false;")
             mel.eval("FBXExportSkins -v false;")
-            mel.eval("FBXExportInAscii -v false;")
+            mel.eval(f"FBXExportFileVersion -v {profile.file_version.value};")
+            mel.eval(f"FBXExportUpAxis {profile.up_axis.value.lower()};")
+            target_centimeters = float(mel.eval(
+                f"FBXExportConvertUnitString {profile.linear_unit.value};"
+            ))
+            source_centimeters = float(mel.eval(
+                f"FBXExportConvertUnitString {self.scene_linear_unit().value};"
+            ))
+            converted_scale = target_centimeters / source_centimeters
+            mel.eval(f"FBXExportScaleFactor {converted_scale:.12g};")
+            mel.eval(
+                "FBXExportInAscii -v "
+                + ("true;" if profile.encoding.value == "ascii" else "false;")
+            )
             mel.eval("FBXExportGenerateLog -v false;")
+            applied_profile = BodyFbxAppliedProfile(
+                file_version=str(mel.eval("FBXExportFileVersion -q;")),
+                up_axis=str(mel.eval("FBXExportUpAxis -q;")),
+                scale_factor=float(mel.eval("FBXExportScaleFactor -q;")),
+                encoding=(
+                    "ascii"
+                    if bool(mel.eval("FBXExportInAscii -q;"))
+                    else "binary"
+                ),
+            )
             try:
                 with self.transaction("临时规范化 FBX 发布名称"):
                     self._transaction_changed = True
@@ -1787,6 +1826,9 @@ class MayaBodyBuildHost(MayaFitJointHost):
                     self._cmds.undoInfo(stateWithoutFlush=True)
         if str(self._cmds.undoInfo(query=True, undoName=True) or "") != original_undo_name:
             raise RuntimeError("FBX 导出改变了 Maya 原有 Undo 队列顶部")
+        if applied_profile is None:
+            raise RuntimeError("FBX exporter Profile 未生成应用快照")
+        return applied_profile
 
     def create_body_arm_ik_root(self, name: str) -> str:
         return self.create_body_control_root(name)

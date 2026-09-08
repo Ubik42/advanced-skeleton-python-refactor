@@ -31,6 +31,11 @@ def main(output: Path) -> int:
             ExportBodyFbx,
         )
         from adv_py.core import (
+            BodyFbxEncoding,
+            BodyFbxExportProfile,
+            BodyFbxFileVersion,
+            BodyFbxLinearUnit,
+            FitUpAxis,
             plan_body_export_skeleton_bake,
             plan_body_fbx_export_selection,
         )
@@ -84,6 +89,20 @@ def main(output: Path) -> int:
                 end_frame=5,
                 source_container=container,
             )
+            converted_destination = Path(directory) / "synthetic-character-y-up-m.fbx"
+            converted_profile = BodyFbxExportProfile(
+                BodyFbxFileVersion.FBX_2018,
+                FitUpAxis.Y,
+                BodyFbxLinearUnit.METER,
+                BodyFbxEncoding.ASCII,
+            )
+            converted_result = ExportBodyFbx(host).apply(
+                converted_destination,
+                start_frame=1,
+                end_frame=5,
+                source_container=container,
+                profile=converted_profile,
+            )
             checks = {
                 "live_body_dependencies_detected": bool(live_dependencies),
                 "explicit_31_node_selection": result.plan.selection.node_count == 31,
@@ -97,8 +116,23 @@ def main(output: Path) -> int:
                 "zero_body_dependencies": not result.plan.body_dependency_plugs,
                 "binary_fbx_written": (
                     result.artifact.encoding == "binary"
+                    and result.artifact.format_version == 7700
                     and result.artifact.byte_count == destination.stat().st_size
                     and len(result.artifact.content_sha256) == 64
+                ),
+                "default_profile_applied": (
+                    result.applied_profile.file_version == "FBX202000"
+                    and result.applied_profile.up_axis.lower() == "z"
+                    and abs(result.applied_profile.scale_factor - 1.0) < 1e-9
+                    and result.applied_profile.encoding == "binary"
+                ),
+                "explicit_ascii_profile_applied": (
+                    converted_result.artifact.encoding == "ascii"
+                    and converted_result.artifact.format_version == 7500
+                    and converted_result.applied_profile.file_version == "FBX201800"
+                    and converted_result.applied_profile.up_axis.lower() == "y"
+                    and abs(converted_result.applied_profile.scale_factor - 100.0) < 1e-9
+                    and converted_result.applied_profile.encoding == "ascii"
                 ),
                 "selection_preserved": (cmds.ls(selection=True, long=True) or []) == original_selection,
                 "current_time_preserved": abs(float(cmds.currentTime(query=True)) - original_time) < 1e-6,
@@ -132,7 +166,7 @@ def main(output: Path) -> int:
 
             cmds.file(new=True, force=True)
             cmds.file(
-                str(destination),
+                str(converted_destination),
                 i=True,
                 type="FBX",
                 ignoreVersion=True,
@@ -199,6 +233,8 @@ def main(output: Path) -> int:
             "imported_joint_count": len(imported_joints),
             "fbx_byte_count": result.artifact.byte_count,
             "fbx_sha256": result.artifact.content_sha256,
+            "converted_fbx_byte_count": converted_result.artifact.byte_count,
+            "converted_fbx_sha256": converted_result.artifact.content_sha256,
             "duration_seconds": round(time.perf_counter() - started, 3),
             "status": "passed" if passed else "failed",
         }

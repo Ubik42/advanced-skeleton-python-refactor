@@ -5,7 +5,12 @@ from pathlib import Path
 
 from adv_py.application import ExportBodyFbx
 from adv_py.core import (
-    FBX_BINARY_MAGIC,
+    FBX_BINARY_HEADER,
+    BodyFbxAppliedProfile,
+    BodyFbxEncoding,
+    BodyFbxExportProfile,
+    BodyFbxFileVersion,
+    BodyFbxLinearUnit,
     FitUpAxis,
     audit_body_fbx_export_readiness,
     inspect_body_fbx_bytes,
@@ -24,7 +29,13 @@ from test_body_export_skeleton import (
 
 
 class FakeFbxHost:
-    def __init__(self, *, dependencies=(), collisions=()):
+    def __init__(
+        self,
+        *,
+        dependencies=(),
+        collisions=(),
+        scene_unit=BodyFbxLinearUnit.CENTIMETER,
+    ):
         self.body = make_body()
         root_motion = make_root_motion_plan()
         export = plan_body_export_skeleton(self.body, root_motion)
@@ -36,11 +47,15 @@ class FakeFbxHost:
         )
         self.dependencies = dependencies
         self.collisions = collisions
+        self.scene_unit = scene_unit
         self.export_calls = 0
         self.last_selection = None
 
     def scene_up_axis(self):
         return FitUpAxis.Z
+
+    def scene_linear_unit(self):
+        return self.scene_unit
 
     def capture_body_skeleton(self, root_name):
         return self.body
@@ -57,10 +72,28 @@ class FakeFbxHost:
     def prepare_fbx_export_runtime(self):
         return "test-fbx-1"
 
-    def export_fbx_selection(self, destination, selection):
+    def export_fbx_selection(self, destination, selection, profile):
         self.export_calls += 1
         self.last_selection = selection
-        destination.write_bytes(FBX_BINARY_MAGIC + b"\x00" * 256)
+        if profile.encoding is BodyFbxEncoding.ASCII:
+            destination.write_bytes(
+                b"; FBX 7.7.0 project file\nFBXVersion: "
+                + str(profile.format_version).encode("ascii")
+                + b"\n"
+                + b" " * 256
+            )
+        else:
+            destination.write_bytes(
+                FBX_BINARY_HEADER
+                + profile.format_version.to_bytes(4, "little")
+                + b"\x00" * 256
+            )
+        return BodyFbxAppliedProfile(
+            file_version=profile.file_version.value,
+            up_axis=profile.up_axis.value.lower(),
+            scale_factor=profile.scale_factor_from(self.scene_unit),
+            encoding=profile.encoding.value,
+        )
 
 
 class BodyFbxExportTests(unittest.TestCase):
@@ -100,9 +133,12 @@ class BodyFbxExportTests(unittest.TestCase):
         )
 
     def test_artifact_inspection_accepts_fbx_and_rejects_unknown_bytes(self):
-        artifact = inspect_body_fbx_bytes(FBX_BINARY_MAGIC + b"\x00" * 256)
+        artifact = inspect_body_fbx_bytes(
+            FBX_BINARY_HEADER + (7700).to_bytes(4, "little") + b"\x00" * 256
+        )
 
         self.assertEqual(artifact.encoding, "binary")
+        self.assertEqual(artifact.format_version, 7700)
         self.assertEqual(len(artifact.content_sha256), 64)
         with self.assertRaises(ValueError):
             inspect_body_fbx_bytes(b"not an fbx" * 30)
@@ -118,7 +154,16 @@ class BodyFbxExportTests(unittest.TestCase):
 
             self.assertTrue(destination.is_file())
             self.assertEqual(result.artifact.encoding, "binary")
+            self.assertEqual(result.artifact.format_version, 7700)
             self.assertEqual(result.plugin_version, "test-fbx-1")
+            self.assertEqual(
+                result.plan.profile,
+                BodyFbxExportProfile(
+                    BodyFbxFileVersion.FBX_2020,
+                    FitUpAxis.Z,
+                    BodyFbxLinearUnit.CENTIMETER,
+                ),
+            )
             self.assertEqual(host.export_calls, 1)
             self.assertFalse(any(
                 "AdvPy_EXP_" in path
@@ -206,6 +251,41 @@ class BodyFbxExportTests(unittest.TestCase):
         self.assertFalse(any(
             "AdvPy_EXP_" in path for path in selection.published_paths
         ))
+
+    def test_custom_ascii_y_up_meter_profile_is_applied_and_verified(self):
+        host = FakeFbxHost()
+        profile = BodyFbxExportProfile(
+            BodyFbxFileVersion.FBX_2018,
+            FitUpAxis.Y,
+            BodyFbxLinearUnit.METER,
+            BodyFbxEncoding.ASCII,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "character.fbx"
+
+            result = ExportBodyFbx(host).apply(
+                destination,
+                start_frame=1,
+                end_frame=3,
+                profile=profile,
+            )
+
+            self.assertEqual(result.applied_profile.scale_factor, 100.0)
+            self.assertEqual(result.applied_profile.up_axis, "y")
+            self.assertEqual(result.artifact.encoding, "ascii")
+            self.assertEqual(result.artifact.format_version, 7500)
+
+    def test_default_meter_scene_profile_uses_identity_scale(self):
+        host = FakeFbxHost(scene_unit=BodyFbxLinearUnit.METER)
+        with tempfile.TemporaryDirectory() as directory:
+            result = ExportBodyFbx(host).apply(
+                Path(directory) / "meter-scene.fbx",
+                start_frame=1,
+                end_frame=3,
+            )
+
+        self.assertEqual(result.plan.profile.linear_unit, BodyFbxLinearUnit.METER)
+        self.assertEqual(result.applied_profile.scale_factor, 1.0)
 
 
 if __name__ == "__main__":

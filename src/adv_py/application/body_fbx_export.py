@@ -13,8 +13,14 @@ from adv_py.core.body_export_skeleton import (
     plan_body_export_skeleton_bake,
 )
 from adv_py.core.body_fbx_export import (
+    BodyFbxAppliedProfile,
     BodyFbxArtifact,
+    BodyFbxEncoding,
+    BodyFbxExportProfile,
     BodyFbxExportSelection,
+    BodyFbxFileVersion,
+    BodyFbxLinearUnit,
+    audit_body_fbx_profile,
     audit_body_fbx_export_readiness,
     inspect_body_fbx_bytes,
     plan_body_fbx_export_selection,
@@ -31,6 +37,7 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 
 class BodyFbxExportHost(Protocol):
     def scene_up_axis(self) -> FitUpAxis: ...
+    def scene_linear_unit(self) -> BodyFbxLinearUnit: ...
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot: ...
     def capture_baked_body_export_skeleton(
         self, plan: BodyExportSkeletonBakePlan
@@ -43,14 +50,19 @@ class BodyFbxExportHost(Protocol):
     ) -> tuple[str, ...]: ...
     def prepare_fbx_export_runtime(self) -> str: ...
     def export_fbx_selection(
-        self, destination: Path, selection: BodyFbxExportSelection
-    ) -> None: ...
+        self,
+        destination: Path,
+        selection: BodyFbxExportSelection,
+        profile: BodyFbxExportProfile,
+    ) -> BodyFbxAppliedProfile: ...
 
 
 @dataclass(frozen=True, slots=True)
 class BodyFbxExportPlan:
     destination: Path
     body: BodySkeletonSnapshot
+    source_linear_unit: BodyFbxLinearUnit
+    profile: BodyFbxExportProfile
     bake: BodyExportSkeletonBakePlan
     baked: BodyExportSkeletonBakedSnapshot
     selection: BodyFbxExportSelection
@@ -68,6 +80,7 @@ class BodyFbxExportResult:
     plan: BodyFbxExportPlan
     artifact: BodyFbxArtifact
     plugin_version: str
+    applied_profile: BodyFbxAppliedProfile
 
 
 class ExportBodyFbx:
@@ -88,6 +101,7 @@ class ExportBodyFbx:
         root_motion_basename: str = "AdvPy_GameRootMotion",
         output_prefix: str = "AdvPy_EXP_",
         published_root_name: str = "RootMotion",
+        profile: BodyFbxExportProfile | None = None,
     ) -> BodyFbxExportPlan:
         path = Path(destination)
         if not path.is_absolute() or path.suffix.casefold() != ".fbx":
@@ -97,11 +111,21 @@ class ExportBodyFbx:
         if path.exists() or path.is_symlink():
             raise FitSkeletonValidationError("FBX 导出目标已存在，拒绝覆盖")
 
+        if profile is not None and not isinstance(profile, BodyFbxExportProfile):
+            raise FitSkeletonValidationError("FBX 导出 Profile 类型无效")
+        up_axis = self._host.scene_up_axis()
+        source_linear_unit = self._host.scene_linear_unit()
+        selected_profile = profile or BodyFbxExportProfile(
+            file_version=BodyFbxFileVersion.FBX_2020,
+            up_axis=up_axis,
+            linear_unit=source_linear_unit,
+            encoding=BodyFbxEncoding.BINARY,
+        )
         body = self._host.capture_body_skeleton(body_root_name)
         provenance = oriented_body_provenance(source_container, len(body.joints))
         root_motion = plan_body_root_motion(
             source_root_path=body.root,
-            up_axis=self._host.scene_up_axis(),
+            up_axis=up_axis,
             output_basename=root_motion_basename,
         )
         export = plan_body_export_skeleton(body, root_motion, output_prefix=output_prefix)
@@ -124,6 +148,8 @@ class ExportBodyFbx:
         return BodyFbxExportPlan(
             destination=path,
             body=body,
+            source_linear_unit=source_linear_unit,
+            profile=selected_profile,
             bake=bake,
             baked=baked,
             selection=selection,
@@ -157,7 +183,10 @@ class ExportBodyFbx:
             if plan.destination.exists() or plan.destination.is_symlink():
                 raise FitSkeletonValidationError("FBX 导出目标在写入前已出现")
             if (
-                self._host.capture_body_skeleton(kwargs.get("body_root_name", "Root_M"))
+                self._host.scene_up_axis()
+                != plan.bake.root_motion.root_motion.up_axis
+                or self._host.scene_linear_unit() != plan.source_linear_unit
+                or self._host.capture_body_skeleton(kwargs.get("body_root_name", "Root_M"))
                 != plan.body
                 or self._host.capture_baked_body_export_skeleton(plan.bake) != plan.baked
                 or self._host.capture_body_export_dependency_plugs(
@@ -168,8 +197,20 @@ class ExportBodyFbx:
                 ) != plan.published_name_collisions
             ):
                 raise RuntimeError("FBX 导出执行前场景输入发生变化")
-            self._host.export_fbx_selection(temporary, plan.selection)
+            applied_profile = self._host.export_fbx_selection(
+                temporary, plan.selection, plan.profile
+            )
             temporary_artifact = inspect_body_fbx_bytes(temporary.read_bytes())
+            profile_issues = audit_body_fbx_profile(
+                plan.profile,
+                plan.source_linear_unit,
+                applied_profile,
+                temporary_artifact,
+            )
+            if profile_issues:
+                raise RuntimeError(
+                    "FBX Profile 应用复检失败：" + "；".join(profile_issues)
+                )
             try:
                 os.link(temporary, plan.destination)
             except FileExistsError as error:
@@ -179,7 +220,9 @@ class ExportBodyFbx:
             artifact = inspect_body_fbx_bytes(plan.destination.read_bytes())
             if artifact != temporary_artifact:
                 raise RuntimeError("FBX 发布文件摘要复检失败")
-            return BodyFbxExportResult(plan, artifact, plugin_version)
+            return BodyFbxExportResult(
+                plan, artifact, plugin_version, applied_profile
+            )
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
