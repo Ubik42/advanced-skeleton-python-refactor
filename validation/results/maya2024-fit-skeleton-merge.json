@@ -1,0 +1,21 @@
+{
+  "host": "maya",
+  "version": "2024",
+  "pid": 16696,
+  "slice": "fit_skeleton_additive_merge",
+  "preview_ready_and_read_only": true,
+  "additive_union_matches_incoming_document": true,
+  "existing_joint_identity_preserved": true,
+  "selection_preserved": true,
+  "repeat_is_noop_without_new_undo": true,
+  "one_undo_removed_only_additions": true,
+  "shared_joint_conflict_refused_read_only": true,
+  "source_file_survived_scene_undo": true,
+  "temporary_directory_removed": true,
+  "scene_cleanup": true,
+  "existing_joint_count": 18,
+  "added_joint_count": 20,
+  "merged_joint_count": 38,
+  "duration_seconds": 4.49,
+  "status": "passed"
+}

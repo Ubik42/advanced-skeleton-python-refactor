@@ -28,11 +28,13 @@ from adv_py.core.fit_skeleton_io import (
     FIT_SKELETON_NONPORTABLE_SETTING_FIELDS,
     FIT_SKELETON_PORTABLE_SETTING_FIELDS,
     FitSkeletonDocument,
+    FitSkeletonDocumentMergePlan,
     FitSkeletonSettingChannelState,
     fit_skeleton_document_from_json,
     fit_skeleton_document_from_snapshot,
     fit_skeleton_document_to_json,
     fit_skeleton_documents_match,
+    plan_fit_skeleton_document_merge,
 )
 from adv_py.core.fit_template import FitJointSpec
 from adv_py.core.joint_labels import JointLabel
@@ -136,6 +138,33 @@ class FitSkeletonImportPlan:
 @dataclass(frozen=True, slots=True)
 class FitSkeletonImportResult:
     plan: FitSkeletonImportPlan
+    verified: FitSkeletonSceneInspection
+    verified_document: FitSkeletonDocument
+    joint_paths: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FitSkeletonMergePlan:
+    source: Path
+    incoming_document: FitSkeletonDocument
+    target: FitSkeletonSceneInspection
+    current_document: FitSkeletonDocument
+    document_merge: FitSkeletonDocumentMergePlan
+    name_collisions: tuple[str, ...]
+    blockers: tuple[str, ...]
+
+    @property
+    def ready(self) -> bool:
+        return not self.blockers and self.document_merge.ready
+
+    @property
+    def added_joint_count(self) -> int:
+        return self.document_merge.added_joint_count
+
+
+@dataclass(frozen=True, slots=True)
+class FitSkeletonMergeResult:
+    plan: FitSkeletonMergePlan
     verified: FitSkeletonSceneInspection
     verified_document: FitSkeletonDocument
     joint_paths: tuple[str, ...]
@@ -366,6 +395,161 @@ class ImportFitSkeleton:
             verified,
             verified_document,
             tuple(paths[joint.name] for joint in plan.document.joints),
+        )
+
+
+class MergeFitSkeleton:
+    """Add missing document branches while preserving every existing joint."""
+
+    def __init__(self, host: FitSkeletonDocumentHost) -> None:
+        self._host = host
+
+    def plan(
+        self,
+        source: str | os.PathLike[str],
+        container_name: str = "FitSkeleton",
+    ) -> FitSkeletonMergePlan:
+        path = _fit_document_path(source)
+        if path.is_symlink() or not path.is_file():
+            raise FitSkeletonValidationError(
+                "FitSkeleton 合并文件不存在或不是普通文件"
+            )
+        try:
+            incoming = fit_skeleton_document_from_json(
+                path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError, ValueError) as error:
+            raise FitSkeletonValidationError(
+                f"FitSkeleton 合并文件损坏：{path.name}"
+            ) from error
+
+        target = _inspect_scene(self._host, container_name)
+        current = fit_skeleton_document_from_snapshot(
+            target.orientation,
+            target.settings,
+            target.labels,
+        )
+        document_merge = plan_fit_skeleton_document_merge(current, incoming)
+        collisions = tuple(
+            sorted(
+                {
+                    collision
+                    for name in document_merge.added_joint_names
+                    for collision in self._host.find_name_collisions(name)
+                }
+            )
+        )
+        blockers = [issue.message for issue in document_merge.issues]
+        if collisions:
+            blockers.append(
+                "待新增关节与场景节点重名：" + "、".join(collisions)
+            )
+        return FitSkeletonMergePlan(
+            path,
+            incoming,
+            target,
+            current,
+            document_merge,
+            collisions,
+            tuple(blockers),
+        )
+
+    def apply(
+        self,
+        source: str | os.PathLike[str],
+        container_name: str = "FitSkeleton",
+    ) -> FitSkeletonMergeResult:
+        plan = self.plan(source, container_name)
+        if not plan.ready:
+            raise FitSkeletonValidationError(
+                "FitSkeleton 合并预检失败，场景未修改："
+                + "；".join(plan.blockers)
+            )
+        if plan.added_joint_count == 0:
+            return FitSkeletonMergeResult(
+                plan,
+                plan.target,
+                plan.current_document,
+                (),
+            )
+
+        expected = plan.document_merge.merged
+        if expected is None:
+            raise RuntimeError("FitSkeleton 合并计划缺少预期文档")
+        incoming = {
+            joint.name: joint for joint in plan.incoming_document.joints
+        }
+        paths = {
+            node.short_name: node.path
+            for node in plan.target.orientation.hierarchy.joints
+        }
+        created_paths: list[str] = []
+        with self._host.transaction(
+            f"合并 {plan.added_joint_count} 个 FitSkeleton 关节"
+        ):
+            current = self.plan(plan.source, plan.target.container.path)
+            if current != plan:
+                raise FitSkeletonValidationError(
+                    "FitSkeleton 合并文件或目标场景在执行前发生变化"
+                )
+            for name in plan.document_merge.added_joint_names:
+                joint = incoming[name]
+                if joint.parent is None or joint.parent not in paths:
+                    raise RuntimeError(
+                        f"FitSkeleton 合并计划缺少已创建父级：{name}"
+                    )
+                path = self._host.create_fit_joint(
+                    paths[joint.parent],
+                    FitJointSpec(
+                        joint.name,
+                        joint.parent,
+                        joint.local_position,
+                        joint.label,
+                    ),
+                )
+                self._host.set_joint_label(path, joint.label)
+                for value in joint.metadata:
+                    self._host.apply_fit_joint_edit(
+                        path,
+                        FitJointFieldEdit(value.field, value.value),
+                    )
+                self._host.set_fit_joint_world_axes(path, joint.world_axes)
+                paths[joint.name] = path
+                created_paths.append(path)
+
+            try:
+                current_incoming = fit_skeleton_document_from_json(
+                    plan.source.read_text(encoding="utf-8")
+                )
+            except (OSError, UnicodeError, ValueError) as error:
+                raise RuntimeError(
+                    "FitSkeleton 合并文件在事务中失效"
+                ) from error
+            if current_incoming != plan.incoming_document:
+                raise RuntimeError(
+                    "FitSkeleton 合并文件在事务中发生变化"
+                )
+            verified = _inspect_scene(
+                self._host,
+                plan.target.container.path,
+            )
+            verified_document = fit_skeleton_document_from_snapshot(
+                verified.orientation,
+                verified.settings,
+                verified.labels,
+            )
+            if not fit_skeleton_documents_match(
+                verified_document,
+                expected,
+            ):
+                raise RuntimeError(
+                    "FitSkeleton 合并后语义复检失败"
+                )
+        return FitSkeletonMergeResult(
+            plan,
+            verified,
+            verified_document,
+            tuple(created_paths),
         )
 
 

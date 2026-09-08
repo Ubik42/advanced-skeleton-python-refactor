@@ -527,6 +527,8 @@ from .fit_skeleton_io import (
     FIT_SKELETON_NONPORTABLE_SETTING_FIELDS,
     FIT_SKELETON_PORTABLE_SETTING_FIELDS,
     FitSkeletonDocument,
+    FitSkeletonDocumentMergeIssue,
+    FitSkeletonDocumentMergePlan,
     FitSkeletonDocumentValidationError,
     FitSkeletonJointDocument,
     FitSkeletonJointMetadataValue,
@@ -536,6 +538,7 @@ from .fit_skeleton_io import (
     fit_skeleton_document_template,
     fit_skeleton_document_to_json,
     fit_skeleton_documents_match,
+    plan_fit_skeleton_document_merge,
 )
 from .fit_symmetry import (
     FitBuildSide,
@@ -882,6 +885,8 @@ __all__ = [
     "FIT_SKELETON_NONPORTABLE_SETTING_FIELDS",
     "FIT_SKELETON_PORTABLE_SETTING_FIELDS",
     "FitSkeletonDocument",
+    "FitSkeletonDocumentMergeIssue",
+    "FitSkeletonDocumentMergePlan",
     "FitSkeletonDocumentValidationError",
     "FitSkeletonJointDocument",
     "FitSkeletonJointMetadataValue",
@@ -966,6 +971,7 @@ __all__ = [
     "fit_skeleton_document_template",
     "fit_skeleton_document_to_json",
     "fit_skeleton_documents_match",
+    "plan_fit_skeleton_document_merge",
     "matrix44",
     "minimal_body_fit_template",
     "multiply",

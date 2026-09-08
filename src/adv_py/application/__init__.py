@@ -249,9 +249,12 @@ from .fit_skeleton_io import (
     FitSkeletonExportResult,
     FitSkeletonImportPlan,
     FitSkeletonImportResult,
+    FitSkeletonMergePlan,
+    FitSkeletonMergeResult,
     FitSkeletonSceneInspection,
     FitSkeletonSettingChange,
     ImportFitSkeleton,
+    MergeFitSkeleton,
 )
 from .fit_symmetry import FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry
 from .fit_template import (
@@ -419,6 +422,7 @@ __all__ = [
     "EnsureFitSkeletonSettings",
     "ExportFitSkeleton",
     "ImportFitSkeleton",
+    "MergeFitSkeleton",
     "FitContainerCreatePlan",
     "FitContainerCreateResult",
     "FitContainerHost",
@@ -447,6 +451,8 @@ __all__ = [
     "FitSkeletonExportResult",
     "FitSkeletonImportPlan",
     "FitSkeletonImportResult",
+    "FitSkeletonMergePlan",
+    "FitSkeletonMergeResult",
     "FitSkeletonSceneInspection",
     "FitSkeletonSettingChange",
     "FitSymmetryHost",

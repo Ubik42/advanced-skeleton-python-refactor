@@ -5,7 +5,11 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from adv_py.application import ExportFitSkeleton, ImportFitSkeleton
+from adv_py.application import (
+    ExportFitSkeleton,
+    ImportFitSkeleton,
+    MergeFitSkeleton,
+)
 from adv_py.core import (
     FIT_SKELETON_NONPORTABLE_SETTING_FIELDS,
     FitContainerDisplayStyle,
@@ -393,6 +397,80 @@ class FitSkeletonIoTests(unittest.TestCase):
         self.assertEqual(target.transaction_count, 1)
         self.assertFalse(target.joints)
         self.assertEqual(target.settings, before_settings)
+
+    def test_additive_merge_preserves_existing_joint_and_is_idempotent(self):
+        source = FakeFitSkeletonDocumentHost(populated=True)
+        target = FakeFitSkeletonDocumentHost(populated=False)
+        target.joints = _source_joints()[:1]
+        target.settings = _settings(target.container, source=True)
+        existing_root = target.joints[0]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "完整角色.fit.json"
+            exported = ExportFitSkeleton(source).apply(path)
+            preview = MergeFitSkeleton(target).plan(path)
+            merged = MergeFitSkeleton(target).apply(path)
+
+            self.assertTrue(preview.ready)
+            self.assertEqual(preview.added_joint_count, 2)
+            self.assertEqual(target.joints[0], existing_root)
+            self.assertTrue(
+                fit_skeleton_documents_match(
+                    merged.verified_document,
+                    exported.plan.document,
+                )
+            )
+            self.assertEqual(target.transaction_count, 1)
+
+            repeated = MergeFitSkeleton(target).apply(path)
+            self.assertEqual(repeated.plan.added_joint_count, 0)
+            self.assertFalse(repeated.joint_paths)
+            self.assertEqual(target.transaction_count, 1)
+
+    def test_merge_conflict_and_external_name_collision_stop_before_transaction(self):
+        source = FakeFitSkeletonDocumentHost(populated=True)
+        target = FakeFitSkeletonDocumentHost(populated=False)
+        target.joints = _source_joints()[:2]
+        target.settings = _settings(target.container, source=True)
+        target._replace_joint("Spine1", local_position=(0.0, 0.0, 6.0))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "完整角色.fit.json"
+            ExportFitSkeleton(source).apply(path)
+            conflict = MergeFitSkeleton(target).plan(path)
+            self.assertFalse(conflict.ready)
+            self.assertIn("joint_conflict", {
+                issue.code for issue in conflict.document_merge.issues
+            })
+            with self.assertRaisesRegex(ValueError, "同名 Fit joint"):
+                MergeFitSkeleton(target).apply(path)
+            self.assertEqual(target.transaction_count, 0)
+
+            target.joints = _source_joints()[:1]
+            target.external_collisions["Spine1"] = ("|Other|Spine1",)
+            collision = MergeFitSkeleton(target).plan(path)
+            self.assertFalse(collision.ready)
+            with self.assertRaisesRegex(ValueError, "场景节点重名"):
+                MergeFitSkeleton(target).apply(path)
+            self.assertEqual(target.transaction_count, 0)
+
+    def test_merge_postcheck_failure_rolls_back_only_new_joints(self):
+        class FaultyMergeHost(FakeFitSkeletonDocumentHost):
+            def set_fit_joint_world_axes(self, joint, world_axes):
+                del world_axes
+                super().set_fit_joint_world_axes(joint, IDENTITY_AXES)
+
+        source = FakeFitSkeletonDocumentHost(populated=True)
+        target = FaultyMergeHost(populated=False)
+        target.joints = _source_joints()[:1]
+        target.settings = _settings(target.container, source=True)
+        before = target.joints
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "完整角色.fit.json"
+            ExportFitSkeleton(source).apply(path)
+            with self.assertRaisesRegex(RuntimeError, "合并后语义复检失败"):
+                MergeFitSkeleton(target).apply(path)
+
+        self.assertEqual(target.transaction_count, 1)
+        self.assertEqual(target.joints, before)
 
 
 if __name__ == "__main__":

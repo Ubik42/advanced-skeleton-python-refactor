@@ -106,6 +106,30 @@ class FitSkeletonDocument:
     format_name: str = FIT_SKELETON_DOCUMENT_FORMAT
 
 
+@dataclass(frozen=True, slots=True)
+class FitSkeletonDocumentMergeIssue:
+    code: str
+    message: str
+    joint: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FitSkeletonDocumentMergePlan:
+    current: FitSkeletonDocument
+    incoming: FitSkeletonDocument
+    merged: FitSkeletonDocument | None
+    added_joint_names: tuple[str, ...]
+    issues: tuple[FitSkeletonDocumentMergeIssue, ...]
+
+    @property
+    def ready(self) -> bool:
+        return not self.issues and self.merged is not None
+
+    @property
+    def added_joint_count(self) -> int:
+        return len(self.added_joint_names)
+
+
 def fit_skeleton_document_from_snapshot(
     snapshot: FitOrientationSnapshot,
     settings: FitSkeletonSettings,
@@ -438,6 +462,97 @@ def fit_skeleton_documents_match(
     return True
 
 
+def plan_fit_skeleton_document_merge(
+    current: FitSkeletonDocument,
+    incoming: FitSkeletonDocument,
+    *,
+    tolerance: float = 1e-5,
+) -> FitSkeletonDocumentMergePlan:
+    """Plan an additive union without changing any existing joint semantics."""
+
+    if (
+        isinstance(tolerance, bool)
+        or not isinstance(tolerance, (int, float))
+        or not isfinite(float(tolerance))
+        or tolerance <= 0
+    ):
+        raise FitSkeletonDocumentValidationError(
+            "FitSkeleton 合并容差必须是正有限数值"
+        )
+    _validate_document(current)
+    _validate_document(incoming)
+
+    issues: list[FitSkeletonDocumentMergeIssue] = []
+    if current.up_axis is not incoming.up_axis:
+        issues.append(
+            FitSkeletonDocumentMergeIssue(
+                "up_axis_conflict",
+                "当前 FitSkeleton 与导入文档的 Up Axis 不一致",
+            )
+        )
+    if current.axis_configuration != incoming.axis_configuration:
+        issues.append(
+            FitSkeletonDocumentMergeIssue(
+                "axis_configuration_conflict",
+                "当前 FitSkeleton 与导入文档的轴配置不一致",
+            )
+        )
+    for first, second in zip(current.settings, incoming.settings):
+        if first.field is not second.field or not _values_match(
+            first.value,
+            second.value,
+            tolerance,
+        ):
+            issues.append(
+                FitSkeletonDocumentMergeIssue(
+                    "setting_conflict",
+                    f"可移植设置不一致：{first.field.value}",
+                )
+            )
+
+    current_by_name = {joint.name: joint for joint in current.joints}
+    for joint in incoming.joints:
+        existing = current_by_name.get(joint.name)
+        if existing is not None and not _joint_documents_match(
+            existing,
+            joint,
+            float(tolerance),
+        ):
+            issues.append(
+                FitSkeletonDocumentMergeIssue(
+                    "joint_conflict",
+                    f"同名 Fit joint 的父级、位置、朝向、标签或元数据不一致：{joint.name}",
+                    joint.name,
+                )
+            )
+
+    additions = tuple(
+        joint for joint in incoming.joints if joint.name not in current_by_name
+    )
+    added_names = tuple(joint.name for joint in additions)
+    if issues:
+        return FitSkeletonDocumentMergePlan(
+            current,
+            incoming,
+            None,
+            added_names,
+            tuple(issues),
+        )
+    merged = _make_document(
+        current.up_axis,
+        current.axis_configuration,
+        current.settings,
+        current.joints + additions,
+    )
+    return FitSkeletonDocumentMergePlan(
+        current,
+        incoming,
+        merged,
+        added_names,
+        (),
+    )
+
+
 def fit_skeleton_document_template(
     document: FitSkeletonDocument,
 ) -> FitTemplateSpec:
@@ -716,6 +831,30 @@ def _values_match(left: object, right: object, tolerance: float) -> bool:
     if isinstance(left, (int, float)) and isinstance(right, (int, float)):
         return abs(float(left) - float(right)) <= tolerance
     return left == right
+
+
+def _joint_documents_match(
+    left: FitSkeletonJointDocument,
+    right: FitSkeletonJointDocument,
+    tolerance: float,
+) -> bool:
+    if (
+        left.name != right.name
+        or left.parent != right.parent
+        or left.label != right.label
+        or len(left.metadata) != len(right.metadata)
+        or not _vectors_match(left.local_position, right.local_position, tolerance)
+        or any(
+            not _vectors_match(first, second, tolerance)
+            for first, second in zip(left.world_axes, right.world_axes)
+        )
+    ):
+        return False
+    return all(
+        first.field is second.field
+        and _values_match(first.value, second.value, tolerance)
+        for first, second in zip(left.metadata, right.metadata)
+    )
 
 
 def _vectors_match(
