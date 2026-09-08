@@ -255,6 +255,14 @@ from .body_export_skeleton import (
     plan_body_export_skeleton,
     plan_body_export_skeleton_bake,
 )
+from .body_fbx_export import (
+    FBX_BINARY_MAGIC,
+    BodyFbxArtifact,
+    BodyFbxExportSelection,
+    audit_body_fbx_export_readiness,
+    inspect_body_fbx_bytes,
+    plan_body_fbx_export_selection,
+)
 from .body_hand_fit import (
     BODY_HAND_DIGITS,
     BODY_HAND_SEGMENTS,
@@ -704,6 +712,7 @@ __all__ = [
     "BodyExportSkeletonValidationError",
     "BodyExportSkeletonBakePlan", "BodyExportSkeletonBakedSnapshot",
     "BodyExportSkeletonSample",
+    "FBX_BINARY_MAGIC", "BodyFbxArtifact", "BodyFbxExportSelection",
     "BodyCharacterGlobalPlan",
     "BodyCharacterGlobalSnapshot",
     "BodyCharacterGlobalValidationError",
@@ -984,6 +993,7 @@ __all__ = [
     "audit_body_root_motion_samples", "audit_baked_body_root_motion",
     "audit_body_export_skeleton",
     "audit_body_export_skeleton_samples", "audit_baked_body_export_skeleton",
+    "audit_body_fbx_export_readiness",
     "audit_body_limb_stretch",
     "audit_body_limb_twist",
     "audit_body_arm_twist",
@@ -1059,6 +1069,8 @@ __all__ = [
     "plan_body_root_motion_bake",
     "plan_body_export_skeleton",
     "plan_body_export_skeleton_bake",
+    "plan_body_fbx_export_selection",
+    "inspect_body_fbx_bytes",
     "plan_body_limb_stretch",
     "compensated_stretch_ratio",
     "biased_stretch_factors",

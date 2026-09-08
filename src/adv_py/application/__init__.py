@@ -122,6 +122,12 @@ from .body_export_skeleton import (
     BodyExportSkeletonHost,
     BuildBodyExportSkeleton,
 )
+from .body_fbx_export import (
+    BodyFbxExportHost,
+    BodyFbxExportPlan,
+    BodyFbxExportResult,
+    ExportBodyFbx,
+)
 from .body_hand_fit import (
     BodyHandSourceFitBuildPlan,
     BodyHandSourceFitBuildResult,
@@ -320,6 +326,7 @@ __all__ = [
     "BodyExportSkeletonBuildPlan", "BodyExportSkeletonBuildResult",
     "BodyExportSkeletonHost",
     "BodyExportSkeletonBakeBuildPlan", "BodyExportSkeletonBakeResult",
+    "BodyFbxExportHost", "BodyFbxExportPlan", "BodyFbxExportResult",
     "BodyHandSourceFitBuildPlan",
     "BodyHandSourceFitBuildResult",
     "BodyHandSourceFitHost",
@@ -439,6 +446,7 @@ __all__ = [
     "MatchBodyLegFkToIk",
     "MatchBodyLegIkToFk",
     "BuildOrientedBodySkeleton",
+    "ExportBodyFbx",
     "BuildOrientedFitTemplate",
     "BuildSyntheticBodySourceFit",
     "BuildSyntheticUpperBodyFit",

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from adv_py.core.body_arm_mechanisms import (
     BodyArmMechanismJointSpec,
     BodyArmMechanismJointState,
@@ -95,6 +98,7 @@ from adv_py.core.body_export_skeleton import (
     BodyExportSkeletonSample,
     BodyExportSkeletonSnapshot,
 )
+from adv_py.core.body_fbx_export import BodyFbxExportSelection
 from adv_py.core.body_hand_controls import (
     BodyHandFkControlPlan,
     BodyHandFkControlSnapshot,
@@ -1608,6 +1612,105 @@ class MayaBodyBuildHost(MayaFitJointHost):
             root_motion=self.capture_baked_body_root_motion(plan.root_motion),
             joints=joints,
         )
+
+    def capture_body_export_dependency_plugs(
+        self,
+        body_root: str,
+        export_paths: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        body_roots = self._cmds.ls(body_root, long=True, type="joint") or []
+        if len(body_roots) != 1:
+            raise FitSkeletonValidationError("FBX 依赖审计的 Body root 无效")
+        body_paths = {body_roots[0]}
+        body_paths.update(self._cmds.listRelatives(
+            body_roots[0],
+            allDescendents=True,
+            fullPath=True,
+            type="joint",
+        ) or [])
+        dependencies: set[str] = set()
+        for path in export_paths:
+            matches = self._cmds.ls(path, long=True, type="joint") or []
+            if len(matches) != 1 or matches[0] != path:
+                raise FitSkeletonValidationError(
+                    f"FBX 依赖审计的导出 joint 无效：{path}"
+                )
+            connections = self._cmds.listConnections(
+                path,
+                source=True,
+                destination=True,
+                connections=True,
+                plugs=True,
+            ) or []
+            for index in range(0, len(connections) - 1, 2):
+                left, right = connections[index:index + 2]
+                endpoint_paths = {
+                    long_path
+                    for plug in (left, right)
+                    for long_path in (self._cmds.ls(
+                        plug.split(".", 1)[0], long=True
+                    ) or [])
+                }
+                if endpoint_paths & body_paths:
+                    dependencies.add(f"{left} -> {right}")
+        return tuple(sorted(dependencies))
+
+    def prepare_fbx_export_runtime(self) -> str:
+        plugin = "fbxmaya"
+        if not self._cmds.pluginInfo(plugin, query=True, loaded=True):
+            self._cmds.loadPlugin(plugin, quiet=True)
+        if not self._cmds.pluginInfo(plugin, query=True, loaded=True):
+            raise RuntimeError("Maya FBX 插件加载失败")
+        return str(self._cmds.pluginInfo(plugin, query=True, version=True))
+
+    def export_fbx_selection(
+        self,
+        destination: Path,
+        selection: BodyFbxExportSelection,
+    ) -> None:
+        from maya import mel
+
+        if destination.exists() or destination.is_symlink():
+            raise FitSkeletonValidationError("FBX 临时导出目标已存在")
+        for path in selection.node_paths:
+            matches = self._cmds.ls(path, long=True, type="joint") or []
+            if len(matches) != 1 or matches[0] != path:
+                raise FitSkeletonValidationError(
+                    f"FBX 明确选择集在执行前失效：{path}"
+                )
+        original_selection = self._cmds.ls(selection=True, long=True) or []
+        original_time = float(self._cmds.currentTime(query=True))
+        original_modified = bool(self._cmds.file(query=True, modified=True))
+        pushed = False
+        try:
+            mel.eval("FBXPushSettings;")
+            pushed = True
+            mel.eval("FBXResetExport;")
+            mel.eval("FBXExportBakeComplexAnimation -v false;")
+            mel.eval("FBXExportInputConnections -v false;")
+            mel.eval("FBXExportConstraints -v false;")
+            mel.eval("FBXExportCameras -v false;")
+            mel.eval("FBXExportLights -v false;")
+            mel.eval("FBXExportShapes -v false;")
+            mel.eval("FBXExportSkins -v false;")
+            mel.eval("FBXExportInAscii -v false;")
+            mel.eval("FBXExportGenerateLog -v false;")
+            self._cmds.select(selection.node_paths, replace=True, noExpand=True)
+            destination_literal = json.dumps(
+                destination.as_posix(), ensure_ascii=False
+            )
+            mel.eval(f"FBXExport -f {destination_literal} -s;")
+            if not destination.is_file():
+                raise RuntimeError("Maya FBX 导出未生成临时文件")
+        finally:
+            if pushed:
+                mel.eval("FBXPopSettings;")
+            self._cmds.currentTime(original_time, edit=True, update=True)
+            if original_selection:
+                self._cmds.select(original_selection, replace=True)
+            else:
+                self._cmds.select(clear=True)
+            self._cmds.file(modified=original_modified)
 
     def create_body_arm_ik_root(self, name: str) -> str:
         return self.create_body_control_root(name)
