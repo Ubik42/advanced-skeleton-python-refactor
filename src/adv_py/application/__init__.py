@@ -138,6 +138,12 @@ from .mocap_mapping import (
     MocapBodyMappingInspection,
     MocapBodyMappingReader,
 )
+from .mocap_connection import (
+    ConnectMocapBody,
+    DisconnectMocapBody,
+    MocapBodyConnectionHost,
+    MocapBodyConnectionResult,
+)
 from .body_hand_fit import (
     BodyHandSourceFitBuildPlan,
     BodyHandSourceFitBuildResult,
@@ -463,6 +469,10 @@ __all__ = [
     "InspectMocapBodyMapping",
     "MocapBodyMappingInspection",
     "MocapBodyMappingReader",
+    "ConnectMocapBody",
+    "DisconnectMocapBody",
+    "MocapBodyConnectionHost",
+    "MocapBodyConnectionResult",
     "BuildOrientedFitTemplate",
     "BuildSyntheticBodySourceFit",
     "BuildSyntheticUpperBodyFit",

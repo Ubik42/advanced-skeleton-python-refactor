@@ -153,6 +153,8 @@
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_mapping_smoke.py validation\results\maya2024-mocap-mapping.json
 
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_connection_smoke.py validation\results\maya2024-mocap-connection.json
+
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_character_hand_smoke.py validation\results\maya2024-body-character-hand.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_hand_pose_smoke.py validation\results\maya2024-body-hand-pose.json
@@ -237,6 +239,7 @@
 - Root Motion 案例覆盖本工程 owned Body 的 Y-Up/Z-Up 平面位移与 yaw 实时驱动、选择保持和单次 Undo；Export Skeleton 案例覆盖 Root Motion 下完整 30 关节输出层级、实时世界姿态、来源/provenance、ReBuild 阻断与 Undo。统一 bake 案例再覆盖 Root Motion 三通道与 30×9 个 joint TRS 通道逐帧 linear keys、全部 Body 依赖移除、独立回放和 Undo 恢复；FBX 案例用显式 31-joint 选择写入临时文件，在专用临时 Undo 事务中规范发布名称并剥离内部属性，验证原场景/Undo 顶部恢复和文件摘要后拒绝覆盖发布，再由新场景回读确认无开发前缀、namespace、Fit/Body/control 或内部元数据泄漏。显式 Profile 再覆盖 FBX2018/2020、Y/Z Up、cm/m、binary/ASCII，复检 exporter 回读和文件头版本；默认保持场景轴与单位。尚未包含持久 export objectSet、曲线简化、更多线性单位、自动引擎 Profile 或游戏引擎专用骨名表。
 - MoCap Source 案例只读检查调用方明确指定的 joint 根，要求连续 joint 父链、统一 namespace、唯一可移植名和直接 animation curve，并报告动画范围。当前不导入外部文件，不猜测厂商命名，不创建映射、约束、重定向或 bake。
 - MoCap Mapping 案例把调用方显式 source/target 短名解析到已验证来源和 owned Body，检查一一对应、根通道、非根平移及最近映射祖先顺序。当前只生成只读计划，不创建约束、重定向或 bake，也不提供厂商自动映射。
+- MoCap Connection 案例把已验证映射建立为 maintain-offset 临时约束，复检真实 source/target、输出所有权、连接瞬间姿态、跨帧驱动、显式断开与各自单次 Undo。当前不 bake、不导入文件、不提供厂商自动映射、Control Rig、UI 或 Blender 实现。
 - provenance 只证明本工程写入的产物身份和声明数量；删除资格还必须通过当前 DAG 与外部连接安全评估，不能只凭标记直接删除。
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。
