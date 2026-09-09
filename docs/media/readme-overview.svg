@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">AdvancedSkeleton Python architecture refactor</title>
+  <desc id="desc">Maya-first layered Python architecture with Blender as a frozen second-stage target.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08111f"/>
+      <stop offset="1" stop-color="#152b43"/>
+    </linearGradient>
+    <linearGradient id="maya" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#27c4c8"/>
+      <stop offset="1" stop-color="#147a99"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <circle cx="1390" cy="110" r="250" fill="#27c4c8" opacity=".06"/>
+  <circle cx="170" cy="820" r="300" fill="#5c82ff" opacity=".06"/>
+  <g font-family="Arial, 'Microsoft YaHei', sans-serif">
+    <text x="110" y="118" fill="#72e7e5" font-size="26" font-weight="700" letter-spacing="5">MAYA-FIRST · BLENDER-SECOND</text>
+    <text x="110" y="188" fill="#f5f8fc" font-size="54" font-weight="700">AdvancedSkeleton Python 架构重构</text>
+    <text x="110" y="236" fill="#aebed1" font-size="25">从单体 MEL 行为到分层、可验证的 Python 合同</text>
+    <g>
+      <rect x="110" y="310" width="310" height="146" rx="22" fill="#172a3d" stroke="#34516b"/>
+      <text x="140" y="355" fill="#8da9c1" font-size="19">PURE PYTHON</text>
+      <text x="140" y="400" fill="#ffffff" font-size="34" font-weight="700">Core</text>
+      <text x="140" y="430" fill="#aebed1" font-size="18">数据 · 规则 · Rig Plan</text>
+      <rect x="495" y="310" width="310" height="146" rx="22" fill="#172a3d" stroke="#34516b"/>
+      <text x="525" y="355" fill="#8da9c1" font-size="19">ORCHESTRATION</text>
+      <text x="525" y="400" fill="#ffffff" font-size="34" font-weight="700">Use Cases</text>
+      <text x="525" y="430" fill="#aebed1" font-size="18">预检 · 事务 · 读回复检</text>
+      <rect x="880" y="310" width="310" height="146" rx="22" fill="url(#maya)"/>
+      <text x="910" y="355" fill="#d9ffff" font-size="19">STAGE 1 · ACTIVE</text>
+      <text x="910" y="400" fill="#ffffff" font-size="34" font-weight="700">Maya Adapter</text>
+      <text x="910" y="430" fill="#e8ffff" font-size="18">真实场景 · Undo · 验证</text>
+      <rect x="1265" y="310" width="225" height="146" rx="22" fill="#121e2d" stroke="#496078" stroke-dasharray="9 8"/>
+      <text x="1295" y="355" fill="#8598aa" font-size="19">STAGE 2 · FROZEN</text>
+      <text x="1295" y="400" fill="#c8d3de" font-size="31" font-weight="700">Blender</text>
+      <text x="1295" y="430" fill="#8598aa" font-size="18">Maya 稳定后迁移</text>
+    </g>
+    <g fill="none" stroke="#72e7e5" stroke-width="4">
+      <path d="M420 383h75"/><path d="M805 383h75"/>
+    </g>
+    <path d="M1190 383h75" stroke="#71869a" stroke-width="4" stroke-dasharray="9 8"/>
+    <g transform="translate(110 555)">
+      <rect width="1380" height="220" rx="28" fill="#0c1827" stroke="#293f56"/>
+      <g transform="translate(45 45)"><text fill="#72e7e5" font-size="46" font-weight="700">90</text><text y="40" fill="#9cafc2" font-size="19">Maya 纵向切片</text></g>
+      <g transform="translate(305 45)"><text fill="#72e7e5" font-size="46" font-weight="700">272</text><text y="40" fill="#9cafc2" font-size="19">Python 回归测试</text></g>
+      <g transform="translate(600 45)"><text fill="#ffffff" font-size="30" font-weight="700">30 / 70 joints</text><text y="40" fill="#9cafc2" font-size="19">基础与五指 Body</text></g>
+      <g transform="translate(940 45)"><text fill="#ffffff" font-size="30" font-weight="700">31 joints</text><text y="40" fill="#9cafc2" font-size="19">独立导出骨架</text></g>
+      <text x="45" y="165" fill="#d9e4ef" font-size="22">FK / IK · Skin · Root Motion · FBX Profiles · MoCap Mapping</text>
+      <rect x="1085" y="132" width="245" height="48" rx="24" fill="#163a46"/>
+      <text x="1207" y="164" fill="#72e7e5" text-anchor="middle" font-size="18" font-weight="700">MAYA 2024 VERIFIED</text>
+    </g>
+    <text x="110" y="835" fill="#71869a" font-size="18">PRIVATE RESEARCH · ORIGINAL ADVANCEDSKELETON SOURCE AND ASSETS ARE NOT INCLUDED</text>
+  </g>
+</svg>
