@@ -349,3 +349,17 @@ write 先捕获非中性姿态，再扰动全部登记控制与空间；read 从
 ```
 
 30 关节使用相应输入目录。脚本从场景读取拓扑，无需 basic 开关。覆盖 32 个新通道、旧动画保留、登记与转换事务恢复、左右臂腿八种转换、实际蒙皮和新进程继续编辑。该批使用中性骨段长度与等比 Global 动画；动态拉伸组合的缺口见 [四肢动画开发记录](../docs/四肢动画开发记录.md)。
+
+
+## 动态拉伸、体积与辅助骨骼蒙皮
+
+输入使用四肢动画脚本保存的场景；各进程独立运行：
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_stretch_matching_smoke.py validation/results/limb-animation70-final.ma validation/results/stretch-matching70
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_stretch_matching_smoke.py validation/results/limb-animation70-final.ma validation/results/stretch-matching70 --reopen
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_stretch_matching_smoke.py validation/results/limb-animation70-final.ma validation/results/stretch-matching70 --advanced
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_stretch_matching_smoke.py validation/results/limb-animation70-final.ma validation/results/stretch-matching70 --faults
+```
+
+默认流程建立辅助骨骼蒙皮探针，覆盖四肢上下段不同长度、双向转换、体积因子变化、撤销与回滚。reopen 重新读取场景并继续转换；advanced 使用自动拉伸、膝盖锁定、长度偏置和脚掌滚动；faults 检查外部输出、单位换算损坏及辅助骨骼错误读回。30 关节使用对应场景路径与新输出目录。

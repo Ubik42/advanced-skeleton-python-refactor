@@ -6,6 +6,7 @@ from adv_py.core.character_registry import CharacterRegistryError
 from adv_py.core.character_animation import CharacterAnimation, character_sample_frames, validate_character_animation
 from adv_py.core.fit_symmetry import FitBuildSide
 from .character_animation import verify_character_animation_write
+from adv_py.core.body_control_spaces import control_space_pose_error
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ class BakeBodyCharacterLimbMode:
         self._host.preflight_character_keyframe(reg)
         keys=self._host.capture_character_key_state(reg)
         unit=self._host.character_time_unit()
+        helpers=self._host.sample_character_limb_helpers(reg,frames,limb,side.value)
         with self._host.transaction(f"Bake animated {limb} {side.value} {mode}"):
             if self._host.read_character_registration()!=reg or self._host.capture_character_key_state(reg)!=keys:
                 raise RuntimeError("四肢动画提交前场景发生变化")
@@ -64,4 +66,8 @@ class BakeBodyCharacterLimbMode:
             validate_character_animation(animation,reg)
             self._host.write_character_animation(reg,samples)
             verify_character_animation_write(self._host,reg,animation,keys)
+            actual_helpers=self._host.sample_character_limb_helpers(reg,frames,limb,side.value)
+            if (tuple((f,tuple(p for p,_ in rows)) for f,rows in helpers)!=tuple((f,tuple(p for p,_ in rows)) for f,rows in actual_helpers)
+                    or any(control_space_pose_error(left,right)>1e-4 for (_,left),(_,right) in zip(helpers,actual_helpers))):
+                raise RuntimeError('四肢动画转换改变了变形 helper 的世界姿态')
         return animation

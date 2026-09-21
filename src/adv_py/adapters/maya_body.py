@@ -3715,6 +3715,8 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self._transaction_changed = True
+            from .maya_limb_shape import begin_optional_match, finish_match
+            shape_state=begin_optional_match(self,"arm",plan.side.value,"ik")
             from .maya_limb_orientation import begin_orientation_match, finish_orientation_match
             orientation_state=begin_orientation_match(self,"arm",plan.side.value)
             self._cmds.xform(plan.pole_control_path, worldSpace=True, translation=plan.pole_position)
@@ -3724,6 +3726,7 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
             self._spine_set_world_rotation(plan.wrist_control_path,matrix)
             self._cmds.setAttr(plan.blend_plug, 1.0)
             finish_orientation_match(self,"arm",plan.side.value,orientation_state)
+            finish_match(self,shape_state)
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
@@ -3800,6 +3803,8 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self._transaction_changed = True
+            from .maya_limb_shape import begin_optional_match, finish_match
+            shape_state=begin_optional_match(self,"leg",plan.side.value,"ik")
             from .maya_limb_orientation import begin_orientation_match, finish_orientation_match
             orientation_state=begin_orientation_match(self,"leg",plan.side.value)
             for plug in plan.foot_attribute_plugs:
@@ -3834,6 +3839,7 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
             self._spine_set_world_rotation(plan.toe_control_path,toe_matrix)
             self._cmds.setAttr(plan.blend_plug, 1.0)
             finish_orientation_match(self,"leg",plan.side.value,orientation_state)
+            finish_match(self,shape_state)
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
@@ -3893,6 +3899,8 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self._transaction_changed = True
+            from .maya_limb_shape import begin_optional_match, finish_match
+            shape_state=begin_optional_match(self,"leg",plan.side.value,"fk")
             for path, target_axes in zip(
                 plan.fk_control_paths, plan.fk_control_axes
             ):
@@ -3913,6 +3921,7 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
             ):
                 self._cmds.setAttr(plug, value)
             self._cmds.setAttr(plan.blend_plug, 0.0)
+            finish_match(self,shape_state)
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
@@ -3969,6 +3978,8 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self._transaction_changed = True
+            from .maya_limb_shape import begin_optional_match, finish_match
+            shape_state=begin_optional_match(self,"arm",plan.side.value,"fk")
             for path, target_axes in zip(plan.fk_control_paths, plan.fk_control_axes):
                 position = self._cmds.xform(path, query=True, worldSpace=True, translation=True)
                 x_axis, y_axis, z_axis = target_axes
@@ -3980,6 +3991,7 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
             ):
                 self._cmds.setAttr(plug, value)
             self._cmds.setAttr(plan.blend_plug, 0.0)
+            finish_match(self,shape_state)
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 

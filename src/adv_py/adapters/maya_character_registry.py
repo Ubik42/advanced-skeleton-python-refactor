@@ -9,6 +9,28 @@ from adv_py.core.body_skeleton import audit_body_provenance, oriented_body_prove
 
 
 class MayaCharacterRegistryMixin:
+    def describe_character_stretch_matching(self,registration):
+        from .maya_limb_shape import describe
+        return describe(self,registration)
+
+    def install_character_stretch_matching(self,before,after):
+        from .maya_limb_shape import install,describe
+        self._require_transaction()
+        if self.read_character_registration()!=before or describe(self,before)!=after:
+            raise CharacterRegistryError('拉伸匹配扩展计划失效')
+        install(self,before,after)
+        self.write_character_registration_extension(before,after)
+
+    def sample_character_limb_helpers(self,registration,frames,limb,side):
+        from .maya_limb_shape import sample_helpers
+        return sample_helpers(self,registration,frames,limb,side)
+
+    def capture_character_stretch_world(self,registration):
+        from .maya_limb_shape import bindings
+        lengths,volumes=bindings(self,registration)
+        paths=[b.target.rsplit('.',1)[0] for b in lengths]+[p for b in volumes for p,_ in b.helpers]
+        return tuple((p,self._spine_world_frame(p)[0]) for p in paths)
+
     def describe_character_limb_animation(self,registration):
         from adv_py.application.body_arm_ik_to_fk import MatchBodyArmIkToFk
         from adv_py.application.body_leg_ik_to_fk import MatchBodyLegIkToFk
@@ -61,6 +83,13 @@ class MayaCharacterRegistryMixin:
         self._transaction_changed=True
         from .maya_limb_orientation import install_orientation
         install_orientation(self,before)
+        self.write_character_registration_extension(before,after)
+
+    def write_character_registration_extension(self,before,after):
+        self._require_transaction()
+        self._validate_character_registration(after)
+        c=self._cmds
+        self._transaction_changed=True
         document=REGISTRY_NAME+".advPyRegistryDocument"
         c.setAttr(document,lock=False)
         c.setAttr(document,encode_registration(after),type="string")
@@ -166,6 +195,8 @@ class MayaCharacterRegistryMixin:
                 raise CharacterRegistryError("登记控制通道有非动画外部输入")
         from .maya_limb_orientation import audit_orientation
         audit_orientation(self,plan)
+        from .maya_limb_shape import audit as audit_shape
+        audit_shape(self,plan)
         self.validate_body_spine(plan.spine)
         for spec in plan.spaces.spaces:
             self.capture_control_space_mode(spec)
