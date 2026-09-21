@@ -9,8 +9,9 @@ sys.path[:0]=[str(ROOT/'src'),str(ROOT/'examples')]
 import maya.standalone
 
 
-def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_full_ik=False):
-    with_ik=with_ik or with_full_ik
+def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_full_ik=False,
+         with_mixed=False,mixed_spine_ik=False):
+    with_ik=with_ik or with_full_ik or with_mixed
     output.parent.mkdir(parents=True,exist_ok=True)
     maya.standalone.initialize(name='python')
     try:
@@ -20,7 +21,7 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
             BuildOrientedBodySkeleton,BuildBodyCharacterRig,RegisterBodyCharacter,
             RetargetMocapVariableFullFkToCharacter,RetargetMocapVariableSplineIkToCharacter,
             RetargetMocapVariableFullIkToCharacter,EnableBodyCharacterSplineAnimation,
-            EnableBodyCharacterLimbAnimation,ImportMocapFbx)
+            RetargetMocapVariableMixedToCharacter,EnableBodyCharacterLimbAnimation,ImportMocapFbx)
         from adv_py.core.variable_body_fit import variable_axial_description
         from adv_py.core import MocapJointMapping,MocapMappingPreset
 
@@ -33,7 +34,7 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
             include_control_spaces=True,axial_description=variable_axial_description(segments))
         registration=RegisterBodyCharacter(built).apply(rig)
         if with_ik:registration=EnableBodyCharacterSplineAnimation(built).apply()
-        if with_full_ik:registration=EnableBodyCharacterLimbAnimation(built).apply()
+        if with_full_ik or with_mixed:registration=EnableBodyCharacterLimbAnimation(built).apply()
         target={joint.path.rsplit('|',1)[-1].rsplit(':',1)[-1]:joint for joint in registration.body}
         spine=tuple(path.rsplit('|',1)[-1].rsplit(':',1)[-1]
                     for path in registration.spine.body_joints[1:])
@@ -65,7 +66,20 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
                 value=((3. if segments<=4 else .3) if name in spine else 5.)*amount
                 cmds.setKeyframe(path,attribute='rotateZ',time=frame,value=value)
         host=MayaMocapControlHost(namespace='hero')
-        service=(RetargetMocapVariableFullIkToCharacter(host) if with_full_ik else
+        mixed_options=dict(spine_mode='ik' if mixed_spine_ik else 'fk',limb_modes={
+            ('arm','R'):'ik',('arm','L'):'fk',('leg','R'):'fk',('leg','L'):'ik'})
+        invalid_mixed_rejected=True
+        if with_mixed:
+            try:RetargetMocapVariableMixedToCharacter(host,spine_mode='other',
+                limb_modes=mixed_options['limb_modes'])
+            except ValueError:pass
+            else:invalid_mixed_rejected=False
+            try:RetargetMocapVariableMixedToCharacter(host,spine_mode='fk',
+                limb_modes={('arm','R'):'ik'})
+            except ValueError:pass
+            else:invalid_mixed_rejected=False
+        service=(RetargetMocapVariableMixedToCharacter(host,**mixed_options) if with_mixed else
+                 RetargetMocapVariableFullIkToCharacter(host) if with_full_ik else
                  RetargetMocapVariableSplineIkToCharacter(host) if with_ik else
                  RetargetMocapVariableFullFkToCharacter(host))
         old_channel=next(row for row in registration.channels if row.key=='leg.fk.ToesFK_R.rotateZ')
@@ -96,7 +110,8 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
                 self.calls+=1
                 if self.calls==4:raise RuntimeError('Injected variable group failure')
                 return result
-        failing=(RetargetMocapVariableFullIkToCharacter(FailedHost(namespace='hero'))
+        failing=(RetargetMocapVariableMixedToCharacter(FailedHost(namespace='hero'),**mixed_options)
+            if with_mixed else RetargetMocapVariableFullIkToCharacter(FailedHost(namespace='hero'))
             if with_full_ik else RetargetMocapVariableSplineIkToCharacter(FailedHost(namespace='hero'))
             if with_ik else RetargetMocapVariableFullFkToCharacter(FailedHost(namespace='hero')))
         try:failing.apply_with_preset(
@@ -106,7 +121,7 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
             rollback=host.capture_character_key_state(registration)==before
         else:rollback=False
         spine_rollback=True
-        if with_ik and not with_fbx and segments==4 and not with_hand:
+        if with_ik and not with_mixed and not with_fbx and segments==4 and not with_hand:
             class FailedSpineHost(MayaMocapControlHost):
                 def match_character_spine_samples(self,*args,**kwargs):
                     super().match_character_spine_samples(*args,**kwargs)
@@ -119,22 +134,25 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
                 spine_rollback=host.capture_character_key_state(registration)==before
             else:spine_rollback=False
         limb_rollback=True
-        if with_full_ik:
+        if with_full_ik or with_mixed:
             class FailedLimbHost(MayaMocapControlHost):
                 calls=0
                 def match_character_limb_samples(self,*args,**kwargs):
                     result=super().match_character_limb_samples(*args,**kwargs)
                     self.calls+=1
-                    if self.calls==3:raise RuntimeError('Injected variable limb failure')
+                    if self.calls==(2 if with_mixed else 3):
+                        raise RuntimeError('Injected variable limb failure')
                     return result
-            try:RetargetMocapVariableFullIkToCharacter(FailedLimbHost(namespace='hero')).apply_with_preset(
-                root,preset,**options)
+            failing_limb=(RetargetMocapVariableMixedToCharacter(
+                FailedLimbHost(namespace='hero'),**mixed_options) if with_mixed else
+                RetargetMocapVariableFullIkToCharacter(FailedLimbHost(namespace='hero')))
+            try:failing_limb.apply_with_preset(root,preset,**options)
             except RuntimeError as exc:
                 if 'Injected variable limb failure' not in str(exc):raise
                 limb_rollback=host.capture_character_key_state(registration)==before
             else:limb_rollback=False
         unfit_rejected=True
-        if with_ik and segments>=8 and not with_fbx:
+        if with_ik and not with_mixed and segments>=8 and not with_fbx:
             for name in spine:
                 for frame,value in ((5,3.),(10,6.)):
                     cmds.setKeyframe(source[name],attribute='rotateZ',time=frame,value=value)
@@ -145,7 +163,7 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
             for name in spine:
                 for frame,value in ((5,.3),(10,.6)):
                     cmds.setKeyframe(source[name],attribute='rotateZ',time=frame,value=value)
-        if with_full_ik:
+        if with_full_ik or with_mixed:
             roots,groups,conversion,limb_conversions=service.apply_with_preset(root,preset,**options)
         elif with_ik:
             roots,groups,conversion=service.apply_with_preset(root,preset,**options)
@@ -166,18 +184,24 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
             'external_fbx_joint_count':not with_fbx or len(imported.clip.joints)==len(required),
             'all_groups_written':len(roots)==10 and len(groups)==7
                 and all(len(group)==10 for group in groups),
-            'body_pose_matches':max(errors)<(1e-3 if with_full_ik else 1e-4),
-            'spline_ik_mode':not with_ik or (conversion is not None and all(
-                abs(cmds.getAttr(host.scene_address(registration.spine.settings)+'.spineIkFk',
-                    time=frame)-1.)<1e-8 for frame in range(1,11))),
-            'four_limb_ik_modes':not with_full_ik or (len(limb_conversions)==4 and all(
+            'body_pose_matches':max(errors)<(1e-3 if with_full_ik or with_mixed else 1e-4),
+            'spline_ik_mode':not with_ik or (
+                (conversion is not None)==(mixed_spine_ik if with_mixed else True)
+                and all(abs(cmds.getAttr(host.scene_address(registration.spine.settings)+
+                    '.spineIkFk',time=frame)-
+                    (float(mixed_spine_ik) if with_mixed else 1.))<1e-8
+                    for frame in range(1,11))),
+            'four_limb_ik_modes':not (with_full_ik or with_mixed) or (
+                len(limb_conversions)==(2 if with_mixed else 4) and all(
                 abs(cmds.getAttr(host.scene_address(next(ch for ch in registration.channels if ch.key==
                     f'{limb}.settings.{limb}IkFk_{side}').node)+'.'+
-                    f'{limb}IkFk_{side}',time=frame)-1.)<1e-8
+                    f'{limb}IkFk_{side}',time=frame)-
+                    (float(mixed_options['limb_modes'][(limb,side)]=='ik') if with_mixed else 1.))<1e-8
                 for limb in ('arm','leg') for side in ('R','L') for frame in range(1,11))),
             'group_failure_rolls_back':rollback,
             'spline_conversion_failure_rolls_back':spine_rollback,
             'limb_conversion_failure_rolls_back':limb_rollback}
+        checks['invalid_mixed_policy_rejected']=invalid_mixed_rejected
         old_curve=dict(zip(host._cmds.keyframe(old_channel.node,
             attribute=old_channel.attribute,query=True,timeChange=True) or [],
             host._cmds.keyframe(old_channel.node,attribute=old_channel.attribute,
@@ -208,9 +232,11 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
                 for path,wanted in zip(group_plan.target_joints,samples[-1].body_matrices)
                 for a,b in zip(cmds.xform(reopened.scene_address(path),query=True,
                     worldSpace=True,matrix=True),wanted))
-        checks['reopened_pose']=reopened_error<(1e-3 if with_full_ik else 1e-4)
+        checks['reopened_pose']=reopened_error<(1e-3 if with_full_ik or with_mixed else 1e-4)
         payload={**checks,'segments':segments,'joint_count':len(registration.body),
                  'max_body_error':max(errors),'reopened_body_error':reopened_error,
+                 'mixed_modes':with_mixed,
+                 'mixed_spine_ik':mixed_spine_ik,
                  'status':'passed' if all(checks.values()) else 'failed'}
         output.write_text(json.dumps(payload,indent=2)+'\n',encoding='utf8')
         return 0 if all(checks.values()) else 1
@@ -220,4 +246,5 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
 if __name__=='__main__':raise SystemExit(main(Path(sys.argv[1]).resolve(),
     int(sys.argv[2]) if len(sys.argv)>2 and sys.argv[2].isdigit() else 4,
     '--hand' in sys.argv[2:],'--ik' in sys.argv[2:],'--fbx' in sys.argv[2:],
-    '--full-ik' in sys.argv[2:]))
+    '--full-ik' in sys.argv[2:],'--mixed' in sys.argv[2:],
+    '--mixed-spine-ik' in sys.argv[2:]))

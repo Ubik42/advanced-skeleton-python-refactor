@@ -143,19 +143,23 @@ class RetargetMocapVariableFullFkToCharacter:
 
 class RetargetMocapVariableSplineIkToCharacter(RetargetMocapVariableFullFkToCharacter):
     """Convert mapped variable FK spine motion to Spline IK atomically."""
+    _spine_ik=True
     _limb_ik=False
+    _ik_limbs=()
+    _mixed=False
     def plan_with_preset(self,source_root,preset,*,start_frame,end_frame,sample_by=1,
                          reference_frame=None):
         plan=super().plan_with_preset(source_root,preset,start_frame=start_frame,
             end_frame=end_frame,sample_by=sample_by,reference_frame=reference_frame)
         keys={row.key for row in plan.root.registration.channels}
-        if 'spine.spline.1.translateX' not in keys or 'spine.spline.spineIkFk' not in keys:
+        if self._spine_ik and ('spine.spline.1.translateX' not in keys
+                or 'spine.spline.spineIkFk' not in keys):
             raise CharacterRegistryError('Spline IK 动捕须先启用可变脊柱动画通道登记')
-        if self._limb_ik:
-            required={f'{limb}.fkLength.{side}.{index}' for limb in ('arm','leg')
-                      for side in ('R','L') for index in (0,1)}
+        if self._ik_limbs:
+            required={f'{limb}.fkLength.{side}.{index}' for limb,side in self._ik_limbs
+                      for index in (0,1)}
             required.update(f'{limb}.ikOrientation.{side}.{segment}.rotate{axis}'
-                for limb in ('arm','leg') for side in ('R','L')
+                for limb,side in self._ik_limbs
                 for segment in ('upper','lower') for axis in 'XYZ')
             if not required.issubset(keys):
                 raise CharacterRegistryError('可变脊柱全身 IK 动捕须先启用四肢动画通道登记')
@@ -171,8 +175,9 @@ class RetargetMocapVariableSplineIkToCharacter(RetargetMocapVariableFullFkToChar
         plan=self.plan_with_preset(source_root,preset,**options)
         host=self._host
         reg=plan.root.registration
-        label=('Retarget variable-spine MoCap to full IK' if self._limb_ik
-               else 'Retarget variable-spine MoCap to Spline IK')
+        label=('Retarget variable-spine MoCap with mixed modes' if self._mixed else
+               'Retarget variable-spine MoCap to full IK' if self._limb_ik else
+               'Retarget variable-spine MoCap to Spline IK')
         with host.transaction(label):
             if self.plan_with_preset(source_root,preset,**options)!=plan:
                 raise CharacterRegistryError('可变脊柱动捕或角色状态在 Spline IK 写入前发生变化')
@@ -184,37 +189,55 @@ class RetargetMocapVariableSplineIkToCharacter(RetargetMocapVariableFullFkToChar
             reference=host.sample_character_animation(reg,plan.root.frames)
             unit=host.character_time_unit()
             keys=host.capture_character_key_state(reg)
-            samples=host.match_character_spine_samples(reg,plan.root.frames,'ik')
-            if host.capture_character_key_state(reg)!=keys or host.character_time_unit()!=unit:
-                raise RuntimeError('Spline IK 匹配采样改变了原曲线或时间')
-            animation=CharacterAnimation(unit,samples)
-            validate_character_animation(animation,reg)
-            host.write_character_animation(reg,samples)
-            verify_character_animation_write(host,reg,animation,keys)
+            animation=None
+            if self._spine_ik:
+                samples=host.match_character_spine_samples(reg,plan.root.frames,'ik')
+                if host.capture_character_key_state(reg)!=keys or host.character_time_unit()!=unit:
+                    raise RuntimeError('Spline IK 匹配采样改变了原曲线或时间')
+                animation=CharacterAnimation(unit,samples)
+                validate_character_animation(animation,reg)
+                host.write_character_animation(reg,samples)
+                verify_character_animation_write(host,reg,animation,keys)
             limb_conversions=[]
-            if self._limb_ik:
-                for limb in ('arm','leg'):
-                    for side in ('R','L'):
-                        keys=host.capture_character_key_state(reg)
-                        samples=host.match_character_limb_samples(reg,plan.root.frames,limb,
-                            FitBuildSide(side),'ik',pose_tolerance=1e-3)
-                        if host.capture_character_key_state(reg)!=keys or host.character_time_unit()!=unit:
-                            raise RuntimeError('可变脊柱动捕四肢匹配采样改变了原曲线或时间')
-                        conversion=CharacterAnimation(unit,samples)
-                        validate_character_animation(conversion,reg)
-                        host.write_character_animation(reg,samples)
-                        verify_character_animation_write(host,reg,conversion,keys)
-                        limb_conversions.append(conversion)
+            for limb,side in self._ik_limbs:
+                keys=host.capture_character_key_state(reg)
+                samples=host.match_character_limb_samples(reg,plan.root.frames,limb,
+                    FitBuildSide(side),'ik',pose_tolerance=1e-3)
+                if host.capture_character_key_state(reg)!=keys or host.character_time_unit()!=unit:
+                    raise RuntimeError('可变脊柱动捕四肢匹配采样改变了原曲线或时间')
+                conversion=CharacterAnimation(unit,samples)
+                validate_character_animation(conversion,reg)
+                host.write_character_animation(reg,samples)
+                verify_character_animation_write(host,reg,conversion,keys)
+                limb_conversions.append(conversion)
             actual=host.sample_character_animation(reg,plan.root.frames)
             error=max(abs(a-b) for (_,before),(_,after) in zip(reference,actual)
                 for (_,left),(_,right) in zip(before.body_frames,after.body_frames)
                 for a,b in zip(left,right))
-            if error>(1e-3 if self._limb_ik else 1e-4):
+            if error>(1e-3 if self._ik_limbs else 1e-4):
                 raise RuntimeError('动捕 Spline IK 转换改变了采样帧 Body 世界姿态：'+str(error))
         result=(root_samples,group_samples,animation)
+        if self._mixed:return (*result,tuple(limb_conversions))
         return (*result,tuple(limb_conversions)) if self._limb_ik else result
 
 
 class RetargetMocapVariableFullIkToCharacter(RetargetMocapVariableSplineIkToCharacter):
     """Retarget a variable Spline spine and all four limbs to IK controls."""
     _limb_ik=True
+    _ik_limbs=(('arm','R'),('arm','L'),('leg','R'),('leg','L'))
+
+
+class RetargetMocapVariableMixedToCharacter(RetargetMocapVariableSplineIkToCharacter):
+    """Retarget an explicitly selected FK/IK mode for the spine and each limb."""
+    _mixed=True
+
+    def __init__(self,host,*,spine_mode,limb_modes):
+        super().__init__(host)
+        expected=(('arm','R'),('arm','L'),('leg','R'),('leg','L'))
+        if spine_mode not in ('fk','ik'):
+            raise CharacterRegistryError('混合动捕的脊柱模式必须为 fk 或 ik')
+        if (not isinstance(limb_modes,dict) or set(limb_modes)!=set(expected)
+                or any(mode not in ('fk','ik') for mode in limb_modes.values())):
+            raise CharacterRegistryError('混合动捕须逐条指定四肢的 fk 或 ik 模式')
+        self._spine_ik=spine_mode=='ik'
+        self._ik_limbs=tuple(pair for pair in expected if limb_modes[pair]=='ik')
