@@ -249,7 +249,11 @@ def audit_skin_weight_document_target(
 def remap_skin_weight_document(
     document: SkinWeightDocument,
     mapping: SkinWeightPathMapping,
+    *,
+    allow_unweighted_missing: bool = False,
 ) -> SkinWeightDocument:
+    if not isinstance(allow_unweighted_missing, bool):
+        raise SkinWeightValidationError("缺失影响策略必须是布尔值")
     if (
         not isinstance(mapping.target_skin_name, str)
         or not mapping.target_skin_name.strip()
@@ -279,14 +283,17 @@ def remap_skin_weight_document(
         raise SkinWeightValidationError("Influence 映射包含重复源路径")
     if len(set(targets)) != len(targets):
         raise SkinWeightValidationError("Influence 映射必须是一一对应，目标路径不能重复")
-    if len(sources) != len(document.influence_paths) or set(sources) != set(
-        document.influence_paths
-    ):
+    source_set=set(document.influence_paths)
+    if not set(sources).issubset(source_set) or (not allow_unweighted_missing and set(sources)!=source_set):
         raise SkinWeightValidationError("Influence 映射必须完整且只覆盖文档源集合")
     target_by_source = dict(pairs)
+    missing=source_set-set(sources)
+    if missing and any(entry.influence_path in missing for vertex in document.vertices for entry in vertex.weights):
+        raise SkinWeightValidationError("缺失的 Influence 持有非零顶点权重，拒绝丢失："+", ".join(sorted(missing)))
     target_influences = tuple(
         target_by_source[source]
         for source in document.influence_paths
+        if source in target_by_source
     )
     target_vertices = tuple(
         SkinVertexWeights(
@@ -296,7 +303,7 @@ def remap_skin_weight_document(
                     target_by_source[entry.influence_path],
                     entry.weight,
                 )
-                for entry in vertex.weights
+                for entry in vertex.weights if entry.influence_path in target_by_source
             ),
         )
         for vertex in document.vertices

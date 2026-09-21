@@ -131,13 +131,16 @@ class ImportSkinWeights:
         source: str | os.PathLike[str],
         *,
         mapping: SkinWeightPathMapping | None = None,
+        allow_unweighted_missing: bool = False,
     ) -> SkinWeightImportPlan:
         path = _json_path(source)
         if not path.is_file():
             raise FitSkeletonValidationError("权重导入文件不存在")
+        if allow_unweighted_missing and mapping is None:
+            raise FitSkeletonValidationError("允许缺失零权重影响时必须提供目标路径映射")
         document = skin_weight_document_from_json(path.read_text(encoding="utf-8"))
         target_document = (
-            remap_skin_weight_document(document, mapping)
+            remap_skin_weight_document(document, mapping,allow_unweighted_missing=allow_unweighted_missing)
             if mapping is not None
             else document
         )
@@ -169,8 +172,9 @@ class ImportSkinWeights:
         source: str | os.PathLike[str],
         *,
         mapping: SkinWeightPathMapping | None = None,
+        allow_unweighted_missing: bool = False,
     ) -> SkinWeightImportResult:
-        plan = self.plan(source, mapping=mapping)
+        plan = self.plan(source, mapping=mapping,allow_unweighted_missing=allow_unweighted_missing)
         current_document = skin_weight_document_from_json(
             plan.source.read_text(encoding="utf-8")
         )

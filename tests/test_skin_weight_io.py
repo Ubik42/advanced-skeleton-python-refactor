@@ -210,6 +210,23 @@ class SkinWeightIoTests(unittest.TestCase):
         with self.assertRaisesRegex(SkinWeightValidationError, "一一对应"):
             remap_skin_weight_document(document, invalid)
 
+    def test_explicitly_omits_only_unweighted_missing_influences(self):
+        host=FakeSkinWeightDocumentHost()
+        partial=SkinWeightPathMapping('TargetSkin','|TargetMesh',
+                                      (SkinWeightInfluenceMapping(A,C),))
+        weighted=skin_weight_document_from_state(host.state)
+        with self.assertRaisesRegex(SkinWeightValidationError,'完整'):
+            remap_skin_weight_document(weighted,partial)
+        with self.assertRaisesRegex(SkinWeightValidationError,'非零'):
+            remap_skin_weight_document(weighted,partial,allow_unweighted_missing=True)
+        single=lambda index:SkinVertexWeights(index,(SkinInfluenceWeight(A,1.),))
+        unweighted=skin_weight_document_from_state(replace(host.state,vertices=(single(0),single(1))))
+        converted=remap_skin_weight_document(unweighted,partial,allow_unweighted_missing=True)
+        self.assertEqual(converted.influence_paths,(C,))
+        self.assertEqual(tuple(vertex.weights for vertex in converted.vertices),
+                         ((SkinInfluenceWeight(C,1.),),)*2)
+        self.assertEqual(skin_weight_document_from_json(skin_weight_document_to_json(converted)),converted)
+
     def test_imports_into_explicit_mapped_target(self):
         host = FakeSkinWeightDocumentHost()
         with tempfile.TemporaryDirectory() as directory:
