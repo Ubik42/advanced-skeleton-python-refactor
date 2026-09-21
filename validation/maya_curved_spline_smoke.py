@@ -13,7 +13,7 @@ def main(folder):
         from adv_py.application import (CreateFitSkeleton,BuildVariableBodySourceFit,
             EditFitJointPositions,OrientSimpleFitChain,BuildOrientedBodySkeleton,BuildBodyCharacterRig,
             RegisterBodyCharacter,BindSkin,ResolveBodyCharacter,EnableBodyCharacterSplineAnimation,
-            BakeBodyCharacterSpineMode,RebuildBodyCharacter)
+            BakeBodyCharacterSpineMode,RebuildBodyCharacter,CaptureBodyCharacterAnimation)
         from adv_py.core.fit_position import FitJointPositionEdit,FitJointPositionPatch
         from adv_py.core.fit_orientation import FitOrientationRequest
         from adv_py.core.variable_body_fit import variable_axial_description
@@ -79,10 +79,22 @@ def main(folder):
                 RebuildBodyCharacter(host).apply('replacement')
                 rebuilt=error(matched,matrices())
             else:rebuilt=0.
+            clip_error=0.
+            if count==4:
+                for frame,value in ((1.,.1),(5.,.2),(9.,-.15)):
+                    c.setKeyframe(host.scene_address(plan.targets[3]),attribute='translateY',time=frame,value=value)
+                wanted=CaptureBodyCharacterAnimation(host).execute(1,9,4)
+                BakeBodyCharacterSpineMode(host).execute(1,9,'fk',4)
+                c.keyframe(host.scene_address(plan.targets[3]),attribute='translateY',edit=True,relative=True,valueChange=.08)
+                BakeBodyCharacterSpineMode(host).execute(1,9,'ik',4)
+                actual=CaptureBodyCharacterAnimation(host).execute(1,9,4)
+                clip_error=max(abs(a-b) for (_,left),(_,right) in zip(wanted.samples,actual.samples)
+                               for (_,first),(_,last) in zip(left.body_frames,right.body_frames)
+                               for a,b in zip(first,last))
             row=dict(segments=count,targets=len(plan.targets),fk_error=fk_error,ik_error=ik_error,
                      undo=ik_undo,redo=ik_redo,skin_displacement=moved,neutral_recovered=neutral_recovered,reopen_error=reopen,
-                     fk_match=fk_match,ik_match=ik_match,matched_reopen=matched_reopen,rebuilt=rebuilt)
-            row['passed']=all((ik_undo,ik_redo)) and len(plan.targets)==count+2 and max(fk_error,ik_error,neutral_recovered,reopen,fk_match,ik_match,matched_reopen,rebuilt)<1e-4 and moved>.001
+                     fk_match=fk_match,ik_match=ik_match,matched_reopen=matched_reopen,rebuilt=rebuilt,clip_error=clip_error)
+            row['passed']=all((ik_undo,ik_redo)) and len(plan.targets)==count+2 and max(fk_error,ik_error,neutral_recovered,reopen,fk_match,ik_match,matched_reopen,rebuilt,clip_error)<1e-4 and moved>.001
             reports.append(row);print(json.dumps(row),flush=True)
         (folder/'report.json').write_text(json.dumps(reports,indent=2),encoding='utf8')
         return 0 if all(row['passed'] for row in reports) else 1
