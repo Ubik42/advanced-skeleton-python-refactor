@@ -51,6 +51,14 @@ class PreservedExtension:
 
 
 @dataclass(frozen=True)
+class RebuildOwnership:
+    # Logical role, original UUID, replacement UUID, native node type.
+    nodes: tuple[tuple[str,str,str,str], ...]
+    connections: tuple[tuple[str,str], ...]
+    shapes: tuple[tuple[str,tuple[float,...],tuple,tuple[float,...]], ...] = ()
+
+
+@dataclass(frozen=True)
 class CharacterPreservation:
     registration: CharacterRegistration
     pose: CharacterPose

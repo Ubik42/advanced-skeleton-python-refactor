@@ -110,6 +110,8 @@ def transfer(host,staged):
     try:
         from .maya_character_properties import install,lock_and_verify
         install(target,staged.custom_properties)
+        from .maya_character_ownership import transfer_shapes
+        transfer_shapes(target,staged.ownership)
         # Match the original solver policy before any animation is moved.
         if host._cmds.ikHandle('AdvPy_SpineIKHandle',q=True,solver=True)=='AdvPy_SpineRPSolver':
             target._transaction_active=True
@@ -182,6 +184,8 @@ def verify_retained(host,staged):
     from .maya_body import MayaBodyBuildHost
     target=MayaBodyBuildHost(namespace=staged.namespace)
     old=staged.original
+    from .maya_character_ownership import verify_shapes
+    verify_shapes(target,staged.ownership)
     registered={n.path for n in old.registration.nodes if n.path!=old.registration.container and not n.path.startswith(old.registration.container+'|')}
     retained={row.path:row.uuid for row in old.extensions}
     retained.update({row.node:row.uuid for row in old.curves})

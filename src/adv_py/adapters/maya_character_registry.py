@@ -9,6 +9,15 @@ from adv_py.core.body_skeleton import audit_body_provenance, oriented_body_prove
 
 
 class MayaCharacterRegistryMixin:
+    def match_character_rebuild_solver(self,stage,registration):
+        if self._cmds.ikHandle('AdvPy_SpineIKHandle',q=True,solver=True)=='AdvPy_SpineRPSolver':
+            with stage.transaction('Match replacement spine solver'):
+                stage.ensure_precise_body_spine_solver(registration.spine)
+
+    def audit_character_rebuild_ownership(self,staged):
+        from .maya_character_ownership import audit
+        return audit(self,staged)
+
     def plan_character_property_transfer(self,original,namespace):
         from .maya_character_properties import plan
         return plan(self,original,namespace)

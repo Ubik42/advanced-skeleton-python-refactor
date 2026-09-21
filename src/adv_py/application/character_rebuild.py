@@ -1,10 +1,10 @@
 """Build and verify a replacement rig before transferring any original data."""
-from dataclasses import dataclass
+from dataclasses import dataclass,replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from adv_py.core.character_registry import CharacterRegistration
-from adv_py.core.character_preservation import CharacterPreservation,validate_rebuild_layout,character_transfer_error
+from adv_py.core.character_preservation import CharacterPreservation,RebuildOwnership,validate_rebuild_layout,character_transfer_error
 from .character_preservation import CaptureBodyCharacterPreservation
 from .fit_skeleton_io import ExportFitSkeleton,CreateAndImportFitSkeleton
 from .oriented_body_skeleton import BuildOrientedBodySkeleton
@@ -22,6 +22,7 @@ class StagedCharacterRebuild:
     namespace: str
     registration: CharacterRegistration
     custom_properties: tuple = ()
+    ownership: RebuildOwnership | None = None
 
 
 class StageBodyCharacterRebuild:
@@ -46,11 +47,14 @@ class StageBodyCharacterRebuild:
                 if any('.ikOrientation.' in key for key in keys):registration=EnableBodyCharacterLimbAnimation(stage).apply()
                 if any('.ikLengthWeight.' in key for key in keys):registration=EnableBodyCharacterStretchMatching(stage).apply()
                 if any(key.startswith('space.') for key in keys):registration=EnableBodyCharacterSpaceAnimation(stage).apply()
+                host.match_character_rebuild_solver(stage,registration)
                 validate_rebuild_layout(original.registration,registration)
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('暂存构建改写了原角色，已回滚')
                 properties=host.plan_character_property_transfer(original,namespace)
-        return StagedCharacterRebuild(original,namespace,registration,properties)
+                staged=StagedCharacterRebuild(original,namespace,registration,properties)
+                staged=replace(staged,ownership=host.audit_character_rebuild_ownership(staged))
+        return staged
 
 
 class TransferStagedBodyCharacterData:
@@ -63,6 +67,8 @@ class TransferStagedBodyCharacterData:
         if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
             raise CharacterRegistryError('原角色与暂存时的保留数据不同，请重新暂存')
         host.preflight_character_transfer(staged)
+        if staged.ownership is not None and host.audit_character_rebuild_ownership(staged)!=staged.ownership:
+            raise CharacterRegistryError('暂存后的 Rig 归属或连接已变化，请重新暂存')
         keys=sorted({original.current_time,*[t for curve in original.curves for t in curve.times]})
         frames=tuple(sorted({*keys,*[(a+b)/2 for a,b in zip(keys,keys[1:])]}))
         if len(frames)>2000:raise CharacterRegistryError('交接复检采样最多 2000 帧，需要分段验证策略')

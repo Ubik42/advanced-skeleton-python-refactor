@@ -22,6 +22,12 @@ def main(source,folder,reopen=False,partner=False,prepared=False,custom=False):
             expected=json.loads((folder/'expected.json').read_text(encoding='utf-8'))
             property_ids=json.loads((folder/'property-ids.json').read_text(encoding='utf-8')) if (folder/'property-ids.json').exists() else {}
             host=MayaBodyBuildHost(namespace=target_namespace);reg=host.read_character_registration()
+            if (folder/'shapes.json').exists():
+                from adv_py.core.character_preservation import RebuildOwnership
+                from adv_py.adapters.maya_character_ownership import verify_shapes
+                def tuples(value):return tuple(tuples(item) for item in value) if isinstance(value,list) else value
+                shapes=tuples(json.loads((folder/'shapes.json').read_text(encoding='utf8')))
+                verify_shapes(host,RebuildOwnership((),(),shapes))
             rows=[]
             with host._character_sampling_time() as seek:
                 for frame,body,spaces,meshes,attachments in expected:
@@ -105,6 +111,8 @@ def main(source,folder,reopen=False,partner=False,prepared=False,custom=False):
         (folder/'expected.json').write_text(json.dumps(expected),encoding='utf-8')
         property_ids={row.uuid:cmds.ls(MayaBodyBuildHost(namespace=target_namespace).scene_address(row.path),uuid=True)[0] for row in staged.custom_properties}
         (folder/'property-ids.json').write_text(json.dumps(property_ids),encoding='utf-8')
+        if staged.ownership:
+            (folder/'shapes.json').write_text(json.dumps(staged.ownership.shapes),encoding='utf8')
         cmds.file(rename=str(folder/'transferred.ma'));cmds.file(save=True,type='mayaAscii',force=True)
         report['status']='passed' if all(report.values()) else 'failed'
         (folder/'transfer.json').write_text(json.dumps(report,indent=2),encoding='utf-8');print(json.dumps(report,indent=2))
