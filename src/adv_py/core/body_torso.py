@@ -14,6 +14,8 @@ from .body_limb_mechanisms import BodyLimbMechanismPlan
 from .body_limb_stretch import BodyLimbStretchPlan
 from .fit_settings import FitSkeletonValidationError
 from .body_description import BodyAxialDescription
+from .body_head_aim import HeadAimPlan,with_head_aim
+from .fit_container import FitUpAxis
 
 
 class BodyTorsoLimbPlan(Protocol):
@@ -53,6 +55,7 @@ class BodyTorsoPlan:
     pelvis_translation: BodySpaceAttachment
     attachments: tuple[BodySpaceAttachment, ...]
     spine: BodySpinePlan | None = None
+    head_aim: HeadAimPlan | None = None
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -60,7 +63,7 @@ class BodyTorsoPlan:
             name for control in self.controls.controls
             for name in (control.offset_name, control.control_name,
                          control.control_name + "Shape", control.constraint_name)
-        ) + tuple(item.name for item in (self.pelvis_translation,) + self.attachments) + (self.spine.node_names if self.spine else ())
+        ) + tuple(item.name for item in (self.pelvis_translation,) + self.attachments) + (self.spine.node_names if self.spine else ()) + (self.head_aim.node_names if self.head_aim else ())
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,11 +74,12 @@ class BodyTorsoSnapshot:
 
 def plan_body_torso(
     body: BodySkeletonSnapshot, arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan,
-    *, radius: float = 2.0, spine_ik: bool = False, description: BodyAxialDescription | None = None,
+    *, radius: float = 2.0, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z,
 ) -> BodyTorsoPlan:
     if isinstance(radius, bool) or not isinstance(radius, (int, float)) or not isfinite(radius) or radius <= 0:
         raise FitSkeletonValidationError("Torso 控制半径必须是正有限数")
     description=BodyAxialDescription() if description is None else description
+    if not isinstance(head_aim,bool):raise FitSkeletonValidationError('head_aim 必须是布尔值')
     if not isinstance(description,BodyAxialDescription):raise FitSkeletonValidationError('身体描述类型无效')
     if spine_ik and description!=BodyAxialDescription():
         raise FitSkeletonValidationError('现有双段 Spine IK 不接受可变身体描述；通用 IK 求解尚未接入')
@@ -126,7 +130,8 @@ def plan_body_torso(
                 f"AdvPy_Torso{label}StretchOrigin_{suffix}", source, stretches[0].start_path, "parentConstraint", True,
             ))
     plan = BodyTorsoPlan(BodyLimbFkControlPlan(root_path, root_name, tuple(controls)), pelvis, tuple(attachments))
-    return with_spine_ik(body, plan) if spine_ik else plan
+    plan=with_spine_ik(body, plan) if spine_ik else plan
+    return with_head_aim(plan,body,description,up_axis) if head_aim else plan
 
 
 def audit_body_torso(plan: BodyTorsoPlan, snapshot: BodyTorsoSnapshot) -> tuple[str, ...]:

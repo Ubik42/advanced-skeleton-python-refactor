@@ -21,6 +21,8 @@ class MayaCharacterPoseMixin:
 
     def capture_character_pose(self,registration):
         c=self._cmds
+        from .maya_head_aim import audit_registered
+        audit_registered(self,registration)
         return CharacterPose(registration.compatibility_digest,
             tuple((ch.key,float(c.getAttr(ch.node+"."+ch.attribute))) for ch in registration.channels),
             tuple((s.key,self.capture_control_space_mode(s)) for s in registration.spaces.spaces),

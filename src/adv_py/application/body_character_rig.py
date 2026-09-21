@@ -145,7 +145,10 @@ class BuildBodyCharacterRig:
         include_control_spaces: bool = False,
         torso_control_radius: float = 2.0,
         axial_description=None,
+        include_head_aim: bool = False,
     ) -> BodyCharacterRigBuildPlan:
+        if not isinstance(include_head_aim,bool) or (include_head_aim and not include_torso):
+            raise FitSkeletonValidationError('头部瞄准需要显式启用 Torso')
         if axial_description is not None and not include_torso:
             raise FitSkeletonValidationError('身体描述需要启用 Torso')
         if not isinstance(include_control_spaces, bool) or (include_control_spaces and not include_torso):
@@ -190,7 +193,7 @@ class BuildBodyCharacterRig:
                 f"缺少 {len(missing)} 个关节：" + "、".join(missing),
             )
         torso = (
-            self._torso.plan_from_safety(safety, arm, leg, radius=torso_control_radius, spine_ik=include_spine_ik,description=axial_description)
+            self._torso.plan_from_safety(safety, arm, leg, radius=torso_control_radius, spine_ik=include_spine_ik,description=axial_description,head_aim=include_head_aim)
             if include_torso else None
         )
         driven_roots = (
@@ -256,6 +259,7 @@ class BuildBodyCharacterRig:
         include_control_spaces: bool = False,
         torso_control_radius: float = 2.0,
         axial_description=None,
+        include_head_aim: bool = False,
     ) -> BodyCharacterRigBuildResult:
         plan = self.plan(
             container_name,
@@ -269,6 +273,7 @@ class BuildBodyCharacterRig:
             include_control_spaces=include_control_spaces,
             torso_control_radius=torso_control_radius,
             axial_description=axial_description,
+            include_head_aim=include_head_aim,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
             center_tolerance=center_tolerance,

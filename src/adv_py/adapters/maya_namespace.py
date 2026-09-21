@@ -13,6 +13,9 @@ _NODE_RESULTS = frozenset('listRelatives listConnections listHistory rename pare
 _GLOBAL = frozenset('currentTime currentUnit upAxis undoInfo undo file pluginInfo loadPlugin allNodeTypes'.split())
 _READ = frozenset('ls listAttr objExists nodeType listRelatives listConnections listHistory referenceQuery connectionInfo getAttr attributeQuery isConnected exactWorldBoundingBox pointPosition polyEvaluate'.split())
 _CREATE = frozenset('createNode joint circle ikHandle skinCluster orientConstraint parentConstraint pointConstraint scaleConstraint poleVectorConstraint polyCylinder polyCube polyUnite setKeyframe'.split())
+_NODE_ARGS |= {'aimConstraint'}
+_NODE_RESULTS |= {'aimConstraint'}
+_CREATE |= {'aimConstraint'}
 
 
 class MayaCharacterCommands:

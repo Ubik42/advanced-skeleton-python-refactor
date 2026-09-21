@@ -48,6 +48,9 @@ class MayaBodyTorsoMixin:
                     self._cmds.setAttr(f"{spec.control_path}.{attr}", lock=True, keyable=False)
             if plan.spine:
                 self.create_body_spine(plan.spine)
+            if plan.head_aim:
+                from .maya_head_aim import create
+                create(self,plan.head_aim)
             for spec in (plan.pelvis_translation,) + plan.attachments:
                 self._preflight_torso_channels(spec.target, spec.attributes)
                 command = self._cmds.parentConstraint if spec.kind == "parentConstraint" else self._cmds.pointConstraint
@@ -60,6 +63,9 @@ class MayaBodyTorsoMixin:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
     def capture_body_torso(self, plan):
+        if plan.head_aim:
+            from .maya_head_aim import audit
+            audit(self,plan.head_aim.head_control,plan.head_aim.target)
         states = []
         for spec in (plan.pelvis_translation,) + plan.attachments:
             nodes = self._cmds.ls(spec.name, long=True) or []

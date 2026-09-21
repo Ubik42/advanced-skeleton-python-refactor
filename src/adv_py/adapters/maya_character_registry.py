@@ -256,6 +256,9 @@ class MayaCharacterRegistryMixin:
                       spine.ik_offset,spine.ik_control,spine.pole_offset,spine.pole_control,
                       spine.waist_output,spine.chest_space,*(j.path for j in spine.joints)))
         paths.update(p for spec in spaces.spaces for p in (*spec.targets,spec.body_source,spec.global_source))
+        if rig.plan.torso.torso.head_aim:
+            aim=rig.plan.torso.torso.head_aim
+            paths.update((aim.rest,aim.solved,aim.pivot,aim.target,aim.target_offset))
         for node in tuple(paths):
             parent = node.rsplit("|",1)[0]
             while parent:
@@ -282,6 +285,8 @@ class MayaCharacterRegistryMixin:
 
     def _validate_character_registration(self, plan):
         c = self._cmds
+        from .maya_head_aim import audit_registered
+        audit_registered(self,plan)
         user_plugs={channel.node+"."+channel.attribute for channel in plan.channels}
         for node in plan.nodes:
             current=self._registry_node(node.path)

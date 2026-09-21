@@ -41,9 +41,10 @@ class StageBodyCharacterRebuild:
                 stage=host.create_character_rebuild_host(namespace)
                 CreateAndImportFitSkeleton(stage).apply(fit)
                 BuildOrientedBodySkeleton(stage).apply()
-                rig=BuildBodyCharacterRig(stage).apply(include_torso=True,include_spine_ik=True,include_control_spaces=True)
-                registration=RegisterBodyCharacter(stage).apply(rig)
                 keys={channel.key for channel in original.registration.channels}
+                rig=BuildBodyCharacterRig(stage).apply(include_torso=True,include_spine_ik=True,include_control_spaces=True,
+                    include_head_aim='head.aim.headAim' in keys)
+                registration=RegisterBodyCharacter(stage).apply(rig)
                 if any('.ikOrientation.' in key for key in keys):registration=EnableBodyCharacterLimbAnimation(stage).apply()
                 if any('.ikLengthWeight.' in key for key in keys):registration=EnableBodyCharacterStretchMatching(stage).apply()
                 if any(key.startswith('space.') for key in keys):registration=EnableBodyCharacterSpaceAnimation(stage).apply()

@@ -3,10 +3,12 @@ from typing import Protocol
 
 from adv_py.core.body_torso import BodyTorsoLimbPlan, BodyTorsoPlan, BodyTorsoSnapshot, audit_body_torso, plan_body_torso
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from adv_py.core.fit_container import FitUpAxis
 from .body_rebuild import BodyRebuildSafetyAudit
 
 
 class BodyTorsoHost(Protocol):
+    def scene_up_axis(self) -> FitUpAxis: ...
     def find_name_collisions(self, name: str) -> tuple[str, ...]: ...
     def preflight_body_torso(self, plan: BodyTorsoPlan) -> None: ...
     def create_body_torso(self, plan: BodyTorsoPlan) -> None: ...
@@ -38,9 +40,10 @@ class BuildBodyTorso:
 
     def plan_from_safety(
         self, safety: BodyRebuildSafetyAudit,
-        arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan, *, radius: float = 2.0, spine_ik: bool = False, description=None,
+        arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan, *, radius: float = 2.0, spine_ik: bool = False, description=None, head_aim=False,
     ) -> BodyTorsoBuildPlan:
-        torso = plan_body_torso(safety.body, arm, leg, radius=radius, spine_ik=spine_ik,description=description)
+        options={'up_axis':self._host.scene_up_axis()} if head_aim else {}
+        torso = plan_body_torso(safety.body, arm, leg, radius=radius, spine_ik=spine_ik,description=description,head_aim=head_aim,**options)
         collisions = tuple(sorted({path for name in torso.node_names for path in self._host.find_name_collisions(name)}))
         self._host.preflight_body_torso(torso)
         return BodyTorsoBuildPlan(safety, torso, collisions)

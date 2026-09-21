@@ -30,6 +30,10 @@ def character_channels(rig):
     spine = p.torso.torso.spine
     add("spine.ik",spine.ik_control,translation+rotation+("waistRoll","spineIkFk"))
     add("spine.pole",spine.pole_control,translation)
+    if p.torso.torso.head_aim:
+        aim=p.torso.torso.head_aim
+        add('head.aim.target',aim.target,translation+rotation)
+        add('head.aim',aim.head_control,('headAim',))
     for label,module in (("arm",p.arm),("leg",p.leg)):
         for control in module.fk_controls.controls:
             add(label+".fk."+control.control_name.removeprefix("AdvPy_"),control.control_path,rotation)

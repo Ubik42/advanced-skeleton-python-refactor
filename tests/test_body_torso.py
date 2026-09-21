@@ -47,6 +47,23 @@ class BodyTorsoTests(unittest.TestCase):
             with self.assertRaises(FitSkeletonValidationError):
                 self.plan(radius=radius)
 
+    def test_head_aim_adds_independent_blend_frame_and_forward_target(self):
+        plan=self.plan(head_aim=True)
+        aim=plan.head_aim
+        control=next(c for c in plan.controls.controls if c.control_path==aim.head_control)
+        self.assertEqual(control.control_parent_path,aim.pivot)
+        self.assertEqual(aim.pivot,control.offset_path+'|AdvPy_HeadAimBlend')
+        delta=tuple(a-b for a,b in zip(aim.position,control.world_position))
+        self.assertGreater(delta[1],0.)
+        self.assertAlmostEqual(delta[0],0.)
+        self.assertAlmostEqual(delta[2],0.)
+        self.assertEqual(len(plan.node_names),len(set(plan.node_names)))
+        self.assertFalse(aim.target.startswith(aim.offset+'|'))
+
+    def test_head_aim_requires_boolean_opt_in(self):
+        for value in (1,'yes',None):
+            with self.assertRaises(FitSkeletonValidationError):self.plan(head_aim=value)
+
     def test_global_root_via_controls_requires_explicit_scale(self):
         options = dict(up_axis=FitUpAxis.Z, body_root="|Root_M",
                        driven_roots=("|AdvPy_TorsoControls",), body_root_via_controls=True)
