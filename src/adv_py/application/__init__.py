@@ -152,6 +152,7 @@ from .mocap_mapping import (
     MocapBodyMappingInspection,
     MocapBodyMappingReader,
 )
+from .mocap_preset import save_mocap_mapping_preset, load_mocap_mapping_preset
 from .mocap_connection import (
     ConnectMocapBody,
     DisconnectMocapBody,
@@ -500,6 +501,8 @@ __all__ = [
     "InspectMocapBodyMapping",
     "MocapBodyMappingInspection",
     "MocapBodyMappingReader",
+    "save_mocap_mapping_preset",
+    "load_mocap_mapping_preset",
     "ConnectMocapBody",
     "DisconnectMocapBody",
     "MocapBodyConnectionHost",

@@ -25,8 +25,9 @@ def main(output: Path) -> int:
             BuildSyntheticBodySourceFit,
             CreateFitSkeleton,
             InspectMocapBodyMapping,
+            save_mocap_mapping_preset,load_mocap_mapping_preset,
         )
-        from adv_py.core import MocapJointMapping
+        from adv_py.core import MocapJointMapping,MocapMappingPreset
 
         cmds.file(new=True, force=True)
         cmds.undoInfo(state=True)
@@ -87,6 +88,13 @@ def main(output: Path) -> int:
         )
         invalid = use_case.execute("|TakeA:Hips", reversed_mapping)
         invalid_codes = {issue.code for issue in invalid.issues}
+        output.parent.mkdir(parents=True,exist_ok=True)
+        preset=MocapMappingPreset('Take A five-joint test',mappings,30)
+        preset_path=output.with_name('mapping-preset.json')
+        save_mocap_mapping_preset(preset,preset_path)
+        loaded=load_mocap_mapping_preset(preset_path)
+        preset_plan=use_case.execute('|TakeA:Hips',loaded.mappings,
+                                     expected_body_joint_count=loaded.expected_body_joint_count).require_valid()
         checks = {
             "owned_body_detected": len(body.joints) == 30,
             "explicit_mapping_valid": inspection.valid,
@@ -108,6 +116,7 @@ def main(output: Path) -> int:
             ),
             "reversed_topology_detected": "topology_mismatch" in invalid_codes,
             "inspection_is_read_only": read_only_preserved,
+            "preset_round_trip_resolves_same_mapping": loaded==preset and preset_plan==plan,
         }
 
         cmds.file(new=True, force=True)
