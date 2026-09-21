@@ -9,7 +9,7 @@ sys.path[:0]=[str(ROOT/'src'),str(ROOT/'examples')]
 import maya.standalone
 
 
-def main(output):
+def main(output,with_upper=False):
     output.parent.mkdir(parents=True,exist_ok=True)
     maya.standalone.initialize(name='python')
     try:
@@ -18,7 +18,8 @@ def main(output):
         from adv_py.adapters import MayaMocapClipHost,MayaMocapControlHost,MayaMocapSourceReader
         from adv_py.application import (RegisterBodyCharacter,ImportMocapFbx,
             RetargetMocapFourLimbsToCharacter,MocapLimbSource,InspectMocapSource,
-            save_mocap_mapping_preset,load_mocap_mapping_preset)
+            RetargetMocapUpperAndFourLimbsToCharacter,save_mocap_mapping_preset,
+            load_mocap_mapping_preset)
         from adv_py.core import MocapJointMapping,MocapMappingPreset
         cmds.file(new=True,force=True);cmds.undoInfo(state=True);cmds.upAxis(axis='z',rotateView=False)
         if not cmds.pluginInfo('fbxmaya',query=True,loaded=True):cmds.loadPlugin('fbxmaya',quiet=True)
@@ -29,11 +30,22 @@ def main(output):
         spine=cmds.createNode('joint',name='TakeA:Spine',parent=root,skipSelect=True)
         chest=cmds.createNode('joint',name='TakeA:Chest',parent=spine,skipSelect=True)
         cmds.setAttr(spine+'.translateY',5.);cmds.setAttr(chest+'.translateY',5.)
+        upper_nodes={}
+        if with_upper:
+            neck=cmds.createNode('joint',name='TakeA:Neck',parent=chest,skipSelect=True)
+            head=cmds.createNode('joint',name='TakeA:Head',parent=neck,skipSelect=True)
+            cmds.setAttr(neck+'.translateY',2.);cmds.setAttr(head+'.translateY',2.)
+            upper_nodes.update(Neck=neck,Head=head)
+            for side in ('R','L'):
+                joint=cmds.createNode('joint',name='TakeA:Scapula_'+side,parent=chest,skipSelect=True)
+                cmds.setAttr(joint+'.translateX',3. if side=='L' else -3.)
+                upper_nodes['Scapula_'+side]=joint
         specs=[];chains=[]
         for limb,parts,attach in (('arm',('Shoulder','Elbow','Wrist'),chest),
                                   ('leg',('Hip','Knee','Ankle'),root)):
             for side in ('R','L'):
-                parent=attach;chain=[]
+                parent=upper_nodes['Scapula_'+side] if with_upper and limb=='arm' else attach
+                chain=[]
                 for part in parts:
                     parent=cmds.createNode('joint',name='TakeA:'+part+'_'+side,parent=parent,skipSelect=True)
                     cmds.setAttr(parent+'.translateX',3.)
@@ -44,6 +56,10 @@ def main(output):
             cmds.setKeyframe(root,attribute='translateX',time=frame,value=travel)
             cmds.setKeyframe(spine,attribute='rotateZ',time=frame,value=amount*8.)
             cmds.setKeyframe(chest,attribute='rotateX',time=frame,value=amount*5.)
+            if with_upper:
+                for name,axis,value in (('Neck','Z',6.),('Head','X',-4.),
+                                        ('Scapula_R','Y',7.),('Scapula_L','Y',-7.)):
+                    cmds.setKeyframe(upper_nodes[name],attribute='rotate'+axis,time=frame,value=amount*value)
             for index,chain in enumerate(chains):
                 sign=1. if index%2==0 else -1.
                 for joint,axis,value in zip(chain,('Z','Y','X'),(10.,-14.,7.)):
@@ -52,11 +68,14 @@ def main(output):
         before=target.capture_character_key_state(registration)
         mappings=[MocapJointMapping('Hips','Root_M',True,True),
                   MocapJointMapping('Spine','Spine1_M'),MocapJointMapping('Chest','Chest_M')]
+        if with_upper:
+            mappings.extend(MocapJointMapping(name,name+'_M' if name in ('Neck','Head') else name)
+                for name in ('Neck','Head','Scapula_R','Scapula_L'))
         for spec in specs:
             parts=('Shoulder','Elbow','Wrist') if spec.limb=='arm' else ('Hip','Knee','Ankle')
             mappings.extend(MocapJointMapping(source,part+'_'+spec.side)
                             for source,part in zip((spec.upper,spec.middle,spec.end),parts))
-        preset=MocapMappingPreset('Generated 15-joint control mapping',tuple(mappings),30)
+        preset=MocapMappingPreset('Generated control mapping',tuple(mappings),30)
         with tempfile.TemporaryDirectory(prefix='advpy-fbx-retarget-') as directory:
             fbx=Path(directory)/'generated_take.fbx'
             preset_file=Path(directory)/'mapping.json'
@@ -72,16 +91,28 @@ def main(output):
             imported_root=imported.snapshot.root
             imported_valid=InspectMocapSource(MayaMocapSourceReader()).execute(imported_root).valid
             options=dict(start_frame=1,end_frame=10)
-            roots,spines,limbs=RetargetMocapFourLimbsToCharacter(target).apply_with_preset(
-                imported_root,loaded,**options)
+            service=(RetargetMocapUpperAndFourLimbsToCharacter(target) if with_upper
+                     else RetargetMocapFourLimbsToCharacter(target))
+            if with_upper:
+                roots,spines,upper,limbs=service.apply_with_preset(imported_root,loaded,**options)
+            else:
+                roots,spines,limbs=service.apply_with_preset(imported_root,loaded,**options)
+                upper=()
         after=target.capture_character_key_state(registration)
-        plans=RetargetMocapFourLimbsToCharacter(target).plan_with_preset(imported_root,loaded,**options).limbs
+        complete_plan=service.plan_with_preset(imported_root,loaded,**options)
+        plans=complete_plan.four_limbs.limbs if with_upper else complete_plan.limbs
         incomplete=MocapMappingPreset('Missing one limb joint',loaded.mappings[:-1],30)
-        try:RetargetMocapFourLimbsToCharacter(target).apply_with_preset(imported_root,incomplete,**options)
+        try:service.apply_with_preset(imported_root,incomplete,**options)
         except ValueError:bad_preset_rejected=target.capture_character_key_state(registration)==after
         else:bad_preset_rejected=False
         with target._character_sampling_time() as seek:
             errors=[]
+            if with_upper:
+                for sample in upper:
+                    seek(sample.frame)
+                    for path,wanted in zip(complete_plan.target_joints,sample.body_matrices):
+                        actual=cmds.xform(path,query=True,worldSpace=True,matrix=True)
+                        errors.append(max(abs(a-b) for a,b in zip(actual,wanted)))
             for plan,samples in zip(plans,limbs):
                 for sample in samples:
                     seek(sample.frame)
@@ -89,12 +120,13 @@ def main(output):
                         actual=cmds.xform(path,query=True,worldSpace=True,matrix=True)
                         errors.append(max(abs(a-b) for a,b in zip(actual,wanted)))
         checks={
-            'external_fbx_has_fifteen_joints':len(imported.clip.joints)==15,
+            'external_fbx_has_expected_joints':len(imported.clip.joints)==(19 if with_upper else 15),
             'mapping_preset_round_trip':loaded==preset,
             'incomplete_preset_rejected_without_edits':bad_preset_rejected,
             'imported_source_valid':imported_valid,
             'all_control_groups_written':len(roots)==len(spines)==10 and len(limbs)==4
                 and all(len(group)==10 for group in limbs),
+            'upper_controls_written':not with_upper or len(upper)==10,
             'imported_motion_matches_body':max(errors)<1e-4,
         }
         cmds.undo()
@@ -106,7 +138,8 @@ def main(output):
         cmds.redo();cmds.redo()
         checks['two_redos_restore_pipeline']=(target.capture_character_key_state(registration)==after
             and InspectMocapSource(MayaMocapSourceReader()).execute(imported_root).valid)
-        scene=output.parent/'fbx-to-character-controls.ma'
+        scene=output.parent/('fbx-to-upper-character-controls.ma' if with_upper
+                             else 'fbx-to-character-controls.ma')
         cmds.file(rename=str(scene));cmds.file(save=True,type='mayaAscii',force=True)
         cmds.file(str(scene),open=True,force=True)
         reopened=MayaMocapControlHost()
@@ -118,4 +151,4 @@ def main(output):
     finally:maya.standalone.uninitialize()
 
 
-if __name__=='__main__':raise SystemExit(main(Path(sys.argv[1]).resolve()))
+if __name__=='__main__':raise SystemExit(main(Path(sys.argv[1]).resolve(),'--upper' in sys.argv[2:]))

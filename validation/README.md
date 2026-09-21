@@ -165,7 +165,13 @@
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_control_four_limbs_smoke.py validation\results\maya2024-mocap-four-limbs-hand.json --hand
 
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_control_four_limbs_smoke.py validation\results\maya2024-mocap-upper-four-limbs-basic.json --upper
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_control_four_limbs_smoke.py validation\results\maya2024-mocap-upper-four-limbs-hand.json --upper --hand
+
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_fbx_to_character_controls_smoke.py validation\results\maya2024-fbx-to-character-controls.json
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_fbx_to_character_controls_smoke.py validation\results\maya2024-fbx-to-upper-character-controls.json --upper
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_source_smoke.py validation\results\maya2024-mocap-source.json
 

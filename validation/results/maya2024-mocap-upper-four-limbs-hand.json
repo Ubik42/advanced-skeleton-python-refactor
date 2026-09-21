@@ -9,7 +9,7 @@
   "single_undo_restores_every_limb": true,
   "single_redo_restores_every_limb": true,
   "reopened_animation": true,
-  "joint_count": 30,
-  "max_body_error": 3.552713678800501e-15,
+  "joint_count": 70,
+  "max_body_error": 1.2378986724570495e-14,
   "status": "passed"
 }
