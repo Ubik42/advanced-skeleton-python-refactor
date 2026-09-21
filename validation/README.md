@@ -173,6 +173,14 @@
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_fbx_to_character_controls_smoke.py validation\results\maya2024-fbx-to-upper-character-controls.json --upper
 
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_full_fk_smoke.py validation\results\maya2024-mocap-full-fk-basic.json
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_full_fk_smoke.py validation\results\maya2024-mocap-full-fk-hand.json --hand
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_fbx_to_character_controls_smoke.py validation\results\maya2024-fbx-to-full-fk-basic.json --full
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_fbx_to_character_controls_smoke.py validation\results\maya2024-fbx-to-full-fk-hand.json --full --hand
+
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_source_smoke.py validation\results\maya2024-mocap-source.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_mapping_smoke.py validation\results\maya2024-mocap-mapping.json

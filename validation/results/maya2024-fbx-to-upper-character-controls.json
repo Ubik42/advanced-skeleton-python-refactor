@@ -5,6 +5,7 @@
   "imported_source_valid": true,
   "all_control_groups_written": true,
   "upper_controls_written": true,
+  "distal_controls_written": true,
   "imported_motion_matches_body": true,
   "retarget_undo_keeps_import": true,
   "import_undo_keeps_character": true,

@@ -11,6 +11,7 @@
   "import_undo_keeps_character": true,
   "two_redos_restore_pipeline": true,
   "reopened_pipeline": true,
-  "max_body_error": 3.552713678800501e-15,
+  "reopened_distal_pose": true,
+  "max_body_error": 7.105427357601002e-15,
   "status": "passed"
 }

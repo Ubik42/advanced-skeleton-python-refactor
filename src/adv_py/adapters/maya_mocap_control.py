@@ -147,6 +147,18 @@ class MayaMocapControlHost(MayaBodyBuildHost):
             plan.target_joints,plan.target_parents,plan.controls,label='upper body')
         return tuple(MocapUpperControlSample(*row) for row in rows)
 
+    def write_mocap_distal_control_keys(self,plan):
+        from adv_py.application.mocap_control_retarget import MocapDistalControlSample
+        root=plan.upper.four_limbs.spine.root
+        with self._character_sampling_time() as seek:
+            for frame in root.frames:
+                seek(frame)
+                if any(abs(float(self._cmds.getAttr(plug)))>1e-8 for plug in plan.mode_plugs):
+                    raise CharacterRegistryError('动捕脚趾 FK 写入要求双腿处于 FK 模式：frame='+str(frame))
+        rows=self._write_mocap_fk_chain(root,plan.source_joints,plan.source_parents,
+            plan.target_joints,plan.target_parents,plan.controls,label='toes and fingers')
+        return tuple(MocapDistalControlSample(*row) for row in rows)
+
     def _write_mocap_fk_chain(self,root,source_joints,source_parents,target_joints,target_parents,
                               controls,*,label,mode_plug=None):
         from math import sqrt

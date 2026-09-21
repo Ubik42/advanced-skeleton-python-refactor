@@ -9,7 +9,7 @@ sys.path[:0]=[str(ROOT/'src'),str(ROOT/'examples')]
 import maya.standalone
 
 
-def main(output,with_upper=False):
+def main(output,with_upper=False,with_full=False,with_hand=False):
     output.parent.mkdir(parents=True,exist_ok=True)
     maya.standalone.initialize(name='python')
     try:
@@ -18,12 +18,13 @@ def main(output,with_upper=False):
         from adv_py.adapters import MayaMocapClipHost,MayaMocapControlHost,MayaMocapSourceReader
         from adv_py.application import (RegisterBodyCharacter,ImportMocapFbx,
             RetargetMocapFourLimbsToCharacter,MocapLimbSource,InspectMocapSource,
-            RetargetMocapUpperAndFourLimbsToCharacter,save_mocap_mapping_preset,
+            RetargetMocapUpperAndFourLimbsToCharacter,RetargetMocapFullFkToCharacter,
+            save_mocap_mapping_preset,
             load_mocap_mapping_preset)
         from adv_py.core import MocapJointMapping,MocapMappingPreset
         cmds.file(new=True,force=True);cmds.undoInfo(state=True);cmds.upAxis(axis='z',rotateView=False)
         if not cmds.pluginInfo('fbxmaya',query=True,loaded=True):cmds.loadPlugin('fbxmaya',quiet=True)
-        built=build_character(with_hand=False)
+        built=build_character(with_hand=with_hand)
         registration=RegisterBodyCharacter(built.host).apply(built.rig)
         cmds.namespace(add='TakeA')
         root=cmds.createNode('joint',name='TakeA:Hips',skipSelect=True)
@@ -31,7 +32,7 @@ def main(output,with_upper=False):
         chest=cmds.createNode('joint',name='TakeA:Chest',parent=spine,skipSelect=True)
         cmds.setAttr(spine+'.translateY',5.);cmds.setAttr(chest+'.translateY',5.)
         upper_nodes={}
-        if with_upper:
+        if with_upper or with_full:
             neck=cmds.createNode('joint',name='TakeA:Neck',parent=chest,skipSelect=True)
             head=cmds.createNode('joint',name='TakeA:Head',parent=neck,skipSelect=True)
             cmds.setAttr(neck+'.translateY',2.);cmds.setAttr(head+'.translateY',2.)
@@ -40,11 +41,11 @@ def main(output,with_upper=False):
                 joint=cmds.createNode('joint',name='TakeA:Scapula_'+side,parent=chest,skipSelect=True)
                 cmds.setAttr(joint+'.translateX',3. if side=='L' else -3.)
                 upper_nodes['Scapula_'+side]=joint
-        specs=[];chains=[]
+        specs=[];chains=[];distal_nodes={}
         for limb,parts,attach in (('arm',('Shoulder','Elbow','Wrist'),chest),
                                   ('leg',('Hip','Knee','Ankle'),root)):
             for side in ('R','L'):
-                parent=upper_nodes['Scapula_'+side] if with_upper and limb=='arm' else attach
+                parent=upper_nodes['Scapula_'+side] if (with_upper or with_full) and limb=='arm' else attach
                 chain=[]
                 for part in parts:
                     parent=cmds.createNode('joint',name='TakeA:'+part+'_'+side,parent=parent,skipSelect=True)
@@ -52,11 +53,24 @@ def main(output,with_upper=False):
                     chain.append(parent)
                 specs.append(MocapLimbSource(limb,side,*(part+'_'+side for part in parts)))
                 chains.append(tuple(chain))
+                if with_full and limb=='leg':
+                    toe=cmds.createNode('joint',name='TakeA:Toes_'+side,parent=parent,skipSelect=True)
+                    cmds.setAttr(toe+'.translateX',1.)
+                    distal_nodes['Toes_'+side]=toe
+                if with_full and with_hand and limb=='arm':
+                    for digit in ('Thumb','Index','Middle','Ring','Pinky'):
+                        finger_parent=parent
+                        for segment in (1,2,3):
+                            name=f'{digit}{segment}_{side}'
+                            finger_parent=cmds.createNode('joint',name='TakeA:'+name,
+                                parent=finger_parent,skipSelect=True)
+                            cmds.setAttr(finger_parent+'.translateX',.4)
+                            distal_nodes[name]=finger_parent
         for frame,travel,amount in ((1,0.,0.),(5,4.,1.),(10,9.,2.)):
             cmds.setKeyframe(root,attribute='translateX',time=frame,value=travel)
             cmds.setKeyframe(spine,attribute='rotateZ',time=frame,value=amount*8.)
             cmds.setKeyframe(chest,attribute='rotateX',time=frame,value=amount*5.)
-            if with_upper:
+            if with_upper or with_full:
                 for name,axis,value in (('Neck','Z',6.),('Head','X',-4.),
                                         ('Scapula_R','Y',7.),('Scapula_L','Y',-7.)):
                     cmds.setKeyframe(upper_nodes[name],attribute='rotate'+axis,time=frame,value=amount*value)
@@ -64,18 +78,22 @@ def main(output,with_upper=False):
                 sign=1. if index%2==0 else -1.
                 for joint,axis,value in zip(chain,('Z','Y','X'),(10.,-14.,7.)):
                     cmds.setKeyframe(joint,attribute='rotate'+axis,time=frame,value=sign*amount*value)
+            for name,joint in distal_nodes.items():
+                cmds.setKeyframe(joint,attribute='rotateY',time=frame,
+                    value=amount*(10. if name.startswith('Toes') else 3.))
         target=MayaMocapControlHost()
         before=target.capture_character_key_state(registration)
         mappings=[MocapJointMapping('Hips','Root_M',True,True),
                   MocapJointMapping('Spine','Spine1_M'),MocapJointMapping('Chest','Chest_M')]
-        if with_upper:
+        if with_upper or with_full:
             mappings.extend(MocapJointMapping(name,name+'_M' if name in ('Neck','Head') else name)
                 for name in ('Neck','Head','Scapula_R','Scapula_L'))
         for spec in specs:
             parts=('Shoulder','Elbow','Wrist') if spec.limb=='arm' else ('Hip','Knee','Ankle')
             mappings.extend(MocapJointMapping(source,part+'_'+spec.side)
                             for source,part in zip((spec.upper,spec.middle,spec.end),parts))
-        preset=MocapMappingPreset('Generated control mapping',tuple(mappings),30)
+        if with_full:mappings.extend(MocapJointMapping(name,name) for name in distal_nodes)
+        preset=MocapMappingPreset('Generated control mapping',tuple(mappings),len(registration.body))
         with tempfile.TemporaryDirectory(prefix='advpy-fbx-retarget-') as directory:
             fbx=Path(directory)/'generated_take.fbx'
             preset_file=Path(directory)/'mapping.json'
@@ -91,26 +109,38 @@ def main(output,with_upper=False):
             imported_root=imported.snapshot.root
             imported_valid=InspectMocapSource(MayaMocapSourceReader()).execute(imported_root).valid
             options=dict(start_frame=1,end_frame=10)
-            service=(RetargetMocapUpperAndFourLimbsToCharacter(target) if with_upper
-                     else RetargetMocapFourLimbsToCharacter(target))
-            if with_upper:
+            service=(RetargetMocapFullFkToCharacter(target) if with_full else
+                     RetargetMocapUpperAndFourLimbsToCharacter(target) if with_upper else
+                     RetargetMocapFourLimbsToCharacter(target))
+            if with_full:
+                roots,spines,upper,limbs,distal=service.apply_with_preset(imported_root,loaded,**options)
+            elif with_upper:
                 roots,spines,upper,limbs=service.apply_with_preset(imported_root,loaded,**options)
+                distal=()
             else:
                 roots,spines,limbs=service.apply_with_preset(imported_root,loaded,**options)
-                upper=()
+                upper=();distal=()
         after=target.capture_character_key_state(registration)
         complete_plan=service.plan_with_preset(imported_root,loaded,**options)
-        plans=complete_plan.four_limbs.limbs if with_upper else complete_plan.limbs
-        incomplete=MocapMappingPreset('Missing one limb joint',loaded.mappings[:-1],30)
+        plans=(complete_plan.upper.four_limbs.limbs if with_full else
+               complete_plan.four_limbs.limbs if with_upper else complete_plan.limbs)
+        incomplete=MocapMappingPreset('Missing one limb joint',loaded.mappings[:-1],len(registration.body))
         try:service.apply_with_preset(imported_root,incomplete,**options)
         except ValueError:bad_preset_rejected=target.capture_character_key_state(registration)==after
         else:bad_preset_rejected=False
         with target._character_sampling_time() as seek:
             errors=[]
-            if with_upper:
-                for sample in upper:
+            if with_full:
+                for sample in distal:
                     seek(sample.frame)
                     for path,wanted in zip(complete_plan.target_joints,sample.body_matrices):
+                        actual=cmds.xform(path,query=True,worldSpace=True,matrix=True)
+                        errors.append(max(abs(a-b) for a,b in zip(actual,wanted)))
+            if with_upper or with_full:
+                for sample in upper:
+                    seek(sample.frame)
+                    upper_plan=complete_plan.upper if with_full else complete_plan
+                    for path,wanted in zip(upper_plan.target_joints,sample.body_matrices):
                         actual=cmds.xform(path,query=True,worldSpace=True,matrix=True)
                         errors.append(max(abs(a-b) for a,b in zip(actual,wanted)))
             for plan,samples in zip(plans,limbs):
@@ -120,13 +150,15 @@ def main(output,with_upper=False):
                         actual=cmds.xform(path,query=True,worldSpace=True,matrix=True)
                         errors.append(max(abs(a-b) for a,b in zip(actual,wanted)))
         checks={
-            'external_fbx_has_expected_joints':len(imported.clip.joints)==(19 if with_upper else 15),
+            'external_fbx_has_expected_joints':len(imported.clip.joints)==(
+                (51 if with_hand else 21) if with_full else 19 if with_upper else 15),
             'mapping_preset_round_trip':loaded==preset,
             'incomplete_preset_rejected_without_edits':bad_preset_rejected,
             'imported_source_valid':imported_valid,
             'all_control_groups_written':len(roots)==len(spines)==10 and len(limbs)==4
                 and all(len(group)==10 for group in limbs),
-            'upper_controls_written':not with_upper or len(upper)==10,
+            'upper_controls_written':not (with_upper or with_full) or len(upper)==10,
+            'distal_controls_written':not with_full or len(distal)==10,
             'imported_motion_matches_body':max(errors)<1e-4,
         }
         cmds.undo()
@@ -138,17 +170,30 @@ def main(output,with_upper=False):
         cmds.redo();cmds.redo()
         checks['two_redos_restore_pipeline']=(target.capture_character_key_state(registration)==after
             and InspectMocapSource(MayaMocapSourceReader()).execute(imported_root).valid)
-        scene=output.parent/('fbx-to-upper-character-controls.ma' if with_upper
-                             else 'fbx-to-character-controls.ma')
+        scene=output.with_suffix('.ma')
         cmds.file(rename=str(scene));cmds.file(save=True,type='mayaAscii',force=True)
         cmds.file(str(scene),open=True,force=True)
         reopened=MayaMocapControlHost()
-        checks['reopened_pipeline']=(reopened.read_character_registration()==registration
+        reopened_reg=reopened.read_character_registration()
+        reopened_keys=reopened.capture_character_key_state(reopened_reg)
+        keys_match=(abs(reopened_keys[0]-after[0])<1e-8
+            and len(reopened_keys[1])==len(after[1])
+            and all(a[:3]==b[:3] and len(a[3])==len(b[3])
+                and all(abs(x-y)<1e-8 for x,y in zip(a[3],b[3]))
+                for a,b in zip(reopened_keys[1],after[1])))
+        checks['reopened_pipeline']=(reopened_reg==registration and keys_match
             and InspectMocapSource(MayaMocapSourceReader()).execute(imported_root).valid)
+        if with_full:
+            with reopened._character_sampling_time() as seek:
+                seek(10.)
+                checks['reopened_distal_pose']=all(max(abs(a-b) for a,b in zip(
+                    cmds.xform(path,query=True,worldSpace=True,matrix=True),wanted))<1e-4
+                    for path,wanted in zip(complete_plan.target_joints,distal[-1].body_matrices))
         payload={**checks,'max_body_error':max(errors),'status':'passed' if all(checks.values()) else 'failed'}
         output.write_text(json.dumps(payload,indent=2)+'\n',encoding='utf8')
         return 0 if all(checks.values()) else 1
     finally:maya.standalone.uninitialize()
 
 
-if __name__=='__main__':raise SystemExit(main(Path(sys.argv[1]).resolve(),'--upper' in sys.argv[2:]))
+if __name__=='__main__':raise SystemExit(main(Path(sys.argv[1]).resolve(),
+    '--upper' in sys.argv[2:],'--full' in sys.argv[2:],'--hand' in sys.argv[2:]))

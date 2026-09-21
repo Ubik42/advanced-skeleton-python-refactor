@@ -609,3 +609,5 @@ from .mocap_control_retarget import RetargetMocapLimbToCharacter,MocapLimbContro
 from .mocap_control_retarget import RetargetMocapFourLimbsToCharacter,MocapFourLimbControlPlan,MocapLimbSource
 from .mocap_control_retarget import (RetargetMocapUpperAndFourLimbsToCharacter,
     MocapUpperControlPlan,MocapUpperControlSample)
+from .mocap_control_retarget import (RetargetMocapFullFkToCharacter,
+    MocapDistalControlPlan,MocapDistalControlSample)

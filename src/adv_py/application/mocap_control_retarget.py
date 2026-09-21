@@ -91,6 +91,24 @@ class MocapUpperControlSample:
     body_matrices: tuple[tuple[float,...],...]
 
 
+@dataclass(frozen=True,slots=True)
+class MocapDistalControlPlan:
+    upper: MocapUpperControlPlan
+    source_joints: tuple[str,...]
+    source_parents: tuple[str,...]
+    target_joints: tuple[str,...]
+    target_parents: tuple[str,...]
+    controls: tuple[str,...]
+    mode_plugs: tuple[str,...]
+
+
+@dataclass(frozen=True,slots=True)
+class MocapDistalControlSample:
+    frame: float
+    control_values: tuple[float,...]
+    body_matrices: tuple[tuple[float,...],...]
+
+
 class MocapRootControlHost(Protocol):
     def read_character_registration(self) -> CharacterRegistration: ...
     def capture_mocap_source(self,root_name: str) -> MocapSourceSnapshot: ...
@@ -101,6 +119,7 @@ class MocapRootControlHost(Protocol):
     def write_mocap_spine_control_keys(self,plan: MocapSpineControlPlan) -> tuple[MocapSpineControlSample,...]: ...
     def write_mocap_limb_control_keys(self,plan: MocapLimbControlPlan) -> tuple[MocapLimbControlSample,...]: ...
     def write_mocap_upper_control_keys(self,plan: MocapUpperControlPlan) -> tuple[MocapUpperControlSample,...]: ...
+    def write_mocap_distal_control_keys(self,plan: MocapDistalControlPlan) -> tuple[MocapDistalControlSample,...]: ...
 
 
 class RetargetMocapRootToCharacter:
@@ -420,3 +439,132 @@ class RetargetMocapUpperAndFourLimbsToCharacter:
                    for group in (root_samples,spine_samples,upper_samples,*limb_samples)):
                 raise RuntimeError('动捕上半身或四肢采样不完整')
         return root_samples,spine_samples,upper_samples,limb_samples
+
+
+class RetargetMocapFullFkToCharacter:
+    """Retarget the standard FK body, toes, and optional five-digit hands."""
+    DIGITS=('Thumb','Index','Middle','Ring','Pinky')
+    def __init__(self,host: MocapRootControlHost):self._host=host
+
+    def _preset_options(self,source_root,preset):
+        from adv_py.core.mocap_preset import MocapMappingPreset
+        from .mocap_mapping import InspectMocapBodyMapping
+        if not isinstance(preset,MocapMappingPreset):
+            raise CharacterRegistryError('全身 FK 动捕映射需要版本化预设')
+        reg=self._host.read_character_registration()
+        if len(reg.body) not in (30,70) or len(reg.body)!=preset.expected_body_joint_count:
+            raise CharacterRegistryError('全身 FK 动捕需要 30 或 70 关节角色及匹配的预设')
+        root=reg.body_root.rsplit('|',1)[-1]
+        required={root,'Spine1_M','Chest_M','Neck_M','Head_M','Scapula_R','Scapula_L'}|{
+            part+'_'+side for part in ('Shoulder','Elbow','Wrist','Hip','Knee','Ankle','Toes')
+            for side in ('R','L')}
+        if len(reg.body)==70:
+            required|={f'{digit}{segment}_{side}' for digit in self.DIGITS
+                       for segment in (1,2,3) for side in ('R','L')}
+        by_target={row.target_name:row for row in preset.mappings}
+        if set(by_target)!=required or len(preset.mappings)!=len(required):
+            raise CharacterRegistryError('全身 FK 动捕预设的目标关节集合不完整或包含多余项')
+        if (not by_target[root].transfer_translation
+                or any(not row.transfer_rotation for row in preset.mappings)
+                or any(row.transfer_translation for name,row in by_target.items() if name!=root)):
+            raise CharacterRegistryError('全身 FK 动捕预设仅允许根部平移，所有关节须传递旋转')
+        InspectMocapBodyMapping(self._host).execute(source_root,preset.mappings,
+            body_root_name=reg.body_root,source_container=reg.container,
+            expected_body_joint_count=preset.expected_body_joint_count).require_valid()
+        limbs=tuple(MocapLimbSource(limb,side,*(by_target[part+'_'+side].source_name for part in parts))
+            for limb,parts in (('arm',('Shoulder','Elbow','Wrist')),
+                               ('leg',('Hip','Knee','Ankle'))) for side in ('R','L'))
+        upper=dict(source_spine=by_target['Spine1_M'].source_name,
+            source_chest=by_target['Chest_M'].source_name,
+            source_neck=by_target['Neck_M'].source_name,
+            source_head=by_target['Head_M'].source_name,
+            source_scapula_right=by_target['Scapula_R'].source_name,
+            source_scapula_left=by_target['Scapula_L'].source_name,source_limbs=limbs)
+        distal={name:by_target[name].source_name for name in required if name.startswith('Toes_')
+                or (len(reg.body)==70 and any(name.startswith(digit) for digit in self.DIGITS))}
+        return upper,distal
+
+    def plan_with_preset(self,source_root,preset,*,start_frame,end_frame,sample_by=1,reference_frame=None):
+        upper,distal=self._preset_options(source_root,preset)
+        return self.plan(source_root,**upper,source_distal=distal,start_frame=start_frame,
+            end_frame=end_frame,sample_by=sample_by,reference_frame=reference_frame)
+
+    def apply_with_preset(self,source_root,preset,*,start_frame,end_frame,sample_by=1,reference_frame=None):
+        upper,distal=self._preset_options(source_root,preset)
+        return self.apply(source_root,**upper,source_distal=distal,start_frame=start_frame,
+            end_frame=end_frame,sample_by=sample_by,reference_frame=reference_frame)
+
+    def plan(self,source_root,*,source_distal,source_spine,source_chest,source_neck,
+             source_head,source_scapula_right,source_scapula_left,source_limbs,
+             start_frame,end_frame,sample_by=1,reference_frame=None):
+        upper=RetargetMocapUpperAndFourLimbsToCharacter(self._host).plan(source_root,
+            source_spine=source_spine,source_chest=source_chest,source_neck=source_neck,
+            source_head=source_head,source_scapula_right=source_scapula_right,
+            source_scapula_left=source_scapula_left,source_limbs=source_limbs,
+            start_frame=start_frame,end_frame=end_frame,sample_by=sample_by,
+            reference_frame=reference_frame)
+        reg=upper.four_limbs.spine.root.registration
+        if len(reg.body) not in (30,70):
+            raise CharacterRegistryError('全身 FK 动捕仅支持标准 30 / 70 关节角色')
+        names=[f'Toes_{side}' for side in ('R','L')]
+        if len(reg.body)==70:
+            names.extend(f'{digit}{segment}_{side}' for side in ('R','L')
+                for digit in self.DIGITS for segment in (1,2,3))
+        if (not isinstance(source_distal,dict) or set(source_distal)!=set(names)
+                or any(not isinstance(value,str) or not value for value in source_distal.values())
+                or len(set(source_distal.values()))!=len(source_distal)):
+            raise CharacterRegistryError('末端动捕来源须准确覆盖脚趾及角色已有的五指控制关节')
+        source_by_name={joint.name:joint for joint in upper.four_limbs.spine.root.source.joints}
+        target_by_name={joint.path.rsplit('|',1)[-1]:joint for joint in reg.body}
+        channels={channel.key:channel for channel in reg.channels}
+        if any(name not in source_by_name for name in source_distal.values()):
+            raise CharacterRegistryError('末端动捕来源关节缺失')
+        used={upper.four_limbs.spine.root.source.root,upper.four_limbs.spine.source_spine,
+              upper.four_limbs.spine.source_chest,*upper.source_joints}
+        used.update(path for limb in upper.four_limbs.limbs for path in limb.source_joints)
+        if any(source_by_name[name].path in used for name in source_distal.values()):
+            raise CharacterRegistryError('末端动捕来源不得复用躯干或四肢关节')
+        sources=[];targets=[];controls=[]
+        for name in names:
+            source=source_by_name.get(source_distal[name]);target=target_by_name.get(name)
+            if source is None or target is None:
+                raise CharacterRegistryError('末端动捕来源或 Body 关节缺失：'+name)
+            part,side=name.rsplit('_',1)
+            if part=='Toes':
+                parent_name='Ankle_'+side
+                channel_prefix=f'leg.fk.ToesFK_{side}'
+            else:
+                segment=int(part[-1]);digit=part[:-1]
+                parent_name=(f'Wrist_{side}' if segment==1 else f'{digit}{segment-1}_{side}')
+                channel_prefix=f'hand.fk.{part}FK_{side}'
+            expected_source_parent=(next(limb.source_joints[2] for limb in upper.four_limbs.limbs
+                if limb.limb==('leg' if part=='Toes' else 'arm') and limb.side==side)
+                if part=='Toes' or part.endswith('1') else source_by_name[source_distal[parent_name]].path)
+            if (source.joint_parent!=expected_source_parent
+                    or target.parent!=target_by_name[parent_name].path):
+                raise CharacterRegistryError('末端动捕父子链与角色不一致：'+name)
+            group=tuple(channels.get(channel_prefix+'.rotate'+axis) for axis in 'XYZ')
+            if any(row is None for row in group) or len({row.node for row in group})!=1:
+                raise CharacterRegistryError('末端 FK 控制旋转通道不完整：'+name)
+            sources.append(source);targets.append(target);controls.append(group[0].node)
+        modes=tuple(next(limb.blend_plug for limb in upper.four_limbs.limbs
+            if limb.limb=='leg' and limb.side==side) for side in ('R','L'))
+        return MocapDistalControlPlan(upper,tuple(row.path for row in sources),
+            tuple(row.joint_parent for row in sources),tuple(row.path for row in targets),
+            tuple(row.parent for row in targets),tuple(controls),modes)
+
+    def apply(self,source_root,**options):
+        plan=self.plan(source_root,**options)
+        with self._host.transaction('Retarget MoCap full FK body'):
+            if self.plan(source_root,**options)!=plan:
+                raise CharacterRegistryError('动捕或角色状态在全身 FK 写入前发生变化')
+            four=plan.upper.four_limbs
+            root=self._host.write_mocap_root_control_keys(four.spine.root)
+            spine=self._host.write_mocap_spine_control_keys(four.spine)
+            upper=self._host.write_mocap_upper_control_keys(plan.upper)
+            limbs=tuple(self._host.write_mocap_limb_control_keys(limb) for limb in four.limbs)
+            distal=self._host.write_mocap_distal_control_keys(plan)
+            if any(tuple(sample.frame for sample in group)!=four.spine.root.frames
+                   for group in (root,spine,upper,*limbs,distal)):
+                raise RuntimeError('动捕全身 FK 采样不完整')
+        return root,spine,upper,limbs,distal
