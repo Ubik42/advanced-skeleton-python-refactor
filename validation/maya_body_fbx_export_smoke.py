@@ -34,6 +34,7 @@ def main(output: Path) -> int:
         )
         from adv_py.core import (
             BodyFbxEncoding,
+            BodyFbxCurvePolicy,
             BodyFbxExportProfile,
             BodyFbxFileVersion,
             BodyFbxLinearUnit,
@@ -111,6 +112,15 @@ def main(output: Path) -> int:
                 (('Root_M','pelvis'),('Spine1_M','spine_01'),('Head_M','head')))
             named_result=ExportBodyFbx(host).apply(named_destination,start_frame=1,end_frame=5,
                 source_container=container,naming_profile=named_profile)
+            reduced_destination=Path(directory)/'linear-reduced-character.fbx'
+            reduced_profile=BodyFbxExportProfile(
+                BodyFbxFileVersion.FBX_2020, FitUpAxis.Z,
+                BodyFbxLinearUnit.CENTIMETER, BodyFbxEncoding.BINARY,
+                BodyFbxCurvePolicy.LOSSLESS_LINEAR,
+            )
+            reduced_result=ExportBodyFbx(host).apply(
+                reduced_destination,start_frame=1,end_frame=5,
+                source_container=container,profile=reduced_profile)
             checks = {
                 "live_body_dependencies_detected": bool(live_dependencies),
                 "explicit_31_node_selection": result.plan.selection.node_count == 31,
@@ -127,6 +137,11 @@ def main(output: Path) -> int:
                     and result.artifact.format_version == 7700
                     and result.artifact.byte_count == destination.stat().st_size
                     and len(result.artifact.content_sha256) == 64
+                ),
+                "linear_reduction_applied": (
+                    reduced_result.applied_profile.curve_policy == 'lossless_linear'
+                    and reduced_result.applied_profile.removed_linear_keys > 0
+                    and reduced_result.artifact.byte_count < result.artifact.byte_count
                 ),
                 "default_profile_applied": (
                     result.applied_profile.file_version == "FBX202000"
@@ -171,6 +186,32 @@ def main(output: Path) -> int:
             except FitSkeletonValidationError:
                 refused_overwrite = True
             checks["existing_target_refused"] = refused_overwrite
+
+            def imported_pose(path):
+                cmds.file(new=True, force=True)
+                cmds.file(str(path), i=True, type='FBX', ignoreVersion=True,
+                          mergeNamespacesOnClash=False, options='fbx')
+                joints=tuple(sorted(cmds.ls(type='joint',long=True) or []))
+                poses=[]
+                for frame in range(1,6):
+                    cmds.currentTime(frame,edit=True,update=True)
+                    poses.append(tuple(tuple(float(value) for value in
+                        cmds.xform(joint,query=True,worldSpace=True,matrix=True))
+                        for joint in joints))
+                key_count=sum(len(cmds.keyframe(joint,attribute=attribute,
+                    query=True,timeChange=True) or []) for joint in joints
+                    for attribute in ('translateX','translateY','translateZ',
+                                      'rotateX','rotateY','rotateZ',
+                                      'scaleX','scaleY','scaleZ'))
+                return joints,tuple(poses),key_count
+            full_joints,full_poses,full_keys=imported_pose(destination)
+            reduced_joints,reduced_poses,reduced_keys=imported_pose(reduced_destination)
+            max_pose_error=max(abs(left-right) for full_frame,reduced_frame in
+                zip(full_poses,reduced_poses) for full_joint,reduced_joint in
+                zip(full_frame,reduced_frame) for left,right in zip(full_joint,reduced_joint))
+            checks['reduced_fbx_reimports_with_same_joint_poses']=(
+                full_joints==reduced_joints and reduced_keys<full_keys
+                and max_pose_error<1e-5)
 
             cmds.file(new=True, force=True)
             cmds.file(
@@ -288,6 +329,11 @@ def main(output: Path) -> int:
             "fbx_sha256": result.artifact.content_sha256,
             "converted_fbx_byte_count": converted_result.artifact.byte_count,
             "converted_fbx_sha256": converted_result.artifact.content_sha256,
+            "reduced_fbx_byte_count": reduced_result.artifact.byte_count,
+            "removed_linear_keys": reduced_result.applied_profile.removed_linear_keys,
+            "full_reimport_key_count": full_keys,
+            "reduced_reimport_key_count": reduced_keys,
+            "reimport_max_pose_error": max_pose_error,
             "duration_seconds": round(time.perf_counter() - started, 3),
             "status": "passed" if passed else "failed",
         }

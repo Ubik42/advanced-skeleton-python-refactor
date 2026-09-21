@@ -16,6 +16,7 @@ from .body_export_skeleton import (
     BodyExportSkeletonIssue,
 )
 from .fit_container import FitUpAxis
+from .body_root_motion import BodyRootMotionKeyState
 
 
 FBX_BINARY_MAGIC = b"Kaydara FBX Binary"
@@ -37,12 +38,18 @@ class BodyFbxEncoding(str, Enum):
     ASCII = "ascii"
 
 
+class BodyFbxCurvePolicy(str, Enum):
+    SAMPLED_LINEAR = "sampled_linear"
+    LOSSLESS_LINEAR = "lossless_linear"
+
+
 @dataclass(frozen=True, slots=True)
 class BodyFbxExportProfile:
     file_version: BodyFbxFileVersion
     up_axis: FitUpAxis
     linear_unit: BodyFbxLinearUnit
     encoding: BodyFbxEncoding = BodyFbxEncoding.BINARY
+    curve_policy: BodyFbxCurvePolicy = BodyFbxCurvePolicy.SAMPLED_LINEAR
 
     def __post_init__(self) -> None:
         if (
@@ -50,6 +57,7 @@ class BodyFbxExportProfile:
             or not isinstance(self.up_axis, FitUpAxis)
             or not isinstance(self.linear_unit, BodyFbxLinearUnit)
             or not isinstance(self.encoding, BodyFbxEncoding)
+            or not isinstance(self.curve_policy, BodyFbxCurvePolicy)
         ):
             raise ValueError("FBX 导出 Profile 字段无效")
 
@@ -97,6 +105,41 @@ class BodyFbxAppliedProfile:
     up_axis: str
     scale_factor: float
     encoding: str
+    curve_policy: str = BodyFbxCurvePolicy.SAMPLED_LINEAR.value
+    removed_linear_keys: int = 0
+
+
+def redundant_linear_key_frames(
+    keys: tuple[BodyRootMotionKeyState, ...], *, tolerance: float = 1e-9
+) -> tuple[int, ...]:
+    """Remove only interior linear keys whose original sampled values stay unchanged."""
+    if len(keys) < 3:
+        return ()
+    retained = [keys[0]]
+    removed: list[int] = []
+    for candidate in keys[1:-1]:
+        retained.append(candidate)
+        next_key = keys[len(retained) + len(removed)]
+        while len(retained) > 1:
+            previous = retained[-2]
+            current = retained[-1]
+            ratio = (current.frame - previous.frame) / (next_key.frame - previous.frame)
+            predicted = previous.value + ratio * (next_key.value - previous.value)
+            if abs(predicted - current.value) > tolerance:
+                break
+            removed.append(current.frame)
+            retained.pop()
+    retained.append(keys[-1])
+    retained_index = 0
+    for key in keys[1:-1]:
+        while key.frame >= retained[retained_index + 1].frame:
+            retained_index += 1
+        previous, following = retained[retained_index:retained_index + 2]
+        ratio = (key.frame - previous.frame) / (following.frame - previous.frame)
+        predicted = previous.value + ratio * (following.value - previous.value)
+        if abs(predicted - key.value) > tolerance:
+            return ()
+    return tuple(removed)
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +371,8 @@ def audit_body_fbx_profile(
         )
     if applied.encoding.casefold() != profile.encoding.value:
         issues.append("FBX exporter 编码回读不一致")
+    if applied.curve_policy != profile.curve_policy.value:
+        issues.append("FBX 发布曲线策略回读不一致")
     if artifact.encoding != profile.encoding.value:
         issues.append("FBX 文件编码与 Profile 不一致")
     if artifact.format_version != profile.format_version:

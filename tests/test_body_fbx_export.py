@@ -7,11 +7,13 @@ from adv_py.application import ExportBodyFbx
 from adv_py.core import (
     FBX_BINARY_HEADER,
     BodyFbxAppliedProfile,
+    BodyFbxCurvePolicy,
     BodyFbxEncoding,
     BodyFbxExportProfile,
     BodyFbxNamingProfile,
     BodyFbxFileVersion,
     BodyFbxLinearUnit,
+    BodyRootMotionKeyState,
     FitUpAxis,
     audit_body_fbx_export_readiness,
     inspect_body_fbx_bytes,
@@ -19,6 +21,7 @@ from adv_py.core import (
     plan_body_export_skeleton_bake,
     plan_body_fbx_export_selection,
     plan_body_root_motion,
+    redundant_linear_key_frames,
 )
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from test_body_export_skeleton import (
@@ -98,6 +101,24 @@ class FakeFbxHost:
 
 
 class BodyFbxExportTests(unittest.TestCase):
+    def test_lossless_linear_policy_keeps_bends_and_endpoints(self):
+        def keys(values):
+            return tuple(BodyRootMotionKeyState(frame=index, value=value,
+                in_tangent="linear", out_tangent="linear")
+                for index, value in enumerate(values, 1))
+
+        self.assertEqual(redundant_linear_key_frames(keys((0., 2., 4., 6.))), (2, 3))
+        self.assertEqual(redundant_linear_key_frames(keys((0., 2., 5., 6.))), ())
+        self.assertEqual(redundant_linear_key_frames(keys((0., 2., 4., 7.))), (2,))
+        self.assertEqual(redundant_linear_key_frames(keys((3., 3., 3.))), (2,))
+        self.assertEqual(BodyFbxExportProfile(BodyFbxFileVersion.FBX_2020,
+            FitUpAxis.Z, BodyFbxLinearUnit.CENTIMETER).curve_policy,
+            BodyFbxCurvePolicy.SAMPLED_LINEAR)
+        with self.assertRaises(ValueError):
+            BodyFbxExportProfile(BodyFbxFileVersion.FBX_2020,
+                FitUpAxis.Z, BodyFbxLinearUnit.CENTIMETER,
+                curve_policy="lossless_linear")
+
     def test_selection_and_readiness_require_complete_independent_bake(self):
         host = FakeFbxHost()
         selection = plan_body_fbx_export_selection(host.bake)

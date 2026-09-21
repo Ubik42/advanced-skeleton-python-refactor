@@ -264,6 +264,7 @@ from .body_fbx_export import (
     FBX_BINARY_MAGIC,
     BodyFbxAppliedProfile,
     BodyFbxArtifact,
+    BodyFbxCurvePolicy,
     BodyFbxEncoding,
     BodyFbxExportProfile,
     BodyFbxNamingProfile,
@@ -275,6 +276,7 @@ from .body_fbx_export import (
     audit_body_fbx_export_readiness,
     inspect_body_fbx_bytes,
     plan_body_fbx_export_selection,
+    redundant_linear_key_frames,
 )
 from .mocap_source import (
     MOCAP_TRANSFORM_ATTRIBUTES,
@@ -775,7 +777,7 @@ __all__ = [
     "BodyExportSkeletonBakePlan", "BodyExportSkeletonBakedSnapshot",
     "BodyExportSkeletonSample",
     "FBX_BINARY_HEADER", "FBX_BINARY_MAGIC",
-    "BodyFbxAppliedProfile", "BodyFbxArtifact", "BodyFbxEncoding",
+    "BodyFbxAppliedProfile", "BodyFbxArtifact", "BodyFbxCurvePolicy", "BodyFbxEncoding",
     "BodyFbxExportProfile", "BodyFbxNamingProfile", "BodyFbxExportSelection", "BodyFbxFileVersion",
     "BodyFbxLinearUnit", "BodyFbxPublishedNode",
     "MOCAP_TRANSFORM_ATTRIBUTES", "MocapChannelSnapshot",

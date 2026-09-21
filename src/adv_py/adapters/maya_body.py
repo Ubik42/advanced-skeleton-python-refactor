@@ -7,6 +7,7 @@ from .maya_spine import MayaBodySpineMixin
 from .maya_control_spaces import MayaBodyControlSpacesMixin
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from adv_py.core.body_arm_mechanisms import (
@@ -106,9 +107,11 @@ from adv_py.core.body_export_skeleton import (
 )
 from adv_py.core.body_fbx_export import (
     BodyFbxAppliedProfile,
+    BodyFbxCurvePolicy,
     BodyFbxExportProfile,
     BodyFbxExportSelection,
     BodyFbxLinearUnit,
+    redundant_linear_key_frames,
 )
 from adv_py.core.body_hand_controls import (
     BodyHandFkControlPlan,
@@ -1733,6 +1736,7 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
         )
         pushed = False
         applied_profile: BodyFbxAppliedProfile | None = None
+        removed_linear_keys = 0
         try:
             mel.eval("FBXPushSettings;")
             pushed = True
@@ -1797,6 +1801,34 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                         for path in selection.published_paths
                     ):
                         raise RuntimeError("FBX 发布名称临时映射复检失败")
+                    if profile.curve_policy == BodyFbxCurvePolicy.LOSSLESS_LINEAR:
+                        root_attributes = (
+                            ("translateX", "translateY", "rotateZ")
+                            if self.scene_up_axis().value.lower() == "z"
+                            else ("translateX", "translateZ", "rotateY")
+                        )
+                        for path in selection.published_paths:
+                            attributes = (
+                                root_attributes
+                                if path == selection.published_root_path
+                                else BODY_EXPORT_CHANNEL_ATTRIBUTES
+                            )
+                            for attribute in attributes:
+                                plug = f"{path}.{attribute}"
+                                frame_range = (selection.start_frame, selection.end_frame)
+                                times = self._cmds.keyframe(
+                                    plug, query=True, time=frame_range, timeChange=True
+                                ) or []
+                                values = self._cmds.keyframe(
+                                    plug, query=True, time=frame_range, valueChange=True
+                                ) or []
+                                keys = tuple(BodyRootMotionKeyState(
+                                    frame=int(round(float(frame))), value=float(value),
+                                    in_tangent="linear", out_tangent="linear",
+                                ) for frame, value in zip(times, values))
+                                for frame in redundant_linear_key_frames(keys):
+                                    self._cmds.cutKey(plug, time=(frame, frame), option="keys")
+                                    removed_linear_keys += 1
                     self._cmds.select(
                         selection.published_paths,
                         replace=True,
@@ -1835,7 +1867,11 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
             raise RuntimeError("FBX 导出改变了 Maya 原有 Undo 队列顶部")
         if applied_profile is None:
             raise RuntimeError("FBX exporter Profile 未生成应用快照")
-        return applied_profile
+        return replace(
+            applied_profile,
+            curve_policy=profile.curve_policy.value,
+            removed_linear_keys=removed_linear_keys,
+        )
 
     def create_body_arm_ik_root(self, name: str) -> str:
         return self.create_body_control_root(name)

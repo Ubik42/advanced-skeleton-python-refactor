@@ -25,6 +25,7 @@ from adv_py.core.body_fbx_export import (
     audit_body_fbx_export_readiness,
     inspect_body_fbx_bytes,
     plan_body_fbx_export_selection,
+    redundant_linear_key_frames,
 )
 from adv_py.core.body_root_motion import plan_body_root_motion
 from adv_py.core.body_skeleton import (
@@ -218,6 +219,18 @@ class ExportBodyFbx:
                 raise RuntimeError(
                     "FBX Profile 应用复检失败：" + "；".join(profile_issues)
                 )
+            expected_removed = (
+                sum(
+                    len(redundant_linear_key_frames(channel.keys))
+                    for channel in (
+                        *plan.baked.root_motion.channels,
+                        *(channel for joint in plan.baked.joints for channel in joint.channels),
+                    )
+                )
+                if plan.profile.curve_policy.value == "lossless_linear" else 0
+            )
+            if applied_profile.removed_linear_keys != expected_removed:
+                raise RuntimeError("FBX 发布曲线简化数量与预检快照不一致")
             try:
                 os.link(temporary, plan.destination)
             except FileExistsError as error:
