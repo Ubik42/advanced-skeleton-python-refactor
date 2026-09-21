@@ -65,11 +65,11 @@ def main(output, with_hand=True):
         before = host.capture_body_spine_pose(spine)
         matched = MatchBodySpine(host).execute(spine, "ik")
         fk_to_ik_error = error(before, matched)
-        checks["fk_to_ik_preserves_all_body_matrices"] = fk_to_ik_error < 2e-3 and cmds.getAttr(spine.blend_plug) == 1
+        checks["fk_to_ik_preserves_all_body_matrices"] = fk_to_ik_error < 1e-4 and cmds.getAttr(spine.blend_plug) == 1
         cmds.undo()
-        checks["match_undo_restores_fk"] = cmds.getAttr(spine.blend_plug) == 0 and error(before, host.capture_body_spine_pose(spine)) < 2e-3
+        checks["match_undo_restores_fk"] = cmds.getAttr(spine.blend_plug) == 0 and error(before, host.capture_body_spine_pose(spine)) < 1e-4
         cmds.redo()
-        checks["match_redo_restores_ik"] = cmds.getAttr(spine.blend_plug) == 1 and error(before, host.capture_body_spine_pose(spine)) < 2e-3
+        checks["match_redo_restores_ik"] = cmds.getAttr(spine.blend_plug) == 1 and error(before, host.capture_body_spine_pose(spine)) < 1e-4
         edit(spine.ik_control, "translateY", cmds.getAttr(spine.ik_control + ".translateY") + 0.2)
         edit(spine.ik_control, "rotateZ", cmds.getAttr(spine.ik_control + ".rotateZ") + 14)
         edit(spine.ik_control, "waistRoll", 28)
@@ -90,14 +90,14 @@ def main(output, with_hand=True):
         edit(spine.ik_control, "spineIkFk", 1.0)
         matched = MatchBodySpine(host).execute(spine, "fk")
         ik_to_fk_error = error(ik_pose, matched)
-        checks["ik_to_fk_preserves_all_body_matrices"] = ik_to_fk_error < 2e-3 and cmds.getAttr(spine.blend_plug) == 0
+        checks["ik_to_fk_preserves_all_body_matrices"] = ik_to_fk_error < 1e-4 and cmds.getAttr(spine.blend_plug) == 0
         edit(result.plan.global_control.control_path, "globalScale", 1.5)
         edit(result.plan.global_control.control_path, "rotateY", 22)
         edit(result.plan.global_control.control_path, "translateZ", 1)
         scaled = host.capture_body_spine_pose(spine)
         matched = MatchBodySpine(host).execute(spine, "ik")
         scaled_error = error(scaled, matched)
-        checks["matching_under_global_scale"] = scaled_error < 2e-3
+        checks["matching_under_global_scale"] = scaled_error < 1e-4
         cmds.setAttr(spine.fk_controls[0] + ".rotateX", lock=True)
         undo_before = cmds.undoInfo(query=True, undoName=True)
         try:
@@ -117,7 +117,7 @@ def main(output, with_hand=True):
         except RuntimeError as exc:
             if "Injected" not in str(exc):
                 raise
-            checks["failed_match_rolls_back"] = cmds.getAttr(spine.blend_plug) == 1 and error(before_failure, host.capture_body_spine_pose(spine)) < 2e-3
+            checks["failed_match_rolls_back"] = cmds.getAttr(spine.blend_plug) == 1 and error(before_failure, host.capture_body_spine_pose(spine)) < 1e-4
         checks["selection_and_time_preserved"] = cmds.ls(selection=True) == [marker] and cmds.currentTime(query=True) == 1
         # A fresh build establishes the whole-character Undo boundary independently of match history.
         cmds.file(new=True, force=True)
@@ -125,10 +125,11 @@ def main(output, with_hand=True):
         (BuildSyntheticBodyWithHandSourceFit if with_hand else BuildSyntheticBodySourceFit)(host).apply(container)
         BuildOrientedBodySkeleton(host).apply(container)
         BuildBodyCharacterRig(host).apply(include_torso=True, include_spine_ik=True)
+        original_build_pose = host.capture_body_spine_pose(spine)
         cmds.undo()
         checks["one_build_undo_preserves_body_and_removes_spine"] = cmds.objExists("Root_M") and not cmds.ls("AdvPy_Spine*", "AdvPy_Global")
         cmds.redo()
-        checks["build_redo_restores_spine"] = cmds.objExists(spine.root_path)
+        checks["build_redo_restores_spine"] = cmds.objExists(spine.root_path) and error(original_build_pose,host.capture_body_spine_pose(spine)) < 1e-4
         cmds.file(new=True, force=True)
         report = {"host": "maya", "version": cmds.about(version=True), "body_joint_count": len(original.joints),
                   **checks, "fk_to_ik_matrix_error": fk_to_ik_error, "ik_to_fk_matrix_error": ik_to_fk_error,

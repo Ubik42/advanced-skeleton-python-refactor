@@ -276,3 +276,19 @@
 ```
 
 分别使用 70 / 30 关节自生成 Body，验证直立与弯曲姿态双向匹配、混合、独立腰部 roll、骨盆隔离、全局变换下姿态保持、非法输入拒绝、失败回滚与匹配 / 构建 Undo、Redo。运行时匹配阈值为全部 Body 世界矩阵逐元素 `1e-4`；详细误差保存在本机 JSON。
+
+
+## 完整核心里程碑综合验收
+
+在仓库根目录运行；下列文件均由代码生成场景，不读取 ADV 素材。纯 Python 回归集中运行一次，宿主脚本按相关工作批次选用。
+
+```powershell
+$env:PYTHONPATH = 'src'
+py -3 -m unittest discover -s tests
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_complete_character_smoke.py validation/results/maya2024-complete-character.json
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_complete_character_smoke.py validation/results/maya2024-complete-character-basic.json --basic
+```
+
+综合脚本覆盖 Fit → Body → Spine / Torso / Arm / Leg / Hand / Global / 控制空间 → 显式蒙皮，核对权重和实际顶点变形。一次 Undo / Redo 必须恢复原有世界矩阵与网格位置，不能只以节点存在判断重做成功。蒙皮后注入失败必须移除整个新建角色，保留原有场景标记和选择。
+
+局部机制定位使用 `maya_body_spine_smoke.py` 与 `maya_body_control_spaces_smoke.py`，输出路径作为第一个参数，`--basic` 切换为 30 关节。两者包含非法状态拒绝和失败回滚；空间脚本另外验证身体 / Global 跟随关系。结果写入已忽略的 `validation/results/`，不提交本机日志。

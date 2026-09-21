@@ -38,9 +38,11 @@ def main(output, with_hand=True):
         plan = rig.plan.control_spaces
         switch = SwitchBodyControlSpace(host)
         checks = {"five_spaces_nine_constraints": len(plan.spaces) == 5 and len(plan.node_names) == 9}
+        original_pose = host.capture_control_space_pose(plan)
         cmds.undo()
         checks["one_undo_removes_complete_character"] = not cmds.ls("AdvPy_Space_*", "AdvPy_Global", "AdvPy_Spine*") and cmds.objExists("Root_M")
         cmds.redo()
+        checks["redo_preserves_body_and_offsets"] = control_space_pose_error(original_pose, host.capture_control_space_pose(plan)) < 1e-4
         checks["redo_restores_spaces"] = all(host.capture_control_space_mode(s) == s.initial_mode for s in plan.spaces)
         for module in (rig.plan.arm, rig.plan.leg):
             for side in module.blend.sides:

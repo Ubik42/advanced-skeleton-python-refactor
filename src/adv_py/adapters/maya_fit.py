@@ -887,15 +887,43 @@ class MayaFitJointHost:
         self._transaction_changed = True
         self._set_joint_world_axes(path, world_axes)
 
+    def _checkpoint_new_transform_channels(self, previous_uuids):
+        """Record final local values so redo does not depend on world-xform order.
+
+        Maya may reevaluate world-space construction commands against a partly
+        restored hierarchy during redo. Only newly created, unconnected local
+        transform channels are checkpointed; driven channels remain untouched.
+        """
+        c = self._cmds
+        channels = ("translate", "rotate", "scale", "shear", "rotateAxis", "jointOrient")
+        rows = []
+        for node in sorted(c.ls(type="transform", long=True) or []):
+            if c.nodeType(node) not in ("transform", "joint") or set(c.ls(node, uuid=True) or []) & previous_uuids:
+                continue
+            for channel in channels:
+                for axis in ("XY", "XZ", "YZ") if channel == "shear" else "XYZ":
+                    plug = node + "." + channel + axis
+                    if c.objExists(plug) and not c.listConnections(plug, source=True, destination=False):
+                        rows.append((plug, c.getAttr(plug), c.getAttr(plug, lock=True)))
+        for plug, value, locked in rows:
+            if locked:
+                c.setAttr(plug, lock=False)
+            c.setAttr(plug, value)
+            if locked:
+                c.setAttr(plug, lock=True)
+
     @contextmanager
     def transaction(self, label: str) -> Iterator[None]:
         if self._transaction_active:
             raise RuntimeError("MayaFitJointHost 不支持嵌套事务")
+        previous_uuids = set(self._cmds.ls(type="transform", uuid=True) or [])
         self._transaction_active = True
         self._transaction_changed = False
         self._cmds.undoInfo(openChunk=True, chunkName=label)
         try:
             yield
+            if self._transaction_changed:
+                self._checkpoint_new_transform_channels(previous_uuids)
         except Exception:
             self._cmds.undoInfo(closeChunk=True)
             if self._transaction_changed:
