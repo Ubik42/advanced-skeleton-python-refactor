@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from adv_py.core.character_registry import CharacterRegistration
-from adv_py.core.character_preservation import CharacterPreservation,validate_rebuild_layout
+from adv_py.core.character_preservation import CharacterPreservation,validate_rebuild_layout,character_transfer_error
 from .character_preservation import CaptureBodyCharacterPreservation
 from .fit_skeleton_io import ExportFitSkeleton,CreateAndImportFitSkeleton
 from .oriented_body_skeleton import BuildOrientedBodySkeleton
@@ -13,6 +13,7 @@ from .character_registry import RegisterBodyCharacter
 from .character_limb_animation import EnableBodyCharacterLimbAnimation
 from .character_stretch_matching import EnableBodyCharacterStretchMatching
 from .character_spaces import EnableBodyCharacterSpaceAnimation
+from adv_py.core.character_registry import CharacterRegistryError
 
 
 @dataclass(frozen=True)
@@ -48,3 +49,26 @@ class StageBodyCharacterRebuild:
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('暂存构建改写了原角色，已回滚')
         return StagedCharacterRebuild(original,namespace,registration)
+
+
+class TransferStagedBodyCharacterData:
+    def __init__(self,host):self._host=host
+
+    def apply(self,staged):
+        host=self._host
+        original=staged.original
+        extensions=tuple(row.path for row in original.extensions)
+        if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
+            raise CharacterRegistryError('原角色与暂存时的保留数据不同，请重新暂存')
+        host.preflight_character_transfer(staged)
+        keys=sorted({original.current_time,*[t for curve in original.curves for t in curve.times]})
+        frames=tuple(sorted({*keys,*[(a+b)/2 for a,b in zip(keys,keys[1:])]}))
+        if len(frames)>2000:raise CharacterRegistryError('交接复检采样最多 2000 帧，需要分段验证策略')
+        before=host.sample_character_transfer(staged,frames)
+        with host.transaction('Transfer preserved data to replacement rig'):
+            host.transfer_character_data(staged)
+            after=host.sample_character_transfer(staged,frames,target=True)
+            if character_transfer_error(before,after)>1e-4:
+                raise RuntimeError('交接改变身体、控制空间、蒙皮或用户附件')
+            host.verify_character_retained_data(staged)
+        return staged

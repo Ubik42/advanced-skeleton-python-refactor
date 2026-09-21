@@ -397,3 +397,13 @@ write 先捕获非中性姿态，再扰动全部登记控制与空间；read 从
 ```
 
 保留快照检查原生加权曲线及循环、完整稀疏蒙皮、附件属性与只读采集。暂存构建检查新 Rig 身份、绑定布局、源角色和另一角色不变、Undo / Redo；故障模式在 70 关节角色暂存扩展时注入异常，核对新 Rig 撤销和原数据完整。暂存场景为 `staged.ma`，不表示原位替换已经实现。
+## 重建原生数据交接
+
+```powershell
+& $mayapy validation/maya_character_transfer_smoke.py validation/results/namespace-character-final/animated.ma validation/results/character-transfer-extended
+& $mayapy validation/maya_character_transfer_smoke.py validation/results/namespace-character-final/animated.ma validation/results/character-transfer-extended --reopen
+& $mayapy validation/maya_character_transfer_smoke.py validation/results/namespace-character-final/animated.ma validation/results/character-transfer70 --partner
+& $mayapy validation/maya_character_transfer_smoke.py validation/results/namespace-character-final/animated.ma validation/results/character-transfer70 --partner --reopen
+```
+
+默认交接 30 关节角色，`--partner` 交接 70 关节角色。两者均加入加权曲线、循环设置、带动画与 Rig 矩阵输入的两级附件，核对保留对象身份、曲线和蒙皮内容、其他角色不变、Undo / Redo 与故障回滚。`--reopen` 比较保存场景中的身体、空间、实际网格和附件。该入口不删除旧 Rig，完整原位替换仍在开发中。

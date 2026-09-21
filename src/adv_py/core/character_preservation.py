@@ -102,3 +102,20 @@ def validate_rebuild_layout(before, after, tolerance=1e-6):
         raise CharacterRegistryError('重建角色的拓扑或控制语义变化，需要明确迁移计划')
     if any(abs(a-b)>tolerance for x,y in zip(before.body,after.body) for a,b in zip(x.matrix,y.matrix)):
         raise CharacterRegistryError('重建绑定布局变化，需要蒙皮与动画迁移计划')
+
+
+def character_transfer_error(before,after):
+    from .body_control_spaces import control_space_pose_error
+    if not before or tuple(row[0] for row in before)!=tuple(row[0] for row in after):
+        raise CharacterRegistryError('交接复检帧不一致')
+    error=0.
+    for left,right in zip(before,after):
+        finite(left[0])
+        error=max(error,*(control_space_pose_error(tuple(left[i]),tuple(right[i])) for i in (1,2)))
+        for i in (3,4):
+            if tuple(k for k,_ in left[i])!=tuple(k for k,_ in right[i]):
+                raise CharacterRegistryError('交接复检蒙皮或附件身份不一致')
+            for (_,a),(_,b) in zip(left[i],right[i]):
+                if len(a)!=len(b):raise CharacterRegistryError('交接复检向量不完整')
+                error=max(error,max((abs(finite(x)-finite(y)) for x,y in zip(a,b)),default=0.))
+    return error

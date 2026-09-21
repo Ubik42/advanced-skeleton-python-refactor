@@ -72,7 +72,9 @@ def capture_extension(host,node):
             raise CharacterRegistryError('用户扩展数组需要专用保留协议：'+plug)
         if datatype=='message':value=None
         elif datatype in ('string','bool','byte','short','long','float','double','doubleAngle','doubleLinear','enum','matrix'):
-            value=c.getAttr(plug)
+            # Request the explicit time context: after sampling other frames,
+            # Maya can leave non-transform custom attributes with a stale cache.
+            value=c.getAttr(plug,time=c.currentTime(q=True))
             if isinstance(value,list):value=tuple(value)
         else:raise CharacterRegistryError('用户扩展属性类型尚无保留协议：'+plug+' '+datatype)
         metadata=[]
@@ -116,7 +118,19 @@ def capture(host,registration,extensions):
             node=source.rsplit('.',1)[0]
             if c.nodeType(node).startswith('animCurve'):
                 if not host._character_direct_animation(source):
-                    raise CharacterRegistryError('用户扩展动画需要角色自有的原生时间曲线：'+source)
+                    # Maya's ordinary setKeyframe may create a root-namespace
+                    # curve for a namespaced user attachment. Adopt only a
+                    # native time curve whose entire output boundary belongs
+                    # to these explicitly retained extension objects.
+                    physical=host.scene_address(node).lstrip(':')
+                    driver=c.connectionInfo(node+'.input',sourceFromDestination=True)
+                    outputs=c.listConnections(node+'.output',s=False,d=True,plugs=True) or []
+                    native=c.nodeType(node) in ('animCurveTA','animCurveTL','animCurveTU')
+                    timed=not driver or (driver.rsplit('.',1)[1]=='outTime' and c.nodeType(driver.rsplit('.',1)[0])=='time')
+                    owned_outputs=outputs and all(host._resolve_connected_node(p.split('.',1)[0]) in extension_paths for p in outputs)
+                    if (':' in physical or not native or not timed or not owned_outputs or c.referenceQuery(node,isNodeReferenced=True)
+                            or any(c.lockNode(node,q=True,lock=True) or [])):
+                        raise CharacterRegistryError('用户扩展动画没有独占的原生时间曲线保留边界：'+source)
                 curves.add(node)
     return validate_preservation(CharacterPreservation(registration,host.capture_character_pose(registration),
         float(c.currentTime(q=True)),host.character_time_unit(),host.namespace,tuple(capture_curve(host,node) for node in sorted(curves)),

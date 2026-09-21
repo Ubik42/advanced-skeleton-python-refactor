@@ -9,6 +9,22 @@ from adv_py.core.body_skeleton import audit_body_provenance, oriented_body_prove
 
 
 class MayaCharacterRegistryMixin:
+    def preflight_character_transfer(self,staged):
+        from .maya_character_transfer import preflight
+        preflight(self,staged)
+
+    def sample_character_transfer(self,staged,frames,*,target=False):
+        from .maya_character_transfer import sample
+        return sample(self,staged,frames,target)
+
+    def transfer_character_data(self,staged):
+        from .maya_character_transfer import transfer
+        transfer(self,staged)
+
+    def verify_character_retained_data(self,staged):
+        from .maya_character_transfer import verify_retained
+        verify_retained(self,staged)
+
     def preflight_character_rebuild_namespace(self,namespace):
         from maya import cmds
         from adv_py.core.character_identity import CharacterIdentity
