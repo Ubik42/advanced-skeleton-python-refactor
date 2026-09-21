@@ -294,3 +294,97 @@ class MayaMocapConnectionHost(MayaMocapMappingReader):
     def _require_transaction(self) -> None:
         if not self._transaction_active:
             raise RuntimeError("MoCap 场景修改必须在事务内执行")
+
+
+class MayaMocapBakeHost(MayaMocapConnectionHost):
+    """Bake only the channels owned by a verified temporary MoCap connection."""
+
+    def preflight_mocap_bake(self, plan) -> None:
+        if not self._cmds.undoInfo(query=True, state=True):
+            raise MocapMappingValidationError("MoCap bake 需要启用 Maya Undo")
+        if self._cmds.ls(type="animLayer"):
+            raise MocapMappingValidationError("MoCap bake 暂不支持带动画层的场景")
+        for spec in plan.connection.constraints:
+            for node in (spec.target_path, spec.name):
+                if (self._cmds.referenceQuery(node, isNodeReferenced=True)
+                        or any(self._cmds.lockNode(node, query=True, lock=True) or [])):
+                    raise MocapMappingValidationError(f"MoCap bake 对象不可编辑：{node}")
+            if self._cmds.listRelatives(spec.name, children=True):
+                raise MocapMappingValidationError("MoCap bake 约束包含未知子节点")
+            if self._cmds.getAttr(f"{spec.name}.interpType") not in (1, 2):
+                raise MocapMappingValidationError("MoCap bake 只支持无历史依赖的 Average/Shortest 约束")
+            expected = {(spec.target_path, attr) for attr in spec.target_attributes}
+            destinations = self._cmds.listConnections(
+                spec.name, source=False, destination=True, plugs=True,
+            ) or []
+            actual = set()
+            for plug in destinations:
+                node, attr = plug.split(".", 1)
+                resolved = self._resolve_node(node)
+                if resolved == self._resolve_node(spec.name):
+                    continue  # Maya connects the weight alias to its own target array.
+                actual.add((resolved, attr))
+            if actual != expected:
+                raise MocapMappingValidationError(f"MoCap bake constraint outputs mismatch: {actual!r}; expected {expected!r}")
+        for path, attribute in plan.channels:
+            if self._cmds.getAttr(f"{path}.{attribute}", lock=True):
+                raise MocapMappingValidationError(f"MoCap bake 通道锁定：{path}.{attribute}")
+
+    @contextmanager
+    def _sampling_time(self):
+        original_time = self._cmds.currentTime(query=True)
+        undo_enabled = self._cmds.undoInfo(query=True, state=True)
+        self._cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            yield
+        finally:
+            try:
+                self._cmds.currentTime(original_time, edit=True, update=True)
+            finally:
+                self._cmds.undoInfo(stateWithoutFlush=undo_enabled)
+
+    def sample_mocap_body(self, plan):
+        from adv_py.core.mocap_bake import MocapBodySample
+
+        samples = []
+        with self._sampling_time():
+            for frame in plan.frames:
+                self._cmds.currentTime(frame, edit=True, update=True)
+                samples.append(MocapBodySample(
+                    frame,
+                    tuple(float(self._cmds.getAttr(f"{path}.{attr}")) for path, attr in plan.channels),
+                    self.capture_mocap_target_poses(plan.connection),
+                ))
+        return tuple(samples)
+
+    def write_mocap_keys(self, plan, samples) -> None:
+        self._require_transaction()
+        for path, attr in plan.channels:
+            if (self._cmds.listConnections(f"{path}.{attr}", source=True, destination=False)
+                    or not self._cmds.getAttr(f"{path}.{attr}", settable=True)):
+                raise MocapMappingValidationError(f"MoCap bake 目标输入未释放：{path}.{attr}")
+        self._transaction_changed = True
+        for sample in samples:
+            for (path, attr), value in zip(plan.channels, sample.values):
+                self._cmds.setKeyframe(path, attribute=attr, time=sample.frame, value=value,
+                                      inTangentType="linear", outTangentType="linear")
+
+    def verify_mocap_keys(self, plan, samples) -> None:
+        for index, (path, attr) in enumerate(plan.channels):
+            curves = self._cmds.listConnections(
+                f"{path}.{attr}", source=True, destination=False,
+            ) or []
+            expected_type = "animCurveTL" if attr.startswith("translate") else "animCurveTA"
+            if len(curves) != 1 or self._cmds.nodeType(curves[0]) != expected_type:
+                raise MocapMappingValidationError("MoCap bake 未生成直接动画曲线")
+            curve = curves[0]
+            times = tuple(self._cmds.keyframe(curve, query=True, timeChange=True) or [])
+            values = tuple(self._cmds.keyframe(curve, query=True, valueChange=True) or [])
+            tangents = (self._cmds.keyTangent(curve, query=True, inTangentType=True) or []) + (
+                self._cmds.keyTangent(curve, query=True, outTangentType=True) or [])
+            expected = tuple(sample.values[index] for sample in samples)
+            if (times != plan.frames or len(values) != len(expected)
+                    or any(abs(a - b) > 1e-5 for a, b in zip(values, expected))
+                    or len(tangents) != 2 * len(plan.frames)
+                    or any(tangent != "linear" for tangent in tangents)):
+                raise MocapMappingValidationError(f"MoCap bake 关键帧复检失败：{path}.{attr}")

@@ -244,3 +244,13 @@
 - ReBuild 已覆盖当前 Body DAG 与直接外部 DG 连接，并具备单事务失败恢复；引用场景、未知插件节点、文件保存状态和带蒙皮/附件的数据迁移仍未实现，因此这些场景继续被拒绝。
 - Arm FK 约束会被 ReBuild 安全评估视为外部依赖；当前正确工作流是在一次 Undo 中移除控制系统后再 ReBuild，控制器迁移/重建编排留给后续切片。
 - Limb FK controls 与 RP IK controls 已通过双源 blend 输出到 Body，并完成控制显隐、含 stretch 段长传递的双向匹配、统一角色等比缩放和轴向 twist/volume helper；Hand FK controls 直接驱动 30 个 Body 指节，并具备 curl/spread 聚合属性及语义 Pose JSON 往返。Skin 已覆盖显式单网格绑定、稀疏权重写入/镜像、JSON 往返和路径映射；尚未实现动画 bake、自动 namespace/influence 推断、非对称空间配对或已有蒙皮迁移。
+
+## MoCap 显式采样与 bake
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' `
+  validation\maya_mocap_bake_smoke.py `
+  validation\results\maya2024-mocap-bake.json
+```
+
+自行生成来源与 owned Body，连接后将第 2–20 帧按步长 2 写为 18 条直接动画曲线和 180 个 linear keys。复检采样点局部值、世界姿态、完整键集合及切线；覆盖锁定/外部输出拒绝、失败回滚、单次 Undo、Redo、选择/时间恢复和删除来源后的独立回放。只保证采样点一致，不保证线性 Euler 插值在任意子帧等价于原约束；动画层、引用目标与历史依赖约束暂不支持。

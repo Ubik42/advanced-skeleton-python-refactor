@@ -1,5 +1,7 @@
 """DCC-neutral rig description and validation."""
 
+from .mocap_bake import MocapBodyBakePlan, MocapBodySample, plan_mocap_body_bake, validate_mocap_samples, verify_mocap_bake_samples
+
 from .body_arm_mechanisms import (
     BodyArmMechanismIssue,
     BodyArmMechanismJointSpec,
@@ -676,6 +678,12 @@ from .matrix import (
 from .validation import PlanValidationError, validate_plan
 
 __all__ = [
+    "MocapBodyBakePlan",
+    "MocapBodySample",
+    "plan_mocap_body_bake",
+    "validate_mocap_samples",
+    "verify_mocap_bake_samples",
+
     "BodyArmBlendIssue", "BodyArmBlendJointSpec", "BodyArmBlendJointState",
     "BodyArmBlendPlan", "BodyArmBlendSideSpec", "BodyArmBlendSideState",
     "BodyArmBlendSnapshot",

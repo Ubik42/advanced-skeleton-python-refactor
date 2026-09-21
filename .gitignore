@@ -11,6 +11,8 @@ dist/
 *.egg-info/
 validation/results/.*.log
 validation/results/.*.txt
+# New host run evidence stays local; historical tracked baselines are unchanged.
+validation/results/
 
 # Generated inventories may contain proprietary procedure names and paths.
 reports/*.json

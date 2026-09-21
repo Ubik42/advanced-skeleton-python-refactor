@@ -6,7 +6,7 @@
 
 ![AdvancedSkeleton Python 重构的分层架构与当前阶段](docs/media/readme-overview.svg)
 
-> 当前版本：`v0.95.0` · Windows · Maya 2024 standalone · Python 3.10 / 3.14
+> 当前版本：`v0.96.0` · Windows · Maya 2024 standalone · Python 3.10 / 3.14
 >
 > Blender 5.2 仅保留早期架构可行性代码，第二阶段尚未开始。
 
@@ -14,13 +14,13 @@
 
 | 范围 | 已完成 |
 | --- | --- |
-| Maya 重构 | 90 个纵向切片，覆盖 Fit、Body、Arm / Leg / Hand FK/IK、Skin、Root Motion、FBX 与 MoCap 临时驱动 |
+| Maya 重构 | 91 个纵向切片，覆盖 Fit、Body、Arm / Leg / Hand FK/IK、Skin、Root Motion、FBX 与 MoCap 采样 / bake |
 | 角色结构 | 30 关节基础 Body、70 关节五指 Body、31 关节独立导出骨架 |
 | 数据合同 | FitSkeleton、Hand Pose 与 Skin Weight 使用路径无关的 JSON 文档和 SHA-256 内容摘要 |
 | 写入边界 | 修改前预检；单一 Maya Undo 事务提交；执行后从场景读回复检 |
-| 自动验证 | 272 项纯 Python 回归测试；79 个 Maya / Blender 宿主 smoke 脚本 |
+| 自动验证 | 278 项纯 Python 回归测试；80 个 Maya / Blender 宿主 smoke 脚本 |
 
-[查看 v0.95.0 阶段说明](docs/阶段发布-v0.95.md)
+[查看 v0.96.0 阶段说明](docs/阶段发布-v0.96.md)
 
 ## 解决的问题
 
@@ -54,7 +54,7 @@
 - Root Motion 实时输出与逐帧 bake；
 - 31 关节独立 Export Skeleton 和完整 TRS bake；
 - FBX2018 / FBX2020、Y/Z Up、cm/m、binary/ASCII 显式 Profile；
-- MoCap 来源检查、显式 Body 映射、临时连接、断开和 Undo。
+- MoCap 来源检查、显式 Body 映射、临时连接、断开，以及显式范围采样 / bake。
 
 ## 快速开始
 
@@ -89,11 +89,11 @@ py -3 -m unittest discover -s tests
 
 ```powershell
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' `
-  validation\maya_mocap_connection_smoke.py `
-  validation\results\maya2024-mocap-connection.json
+  validation\maya_mocap_bake_smoke.py `
+  validation\results\maya2024-mocap-bake.json
 ```
 
-该脚本自行生成五关节 MoCap 来源和 owned Body，检查姿态保持、跨帧驱动、显式断开、两级 Undo、选择与时间恢复。最近记录的运行结果为 `status: passed`，耗时 3.697 秒。
+该脚本自行生成五关节 MoCap 来源和 30 关节 owned Body，将第 2–20 帧按步长 2 烘焙为 18 条动画曲线、180 个关键帧，检查采样姿态、关键帧读回、失败回滚、Undo / Redo 和删除来源后的回放。Maya 2024 后台实测 `status: passed`，耗时 4.318 秒。
 
 更多宿主命令见 [后台宿主验证](validation/README.md)。
 
@@ -131,7 +131,7 @@ docs/                   架构、路线、调研与阶段说明
 - [迁移架构](docs/迁移架构.md)
 - [跨 DCC 路线](docs/跨DCC路线.md)
 - [社区调研](docs/社区调研.md)
-- [v0.95.0 阶段说明](docs/阶段发布-v0.95.md)
+- [v0.96.0 阶段说明](docs/阶段发布-v0.96.md)
 - [宿主验证命令](validation/README.md)
 
 ## 许可与源码边界
