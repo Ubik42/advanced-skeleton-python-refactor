@@ -9,6 +9,10 @@ from adv_py.core.body_skeleton import audit_body_provenance, oriented_body_prove
 
 
 class MayaCharacterRegistryMixin:
+    def plan_character_property_transfer(self,original,namespace):
+        from .maya_character_properties import plan
+        return plan(self,original,namespace)
+
     def preflight_character_transfer(self,staged):
         from .maya_character_transfer import preflight
         preflight(self,staged)

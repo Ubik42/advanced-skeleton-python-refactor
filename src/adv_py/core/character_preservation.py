@@ -60,6 +60,7 @@ class CharacterPreservation:
     curves: tuple[PreservedCurve, ...]
     skins: tuple[PreservedSkin, ...]
     extensions: tuple[PreservedExtension, ...]
+    properties: tuple[PreservedExtension, ...] = ()
 
     @property
     def content_digest(self):
@@ -72,7 +73,7 @@ def validate_preservation(snapshot):
     # Reject non-finite data at every level, including retained custom values.
     try:canonical(asdict(snapshot))
     except (ValueError,TypeError) as exc:raise CharacterRegistryError('重建保留数据包含不可序列化或非有限数值') from exc
-    for rows in (snapshot.curves,snapshot.skins,snapshot.extensions):
+    for rows in (snapshot.curves,snapshot.skins,snapshot.extensions,snapshot.properties):
         if len({r.uuid for r in rows})!=len(rows):raise CharacterRegistryError('重建保留对象身份重复')
     for curve in snapshot.curves:
         count=len(curve.times)

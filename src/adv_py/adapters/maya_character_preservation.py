@@ -1,5 +1,6 @@
 """Capture original curves, sparse skin storage and explicit extension objects."""
 from adv_py.core.character_registry import CharacterRegistryError
+from dataclasses import replace
 from adv_py.core.character_preservation import PreservedCurve, PreservedSkin, PreservedExtension, CharacterPreservation, validate_preservation
 
 
@@ -113,7 +114,15 @@ def capture(host,registration,extensions):
         if 'dagNode' in (c.nodeType(node,inherited=True) or []):
             extension_paths.update(c.listRelatives(node,allDescendents=True,fullPath=True) or [])
     extension_rows=tuple(capture_extension(host,node) for node in sorted(extension_paths))
-    for row in extension_rows:
+    properties=[]
+    for member in registration.nodes:
+        if member.path==registration.container or member.path.startswith(registration.container+'|'):continue
+        if not c.listAttr(member.path,userDefined=True):continue
+        row=capture_extension(host,member.path)
+        plugs={row.path+'.'+a[0] for a in row.attributes}
+        properties.append(replace(row,parent=None,matrix=None,connections=tuple((a,b) for a,b in row.connections if a in plugs or b in plugs)))
+    property_plugs={row.path+'.'+a[0] for row in properties for a in row.attributes}
+    for row in (*extension_rows,*properties):
         for source,target in row.connections:
             node=source.rsplit('.',1)[0]
             if c.nodeType(node).startswith('animCurve'):
@@ -127,11 +136,11 @@ def capture(host,registration,extensions):
                     outputs=c.listConnections(node+'.output',s=False,d=True,plugs=True) or []
                     native=c.nodeType(node) in ('animCurveTA','animCurveTL','animCurveTU')
                     timed=not driver or (driver.rsplit('.',1)[1]=='outTime' and c.nodeType(driver.rsplit('.',1)[0])=='time')
-                    owned_outputs=outputs and all(host._resolve_connected_node(p.split('.',1)[0]) in extension_paths for p in outputs)
+                    owned_outputs=outputs and all(host._resolve_connected_node(p.split('.',1)[0]) in extension_paths or _plug(host,p) in property_plugs for p in outputs)
                     if (':' in physical or not native or not timed or not owned_outputs or c.referenceQuery(node,isNodeReferenced=True)
                             or any(c.lockNode(node,q=True,lock=True) or [])):
                         raise CharacterRegistryError('用户扩展动画没有独占的原生时间曲线保留边界：'+source)
                 curves.add(node)
     return validate_preservation(CharacterPreservation(registration,host.capture_character_pose(registration),
         float(c.currentTime(q=True)),host.character_time_unit(),host.namespace,tuple(capture_curve(host,node) for node in sorted(curves)),
-        tuple(skins),extension_rows))
+        tuple(skins),extension_rows,tuple(properties)))

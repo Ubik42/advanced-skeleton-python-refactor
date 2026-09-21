@@ -21,6 +21,7 @@ class StagedCharacterRebuild:
     original: CharacterPreservation
     namespace: str
     registration: CharacterRegistration
+    custom_properties: tuple = ()
 
 
 class StageBodyCharacterRebuild:
@@ -48,7 +49,8 @@ class StageBodyCharacterRebuild:
                 validate_rebuild_layout(original.registration,registration)
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('暂存构建改写了原角色，已回滚')
-        return StagedCharacterRebuild(original,namespace,registration)
+                properties=host.plan_character_property_transfer(original,namespace)
+        return StagedCharacterRebuild(original,namespace,registration,properties)
 
 
 class TransferStagedBodyCharacterData:
