@@ -45,7 +45,7 @@ class PreservedDeformer:
     uuid: str
     node_type: str
     mesh_stack: tuple[tuple[str, int], ...]
-    settings: tuple[tuple[str, float], ...]
+    settings: tuple[tuple[str, float | tuple[float, ...]], ...]
     aliases: tuple[str, ...]
     connections: tuple[tuple[str, str], ...]
 

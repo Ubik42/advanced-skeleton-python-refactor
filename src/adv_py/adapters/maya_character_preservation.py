@@ -69,9 +69,17 @@ def capture_deformer(host,node,mesh_stack):
            'wrap':('envelope','falloffMode','maxDistance','autoWeightThreshold','weightThreshold',
                    'exclusiveBind','smoothness')}
     settings=[]
+    def numeric(value):
+        if isinstance(value,list) and len(value)==1 and isinstance(value[0],tuple):
+            value=value[0]
+        if isinstance(value,(int,float)) and not isinstance(value,bool):return float(value)
+        if isinstance(value,bool):return float(value)
+        if isinstance(value,(tuple,list)) and all(isinstance(item,(int,float)) for item in value):
+            return tuple(float(item) for item in value)
+        raise CharacterRegistryError('生产变形器参数类型不受支持：'+node)
     for name in names[kind]:
         if c.objExists(node+'.'+name):
-            settings.append((name,float(c.getAttr(node+'.'+name))))
+            settings.append((name,numeric(c.getAttr(node+'.'+name))))
     if kind=='blendShape':
         for index in c.getAttr(node+'.weight',multiIndices=True) or []:
             settings.append((f'weight[{index}]',float(c.getAttr(node+f'.weight[{index}]'))))
