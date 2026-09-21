@@ -1,0 +1,11 @@
+{
+  "ten_complete_samples": true,
+  "body_pose_verified": true,
+  "limb_control_motion": true,
+  "other_control_curves_preserved": true,
+  "single_undo": true,
+  "single_redo": true,
+  "limb": "leg",
+  "max_body_error": 1.7763568394002505e-15,
+  "status": "passed"
+}

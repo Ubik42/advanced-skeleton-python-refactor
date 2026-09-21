@@ -157,6 +157,14 @@
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_control_spine_smoke.py validation\results\maya2024-mocap-control-spine.json
 
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_control_limb_smoke.py validation\results\maya2024-mocap-control-arm.json arm
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_control_limb_smoke.py validation\results\maya2024-mocap-control-leg.json leg
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_control_four_limbs_smoke.py validation\results\maya2024-mocap-four-limbs-basic.json
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_control_four_limbs_smoke.py validation\results\maya2024-mocap-four-limbs-hand.json --hand
+
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_source_smoke.py validation\results\maya2024-mocap-source.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_mapping_smoke.py validation\results\maya2024-mocap-mapping.json

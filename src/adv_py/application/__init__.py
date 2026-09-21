@@ -507,6 +507,8 @@ __all__ = [
     "ImportMocapFbx", "MocapFbxImportPlan", "MocapFbxImportResult",
     "RetargetMocapRootToCharacter", "MocapRootControlPlan", "MocapRootControlSample",
     "RetargetMocapSpineToCharacter", "MocapSpineControlPlan", "MocapSpineControlSample",
+    "RetargetMocapLimbToCharacter", "MocapLimbControlPlan", "MocapLimbControlSample",
+    "RetargetMocapFourLimbsToCharacter", "MocapFourLimbControlPlan", "MocapLimbSource",
     "ConnectMocapBody",
     "DisconnectMocapBody",
     "MocapBodyConnectionHost",
@@ -602,3 +604,5 @@ from .character_rebuild import RebuildBodyCharacter
 from .variable_body_fit import BuildVariableBodySourceFit
 from .mocap_control_retarget import (RetargetMocapRootToCharacter,MocapRootControlPlan,MocapRootControlSample,
     RetargetMocapSpineToCharacter,MocapSpineControlPlan,MocapSpineControlSample)
+from .mocap_control_retarget import RetargetMocapLimbToCharacter,MocapLimbControlPlan,MocapLimbControlSample
+from .mocap_control_retarget import RetargetMocapFourLimbsToCharacter,MocapFourLimbControlPlan,MocapLimbSource

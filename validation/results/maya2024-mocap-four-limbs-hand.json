@@ -1,0 +1,14 @@
+{
+  "all_groups_have_ten_samples": true,
+  "all_four_limb_poses_verified": true,
+  "all_fk_curves_written": true,
+  "other_controls_unchanged": true,
+  "outside_keys_preserved": true,
+  "third_limb_failure_rolls_back": true,
+  "single_undo_restores_every_limb": true,
+  "single_redo_restores_every_limb": true,
+  "reopened_animation": true,
+  "joint_count": 70,
+  "max_body_error": 3.552713678800501e-15,
+  "status": "passed"
+}

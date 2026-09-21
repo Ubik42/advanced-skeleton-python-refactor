@@ -126,3 +126,63 @@ class MayaMocapControlHost(MayaBodyBuildHost):
                 if any(error(matrix(path),wanted)>1e-4 for path,wanted in zip(body[1:],sample.body_matrices)):
                     raise RuntimeError('动捕脊柱控制曲线验收失败：frame='+str(sample.frame))
         return tuple(samples)
+
+    def write_mocap_limb_control_keys(self,plan):
+        from math import sqrt
+        from maya.api.OpenMaya import MMatrix,MTransformationMatrix
+        from adv_py.application.mocap_control_retarget import MocapLimbControlSample
+        self._require_transaction()
+        registration=plan.spine.root.registration
+        self.preflight_character_keyframe(registration)
+        c=self._cmds
+        def matrix(node):return MMatrix(c.xform(node,query=True,worldSpace=True,matrix=True))
+        def error(left,right):return max(abs(a-b) for a,b in zip(left,right))
+        def rotation(value):return MTransformationMatrix(value).rotation().asMatrix()
+        def rotated_local(original,delta):
+            result=list(rotation(original)*delta)
+            for offset in (0,4,8):
+                size=sqrt(sum(original[offset+axis]**2 for axis in range(3)))
+                if size<1e-8:raise CharacterRegistryError('目标四肢包含退化缩放')
+                for axis in range(3):result[offset+axis]*=size
+            result[12:15]=[original[12],original[13],original[14]]
+            return MMatrix(result)
+        self._transaction_changed=True
+        samples=[]
+        with self._character_sampling_time(preserve_modified=False) as seek:
+            seek(plan.spine.root.reference_frame)
+            reference=tuple(rotation(matrix(joint)*matrix(parent).inverse())
+                            for joint,parent in zip(plan.source_joints,plan.source_parents))
+            for frame in plan.spine.root.frames:
+                seek(frame)
+                if abs(float(c.getAttr(plan.blend_plug)))>1e-8:
+                    raise CharacterRegistryError('动捕四肢转移要求采样帧处于 FK 模式：'
+                        +plan.limb+' '+plan.side+' frame='+str(frame))
+                deltas=tuple(ref.inverse()*rotation(matrix(joint)*matrix(parent).inverse())
+                    for ref,joint,parent in zip(reference,plan.source_joints,plan.source_parents))
+                pose=self.capture_character_pose(registration)
+                wanted=[]
+                with self._character_static_controls(registration,pose):
+                    for joint,parent,control,delta in zip(plan.target_joints,plan.target_parents,plan.controls,deltas):
+                        parent_matrix=matrix(parent);actual=matrix(joint)
+                        desired=rotated_local(actual*parent_matrix.inverse(),delta)*parent_matrix
+                        target=matrix(control)*actual.inverse()*desired
+                        self._spine_set_world_rotation(control,target)
+                        evaluated=matrix(joint)
+                        if error(evaluated,desired)>1e-4:
+                            raise CharacterRegistryError('动捕四肢姿态不能由 FK 控制器精确表达：'
+                                +str((frame,joint,error(evaluated,desired))))
+                        wanted.append(tuple(desired))
+                    values=tuple(float(c.getAttr(control+'.rotate'+axis))
+                                 for control in plan.controls for axis in 'XYZ')
+                samples.append(MocapLimbControlSample(frame,values,tuple(wanted)))
+            for sample in samples:
+                for index,control in enumerate(plan.controls):
+                    for axis,value in zip('XYZ',sample.control_values[index*3:index*3+3]):
+                        c.setKeyframe(control,attribute='rotate'+axis,time=sample.frame,value=value,
+                                      inTangentType='linear',outTangentType='linear')
+            for sample in samples:
+                seek(sample.frame)
+                if any(error(matrix(joint),wanted)>1e-4
+                       for joint,wanted in zip(plan.target_joints,sample.body_matrices)):
+                    raise RuntimeError('动捕四肢控制曲线验收失败：frame='+str(sample.frame))
+        return tuple(samples)
