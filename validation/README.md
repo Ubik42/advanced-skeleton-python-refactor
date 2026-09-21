@@ -265,3 +265,14 @@
 ```
 
 默认使用 70 关节五指 Body；`--basic` 使用 30 关节基础 Body。两者均验证 7 个 Torso FK 控制和 16 处四肢空间连接，以及 FK 传递、IK 目标保持、拉伸起点跟随、全局缩放、失败回滚与 Undo / Redo。首次初始化的 Maya 共享 IK solver 节点允许由宿主保留；角色节点和原 Body 姿态必须完整恢复。
+
+## 脊柱 IK/FK 与双向匹配
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' `
+  validation\maya_body_spine_smoke.py validation\results\maya2024-body-spine.json
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' `
+  validation\maya_body_spine_smoke.py validation\results\maya2024-body-spine-basic.json --basic
+```
+
+分别使用 70 / 30 关节自生成 Body，验证直立与弯曲姿态双向匹配、混合、独立腰部 roll、骨盆隔离、全局变换下姿态保持、非法输入拒绝、失败回滚与匹配 / 构建 Undo、Redo。运行时匹配阈值为全部 Body 世界矩阵逐元素 `1e-4`；详细误差保存在本机 JSON。

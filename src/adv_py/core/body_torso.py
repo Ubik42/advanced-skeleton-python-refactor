@@ -9,6 +9,7 @@ from .body_limb_controls import (
     audit_body_limb_fk_controls,
 )
 from .body_skeleton import BodySkeletonSnapshot
+from .body_spine import BodySpinePlan, with_spine_ik
 from .body_limb_mechanisms import BodyLimbMechanismPlan
 from .body_limb_stretch import BodyLimbStretchPlan
 from .fit_settings import FitSkeletonValidationError
@@ -50,6 +51,7 @@ class BodyTorsoPlan:
     controls: BodyLimbFkControlPlan
     pelvis_translation: BodySpaceAttachment
     attachments: tuple[BodySpaceAttachment, ...]
+    spine: BodySpinePlan | None = None
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -57,7 +59,7 @@ class BodyTorsoPlan:
             name for control in self.controls.controls
             for name in (control.offset_name, control.control_name,
                          control.control_name + "Shape", control.constraint_name)
-        ) + tuple(item.name for item in (self.pelvis_translation,) + self.attachments)
+        ) + tuple(item.name for item in (self.pelvis_translation,) + self.attachments) + (self.spine.node_names if self.spine else ())
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +70,7 @@ class BodyTorsoSnapshot:
 
 def plan_body_torso(
     body: BodySkeletonSnapshot, arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan,
-    *, radius: float = 2.0,
+    *, radius: float = 2.0, spine_ik: bool = False,
 ) -> BodyTorsoPlan:
     if isinstance(radius, bool) or not isinstance(radius, (int, float)) or not isfinite(radius) or radius <= 0:
         raise FitSkeletonValidationError("Torso 控制半径必须是正有限数")
@@ -126,7 +128,8 @@ def plan_body_torso(
             attachments.append(BodySpaceAttachment(
                 f"AdvPy_Torso{label}StretchOrigin_{suffix}", source, stretches[0].start_path, "parentConstraint", True,
             ))
-    return BodyTorsoPlan(BodyLimbFkControlPlan(root_path, root_name, tuple(controls)), pelvis, tuple(attachments))
+    plan = BodyTorsoPlan(BodyLimbFkControlPlan(root_path, root_name, tuple(controls)), pelvis, tuple(attachments))
+    return with_spine_ik(body, plan) if spine_ik else plan
 
 
 def audit_body_torso(plan: BodyTorsoPlan, snapshot: BodyTorsoSnapshot) -> tuple[str, ...]:

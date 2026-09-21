@@ -138,8 +138,11 @@ class BuildBodyCharacterRig:
         twist_joints_per_segment: int = 2,
         center_tolerance: float = 0.01,
         include_torso: bool = False,
+        include_spine_ik: bool = False,
         torso_control_radius: float = 2.0,
     ) -> BodyCharacterRigBuildPlan:
+        if not isinstance(include_spine_ik, bool) or (include_spine_ik and not include_torso):
+            raise FitSkeletonValidationError("Spine IK 必须以布尔参数显式启用，并包含 Torso")
         if not isinstance(include_torso, bool):
             raise FitSkeletonValidationError("include_torso 必须是布尔值")
         safety = self._inspector.execute(
@@ -178,7 +181,7 @@ class BuildBodyCharacterRig:
                 f"缺少 {len(missing)} 个关节：" + "、".join(missing),
             )
         torso = (
-            self._torso.plan_from_safety(safety, arm, leg, radius=torso_control_radius)
+            self._torso.plan_from_safety(safety, arm, leg, radius=torso_control_radius, spine_ik=include_spine_ik)
             if include_torso else None
         )
         driven_roots = (
@@ -238,6 +241,7 @@ class BuildBodyCharacterRig:
         twist_joints_per_segment: int = 2,
         center_tolerance: float = 0.01,
         include_torso: bool = False,
+        include_spine_ik: bool = False,
         torso_control_radius: float = 2.0,
     ) -> BodyCharacterRigBuildResult:
         plan = self.plan(
@@ -248,6 +252,7 @@ class BuildBodyCharacterRig:
             hand_control_radius=hand_control_radius,
             global_control_radius=global_control_radius,
             include_torso=include_torso,
+            include_spine_ik=include_spine_ik,
             torso_control_radius=torso_control_radius,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,

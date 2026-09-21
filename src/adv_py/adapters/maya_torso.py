@@ -17,7 +17,13 @@ class MayaBodyTorsoMixin:
                 raise FitSkeletonValidationError(f"Torso 通道已有输入或锁定：{plug}")
 
     def preflight_body_torso(self, plan):
+        planned_joints = {j.path for j in plan.spine.joints} if plan.spine else set()
+        if plan.spine:
+            for target in plan.spine.body_joints[1:]:
+                self._preflight_torso_channels(target, tuple(kind + axis for kind in ("translate", "rotate") for axis in "XYZ"))
         for spec in plan.controls.controls:
+            if spec.driven_joint in planned_joints:
+                continue
             attributes = tuple(f"rotate{axis}" for axis in "XYZ")
             if spec.driven_joint == plan.pelvis_translation.target:
                 attributes += tuple(f"{kind}{axis}" for kind in ("translate", "scale") for axis in "XYZ")
@@ -31,6 +37,8 @@ class MayaBodyTorsoMixin:
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self.create_body_control_root(plan.controls.root_name)
+            if plan.spine:
+                self.prepare_body_spine(plan.spine)
             for spec in plan.controls.controls:
                 self._create_body_limb_fk_control(spec, "Torso")
                 locked = [f"scale{axis}" for axis in "XYZ"]
@@ -38,6 +46,8 @@ class MayaBodyTorsoMixin:
                     locked += [f"translate{axis}" for axis in "XYZ"]
                 for attr in locked:
                     self._cmds.setAttr(f"{spec.control_path}.{attr}", lock=True, keyable=False)
+            if plan.spine:
+                self.create_body_spine(plan.spine)
             for spec in (plan.pelvis_translation,) + plan.attachments:
                 self._preflight_torso_channels(spec.target, spec.attributes)
                 command = self._cmds.parentConstraint if spec.kind == "parentConstraint" else self._cmds.pointConstraint
