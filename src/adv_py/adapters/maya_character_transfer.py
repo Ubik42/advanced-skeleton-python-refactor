@@ -17,6 +17,14 @@ def _curve_name(curve):
     return curve.node.rsplit(':',1)[-1]
 
 
+def _refresh_skin_inputs(c,host,skins):
+    for skin in skins:
+        node=host.scene_address(skin.node)
+        c.dgdirty(node+'.matrix')
+        for index,*_ in skin.influences:c.getAttr(node+f'.matrix[{index}]')
+        c.dgdirty(node)
+
+
 @contextmanager
 def _writable_connection(c,*plugs):
     """Temporarily unlock existing destinations without changing their contract."""
@@ -69,6 +77,7 @@ def sample(host,staged,frames,target=False):
         for frame in frames:
             seek(frame)
             pose=active.capture_character_pose(reg)
+            _refresh_skin_inputs(c,host,staged.original.skins)
             meshes=tuple((uuid,tuple(c.xform(_by_uuid(c,uuid)+'.vtx[*]',q=True,ws=True,t=True)))
                 for skin in staged.original.skins for _,uuid,_ in skin.meshes)
             attachments=tuple((row.uuid,tuple(c.xform(_by_uuid(c,row.uuid),q=True,ws=True,matrix=True)))
@@ -172,6 +181,11 @@ def transfer(host,staged):
             if row.parent and host.scene_address(row.parent) in old_nodes:
                 c.parent(node,old_nodes[host.scene_address(row.parent)],relative=True)
         c.currentTime(c.currentTime(q=True),edit=True,update=True)
+        # A static rig has no time-driven transform to invalidate Maya's skin
+        # matrix cache after rewiring. Pull the new influence inputs before
+        # dirtying the retained deformer; otherwise live geometry can differ
+        # from the identical scene evaluated after reopening.
+        _refresh_skin_inputs(c,host,old.skins)
         lock_and_verify(target,staged.custom_properties,apply_locks=True)
         target.read_character_registration()
     finally:

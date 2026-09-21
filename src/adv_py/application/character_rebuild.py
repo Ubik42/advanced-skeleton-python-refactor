@@ -35,7 +35,7 @@ class StageBodyCharacterRebuild:
         with TemporaryDirectory(prefix='adv-py-rebuild-') as directory:
             fit=Path(directory)/'source.fit.json'
             ExportFitSkeleton(host).apply(fit,original.registration.container)
-            with host.transaction('Stage replacement character'):
+            with host.character_rebuild_transaction('Stage replacement character'):
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('重建暂存前原角色发生变化')
                 stage=host.create_character_rebuild_host(namespace)
@@ -73,10 +73,30 @@ class TransferStagedBodyCharacterData:
         frames=tuple(sorted({*keys,*[(a+b)/2 for a,b in zip(keys,keys[1:])]}))
         if len(frames)>2000:raise CharacterRegistryError('交接复检采样最多 2000 帧，需要分段验证策略')
         before=host.sample_character_transfer(staged,frames)
-        with host.transaction('Transfer preserved data to replacement rig'):
+        with host.character_rebuild_transaction('Transfer preserved data to replacement rig'):
             host.transfer_character_data(staged)
-            after=host.sample_character_transfer(staged,frames,target=True)
-            if character_transfer_error(before,after)>1e-4:
-                raise RuntimeError('交接改变身体、控制空间、蒙皮或用户附件')
             host.verify_character_retained_data(staged)
+            after=host.sample_character_transfer(staged,frames,target=True)
+            error=character_transfer_error(before,after)
+            if error>1e-4:
+                raise RuntimeError('交接改变身体、控制空间、蒙皮或用户附件；最大误差：'+str(error))
         return staged
+
+
+class RebuildBodyCharacter:
+    """Same-layout replacement, including creation and cleanup in one Undo."""
+    def __init__(self,host):self._host=host
+
+    def apply(self,namespace,*,extensions=()):
+        host=self._host
+        with host.transaction('Rebuild character preserving user data'):
+            staged=StageBodyCharacterRebuild(host).apply(namespace,extensions=extensions)
+            TransferStagedBodyCharacterData(host).apply(staged)
+            keys=sorted({staged.original.current_time,*[t for curve in staged.original.curves for t in curve.times]})
+            frames=tuple(sorted({*keys,*[(a+b)/2 for a,b in zip(keys,keys[1:])]}))
+            before=host.sample_character_transfer(staged,frames,target=True)
+            promoted=host.promote_character_rebuild(staged)
+            after=host.sample_character_transfer(promoted,frames,target=True)
+            if character_transfer_error(before,after)>1e-4:
+                raise RuntimeError('原位替换改变身体、蒙皮或用户数据')
+        return promoted

@@ -9,6 +9,14 @@ from adv_py.core.body_skeleton import audit_body_provenance, oriented_body_prove
 
 
 class MayaCharacterRegistryMixin:
+    def character_rebuild_transaction(self,label):
+        from contextlib import nullcontext
+        return nullcontext() if self._transaction_active else self.transaction(label)
+
+    def promote_character_rebuild(self,staged):
+        from .maya_character_promotion import promote
+        return promote(self,staged)
+
     def match_character_rebuild_solver(self,stage,registration):
         if self._cmds.ikHandle('AdvPy_SpineIKHandle',q=True,solver=True)=='AdvPy_SpineRPSolver':
             with stage.transaction('Match replacement spine solver'):

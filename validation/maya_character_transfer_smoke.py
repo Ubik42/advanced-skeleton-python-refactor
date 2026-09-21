@@ -7,9 +7,9 @@ sys.path.insert(0,str(ROOT/'src'))
 import maya.standalone
 
 
-def main(source,folder,reopen=False,partner=False,prepared=False,custom=False):
+def main(source,folder,reopen=False,partner=False,prepared=False,custom=False,promoted=False):
     source_namespace="partner" if partner else "hero"
-    target_namespace=source_namespace+"_rebuild"
+    target_namespace=source_namespace if promoted else source_namespace+"_rebuild"
     folder=folder.resolve();folder.mkdir(parents=True,exist_ok=True)
     maya.standalone.initialize(name='python')
     try:

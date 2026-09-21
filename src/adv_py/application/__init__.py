@@ -590,3 +590,4 @@ from .character_preservation import CaptureBodyCharacterPreservation
 from .character_rebuild import StageBodyCharacterRebuild
 
 from .character_rebuild import TransferStagedBodyCharacterData
+from .character_rebuild import RebuildBodyCharacter
