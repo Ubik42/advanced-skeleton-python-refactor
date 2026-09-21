@@ -1,6 +1,6 @@
 from dataclasses import replace
 import unittest
-from adv_py.core.character_preservation import CharacterPreservation,PreservedCurve,PreservedSkin,validate_preservation,validate_rebuild_layout
+from adv_py.core.character_preservation import CharacterPreservation,PreservedCurve,PreservedSkin,PreservedDeformer,validate_preservation,validate_rebuild_layout
 from adv_py.core.character_registry import CharacterRegistryError
 from test_character_registry import registration_fixture
 from test_character_pose import pose_fixture
@@ -33,6 +33,18 @@ class CharacterPreservationTests(unittest.TestCase):
                     replace(self.snapshot,skins=(replace(skin,weights=((0,((9,1.),)),)),)),
                     replace(self.snapshot,skins=(replace(skin,settings=(('envelope',float('nan')),)),))):
             with self.assertRaises(CharacterRegistryError):validate_preservation(bad)
+
+    def test_deformer_stack_is_part_of_preservation_contract(self):
+        deformer=PreservedDeformer('blend','blend-id','blendShape',(('meshShape',2),),
+                                  (('envelope',.6),('weight[0]',.4)),('smile','weight[0]'),())
+        retained=replace(self.snapshot,deformers=(deformer,))
+        self.assertNotEqual(retained.content_digest,self.snapshot.content_digest)
+        self.assertNotEqual(replace(retained,deformers=(replace(deformer,settings=(('envelope',.7),)),)).content_digest,
+                            retained.content_digest)
+        for invalid in (replace(deformer,node_type='unknown'),replace(deformer,mesh_stack=()),
+                        replace(deformer,settings=(('envelope',float('nan')),))):
+            with self.assertRaises(CharacterRegistryError):
+                validate_preservation(replace(self.snapshot,deformers=(invalid,)))
 
     def test_replacement_requires_explicit_topology_and_bind_layout_compatibility(self):
         reg=self.snapshot.registration

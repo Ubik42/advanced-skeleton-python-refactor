@@ -8,10 +8,10 @@ from contextlib import contextmanager
 from adv_py.core.character_identity import CharacterIdentity, SHARED_NODES
 from adv_py.core.character_registry import CharacterRegistryError
 
-_NODE_ARGS = frozenset('ls objExists nodeType listRelatives listConnections listHistory referenceQuery lockNode xform delete deleteAttr rename parent connectAttr disconnectAttr isConnected connectionInfo getAttr addAttr attributeQuery joint circle makeIdentity exactWorldBoundingBox pointPosition polyEvaluate keyframe keyTangent setKeyframe skinCluster skinPercent orientConstraint parentConstraint pointConstraint scaleConstraint poleVectorConstraint ikHandle polyUnite'.split())
+_NODE_ARGS = frozenset('ls objExists nodeType listRelatives listConnections listHistory aliasAttr referenceQuery lockNode xform delete deleteAttr rename parent connectAttr disconnectAttr isConnected connectionInfo getAttr addAttr attributeQuery joint circle makeIdentity exactWorldBoundingBox pointPosition polyEvaluate keyframe keyTangent setKeyframe skinCluster skinPercent orientConstraint parentConstraint pointConstraint scaleConstraint poleVectorConstraint ikHandle polyUnite'.split())
 _NODE_RESULTS = frozenset('listRelatives listConnections listHistory rename parent createNode joint circle skinCluster orientConstraint parentConstraint pointConstraint scaleConstraint poleVectorConstraint ikHandle polyCylinder polyCube polyUnite'.split())
 _GLOBAL = frozenset('currentTime currentUnit upAxis undoInfo undo file pluginInfo loadPlugin allNodeTypes'.split())
-_READ = frozenset('ls listAttr objExists nodeType listRelatives listConnections listHistory referenceQuery connectionInfo getAttr attributeQuery isConnected exactWorldBoundingBox pointPosition polyEvaluate'.split())
+_READ = frozenset('ls listAttr objExists nodeType listRelatives listConnections listHistory aliasAttr referenceQuery connectionInfo getAttr attributeQuery isConnected exactWorldBoundingBox pointPosition polyEvaluate'.split())
 _CREATE = frozenset('createNode joint circle ikHandle skinCluster orientConstraint parentConstraint pointConstraint scaleConstraint poleVectorConstraint polyCylinder polyCube polyUnite setKeyframe'.split())
 _NODE_ARGS |= {'aimConstraint'}
 _NODE_RESULTS |= {'aimConstraint'}

@@ -40,6 +40,17 @@ class PreservedSkin:
 
 
 @dataclass(frozen=True)
+class PreservedDeformer:
+    node: str
+    uuid: str
+    node_type: str
+    mesh_stack: tuple[tuple[str, int], ...]
+    settings: tuple[tuple[str, float], ...]
+    aliases: tuple[str, ...]
+    connections: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
 class PreservedExtension:
     path: str
     uuid: str
@@ -69,6 +80,7 @@ class CharacterPreservation:
     skins: tuple[PreservedSkin, ...]
     extensions: tuple[PreservedExtension, ...]
     properties: tuple[PreservedExtension, ...] = ()
+    deformers: tuple[PreservedDeformer, ...] = ()
 
     @property
     def content_digest(self):
@@ -81,7 +93,7 @@ def validate_preservation(snapshot):
     # Reject non-finite data at every level, including retained custom values.
     try:canonical(asdict(snapshot))
     except (ValueError,TypeError) as exc:raise CharacterRegistryError('重建保留数据包含不可序列化或非有限数值') from exc
-    for rows in (snapshot.curves,snapshot.skins,snapshot.extensions,snapshot.properties):
+    for rows in (snapshot.curves,snapshot.skins,snapshot.extensions,snapshot.properties,snapshot.deformers):
         if len({r.uuid for r in rows})!=len(rows):raise CharacterRegistryError('重建保留对象身份重复')
     for curve in snapshot.curves:
         count=len(curve.times)
@@ -99,6 +111,11 @@ def validate_preservation(snapshot):
         for _,weights in skin.weights:
             if any(i not in indices or value<0 for i,value in weights):
                 raise CharacterRegistryError('蒙皮权重引用未知影响或包含负值')
+    for deformer in snapshot.deformers:
+        if (deformer.node_type not in ('blendShape','deltaMush','wrap')
+                or not deformer.mesh_stack
+                or len(set(deformer.mesh_stack))!=len(deformer.mesh_stack)):
+            raise CharacterRegistryError('生产变形器类型或网格顺序无效')
     return snapshot
 
 

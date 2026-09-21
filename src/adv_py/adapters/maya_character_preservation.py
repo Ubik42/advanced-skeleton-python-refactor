@@ -1,7 +1,7 @@
 """Capture original curves, sparse skin storage and explicit extension objects."""
 from adv_py.core.character_registry import CharacterRegistryError
 from dataclasses import replace
-from adv_py.core.character_preservation import PreservedCurve, PreservedSkin, PreservedExtension, CharacterPreservation, validate_preservation
+from adv_py.core.character_preservation import PreservedCurve, PreservedSkin, PreservedDeformer, PreservedExtension, CharacterPreservation, validate_preservation
 
 
 def _plug(host,plug):
@@ -56,6 +56,41 @@ def capture_skin(host,node):
         'weightDistribution','bindMethod','useComponents','deformUserNormals','dqsSupportNonRigid') if c.objExists(node+'.'+attr))
     blend=tuple((i,float(c.getAttr(node+f'.blendWeights[{i}]'))) for i in c.getAttr(node+'.blendWeights',multiIndices=True) or [])
     return PreservedSkin(node,c.ls(node,uuid=True)[0],tuple(geometries),settings,tuple(influences),tuple(weights),blend,connections(host,node))
+
+
+def capture_deformer(host,node,mesh_stack):
+    c=host._cmds
+    kind=c.nodeType(node)
+    if kind not in ('blendShape','deltaMush','wrap'):
+        raise CharacterRegistryError('未声明的生产变形器类型：'+kind)
+    names={'blendShape':('envelope','origin','supportNegativeWeights'),
+           'deltaMush':('envelope','smoothingIterations','smoothingStep','pinBorderVertices',
+                        'inwardConstraint','outwardConstraint','distanceWeight','displacement'),
+           'wrap':('envelope','falloffMode','maxDistance','autoWeightThreshold','weightThreshold',
+                   'exclusiveBind','smoothness')}
+    settings=[]
+    for name in names[kind]:
+        if c.objExists(node+'.'+name):
+            settings.append((name,float(c.getAttr(node+'.'+name))))
+    if kind=='blendShape':
+        for index in c.getAttr(node+'.weight',multiIndices=True) or []:
+            settings.append((f'weight[{index}]',float(c.getAttr(node+f'.weight[{index}]'))))
+    aliases=tuple(c.aliasAttr(node,query=True) or [])
+    return PreservedDeformer(host._resolve_connected_node(node),c.ls(node,uuid=True)[0],kind,
+                             tuple(sorted(mesh_stack)),tuple(settings),aliases,connections(host,node))
+
+
+def capture_deformers(host,skins):
+    c=host._cmds
+    stacks={}
+    for skin in skins:
+        for shape,_,_ in skin.meshes:
+            history=c.listHistory(host.scene_address(shape),pruneDagObjects=True) or []
+            for index,node in enumerate(history):
+                if c.nodeType(node) in ('blendShape','deltaMush','wrap'):
+                    path=host._resolve_connected_node(node)
+                    stacks.setdefault(path,[]).append((shape,index))
+    return tuple(capture_deformer(host,node,stacks[node]) for node in sorted(stacks))
 
 
 def capture_extension(host,node):
@@ -143,4 +178,4 @@ def capture(host,registration,extensions):
                 curves.add(node)
     return validate_preservation(CharacterPreservation(registration,host.capture_character_pose(registration),
         float(c.currentTime(q=True)),host.character_time_unit(),host.namespace,tuple(capture_curve(host,node) for node in sorted(curves)),
-        tuple(skins),extension_rows,tuple(properties)))
+        tuple(skins),extension_rows,tuple(properties),capture_deformers(host,skins)))
