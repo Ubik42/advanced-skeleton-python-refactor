@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .maya_character_registry import MayaCharacterRegistryMixin
 from .maya_torso import MayaBodyTorsoMixin
 from .maya_spine import MayaBodySpineMixin
 from .maya_control_spaces import MayaBodyControlSpacesMixin
@@ -264,7 +265,7 @@ _BODY_EXPORT_BAKE_ATTRIBUTES = {
 }
 
 
-class MayaBodyBuildHost(MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
+class MayaBodyBuildHost(MayaCharacterRegistryMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
     """Maya scene adapter for the first materialized Body skeleton stage."""
 
     def create_body_joint(self, spec: BodyJointSpec) -> str:

@@ -1,3 +1,4 @@
+from .character_registry import RegisterBodyCharacter, ResolveBodyCharacter
 """Host-independent application use cases."""
 
 from .body_control_spaces import SwitchBodyControlSpace
@@ -339,6 +340,8 @@ from .upper_body_fit import (
 )
 
 __all__ = [
+    "RegisterBodyCharacter",
+    "ResolveBodyCharacter",
     "SwitchBodyControlSpace",
     "MatchBodySpine",
     "BuildBodyTorso",

@@ -292,3 +292,15 @@ py -3 -m unittest discover -s tests
 综合脚本覆盖 Fit → Body → Spine / Torso / Arm / Leg / Hand / Global / 控制空间 → 显式蒙皮，核对权重和实际顶点变形。一次 Undo / Redo 必须恢复原有世界矩阵与网格位置，不能只以节点存在判断重做成功。蒙皮后注入失败必须移除整个新建角色，保留原有场景标记和选择。
 
 局部机制定位使用 `maya_body_spine_smoke.py` 与 `maya_body_control_spaces_smoke.py`，输出路径作为第一个参数，`--basic` 切换为 30 关节。两者包含非法状态拒绝和失败回滚；空间脚本另外验证身体 / Global 跟随关系。结果写入已忽略的 `validation/results/`，不提交本机日志。
+
+
+## 角色登记的独立进程重开验收
+
+在仓库目录按顺序执行，两条命令各启动一个独立 Maya standalone 进程：
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_registry_smoke.py validation/results/registry70 write
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_registry_smoke.py validation/results/registry70 read
+```
+
+30 关节案例将目录改为 `registry30`，两条命令均追加 `--basic`。write 阶段生成、登记、验证 Undo / Redo 后保存 `.ma`，read 阶段在新进程中只从场景登记恢复角色。覆盖只读解析、脊柱双向匹配、全部空间切换、输入连接污染与改名 / 损坏数据拒绝。首版仅支持完整控制组合、无 namespace、非引用的单角色。
