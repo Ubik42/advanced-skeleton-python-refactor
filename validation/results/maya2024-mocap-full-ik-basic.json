@@ -13,6 +13,6 @@
   "reopened_keys": true,
   "reopened_distal_pose": true,
   "joint_count": 30,
-  "max_body_error": 1.7763568394002505e-15,
+  "max_body_error": 2.7869524176438176e-05,
   "status": "passed"
 }

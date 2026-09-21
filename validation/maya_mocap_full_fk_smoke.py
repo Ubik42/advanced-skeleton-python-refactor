@@ -8,7 +8,7 @@ sys.path[:0]=[str(ROOT/'src'),str(ROOT/'examples')]
 import maya.standalone
 
 
-def main(output,with_hand=False):
+def main(output,with_hand=False,with_ik=False):
     output.parent.mkdir(parents=True,exist_ok=True)
     maya.standalone.initialize(name='python')
     try:
@@ -16,7 +16,7 @@ def main(output,with_hand=False):
         from maya_complete_character import build_character
         from adv_py.adapters import MayaMocapControlHost
         from adv_py.application import (RegisterBodyCharacter,RetargetMocapFullFkToCharacter,
-            MocapLimbSource)
+            RetargetMocapFullLimbIkToCharacter,EnableBodyCharacterLimbAnimation,MocapLimbSource)
         from adv_py.core import MocapJointMapping,MocapMappingPreset
 
         cmds.file(new=True,force=True);cmds.undoInfo(state=True);cmds.upAxis(axis='z',rotateView=False)
@@ -63,7 +63,10 @@ def main(output,with_hand=False):
                 cmds.setKeyframe(source[name],attribute='rotate'+axis,time=frame,value=amount*value)
             for path,attribute,value in animated:
                 cmds.setKeyframe(path,attribute=attribute,time=frame,value=amount*value)
-        host=MayaMocapControlHost();service=RetargetMocapFullFkToCharacter(host)
+        host=MayaMocapControlHost()
+        if with_ik:registration=EnableBodyCharacterLimbAnimation(host).apply()
+        service=(RetargetMocapFullLimbIkToCharacter(host) if with_ik else
+                 RetargetMocapFullFkToCharacter(host))
         channels={row.key:row for row in registration.channels}
         old_keys=(channels['leg.fk.ToesFK_R.rotateZ'],)
         if with_hand:
@@ -84,7 +87,37 @@ def main(output,with_hand=False):
         options=dict(start_frame=1,end_frame=10)
         before=host.capture_character_key_state(registration)
         plan=service.plan_with_preset(root,preset,**options)
-        roots,spines,uppers,limbs,distals=service.apply_with_preset(root,preset,**options)
+        class FailedHost(MayaMocapControlHost):
+            def write_mocap_distal_control_keys(self,plan):
+                super().write_mocap_distal_control_keys(plan)
+                raise RuntimeError('Injected distal failure')
+        failure_service=(RetargetMocapFullLimbIkToCharacter(FailedHost()) if with_ik else
+                         RetargetMocapFullFkToCharacter(FailedHost()))
+        try:failure_service.apply_with_preset(root,preset,**options)
+        except RuntimeError as exc:
+            if 'Injected distal failure' not in str(exc):raise
+            distal_rollback=host.capture_character_key_state(registration)==before
+        else:distal_rollback=False
+        conversion_rollback=True
+        if with_ik:
+            class FailedConversionHost(MayaMocapControlHost):
+                calls=0
+                def match_character_limb_samples(self,*args,**kwargs):
+                    result=super().match_character_limb_samples(*args,**kwargs)
+                    self.calls+=1
+                    if self.calls==3:raise RuntimeError('Injected third IK conversion failure')
+                    return result
+            try:RetargetMocapFullLimbIkToCharacter(FailedConversionHost()).apply_with_preset(
+                root,preset,**options)
+            except RuntimeError as exc:
+                if 'Injected third IK conversion failure' not in str(exc):raise
+                conversion_rollback=host.capture_character_key_state(registration)==before
+            else:conversion_rollback=False
+        if with_ik:
+            roots,spines,uppers,limbs,distals,conversions=service.apply_with_preset(root,preset,**options)
+        else:
+            roots,spines,uppers,limbs,distals=service.apply_with_preset(root,preset,**options)
+            conversions=()
         after=host.capture_character_key_state(registration)
         with host._character_sampling_time() as seek:
             errors=[]
@@ -99,24 +132,22 @@ def main(output,with_hand=False):
             'all_distal_controls_written':all(set(range(1,11)).issubset(set(
                 cmds.keyframe(control+'.rotate'+axis,query=True,timeChange=True) or []))
                 for control in plan.controls for axis in 'XYZ'),
-            'distal_body_pose_matches':max(errors)<1e-4,
+            'distal_body_pose_matches':max(errors)<(1e-3 if with_ik else 1e-4),
             'expected_source_and_target_count':len(plan.controls)==(32 if with_hand else 2),
+            'all_limb_modes_ik':not with_ik or (len(conversions)==4 and all(
+                abs(cmds.getAttr(next(ch for ch in registration.channels if ch.key==
+                    f'{limb}.settings.{limb}IkFk_{side}').node+'.'+
+                    f'{limb}IkFk_{side}',time=frame)-1.)<1e-8
+                for limb in ('arm','leg') for side in ('R','L') for frame in range(1,11))),
             'outside_keys_preserved':all(all(time in (cmds.keyframe(row.node+'.'+row.attribute,
                 query=True,timeChange=True) or []) for time in (0.,20.)) for row in old_keys),
+            'distal_failure_rolls_back':distal_rollback,
+            'ik_conversion_failure_rolls_back':conversion_rollback,
         }
         try:service.apply_with_preset(root,MocapMappingPreset('Incomplete',preset.mappings[:-1],
             len(registration.body)),**options)
         except ValueError:checks['incomplete_preset_rejected']=host.capture_character_key_state(registration)==after
         else:checks['incomplete_preset_rejected']=False
-        class FailedHost(MayaMocapControlHost):
-            def write_mocap_distal_control_keys(self,plan):
-                super().write_mocap_distal_control_keys(plan)
-                raise RuntimeError('Injected distal failure')
-        try:RetargetMocapFullFkToCharacter(FailedHost()).apply_with_preset(root,preset,**options)
-        except RuntimeError as exc:
-            if 'Injected distal failure' not in str(exc):raise
-            checks['distal_failure_rolls_back']=host.capture_character_key_state(registration)==after
-        else:checks['distal_failure_rolls_back']=False
         cmds.undo();checks['single_undo_restores_character']=host.capture_character_key_state(registration)==before
         cmds.redo();checks['single_redo_restores_character']=host.capture_character_key_state(registration)==after
         scene=output.with_suffix('.ma')
@@ -132,7 +163,7 @@ def main(output,with_hand=False):
         with reopened._character_sampling_time() as seek:
             seek(10.)
             checks['reopened_distal_pose']=all(max(abs(a-b) for a,b in zip(
-                cmds.xform(path,query=True,worldSpace=True,matrix=True),wanted))<1e-4
+                    cmds.xform(path,query=True,worldSpace=True,matrix=True),wanted))<(1e-3 if with_ik else 1e-4)
                 for path,wanted in zip(plan.target_joints,distals[-1].body_matrices))
         result={**checks,'joint_count':len(registration.body),'max_body_error':max(errors),
             'status':'passed' if all(checks.values()) else 'failed'}
@@ -141,4 +172,5 @@ def main(output,with_hand=False):
     finally:maya.standalone.uninitialize()
 
 
-if __name__=='__main__':raise SystemExit(main(Path(sys.argv[1]).resolve(),'--hand' in sys.argv[2:]))
+if __name__=='__main__':raise SystemExit(main(Path(sys.argv[1]).resolve(),
+    '--hand' in sys.argv[2:],'--ik' in sys.argv[2:]))

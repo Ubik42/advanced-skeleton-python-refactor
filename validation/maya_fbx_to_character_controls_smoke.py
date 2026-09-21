@@ -9,7 +9,7 @@ sys.path[:0]=[str(ROOT/'src'),str(ROOT/'examples')]
 import maya.standalone
 
 
-def main(output,with_upper=False,with_full=False,with_hand=False):
+def main(output,with_upper=False,with_full=False,with_hand=False,with_ik=False):
     output.parent.mkdir(parents=True,exist_ok=True)
     maya.standalone.initialize(name='python')
     try:
@@ -19,6 +19,7 @@ def main(output,with_upper=False,with_full=False,with_hand=False):
         from adv_py.application import (RegisterBodyCharacter,ImportMocapFbx,
             RetargetMocapFourLimbsToCharacter,MocapLimbSource,InspectMocapSource,
             RetargetMocapUpperAndFourLimbsToCharacter,RetargetMocapFullFkToCharacter,
+            RetargetMocapFullLimbIkToCharacter,EnableBodyCharacterLimbAnimation,
             save_mocap_mapping_preset,
             load_mocap_mapping_preset)
         from adv_py.core import MocapJointMapping,MocapMappingPreset
@@ -26,6 +27,7 @@ def main(output,with_upper=False,with_full=False,with_hand=False):
         if not cmds.pluginInfo('fbxmaya',query=True,loaded=True):cmds.loadPlugin('fbxmaya',quiet=True)
         built=build_character(with_hand=with_hand)
         registration=RegisterBodyCharacter(built.host).apply(built.rig)
+        if with_ik:registration=EnableBodyCharacterLimbAnimation(MayaMocapControlHost()).apply()
         cmds.namespace(add='TakeA')
         root=cmds.createNode('joint',name='TakeA:Hips',skipSelect=True)
         spine=cmds.createNode('joint',name='TakeA:Spine',parent=root,skipSelect=True)
@@ -109,17 +111,21 @@ def main(output,with_upper=False,with_full=False,with_hand=False):
             imported_root=imported.snapshot.root
             imported_valid=InspectMocapSource(MayaMocapSourceReader()).execute(imported_root).valid
             options=dict(start_frame=1,end_frame=10)
-            service=(RetargetMocapFullFkToCharacter(target) if with_full else
+            service=(RetargetMocapFullLimbIkToCharacter(target) if with_ik else
+                     RetargetMocapFullFkToCharacter(target) if with_full else
                      RetargetMocapUpperAndFourLimbsToCharacter(target) if with_upper else
                      RetargetMocapFourLimbsToCharacter(target))
-            if with_full:
+            if with_ik:
+                roots,spines,upper,limbs,distal,conversions=service.apply_with_preset(imported_root,loaded,**options)
+            elif with_full:
                 roots,spines,upper,limbs,distal=service.apply_with_preset(imported_root,loaded,**options)
+                conversions=()
             elif with_upper:
                 roots,spines,upper,limbs=service.apply_with_preset(imported_root,loaded,**options)
-                distal=()
+                distal=();conversions=()
             else:
                 roots,spines,limbs=service.apply_with_preset(imported_root,loaded,**options)
-                upper=();distal=()
+                upper=();distal=();conversions=()
         after=target.capture_character_key_state(registration)
         complete_plan=service.plan_with_preset(imported_root,loaded,**options)
         plans=(complete_plan.upper.four_limbs.limbs if with_full else
@@ -159,7 +165,8 @@ def main(output,with_upper=False,with_full=False,with_hand=False):
                 and all(len(group)==10 for group in limbs),
             'upper_controls_written':not (with_upper or with_full) or len(upper)==10,
             'distal_controls_written':not with_full or len(distal)==10,
-            'imported_motion_matches_body':max(errors)<1e-4,
+            'four_limb_ik_conversions':not with_ik or len(conversions)==4,
+            'imported_motion_matches_body':max(errors)<(1e-3 if with_ik else 1e-4),
         }
         cmds.undo()
         checks['retarget_undo_keeps_import']=(target.capture_character_key_state(registration)==before
@@ -187,7 +194,7 @@ def main(output,with_upper=False,with_full=False,with_hand=False):
             with reopened._character_sampling_time() as seek:
                 seek(10.)
                 checks['reopened_distal_pose']=all(max(abs(a-b) for a,b in zip(
-                    cmds.xform(path,query=True,worldSpace=True,matrix=True),wanted))<1e-4
+                    cmds.xform(path,query=True,worldSpace=True,matrix=True),wanted))<(1e-3 if with_ik else 1e-4)
                     for path,wanted in zip(complete_plan.target_joints,distal[-1].body_matrices))
         payload={**checks,'max_body_error':max(errors),'status':'passed' if all(checks.values()) else 'failed'}
         output.write_text(json.dumps(payload,indent=2)+'\n',encoding='utf8')
@@ -196,4 +203,5 @@ def main(output,with_upper=False,with_full=False,with_hand=False):
 
 
 if __name__=='__main__':raise SystemExit(main(Path(sys.argv[1]).resolve(),
-    '--upper' in sys.argv[2:],'--full' in sys.argv[2:],'--hand' in sys.argv[2:]))
+    '--upper' in sys.argv[2:],'--full' in sys.argv[2:] or '--ik' in sys.argv[2:],
+    '--hand' in sys.argv[2:],'--ik' in sys.argv[2:]))

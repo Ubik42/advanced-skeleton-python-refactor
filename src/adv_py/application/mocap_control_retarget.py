@@ -120,6 +120,11 @@ class MocapRootControlHost(Protocol):
     def write_mocap_limb_control_keys(self,plan: MocapLimbControlPlan) -> tuple[MocapLimbControlSample,...]: ...
     def write_mocap_upper_control_keys(self,plan: MocapUpperControlPlan) -> tuple[MocapUpperControlSample,...]: ...
     def write_mocap_distal_control_keys(self,plan: MocapDistalControlPlan) -> tuple[MocapDistalControlSample,...]: ...
+    def sample_character_animation(self,registration: CharacterRegistration,frames: tuple[float,...]) -> tuple: ...
+    def character_time_unit(self) -> str: ...
+    def match_character_limb_samples(self,registration: CharacterRegistration,frames: tuple[float,...],
+                                      limb: str,side,mode: str,pose_tolerance: float=1e-4) -> tuple: ...
+    def write_character_animation(self,registration: CharacterRegistration,samples: tuple) -> None: ...
 
 
 class RetargetMocapRootToCharacter:
@@ -568,3 +573,80 @@ class RetargetMocapFullFkToCharacter:
                    for group in (root,spine,upper,*limbs,distal)):
                 raise RuntimeError('动捕全身 FK 采样不完整')
         return root,spine,upper,limbs,distal
+
+
+class RetargetMocapFullLimbIkToCharacter:
+    """Retarget full FK motion, then match all four limbs to IK in one edit."""
+    def __init__(self,host: MocapRootControlHost):self._host=host
+
+    def _require_limb_animation(self,plan):
+        reg=plan.upper.four_limbs.spine.root.registration
+        required={f'{limb}.fkLength.{side}.{index}' for limb in ('arm','leg')
+                  for side in ('R','L') for index in (0,1)}
+        required.update(f'{limb}.ikOrientation.{side}.{segment}.rotate{axis}'
+            for limb in ('arm','leg') for side in ('R','L')
+            for segment in ('upper','lower') for axis in 'XYZ')
+        if not required.issubset({channel.key for channel in reg.channels}):
+            raise CharacterRegistryError('四肢 IK 动捕须先启用完整四肢动画通道登记')
+
+    def plan_with_preset(self,source_root,preset,*,start_frame,end_frame,sample_by=1,reference_frame=None):
+        plan=RetargetMocapFullFkToCharacter(self._host).plan_with_preset(source_root,preset,
+            start_frame=start_frame,end_frame=end_frame,sample_by=sample_by,
+            reference_frame=reference_frame)
+        self._require_limb_animation(plan)
+        return plan
+
+    def apply_with_preset(self,source_root,preset,*,start_frame,end_frame,sample_by=1,reference_frame=None):
+        full=RetargetMocapFullFkToCharacter(self._host)
+        upper_options,distal=full._preset_options(source_root,preset)
+        return self.apply(source_root,**upper_options,source_distal=distal,
+            start_frame=start_frame,end_frame=end_frame,sample_by=sample_by,
+            reference_frame=reference_frame)
+
+    def plan(self,source_root,**options):
+        plan=RetargetMocapFullFkToCharacter(self._host).plan(source_root,**options)
+        self._require_limb_animation(plan)
+        return plan
+
+    def apply(self,source_root,**options):
+        from adv_py.core.character_animation import CharacterAnimation,validate_character_animation
+        from adv_py.core.fit_symmetry import FitBuildSide
+        from .character_animation import verify_character_animation_write
+        plan=self.plan(source_root,**options)
+        root=plan.upper.four_limbs.spine.root
+        reg=root.registration
+        host=self._host
+        with host.transaction('Retarget MoCap full body and four IK limbs'):
+            if self.plan(source_root,**options)!=plan:
+                raise CharacterRegistryError('动捕或角色状态在四肢 IK 写入前发生变化')
+            four=plan.upper.four_limbs
+            root_samples=host.write_mocap_root_control_keys(root)
+            spine_samples=host.write_mocap_spine_control_keys(four.spine)
+            upper_samples=host.write_mocap_upper_control_keys(plan.upper)
+            limb_samples=tuple(host.write_mocap_limb_control_keys(limb) for limb in four.limbs)
+            distal_samples=host.write_mocap_distal_control_keys(plan)
+            if any(tuple(sample.frame for sample in group)!=root.frames
+                   for group in (root_samples,spine_samples,upper_samples,*limb_samples,distal_samples)):
+                raise RuntimeError('动捕 FK 基础采样不完整')
+            reference=host.sample_character_animation(reg,root.frames)
+            unit=host.character_time_unit()
+            conversions=[]
+            for limb in ('arm','leg'):
+                for side in ('R','L'):
+                    keys=host.capture_character_key_state(reg)
+                    samples=host.match_character_limb_samples(reg,root.frames,limb,
+                        FitBuildSide(side),'ik',pose_tolerance=1e-3)
+                    if host.capture_character_key_state(reg)!=keys or host.character_time_unit()!=unit:
+                        raise RuntimeError('动捕四肢匹配采样改变了原曲线或时间')
+                    animation=CharacterAnimation(unit,samples)
+                    validate_character_animation(animation,reg)
+                    host.write_character_animation(reg,samples)
+                    verify_character_animation_write(host,reg,animation,keys)
+                    conversions.append(animation)
+            actual=host.sample_character_animation(reg,root.frames)
+            error=max(abs(a-b) for (_,before),(_,after) in zip(reference,actual)
+                for (_,left),(_,right) in zip(before.body_frames,after.body_frames)
+                for a,b in zip(left,right))
+            if error>1e-3:
+                raise RuntimeError('动捕四肢 IK 转换改变了采样帧 Body 世界姿态：'+str(error))
+        return root_samples,spine_samples,upper_samples,limb_samples,distal_samples,tuple(conversions)

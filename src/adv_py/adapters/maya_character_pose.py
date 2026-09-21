@@ -203,7 +203,7 @@ class MayaCharacterPoseMixin:
             for source,plug in connections:
                 c.connectAttr(source,plug)
 
-    def match_character_limb_samples(self,registration,frames,limb,side,mode):
+    def match_character_limb_samples(self,registration,frames,limb,side,mode,pose_tolerance=1e-4):
         from adv_py.application.body_arm_fk_to_ik import MatchBodyArmFkToIk
         from adv_py.application.body_arm_ik_to_fk import MatchBodyArmIkToFk
         from adv_py.application.body_leg_fk_to_ik import MatchBodyLegFkToIk
@@ -231,7 +231,7 @@ class MayaCharacterPoseMixin:
                         method(plan.match)
                     after=self.capture_character_pose(registration)
                     error=max(abs(a-b) for (_,left),(_,right) in zip(before.body_frames,after.body_frames) for a,b in zip(left,right))
-                    if error>1e-4 or dict(after.channels)[blend_key]!=(1. if mode=='ik' else 0.):
+                    if error>pose_tolerance or dict(after.channels)[blend_key]!=(1. if mode=='ik' else 0.):
                         raise RuntimeError(f'四肢动画匹配复检失败：frame={frame}, error={error}')
                     result.append((float(frame),after))
                 seek(frame)
