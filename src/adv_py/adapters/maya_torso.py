@@ -18,6 +18,10 @@ class MayaBodyTorsoMixin:
 
     def preflight_body_torso(self, plan):
         planned_joints = {j.path for j in plan.spine.joints} if plan.spine else set()
+        if plan.spline:
+            planned_joints.update(j.path for j in plan.spline.joints)
+            for target in plan.spline.body_joints[1:]:
+                self._preflight_torso_channels(target,tuple(kind+axis for kind in ('translate','rotate','scale') for axis in 'XYZ'))
         if plan.spine:
             for target in plan.spine.body_joints[1:]:
                 self._preflight_torso_channels(target, tuple(kind + axis for kind in ("translate", "rotate") for axis in "XYZ"))
@@ -39,6 +43,9 @@ class MayaBodyTorsoMixin:
             self.create_body_control_root(plan.controls.root_name)
             if plan.spine:
                 self.prepare_body_spine(plan.spine)
+            if plan.spline:
+                from .maya_spline import prepare
+                prepare(self,plan.spline)
             for spec in plan.controls.controls:
                 self._create_body_limb_fk_control(spec, "Torso")
                 locked = [f"scale{axis}" for axis in "XYZ"]
@@ -48,6 +55,9 @@ class MayaBodyTorsoMixin:
                     self._cmds.setAttr(f"{spec.control_path}.{attr}", lock=True, keyable=False)
             if plan.spine:
                 self.create_body_spine(plan.spine)
+            if plan.spline:
+                from .maya_spline import create
+                create(self,plan.spline)
             if plan.head_aim:
                 from .maya_head_aim import create
                 create(self,plan.head_aim)
@@ -63,6 +73,9 @@ class MayaBodyTorsoMixin:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
     def capture_body_torso(self, plan):
+        if plan.spline:
+            from .maya_spline import audit
+            audit(self,plan.spline)
         if plan.head_aim:
             from .maya_head_aim import audit
             audit(self,plan.head_aim.head_control,plan.head_aim.target)

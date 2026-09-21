@@ -16,6 +16,8 @@ _CREATE = frozenset('createNode joint circle ikHandle skinCluster orientConstrai
 _NODE_ARGS |= {'aimConstraint'}
 _NODE_RESULTS |= {'aimConstraint'}
 _CREATE |= {'aimConstraint'}
+_NODE_RESULTS |= {'curve'}
+_CREATE |= {'curve'}
 
 
 class MayaCharacterCommands:
@@ -68,7 +70,7 @@ class MayaCharacterCommands:
                 pass  # First positional argument is a node type.
             elif name in _NODE_ARGS or name in ('select','listAttr'):
                 args=[address(a) for a in args]
-            for flag in ('name','n','parent','p','node','startJoint','sj','endEffector','ee','worldUpObject'):
+            for flag in ('name','n','parent','p','node','startJoint','sj','endEffector','ee','worldUpObject','curve'):
                 if flag in kwargs and isinstance(kwargs[flag],str):kwargs[flag]=address(kwargs[flag])
             if name=='ikHandle' and isinstance(kwargs.get('solver'),str) and kwargs['solver'] not in SHARED_NODES:
                 kwargs['solver']=identity.to_scene(kwargs['solver']).lstrip(':')

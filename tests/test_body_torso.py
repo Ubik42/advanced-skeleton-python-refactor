@@ -64,6 +64,26 @@ class BodyTorsoTests(unittest.TestCase):
         for value in (1,'yes',None):
             with self.assertRaises(FitSkeletonValidationError):self.plan(head_aim=value)
 
+    def test_spline_roles_and_controls_have_distinct_names(self):
+        from adv_py.core.body_spline import with_spline_ik
+        from adv_py.core.body_description import BodyAxialDescription
+        body=replace(self.body,joints=tuple(replace(j,world_axes=((0.,0.,1.),(0.,1.,0.),(-1.,0.,0.)))
+            if j.name in ('Spine1_M','Chest_M') else j for j in self.body.joints))
+        torso=with_spline_ik(body,self.plan(body),BodyAxialDescription())
+        plan=torso.spline
+        self.assertEqual(len(plan.joints),2*len(plan.body_joints))
+        self.assertEqual(len(plan.targets),4)
+        self.assertEqual(len(torso.node_names),len(set(torso.node_names)))
+        self.assertFalse(set(j.name for j in plan.joints)&{p.rsplit('|',1)[-1] for p in plan.targets})
+        self.assertEqual(plan.positions[0],next(j.world_position for j in self.body.joints if j.name=='Root_M'))
+        self.assertEqual(plan.positions[-1],next(j.world_position for j in self.body.joints if j.name=='Chest_M'))
+
+    def test_spline_rejects_rest_bones_not_aligned_to_local_x(self):
+        from adv_py.core.body_spline import with_spline_ik
+        from adv_py.core.body_description import BodyAxialDescription
+        with self.assertRaisesRegex(FitSkeletonValidationError,'本地'):
+            with_spline_ik(self.body,self.plan(),BodyAxialDescription())
+
     def test_global_root_via_controls_requires_explicit_scale(self):
         options = dict(up_axis=FitUpAxis.Z, body_root="|Root_M",
                        driven_roots=("|AdvPy_TorsoControls",), body_root_via_controls=True)

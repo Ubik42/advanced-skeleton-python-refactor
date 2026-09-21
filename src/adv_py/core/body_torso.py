@@ -16,6 +16,7 @@ from .fit_settings import FitSkeletonValidationError
 from .body_description import BodyAxialDescription
 from .body_head_aim import HeadAimPlan,with_head_aim
 from .fit_container import FitUpAxis
+from .body_spline import BodySplinePlan,with_spline_ik
 
 
 class BodyTorsoLimbPlan(Protocol):
@@ -56,6 +57,7 @@ class BodyTorsoPlan:
     attachments: tuple[BodySpaceAttachment, ...]
     spine: BodySpinePlan | None = None
     head_aim: HeadAimPlan | None = None
+    spline: BodySplinePlan | None = None
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -63,7 +65,7 @@ class BodyTorsoPlan:
             name for control in self.controls.controls
             for name in (control.offset_name, control.control_name,
                          control.control_name + "Shape", control.constraint_name)
-        ) + tuple(item.name for item in (self.pelvis_translation,) + self.attachments) + (self.spine.node_names if self.spine else ()) + (self.head_aim.node_names if self.head_aim else ())
+        ) + tuple(item.name for item in (self.pelvis_translation,) + self.attachments) + (self.spine.node_names if self.spine else ()) + (self.head_aim.node_names if self.head_aim else ()) + (self.spline.node_names if self.spline else ())
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,8 +83,6 @@ def plan_body_torso(
     description=BodyAxialDescription() if description is None else description
     if not isinstance(head_aim,bool):raise FitSkeletonValidationError('head_aim 必须是布尔值')
     if not isinstance(description,BodyAxialDescription):raise FitSkeletonValidationError('身体描述类型无效')
-    if spine_ik and description!=BodyAxialDescription():
-        raise FitSkeletonValidationError('现有双段 Spine IK 不接受可变身体描述；通用 IK 求解尚未接入')
     parents=dict(description.parents)
     joints=description.validate(body)
     root_name = "AdvPy_TorsoControls"
@@ -130,7 +130,8 @@ def plan_body_torso(
                 f"AdvPy_Torso{label}StretchOrigin_{suffix}", source, stretches[0].start_path, "parentConstraint", True,
             ))
     plan = BodyTorsoPlan(BodyLimbFkControlPlan(root_path, root_name, tuple(controls)), pelvis, tuple(attachments))
-    plan=with_spine_ik(body, plan) if spine_ik else plan
+    if spine_ik:
+        plan=with_spine_ik(body,plan) if description==BodyAxialDescription() else with_spline_ik(body,plan,description)
     return with_head_aim(plan,body,description,up_axis) if head_aim else plan
 
 
