@@ -375,3 +375,16 @@ write 先捕获非中性姿态，再扰动全部登记控制与空间；read 从
 ```
 
 `--reopen` 在新进程检查保存结果，并继续切换、四肢及脊柱模式烘焙。`--faults` 检查跨空间全身写键、外部消费、非法曲线切线和写入异常回滚。输出目录中的场景与 JSON 均为忽略的运行产物，不覆盖已有受版本管理的历史结果。
+## 多角色命名空间
+
+`maya_character_namespace_smoke.py` 在同一场景生成 `hero` 的 30 关节角色与 `partner` 的 70 关节角色，检查完整构建 Undo / Redo、各自蒙皮与登记、全身动画和空间操作的角色隔离。
+
+```powershell
+& $mayapy validation/maya_character_namespace_smoke.py validation/results/namespace-character-final
+& $mayapy validation/maya_character_namespace_smoke.py validation/results/namespace-character-final --reopen
+& $mayapy validation/maya_character_namespace_smoke.py validation/results/namespace-character-final --verify
+& $mayapy validation/maya_character_namespace_smoke.py validation/results/namespace-character-final --faults
+& $mayapy validation/maya_character_namespace_smoke.py validation/results/namespace-character-final --references
+```
+
+默认模式生成 `characters.ma`；`--reopen` 给一方写入动画、空间事件和 FK/IK 转换并保存 `animated.ma`；`--verify` 在另一个进程比较保存结果，并继续操作另一角色。`--faults` 验证跨角色曲线拒绝和部分写入异常回滚。`--references` 以 `shot` 命名空间引用原场景，检查嵌套身份发现和引用节点只读边界。所有运行产物写入忽略目录。

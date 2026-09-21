@@ -90,7 +90,8 @@ class CharacterExample:
 
 
 def build_character(*, with_hand=True, host=None):
-    from maya import cmds
+    host = host or CharacterExampleHost()
+    cmds=host._cmds
     if not isinstance(with_hand, bool):
         raise ValueError("with_hand must be a bool")
     if (cmds.ls(type="joint") or cmds.ls(type="mesh")
@@ -99,7 +100,6 @@ def build_character(*, with_hand=True, host=None):
             or cmds.currentUnit(query=True, angle=True) != "deg"
             or not cmds.undoInfo(query=True, state=True)):
         raise ValueError("Example requires a fresh Z-up, degree scene with Undo enabled")
-    host = host or CharacterExampleHost()
     if not isinstance(host, CharacterExampleHost) or host._transaction_active:
         raise ValueError("Example requires an idle CharacterExampleHost")
     selection = cmds.ls(selection=True, long=True) or []

@@ -178,12 +178,23 @@ _FIT_AXIS_ENUM_INDEX = {
 class MayaFitJointHost:
     """Maya adapter for FitSkeleton and explicit Fit joint operations."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, namespace: str | None = None) -> None:
         from maya import cmds  # type: ignore[import-not-found]
 
-        self._cmds = cmds
+        if namespace is None:
+            self._cmds = cmds
+        else:
+            from .maya_namespace import MayaCharacterCommands
+            self._cmds = MayaCharacterCommands(cmds, namespace)
+        self.namespace = namespace
         self._transaction_active = False
         self._transaction_changed = False
+
+    def scene_address(self, address: str) -> str:
+        """Resolve an internal node/plug address for external Maya consumers."""
+        if self.namespace is None:
+            return address
+        return self._cmds.identity.to_scene(address)
 
     def resolve_joints(self, names: Sequence[str]) -> tuple[str, ...]:
         resolved: list[str] = []

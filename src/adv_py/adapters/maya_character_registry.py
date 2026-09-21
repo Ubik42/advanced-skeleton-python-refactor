@@ -9,6 +9,21 @@ from adv_py.core.body_skeleton import audit_body_provenance, oriented_body_prove
 
 
 class MayaCharacterRegistryMixin:
+    @staticmethod
+    def discover_scene_characters():
+        """Physical identities for explicit host selection; never edits a scene."""
+        from maya import cmds
+        from adv_py.core.character_identity import CharacterIdentity, SceneCharacter
+        rows=[]
+        for node in cmds.ls(type='network') or []:
+            if (node.rsplit(':',1)[-1]!=REGISTRY_NAME or not cmds.objExists(node+'.advPyRegistryOwner')
+                    or cmds.getAttr(node+'.advPyRegistryOwner')!=FORMAT):
+                continue
+            namespace=node.rsplit(':',1)[0] if ':' in node else ''
+            rows.append(SceneCharacter(CharacterIdentity(namespace),node,cmds.ls(node,uuid=True)[0],
+                                       bool(cmds.referenceQuery(node,isNodeReferenced=True))))
+        return tuple(sorted(rows,key=lambda row:row.identity.namespace))
+
     def preflight_character_space_animation(self, registration):
         from .maya_animated_spaces import preflight
         preflight(self, registration)
@@ -133,6 +148,8 @@ class MayaCharacterRegistryMixin:
         """Only native time-input curves may replace an editable user input."""
         c=self._cmds
         node,attribute=source.rsplit(".",1)
+        if self.namespace is not None and not c.identity.owns(self.scene_address(node)):
+            return False
         if attribute!="output" or c.nodeType(node) not in ("animCurveTA","animCurveTL","animCurveTU"):
             return False
         driver=c.connectionInfo(node+".input",sourceFromDestination=True)
