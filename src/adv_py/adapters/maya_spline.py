@@ -7,7 +7,7 @@ def prepare(host,plan):
     c=host._cmds
     c.createNode('transform',name='AdvPy_SplineMechanisms',parent=plan.root_path.rsplit('|',1)[0],skipSelect=True)
     c.addAttr(plan.root_path,longName='advPySplineOwner',dataType='string')
-    c.setAttr(plan.root_path+'.advPySplineOwner','adv_py.spline.v2',type='string',lock=True)
+    c.setAttr(plan.root_path+'.advPySplineOwner','adv_py.spline.v3' if plan.curved else 'adv_py.spline.v2',type='string',lock=True)
     for joint in plan.joints:host.create_body_arm_mechanism_joint(joint)
     last=plan.joints[len(plan.body_joints)-1]
     host._spine_frame('AdvPy_SplineChestSpace',plan.chest_space.rsplit('|',1)[0],last.world_position,last.world_axes)
@@ -21,7 +21,7 @@ def create(host,plan):
         host._spine_frame(f'AdvPy_SplineIK{i}Offset',plan.pelvis_control,position,plan.axes)
         control=c.circle(name=f'AdvPy_SplineIK{i}',normal=(1.,0.,0.),radius=1.5,constructionHistory=False)[0]
         c.parent(control,offset,relative=True)
-        locked=['scale'+a for a in 'XYZ']+(['translate'+a for a in 'XYZ'] if i==0 else [])+(['rotate'+a for a in 'XYZ'] if i in (1,2) else [])
+        locked=['scale'+a for a in 'XYZ']+(['translate'+a for a in 'XYZ'] if i==0 else [])+(['rotate'+a for a in 'XYZ'] if 0<i<len(plan.targets)-1 else [])
         for attr in locked:c.setAttr(target+'.'+attr,lock=True,keyable=False)
     for attribute,default,label in (('spineIkFk',0.,'脊柱 IK 权重'),('stretch',1.,'脊柱伸展'),('volume',1.,'体积保持')):
         c.addAttr(plan.settings,longName=attribute,niceName=label,attributeType='double',minValue=0.,maxValue=1.,defaultValue=default,keyable=True)
@@ -51,7 +51,11 @@ def create(host,plan):
     c.createNode('curveInfo',name='AdvPy_SplineArc',skipSelect=True)
     c.connectAttr(shape+'.local','AdvPy_SplineArc.inputCurve')
     c.createNode('multiplyDivide',name='AdvPy_SplineRatio',skipSelect=True)
-    c.setAttr('AdvPy_SplineRatio.operation',2);c.setAttr('AdvPy_SplineRatio.input2X',sum(plan.lengths))
+    rest_arc=c.getAttr('AdvPy_SplineArc.arcLength') if plan.curved else sum(plan.lengths)
+    if plan.curved:
+        c.addAttr(plan.root_path,longName='advPySplineRestArc',attributeType='double')
+        c.setAttr(plan.root_path+'.advPySplineRestArc',rest_arc,lock=True)
+    c.setAttr('AdvPy_SplineRatio.operation',2);c.setAttr('AdvPy_SplineRatio.input2X',rest_arc)
     c.connectAttr('AdvPy_SplineArc.arcLength','AdvPy_SplineRatio.input1X')
     c.createNode('blendColors',name='AdvPy_SplineStretchBlend',skipSelect=True)
     c.connectAttr('AdvPy_SplineRatio.outputX','AdvPy_SplineStretchBlend.color1R');c.setAttr('AdvPy_SplineStretchBlend.color2R',1.)
@@ -70,10 +74,22 @@ def create(host,plan):
             c.createNode('multiplyDivide',name=f'AdvPy_SplineLength{i}',skipSelect=True)
             c.setAttr(f'AdvPy_SplineLength{i}.input1X',plan.lengths[i-1]);c.connectAttr('AdvPy_SplineClamp.outputR',f'AdvPy_SplineLength{i}.input2X')
             c.connectAttr(f'AdvPy_SplineLength{i}.outputX',joint.path+'.translateX')
+    if plan.curved:
+        import json
+        for i in range(1,n):
+            rest=c.createNode('transform',name=f'AdvPy_SplineIKRest{i}',parent=ik[i].path,skipSelect=True)
+            bind=c.xform(plan.body_joints[i],q=True,ws=True,matrix=True)
+            c.xform(rest,ws=True,matrix=bind)
+            local=tuple(c.getAttr(rest+'.matrix'))
+            c.addAttr(rest,longName='advPySplineRestLocal',dataType='string')
+            c.setAttr(rest+'.advPySplineRestLocal',json.dumps(local),type='string',lock=True)
+            for kind in ('translate','rotate','scale','shear'):
+                for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ')):
+                    c.setAttr(rest+'.'+kind+axis,lock=True,keyable=False)
     c.createNode('reverse',name='AdvPy_SplineReverse',skipSelect=True);c.connectAttr(plan.settings+'.spineIkFk','AdvPy_SplineReverse.inputX')
     for i in range(1,n):
         for label,command in (('Point',c.pointConstraint),('Orient',c.orientConstraint),('Scale',c.scaleConstraint)):
-            node=command(fk[i].path,ik[i].path,plan.body_joints[i],name=f'AdvPy_Spline{label}{i}',maintainOffset=False)[0]
+            node=command(fk[i].path,plan.ik_outputs[i],plan.body_joints[i],name=f'AdvPy_Spline{label}{i}',maintainOffset=False)[0]
             aliases=command(node,q=True,weightAliasList=True)
             c.connectAttr('AdvPy_SplineReverse.outputX',node+'.'+aliases[0]);c.connectAttr(plan.settings+'.spineIkFk',node+'.'+aliases[1])
             if label=='Orient':c.setAttr(node+'.interpType',2)
@@ -84,7 +100,7 @@ def create(host,plan):
                 if source:c.disconnectAttr(source,plug)
                 c.setAttr(plug,1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,type='matrix',lock=True)
                 c.setAttr(node+'.constraintScaleCompensate',False,lock=True)
-                for target_index,source_joint in enumerate((fk[i].path,ik[i].path)):
+                for target_index,source_joint in enumerate((fk[i].path,plan.ik_outputs[i])):
                     world=f'AdvPy_Spline{("FK" if target_index==0 else "IK")}WorldScale{i}'
                     c.createNode('decomposeMatrix',name=world,skipSelect=True)
                     c.connectAttr(source_joint+'.worldMatrix[0]',world+'.inputMatrix')
@@ -103,7 +119,8 @@ def create(host,plan):
 def audit(host,plan):
     c=host._cmds;n=len(plan.body_joints)
     owner=c.getAttr(plan.root_path+'.advPySplineOwner')
-    if owner not in ('adv_py.spline.v1','adv_py.spline.v2'):raise FitSkeletonValidationError('Spline 所有权标记无效')
+    if owner not in ('adv_py.spline.v1','adv_py.spline.v2','adv_py.spline.v3'):raise FitSkeletonValidationError('Spline 所有权标记无效')
+    if (owner=='adv_py.spline.v3')!=plan.curved:raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
     missing=tuple(name for name in plan.node_names if not (owner=='adv_py.spline.v1' and 'WorldScale' in name) and len(c.ls(name,long=True) or [])!=1)
     if missing:raise FitSkeletonValidationError('Spline 节点缺失或名称不唯一：'+repr(missing))
     if c.ikHandle('AdvPy_SplineIKHandle',q=True,solver=True)!='ikSplineSolver':raise FitSkeletonValidationError('Spline 求解器被替换')
@@ -125,15 +142,21 @@ def audit(host,plan):
             (f'AdvPy_SplineLength{i}.outputX',joint.path+'.translateX'),(plan.joints[n+i-1].path+'.scale',joint.path+'.inverseScale')]
     bad=[(a,b) for a,b in edges if not c.isConnected(a,b)]
     if bad:raise FitSkeletonValidationError('Spline 曲线或伸展连接被替换：'+repr(bad[:2]))
-    constants={'AdvPy_SplineRatio.operation':2,'AdvPy_SplineRatio.input2X':sum(plan.lengths),
+    if plan.curved and (not c.attributeQuery('advPySplineRestArc',node=plan.root_path,exists=True)
+                        or not c.getAttr(plan.root_path+'.advPySplineRestArc',lock=True)):
+        raise FitSkeletonValidationError('Spline 绑定曲线长度标记缺失或可写')
+    rest_arc=c.getAttr(plan.root_path+'.advPySplineRestArc') if plan.curved else sum(plan.lengths)
+    if rest_arc<=0:raise FitSkeletonValidationError('Spline 绑定曲线长度无效')
+    constants={'AdvPy_SplineRatio.operation':2,'AdvPy_SplineRatio.input2X':rest_arc,
         'AdvPy_SplineStretchBlend.color2R':1.,'AdvPy_SplineClamp.minR':.001,'AdvPy_SplineClamp.maxR':1000.,
         'AdvPy_SplineVolumeExponent.operation':1,'AdvPy_SplineVolumeExponent.input2X':-.5,'AdvPy_SplineVolume.operation':3,
         'AdvPy_SplineIKHandle.dTwistControlEnable':1,'AdvPy_SplineIKHandle.dWorldUpType':4,
         'AdvPy_SplineIKHandle.dForwardAxis':0,'AdvPy_SplineIKHandle.dWorldUpAxis':0}
     if n==2:constants.pop('AdvPy_SplineIKHandle.dTwistControlEnable')
     constants.update({f'AdvPy_SplineLength{i}.input1X':length for i,length in enumerate(plan.lengths,1)})
-    if any(abs(c.getAttr(plug)-value)>1e-8 for plug,value in constants.items()):raise FitSkeletonValidationError('Spline 求解常量被修改')
-    if owner=='adv_py.spline.v2':
+    changed=[(plug,c.getAttr(plug),value) for plug,value in constants.items() if abs(c.getAttr(plug)-value)>1e-6*max(1.,abs(value))]
+    if changed:raise FitSkeletonValidationError('Spline 求解常量被修改：'+repr(changed[:3]))
+    if owner in ('adv_py.spline.v2','adv_py.spline.v3'):
         identity=(1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.)
         for i in range(1,n):
             node=f'AdvPy_SplineScale{i}'
@@ -142,7 +165,7 @@ def audit(host,plan):
                     or c.listConnections(plug,s=True,d=False) or tuple(c.getAttr(plug))!=identity
                     or c.getAttr(node+'.constraintScaleCompensate')):
                 raise FitSkeletonValidationError('Spline 世界缩放补偿连接或常量被修改')
-            for target_index,source_joint in enumerate((plan.joints[i].path,plan.joints[n+i].path)):
+            for target_index,source_joint in enumerate((plan.joints[i].path,plan.ik_outputs[i])):
                 world=f'AdvPy_Spline{("FK" if target_index==0 else "IK")}WorldScale{i}'
                 target_parent=node+f'.target[{target_index}].targetParentMatrix'
                 if (not c.isConnected(source_joint+'.worldMatrix[0]',world+'.inputMatrix')
@@ -154,10 +177,22 @@ def audit(host,plan):
             node=f'AdvPy_Spline{label}{i}'
             if label!='Scale' or owner=='adv_py.spline.v1':
                 sources=tuple(host._resolve_connected_node(p) for p in command(node,q=True,targetList=True))
-                if sources!=(plan.joints[i].path,plan.joints[n+i].path):raise FitSkeletonValidationError('Spline FK/IK 输出目标被替换')
-            aliases=("target[0].targetWeight","target[1].targetWeight") if label=="Scale" and owner=="adv_py.spline.v2" else command(node,q=True,weightAliasList=True)
+                if sources!=(plan.joints[i].path,plan.ik_outputs[i]):raise FitSkeletonValidationError('Spline FK/IK 输出目标被替换')
+            aliases=("target[0].targetWeight","target[1].targetWeight") if label=="Scale" and owner!='adv_py.spline.v1' else command(node,q=True,weightAliasList=True)
             if not c.isConnected('AdvPy_SplineReverse.outputX',node+'.'+aliases[0]) or not c.isConnected(plan.settings+'.spineIkFk',node+'.'+aliases[1]):
                 raise FitSkeletonValidationError('Spline 混合权重连接无效')
             for axis in 'XYZ':
                 if not c.isConnected(node+'.constraint'+kind.title()+axis,plan.body_joints[i]+'.'+kind+axis):
                     raise FitSkeletonValidationError('Spline Body 输出被替换')
+    if plan.curved:
+        import json
+        for i in range(1,n):
+            rest=plan.ik_outputs[i]
+            if (c.nodeType(rest)!='transform' or (c.listRelatives(rest,parent=True,fullPath=True) or [])!=[plan.joints[n+i].path]
+                    or not c.getAttr(rest+'.advPySplineRestLocal',lock=True)):
+                raise FitSkeletonValidationError('Spline 中性姿态补偿层归属无效')
+            recorded=json.loads(c.getAttr(rest+'.advPySplineRestLocal'))
+            if (len(recorded)!=16 or any(abs(a-b)>1e-8 for a,b in zip(recorded,c.getAttr(rest+'.matrix')))
+                    or any(not c.getAttr(rest+'.'+kind+axis,lock=True) for kind in ('translate','rotate','scale','shear')
+                           for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ')))):
+                raise FitSkeletonValidationError('Spline 中性姿态补偿层被修改')

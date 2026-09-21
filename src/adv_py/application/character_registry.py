@@ -35,7 +35,7 @@ def character_channels(rig):
         spline = p.torso.torso.spline
         for index, target in enumerate(spline.targets):
             add(f"spine.spline.{index}", target,
-                (() if index == 0 else translation) + (rotation if index in (0, 3) else ()))
+                (() if index == 0 else translation) + (rotation if index in (0, len(spline.targets)-1) else ()))
         add("spine.spline", spline.settings, ("spineIkFk", "stretch", "volume"))
     if p.torso.torso.head_aim:
         aim=p.torso.torso.head_aim

@@ -1,4 +1,4 @@
-"""Fit the native four-control spline to a representable body pose."""
+"""Fit the native variable-control spline to a representable body pose."""
 from math import pi,sqrt
 
 from adv_py.core.character_registry import CharacterRegistryError
@@ -22,14 +22,14 @@ def match_ik(host, registration, before):
     ratios = tuple(sqrt(sum((a-b)**2 for a,b in zip(left[12:15],right[12:15])))/(rest*scale)
                    for left,right,rest in zip(matrices,matrices[1:],plan.lengths))
     if max(ratios)-min(ratios)>1e-5:
-        raise CharacterRegistryError('当前 FK 骨段伸展比不一致，四控制点 IK 无法无跳变表达')
+        raise CharacterRegistryError('当前 FK 骨段伸展比不一致，曲线 IK 无法无跳变表达')
     if any(abs(sqrt(sum(value*value for value in matrix[:3]))-scale)>1e-5 for matrix in matrices[1:]):
         raise CharacterRegistryError('当前 FK 含独立纵向缩放，原生曲线 IK 无法无跳变表达')
     parameters = []
     for index,control in enumerate(plan.targets):
         if index:
             parameters.extend((control+'.translate'+axis,length,None,None) for axis in 'XYZ')
-        if index in (0,3):
+        if index in (0,len(plan.targets)-1):
             parameters.extend((control+'.rotate'+axis,180./pi,None,None) for axis in 'XYZ')
     parameters.extend((plan.settings+'.'+attribute,1.,0.,1.) for attribute in ('stretch','volume'))
     initial = tuple(c.getAttr(plug)/unit for plug,unit,_,_ in parameters)

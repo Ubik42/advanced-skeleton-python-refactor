@@ -288,7 +288,7 @@ class MayaCharacterRegistryMixin:
                       spine.chest_space,*(j.path for j in spine.joints)))
         from adv_py.core.body_spline import BodySplinePlan
         if isinstance(spine, BodySplinePlan):
-            paths.update((*spine.targets, spine.curve))
+            paths.update((*spine.targets, spine.curve, *spine.ik_outputs[1:]))
         else:
             paths.update((spine.ik_offset,spine.ik_control,spine.pole_offset,spine.pole_control,spine.waist_output))
         paths.update(p for spec in spaces.spaces for p in (*spec.targets,spec.body_source,spec.global_source))

@@ -30,7 +30,8 @@ def decode_spline(raw, body):
     positions = tuple(vector(position, 3) for position in raw['positions'])
     targets = tuple(path(target) for target in raw['targets'])
     controls = tuple(path(control) for control in raw['fk_controls'])
-    if len(positions) != 4 or len(targets) != 4 or len(set(targets)) != 4 or len(controls) != count or len(set(controls)) != count:
+    if (len(targets) not in (4,max(4,count+1)) or len(positions)!=len(targets)
+            or len(set(targets)) != len(targets) or len(controls) != count or len(set(controls)) != count):
         raise CharacterRegistryError('曲线脊柱控制器声明不完整')
     joints = []
     for index, row in enumerate(raw['joints']):

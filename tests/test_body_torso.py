@@ -78,11 +78,12 @@ class BodyTorsoTests(unittest.TestCase):
         self.assertEqual(plan.positions[0],next(j.world_position for j in self.body.joints if j.name=='Root_M'))
         self.assertEqual(plan.positions[-1],next(j.world_position for j in self.body.joints if j.name=='Chest_M'))
 
-    def test_spline_rejects_rest_bones_not_aligned_to_local_x(self):
+    def test_spline_accepts_unaligned_bind_bone_axes(self):
         from adv_py.core.body_spline import with_spline_ik
         from adv_py.core.body_description import BodyAxialDescription
-        with self.assertRaisesRegex(FitSkeletonValidationError,'本地'):
-            with_spline_ik(self.body,self.plan(),BodyAxialDescription())
+        spline=with_spline_ik(self.body,self.plan(),BodyAxialDescription()).spline
+        self.assertEqual(len(spline.joints),2*len(spline.body_joints))
+        self.assertEqual(len(spline.targets),4)
 
     def test_global_root_via_controls_requires_explicit_scale(self):
         options = dict(up_axis=FitUpAxis.Z, body_root="|Root_M",
