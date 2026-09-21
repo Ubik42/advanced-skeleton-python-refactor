@@ -64,3 +64,10 @@ MatchBodySpine(MayaBodyBuildHost()).execute(character.spine, "ik")
 当前支持标准无 namespace、非引用的单角色、cm / degree 单位和正等比 Global 缩放。静态捕获与应用拒绝动画层、动画输入、外部输入及锁定通道；不清除键、不创建键，不保证其他帧历史运动。手部旧预设接口继续保留其独立语义。
 
 完整的两进程复现命令见 [角色姿态验收](../validation/README.md)。
+
+
+## 已保存角色的动画操作
+
+`maya_saved_character_animation.py` 提供 `capture_to_file(destination, start, end, step=1)`、`restore_from_file(source)` 和 `convert_spine(start, end, mode, step=1)`。角色必须在构建绑定姿态完成登记；之后允许原生用户动画曲线，保存重开后仍可使用相同入口。
+
+片段恢复在一笔事务中写入所有采样帧，其他帧原有键值保留；脊柱转换在每个采样帧匹配全身世界姿态，再写入目标 FK / IK 控制。时间单位、完整数据形态和点间插值限制见 [角色动画操作](../docs/角色动画操作.md)。

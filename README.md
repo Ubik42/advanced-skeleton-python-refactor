@@ -14,11 +14,11 @@
 
 | 范围 | 已完成 |
 | --- | --- |
-| Maya 重构 | 97 个纵向切片，覆盖 Fit、Body、Arm / Leg / Hand FK/IK、Skin、Root Motion、FBX 与 MoCap 采样 / bake |
+| Maya 重构 | 100 个纵向切片，覆盖 Fit、Body、Arm / Leg / Hand FK/IK、Skin、Root Motion、FBX 与 MoCap 采样 / bake |
 | 角色结构 | 30 关节基础 Body、70 关节五指 Body、31 关节独立导出骨架 |
 | 数据合同 | FitSkeleton、Hand Pose 与 Skin Weight 使用路径无关的 JSON 文档和 SHA-256 内容摘要 |
 | 写入边界 | 修改前预检；单一 Maya Undo 事务提交；执行后从场景读回复检 |
-| 自动验证 | 299 项纯 Python 回归测试；86 个 Maya / Blender 宿主 smoke 脚本 |
+| 自动验证 | 305 项纯 Python 回归测试；89 个 Maya / Blender 宿主 smoke 脚本 |
 
 当前 main 已在 v0.96.0 基础上加入躯干 / 颈头 FK、独立脊柱 IK/FK、双向姿态匹配与头部 / 手脚空间切换，调用方式见 [核心绑定架构](docs/核心绑定架构.md)。完整 Fit → Body → 控制 → 显式蒙皮入口见 [全身示例](examples/README.md)。本轮未新增版本发布。
 
@@ -57,6 +57,8 @@
 - 全身静态姿态 JSON、完整预演和单事务恢复，包含控制空间偏移及 Body 姿态复检。
 
 ### 动画与导出
+
+- 全身当前帧写键、动画片段采样 / JSON / 批量恢复、已有动画上的脊柱 FK/IK 范围转换；
 
 - Root Motion 实时输出与逐帧 bake；
 - 31 关节独立 Export Skeleton 和完整 TRS bake；
@@ -126,6 +128,8 @@ docs/                   架构、路线、调研与阶段说明
 
 ## 当前未包含
 
+完整工作包及完成条件见 [剩余开发清单](docs/剩余开发清单.md)，当前工程尚未完成全量替代。
+
 - 产品 UI、自动角色发现和厂商 MoCap 自动映射表；
 - 外部 FBX 自动导入、动画曲线简化和引擎专用骨名表；
 - FitSkeleton 冲突覆盖、重父级、删除式同步与 ReBuild 脚本迁移；
@@ -135,6 +139,8 @@ docs/                   架构、路线、调研与阶段说明
 ## 文档
 
 - [开发交接](docs/开发交接.md)
+- [角色动画操作](docs/角色动画操作.md)
+- [剩余开发清单](docs/剩余开发清单.md)
 - [核心绑定架构](docs/核心绑定架构.md)
 - [迁移架构](docs/迁移架构.md)
 - [跨 DCC 路线](docs/跨DCC路线.md)

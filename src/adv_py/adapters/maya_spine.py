@@ -8,6 +8,28 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 
 
 class MayaBodySpineMixin:
+    def ensure_precise_body_spine_solver(self,plan):
+        """Upgrade this owned spine only; never edit Maya's shared solver settings."""
+        self._require_transaction()
+        self.validate_body_spine(plan)
+        c=self._cmds
+        solver="AdvPy_SpineRPSolver"
+        current=c.ikHandle("AdvPy_SpineIKHandle",query=True,solver=True)
+        if current==solver:
+            return
+        if current!="ikRPsolver" or c.objExists(solver):
+            raise FitSkeletonValidationError("脊柱求解器有外部替换或名称冲突")
+        self._transaction_changed=True
+        c.createNode("ikRPsolver",name=solver,skipSelect=True)
+        c.addAttr(solver,longName="advPySpineSolverOwner",dataType="string")
+        c.setAttr(solver+".advPySpineSolverOwner","adv_py.spine_solver.v1",type="string",lock=True)
+        c.addAttr(solver,longName="characterRoot",attributeType="message")
+        c.connectAttr(plan.root_path+".message",solver+".characterRoot")
+        c.setAttr(solver+".characterRoot",lock=True)
+        c.setAttr(solver+".tolerance",1e-10,lock=True)
+        c.ikHandle("AdvPy_SpineIKHandle",edit=True,solver=solver)
+        self.validate_body_spine(plan)
+
     def _spine_frame(self, name, parent, position, axes):
         node = self._cmds.createNode("transform", name=name, parent=parent, skipSelect=True)
         node = self._resolve_connected_node(node)
@@ -81,6 +103,17 @@ class MayaBodySpineMixin:
             raise FitSkeletonValidationError("Spine 机制归属标记缺失")
         if any(len(c.ls(name, long=True) or []) != 1 for name in plan.node_names):
             raise FitSkeletonValidationError("Spine 节点集合缺失或名称不唯一")
+        solver=c.ikHandle("AdvPy_SpineIKHandle",query=True,solver=True)
+        if solver!="ikRPsolver":
+            if (solver!="AdvPy_SpineRPSolver" or c.nodeType(solver)!="ikRPsolver"
+                    or c.referenceQuery(solver,isNodeReferenced=True)
+                    or not c.objExists(solver+".advPySpineSolverOwner")
+                    or c.getAttr(solver+".advPySpineSolverOwner")!="adv_py.spine_solver.v1"
+                    or not c.isConnected(plan.root_path+".message",solver+".characterRoot")
+                    or c.getAttr(solver+".tolerance")!=1e-10
+                    or c.listConnections(solver+".tolerance",s=True,d=False)
+                    or (c.listConnections(solver,s=False,d=True,plugs=True) or []) != ["AdvPy_SpineIKHandle.ikSolver"]):
+                raise FitSkeletonValidationError("独立脊柱求解器归属、精度或输出被修改")
         for joint in plan.joints:
             parents = c.listRelatives(joint.path, parent=True, fullPath=True) or []
             if c.nodeType(joint.path) != "joint" or parents != [joint.parent_path]:

@@ -1,3 +1,6 @@
+from .character_keyframe import KeyBodyCharacterPose, CaptureAnimatedBodyCharacterPose
+from .character_animation import CaptureBodyCharacterAnimation, ApplyBodyCharacterAnimation, save_character_animation, load_character_animation
+from .character_spine_animation import BakeBodyCharacterSpineMode
 from .character_pose import CaptureBodyCharacterPose, ApplyBodyCharacterPose, save_character_pose, load_character_pose
 from .character_registry import RegisterBodyCharacter, ResolveBodyCharacter
 """Host-independent application use cases."""
@@ -341,6 +344,9 @@ from .upper_body_fit import (
 )
 
 __all__ = [
+    "KeyBodyCharacterPose", "CaptureAnimatedBodyCharacterPose",
+    "CaptureBodyCharacterAnimation", "ApplyBodyCharacterAnimation", "save_character_animation", "load_character_animation",
+    "BakeBodyCharacterSpineMode",
     "CaptureBodyCharacterPose", "ApplyBodyCharacterPose", "save_character_pose", "load_character_pose",
     "RegisterBodyCharacter",
     "ResolveBodyCharacter",

@@ -320,3 +320,20 @@ py -3 -m unittest discover -s tests
 首次运行用上述目录；再次完整运行应换新的结果目录。read 可单独复验已保存的扰动场景，它不会覆盖场景或姿态文件。
 
 write 先捕获非中性姿态，再扰动全部登记控制与空间；read 从新进程恢复并比较完整 Body、控制、空间和网格。负例覆盖锁定、动画输入、动画层、不兼容绑定、写入异常和伪造 Body 参考。继续执行脊柱双向匹配与全部空间切换后，仍须能再次应用原姿态。旧接口兼容检查使用 `maya_body_hand_pose_io_smoke.py`。
+
+
+## 全身动画与已有动画脊柱转换
+
+使用新的结果目录；动画文件发布拒绝覆盖。先创建动画场景，再进行独立进程重开与脊柱转换：
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_keyframe_smoke.py validation/results/keyframe70.json
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_animation_smoke.py validation/results/animation70_final write
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_animation_smoke.py validation/results/animation70_final read
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_spine_animation_smoke.py validation/results/animation70_final validation/results/spine-animation70-final.json
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_spine_animation_smoke.py validation/results/animation70_final validation/results/spine-animation70-final.json --reopen
+```
+
+30 关节用例将结果名中的 `70` 改为 `30`，单帧和片段脚本追加 `--basic`；脊柱脚本从已保存场景读取拓扑，无需额外参数。
+
+单帧脚本覆盖 1 / 10 / 20 三帧、曲线归属、其他键值保留和整笔恢复。片段脚本覆盖 1–21 帧、步长 5 的五个采样，以及 0 / 30 帧已有键保留；重开后比较身体与实际蒙皮并继续编辑。脊柱脚本验证同一段动画双向转换、全部采样点世界姿态、独立求解器 Undo / Redo、共享求解器不变、失败回滚与非法外部消费拒绝。

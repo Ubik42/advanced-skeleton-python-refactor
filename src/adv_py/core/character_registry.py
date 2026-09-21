@@ -110,8 +110,8 @@ def _pairs(items):
     return result
 
 
-def safe_json(text):
-    if not isinstance(text, str) or len(text.encode("utf-8")) > 2_000_000:
+def safe_json(text, *, max_bytes=2_000_000):
+    if not isinstance(text, str) or len(text.encode("utf-8")) > max_bytes:
         raise CharacterRegistryError("登记 JSON 类型或大小无效")
     try:
         return json.loads(text, object_pairs_hook=_pairs,

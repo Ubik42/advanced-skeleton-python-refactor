@@ -27,6 +27,17 @@ class MayaCharacterRegistryMixin:
         return CharacterNode(path,c.ls(path,uuid=True)[0],c.nodeType(path),
                              (c.listRelatives(path,parent=True,fullPath=True) or [None])[0],tuple(inputs))
 
+    def _character_direct_animation(self, source):
+        """Only native time-input curves may replace an editable user input."""
+        c=self._cmds
+        node,attribute=source.rsplit(".",1)
+        if attribute!="output" or c.nodeType(node) not in ("animCurveTA","animCurveTL","animCurveTU"):
+            return False
+        driver=c.connectionInfo(node+".input",sourceFromDestination=True)
+        if not driver or driver.rsplit(".",1)[1]!="outTime" or c.nodeType(driver.rsplit(".",1)[0])!="time":
+            return False
+        return True
+
     def describe_character_registration(self, rig, channels):
         c = self._cmds
         body = self.capture_body_skeleton(rig.body.root)
@@ -69,8 +80,15 @@ class MayaCharacterRegistryMixin:
 
     def _validate_character_registration(self, plan):
         c = self._cmds
+        user_plugs={channel.node+"."+channel.attribute for channel in plan.channels}
         for node in plan.nodes:
-            if self._registry_node(node.path) != node:
+            current=self._registry_node(node.path)
+            retained=[]
+            for attribute,source in current.inputs:
+                if node.path+"."+attribute in user_plugs and self._character_direct_animation(source):
+                    continue
+                retained.append((attribute,source))
+            if replace(current,inputs=tuple(retained)) != node:
                 raise CharacterRegistryError("登记节点身份或父级变化："+node.path)
         body = self.capture_body_skeleton(plan.body_root)
         if {(j.path,j.parent_path) for j in body.joints} != {(j.path,j.parent) for j in plan.body}:
@@ -80,6 +98,9 @@ class MayaCharacterRegistryMixin:
         for channel in plan.channels:
             if not c.objExists(channel.node+"."+channel.attribute):
                 raise CharacterRegistryError("登记控制通道缺失")
+            source=c.connectionInfo(channel.node+"."+channel.attribute,sourceFromDestination=True)
+            if source and not self._character_direct_animation(source):
+                raise CharacterRegistryError("登记控制通道有非动画外部输入")
         self.validate_body_spine(plan.spine)
         for spec in plan.spaces.spaces:
             self.capture_control_space_mode(spec)
