@@ -584,3 +584,7 @@ __all__ = [
 ]
 
 from .character_spaces import EnableBodyCharacterSpaceAnimation, SwitchBodyCharacterSpace
+
+from .character_preservation import CaptureBodyCharacterPreservation
+
+from .character_rebuild import StageBodyCharacterRebuild

@@ -388,3 +388,12 @@ write 先捕获非中性姿态，再扰动全部登记控制与空间；read 从
 ```
 
 默认模式生成 `characters.ma`；`--reopen` 给一方写入动画、空间事件和 FK/IK 转换并保存 `animated.ma`；`--verify` 在另一个进程比较保存结果，并继续操作另一角色。`--faults` 验证跨角色曲线拒绝和部分写入异常回滚。`--references` 以 `shot` 命名空间引用原场景，检查嵌套身份发现和引用节点只读边界。所有运行产物写入忽略目录。
+## 重建保留快照与暂存 Rig
+
+```powershell
+& $mayapy validation/maya_character_preservation_smoke.py validation/results/namespace-character-final/animated.ma validation/results/character-preservation-final.json
+& $mayapy validation/maya_character_rebuild_stage_smoke.py validation/results/namespace-character-final/animated.ma validation/results/rebuild-stage-final
+& $mayapy validation/maya_character_rebuild_stage_smoke.py validation/results/namespace-character-final/animated.ma validation/results/rebuild-stage-final --faults
+```
+
+保留快照检查原生加权曲线及循环、完整稀疏蒙皮、附件属性与只读采集。暂存构建检查新 Rig 身份、绑定布局、源角色和另一角色不变、Undo / Redo；故障模式在 70 关节角色暂存扩展时注入异常，核对新 Rig 撤销和原数据完整。暂存场景为 `staged.ma`，不表示原位替换已经实现。

@@ -11,7 +11,7 @@ from adv_py.core.character_registry import CharacterRegistryError
 _NODE_ARGS = frozenset('ls objExists nodeType listRelatives listConnections listHistory referenceQuery lockNode xform delete deleteAttr rename parent connectAttr disconnectAttr isConnected connectionInfo getAttr addAttr attributeQuery joint circle makeIdentity exactWorldBoundingBox pointPosition polyEvaluate keyframe keyTangent setKeyframe skinCluster skinPercent orientConstraint parentConstraint pointConstraint scaleConstraint poleVectorConstraint ikHandle polyUnite'.split())
 _NODE_RESULTS = frozenset('listRelatives listConnections listHistory rename parent createNode joint circle skinCluster orientConstraint parentConstraint pointConstraint scaleConstraint poleVectorConstraint ikHandle polyCylinder polyCube polyUnite'.split())
 _GLOBAL = frozenset('currentTime currentUnit upAxis undoInfo undo file pluginInfo loadPlugin allNodeTypes'.split())
-_READ = frozenset('ls objExists nodeType listRelatives listConnections listHistory referenceQuery connectionInfo getAttr attributeQuery isConnected exactWorldBoundingBox pointPosition polyEvaluate'.split())
+_READ = frozenset('ls listAttr objExists nodeType listRelatives listConnections listHistory referenceQuery connectionInfo getAttr attributeQuery isConnected exactWorldBoundingBox pointPosition polyEvaluate'.split())
 _CREATE = frozenset('createNode joint circle ikHandle skinCluster orientConstraint parentConstraint pointConstraint scaleConstraint poleVectorConstraint polyCylinder polyCube polyUnite setKeyframe'.split())
 
 
@@ -43,7 +43,7 @@ class MayaCharacterCommands:
 
     def __getattr__(self,name):
         if name in _GLOBAL:return getattr(self.raw,name)
-        if name not in _NODE_ARGS|_NODE_RESULTS|{'setAttr','select'}:
+        if name not in _NODE_ARGS|_NODE_RESULTS|{'setAttr','select','listAttr'}:
             raise AttributeError('角色命名空间边界尚未声明命令：'+name)
         def call(*args,**kwargs):
             c=self.raw;identity=self.identity
@@ -63,7 +63,7 @@ class MayaCharacterCommands:
                 pass  # First positional argument is an attribute identifier.
             elif name=='createNode':
                 pass  # First positional argument is a node type.
-            elif name in _NODE_ARGS or name=='select':
+            elif name in _NODE_ARGS or name in ('select','listAttr'):
                 args=[address(a) for a in args]
             for flag in ('name','n','parent','p','node','startJoint','sj','endEffector','ee','worldUpObject'):
                 if flag in kwargs and isinstance(kwargs[flag],str):kwargs[flag]=address(kwargs[flag])
@@ -89,6 +89,15 @@ class MayaCharacterCommands:
                         raise CharacterRegistryError('拒绝写入目标角色之外的节点：'+item)
                 if name in ('delete','parent','rename','makeIdentity') and not args:
                     raise CharacterRegistryError('角色写操作必须显式指定节点，不使用当前选择')
+            if name=='ikHandle' and not query:
+                # The first solver-system query lazily creates all default
+                # solvers, outside normal node Undo. Initialize at scene root
+                # before entering a character namespace, including after reopen.
+                previous=c.namespaceInfo(currentNamespace=True,absoluteName=True)
+                try:
+                    c.namespace(setNamespace=':')
+                    c.ikSystem(query=True,solverTypes=True)
+                finally:c.namespace(setNamespace=previous)
             if default_solver and not c.objExists(':'+default_solver):
                 c.createNode(default_solver,name=':'+default_solver,skipSelect=True)
             # Scene-wide discovery is scoped before UUID conversion, so Undo

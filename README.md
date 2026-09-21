@@ -14,11 +14,11 @@
 
 | 范围 | 已完成 |
 | --- | --- |
-| Maya 重构 | 105 个纵向切片，覆盖 Fit、Body、Arm / Leg / Hand FK/IK、Skin、Root Motion、FBX 与 MoCap 采样 / bake |
+| Maya 重构 | 106 个纵向切片，覆盖 Fit、Body、Arm / Leg / Hand FK/IK、Skin、Root Motion、FBX 与 MoCap 采样 / bake |
 | 角色结构 | 30 关节基础 Body、70 关节五指 Body、31 关节独立导出骨架 |
 | 数据合同 | FitSkeleton、Hand Pose 与 Skin Weight 使用路径无关的 JSON 文档和 SHA-256 内容摘要 |
 | 写入边界 | 修改前预检；单一 Maya Undo 事务提交；执行后从场景读回复检 |
-| 自动验证 | 316 项纯 Python 回归测试；93 个 Maya / Blender 宿主 smoke 脚本 |
+| 自动验证 | 319 项纯 Python 回归测试；95 个 Maya / Blender 宿主 smoke 脚本 |
 
 当前 main 已在 v0.96.0 基础上加入躯干 / 颈头 FK、独立脊柱 IK/FK、双向姿态匹配与头部 / 手脚空间切换，调用方式见 [核心绑定架构](docs/核心绑定架构.md)。完整 Fit → Body → 控制 → 显式蒙皮入口见 [全身示例](examples/README.md)。本轮未新增版本发布。
 
@@ -143,6 +143,7 @@ docs/                   架构、路线、调研与阶段说明
 - [角色动画操作](docs/角色动画操作.md)
 - [动画控制空间](docs/动画控制空间.md)
 - [多角色与命名空间](docs/多角色与命名空间.md)
+- [角色重建开发记录](docs/角色重建开发记录.md)
 - [剩余开发清单](docs/剩余开发清单.md)
 - [核心绑定架构](docs/核心绑定架构.md)
 - [迁移架构](docs/迁移架构.md)

@@ -9,6 +9,50 @@ from adv_py.core.body_skeleton import audit_body_provenance, oriented_body_prove
 
 
 class MayaCharacterRegistryMixin:
+    def preflight_character_rebuild_namespace(self,namespace):
+        from maya import cmds
+        from adv_py.core.character_identity import CharacterIdentity
+        if self.namespace is None:
+            raise CharacterRegistryError('重建必须显式选择角色 namespace；根命名空间使用空字符串')
+        identity=CharacterIdentity(namespace)
+        if not identity.namespace:
+            raise CharacterRegistryError('重建暂存需要非根命名空间')
+        if cmds.namespace(exists=namespace) and (cmds.namespaceInfo(namespace,listOnlyDependencyNodes=True,recurse=True)
+                or cmds.namespaceInfo(namespace,listOnlyNamespaces=True,recurse=True)):
+            raise CharacterRegistryError('重建暂存命名空间已有内容')
+        if ':' in namespace and not cmds.namespace(exists=namespace.rsplit(':',1)[0]):
+            raise CharacterRegistryError('重建暂存的父命名空间不存在')
+
+    def create_character_rebuild_host(self,namespace):
+        self._require_transaction()
+        self.preflight_character_rebuild_namespace(namespace)
+        from maya import cmds
+        from .maya_body import MayaBodyBuildHost
+        from contextlib import contextmanager
+        parent=self
+        class RebuildStageHost(MayaBodyBuildHost):
+            @contextmanager
+            def transaction(stage,label):
+                # The source host owns the one native Undo chunk. A stage
+                # failure must propagate before that chunk is rolled back.
+                parent._require_transaction()
+                if stage._transaction_active:raise RuntimeError('重建暂存不允许嵌套应用事务')
+                previous=set(stage._cmds.ls(type='transform',uuid=True) or [])
+                stage._transaction_active=True;stage._transaction_changed=False
+                try:
+                    yield
+                    if stage._transaction_changed:stage._checkpoint_new_transform_channels(previous)
+                finally:
+                    parent._transaction_changed|=stage._transaction_changed
+                    stage._transaction_active=False;stage._transaction_changed=False
+        self._transaction_changed=True
+        if not cmds.namespace(exists=namespace):cmds.namespace(addNamespace=namespace)
+        return RebuildStageHost(namespace=namespace)
+
+    def capture_character_preservation(self,registration,extensions=()):
+        from .maya_character_preservation import capture
+        return capture(self,registration,extensions)
+
     @staticmethod
     def discover_scene_characters():
         """Physical identities for explicit host selection; never edits a scene."""
