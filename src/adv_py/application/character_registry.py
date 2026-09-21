@@ -16,7 +16,7 @@ class CharacterRegistryHost(Protocol):
 def character_channels(rig):
     """Declare user channels from the actual build plans, never scene selection."""
     p = rig.plan
-    if not p.torso or not p.torso.torso.spine or not p.control_spaces:
+    if not p.torso or not (p.torso.torso.spine or p.torso.torso.spline) or not p.control_spaces:
         raise ValueError("角色登记要求完整 Torso、Spine IK 和控制空间")
     rows = []
     def add(key,node,attributes):
@@ -28,8 +28,15 @@ def character_channels(rig):
         add("torso."+control.control_name.removeprefix("AdvPy_"),control.control_path,
             (translation if control.control_path==p.torso.torso.pelvis_translation.source else ())+rotation)
     spine = p.torso.torso.spine
-    add("spine.ik",spine.ik_control,translation+rotation+("waistRoll","spineIkFk"))
-    add("spine.pole",spine.pole_control,translation)
+    if spine:
+        add("spine.ik",spine.ik_control,translation+rotation+("waistRoll","spineIkFk"))
+        add("spine.pole",spine.pole_control,translation)
+    else:
+        spline = p.torso.torso.spline
+        for index, target in enumerate(spline.targets):
+            add(f"spine.spline.{index}", target,
+                (() if index == 0 else translation) + (rotation if index in (0, 3) else ()))
+        add("spine.spline", spline.settings, ("spineIkFk", "stretch", "volume"))
     if p.torso.torso.head_aim:
         aim=p.torso.torso.head_aim
         add('head.aim.target',aim.target,translation+rotation)

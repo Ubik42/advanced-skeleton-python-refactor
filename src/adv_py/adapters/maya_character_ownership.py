@@ -95,7 +95,10 @@ def audit(host,staged):
                 value=a.getAttr(old+'.'+attr)
                 if isinstance(value,list):value=tuple(value[0])
                 settings.append((attr,value,bool(a.getAttr(old+'.'+attr,lock=True))))
-            shapes.append((role,tuple(shape_a),tuple(settings),_curve_topology(host,old)))
+            # Solver curves receive their CVs from owned graph connections.
+            # Their evaluated animation is not an editable control shape.
+            driven = a.listConnections(old+'.controlPoints',source=True,destination=False) or []
+            shapes.append((role,() if driven else tuple(shape_a),tuple(settings),_curve_topology(host,old)))
         if 'dagNode' in (a.nodeType(old,inherited=True) or []):
             children=set(a.listRelatives(old,children=True,fullPath=True) or [])
             if children-set(old_nodes.values())-extensions:
@@ -138,7 +141,7 @@ def verify_shapes(target,ownership):
     c=target._cmds
     for node,points,settings,knots in ownership.shapes:
         current=tuple(c.xform(node+'.cv[*]',q=True,objectSpace=True,t=True) or [])
-        if (len(current)!=len(points) or any(abs(a-b)>1e-8 for a,b in zip(current,points))
+        if ((points and (len(current)!=len(points) or any(abs(a-b)>1e-8 for a,b in zip(current,points))))
                 or _curve_topology(target,node)!=knots):
             raise RuntimeError('控制形状保留复检失败：'+node)
         for attr,value,locked in settings:

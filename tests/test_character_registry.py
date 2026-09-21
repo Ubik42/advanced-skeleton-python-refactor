@@ -55,4 +55,53 @@ class CharacterRegistryTests(unittest.TestCase):
         mutate(lambda p:p["spaces"]["spaces"][0].__setitem__("rotation_only",False))
 
 
+class SplineRegistrationTests(unittest.TestCase):
+    @staticmethod
+    def fixture():
+        from adv_py.core.body_spline import BodySplinePlan
+        old = registration_fixture()
+        body = old.body[:29]
+        source = tuple(j.path for j in body[:5])
+        joints = []
+        for role in (BodyLimbMechanismRole.FK, BodyLimbMechanismRole.IK):
+            parent = '|Mechanisms'
+            for i, joint in enumerate(source):
+                name = f'{role.value}Joint{i}'
+                node = parent + '|' + name
+                joints.append(BodyLimbMechanismJointSpec(role, FitBuildSide.MIDDLE, joint, node,
+                    name, parent, (0.,0.,float(i)), ((1.,0.,0.),(0.,1.,0.),(0.,0.,1.))))
+                parent = node
+        spline = BodySplinePlan('|Mechanisms', tuple(joints), source,
+            tuple(f'|FK{i}' for i in range(5)), '|Pelvis', '|Chest',
+            tuple(f'|SplineTarget{i}' for i in range(4)),
+            tuple((0.,0.,i*4/3) for i in range(4)), ((1.,0.,0.),(0.,1.,0.),(0.,0.,1.)), (1.,)*4)
+        paths = {n.path for n in old.nodes} | {j.path for j in joints} | set(spline.targets) | set(spline.fk_controls) | {spline.curve}
+        nodes = tuple(CharacterNode(p, str(i), 'transform', None) for i,p in enumerate(sorted(paths)))
+        return replace(old, body=body, spine=spline, nodes=nodes)
+
+    def test_spline_version_roundtrip_and_legacy_unchanged(self):
+        reg = self.fixture()
+        text = encode_registration(reg)
+        self.assertEqual(json.loads(text)['version'], 2)
+        self.assertEqual(decode_registration(text), reg)
+        self.assertEqual(json.loads(encode_registration(registration_fixture()))['version'], 1)
+
+    def test_spline_rejects_invalid_mechanism_and_control_contracts(self):
+        original = json.loads(encode_registration(self.fixture()))
+        changes = (
+            lambda p: p.__setitem__('spine_kind', 'unknown'),
+            lambda p: p['spine']['targets'].pop(),
+            lambda p: p['spine']['lengths'].__setitem__(0, 0),
+            lambda p: p['spine']['body_joints'].reverse(),
+            lambda p: p['spine']['joints'][0].__setitem__('role', 'ik'),
+            lambda p: p['spine']['joints'][1].__setitem__('parent_path', '|Wrong'),
+            lambda p: p['spine']['axes'].__setitem__(0, [2,0,0]),
+        )
+        for change in changes:
+            doc = json.loads(json.dumps(original))
+            change(doc['payload']);doc['digest'] = digest(doc['payload'])
+            with self.assertRaises(CharacterRegistryError):
+                decode_registration(json.dumps(doc))
+
+
 if __name__=="__main__": unittest.main()

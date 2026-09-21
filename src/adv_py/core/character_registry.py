@@ -6,6 +6,7 @@ from math import isfinite
 import re
 
 from .body_spine import BodySpinePlan
+from .body_spline import BodySplinePlan
 from .body_control_spaces import BodyControlSpaceSpec, BodyControlSpacesPlan
 from .body_limb_mechanisms import BodyLimbMechanismJointSpec, BodyLimbMechanismRole
 from .fit_symmetry import FitBuildSide
@@ -81,7 +82,7 @@ class CharacterRegistration:
     channels: tuple[CharacterChannel, ...]
     body: tuple[CharacterBindJoint, ...]
     nodes: tuple[CharacterNode, ...]
-    spine: BodySpinePlan
+    spine: BodySpinePlan | BodySplinePlan
     spaces: BodyControlSpacesPlan
 
     @property
@@ -122,7 +123,11 @@ def safe_json(text, *, max_bytes=2_000_000):
 
 def encode_registration(registration):
     payload = asdict(registration)
-    value = {"format":FORMAT,"version":VERSION,"payload":payload,"digest":digest(payload)}
+    version = VERSION
+    if isinstance(registration.spine, BodySplinePlan):
+        version = 2
+        payload["spine_kind"] = "spline"
+    value = {"format":FORMAT,"version":version,"payload":payload,"digest":digest(payload)}
     text = canonical(value)
     decode_registration(text)
     return text
@@ -130,9 +135,12 @@ def encode_registration(registration):
 
 def decode_registration(text):
     doc = exact(safe_json(text), ("format","version","payload","digest"))
-    if doc["format"] != FORMAT or type(doc["version"]) is not int or doc["version"] != VERSION:
+    if doc["format"] != FORMAT or type(doc["version"]) is not int or doc["version"] not in (1, 2):
         raise CharacterRegistryError("不支持的角色登记版本")
-    data = exact(doc["payload"], ("body_root","container","channels","body","nodes","spine","spaces"))
+    spline_document = doc["version"] == 2
+    data = exact(doc["payload"], ("body_root","container","channels","body","nodes","spine","spaces") + (("spine_kind",) if spline_document else ()))
+    if spline_document and data["spine_kind"] != "spline":
+        raise CharacterRegistryError("不支持的脊柱求解类型")
     if digest(data) != doc["digest"]:
         raise CharacterRegistryError("角色登记摘要不匹配")
     try:
@@ -154,8 +162,8 @@ def decode_registration(text):
         for row in data["body"]:
             exact(row,("path","parent","matrix"))
             body.append(CharacterBindJoint(path(row["path"]),path(row["parent"]) if row["parent"] else None,vector(row["matrix"],16)))
-        if len(body) not in (30,70) or len({j.path for j in body}) != len(body) or {j.path for j in body if j.parent is None} != {root}:
-            raise CharacterRegistryError("登记只支持完整 30 / 70 关节身体")
+        if (not 2 <= len(body) <= 256 if spline_document else len(body) not in (30,70)) or len({j.path for j in body}) != len(body) or {j.path for j in body if j.parent is None} != {root}:
+            raise CharacterRegistryError("登记身体数量或根节点无效")
         paths = {j.path for j in body}
         if any(j.parent and (j.parent not in paths or j.path.rsplit("|",1)[0] != j.parent) for j in body):
             raise CharacterRegistryError("Body 父链无效")
@@ -174,28 +182,36 @@ def decode_registration(text):
             nodes.append(CharacterNode(path(row["path"]),row["uuid"],row["node_type"],path(row["parent"]) if row["parent"] else None,tuple(inputs)))
         if len({n.path for n in nodes}) != len(nodes) or len({n.uuid for n in nodes}) != len(nodes):
             raise CharacterRegistryError("登记节点身份重复")
-        raw = exact(data["spine"], (f.name for f in fields(BodySpinePlan)))
-        joints = []
-        for row in raw["joints"]:
-            exact(row,(f.name for f in fields(BodyLimbMechanismJointSpec)))
-            node = path(row["path"])
-            if row["name"] != node.split("|")[-1]:
-                raise CharacterRegistryError("Spine 关节名称与路径不一致")
-            axes = tuple(vector(v,3) for v in row["world_axes"])
-            if len(axes) != 3:
-                raise CharacterRegistryError("Spine 朝向维度错误")
-            joints.append(BodyLimbMechanismJointSpec(BodyLimbMechanismRole(row["role"]),FitBuildSide(row["side"]),path(row["source_joint"]),node,row["name"],path(row["parent_path"]),vector(row["world_position"],3),axes))
-        if len(joints) != 6 or tuple(j.role.value for j in joints) != ("fk",)*3+("ik",)*3:
-            raise CharacterRegistryError("Spine 机制链不完整")
-        values = {k:path(v) for k,v in raw.items() if k not in ("joints","fk_controls","body_joints","pole_position","lengths")}
-        for key in ("fk_controls","body_joints"):
-            values[key] = tuple(path(p) for p in raw[key])
-            if len(values[key]) != 3:
-                raise CharacterRegistryError("Spine 三关节合同无效")
-        lengths = vector(raw["lengths"],2)
-        if min(lengths) <= 0:
-            raise CharacterRegistryError("Spine 骨段长度必须为正")
-        spine = BodySpinePlan(**values,joints=tuple(joints),pole_position=vector(raw["pole_position"],3),lengths=lengths)
+        if spline_document:
+            from .spline_registration import decode_spline
+            spine = decode_spline(data["spine"], tuple(body))
+            joints = spine.joints
+            values = {"fk_controls": spine.fk_controls, "body_joints": spine.body_joints,
+                      "root_path": spine.root_path, "pelvis_control": spine.pelvis_control,
+                      "chest_space": spine.chest_space, "curve": spine.curve}
+        else:
+            raw = exact(data["spine"], (f.name for f in fields(BodySpinePlan)))
+            joints = []
+            for row in raw["joints"]:
+                exact(row,(f.name for f in fields(BodyLimbMechanismJointSpec)))
+                node = path(row["path"])
+                if row["name"] != node.split("|")[-1]:
+                    raise CharacterRegistryError("Spine 关节名称与路径不一致")
+                axes = tuple(vector(v,3) for v in row["world_axes"])
+                if len(axes) != 3:
+                    raise CharacterRegistryError("Spine 朝向维度错误")
+                joints.append(BodyLimbMechanismJointSpec(BodyLimbMechanismRole(row["role"]),FitBuildSide(row["side"]),path(row["source_joint"]),node,row["name"],path(row["parent_path"]),vector(row["world_position"],3),axes))
+            if len(joints) != 6 or tuple(j.role.value for j in joints) != ("fk",)*3+("ik",)*3:
+                raise CharacterRegistryError("Spine 机制链不完整")
+            values = {k:path(v) for k,v in raw.items() if k not in ("joints","fk_controls","body_joints","pole_position","lengths")}
+            for key in ("fk_controls","body_joints"):
+                values[key] = tuple(path(p) for p in raw[key])
+                if len(values[key]) != 3:
+                    raise CharacterRegistryError("Spine 三关节合同无效")
+            lengths = vector(raw["lengths"],2)
+            if min(lengths) <= 0:
+                raise CharacterRegistryError("Spine 骨段长度必须为正")
+            spine = BodySpinePlan(**values,joints=tuple(joints),pole_position=vector(raw["pole_position"],3),lengths=lengths)
         raw_spaces = exact(data["spaces"],("body_root","spaces"))
         spaces = []
         for row in raw_spaces["spaces"]:
@@ -211,6 +227,8 @@ def decode_registration(text):
             raise CharacterRegistryError("空间或脊柱角色根不一致")
         required = {root,container,*(c.node for c in channels),*paths,*values["fk_controls"],*values["body_joints"],*(j.path for j in joints)}
         required.update(v for v in values.values() if isinstance(v,str))
+        if spline_document:
+            required.update(spine.targets)
         required.update(p for s in spaces for p in (*s.targets,s.body_source,s.global_source))
         if not required.issubset({n.path for n in nodes}):
             raise CharacterRegistryError("登记缺少操作节点身份")

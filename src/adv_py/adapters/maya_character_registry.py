@@ -18,9 +18,25 @@ class MayaCharacterRegistryMixin:
         return promote(self,staged)
 
     def match_character_rebuild_solver(self,stage,registration):
-        if self._cmds.ikHandle('AdvPy_SpineIKHandle',q=True,solver=True)=='AdvPy_SpineRPSolver':
+        if self._cmds.objExists('AdvPy_SpineIKHandle') and self._cmds.ikHandle('AdvPy_SpineIKHandle',q=True,solver=True)=='AdvPy_SpineRPSolver':
             with stage.transaction('Match replacement spine solver'):
                 stage.ensure_precise_body_spine_solver(registration.spine)
+
+    def preserve_character_rebuild_binding(self,stage,original,replacement):
+        from adv_py.core.character_preservation import validate_rebuild_layout
+        validate_rebuild_layout(original,replacement)
+        if (type(original.spine) is not type(replacement.spine)
+                or len(original.spine.lengths)!=len(replacement.spine.lengths)
+                or any(abs(a-b)>1e-6 for a,b in zip(original.spine.lengths,replacement.spine.lengths))):
+            raise CharacterRegistryError('重建改变脊柱求解类型或绑定长度')
+        # Same-layout rebuilding keeps the original binding definition exactly.
+        # Re-evaluating matrices after Fit import can add sub-ulp noise, which
+        # must not invalidate the character's previously saved animation files.
+        retained=replace(replacement,body=original.body,
+                         spine=replace(replacement.spine,lengths=original.spine.lengths))
+        with stage.transaction('Preserve original binding identity'):
+            stage.write_character_registration_extension(replacement,retained)
+        return retained
 
     def audit_character_rebuild_ownership(self,staged):
         from .maya_character_ownership import audit
@@ -240,21 +256,33 @@ class MayaCharacterRegistryMixin:
             return False
         return True
 
+    def validate_character_spine(self, plan):
+        from adv_py.core.body_spline import BodySplinePlan
+        if isinstance(plan, BodySplinePlan):
+            from .maya_spline import audit
+            audit(self, plan)
+        else:
+            self.validate_body_spine(plan)
+
     def describe_character_registration(self, rig, channels):
         c = self._cmds
         body = self.capture_body_skeleton(rig.body.root)
         if not body_bind_pose_matches(rig.body,body):
             raise CharacterRegistryError("角色必须在构建后的绑定姿态登记")
-        spine = rig.plan.torso.torso.spine
+        spine = rig.plan.torso.torso.spine or rig.plan.torso.torso.spline
         spaces = rig.plan.control_spaces
-        self.validate_body_spine(spine)
+        self.validate_character_spine(spine)
         for spec in spaces.spaces:
             self.capture_control_space_mode(spec)
         container = rig.plan.arm.safety.symmetry.source.hierarchy.container
         paths = {body.root,container,*(j.path for j in body.joints),*(ch.node for ch in channels)}
         paths.update((spine.root_path,spine.pelvis_control,*spine.fk_controls,*spine.body_joints,
-                      spine.ik_offset,spine.ik_control,spine.pole_offset,spine.pole_control,
-                      spine.waist_output,spine.chest_space,*(j.path for j in spine.joints)))
+                      spine.chest_space,*(j.path for j in spine.joints)))
+        from adv_py.core.body_spline import BodySplinePlan
+        if isinstance(spine, BodySplinePlan):
+            paths.update((*spine.targets, spine.curve))
+        else:
+            paths.update((spine.ik_offset,spine.ik_control,spine.pole_offset,spine.pole_control,spine.waist_output))
         paths.update(p for spec in spaces.spaces for p in (*spec.targets,spec.body_source,spec.global_source))
         if rig.plan.torso.torso.head_aim:
             aim=rig.plan.torso.torso.head_aim
@@ -314,7 +342,7 @@ class MayaCharacterRegistryMixin:
         audit_shape(self,plan)
         from .maya_animated_spaces import audit as audit_spaces
         audit_spaces(self,plan)
-        self.validate_body_spine(plan.spine)
+        self.validate_character_spine(plan.spine)
         for spec in plan.spaces.spaces:
             self.capture_control_space_mode(spec)
 

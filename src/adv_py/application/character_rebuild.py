@@ -42,14 +42,33 @@ class StageBodyCharacterRebuild:
                 CreateAndImportFitSkeleton(stage).apply(fit)
                 BuildOrientedBodySkeleton(stage).apply()
                 keys={channel.key for channel in original.registration.channels}
+                from adv_py.core.body_spline import BodySplinePlan
+                from adv_py.core.body_description import BodyAxialDescription
+                description = None
+                if isinstance(original.registration.spine, BodySplinePlan):
+                    source = original.registration
+                    by_path = {joint.path: joint for joint in source.body}
+                    heads = [joint for joint in source.body if joint.path.rsplit('|',1)[-1] == 'Head_M']
+                    if len(heads) != 1:
+                        raise CharacterRegistryError('可变身体重建需要明确的 Head_M 颈头终点')
+                    neck = []
+                    joint = heads[0]
+                    while joint.path != source.spine.body_joints[-1]:
+                        neck.append(joint.path.rsplit('|',1)[-1])
+                        if joint.parent not in by_path:
+                            raise CharacterRegistryError('重建颈头链没有连接到胸部')
+                        joint = by_path[joint.parent]
+                    description = BodyAxialDescription(
+                        spine=tuple(p.rsplit('|',1)[-1] for p in source.spine.body_joints), neck=tuple(reversed(neck)))
                 rig=BuildBodyCharacterRig(stage).apply(include_torso=True,include_spine_ik=True,include_control_spaces=True,
-                    include_head_aim='head.aim.headAim' in keys)
+                    include_head_aim='head.aim.headAim' in keys,axial_description=description)
                 registration=RegisterBodyCharacter(stage).apply(rig)
                 if any('.ikOrientation.' in key for key in keys):registration=EnableBodyCharacterLimbAnimation(stage).apply()
                 if any('.ikLengthWeight.' in key for key in keys):registration=EnableBodyCharacterStretchMatching(stage).apply()
                 if any(key.startswith('space.') for key in keys):registration=EnableBodyCharacterSpaceAnimation(stage).apply()
                 host.match_character_rebuild_solver(stage,registration)
                 validate_rebuild_layout(original.registration,registration)
+                registration=host.preserve_character_rebuild_binding(stage,original.registration,registration)
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('暂存构建改写了原角色，已回滚')
                 properties=host.plan_character_property_transfer(original,namespace)

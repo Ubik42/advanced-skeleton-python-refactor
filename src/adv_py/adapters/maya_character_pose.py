@@ -147,6 +147,9 @@ class MayaCharacterPoseMixin:
             seek(c.currentTime(q=True))
 
     def match_character_spine_samples(self,registration,frames,mode):
+        from adv_py.core.body_spline import BodySplinePlan
+        if isinstance(registration.spine, BodySplinePlan):
+            raise CharacterRegistryError("曲线脊柱的无跳变模式匹配尚未实现")
         self._require_transaction()
         self.preflight_character_keyframe(registration)
         c=self._cmds

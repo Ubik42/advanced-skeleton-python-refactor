@@ -122,7 +122,7 @@ def transfer(host,staged):
         from .maya_character_ownership import transfer_shapes
         transfer_shapes(target,staged.ownership)
         # Match the original solver policy before any animation is moved.
-        if host._cmds.ikHandle('AdvPy_SpineIKHandle',q=True,solver=True)=='AdvPy_SpineRPSolver':
+        if host._cmds.objExists('AdvPy_SpineIKHandle') and host._cmds.ikHandle('AdvPy_SpineIKHandle',q=True,solver=True)=='AdvPy_SpineRPSolver':
             target._transaction_active=True
             try:target.ensure_precise_body_spine_solver(staged.registration.spine)
             finally:target._transaction_active=False;target._transaction_changed=False
