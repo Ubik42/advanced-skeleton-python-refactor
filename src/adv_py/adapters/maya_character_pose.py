@@ -150,18 +150,7 @@ class MayaCharacterPoseMixin:
             for frame in frames:
                 seek(frame)
                 before=self.capture_character_pose(registration)
-                values=[(ch.node+'.'+ch.attribute,value) for ch,(_,value) in zip(registration.channels,before.channels)]
-                connections=[]
-                self._transaction_changed=True
-                try:
-                    # Curves stay intact. Temporarily expose scalar controls to
-                    # the existing static solver, then reconnect the same plugs.
-                    for plug,value in values:
-                        source=c.connectionInfo(plug,sourceFromDestination=True)
-                        if source:
-                            c.disconnectAttr(source,plug)
-                            connections.append((source,plug))
-                        c.setAttr(plug,value)
+                with self._character_static_controls(registration,before):
                     value=self.preflight_body_spine_match(registration.spine,mode)
                     if value!=(1. if mode=='ik' else 0.):
                         self.match_body_spine(registration.spine,mode)
@@ -172,12 +161,61 @@ class MayaCharacterPoseMixin:
                         joint=max(zip(reference.body_frames,after.body_frames),key=lambda pair:max(abs(a-b) for a,b in zip(pair[0][1],pair[1][1])))[0][0]
                         raise RuntimeError(f"脊柱动画匹配改变了全身世界姿态：frame={frame}, joint={joint}, error={error}")
                     samples.append((float(frame),after))
-                finally:
-                    for plug,value in values:
-                        # A partial disconnect failure may leave other channels connected.
-                        if not c.connectionInfo(plug,sourceFromDestination=True):
-                            c.setAttr(plug,value)
-                    for source,plug in connections:
-                        c.connectAttr(source,plug)
                 seek(frame)
         return tuple(samples)
+
+    @contextmanager
+    def _character_static_controls(self,registration,pose):
+        self._require_transaction()
+        c=self._cmds
+        values=[(ch.node+'.'+ch.attribute,value) for ch,(_,value) in zip(registration.channels,pose.channels)]
+        connections=[]
+        self._transaction_changed=True
+        try:
+            for plug,value in values:
+                source=c.connectionInfo(plug,sourceFromDestination=True)
+                if source:
+                    c.disconnectAttr(source,plug)
+                    connections.append((source,plug))
+                c.setAttr(plug,value)
+            yield
+        finally:
+            for plug,value in values:
+                if not c.connectionInfo(plug,sourceFromDestination=True):
+                    c.setAttr(plug,value)
+            for source,plug in connections:
+                c.connectAttr(source,plug)
+
+    def match_character_limb_samples(self,registration,frames,limb,side,mode):
+        from adv_py.application.body_arm_fk_to_ik import MatchBodyArmFkToIk
+        from adv_py.application.body_arm_ik_to_fk import MatchBodyArmIkToFk
+        from adv_py.application.body_leg_fk_to_ik import MatchBodyLegFkToIk
+        from adv_py.application.body_leg_ik_to_fk import MatchBodyLegIkToFk
+        self._require_transaction()
+        self.preflight_character_keyframe(registration)
+        services={('arm','ik'):MatchBodyArmFkToIk,('arm','fk'):MatchBodyArmIkToFk,
+                  ('leg','ik'):MatchBodyLegFkToIk,('leg','fk'):MatchBodyLegIkToFk}
+        service=services[(limb,mode)](self)
+        method=getattr(self,'apply_body_'+limb+('_fk_to_ik' if mode=='ik' else '_ik_to_fk'))
+        blend_key=f'{limb}.settings.{limb}IkFk_{side.value}'
+        result=[]
+        with self._character_sampling_time(preserve_modified=False) as seek:
+            for frame in frames:
+                seek(frame)
+                before=self.capture_character_pose(registration)
+                value=dict(before.channels)[blend_key]
+                if value not in (0.,1.):
+                    raise CharacterRegistryError('四肢动画转换要求源模式位于 FK / IK 端点')
+                with self._character_static_controls(registration,before):
+                    if value!=(1. if mode=='ik' else 0.):
+                        plan=service.plan(side,registration.container,body_root_name=registration.body_root)
+                        if not plan.ready:
+                            raise CharacterRegistryError('四肢动画匹配预检失败：'+'；'.join(plan.blockers))
+                        method(plan.match)
+                    after=self.capture_character_pose(registration)
+                    error=max(abs(a-b) for (_,left),(_,right) in zip(before.body_frames,after.body_frames) for a,b in zip(left,right))
+                    if error>1e-4 or dict(after.channels)[blend_key]!=(1. if mode=='ik' else 0.):
+                        raise RuntimeError(f'四肢动画匹配复检失败：frame={frame}, error={error}')
+                    result.append((float(frame),after))
+                seek(frame)
+        return tuple(result)

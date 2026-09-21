@@ -75,6 +75,7 @@ class BodyJointState:
     rotation: Vector3
     world_axes: AxisFrame = IDENTITY_FRAME
     writable_joint_orient_axes: frozenset[str] = ALL_ORIENT_AXES
+    world_scale: Vector3 = (1.0, 1.0, 1.0)
 
 
 @dataclass(frozen=True, slots=True)

@@ -551,4 +551,7 @@ def _signed_local_axis_distance(
         raise ValueError(
             "Leg IK→FK 匹配要求 Body 段沿父关节一个明确的本地主轴"
         )
-    return "XYZ"[axis_index], projected
+    scale=parent.world_scale[axis_index]
+    if not isfinite(scale) or scale<=1e-8:
+        raise ValueError("Leg IK→FK 父级缩放无效")
+    return "XYZ"[axis_index], projected/scale

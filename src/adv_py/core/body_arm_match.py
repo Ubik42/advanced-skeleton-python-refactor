@@ -279,4 +279,7 @@ def _signed_local_x_distance(parent, child, *, tolerance: float = 1e-3) -> float
         or abs(abs(projected) - length) > tolerance
     ):
         raise ValueError("Arm IK→FK 匹配要求 Body 段沿父关节本地 X 对齐")
-    return projected
+    scale=parent.world_scale[0]
+    if not isfinite(scale) or scale<=1e-8:
+        raise ValueError("Arm IK→FK 父级缩放无效")
+    return projected/scale

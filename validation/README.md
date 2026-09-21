@@ -337,3 +337,15 @@ write 先捕获非中性姿态，再扰动全部登记控制与空间；read 从
 30 关节用例将结果名中的 `70` 改为 `30`，单帧和片段脚本追加 `--basic`；脊柱脚本从已保存场景读取拓扑，无需额外参数。
 
 单帧脚本覆盖 1 / 10 / 20 三帧、曲线归属、其他键值保留和整笔恢复。片段脚本覆盖 1–21 帧、步长 5 的五个采样，以及 0 / 30 帧已有键保留；重开后比较身体与实际蒙皮并继续编辑。脊柱脚本验证同一段动画双向转换、全部采样点世界姿态、独立求解器 Undo / Redo、共享求解器不变、失败回滚与非法外部消费拒绝。
+
+
+## 四肢动画及补偿登记
+
+先生成上节的 `animation70_final` 输入场景，再运行：
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_limb_animation_smoke.py validation/results/animation70_final validation/results/limb-animation70-final.json
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_limb_animation_smoke.py validation/results/animation70_final validation/results/limb-animation70-final.json --reopen
+```
+
+30 关节使用相应输入目录。脚本从场景读取拓扑，无需 basic 开关。覆盖 32 个新通道、旧动画保留、登记与转换事务恢复、左右臂腿八种转换、实际蒙皮和新进程继续编辑。该批使用中性骨段长度与等比 Global 动画；动态拉伸组合的缺口见 [四肢动画开发记录](../docs/四肢动画开发记录.md)。

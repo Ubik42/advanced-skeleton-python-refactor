@@ -9,6 +9,67 @@ from adv_py.core.body_skeleton import audit_body_provenance, oriented_body_prove
 
 
 class MayaCharacterRegistryMixin:
+    def describe_character_limb_animation(self,registration):
+        from adv_py.application.body_arm_ik_to_fk import MatchBodyArmIkToFk
+        from adv_py.application.body_leg_ik_to_fk import MatchBodyLegIkToFk
+        from adv_py.core.character_registry import CharacterChannel
+        from adv_py.core.fit_symmetry import FitBuildSide
+        self._validate_character_registration(registration)
+        c=self._cmds
+        from .maya_limb_orientation import preflight_orientation_install, orientation_channels
+        preflight_orientation_install(self,registration)
+        channels=list(registration.channels)
+        existing={ch.key:ch for ch in channels}
+        nodes=list(registration.nodes)
+        known={n.path for n in nodes}
+        for label,service in (("arm",MatchBodyArmIkToFk),("leg",MatchBodyLegIkToFk)):
+            for side in (FitBuildSide.RIGHT,FitBuildSide.LEFT):
+                # The read-only matching plan resolves actual driver paths and
+                # the signed primary axis, including non-X leg constructions.
+                plan=service(self).plan(side,registration.container,body_root_name=registration.body_root)
+                if plan.provenance_issues or plan.blend_issues or plan.fk_issues:
+                    raise CharacterRegistryError("四肢结构无法登记为动画骨段")
+                for index,plug in enumerate(plan.match.fk_segment_plugs):
+                    path,attribute=plug.rsplit('.',1)
+                    channel=CharacterChannel(f"{label}.fkLength.{side.value}.{index}",path,attribute)
+                    if channel.key in existing:
+                        if existing[channel.key]!=channel:
+                            raise CharacterRegistryError("已登记的四肢骨段通道被替换")
+                        continue
+                    if (c.nodeType(path)!="joint" or c.getAttr(plug,lock=True)
+                            or not c.getAttr(plug,keyable=True) or c.listConnections(plug,s=True,d=False)):
+                        raise CharacterRegistryError("新增骨段通道锁定、不可写键或已有输入")
+                    if any(ch.node==path and ch.attribute==attribute for ch in channels):
+                        raise CharacterRegistryError("四肢骨段通道已经以其他语义登记")
+                    channels.append(channel)
+                    while path:
+                        if path not in known:
+                            nodes.append(self._registry_node(path));known.add(path)
+                        path=path.rsplit('|',1)[0]
+        for ch in orientation_channels(registration):
+            if ch.key not in existing:
+                channels.append(ch)
+        result=replace(registration,channels=tuple(channels),nodes=tuple(nodes))
+        encode_registration(result)
+        return result
+
+    def extend_character_limb_registration(self,before,after):
+        self._require_transaction()
+        if self.read_character_registration()!=before or self.describe_character_limb_animation(before)!=after:
+            raise CharacterRegistryError("角色骨段扩展计划已经失效")
+        c=self._cmds
+        self._transaction_changed=True
+        from .maya_limb_orientation import install_orientation
+        install_orientation(self,before)
+        document=REGISTRY_NAME+".advPyRegistryDocument"
+        c.setAttr(document,lock=False)
+        c.setAttr(document,encode_registration(after),type="string")
+        c.setAttr(document,lock=True)
+        c.setAttr(REGISTRY_NAME+".members",lock=False)
+        for index,member in enumerate(after.nodes[len(before.nodes):],start=len(before.nodes)):
+            c.connectAttr(member.path+".message",REGISTRY_NAME+f".members[{index}]")
+        c.setAttr(REGISTRY_NAME+".members",lock=True)
+
     def _registry_node(self, path):
         c = self._cmds
         if (c.ls(path,long=True) or []) != [path] or c.nodeType(path) not in ("transform","joint"):
@@ -34,7 +95,9 @@ class MayaCharacterRegistryMixin:
         if attribute!="output" or c.nodeType(node) not in ("animCurveTA","animCurveTL","animCurveTU"):
             return False
         driver=c.connectionInfo(node+".input",sourceFromDestination=True)
-        if not driver or driver.rsplit(".",1)[1]!="outTime" or c.nodeType(driver.rsplit(".",1)[0])!="time":
+        # Maya can use the implicit scene clock without a visible input edge,
+        # including curves restored from its native scene format.
+        if driver and (driver.rsplit(".",1)[1]!="outTime" or c.nodeType(driver.rsplit(".",1)[0])!="time"):
             return False
         return True
 
@@ -101,6 +164,8 @@ class MayaCharacterRegistryMixin:
             source=c.connectionInfo(channel.node+"."+channel.attribute,sourceFromDestination=True)
             if source and not self._character_direct_animation(source):
                 raise CharacterRegistryError("登记控制通道有非动画外部输入")
+        from .maya_limb_orientation import audit_orientation
+        audit_orientation(self,plan)
         self.validate_body_spine(plan.spine)
         for spec in plan.spaces.spaces:
             self.capture_control_space_mode(spec)
@@ -134,7 +199,11 @@ class MayaCharacterRegistryMixin:
             raise CharacterRegistryError("角色登记文档缺失")
         plan = decode_registration(c.getAttr(name+".advPyRegistryDocument"))
         indices = c.getAttr(name+".members",multiIndices=True) or []
-        if indices != list(range(len(plan.nodes))):
+        # Undoing a Maya multi-message connection may leave an empty logical
+        # array slot. Only trailing, unconnected capacity is permitted.
+        if indices[:len(plan.nodes)] != list(range(len(plan.nodes))) or any(
+                c.listConnections(name+f".members[{index}]",source=True,destination=False)
+                for index in indices[len(plan.nodes):]):
             raise CharacterRegistryError("角色登记成员列表不完整")
         for index,member in enumerate(plan.nodes):
             inputs = c.listConnections(name+f".members[{index}]",source=True,destination=False,plugs=True) or []

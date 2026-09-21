@@ -375,6 +375,7 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                     rotation=tuple(float(value) for value in rotation),
                     world_axes=world_axes,
                     writable_joint_orient_axes=writable_axes,
+                    world_scale=tuple(sum(float(v)*float(v) for v in matrix[i:i+3])**0.5 for i in (0,4,8)),
                 )
             )
         return BodySkeletonSnapshot(
@@ -3714,11 +3715,15 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self._transaction_changed = True
+            from .maya_limb_orientation import begin_orientation_match, finish_orientation_match
+            orientation_state=begin_orientation_match(self,"arm",plan.side.value)
             self._cmds.xform(plan.pole_control_path, worldSpace=True, translation=plan.pole_position)
             x_axis, y_axis, z_axis = plan.wrist_axes
             matrix = (*x_axis, 0.0, *y_axis, 0.0, *z_axis, 0.0, *plan.wrist_position, 1.0)
-            self._cmds.xform(plan.wrist_control_path, worldSpace=True, matrix=matrix)
+            self._cmds.xform(plan.wrist_control_path, worldSpace=True, translation=plan.wrist_position)
+            self._spine_set_world_rotation(plan.wrist_control_path,matrix)
             self._cmds.setAttr(plan.blend_plug, 1.0)
+            finish_orientation_match(self,"arm",plan.side.value,orientation_state)
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
@@ -3795,6 +3800,8 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self._transaction_changed = True
+            from .maya_limb_orientation import begin_orientation_match, finish_orientation_match
+            orientation_state=begin_orientation_match(self,"leg",plan.side.value)
             for plug in plan.foot_attribute_plugs:
                 self._cmds.setAttr(plug, 0.0)
             self._cmds.xform(
@@ -3809,9 +3816,8 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                 *z_axis, 0.0,
                 *plan.ankle_position, 1.0,
             )
-            self._cmds.xform(
-                plan.ankle_control_path, worldSpace=True, matrix=matrix
-            )
+            self._cmds.xform(plan.ankle_control_path, worldSpace=True, translation=plan.ankle_position)
+            self._spine_set_world_rotation(plan.ankle_control_path,matrix)
             toe_position = tuple(float(value) for value in self._cmds.xform(
                 plan.toe_control_path,
                 query=True,
@@ -3825,10 +3831,9 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                 *toe_z, 0.0,
                 *toe_position, 1.0,
             )
-            self._cmds.xform(
-                plan.toe_control_path, worldSpace=True, matrix=toe_matrix
-            )
+            self._spine_set_world_rotation(plan.toe_control_path,toe_matrix)
             self._cmds.setAttr(plan.blend_plug, 1.0)
+            finish_orientation_match(self,"leg",plan.side.value,orientation_state)
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
@@ -3901,7 +3906,7 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                     *z_axis, 0.0,
                     *position, 1.0,
                 )
-                self._cmds.xform(path, worldSpace=True, matrix=matrix)
+                self._spine_set_world_rotation(path,matrix)
             for plug, value in zip(
                 plan.fk_segment_plugs,
                 plan.fk_segment_translations,
@@ -3968,7 +3973,7 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                 position = self._cmds.xform(path, query=True, worldSpace=True, translation=True)
                 x_axis, y_axis, z_axis = target_axes
                 matrix = (*x_axis, 0.0, *y_axis, 0.0, *z_axis, 0.0, *position, 1.0)
-                self._cmds.xform(path, worldSpace=True, matrix=matrix)
+                self._spine_set_world_rotation(path,matrix)
             for plug, value in zip(
                 plan.fk_segment_plugs,
                 plan.fk_segment_translations,
