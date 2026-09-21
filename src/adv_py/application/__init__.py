@@ -153,6 +153,7 @@ from .mocap_mapping import (
     MocapBodyMappingReader,
 )
 from .mocap_preset import save_mocap_mapping_preset, load_mocap_mapping_preset
+from .mocap_fbx_import import ImportMocapFbx,MocapFbxImportPlan,MocapFbxImportResult
 from .mocap_connection import (
     ConnectMocapBody,
     DisconnectMocapBody,
@@ -503,6 +504,7 @@ __all__ = [
     "MocapBodyMappingReader",
     "save_mocap_mapping_preset",
     "load_mocap_mapping_preset",
+    "ImportMocapFbx", "MocapFbxImportPlan", "MocapFbxImportResult",
     "ConnectMocapBody",
     "DisconnectMocapBody",
     "MocapBodyConnectionHost",

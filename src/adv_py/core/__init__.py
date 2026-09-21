@@ -298,6 +298,7 @@ from .mocap_mapping import (
     plan_mocap_body_mapping,
 )
 from .mocap_preset import MocapMappingPreset, encode_mocap_mapping_preset, decode_mocap_mapping_preset
+from .mocap_clip import MocapClip,MocapClipJoint,MocapClipChannel,encode_mocap_clip,decode_mocap_clip,validate_mocap_clip
 from .mocap_connection import (
     MOCAP_CONNECTION_PREFIX,
     MocapBodyConnectionPlan,
@@ -784,6 +785,7 @@ __all__ = [
     "MocapBodyMappingPlan", "MocapJointMapping", "MocapMappingIssue",
     "MocapMappingValidationError", "ResolvedMocapJointMapping",
     "MocapMappingPreset", "encode_mocap_mapping_preset", "decode_mocap_mapping_preset",
+    "MocapClip", "MocapClipJoint", "MocapClipChannel", "encode_mocap_clip", "decode_mocap_clip", "validate_mocap_clip",
     "BodyCharacterGlobalPlan",
     "BodyCharacterGlobalSnapshot",
     "BodyCharacterGlobalValidationError",

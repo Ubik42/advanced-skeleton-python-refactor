@@ -1,6 +1,7 @@
 """Concrete and test host adapters."""
 
 from .maya_mocap import MayaMocapBakeHost
+from .maya_mocap_clip import MayaMocapClipHost
 
 from .blender import BlenderAdapterStatus, BlenderRigHost
 from .maya import MayaAdapterStatus, MayaRigHost
@@ -15,6 +16,7 @@ from .memory import InMemoryRigHost
 
 __all__ = [
     "MayaMocapBakeHost",
+    "MayaMocapClipHost",
 
     "BlenderAdapterStatus",
     "BlenderRigHost",

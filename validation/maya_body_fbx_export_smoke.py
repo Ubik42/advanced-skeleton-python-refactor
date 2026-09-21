@@ -20,7 +20,7 @@ def main(output: Path) -> int:
     try:
         from maya import cmds
 
-        from adv_py.adapters import MayaBodyBuildHost
+        from adv_py.adapters import MayaBodyBuildHost,MayaMocapSourceReader,MayaMocapClipHost
         from adv_py.application import (
             BakeBodyExportSkeleton,
             BuildBodyExportSkeleton,
@@ -29,6 +29,8 @@ def main(output: Path) -> int:
             BuildSyntheticBodySourceFit,
             CreateFitSkeleton,
             ExportBodyFbx,
+            InspectMocapSource,
+            ImportMocapFbx,
         )
         from adv_py.core import (
             BodyFbxEncoding,
@@ -226,6 +228,43 @@ def main(output: Path) -> int:
                     for pattern in ("FitSkeleton", "|Root_M", "*_CTRL", "AdvPy_CharacterControls")
                 ),
             })
+            imported_source=InspectMocapSource(MayaMocapSourceReader()).execute('|RootMotion')
+            checks['imported_fbx_is_mocap_source']=imported_source.valid
+            if not imported_source.valid:
+                print('MOCAP_IMPORT_ISSUES',[(issue.code,issue.message) for issue in imported_source.issues],flush=True)
+            take_time=float(cmds.currentTime(query=True))
+            take_selection=cmds.ls(selection=True,long=True) or []
+            cmds.createNode('transform',name='PreImportUndoMarker',skipSelect=True)
+            external=ImportMocapFbx(MayaMocapClipHost()).apply(named_destination,namespace='ExternalTake')
+            checks['isolated_external_fbx_source']=(external.summary.namespace=='ExternalTake'
+                and external.summary.joint_count==31 and external.summary.start_time==1.
+                and external.summary.end_time==5.
+                and abs(float(cmds.currentTime(query=True))-take_time)<1e-8
+                and (cmds.ls(selection=True,long=True) or [])==take_selection)
+            from dataclasses import replace
+            sample_time,sample_matrices=external.clip.samples[0]
+            invalid_matrix=list(sample_matrices[0]);invalid_matrix[12]+=1.
+            invalid_samples=((sample_time,(tuple(invalid_matrix),)+sample_matrices[1:]),)+external.clip.samples[1:]
+            failed_clip=replace(external.clip,samples=invalid_samples)
+            try:MayaMocapClipHost().create_mocap_clip('FaultTake',failed_clip)
+            except Exception:failed_import_rolled_back=(not cmds.ls('FaultTake:*')
+                and bool(cmds.ls('|ExternalTake:EngineRoot',long=True,type='joint')))
+            else:failed_import_rolled_back=False
+            checks['invalid_external_clip_rolls_back']=failed_import_rolled_back
+            cmds.undo()
+            checks['external_import_single_undo']=(not cmds.ls('|ExternalTake:EngineRoot',long=True)
+                                                   and bool(cmds.ls('PreImportUndoMarker')))
+            cmds.undo()
+            checks['previous_undo_history_preserved']=not cmds.ls('PreImportUndoMarker')
+            cmds.redo();cmds.redo()
+            checks['external_import_redo_restores_source']=(
+                bool(cmds.ls('|ExternalTake:EngineRoot',long=True,type='joint'))
+                and InspectMocapSource(MayaMocapSourceReader()).execute('|ExternalTake:EngineRoot').valid)
+            retained_scene=(output.parent/'isolated-mocap.ma').resolve()
+            cmds.file(rename=str(retained_scene));cmds.file(save=True,type='mayaAscii',force=True)
+            cmds.file(str(retained_scene),open=True,force=True)
+            checks['external_import_reopens_as_source']=InspectMocapSource(
+                MayaMocapSourceReader()).execute('|ExternalTake:EngineRoot').valid
             cmds.file(new=True,force=True)
             cmds.file(str(named_destination),i=True,type='FBX',ignoreVersion=True,
                       mergeNamespacesOnClash=False,options='fbx')
