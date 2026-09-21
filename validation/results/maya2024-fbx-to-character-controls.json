@@ -1,0 +1,14 @@
+{
+  "external_fbx_has_fifteen_joints": true,
+  "mapping_preset_round_trip": true,
+  "incomplete_preset_rejected_without_edits": true,
+  "imported_source_valid": true,
+  "all_control_groups_written": true,
+  "imported_motion_matches_body": true,
+  "retarget_undo_keeps_import": true,
+  "import_undo_keeps_character": true,
+  "two_redos_restore_pipeline": true,
+  "reopened_pipeline": true,
+  "max_body_error": 3.552713678800501e-15,
+  "status": "passed"
+}

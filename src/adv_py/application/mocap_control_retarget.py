@@ -228,6 +228,43 @@ class RetargetMocapFourLimbsToCharacter:
     """Apply root, FK spine, and both FK arms and legs atomically."""
     def __init__(self,host: MocapRootControlHost):self._host=host
 
+    def _preset_options(self,source_root,preset):
+        from adv_py.core.mocap_preset import MocapMappingPreset
+        from .mocap_mapping import InspectMocapBodyMapping
+        if not isinstance(preset,MocapMappingPreset):
+            raise CharacterRegistryError('控制 Rig 动捕映射需要版本化预设')
+        registration=self._host.read_character_registration()
+        if len(registration.body)!=preset.expected_body_joint_count:
+            raise CharacterRegistryError('动捕预设的 Body 关节数与角色不一致')
+        target_root=registration.body_root.rsplit('|',1)[-1]
+        required={target_root,'Spine1_M','Chest_M'}|{
+            part+'_'+side for part in ('Shoulder','Elbow','Wrist','Hip','Knee','Ankle')
+            for side in ('R','L')}
+        by_target={row.target_name:row for row in preset.mappings}
+        if set(by_target)!=required or len(preset.mappings)!=len(required):
+            raise CharacterRegistryError('控制 Rig 预设须准确覆盖根、双段脊柱与左右四肢 15 个关节')
+        if (not by_target[target_root].transfer_translation
+                or any(not row.transfer_rotation for row in preset.mappings)
+                or any(row.transfer_translation for name,row in by_target.items() if name!=target_root)):
+            raise CharacterRegistryError('控制 Rig 预设要求根部平移与全关节旋转，其他关节不得传递平移')
+        InspectMocapBodyMapping(self._host).execute(source_root,preset.mappings,
+            body_root_name=registration.body_root,source_container=registration.container,
+            expected_body_joint_count=preset.expected_body_joint_count).require_valid()
+        limbs=tuple(MocapLimbSource(limb,side,*(by_target[part+'_'+side].source_name for part in parts))
+            for limb,parts in (('arm',('Shoulder','Elbow','Wrist')),
+                               ('leg',('Hip','Knee','Ankle'))) for side in ('R','L'))
+        return by_target['Spine1_M'].source_name,by_target['Chest_M'].source_name,limbs
+
+    def plan_with_preset(self,source_root,preset,*,start_frame,end_frame,sample_by=1,reference_frame=None):
+        spine,chest,limbs=self._preset_options(source_root,preset)
+        return self.plan(source_root,source_spine=spine,source_chest=chest,source_limbs=limbs,
+            start_frame=start_frame,end_frame=end_frame,sample_by=sample_by,reference_frame=reference_frame)
+
+    def apply_with_preset(self,source_root,preset,*,start_frame,end_frame,sample_by=1,reference_frame=None):
+        spine,chest,limbs=self._preset_options(source_root,preset)
+        return self.apply(source_root,source_spine=spine,source_chest=chest,source_limbs=limbs,
+            start_frame=start_frame,end_frame=end_frame,sample_by=sample_by,reference_frame=reference_frame)
+
     def plan(self,source_root,*,source_spine,source_chest,source_limbs,start_frame,end_frame,
              sample_by=1,reference_frame=None):
         if (not isinstance(source_limbs,(tuple,list)) or len(source_limbs)!=4
