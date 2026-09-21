@@ -28,6 +28,13 @@ def enabled(registration):
 def install(host, registration):
     host._require_transaction()
     extra = channels(registration)
+    if len(registration.spine.body_joints)==2 and host._cmds.getAttr('AdvPy_SplineIKHandle.dTwistControlEnable'):
+        before_twist=tuple(host._spine_world_frame(j.path)[0] for j in registration.body)
+        host._transaction_changed=True
+        host._cmds.setAttr('AdvPy_SplineIKHandle.dTwistControlEnable',False)
+        after_twist=tuple(host._spine_world_frame(j.path)[0] for j in registration.body)
+        if max(abs(a-b) for x,y in zip(before_twist,after_twist) for a,b in zip(x,y))>1e-4:
+            raise CharacterRegistryError('单段脊柱扭转修正改变当前姿态')
     if enabled(registration):
         audit(host, registration)
         return registration

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from math import sqrt
+from math import sqrt, isfinite
 
 from adv_py.core.body_spine import spine_roll_degrees, spine_ik_goal_position
 from adv_py.core.body_limb_ik import solve_limb_pole_position
@@ -169,6 +169,8 @@ class MayaBodySpineMixin:
 
     def _spine_world_frame(self, node):
         matrix = tuple(float(v) for v in self._cmds.xform(node, query=True, worldSpace=True, matrix=True))
+        if len(matrix)!=16 or not all(isfinite(value) for value in matrix):
+            raise FitSkeletonValidationError('节点世界矩阵包含非有限数值：'+node)
         axes = tuple(self._normalized_vector(matrix[i:i+3]) for i in (0, 4, 8))
         return matrix, axes
 

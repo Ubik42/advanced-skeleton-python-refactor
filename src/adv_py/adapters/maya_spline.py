@@ -42,7 +42,7 @@ def create(host,plan):
     handle,effector=c.ikHandle(name='AdvPy_SplineIKHandle',startJoint=ik[0].path,endEffector=ik[-1].path,
         solver='ikSplineSolver',curve=plan.curve,createCurve=False,parentCurve=False)
     c.rename(effector,'AdvPy_SplineIKEffector');c.parent(handle,plan.root_path)
-    for attr,value in (('dTwistControlEnable',True),('dWorldUpType',4),('dForwardAxis',0),('dWorldUpAxis',0)):
+    for attr,value in (('dTwistControlEnable',n>2),('dWorldUpType',4),('dForwardAxis',0),('dWorldUpAxis',0)):
         c.setAttr('AdvPy_SplineIKHandle.'+attr,value)
     for attr in ('dWorldUpVector','dWorldUpVectorEnd'):c.setAttr('AdvPy_SplineIKHandle.'+attr,0.,1.,0.,type='double3')
     c.connectAttr(plan.targets[0]+'.worldMatrix[0]','AdvPy_SplineIKHandle.dWorldUpMatrix')
@@ -130,6 +130,7 @@ def audit(host,plan):
         'AdvPy_SplineVolumeExponent.operation':1,'AdvPy_SplineVolumeExponent.input2X':-.5,'AdvPy_SplineVolume.operation':3,
         'AdvPy_SplineIKHandle.dTwistControlEnable':1,'AdvPy_SplineIKHandle.dWorldUpType':4,
         'AdvPy_SplineIKHandle.dForwardAxis':0,'AdvPy_SplineIKHandle.dWorldUpAxis':0}
+    if n==2:constants.pop('AdvPy_SplineIKHandle.dTwistControlEnable')
     constants.update({f'AdvPy_SplineLength{i}.input1X':length for i,length in enumerate(plan.lengths,1)})
     if any(abs(c.getAttr(plug)-value)>1e-8 for plug,value in constants.items()):raise FitSkeletonValidationError('Spline 求解常量被修改')
     if owner=='adv_py.spline.v2':

@@ -149,8 +149,6 @@ class MayaCharacterPoseMixin:
     def match_character_spine_samples(self,registration,frames,mode):
         from adv_py.core.body_spline import BodySplinePlan
         spline = isinstance(registration.spine, BodySplinePlan)
-        if spline and mode != 'fk':
-            raise CharacterRegistryError("曲线脊柱的 FK 到 IK 拟合尚未实现")
         self._require_transaction()
         self.preflight_character_keyframe(registration)
         c=self._cmds
@@ -163,8 +161,12 @@ class MayaCharacterPoseMixin:
                 before=self.capture_character_pose(registration)
                 with self._character_static_controls(registration,before):
                     if spline:
-                        from .maya_spline_matching import match_fk
-                        match_fk(self,registration,before)
+                        if mode=='fk':
+                            from .maya_spline_matching import match_fk
+                            match_fk(self,registration,before)
+                        else:
+                            from .maya_spline_ik_matching import match_ik
+                            match_ik(self,registration,before)
                     else:
                         value=self.preflight_body_spine_match(registration.spine,mode)
                         if value!=(1. if mode=='ik' else 0.):
