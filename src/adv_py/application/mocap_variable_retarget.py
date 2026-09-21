@@ -241,3 +241,121 @@ class RetargetMocapVariableMixedToCharacter(RetargetMocapVariableSplineIkToChara
             raise CharacterRegistryError('混合动捕须逐条指定四肢的 fk 或 ik 模式')
         self._spine_ik=spine_mode=='ik'
         self._ik_limbs=tuple(pair for pair in expected if limb_modes[pair]=='ik')
+
+
+@dataclass(frozen=True,slots=True)
+class MocapVariableScheduledPlan:
+    full_fk: MocapVariableFullPlan
+    spine_ik_frames: tuple[float,...]
+    limb_ik_frames: tuple[tuple[str,str,tuple[float,...]],...]
+    mode_keys: tuple[str,...]
+
+
+class RetargetMocapVariableScheduledToCharacter(RetargetMocapVariableFullFkToCharacter):
+    """Apply explicit FK/IK mode events over one mapped variable-body take."""
+    LIMBS=(('arm','R'),('arm','L'),('leg','R'),('leg','L'))
+
+    def __init__(self,host,*,spine_events,limb_events):
+        super().__init__(host)
+        if not isinstance(limb_events,dict) or set(limb_events)!=set(self.LIMBS):
+            raise CharacterRegistryError('事件动捕须逐条指定四肢模式事件')
+        self._spine_events=self._events(spine_events)
+        self._limb_events=tuple((limb,side,self._events(limb_events[(limb,side)]))
+            for limb,side in self.LIMBS)
+
+    @staticmethod
+    def _events(events):
+        if (not isinstance(events,(tuple,list)) or not events
+                or any(not isinstance(row,(tuple,list)) or len(row)!=2
+                       or type(row[0]) is not int or row[1] not in ('fk','ik')
+                       for row in events)):
+            raise CharacterRegistryError('模式事件须为非空的 (整数帧, fk/ik) 序列')
+        result=tuple((int(frame),mode) for frame,mode in events)
+        if any(left[0]>=right[0] or left[1]==right[1]
+               for left,right in zip(result,result[1:])):
+            raise CharacterRegistryError('模式事件帧须递增且模式必须变化')
+        return result
+
+    @staticmethod
+    def _ik_frames(events,frames):
+        if events[0][0]!=frames[0] or any(frame not in frames for frame,_ in events):
+            raise CharacterRegistryError('模式事件首帧和后续事件须位于动捕采样帧')
+        selected=[]
+        event_index=0
+        for frame in frames:
+            if event_index+1<len(events) and frame>=events[event_index+1][0]:
+                event_index+=1
+            if events[event_index][1]=='ik':selected.append(frame)
+        return tuple(selected)
+
+    def plan_with_preset(self,source_root,preset,*,start_frame,end_frame,sample_by=1,
+                         reference_frame=None):
+        full=super().plan_with_preset(source_root,preset,start_frame=start_frame,
+            end_frame=end_frame,sample_by=sample_by,reference_frame=reference_frame)
+        frames=full.root.frames
+        spine_frames=self._ik_frames(self._spine_events,frames)
+        limb_frames=tuple((limb,side,self._ik_frames(events,frames))
+            for limb,side,events in self._limb_events)
+        keys={channel.key for channel in full.root.registration.channels}
+        if spine_frames and not {'spine.spline.1.translateX',
+                                'spine.spline.spineIkFk'}.issubset(keys):
+            raise CharacterRegistryError('脊柱 IK 事件要求先启用 Spline 动画登记')
+        for limb,side,selected in limb_frames:
+            if selected:
+                required={f'{limb}.fkLength.{side}.{index}' for index in (0,1)}
+                required.update(f'{limb}.ikOrientation.{side}.{segment}.rotate{axis}'
+                    for segment in ('upper','lower') for axis in 'XYZ')
+                if not required.issubset(keys):
+                    raise CharacterRegistryError('四肢 IK 事件要求先启用四肢动画登记')
+        mode_keys=('spine.spline.spineIkFk',)+tuple(
+            f'{limb}.settings.{limb}IkFk_{side}' for limb,side in self.LIMBS)
+        self._host.preflight_mocap_mode_schedule(full.root.registration,mode_keys)
+        return MocapVariableScheduledPlan(full,spine_frames,limb_frames,mode_keys)
+
+    def apply_with_preset(self,source_root,preset,*,start_frame,end_frame,sample_by=1,
+                          reference_frame=None):
+        from adv_py.core.character_animation import CharacterAnimation,validate_character_animation
+        from adv_py.core.fit_symmetry import FitBuildSide
+        from .character_animation import verify_character_animation_write
+
+        options=dict(start_frame=start_frame,end_frame=end_frame,sample_by=sample_by,
+                     reference_frame=reference_frame)
+        plan=self.plan_with_preset(source_root,preset,**options)
+        host=self._host
+        reg=plan.full_fk.root.registration
+        frames=plan.full_fk.root.frames
+        with host.transaction('Retarget variable-spine MoCap mode events'):
+            if self.plan_with_preset(source_root,preset,**options)!=plan:
+                raise CharacterRegistryError('事件动捕或角色状态在写入前发生变化')
+            root_samples=host.write_mocap_root_control_keys(plan.full_fk.root)
+            groups=tuple(host.write_mocap_fk_group_keys(group) for group in plan.full_fk.groups)
+            if any(tuple(sample.frame for sample in group)!=frames
+                   for group in (root_samples,*groups)):
+                raise RuntimeError('事件动捕 FK 基础采样不完整')
+            reference=host.sample_character_animation(reg,frames)
+            host.write_mocap_mode_base_keys(reg,plan.mode_keys,frames)
+            unit=host.character_time_unit()
+            conversions=[]
+            selected=(('spine','',plan.spine_ik_frames),*plan.limb_ik_frames)
+            for limb,side,ik_frames in selected:
+                if not ik_frames:
+                    continue
+                keys=host.capture_character_key_state(reg)
+                samples=(host.match_character_spine_samples(reg,ik_frames,'ik')
+                    if limb=='spine' else host.match_character_limb_samples(
+                        reg,ik_frames,limb,FitBuildSide(side),'ik',pose_tolerance=1e-3))
+                if host.capture_character_key_state(reg)!=keys or host.character_time_unit()!=unit:
+                    raise RuntimeError('事件模式匹配采样改变了原曲线或时间')
+                conversion=CharacterAnimation(unit,samples)
+                validate_character_animation(conversion,reg)
+                host.write_character_animation(reg,samples)
+                verify_character_animation_write(host,reg,conversion,keys)
+                conversions.append((limb,side,conversion))
+            host.set_mocap_mode_step_tangents(reg,plan.mode_keys,frames)
+            actual=host.sample_character_animation(reg,frames)
+            error=max(abs(a-b) for (_,before),(_,after) in zip(reference,actual)
+                for (_,left),(_,right) in zip(before.body_frames,after.body_frames)
+                for a,b in zip(left,right))
+            if error>1e-3:
+                raise RuntimeError('事件动捕改变了采样帧 Body 世界姿态：'+str(error))
+        return root_samples,groups,tuple(conversions)

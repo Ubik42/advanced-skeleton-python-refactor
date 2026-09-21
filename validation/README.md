@@ -218,6 +218,7 @@
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_variable_fk_smoke.py validation\results\maya2024-fbx-variable-full-ik-4-hand.json 4 --full-ik --hand --fbx
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_variable_fk_smoke.py validation\results\maya2024-fbx-variable-full-ik-8.json 8 --full-ik --fbx
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_variable_fk_smoke.py validation\results\maya2024-mocap-variable-scheduled-fbx.json 4 --scheduled --fbx
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_source_smoke.py validation\results\maya2024-mocap-source.json
 

@@ -5,6 +5,38 @@ from .maya_mocap import MayaMocapSourceReader
 
 
 class MayaMocapControlHost(MayaBodyBuildHost):
+    def preflight_mocap_mode_schedule(self, registration, mode_keys):
+        channels={channel.key:channel for channel in registration.channels}
+        for key in mode_keys:
+            channel=channels.get(key)
+            if channel is None:
+                raise CharacterRegistryError('动捕模式通道未登记：'+key)
+            plug=self.scene_address(channel.node)+'.'+channel.attribute
+            if (self._cmds.keyframe(plug,query=True,timeChange=True) or []
+                    or abs(float(self._cmds.getAttr(plug)))>1e-8):
+                raise CharacterRegistryError('事件模式动捕要求起始为未动画的 FK 端点：'+key)
+
+    def write_mocap_mode_base_keys(self, registration, mode_keys, frames):
+        self._require_transaction()
+        self.preflight_mocap_mode_schedule(registration,mode_keys)
+        channels={channel.key:channel for channel in registration.channels}
+        self._transaction_changed=True
+        for key in mode_keys:
+            channel=channels[key]
+            plug=self.scene_address(channel.node)+'.'+channel.attribute
+            for frame in (frames[0]-1.,*frames,frames[-1]+1.):
+                self._cmds.setKeyframe(plug,time=frame,value=0.,
+                    inTangentType='linear',outTangentType='step')
+
+    def set_mocap_mode_step_tangents(self, registration, mode_keys, frames):
+        self._require_transaction()
+        channels={channel.key:channel for channel in registration.channels}
+        for key in mode_keys:
+            channel=channels[key]
+            plug=self.scene_address(channel.node)+'.'+channel.attribute
+            self._cmds.keyTangent(plug,time=(frames[0]-1.,frames[-1]+1.),
+                inTangentType='linear',outTangentType='step')
+
     def capture_mocap_source(self,root_name):
         return MayaMocapSourceReader().capture_mocap_source(root_name)
 
