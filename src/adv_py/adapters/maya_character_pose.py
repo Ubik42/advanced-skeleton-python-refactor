@@ -148,22 +148,27 @@ class MayaCharacterPoseMixin:
 
     def match_character_spine_samples(self,registration,frames,mode):
         from adv_py.core.body_spline import BodySplinePlan
-        if isinstance(registration.spine, BodySplinePlan):
-            raise CharacterRegistryError("曲线脊柱的无跳变模式匹配尚未实现")
+        spline = isinstance(registration.spine, BodySplinePlan)
+        if spline and mode != 'fk':
+            raise CharacterRegistryError("曲线脊柱的 FK 到 IK 拟合尚未实现")
         self._require_transaction()
         self.preflight_character_keyframe(registration)
         c=self._cmds
         samples=[]
         original_frames=dict(self.sample_character_animation(registration,frames))
-        self.ensure_precise_body_spine_solver(registration.spine)
+        if not spline:self.ensure_precise_body_spine_solver(registration.spine)
         with self._character_sampling_time(preserve_modified=False) as seek:
             for frame in frames:
                 seek(frame)
                 before=self.capture_character_pose(registration)
                 with self._character_static_controls(registration,before):
-                    value=self.preflight_body_spine_match(registration.spine,mode)
-                    if value!=(1. if mode=='ik' else 0.):
-                        self.match_body_spine(registration.spine,mode)
+                    if spline:
+                        from .maya_spline_matching import match_fk
+                        match_fk(self,registration,before)
+                    else:
+                        value=self.preflight_body_spine_match(registration.spine,mode)
+                        if value!=(1. if mode=='ik' else 0.):
+                            self.match_body_spine(registration.spine,mode)
                     after=self.capture_character_pose(registration)
                     reference=original_frames[float(frame)]
                     error=max(abs(a-b) for (_,left),(_,right) in zip(reference.body_frames,after.body_frames) for a,b in zip(left,right))

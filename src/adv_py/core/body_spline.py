@@ -31,7 +31,7 @@ class BodySplinePlan:
             'AdvPy_SplineChestOrient','AdvPy_SplineChestSpaceParent','AdvPy_SplineReverse','AdvPy_SplineArc',
             'AdvPy_SplineRatio','AdvPy_SplineStretchBlend','AdvPy_SplineClamp','AdvPy_SplineVolumeExponent','AdvPy_SplineVolume')
         targets=tuple(f'AdvPy_SplineIK{i}{suffix}' for i in range(4) for suffix in ('Offset','','Shape','Matrix','Position'))
-        outputs=tuple(f'AdvPy_Spline{kind}{i}' for i in range(1,len(self.body_joints)) for kind in ('Point','Orient','Scale','Length'))
+        outputs=tuple(f'AdvPy_Spline{kind}{i}' for i in range(1,len(self.body_joints)) for kind in ('Point','Orient','Scale','Length','FKWorldScale','IKWorldScale'))
         return fixed+tuple(j.name for j in self.joints)+targets+outputs
 
 

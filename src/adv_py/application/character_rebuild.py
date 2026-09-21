@@ -66,8 +66,10 @@ class StageBodyCharacterRebuild:
                 if any('.ikOrientation.' in key for key in keys):registration=EnableBodyCharacterLimbAnimation(stage).apply()
                 if any('.ikLengthWeight.' in key for key in keys):registration=EnableBodyCharacterStretchMatching(stage).apply()
                 if any(key.startswith('space.') for key in keys):registration=EnableBodyCharacterSpaceAnimation(stage).apply()
+                if any(key.startswith('spine.fkMatch.') for key in keys):
+                    from .character_spline_animation import EnableBodyCharacterSplineAnimation
+                    registration=EnableBodyCharacterSplineAnimation(stage).apply()
                 host.match_character_rebuild_solver(stage,registration)
-                validate_rebuild_layout(original.registration,registration)
                 registration=host.preserve_character_rebuild_binding(stage,original.registration,registration)
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('暂存构建改写了原角色，已回滚')

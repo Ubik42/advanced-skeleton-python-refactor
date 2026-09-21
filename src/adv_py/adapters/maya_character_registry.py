@@ -24,6 +24,10 @@ class MayaCharacterRegistryMixin:
 
     def preserve_character_rebuild_binding(self,stage,original,replacement):
         from adv_py.core.character_preservation import validate_rebuild_layout
+        generated = replacement
+        by_key = {channel.key:channel for channel in replacement.channels}
+        if set(by_key)=={channel.key for channel in original.channels}:
+            replacement=replace(replacement,channels=tuple(by_key[channel.key] for channel in original.channels))
         validate_rebuild_layout(original,replacement)
         if (type(original.spine) is not type(replacement.spine)
                 or len(original.spine.lengths)!=len(replacement.spine.lengths)
@@ -35,7 +39,7 @@ class MayaCharacterRegistryMixin:
         retained=replace(replacement,body=original.body,
                          spine=replace(replacement.spine,lengths=original.spine.lengths))
         with stage.transaction('Preserve original binding identity'):
-            stage.write_character_registration_extension(replacement,retained)
+            stage.write_character_registration_extension(generated,retained)
         return retained
 
     def audit_character_rebuild_ownership(self,staged):
@@ -256,6 +260,10 @@ class MayaCharacterRegistryMixin:
             return False
         return True
 
+    def install_character_spline_animation(self, registration):
+        from .maya_spline_matching import install
+        return install(self, registration)
+
     def validate_character_spine(self, plan):
         from adv_py.core.body_spline import BodySplinePlan
         if isinstance(plan, BodySplinePlan):
@@ -315,6 +323,8 @@ class MayaCharacterRegistryMixin:
         c = self._cmds
         from .maya_head_aim import audit_registered
         audit_registered(self,plan)
+        from .maya_spline_matching import audit as audit_spline_matching
+        audit_spline_matching(self,plan)
         user_plugs={channel.node+"."+channel.attribute for channel in plan.channels}
         for node in plan.nodes:
             current=self._registry_node(node.path)

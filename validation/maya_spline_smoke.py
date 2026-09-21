@@ -111,6 +111,12 @@ def main(folder, reopen=False, rebuild=False):
             volume=c.getAttr('hero:AdvPy_SplineVolume.outputX')
             global_plug=host.scene_address(result.plan.global_control.control_path+'.'+result.plan.global_control.scale_attribute)
             c.setAttr(global_plug,2.);scaled_ratio=c.getAttr('hero:AdvPy_SplineClamp.outputR')
+            expected_scale=(2.,2.*volume,2.*volume)
+            scale_error=0.
+            for node in plan.body_joints[1:]:
+                matrix=c.xform(host.scene_address(node),q=True,ws=True,matrix=True)
+                actual_scale=tuple(sum(v*v for v in matrix[k:k+3])**.5 for k in (0,4,8))
+                scale_error=max(scale_error,max(abs(a-b) for a,b in zip(actual_scale,expected_scale)))
             c.setAttr(settings+'.stretch',0.);rest_lengths=tuple(c.getAttr(host.scene_address(j.path)+'.translateX') for j in plan.joints[len(plan.body_joints)+1:])
             c.setAttr(global_plug,1.);c.setAttr(settings+'.stretch',1.);c.setAttr(settings+'.translateX',0.)
             c.setAttr(host.scene_address(plan.targets[1])+'.translateY',1.)
@@ -136,9 +142,9 @@ def main(folder, reopen=False, rebuild=False):
             ResolveBodyCharacter(host).execute()
             reopened=error(expected,sample())
             report={'segments':count,'neutral_error':neutral,'ik_neutral_error':ik_neutral,'undo':undone,'stretch_ratio':ratio,
-                'animation_error':animation_error,'endpoint_error':end_error,'volume':volume,'scaled_ratio':scaled_ratio,'stretch_off_lengths':rest_lengths,
+                'world_scale_error':scale_error,'animation_error':animation_error,'endpoint_error':end_error,'volume':volume,'scaled_ratio':scaled_ratio,'stretch_off_lengths':rest_lengths,
                 'bend_displacement':displacement,'fk_return_error':fk_return,'tamper_rejected':tamper,'failure_rollback':rollback,'reopen_error':reopened}
-            report['passed']=animation_error<1e-4 and neutral<1e-4 and ik_neutral<1e-4 and undone and abs(ratio-1.5)<1e-4 and end_error<1e-3 and abs(volume-1/math.sqrt(1.5))<1e-4 and abs(scaled_ratio-ratio)<1e-4 and all(abs(a-b)<1e-5 for a,b in zip(rest_lengths,plan.lengths)) and displacement>.01 and fk_return<1e-4 and tamper and rollback and reopened<1e-4
+            report['passed']=scale_error<1e-5 and animation_error<1e-4 and neutral<1e-4 and ik_neutral<1e-4 and undone and abs(ratio-1.5)<1e-4 and end_error<1e-3 and abs(volume-1/math.sqrt(1.5))<1e-4 and abs(scaled_ratio-ratio)<1e-4 and all(abs(a-b)<1e-5 for a,b in zip(rest_lengths,plan.lengths)) and displacement>.01 and fk_return<1e-4 and tamper and rollback and reopened<1e-4
             reports.append(report);print(json.dumps(report))
         (folder/'report.json').write_text(json.dumps(reports,indent=2),encoding='utf8')
         return 0 if all(row['passed'] for row in reports) else 1

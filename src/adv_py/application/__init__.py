@@ -1,3 +1,4 @@
+from .character_spline_animation import EnableBodyCharacterSplineAnimation
 from .character_keyframe import KeyBodyCharacterPose, CaptureAnimatedBodyCharacterPose
 from .character_animation import CaptureBodyCharacterAnimation, ApplyBodyCharacterAnimation, save_character_animation, load_character_animation
 from .character_spine_animation import BakeBodyCharacterSpineMode
