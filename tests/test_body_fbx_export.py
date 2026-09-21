@@ -9,6 +9,7 @@ from adv_py.core import (
     BodyFbxAppliedProfile,
     BodyFbxEncoding,
     BodyFbxExportProfile,
+    BodyFbxNamingProfile,
     BodyFbxFileVersion,
     BodyFbxLinearUnit,
     FitUpAxis,
@@ -251,6 +252,24 @@ class BodyFbxExportTests(unittest.TestCase):
         self.assertFalse(any(
             "AdvPy_EXP_" in path for path in selection.published_paths
         ))
+
+    def test_engine_naming_profile_maps_export_joints_and_rejects_collisions(self):
+        host=FakeFbxHost()
+        naming=BodyFbxNamingProfile('GameRoot',(('Root_M','pelvis'),('Spine1_M','spine_01'),('Head_M','head')))
+        selection=plan_body_fbx_export_selection(host.bake,published_root_name=naming.root_name,
+                                                  published_joint_names=naming.joint_names)
+        self.assertEqual(tuple(node.published_name for node in selection.published_nodes),
+                         ('GameRoot','pelvis','spine_01','head'))
+        with tempfile.TemporaryDirectory() as directory:
+            plan=ExportBodyFbx(host).plan(Path(directory)/'character.fbx',start_frame=1,end_frame=3,
+                                           naming_profile=naming)
+            self.assertEqual(plan.selection,selection)
+        with self.assertRaisesRegex(ValueError,'重复'):
+            BodyFbxNamingProfile('GameRoot',(('Root_M','pelvis'),('Head_M','pelvis')))
+        with self.assertRaisesRegex(ValueError,'之外'):
+            plan_body_fbx_export_selection(host.bake,published_joint_names=(('NoJoint','missing'),))
+        with self.assertRaisesRegex(ValueError,'重复'):
+            plan_body_fbx_export_selection(host.bake,published_joint_names=(('Head_M','Spine1_M'),))
 
     def test_custom_ascii_y_up_meter_profile_is_applied_and_verified(self):
         host = FakeFbxHost()

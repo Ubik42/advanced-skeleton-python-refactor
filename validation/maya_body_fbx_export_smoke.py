@@ -35,6 +35,7 @@ def main(output: Path) -> int:
             BodyFbxExportProfile,
             BodyFbxFileVersion,
             BodyFbxLinearUnit,
+            BodyFbxNamingProfile,
             FitUpAxis,
             plan_body_export_skeleton_bake,
             plan_body_fbx_export_selection,
@@ -103,6 +104,11 @@ def main(output: Path) -> int:
                 source_container=container,
                 profile=converted_profile,
             )
+            named_destination=Path(directory)/'engine-named-character.fbx'
+            named_profile=BodyFbxNamingProfile('EngineRoot',
+                (('Root_M','pelvis'),('Spine1_M','spine_01'),('Head_M','head')))
+            named_result=ExportBodyFbx(host).apply(named_destination,start_frame=1,end_frame=5,
+                source_container=container,naming_profile=named_profile)
             checks = {
                 "live_body_dependencies_detected": bool(live_dependencies),
                 "explicit_31_node_selection": result.plan.selection.node_count == 31,
@@ -220,6 +226,14 @@ def main(output: Path) -> int:
                     for pattern in ("FitSkeleton", "|Root_M", "*_CTRL", "AdvPy_CharacterControls")
                 ),
             })
+            cmds.file(new=True,force=True)
+            cmds.file(str(named_destination),i=True,type='FBX',ignoreVersion=True,
+                      mergeNamespacesOnClash=False,options='fbx')
+            checks['fresh_import_has_engine_names']=(
+                named_result.plan.selection.published_root_path=='|EngineRoot'
+                and (cmds.ls('|EngineRoot|pelvis|spine_01',long=True,type='joint') or [])==['|EngineRoot|pelvis|spine_01']
+                and len(cmds.ls('head',long=True,type='joint') or [])==1
+                and len(cmds.ls(type='joint') or [])==31)
 
         passed = all(checks.values())
         payload = {

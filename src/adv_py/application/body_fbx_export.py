@@ -20,6 +20,7 @@ from adv_py.core.body_fbx_export import (
     BodyFbxExportSelection,
     BodyFbxFileVersion,
     BodyFbxLinearUnit,
+    BodyFbxNamingProfile,
     audit_body_fbx_profile,
     audit_body_fbx_export_readiness,
     inspect_body_fbx_bytes,
@@ -101,6 +102,7 @@ class ExportBodyFbx:
         root_motion_basename: str = "AdvPy_GameRootMotion",
         output_prefix: str = "AdvPy_EXP_",
         published_root_name: str = "RootMotion",
+        naming_profile: BodyFbxNamingProfile | None = None,
         profile: BodyFbxExportProfile | None = None,
     ) -> BodyFbxExportPlan:
         path = Path(destination)
@@ -113,6 +115,10 @@ class ExportBodyFbx:
 
         if profile is not None and not isinstance(profile, BodyFbxExportProfile):
             raise FitSkeletonValidationError("FBX 导出 Profile 类型无效")
+        if naming_profile is not None and not isinstance(naming_profile,BodyFbxNamingProfile):
+            raise FitSkeletonValidationError("FBX 引擎骨名 Profile 类型无效")
+        if naming_profile is not None and published_root_name!="RootMotion":
+            raise FitSkeletonValidationError("FBX 引擎骨名 Profile 与独立根名称不能同时指定")
         up_axis = self._host.scene_up_axis()
         source_linear_unit = self._host.scene_linear_unit()
         selected_profile = profile or BodyFbxExportProfile(
@@ -137,7 +143,8 @@ class ExportBodyFbx:
             sample_by=sample_by,
         )
         selection = plan_body_fbx_export_selection(
-            bake, published_root_name=published_root_name
+            bake, published_root_name=naming_profile.root_name if naming_profile else published_root_name,
+            published_joint_names=naming_profile.joint_names if naming_profile else (),
         )
         baked = self._host.capture_baked_body_export_skeleton(bake)
         dependencies = self._host.capture_body_export_dependency_plugs(

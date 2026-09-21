@@ -74,6 +74,24 @@ class BodyFbxExportProfile:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyFbxNamingProfile:
+    root_name: str = "RootMotion"
+    joint_names: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        if not _is_portable_node_name(self.root_name):
+            raise ValueError("FBX 发布 Root Motion 名称无效")
+        sources=[];targets=[]
+        for row in self.joint_names:
+            if (not isinstance(row,tuple) or len(row)!=2
+                    or not all(isinstance(item,str) and _is_portable_node_name(item) for item in row)):
+                raise ValueError("FBX 引擎骨名映射必须是可移植的源名/目标名")
+            sources.append(row[0]);targets.append(row[1])
+        if len(set(sources))!=len(sources) or len(set(targets))!=len(targets) or self.root_name in targets:
+            raise ValueError("FBX 引擎骨名映射产生重复名称")
+
+
+@dataclass(frozen=True, slots=True)
 class BodyFbxAppliedProfile:
     file_version: str
     up_axis: str
@@ -119,7 +137,9 @@ def plan_body_fbx_export_selection(
     bake: BodyExportSkeletonBakePlan,
     *,
     published_root_name: str = "RootMotion",
+    published_joint_names: tuple[tuple[str,str],...] = (),
 ) -> BodyFbxExportSelection:
+    naming=BodyFbxNamingProfile(published_root_name,published_joint_names)
     export = bake.export_skeleton
     paths = (export.root_motion_path,) + tuple(
         joint.output_path for joint in export.joints
@@ -128,6 +148,11 @@ def plan_body_fbx_export_selection(
         raise ValueError("FBX 导出选择集包含重复或非完整 DAG 路径")
     if not _is_portable_node_name(published_root_name):
         raise ValueError("FBX 发布 Root Motion 名称无效")
+
+    rename=dict(naming.joint_names)
+    source_names={joint.source_path.rsplit("|",1)[-1].rsplit(":",1)[-1] for joint in export.joints}
+    if not set(rename).issubset(source_names):
+        raise ValueError("FBX 引擎骨名映射包含导出骨架之外的来源")
 
     published_by_scene_path = {
         export.root_motion_path: f"|{published_root_name}"
@@ -138,7 +163,8 @@ def plan_body_fbx_export_selection(
         published_path=f"|{published_root_name}",
     )]
     for joint in export.joints:
-        published_name = joint.source_path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        source_name = joint.source_path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        published_name = rename.get(source_name,source_name)
         if not _is_portable_node_name(published_name):
             raise ValueError(
                 f"FBX 发布 joint 名称无效：{published_name}"
@@ -155,7 +181,7 @@ def plan_body_fbx_export_selection(
             published_path=published_path,
         ))
     published_paths = tuple(node.published_path for node in nodes)
-    if len(set(published_paths)) != len(published_paths):
+    if len(set(published_paths)) != len(published_paths) or len({node.published_name for node in nodes})!=len(nodes):
         raise ValueError("FBX 发布名称映射产生重复 DAG 路径")
     return BodyFbxExportSelection(
         root_path=export.root_motion_path,
