@@ -1,5 +1,6 @@
 """Host-independent application use cases."""
 
+from .body_control_spaces import SwitchBodyControlSpace
 from .body_spine import MatchBodySpine
 from .body_torso import BuildBodyTorso, BodyTorsoBuildPlan, BodyTorsoHost
 
@@ -338,6 +339,7 @@ from .upper_body_fit import (
 )
 
 __all__ = [
+    "SwitchBodyControlSpace",
     "MatchBodySpine",
     "BuildBodyTorso",
     "BodyTorsoBuildPlan",

@@ -37,6 +37,7 @@ from .body_rebuild import InspectBodyRebuildSafety
 from .body_rig_validation import body_bind_pose_matches
 from .body_torso import BodyTorsoHost, BodyTorsoBuildPlan, BuildBodyTorso
 from adv_py.core.body_torso import BodyTorsoSnapshot
+from adv_py.core.body_control_spaces import BodyControlSpacesPlan, plan_body_control_spaces
 
 
 class BodyCharacterRigHost(
@@ -46,6 +47,7 @@ class BodyCharacterRigHost(
     BodyTorsoHost,
     Protocol,
 ):
+    def create_body_control_spaces(self, plan: BodyControlSpacesPlan) -> None: ...
     def scene_up_axis(self) -> FitUpAxis: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
     def create_body_character_global(self, plan: BodyCharacterGlobalPlan) -> None: ...
@@ -65,6 +67,7 @@ class BodyCharacterRigBuildPlan:
     global_name_collisions: tuple[str, ...]
     shared_input_stable: bool
     torso: BodyTorsoBuildPlan | None = None
+    control_spaces: BodyControlSpacesPlan | None = None
 
     @property
     def ready(self) -> bool:
@@ -139,8 +142,11 @@ class BuildBodyCharacterRig:
         center_tolerance: float = 0.01,
         include_torso: bool = False,
         include_spine_ik: bool = False,
+        include_control_spaces: bool = False,
         torso_control_radius: float = 2.0,
     ) -> BodyCharacterRigBuildPlan:
+        if not isinstance(include_control_spaces, bool) or (include_control_spaces and not include_torso):
+            raise FitSkeletonValidationError("控制空间需要显式包含 Torso")
         if not isinstance(include_spine_ik, bool) or (include_spine_ik and not include_torso):
             raise FitSkeletonValidationError("Spine IK 必须以布尔参数显式启用，并包含 Torso")
         if not isinstance(include_torso, bool):
@@ -209,9 +215,10 @@ class BuildBodyCharacterRig:
             radius=global_control_radius,
             body_root_via_controls=include_torso,
         )
+        spaces = plan_body_control_spaces(safety.body, torso.torso, arm, leg, global_control) if include_control_spaces else None
         collisions = tuple(sorted({
             path
-            for name in global_control.node_names
+            for name in global_control.node_names + (spaces.node_names if spaces else ())
             for path in self._host.find_name_collisions(name)
         }))
         return BodyCharacterRigBuildPlan(
@@ -222,6 +229,7 @@ class BuildBodyCharacterRig:
             global_control=global_control,
             global_name_collisions=collisions,
             torso=torso,
+            control_spaces=spaces,
             shared_input_stable=(
                 arm.safety == leg.safety
                 and (hand is None or hand.safety == arm.safety)
@@ -242,6 +250,7 @@ class BuildBodyCharacterRig:
         center_tolerance: float = 0.01,
         include_torso: bool = False,
         include_spine_ik: bool = False,
+        include_control_spaces: bool = False,
         torso_control_radius: float = 2.0,
     ) -> BodyCharacterRigBuildResult:
         plan = self.plan(
@@ -253,6 +262,7 @@ class BuildBodyCharacterRig:
             global_control_radius=global_control_radius,
             include_torso=include_torso,
             include_spine_ik=include_spine_ik,
+            include_control_spaces=include_control_spaces,
             torso_control_radius=torso_control_radius,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
@@ -296,6 +306,8 @@ class BuildBodyCharacterRig:
                     "角色总控阶段复检失败："
                     + "；".join(issue.message for issue in issues)
                 )
+            if plan.control_spaces:
+                self._host.create_body_control_spaces(plan.control_spaces)
             body = self._host.capture_body_skeleton(body_root_name)
             if not body_bind_pose_matches(plan.arm.safety.body, body):
                 raise RuntimeError("角色总控中性状态改变了 Body 绑定姿态")
