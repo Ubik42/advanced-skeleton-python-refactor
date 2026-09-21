@@ -582,3 +582,5 @@ __all__ = [
     "body_with_hand_orientation_request",
     "upper_body_orientation_request",
 ]
+
+from .character_spaces import EnableBodyCharacterSpaceAnimation, SwitchBodyCharacterSpace

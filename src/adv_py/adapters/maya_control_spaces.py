@@ -55,6 +55,9 @@ class MayaBodyControlSpacesMixin:
             c.select(selection, replace=True) if selection else c.select(clear=True)
 
     def capture_control_space_mode(self, spec):
+        from .maya_animated_spaces import enabled, audit_mode
+        if enabled(self, spec):
+            return audit_mode(self, spec)
         c = self._cmds
         modes = []
         command = self._space_command(spec)
@@ -118,6 +121,9 @@ class MayaBodyControlSpacesMixin:
 
     def switch_control_space(self, spec, mode):
         self._require_transaction()
+        from .maya_animated_spaces import enabled
+        if enabled(self, spec):
+            raise FitSkeletonValidationError('已启用动画空间；请用 SwitchBodyCharacterSpace 指定切换帧')
         c = self._cmds
         frames = tuple(self._spine_world_frame(path)[0] for path in spec.targets)
         selection = c.ls(selection=True, long=True) or []

@@ -26,7 +26,7 @@ def character_sample_frames(start, end, step=1):
 
 def decode_character_animation(text):
     doc=exact(safe_json(text,max_bytes=ANIMATION_MAX_BYTES),("format","version","payload","digest"))
-    if doc["format"] != ANIMATION_FORMAT or type(doc["version"]) is not int or doc["version"] != 1:
+    if doc["format"] != ANIMATION_FORMAT or type(doc["version"]) is not int or doc["version"] not in (1,2):
         raise CharacterRegistryError("不支持的角色动画版本")
     raw=exact(doc["payload"],("time_unit","samples"))
     if digest(raw)!=doc["digest"]:
@@ -44,13 +44,17 @@ def decode_character_animation(text):
         if not isinstance(row,list) or len(row)!=2:
             raise CharacterRegistryError("动画采样字段无效")
         frame=finite(row[0]); pose=decode_character_pose(canonical(row[1]))
+        from .character_spaces import validate_space_values
+        animated_spaces=validate_space_values(pose.channels,pose.spaces)
+        if doc['version']==2 and not animated_spaces:
+            raise CharacterRegistryError('动画版本 2 要求完整空间模式通道')
         if samples:
             first=samples[0][1]
             if frame<=samples[-1][0]:
                 raise CharacterRegistryError("动画采样时间必须严格递增")
-            if (pose.compatibility!=first.compatibility or pose.spaces!=first.spaces
+            if (pose.compatibility!=first.compatibility or (doc['version']==1 and pose.spaces!=first.spaces)
                     or any(tuple(k for k,_ in getattr(pose,f))!=tuple(k for k,_ in getattr(first,f))
-                           for f in ("channels","space_frames","body_frames"))):
+                           for f in ("channels","spaces","space_frames","body_frames"))):
                 raise CharacterRegistryError("动画片段的角色布局或空间来源不一致")
         samples.append((frame,pose))
     return CharacterAnimation(unit,tuple(samples))
@@ -58,7 +62,8 @@ def decode_character_animation(text):
 
 def encode_character_animation(animation):
     payload={"time_unit":animation.time_unit,"samples":[[finite(t),safe_json(encode_character_pose(p))] for t,p in animation.samples]}
-    text=canonical({"format":ANIMATION_FORMAT,"version":1,"payload":payload,"digest":digest(payload)})
+    version=2 if animation.samples and any(k.startswith('space.') for k,_ in animation.samples[0][1].channels) else 1
+    text=canonical({"format":ANIMATION_FORMAT,"version":version,"payload":payload,"digest":digest(payload)})
     decode_character_animation(text)
     return text
 

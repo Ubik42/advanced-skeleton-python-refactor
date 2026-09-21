@@ -49,7 +49,8 @@ class ApplyBodyCharacterAnimation:
         if animation.time_unit!=self._host.character_time_unit():
             raise CharacterRegistryError("动画与场景时间单位不一致；不隐式修改帧率")
         before=self._host.capture_character_pose(reg)
-        if before.spaces!=animation.samples[0][1].spaces:
+        from adv_py.core.character_spaces import has_animated_spaces
+        if not has_animated_spaces(reg) and before.spaces!=animation.samples[0][1].spaces:
             raise CharacterRegistryError("动画写入要求相同的控制空间来源")
         return CharacterAnimationPlan(reg,animation,self._host.capture_character_key_state(reg),before)
 

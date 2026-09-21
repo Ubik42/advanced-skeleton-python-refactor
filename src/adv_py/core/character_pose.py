@@ -65,6 +65,8 @@ def encode_character_pose(pose):
 def validate_character_pose(pose, registration):
     # Validate programmatic callers as strictly as JSON callers.
     decode_character_pose(encode_character_pose(pose))
+    from .character_spaces import validate_space_values
+    validate_space_values(pose.channels, pose.spaces)
     if pose.compatibility!=registration.compatibility_digest:
         raise CharacterRegistryError("姿态拓扑、绑定布局或特性与角色不兼容")
     if tuple(k for k,_ in pose.channels)!=tuple(c.key for c in registration.channels):

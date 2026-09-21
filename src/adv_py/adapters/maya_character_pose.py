@@ -41,6 +41,9 @@ class MayaCharacterPoseMixin:
             for channel,(_,value) in zip(registration.channels,pose.channels):
                 c.setAttr(channel.node+"."+channel.attribute,value)
             for spec in registration.spaces.spaces:
+                from .maya_animated_spaces import enabled
+                if enabled(self, spec):
+                    continue
                 c.delete(spec.constraint_names)
                 for i,(target,name) in enumerate(zip(spec.targets,spec.constraint_names)):
                     matrix=frames[spec.key+"."+str(i)]
@@ -90,8 +93,9 @@ class MayaCharacterPoseMixin:
         frame=c.currentTime(q=True)
         self._transaction_changed=True
         for channel,(_,value) in zip(registration.channels,pose.channels):
+            from adv_py.core.character_spaces import character_channel_tangent
             c.setKeyframe(channel.node,attribute=channel.attribute,time=frame,value=value,
-                          inTangentType="linear",outTangentType="linear")
+                          inTangentType="linear",outTangentType=character_channel_tangent(channel.key))
         c.currentTime(frame,edit=True,update=True)
 
     def character_time_unit(self):
@@ -134,8 +138,9 @@ class MayaCharacterPoseMixin:
         # Explicit key times do not require scene-time changes while writing.
         for frame,pose in samples:
             for channel,(_,value) in zip(registration.channels,pose.channels):
+                from adv_py.core.character_spaces import character_channel_tangent
                 c.setKeyframe(channel.node,attribute=channel.attribute,time=frame,value=value,
-                              inTangentType="linear",outTangentType="linear")
+                              inTangentType="linear",outTangentType=character_channel_tangent(channel.key))
         with self._character_sampling_time() as seek:
             seek(c.currentTime(q=True))
 

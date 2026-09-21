@@ -1,4 +1,4 @@
-"""Current-frame whole-character keys with fixed, audited control spaces."""
+"""Current-frame whole-character keys with audited control spaces."""
 from dataclasses import dataclass
 
 from adv_py.core.character_pose import (
@@ -37,7 +37,8 @@ class KeyBodyCharacterPose:
         self._host.preflight_character_keyframe(registration)
         before=self._host.capture_character_pose(registration)
         validate_character_pose(before,registration)
-        if before.spaces!=pose.spaces:
+        from adv_py.core.character_spaces import has_animated_spaces
+        if not has_animated_spaces(registration) and before.spaces!=pose.spaces:
             raise CharacterRegistryError("当前写键不改变空间来源；动画空间切换需独立流程")
         return CharacterKeyPlan(registration,pose,before,self._host.capture_character_key_state(registration))
 

@@ -363,3 +363,15 @@ write 先捕获非中性姿态，再扰动全部登记控制与空间；read 从
 ```
 
 默认流程建立辅助骨骼蒙皮探针，覆盖四肢上下段不同长度、双向转换、体积因子变化、撤销与回滚。reopen 重新读取场景并继续转换；advanced 使用自动拉伸、膝盖锁定、长度偏置和脚掌滚动；faults 检查外部输出、单位换算损坏及辅助骨骼错误读回。30 关节使用对应场景路径与新输出目录。
+# 动画空间事件
+
+`maya_character_space_animation_smoke.py` 使用上一批拉伸角色场景，检查头部与四肢五组来源切换、历史动画、未来事件、实际身体与辅助骨骼蒙皮、撤销重做以及版本 2 动画片段。默认模式同时加入全局平移、旋转、缩放和躯干旋转。
+
+```powershell
+& $mayapy validation/maya_character_space_animation_smoke.py validation/results/stretch-matching30-final/stretched.ma validation/results/space-animation30-final
+& $mayapy validation/maya_character_space_animation_smoke.py validation/results/stretch-matching70/stretched.ma validation/results/space-animation70-final
+& $mayapy validation/maya_character_space_animation_smoke.py validation/results/stretch-matching30-final/stretched.ma validation/results/space-animation30-final --reopen
+& $mayapy validation/maya_character_space_animation_smoke.py validation/results/stretch-matching30-final/stretched.ma validation/results/space-animation30-final --faults
+```
+
+`--reopen` 在新进程检查保存结果，并继续切换、四肢及脊柱模式烘焙。`--faults` 检查跨空间全身写键、外部消费、非法曲线切线和写入异常回滚。输出目录中的场景与 JSON 均为忽略的运行产物，不覆盖已有受版本管理的历史结果。

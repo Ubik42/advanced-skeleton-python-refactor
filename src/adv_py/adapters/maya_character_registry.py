@@ -9,6 +9,18 @@ from adv_py.core.body_skeleton import audit_body_provenance, oriented_body_prove
 
 
 class MayaCharacterRegistryMixin:
+    def preflight_character_space_animation(self, registration):
+        from .maya_animated_spaces import preflight
+        preflight(self, registration)
+
+    def install_character_space_animation(self, registration):
+        from .maya_animated_spaces import install
+        return install(self, registration)
+
+    def switch_character_space(self, registration, key, mode, frame):
+        from .maya_animated_spaces import switch
+        return switch(self, registration, key, mode, frame)
+
     def describe_character_stretch_matching(self,registration):
         from .maya_limb_shape import describe
         return describe(self,registration)
@@ -197,6 +209,8 @@ class MayaCharacterRegistryMixin:
         audit_orientation(self,plan)
         from .maya_limb_shape import audit as audit_shape
         audit_shape(self,plan)
+        from .maya_animated_spaces import audit as audit_spaces
+        audit_spaces(self,plan)
         self.validate_body_spine(plan.spine)
         for spec in plan.spaces.spaces:
             self.capture_control_space_mode(spec)
