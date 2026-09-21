@@ -101,6 +101,7 @@ def plan_body_character_global(
     driven_roots: tuple[str, ...],
     scale_destinations: tuple[str, ...],
     radius: float = 12.0,
+    body_root_via_controls: bool = False,
 ) -> BodyCharacterGlobalPlan:
     if (
         not isinstance(up_axis, FitUpAxis)
@@ -108,7 +109,13 @@ def plan_body_character_global(
         or not body_root.startswith("|")
         or not isinstance(driven_roots, tuple)
         or not driven_roots
-        or body_root not in driven_roots
+        or not isinstance(scale_destinations, tuple)
+        or not isinstance(body_root_via_controls, bool)
+        or (not body_root_via_controls and body_root not in driven_roots)
+        or (body_root_via_controls and (
+            body_root in driven_roots
+            or not all(f"{body_root}.scale{axis}" in scale_destinations for axis in "XYZ")
+        ))
         or len(set(driven_roots)) != len(driven_roots)
         or any(
             not isinstance(path, str)

@@ -1,5 +1,7 @@
 """Host-independent application use cases."""
 
+from .body_torso import BuildBodyTorso, BodyTorsoBuildPlan, BodyTorsoHost
+
 from .mocap_bake import BakeMocapBody, MocapBodyBakeHost
 
 from .body_arm_mechanisms import (
@@ -335,6 +337,9 @@ from .upper_body_fit import (
 )
 
 __all__ = [
+    "BuildBodyTorso",
+    "BodyTorsoBuildPlan",
+    "BodyTorsoHost",
     "BakeMocapBody",
     "MocapBodyBakeHost",
 

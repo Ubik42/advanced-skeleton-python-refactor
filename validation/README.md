@@ -254,3 +254,14 @@
 ```
 
 自行生成来源与 owned Body，连接后将第 2–20 帧按步长 2 写为 18 条直接动画曲线和 180 个 linear keys。复检采样点局部值、世界姿态、完整键集合及切线；覆盖锁定/外部输出拒绝、失败回滚、单次 Undo、Redo、选择/时间恢复和删除来源后的独立回放。只保证采样点一致，不保证线性 Euler 插值在任意子帧等价于原约束；动画层、引用目标与历史依赖约束暂不支持。
+
+## 躯干、颈头与整角色连接
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' `
+  validation\maya_body_torso_smoke.py validation\results\maya2024-body-torso.json
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' `
+  validation\maya_body_torso_smoke.py validation\results\maya2024-body-torso-basic.json --basic
+```
+
+默认使用 70 关节五指 Body；`--basic` 使用 30 关节基础 Body。两者均验证 7 个 Torso FK 控制和 16 处四肢空间连接，以及 FK 传递、IK 目标保持、拉伸起点跟随、全局缩放、失败回滚与 Undo / Redo。首次初始化的 Maya 共享 IK solver 节点允许由宿主保留；角色节点和原 Body 姿态必须完整恢复。

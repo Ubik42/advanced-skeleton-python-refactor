@@ -1,0 +1,75 @@
+from adv_py.core.body_torso import BodySpaceAttachmentState, BodyTorsoSnapshot
+from adv_py.core.fit_settings import FitSkeletonValidationError
+
+
+class MayaBodyTorsoMixin:
+    """Torso operations share the owning MayaBodyBuildHost transaction."""
+
+    def _preflight_torso_channels(self, node, attributes):
+        matches = self._cmds.ls(node, long=True) or []
+        if (matches != [node] or self._cmds.referenceQuery(node, isNodeReferenced=True)
+                or any(self._cmds.lockNode(node, query=True, lock=True) or [])):
+            raise FitSkeletonValidationError(f"Torso 对象不可编辑：{node}")
+        for attr in attributes:
+            plug = f"{node}.{attr}"
+            if (not self._cmds.getAttr(plug, settable=True)
+                    or self._cmds.listConnections(plug, source=True, destination=False)):
+                raise FitSkeletonValidationError(f"Torso 通道已有输入或锁定：{plug}")
+
+    def preflight_body_torso(self, plan):
+        for spec in plan.controls.controls:
+            attributes = tuple(f"rotate{axis}" for axis in "XYZ")
+            if spec.driven_joint == plan.pelvis_translation.target:
+                attributes += tuple(f"{kind}{axis}" for kind in ("translate", "scale") for axis in "XYZ")
+            self._preflight_torso_channels(spec.driven_joint, attributes)
+
+    def create_body_torso(self, plan):
+        self._require_transaction()
+        self.preflight_body_torso(plan)
+        if any(self.find_name_collisions(name) for name in plan.node_names):
+            raise FitSkeletonValidationError("Torso 名称在执行前发生冲突")
+        selection = self._cmds.ls(selection=True, long=True) or []
+        try:
+            self.create_body_control_root(plan.controls.root_name)
+            for spec in plan.controls.controls:
+                self._create_body_limb_fk_control(spec, "Torso")
+                locked = [f"scale{axis}" for axis in "XYZ"]
+                if spec.driven_joint != plan.pelvis_translation.target:
+                    locked += [f"translate{axis}" for axis in "XYZ"]
+                for attr in locked:
+                    self._cmds.setAttr(f"{spec.control_path}.{attr}", lock=True, keyable=False)
+            for spec in (plan.pelvis_translation,) + plan.attachments:
+                self._preflight_torso_channels(spec.target, spec.attributes)
+                command = self._cmds.parentConstraint if spec.kind == "parentConstraint" else self._cmds.pointConstraint
+                self._transaction_changed = True
+                options = {"skipRotate": ("x", "y", "z")} if spec.translation_only else {}
+                nodes = command(spec.source, spec.target, maintainOffset=True, name=spec.name, **options)
+                if len(nodes) != 1 or nodes[0].rsplit("|", 1)[-1] != spec.name:
+                    raise RuntimeError(f"Torso 约束名称漂移：{spec.name}")
+        finally:
+            self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
+
+    def capture_body_torso(self, plan):
+        states = []
+        for spec in (plan.pelvis_translation,) + plan.attachments:
+            nodes = self._cmds.ls(spec.name, long=True) or []
+            if len(nodes) != 1:
+                raise RuntimeError(f"Torso 约束缺失或不唯一：{spec.name}")
+            kind = self._cmds.nodeType(nodes[0])
+            if kind != spec.kind:
+                raise RuntimeError(f"Torso 约束类型错误：{spec.name}")
+            command = self._cmds.parentConstraint if kind == "parentConstraint" else self._cmds.pointConstraint
+            sources = tuple(self._resolve_connected_node(node) for node in (command(nodes[0], query=True, targetList=True) or []))
+            inputs = []
+            for attr in spec.attributes:
+                plug = f"{spec.target}.{attr}"
+                connected = self._cmds.listConnections(plug, source=True, destination=False) or []
+                owner = None
+                if len(connected) == 1:
+                    resolved = self._resolve_connected_node(connected[0])
+                    owner = spec.name if resolved == nodes[0] else resolved
+                inputs.append((plug, owner))
+            states.append(BodySpaceAttachmentState(spec.name, kind, sources, tuple(inputs)))
+        return BodyTorsoSnapshot(
+            self._capture_body_limb_fk_controls(plan.controls, "Torso"), tuple(states),
+        )

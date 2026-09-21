@@ -6,7 +6,7 @@
 
 ![AdvancedSkeleton Python 重构的分层架构与当前阶段](docs/media/readme-overview.svg)
 
-> 当前版本：`v0.96.0` · Windows · Maya 2024 standalone · Python 3.10 / 3.14
+> 包版本：`v0.96.0` · Windows · Maya 2024 standalone · Python 3.10 / 3.14
 >
 > Blender 5.2 仅保留早期架构可行性代码，第二阶段尚未开始。
 
@@ -14,11 +14,13 @@
 
 | 范围 | 已完成 |
 | --- | --- |
-| Maya 重构 | 91 个纵向切片，覆盖 Fit、Body、Arm / Leg / Hand FK/IK、Skin、Root Motion、FBX 与 MoCap 采样 / bake |
+| Maya 重构 | 92 个纵向切片，覆盖 Fit、Body、Arm / Leg / Hand FK/IK、Skin、Root Motion、FBX 与 MoCap 采样 / bake |
 | 角色结构 | 30 关节基础 Body、70 关节五指 Body、31 关节独立导出骨架 |
 | 数据合同 | FitSkeleton、Hand Pose 与 Skin Weight 使用路径无关的 JSON 文档和 SHA-256 内容摘要 |
 | 写入边界 | 修改前预检；单一 Maya Undo 事务提交；执行后从场景读回复检 |
-| 自动验证 | 280 项纯 Python 回归测试；80 个 Maya / Blender 宿主 smoke 脚本 |
+| 自动验证 | 284 项纯 Python 回归测试；81 个 Maya / Blender 宿主 smoke 脚本 |
+
+当前 main 已在 v0.96.0 基础上加入躯干 / 颈头 FK 与四肢空间连接，调用方式见 [核心绑定架构](docs/核心绑定架构.md)。本轮未新增版本发布。
 
 [查看 v0.96.0 阶段说明](docs/阶段发布-v0.96.md)
 
@@ -44,6 +46,7 @@
 
 ### 角色控制与蒙皮
 
+- 骨盆、腰、胸、颈、头及双侧肩胛 FK，衔接四肢起点和拉伸测量空间；
 - 双臂、双腿 FK/IK、匹配、显隐、stretch、twist 与 volume；
 - Leg knee pin、stretch bias 与五级 reverse-foot；
 - 双手 30 个 FK controls、curl / spread 聚合属性与 Hand Pose 预设；

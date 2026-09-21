@@ -35,12 +35,15 @@ from .body_hand_controls import (
 )
 from .body_rebuild import InspectBodyRebuildSafety
 from .body_rig_validation import body_bind_pose_matches
+from .body_torso import BodyTorsoHost, BodyTorsoBuildPlan, BuildBodyTorso
+from adv_py.core.body_torso import BodyTorsoSnapshot
 
 
 class BodyCharacterRigHost(
     BodyArmRigHost,
     BodyLegRigHost,
     BodyHandFkHost,
+    BodyTorsoHost,
     Protocol,
 ):
     def scene_up_axis(self) -> FitUpAxis: ...
@@ -61,6 +64,7 @@ class BodyCharacterRigBuildPlan:
     global_control: BodyCharacterGlobalPlan
     global_name_collisions: tuple[str, ...]
     shared_input_stable: bool
+    torso: BodyTorsoBuildPlan | None = None
 
     @property
     def ready(self) -> bool:
@@ -71,6 +75,7 @@ class BodyCharacterRigBuildPlan:
             and not self.hand_schema_blockers
             and not self.global_name_collisions
             and self.shared_input_stable
+            and (self.torso is None or self.torso.ready)
         )
 
     @property
@@ -79,6 +84,8 @@ class BodyCharacterRigBuildPlan:
         values.extend(
             blocker for blocker in self.leg.blockers if blocker not in values
         )
+        if self.torso is not None:
+            values.extend(self.torso.blockers)
         if self.hand is not None:
             values.extend(
                 blocker for blocker in self.hand.blockers if blocker not in values
@@ -104,6 +111,7 @@ class BodyCharacterRigBuildResult:
     hand: BodyHandFkBuildResult | None
     global_control: BodyCharacterGlobalSnapshot
     body: BodySkeletonSnapshot
+    torso: BodyTorsoSnapshot | None = None
 
 
 class BuildBodyCharacterRig:
@@ -114,6 +122,7 @@ class BuildBodyCharacterRig:
         self._arm = BuildBodyArmRig(host)
         self._leg = BuildBodyLegRig(host)
         self._hand = BuildBodyHandFkControls(host)
+        self._torso = BuildBodyTorso(host)
         self._inspector = InspectBodyRebuildSafety(host)
 
     def plan(
@@ -128,7 +137,11 @@ class BuildBodyCharacterRig:
         pole_distance_scale: float = 0.75,
         twist_joints_per_segment: int = 2,
         center_tolerance: float = 0.01,
+        include_torso: bool = False,
+        torso_control_radius: float = 2.0,
     ) -> BodyCharacterRigBuildPlan:
+        if not isinstance(include_torso, bool):
+            raise FitSkeletonValidationError("include_torso 必须是布尔值")
         safety = self._inspector.execute(
             container_name, root_name=body_root_name, center_tolerance=center_tolerance,
         )
@@ -164,8 +177,12 @@ class BuildBodyCharacterRig:
                 "Body 包含不完整的双侧五指集合，Hand FK 不会静默跳过；"
                 f"缺少 {len(missing)} 个关节：" + "、".join(missing),
             )
+        torso = (
+            self._torso.plan_from_safety(safety, arm, leg, radius=torso_control_radius)
+            if include_torso else None
+        )
         driven_roots = (
-            arm.safety.body.root,
+            torso.torso.controls.root_path if torso else arm.safety.body.root,
             arm.mechanisms.root_path,
             arm.fk_controls.root_path,
             arm.ik.root_path,
@@ -184,8 +201,10 @@ class BuildBodyCharacterRig:
                 f"{arm.stretch.global_scale_attribute}",
                 f"{leg.stretch.settings_path}."
                 f"{leg.stretch.global_scale_attribute}",
+                *(tuple(f"{safety.body.root}.scale{axis}" for axis in "XYZ") if torso else ()),
             ),
             radius=global_control_radius,
+            body_root_via_controls=include_torso,
         )
         collisions = tuple(sorted({
             path
@@ -199,6 +218,7 @@ class BuildBodyCharacterRig:
             hand_schema_blockers=hand_schema_blockers,
             global_control=global_control,
             global_name_collisions=collisions,
+            torso=torso,
             shared_input_stable=(
                 arm.safety == leg.safety
                 and (hand is None or hand.safety == arm.safety)
@@ -217,6 +237,8 @@ class BuildBodyCharacterRig:
         pole_distance_scale: float = 0.75,
         twist_joints_per_segment: int = 2,
         center_tolerance: float = 0.01,
+        include_torso: bool = False,
+        torso_control_radius: float = 2.0,
     ) -> BodyCharacterRigBuildResult:
         plan = self.plan(
             container_name,
@@ -225,6 +247,8 @@ class BuildBodyCharacterRig:
             leg_control_radius=leg_control_radius,
             hand_control_radius=hand_control_radius,
             global_control_radius=global_control_radius,
+            include_torso=include_torso,
+            torso_control_radius=torso_control_radius,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
             center_tolerance=center_tolerance,
@@ -253,6 +277,7 @@ class BuildBodyCharacterRig:
                 self._hand.build_in_transaction(plan.hand)
                 if plan.hand is not None else None
             )
+            torso = self._torso.build_in_transaction(plan.torso) if plan.torso else None
             self._host.create_body_character_global(plan.global_control)
             global_control = self._host.capture_body_character_global(
                 plan.global_control
@@ -284,4 +309,5 @@ class BuildBodyCharacterRig:
             hand=hand,
             global_control=global_control,
             body=body,
+            torso=torso,
         )

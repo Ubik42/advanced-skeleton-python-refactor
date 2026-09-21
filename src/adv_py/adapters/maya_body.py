@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .maya_torso import MayaBodyTorsoMixin
+
 import json
 from pathlib import Path
 
@@ -260,7 +262,7 @@ _BODY_EXPORT_BAKE_ATTRIBUTES = {
 }
 
 
-class MayaBodyBuildHost(MayaFitJointHost):
+class MayaBodyBuildHost(MayaBodyTorsoMixin, MayaFitJointHost):
     """Maya scene adapter for the first materialized Body skeleton stage."""
 
     def create_body_joint(self, spec: BodyJointSpec) -> str:
