@@ -1,0 +1,20 @@
+{
+  "all_groups_have_ten_samples": true,
+  "all_distal_controls_written": true,
+  "distal_body_pose_matches": true,
+  "expected_source_and_target_count": true,
+  "all_limb_modes_ik": true,
+  "spine_mode_ik": true,
+  "outside_keys_preserved": true,
+  "distal_failure_rolls_back": true,
+  "ik_conversion_failure_rolls_back": true,
+  "spine_conversion_failure_rolls_back": true,
+  "incomplete_preset_rejected": true,
+  "single_undo_restores_character": true,
+  "single_redo_restores_character": true,
+  "reopened_keys": true,
+  "reopened_distal_pose": true,
+  "joint_count": 30,
+  "max_body_error": 2.7869524176438176e-05,
+  "status": "passed"
+}

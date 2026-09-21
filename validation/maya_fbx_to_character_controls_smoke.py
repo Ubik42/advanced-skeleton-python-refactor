@@ -9,7 +9,9 @@ sys.path[:0]=[str(ROOT/'src'),str(ROOT/'examples')]
 import maya.standalone
 
 
-def main(output,with_upper=False,with_full=False,with_hand=False,with_ik=False):
+def main(output,with_upper=False,with_full=False,with_hand=False,with_ik=False,with_spine_ik=False):
+    with_ik=with_ik or with_spine_ik
+    with_full=with_full or with_ik
     output.parent.mkdir(parents=True,exist_ok=True)
     maya.standalone.initialize(name='python')
     try:
@@ -20,6 +22,7 @@ def main(output,with_upper=False,with_full=False,with_hand=False,with_ik=False):
             RetargetMocapFourLimbsToCharacter,MocapLimbSource,InspectMocapSource,
             RetargetMocapUpperAndFourLimbsToCharacter,RetargetMocapFullFkToCharacter,
             RetargetMocapFullLimbIkToCharacter,EnableBodyCharacterLimbAnimation,
+            RetargetMocapFullIkToCharacter,
             save_mocap_mapping_preset,
             load_mocap_mapping_preset)
         from adv_py.core import MocapJointMapping,MocapMappingPreset
@@ -111,21 +114,26 @@ def main(output,with_upper=False,with_full=False,with_hand=False,with_ik=False):
             imported_root=imported.snapshot.root
             imported_valid=InspectMocapSource(MayaMocapSourceReader()).execute(imported_root).valid
             options=dict(start_frame=1,end_frame=10)
-            service=(RetargetMocapFullLimbIkToCharacter(target) if with_ik else
+            service=(RetargetMocapFullIkToCharacter(target) if with_spine_ik else
+                     RetargetMocapFullLimbIkToCharacter(target) if with_ik else
                      RetargetMocapFullFkToCharacter(target) if with_full else
                      RetargetMocapUpperAndFourLimbsToCharacter(target) if with_upper else
                      RetargetMocapFourLimbsToCharacter(target))
-            if with_ik:
+            if with_spine_ik:
+                roots,spines,upper,limbs,distal,conversions,spine_conversion=service.apply_with_preset(
+                    imported_root,loaded,**options)
+            elif with_ik:
                 roots,spines,upper,limbs,distal,conversions=service.apply_with_preset(imported_root,loaded,**options)
+                spine_conversion=None
             elif with_full:
                 roots,spines,upper,limbs,distal=service.apply_with_preset(imported_root,loaded,**options)
-                conversions=()
+                conversions=();spine_conversion=None
             elif with_upper:
                 roots,spines,upper,limbs=service.apply_with_preset(imported_root,loaded,**options)
-                distal=();conversions=()
+                distal=();conversions=();spine_conversion=None
             else:
                 roots,spines,limbs=service.apply_with_preset(imported_root,loaded,**options)
-                upper=();distal=();conversions=()
+                upper=();distal=();conversions=();spine_conversion=None
         after=target.capture_character_key_state(registration)
         complete_plan=service.plan_with_preset(imported_root,loaded,**options)
         plans=(complete_plan.upper.four_limbs.limbs if with_full else
@@ -166,6 +174,7 @@ def main(output,with_upper=False,with_full=False,with_hand=False,with_ik=False):
             'upper_controls_written':not (with_upper or with_full) or len(upper)==10,
             'distal_controls_written':not with_full or len(distal)==10,
             'four_limb_ik_conversions':not with_ik or len(conversions)==4,
+            'spine_ik_conversion':not with_spine_ik or spine_conversion is not None,
             'imported_motion_matches_body':max(errors)<(1e-3 if with_ik else 1e-4),
         }
         cmds.undo()
@@ -203,5 +212,6 @@ def main(output,with_upper=False,with_full=False,with_hand=False,with_ik=False):
 
 
 if __name__=='__main__':raise SystemExit(main(Path(sys.argv[1]).resolve(),
-    '--upper' in sys.argv[2:],'--full' in sys.argv[2:] or '--ik' in sys.argv[2:],
-    '--hand' in sys.argv[2:],'--ik' in sys.argv[2:]))
+    '--upper' in sys.argv[2:],
+    any(flag in sys.argv[2:] for flag in ('--full','--ik','--spine-ik')),
+    '--hand' in sys.argv[2:],'--ik' in sys.argv[2:],'--spine-ik' in sys.argv[2:]))

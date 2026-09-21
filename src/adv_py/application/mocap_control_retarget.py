@@ -124,6 +124,8 @@ class MocapRootControlHost(Protocol):
     def character_time_unit(self) -> str: ...
     def match_character_limb_samples(self,registration: CharacterRegistration,frames: tuple[float,...],
                                       limb: str,side,mode: str,pose_tolerance: float=1e-4) -> tuple: ...
+    def match_character_spine_samples(self,registration: CharacterRegistration,
+                                      frames: tuple[float,...],mode: str) -> tuple: ...
     def write_character_animation(self,registration: CharacterRegistration,samples: tuple) -> None: ...
 
 
@@ -577,6 +579,7 @@ class RetargetMocapFullFkToCharacter:
 
 class RetargetMocapFullLimbIkToCharacter:
     """Retarget full FK motion, then match all four limbs to IK in one edit."""
+    _spine_ik=False
     def __init__(self,host: MocapRootControlHost):self._host=host
 
     def _require_limb_animation(self,plan):
@@ -616,7 +619,9 @@ class RetargetMocapFullLimbIkToCharacter:
         root=plan.upper.four_limbs.spine.root
         reg=root.registration
         host=self._host
-        with host.transaction('Retarget MoCap full body and four IK limbs'):
+        label=('Retarget MoCap spine and four limb IK' if self._spine_ik
+               else 'Retarget MoCap full body and four IK limbs')
+        with host.transaction(label):
             if self.plan(source_root,**options)!=plan:
                 raise CharacterRegistryError('动捕或角色状态在四肢 IK 写入前发生变化')
             four=plan.upper.four_limbs
@@ -630,6 +635,16 @@ class RetargetMocapFullLimbIkToCharacter:
                 raise RuntimeError('动捕 FK 基础采样不完整')
             reference=host.sample_character_animation(reg,root.frames)
             unit=host.character_time_unit()
+            spine_conversion=None
+            if self._spine_ik:
+                keys=host.capture_character_key_state(reg)
+                samples=host.match_character_spine_samples(reg,root.frames,'ik')
+                if host.capture_character_key_state(reg)!=keys or host.character_time_unit()!=unit:
+                    raise RuntimeError('动捕脊柱 IK 匹配采样改变了原曲线或时间')
+                spine_conversion=CharacterAnimation(unit,samples)
+                validate_character_animation(spine_conversion,reg)
+                host.write_character_animation(reg,samples)
+                verify_character_animation_write(host,reg,spine_conversion,keys)
             conversions=[]
             for limb in ('arm','leg'):
                 for side in ('R','L'):
@@ -649,4 +664,10 @@ class RetargetMocapFullLimbIkToCharacter:
                 for a,b in zip(left,right))
             if error>1e-3:
                 raise RuntimeError('动捕四肢 IK 转换改变了采样帧 Body 世界姿态：'+str(error))
-        return root_samples,spine_samples,upper_samples,limb_samples,distal_samples,tuple(conversions)
+        result=(root_samples,spine_samples,upper_samples,limb_samples,distal_samples,tuple(conversions))
+        return (*result,spine_conversion) if self._spine_ik else result
+
+
+class RetargetMocapFullIkToCharacter(RetargetMocapFullLimbIkToCharacter):
+    """Retarget a standard two-segment spine and four limbs to IK controls."""
+    _spine_ik=True
