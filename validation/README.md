@@ -151,6 +151,10 @@
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_long_mocap_fbx_smoke.py validation\results\maya2024-long-mocap-fbx.json
 
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_control_root_smoke.py validation\results\maya2024-mocap-control-root.json
+
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_control_namespace_smoke.py validation\results\maya2024-mocap-control-namespace.json
+
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_source_smoke.py validation\results\maya2024-mocap-source.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_mapping_smoke.py validation\results\maya2024-mocap-mapping.json

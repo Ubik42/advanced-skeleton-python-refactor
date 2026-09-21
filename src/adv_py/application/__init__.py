@@ -505,6 +505,7 @@ __all__ = [
     "save_mocap_mapping_preset",
     "load_mocap_mapping_preset",
     "ImportMocapFbx", "MocapFbxImportPlan", "MocapFbxImportResult",
+    "RetargetMocapRootToCharacter", "MocapRootControlPlan", "MocapRootControlSample",
     "ConnectMocapBody",
     "DisconnectMocapBody",
     "MocapBodyConnectionHost",
@@ -598,3 +599,4 @@ from .character_rebuild import StageBodyCharacterRebuild
 from .character_rebuild import TransferStagedBodyCharacterData
 from .character_rebuild import RebuildBodyCharacter
 from .variable_body_fit import BuildVariableBodySourceFit
+from .mocap_control_retarget import RetargetMocapRootToCharacter,MocapRootControlPlan,MocapRootControlSample

@@ -1,0 +1,13 @@
+{
+  "all_frames_written": true,
+  "global_curves_are_editable": true,
+  "body_root_matches_source_delta": true,
+  "scene_time_preserved": true,
+  "other_controls_untouched": true,
+  "partial_write_rolls_back": true,
+  "single_undo_restores_keys": true,
+  "single_redo_restores_keys": true,
+  "reopened_control_animation": true,
+  "max_root_error": 1.43982048506075e-16,
+  "status": "passed"
+}

@@ -2,6 +2,7 @@
 
 from .maya_mocap import MayaMocapBakeHost
 from .maya_mocap_clip import MayaMocapClipHost
+from .maya_mocap_control import MayaMocapControlHost
 
 from .blender import BlenderAdapterStatus, BlenderRigHost
 from .maya import MayaAdapterStatus, MayaRigHost
@@ -17,6 +18,7 @@ from .memory import InMemoryRigHost
 __all__ = [
     "MayaMocapBakeHost",
     "MayaMocapClipHost",
+    "MayaMocapControlHost",
 
     "BlenderAdapterStatus",
     "BlenderRigHost",

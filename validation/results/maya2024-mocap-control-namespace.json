@@ -1,0 +1,10 @@
+{
+  "target_has_ten_control_samples": true,
+  "target_changed": true,
+  "other_character_unchanged": true,
+  "target_undo": true,
+  "other_undo_unchanged": true,
+  "target_redo": true,
+  "other_redo_unchanged": true,
+  "status": "passed"
+}
