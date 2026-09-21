@@ -4,6 +4,7 @@ import unittest
 
 from adv_py.core import (MocapClip,MocapClipJoint,MocapClipChannel,
                          encode_mocap_clip,decode_mocap_clip,validate_mocap_clip)
+from adv_py.core.mocap_clip import mocap_verification_times
 from adv_py.core.mocap_source import MocapSourceValidationError
 
 
@@ -11,6 +12,15 @@ IDENTITY=(1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.)
 
 
 class MocapClipTests(unittest.TestCase):
+    def test_long_clip_samples_both_ends_and_intervals(self):
+        keyed=tuple(float(frame) for frame in range(1,1202))
+        selected=mocap_verification_times(keyed)
+        self.assertEqual(len(selected),2000)
+        self.assertEqual((selected[0],selected[-1]),(1.,1201.))
+        self.assertTrue(any(time!=int(time) for time in selected))
+        self.assertEqual(selected,tuple(sorted(set(selected))))
+        self.assertEqual(mocap_verification_times((1.,5.,10.)),(1.,3.,5.,7.5,10.))
+
     def fixture(self):
         joint=MocapClipJoint('Hips',None,(0.,0.,0.),(0.,0.,0.),(0.,0.,0.),(1.,1.,1.),0,
                             (MocapClipChannel('translateX',((1.,0.),(5.,4.))),))

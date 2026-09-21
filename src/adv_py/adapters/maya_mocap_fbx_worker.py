@@ -11,7 +11,7 @@ import maya.standalone
 def read_fbx(source,units):
     from maya import cmds as c
     from adv_py.adapters.maya_mocap import MayaMocapSourceReader
-    from adv_py.core.mocap_clip import MocapClip,MocapClipJoint,MocapClipChannel
+    from adv_py.core.mocap_clip import MocapClip,MocapClipJoint,MocapClipChannel,mocap_verification_times
     from adv_py.core.mocap_source import audit_mocap_source,MocapSourceValidationError
 
     c.file(new=True,force=True)
@@ -44,9 +44,7 @@ def read_fbx(source,units):
         result.append(MocapClipJoint(row.name,names[row.joint_parent] if row.joint_parent else None,
                                      vector('translate'),vector('rotate'),vector('jointOrient'),vector('scale'),
                                      int(c.getAttr(path+'.rotateOrder')),tuple(channels[path])))
-    keyed=sorted({time for joint in result for channel in joint.channels for time,_ in channel.keys})
-    frames=sorted(set(keyed)|{(left+right)/2 for left,right in zip(keyed,keyed[1:])})
-    if len(frames)>2000:raise MocapSourceValidationError('外部 FBX 关键帧超过当前逐帧验收上限')
+    frames=mocap_verification_times(time for joint in result for channel in joint.channels for time,_ in channel.keys)
     samples=[]
     for frame in frames:
         c.currentTime(frame,edit=True,update=True)

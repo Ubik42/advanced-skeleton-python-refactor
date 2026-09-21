@@ -1,0 +1,8 @@
+{
+  "source_has_1101_keys": true,
+  "bounded_world_samples": true,
+  "both_endpoints_verified": true,
+  "full_curve_restored": true,
+  "late_motion_restored": true,
+  "status": "passed"
+}

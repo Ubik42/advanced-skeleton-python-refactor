@@ -149,6 +149,8 @@
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_body_fbx_export_smoke.py validation\results\maya2024-body-fbx-export.json
 
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_long_mocap_fbx_smoke.py validation\results\maya2024-long-mocap-fbx.json
+
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_source_smoke.py validation\results\maya2024-mocap-source.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_mapping_smoke.py validation\results\maya2024-mocap-mapping.json

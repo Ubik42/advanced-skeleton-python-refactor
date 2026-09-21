@@ -9,6 +9,20 @@ from .mocap_source import MOCAP_TRANSFORM_ATTRIBUTES,MocapSourceValidationError
 
 MOCAP_CLIP_FORMAT='adv_py_mocap_clip'
 MOCAP_CLIP_SCHEMA=1
+MOCAP_CLIP_MAX_SAMPLES=2000
+
+
+def mocap_verification_times(key_times,maximum=MOCAP_CLIP_MAX_SAMPLES):
+    """Spread bounded world-pose checks across the entire keyed time range."""
+    keyed=tuple(sorted(set(key_times)))
+    if not keyed or maximum<2:
+        raise MocapSourceValidationError('动捕验收需要关键帧和至少两个采样位置')
+    if any(not isinstance(time,(int,float)) or isinstance(time,bool) or not isfinite(time) for time in keyed):
+        raise MocapSourceValidationError('动捕关键帧时间必须有限')
+    candidates=tuple(sorted(set(keyed)|{(left+right)/2 for left,right in zip(keyed,keyed[1:])}))
+    if len(candidates)<=maximum:return candidates
+    indices=tuple(round(index*(len(candidates)-1)/(maximum-1)) for index in range(maximum))
+    return tuple(candidates[index] for index in indices)
 
 
 @dataclass(frozen=True,slots=True)
@@ -88,7 +102,7 @@ def validate_mocap_clip(clip):
                            for values in tangents[2:] for value in values)):
                 raise MocapSourceValidationError('动捕片段曲线切线或循环设置无效')
     if not animated:raise MocapSourceValidationError('动捕片段没有动画通道')
-    if not 1<=len(clip.samples)<=2000:
+    if not 1<=len(clip.samples)<=MOCAP_CLIP_MAX_SAMPLES:
         raise MocapSourceValidationError('动捕片段姿态采样数量无效')
     sample_times=[]
     for time,matrices in clip.samples:
