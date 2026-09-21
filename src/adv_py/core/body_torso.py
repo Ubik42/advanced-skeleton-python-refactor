@@ -13,6 +13,7 @@ from .body_spine import BodySpinePlan, with_spine_ik
 from .body_limb_mechanisms import BodyLimbMechanismPlan
 from .body_limb_stretch import BodyLimbStretchPlan
 from .fit_settings import FitSkeletonValidationError
+from .body_description import BodyAxialDescription
 
 
 class BodyTorsoLimbPlan(Protocol):
@@ -70,20 +71,16 @@ class BodyTorsoSnapshot:
 
 def plan_body_torso(
     body: BodySkeletonSnapshot, arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan,
-    *, radius: float = 2.0, spine_ik: bool = False,
+    *, radius: float = 2.0, spine_ik: bool = False, description: BodyAxialDescription | None = None,
 ) -> BodyTorsoPlan:
     if isinstance(radius, bool) or not isinstance(radius, (int, float)) or not isfinite(radius) or radius <= 0:
         raise FitSkeletonValidationError("Torso 控制半径必须是正有限数")
-    parents = {
-        "Root_M": None, "Spine1_M": "Root_M", "Chest_M": "Spine1_M",
-        "Neck_M": "Chest_M", "Head_M": "Neck_M",
-        "Scapula_R": "Chest_M", "Scapula_L": "Chest_M",
-    }
-    joints = {joint.name: joint for joint in body.joints}
-    if len(joints) != len(body.joints) or any(name not in joints for name in parents):
-        raise FitSkeletonValidationError("Torso 需要唯一的 Root / Spine1 / Chest / Neck / Head / Scapula 骨架")
-    if joints["Root_M"].path != body.root:
-        raise FitSkeletonValidationError("Torso 根与 Body 根不一致")
+    description=BodyAxialDescription() if description is None else description
+    if not isinstance(description,BodyAxialDescription):raise FitSkeletonValidationError('身体描述类型无效')
+    if spine_ik and description!=BodyAxialDescription():
+        raise FitSkeletonValidationError('现有双段 Spine IK 不接受可变身体描述；通用 IK 求解尚未接入')
+    parents=dict(description.parents)
+    joints=description.validate(body)
     root_name = "AdvPy_TorsoControls"
     root_path = f"|{root_name}"
     controls = []
@@ -108,8 +105,8 @@ def plan_body_torso(
     pelvis = BodySpaceAttachment("AdvPy_TorsoPelvisPoint", controls[0].control_path, body.root, "pointConstraint")
     attachments = []
     for label, module, start, anchor in (("Arm", arm, "Shoulder", "Scapula"), ("Leg", leg, "Hip", "Root")):
-        for suffix in ("R", "L"):
-            source = joints[f"Scapula_{suffix}"].path if anchor == "Scapula" else body.root
+        for index,suffix in enumerate(("R", "L")):
+            source = joints[description.scapulae[index]].path if anchor == "Scapula" else body.root
             start_joint = joints.get(f"{start}_{suffix}")
             if start_joint is None or start_joint.parent_path != source:
                 raise FitSkeletonValidationError(f"{label} 起点未连接到预期躯干关节")

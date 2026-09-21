@@ -248,6 +248,7 @@ def plan_body_joint_orientations(
         raise BodySkeletonValidationError("Body skeleton 与镜像展开实例集合不一致")
 
     changes: list[BodyJointOrientationChange] = []
+    changed_paths: set[str] = set()
     for path in sorted(actual, key=lambda value: (value.count("|"), value)):
         state = actual[path]
         instance = desired[path]
@@ -271,7 +272,11 @@ def plan_body_joint_orientations(
             raise BodySkeletonValidationError(
                 f"Body skeleton jointOrient 不可完整写入：{path}"
             )
-        if not _axes_match(state.world_axes, instance.world_axes, tolerance):
+        # A parent orientation edit also rotates descendants. A child that
+        # matches its desired world frame before that edit still needs its
+        # frame restored when any ancestor is scheduled to change.
+        ancestor_changed=any(path.startswith(parent+'|') for parent in changed_paths)
+        if ancestor_changed or not _axes_match(state.world_axes, instance.world_axes, tolerance):
             changes.append(
                 BodyJointOrientationChange(
                     path,
@@ -280,6 +285,7 @@ def plan_body_joint_orientations(
                     state.world_position,
                 )
             )
+            changed_paths.add(path)
     return tuple(changes)
 
 

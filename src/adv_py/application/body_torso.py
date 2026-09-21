@@ -38,9 +38,9 @@ class BuildBodyTorso:
 
     def plan_from_safety(
         self, safety: BodyRebuildSafetyAudit,
-        arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan, *, radius: float = 2.0, spine_ik: bool = False,
+        arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan, *, radius: float = 2.0, spine_ik: bool = False, description=None,
     ) -> BodyTorsoBuildPlan:
-        torso = plan_body_torso(safety.body, arm, leg, radius=radius, spine_ik=spine_ik)
+        torso = plan_body_torso(safety.body, arm, leg, radius=radius, spine_ik=spine_ik,description=description)
         collisions = tuple(sorted({path for name in torso.node_names for path in self._host.find_name_collisions(name)}))
         self._host.preflight_body_torso(torso)
         return BodyTorsoBuildPlan(safety, torso, collisions)

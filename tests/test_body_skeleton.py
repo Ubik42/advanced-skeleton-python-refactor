@@ -1727,7 +1727,11 @@ class BodySkeletonTests(unittest.TestCase):
 
         preview = use_case.plan()
 
-        self.assertEqual(len(preview.changes), 13)
+        self.assertEqual(len(preview.changes), 16)
+        restored=[change for change in preview.changes if change.before_world_axes==change.desired_world_axes]
+        self.assertEqual(len(restored),3)
+        self.assertTrue(all(any(change.joint.startswith(parent.joint+'|') for parent in preview.changes
+                                if parent.before_world_axes!=parent.desired_world_axes) for change in restored))
         before_positions = {
             state.path: state.world_position for state in preview.before.joints
         }
@@ -1788,7 +1792,7 @@ class BodySkeletonTests(unittest.TestCase):
         result = use_case.apply()
         self.assertEqual(host.transaction_count, 1)
         self.assertEqual(len(result.snapshot.joints), 30)
-        self.assertEqual(len(result.orientation_changes), 13)
+        self.assertEqual(len(result.orientation_changes), 16)
         self.assertFalse(OrientBodySkeleton(host).plan().changes)
         audit = InspectBodySkeletonProvenance(host).execute()
         self.assertTrue(audit.owned)

@@ -591,3 +591,4 @@ from .character_rebuild import StageBodyCharacterRebuild
 
 from .character_rebuild import TransferStagedBodyCharacterData
 from .character_rebuild import RebuildBodyCharacter
+from .variable_body_fit import BuildVariableBodySourceFit
