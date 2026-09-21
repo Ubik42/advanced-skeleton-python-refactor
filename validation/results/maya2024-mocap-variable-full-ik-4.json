@@ -1,0 +1,20 @@
+{
+  "expected_joint_count": true,
+  "external_fbx_joint_count": true,
+  "all_groups_written": true,
+  "body_pose_matches": true,
+  "spline_ik_mode": true,
+  "four_limb_ik_modes": true,
+  "group_failure_rolls_back": true,
+  "spline_conversion_failure_rolls_back": true,
+  "limb_conversion_failure_rolls_back": true,
+  "outside_keys_preserved": true,
+  "unfit_spline_rejected_without_character_edits": true,
+  "single_undo_restores_character": true,
+  "single_redo_restores_character": true,
+  "reopened_keys": true,
+  "segments": 4,
+  "joint_count": 32,
+  "max_body_error": 0.0005834891642812964,
+  "status": "passed"
+}

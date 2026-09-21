@@ -1,0 +1,13 @@
+{
+  "expected_joint_count": true,
+  "all_groups_written": true,
+  "body_pose_matches": true,
+  "group_failure_rolls_back": true,
+  "single_undo_restores_character": true,
+  "single_redo_restores_character": true,
+  "reopened_keys": true,
+  "segments": 4,
+  "joint_count": 72,
+  "max_body_error": 3.552713678800501e-15,
+  "status": "passed"
+}

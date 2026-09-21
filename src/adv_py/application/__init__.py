@@ -513,6 +513,10 @@ __all__ = [
     "RetargetMocapFullFkToCharacter", "MocapDistalControlPlan", "MocapDistalControlSample",
     "RetargetMocapFullLimbIkToCharacter",
     "RetargetMocapFullIkToCharacter",
+    "RetargetMocapVariableFullFkToCharacter", "MocapVariableFullPlan",
+    "MocapFkGroupPlan", "MocapFkGroupSample",
+    "RetargetMocapVariableSplineIkToCharacter",
+    "RetargetMocapVariableFullIkToCharacter",
     "ConnectMocapBody",
     "DisconnectMocapBody",
     "MocapBodyConnectionHost",
@@ -616,3 +620,7 @@ from .mocap_control_retarget import (RetargetMocapFullFkToCharacter,
     MocapDistalControlPlan,MocapDistalControlSample)
 from .mocap_control_retarget import RetargetMocapFullLimbIkToCharacter
 from .mocap_control_retarget import RetargetMocapFullIkToCharacter
+from .mocap_variable_retarget import (RetargetMocapVariableFullFkToCharacter,
+    MocapVariableFullPlan,MocapFkGroupPlan,MocapFkGroupSample)
+from .mocap_variable_retarget import RetargetMocapVariableSplineIkToCharacter
+from .mocap_variable_retarget import RetargetMocapVariableFullIkToCharacter

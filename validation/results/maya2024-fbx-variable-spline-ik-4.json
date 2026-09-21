@@ -1,0 +1,18 @@
+{
+  "expected_joint_count": true,
+  "external_fbx_joint_count": true,
+  "all_groups_written": true,
+  "body_pose_matches": true,
+  "spline_ik_mode": true,
+  "group_failure_rolls_back": true,
+  "unfit_spline_rejected_without_character_edits": true,
+  "single_undo_restores_character": true,
+  "retarget_undo_keeps_import": true,
+  "import_undo_keeps_character": true,
+  "single_redo_restores_character": true,
+  "reopened_keys": true,
+  "segments": 4,
+  "joint_count": 32,
+  "max_body_error": 4.7594097551950654e-07,
+  "status": "passed"
+}

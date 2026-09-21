@@ -159,6 +159,18 @@ class MayaMocapControlHost(MayaBodyBuildHost):
             plan.target_joints,plan.target_parents,plan.controls,label='toes and fingers')
         return tuple(MocapDistalControlSample(*row) for row in rows)
 
+    def write_mocap_fk_group_keys(self,plan):
+        from adv_py.application.mocap_variable_retarget import MocapFkGroupSample
+        with self._character_sampling_time() as seek:
+            for frame in plan.root.frames:
+                seek(frame)
+                if any(abs(float(self._cmds.getAttr(plug)))>1e-8 for plug in plan.zero_plugs):
+                    raise CharacterRegistryError('动捕 FK 控制组要求对应模式权重为零：'
+                        +plan.label+' frame='+str(frame))
+        rows=self._write_mocap_fk_chain(plan.root,plan.source_joints,plan.source_parents,
+            plan.target_joints,plan.target_parents,plan.controls,label=plan.label)
+        return tuple(MocapFkGroupSample(*row) for row in rows)
+
     def _write_mocap_fk_chain(self,root,source_joints,source_parents,target_joints,target_parents,
                               controls,*,label,mode_plug=None):
         from math import sqrt
