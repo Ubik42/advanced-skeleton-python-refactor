@@ -32,3 +32,19 @@ class MocapClipTests(unittest.TestCase):
                  replace(clip,samples=((1.,((1.,),)),)))
         for item in invalid:
             with self.assertRaises(MocapSourceValidationError):validate_mocap_clip(item)
+
+    def test_tangent_round_trip_and_rejects_malformed_arrays(self):
+        clip=self.fixture()
+        channel=replace(clip.joints[0].channels[0],
+            in_tangents=('fixed','linear'),out_tangents=('linear','fixed'),
+            in_angles=(0.,1.),out_angles=(1.,0.),
+            in_weights=(1.,1.),out_weights=(1.,1.),weighted=True,post_infinity=3)
+        clip=replace(clip,joints=(replace(clip.joints[0],channels=(channel,)),))
+        self.assertEqual(decode_mocap_clip(encode_mocap_clip(clip)),clip)
+        with self.assertRaisesRegex(MocapSourceValidationError,'切线数量'):
+            validate_mocap_clip(replace(clip,joints=(replace(clip.joints[0],
+                channels=(replace(channel,out_angles=(0.,)),)),)))
+        malformed=json.loads(encode_mocap_clip(clip))
+        malformed['joints'][0]['channels'][0]['in_angles']=None
+        with self.assertRaisesRegex(MocapSourceValidationError,'切线结构'):
+            decode_mocap_clip(json.dumps(malformed))

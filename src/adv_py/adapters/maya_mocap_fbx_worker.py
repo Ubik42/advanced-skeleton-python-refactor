@@ -31,7 +31,12 @@ def read_fbx(source,units):
     for row in snapshot.channels:
         plug=row.joint_path+'.'+row.attribute
         keys=tuple((float(time),float(c.getAttr(plug,time=time))) for time in row.key_times)
-        channels[row.joint_path].append(MocapClipChannel(row.attribute,keys))
+        curve=row.driver_path.rsplit('.',1)[0]
+        tangent=lambda flag:tuple(c.keyTangent(curve,query=True,**{flag:True}) or [])
+        channels[row.joint_path].append(MocapClipChannel(row.attribute,keys,
+            tangent('inTangentType'),tangent('outTangentType'),tangent('inAngle'),tangent('outAngle'),
+            tangent('inWeight'),tangent('outWeight'),bool(c.getAttr(curve+'.weightedTangents')),
+            int(c.getAttr(curve+'.preInfinity')),int(c.getAttr(curve+'.postInfinity'))))
     result=[]
     for row in snapshot.joints:
         path=row.path
@@ -39,7 +44,8 @@ def read_fbx(source,units):
         result.append(MocapClipJoint(row.name,names[row.joint_parent] if row.joint_parent else None,
                                      vector('translate'),vector('rotate'),vector('jointOrient'),vector('scale'),
                                      int(c.getAttr(path+'.rotateOrder')),tuple(channels[path])))
-    frames=sorted({time for joint in result for channel in joint.channels for time,_ in channel.keys})
+    keyed=sorted({time for joint in result for channel in joint.channels for time,_ in channel.keys})
+    frames=sorted(set(keyed)|{(left+right)/2 for left,right in zip(keyed,keyed[1:])})
     if len(frames)>2000:raise MocapSourceValidationError('外部 FBX 关键帧超过当前逐帧验收上限')
     samples=[]
     for frame in frames:

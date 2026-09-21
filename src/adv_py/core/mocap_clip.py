@@ -15,6 +15,15 @@ MOCAP_CLIP_SCHEMA=1
 class MocapClipChannel:
     attribute: str
     keys: tuple[tuple[float,float],...]
+    in_tangents: tuple[str,...] = ()
+    out_tangents: tuple[str,...] = ()
+    in_angles: tuple[float,...] = ()
+    out_angles: tuple[float,...] = ()
+    in_weights: tuple[float,...] = ()
+    out_weights: tuple[float,...] = ()
+    weighted: bool = False
+    pre_infinity: int = 0
+    post_infinity: int = 0
 
 
 @dataclass(frozen=True,slots=True)
@@ -68,6 +77,16 @@ def validate_mocap_clip(clip):
                 times.append(time)
             if any(left>=right for left,right in zip(times,times[1:])):
                 raise MocapSourceValidationError('动捕片段关键帧时间不递增')
+            tangents=(channel.in_tangents,channel.out_tangents,channel.in_angles,
+                      channel.out_angles,channel.in_weights,channel.out_weights)
+            if any(tangents) and any(len(values)!=len(channel.keys) for values in tangents):
+                raise MocapSourceValidationError('动捕片段曲线切线数量不完整')
+            if (not isinstance(channel.weighted,bool)
+                    or type(channel.pre_infinity) is not int or type(channel.post_infinity) is not int
+                    or any(not isinstance(value,str) or not value for values in tangents[:2] for value in values)
+                    or any(not isinstance(value,(int,float)) or isinstance(value,bool) or not isfinite(value)
+                           for values in tangents[2:] for value in values)):
+                raise MocapSourceValidationError('动捕片段曲线切线或循环设置无效')
     if not animated:raise MocapSourceValidationError('动捕片段没有动画通道')
     if not 1<=len(clip.samples)<=2000:
         raise MocapSourceValidationError('动捕片段姿态采样数量无效')
@@ -107,13 +126,34 @@ def decode_mocap_clip(text):
         if not isinstance(row['channels'],list):raise MocapSourceValidationError('动捕片段通道必须是数组')
         channels=[]
         for channel in row['channels']:
-            if not isinstance(channel,dict) or set(channel)!={'attribute','keys'} or not isinstance(channel['keys'],list):
+            if not isinstance(channel,dict) or set(channel)!={
+                    'attribute','keys','in_tangents','out_tangents','in_angles','out_angles',
+                    'in_weights','out_weights','weighted','pre_infinity','post_infinity'} or not isinstance(channel['keys'],list):
                 raise MocapSourceValidationError('动捕片段通道字段无效')
-            channels.append(MocapClipChannel(channel['attribute'],tuple(tuple(key) for key in channel['keys'])))
-        joints.append(MocapClipJoint(row['name'],row['parent_name'],tuple(row['translate']),tuple(row['rotate']),
-                                     tuple(row['joint_orient']),tuple(row['scale']),row['rotate_order'],tuple(channels)))
+            try:
+                if any(not isinstance(key,list) or len(key)!=2 for key in channel['keys']):
+                    raise ValueError('key shape')
+                tangent_fields=('in_tangents','out_tangents','in_angles','out_angles','in_weights','out_weights')
+                if any(not isinstance(channel[field],list) for field in tangent_fields):
+                    raise ValueError('tangent shape')
+                channels.append(MocapClipChannel(channel['attribute'],tuple(tuple(key) for key in channel['keys']),
+                             *(tuple(channel[field]) for field in tangent_fields),channel['weighted'],
+                             channel['pre_infinity'],channel['post_infinity']))
+            except (TypeError,ValueError) as exc:
+                raise MocapSourceValidationError('动捕片段关键帧或曲线切线结构无效') from exc
+        try:
+            joints.append(MocapClipJoint(row['name'],row['parent_name'],tuple(row['translate']),tuple(row['rotate']),
+                                         tuple(row['joint_orient']),tuple(row['scale']),row['rotate_order'],tuple(channels)))
+        except TypeError as exc:
+            raise MocapSourceValidationError('动捕片段关节变换结构无效') from exc
     if not isinstance(raw['samples'],list):raise MocapSourceValidationError('动捕片段采样必须是数组')
-    samples=tuple((time,tuple(tuple(matrix) for matrix in matrices)) for time,matrices in raw['samples'])
+    try:
+        if any(not isinstance(sample,list) or len(sample)!=2 or not isinstance(sample[1],list)
+               or any(not isinstance(matrix,list) for matrix in sample[1]) for sample in raw['samples']):
+            raise ValueError('sample shape')
+        samples=tuple((time,tuple(tuple(matrix) for matrix in matrices)) for time,matrices in raw['samples'])
+    except (TypeError,ValueError) as exc:
+        raise MocapSourceValidationError('动捕片段姿态采样结构无效') from exc
     clip=validate_mocap_clip(MocapClip(raw['up_axis'],raw['linear_unit'],raw['time_unit'],tuple(joints),samples))
     if json.loads(encode_mocap_clip(clip))['content_sha256']!=raw['content_sha256']:
         raise MocapSourceValidationError('动捕片段内容摘要不匹配')

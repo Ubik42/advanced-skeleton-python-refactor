@@ -52,6 +52,21 @@ class MayaMocapClipHost:
                 for channel in joint.channels:
                     for time,value in channel.keys:
                         c.setKeyframe(path,attribute=channel.attribute,time=time,value=value)
+                    if channel.in_tangents:
+                        curve=c.connectionInfo(path+'.'+channel.attribute,sourceFromDestination=True).rsplit('.',1)[0]
+                        c.keyTangent(curve,edit=True,weightedTangents=channel.weighted)
+                        for index,(time,_) in enumerate(channel.keys):
+                            scope={'time':(time,time)}
+                            c.keyTangent(curve,edit=True,**scope,
+                                inTangentType=channel.in_tangents[index],outTangentType=channel.out_tangents[index])
+                            if channel.in_tangents[index]=='fixed':
+                                c.keyTangent(curve,edit=True,**scope,inAngle=channel.in_angles[index],
+                                             **({'inWeight':channel.in_weights[index]} if channel.weighted else {}))
+                            if channel.out_tangents[index]=='fixed':
+                                c.keyTangent(curve,edit=True,**scope,outAngle=channel.out_angles[index],
+                                             **({'outWeight':channel.out_weights[index]} if channel.weighted else {}))
+                        c.setAttr(curve+'.preInfinity',channel.pre_infinity)
+                        c.setAttr(curve+'.postInfinity',channel.post_infinity)
             root=paths[clip.joints[0].name]
             snapshot=MayaMocapSourceReader().capture_mocap_source(root)
             issues=audit_mocap_source(snapshot)
