@@ -304,3 +304,19 @@ py -3 -m unittest discover -s tests
 ```
 
 30 关节案例将目录改为 `registry30`，两条命令均追加 `--basic`。write 阶段生成、登记、验证 Undo / Redo 后保存 `.ma`，read 阶段在新进程中只从场景登记恢复角色。覆盖只读解析、脊柱双向匹配、全部空间切换、输入连接污染与改名 / 损坏数据拒绝。首版仅支持完整控制组合、无 namespace、非引用的单角色。
+
+
+## 全身姿态与新进程蒙皮恢复
+
+使用新结果目录，write 阶段不会覆盖已有姿态文件；各命令在独立 Maya standalone 进程运行。
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_pose_smoke.py validation/results/pose70_final write
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_pose_smoke.py validation/results/pose70_final read
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_pose_smoke.py validation/results/pose30_final write --basic
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_character_pose_smoke.py validation/results/pose30_final read --basic
+```
+
+首次运行用上述目录；再次完整运行应换新的结果目录。read 可单独复验已保存的扰动场景，它不会覆盖场景或姿态文件。
+
+write 先捕获非中性姿态，再扰动全部登记控制与空间；read 从新进程恢复并比较完整 Body、控制、空间和网格。负例覆盖锁定、动画输入、动画层、不兼容绑定、写入异常和伪造 Body 参考。继续执行脊柱双向匹配与全部空间切换后，仍须能再次应用原姿态。旧接口兼容检查使用 `maya_body_hand_pose_io_smoke.py`。

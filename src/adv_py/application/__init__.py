@@ -1,3 +1,4 @@
+from .character_pose import CaptureBodyCharacterPose, ApplyBodyCharacterPose, save_character_pose, load_character_pose
 from .character_registry import RegisterBodyCharacter, ResolveBodyCharacter
 """Host-independent application use cases."""
 
@@ -340,6 +341,7 @@ from .upper_body_fit import (
 )
 
 __all__ = [
+    "CaptureBodyCharacterPose", "ApplyBodyCharacterPose", "save_character_pose", "load_character_pose",
     "RegisterBodyCharacter",
     "ResolveBodyCharacter",
     "SwitchBodyControlSpace",
