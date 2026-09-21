@@ -1,0 +1,13 @@
+{
+  "all_ten_frames": true,
+  "fk_spine_keyed": true,
+  "spine_pose_verified": true,
+  "spine_motion_visible": true,
+  "other_character_channels_preserved": true,
+  "partial_failure_rolls_back": true,
+  "single_undo": true,
+  "single_redo": true,
+  "reopened_spine_animation": true,
+  "max_spine_error": 1.609823385706477e-15,
+  "status": "passed"
+}

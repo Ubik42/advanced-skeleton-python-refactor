@@ -56,3 +56,73 @@ class MayaMocapControlHost(MayaBodyBuildHost):
                 if error(matrix(body_root),sample.body_root_matrix)>1e-4:
                     raise RuntimeError('动捕根部控制曲线验收失败：frame='+str(sample.frame))
         return tuple(samples)
+
+    def write_mocap_spine_control_keys(self,plan):
+        from math import sqrt
+        from maya.api.OpenMaya import MMatrix,MTransformationMatrix
+        from adv_py.application.mocap_control_retarget import MocapSpineControlSample
+        self._require_transaction()
+        registration=plan.root.registration
+        self.preflight_character_keyframe(registration)
+        c=self._cmds
+        spine=registration.spine
+        body=spine.body_joints
+        controls=spine.fk_controls
+        sources=(plan.root.source.root,plan.source_spine,plan.source_chest)
+        channels={channel.node+'.'+channel.attribute for channel in registration.channels}
+        if any(control+'.rotate'+axis not in channels for control in controls[1:] for axis in 'XYZ'):
+            raise CharacterRegistryError('FK 脊柱控制器旋转通道不完整')
+        def matrix(node):return MMatrix(c.xform(node,query=True,worldSpace=True,matrix=True))
+        def error(left,right):return max(abs(a-b) for a,b in zip(left,right))
+        def rotation(value):return MTransformationMatrix(value).rotation().asMatrix()
+        def rotated_local(original,delta):
+            direction=rotation(original)*delta
+            data=list(direction)
+            for offset in (0,4,8):
+                size=sqrt(sum(original[offset+axis]**2 for axis in range(3)))
+                if size<1e-8:raise CharacterRegistryError('目标脊柱包含退化缩放')
+                for axis in range(3):data[offset+axis]*=size
+            data[12:15]=[original[12],original[13],original[14]]
+            return MMatrix(data)
+        samples=[]
+        self._transaction_changed=True
+        with self._character_sampling_time(preserve_modified=False) as seek:
+            seek(plan.root.reference_frame)
+            reference=tuple(matrix(path) for path in sources)
+            relative_reference=tuple(rotation(reference[index]*reference[index-1].inverse())
+                                     for index in (1,2))
+            for frame in plan.root.frames:
+                seek(frame)
+                if abs(float(c.getAttr(spine.blend_plug)))>1e-8:
+                    raise CharacterRegistryError('动捕脊柱转移要求采样帧处于 Spine FK 模式：frame='+str(frame))
+                current_source=tuple(matrix(path) for path in sources)
+                deltas=tuple(relative_reference[index-1].inverse()*
+                    rotation(current_source[index]*current_source[index-1].inverse()) for index in (1,2))
+                pose=self.capture_character_pose(registration)
+                wanted=[]
+                with self._character_static_controls(registration,pose):
+                    for index,delta in zip((1,2),deltas):
+                        parent=matrix(body[index-1]);actual=matrix(body[index])
+                        local=actual*parent.inverse()
+                        desired=rotated_local(local,delta)*parent
+                        control=controls[index]
+                        target=matrix(control)*actual.inverse()*desired
+                        self._spine_set_world_rotation(control,target)
+                        evaluated=matrix(body[index])
+                        if error(evaluated,desired)>1e-4:
+                            raise CharacterRegistryError('动捕脊柱姿态不能由 FK 控制器精确表达：'
+                                +str((frame,body[index],error(evaluated,desired))))
+                        wanted.append(tuple(desired))
+                    values=tuple(float(c.getAttr(control+'.rotate'+axis))
+                                 for control in controls[1:] for axis in 'XYZ')
+                samples.append(MocapSpineControlSample(frame,values,tuple(wanted)))
+            for sample in samples:
+                for control,values in zip(controls[1:],(sample.control_values[:3],sample.control_values[3:])):
+                    for axis,value in zip('XYZ',values):
+                        c.setKeyframe(control,attribute='rotate'+axis,time=sample.frame,value=value,
+                                      inTangentType='linear',outTangentType='linear')
+            for sample in samples:
+                seek(sample.frame)
+                if any(error(matrix(path),wanted)>1e-4 for path,wanted in zip(body[1:],sample.body_matrices)):
+                    raise RuntimeError('动捕脊柱控制曲线验收失败：frame='+str(sample.frame))
+        return tuple(samples)
