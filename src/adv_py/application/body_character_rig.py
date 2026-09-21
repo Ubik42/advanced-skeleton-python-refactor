@@ -129,21 +129,20 @@ class BuildBodyCharacterRig:
         twist_joints_per_segment: int = 2,
         center_tolerance: float = 0.01,
     ) -> BodyCharacterRigBuildPlan:
-        arm = self._arm.plan(
-            container_name,
-            body_root_name=body_root_name,
+        safety = self._inspector.execute(
+            container_name, root_name=body_root_name, center_tolerance=center_tolerance,
+        )
+        arm = self._arm.plan_from_safety(
+            safety,
             control_radius=arm_control_radius,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
-            center_tolerance=center_tolerance,
         )
-        leg = self._leg.plan(
-            container_name,
-            body_root_name=body_root_name,
+        leg = self._leg.plan_from_safety(
+            safety,
             control_radius=leg_control_radius,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
-            center_tolerance=center_tolerance,
         )
         expected_hand_names = {
             f"{source_name}_{suffix}"
@@ -236,8 +235,8 @@ class BuildBodyCharacterRig:
                 + "；".join(plan.blockers)
             )
 
-        self._host.prepare_body_arm_twist_runtime()
-        self._host.prepare_body_leg_twist_runtime()
+        self._arm.prepare_runtime()
+        self._leg.prepare_runtime()
         with self._host.transaction("构建完整角色 Arm/Leg/Hand 与总控"):
             current = self._inspector.execute(
                 container_name,
@@ -248,29 +247,11 @@ class BuildBodyCharacterRig:
                 raise RuntimeError(
                     "Character Rig 执行前 Body 或 Fit 输入发生变化"
                 )
-            arm = self._arm._apply_plan(
-                plan.arm,
-                body_root_name=body_root_name,
-                manage_transaction=False,
-                prepare_runtime=False,
-            )
-            leg = self._leg._apply_plan(
-                plan.leg,
-                body_root_name=body_root_name,
-                manage_transaction=False,
-                prepare_runtime=False,
-            )
+            arm = self._arm.build_in_transaction(plan.arm)
+            leg = self._leg.build_in_transaction(plan.leg)
             hand = (
-                self._hand._apply_plan(
-                    plan.hand,
-                    body_root_name=body_root_name,
-                    container_name=container_name,
-                    center_tolerance=center_tolerance,
-                    manage_transaction=False,
-                    revalidate_safety=False,
-                )
-                if plan.hand is not None
-                else None
+                self._hand.build_in_transaction(plan.hand)
+                if plan.hand is not None else None
             )
             self._host.create_body_character_global(plan.global_control)
             global_control = self._host.capture_body_character_global(

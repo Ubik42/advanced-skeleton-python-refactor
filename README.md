@@ -18,7 +18,7 @@
 | 角色结构 | 30 关节基础 Body、70 关节五指 Body、31 关节独立导出骨架 |
 | 数据合同 | FitSkeleton、Hand Pose 与 Skin Weight 使用路径无关的 JSON 文档和 SHA-256 内容摘要 |
 | 写入边界 | 修改前预检；单一 Maya Undo 事务提交；执行后从场景读回复检 |
-| 自动验证 | 278 项纯 Python 回归测试；80 个 Maya / Blender 宿主 smoke 脚本 |
+| 自动验证 | 280 项纯 Python 回归测试；80 个 Maya / Blender 宿主 smoke 脚本 |
 
 [查看 v0.96.0 阶段说明](docs/阶段发布-v0.96.md)
 
@@ -128,6 +128,7 @@ docs/                   架构、路线、调研与阶段说明
 ## 文档
 
 - [开发交接](docs/开发交接.md)
+- [核心绑定架构](docs/核心绑定架构.md)
 - [迁移架构](docs/迁移架构.md)
 - [跨 DCC 路线](docs/跨DCC路线.md)
 - [社区调研](docs/社区调研.md)

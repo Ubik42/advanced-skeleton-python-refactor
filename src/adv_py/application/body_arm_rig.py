@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -88,8 +88,23 @@ class BuildBodyArmRig:
     def __init__(self, host: BodyArmRigHost) -> None:
         self._host, self._inspector = host, InspectBodyRebuildSafety(host)
 
-    def plan(self, container_name="FitSkeleton", *, body_root_name="Root_M", control_radius=1.5, pole_distance_scale=0.75, twist_joints_per_segment=2, center_tolerance=0.01) -> BodyArmRigBuildPlan:
+    def plan(
+        self, container_name: str = "FitSkeleton", *, body_root_name: str = "Root_M",
+        control_radius: float = 1.5, pole_distance_scale: float = 0.75,
+        twist_joints_per_segment: int = 2, center_tolerance: float = 0.01,
+    ) -> BodyArmRigBuildPlan:
         safety = self._inspector.execute(container_name, root_name=body_root_name, center_tolerance=center_tolerance)
+        return self.plan_from_safety(
+            safety, control_radius=control_radius,
+            pole_distance_scale=pole_distance_scale,
+            twist_joints_per_segment=twist_joints_per_segment,
+        )
+
+    def plan_from_safety(
+        self, safety: BodyRebuildSafetyAudit, *, control_radius: float = 1.5,
+        pole_distance_scale: float = 0.75, twist_joints_per_segment: int = 2,
+    ) -> BodyArmRigBuildPlan:
+        """Plan this module from the character's shared immutable input."""
         mechanisms = plan_body_arm_mechanisms(safety.body)
         fk_drivers = {spec.source_joint: spec.path for spec in mechanisms.joints if spec.role is BodyArmMechanismRole.FK}
         fk_controls = plan_body_arm_fk_controls(safety.body, radius=control_radius, driven_joint_by_source=fk_drivers)
@@ -101,12 +116,14 @@ class BuildBodyArmRig:
         volume = plan_body_arm_volume(stretch, twist, blend)
         names = [mechanisms.root_name, fk_controls.root_name, blend.settings_name, ik.root_name]
         names.extend(spec.name for spec in mechanisms.joints)
-        for spec in fk_controls.controls: names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
+        for spec in fk_controls.controls:
+            names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
         for side in blend.sides:
             names.append(side.reverse_name)
             names.extend(j.constraint_name for j in side.joints)
             names.extend(j.translation_constraint_name for j in side.joints if j.translation_constraint_name)
-        for spec in ik.limbs: names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name))
+        for spec in ik.limbs:
+            names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name))
         for side in stretch.sides:
             names.extend((side.start_name, side.distance_name, side.ratio_name, side.rest_scale_name, side.clamp_name, side.blend_name, side.segment_name))
         names.append(twist.root_name)
@@ -120,67 +137,93 @@ class BuildBodyArmRig:
         collisions = tuple(sorted({path for name in names for path in self._host.find_name_collisions(name)}))
         return BodyArmRigBuildPlan(safety, mechanisms, fk_controls, blend, ik, visibility, stretch, twist, volume, collisions)
 
-    def apply(self, container_name="FitSkeleton", *, body_root_name="Root_M", control_radius=1.5, pole_distance_scale=0.75, twist_joints_per_segment=2, center_tolerance=0.01) -> BodyArmRigBuildResult:
-        plan = self.plan(container_name, body_root_name=body_root_name, control_radius=control_radius, pole_distance_scale=pole_distance_scale, twist_joints_per_segment=twist_joints_per_segment, center_tolerance=center_tolerance)
-        return self._apply_plan(plan, body_root_name=body_root_name)
-
-    def _apply_plan(
-        self,
-        plan: BodyArmRigBuildPlan,
-        *,
-        body_root_name: str,
-        manage_transaction: bool = True,
-        prepare_runtime: bool = True,
+    def apply(
+        self, container_name: str = "FitSkeleton", *, body_root_name: str = "Root_M",
+        control_radius: float = 1.5, pole_distance_scale: float = 0.75,
+        twist_joints_per_segment: int = 2, center_tolerance: float = 0.01,
     ) -> BodyArmRigBuildResult:
-        if not plan.ready: raise FitSkeletonValidationError("Arm Rig 构建预检失败，场景未修改：" + "；".join(plan.blockers))
-        if prepare_runtime:
-            self._host.prepare_body_arm_twist_runtime()
-        transaction = (
-            self._host.transaction("构建完整双臂 IK/FK")
-            if manage_transaction
-            else nullcontext()
-        )
-        with transaction:
-            if self._host.create_body_arm_mechanism_root(plan.mechanisms.root_name) != plan.mechanisms.root_path: raise RuntimeError("Arm mechanism 根路径漂移")
-            for spec in plan.mechanisms.joints: self._host.create_body_arm_mechanism_joint(spec)
-            mechanisms = self._host.capture_body_arm_mechanisms(plan.mechanisms)
-            if audit_body_arm_mechanisms(plan.mechanisms, mechanisms): raise RuntimeError("Arm mechanism 阶段复检失败")
-            if self._host.create_body_control_root(plan.fk_controls.root_name) != plan.fk_controls.root_path: raise RuntimeError("Arm FK 根路径漂移")
-            for spec in plan.fk_controls.controls: self._host.create_body_arm_fk_control(spec)
-            fk = self._host.capture_body_arm_fk_controls(plan.fk_controls)
-            if audit_body_arm_fk_controls(plan.fk_controls, fk): raise RuntimeError("Arm FK 阶段复检失败")
-            self._host.create_body_arm_blend(plan.blend); blend = self._host.capture_body_arm_blend(plan.blend)
-            if audit_body_arm_blend(plan.blend, blend): raise RuntimeError("Arm blend 阶段复检失败")
-            if self._host.create_body_arm_ik_root(plan.ik.root_name) != plan.ik.root_path: raise RuntimeError("Arm IK 根路径漂移")
-            for spec in plan.ik.limbs: self._host.create_body_arm_ik(spec)
-            ik = self._host.capture_body_arm_ik(plan.ik)
-            if audit_body_arm_ik(plan.ik, ik): raise RuntimeError("Arm IK 阶段复检失败")
-            self._host.create_body_arm_visibility(plan.visibility)
-            visibility = self._host.capture_body_arm_visibility(plan.visibility)
-            if audit_body_arm_visibility(plan.visibility, visibility): raise RuntimeError("Arm 控制显隐阶段复检失败")
-            self._host.create_body_arm_stretch(plan.stretch)
-            stretch = self._host.capture_body_arm_stretch(plan.stretch)
-            stretch_issues = audit_body_arm_stretch(plan.stretch, stretch)
-            if stretch_issues:
-                raise RuntimeError("Arm stretch 阶段复检失败：" + "；".join(issue.message for issue in stretch_issues))
-            if self._host.create_body_arm_twist_root(plan.twist.root_name) != plan.twist.root_path:
-                raise RuntimeError("Arm twist 根路径漂移")
-            for spec in plan.twist.segments:
-                self._host.create_body_arm_twist_segment(spec)
-            for spec in plan.twist.joints:
-                self._host.create_body_arm_twist_joint(spec)
-            twist = self._host.capture_body_arm_twist(plan.twist)
-            twist_issues = audit_body_arm_twist(plan.twist, twist)
-            if twist_issues:
-                raise RuntimeError("Arm twist 阶段复检失败：" + "；".join(issue.message for issue in twist_issues))
-            self._host.create_body_arm_volume(plan.volume)
-            volume = self._host.capture_body_arm_volume(plan.volume)
-            volume_issues = audit_body_arm_volume(plan.volume, volume)
-            if volume_issues:
-                raise RuntimeError("Arm 体积保持阶段复检失败：" + "；".join(issue.message for issue in volume_issues))
-            body = self._host.capture_body_skeleton(body_root_name)
-            if not body_bind_pose_matches(plan.safety.body, body):
-                raise RuntimeError("Arm Rig 绑定姿态下 Body 发生变化")
-            container = plan.safety.symmetry.source.hierarchy.container
-            if self._host.capture_fit_orientation(container) != plan.safety.symmetry.source or self._host.read_fit_skeleton_settings(container) != plan.safety.symmetry.settings: raise RuntimeError("Arm Rig 构建后 Fit 输入变化")
+        plan = self.plan(container_name, body_root_name=body_root_name, control_radius=control_radius, pole_distance_scale=pole_distance_scale, twist_joints_per_segment=twist_joints_per_segment, center_tolerance=center_tolerance)
+        self._require_ready(plan)
+        self.prepare_runtime()
+        with self._host.transaction("构建完整双臂 IK/FK"):
+            current = self._inspector.execute(
+                container_name, root_name=body_root_name, center_tolerance=center_tolerance,
+            )
+            if current != plan.safety:
+                raise RuntimeError("Arm Rig 执行前 Body 或 Fit 输入发生变化")
+            return self.build_in_transaction(plan)
+
+    def prepare_runtime(self) -> None:
+        self._host.prepare_body_arm_twist_runtime()
+
+    @staticmethod
+    def _require_ready(plan: BodyArmRigBuildPlan) -> None:
+        if not plan.ready:
+            raise FitSkeletonValidationError(
+                "Arm Rig 构建预检失败，场景未修改：" + "；".join(plan.blockers)
+            )
+
+    def build_in_transaction(self, plan: BodyArmRigBuildPlan) -> BodyArmRigBuildResult:
+        """Build inside a caller-owned transaction after shared input validation.
+
+        The caller prepares runtime dependencies before opening the transaction.
+        This method retains module postconditions and propagates failures to the owner.
+        """
+        self._require_ready(plan)
+        body_root_name = plan.safety.body.root
+        if self._host.create_body_arm_mechanism_root(plan.mechanisms.root_name) != plan.mechanisms.root_path:
+            raise RuntimeError("Arm mechanism 根路径漂移")
+        for spec in plan.mechanisms.joints:
+            self._host.create_body_arm_mechanism_joint(spec)
+        mechanisms = self._host.capture_body_arm_mechanisms(plan.mechanisms)
+        if audit_body_arm_mechanisms(plan.mechanisms, mechanisms):
+            raise RuntimeError("Arm mechanism 阶段复检失败")
+        if self._host.create_body_control_root(plan.fk_controls.root_name) != plan.fk_controls.root_path:
+            raise RuntimeError("Arm FK 根路径漂移")
+        for spec in plan.fk_controls.controls:
+            self._host.create_body_arm_fk_control(spec)
+        fk = self._host.capture_body_arm_fk_controls(plan.fk_controls)
+        if audit_body_arm_fk_controls(plan.fk_controls, fk):
+            raise RuntimeError("Arm FK 阶段复检失败")
+        self._host.create_body_arm_blend(plan.blend)
+        blend = self._host.capture_body_arm_blend(plan.blend)
+        if audit_body_arm_blend(plan.blend, blend):
+            raise RuntimeError("Arm blend 阶段复检失败")
+        if self._host.create_body_arm_ik_root(plan.ik.root_name) != plan.ik.root_path:
+            raise RuntimeError("Arm IK 根路径漂移")
+        for spec in plan.ik.limbs:
+            self._host.create_body_arm_ik(spec)
+        ik = self._host.capture_body_arm_ik(plan.ik)
+        if audit_body_arm_ik(plan.ik, ik):
+            raise RuntimeError("Arm IK 阶段复检失败")
+        self._host.create_body_arm_visibility(plan.visibility)
+        visibility = self._host.capture_body_arm_visibility(plan.visibility)
+        if audit_body_arm_visibility(plan.visibility, visibility):
+            raise RuntimeError("Arm 控制显隐阶段复检失败")
+        self._host.create_body_arm_stretch(plan.stretch)
+        stretch = self._host.capture_body_arm_stretch(plan.stretch)
+        stretch_issues = audit_body_arm_stretch(plan.stretch, stretch)
+        if stretch_issues:
+            raise RuntimeError("Arm stretch 阶段复检失败：" + "；".join(issue.message for issue in stretch_issues))
+        if self._host.create_body_arm_twist_root(plan.twist.root_name) != plan.twist.root_path:
+            raise RuntimeError("Arm twist 根路径漂移")
+        for spec in plan.twist.segments:
+            self._host.create_body_arm_twist_segment(spec)
+        for spec in plan.twist.joints:
+            self._host.create_body_arm_twist_joint(spec)
+        twist = self._host.capture_body_arm_twist(plan.twist)
+        twist_issues = audit_body_arm_twist(plan.twist, twist)
+        if twist_issues:
+            raise RuntimeError("Arm twist 阶段复检失败：" + "；".join(issue.message for issue in twist_issues))
+        self._host.create_body_arm_volume(plan.volume)
+        volume = self._host.capture_body_arm_volume(plan.volume)
+        volume_issues = audit_body_arm_volume(plan.volume, volume)
+        if volume_issues:
+            raise RuntimeError("Arm 体积保持阶段复检失败：" + "；".join(issue.message for issue in volume_issues))
+        body = self._host.capture_body_skeleton(body_root_name)
+        if not body_bind_pose_matches(plan.safety.body, body):
+            raise RuntimeError("Arm Rig 绑定姿态下 Body 发生变化")
+        container = plan.safety.symmetry.source.hierarchy.container
+        if self._host.capture_fit_orientation(container) != plan.safety.symmetry.source or self._host.read_fit_skeleton_settings(container) != plan.safety.symmetry.settings:
+            raise RuntimeError("Arm Rig 构建后 Fit 输入变化")
         return BodyArmRigBuildResult(plan, mechanisms, fk, blend, ik, visibility, stretch, twist, volume, body)

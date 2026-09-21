@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -190,6 +190,17 @@ class BuildBodyLegRig:
             root_name=body_root_name,
             center_tolerance=center_tolerance,
         )
+        return self.plan_from_safety(
+            safety, control_radius=control_radius,
+            pole_distance_scale=pole_distance_scale,
+            twist_joints_per_segment=twist_joints_per_segment,
+        )
+
+    def plan_from_safety(
+        self, safety: BodyRebuildSafetyAudit, *, control_radius: float = 1.75,
+        pole_distance_scale: float = 0.75, twist_joints_per_segment: int = 2,
+    ) -> BodyLegRigBuildPlan:
+        """Plan this module from the character's shared immutable input."""
         mechanisms = plan_body_leg_mechanisms(safety.body)
         fk_drivers = {
             spec.source_joint: spec.path
@@ -345,207 +356,213 @@ class BuildBodyLegRig:
             twist_joints_per_segment=twist_joints_per_segment,
             center_tolerance=center_tolerance,
         )
-        return self._apply_plan(plan, body_root_name=body_root_name)
+        self._require_ready(plan)
+        self.prepare_runtime()
+        with self._host.transaction("构建完整双腿 IK/FK"):
+            current = self._inspector.execute(
+                container_name, root_name=body_root_name, center_tolerance=center_tolerance,
+            )
+            if current != plan.safety:
+                raise RuntimeError("Leg Rig 执行前 Body 或 Fit 输入发生变化")
+            return self.build_in_transaction(plan)
 
-    def _apply_plan(
-        self,
-        plan: BodyLegRigBuildPlan,
-        *,
-        body_root_name: str,
-        manage_transaction: bool = True,
-        prepare_runtime: bool = True,
-    ) -> BodyLegRigBuildResult:
+    def prepare_runtime(self) -> None:
+        self._host.prepare_body_leg_twist_runtime()
+
+    @staticmethod
+    def _require_ready(plan: BodyLegRigBuildPlan) -> None:
         if not plan.ready:
             raise FitSkeletonValidationError(
                 "Leg Rig 构建预检失败，场景未修改：" + "；".join(plan.blockers)
             )
-        if prepare_runtime:
-            self._host.prepare_body_leg_twist_runtime()
-        transaction = (
-            self._host.transaction("构建完整双腿 IK/FK")
-            if manage_transaction
-            else nullcontext()
+
+    def build_in_transaction(self, plan: BodyLegRigBuildPlan) -> BodyLegRigBuildResult:
+        """Build inside a caller-owned transaction after shared input validation.
+
+        The caller prepares runtime dependencies before opening the transaction.
+        This method retains module postconditions and propagates failures to the owner.
+        """
+        self._require_ready(plan)
+        body_root_name = plan.safety.body.root
+        if (
+            self._host.create_body_leg_mechanism_root(plan.mechanisms.root_name)
+            != plan.mechanisms.root_path
+        ):
+            raise RuntimeError("Leg mechanism 根路径漂移")
+        for spec in plan.mechanisms.joints:
+            self._host.create_body_leg_mechanism_joint(spec)
+        mechanisms = self._host.capture_body_leg_mechanisms(plan.mechanisms)
+        if audit_body_leg_mechanisms(plan.mechanisms, mechanisms):
+            raise RuntimeError("Leg mechanism 阶段复检失败")
+
+        if (
+            self._host.create_body_control_root(plan.fk_controls.root_name)
+            != plan.fk_controls.root_path
+        ):
+            raise RuntimeError("Leg FK 根路径漂移")
+        for spec in plan.fk_controls.controls:
+            self._host.create_body_leg_fk_control(spec)
+        fk = self._host.capture_body_leg_fk_controls(plan.fk_controls)
+        if audit_body_leg_fk_controls(plan.fk_controls, fk):
+            raise RuntimeError("Leg FK 阶段复检失败")
+
+        self._host.create_body_leg_blend(plan.blend)
+        blend = self._host.capture_body_leg_blend(plan.blend)
+        if audit_body_leg_blend(plan.blend, blend):
+            raise RuntimeError("Leg blend 阶段复检失败")
+
+        if (
+            self._host.create_body_leg_ik_root(plan.ik.root_name)
+            != plan.ik.root_path
+        ):
+            raise RuntimeError("Leg IK 根路径漂移")
+        for spec in plan.ik.limbs:
+            self._host.create_body_leg_ik(spec)
+        ik = self._host.capture_body_leg_ik(plan.ik)
+        if audit_body_leg_ik(plan.ik, ik):
+            raise RuntimeError("Leg IK 阶段复检失败")
+
+        self._host.create_body_leg_visibility(plan.visibility)
+        visibility = self._host.capture_body_leg_visibility(plan.visibility)
+        if audit_body_leg_visibility(plan.visibility, visibility):
+            raise RuntimeError("Leg 控制显隐阶段复检失败")
+
+        self._host.create_body_leg_stretch(plan.stretch)
+        stretch = self._host.capture_body_leg_stretch(plan.stretch)
+        stretch_issues = audit_body_leg_stretch(plan.stretch, stretch)
+        if stretch_issues:
+            raise RuntimeError(
+                "Leg stretch 阶段复检失败："
+                + "；".join(issue.message for issue in stretch_issues)
+            )
+
+        self._host.create_body_leg_stretch_bias(plan.stretch_bias)
+        stretch_bias = self._host.capture_body_leg_stretch_bias(
+            plan.stretch_bias
         )
-        with transaction:
-            if (
-                self._host.create_body_leg_mechanism_root(plan.mechanisms.root_name)
-                != plan.mechanisms.root_path
-            ):
-                raise RuntimeError("Leg mechanism 根路径漂移")
-            for spec in plan.mechanisms.joints:
-                self._host.create_body_leg_mechanism_joint(spec)
-            mechanisms = self._host.capture_body_leg_mechanisms(plan.mechanisms)
-            if audit_body_leg_mechanisms(plan.mechanisms, mechanisms):
-                raise RuntimeError("Leg mechanism 阶段复检失败")
-
-            if (
-                self._host.create_body_control_root(plan.fk_controls.root_name)
-                != plan.fk_controls.root_path
-            ):
-                raise RuntimeError("Leg FK 根路径漂移")
-            for spec in plan.fk_controls.controls:
-                self._host.create_body_leg_fk_control(spec)
-            fk = self._host.capture_body_leg_fk_controls(plan.fk_controls)
-            if audit_body_leg_fk_controls(plan.fk_controls, fk):
-                raise RuntimeError("Leg FK 阶段复检失败")
-
-            self._host.create_body_leg_blend(plan.blend)
-            blend = self._host.capture_body_leg_blend(plan.blend)
-            if audit_body_leg_blend(plan.blend, blend):
-                raise RuntimeError("Leg blend 阶段复检失败")
-
-            if (
-                self._host.create_body_leg_ik_root(plan.ik.root_name)
-                != plan.ik.root_path
-            ):
-                raise RuntimeError("Leg IK 根路径漂移")
-            for spec in plan.ik.limbs:
-                self._host.create_body_leg_ik(spec)
-            ik = self._host.capture_body_leg_ik(plan.ik)
-            if audit_body_leg_ik(plan.ik, ik):
-                raise RuntimeError("Leg IK 阶段复检失败")
-
-            self._host.create_body_leg_visibility(plan.visibility)
-            visibility = self._host.capture_body_leg_visibility(plan.visibility)
-            if audit_body_leg_visibility(plan.visibility, visibility):
-                raise RuntimeError("Leg 控制显隐阶段复检失败")
-
-            self._host.create_body_leg_stretch(plan.stretch)
-            stretch = self._host.capture_body_leg_stretch(plan.stretch)
-            stretch_issues = audit_body_leg_stretch(plan.stretch, stretch)
-            if stretch_issues:
-                raise RuntimeError(
-                    "Leg stretch 阶段复检失败："
-                    + "；".join(issue.message for issue in stretch_issues)
-                )
-
-            self._host.create_body_leg_stretch_bias(plan.stretch_bias)
-            stretch_bias = self._host.capture_body_leg_stretch_bias(
-                plan.stretch_bias
+        bias_issues = audit_body_leg_stretch_bias(
+            plan.stretch_bias,
+            stretch_bias,
+        )
+        if bias_issues:
+            raise RuntimeError(
+                "Leg stretch bias 阶段复检失败："
+                + "；".join(issue.message for issue in bias_issues)
             )
-            bias_issues = audit_body_leg_stretch_bias(
-                plan.stretch_bias,
-                stretch_bias,
+        stretch = self._host.capture_body_leg_stretch(plan.stretch)
+        stretch_issues = audit_body_leg_stretch(
+            plan.stretch,
+            stretch,
+            expected_segment_factor_sources_by_side={
+                spec.side: spec.factor_sources
+                for spec in plan.stretch_bias.sides
+            },
+        )
+        if stretch_issues:
+            raise RuntimeError(
+                "Leg stretch bias 构建后基础网络复检失败："
+                + "；".join(issue.message for issue in stretch_issues)
             )
-            if bias_issues:
-                raise RuntimeError(
-                    "Leg stretch bias 阶段复检失败："
-                    + "；".join(issue.message for issue in bias_issues)
-                )
-            stretch = self._host.capture_body_leg_stretch(plan.stretch)
-            stretch_issues = audit_body_leg_stretch(
-                plan.stretch,
-                stretch,
-                expected_segment_factor_sources_by_side={
-                    spec.side: spec.factor_sources
-                    for spec in plan.stretch_bias.sides
-                },
-            )
-            if stretch_issues:
-                raise RuntimeError(
-                    "Leg stretch bias 构建后基础网络复检失败："
-                    + "；".join(issue.message for issue in stretch_issues)
-                )
 
-            self._host.create_body_leg_knee_pin(plan.knee_pin)
-            knee_pin = self._host.capture_body_leg_knee_pin(plan.knee_pin)
-            knee_pin_issues = audit_body_leg_knee_pin(
-                plan.knee_pin,
-                knee_pin,
+        self._host.create_body_leg_knee_pin(plan.knee_pin)
+        knee_pin = self._host.capture_body_leg_knee_pin(plan.knee_pin)
+        knee_pin_issues = audit_body_leg_knee_pin(
+            plan.knee_pin,
+            knee_pin,
+        )
+        if knee_pin_issues:
+            raise RuntimeError(
+                "Leg knee pin 阶段复检失败："
+                + "；".join(issue.message for issue in knee_pin_issues)
             )
-            if knee_pin_issues:
-                raise RuntimeError(
-                    "Leg knee pin 阶段复检失败："
-                    + "；".join(issue.message for issue in knee_pin_issues)
-                )
-            stretch_bias = self._host.capture_body_leg_stretch_bias(
-                plan.stretch_bias
+        stretch_bias = self._host.capture_body_leg_stretch_bias(
+            plan.stretch_bias
+        )
+        bias_issues = audit_body_leg_stretch_bias(
+            plan.stretch_bias,
+            stretch_bias,
+            expected_factor_destination_sources_by_side={
+                spec.side: spec.factor_sources
+                for spec in plan.knee_pin.sides
+            },
+        )
+        if bias_issues:
+            raise RuntimeError(
+                "Leg knee pin 构建后 bias 网络复检失败："
+                + "；".join(issue.message for issue in bias_issues)
             )
-            bias_issues = audit_body_leg_stretch_bias(
-                plan.stretch_bias,
-                stretch_bias,
-                expected_factor_destination_sources_by_side={
-                    spec.side: spec.factor_sources
-                    for spec in plan.knee_pin.sides
-                },
+        stretch = self._host.capture_body_leg_stretch(plan.stretch)
+        stretch_issues = audit_body_leg_stretch(
+            plan.stretch,
+            stretch,
+            expected_segment_factor_sources_by_side={
+                spec.side: spec.factor_sources
+                for spec in plan.knee_pin.sides
+            },
+        )
+        if stretch_issues:
+            raise RuntimeError(
+                "Leg knee pin 构建后基础网络复检失败："
+                + "；".join(issue.message for issue in stretch_issues)
             )
-            if bias_issues:
-                raise RuntimeError(
-                    "Leg knee pin 构建后 bias 网络复检失败："
-                    + "；".join(issue.message for issue in bias_issues)
-                )
-            stretch = self._host.capture_body_leg_stretch(plan.stretch)
-            stretch_issues = audit_body_leg_stretch(
-                plan.stretch,
-                stretch,
-                expected_segment_factor_sources_by_side={
-                    spec.side: spec.factor_sources
-                    for spec in plan.knee_pin.sides
-                },
+
+        if (
+            self._host.create_body_leg_twist_root(plan.twist.root_name)
+            != plan.twist.root_path
+        ):
+            raise RuntimeError("Leg twist 根路径漂移")
+        for spec in plan.twist.segments:
+            self._host.create_body_leg_twist_segment(spec)
+        for spec in plan.twist.joints:
+            self._host.create_body_leg_twist_joint(spec)
+        twist = self._host.capture_body_leg_twist(plan.twist)
+        twist_issues = audit_body_leg_twist(plan.twist, twist)
+        if twist_issues:
+            raise RuntimeError(
+                "Leg twist 阶段复检失败："
+                + "；".join(issue.message for issue in twist_issues)
             )
-            if stretch_issues:
-                raise RuntimeError(
-                    "Leg knee pin 构建后基础网络复检失败："
-                    + "；".join(issue.message for issue in stretch_issues)
-                )
 
-            if (
-                self._host.create_body_leg_twist_root(plan.twist.root_name)
-                != plan.twist.root_path
-            ):
-                raise RuntimeError("Leg twist 根路径漂移")
-            for spec in plan.twist.segments:
-                self._host.create_body_leg_twist_segment(spec)
-            for spec in plan.twist.joints:
-                self._host.create_body_leg_twist_joint(spec)
-            twist = self._host.capture_body_leg_twist(plan.twist)
-            twist_issues = audit_body_leg_twist(plan.twist, twist)
-            if twist_issues:
-                raise RuntimeError(
-                    "Leg twist 阶段复检失败："
-                    + "；".join(issue.message for issue in twist_issues)
-                )
+        self._host.create_body_leg_volume(plan.volume)
+        volume = self._host.capture_body_leg_volume(plan.volume)
+        volume_issues = audit_body_leg_volume(plan.volume, volume)
+        if volume_issues:
+            raise RuntimeError(
+                "Leg 体积保持阶段复检失败："
+                + "；".join(issue.message for issue in volume_issues)
+            )
 
-            self._host.create_body_leg_volume(plan.volume)
-            volume = self._host.capture_body_leg_volume(plan.volume)
-            volume_issues = audit_body_leg_volume(plan.volume, volume)
-            if volume_issues:
-                raise RuntimeError(
-                    "Leg 体积保持阶段复检失败："
-                    + "；".join(issue.message for issue in volume_issues)
-                )
+        for spec in plan.foot.sides:
+            self._host.create_body_leg_foot_side(spec)
+        foot = self._host.capture_body_leg_foot(plan.foot)
+        if audit_body_leg_foot(plan.foot, foot):
+            raise RuntimeError("Leg Foot 阶段复检失败")
+        ik = self._host.capture_body_leg_ik(plan.ik)
+        if audit_body_leg_ik(
+            plan.ik,
+            ik,
+            expected_handle_parent_by_side={
+                side.side: side.final_handle_parent_path
+                for side in plan.foot.sides
+            },
+            expected_ankle_source_by_side={
+                side.side: side.ankle_orientation_source_path
+                for side in plan.foot.sides
+            },
+        ):
+            raise RuntimeError("Leg Foot 构建后 IK 结构复检失败")
 
-            for spec in plan.foot.sides:
-                self._host.create_body_leg_foot_side(spec)
-            foot = self._host.capture_body_leg_foot(plan.foot)
-            if audit_body_leg_foot(plan.foot, foot):
-                raise RuntimeError("Leg Foot 阶段复检失败")
-            ik = self._host.capture_body_leg_ik(plan.ik)
-            if audit_body_leg_ik(
-                plan.ik,
-                ik,
-                expected_handle_parent_by_side={
-                    side.side: side.final_handle_parent_path
-                    for side in plan.foot.sides
-                },
-                expected_ankle_source_by_side={
-                    side.side: side.ankle_orientation_source_path
-                    for side in plan.foot.sides
-                },
-            ):
-                raise RuntimeError("Leg Foot 构建后 IK 结构复检失败")
-
-            body = self._host.capture_body_skeleton(body_root_name)
-            if not body_bind_pose_matches(plan.safety.body, body):
-                raise RuntimeError("Leg Rig 绑定姿态下 Body 发生变化")
-            container = plan.safety.symmetry.source.hierarchy.container
-            if (
-                self._host.capture_fit_orientation(container)
-                != plan.safety.symmetry.source
-                or self._host.read_fit_skeleton_settings(container)
-                != plan.safety.symmetry.settings
-            ):
-                raise RuntimeError("Leg Rig 构建后 Fit 输入变化")
+        body = self._host.capture_body_skeleton(body_root_name)
+        if not body_bind_pose_matches(plan.safety.body, body):
+            raise RuntimeError("Leg Rig 绑定姿态下 Body 发生变化")
+        container = plan.safety.symmetry.source.hierarchy.container
+        if (
+            self._host.capture_fit_orientation(container)
+            != plan.safety.symmetry.source
+            or self._host.read_fit_skeleton_settings(container)
+            != plan.safety.symmetry.settings
+        ):
+            raise RuntimeError("Leg Rig 构建后 Fit 输入变化")
         return BodyLegRigBuildResult(
             plan,
             mechanisms,

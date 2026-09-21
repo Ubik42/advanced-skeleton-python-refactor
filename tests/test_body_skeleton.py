@@ -461,7 +461,7 @@ class FakeBodySkeletonHost:
         return spec.path
 
     def capture_body_skeleton(self, root_name):
-        root = f"|{root_name}"
+        root = "|" + root_name.lstrip("|")
         joints = tuple(self.body)
         should_corrupt = self.faulty_capture or (
             self.faulty_after_orientation and self.orientation_write_count > 0
@@ -517,7 +517,7 @@ class FakeBodySkeletonHost:
         )
 
     def capture_body_rebuild_state(self, root_name):
-        root = f"|{root_name}"
+        root = "|" + root_name.lstrip("|")
         return BodyRebuildSceneState(
             root,
             tuple(state.path for state in self.body) + self.extra_dag_paths,
@@ -2443,6 +2443,42 @@ class BodySkeletonTests(unittest.TestCase):
             10,
         )
         self.assertEqual(result.body, body)
+
+    def test_character_plans_share_one_scene_snapshot(self):
+        class CountingHost(FakeBodySkeletonHost):
+            captures = 0
+
+            def capture_body_rebuild_state(self, root_name):
+                self.captures += 1
+                return super().capture_body_rebuild_state(root_name)
+
+        host = CountingHost(with_hand=True)
+        BuildOrientedBodySkeleton(host).apply()
+        host.captures = 0
+        plan = BuildBodyCharacterRig(host).plan()
+        self.assertEqual(host.captures, 1)
+        self.assertIs(plan.arm.safety, plan.leg.safety)
+        self.assertIs(plan.arm.safety, plan.hand.safety)
+        self.assertEqual(host.transaction_count, 1)
+
+    def test_runtime_input_changes_rejected_before_module_creation(self):
+        class ChangingHost(FakeBodySkeletonHost):
+            def prepare_body_arm_twist_runtime(self):
+                super().prepare_body_arm_twist_runtime()
+                self.body[0] = replace(self.body[0], world_position=(99.0, 0.0, 0.0))
+
+            def prepare_body_leg_twist_runtime(self):
+                self.body[0] = replace(self.body[0], world_position=(99.0, 0.0, 0.0))
+
+        for builder in (BuildBodyCharacterRig, BuildBodyArmRig, BuildBodyLegRig):
+            with self.subTest(builder=builder.__name__):
+                host = ChangingHost()
+                BuildOrientedBodySkeleton(host).apply()
+                with self.assertRaisesRegex(RuntimeError, "执行前 Body 或 Fit 输入发生变化"):
+                    builder(host).apply()
+                self.assertIsNone(host.mechanism_root)
+                self.assertIsNone(host.leg_mechanism_root)
+                self.assertIsNone(host.character_global_snapshot)
 
     def test_complete_character_rig_auto_builds_hand_for_seventy_joint_body(self):
         host = FakeBodySkeletonHost(with_hand=True)

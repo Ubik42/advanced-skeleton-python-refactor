@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -155,86 +155,71 @@ class BuildBodyHandFkControls:
             control_radius=control_radius,
             center_tolerance=center_tolerance,
         )
-        return self._apply_plan(
-            plan,
-            body_root_name=body_root_name,
-            container_name=container_name,
-            center_tolerance=center_tolerance,
-        )
+        self._require_ready(plan)
+        with self._host.transaction("创建双手五指分层 FK 控制"):
+            current = self._inspector.execute(
+                container_name, root_name=body_root_name, center_tolerance=center_tolerance,
+            )
+            if current != plan.safety:
+                raise RuntimeError("Hand FK 控制执行前 Body 或 Fit 输入发生变化")
+            return self.build_in_transaction(plan)
 
-    def _apply_plan(
-        self,
-        plan: BodyHandFkBuildPlan,
-        *,
-        body_root_name: str,
-        container_name: str = "FitSkeleton",
-        center_tolerance: float = 0.01,
-        manage_transaction: bool = True,
-        revalidate_safety: bool = True,
-    ) -> BodyHandFkBuildResult:
+    @staticmethod
+    def _require_ready(plan: BodyHandFkBuildPlan) -> None:
         if not plan.ready:
             raise FitSkeletonValidationError(
-                "Hand FK 控制构建预检失败，场景未修改："
-                + "；".join(plan.blockers)
+                "Hand FK 控制构建预检失败，场景未修改：" + "；".join(plan.blockers)
             )
 
-        transaction = (
-            self._host.transaction("创建双手五指分层 FK 控制")
-            if manage_transaction
-            else nullcontext()
+    def build_in_transaction(self, plan: BodyHandFkBuildPlan) -> BodyHandFkBuildResult:
+        """Build in the caller's transaction after validation of shared Body/Fit input.
+
+        Hand channel inputs are checked here because earlier character stages may
+        have added their own drivers without changing the shared bind pose.
+        """
+        self._require_ready(plan)
+        body_root_name = plan.safety.body.root
+        current_input = self._host.capture_body_hand_fk_input(
+            plan.controls
         )
-        with transaction:
-            current_safety = (
-                self._inspector.execute(
-                    container_name,
-                    root_name=body_root_name,
-                    center_tolerance=center_tolerance,
-                )
-                if revalidate_safety
-                else plan.safety
+        if (
+            current_input != plan.input_snapshot
+            or audit_body_hand_fk_input(plan.controls, current_input)
+        ):
+            raise RuntimeError(
+                "Hand FK 控制执行前 Body、Fit 或目标通道发生变化"
             )
-            current_input = self._host.capture_body_hand_fk_input(
-                plan.controls
+        for spec in plan.controls.roots:
+            if self._host.create_body_hand_fk_root(spec) != spec.path:
+                raise RuntimeError("Hand FK 根节点路径漂移")
+        for spec in plan.controls.controls:
+            self._host.create_body_hand_fk_control(spec)
+        self._host.create_body_hand_pose(plan.pose)
+        snapshot = self._host.capture_body_hand_fk_controls(plan.controls)
+        issues = audit_body_hand_fk_controls(plan.controls, snapshot)
+        if issues:
+            raise RuntimeError(
+                "Hand FK 控制构建后复检失败："
+                + "；".join(issue.message for issue in issues)
             )
-            if (
-                current_safety != plan.safety
-                or current_input != plan.input_snapshot
-                or audit_body_hand_fk_input(plan.controls, current_input)
-            ):
-                raise RuntimeError(
-                    "Hand FK 控制执行前 Body、Fit 或目标通道发生变化"
-                )
-            for spec in plan.controls.roots:
-                if self._host.create_body_hand_fk_root(spec) != spec.path:
-                    raise RuntimeError("Hand FK 根节点路径漂移")
-            for spec in plan.controls.controls:
-                self._host.create_body_hand_fk_control(spec)
-            self._host.create_body_hand_pose(plan.pose)
-            snapshot = self._host.capture_body_hand_fk_controls(plan.controls)
-            issues = audit_body_hand_fk_controls(plan.controls, snapshot)
-            if issues:
-                raise RuntimeError(
-                    "Hand FK 控制构建后复检失败："
-                    + "；".join(issue.message for issue in issues)
-                )
-            pose = self._host.capture_body_hand_pose(plan.pose)
-            pose_issues = audit_body_hand_pose_controls(plan.pose, pose)
-            if pose_issues:
-                raise RuntimeError(
-                    "Hand 聚合姿态构建后复检失败："
-                    + "；".join(issue.message for issue in pose_issues)
-                )
-            body = self._host.capture_body_skeleton(body_root_name)
-            if not body_bind_pose_matches(plan.safety.body, body):
-                raise RuntimeError("Hand FK 控制中性状态改变了 Body 绑定姿态")
-            source = plan.safety.symmetry.source
-            if (
-                self._host.capture_fit_orientation(source.hierarchy.container)
-                != source
-                or self._host.read_fit_skeleton_settings(
-                    source.hierarchy.container
-                )
-                != plan.safety.symmetry.settings
-            ):
-                raise RuntimeError("Hand FK 控制构建后 Fit 输入变化")
+        pose = self._host.capture_body_hand_pose(plan.pose)
+        pose_issues = audit_body_hand_pose_controls(plan.pose, pose)
+        if pose_issues:
+            raise RuntimeError(
+                "Hand 聚合姿态构建后复检失败："
+                + "；".join(issue.message for issue in pose_issues)
+            )
+        body = self._host.capture_body_skeleton(body_root_name)
+        if not body_bind_pose_matches(plan.safety.body, body):
+            raise RuntimeError("Hand FK 控制中性状态改变了 Body 绑定姿态")
+        source = plan.safety.symmetry.source
+        if (
+            self._host.capture_fit_orientation(source.hierarchy.container)
+            != source
+            or self._host.read_fit_skeleton_settings(
+                source.hierarchy.container
+            )
+            != plan.safety.symmetry.settings
+        ):
+            raise RuntimeError("Hand FK 控制构建后 Fit 输入变化")
         return BodyHandFkBuildResult(plan, snapshot, pose, body)
