@@ -15,6 +15,7 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
     try:
         from maya import cmds
         from adv_py.adapters import MayaBodyBuildHost, MayaFaceHost, MayaOriginalSkinSpineMigrationHost
+        from adv_py.adapters.maya_spine_original_promotion import MayaOriginalSpinePromotionHost
         from adv_py.application import BuildFaceBlendShapes, GenerateFaceTarget, ReplaceRegisteredSpineCharacter
         from adv_py.core import FaceLandmark, FaceShapeKind, FaceTarget
 
@@ -79,6 +80,27 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
                                      ("source:FaceSkin", "|source:FaceNeutral")))
         kwargs = dict(start_frame=1, end_frame=10, extensions=(control,),
                       retained_assets=targets, max_mesh_error=.2)
+        class FailedPromotionHost(MayaOriginalSpinePromotionHost):
+            def apply_original_spine_promotion(self, plan):
+                super().apply_original_spine_promotion(plan)
+                raise RuntimeError("Injected failure after Face promotion")
+
+        class FailedHost(MayaOriginalSkinSpineMigrationHost):
+            def original_skin_handoff_host(self):
+                return FailedPromotionHost()
+
+        try:
+            ReplaceRegisteredSpineCharacter(
+                FailedHost(namespace="target")).apply_many(*args, **kwargs)
+        except RuntimeError as error:
+            rollback = ("Injected failure after Face promotion" in str(error) and
+                cmds.namespace(exists="target") and
+                len(MayaBodyBuildHost(namespace="source")
+                    .read_character_registration().spine.body_joints) == 5 and
+                all(bool(cmds.ls(uuid, long=True)) for uuid in identities.values()) and
+                abs(cmds.getAttr(control + ".smile_R", time=5) - 1.) < 1e-6)
+        else:
+            rollback = False
         replacement.apply_many(*args, **kwargs)
 
         def check():
@@ -130,12 +152,12 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
         cmds.file(save=True, type="mayaAscii", force=True)
         cmds.file(str(scene), open=True, force=True)
         reopened = check()
-        report = dict(passed=passed, undo=undo, undo_details=undo_details,
+        report = dict(passed=passed, rollback=rollback, undo=undo, undo_details=undo_details,
                       redo=redo, reopened=reopened)
         (folder / "face-topology-replacement.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf8")
         print(json.dumps(report, ensure_ascii=False), flush=True)
-        return 0 if (undo and all(x == passed for x in (redo, reopened)) and
+        return 0 if (rollback and undo and all(x == passed for x in (redo, reopened)) and
                      passed["spine_joints"] == 7 and passed["namespace_removed"] and
                      passed["identities_preserved"] and passed["face_control_on_new_head"] and
                      passed["face_values_preserved"] and passed["deformation_live"]) else 1
