@@ -431,7 +431,7 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
             group_uuid = None
             parent = move.target_parent
             if move.curves or move.requires_compensation:
-                owner = move.old_path.rsplit('|',1)[-1].split(':',1)[0]
+                owner = move.old_path.rsplit('|',1)[-1].rsplit(':',1)[0]
                 group = cmds.createNode('transform',
                     name=owner + ':AdvPy_Extension_'
                     + move.uuid[:8].replace('-','') + '_Compensator',
@@ -493,7 +493,7 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
                             or outputs[0].rsplit('.',1)[-1] != attribute):
                         raise RuntimeError('附件烘焙曲线被其他通道共享：' + curve)
                     uuid = _uuid(cmds,curve)
-                    owner = node.rsplit('|',1)[-1].split(':',1)[0]
+                    owner = node.rsplit('|',1)[-1].rsplit(':',1)[0]
                     cmds.rename(curve, ':' + owner + ':AdvPy_Extension_'
                                 + move.uuid[:8].replace('-','') + '_' + attribute)
                     curves.append(uuid)
@@ -557,8 +557,9 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
             raise CharacterRegistryError('原位接管需要非空且唯一的 Skin／网格清单')
         if (not source_namespace or not target_namespace
                 or source_namespace == target_namespace
-                or ':' in source_namespace or ':' in target_namespace):
-            raise CharacterRegistryError('原位接管要求两个不同的顶层角色命名空间')
+                or source_namespace.startswith(target_namespace + ':')
+                or target_namespace.startswith(source_namespace + ':')):
+            raise CharacterRegistryError('原位接管要求两个互不包含的独立角色命名空间')
         if (cmds.namespaceInfo(':' + source_namespace,
                 listOnlyNamespaces=True, recurse=True)
                 or cmds.namespaceInfo(':' + target_namespace,
