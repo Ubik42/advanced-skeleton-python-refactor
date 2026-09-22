@@ -169,14 +169,15 @@ class ReplaceRegisteredSpineCharacter:
         global_host = host.original_skin_handoff_host()
         from .mocap_control_retarget import character_sample_frames
         sampled = character_sample_frames(start_frame, end_frame, sample_by)
-        extension_frames = tuple(sorted({*sampled,
-            *((a+b)/2 for a,b in zip(sampled,sampled[1:]))}))
         ik_retarget = RetargetCharacterSpineIk(host) if spine_mode != 'fk' else None
         ik_take = (ik_retarget.plan(source_namespace, skins, sampled,
                                    max_mesh_error=max_mesh_error,
                                    max_body_error=max_body_error,
                                    allow_fk=spine_mode=='hybrid')
                    if ik_retarget else None)
+        extension_frames = (ik_take.frames if ik_take else
+            tuple(sorted({*sampled,
+                *((a+b)/2 for a,b in zip(sampled,sampled[1:]))})))
         extension_moves = global_host.plan_original_spine_extensions(
             source_namespace, target_namespace, extensions, extension_frames)
         handoff = HandoffRegisteredSpineSkinCluster(global_host)
