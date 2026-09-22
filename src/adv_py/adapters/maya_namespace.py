@@ -21,6 +21,9 @@ _CREATE |= {'curve'}
 _NODE_ARGS |= {'blendShape'}
 _NODE_RESULTS |= {'blendShape'}
 _CREATE |= {'blendShape'}
+_NODE_ARGS |= {'duplicate'}
+_NODE_RESULTS |= {'duplicate'}
+_CREATE |= {'duplicate'}
 
 
 class MayaCharacterCommands:

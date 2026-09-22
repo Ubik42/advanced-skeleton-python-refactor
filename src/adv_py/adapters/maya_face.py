@@ -9,11 +9,59 @@ from adv_py.core.face_shapes import FaceMeshSnapshot, FaceShapeKind
 from adv_py.core.face_performance import FacePerformance
 from adv_py.application.face_shapes import FaceBinding, FaceBuildPlan
 from adv_py.application.face_performance import FacePerformancePlan
+from adv_py.application.face_landmarks import FaceTargetGenerationPlan
 
 from .maya_body import MayaBodyBuildHost
 
 
 class MayaFaceHost(MayaBodyBuildHost):
+    def face_target_path_available(self, path: str) -> bool:
+        from maya import cmds
+
+        return not cmds.objExists(self.scene_address(path))
+
+    def create_face_target(self, plan: FaceTargetGenerationPlan) -> None:
+        from maya import cmds
+
+        self._require_transaction()
+        if not self.face_target_path_available(plan.target.mesh):
+            raise CharacterRegistryError("生成面部目标时路径已被占用")
+        target = self.scene_address(plan.target.mesh)
+        name = plan.target.mesh.rsplit("|", 1)[-1]
+        selection = cmds.ls(selection=True, long=True) or []
+        self._transaction_changed = True
+        try:
+            created = self._cmds.duplicate(plan.neutral.path, name=name,
+                                           returnRootsOnly=True)
+            if len(created) != 1 or (cmds.ls(self.scene_address(created[0]),
+                                              long=True) or []) != [target]:
+                raise RuntimeError("生成面部目标路径与计划不一致")
+            self._cmds.delete(plan.target.mesh, constructionHistory=True)
+            for index, point in enumerate(plan.points):
+                if any(abs(a - b) > 1e-8 for a, b in
+                       zip(point, plan.neutral.points[index])):
+                    self._cmds.xform(f"{plan.target.mesh}.vtx[{index}]",
+                                     objectSpace=True, translation=point)
+            cmds.addAttr(target, longName="advPyFaceTargetProvenance",
+                         dataType="string")
+            cmds.setAttr(target + ".advPyFaceTargetProvenance",
+                         plan.provenance, type="string", lock=True)
+        finally:
+            if selection:
+                cmds.select(selection, replace=True)
+            else:
+                cmds.select(clear=True)
+
+    def read_face_target_provenance(self, path: str) -> str:
+        from maya import cmds
+
+        target = self.scene_address(path)
+        if (not cmds.objExists(target)
+                or not cmds.attributeQuery("advPyFaceTargetProvenance",
+                                           node=target, exists=True)):
+            raise CharacterRegistryError("生成目标缺少来源记录")
+        return cmds.getAttr(target + ".advPyFaceTargetProvenance")
+
     def read_face_manifest(self, control_path: str) -> tuple:
         from maya import cmds
 
