@@ -212,6 +212,26 @@ class MayaFaceHost(MayaBodyBuildHost):
                        for point in fn.getPoints(om.MSpace.kObject))
         return FaceMeshSnapshot(path, len(points), topology, points)
 
+    def capture_face_triangles(self, path: str) -> tuple[tuple[int, int, int], ...]:
+        from maya import cmds
+        from maya.api import OpenMaya as om
+
+        actual = self.scene_address(path)
+        matches = cmds.ls(actual, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise CharacterRegistryError("面部网格 Transform 缺失或歧义：" + path)
+        shapes = cmds.listRelatives(matches[0], shapes=True, noIntermediate=True,
+                                    fullPath=True, type="mesh") or []
+        if len(shapes) != 1:
+            raise CharacterRegistryError("面部网格缺少唯一可见 mesh shape：" + path)
+        selection = om.MSelectionList()
+        selection.add(shapes[0])
+        _, indices = om.MFnMesh(selection.getDagPath(0)).getTriangles()
+        if len(indices) % 3:
+            raise CharacterRegistryError("源面部网格三角化结果不完整")
+        return tuple(tuple(int(indices[index + offset]) for offset in range(3))
+                     for index in range(0, len(indices), 3))
+
     def face_names_available(self, control_path: str, deformer_name: str) -> bool:
         from maya import cmds
         return (not cmds.objExists(self.scene_address(control_path))

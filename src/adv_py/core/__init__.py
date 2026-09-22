@@ -691,6 +691,8 @@ from .face_landmarks import FaceLandmark, deform_face_landmarks
 from .face_target_asset import (FaceTargetAsset, FaceAssetMergeConflict,
     face_target_asset_from_meshes, face_target_asset_to_json,
     face_target_asset_from_json, merge_face_target_assets)
+from .face_surface_transfer import (FaceSurfaceTransferResult,
+    transfer_face_target_asset)
 
 __all__ = [
     "FaceShapeKind", "FaceTarget", "FaceMeshSnapshot", "validate_face_targets",
@@ -700,6 +702,7 @@ __all__ = [
     "FaceTargetAsset", "FaceAssetMergeConflict", "merge_face_target_assets",
     "face_target_asset_from_meshes",
     "face_target_asset_to_json", "face_target_asset_from_json",
+    "FaceSurfaceTransferResult", "transfer_face_target_asset",
     "BodyTorsoPlan",
     "BodyTorsoSnapshot",
     "BodySpaceAttachment",

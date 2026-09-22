@@ -636,4 +636,5 @@ from .face_landmarks import GenerateFaceTarget, FaceTargetGenerationPlan
 from .face_target_asset import (ExportFaceTargetAsset, ImportFaceTargetAsset,
     FaceTargetAssetImportPlan, save_face_target_asset, load_face_target_asset)
 from .face_asset_library import FaceAssetLibrary, FaceAssetLibraryEntry
+from .face_surface_transfer import TransferFaceTargetAsset, FaceAssetTransferPlan
 from .character_presets import InspectBodyCharacterPresets, CharacterPresetStatus

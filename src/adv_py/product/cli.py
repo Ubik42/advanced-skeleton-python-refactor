@@ -15,7 +15,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     ImportMocapFbx, RetargetMocapFullFkToCharacter,
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
     load_mocap_mapping_preset,
-    ResolveBodyCharacter,
+    ResolveBodyCharacter, TransferFaceTargetAsset,
     InspectBodyCharacterPresets, load_character_animation, load_character_pose, save_character_animation,
     save_character_pose, RebuildBodyCharacter, load_face_target_asset,
     save_face_target_asset)
@@ -72,6 +72,15 @@ def parser() -> argparse.ArgumentParser:
     asset_import.add_argument("--asset", type=Path, required=True)
     asset_import.add_argument("--target", required=True)
     asset_import.add_argument("--output", type=Path, required=True)
+    asset_transfer = commands.add_parser("face-asset-transfer",
+        help="按源网格表面对应关系转移雕刻位移到不同拓扑")
+    asset_transfer.add_argument("scene", type=Path)
+    asset_transfer.add_argument("--namespace", required=True)
+    asset_transfer.add_argument("--source-neutral", required=True)
+    asset_transfer.add_argument("--target-neutral", required=True)
+    asset_transfer.add_argument("--asset", type=Path, required=True)
+    asset_transfer.add_argument("--max-distance", type=float, required=True)
+    asset_transfer.add_argument("--output", type=Path, required=True)
     library_add = commands.add_parser("face-library-add",
         help="将面部目标资产登记到不可覆盖的版本目录")
     library_add.add_argument("--library", type=Path, required=True)
@@ -339,6 +348,22 @@ def _run(args, gateway) -> dict:
               changed_vertices=len(asset.deltas))
         return {"status": "ok", "output": str(saved),
                 "channel": asset.name, "changed_vertices": len(asset.deltas)}
+    if args.command == "face-asset-transfer":
+        output = args.output.resolve()
+        if output.suffix.lower() != ".json" or output.exists():
+            raise ValueError("转移资产输出须为尚不存在的 .json 文件")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        source = load_face_target_asset(args.asset)
+        plan = TransferFaceTargetAsset(host).execute(args.source_neutral,
+            args.target_neutral, source, max_distance=args.max_distance)
+        saved = save_face_target_asset(plan.result.asset, output)
+        _emit("face_asset_transferred",
+              source_triangles=plan.result.source_triangle_count,
+              changed_vertices=plan.result.transferred_vertex_count,
+              max_neutral_distance=plan.result.max_neutral_distance)
+        return {"status": "ok", "output": str(saved),
+                "changed_vertices": plan.result.transferred_vertex_count,
+                "max_neutral_distance": plan.result.max_neutral_distance}
     if args.command in ("pose-capture", "animation-capture"):
         output = args.output.resolve()
         if output.suffix.lower() != ".json" or output.exists():
