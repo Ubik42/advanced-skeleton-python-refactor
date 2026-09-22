@@ -10,6 +10,7 @@ import sys
 from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkeleton,
     ApplyBodyCharacterPose, ApplyFacePerformance, BuildFaceBlendShapes, CaptureBodyCharacterAnimation,
     CaptureBodyCharacterPose, BuildBodyExportSkeleton, BuildBodyRootMotion,
+    BuildOrientedBodySkeleton, BuildBodyCharacterRig, RegisterBodyCharacter,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget,
     FaceAssetLibrary, ImportFaceTargetAsset, ExportSkinWeights, ImportSkinWeights,
     ImportMocapFbx, RetargetMocapFullFkToCharacter,
@@ -26,6 +27,7 @@ from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
                          FaceLandmark, FaceShapeKind, FaceTarget, FaceSurfaceAlignment,
                          face_performance_from_json)
 from adv_py.core.character_registry import safe_json
+from adv_py.core.variable_body_fit import variable_axial_description
 
 
 def parser() -> argparse.ArgumentParser:
@@ -137,6 +139,15 @@ def parser() -> argparse.ArgumentParser:
     clip_apply.add_argument("--namespace", required=True)
     clip_apply.add_argument("--clip", type=Path, required=True)
     clip_apply.add_argument("--output", type=Path, required=True)
+    body_build = commands.add_parser("body-build",
+        help="从现有 Fit 场景构建 Body 骨架、完整控制 Rig 并登记角色")
+    body_build.add_argument("scene", type=Path)
+    body_build.add_argument("--namespace", required=True)
+    body_build.add_argument("--fit", default="FitSkeleton")
+    body_build.add_argument("--spine-segments", type=int,
+        help="可变脊柱段数；标准双段角色可省略")
+    body_build.add_argument("--head-aim", action="store_true")
+    body_build.add_argument("--output", type=Path, required=True)
     presets = commands.add_parser("presets", help="检查角色姿态与动画预设目录")
     presets.add_argument("scene", type=Path)
     presets.add_argument("--namespace", required=True)
@@ -279,6 +290,25 @@ def _run(args, gateway) -> dict:
     selected_namespace = ("" if args.command == "rebuild" else None)
     host = MayaFaceHost(namespace=selected_namespace if args.namespace == ":"
                         else args.namespace)
+    if args.command == "body-build":
+        output = gateway.preflight_output(args.output)
+        description = (variable_axial_description(args.spine_segments)
+            if args.spine_segments is not None else None)
+        skeleton = BuildOrientedBodySkeleton(host).apply(args.fit)
+        _emit("body_skeleton_built", joints=len(skeleton.snapshot.joints))
+        rig = BuildBodyCharacterRig(host).apply(args.fit,
+            include_torso=True, include_spine_ik=True,
+            include_control_spaces=True, axial_description=description,
+            include_head_aim=args.head_aim)
+        _emit("body_controls_built", joints=len(rig.body.joints))
+        registration = RegisterBodyCharacter(host).apply(rig)
+        _emit("character_registered", channels=len(registration.channels))
+        saved = gateway.save_new(output)
+        _emit("scene_saved", scene=str(saved))
+        return {"status": "ok", "output": str(saved),
+                "joints": len(registration.body),
+                "channels": len(registration.channels),
+                "compatibility_digest": registration.compatibility_digest}
     if args.command == "presets":
         entries = InspectBodyCharacterPresets(host).list(args.directory)
         return {"status": "ok", "presets": [asdict(entry) for entry in entries]}
