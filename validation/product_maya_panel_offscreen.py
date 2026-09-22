@@ -88,6 +88,7 @@ def main(report: Path) -> int:
     mocap_saved = pixmap.save(str(mocap_image))
     panel.tabs.setCurrentIndex(5)
     app.processEvents()
+    panel.fbx_euler_filter.setChecked(True)
     panel.render(pixmap)
     publish_saved = pixmap.save(str(publish_image))
     panel.face_build_document.setText("C:/temp/face-build.json")
@@ -115,6 +116,7 @@ def main(report: Path) -> int:
         "six_chinese_workspaces": [panel.tabs.tabText(i)
             for i in range(panel.tabs.count())]
             == ["Fit 与构建", "蒙皮", "姿态与动画", "面部", "动捕", "发布"],
+        "euler_filter_option_visible": panel.fbx_euler_filter.isChecked(),
         "face_build_dispatches_application_action": face_dispatched,
         "role_selection_dispatches_application_action":
             ("body_build", "hero", "FitSkeleton", None, False)

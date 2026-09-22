@@ -54,6 +54,7 @@ class BodyFbxExportProfile:
     curve_policy: BodyFbxCurvePolicy = BodyFbxCurvePolicy.SAMPLED_LINEAR
     value_tolerance: float = 0.0
     matrix_tolerance: float = 0.0
+    euler_filter: bool = False
 
     def __post_init__(self) -> None:
         if (
@@ -62,6 +63,7 @@ class BodyFbxExportProfile:
             or not isinstance(self.linear_unit, BodyFbxLinearUnit)
             or not isinstance(self.encoding, BodyFbxEncoding)
             or not isinstance(self.curve_policy, BodyFbxCurvePolicy)
+            or type(self.euler_filter) is not bool
         ):
             raise ValueError("FBX 导出 Profile 字段无效")
         tolerances = (self.value_tolerance, self.matrix_tolerance)
@@ -120,6 +122,8 @@ class BodyFbxAppliedProfile:
     curve_policy: str = BodyFbxCurvePolicy.SAMPLED_LINEAR.value
     removed_linear_keys: int = 0
     max_matrix_error: float = 0.0
+    euler_filter: bool = False
+    euler_filtered_curves: int = 0
 
 
 def redundant_linear_key_frames(
@@ -401,6 +405,11 @@ def audit_body_fbx_profile(
         issues.append("FBX exporter 编码回读不一致")
     if applied.curve_policy != profile.curve_policy.value:
         issues.append("FBX 发布曲线策略回读不一致")
+    if (applied.euler_filter != profile.euler_filter
+            or applied.euler_filtered_curves < 0
+            or (profile.euler_filter and applied.euler_filtered_curves == 0)
+            or (not profile.euler_filter and applied.euler_filtered_curves)):
+        issues.append("FBX Euler Filter 应用记录不一致")
     if (profile.curve_policy is BodyFbxCurvePolicy.BOUNDED_LINEAR
             and applied.max_matrix_error > profile.matrix_tolerance + tolerance):
         issues.append("FBX 发布姿态超过矩阵误差上限")

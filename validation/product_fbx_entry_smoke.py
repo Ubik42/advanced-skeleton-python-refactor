@@ -87,6 +87,10 @@ def main(mayapy: Path, report: Path) -> int:
                        "bounded_linear", "--value-tolerance", "0.2",
                        "--matrix-tolerance", "0.2", "--output",
                        str(bounded_artifact))
+        euler_artifact = folder / "euler.fbx"
+        euler = _run(mayapy, "fbx-publish", str(scene), "--namespace", ":",
+                     "--start", "1", "--end", "5", "--euler-filter",
+                     "--output", str(euler_artifact))
         imported = subprocess.run([str(mayapy), str(Path(__file__)), "--inspect",
                                    str(artifact)], cwd=ROOT, capture_output=True,
                                   text=True, timeout=120) if artifact.exists() else None
@@ -152,6 +156,10 @@ def main(mayapy: Path, report: Path) -> int:
                     for frame in (1, 3, 5) for axis in range(3)) <= .2,
             "bounded_policy_refuses_too_tight_pose_limit":
                 refused_error[0] == 2 and not too_tight.exists(),
+            "euler_filter_product_option": euler[0] == 0
+                and euler_artifact.is_file() and euler[1] is not None
+                and euler[1]["euler_filter"] is True
+                and euler[1]["euler_filtered_curves"] == 90,
             "collision_rejected": collision[0] == 2,
             "invalid_range_rejected": bad_range[0] == 2 and not rejected.exists(),
             "source_scene_unchanged": source_hash == sha256(scene.read_bytes()).hexdigest(),
@@ -161,6 +169,7 @@ def main(mayapy: Path, report: Path) -> int:
             payload["diagnostics"] = {"published": published[2][-1000:],
                 "reduced": reduced[2][-1000:],
                 "bounded": bounded[2][-1000:],
+                "euler": euler[2][-1000:],
                 "bounded_import": bounded_import.stderr[-800:] if bounded_import else "missing",
                 "bounded_inspected": bounded_inspected,
                 "refused_error": refused_error[2][-800:],

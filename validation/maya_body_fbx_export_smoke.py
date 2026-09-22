@@ -130,6 +130,14 @@ def main(output: Path) -> int:
             bounded_result=ExportBodyFbx(host).apply(
                 bounded_destination,start_frame=1,end_frame=5,
                 source_container=container,profile=bounded_profile)
+            filtered_destination=Path(directory)/'euler-filtered-character.fbx'
+            filtered_profile=BodyFbxExportProfile(
+                BodyFbxFileVersion.FBX_2020, FitUpAxis.Z,
+                BodyFbxLinearUnit.CENTIMETER, BodyFbxEncoding.BINARY,
+                euler_filter=True)
+            filtered_result=ExportBodyFbx(host).apply(filtered_destination,
+                start_frame=1,end_frame=5,source_container=container,
+                profile=filtered_profile)
             checks = {
                 "live_body_dependencies_detected": bool(live_dependencies),
                 "explicit_31_node_selection": result.plan.selection.node_count == 31,
@@ -151,6 +159,11 @@ def main(output: Path) -> int:
                     reduced_result.applied_profile.curve_policy == 'lossless_linear'
                     and reduced_result.applied_profile.removed_linear_keys > 0
                     and reduced_result.artifact.byte_count < result.artifact.byte_count
+                ),
+                "euler_filter_applied_temporarily": (
+                    filtered_result.applied_profile.euler_filter
+                    and filtered_result.applied_profile.euler_filtered_curves == 90
+                    and filtered_destination.is_file()
                 ),
                 "default_profile_applied": (
                     result.applied_profile.file_version == "FBX202000"
@@ -195,6 +208,42 @@ def main(output: Path) -> int:
             except FitSkeletonValidationError:
                 refused_overwrite = True
             checks["existing_target_refused"] = refused_overwrite
+
+            export_shoulder = next(joint.output_path for joint in
+                export_result.plan.export_skeleton.joints
+                if joint.source_path == shoulder)
+            for frame, angle in ((1, 170.), (2, -170.), (3, -160.),
+                                 (4, -150.), (5, -140.)):
+                cmds.setKeyframe(export_shoulder, attribute="rotateX",
+                                 time=frame, value=angle)
+            wrapped_source_values = tuple(cmds.keyframe(
+                export_shoulder + ".rotateX", query=True,
+                valueChange=True) or ())
+            wrapped_path = Path(directory) / "wrapped-raw.fbx"
+            wrapped_filtered_path = Path(directory) / "wrapped-euler.fbx"
+            ExportBodyFbx(host).apply(wrapped_path, start_frame=1, end_frame=5,
+                                      source_container=container)
+            wrapped_filtered = ExportBodyFbx(host).apply(
+                wrapped_filtered_path, start_frame=1, end_frame=5,
+                source_container=container, profile=filtered_profile)
+            checks["euler_filter_restores_original_curve"] = (
+                tuple(cmds.keyframe(export_shoulder + ".rotateX",
+                    query=True, valueChange=True) or ()) == wrapped_source_values
+                and wrapped_filtered.applied_profile.euler_filtered_curves == 90)
+
+            def imported_shoulder_midpoint(path):
+                cmds.file(new=True, force=True)
+                cmds.file(str(path), i=True, type="FBX", ignoreVersion=True,
+                          mergeNamespacesOnClash=False, options="fbx")
+                nodes = cmds.ls("Shoulder_R", long=True, type="joint") or []
+                if len(nodes) != 1:
+                    raise RuntimeError("Euler 过滤 FBX 未导入唯一 Shoulder_R")
+                return float(cmds.getAttr(nodes[0] + ".rotateX", time=1.5))
+
+            raw_mid = imported_shoulder_midpoint(wrapped_path)
+            filtered_mid = imported_shoulder_midpoint(wrapped_filtered_path)
+            checks["euler_filter_smooths_wrapped_fbx_midpoint"] = (
+                abs(raw_mid) < 45. and abs(abs(filtered_mid) - 180.) < 45.)
 
             def imported_pose(path):
                 cmds.file(new=True, force=True)
@@ -354,6 +403,8 @@ def main(output: Path) -> int:
             "bounded_reimport_max_pose_error": bounded_pose_error,
             "curve_verification_times": fbx_curve_verification_times(1,5,1),
             "bounded_removed_linear_keys": bounded_result.applied_profile.removed_linear_keys,
+            "wrapped_raw_midpoint_rotate_x": raw_mid,
+            "wrapped_filtered_midpoint_rotate_x": filtered_mid,
             "duration_seconds": round(time.perf_counter() - started, 3),
             "status": "passed" if passed else "failed",
         }

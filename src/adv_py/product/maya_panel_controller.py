@@ -44,6 +44,7 @@ class PanelFbxPublication:
     frames: int
     bytes_written: int
     sha256: str
+    euler_filtered_curves: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,6 +244,7 @@ class MayaPanelController:
                     curve_policy: str = "sampled_linear",
                     value_tolerance: float = 0.0,
                     matrix_tolerance: float = 0.0, *,
+                    euler_filter: bool = False,
                     progress: Callable[[str], None] | None = None) -> PanelFbxPublication:
         destination = Path(destination).expanduser().absolute()
         if (destination.suffix.lower() != ".fbx" or not destination.parent.is_dir()
@@ -255,7 +257,7 @@ class MayaPanelController:
         profile = BodyFbxExportProfile(BodyFbxFileVersion.FBX_2020,
             host.scene_up_axis(), host.scene_linear_unit(),
             BodyFbxEncoding.BINARY, selected_policy,
-            value_tolerance, matrix_tolerance)
+            value_tolerance, matrix_tolerance, euler_filter)
         prefix = "" if namespace == ":" else namespace.strip(":") + ":"
         body_root = prefix + "Root_M"
         container = "|" + prefix + "FitSkeleton"
@@ -279,7 +281,8 @@ class MayaPanelController:
             source_container=container, profile=profile)
         return PanelFbxPublication(len(baked.plan.body.joints),
             len(baked.plan.bake.frames), exported.artifact.byte_count,
-            exported.artifact.content_sha256)
+            exported.artifact.content_sha256,
+            exported.applied_profile.euler_filtered_curves)
 
     def mocap_retarget(self, namespace: str, source: Path,
                        mapping: Path, source_namespace: str,

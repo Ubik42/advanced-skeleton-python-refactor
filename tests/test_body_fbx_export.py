@@ -143,6 +143,9 @@ class BodyFbxExportTests(unittest.TestCase):
             replace(profile, value_tolerance=float("nan"))
         with self.assertRaises(ValueError):
             replace(profile, curve_policy=BodyFbxCurvePolicy.SAMPLED_LINEAR)
+        self.assertTrue(replace(profile, euler_filter=True).euler_filter)
+        with self.assertRaises(ValueError):
+            replace(profile, euler_filter=1)
 
     def test_selection_and_readiness_require_complete_independent_bake(self):
         host = FakeFbxHost()

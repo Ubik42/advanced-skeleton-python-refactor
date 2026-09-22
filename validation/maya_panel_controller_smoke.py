@@ -86,7 +86,7 @@ def main(report: Path) -> int:
                 (head + "|AdvPy_FaceControls",), progress=stages.append)
             rebuild_stage_removed = not cmds.namespace(exists="PanelRebuildStage")
             published = controller.publish_fbx(":", folder / "panel.fbx", 1, 3,
-                                               progress=stages.append)
+                euler_filter=True, progress=stages.append)
             checks = {
                 "fit_document_written": fit_count == 18 and fit.is_file(),
                 "registered_character_discovered": character.registered
@@ -115,6 +115,7 @@ def main(report: Path) -> int:
                 "fbx_published": published.joints == character.joint_count
                     and published.frames == 3
                     and published.bytes_written > 64
+                    and published.euler_filtered_curves == 90
                     and (folder / "panel.fbx").is_file(),
                 "long_operation_progress": len(stages) == 6
                     and "Root Motion" in stages[2]
