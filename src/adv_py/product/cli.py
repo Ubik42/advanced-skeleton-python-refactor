@@ -26,6 +26,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     ImportMocapFbx, RetargetMocapFullFkToCharacter,
     RetargetCharacterSpineFk,
     MigrateRegisteredSpineCharacter,
+    HandoffRegisteredSpineSkinCluster,
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
     load_mocap_mapping_preset,
     ResolveBodyCharacter, TransferFaceTargetAsset,
@@ -330,6 +331,14 @@ def parser() -> argparse.ArgumentParser:
     spine_migrate.add_argument("--max-discarded-weight", type=float, default=0.)
     spine_migrate.add_argument("--allow-target-extra-influences", action="store_true")
     spine_migrate.add_argument("--output", type=Path, required=True)
+    skin_handoff = commands.add_parser("spine-skin-handoff",
+        help="保留原网格和 skinCluster，将其影响关节交给另一已登记脊柱角色")
+    skin_handoff.add_argument("scene", type=Path)
+    skin_handoff.add_argument("--namespace", required=True)
+    skin_handoff.add_argument("--replacement-namespace", required=True)
+    skin_handoff.add_argument("--skin", required=True)
+    skin_handoff.add_argument("--mesh", required=True)
+    skin_handoff.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
     rebuild.add_argument("scene", type=Path)
     rebuild.add_argument("--namespace", required=True)
@@ -552,6 +561,23 @@ def _run(args, gateway) -> dict:
         return {"status": "ok", "output": str(output),
                 "frames": result.frames, "fk_groups": result.fk_groups,
                 "changed_vertices": result.changed_vertices}
+    if args.command == "spine-skin-handoff":
+        from adv_py.adapters import MayaSpineSkinHandoffHost
+
+        gateway.preflight_output(args.output)
+        source_namespace = "" if args.namespace == ":" else args.namespace
+        target_namespace = ("" if args.replacement_namespace == ":"
+                            else args.replacement_namespace)
+        result = HandoffRegisteredSpineSkinCluster(
+            MayaSpineSkinHandoffHost()).apply(source_namespace,
+            target_namespace, args.skin, args.mesh)
+        _emit("spine_skin_handed_off", vertices=result.vertex_count,
+              target_influences=result.target_influence_count)
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output),
+                "vertices": result.vertex_count,
+                "target_influences": result.target_influence_count}
     if args.command == "face-asset-export":
         output = args.output.resolve()
         if output.suffix.lower() != ".json" or output.exists():
