@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "advanced-skeleton-python-refactor"
 version = "0.96.0"
-description = "Private tooling and a portable Python core for incrementally studying rig behavior across Maya and Blender."
+description = "A public Maya-first Python refactor of rig behavior with a portable DCC-independent core."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Proprietary internal tooling" }
+license = { text = "All rights reserved" }
 authors = [{ name = "Ubik" }]
 dependencies = []
 

@@ -78,7 +78,7 @@ cd advanced-skeleton-python-refactor
 py -3 -m pip install -e .
 ```
 
-仓库当前为私有项目，克隆需要对应 GitHub 访问权限。
+仓库公开可读，可直接克隆；运行 Maya 宿主功能仍需自行安装并授权 Autodesk Maya。
 
 ### 2. 生成 MEL 只读清单
 
@@ -159,6 +159,6 @@ docs/                   架构、路线、调研与阶段说明
 
 ## 许可与源码边界
 
-这是围绕本机已授权 AdvancedSkeleton 安装开展的私有研究与迁移工程。仓库仅保存独立 Python 实现、测试代码和自行生成的数据，不重新分发 AdvancedSkeleton 原始源码或资产。使用者需要分别遵守 AdvancedSkeleton、Autodesk Maya、Blender 及相关依赖的许可条款。
+这是围绕本机已授权 AdvancedSkeleton 安装开展的公开 Python 重构工程。仓库仅保存独立 Python 实现、测试代码和自行生成的数据，不重新分发 AdvancedSkeleton 原始源码或资产。使用者需要分别遵守 [AdvancedSkeleton 官方许可](https://www.animationstudios.com.au/EULA.html)、Autodesk Maya、Blender 及相关依赖的许可条款。
 
-项目包元数据标记为 `Proprietary internal tooling`，当前未授权公开再分发。
+本仓库目前未提供开源许可证。公开阅读和克隆不等于获得修改后再分发本仓库代码的许可；如需这类许可，需另行明确。
