@@ -47,9 +47,16 @@ class MayaMocapControlHost(MayaBodyBuildHost):
             seek(reference)
             neutral = tuple(float(c.getAttr(ch.node+'.'+ch.attribute))
                             for ch in registration.channels)
+        # Static channels already hold the calibration value at every frame.
+        # Keying them here needlessly rewrites curves written by later passes.
+        animated = tuple((ch, value) for ch, value in zip(
+            registration.channels, neutral) if c.connectionInfo(
+                ch.node + '.' + ch.attribute, sourceFromDestination=True))
+        if not animated:
+            return
         self._transaction_changed = True
-        for frame in frames:
-            for ch, value in zip(registration.channels, neutral):
+        for ch, value in animated:
+            for frame in frames:
                 c.setKeyframe(ch.node, attribute=ch.attribute,
                               time=frame, value=value,
                               inTangentType='linear', outTangentType='linear')
