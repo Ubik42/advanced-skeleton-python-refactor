@@ -54,7 +54,18 @@ def main(mode, folder):
             MayaOriginalSkinSpineMigrationHost(namespace='target'))
         try:
             service.apply('source','target',skin,mesh,start_frame=1,end_frame=10,
-                          spine_mode='ik',max_mesh_error=0.)
+                          spine_mode='ik',max_mesh_error=1.,max_body_error=.00001)
+        except Exception as exc:
+            body_rejected=('IK 迁移身体空间误差超限' in str(exc)
+                           and 'frame=1' not in str(exc)
+                           and cmds.namespace(exists='target'))
+        else:
+            body_rejected=False
+        if not body_rejected:
+            raise RuntimeError('IK 身体弯曲误差上限未按预期回滚')
+        try:
+            service.apply('source','target',skin,mesh,start_frame=1,end_frame=10,
+                          spine_mode='ik',max_mesh_error=0.,max_body_error=1.)
         except Exception as exc:
             rejected = ('IK 迁移原网格误差超限' in str(exc)
                         and cmds.namespace(exists='target')
@@ -78,10 +89,11 @@ def main(mode, folder):
         cmds.redo()
         redo=(not cmds.namespace(exists='target')
               and len(source.read_character_registration().spine.body_joints)==7)
-        report=dict(rejected=rejected,promoted=promoted,undo=undo,redo=redo,
+        report=dict(rejected=rejected,body_rejected=body_rejected,
+                    promoted=promoted,undo=undo,redo=redo,
                     max_mesh_error=error,frames=result.frames,groups=result.fk_groups)
         print('IK_DIRECT',json.dumps(report),flush=True)
-        if not all((promoted,undo,redo,error<=.001,result.frames==10,
+        if not all((body_rejected,promoted,undo,redo,error<=.001,result.frames==10,
                     result.fk_groups==0)):
             raise RuntimeError(report)
         cmds.file(rename=str(folder/'spine-ik-direct-replaced.ma'))

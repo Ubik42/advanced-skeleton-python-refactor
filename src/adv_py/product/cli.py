@@ -376,6 +376,8 @@ def parser() -> argparse.ArgumentParser:
     original_replace.add_argument("--spine-mode", choices=("fk", "ik"), default="fk")
     original_replace.add_argument("--max-mesh-error", type=float,
         help="IK 模式必填：原网格采样顶点的最大允许坐标误差（厘米）")
+    original_replace.add_argument("--max-body-error", type=float,
+        help="IK 模式身体标记点最大允许误差（厘米）；默认与网格上限相同")
     original_replace.add_argument("--extension", action="append", default=[])
     original_replace.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
@@ -672,7 +674,8 @@ def _run(args, gateway) -> dict:
                 start_frame=args.start, end_frame=args.end,
                 sample_by=args.step, reference_frame=args.reference,
                 extensions=tuple(args.extension), spine_mode=args.spine_mode,
-                max_mesh_error=args.max_mesh_error)
+                max_mesh_error=args.max_mesh_error,
+                max_body_error=args.max_body_error)
         _emit("character_spine_replaced", frames=result.frames,
               groups=result.fk_groups, vertices=result.vertices,
               removed=result.old_nodes_removed, skins=result.skin_count)

@@ -13,7 +13,10 @@ class RegisteredSpineIkTake:
     frames: tuple[float, ...]
     channels: tuple
     meshes: tuple
+    body: tuple
+    body_names: tuple[str, ...]
     max_mesh_error: float
+    max_body_error: float
 
 
 class RetargetCharacterSpineIk:
@@ -22,11 +25,18 @@ class RetargetCharacterSpineIk:
     def __init__(self, host):
         self._host = host
 
-    def plan(self, source_namespace, skins, frames, *, max_mesh_error):
+    def plan(self, source_namespace, skins, frames, *, max_mesh_error,
+             max_body_error=None):
         if (isinstance(max_mesh_error, bool)
                 or not isinstance(max_mesh_error, (int, float))
                 or not isfinite(max_mesh_error) or max_mesh_error < 0):
             raise CharacterRegistryError('IK 网格误差上限须为非负有限厘米数值')
+        if max_body_error is None:
+            max_body_error = max_mesh_error
+        if (isinstance(max_body_error, bool)
+                or not isinstance(max_body_error, (int, float))
+                or not isfinite(max_body_error) or max_body_error < 0):
+            raise CharacterRegistryError('IK 身体误差上限须为非负有限厘米数值')
         host = self._host
         source = host.read_source_character_registration(source_namespace)
         target = host.read_character_registration()
@@ -59,13 +69,15 @@ class RetargetCharacterSpineIk:
             raise CharacterRegistryError('来源与目标 Spline IK 通道不对应')
         all_frames = tuple(sorted({*frames,
             *((a+b)/2 for a,b in zip(frames,frames[1:]))}))
-        channels, meshes = host.capture_registered_spine_ik_take(
-            source_namespace, source, tuple(mesh for _,mesh in skins), all_frames)
+        body_names = tuple(source_body)
+        channels, meshes, body = host.capture_registered_spine_ik_take(
+            source_namespace, source, tuple(mesh for _,mesh in skins),
+            body_names, all_frames)
         mode = 'spine.spline.spineIkFk'
         if any(abs(dict(row)[mode]-1.) > 1e-8 for row in channels):
             raise CharacterRegistryError('IK 跨段数迁移要求整个采样区间保持 Spline IK 模式')
         return RegisteredSpineIkTake(source,target,all_frames,channels,
-                                     meshes,float(max_mesh_error))
+            meshes,body,body_names,float(max_mesh_error),float(max_body_error))
 
     def apply_in_transaction(self, take, source_namespace, skins):
         host = self._host
@@ -74,7 +86,23 @@ class RetargetCharacterSpineIk:
                 or host.read_character_registration() != take.target_registration):
             raise CharacterRegistryError('IK 迁移角色登记在写入前发生变化')
         host.write_registered_spine_ik_take(take)
+        self.verify_body(take)
         self.verify_meshes(take, skins)
+
+    def verify_body(self, take, host=None):
+        current = (self._host if host is None else host).capture_registered_spine_body_take(
+            take.target_registration, take.body_names, take.frames)
+        for frame, expected, actual in zip(take.frames,take.body,current):
+            for (name,left),(actual_name,right) in zip(expected,actual):
+                if name != actual_name:
+                    raise CharacterRegistryError('IK 迁移 Body 关节对应变化：'+name)
+                error = max(abs(a-b) for left_point,right_point in zip(left,right)
+                            for a,b in zip(left_point,right_point))
+                if error > take.max_body_error:
+                    raise CharacterRegistryError(
+                        'IK 迁移身体空间误差超限：joint='+name
+                        +' frame='+str(frame)+' error='+str(error)
+                        +' limit='+str(take.max_body_error))
 
     def verify_meshes(self, take, skins):
         current = self._host.capture_registered_spine_mesh_take(
