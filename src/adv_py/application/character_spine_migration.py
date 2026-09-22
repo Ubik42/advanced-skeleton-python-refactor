@@ -5,6 +5,7 @@ from adv_py.core.character_registry import CharacterRegistryError
 from adv_py.core.skin_weight_redistribution import registered_spine_weight_redistribution
 
 from .character_spine_retarget import RetargetCharacterSpineFk
+from .spine_skin_handoff import HandoffRegisteredSpineSkinCluster
 from .skin_weight_surface_transfer import TransferSkinWeightsBySurface
 from .skin_weights import EditSkinWeights
 
@@ -71,3 +72,48 @@ class MigrateRegisteredSpineCharacter:
                 raise RuntimeError('跨段数迁移后的目标 Skin 权重变化')
         return RegisteredSpineMigrationResult(len(roots), len(groups),
                                               edit.changed_vertex_count)
+
+
+@dataclass(frozen=True, slots=True)
+class OriginalSkinSpineMigrationResult:
+    frames: int
+    fk_groups: int
+    vertices: int
+    target_influences: int
+
+
+class MigrateRegisteredSpineOnOriginalSkin:
+    """Keep the source mesh/skinCluster while writing replacement FK animation."""
+
+    def __init__(self, host):
+        self._host = host
+
+    def apply(self, source_namespace, target_namespace, skin_name, mesh_path,
+              *, start_frame, end_frame, sample_by=1, reference_frame=None):
+        host = self._host
+        if host.namespace != target_namespace:
+            raise CharacterRegistryError('目标动画宿主与目标角色命名空间不一致')
+        skin_host = host.original_skin_handoff_host()
+        handoff = HandoffRegisteredSpineSkinCluster(skin_host)
+        plan = handoff.plan(source_namespace, target_namespace, skin_name, mesh_path)
+        with host.transaction('Migrate spine FK and original skinCluster'):
+            skin_host._transaction_active = True
+            try:
+                result = handoff.apply_plan_in_transaction(
+                    plan, source_namespace, target_namespace, skin_name, mesh_path,
+                    before_mutation=host.mark_original_skin_mutation)
+            finally:
+                skin_host._transaction_active = False
+            roots, groups = RetargetCharacterSpineFk(host).apply_in_transaction(
+                source_namespace, start_frame=start_frame, end_frame=end_frame,
+                sample_by=sample_by, reference_frame=reference_frame)
+            if skin_host.read_registration_in_namespace(source_namespace) != plan.source_registration:
+                raise RuntimeError('动画迁移改变了来源角色登记')
+            final = skin_host.capture_all_skin_weights(skin_name, mesh_path)
+            if (set(final.influence_paths) != set(plan.target_document.influence_paths)
+                    or skin_host.capture_skin_handoff_boundary(skin_name, mesh_path)
+                    != plan.boundary):
+                raise RuntimeError('动画迁移改变了原 Skin 交接结果')
+        return OriginalSkinSpineMigrationResult(
+            len(roots), len(groups), result.vertex_count,
+            result.target_influence_count)
