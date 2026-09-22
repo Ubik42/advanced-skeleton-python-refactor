@@ -14,11 +14,11 @@
 
 | 范围 | 已完成 |
 | --- | --- |
-| Maya 重构 | 107 个纵向切片，覆盖 Fit、Body、Arm / Leg / Hand FK/IK、Skin、Root Motion、FBX 与 MoCap 采样 / bake |
+| Maya 重构 | Fit、Body、Arm / Leg / Hand FK/IK、Skin、Root Motion、FBX、MoCap 控制重定向与基础 Face 工作流；完成范围逐项见剩余开发清单 |
 | 角色结构 | 30 关节基础 Body、70 关节五指 Body、31 关节独立导出骨架 |
 | 数据合同 | FitSkeleton、Hand Pose 与 Skin Weight 使用路径无关的 JSON 文档和 SHA-256 内容摘要 |
 | 写入边界 | 修改前预检；单一 Maya Undo 事务提交；执行后从场景读回复检 |
-| 自动验证 | 339 项纯 Python 回归测试；103 个 Maya / Blender 宿主 smoke 脚本 |
+| 自动验证 | 361 项纯 Python 回归测试；Maya 后台场景与独立进程验收命令见验证清单 |
 
 当前 main 已在 v0.96.0 基础上加入躯干 / 颈头 FK、独立脊柱 IK/FK、双向姿态匹配与头部 / 手脚空间切换，调用方式见 [核心绑定架构](docs/核心绑定架构.md)。完整 Fit → Body → 控制 → 显式蒙皮入口见 [全身示例](examples/README.md)。本轮未新增版本发布。
 
@@ -109,6 +109,8 @@ py -3 -m unittest discover -s tests
 
 更多宿主命令见 [后台宿主验证](validation/README.md)。
 
+已登记角色的后台发现、面部目标生成和动画文档写入见 [后台产品入口](docs/后台产品入口.md)。这些操作通过 `mayapy -m adv_py.product` 在独立场景进程中运行。
+
 ## 工程结构
 
 ```text
@@ -133,10 +135,10 @@ docs/                   架构、路线、调研与阶段说明
 
 完整工作包及完成条件见 [剩余开发清单](docs/剩余开发清单.md)，当前工程尚未完成全量替代。
 
-- 产品 UI、自动角色发现和厂商 MoCap 自动映射表；
-- 外部 FBX 自动导入、动画曲线简化和引擎专用骨名表；
-- FitSkeleton 冲突覆盖、重父级、删除式同步与 ReBuild 脚本迁移；
-- 非对称蒙皮镜像、自动手指权重与已有复杂蒙皮迁移；
+- 产品交互界面、预设管理与全身工作流统一入口；
+- 生产资产的广泛拓扑兼容、外部目标网格版本管理与完整旧流程替代审计；
+- 面部自动解剖标记定位、跨拓扑目标转移、骨骼与曲线混合求解；
+- 动捕与 FBX 在更广外部曲线条件下的兼容性、有损发布曲线处理；
 - Blender 第二阶段的正式功能迁移。
 
 ## 文档

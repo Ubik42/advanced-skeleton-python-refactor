@@ -14,6 +14,7 @@ dependencies = []
 
 [project.scripts]
 adv-migrate = "adv_migration.cli:main"
+adv-rig = "adv_py.product.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

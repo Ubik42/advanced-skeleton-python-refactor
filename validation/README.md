@@ -222,6 +222,7 @@
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_variable_fk_smoke.py validation\results\maya2024-mocap-variable-scheduled-replace-fbx.json 4 --scheduled-replace --fbx
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_face_shapes_smoke.py validation\results\maya2024-face-shapes-rebuild.json
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_face_shapes_smoke.py validation\results\maya2024-face-performance.json
+python validation\product_entry_smoke.py 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\results\maya2024-face-performance.ma validation\results\maya2024-product-entry.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_mocap_source_smoke.py validation\results\maya2024-mocap-source.json
 

@@ -373,6 +373,7 @@ class MayaCharacterRegistryMixin:
     def discover_character_registrations(self):
         c = self._cmds
         return tuple(sorted(n for n in c.ls(type="network") or []
+                            if (self.namespace is not None or ':' not in n)
                             if c.objExists(n+".advPyRegistryOwner") and c.getAttr(n+".advPyRegistryOwner")==FORMAT))
 
     def read_character_registration(self, name=REGISTRY_NAME):
