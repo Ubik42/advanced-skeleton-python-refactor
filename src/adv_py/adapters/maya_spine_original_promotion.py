@@ -151,6 +151,18 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
             raise CharacterRegistryError('附件变拓扑映射要求两个可变脊柱角色')
         old_roles = {row.path for row in source_reg.nodes}
         new_roles = {row.path for row in target_reg.nodes}
+        source_body_paths = {row.path for row in source_reg.body}
+        source_spine_body = set(source_reg.spine.body_joints)
+        source_body_names = [row.path.rsplit('|', 1)[-1]
+                             for row in source_reg.body]
+        if len(source_body_names) != len(set(source_body_names)):
+            raise CharacterRegistryError('来源 Body 关节短名不唯一')
+        target_body_by_name = {}
+        for row in target_reg.body:
+            name = row.path.rsplit('|', 1)[-1]
+            if name in target_body_by_name:
+                raise CharacterRegistryError('目标 Body 关节短名不唯一：' + name)
+            target_body_by_name[name] = row.path
         def target_role(logical):
             if logical in source_reg.spine.fk_controls:
                 source_index = source_reg.spine.fk_controls.index(logical)
@@ -164,6 +176,8 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
                 target_index=min(range(len(target_positions)),
                     key=lambda index:(abs(target_positions[index]-position),index))
                 return target_reg.spine.fk_controls[target_index]
+            if logical in source_body_paths and logical not in source_spine_body:
+                return target_body_by_name.get(logical.rsplit('|', 1)[-1], logical)
             return logical
         moves = []
         used = set()
