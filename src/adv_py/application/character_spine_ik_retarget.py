@@ -6,6 +6,25 @@ from adv_py.core.body_spline import BodySplinePlan
 from adv_py.core.character_registry import CharacterRegistryError
 
 
+def verify_registered_spine_meshes(host, skins, frames, wanted_meshes,
+                                   max_mesh_error, *, mode):
+    meshes=tuple(mesh for _,mesh in skins)
+    current=host.capture_registered_spine_mesh_take(meshes,frames)
+    for mesh,wanted,actual in zip(meshes,wanted_meshes,current):
+        if len(wanted)!=len(actual):
+            raise CharacterRegistryError(mode+' 迁移改变原网格采样帧数：'+mesh)
+        for frame,expected_points,current_points in zip(frames,wanted,actual):
+            if len(expected_points)!=len(current_points):
+                raise CharacterRegistryError(mode+' 迁移改变原网格顶点数量：'+mesh)
+            error=max((abs(a-b) for left,right in zip(expected_points,current_points)
+                       for a,b in zip(left,right)),default=0.)
+            if error>max_mesh_error:
+                raise CharacterRegistryError(
+                    mode+' 迁移原网格误差超限：mesh='+mesh
+                    +' frame='+str(frame)+' error='+str(error)
+                    +' limit='+str(max_mesh_error))
+
+
 @dataclass(frozen=True, slots=True)
 class RegisteredSpineIkTake:
     source_registration: object
@@ -147,18 +166,5 @@ class RetargetCharacterSpineIk:
                         +' limit='+str(take.max_body_error))
 
     def verify_meshes(self, take, skins):
-        current = self._host.capture_registered_spine_mesh_take(
-            tuple(mesh for _,mesh in skins), take.frames)
-        for mesh, wanted, actual in zip((mesh for _,mesh in skins), take.meshes, current):
-            if len(wanted) != len(actual):
-                raise CharacterRegistryError('IK 迁移改变原网格顶点数量：'+mesh)
-            for frame, expected_points, current_points in zip(take.frames,wanted,actual):
-                if len(expected_points) != len(current_points):
-                    raise CharacterRegistryError('IK 迁移改变原网格顶点数量：'+mesh)
-                error = max((abs(a-b) for left,right in zip(expected_points,current_points)
-                             for a,b in zip(left,right)),default=0.)
-                if error > take.max_mesh_error:
-                    raise CharacterRegistryError(
-                        'IK 迁移原网格误差超限：mesh='+mesh
-                        +' frame='+str(frame)+' error='+str(error)
-                        +' limit='+str(take.max_mesh_error))
+        verify_registered_spine_meshes(self._host,skins,take.frames,
+            take.meshes,take.max_mesh_error,mode='IK')
