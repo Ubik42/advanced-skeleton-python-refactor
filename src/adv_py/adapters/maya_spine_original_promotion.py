@@ -4,6 +4,7 @@ import re
 
 from adv_py.core.character_identity import CharacterIdentity, SHARED_NODES
 from adv_py.core.character_registry import CharacterRegistryError
+from adv_py.core.body_spline import BodySplinePlan
 
 from .maya_body import MayaBodyBuildHost
 from .maya_spine_skin_handoff import MayaSpineSkinHandoffHost
@@ -67,6 +68,7 @@ class OriginalSpineExtensionMove:
     parent_world_samples: tuple[tuple[float, tuple[float, ...]], ...] = ()
     curves: tuple[object, ...] = ()
     curve_outputs: tuple[tuple[str, str, str], ...] = ()
+    requires_compensation: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,8 +116,25 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
         target = MayaBodyBuildHost(namespace=target_namespace)
         source_reg = source.read_character_registration()
         target_reg = target.read_character_registration()
+        if (not isinstance(source_reg.spine,BodySplinePlan)
+                or not isinstance(target_reg.spine,BodySplinePlan)):
+            raise CharacterRegistryError('附件变拓扑映射要求两个可变脊柱角色')
         old_roles = {row.path for row in source_reg.nodes}
         new_roles = {row.path for row in target_reg.nodes}
+        def target_role(logical):
+            if logical in source_reg.spine.fk_controls:
+                source_index = source_reg.spine.fk_controls.index(logical)
+                def normalized(lengths):
+                    total=sum(lengths)
+                    return tuple(sum(lengths[:index])/total
+                                 for index in range(len(lengths)+1))
+                source_positions=normalized(source_reg.spine.lengths)
+                target_positions=normalized(target_reg.spine.lengths)
+                position=source_positions[source_index]
+                target_index=min(range(len(target_positions)),
+                    key=lambda index:(abs(target_positions[index]-position),index))
+                return target_reg.spine.fk_controls[target_index]
+            return logical
         moves = []
         used = set()
         current_time = cmds.currentTime(query=True)
@@ -127,9 +146,10 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
                 raise CharacterRegistryError('附件不属于原角色：' + path)
             parent = (cmds.listRelatives(path, parent=True, fullPath=True) or [None])[0]
             logical = CharacterIdentity(source_namespace).to_local(parent)
-            if logical not in old_roles or logical not in new_roles:
+            destination = target_role(logical)
+            if logical not in old_roles or destination not in new_roles:
                 raise CharacterRegistryError('附件父控制在目标角色没有同一路径：' + str(parent))
-            target_parent = CharacterIdentity(target_namespace).to_scene(logical)
+            target_parent = CharacterIdentity(target_namespace).to_scene(destination)
             if not cmds.objExists(target_parent):
                 raise CharacterRegistryError('目标附件父控制缺失：' + target_parent)
             source_matrix = cmds.xform(parent, query=True, worldSpace=True, matrix=True)
@@ -170,9 +190,9 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
                         _uuid(cmds,curve),_plug_uuid(cmds,local),
                         local.rsplit('.',1)[-1])
                 snapshots.append(capture_extension(self,node))
-            if (not curves and max(abs(a-b) for a,b in
-                                   zip(source_matrix,target_matrix)) > 1e-4):
-                raise CharacterRegistryError('附件父控制与目标在当前帧不重合：' + path)
+            requires_compensation = (destination != logical
+                or max(abs(a-b) for a,b in
+                       zip(source_matrix,target_matrix)) > 1e-4)
             world_samples = []
             parent_samples = []
             try:
@@ -188,7 +208,8 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
                 target_parent,_uuid(cmds,parent),_uuid(cmds,target_parent),
                 snapshots[0],member_uuids,tuple(snapshots),
                 tuple(world_samples),tuple(parent_samples),
-                tuple(curves.values()),tuple(curve_outputs.values())))
+                tuple(curves.values()),tuple(curve_outputs.values()),
+                requires_compensation))
         # Explicit attachments cannot retain hidden connections to the old Rig.
         old_uuids = {_uuid(cmds, source.scene_address(row.path))
                      for row in source_reg.nodes}
@@ -215,7 +236,7 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
             self._transaction_changed = True
             group_uuid = None
             parent = move.target_parent
-            if move.curves:
+            if move.curves or move.requires_compensation:
                 owner = move.old_path.rsplit('|',1)[-1].split(':',1)[0]
                 group = cmds.createNode('transform',
                     name=owner + ':AdvPy_Extension_'

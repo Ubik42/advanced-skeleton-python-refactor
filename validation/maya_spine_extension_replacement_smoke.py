@@ -15,10 +15,12 @@ def main(mode, folder):
         from adv_py.adapters import MayaOriginalSkinSpineMigrationHost, MayaBodyBuildHost
         from adv_py.application import ReplaceRegisteredSpineCharacter
         animated = 'animated' in mode
-        stem = 'spine-animated-extension' if animated else 'spine-extension'
+        axial = 'axial' in mode
+        stem = ('spine-axial-extension' if axial else
+                'spine-animated-extension' if animated else 'spine-extension')
         skins = (('source:SourceSkin', '|source:SourceMesh'),
                  ('source:SecondSkin', '|source:SecondMesh'))
-        if mode in ('inspect', 'animated-inspect'):
+        if mode in ('inspect', 'animated-inspect', 'axial-inspect'):
             scene = sys.argv[3] if len(sys.argv) > 3 else stem + '-replaced.ma'
             cmds.file(str(folder / scene), open=True, force=True)
             MayaBodyBuildHost(namespace='source').read_character_registration()
@@ -38,7 +40,7 @@ def main(mode, folder):
             curves = cmds.listConnections(accessory[0], source=True,
                 destination=False, type='animCurve') or []
             driven = (cmds.listRelatives(accessory[0],parent=True,
-                                         fullPath=True) or [None])[0] if animated else accessory[0]
+                                         fullPath=True) or [None])[0] if (animated or axial) else accessory[0]
             baked_curves = cmds.listConnections(driven, source=True,
                 destination=False, type='animCurve') or []
             if (len(set(baked_curves)) != 9
@@ -59,8 +61,15 @@ def main(mode, folder):
                   open=True, force=True)
         cmds.undoInfo(state=True)
         cmds.currentTime(1, edit=True)
-        source_parent = (cmds.ls('source:AdvPy_WristFK_R', long=True) or [None])[0]
-        target_parent = (cmds.ls('target:AdvPy_WristFK_R', long=True) or [None])[0]
+        if axial:
+            from adv_py.core.character_identity import CharacterIdentity
+            source_reg = MayaBodyBuildHost(namespace='source').read_character_registration()
+            source_parent = CharacterIdentity('source').to_scene(
+                source_reg.spine.fk_controls[3])
+            target_parent = 'target:AdvPy_Global'
+        else:
+            source_parent = (cmds.ls('source:AdvPy_WristFK_R', long=True) or [None])[0]
+            target_parent = (cmds.ls('target:AdvPy_WristFK_R', long=True) or [None])[0]
         if not source_parent or not target_parent:
             raise RuntimeError('手腕控制节点缺失')
         accessory = cmds.createNode('transform', name='source:Accessory',
@@ -115,9 +124,9 @@ def main(mode, folder):
                 extensions=(accessory,))
         moved = (cmds.ls(uuid, long=True) or [None])[0]
         attached = (moved and moved.startswith('|source:')
-            and '|source:AdvPy_WristFK_R|' in moved
+            and (axial or '|source:AdvPy_WristFK_R|' in moved)
             and moved.endswith('|source:Accessory')
-            and (not animated or '|source:AdvPy_Extension_' in moved)
+            and (not (animated or axial) or '|source:AdvPy_Extension_' in moved)
             and tuple(cmds.xform(moved, query=True,
                                  objectSpace=True, matrix=True)) == local
             and cmds.getAttr(moved + '.assetCode') == 'rig-prop-A')
@@ -132,7 +141,7 @@ def main(mode, folder):
             zip(original_world, moved_world) for a,b in zip(before,after))
         cmds.currentTime(1, edit=True)
         report = dict(skins=result.skin_count, attached=bool(attached),
-                      animated=animated,
+                      animated=animated, axial=axial, source_path=accessory,
                       trajectory_error=trajectory_error,
                       sample_frames=sample_frames,
                       original_curve_uuid=original_curve_uuid,
