@@ -1,6 +1,7 @@
 """Portable sculpt asset export/import/build across Maya processes."""
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 import subprocess
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "validation")]
 
 from adv_py.core.character_registry import digest
+from adv_py.application import load_face_target_asset, save_face_target_asset
 from product_entry_smoke import _hash, _run
 
 
@@ -45,9 +47,29 @@ def main(mayapy: Path, source: Path, report: Path) -> int:
             "--name", "smile_R", "--kind", "expression",
             "--target", "|SmileTarget", "--frame", "1",
             "--output", str(asset_path))
-        invalid_path = folder / "wrong-neutral.asset.json"
+        library = folder / "library"
+        registered = _run(Path(sys.executable), "face-library-add",
+            "--library", str(library), "--asset", str(asset_path),
+            "--release", "1.0.0")
+        listed = _run(Path(sys.executable), "face-library-list",
+            "--library", str(library))
+        resolved_path = folder / "resolved.asset.json"
+        resolved = _run(Path(sys.executable), "face-library-export",
+            "--library", str(library), "--name", "smile_R",
+            "--release", "1.0.0", "--output", str(resolved_path))
+        changed_path = folder / "changed.asset.json"
         if asset_path.exists():
-            invalid = json.loads(asset_path.read_text(encoding="utf-8"))
+            original = load_face_target_asset(asset_path)
+            first = original.deltas[0]
+            changed = replace(original, deltas=((first[0], first[1] + .1,
+                first[2], first[3]),) + original.deltas[1:])
+            save_face_target_asset(changed, changed_path)
+        conflict = _run(Path(sys.executable), "face-library-add",
+            "--library", str(library), "--asset", str(changed_path),
+            "--release", "1.0.0")
+        invalid_path = folder / "wrong-neutral.asset.json"
+        if resolved_path.exists():
+            invalid = json.loads(resolved_path.read_text(encoding="utf-8"))
             invalid["payload"]["neutral_position_digest"] = "0" * 64
             invalid["digest"] = digest(invalid["payload"])
             invalid_path.write_text(json.dumps(invalid), encoding="utf-8")
@@ -57,7 +79,7 @@ def main(mayapy: Path, source: Path, report: Path) -> int:
             "--output", str(refused_scene))
         imported = _run(mayapy, "face-asset-import", str(source),
             "--namespace", "hero", "--neutral", "|FaceNeutral",
-            "--asset", str(asset_path), "--target", "|ImportedSmile",
+            "--asset", str(resolved_path), "--target", "|ImportedSmile",
             "--output", str(imported_scene))
         inspected_import = (_inspect(mayapy, imported_scene, False)
                             if imported_scene.exists() else (1, None, "missing import"))
@@ -78,6 +100,17 @@ def main(mayapy: Path, source: Path, report: Path) -> int:
                 exported[0] == 0 and exported[1] is not None
                 and exported[1]["changed_vertices"] == 4
                 and asset_path.is_file() and _hash(source) == source_hash),
+            "library_resolves_immutable_version": (
+                registered[0] == 0 and listed[0] == 0
+                and listed[1] is not None and len(listed[1]["assets"]) == 1
+                and listed[1]["assets"][0]["valid"]
+                and resolved[0] == 0 and resolved_path.is_file()
+                and load_face_target_asset(resolved_path)
+                    == load_face_target_asset(asset_path)),
+            "library_rejects_conflicting_same_version": (
+                conflict[0] == 2
+                and load_face_target_asset(resolved_path)
+                    == load_face_target_asset(asset_path)),
             "wrong_neutral_rejected_without_output": (
                 refused[0] == 2 and not refused_scene.exists()),
             "imported_geometry_matches_original_after_reopen": (
@@ -98,6 +131,8 @@ def main(mayapy: Path, source: Path, report: Path) -> int:
         payload = {**checks, "status": "passed" if all(checks.values()) else "failed"}
         if not all(checks.values()):
             payload["diagnostics"] = {"export": exported[2][-500:],
+                "register": registered[2][-500:], "list": listed[2][-500:],
+                "resolve": resolved[2][-500:], "conflict": conflict[2][-500:],
                 "refuse": refused[2][-500:], "import": imported[2][-500:],
                 "inspect_import": inspected_import[2][-500:],
                 "build": built[2][-500:],

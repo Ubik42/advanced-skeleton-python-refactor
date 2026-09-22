@@ -10,7 +10,7 @@ import sys
 from adv_py.application import (ApplyBodyCharacterAnimation,
     ApplyBodyCharacterPose, ApplyFacePerformance, BuildFaceBlendShapes, CaptureBodyCharacterAnimation,
     CaptureBodyCharacterPose, ExportFaceTargetAsset, GenerateFaceTarget,
-    ImportFaceTargetAsset, ResolveBodyCharacter,
+    FaceAssetLibrary, ImportFaceTargetAsset, ResolveBodyCharacter,
     InspectBodyCharacterPresets, load_character_animation, load_character_pose, save_character_animation,
     save_character_pose, RebuildBodyCharacter, load_face_target_asset,
     save_face_target_asset)
@@ -65,6 +65,20 @@ def parser() -> argparse.ArgumentParser:
     asset_import.add_argument("--asset", type=Path, required=True)
     asset_import.add_argument("--target", required=True)
     asset_import.add_argument("--output", type=Path, required=True)
+    library_add = commands.add_parser("face-library-add",
+        help="将面部目标资产登记到不可覆盖的版本目录")
+    library_add.add_argument("--library", type=Path, required=True)
+    library_add.add_argument("--asset", type=Path, required=True)
+    library_add.add_argument("--release", required=True)
+    library_list = commands.add_parser("face-library-list",
+        help="列出面部资产版本和损坏状态")
+    library_list.add_argument("--library", type=Path, required=True)
+    library_export = commands.add_parser("face-library-export",
+        help="从版本目录导出指定面部资产")
+    library_export.add_argument("--library", type=Path, required=True)
+    library_export.add_argument("--name", required=True)
+    library_export.add_argument("--release", required=True)
+    library_export.add_argument("--output", type=Path, required=True)
     pose_capture = commands.add_parser("pose-capture", help="捕获已登记角色的静态姿态文档")
     pose_capture.add_argument("scene", type=Path)
     pose_capture.add_argument("--namespace", required=True)
@@ -142,6 +156,24 @@ def _face_build_spec(path: Path) -> tuple[str, tuple[FaceTarget, ...]]:
 def _emit(event: str, **payload) -> None:
     print(json.dumps({"event": event, **payload}, ensure_ascii=False), file=sys.stderr,
           flush=True)
+
+
+def _run_library(args) -> dict:
+    library = FaceAssetLibrary(args.library)
+    if args.command == "face-library-list":
+        return {"status": "ok", "assets": [asdict(entry)
+            for entry in library.list()]}
+    if args.command == "face-library-add":
+        entry = library.add(load_face_target_asset(args.asset), args.release)
+        _emit("asset_version_registered", name=entry.name,
+              release=entry.release)
+        return {"status": "ok", "asset": asdict(entry)}
+    asset = library.resolve(args.name, args.release)
+    saved = save_face_target_asset(asset, args.output)
+    _emit("asset_version_exported", name=asset.name,
+          release=args.release)
+    return {"status": "ok", "output": str(saved),
+            "name": asset.name, "release": args.release}
 
 
 def _run(args, gateway) -> dict:
@@ -281,6 +313,13 @@ def _run(args, gateway) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.command.startswith("face-library-"):
+        try:
+            print(json.dumps(_run_library(args), ensure_ascii=False), flush=True)
+            return 0
+        except (OSError, ValueError, RuntimeError) as error:
+            _emit("failed", type=type(error).__name__, message=str(error))
+            return 2
     from adv_py.adapters.maya_scene_gateway import MayaSceneGateway
 
     gateway = MayaSceneGateway()
