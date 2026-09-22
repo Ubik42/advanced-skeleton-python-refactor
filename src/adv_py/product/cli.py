@@ -11,7 +11,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     ApplyBodyCharacterPose, ApplyFacePerformance, CaptureBodyCharacterAnimation,
     CaptureBodyCharacterPose, GenerateFaceTarget, ResolveBodyCharacter,
     InspectBodyCharacterPresets, load_character_animation, load_character_pose, save_character_animation,
-    save_character_pose)
+    save_character_pose, RebuildBodyCharacter)
 from adv_py.core import (FaceLandmark, FaceShapeKind, FaceTarget,
                          face_performance_from_json)
 from adv_py.core.character_registry import safe_json
@@ -64,6 +64,12 @@ def parser() -> argparse.ArgumentParser:
     presets.add_argument("scene", type=Path)
     presets.add_argument("--namespace", required=True)
     presets.add_argument("--directory", type=Path, required=True)
+    rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
+    rebuild.add_argument("scene", type=Path)
+    rebuild.add_argument("--namespace", required=True)
+    rebuild.add_argument("--replacement", required=True)
+    rebuild.add_argument("--extension", action="append", default=[])
+    rebuild.add_argument("--output", type=Path, required=True)
     return result
 
 
@@ -121,7 +127,9 @@ def _run(args, gateway) -> dict:
                     characters.append({"namespace": namespace, "name": name,
                         "writable": False, "reason": str(error)})
         return {"status": "ok", "characters": characters}
-    host = MayaFaceHost(namespace=None if args.namespace == ":" else args.namespace)
+    selected_namespace = ("" if args.command == "rebuild" else None)
+    host = MayaFaceHost(namespace=selected_namespace if args.namespace == ":"
+                        else args.namespace)
     if args.command == "presets":
         entries = InspectBodyCharacterPresets(host).list(args.directory)
         return {"status": "ok", "presets": [asdict(entry) for entry in entries]}
@@ -145,6 +153,16 @@ def _run(args, gateway) -> dict:
         return {"status": "ok", "output": str(saved),
                 "frames": len(animation.samples)}
     gateway.preflight_output(args.output)
+    if args.command == "rebuild":
+        result = RebuildBodyCharacter(host).apply(args.replacement,
+            extensions=tuple(args.extension))
+        _emit("character_rebuilt", joints=len(result.registration.body),
+              preserved_extensions=len(result.original.extensions))
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output),
+                "joints": len(result.registration.body),
+                "preserved_extensions": len(result.original.extensions)}
     if args.command == "pose-apply":
         pose = load_character_pose(args.pose)
         ApplyBodyCharacterPose(host).apply(pose)

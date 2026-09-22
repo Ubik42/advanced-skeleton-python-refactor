@@ -68,6 +68,15 @@ def main(mayapy: Path, pose_scene: Path, target_pose: Path,
             str(animated_output), "--namespace", ":", "--start", "1",
             "--end", "21", "--step", "5", "--output", str(reopened_clip_path))
             if animated_output.exists() else (1, None, "animation output missing"))
+        rebuilt_output = folder / "rebuilt.ma"
+        rebuilt = _run(mayapy, "rebuild", str(animation_scene),
+            "--namespace", ":", "--replacement", "ProductRebuildStage",
+            "--output", str(rebuilt_output))
+        rebuilt_clip_path = folder / "rebuilt.animation.json"
+        rebuilt_animation = (_run(mayapy, "animation-capture",
+            str(rebuilt_output), "--namespace", ":", "--start", "1",
+            "--end", "21", "--step", "5", "--output", str(rebuilt_clip_path))
+            if rebuilt_output.exists() else (1, None, "rebuild output missing"))
         presets = inspected[1]["presets"] if inspected[1] else []
         rows = {row["filename"]: row for row in presets}
         pose_error = (character_pose_error(load_character_pose(target_pose),
@@ -83,6 +92,12 @@ def main(mayapy: Path, pose_scene: Path, target_pose: Path,
             after = load_character_animation(reopened_clip_path)
             animation_errors = [character_pose_error(a, b) for (_, a), (_, b)
                                 in zip(before.samples, after.samples)]
+        rebuild_errors = None
+        if clip_path.exists() and rebuilt_clip_path.exists():
+            before = load_character_animation(clip_path)
+            after = load_character_animation(rebuilt_clip_path)
+            rebuild_errors = [character_pose_error(a, b) for (_, a), (_, b)
+                              in zip(before.samples, after.samples)]
         checks = {
             "preset_directory_reports_compatible_pose": (
                 inspected[0] == 0 and rows.get("target.pose.json", {}).get("applicable")
@@ -100,11 +115,17 @@ def main(mayapy: Path, pose_scene: Path, target_pose: Path,
                 and reopened_animation[0] == 0
                 and animation_errors is not None and len(animation_errors) == 5
                 and max(animation_errors) < 1e-4),
+            "rebuild_preserves_full_body_animation": (
+                rebuilt[0] == 0 and rebuilt[1] is not None
+                and rebuilt[1]["joints"] == 30
+                and rebuilt_animation[0] == 0 and rebuild_errors is not None
+                and len(rebuild_errors) == 5 and max(rebuild_errors) < 1e-4),
             "source_scenes_unchanged": hashes == (_hash(pose_scene),
                                                    _hash(animation_scene)),
         }
         payload = {**checks, "pose_error": pose_error,
             "max_animation_error": max(animation_errors) if animation_errors else None,
+            "max_rebuild_animation_error": max(rebuild_errors) if rebuild_errors else None,
             "status": "passed" if all(checks.values()) else "failed"}
         if not all(checks.values()):
             payload["diagnostics"] = {"presets": inspected[2][-500:],
@@ -113,7 +134,9 @@ def main(mayapy: Path, pose_scene: Path, target_pose: Path,
                 "pose_reopen": reopened_pose[2][-500:],
                 "animation_capture": captured_animation[2][-500:],
                 "animation_apply": applied_animation[2][-500:],
-                "animation_reopen": reopened_animation[2][-500:]}
+                "animation_reopen": reopened_animation[2][-500:],
+                "rebuild": rebuilt[2][-500:],
+                "rebuild_reopen": rebuilt_animation[2][-500:]}
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
                       encoding="utf-8")
