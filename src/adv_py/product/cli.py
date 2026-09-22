@@ -10,7 +10,8 @@ import sys
 from adv_py.application import (ApplyBodyCharacterAnimation,
     ApplyBodyCharacterPose, ApplyFacePerformance, BuildFaceBlendShapes, CaptureBodyCharacterAnimation,
     CaptureBodyCharacterPose, ExportFaceTargetAsset, GenerateFaceTarget,
-    FaceAssetLibrary, ImportFaceTargetAsset, ResolveBodyCharacter,
+    FaceAssetLibrary, ImportFaceTargetAsset, ExportSkinWeights, ImportSkinWeights,
+    ResolveBodyCharacter,
     InspectBodyCharacterPresets, load_character_animation, load_character_pose, save_character_animation,
     save_character_pose, RebuildBodyCharacter, load_face_target_asset,
     save_face_target_asset)
@@ -105,6 +106,17 @@ def parser() -> argparse.ArgumentParser:
     presets.add_argument("scene", type=Path)
     presets.add_argument("--namespace", required=True)
     presets.add_argument("--directory", type=Path, required=True)
+    skin_export = commands.add_parser("skin-export", help="导出网格的完整蒙皮权重文档")
+    skin_export.add_argument("scene", type=Path)
+    skin_export.add_argument("--namespace", required=True)
+    skin_export.add_argument("--skin", required=True)
+    skin_export.add_argument("--mesh", required=True)
+    skin_export.add_argument("--output", type=Path, required=True)
+    skin_import = commands.add_parser("skin-import", help="将完整蒙皮权重文档写入场景")
+    skin_import.add_argument("scene", type=Path)
+    skin_import.add_argument("--namespace", required=True)
+    skin_import.add_argument("--weights", type=Path, required=True)
+    skin_import.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
     rebuild.add_argument("scene", type=Path)
     rebuild.add_argument("--namespace", required=True)
@@ -207,6 +219,13 @@ def _run(args, gateway) -> dict:
     if args.command == "presets":
         entries = InspectBodyCharacterPresets(host).list(args.directory)
         return {"status": "ok", "presets": [asdict(entry) for entry in entries]}
+    if args.command == "skin-export":
+        exported = ExportSkinWeights(host).apply(args.skin, args.mesh, args.output)
+        _emit("skin_exported", vertices=exported.plan.document.vertex_count,
+              bytes=exported.bytes_written)
+        return {"status": "ok", "output": str(exported.plan.destination),
+                "vertices": exported.plan.document.vertex_count,
+                "bytes": exported.bytes_written}
     if args.command == "face-asset-export":
         output = args.output.resolve()
         if output.suffix.lower() != ".json" or output.exists():
@@ -241,6 +260,15 @@ def _run(args, gateway) -> dict:
         return {"status": "ok", "output": str(saved),
                 "frames": len(animation.samples)}
     gateway.preflight_output(args.output)
+    if args.command == "skin-import":
+        imported = ImportSkinWeights(host).apply(args.weights)
+        _emit("skin_imported", vertices=imported.plan.target_document.vertex_count,
+              changed_vertices=imported.edit_result.changed_vertex_count)
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output),
+                "vertices": imported.plan.target_document.vertex_count,
+                "changed_vertices": imported.edit_result.changed_vertex_count}
     if args.command == "face-asset-import":
         asset = load_face_target_asset(args.asset)
         imported = ImportFaceTargetAsset(host).apply(args.neutral, asset,

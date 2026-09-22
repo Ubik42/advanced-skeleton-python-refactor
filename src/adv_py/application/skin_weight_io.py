@@ -110,7 +110,11 @@ class ExportSkinWeights:
                 raise RuntimeError("权重导出临时文件复检失败")
             if plan.destination.exists():
                 raise FitSkeletonValidationError("权重导出目标在写入前已出现")
-            os.replace(temporary, plan.destination)
+            try:
+                os.link(temporary, plan.destination)
+            except FileExistsError as error:
+                raise FitSkeletonValidationError("权重导出目标在写入前已出现") from error
+            Path(temporary).unlink()
             temporary = None
         finally:
             if temporary is not None:
