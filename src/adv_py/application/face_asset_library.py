@@ -11,7 +11,7 @@ import tempfile
 from adv_py.core.character_registry import canonical, digest, exact, safe_json
 from adv_py.core.face_target_asset import (FaceTargetAsset,
     FACE_TARGET_ASSET_MAX_BYTES, face_target_asset_from_json,
-    face_target_asset_to_json)
+    face_target_asset_to_json, merge_face_target_assets)
 
 
 _RELEASE = re.compile(
@@ -30,6 +30,7 @@ class FaceAssetLibraryEntry:
     object_sha256: str | None
     valid: bool
     reason: str | None = None
+    parents: tuple[tuple[str, str, str], ...] = ()
 
 
 class FaceAssetLibrary:
@@ -70,14 +71,18 @@ class FaceAssetLibrary:
             temporary.unlink(missing_ok=True)
 
     def _reference(self, name: str, kind: str, release: str,
-                   object_sha256: str) -> bytes:
+                   object_sha256: str,
+                   parents: tuple[tuple[str, str, str], ...] = ()) -> bytes:
         payload = {"name": name, "kind": kind, "release": release,
                    "object_sha256": object_sha256}
-        return (canonical({"format": _REF_FORMAT, "version": 1,
+        if parents:
+            payload["parents"] = [list(row) for row in parents]
+        return (canonical({"format": _REF_FORMAT,
+            "version": 2 if parents else 1,
             "payload": payload, "digest": digest(payload)}) + "\n").encode("utf-8")
 
-    def _read(self, name: str, release: str) -> tuple[FaceAssetLibraryEntry,
-                                                       FaceTargetAsset]:
+    def _read(self, name: str, release: str, *, verify_lineage: bool = True
+              ) -> tuple[FaceAssetLibraryEntry, FaceTargetAsset]:
         path = self._paths(name, release)
         self._inside(path)
         if path.stat().st_size > 1_000_000:
@@ -87,10 +92,11 @@ class FaceAssetLibrary:
                          ("format", "version", "payload", "digest"))
         if (document["format"] != _REF_FORMAT
                 or type(document["version"]) is not int
-                or document["version"] != 1):
+                or document["version"] not in (1, 2)):
             raise ValueError("资产版本引用格式无效")
-        payload = exact(document["payload"],
-                        ("name", "kind", "release", "object_sha256"))
+        payload = exact(document["payload"], ("name", "kind", "release",
+            "object_sha256") if document["version"] == 1 else
+            ("name", "kind", "release", "object_sha256", "parents"))
         object_hash = payload["object_sha256"]
         if (payload["name"] != name or payload["release"] != release
                 or payload["kind"] not in ("expression", "viseme")
@@ -98,6 +104,27 @@ class FaceAssetLibrary:
                 or not _DIGEST.fullmatch(object_hash)
                 or document["digest"] != digest(payload)):
             raise ValueError("资产版本引用摘要、路径或语义无效")
+        parents = ()
+        if document["version"] == 2:
+            rows = payload["parents"]
+            if (not isinstance(rows, list) or len(rows) != 3
+                    or any(not isinstance(row, list) or len(row) != 3
+                           for row in rows)):
+                raise ValueError("面部合并来源结构无效")
+            parents = tuple(tuple(row) for row in rows)
+            if (any(not all(isinstance(value, str) for value in row)
+                    for row in parents)
+                    or tuple(row[0] for row in parents) != ("base", "left", "right")
+                    or len({row[1] for row in parents}) != 3
+                    or any(not _RELEASE.fullmatch(row[1]) or row[1] == release
+                           or not _DIGEST.fullmatch(row[2]) for row in parents)):
+                raise ValueError("面部合并来源版本或摘要无效")
+            if verify_lineage:
+                for _, parent_release, parent_hash in parents:
+                    parent, _ = self._read(name, parent_release,
+                                           verify_lineage=False)
+                    if parent.object_sha256 != parent_hash:
+                        raise ValueError("面部合并来源版本内容已变化")
         object_path = self.objects / (object_hash + ".json")
         self._inside(object_path)
         if object_path.stat().st_size > FACE_TARGET_ASSET_MAX_BYTES:
@@ -109,7 +136,7 @@ class FaceAssetLibrary:
         if asset.name != name or asset.kind.value != payload["kind"]:
             raise ValueError("资产对象与版本引用的通道语义不一致")
         return FaceAssetLibraryEntry(name, asset.kind.value, release,
-                                     object_hash, True), asset
+                                     object_hash, True, parents=parents), asset
 
     def list(self) -> tuple[FaceAssetLibraryEntry, ...]:
         if not self.refs.exists():
@@ -130,9 +157,25 @@ class FaceAssetLibrary:
                         None, False, str(error)))
         return tuple(entries)
 
-    def add(self, asset: FaceTargetAsset, release: str) -> FaceAssetLibraryEntry:
+    def add(self, asset: FaceTargetAsset, release: str, *,
+            parents: tuple[tuple[str, str, str], ...] = ()) -> FaceAssetLibraryEntry:
         text = face_target_asset_to_json(asset)
         path = self._paths(asset.name, release)
+        if parents:
+            if (len(parents) != 3 or any(not isinstance(row, tuple)
+                    or len(row) != 3
+                    or not all(isinstance(value, str) for value in row)
+                    for row in parents)):
+                raise ValueError("面部合并来源结构无效")
+            if (tuple(row[0] for row in parents) != ("base", "left", "right")
+                    or len({row[1] for row in parents}) != 3
+                    or any(row[1] == release or not _DIGEST.fullmatch(row[2])
+                           for row in parents)):
+                raise ValueError("面部合并来源版本或摘要无效")
+            for _, parent_release, parent_hash in parents:
+                parent, _ = self._read(asset.name, parent_release)
+                if parent.object_sha256 != parent_hash:
+                    raise ValueError("面部合并来源版本内容已变化")
         prior = self.list()
         if any(not entry.valid for entry in prior):
             raise ValueError("资产目录含损坏引用，先修复再添加版本")
@@ -141,7 +184,7 @@ class FaceAssetLibrary:
             raise ValueError("同名资产已有其他面部语义类别")
         if path.exists():
             entry, current = self._read(asset.name, release)
-            if current == asset:
+            if current == asset and entry.parents == parents:
                 return entry
             raise FileExistsError("同名版本已指向其他资产内容")
         data = (text + "\n").encode("utf-8")
@@ -152,7 +195,7 @@ class FaceAssetLibrary:
                     or object_path.read_bytes() != data):
                 raise ValueError("内容地址与现有资产对象不一致")
         reference = self._reference(asset.name, asset.kind.value,
-                                    release, object_hash)
+                                    release, object_hash, parents)
         if not self._publish(path, reference) and path.read_bytes() != reference:
             raise FileExistsError("同名版本已指向其他资产内容")
         entry, loaded = self._read(asset.name, release)
@@ -162,3 +205,15 @@ class FaceAssetLibrary:
 
     def resolve(self, name: str, release: str) -> FaceTargetAsset:
         return self._read(name, release)[1]
+
+    def merge(self, name: str, base_release: str, left_release: str,
+              right_release: str, release: str) -> FaceAssetLibraryEntry:
+        versions = (base_release, left_release, right_release)
+        if len(set(versions)) != 3 or release in versions:
+            raise ValueError("合并需要三个不同来源版本和一个新版本")
+        source = tuple(self._read(name, value) for value in versions)
+        asset = merge_face_target_assets(*(item[1] for item in source))
+        parents = tuple((role, value, item[0].object_sha256)
+            for role, value, item in zip(("base", "left", "right"),
+                                          versions, source))
+        return self.add(asset, release, parents=parents)

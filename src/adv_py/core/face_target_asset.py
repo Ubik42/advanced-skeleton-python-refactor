@@ -65,6 +65,52 @@ class FaceTargetAsset:
         return tuple(points)
 
 
+class FaceAssetMergeConflict(ValueError):
+    def __init__(self, vertices: tuple[int, ...]):
+        self.vertices = vertices
+        super().__init__("面部雕刻版本在以下顶点有冲突："
+                         + "、".join(str(index) for index in vertices[:16])
+                         + ("…" if len(vertices) > 16 else ""))
+
+
+def merge_face_target_assets(base: FaceTargetAsset,
+                             left: FaceTargetAsset,
+                             right: FaceTargetAsset) -> FaceTargetAsset:
+    """Merge independent sparse vertex edits against one exact neutral mesh."""
+    if not all(isinstance(item, FaceTargetAsset) for item in (base, left, right)):
+        raise ValueError("面部雕刻合并需要三个有效资产")
+    identity = lambda item: (item.name, item.kind, item.vertex_count,
+                             item.topology_digest, item.neutral_position_digest)
+    if identity(base) != identity(left) or identity(base) != identity(right):
+        raise ValueError("面部雕刻版本的通道、拓扑或中性网格基准不一致")
+    snapshots = [dict((row[0], row[1:]) for row in asset.deltas)
+                 for asset in (base, left, right)]
+    baseline, edited_left, edited_right = snapshots
+    merged = []
+    conflicts = []
+    for index in sorted(set(baseline) | set(edited_left) | set(edited_right)):
+        original = baseline.get(index)
+        a, b = edited_left.get(index), edited_right.get(index)
+        if a == b:
+            chosen = a
+        elif a == original:
+            chosen = b
+        elif b == original:
+            chosen = a
+        else:
+            conflicts.append(index)
+            continue
+        if chosen is not None:
+            merged.append((index, *chosen))
+    if conflicts:
+        raise FaceAssetMergeConflict(tuple(conflicts))
+    if not merged:
+        raise ValueError("合并结果没有非零雕刻位移，不能登记为空目标资产")
+    return FaceTargetAsset(base.name, base.kind, base.vertex_count,
+                           base.topology_digest,
+                           base.neutral_position_digest, tuple(merged))
+
+
 def face_target_asset_from_meshes(
     neutral: FaceMeshSnapshot, target: FaceTarget,
     sculpt: FaceMeshSnapshot,

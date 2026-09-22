@@ -688,15 +688,17 @@ from .face_shapes import FaceShapeKind, FaceTarget, FaceMeshSnapshot, validate_f
 from .face_performance import FacePerformance, face_performance_to_json, face_performance_from_json
 from .phoneme_visemes import PhonemeCue, phoneme_cues_to_performance
 from .face_landmarks import FaceLandmark, deform_face_landmarks
-from .face_target_asset import (FaceTargetAsset, face_target_asset_from_meshes,
-    face_target_asset_to_json, face_target_asset_from_json)
+from .face_target_asset import (FaceTargetAsset, FaceAssetMergeConflict,
+    face_target_asset_from_meshes, face_target_asset_to_json,
+    face_target_asset_from_json, merge_face_target_assets)
 
 __all__ = [
     "FaceShapeKind", "FaceTarget", "FaceMeshSnapshot", "validate_face_targets",
     "FacePerformance", "face_performance_to_json", "face_performance_from_json",
     "PhonemeCue", "phoneme_cues_to_performance",
     "FaceLandmark", "deform_face_landmarks",
-    "FaceTargetAsset", "face_target_asset_from_meshes",
+    "FaceTargetAsset", "FaceAssetMergeConflict", "merge_face_target_assets",
+    "face_target_asset_from_meshes",
     "face_target_asset_to_json", "face_target_asset_from_json",
     "BodyTorsoPlan",
     "BodyTorsoSnapshot",

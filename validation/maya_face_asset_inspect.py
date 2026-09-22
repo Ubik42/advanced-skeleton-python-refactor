@@ -11,20 +11,29 @@ sys.path.insert(0, str(ROOT / "src"))
 import maya.standalone
 
 
-def main(scene: Path, built: bool) -> int:
+def main(scene: Path, built: bool, merged_asset: Path | None = None) -> int:
     maya.standalone.initialize(name="python")
     try:
         from maya import cmds
         from adv_py.adapters import MayaFaceHost
+        from adv_py.application import load_face_target_asset
 
         cmds.file(str(scene.resolve()), open=True, force=True)
         host = MayaFaceHost(namespace="hero")
         registration = host.read_character_registration()
-        original = host.capture_face_mesh("|SmileTarget")
-        imported = host.capture_face_mesh("|ImportedSmile")
+        if merged_asset is None:
+            original = host.capture_face_mesh("|SmileTarget")
+            imported = host.capture_face_mesh("|ImportedSmile")
+            expected_points = original.points
+            target_path = "|ImportedSmile"
+        else:
+            imported = host.capture_face_mesh("|MergedSmile")
+            expected_points = load_face_target_asset(merged_asset).points_for(
+                host.capture_face_mesh("|FaceNeutral"))
+            target_path = "|MergedSmile"
         difference = max(abs(a - b) for first, second in
-            zip(original.points, imported.points) for a, b in zip(first, second))
-        provenance = json.loads(host.read_face_target_provenance("|ImportedSmile"))
+            zip(expected_points, imported.points) for a, b in zip(first, second))
+        provenance = json.loads(host.read_face_target_provenance(target_path))
         deformation = 0.
         channels = 0
         if built:
@@ -48,4 +57,5 @@ def main(scene: Path, built: bool) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(Path(sys.argv[1]), sys.argv[2] == "built"))
+    raise SystemExit(main(Path(sys.argv[1]), sys.argv[2] == "built",
+        Path(sys.argv[3]) if sys.argv[2] == "merged" else None))

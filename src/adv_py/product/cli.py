@@ -86,6 +86,14 @@ def parser() -> argparse.ArgumentParser:
     library_export.add_argument("--name", required=True)
     library_export.add_argument("--release", required=True)
     library_export.add_argument("--output", type=Path, required=True)
+    library_merge = commands.add_parser("face-library-merge",
+        help="以共同基线合并两个雕刻版本并登记新版本")
+    library_merge.add_argument("--library", type=Path, required=True)
+    library_merge.add_argument("--name", required=True)
+    library_merge.add_argument("--base", required=True)
+    library_merge.add_argument("--left", required=True)
+    library_merge.add_argument("--right", required=True)
+    library_merge.add_argument("--release", required=True)
     pose_capture = commands.add_parser("pose-capture", help="捕获已登记角色的静态姿态文档")
     pose_capture.add_argument("scene", type=Path)
     pose_capture.add_argument("--namespace", required=True)
@@ -206,6 +214,11 @@ def _run_library(args) -> dict:
         entry = library.add(load_face_target_asset(args.asset), args.release)
         _emit("asset_version_registered", name=entry.name,
               release=entry.release)
+        return {"status": "ok", "asset": asdict(entry)}
+    if args.command == "face-library-merge":
+        entry = library.merge(args.name, args.base, args.left,
+                              args.right, args.release)
+        _emit("asset_versions_merged", name=entry.name, release=entry.release)
         return {"status": "ok", "asset": asdict(entry)}
     asset = library.resolve(args.name, args.release)
     saved = save_face_target_asset(asset, args.output)
