@@ -11,6 +11,11 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     BakeBodyExportSkeleton, BuildBodyExportSkeleton, BuildBodyRootMotion,
     BuildFaceBlendShapes, BuildRegisteredBodyCharacter,
     CaptureBodyCharacterAnimation, CaptureBodyCharacterPose,
+    CaptureAnimatedBodyCharacterPose, KeyBodyCharacterPose,
+    EnableBodyCharacterLimbAnimation, EnableBodyCharacterStretchMatching,
+    EnableBodyCharacterSplineAnimation, EnableBodyCharacterSpaceAnimation,
+    BakeBodyCharacterLimbMode, BakeBodyCharacterSpineMode,
+    SwitchBodyCharacterSpace,
     CreateAndImportFitSkeleton, ExportFitSkeleton, ExportSkinWeights,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget, ImportFaceTargetAsset,
     FaceAssetLibrary, ImportSkinWeights, InspectBodyCharacterPresets,
@@ -221,6 +226,46 @@ class MayaPanelController:
         animation = load_character_animation(source)
         ApplyBodyCharacterAnimation(self._host(namespace)).apply(animation)
         return len(animation.samples)
+
+    def animation_key_current(self, namespace: str) -> int:
+        host = self._host(namespace)
+        pose = CaptureAnimatedBodyCharacterPose(host).execute()
+        keyed = KeyBodyCharacterPose(host).apply(pose)
+        return len(keyed.channels)
+
+    def animation_enable_limb(self, namespace: str) -> int:
+        return len(EnableBodyCharacterLimbAnimation(
+            self._host(namespace)).apply().channels)
+
+    def animation_enable_stretch(self, namespace: str) -> int:
+        return len(EnableBodyCharacterStretchMatching(
+            self._host(namespace)).apply().channels)
+
+    def animation_enable_spline(self, namespace: str) -> int:
+        return len(EnableBodyCharacterSplineAnimation(
+            self._host(namespace)).apply().channels)
+
+    def animation_enable_spaces(self, namespace: str) -> int:
+        return len(EnableBodyCharacterSpaceAnimation(
+            self._host(namespace)).apply().channels)
+
+    def animation_bake_limb(self, namespace: str, start: int, end: int,
+                            limb: str, side: str, mode: str, step: int = 1) -> int:
+        animation = BakeBodyCharacterLimbMode(self._host(namespace)).execute(
+            start, end, limb, side, mode, step)
+        return len(animation.samples)
+
+    def animation_bake_spine(self, namespace: str, start: int, end: int,
+                             mode: str, step: int = 1) -> int:
+        animation = BakeBodyCharacterSpineMode(self._host(namespace)).execute(
+            start, end, mode, step)
+        return len(animation.samples)
+
+    def animation_switch_space(self, namespace: str, key: str,
+                               mode: str, frame: int) -> str:
+        pose = SwitchBodyCharacterSpace(self._host(namespace)).execute(
+            key, mode, frame)
+        return dict(pose.spaces)[key]
 
     def face_generate(self, namespace: str, neutral: str, name: str,
                       kind: str, target_mesh: str, landmarks: Path) -> int:

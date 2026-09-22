@@ -54,6 +54,40 @@ class FakeController:
                            target_mesh, max_distance, options))
         return PanelSkinSurfaceResult(9, 7, 0., 0.)
 
+    def animation_key_current(self, namespace):
+        self.calls.append(("animation_key_current", namespace))
+        return 157
+
+    def animation_enable_limb(self, namespace):
+        self.calls.append(("animation_enable_limb", namespace))
+        return 189
+
+    def animation_enable_stretch(self, namespace):
+        self.calls.append(("animation_enable_stretch", namespace))
+        return 193
+
+    def animation_enable_spline(self, namespace):
+        self.calls.append(("animation_enable_spline", namespace))
+        return 193
+
+    def animation_enable_spaces(self, namespace):
+        self.calls.append(("animation_enable_spaces", namespace))
+        return 300
+
+    def animation_bake_limb(self, namespace, start, end, limb, side, mode, step):
+        self.calls.append(("animation_bake_limb", namespace, start, end,
+                           limb, side, mode, step))
+        return 3
+
+    def animation_bake_spine(self, namespace, start, end, mode, step):
+        self.calls.append(("animation_bake_spine", namespace, start, end,
+                           mode, step))
+        return 3
+
+    def animation_switch_space(self, namespace, key, mode, frame):
+        self.calls.append(("animation_switch_space", namespace, key, mode, frame))
+        return mode
+
 
 def main(report: Path) -> int:
     report.parent.mkdir(parents=True, exist_ok=True)
@@ -70,6 +104,8 @@ def main(report: Path) -> int:
     skin_transfer_image = report.with_name("maya-panel-skin-transfer.png")
     skin_narrow_image = report.with_name("maya-panel-skin-transfer-narrow.png")
     animation_image = report.with_name("maya-panel-animation.png")
+    animation_edit_image = report.with_name("maya-panel-animation-edit.png")
+    animation_narrow_image = report.with_name("maya-panel-animation-edit-narrow.png")
     face_image = report.with_name("maya-panel-face.png")
     face_library_image = report.with_name("maya-panel-face-library.png")
     rebuild_image = report.with_name("maya-panel-rebuild.png")
@@ -114,6 +150,29 @@ def main(report: Path) -> int:
     app.processEvents()
     panel.render(pixmap)
     animation_saved = pixmap.save(str(animation_image))
+    panel.roles.setCurrentRow(1)
+    panel.start_frame.setValue(1)
+    panel.end_frame.setValue(3)
+    panel.frame_step.setValue(1)
+    buttons = {button.text(): button for button in
+               panel.findChildren(QtWidgets.QPushButton)}
+    for label in ("当前帧完整写键", "启用四肢动画", "启用拉伸匹配",
+                  "启用可变脊柱", "启用空间动画", "转换四肢模式", "转换脊柱模式",
+                  "在指定帧切换空间"):
+        buttons[label].click()
+    animation_page = panel.tabs.currentWidget()
+    animation_page.verticalScrollBar().setValue(animation_page.verticalScrollBar().maximum())
+    app.processEvents()
+    panel.render(pixmap)
+    animation_edit_saved = pixmap.save(str(animation_edit_image))
+    panel.resize(790, 590)
+    app.processEvents()
+    narrow_pixmap = QtGui.QPixmap(panel.size())
+    panel.render(narrow_pixmap)
+    animation_narrow_saved = narrow_pixmap.save(str(animation_narrow_image))
+    animation_narrow_horizontal_overflow = animation_page.horizontalScrollBar().maximum()
+    panel.resize(950, 710)
+    app.processEvents()
     panel.tabs.setCurrentIndex(3)
     app.processEvents()
     panel.render(pixmap)
@@ -164,6 +223,17 @@ def main(report: Path) -> int:
             and surface_dispatch[1:5] == ("hero", "TargetSkin", "|TargetMesh", .01)
             and surface_dispatch[5]["source_asset"] == Path("C:/temp/source-asset.json")
             and surface_dispatch[5]["allow_target_extra_influences"]),
+        "animation_edit_actions_dispatch": all(call in controller.calls for call in (
+            ("animation_key_current", "hero"),
+            ("animation_enable_limb", "hero"),
+            ("animation_enable_stretch", "hero"),
+            ("animation_enable_spline", "hero"),
+            ("animation_enable_spaces", "hero"),
+            ("animation_bake_limb", "hero", 1, 3, "arm", "R", "ik", 1),
+            ("animation_bake_spine", "hero", 1, 3, "ik", 1),
+            ("animation_switch_space", "hero", "head", "body", 1))),
+        "animation_narrow_no_horizontal_overflow":
+            animation_narrow_horizontal_overflow == 0,
         "face_build_dispatches_application_action": face_dispatched,
         "role_selection_dispatches_application_action":
             ("body_build", "hero", "FitSkeleton", None, False)
@@ -176,11 +246,12 @@ def main(report: Path) -> int:
         "success_feedback_visible": "角色已原位重建" in panel.status.toPlainText(),
         "offscreen_views_rendered": fit_saved and rebuild_saved
             and skin_saved and skin_transfer_saved and skin_narrow_saved
-            and animation_saved
+            and animation_saved and animation_edit_saved and animation_narrow_saved
             and face_saved and face_library_saved and mocap_saved and publish_saved,
     }
     payload = {**checks, "status": "passed" if all(checks.values()) else "failed",
-               "image_size": [panel.width(), panel.height()]}
+               "image_size": [panel.width(), panel.height()],
+               "animation_narrow_horizontal_overflow": animation_narrow_horizontal_overflow}
     report.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
                       encoding="utf-8")
     panel.close()

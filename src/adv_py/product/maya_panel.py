@@ -84,7 +84,7 @@ def create_panel(controller: MayaPanelController | None = None):
 
             rail = QtWidgets.QWidget(objectName="RoleRail")
             rail.setMinimumWidth(190)
-            rail.setMaximumWidth(230)
+            rail.setMaximumWidth(190)
             rail_layout = QtWidgets.QVBoxLayout(rail)
             rail_layout.setContentsMargins(18, 24, 14, 18)
             title = QtWidgets.QLabel("角色工作台", objectName="Title")
@@ -104,7 +104,7 @@ def create_panel(controller: MayaPanelController | None = None):
 
             main = QtWidgets.QWidget()
             layout = QtWidgets.QVBoxLayout(main)
-            layout.setContentsMargins(24, 20, 24, 18)
+            layout.setContentsMargins(20, 20, 20, 18)
             layout.setSpacing(12)
             self.current = QtWidgets.QLabel(objectName="CurrentRole")
             layout.addWidget(self.current)
@@ -330,6 +330,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.frame_step = QtWidgets.QSpinBox()
             for field in (self.start_frame, self.end_frame, self.frame_step):
                 field.setRange(-100000, 100000)
+                field.setMaximumWidth(82)
             self.start_frame.setValue(1)
             self.end_frame.setValue(24)
             self.frame_step.setRange(1, 100000)
@@ -346,11 +347,64 @@ def create_panel(controller: MayaPanelController | None = None):
             row.addWidget(self._button("捕获动画", self._capture_animation))
             row.addWidget(self._button("应用动画", self._apply_animation))
             form.addRow(row)
+            form.addRow(self._button("当前帧完整写键", self._key_current_pose))
             stack.addWidget(group)
+
+            group, form = self._group("03 · 动画通道", [])
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("启用四肢动画", self._enable_limb_animation))
+            row.addWidget(self._button("启用拉伸匹配", self._enable_stretch_matching))
+            form.addRow(row)
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("启用可变脊柱", self._enable_spline_animation))
+            row.addWidget(self._button("启用空间动画", self._enable_space_animation))
+            form.addRow(row)
+            stack.addWidget(group)
+
+            self.limb_part = QtWidgets.QComboBox()
+            self.limb_part.addItem("手臂", "arm")
+            self.limb_part.addItem("腿部", "leg")
+            self.limb_side = QtWidgets.QComboBox()
+            self.limb_side.addItem("右侧", "R")
+            self.limb_side.addItem("左侧", "L")
+            self.limb_mode = QtWidgets.QComboBox()
+            self.limb_mode.addItem("转为 IK", "ik")
+            self.limb_mode.addItem("转为 FK", "fk")
+            self.spine_mode = QtWidgets.QComboBox()
+            self.spine_mode.addItem("转为 IK", "ik")
+            self.spine_mode.addItem("转为 FK", "fk")
+            group, form = self._group("04 · 区间模式转换", [
+                ("部位", self.limb_part), ("侧别", self.limb_side),
+                ("四肢目标模式", self.limb_mode),
+                ("脊柱目标模式", self.spine_mode)])
+            form.addRow(QtWidgets.QLabel("使用上方的起始帧、结束帧和采样步长。"))
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("转换四肢模式", self._bake_limb_mode))
+            row.addWidget(self._button("转换脊柱模式", self._bake_spine_mode))
+            form.addRow(row)
+            stack.addWidget(group)
+
+            self.space_key = QtWidgets.QComboBox()
+            for label, key in (("头部", "head"), ("右手", "hand_R"),
+                               ("左手", "hand_L"), ("右脚", "foot_R"),
+                               ("左脚", "foot_L")):
+                self.space_key.addItem(label, key)
+            self.space_mode = QtWidgets.QComboBox()
+            self.space_mode.addItem("跟随身体", "body")
+            self.space_mode.addItem("跟随全局", "global")
+            self.space_frame = QtWidgets.QSpinBox()
+            self.space_frame.setRange(-100000, 100000)
+            self.space_frame.setValue(1)
+            group, form = self._group("05 · 控制空间事件", [
+                ("控制位置", self.space_key), ("目标空间", self.space_mode),
+                ("切换帧", self.space_frame)])
+            form.addRow(self._button("在指定帧切换空间", self._switch_animation_space))
+            stack.addWidget(group)
+
             self.preset_directory = QtWidgets.QLineEdit()
             self.preset_directory.setPlaceholderText("含姿态或动画 JSON 的文件夹")
             self.preset_names = QtWidgets.QComboBox()
-            group, form = self._group("03 · 角色预设", [
+            group, form = self._group("06 · 角色预设", [
                 ("预设目录", self.preset_directory),
                 ("可用预设", self.preset_names)])
             row = QtWidgets.QHBoxLayout()
@@ -650,6 +704,45 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._path(self.animation_export_document), self.start_frame.value(),
                 self.end_frame.value(), self.frame_step.value())
             return f"已保存 {frames} 帧全身动画"
+
+        def _key_current_pose(self):
+            count = self.controller.animation_key_current(self._namespace())
+            return f"当前帧已写入 {count} 个控制通道的关键帧"
+
+        def _enable_limb_animation(self):
+            count = self.controller.animation_enable_limb(self._namespace())
+            return f"四肢动画已启用：{count} 个控制通道"
+
+        def _enable_stretch_matching(self):
+            count = self.controller.animation_enable_stretch(self._namespace())
+            return f"拉伸匹配已启用：{count} 个控制通道"
+
+        def _enable_spline_animation(self):
+            count = self.controller.animation_enable_spline(self._namespace())
+            return f"可变脊柱动画已启用：{count} 个控制通道"
+
+        def _enable_space_animation(self):
+            count = self.controller.animation_enable_spaces(self._namespace())
+            return f"控制空间动画已启用：{count} 个控制通道"
+
+        def _bake_limb_mode(self):
+            count = self.controller.animation_bake_limb(self._namespace(),
+                self.start_frame.value(), self.end_frame.value(),
+                self.limb_part.currentData(), self.limb_side.currentData(),
+                self.limb_mode.currentData(), self.frame_step.value())
+            return f"四肢模式已转换：{count} 个采样帧"
+
+        def _bake_spine_mode(self):
+            count = self.controller.animation_bake_spine(self._namespace(),
+                self.start_frame.value(), self.end_frame.value(),
+                self.spine_mode.currentData(), self.frame_step.value())
+            return f"脊柱模式已转换：{count} 个采样帧"
+
+        def _switch_animation_space(self):
+            mode = self.controller.animation_switch_space(self._namespace(),
+                self.space_key.currentData(), self.space_mode.currentData(),
+                self.space_frame.value())
+            return f"控制空间已在第 {self.space_frame.value()} 帧切换为{('身体' if mode == 'body' else '全局')}"
 
         def _face_generate(self):
             vertices = self.controller.face_generate(self._namespace(),
