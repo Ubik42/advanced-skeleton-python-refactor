@@ -28,6 +28,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     MigrateRegisteredSpineCharacter,
     MigrateRegisteredSpineOnOriginalSkin,
     HandoffRegisteredSpineSkinCluster,
+    PromoteOriginalSpineCharacter,
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
     load_mocap_mapping_preset,
     ResolveBodyCharacter, TransferFaceTargetAsset,
@@ -352,6 +353,14 @@ def parser() -> argparse.ArgumentParser:
     original_migrate.add_argument("--step", type=int, default=1)
     original_migrate.add_argument("--reference", type=float)
     original_migrate.add_argument("--output", type=Path, required=True)
+    original_promote = commands.add_parser("character-spine-promote",
+        help="清理已交接的旧 Rig 并让目标 Rig 接管原角色命名空间")
+    original_promote.add_argument("scene", type=Path)
+    original_promote.add_argument("--namespace", required=True)
+    original_promote.add_argument("--replacement-namespace", required=True)
+    original_promote.add_argument("--skin", required=True)
+    original_promote.add_argument("--mesh", required=True)
+    original_promote.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
     rebuild.add_argument("scene", type=Path)
     rebuild.add_argument("--namespace", required=True)
@@ -612,6 +621,25 @@ def _run(args, gateway) -> dict:
                 "frames": result.frames, "fk_groups": result.fk_groups,
                 "vertices": result.vertices,
                 "target_influences": result.target_influences}
+    if args.command == "character-spine-promote":
+        from adv_py.adapters import MayaOriginalSpinePromotionHost
+
+        gateway.preflight_output(args.output)
+        source_namespace = "" if args.namespace == ":" else args.namespace
+        target_namespace = ("" if args.replacement_namespace == ":"
+                            else args.replacement_namespace)
+        result = PromoteOriginalSpineCharacter(
+            MayaOriginalSpinePromotionHost()).apply(source_namespace,
+                target_namespace, args.skin, args.mesh)
+        _emit("character_spine_promoted", removed=result.old_nodes_removed,
+              retained=result.retained_nodes,
+              replacement=result.replacement_nodes)
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output),
+                "removed": result.old_nodes_removed,
+                "retained": result.retained_nodes,
+                "replacement": result.replacement_nodes}
     if args.command == "face-asset-export":
         output = args.output.resolve()
         if output.suffix.lower() != ".json" or output.exists():
