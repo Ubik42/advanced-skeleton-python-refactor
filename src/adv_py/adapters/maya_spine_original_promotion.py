@@ -39,6 +39,15 @@ def _namespace_nodes(cmds, namespace):
             for name in names}
 
 
+def _node_connections(cmds, node):
+    """Capture both ends of each DG edge without depending on namespace names."""
+    pairs = cmds.listConnections(node, source=True, destination=True,
+                                 plugs=True, connections=True) or []
+    return tuple(sorted((local.split('.', 1)[1], _plug_uuid(cmds, peer),
+                         peer.split('.', 1)[1])
+                        for local, peer in zip(pairs[::2], pairs[1::2])))
+
+
 def _rig_role(cmds, node, registered, fit_root):
     if node in registered or node == fit_root or node.startswith(fit_root + '|'):
         return True
@@ -68,7 +77,7 @@ class OriginalSpineExtensionMove:
     parent_world_samples: tuple[tuple[float, tuple[float, ...]], ...] = ()
     curves: tuple[object, ...] = ()
     curve_outputs: tuple[tuple[str, str, str], ...] = ()
-    internal_connections: tuple[tuple[str, str, str, str], ...] = ()
+    preserved_connections: tuple[tuple[str, str, str, str], ...] = ()
     requires_compensation: bool = False
 
 
@@ -140,8 +149,44 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
             used.update(uuids)
         return tuple(sorted(used))
 
+    def plan_original_spine_retained_nodes(self, source_namespace, names):
+        from maya import cmds
+
+        source = MayaBodyBuildHost(namespace=source_namespace)
+        registration = source.read_character_registration()
+        registered = {source.scene_address(row.path)
+                      for row in registration.nodes}
+        fit_root = source.scene_address(registration.container)
+        owner = CharacterIdentity(source_namespace)
+        planned = []
+        used = set()
+        for name in tuple(names):
+            matches = cmds.ls(name, long=True) or []
+            if (matches != [name] or not owner.owns(name)
+                    or 'dagNode' in (cmds.nodeType(name, inherited=True) or [])
+                    or _rig_role(cmds, name, registered, fit_root)
+                    or cmds.referenceQuery(name, isNodeReferenced=True)
+                    or any(cmds.lockNode(name, query=True, lock=True) or [])):
+                raise CharacterRegistryError('保留节点须是原角色独立、可写的 DG 节点：'
+                                             + str(name))
+            uuid = _uuid(cmds, name)
+            if uuid in used:
+                raise CharacterRegistryError('保留 DG 节点重复：' + name)
+            used.add(uuid)
+            planned.append((uuid, _node_connections(cmds, name)))
+        return tuple(planned)
+
+    def verify_original_spine_retained_nodes(self, planned):
+        from maya import cmds
+
+        for uuid, connections in planned:
+            node = _name(cmds, uuid)
+            if _node_connections(cmds, node) != connections:
+                raise RuntimeError('接管改变显式保留 DG 节点的连接：' + node)
+
     def plan_original_spine_extensions(self, source_namespace,
-                                       target_namespace, extensions, frames=()):
+                                       target_namespace, extensions, frames=(),
+                                       retained_node_uuids=()):
         from maya import cmds
         source = MayaBodyBuildHost(namespace=source_namespace)
         target = MayaBodyBuildHost(namespace=target_namespace)
@@ -210,7 +255,7 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
             snapshots = []
             curves = {}
             curve_outputs = {}
-            internal_connections = set()
+            preserved_connections = set()
             for node in members:
                 if (not CharacterIdentity(source_namespace).owns(node)
                         or cmds.referenceQuery(node, isNodeReferenced=True)
@@ -221,8 +266,8 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
                 for local, incoming in zip(inputs[::2], inputs[1::2]):
                     curve = incoming.rsplit('.',1)[0]
                     incoming_uuid = _plug_uuid(cmds,incoming)
-                    if incoming_uuid in member_set:
-                        internal_connections.add((incoming_uuid,
+                    if incoming_uuid in member_set or incoming_uuid in retained_node_uuids:
+                        preserved_connections.add((incoming_uuid,
                             incoming.split('.',1)[1], _plug_uuid(cmds,local),
                             local.split('.',1)[1]))
                         continue
@@ -262,7 +307,7 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
                 snapshots[0],member_uuids,tuple(snapshots),
                 tuple(world_samples),tuple(parent_samples),
                 tuple(curves.values()),tuple(curve_outputs.values()),
-                tuple(sorted(internal_connections)),requires_compensation))
+                tuple(sorted(preserved_connections)),requires_compensation))
         # Explicit attachments cannot retain hidden connections to the old Rig.
         old_uuids = {_uuid(cmds, source.scene_address(row.path))
                      for row in source_reg.nodes}
@@ -387,7 +432,7 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
                         or outputs[0].rsplit('.',1)[-1] != attribute):
                     raise RuntimeError('附件原有动画曲线连接被修改：'
                                        + _name(cmds,curve_uuid))
-            for source_uuid,source_attr,dest_uuid,dest_attr in move.internal_connections:
+            for source_uuid,source_attr,dest_uuid,dest_attr in move.preserved_connections:
                 destination = _name(cmds,dest_uuid)+'.'+dest_attr
                 actual = cmds.connectionInfo(destination,
                                              sourceFromDestination=True)
