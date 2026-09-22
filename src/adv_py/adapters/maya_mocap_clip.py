@@ -77,6 +77,9 @@ class MayaMocapClipHost:
                         c.keyTangent(curve,edit=True,weightedTangents=channel.weighted)
                         for index,(time,_) in enumerate(channel.keys):
                             scope={'time':(time,time)}
+                            c.keyTangent(curve,edit=True,**scope,lock=False)
+                            if channel.weighted:
+                                c.keyTangent(curve,edit=True,**scope,weightLock=False)
                             c.keyTangent(curve,edit=True,**scope,
                                 inTangentType=channel.in_tangents[index],outTangentType=channel.out_tangents[index])
                             if channel.in_tangents[index]=='fixed':
@@ -85,6 +88,12 @@ class MayaMocapClipHost:
                             if channel.out_tangents[index]=='fixed':
                                 c.keyTangent(curve,edit=True,**scope,outAngle=channel.out_angles[index],
                                              **({'outWeight':channel.out_weights[index]} if channel.weighted else {}))
+                            if channel.tangent_locks:
+                                c.keyTangent(curve,edit=True,**scope,lock=channel.tangent_locks[index])
+                            if channel.weighted and channel.weight_locks:
+                                c.keyTangent(curve,edit=True,**scope,weightLock=channel.weight_locks[index])
+                        for time in channel.breakdown_times:
+                            c.keyframe(curve,edit=True,time=(time,time),breakdown=True)
                         c.setAttr(curve+'.preInfinity',channel.pre_infinity)
                         c.setAttr(curve+'.postInfinity',channel.post_infinity)
             root=paths[clip.joints[0].name]

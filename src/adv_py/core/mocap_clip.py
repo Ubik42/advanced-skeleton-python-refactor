@@ -8,7 +8,7 @@ from .mocap_source import MOCAP_TRANSFORM_ATTRIBUTES,MocapSourceValidationError
 
 
 MOCAP_CLIP_FORMAT='adv_py_mocap_clip'
-MOCAP_CLIP_SCHEMA=1
+MOCAP_CLIP_SCHEMA=2
 MOCAP_CLIP_MAX_SAMPLES=2000
 
 
@@ -38,6 +38,9 @@ class MocapClipChannel:
     weighted: bool = False
     pre_infinity: int = 0
     post_infinity: int = 0
+    tangent_locks: tuple[bool,...] = ()
+    weight_locks: tuple[bool,...] = ()
+    breakdown_times: tuple[float,...] = ()
 
 
 @dataclass(frozen=True,slots=True)
@@ -92,14 +95,21 @@ def validate_mocap_clip(clip):
             if any(left>=right for left,right in zip(times,times[1:])):
                 raise MocapSourceValidationError('动捕片段关键帧时间不递增')
             tangents=(channel.in_tangents,channel.out_tangents,channel.in_angles,
-                      channel.out_angles,channel.in_weights,channel.out_weights)
+                      channel.out_angles,channel.in_weights,channel.out_weights,
+                      channel.tangent_locks,channel.weight_locks)
             if any(tangents) and any(len(values)!=len(channel.keys) for values in tangents):
                 raise MocapSourceValidationError('动捕片段曲线切线数量不完整')
             if (not isinstance(channel.weighted,bool)
                     or type(channel.pre_infinity) is not int or type(channel.post_infinity) is not int
                     or any(not isinstance(value,str) or not value for values in tangents[:2] for value in values)
                     or any(not isinstance(value,(int,float)) or isinstance(value,bool) or not isfinite(value)
-                           for values in tangents[2:] for value in values)):
+                           for values in tangents[2:6] for value in values)
+                    or any(type(value) is not bool for values in tangents[6:] for value in values)
+                    or (not channel.weighted and any(channel.weight_locks))
+                    or any(not isinstance(time,(int,float)) or isinstance(time,bool) or not isfinite(time)
+                           for time in channel.breakdown_times)
+                    or any(time not in times for time in channel.breakdown_times)
+                    or len(set(channel.breakdown_times))!=len(channel.breakdown_times)):
                 raise MocapSourceValidationError('动捕片段曲线切线或循环设置无效')
     if not animated:raise MocapSourceValidationError('动捕片段没有动画通道')
     if not 1<=len(clip.samples)<=MOCAP_CLIP_MAX_SAMPLES:
@@ -130,7 +140,7 @@ def decode_mocap_clip(text):
     except (TypeError,ValueError) as exc:raise MocapSourceValidationError('动捕片段 JSON 无效') from exc
     if not isinstance(raw,dict) or set(raw)!={'format','schema_version','up_axis','linear_unit','time_unit','joints','samples','content_sha256'}:
         raise MocapSourceValidationError('动捕片段字段集合无效')
-    if raw['format']!=MOCAP_CLIP_FORMAT or type(raw['schema_version']) is not int or raw['schema_version']!=MOCAP_CLIP_SCHEMA:
+    if raw['format']!=MOCAP_CLIP_FORMAT or type(raw['schema_version']) is not int or raw['schema_version'] not in (1,MOCAP_CLIP_SCHEMA):
         raise MocapSourceValidationError('动捕片段格式或版本无效')
     if not isinstance(raw['joints'],list):raise MocapSourceValidationError('动捕片段关节必须是数组')
     joints=[]
@@ -140,19 +150,24 @@ def decode_mocap_clip(text):
         if not isinstance(row['channels'],list):raise MocapSourceValidationError('动捕片段通道必须是数组')
         channels=[]
         for channel in row['channels']:
-            if not isinstance(channel,dict) or set(channel)!={
-                    'attribute','keys','in_tangents','out_tangents','in_angles','out_angles',
-                    'in_weights','out_weights','weighted','pre_infinity','post_infinity'} or not isinstance(channel['keys'],list):
+            fields={'attribute','keys','in_tangents','out_tangents','in_angles','out_angles',
+                    'in_weights','out_weights','weighted','pre_infinity','post_infinity'}
+            if raw['schema_version']==2:
+                fields.update(('tangent_locks','weight_locks','breakdown_times'))
+            if not isinstance(channel,dict) or set(channel)!=fields or not isinstance(channel['keys'],list):
                 raise MocapSourceValidationError('动捕片段通道字段无效')
             try:
                 if any(not isinstance(key,list) or len(key)!=2 for key in channel['keys']):
                     raise ValueError('key shape')
                 tangent_fields=('in_tangents','out_tangents','in_angles','out_angles','in_weights','out_weights')
+                if raw['schema_version']==2:
+                    tangent_fields+=('tangent_locks','weight_locks','breakdown_times')
                 if any(not isinstance(channel[field],list) for field in tangent_fields):
                     raise ValueError('tangent shape')
                 channels.append(MocapClipChannel(channel['attribute'],tuple(tuple(key) for key in channel['keys']),
-                             *(tuple(channel[field]) for field in tangent_fields),channel['weighted'],
-                             channel['pre_infinity'],channel['post_infinity']))
+                             *(tuple(channel[field]) for field in tangent_fields[:6]),channel['weighted'],
+                             channel['pre_infinity'],channel['post_infinity'],
+                             *(tuple(channel[field]) for field in tangent_fields[6:])))
             except (TypeError,ValueError) as exc:
                 raise MocapSourceValidationError('动捕片段关键帧或曲线切线结构无效') from exc
         try:
@@ -169,6 +184,8 @@ def decode_mocap_clip(text):
     except (TypeError,ValueError) as exc:
         raise MocapSourceValidationError('动捕片段姿态采样结构无效') from exc
     clip=validate_mocap_clip(MocapClip(raw['up_axis'],raw['linear_unit'],raw['time_unit'],tuple(joints),samples))
-    if json.loads(encode_mocap_clip(clip))['content_sha256']!=raw['content_sha256']:
+    payload={key:value for key,value in raw.items() if key!='content_sha256'}
+    computed=sha256(json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf8')).hexdigest()
+    if computed!=raw['content_sha256']:
         raise MocapSourceValidationError('动捕片段内容摘要不匹配')
     return clip

@@ -36,7 +36,10 @@ def read_fbx(source,units):
         channels[row.joint_path].append(MocapClipChannel(row.attribute,keys,
             tangent('inTangentType'),tangent('outTangentType'),tangent('inAngle'),tangent('outAngle'),
             tangent('inWeight'),tangent('outWeight'),bool(c.getAttr(curve+'.weightedTangents')),
-            int(c.getAttr(curve+'.preInfinity')),int(c.getAttr(curve+'.postInfinity'))))
+            int(c.getAttr(curve+'.preInfinity')),int(c.getAttr(curve+'.postInfinity')),
+            tuple(bool(value) for value in tangent('lock')),
+            tuple(bool(value) for value in tangent('weightLock')),
+            tuple(float(value) for value in (c.keyframe(curve,query=True,breakdown=True) or []))))
     result=[]
     for row in snapshot.joints:
         path=row.path

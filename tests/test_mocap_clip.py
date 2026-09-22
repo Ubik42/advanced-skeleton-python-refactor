@@ -1,4 +1,5 @@
 import json
+from hashlib import sha256
 from dataclasses import replace
 import unittest
 
@@ -48,7 +49,9 @@ class MocapClipTests(unittest.TestCase):
         channel=replace(clip.joints[0].channels[0],
             in_tangents=('fixed','linear'),out_tangents=('linear','fixed'),
             in_angles=(0.,1.),out_angles=(1.,0.),
-            in_weights=(1.,1.),out_weights=(1.,1.),weighted=True,post_infinity=3)
+            in_weights=(1.,1.),out_weights=(1.,1.),weighted=True,post_infinity=3,
+            tangent_locks=(True,False),weight_locks=(False,True),
+            breakdown_times=(5.,))
         clip=replace(clip,joints=(replace(clip.joints[0],channels=(channel,)),))
         self.assertEqual(decode_mocap_clip(encode_mocap_clip(clip)),clip)
         with self.assertRaisesRegex(MocapSourceValidationError,'切线数量'):
@@ -58,3 +61,21 @@ class MocapClipTests(unittest.TestCase):
         malformed['joints'][0]['channels'][0]['in_angles']=None
         with self.assertRaisesRegex(MocapSourceValidationError,'切线结构'):
             decode_mocap_clip(json.dumps(malformed))
+        with self.assertRaisesRegex(MocapSourceValidationError,'切线数量'):
+            validate_mocap_clip(replace(clip,joints=(replace(clip.joints[0],
+                channels=(replace(channel,tangent_locks=(True,)),)),)))
+        with self.assertRaisesRegex(MocapSourceValidationError,'切线或循环设置'):
+            validate_mocap_clip(replace(clip,joints=(replace(clip.joints[0],
+                channels=(replace(channel,breakdown_times=(3.,)),)),)))
+
+    def test_schema_one_clip_remains_readable(self):
+        clip=self.fixture()
+        raw=json.loads(encode_mocap_clip(clip))
+        raw['schema_version']=1
+        for channel in raw['joints'][0]['channels']:
+            for field in ('tangent_locks','weight_locks','breakdown_times'):
+                del channel[field]
+        payload={key:value for key,value in raw.items() if key!='content_sha256'}
+        raw['content_sha256']=sha256(json.dumps(payload,ensure_ascii=False,
+            sort_keys=True,separators=(',',':')).encode('utf8')).hexdigest()
+        self.assertEqual(decode_mocap_clip(json.dumps(raw)),clip)
