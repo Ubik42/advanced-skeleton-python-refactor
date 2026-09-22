@@ -95,6 +95,22 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
         for frame,value in ((0,1.),(20,4.)):
             host._cmds.setKeyframe(old_channel.node,attribute=old_channel.attribute,
                 time=frame,value=value)
+        options=dict(start_frame=1,end_frame=10)
+        if with_scheduled:
+            channels={channel.key:channel for channel in registration.channels}
+            for key in ('spine.spline.spineIkFk','arm.settings.armIkFk_R'):
+                channel=channels[key]
+                for frame,value in ((0,1.),(1,0.),(10,0.),(11,1.),(20,1.)):
+                    host._cmds.setKeyframe(channel.node,attribute=channel.attribute,
+                        time=frame,value=value,outTangentType='step')
+            channel=channels['spine.spline.spineIkFk']
+            host._cmds.setKeyframe(channel.node,attribute=channel.attribute,
+                time=5,value=1.,outTangentType='step')
+            try:service.plan_with_preset(source['Root_M'],preset,**options)
+            except ValueError:invalid_existing_mode_rejected=True
+            else:invalid_existing_mode_rejected=False
+            cmds.cutKey(host.scene_address(channel.node),
+                attribute=channel.attribute,time=(5,5))
         imported=None
         if with_fbx:
             if not cmds.pluginInfo('fbxmaya',query=True,loaded=True):
@@ -109,8 +125,17 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
                 cmds.file(str(fbx),force=True,options='v=0;',type='FBX export',exportSelected=True)
                 imported=ImportMocapFbx(MayaMocapClipHost()).apply(fbx,namespace='ExternalTake')
         root=imported.snapshot.root if imported else source['Root_M']
-        options=dict(start_frame=1,end_frame=10)
         before=host.capture_character_key_state(registration)
+        if with_scheduled:
+            def outside_tangents(key):
+                channel=channels[key]
+                plug=host.scene_address(channel.node)+'.'+channel.attribute
+                return tuple((tuple(cmds.keyTangent(plug,query=True,time=(frame,frame),
+                    inTangentType=True) or []),
+                    tuple(cmds.keyTangent(plug,query=True,time=(frame,frame),
+                    outTangentType=True) or [])) for frame in (0,11,20))
+            original_mode_tangents={key:outside_tangents(key)
+                for key in ('spine.spline.spineIkFk','arm.settings.armIkFk_R')}
         plan=service.plan_with_preset(root,preset,**options)
         group_plans=plan.full_fk.groups if with_scheduled else plan.groups
         class FailedHost(MayaMocapControlHost):
@@ -190,6 +215,17 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
             roots,groups=service.apply_with_preset(root,preset,**options)
             conversion=None;limb_conversions=()
         after=host.capture_character_key_state(registration)
+        if with_scheduled:
+            original_rows={row[0]:row for row in before[1]}
+            applied_rows={row[0]:row for row in after[1]}
+            def outside_keys(key):
+                old=original_rows[key];new=applied_rows[key]
+                old_values=dict(zip(old[2],old[3]))
+                new_values=dict(zip(new[2],new[3]))
+                return all(new_values.get(frame)==old_values[frame]
+                    for frame in (0.,11.,20.))
+            existing_mode_keys_preserved=all(outside_keys(key)
+                for key in ('spine.spline.spineIkFk','arm.settings.armIkFk_R'))
         with host._character_sampling_time() as seek:
             errors=[]
             for group_plan,samples in zip(group_plans,groups):
@@ -220,6 +256,11 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
             'spline_conversion_failure_rolls_back':spine_rollback,
             'limb_conversion_failure_rolls_back':limb_rollback}
         if with_scheduled:
+            checks['existing_mode_keys_outside_preserved']=existing_mode_keys_preserved
+            checks['existing_mode_tangents_outside_preserved']=all(
+                outside_tangents(key)==original_mode_tangents[key]
+                for key in original_mode_tangents)
+            checks['existing_ik_inside_range_rejected']=invalid_existing_mode_rejected
             mode_channels={ch.key:ch for ch in registration.channels}
             def mode_at(key,frame):
                 ch=mode_channels[key]
@@ -232,9 +273,11 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
             checks['scheduled_leg_modes']=all(mode_at('leg.settings.legIkFk_R',frame)==
                 float(frame>=6) and mode_at('leg.settings.legIkFk_L',frame)==0.
                 for frame in range(1,11))
-            checks['outside_modes_restored']=(all(mode_at(key,frame)==0.
-                for key in ('spine.spline.spineIkFk','arm.settings.armIkFk_R',
-                            'leg.settings.legIkFk_R') for frame in (0,11)))
+            checks['outside_modes_restored']=(all(mode_at(key,frame)==1.
+                for key in ('spine.spline.spineIkFk','arm.settings.armIkFk_R')
+                for frame in (0,11,20))
+                and all(mode_at('leg.settings.legIkFk_R',frame)==0.
+                    for frame in (0,11)))
             checks['step_switches_between_frames']=(
                 mode_at('spine.spline.spineIkFk',4.5)==0.
                 and mode_at('spine.spline.spineIkFk',7.5)==1.
@@ -277,7 +320,8 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
                 and mode_at('spine.spline.spineIkFk',5.)==1.
                 and mode_at('spine.spline.spineIkFk',8.)==0.
                 and mode_at('leg.settings.legIkFk_R',6.)==1.
-                and mode_at('leg.settings.legIkFk_R',11.)==0.)
+                and mode_at('leg.settings.legIkFk_R',11.)==0.
+                and mode_at('spine.spline.spineIkFk',11.)==1.)
         payload={**checks,'segments':segments,'joint_count':len(registration.body),
                  'max_body_error':max(errors),'reopened_body_error':reopened_error,
                  'mixed_modes':with_mixed,

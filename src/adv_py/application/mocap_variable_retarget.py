@@ -249,6 +249,7 @@ class MocapVariableScheduledPlan:
     spine_ik_frames: tuple[float,...]
     limb_ik_frames: tuple[tuple[str,str,tuple[float,...]],...]
     mode_keys: tuple[str,...]
+    boundary: tuple
 
 
 class RetargetMocapVariableScheduledToCharacter(RetargetMocapVariableFullFkToCharacter):
@@ -309,8 +310,9 @@ class RetargetMocapVariableScheduledToCharacter(RetargetMocapVariableFullFkToCha
                     raise CharacterRegistryError('四肢 IK 事件要求先启用四肢动画登记')
         mode_keys=('spine.spline.spineIkFk',)+tuple(
             f'{limb}.settings.{limb}IkFk_{side}' for limb,side in self.LIMBS)
-        self._host.preflight_mocap_mode_schedule(full.root.registration,mode_keys)
-        return MocapVariableScheduledPlan(full,spine_frames,limb_frames,mode_keys)
+        boundary=self._host.preflight_mocap_mode_schedule(
+            full.root.registration,mode_keys,frames)
+        return MocapVariableScheduledPlan(full,spine_frames,limb_frames,mode_keys,boundary)
 
     def apply_with_preset(self,source_root,preset,*,start_frame,end_frame,sample_by=1,
                           reference_frame=None):
@@ -333,7 +335,7 @@ class RetargetMocapVariableScheduledToCharacter(RetargetMocapVariableFullFkToCha
                    for group in (root_samples,*groups)):
                 raise RuntimeError('事件动捕 FK 基础采样不完整')
             reference=host.sample_character_animation(reg,frames)
-            host.write_mocap_mode_base_keys(reg,plan.mode_keys,frames)
+            host.write_mocap_mode_base_keys(reg,plan.boundary,frames)
             unit=host.character_time_unit()
             conversions=[]
             selected=(('spine','',plan.spine_ik_frames),*plan.limb_ik_frames)

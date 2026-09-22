@@ -5,26 +5,46 @@ from .maya_mocap import MayaMocapSourceReader
 
 
 class MayaMocapControlHost(MayaBodyBuildHost):
-    def preflight_mocap_mode_schedule(self, registration, mode_keys):
+    def preflight_mocap_mode_schedule(self, registration, mode_keys, frames):
         channels={channel.key:channel for channel in registration.channels}
+        boundary=[]
         for key in mode_keys:
             channel=channels.get(key)
             if channel is None:
                 raise CharacterRegistryError('动捕模式通道未登记：'+key)
             plug=self.scene_address(channel.node)+'.'+channel.attribute
-            if (self._cmds.keyframe(plug,query=True,timeChange=True) or []
-                    or abs(float(self._cmds.getAttr(plug)))>1e-8):
-                raise CharacterRegistryError('事件模式动捕要求起始为未动画的 FK 端点：'+key)
+            if any(abs(float(self._cmds.getAttr(plug,time=frame)))>1e-8
+                   for frame in frames):
+                raise CharacterRegistryError('事件动捕要求写入区间的来源模式均为 FK 端点：'+key)
+            times=tuple(float(value) for value in
+                (self._cmds.keyframe(plug,query=True,timeChange=True) or []))
+            values=tuple(float(value) for value in
+                (self._cmds.keyframe(plug,query=True,valueChange=True) or []))
+            incoming=tuple(self._cmds.keyTangent(plug,query=True,
+                inTangentType=True) or ())
+            outgoing=tuple(self._cmds.keyTangent(plug,query=True,
+                outTangentType=True) or ())
+            boundary.append((key,times,values,incoming,outgoing,
+                float(self._cmds.getAttr(plug,time=frames[0]-1.)),
+                float(self._cmds.getAttr(plug,time=frames[-1]+1.))))
+        return tuple(boundary)
 
-    def write_mocap_mode_base_keys(self, registration, mode_keys, frames):
+    def write_mocap_mode_base_keys(self, registration, boundary, frames):
         self._require_transaction()
-        self.preflight_mocap_mode_schedule(registration,mode_keys)
+        if self.preflight_mocap_mode_schedule(
+                registration,tuple(row[0] for row in boundary),frames)!=boundary:
+            raise RuntimeError('动捕模式边界或原曲线在写入前变化')
         channels={channel.key:channel for channel in registration.channels}
         self._transaction_changed=True
-        for key in mode_keys:
+        for key,times,_,_,_,before,after in boundary:
             channel=channels[key]
             plug=self.scene_address(channel.node)+'.'+channel.attribute
-            for frame in (frames[0]-1.,*frames,frames[-1]+1.):
+            for frame,value in ((frames[0]-1.,before),(frames[-1]+1.,after)):
+                if frame in times:
+                    continue
+                self._cmds.setKeyframe(plug,time=frame,value=value,
+                    inTangentType='linear',outTangentType='step')
+            for frame in frames:
                 self._cmds.setKeyframe(plug,time=frame,value=0.,
                     inTangentType='linear',outTangentType='step')
 
@@ -34,7 +54,7 @@ class MayaMocapControlHost(MayaBodyBuildHost):
         for key in mode_keys:
             channel=channels[key]
             plug=self.scene_address(channel.node)+'.'+channel.attribute
-            self._cmds.keyTangent(plug,time=(frames[0]-1.,frames[-1]+1.),
+            self._cmds.keyTangent(plug,time=(frames[0],frames[-1]),
                 inTangentType='linear',outTangentType='step')
 
     def capture_mocap_source(self,root_name):
