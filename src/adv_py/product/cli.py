@@ -377,7 +377,7 @@ def parser() -> argparse.ArgumentParser:
     original_replace.add_argument("--max-mesh-error", type=float,
         help="IK／混合模式必填，FK 模式可选：原网格采样顶点的最大允许坐标误差（厘米）")
     original_replace.add_argument("--max-body-error", type=float,
-        help="IK／混合模式身体标记点最大允许误差（厘米）；默认与网格上限相同")
+        help="身体标记点最大允许误差（厘米）；IK／混合默认与网格上限相同，FK 可单独指定")
     original_replace.add_argument("--extension", action="append", default=[])
     original_replace.add_argument("--retained-asset", action="append", default=[],
         help="显式保留的原角色独立网格或其他 DAG 根；每个根各指定一次")

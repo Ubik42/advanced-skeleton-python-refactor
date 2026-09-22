@@ -131,6 +131,13 @@ class MayaOriginalSkinSpineMigrationHost(MayaMocapControlHost):
                     for name in body_names))
         return tuple(result)
 
+    def capture_source_registered_spine_body_take(self, source_namespace,
+                                                   registration, body_names,
+                                                   frames):
+        source = MayaOriginalSkinSpineMigrationHost(namespace=source_namespace)
+        return source.capture_registered_spine_body_take(
+            registration, body_names, frames)
+
     def write_registered_spine_ik_take(self, take, source_namespace):
         from maya import cmds as raw
         from adv_py.core.character_registry import CharacterRegistryError
@@ -164,8 +171,14 @@ class MayaOriginalSkinSpineMigrationHost(MayaMocapControlHost):
                 continue
             source_curve = source_output.rsplit('.',1)[0]
             if not target_output:
-                raise CharacterRegistryError('IK 目标动画通道未建立独占曲线：'
-                                             +source_channel.key)
+                self._cmds.setKeyframe(target_channel.node,
+                    attribute=target_channel.attribute,time=take.frames[0],
+                    value=first[source_channel.key])
+                target_output = raw.connectionInfo(
+                    target_plug,sourceFromDestination=True)
+                if not target_output:
+                    raise CharacterRegistryError('IK 目标动画通道未建立独占曲线：'
+                                                 +source_channel.key)
             if raw.copyKey(source_plug) != 1:
                 raise CharacterRegistryError('IK 来源动画曲线复制失败：'
                                              +source_channel.key)

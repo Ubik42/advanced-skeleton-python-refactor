@@ -7,7 +7,7 @@ from adv_py.core.skin_weight_redistribution import registered_spine_weight_redis
 
 from .character_spine_retarget import RetargetCharacterSpineFk
 from .character_spine_ik_retarget import (RetargetCharacterSpineIk,
-    verify_registered_spine_meshes)
+    verify_registered_spine_meshes, verify_registered_spine_body)
 from .spine_skin_handoff import HandoffRegisteredSpineSkinCluster
 from .skin_weight_surface_transfer import TransferSkinWeightsBySurface
 from .skin_weights import EditSkinWeights
@@ -175,8 +175,11 @@ class ReplaceRegisteredSpineCharacter:
             raise CharacterRegistryError('FK 原网格误差上限须为非负有限数')
         if spine_mode in ('ik','hybrid') and reference_frame is not None:
             raise CharacterRegistryError('IK／混合控制迁移不使用 FK 校准帧')
-        if spine_mode == 'fk' and max_body_error is not None:
-            raise CharacterRegistryError('FK 替换不使用 IK 身体误差上限')
+        if spine_mode == 'fk' and max_body_error is not None and (
+                isinstance(max_body_error,bool)
+                or not isinstance(max_body_error,(int,float))
+                or not isfinite(max_body_error) or max_body_error<0):
+            raise CharacterRegistryError('FK 身体误差上限须为非负有限厘米数值')
         global_host = host.original_skin_handoff_host()
         global_host.require_loaded_scene_references(
             (source_namespace, target_namespace))
@@ -188,13 +191,40 @@ class ReplaceRegisteredSpineCharacter:
                                    max_body_error=max_body_error,
                                    allow_fk=spine_mode=='hybrid')
                    if ik_retarget else None)
-        fk_mesh_frames=(tuple(sorted({*sampled,
+        fk_gate_frames=(tuple(sorted({*sampled,
             *(a+(b-a)*fraction/4 for a,b in zip(sampled,sampled[1:])
               for fraction in (1,2,3))}))
-            if spine_mode=='fk' and max_mesh_error is not None else ())
+            if spine_mode=='fk' and (max_mesh_error is not None
+                                    or max_body_error is not None) else ())
+        fk_mesh_frames=fk_gate_frames if max_mesh_error is not None else ()
         fk_mesh_take=(host.capture_registered_spine_mesh_take(
             tuple(mesh for _,mesh in skins),fk_mesh_frames)
             if fk_mesh_frames else ())
+        fk_body_names=()
+        fk_body_take=()
+        fk_body_registration=None
+        if spine_mode=='fk' and max_body_error is not None:
+            source_reg=host.read_source_character_registration(source_namespace)
+            target_reg=host.read_character_registration()
+            short=lambda path:path.rsplit('|',1)[-1].rsplit(':',1)[-1]
+            source_internal={short(path) for path in
+                             source_reg.spine.body_joints[1:-1]}
+            target_internal={short(path) for path in
+                             target_reg.spine.body_joints[1:-1]}
+            source_rows=tuple(short(row.path) for row in source_reg.body
+                              if short(row.path) not in source_internal)
+            target_rows=tuple(short(row.path) for row in target_reg.body
+                              if short(row.path) not in target_internal)
+            source_names=set(source_rows)
+            target_names=set(target_rows)
+            if (len(source_names)!=len(source_rows)
+                    or len(target_names)!=len(target_rows)
+                    or source_names != target_names):
+                raise CharacterRegistryError('FK 身体误差复检要求新旧 Body 非脊柱关节对应')
+            fk_body_names=tuple(sorted(source_names))
+            fk_body_take=host.capture_source_registered_spine_body_take(
+                source_namespace,source_reg,fk_body_names,fk_gate_frames)
+            fk_body_registration=target_reg
         extension_frames = (ik_take.frames if ik_take else
             tuple(sorted({*sampled,
                 *((a+b)/2 for a,b in zip(sampled,sampled[1:]))})))
@@ -237,6 +267,10 @@ class ReplaceRegisteredSpineCharacter:
                     if fk_mesh_frames:
                         verify_registered_spine_meshes(host,skins,fk_mesh_frames,
                             fk_mesh_take,float(max_mesh_error),mode='FK')
+                    if fk_body_take:
+                        verify_registered_spine_body(host,fk_body_registration,
+                            fk_body_names,fk_gate_frames,fk_body_take,
+                            float(max_body_error),mode='FK')
                 else:
                     ik_retarget.apply_in_transaction(ik_take,source_namespace,skins)
                     roots, groups = sampled, ()
@@ -264,6 +298,11 @@ class ReplaceRegisteredSpineCharacter:
                 elif fk_mesh_frames:
                     verify_registered_spine_meshes(host,skins,fk_mesh_frames,
                         fk_mesh_take,float(max_mesh_error),mode='FK')
+                if ik_take is None and fk_body_take:
+                    verify_registered_spine_body(
+                        host.promoted_original_spine_ik_host(source_namespace),
+                        fk_body_registration,fk_body_names,fk_gate_frames,
+                        fk_body_take,float(max_body_error),mode='FK')
             finally:
                 global_host._transaction_active = False
         return ReplacedSpineCharacterResult(len(roots), len(groups),

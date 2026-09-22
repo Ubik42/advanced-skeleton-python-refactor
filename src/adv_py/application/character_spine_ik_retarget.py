@@ -25,6 +25,27 @@ def verify_registered_spine_meshes(host, skins, frames, wanted_meshes,
                     +' limit='+str(max_mesh_error))
 
 
+def verify_registered_spine_body(host, registration, body_names, frames,
+                                 wanted_body, max_body_error, *, mode):
+    current = host.capture_registered_spine_body_take(
+        registration, body_names, frames)
+    if len(current) != len(wanted_body):
+        raise CharacterRegistryError(mode+' 迁移改变 Body 采样帧数')
+    for frame, expected, actual in zip(frames, wanted_body, current):
+        if len(expected) != len(actual):
+            raise CharacterRegistryError(mode+' 迁移改变 Body 对应关节数量')
+        for (name,left),(actual_name,right) in zip(expected,actual):
+            if name != actual_name:
+                raise CharacterRegistryError(mode+' 迁移 Body 关节对应变化：'+name)
+            error = max(abs(a-b) for left_point,right_point in zip(left,right)
+                        for a,b in zip(left_point,right_point))
+            if error > max_body_error:
+                raise CharacterRegistryError(
+                    mode+' 迁移身体空间误差超限：joint='+name
+                    +' frame='+str(frame)+' error='+str(error)
+                    +' limit='+str(max_body_error))
+
+
 @dataclass(frozen=True, slots=True)
 class RegisteredSpineIkTake:
     source_registration: object
@@ -151,19 +172,10 @@ class RetargetCharacterSpineIk:
         self.verify_meshes(take, skins)
 
     def verify_body(self, take, host=None):
-        current = (self._host if host is None else host).capture_registered_spine_body_take(
-            take.target_registration, take.body_names, take.frames)
-        for frame, expected, actual in zip(take.frames,take.body,current):
-            for (name,left),(actual_name,right) in zip(expected,actual):
-                if name != actual_name:
-                    raise CharacterRegistryError('IK 迁移 Body 关节对应变化：'+name)
-                error = max(abs(a-b) for left_point,right_point in zip(left,right)
-                            for a,b in zip(left_point,right_point))
-                if error > take.max_body_error:
-                    raise CharacterRegistryError(
-                        'IK 迁移身体空间误差超限：joint='+name
-                        +' frame='+str(frame)+' error='+str(error)
-                        +' limit='+str(take.max_body_error))
+        verify_registered_spine_body(
+            self._host if host is None else host,
+            take.target_registration, take.body_names, take.frames,
+            take.body, take.max_body_error, mode='IK')
 
     def verify_meshes(self, take, skins):
         verify_registered_spine_meshes(self._host,skins,take.frames,
