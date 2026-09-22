@@ -113,6 +113,11 @@ def main(mayapy: Path, report: Path) -> int:
                                capture_output=True, text=True, timeout=180)
         if setup.returncode:
             raise RuntimeError("fixture failed: " + setup.stderr[-1500:])
+        panel_report = folder / "panel-mocap.json"
+        panel_run = subprocess.run([str(mayapy), str(ROOT / "validation" /
+            "maya_panel_mocap_controller_smoke.py"), str(scene), str(source),
+            str(mapping), str(panel_report)], cwd=ROOT, capture_output=True,
+            text=True, timeout=300)
         hashes = (sha256(scene.read_bytes()).hexdigest(),
                   sha256(source.read_bytes()).hexdigest())
         output = folder / "retargeted.ma"
@@ -162,6 +167,10 @@ def main(mayapy: Path, report: Path) -> int:
                          "--source-namespace", "UI", "--start", "1", "--end", "10",
                          "--output", str(collision_output))
         checks = {
+            "panel_controller_retargeted": panel_run.returncode == 0
+                and panel_report.is_file()
+                and json.loads(panel_report.read_text(encoding="utf-8"))
+                    .get("status") == "passed",
             "external_fbx_retargeted": applied[0] == 0 and applied[1] is not None
                 and applied[1]["source_joints"] == 21 and applied[1]["frames"] == 10,
             "limb_ik_retargeted": limb_ik[0] == 0 and limb_captured[0] == 0
@@ -182,6 +191,7 @@ def main(mayapy: Path, report: Path) -> int:
             "status": "passed" if all(checks.values()) else "failed"}
         if not all(checks.values()):
             payload["diagnostics"] = {"applied": applied[2][-1200:],
+                "panel": panel_run.stderr[-1200:],
                 "limb_ik": limb_ik[2][-1200:], "full_ik": full_ik[2][-1200:],
                 "limb_captured": limb_captured[2][-700:],
                 "full_captured": full_captured[2][-700:],

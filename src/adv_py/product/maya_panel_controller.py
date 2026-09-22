@@ -7,14 +7,20 @@ from pathlib import Path
 from adv_py.adapters import MayaFaceHost
 from adv_py.application import (ApplyBodyCharacterAnimation,
     ApplyBodyCharacterPose, ApplyFacePerformance, BindSkin,
+    BakeBodyExportSkeleton, BuildBodyExportSkeleton, BuildBodyRootMotion,
     BuildFaceBlendShapes, BuildRegisteredBodyCharacter,
     CaptureBodyCharacterAnimation, CaptureBodyCharacterPose,
     CreateAndImportFitSkeleton, ExportFitSkeleton, ExportSkinWeights,
-    ExportFaceTargetAsset, GenerateFaceTarget, ImportFaceTargetAsset,
+    ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget, ImportFaceTargetAsset,
     ImportSkinWeights, InspectBodyCharacterPresets, ResolveBodyCharacter,
+    ImportMocapFbx, RetargetMocapFullFkToCharacter,
+    RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
+    load_mocap_mapping_preset,
     load_character_animation, load_character_pose, load_face_target_asset,
     save_character_animation, save_character_pose, save_face_target_asset)
-from adv_py.core import FaceShapeKind, FaceTarget, face_performance_from_json
+from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
+    BodyFbxExportProfile, BodyFbxFileVersion, FaceShapeKind, FaceTarget,
+    face_performance_from_json)
 from adv_py.core.variable_body_fit import variable_axial_description
 
 from .input_documents import (load_face_build_spec, load_face_landmarks,
@@ -28,6 +34,21 @@ class PanelCharacter:
     joint_count: int = 0
     channel_count: int = 0
     issue: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class PanelFbxPublication:
+    joints: int
+    frames: int
+    bytes_written: int
+    sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class PanelMocapResult:
+    source_joints: int
+    frames: int
+    source_root: str
 
 
 class MayaPanelController:
@@ -181,3 +202,61 @@ class MayaPanelController:
         if matches[0].kind == "animation":
             return self.animation_apply(namespace, source)
         raise ValueError("不支持的角色预设类型")
+
+    def publish_fbx(self, namespace: str, destination: Path,
+                    start: int, end: int, step: int = 1,
+                    curve_policy: str = "sampled_linear",
+                    value_tolerance: float = 0.0,
+                    matrix_tolerance: float = 0.0) -> PanelFbxPublication:
+        destination = Path(destination).expanduser().absolute()
+        if (destination.suffix.lower() != ".fbx" or not destination.parent.is_dir()
+                or destination.exists()):
+            raise ValueError("FBX 输出须为现有目录中尚不存在的 .fbx 文件")
+        if start > end or step < 1:
+            raise ValueError("FBX 发布帧范围或采样步长无效")
+        selected_policy = BodyFbxCurvePolicy(curve_policy)
+        host = self._host(namespace)
+        profile = BodyFbxExportProfile(BodyFbxFileVersion.FBX_2020,
+            host.scene_up_axis(), host.scene_linear_unit(),
+            BodyFbxEncoding.BINARY, selected_policy,
+            value_tolerance, matrix_tolerance)
+        prefix = "" if namespace == ":" else namespace.strip(":") + ":"
+        body_root = prefix + "Root_M"
+        container = "|" + prefix + "FitSkeleton"
+        BuildBodyRootMotion(host).apply(body_root_name=body_root,
+                                        source_container=container)
+        BuildBodyExportSkeleton(host).apply(body_root_name=body_root,
+                                            source_container=container)
+        baked = BakeBodyExportSkeleton(host).apply(start_frame=start,
+            end_frame=end, sample_by=step, body_root_name=body_root,
+            source_container=container)
+        exported = ExportBodyFbx(host).apply(destination, start_frame=start,
+            end_frame=end, sample_by=step, body_root_name=body_root,
+            source_container=container, profile=profile)
+        return PanelFbxPublication(len(baked.plan.body.joints),
+            len(baked.plan.bake.frames), exported.artifact.byte_count,
+            exported.artifact.content_sha256)
+
+    def mocap_retarget(self, namespace: str, source: Path,
+                       mapping: Path, source_namespace: str,
+                       start: int, end: int, step: int = 1,
+                       mode: str = "fk") -> PanelMocapResult:
+        from adv_py.adapters import MayaMocapClipHost, MayaMocapControlHost
+
+        if start > end or step < 1:
+            raise ValueError("动捕帧范围或采样步长无效")
+        services = {"fk": RetargetMocapFullFkToCharacter,
+                    "limb-ik": RetargetMocapFullLimbIkToCharacter,
+                    "full-ik": RetargetMocapFullIkToCharacter}
+        if mode not in services:
+            raise ValueError("不支持的动捕写入模式")
+        preset = load_mocap_mapping_preset(mapping)
+        target_namespace = "" if namespace == ":" else namespace
+        target = MayaMocapControlHost(namespace=target_namespace)
+        target.read_character_registration()
+        imported = ImportMocapFbx(MayaMocapClipHost()).apply(source,
+            namespace=source_namespace)
+        samples = services[mode](target).apply_with_preset(imported.snapshot.root,
+            preset, start_frame=start, end_frame=end, sample_by=step)
+        return PanelMocapResult(len(imported.clip.joints), len(samples[0]),
+                                imported.snapshot.root)

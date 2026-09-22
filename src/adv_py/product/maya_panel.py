@@ -42,10 +42,11 @@ def create_panel(controller: MayaPanelController | None = None):
                     margin-top: 15px; padding: 12px 10px 8px; font-weight: 600; }
                 QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px;
                     color: #C8D5E4; }
-                QLineEdit, QPlainTextEdit, QSpinBox, QComboBox { background: #1C2733;
+                QLineEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QComboBox { background: #1C2733;
                     color: #EDF2F7; border: 1px solid #496073; border-radius: 5px;
                     padding: 6px; selection-background-color: #A96631; }
                 QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus,
+                QDoubleSpinBox:focus,
                 QComboBox:focus {
                     border: 2px solid #F3BE6E; }
                 QComboBox QAbstractItemView { background: #1C2733;
@@ -112,6 +113,8 @@ def create_panel(controller: MayaPanelController | None = None):
             self.tabs.addTab(self._skin_page(), "蒙皮")
             self.tabs.addTab(self._animation_page(), "姿态与动画")
             self.tabs.addTab(self._face_page(), "面部")
+            self.tabs.addTab(self._mocap_page(), "动捕")
+            self.tabs.addTab(self._publish_page(), "发布")
             layout.addWidget(self.tabs, 1)
             layout.addWidget(QtWidgets.QLabel("最近操作"))
             self.status = QtWidgets.QPlainTextEdit()
@@ -142,7 +145,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 layout.addRow(label, widget)
             return group, layout
 
-        def _file_field(self, caption, *, save=False):
+        def _file_field(self, caption, *, save=False, filter_text="JSON 文件 (*.json)"):
             holder = QtWidgets.QWidget()
             line = QtWidgets.QLineEdit()
             line.setPlaceholderText("选择文件路径")
@@ -156,7 +159,7 @@ def create_panel(controller: MayaPanelController | None = None):
             def choose():
                 pick = (QtWidgets.QFileDialog.getSaveFileName if save else
                         QtWidgets.QFileDialog.getOpenFileName)
-                path, _ = pick(self, caption, line.text(), "JSON 文件 (*.json)")
+                path, _ = pick(self, caption, line.text(), filter_text)
                 if path:
                     line.setText(path)
             browse.clicked.connect(choose)
@@ -336,6 +339,100 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addStretch(1)
             return page
 
+        def _publish_page(self):
+            page, stack = self._page()
+            output, self.fbx_output = self._file_field("发布 FBX", save=True,
+                                                       filter_text="FBX 文件 (*.fbx)")
+            frames = QtWidgets.QWidget()
+            row = QtWidgets.QHBoxLayout(frames)
+            row.setContentsMargins(0, 0, 0, 0)
+            self.fbx_start = QtWidgets.QSpinBox()
+            self.fbx_end = QtWidgets.QSpinBox()
+            self.fbx_step = QtWidgets.QSpinBox()
+            for field in (self.fbx_start, self.fbx_end, self.fbx_step):
+                field.setRange(-100000, 100000)
+            self.fbx_start.setValue(1)
+            self.fbx_end.setValue(24)
+            self.fbx_step.setRange(1, 100000)
+            self.fbx_step.setValue(1)
+            for label, field in (("起始", self.fbx_start), ("结束", self.fbx_end),
+                                 ("步长", self.fbx_step)):
+                row.addWidget(QtWidgets.QLabel(label))
+                row.addWidget(field)
+            self.fbx_policy = QtWidgets.QComboBox()
+            self.fbx_policy.addItem("完整采样", "sampled_linear")
+            self.fbx_policy.addItem("无损线性精简", "lossless_linear")
+            self.fbx_policy.addItem("有界线性精简", "bounded_linear")
+            self.fbx_value_tolerance = QtWidgets.QDoubleSpinBox()
+            self.fbx_matrix_tolerance = QtWidgets.QDoubleSpinBox()
+            for field in (self.fbx_value_tolerance, self.fbx_matrix_tolerance):
+                field.setRange(0.0, 1000.0)
+                field.setDecimals(4)
+                field.setSingleStep(0.01)
+                field.setEnabled(False)
+            self.fbx_policy.currentIndexChanged.connect(
+                lambda: self._fbx_policy_changed())
+            group, form = self._group("01 · 烘焙并发布独立骨架", [
+                ("输出文件", output), ("采样帧", frames),
+                ("曲线策略", self.fbx_policy),
+                ("通道容差", self.fbx_value_tolerance),
+                ("矩阵容差", self.fbx_matrix_tolerance)])
+            form.addRow(self._button("发布 FBX", self._publish_fbx, primary=True))
+            stack.addWidget(group)
+            stack.addWidget(QtWidgets.QLabel(
+                "从当前角色构建 Root Motion 与独立导出骨架；目标文件已存在时拒绝覆盖。"))
+            stack.addStretch(1)
+            return page
+
+        def _mocap_page(self):
+            page, stack = self._page()
+            source, self.mocap_source = self._file_field("导入动捕 FBX",
+                filter_text="FBX 文件 (*.fbx)")
+            mapping, self.mocap_mapping = self._file_field("动捕映射预设")
+            self.mocap_namespace = QtWidgets.QLineEdit("ExternalTake")
+            self.mocap_mode = QtWidgets.QComboBox()
+            self.mocap_mode.addItem("全身 FK", "fk")
+            self.mocap_mode.addItem("四肢 IK", "limb-ik")
+            self.mocap_mode.addItem("全身 IK", "full-ik")
+            frames = QtWidgets.QWidget()
+            row = QtWidgets.QHBoxLayout(frames)
+            row.setContentsMargins(0, 0, 0, 0)
+            self.mocap_start = QtWidgets.QSpinBox()
+            self.mocap_end = QtWidgets.QSpinBox()
+            self.mocap_step = QtWidgets.QSpinBox()
+            for field in (self.mocap_start, self.mocap_end, self.mocap_step):
+                field.setRange(-100000, 100000)
+            self.mocap_start.setValue(1)
+            self.mocap_end.setValue(24)
+            self.mocap_step.setRange(1, 100000)
+            self.mocap_step.setValue(1)
+            for label, field in (("起始", self.mocap_start), ("结束", self.mocap_end),
+                                 ("步长", self.mocap_step)):
+                row.addWidget(QtWidgets.QLabel(label))
+                row.addWidget(field)
+            group, form = self._group("01 · 外部 FBX 驱动角色", [
+                ("动捕文件", source), ("映射预设", mapping),
+                ("来源命名空间", self.mocap_namespace),
+                ("控制模式", self.mocap_mode), ("采样帧", frames)])
+            form.addRow(self._button("导入并写入控制", self._mocap_retarget,
+                                      primary=True))
+            stack.addWidget(group)
+            stack.addWidget(QtWidgets.QLabel(
+                "来源 FBX 将导入独立命名空间；该名称在当前场景中必须尚未使用。"))
+            stack.addStretch(1)
+            return page
+
+        def _fbx_policy_changed(self):
+            bounded = self.fbx_policy.currentData() == "bounded_linear"
+            self.fbx_value_tolerance.setEnabled(bounded)
+            self.fbx_matrix_tolerance.setEnabled(bounded)
+            if bounded:
+                self.fbx_value_tolerance.setValue(0.05)
+                self.fbx_matrix_tolerance.setValue(0.2)
+            else:
+                self.fbx_value_tolerance.setValue(0.0)
+                self.fbx_matrix_tolerance.setValue(0.0)
+
         def _namespace(self):
             item = self.roles.currentItem()
             if item is None:
@@ -462,6 +559,25 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.preset_apply(self._namespace(),
                 Path(self.preset_directory.text().strip()), filename)
             return f"已应用预设：{filename}，{count} 个通道或采样帧"
+
+        def _publish_fbx(self):
+            result = self.controller.publish_fbx(self._namespace(),
+                self._path(self.fbx_output), self.fbx_start.value(),
+                self.fbx_end.value(), self.fbx_step.value(),
+                self.fbx_policy.currentData(),
+                self.fbx_value_tolerance.value(),
+                self.fbx_matrix_tolerance.value())
+            return (f"FBX 已发布：{result.joints} 个关节、{result.frames} 帧、"
+                    f"{result.bytes_written} 字节；SHA-256 {result.sha256[:12]}…")
+
+        def _mocap_retarget(self):
+            result = self.controller.mocap_retarget(self._namespace(),
+                self._path(self.mocap_source), self._path(self.mocap_mapping),
+                self.mocap_namespace.text().strip(), self.mocap_start.value(),
+                self.mocap_end.value(), self.mocap_step.value(),
+                self.mocap_mode.currentData())
+            return (f"动捕已写入：{result.source_joints} 个来源关节、"
+                    f"{result.frames} 帧；来源根 {result.source_root}")
 
         def _role_changed(self, current, previous):
             del previous

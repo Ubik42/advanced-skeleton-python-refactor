@@ -72,6 +72,7 @@ def main(report: Path) -> int:
                                  encoding="utf-8")
             face_frames = controller.face_performance_apply(":",
                 head + "|AdvPy_FaceControls", face_clip)
+            published = controller.publish_fbx(":", folder / "panel.fbx", 1, 3)
             checks = {
                 "fit_document_written": fit_count == 18 and fit.is_file(),
                 "registered_character_discovered": character.registered
@@ -90,6 +91,10 @@ def main(report: Path) -> int:
                 "face_control_and_animation": face_channels == 1
                     and face_frames == 2
                     and cmds.objExists(head + "|AdvPy_FaceControls"),
+                "fbx_published": published.joints == character.joint_count
+                    and published.frames == 3
+                    and published.bytes_written > 64
+                    and (folder / "panel.fbx").is_file(),
             }
             payload = {**checks, "status": "passed" if all(checks.values())
                        else "failed"}
