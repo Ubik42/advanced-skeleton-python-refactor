@@ -12,6 +12,9 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     CaptureBodyCharacterPose, BuildBodyExportSkeleton, BuildBodyRootMotion,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget,
     FaceAssetLibrary, ImportFaceTargetAsset, ExportSkinWeights, ImportSkinWeights,
+    ImportMocapFbx, RetargetMocapFullFkToCharacter,
+    RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
+    load_mocap_mapping_preset,
     ResolveBodyCharacter,
     InspectBodyCharacterPresets, load_character_animation, load_character_pose, save_character_animation,
     save_character_pose, RebuildBodyCharacter, load_face_target_asset,
@@ -129,6 +132,18 @@ def parser() -> argparse.ArgumentParser:
     fbx.add_argument("--curve-policy", choices=tuple(item.value for item in
                      BodyFbxCurvePolicy), default=BodyFbxCurvePolicy.SAMPLED_LINEAR.value)
     fbx.add_argument("--output", type=Path, required=True)
+    mocap = commands.add_parser("mocap-retarget",
+        help="从外部 FBX 和版本化映射预设写入角色控制动画")
+    mocap.add_argument("scene", type=Path)
+    mocap.add_argument("--namespace", required=True)
+    mocap.add_argument("--source", type=Path, required=True)
+    mocap.add_argument("--mapping", type=Path, required=True)
+    mocap.add_argument("--source-namespace", required=True)
+    mocap.add_argument("--start", type=int, required=True)
+    mocap.add_argument("--end", type=int, required=True)
+    mocap.add_argument("--step", type=int, default=1)
+    mocap.add_argument("--mode", choices=("fk", "limb-ik", "full-ik"), default="fk")
+    mocap.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
     rebuild.add_argument("scene", type=Path)
     rebuild.add_argument("--namespace", required=True)
@@ -274,6 +289,29 @@ def _run(args, gateway) -> dict:
                 "sha256": exported.artifact.content_sha256,
                 "curve_policy": exported.applied_profile.curve_policy,
                 "removed_linear_keys": exported.applied_profile.removed_linear_keys}
+    if args.command == "mocap-retarget":
+        from adv_py.adapters import MayaMocapClipHost, MayaMocapControlHost
+
+        gateway.preflight_output(args.output)
+        preset = load_mocap_mapping_preset(args.mapping)
+        target_namespace = "" if args.namespace == ":" else args.namespace
+        target = MayaMocapControlHost(namespace=target_namespace)
+        target.read_character_registration()
+        imported = ImportMocapFbx(MayaMocapClipHost()).apply(args.source,
+            namespace=args.source_namespace)
+        _emit("mocap_imported", joints=len(imported.clip.joints),
+              namespace=args.source_namespace)
+        services = {"fk": RetargetMocapFullFkToCharacter,
+                    "limb-ik": RetargetMocapFullLimbIkToCharacter,
+                    "full-ik": RetargetMocapFullIkToCharacter}
+        samples = services[args.mode](target).apply_with_preset(imported.snapshot.root,
+            preset, start_frame=args.start, end_frame=args.end, sample_by=args.step)
+        _emit("mocap_retargeted", mode=args.mode, frames=len(samples[0]))
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output), "mode": args.mode,
+                "source_joints": len(imported.clip.joints),
+                "frames": len(samples[0]), "source_root": imported.snapshot.root}
     if args.command == "face-asset-export":
         output = args.output.resolve()
         if output.suffix.lower() != ".json" or output.exists():
