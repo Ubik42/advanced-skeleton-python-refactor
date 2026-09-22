@@ -633,4 +633,6 @@ from .mocap_variable_retarget import (RetargetMocapVariableScheduledToCharacter,
 from .face_shapes import BuildFaceBlendShapes, FaceBuildPlan, FaceBuildResult, FaceBinding
 from .face_performance import ApplyFacePerformance, FacePerformancePlan
 from .face_landmarks import GenerateFaceTarget, FaceTargetGenerationPlan
+from .face_target_asset import (ExportFaceTargetAsset, ImportFaceTargetAsset,
+    FaceTargetAssetImportPlan, save_face_target_asset, load_face_target_asset)
 from .character_presets import InspectBodyCharacterPresets, CharacterPresetStatus

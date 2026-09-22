@@ -9,9 +9,11 @@ import sys
 
 from adv_py.application import (ApplyBodyCharacterAnimation,
     ApplyBodyCharacterPose, ApplyFacePerformance, BuildFaceBlendShapes, CaptureBodyCharacterAnimation,
-    CaptureBodyCharacterPose, GenerateFaceTarget, ResolveBodyCharacter,
+    CaptureBodyCharacterPose, ExportFaceTargetAsset, GenerateFaceTarget,
+    ImportFaceTargetAsset, ResolveBodyCharacter,
     InspectBodyCharacterPresets, load_character_animation, load_character_pose, save_character_animation,
-    save_character_pose, RebuildBodyCharacter)
+    save_character_pose, RebuildBodyCharacter, load_face_target_asset,
+    save_face_target_asset)
 from adv_py.core import (FaceLandmark, FaceShapeKind, FaceTarget,
                          face_performance_from_json)
 from adv_py.core.character_registry import safe_json
@@ -45,6 +47,24 @@ def parser() -> argparse.ArgumentParser:
     face_build.add_argument("--control-name", default="AdvPy_FaceControls")
     face_build.add_argument("--deformer-name", default="AdvPy_FaceBlendShape")
     face_build.add_argument("--output", type=Path, required=True)
+    asset_export = commands.add_parser("face-asset-export",
+        help="将雕刻目标导出为带摘要的稀疏位移文档")
+    asset_export.add_argument("scene", type=Path)
+    asset_export.add_argument("--namespace", required=True)
+    asset_export.add_argument("--neutral", required=True)
+    asset_export.add_argument("--name", required=True)
+    asset_export.add_argument("--kind", choices=tuple(kind.value for kind in FaceShapeKind), required=True)
+    asset_export.add_argument("--target", required=True)
+    asset_export.add_argument("--frame", type=int)
+    asset_export.add_argument("--output", type=Path, required=True)
+    asset_import = commands.add_parser("face-asset-import",
+        help="在匹配的中性网格上恢复雕刻目标")
+    asset_import.add_argument("scene", type=Path)
+    asset_import.add_argument("--namespace", required=True)
+    asset_import.add_argument("--neutral", required=True)
+    asset_import.add_argument("--asset", type=Path, required=True)
+    asset_import.add_argument("--target", required=True)
+    asset_import.add_argument("--output", type=Path, required=True)
     pose_capture = commands.add_parser("pose-capture", help="捕获已登记角色的静态姿态文档")
     pose_capture.add_argument("scene", type=Path)
     pose_capture.add_argument("--namespace", required=True)
@@ -155,6 +175,20 @@ def _run(args, gateway) -> dict:
     if args.command == "presets":
         entries = InspectBodyCharacterPresets(host).list(args.directory)
         return {"status": "ok", "presets": [asdict(entry) for entry in entries]}
+    if args.command == "face-asset-export":
+        output = args.output.resolve()
+        if output.suffix.lower() != ".json" or output.exists():
+            raise ValueError("资产输出须为尚不存在的 .json 文件")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if args.frame is not None:
+            gateway.seek(args.frame)
+        target = FaceTarget(args.name, FaceShapeKind(args.kind), args.target)
+        asset = ExportFaceTargetAsset(host).execute(args.neutral, target)
+        saved = save_face_target_asset(asset, output)
+        _emit("face_asset_exported", channel=asset.name,
+              changed_vertices=len(asset.deltas))
+        return {"status": "ok", "output": str(saved),
+                "channel": asset.name, "changed_vertices": len(asset.deltas)}
     if args.command in ("pose-capture", "animation-capture"):
         output = args.output.resolve()
         if output.suffix.lower() != ".json" or output.exists():
@@ -175,6 +209,17 @@ def _run(args, gateway) -> dict:
         return {"status": "ok", "output": str(saved),
                 "frames": len(animation.samples)}
     gateway.preflight_output(args.output)
+    if args.command == "face-asset-import":
+        asset = load_face_target_asset(args.asset)
+        imported = ImportFaceTargetAsset(host).apply(args.neutral, asset,
+                                                    args.target)
+        _emit("face_asset_imported", target=imported.target.mesh,
+              changed_vertices=len(imported.asset.deltas))
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output),
+                "target": imported.target.mesh,
+                "changed_vertices": len(imported.asset.deltas)}
     if args.command == "face-build":
         neutral, targets = _face_build_spec(args.spec)
         built = BuildFaceBlendShapes(host).apply(neutral, targets,

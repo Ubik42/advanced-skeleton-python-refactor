@@ -18,7 +18,8 @@ def main(output: Path) -> int:
         from adv_py.adapters import MayaFaceHost
         from adv_py.application import (
             ApplyFacePerformance, BuildBodyCharacterRig, BuildFaceBlendShapes, BuildOrientedBodySkeleton,
-            BuildVariableBodySourceFit, CreateFitSkeleton, GenerateFaceTarget,
+            BuildVariableBodySourceFit, CreateFitSkeleton, ExportFaceTargetAsset,
+            GenerateFaceTarget, ImportFaceTargetAsset,
             RegisterBodyCharacter,
             RebuildBodyCharacter,
         )
@@ -78,6 +79,27 @@ def main(output: Path) -> int:
         viseme_plan = GenerateFaceTarget(host).apply("|FaceNeutral",
             viseme_spec, (FaceLandmark(2, (0., .4, .3), .25),))
         viseme = host.scene_address(viseme_spec.mesh)
+        asset = ExportFaceTargetAsset(host).execute("|FaceNeutral", smile_spec)
+        class FailedAssetHost(MayaFaceHost):
+            def create_face_target_from_asset(self, plan):
+                super().create_face_target_from_asset(plan)
+                raise RuntimeError("Injected face asset import failure")
+        try:
+            ImportFaceTargetAsset(FailedAssetHost(namespace="hero")).apply(
+                "|FaceNeutral", asset, "|ImportedSmileTest")
+        except RuntimeError as error:
+            failed_asset_import_rolled_back = (
+                "Injected face asset import failure" in str(error)
+                and host.face_target_path_available("|ImportedSmileTest"))
+        else:
+            failed_asset_import_rolled_back = False
+        asset_plan = ImportFaceTargetAsset(host).apply(
+            "|FaceNeutral", asset, "|ImportedSmileTest")
+        cmds.undo()
+        asset_undo = host.face_target_path_available("|ImportedSmileTest")
+        cmds.redo()
+        asset_redo = (ImportFaceTargetAsset(host).audit(asset_plan).vertex_count
+                      == smile_plan.neutral.vertex_count)
         cmds.skinCluster(host.scene_address(head), neutral,
                          name="hero:FaceSkin", toSelectedBones=True)
         marker = cmds.createNode("transform", name="FaceBuildSelection", skipSelect=True)
@@ -130,6 +152,8 @@ def main(output: Path) -> int:
                 failed_landmark_rolled_back and target_undo and target_redo
                 and host.read_face_target_provenance(viseme_spec.mesh)
                     == viseme_plan.provenance),
+            "portable_asset_import_undo_redo_and_rollback": (
+                failed_asset_import_rolled_back and asset_undo and asset_redo),
             "landmark_falloff_moves_unmarked_vertex": (
                 .01 < smile_plan.points[1][0]
                     - smile_plan.neutral.points[1][0] < .5),
@@ -231,7 +255,8 @@ def main(output: Path) -> int:
         checks["reopened_registration"] = reopened.read_character_registration() == registration
         checks["generated_targets_survive_reopen"] = (
             GenerateFaceTarget(reopened).audit(smile_plan).vertex_count == 4
-            and GenerateFaceTarget(reopened).audit(viseme_plan).vertex_count == 4)
+            and GenerateFaceTarget(reopened).audit(viseme_plan).vertex_count == 4
+            and ImportFaceTargetAsset(reopened).audit(asset_plan).vertex_count == 4)
         face_control_uuid = (cmds.ls(reopened_control, uuid=True) or [None])[0]
         deformer_uuid = (cmds.ls(reopened.scene_address(result.plan.deformer_name),
                                   uuid=True) or [None])[0]

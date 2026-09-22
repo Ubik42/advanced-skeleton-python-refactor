@@ -10,6 +10,7 @@ from adv_py.core.face_performance import FacePerformance
 from adv_py.application.face_shapes import FaceBinding, FaceBuildPlan
 from adv_py.application.face_performance import FacePerformancePlan
 from adv_py.application.face_landmarks import FaceTargetGenerationPlan
+from adv_py.application.face_target_asset import FaceTargetAssetImportPlan
 
 from .maya_body import MayaBodyBuildHost
 
@@ -21,31 +22,42 @@ class MayaFaceHost(MayaBodyBuildHost):
         return not cmds.objExists(self.scene_address(path))
 
     def create_face_target(self, plan: FaceTargetGenerationPlan) -> None:
+        self._create_face_target_mesh(plan.neutral, plan.target.mesh,
+                                      plan.points, plan.provenance)
+
+    def create_face_target_from_asset(self, plan: FaceTargetAssetImportPlan) -> None:
+        self._create_face_target_mesh(plan.neutral, plan.target.mesh,
+                                      plan.points, plan.provenance)
+
+    def _create_face_target_mesh(self, neutral: FaceMeshSnapshot,
+                                 target_path: str,
+                                 points: tuple[tuple[float, float, float], ...],
+                                 provenance: str) -> None:
         from maya import cmds
 
         self._require_transaction()
-        if not self.face_target_path_available(plan.target.mesh):
+        if not self.face_target_path_available(target_path):
             raise CharacterRegistryError("生成面部目标时路径已被占用")
-        target = self.scene_address(plan.target.mesh)
-        name = plan.target.mesh.rsplit("|", 1)[-1]
+        target = self.scene_address(target_path)
+        name = target_path.rsplit("|", 1)[-1]
         selection = cmds.ls(selection=True, long=True) or []
         self._transaction_changed = True
         try:
-            created = self._cmds.duplicate(plan.neutral.path, name=name,
+            created = self._cmds.duplicate(neutral.path, name=name,
                                            returnRootsOnly=True)
             if len(created) != 1 or (cmds.ls(self.scene_address(created[0]),
                                               long=True) or []) != [target]:
                 raise RuntimeError("生成面部目标路径与计划不一致")
-            self._cmds.delete(plan.target.mesh, constructionHistory=True)
-            for index, point in enumerate(plan.points):
+            self._cmds.delete(target_path, constructionHistory=True)
+            for index, point in enumerate(points):
                 if any(abs(a - b) > 1e-8 for a, b in
-                       zip(point, plan.neutral.points[index])):
-                    self._cmds.xform(f"{plan.target.mesh}.vtx[{index}]",
+                       zip(point, neutral.points[index])):
+                    self._cmds.xform(f"{target_path}.vtx[{index}]",
                                      objectSpace=True, translation=point)
             cmds.addAttr(target, longName="advPyFaceTargetProvenance",
                          dataType="string")
             cmds.setAttr(target + ".advPyFaceTargetProvenance",
-                         plan.provenance, type="string", lock=True)
+                         provenance, type="string", lock=True)
         finally:
             if selection:
                 cmds.select(selection, replace=True)

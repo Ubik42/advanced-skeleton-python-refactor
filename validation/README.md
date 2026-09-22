@@ -223,6 +223,7 @@
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_face_shapes_smoke.py validation\results\maya2024-face-shapes-rebuild.json
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_face_shapes_smoke.py validation\results\maya2024-face-performance.json
 python validation\product_entry_smoke.py 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\results\maya2024-face-performance.ma validation\results\maya2024-product-entry.json
+python validation\product_face_asset_smoke.py 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\results\maya2024-face-performance-unbuilt.ma validation\results\maya2024-product-face-asset.json
 python validation\product_body_entry_smoke.py 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\results\pose30_final\character.ma validation\results\pose30_final\target.pose.json validation\results\animation30_final\animated.ma validation\results\maya2024-product-body-entry.json
 python validation\architecture_boundary_audit.py validation\results\architecture-boundary.json
 
