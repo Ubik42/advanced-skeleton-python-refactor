@@ -10,6 +10,11 @@ import sys
 from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkeleton,
     ApplyBodyCharacterPose, ApplyFacePerformance, BuildFaceBlendShapes, CaptureBodyCharacterAnimation,
     CaptureBodyCharacterPose, BuildBodyExportSkeleton, BuildBodyRootMotion,
+    CaptureAnimatedBodyCharacterPose, KeyBodyCharacterPose,
+    EnableBodyCharacterLimbAnimation, EnableBodyCharacterStretchMatching,
+    EnableBodyCharacterSplineAnimation, EnableBodyCharacterSpaceAnimation,
+    BakeBodyCharacterLimbMode, BakeBodyCharacterSpineMode,
+    SwitchBodyCharacterSpace,
     BuildRegisteredBodyCharacter,
     CreateAndImportFitSkeleton, ExportFitSkeleton,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget,
@@ -145,6 +150,48 @@ def parser() -> argparse.ArgumentParser:
     clip_apply.add_argument("--namespace", required=True)
     clip_apply.add_argument("--clip", type=Path, required=True)
     clip_apply.add_argument("--output", type=Path, required=True)
+    key_current = commands.add_parser("animation-key",
+        help="在指定帧写入已登记角色的完整控制姿态")
+    key_current.add_argument("scene", type=Path)
+    key_current.add_argument("--namespace", required=True)
+    key_current.add_argument("--frame", type=int, required=True)
+    key_current.add_argument("--output", type=Path, required=True)
+    enable = commands.add_parser("animation-enable",
+        help="显式启用角色的动画控制通道")
+    enable.add_argument("scene", type=Path)
+    enable.add_argument("--namespace", required=True)
+    enable.add_argument("--kind", choices=("limb", "stretch", "spline", "spaces"),
+                        required=True)
+    enable.add_argument("--output", type=Path, required=True)
+    limb_bake = commands.add_parser("animation-bake-limb",
+        help="在帧区间内转换手臂或腿部 FK/IK 模式")
+    limb_bake.add_argument("scene", type=Path)
+    limb_bake.add_argument("--namespace", required=True)
+    limb_bake.add_argument("--start", type=int, required=True)
+    limb_bake.add_argument("--end", type=int, required=True)
+    limb_bake.add_argument("--step", type=int, default=1)
+    limb_bake.add_argument("--limb", choices=("arm", "leg"), required=True)
+    limb_bake.add_argument("--side", choices=("R", "L"), required=True)
+    limb_bake.add_argument("--mode", choices=("fk", "ik"), required=True)
+    limb_bake.add_argument("--output", type=Path, required=True)
+    spine_bake = commands.add_parser("animation-bake-spine",
+        help="在帧区间内转换脊柱 FK/IK 模式")
+    spine_bake.add_argument("scene", type=Path)
+    spine_bake.add_argument("--namespace", required=True)
+    spine_bake.add_argument("--start", type=int, required=True)
+    spine_bake.add_argument("--end", type=int, required=True)
+    spine_bake.add_argument("--step", type=int, default=1)
+    spine_bake.add_argument("--mode", choices=("fk", "ik"), required=True)
+    spine_bake.add_argument("--output", type=Path, required=True)
+    space_switch = commands.add_parser("animation-switch-space",
+        help="在指定帧切换头、手或脚控制空间")
+    space_switch.add_argument("scene", type=Path)
+    space_switch.add_argument("--namespace", required=True)
+    space_switch.add_argument("--key", choices=("head", "hand_R", "hand_L",
+                                               "foot_R", "foot_L"), required=True)
+    space_switch.add_argument("--mode", choices=("body", "global"), required=True)
+    space_switch.add_argument("--frame", type=int, required=True)
+    space_switch.add_argument("--output", type=Path, required=True)
     body_build = commands.add_parser("body-build",
         help="从现有 Fit 场景构建 Body 骨架、完整控制 Rig 并登记角色")
     body_build.add_argument("scene", type=Path)
@@ -612,6 +659,50 @@ def _run(args, gateway) -> dict:
         return {"status": "ok", "output": str(output),
                 "channels": len(animation.samples[0][1].channels),
                 "frames": len(animation.samples)}
+    if args.command == "animation-key":
+        gateway.seek(args.frame)
+        pose = CaptureAnimatedBodyCharacterPose(host).execute()
+        keyed = KeyBodyCharacterPose(host).apply(pose)
+        _emit("animation_keyed", frame=args.frame, channels=len(keyed.channels))
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output), "frame": args.frame,
+                "channels": len(keyed.channels)}
+    if args.command == "animation-enable":
+        service = {"limb": EnableBodyCharacterLimbAnimation,
+                   "stretch": EnableBodyCharacterStretchMatching,
+                   "spline": EnableBodyCharacterSplineAnimation,
+                   "spaces": EnableBodyCharacterSpaceAnimation}[args.kind]
+        enabled = service(host).apply()
+        _emit("animation_channels_enabled", kind=args.kind,
+              channels=len(enabled.channels))
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output), "kind": args.kind,
+                "channels": len(enabled.channels)}
+    if args.command in ("animation-bake-limb", "animation-bake-spine"):
+        if args.command == "animation-bake-limb":
+            baked = BakeBodyCharacterLimbMode(host).execute(
+                args.start, args.end, args.limb, args.side, args.mode, args.step)
+        else:
+            baked = BakeBodyCharacterSpineMode(host).execute(
+                args.start, args.end, args.mode, args.step)
+        _emit("animation_mode_baked", mode=args.mode,
+              frames=len(baked.samples))
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output), "mode": args.mode,
+                "frames": len(baked.samples)}
+    if args.command == "animation-switch-space":
+        pose = SwitchBodyCharacterSpace(host).execute(
+            args.key, args.mode, args.frame)
+        mode = dict(pose.spaces)[args.key]
+        _emit("animation_space_switched", key=args.key,
+              mode=mode, frame=args.frame)
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output), "key": args.key,
+                "mode": mode, "frame": args.frame}
     if args.command == "face-target":
         target = FaceTarget(args.name, FaceShapeKind(args.kind), args.target)
         plan = GenerateFaceTarget(host).apply(args.neutral, target,

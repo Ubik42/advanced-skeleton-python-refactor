@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import maya.standalone
 
 
-def main(report: Path) -> int:
+def main(report: Path, source_scene: Path | None = None) -> int:
     maya.standalone.initialize(name="python")
     try:
         from maya import cmds
@@ -29,6 +29,10 @@ def main(report: Path) -> int:
         container = CreateFitSkeleton(host).apply().state.path
         BuildSyntheticBodySourceFit(host).apply(container)
         built = BuildRegisteredBodyCharacter(host).apply(container)
+        if source_scene is not None:
+            source_scene.parent.mkdir(parents=True, exist_ok=True)
+            cmds.file(rename=str(source_scene.resolve()))
+            cmds.file(save=True, type="mayaAscii", force=True)
         controller = MayaPanelController()
         limb_channels = controller.animation_enable_limb(":")
         stretch_channels = controller.animation_enable_stretch(":")
@@ -94,4 +98,5 @@ def main(report: Path) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(Path(sys.argv[1])))
+    raise SystemExit(main(Path(sys.argv[1]),
+        Path(sys.argv[2]) if len(sys.argv) > 2 else None))
