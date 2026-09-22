@@ -190,15 +190,21 @@ class ReplaceRegisteredSpineCharacter:
             (source_namespace, target_namespace))
         from .mocap_control_retarget import character_sample_frames
         sampled = character_sample_frames(start_frame, end_frame, sample_by)
+        fk_written = (character_sample_frames(start_frame, end_frame, sample_by,
+                                              substeps=fk_substeps)
+                      if spine_mode == 'fk' else ())
+        fk_midpoints = tuple((a+b)/2 for a,b in
+                             zip(fk_written,fk_written[1:]))
+        fk_quarters = tuple(a+(b-a)*fraction/4
+            for a,b in zip(sampled,sampled[1:]) for fraction in (1,2,3))
         ik_retarget = RetargetCharacterSpineIk(host) if spine_mode != 'fk' else None
         ik_take = (ik_retarget.plan(source_namespace, skins, sampled,
                                    max_mesh_error=max_mesh_error,
                                    max_body_error=max_body_error,
                                    allow_fk=spine_mode=='hybrid')
                    if ik_retarget else None)
-        fk_gate_frames=(tuple(sorted({*sampled,
-            *(a+(b-a)*fraction/4 for a,b in zip(sampled,sampled[1:])
-              for fraction in (1,2,3))}))
+        fk_gate_frames=(tuple(sorted({*sampled,*fk_quarters,
+                                      *fk_written,*fk_midpoints}))
             if spine_mode=='fk' and (max_mesh_error is not None
                                     or max_body_error is not None) else ())
         fk_mesh_frames=fk_gate_frames if max_mesh_error is not None else ()
@@ -231,8 +237,7 @@ class ReplaceRegisteredSpineCharacter:
                 source_namespace,source_reg,fk_body_names,fk_gate_frames)
             fk_body_registration=target_reg
         extension_frames = (ik_take.frames if ik_take else
-            tuple(sorted({*sampled,
-                *((a+b)/2 for a,b in zip(sampled,sampled[1:]))})))
+            tuple(sorted({*fk_written,*fk_midpoints})))
         graph_names = global_host.expand_original_spine_retained_graph(
             source_namespace, retained_graph_roots)
         explicit_names = tuple(retained_nodes)

@@ -1,4 +1,4 @@
-"""Compare whole-frame and quarter-frame FK keys on generated spine scenes."""
+"""Compare FK keys at original, new-key, and between-key times."""
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -19,7 +19,7 @@ def main(folder, source_count, target_count):
         stem = f'spine-{source_count}-to-{target_count}'
         original = folder / f'{stem}-before.ma'
         original_digest = sha256(original.read_bytes()).hexdigest()
-        frames = tuple(1 + index * .25 for index in range(37))
+        frames = tuple(1 + index * .125 for index in range(73))
 
         def run(substeps):
             cmds.file(str(original), open=True, force=True)
