@@ -36,7 +36,18 @@ def main(mode, folder):
                 ch=channels[key]
                 source._cmds.setKeyframe(ch.node,attribute=ch.attribute,
                                          time=frame,value=value)
-        frames=tuple(sorted({*range(1,11),*(i+.5 for i in range(1,10))}))
+        global_channel=channels['global.translateX']
+        global_curve=source._cmds.connectionInfo(global_channel.node+'.'
+            +global_channel.attribute,sourceFromDestination=True).rsplit('.',1)[0]
+        global_curve=source.scene_address(global_curve)
+        cmds.keyTangent(global_curve,edit=True,weightedTangents=True)
+        cmds.setInfinity(global_curve,pri='cycle',poi='cycle')
+        frames=tuple(1+i*.25 for i in range(37))
+        curve_keys=('global.translateX','spine.spline.1.translateY')
+        curve_times=(.5,1.25,5.25,9.75,11.)
+        curve_values={key:tuple(float(source._cmds.getAttr(
+            channels[key].node+'.'+channels[key].attribute,time=frame))
+            for frame in curve_times) for key in curve_keys}
         def points(frame):
             enabled=cmds.undoInfo(query=True,state=True)
             cmds.undoInfo(stateWithoutFlush=False)
@@ -81,6 +92,10 @@ def main(mode, folder):
                   for a,b in zip(left,right))
         promoted=(not cmds.namespace(exists='target')
                   and len(source.read_character_registration().spine.body_joints)==7)
+        migrated={ch.key:ch for ch in source.read_character_registration().channels}
+        curves_equal=all(curve_values[key]==tuple(float(source._cmds.getAttr(
+            migrated[key].node+'.'+migrated[key].attribute,time=frame))
+            for frame in curve_times) for key in curve_keys)
         cmds.undo()
         print('UNDO_STATE',cmds.namespace(exists='target'),
               len(source.read_character_registration().spine.body_joints),flush=True)
@@ -91,9 +106,11 @@ def main(mode, folder):
               and len(source.read_character_registration().spine.body_joints)==7)
         report=dict(rejected=rejected,body_rejected=body_rejected,
                     promoted=promoted,undo=undo,redo=redo,
-                    max_mesh_error=error,frames=result.frames,groups=result.fk_groups)
+                    curves_equal=curves_equal,max_mesh_error=error,
+                    frames=result.frames,groups=result.fk_groups)
         print('IK_DIRECT',json.dumps(report),flush=True)
-        if not all((body_rejected,promoted,undo,redo,error<=.001,result.frames==10,
+        if not all((body_rejected,promoted,undo,redo,curves_equal,
+                    error<=.001,result.frames==10,
                     result.fk_groups==0)):
             raise RuntimeError(report)
         cmds.file(rename=str(folder/'spine-ik-direct-replaced.ma'))

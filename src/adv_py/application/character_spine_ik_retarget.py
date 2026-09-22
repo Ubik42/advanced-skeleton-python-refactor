@@ -68,7 +68,8 @@ class RetargetCharacterSpineIk:
         if source_ik != target_ik or 'spine.spline.spineIkFk' not in source_ik:
             raise CharacterRegistryError('来源与目标 Spline IK 通道不对应')
         all_frames = tuple(sorted({*frames,
-            *((a+b)/2 for a,b in zip(frames,frames[1:]))}))
+            *(a+(b-a)*fraction/4 for a,b in zip(frames,frames[1:])
+              for fraction in (1,2,3))}))
         body_names = tuple(source_body)
         channels, meshes, body = host.capture_registered_spine_ik_take(
             source_namespace, source, tuple(mesh for _,mesh in skins),
@@ -85,7 +86,7 @@ class RetargetCharacterSpineIk:
                 != take.source_registration
                 or host.read_character_registration() != take.target_registration):
             raise CharacterRegistryError('IK 迁移角色登记在写入前发生变化')
-        host.write_registered_spine_ik_take(take)
+        host.write_registered_spine_ik_take(take,source_namespace)
         self.verify_body(take)
         self.verify_meshes(take, skins)
 

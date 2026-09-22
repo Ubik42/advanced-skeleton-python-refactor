@@ -80,20 +80,70 @@ class MayaOriginalSkinSpineMigrationHost(MayaMocapControlHost):
                     for name in body_names))
         return tuple(result)
 
-    def write_registered_spine_ik_take(self, take):
+    def write_registered_spine_ik_take(self, take, source_namespace):
+        from maya import cmds as raw
+        from adv_py.core.character_registry import CharacterRegistryError
+        from .maya_character_preservation import capture_curve
+        from dataclasses import fields
+
         self._require_transaction()
         target = take.target_registration
         self.prepare_resampled_character_target(target,take.frames,take.frames[0])
         channels = {ch.key:ch for ch in target.channels}
-        c = self._cmds
+        source = MayaBodyBuildHost(namespace=source_namespace)
         self._transaction_changed = True
-        for frame, values in zip(take.frames,take.channels):
-            for key,value in values:
-                ch = channels.get(key)
-                if ch is not None:
-                    c.setKeyframe(ch.node,attribute=ch.attribute,time=frame,
-                                  value=value,inTangentType='linear',
-                                  outTangentType='linear')
+        first = dict(take.channels[0])
+        for source_channel in take.source_registration.channels:
+            target_channel = channels[source_channel.key]
+            source_plug = source.scene_address(source_channel.node)+'.'+source_channel.attribute
+            target_plug = self.scene_address(target_channel.node)+'.'+target_channel.attribute
+            source_output = raw.connectionInfo(source_plug,sourceFromDestination=True)
+            target_output = raw.connectionInfo(target_plug,sourceFromDestination=True)
+            if source_output and not source._character_direct_animation(
+                    source._cmds.connectionInfo(source_channel.node+'.'
+                        +source_channel.attribute,sourceFromDestination=True)):
+                raise CharacterRegistryError('IK 来源控制包含非原生时间曲线：'
+                                             +source_channel.key)
+            if not source_output:
+                for frame in take.frames:
+                    self._cmds.setKeyframe(target_channel.node,
+                        attribute=target_channel.attribute,time=frame,
+                        value=first[source_channel.key],
+                        inTangentType='linear',outTangentType='linear')
+                continue
+            source_curve = source_output.rsplit('.',1)[0]
+            if not target_output:
+                raise CharacterRegistryError('IK 目标动画通道未建立独占曲线：'
+                                             +source_channel.key)
+            if raw.copyKey(source_plug) != 1:
+                raise CharacterRegistryError('IK 来源动画曲线复制失败：'
+                                             +source_channel.key)
+            raw.pasteKey(target_plug,option='replaceCompletely')
+            target_curve = raw.connectionInfo(target_plug,
+                                              sourceFromDestination=True).rsplit('.',1)[0]
+            for attribute in ('preInfinity','postInfinity'):
+                raw.setAttr(target_curve+'.'+attribute,
+                            raw.getAttr(source_curve+'.'+attribute))
+            before = capture_curve(source,source_curve)
+            after = capture_curve(self,target_curve)
+            properties = tuple(field for field in fields(type(before))
+                if field.name not in ('node','uuid','input','outputs'))
+            if (not self._character_direct_animation(
+                    self._cmds.connectionInfo(target_channel.node+'.'
+                        +target_channel.attribute,sourceFromDestination=True))
+                    or any(getattr(before,field.name)!=getattr(after,field.name)
+                           for field in properties)):
+                raise CharacterRegistryError('IK 目标动画曲线未完整保留：'
+                                             +source_channel.key)
+        with self._character_sampling_time(preserve_modified=False) as seek:
+            for frame, values in zip(take.frames,take.channels):
+                seek(frame)
+                for key,wanted in values:
+                    channel=channels[key]
+                    actual=float(self._cmds.getAttr(channel.node+'.'+channel.attribute))
+                    if abs(actual-wanted)>1e-6:
+                        raise CharacterRegistryError('IK 控制曲线复制后数值不一致：'
+                                                     +key+' frame='+str(frame))
 
     def original_skin_handoff_host(self):
         return MayaOriginalSpinePromotionHost()

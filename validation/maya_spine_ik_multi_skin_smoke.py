@@ -36,7 +36,7 @@ def main(mode,folder):
                 ch=keys[key]
                 source._cmds.setKeyframe(ch.node,attribute=ch.attribute,
                                          time=frame,value=value)
-        frames=tuple(sorted({*range(1,11),*(i+.5 for i in range(1,10))}))
+        frames=tuple(1+i*.25 for i in range(37))
         counts=tuple(cmds.polyEvaluate(mesh,vertex=True) for _,mesh in skins)
         def points(frame):
             undo=cmds.undoInfo(query=True,state=True)
