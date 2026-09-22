@@ -467,6 +467,8 @@ __all__ = [
     "BuildBodyLegRig",
     "BuildBodyArmRig",
     "BuildBodyCharacterRig",
+    "BuildRegisteredBodyCharacter",
+    "RegisteredBodyBuildResult",
     "BuildBodyRootMotion",
     "BakeBodyRootMotion",
     "BuildBodyExportSkeleton",
@@ -640,3 +642,5 @@ from .face_surface_transfer import (TransferFaceTargetAsset, FaceAssetTransferPl
     ExportFaceNeutralGeometry, save_face_neutral_geometry,
     load_face_neutral_geometry)
 from .character_presets import InspectBodyCharacterPresets, CharacterPresetStatus
+from .registered_body_build import (BuildRegisteredBodyCharacter,
+    RegisteredBodyBuildResult)

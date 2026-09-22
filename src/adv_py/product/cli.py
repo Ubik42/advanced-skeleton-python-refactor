@@ -10,7 +10,7 @@ import sys
 from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkeleton,
     ApplyBodyCharacterPose, ApplyFacePerformance, BuildFaceBlendShapes, CaptureBodyCharacterAnimation,
     CaptureBodyCharacterPose, BuildBodyExportSkeleton, BuildBodyRootMotion,
-    BuildOrientedBodySkeleton, BuildBodyCharacterRig, RegisterBodyCharacter,
+    BuildRegisteredBodyCharacter,
     CreateAndImportFitSkeleton, ExportFitSkeleton,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget,
     BindSkin,
@@ -353,14 +353,9 @@ def _run(args, gateway) -> dict:
         output = gateway.preflight_output(args.output)
         description = (variable_axial_description(args.spine_segments)
             if args.spine_segments is not None else None)
-        skeleton = BuildOrientedBodySkeleton(host).apply(args.fit)
-        _emit("body_skeleton_built", joints=len(skeleton.snapshot.joints))
-        rig = BuildBodyCharacterRig(host).apply(args.fit,
-            include_torso=True, include_spine_ik=True,
-            include_control_spaces=True, axial_description=description,
-            include_head_aim=args.head_aim)
-        _emit("body_controls_built", joints=len(rig.body.joints))
-        registration = RegisterBodyCharacter(host).apply(rig)
+        built = BuildRegisteredBodyCharacter(host).apply(args.fit,
+            axial_description=description, include_head_aim=args.head_aim)
+        registration = built.registration
         _emit("character_registered", channels=len(registration.channels))
         saved = gateway.save_new(output)
         _emit("scene_saved", scene=str(saved))

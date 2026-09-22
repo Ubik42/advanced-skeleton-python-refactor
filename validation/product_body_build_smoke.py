@@ -69,6 +69,48 @@ def _inspect(scene: Path, namespace: str = ":") -> None:
         maya.standalone.uninitialize()
 
 
+def _atomic(scene: Path) -> None:
+    import maya.standalone
+    maya.standalone.initialize(name="python")
+    try:
+        from maya import cmds
+        from adv_py.adapters import MayaBodyBuildHost
+        from adv_py.application import (BuildRegisteredBodyCharacter,
+            ResolveBodyCharacter)
+
+        cmds.file(str(scene), open=True, force=True)
+        cmds.undoInfo(state=True)
+        host = MayaBodyBuildHost()
+        fit_joints = tuple(cmds.ls(type="joint", long=True) or ())
+        result = BuildRegisteredBodyCharacter(host).apply()
+        built = len(result.registration.body) == 30
+        cmds.undo()
+        removed = (not cmds.objExists("Root_M")
+            and not cmds.objExists("AdvPy_CharacterRegistry")
+            and tuple(cmds.ls(type="joint", long=True) or ()) == fit_joints)
+        cmds.redo()
+        restored = (ResolveBodyCharacter(host).execute()
+                    == result.registration)
+
+        cmds.file(str(scene), open=True, force=True)
+        class FailingHost(MayaBodyBuildHost):
+            def create_character_registration(self, registration):
+                super().create_character_registration(registration)
+                raise RuntimeError("injected registry failure")
+        failed = False
+        try:
+            BuildRegisteredBodyCharacter(FailingHost()).apply()
+        except RuntimeError as error:
+            failed = "injected registry failure" in str(error)
+        rolled_back = (failed and not cmds.objExists("Root_M")
+            and not cmds.objExists("AdvPy_CharacterRegistry")
+            and tuple(cmds.ls(type="joint", long=True) or ()) == fit_joints)
+        print(json.dumps({"built": built, "one_undo": removed,
+            "one_redo": restored, "failure_rolls_back": rolled_back}), flush=True)
+    finally:
+        maya.standalone.uninitialize()
+
+
 def main(mayapy: Path, report: Path) -> int:
     report.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="adv-py-body-build-",
@@ -81,6 +123,17 @@ def main(mayapy: Path, report: Path) -> int:
         if fixture.returncode:
             raise RuntimeError("fixture failed: " + fixture.stderr[-1200:])
         original_hash = sha256(source.read_bytes()).hexdigest()
+        atomic = subprocess.run([str(mayapy), str(Path(__file__)), "--atomic",
+            str(source)], cwd=ROOT, capture_output=True, text=True, timeout=120)
+        atomic_details = None
+        for line in reversed(atomic.stdout.splitlines()):
+            try:
+                row = json.loads(line)
+                if isinstance(row, dict) and "failure_rolls_back" in row:
+                    atomic_details = row
+                    break
+            except ValueError:
+                pass
         build = _run(mayapy, "body-build", str(source), "--namespace", ":",
             "--output", str(built))
         inspect = (subprocess.run([str(mayapy), str(Path(__file__)), "--inspect",
@@ -97,6 +150,8 @@ def main(mayapy: Path, report: Path) -> int:
                 except (ValueError, AttributeError):
                     pass
         checks = {
+            "whole_build_one_undo_and_failure_rollback": atomic.returncode == 0
+                and atomic_details is not None and all(atomic_details.values()),
             "built_from_fit_and_registered": build[0] == 0 and build[1] is not None
                 and built.exists() and build[1]["joints"] == 30,
             "reopened_pose_and_registration": inspect is not None
@@ -232,13 +287,15 @@ def main(mayapy: Path, report: Path) -> int:
                      if key not in ("body_matrices", "body_names", "channel_keys",
                                     "spine_lengths")} if row else None)
         payload = {**checks, "details": compact(details),
+            "atomic_details": atomic_details,
             "variable_details": compact(variable_details),
             "imported_details": compact(rebuilt_details),
             "fit_roundtrip_matrix_error": matrix_error,
             "fit_roundtrip_spine_length_error": spine_error,
             "status": "passed" if all(checks.values()) else "failed"}
         if not all(checks.values()):
-            payload["diagnostics"] = {"build": build[2][-1200:],
+            payload["diagnostics"] = {"atomic": atomic.stderr[-1200:],
+                "build": build[2][-1200:],
                 "inspect": inspect.stderr[-1200:] if inspect else "missing",
                 "variable_build": variable_build[2][-1200:],
                 "variable_inspect": variable_inspect.stderr[-1200:]
@@ -263,5 +320,7 @@ if __name__ == "__main__":
         _fixture(Path(sys.argv[2]), int(sys.argv[3]) if len(sys.argv) > 3 else 2)
     elif sys.argv[1] == "--inspect":
         _inspect(Path(sys.argv[2]), sys.argv[3] if len(sys.argv) > 3 else ":")
+    elif sys.argv[1] == "--atomic":
+        _atomic(Path(sys.argv[2]))
     else:
         raise SystemExit(main(Path(sys.argv[1]), Path(sys.argv[2])))
