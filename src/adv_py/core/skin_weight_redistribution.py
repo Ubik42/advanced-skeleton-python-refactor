@@ -149,3 +149,95 @@ def linear_spine_weight_redistribution(source_chain: tuple[str, ...],
         raise SkinWeightValidationError("脊柱迁移的源或目标影响关节重复")
     return SkinWeightRedistribution(target_skin_name, target_mesh_path,
                                     targets, tuple(rows))
+
+
+def registered_spine_weight_redistribution(source_registration,
+        target_registration, source_influence_paths: tuple[str, ...],
+        target_influence_paths: tuple[str, ...], *, source_namespace: str,
+        target_namespace: str, target_skin_name: str,
+        target_mesh_path: str, allow_target_extra_influences: bool = False
+        ) -> SkinWeightRedistribution:
+    """Derive a complete influence mapping from two registered bind spines."""
+    from math import sqrt
+    from .body_spline import BodySplinePlan
+    from .character_identity import CharacterIdentity
+    from .character_registry import CharacterRegistration
+
+    if (not isinstance(source_registration, CharacterRegistration)
+            or not isinstance(target_registration, CharacterRegistration)
+            or not isinstance(source_registration.spine, BodySplinePlan)
+            or not isinstance(target_registration.spine, BodySplinePlan)):
+        raise SkinWeightValidationError('自动脊柱影响迁移需要两个已登记的可变身体角色')
+    if len(source_registration.spine.body_joints) == len(target_registration.spine.body_joints):
+        raise SkinWeightValidationError('自动脊柱影响迁移要求脊柱段数不同')
+    if type(allow_target_extra_influences) is not bool:
+        raise SkinWeightValidationError('额外目标影响关节策略须为布尔值')
+    def short(path):
+        return path.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
+    def unique(paths, label):
+        if (not isinstance(paths, tuple) or not paths
+                or any(not isinstance(path, str) or not path.strip() for path in paths)):
+            raise SkinWeightValidationError(label + '影响关节路径无效')
+        result = {short(path): path for path in paths}
+        if len(result) != len(paths):
+            raise SkinWeightValidationError(label + '影响关节短名重复')
+        return result
+    source_paths = unique(source_influence_paths, '来源')
+    target_paths = unique(target_influence_paths, '目标')
+    if source_namespace == target_namespace:
+        raise SkinWeightValidationError('来源和目标角色命名空间必须不同')
+    source_identity = CharacterIdentity(source_namespace)
+    target_identity = CharacterIdentity(target_namespace)
+    source_registered = {short(row.path): row.path for row in source_registration.body}
+    target_registered = {short(row.path): row.path for row in target_registration.body}
+    source_bind = {short(row.path): row.matrix for row in source_registration.body}
+    target_bind = {short(row.path): row.matrix for row in target_registration.body}
+    source_spine = tuple(short(path) for path in source_registration.spine.body_joints)
+    target_spine = tuple(short(path) for path in target_registration.spine.body_joints)
+    if (source_spine[0] != target_spine[0] or source_spine[-1] != target_spine[-1]
+            or set(source_bind) - set(source_spine[1:-1])
+               != set(target_bind) - set(target_spine[1:-1])):
+        raise SkinWeightValidationError('自动影响迁移仅支持脊柱内部关节数量变化')
+    if not set(source_paths).issubset(source_bind) or not set(target_paths).issubset(target_bind):
+        raise SkinWeightValidationError('Skin 影响关节须全部属于对应登记 Body')
+    for observed, registered, identity, label in (
+            (source_paths, source_registered, source_identity, '来源'),
+            (target_paths, target_registered, target_identity, '目标')):
+        if any(path not in (registered[name], identity.to_scene(registered[name]))
+               for name, path in observed.items()):
+            raise SkinWeightValidationError(label + ' Skin 影响关节不属于指定角色命名空间')
+    if not set(target_spine).issubset(target_paths):
+        raise SkinWeightValidationError('目标 Skin 须包含完整 Root→Chest 脊柱影响链')
+    nonspine = tuple(name for name in source_paths if name not in source_spine)
+    missing = set(nonspine) - set(target_paths)
+    if missing:
+        raise SkinWeightValidationError('目标 Skin 缺少同名非脊柱影响关节：'
+                                        + ','.join(sorted(missing)))
+    expected = set(target_spine) | set(nonspine)
+    extras = set(target_paths) - expected
+    if extras and not allow_target_extra_influences:
+        raise SkinWeightValidationError('目标 Skin 含未映射影响关节：'
+                                        + ','.join(sorted(extras)))
+    def positions(bind, chain):
+        points = tuple(bind[name][12:15] for name in chain)
+        lengths = tuple(sqrt(sum((a-b)**2 for a, b in zip(left, right)))
+                        for left, right in zip(points, points[1:]))
+        total = sum(lengths)
+        if total <= 1e-9 or any(length <= 1e-9 for length in lengths):
+            raise SkinWeightValidationError('登记绑定脊柱包含零长度骨段')
+        cumulative = [0.]
+        for length in lengths:
+            cumulative.append(cumulative[-1] + length / total)
+        cumulative[-1] = 1.
+        return tuple(cumulative)
+    template = linear_spine_weight_redistribution(source_spine, target_spine,
+        target_skin_name=target_skin_name, target_mesh_path=target_mesh_path,
+        other_influences=tuple((name, name) for name in nonspine),
+        source_positions=positions(source_bind, source_spine),
+        target_positions=positions(target_bind, target_spine))
+    rows = tuple(SkinWeightInfluenceRedistribution(source_paths[row.source_path],
+        tuple(SkinWeightRedistributionTarget(target_paths[item.path], item.fraction)
+              for item in row.targets))
+        for row in template.influences if row.source_path in source_paths)
+    return SkinWeightRedistribution(target_skin_name, target_mesh_path,
+                                    target_influence_paths, rows)

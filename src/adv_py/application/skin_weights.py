@@ -85,15 +85,22 @@ class EditSkinWeights:
         if not plan.changes:
             return SkinWeightEditResult(plan, plan.input_state)
         with self._host.transaction("写入显式顶点权重"):
-            current = self._host.capture_skin_weight_input(plan.request)
-            if current != plan.input_state or audit_skin_weight_input(plan.request, current):
-                raise FitSkeletonValidationError("权重编辑输入在执行前发生变化")
-            self._host.apply_skin_weight_changes(plan.request, plan.changes)
-            snapshot = self._host.capture_skin_weight_input(plan.request)
-            issues = audit_skin_weight_result(plan.request, snapshot)
-            if issues:
-                raise RuntimeError(
-                    "权重编辑后复检失败："
-                    + "；".join(issue.message for issue in issues)
-                )
+            return self.apply_plan_in_transaction(plan)
+
+    def apply_plan_in_transaction(self, plan: SkinWeightEditPlan) -> SkinWeightEditResult:
+        """Apply a preflighted edit within a larger caller-owned transaction."""
+        if not plan.ready:
+            raise FitSkeletonValidationError(
+                "权重编辑预检失败，场景未修改：" + "；".join(plan.blockers))
+        current = self._host.capture_skin_weight_input(plan.request)
+        if current != plan.input_state or audit_skin_weight_input(plan.request, current):
+            raise FitSkeletonValidationError("权重编辑输入在执行前发生变化")
+        if not plan.changes:
+            return SkinWeightEditResult(plan, current)
+        self._host.apply_skin_weight_changes(plan.request, plan.changes)
+        snapshot = self._host.capture_skin_weight_input(plan.request)
+        issues = audit_skin_weight_result(plan.request, snapshot)
+        if issues:
+            raise RuntimeError("权重编辑后复检失败："
+                               + "；".join(issue.message for issue in issues))
         return SkinWeightEditResult(plan, snapshot)

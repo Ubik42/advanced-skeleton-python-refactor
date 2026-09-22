@@ -517,6 +517,7 @@ __all__ = [
     "RetargetMocapFullIkToCharacter",
     "RetargetMocapVariableFullFkToCharacter", "MocapVariableFullPlan",
     "RetargetCharacterSpineFk",
+    "MigrateRegisteredSpineCharacter", "RegisteredSpineMigrationResult",
     "MocapFkGroupPlan", "MocapFkGroupSample",
     "RetargetMocapVariableSplineIkToCharacter",
     "RetargetMocapVariableFullIkToCharacter",
@@ -629,6 +630,8 @@ from .mocap_control_retarget import RetargetMocapFullIkToCharacter
 from .mocap_variable_retarget import (RetargetMocapVariableFullFkToCharacter,
     MocapVariableFullPlan,MocapFkGroupPlan,MocapFkGroupSample)
 from .character_spine_retarget import RetargetCharacterSpineFk
+from .character_spine_migration import (MigrateRegisteredSpineCharacter,
+                                        RegisteredSpineMigrationResult)
 from .mocap_variable_retarget import RetargetMocapVariableSplineIkToCharacter
 from .mocap_variable_retarget import RetargetMocapVariableFullIkToCharacter
 from .mocap_variable_retarget import RetargetMocapVariableMixedToCharacter

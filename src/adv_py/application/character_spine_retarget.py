@@ -1,4 +1,5 @@
 """Transfer a registered variable-spine character take to another topology."""
+from contextlib import nullcontext
 from math import isfinite
 from adv_py.core.body_spline import BodySplinePlan
 from adv_py.core.character_registry import CharacterRegistryError
@@ -17,6 +18,19 @@ class RetargetCharacterSpineFk:
 
     def apply(self, source_namespace, *, start_frame, end_frame, sample_by=1,
               reference_frame=None):
+        return self._apply(source_namespace, start_frame=start_frame,
+            end_frame=end_frame, sample_by=sample_by,
+            reference_frame=reference_frame, own_transaction=True)
+
+    def apply_in_transaction(self, source_namespace, *, start_frame, end_frame,
+                             sample_by=1, reference_frame=None):
+        """Write inside the caller's transaction for combined animation/Skin edits."""
+        return self._apply(source_namespace, start_frame=start_frame,
+            end_frame=end_frame, sample_by=sample_by,
+            reference_frame=reference_frame, own_transaction=False)
+
+    def _apply(self, source_namespace, *, start_frame, end_frame, sample_by,
+               reference_frame, own_transaction):
         frames = character_sample_frames(start_frame, end_frame, sample_by)
         if (reference_frame is not None and
                 (isinstance(reference_frame, bool) or
@@ -36,7 +50,9 @@ class RetargetCharacterSpineFk:
             raise CharacterRegistryError('脊柱迁移来源必须是已登记的可变脊柱角色')
         if len(source.spine.body_joints) == len(target.spine.body_joints):
             raise CharacterRegistryError('此入口要求来源与目标脊柱段数不同')
-        with self._host.transaction('Retarget character across spine counts'):
+        boundary = (self._host.transaction('Retarget character across spine counts')
+                    if own_transaction else nullcontext())
+        with boundary:
             bridge_root = self._host.create_resampled_character_source(target, samples)
             body_names = {short(joint.path) for joint in target.body}
             required = {short(target.body_root),

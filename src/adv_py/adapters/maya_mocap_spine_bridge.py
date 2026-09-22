@@ -46,6 +46,10 @@ def capture_resampled_character_source(host, source_namespace, target, frames):
     common_target = set(target_by_name) - set(target_spine[1:-1])
     if common_source != common_target or source_spine[0] != target_spine[0] or source_spine[-1] != target_spine[-1]:
         raise CharacterRegistryError('跨段数迁移仅支持脊柱内部关节数变化，其余 Body 关节须同名')
+    source_bind = { _short(row.path): row.matrix for row in source.body }
+    target_bind = { _short(row.path): row.matrix for row in target.body }
+    source_positions = _positions(tuple(source_bind[name] for name in source_spine))
+    target_positions = _positions(tuple(target_bind[name] for name in target_spine))
     c = source_host._cmds
     old_time = float(c.currentTime(query=True))
     sampled = {}
@@ -55,15 +59,9 @@ def capture_resampled_character_source(host, source_namespace, target, frames):
             sampled[frame] = {name: tuple(float(x) for x in
                 c.xform(path, query=True, worldSpace=True, matrix=True))
                 for name, path in source_by_name.items()}
-        c.currentTime(frames[0], edit=True)
-        target_reference = tuple(tuple(float(x) for x in
-            host._cmds.xform(path, query=True, worldSpace=True, matrix=True))
-            for path in target.spine.body_joints)
     finally:
         c.currentTime(old_time, edit=True)
-    # Bind correspondence is fixed at the first sample, even if spine lengths animate.
-    source_positions = _positions(tuple(sampled[frames[0]][name] for name in source_spine))
-    target_positions = _positions(target_reference)
+    # Registration bind matrices define correspondence independent of animation.
     result = []
     for frame in frames:
         source_pose = sampled[frame]

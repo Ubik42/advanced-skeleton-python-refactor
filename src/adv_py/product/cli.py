@@ -25,6 +25,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     load_skin_weight_surface_source,
     ImportMocapFbx, RetargetMocapFullFkToCharacter,
     RetargetCharacterSpineFk,
+    MigrateRegisteredSpineCharacter,
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
     load_mocap_mapping_preset,
     ResolveBodyCharacter, TransferFaceTargetAsset,
@@ -36,7 +37,8 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
 from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
                          BodyFbxExportProfile, BodyFbxFileVersion,
                          FaceLandmark, FaceShapeKind, FaceTarget,
-                         face_performance_from_json)
+                         face_performance_from_json,
+                         registered_spine_weight_redistribution)
 from adv_py.core.variable_body_fit import variable_axial_description
 from .input_documents import (load_face_build_spec, load_face_landmarks,
                               load_skin_path_mapping, load_skin_redistribution,
@@ -255,6 +257,8 @@ def parser() -> argparse.ArgumentParser:
     surface_mapping.add_argument("--mapping", type=Path)
     surface_mapping.add_argument("--redistribution", type=Path,
         help="源影响关节到一个或多个目标关节的完整比例文档")
+    surface_mapping.add_argument("--registered-source-namespace",
+        help="从同场景已登记来源角色与目标角色的绑定脊柱自动计算影响重分配")
     skin_surface.add_argument("--alignment", type=Path,
         help="三个源/目标顶点对应及误差上限的 JSON 文件")
     skin_surface.add_argument("--max-distance", type=float, required=True)
@@ -309,6 +313,23 @@ def parser() -> argparse.ArgumentParser:
     spine_transfer.add_argument("--step", type=int, default=1)
     spine_transfer.add_argument("--reference", type=float)
     spine_transfer.add_argument("--output", type=Path, required=True)
+    spine_migrate = commands.add_parser("character-spine-migrate",
+        help="单次事务迁移已登记角色的变段数脊柱 FK 动画和 Skin 权重")
+    spine_migrate.add_argument("scene", type=Path)
+    spine_migrate.add_argument("--namespace", required=True)
+    spine_migrate.add_argument("--source-namespace", required=True)
+    spine_migrate.add_argument("--source-skin", required=True)
+    spine_migrate.add_argument("--source-mesh", required=True)
+    spine_migrate.add_argument("--target-skin", required=True)
+    spine_migrate.add_argument("--target-mesh", required=True)
+    spine_migrate.add_argument("--start", type=int, required=True)
+    spine_migrate.add_argument("--end", type=int, required=True)
+    spine_migrate.add_argument("--step", type=int, default=1)
+    spine_migrate.add_argument("--reference", type=float)
+    spine_migrate.add_argument("--max-distance", type=float, required=True)
+    spine_migrate.add_argument("--max-discarded-weight", type=float, default=0.)
+    spine_migrate.add_argument("--allow-target-extra-influences", action="store_true")
+    spine_migrate.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
     rebuild.add_argument("scene", type=Path)
     rebuild.add_argument("--namespace", required=True)
@@ -511,6 +532,26 @@ def _run(args, gateway) -> dict:
         _emit("scene_saved", scene=str(output))
         return {"status": "ok", "output": str(output),
                 "frames": len(samples[0]), "mode": "fk"}
+    if args.command == "character-spine-migrate":
+        from adv_py.adapters import MayaCharacterSpineMigrationHost
+
+        gateway.preflight_output(args.output)
+        target_namespace = "" if args.namespace == ":" else args.namespace
+        source_namespace = "" if args.source_namespace == ":" else args.source_namespace
+        target = MayaCharacterSpineMigrationHost(namespace=target_namespace)
+        result = MigrateRegisteredSpineCharacter(target).apply(source_namespace,
+            args.source_skin, args.source_mesh, args.target_skin, args.target_mesh,
+            start_frame=args.start, end_frame=args.end, sample_by=args.step,
+            reference_frame=args.reference, max_distance=args.max_distance,
+            max_discarded_weight=args.max_discarded_weight,
+            allow_target_extra_influences=args.allow_target_extra_influences)
+        _emit("character_spine_migrated", frames=result.frames,
+              groups=result.fk_groups, changed_vertices=result.changed_vertices)
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output),
+                "frames": result.frames, "fk_groups": result.fk_groups,
+                "changed_vertices": result.changed_vertices}
     if args.command == "face-asset-export":
         output = args.output.resolve()
         if output.suffix.lower() != ".json" or output.exists():
@@ -607,6 +648,31 @@ def _run(args, gateway) -> dict:
         mapping = load_skin_path_mapping(args.mapping) if args.mapping else None
         redistribution = (load_skin_redistribution(args.redistribution)
             if args.redistribution else None)
+        target_skin = args.target_skin
+        target_mesh = args.target_mesh
+        if args.registered_source_namespace:
+            if args.source_asset or not args.source_mesh:
+                raise ValueError("登记脊柱影响迁移需要同场景源 skinCluster 和源网格")
+            from adv_py.adapters import MayaBodyBuildHost
+            source_namespace = ("" if args.registered_source_namespace == ":"
+                                else args.registered_source_namespace)
+            source_registration = MayaBodyBuildHost(
+                namespace=source_namespace).read_character_registration()
+            target_registration = host.read_character_registration()
+            source_state = host.capture_all_skin_weights(args.source_skin,
+                                                         args.source_mesh)
+            target_state = host.capture_all_skin_weights(args.target_skin,
+                                                         args.target_mesh)
+            target_skin = target_state.skin_name
+            target_mesh = target_state.geometry_path
+            redistribution = registered_spine_weight_redistribution(
+                source_registration, target_registration,
+                source_state.influence_paths, target_state.influence_paths,
+                source_namespace=source_namespace,
+                target_namespace=host.namespace,
+                target_skin_name=target_skin,
+                target_mesh_path=target_mesh,
+                allow_target_extra_influences=args.allow_target_extra_influences)
         alignment = load_surface_alignment(args.alignment) if args.alignment else None
         operation = TransferSkinWeightsBySurface(host)
         if args.source_asset:
@@ -614,7 +680,7 @@ def _run(args, gateway) -> dict:
                 raise ValueError("使用源资产时不得同时指定源网格")
             source = load_skin_weight_surface_source(args.source_asset)
             plan, edit = operation.apply_from_documents(source.weights,
-                source.geometry, args.target_skin, args.target_mesh,
+                source.geometry, target_skin, target_mesh,
                 max_distance=args.max_distance,
                 max_discarded_weight=args.max_discarded_weight, mapping=mapping,
                 redistribution=redistribution,
@@ -626,7 +692,7 @@ def _run(args, gateway) -> dict:
             if not args.source_mesh:
                 raise ValueError("场景内转移须提供源网格路径")
             result = operation.apply(args.source_skin, args.source_mesh,
-                args.target_skin, args.target_mesh, max_distance=args.max_distance,
+                target_skin, target_mesh, max_distance=args.max_distance,
                 max_discarded_weight=args.max_discarded_weight, mapping=mapping,
                 redistribution=redistribution,
                 alignment=alignment,

@@ -3772,14 +3772,14 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
         from maya.api import OpenMayaAnim as oma
 
         selection = om.MSelectionList()
-        selection.add(skin)
+        selection.add(self.scene_address(skin))
         skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
         selection = om.MSelectionList()
-        selection.add(shape)
+        selection.add(self.scene_address(shape))
         dag = selection.getDagPath(0)
         influence_order = {path.fullPathName(): index
                            for index, path in enumerate(skin_fn.influenceObjects())}
-        if any(path not in influence_order for path in influences):
+        if any(self.scene_address(path) not in influence_order for path in influences):
             raise RuntimeError("skinCluster API 影响关节集合与场景查询不一致")
         requested = (tuple(range(vertex_count)) if vertex_indices is None
                      else tuple(index for index in vertex_indices if index < vertex_count))
@@ -3799,7 +3799,8 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
             for offset, vertex_index in enumerate(component_indices):
                 weights = []
                 for path in influences:
-                    value = float(values[offset * influence_count + influence_order[path]])
+                    value = float(values[offset * influence_count
+                        + influence_order[self.scene_address(path)]])
                     if value > SKIN_WEIGHT_VISIBLE_THRESHOLD:
                         weights.append(SkinInfluenceWeight(path, value))
                 rows.append(SkinVertexWeights(vertex_index, tuple(weights)))

@@ -3,6 +3,7 @@
 from .maya_mocap import MayaMocapBakeHost
 from .maya_mocap_clip import MayaMocapClipHost
 from .maya_mocap_control import MayaMocapControlHost
+from .maya_character_spine_migration import MayaCharacterSpineMigrationHost
 
 from .blender import BlenderAdapterStatus, BlenderRigHost
 from .maya import MayaAdapterStatus, MayaRigHost
@@ -20,6 +21,7 @@ __all__ = [
     "MayaMocapBakeHost",
     "MayaMocapClipHost",
     "MayaMocapControlHost",
+    "MayaCharacterSpineMigrationHost",
 
     "BlenderAdapterStatus",
     "BlenderRigHost",
