@@ -143,19 +143,20 @@ class ReplaceRegisteredSpineCharacter:
     def apply(self, source_namespace, target_namespace, skin_name, mesh_path,
               *, start_frame, end_frame, sample_by=1, reference_frame=None,
               spine_mode='fk', max_mesh_error=None, max_body_error=None,
-              retained_assets=(), retained_nodes=()):
+              retained_assets=(), retained_nodes=(), retained_graph_roots=()):
         return self.apply_many(source_namespace, target_namespace,
             ((skin_name, mesh_path),), start_frame=start_frame,
             end_frame=end_frame, sample_by=sample_by,
             reference_frame=reference_frame, spine_mode=spine_mode,
             max_mesh_error=max_mesh_error, max_body_error=max_body_error,
-            retained_assets=retained_assets, retained_nodes=retained_nodes)
+            retained_assets=retained_assets, retained_nodes=retained_nodes,
+            retained_graph_roots=retained_graph_roots)
 
     def apply_many(self, source_namespace, target_namespace, skins,
                    *, start_frame, end_frame, sample_by=1,
                    reference_frame=None, extensions=(), spine_mode='fk',
                    max_mesh_error=None, max_body_error=None,
-                   retained_assets=(), retained_nodes=()):
+                   retained_assets=(), retained_nodes=(), retained_graph_roots=()):
         host = self._host
         if host.namespace != target_namespace:
             raise CharacterRegistryError('目标动画宿主与目标角色命名空间不一致')
@@ -195,8 +196,13 @@ class ReplaceRegisteredSpineCharacter:
         extension_frames = (ik_take.frames if ik_take else
             tuple(sorted({*sampled,
                 *((a+b)/2 for a,b in zip(sampled,sampled[1:]))})))
+        graph_names = global_host.expand_original_spine_retained_graph(
+            source_namespace, retained_graph_roots)
+        explicit_names = tuple(retained_nodes)
+        node_names = (*explicit_names,
+            *(name for name in graph_names if name not in explicit_names))
         node_plans = global_host.plan_original_spine_retained_nodes(
-            source_namespace, retained_nodes)
+            source_namespace, node_names)
         node_uuids = tuple(uuid for uuid, _ in node_plans)
         extension_moves = global_host.plan_original_spine_extensions(
             source_namespace, target_namespace, extensions, extension_frames,

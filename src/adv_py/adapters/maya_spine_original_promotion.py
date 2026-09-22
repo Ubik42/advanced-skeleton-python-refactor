@@ -177,6 +177,58 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
             planned.append((uuid, _node_connections(cmds, name)))
         return tuple(planned)
 
+    def expand_original_spine_retained_graph(self, source_namespace, roots):
+        """Collect writable, source-owned DG nodes connected by data plugs."""
+        from maya import cmds
+
+        roots = tuple(roots)
+        if not roots:
+            return ()
+        for root in roots:
+            if (cmds.ls(root, long=True) or []) != [root]:
+                raise CharacterRegistryError('保留图根须是唯一完整 DG 节点名：'
+                                             + str(root))
+        source = MayaBodyBuildHost(namespace=source_namespace)
+        registration = source.read_character_registration()
+        registered = {source.scene_address(row.path)
+                      for row in registration.nodes}
+        fit_root = source.scene_address(registration.container)
+        owner = CharacterIdentity(source_namespace)
+        pending = list(roots)
+        visited = set()
+        found = {}
+        while pending:
+            name = pending.pop()
+            matches = cmds.ls(name, long=True) or []
+            if len(matches) != 1:
+                raise CharacterRegistryError('保留图节点名称不唯一：' + str(name))
+            name = matches[0]
+            uuid = _uuid(cmds, name)
+            if uuid in visited:
+                continue
+            visited.add(uuid)
+            if (not owner.owns(name)
+                    or 'dagNode' in (cmds.nodeType(name, inherited=True) or [])
+                    or _rig_role(cmds, name, registered, fit_root)):
+                if name in roots:
+                    raise CharacterRegistryError('保留图根须是原角色独立 DG 节点：'
+                                                 + name)
+                continue
+            if (cmds.referenceQuery(name, isNodeReferenced=True)
+                    or any(cmds.lockNode(name, query=True, lock=True) or [])):
+                raise CharacterRegistryError('保留图包含不可写 DG 节点：' + name)
+            found[uuid] = name
+            pairs = cmds.listConnections(name, source=True, destination=True,
+                                         plugs=True, connections=True) or []
+            for local, peer in zip(pairs[::2], pairs[1::2]):
+                if (local.split('.', 1)[1] == 'message'
+                        or peer.split('.', 1)[1] == 'message'):
+                    continue
+                peer_name = peer.split('.', 1)[0]
+                if owner.owns(peer_name):
+                    pending.append(peer_name)
+        return tuple(sorted(found.values()))
+
     def verify_original_spine_retained_nodes(self, planned):
         from maya import cmds
 

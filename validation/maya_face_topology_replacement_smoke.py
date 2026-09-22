@@ -26,13 +26,14 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
             controls = cmds.ls("source:AdvPy_FaceControls", long=True) or []
             followers = cmds.ls("source:FaceFollower", long=True) or []
             drivers = cmds.ls("source:FaceDriver", long=True) or []
+            gains = cmds.ls("source:FaceGain", long=True) or []
             props = cmds.ls("source:FingerProp", long=True) or []
             spine_props = cmds.ls("source:SpineProp", long=True) or []
             spine_parent = (cmds.listRelatives(spine_props[0], parent=True,
                 fullPath=True) or [None])[0] if spine_props else None
             good = (len(registration.spine.body_joints) == 7 and
                     not cmds.namespace(exists="target") and
-                    len(controls) == len(followers) == len(drivers)
+                    len(controls) == len(followers) == len(drivers) == len(gains)
                     == len(props) == len(spine_props) == 1 and
                     cmds.objExists("source:FaceSkin") and
                     cmds.objExists("source:AdvPy_FaceBlendShape") and
@@ -71,9 +72,12 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
         follower = cmds.createNode("transform", name="source:FaceFollower",
                                    parent=control)
         driver = cmds.createNode("multiplyDivide", name="source:FaceDriver")
+        gain = cmds.createNode("multiplyDivide", name="source:FaceGain")
         cmds.setAttr(driver + ".input2X", 1.)
+        cmds.setAttr(gain + ".input2X", 1.)
         cmds.connectAttr(control + ".smile_R", driver + ".input1X")
-        cmds.connectAttr(driver + ".outputX", follower + ".translateX")
+        cmds.connectAttr(driver + ".outputX", gain + ".input1X")
+        cmds.connectAttr(gain + ".outputX", follower + ".translateX")
         prop = cmds.createNode("transform", name="source:FingerProp",
                                parent=face.scene_address(finger))
         prop = (cmds.ls(prop, long=True) or [prop])[0]
@@ -91,9 +95,19 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
                               (20, (.25, 0.))):
             for attr, value in zip(("smile_R", "viseme_A"), values):
                 cmds.setKeyframe(control, attribute=attr, time=frame, value=value)
+        promotion_host = MayaOriginalSpinePromotionHost()
+        graph_exact = set(promotion_host.expand_original_spine_retained_graph(
+            "source", (driver,))) == {driver, gain}
+        try:
+            promotion_host.expand_original_spine_retained_graph(
+                "source", ("source:AdvPy_SplineArc",))
+        except ValueError:
+            old_rig_graph_root_rejected = True
+        else:
+            old_rig_graph_root_rejected = False
         identities = {node: (cmds.ls(node, uuid=True) or [None])[0]
                       for node in (neutral, "source:FaceSkin", control,
-                                   deformer, follower, driver, prop, prop_curve,
+                                   deformer, follower, driver, gain, prop, prop_curve,
                                    spine_prop, *targets)}
         before = {}
         prop_before = {}
@@ -113,7 +127,7 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
         (folder / "face-topology-input.json").write_text(json.dumps({
             "control": control, "prop": prop, "spine_prop": spine_prop,
             "targets": targets,
-            "driver": driver}, ensure_ascii=False),
+            "driver": driver, "gain": gain}, ensure_ascii=False),
             encoding="utf8")
         replacement = ReplaceRegisteredSpineCharacter(
             MayaOriginalSkinSpineMigrationHost(namespace="target"))
@@ -121,11 +135,12 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
                                      ("source:FaceSkin", "|source:FaceNeutral")))
         kwargs = dict(start_frame=1, end_frame=10,
                       extensions=(control, prop, spine_prop),
-                      retained_assets=targets, retained_nodes=(driver,),
+                      retained_assets=targets, retained_graph_roots=(driver,),
                       max_mesh_error=.2)
         try:
             replacement.apply_many(*args, **{
-                key: value for key, value in kwargs.items() if key != "retained_nodes"})
+                key: value for key, value in kwargs.items()
+                if key != "retained_graph_roots"})
         except ValueError as error:
             undeclared_driver_rejected = ("附件输入需要独占的原生动画曲线" in str(error) and
                 cmds.namespace(exists="target") and
@@ -162,6 +177,7 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
             new_control = cmds.ls(identities[control], long=True) or []
             new_follower = cmds.ls(identities[follower], long=True) or []
             new_driver = cmds.ls(identities[driver], long=True) or []
+            new_gain = cmds.ls(identities[gain], long=True) or []
             new_prop = cmds.ls(identities[prop], long=True) or []
             new_spine_prop = cmds.ls(identities[spine_prop], long=True) or []
             new_head = next(j.path for j in new_reg.body
@@ -217,8 +233,11 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
                             abs(cmds.getAttr(new_control[0] + ".smile_R", time=frame) - value) < 1e-6
                             for frame, value in ((0, .15), (5, 1.), (20, .25))),
                         internal_driver_preserved=bool(new_control and new_follower
-                            and new_driver) and
+                            and new_driver and new_gain) and
                             (cmds.ls(cmds.connectionInfo(new_follower[0] + ".translateX",
+                                sourceFromDestination=True).split('.', 1)[0], uuid=True)
+                                or [None])[0] == identities[gain] and
+                            (cmds.ls(cmds.connectionInfo(new_gain[0] + ".input1X",
                                 sourceFromDestination=True).split('.', 1)[0], uuid=True)
                                 or [None])[0] == identities[driver] and
                             (cmds.ls(cmds.connectionInfo(new_driver[0] + ".input1X",
@@ -244,13 +263,16 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
         cmds.file(save=True, type="mayaAscii", force=True)
         cmds.file(str(scene), open=True, force=True)
         reopened = check()
-        report = dict(passed=passed, undeclared_driver_rejected=undeclared_driver_rejected,
+        report = dict(passed=passed, graph_exact=graph_exact,
+                      old_rig_graph_root_rejected=old_rig_graph_root_rejected,
+                      undeclared_driver_rejected=undeclared_driver_rejected,
                       rollback=rollback, undo=undo, undo_details=undo_details,
                       redo=redo, reopened=reopened)
         (folder / "face-topology-replacement.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf8")
         print(json.dumps(report, ensure_ascii=False), flush=True)
-        return 0 if (undeclared_driver_rejected and rollback and undo and
+        return 0 if (graph_exact and old_rig_graph_root_rejected and
+                     undeclared_driver_rejected and rollback and undo and
                      all(x == passed for x in (redo, reopened)) and
                      passed["spine_joints"] == 7 and passed["namespace_removed"] and
                      passed["identities_preserved"] and passed["face_control_on_new_head"] and
