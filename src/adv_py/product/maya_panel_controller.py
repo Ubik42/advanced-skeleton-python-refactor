@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from adv_py.adapters import MayaFaceHost
+from adv_py.adapters import MayaFaceHost, MayaOriginalSkinSpineMigrationHost
 from adv_py.application import (ApplyBodyCharacterAnimation,
     ApplyBodyCharacterPose, ApplyFacePerformance, BindSkin,
     BakeBodyExportSkeleton, BuildBodyExportSkeleton, BuildBodyRootMotion,
@@ -21,7 +21,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     FaceAssetLibrary, ImportSkinWeights, InspectBodyCharacterPresets,
     CaptureSkinWeightSurfaceSource, TransferSkinWeightsBySurface,
     load_skin_weight_surface_source, save_skin_weight_surface_source,
-    RebuildBodyCharacter, ResolveBodyCharacter,
+    RebuildBodyCharacter, ReplaceRegisteredSpineCharacter, ResolveBodyCharacter,
     ImportMocapFbx, RetargetMocapFullFkToCharacter,
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
     load_mocap_mapping_preset,
@@ -136,6 +136,40 @@ class MayaPanelController:
             progress("替换完成，原角色与保留数据已复核")
         return PanelCharacter(namespace, True, len(result.registration.body),
                               len(result.registration.channels))
+
+    def spine_replace(self, namespace: str, replacement: str,
+                      skins: tuple[tuple[str, str], ...], *, start: int,
+                      end: int, step: int = 1, mode: str = "fk",
+                      fk_substeps: int = 1, max_mesh_error: float | None = None,
+                      max_body_error: float | None = None,
+                      extensions: tuple[str, ...] = (),
+                      retained_assets: tuple[str, ...] = (),
+                      retained_nodes: tuple[str, ...] = (),
+                      retained_graph_roots: tuple[str, ...] = (),
+                      progress: Callable[[str], None] | None = None):
+        source = "" if namespace == ":" else namespace.strip()
+        target = replacement.strip()
+        if not source:
+            raise ValueError("跨段数替换要求来源角色位于独立命名空间")
+        if not target or target == ":" or target == source:
+            raise ValueError("请选择不同于来源角色的已登记目标命名空间")
+        if (not skins or any(not skin or not mesh for skin, mesh in skins)
+                or len({skin for skin, _ in skins}) != len(skins)
+                or len({mesh for _, mesh in skins}) != len(skins)):
+            raise ValueError("每行 Skin 和网格路径须一一对应且不重复")
+        if progress:
+            progress("核对新旧角色、Skin、动画与需保留的用户数据")
+        result = ReplaceRegisteredSpineCharacter(
+            MayaOriginalSkinSpineMigrationHost(namespace=target)).apply_many(
+                source, target, skins, start_frame=start, end_frame=end,
+                sample_by=step, spine_mode=mode, fk_substeps=fk_substeps,
+                max_mesh_error=max_mesh_error, max_body_error=max_body_error,
+                extensions=extensions, retained_assets=retained_assets,
+                retained_nodes=retained_nodes,
+                retained_graph_roots=retained_graph_roots)
+        if progress:
+            progress("角色已接管原命名空间，Skin、动画与保留数据已复检")
+        return result
 
     def skin_bind(self, namespace: str, mesh: str,
                   influences: tuple[str, ...], skin: str, maximum: int, *,

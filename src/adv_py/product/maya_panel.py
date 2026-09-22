@@ -206,8 +206,108 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("用户附件根", self.rebuild_extensions)])
             form.addRow(self._button("重建并保留数据", self._rebuild_character))
             stack.addWidget(group)
+
+            self.spine_replacement = QtWidgets.QLineEdit()
+            self.spine_replacement.setPlaceholderText("场景中已构建的目标角色命名空间")
+            self.spine_skins = QtWidgets.QPlainTextEdit()
+            self.spine_skins.setPlaceholderText("每行一个原 Skin 名称；与下方网格逐行对应")
+            self.spine_meshes = QtWidgets.QPlainTextEdit()
+            self.spine_meshes.setPlaceholderText("每行一个原网格完整 DAG 路径")
+            self.spine_extensions = QtWidgets.QPlainTextEdit()
+            self.spine_extensions.setPlaceholderText("每行一个原角色附件根完整路径；可留空")
+            self.spine_assets = QtWidgets.QPlainTextEdit()
+            self.spine_assets.setPlaceholderText("每行一个需保留的独立 DAG 资产根；可留空")
+            self.spine_nodes = QtWidgets.QPlainTextEdit()
+            self.spine_nodes.setPlaceholderText("每行一个需保留的独立 DG 节点；可留空")
+            self.spine_graph_roots = QtWidgets.QPlainTextEdit()
+            self.spine_graph_roots.setPlaceholderText("每行一个 DG 数据连接图根；可留空")
+            for field in (self.spine_skins, self.spine_meshes,
+                          self.spine_extensions, self.spine_assets,
+                          self.spine_nodes, self.spine_graph_roots):
+                field.setMaximumHeight(66)
+            self.spine_replace_start = QtWidgets.QSpinBox()
+            self.spine_replace_end = QtWidgets.QSpinBox()
+            self.spine_replace_step = QtWidgets.QSpinBox()
+            for field in (self.spine_replace_start, self.spine_replace_end):
+                field.setRange(-100000, 100000)
+            self.spine_replace_start.setValue(1)
+            self.spine_replace_end.setValue(10)
+            self.spine_replace_step.setRange(1, 100000)
+            self.spine_replace_mode = QtWidgets.QComboBox()
+            self.spine_replace_mode.addItem("FK 重采样", "fk")
+            self.spine_replace_mode.addItem("IK 曲线迁移", "ik")
+            self.spine_replace_mode.addItem("FK/IK 事件迁移", "hybrid")
+            self.spine_replace_substeps = QtWidgets.QSpinBox()
+            self.spine_replace_substeps.setRange(1, 8)
+            self.spine_replace_mesh_gate = QtWidgets.QCheckBox("限制网格误差")
+            self.spine_replace_mesh_gate.setChecked(True)
+            self.spine_replace_body_gate = QtWidgets.QCheckBox("限制身体误差")
+            self.spine_replace_mesh_limit = QtWidgets.QDoubleSpinBox()
+            self.spine_replace_body_limit = QtWidgets.QDoubleSpinBox()
+            for field in (self.spine_replace_mesh_limit,
+                          self.spine_replace_body_limit):
+                field.setRange(0., 1000.)
+                field.setDecimals(6)
+                field.setSingleStep(.001)
+                field.setSuffix(" cm")
+            self.spine_replace_mesh_limit.setValue(.1)
+            self.spine_replace_body_limit.setValue(.01)
+            self.spine_replace_mesh_gate.toggled.connect(
+                self.spine_replace_mesh_limit.setEnabled)
+            self.spine_replace_body_gate.toggled.connect(
+                self.spine_replace_body_limit.setEnabled)
+            self.spine_replace_body_limit.setEnabled(False)
+            self.spine_replace_mode.currentIndexChanged.connect(
+                self._spine_replace_mode_changed)
+            times = QtWidgets.QWidget()
+            time_grid = QtWidgets.QGridLayout(times)
+            time_grid.setContentsMargins(0, 0, 0, 0)
+            for index, (label, field) in enumerate((
+                    ("起始", self.spine_replace_start),
+                    ("结束", self.spine_replace_end),
+                    ("步长", self.spine_replace_step))):
+                row, column = divmod(index, 2)
+                field.setMaximumWidth(120)
+                time_grid.addWidget(QtWidgets.QLabel(label), row, column * 2)
+                time_grid.addWidget(field, row, column * 2 + 1)
+            limits = QtWidgets.QWidget()
+            limit_rows = QtWidgets.QVBoxLayout(limits)
+            limit_rows.setContentsMargins(0, 0, 0, 0)
+            for gate, field in ((self.spine_replace_mesh_gate,
+                                 self.spine_replace_mesh_limit),
+                                (self.spine_replace_body_gate,
+                                 self.spine_replace_body_limit)):
+                row = QtWidgets.QHBoxLayout()
+                row.addWidget(gate)
+                row.addStretch(1)
+                row.addWidget(field)
+                limit_rows.addLayout(row)
+            group, form = self._group("04 · 跨段数脊柱角色替换", [
+                ("目标命名空间", self.spine_replacement),
+                ("原 Skin", self.spine_skins),
+                ("原网格", self.spine_meshes),
+                ("动画区间", times),
+                ("迁移模式", self.spine_replace_mode),
+                ("FK 帧间细分", self.spine_replace_substeps),
+                ("误差上限", limits),
+                ("附件根", self.spine_extensions),
+                ("保留资产根", self.spine_assets),
+                ("保留 DG 节点", self.spine_nodes),
+                ("DG 图根", self.spine_graph_roots)])
+            form.addRow(self._button("替换脊柱角色并保留数据",
+                                      self._replace_spine_character))
+            stack.addWidget(group)
+            self._spine_replace_mode_changed()
             stack.addStretch(1)
             return page
+
+        def _spine_replace_mode_changed(self):
+            fk = self.spine_replace_mode.currentData() == "fk"
+            self.spine_replace_substeps.setEnabled(fk)
+            if not fk:
+                self.spine_replace_substeps.setValue(1)
+                self.spine_replace_mesh_gate.setChecked(True)
+            self.spine_replace_mesh_gate.setEnabled(fk)
 
         def _skin_page(self):
             page, stack = self._page()
@@ -688,6 +788,32 @@ def create_panel(controller: MayaPanelController | None = None):
                 progress=self._progress)
             return (f"角色已原位重建并保留数据：{result.joint_count} 个关节、"
                     f"{result.channel_count} 个通道")
+
+        def _replace_spine_character(self):
+            lines = lambda field: tuple(line.strip() for line in
+                field.toPlainText().splitlines() if line.strip())
+            skins = lines(self.spine_skins)
+            meshes = lines(self.spine_meshes)
+            if len(skins) != len(meshes) or not skins:
+                raise ValueError("原 Skin 与原网格须逐行对应，且至少填写一组")
+            result = self.controller.spine_replace(self._namespace(),
+                self.spine_replacement.text().strip(), tuple(zip(skins, meshes)),
+                start=self.spine_replace_start.value(),
+                end=self.spine_replace_end.value(),
+                step=self.spine_replace_step.value(),
+                mode=self.spine_replace_mode.currentData(),
+                fk_substeps=self.spine_replace_substeps.value(),
+                max_mesh_error=(self.spine_replace_mesh_limit.value()
+                    if self.spine_replace_mesh_gate.isChecked() else None),
+                max_body_error=(self.spine_replace_body_limit.value()
+                    if self.spine_replace_body_gate.isChecked() else None),
+                extensions=lines(self.spine_extensions),
+                retained_assets=lines(self.spine_assets),
+                retained_nodes=lines(self.spine_nodes),
+                retained_graph_roots=lines(self.spine_graph_roots),
+                progress=self._progress)
+            return (f"跨段数角色已替换：{result.frames} 个写键时刻、"
+                    f"{result.fk_groups} 组 FK 控制、{result.skin_count} 个 Skin")
 
         def _bind_skin(self):
             influences = tuple(line.strip() for line in

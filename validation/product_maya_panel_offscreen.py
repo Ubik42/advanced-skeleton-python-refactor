@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,12 @@ class FakeController:
         if progress:
             progress("暂存替换角色并核对需保留的数据")
         return PanelCharacter(namespace, True, 30, 157)
+
+    def spine_replace(self, namespace, replacement, skins, **options):
+        self.calls.append(("spine_replace", namespace, replacement, skins, options))
+        if options.get("progress"):
+            options["progress"]("角色已接管原命名空间")
+        return SimpleNamespace(frames=37, fk_groups=7, skin_count=len(skins))
 
     def skin_surface_source_export(self, namespace, skin, mesh, destination):
         self.calls.append(("skin_surface_source_export", namespace, skin, mesh,
@@ -109,6 +116,8 @@ def main(report: Path) -> int:
     face_image = report.with_name("maya-panel-face.png")
     face_library_image = report.with_name("maya-panel-face-library.png")
     rebuild_image = report.with_name("maya-panel-rebuild.png")
+    spine_image = report.with_name("maya-panel-spine-replace.png")
+    spine_narrow_image = report.with_name("maya-panel-spine-replace-narrow.png")
     publish_image = report.with_name("maya-panel-publish.png")
     mocap_image = report.with_name("maya-panel-mocap.png")
     pixmap = QtGui.QPixmap(panel.size())
@@ -219,6 +228,38 @@ def main(report: Path) -> int:
     panel.rebuild_extensions.setPlainText("|Head_M|AdvPy_FaceControls")
     buttons["重建并保留数据"].click()
     app.processEvents()
+    panel.spine_replacement.setText("target")
+    panel.spine_skins.setPlainText("hero:BodySkin\nhero:FaceSkin")
+    panel.spine_meshes.setPlainText("|hero:BodyMesh\n|hero:FaceMesh")
+    panel.spine_extensions.setPlainText("|hero:WristControl|hero:Prop")
+    panel.spine_assets.setPlainText("|hero:FaceTarget")
+    panel.spine_nodes.setPlainText("hero:FaceDriver")
+    panel.spine_graph_roots.setPlainText("hero:FaceGraph")
+    panel.spine_replace_substeps.setValue(4)
+    panel.spine_replace_body_gate.setChecked(True)
+    panel.spine_replace_body_limit.setValue(.007)
+    buttons["替换脊柱角色并保留数据"].click()
+    app.processEvents()
+    spine_dispatch = next((call for call in controller.calls
+        if isinstance(call, tuple) and call[0] == "spine_replace"), None)
+    panel.spine_replace_mode.setCurrentIndex(1)
+    ik_fields = (not panel.spine_replace_substeps.isEnabled()
+        and panel.spine_replace_substeps.value() == 1
+        and panel.spine_replace_mesh_gate.isChecked()
+        and not panel.spine_replace_mesh_gate.isEnabled())
+    panel.spine_replace_mode.setCurrentIndex(0)
+    fit_page.verticalScrollBar().setValue(fit_page.verticalScrollBar().maximum())
+    app.processEvents()
+    panel.render(pixmap)
+    spine_saved = pixmap.save(str(spine_image))
+    panel.resize(790, 590)
+    app.processEvents()
+    narrow_pixmap = QtGui.QPixmap(panel.size())
+    panel.render(narrow_pixmap)
+    spine_narrow_saved = narrow_pixmap.save(str(spine_narrow_image))
+    spine_narrow_horizontal_overflow = fit_page.horizontalScrollBar().maximum()
+    panel.resize(950, 710)
+    app.processEvents()
     checks = {
         "six_chinese_workspaces": [panel.tabs.tabText(i)
             for i in range(panel.tabs.count())]
@@ -253,10 +294,26 @@ def main(report: Path) -> int:
         "rebuild_dispatches_declared_extensions":
             ("body_rebuild", "hero", "CharacterRebuildStage",
              ("|Head_M|AdvPy_FaceControls",)) in controller.calls,
+        "spine_replacement_dispatches_complete_inputs": bool(spine_dispatch
+            and spine_dispatch[1:4] == ("hero", "target",
+                (("hero:BodySkin", "|hero:BodyMesh"),
+                 ("hero:FaceSkin", "|hero:FaceMesh")))
+            and spine_dispatch[4]["fk_substeps"] == 4
+            and spine_dispatch[4]["max_body_error"] == .007
+            and spine_dispatch[4]["extensions"]
+                == ("|hero:WristControl|hero:Prop",)
+            and spine_dispatch[4]["retained_graph_roots"]
+                == ("hero:FaceGraph",)),
+        "spine_narrow_no_horizontal_overflow":
+            spine_narrow_horizontal_overflow == 0,
+        "spine_mode_fields_follow_contract": ik_fields
+            and panel.spine_replace_substeps.isEnabled()
+            and panel.spine_replace_mesh_gate.isEnabled(),
         "result_updates_selected_role": "30 关节" in panel.current.text()
             and "157 通道" in panel.current.text(),
-        "success_feedback_visible": "角色已原位重建" in panel.status.toPlainText(),
+        "success_feedback_visible": "跨段数角色已替换" in panel.status.toPlainText(),
         "offscreen_views_rendered": fit_saved and rebuild_saved
+            and spine_saved and spine_narrow_saved
             and skin_saved and skin_transfer_saved and skin_narrow_saved
             and animation_saved and animation_edit_saved and animation_narrow_saved
             and face_saved and face_library_saved and mocap_saved and publish_saved,
