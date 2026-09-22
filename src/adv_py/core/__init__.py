@@ -685,9 +685,11 @@ from .matrix import (
 from .validation import PlanValidationError, validate_plan
 
 from .face_shapes import FaceShapeKind, FaceTarget, FaceMeshSnapshot, validate_face_targets
+from .face_performance import FacePerformance, face_performance_to_json, face_performance_from_json
 
 __all__ = [
     "FaceShapeKind", "FaceTarget", "FaceMeshSnapshot", "validate_face_targets",
+    "FacePerformance", "face_performance_to_json", "face_performance_from_json",
     "BodyTorsoPlan",
     "BodyTorsoSnapshot",
     "BodySpaceAttachment",

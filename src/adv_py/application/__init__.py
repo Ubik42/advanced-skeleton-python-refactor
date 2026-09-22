@@ -631,3 +631,4 @@ from .mocap_variable_retarget import RetargetMocapVariableMixedToCharacter
 from .mocap_variable_retarget import (RetargetMocapVariableScheduledToCharacter,
                                       MocapVariableScheduledPlan)
 from .face_shapes import BuildFaceBlendShapes, FaceBuildPlan, FaceBuildResult, FaceBinding
+from .face_performance import ApplyFacePerformance, FacePerformancePlan

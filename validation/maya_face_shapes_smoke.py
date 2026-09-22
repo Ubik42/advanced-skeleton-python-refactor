@@ -17,11 +17,12 @@ def main(output: Path) -> int:
         from maya import cmds
         from adv_py.adapters import MayaFaceHost
         from adv_py.application import (
-            BuildBodyCharacterRig, BuildFaceBlendShapes, BuildOrientedBodySkeleton,
+            ApplyFacePerformance, BuildBodyCharacterRig, BuildFaceBlendShapes, BuildOrientedBodySkeleton,
             BuildVariableBodySourceFit, CreateFitSkeleton, RegisterBodyCharacter,
             RebuildBodyCharacter,
         )
-        from adv_py.core import FaceShapeKind, FaceTarget
+        from adv_py.core import (FacePerformance, FaceShapeKind, FaceTarget,
+            face_performance_from_json, face_performance_to_json)
         from adv_py.core.variable_body_fit import variable_axial_description
 
         cmds.file(new=True, force=True)
@@ -111,11 +112,70 @@ def main(output: Path) -> int:
         cmds.redo()
         checks["redo_restores_face"] = (
             host.capture_face_binding(result.plan).max_geometry_delta > .1)
-        for frame, smile_value, viseme_value in ((1, 0., 0.), (5, 1., .4), (10, .2, 1.)):
+        for frame, value in ((0, .15), (20, .25)):
             host._cmds.setKeyframe(result.plan.control_path,
-                attribute="smile_R", time=frame, value=smile_value)
-            host._cmds.setKeyframe(result.plan.control_path,
-                attribute="viseme_A", time=frame, value=viseme_value)
+                attribute="smile_R", time=frame, value=value)
+        performance = FacePerformance(
+            (("smile_R", FaceShapeKind.EXPRESSION),
+             ("viseme_A", FaceShapeKind.VISEME)),
+            cmds.currentUnit(query=True, time=True),
+            ((1, (0., 0.)), (5, (1., .4)), (10, (.2, 1.))),
+        )
+        document = face_performance_to_json(performance)
+        checks["portable_performance_roundtrip"] = (
+            face_performance_from_json(document) == performance)
+        old_keys = tuple(cmds.keyframe(control + ".smile_R", query=True,
+                                   timeChange=True) or ())
+        old_values = tuple(cmds.keyframe(control + ".smile_R", query=True,
+                                     valueChange=True) or ())
+        class FailedPerformanceHost(MayaFaceHost):
+            def write_face_performance(self, plan):
+                super().write_face_performance(plan)
+                raise RuntimeError("Injected face performance failure")
+        try:
+            ApplyFacePerformance(FailedPerformanceHost(namespace="hero")).apply(
+                result.plan.control_path, performance)
+        except RuntimeError as error:
+            checks["failed_performance_rolled_back"] = (
+                "Injected face performance failure" in str(error)
+                and tuple(cmds.keyframe(control + ".smile_R", query=True,
+                    timeChange=True) or ()) == old_keys
+                and tuple(cmds.keyframe(control + ".smile_R", query=True,
+                    valueChange=True) or ()) == old_values
+                and not cmds.keyframe(control + ".viseme_A", query=True,
+                    timeChange=True))
+        else:
+            checks["failed_performance_rolled_back"] = False
+        ApplyFacePerformance(host).apply(result.plan.control_path, performance)
+        checks["clip_and_old_keys_coexist"] = (
+            abs(cmds.getAttr(control + ".smile_R", time=0) - .15) < 1e-8
+            and abs(cmds.getAttr(control + ".smile_R", time=20) - .25) < 1e-8
+            and abs(cmds.getAttr(control + ".viseme_A", time=10) - 1.) < 1e-8)
+        cmds.undo()
+        checks["single_undo_restores_old_face_keys"] = (
+            tuple(cmds.keyframe(control + ".smile_R", query=True,
+                timeChange=True) or ()) == old_keys
+            and not cmds.keyframe(control + ".viseme_A", query=True,
+                timeChange=True))
+        cmds.redo()
+        checks["redo_restores_performance"] = (
+            abs(cmds.getAttr(control + ".smile_R", time=5) - 1.) < 1e-8
+            and abs(cmds.getAttr(control + ".viseme_A", time=10) - 1.) < 1e-8)
+        clip_time = float(cmds.currentTime(query=True))
+        try:
+            cmds.currentTime(1)
+            baseline = host.capture_face_mesh("|FaceNeutral").points
+            cmds.currentTime(5)
+            expressive = host.capture_face_mesh("|FaceNeutral").points
+            cmds.currentTime(10)
+            speaking = host.capture_face_mesh("|FaceNeutral").points
+        finally:
+            cmds.currentTime(clip_time)
+        checks["sampled_frames_deform_mesh"] = (
+            max(abs(a - b) for p, q in zip(baseline, expressive)
+                for a, b in zip(p, q)) > .1
+            and max(abs(a - b) for p, q in zip(baseline, speaking)
+                for a, b in zip(p, q)) > .1)
         scene = output.with_suffix(".ma")
         cmds.file(rename=str(scene))
         cmds.file(save=True, type="mayaAscii", force=True)

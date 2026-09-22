@@ -5,13 +5,132 @@ from hashlib import sha256
 import json
 
 from adv_py.core.character_registry import CharacterRegistryError
-from adv_py.core.face_shapes import FaceMeshSnapshot
+from adv_py.core.face_shapes import FaceMeshSnapshot, FaceShapeKind
+from adv_py.core.face_performance import FacePerformance
 from adv_py.application.face_shapes import FaceBinding, FaceBuildPlan
+from adv_py.application.face_performance import FacePerformancePlan
 
 from .maya_body import MayaBodyBuildHost
 
 
 class MayaFaceHost(MayaBodyBuildHost):
+    def read_face_manifest(self, control_path: str) -> tuple:
+        from maya import cmds
+
+        control = self.scene_address(control_path)
+        if (not cmds.objExists(control) or
+                not cmds.attributeQuery("advPyFaceSchemaVersion", node=control, exists=True) or
+                cmds.getAttr(control + ".advPyFaceSchemaVersion") != 1):
+            raise CharacterRegistryError("面部控制或清单版本无效")
+        try:
+            rows = json.loads(cmds.getAttr(control + ".advPyFaceManifest"))
+            channels = tuple((name, FaceShapeKind(kind)) for name, kind in rows)
+            if not channels or len({name for name, _ in channels}) != len(channels):
+                raise ValueError()
+            for name, _ in channels:
+                if not cmds.attributeQuery(name, node=control, exists=True):
+                    raise ValueError()
+                destinations = cmds.listConnections(control + "." + name,
+                    source=False, destination=True, plugs=True) or []
+                if len(destinations) != 1 or cmds.nodeType(destinations[0].rsplit(".", 1)[0]) != "blendShape":
+                    raise ValueError()
+            return channels
+        except (TypeError, ValueError, KeyError, RuntimeError) as error:
+            raise CharacterRegistryError("面部控制清单或权重连接无效") from error
+
+    def preflight_face_performance(self, control_path: str,
+                                   performance: FacePerformance) -> None:
+        from maya import cmds
+
+        if cmds.currentUnit(query=True, time=True) != performance.time_unit:
+            raise CharacterRegistryError("面部动画时间单位与场景不一致")
+        if not cmds.undoInfo(query=True, state=True):
+            raise CharacterRegistryError("面部动画写入需要启用 Maya 撤销")
+        control = self.scene_address(control_path)
+        if cmds.referenceQuery(control, isNodeReferenced=True):
+            raise CharacterRegistryError("不能修改引用场景中的面部控制")
+        if cmds.animLayer(query=True, root=True):
+            raise CharacterRegistryError("面部动画写入不支持动画层")
+        for name, _ in performance.channels:
+            plug = control + "." + name
+            if cmds.getAttr(plug, lock=True) or not cmds.getAttr(plug, keyable=True):
+                raise CharacterRegistryError("面部通道不可写入：" + name)
+            source = cmds.connectionInfo(plug, sourceFromDestination=True)
+            if source:
+                if not self._character_direct_animation(source):
+                    raise CharacterRegistryError("面部通道有非角色动画驱动：" + name + " " + source)
+                destinations = cmds.listConnections(source, source=False,
+                    destination=True, plugs=True) or []
+                destination = destinations[0] if len(destinations) == 1 else ""
+                node, _, attribute = destination.rpartition(".")
+                matches = cmds.ls(node, long=True) or []
+                if len(destinations) != 1 or matches != [control] or attribute != name:
+                    raise CharacterRegistryError("面部动画曲线被多个通道共享：" + name)
+
+    def capture_face_curve_state(self, control_path: str,
+                                 performance: FacePerformance) -> tuple:
+        from maya import cmds
+
+        control = self.scene_address(control_path)
+        start, end = performance.frames[0], performance.frames[-1]
+        rows = []
+        for name, _ in performance.channels:
+            plug = control + "." + name
+            source = cmds.connectionInfo(plug, sourceFromDestination=True) or ""
+            times = tuple(cmds.keyframe(plug, query=True, timeChange=True) or ())
+            values = tuple(cmds.keyframe(plug, query=True, valueChange=True) or ())
+            incoming = tuple(cmds.keyTangent(plug, query=True, inTangentType=True) or ())
+            outgoing = tuple(cmds.keyTangent(plug, query=True, outTangentType=True) or ())
+            if not (len(times) == len(values) == len(incoming) == len(outgoing)):
+                raise CharacterRegistryError("面部动画曲线快照不完整：" + name)
+            guards = tuple(float(cmds.getAttr(plug, time=frame))
+                           for frame in (start - 1, end + 1))
+            rows.append((source, tuple(zip(times, values, incoming, outgoing)), guards))
+        return tuple(rows)
+
+    def write_face_performance(self, plan: FacePerformancePlan) -> None:
+        self._require_transaction()
+        if self.capture_face_curve_state(plan.control_path, plan.performance) != plan.curve_state:
+            raise CharacterRegistryError("面部动画曲线在写入前发生变化")
+        self._transaction_changed = True
+        start, end = plan.performance.frames[0], plan.performance.frames[-1]
+        for index, (name, _) in enumerate(plan.performance.channels):
+            _, old_keys, guards = plan.curve_state[index]
+            old_times = {row[0] for row in old_keys}
+            for frame, value in zip((start - 1, end + 1), guards):
+                if frame not in old_times:
+                    self._cmds.setKeyframe(plan.control_path, attribute=name,
+                                           time=frame, value=value)
+            for frame, values in plan.performance.samples:
+                self._cmds.setKeyframe(plan.control_path, attribute=name,
+                    time=frame, value=values[index], inTangentType="linear",
+                    outTangentType="linear")
+
+    def sample_face_performance(self, control_path: str,
+                                performance: FacePerformance) -> tuple:
+        from maya import cmds
+
+        control = self.scene_address(control_path)
+        return tuple((frame, tuple(float(cmds.getAttr(control + "." + name,
+            time=frame)) for name, _ in performance.channels))
+            for frame, _ in performance.samples)
+
+    def verify_face_curve_boundary(self, plan: FacePerformancePlan) -> None:
+        from maya import cmds
+
+        start, end = plan.performance.frames[0], plan.performance.frames[-1]
+        current = self.capture_face_curve_state(plan.control_path, plan.performance)
+        for index, (_, old_keys, guards) in enumerate(plan.curve_state):
+            name = plan.performance.channels[index][0]
+            _, new_keys, new_guards = current[index]
+            outside = lambda rows: tuple(row for row in rows if row[0] < start or row[0] > end)
+            old_outside = outside(old_keys)
+            new_by_time = {row[0]: row for row in outside(new_keys)}
+            if any(new_by_time.get(row[0]) != row for row in old_outside):
+                raise RuntimeError("面部片段外原有关键帧发生变化：" + name)
+            if any(abs(a - b) > 1e-8 for a, b in zip(guards, new_guards)):
+                raise RuntimeError("面部片段边界值发生变化：" + name)
+
     def capture_face_mesh(self, path: str) -> FaceMeshSnapshot:
         from maya import cmds
         from maya.api import OpenMaya as om
