@@ -267,6 +267,9 @@ def create_panel(controller: MayaPanelController | None = None):
             self.surface_target_skin.setPlaceholderText("TargetSkin")
             self.surface_target_mesh = QtWidgets.QLineEdit()
             self.surface_target_mesh.setPlaceholderText("|TargetMesh")
+            self.surface_mapping_mode = QtWidgets.QComboBox()
+            self.surface_mapping_mode.addItem("一对一路径映射", "mapping")
+            self.surface_mapping_mode.addItem("一对多影响重分配", "redistribution")
             surface_mapping, self.surface_mapping = self._file_field("关节路径映射")
             surface_alignment, self.surface_alignment = self._file_field("三点刚体对齐")
             self.surface_distance = QtWidgets.QDoubleSpinBox()
@@ -287,7 +290,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("源资产", asset_in),
                 ("目标 Skin", self.surface_target_skin),
                 ("目标网格", self.surface_target_mesh),
-                ("关节映射", surface_mapping),
+                ("关节转换方式", self.surface_mapping_mode),
+                ("关节转换文档", surface_mapping),
                 ("刚体对齐", surface_alignment),
                 ("最大表面距离", self.surface_distance),
                 ("最大裁剪损失", self.surface_discard),
@@ -634,6 +638,7 @@ def create_panel(controller: MayaPanelController | None = None):
         def _transfer_skin_surface(self):
             asset_mode = self.surface_mode.currentData() == "asset"
             mapping = self.surface_mapping.text().strip()
+            redistribution = self.surface_mapping_mode.currentData() == "redistribution"
             alignment = self.surface_alignment.text().strip()
             result = self.controller.skin_surface_transfer(self._namespace(),
                 self.surface_target_skin.text().strip(),
@@ -642,7 +647,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 source_asset=self._path(self.surface_asset_in) if asset_mode else None,
                 source_skin="" if asset_mode else self.surface_source_skin.text().strip(),
                 source_mesh="" if asset_mode else self.surface_source_mesh.text().strip(),
-                mapping_file=Path(mapping) if mapping else None,
+                mapping_file=Path(mapping) if mapping and not redistribution else None,
+                redistribution_file=Path(mapping) if mapping and redistribution else None,
                 alignment_file=Path(alignment) if alignment else None,
                 max_discarded_weight=self.surface_discard.value(),
                 allow_target_extra_influences=self.surface_extra.isChecked(),

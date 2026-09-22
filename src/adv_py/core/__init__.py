@@ -488,6 +488,13 @@ from .skin_weight_io import (
     skin_weight_document_from_state,
     skin_weight_document_to_json,
 )
+from .skin_weight_redistribution import (
+    SkinWeightRedistribution,
+    SkinWeightInfluenceRedistribution,
+    SkinWeightRedistributionTarget,
+    redistribute_skin_weight_document,
+    linear_spine_weight_redistribution,
+)
 from .skin_weight_mirror import (
     SkinWeightMirrorRequest,
     SkinWeightVertexPair,
@@ -932,6 +939,11 @@ __all__ = [
     "SkinWeightDocument",
     "SkinWeightInfluenceMapping",
     "SkinWeightPathMapping",
+    "SkinWeightRedistribution",
+    "SkinWeightInfluenceRedistribution",
+    "SkinWeightRedistributionTarget",
+    "redistribute_skin_weight_document",
+    "linear_spine_weight_redistribution",
     "SkinWeightMirrorRequest",
     "SkinWeightVertexPair",
     "BODY_PROVENANCE_KIND",

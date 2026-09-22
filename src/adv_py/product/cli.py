@@ -38,7 +38,8 @@ from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
                          face_performance_from_json)
 from adv_py.core.variable_body_fit import variable_axial_description
 from .input_documents import (load_face_build_spec, load_face_landmarks,
-                              load_skin_path_mapping, load_surface_alignment)
+                              load_skin_path_mapping, load_skin_redistribution,
+                              load_surface_alignment)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -249,7 +250,10 @@ def parser() -> argparse.ArgumentParser:
     skin_surface.add_argument("--source-mesh")
     skin_surface.add_argument("--target-skin", required=True)
     skin_surface.add_argument("--target-mesh", required=True)
-    skin_surface.add_argument("--mapping", type=Path)
+    surface_mapping = skin_surface.add_mutually_exclusive_group()
+    surface_mapping.add_argument("--mapping", type=Path)
+    surface_mapping.add_argument("--redistribution", type=Path,
+        help="源影响关节到一个或多个目标关节的完整比例文档")
     skin_surface.add_argument("--alignment", type=Path,
         help="三个源/目标顶点对应及误差上限的 JSON 文件")
     skin_surface.add_argument("--max-distance", type=float, required=True)
@@ -574,6 +578,8 @@ def _run(args, gateway) -> dict:
                 "changed_vertices": imported.edit_result.changed_vertex_count}
     if args.command == "skin-surface-transfer":
         mapping = load_skin_path_mapping(args.mapping) if args.mapping else None
+        redistribution = (load_skin_redistribution(args.redistribution)
+            if args.redistribution else None)
         alignment = load_surface_alignment(args.alignment) if args.alignment else None
         operation = TransferSkinWeightsBySurface(host)
         if args.source_asset:
@@ -584,6 +590,7 @@ def _run(args, gateway) -> dict:
                 source.geometry, args.target_skin, args.target_mesh,
                 max_distance=args.max_distance,
                 max_discarded_weight=args.max_discarded_weight, mapping=mapping,
+                redistribution=redistribution,
                 alignment=alignment,
                 allow_target_extra_influences=args.allow_target_extra_influences,
                 allow_unweighted_missing=args.allow_unweighted_missing)
@@ -594,6 +601,7 @@ def _run(args, gateway) -> dict:
             result = operation.apply(args.source_skin, args.source_mesh,
                 args.target_skin, args.target_mesh, max_distance=args.max_distance,
                 max_discarded_weight=args.max_discarded_weight, mapping=mapping,
+                redistribution=redistribution,
                 alignment=alignment,
                 allow_target_extra_influences=args.allow_target_extra_influences,
                 allow_unweighted_missing=args.allow_unweighted_missing)

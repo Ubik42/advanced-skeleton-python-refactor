@@ -134,6 +134,12 @@ def main(report: Path) -> int:
     skin_buttons["预检并转移权重"].click()
     surface_dispatch = next((call for call in controller.calls
         if isinstance(call, tuple) and call[0] == "skin_surface_transfer"), None)
+    panel.surface_mapping.setText("C:/temp/redistribution.json")
+    panel.surface_mapping_mode.setCurrentIndex(1)
+    skin_buttons["预检并转移权重"].click()
+    redistribution_dispatch = next((call for call in controller.calls
+        if isinstance(call, tuple) and call[0] == "skin_surface_transfer"
+        and call[5].get("redistribution_file")), None)
     skin_page = panel.tabs.currentWidget()
     skin_page.verticalScrollBar().setValue(skin_page.verticalScrollBar().maximum())
     app.processEvents()
@@ -144,6 +150,7 @@ def main(report: Path) -> int:
     narrow_pixmap = QtGui.QPixmap(panel.size())
     panel.render(narrow_pixmap)
     skin_narrow_saved = narrow_pixmap.save(str(skin_narrow_image))
+    skin_narrow_horizontal_overflow = skin_page.horizontalScrollBar().maximum()
     panel.resize(950, 710)
     app.processEvents()
     panel.tabs.setCurrentIndex(2)
@@ -223,6 +230,11 @@ def main(report: Path) -> int:
             and surface_dispatch[1:5] == ("hero", "TargetSkin", "|TargetMesh", .01)
             and surface_dispatch[5]["source_asset"] == Path("C:/temp/source-asset.json")
             and surface_dispatch[5]["allow_target_extra_influences"]),
+        "surface_redistribution_dispatches": bool(redistribution_dispatch
+            and redistribution_dispatch[5]["redistribution_file"]
+                == Path("C:/temp/redistribution.json")
+            and redistribution_dispatch[5]["mapping_file"] is None),
+        "skin_narrow_no_horizontal_overflow": skin_narrow_horizontal_overflow == 0,
         "animation_edit_actions_dispatch": all(call in controller.calls for call in (
             ("animation_key_current", "hero"),
             ("animation_enable_limb", "hero"),
@@ -251,7 +263,8 @@ def main(report: Path) -> int:
     }
     payload = {**checks, "status": "passed" if all(checks.values()) else "failed",
                "image_size": [panel.width(), panel.height()],
-               "animation_narrow_horizontal_overflow": animation_narrow_horizontal_overflow}
+               "animation_narrow_horizontal_overflow": animation_narrow_horizontal_overflow,
+               "skin_narrow_horizontal_overflow": skin_narrow_horizontal_overflow}
     report.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
                       encoding="utf-8")
     panel.close()

@@ -21,6 +21,8 @@ from adv_py.core.skin_weight_surface_source import (SkinWeightSurfaceSource,
     SKIN_WEIGHT_SURFACE_SOURCE_MAX_BYTES,
     skin_weight_surface_source_from_json, skin_weight_surface_source_to_json)
 from adv_py.core.skin_weights import SkinWeightInputState, SkinWeightValidationError
+from adv_py.core.skin_weight_redistribution import (SkinWeightRedistribution,
+    redistribute_skin_weight_document)
 
 from .skin_weight_io import SkinWeightDocumentHost
 from .skin_weights import EditSkinWeights, SkinWeightEditResult
@@ -69,6 +71,7 @@ class TransferSkinWeightsBySurface:
              target_mesh: str, *, max_distance: float,
              max_discarded_weight: float = 0.0,
              mapping: SkinWeightPathMapping | None = None,
+             redistribution: SkinWeightRedistribution | None = None,
              alignment: FaceSurfaceAlignment | None = None,
              allow_target_extra_influences: bool = False,
              allow_unweighted_missing: bool = False) -> SkinWeightSurfacePlan:
@@ -80,7 +83,15 @@ class TransferSkinWeightsBySurface:
         target_geometry = self._host.capture_face_mesh(target_mesh)
         triangles = self._host.capture_face_triangles(source_mesh)
         document = skin_weight_document_from_state(source_state)
-        if mapping is not None:
+        if mapping is not None and redistribution is not None:
+            raise FitSkeletonValidationError("一对一路径映射与影响重分配不能同时使用")
+        if redistribution is not None:
+            if (redistribution.target_skin_name != target_skin
+                    or redistribution.target_mesh_path != target_mesh
+                    or allow_unweighted_missing):
+                raise FitSkeletonValidationError("影响重分配的目标或缺失关节策略不一致")
+            document = redistribute_skin_weight_document(document, redistribution)
+        elif mapping is not None:
             if mapping.target_skin_name != target_skin or mapping.target_mesh_path != target_mesh:
                 raise FitSkeletonValidationError("权重路径映射与目标 skinCluster/mesh 不一致")
             document = remap_skin_weight_document(document, mapping,
@@ -102,12 +113,13 @@ class TransferSkinWeightsBySurface:
               target_mesh: str, *, max_distance: float,
               max_discarded_weight: float = 0.0,
               mapping: SkinWeightPathMapping | None = None,
+              redistribution: SkinWeightRedistribution | None = None,
               alignment: FaceSurfaceAlignment | None = None,
               allow_target_extra_influences: bool = False,
               allow_unweighted_missing: bool = False) -> SkinWeightSurfaceResult:
         plan = self.plan(source_skin, source_mesh, target_skin, target_mesh,
             max_distance=max_distance, max_discarded_weight=max_discarded_weight,
-            mapping=mapping, alignment=alignment,
+            mapping=mapping, redistribution=redistribution, alignment=alignment,
             allow_target_extra_influences=allow_target_extra_influences,
             allow_unweighted_missing=allow_unweighted_missing)
         if (self._host.capture_all_skin_weights(source_skin, source_mesh) != plan.source_state
@@ -125,6 +137,7 @@ class TransferSkinWeightsBySurface:
             geometry: FaceNeutralGeometry, target_skin: str, target_mesh: str,
             *, max_distance: float, max_discarded_weight: float = 0.,
             mapping: SkinWeightPathMapping | None = None,
+            redistribution: SkinWeightRedistribution | None = None,
             alignment: FaceSurfaceAlignment | None = None,
             allow_target_extra_influences: bool = False,
             allow_unweighted_missing: bool = False
@@ -134,7 +147,15 @@ class TransferSkinWeightsBySurface:
         if (geometry.up_axis != self._host.scene_up_axis().value
                 or geometry.linear_unit != self._host.scene_linear_unit().value):
             raise FitSkeletonValidationError("源几何与目标场景的坐标轴或长度单位不一致")
-        if mapping is not None:
+        if mapping is not None and redistribution is not None:
+            raise FitSkeletonValidationError("一对一路径映射与影响重分配不能同时使用")
+        if redistribution is not None:
+            if (redistribution.target_skin_name != target_skin
+                    or redistribution.target_mesh_path != target_mesh
+                    or allow_unweighted_missing):
+                raise FitSkeletonValidationError("影响重分配的目标或缺失关节策略不一致")
+            mapped = redistribute_skin_weight_document(weights, redistribution)
+        elif mapping is not None:
             if mapping.target_skin_name != target_skin or mapping.target_mesh_path != target_mesh:
                 raise FitSkeletonValidationError("权重路径映射与目标 skinCluster/mesh 不一致")
             mapped = remap_skin_weight_document(weights, mapping,
@@ -161,13 +182,14 @@ class TransferSkinWeightsBySurface:
             geometry: FaceNeutralGeometry, target_skin: str, target_mesh: str,
             *, max_distance: float, max_discarded_weight: float = 0.,
             mapping: SkinWeightPathMapping | None = None,
+            redistribution: SkinWeightRedistribution | None = None,
             alignment: FaceSurfaceAlignment | None = None,
             allow_target_extra_influences: bool = False,
             allow_unweighted_missing: bool = False
             ) -> tuple[SkinWeightDocumentSurfacePlan, SkinWeightEditResult]:
         plan = self.plan_from_documents(weights, geometry, target_skin, target_mesh,
             max_distance=max_distance, max_discarded_weight=max_discarded_weight,
-            mapping=mapping, alignment=alignment,
+            mapping=mapping, redistribution=redistribution, alignment=alignment,
             allow_target_extra_influences=allow_target_extra_influences,
             allow_unweighted_missing=allow_unweighted_missing)
         if (self._host.capture_all_skin_weights(target_skin, target_mesh) != plan.target_state

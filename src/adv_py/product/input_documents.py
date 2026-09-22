@@ -8,6 +8,8 @@ from adv_py.core import (FaceLandmark, FaceShapeKind, FaceTarget,
                          FaceSurfaceAlignment)
 from adv_py.core.skin_weight_io import (SkinWeightPathMapping,
     SkinWeightInfluenceMapping)
+from adv_py.core.skin_weight_redistribution import (SkinWeightRedistribution,
+    SkinWeightInfluenceRedistribution, SkinWeightRedistributionTarget)
 
 
 def load_skin_path_mapping(path: Path) -> SkinWeightPathMapping:
@@ -27,6 +29,35 @@ def load_skin_path_mapping(path: Path) -> SkinWeightPathMapping:
         rows.append(SkinWeightInfluenceMapping(entry["source"], entry["target"]))
     return SkinWeightPathMapping(document["target_skin"],
                                  document["target_mesh"], tuple(rows))
+
+
+def load_skin_redistribution(path: Path) -> SkinWeightRedistribution:
+    source = Path(path).expanduser()
+    if source.stat().st_size > 512_000:
+        raise ValueError("影响重分配文档超过 512 KB")
+    document = safe_json(source.read_text(encoding="utf-8"), max_bytes=512_000)
+    if (not isinstance(document, dict)
+            or set(document) != {"target_skin", "target_mesh", "target_influences", "influences"}
+            or not isinstance(document["target_influences"], list)
+            or not isinstance(document["influences"], list)
+            or not 1 <= len(document["target_influences"]) <= 512
+            or not 1 <= len(document["influences"]) <= 512):
+        raise ValueError("影响重分配文档须声明目标 Skin、网格和完整影响集合")
+    rows = []
+    for row in document["influences"]:
+        if (not isinstance(row, dict) or set(row) != {"source", "targets"}
+                or not isinstance(row["targets"], list)
+                or not 1 <= len(row["targets"]) <= 512):
+            raise ValueError("每个源影响关节须声明 1–512 个目标与比例")
+        targets = []
+        for target in row["targets"]:
+            if not isinstance(target, dict) or set(target) != {"path", "fraction"}:
+                raise ValueError("重分配目标须包含 path 和 fraction")
+            targets.append(SkinWeightRedistributionTarget(
+                target["path"], target["fraction"]))
+        rows.append(SkinWeightInfluenceRedistribution(row["source"], tuple(targets)))
+    return SkinWeightRedistribution(document["target_skin"], document["target_mesh"],
+        tuple(document["target_influences"]), tuple(rows))
 
 
 def load_surface_alignment(path: Path) -> FaceSurfaceAlignment:

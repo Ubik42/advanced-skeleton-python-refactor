@@ -33,7 +33,8 @@ from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
 from adv_py.core.variable_body_fit import variable_axial_description
 
 from .input_documents import (load_face_build_spec, load_face_landmarks,
-                              load_skin_path_mapping, load_surface_alignment)
+                              load_skin_path_mapping, load_skin_redistribution,
+                              load_surface_alignment)
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,12 +172,17 @@ class MayaPanelController:
                               source_asset: Path | None = None,
                               source_skin: str = "", source_mesh: str = "",
                               mapping_file: Path | None = None,
+                              redistribution_file: Path | None = None,
                               alignment_file: Path | None = None,
                               max_discarded_weight: float = 0.,
                               allow_target_extra_influences: bool = False,
                               allow_unweighted_missing: bool = False
                               ) -> PanelSkinSurfaceResult:
+        if mapping_file and redistribution_file:
+            raise ValueError("一对一路径映射与影响重分配不能同时使用")
         mapping = load_skin_path_mapping(mapping_file) if mapping_file else None
+        redistribution = (load_skin_redistribution(redistribution_file)
+                          if redistribution_file else None)
         alignment = load_surface_alignment(alignment_file) if alignment_file else None
         service = TransferSkinWeightsBySurface(self._host(namespace))
         if source_asset:
@@ -187,7 +193,8 @@ class MayaPanelController:
                 source.geometry, target_skin, target_mesh,
                 max_distance=max_distance,
                 max_discarded_weight=max_discarded_weight,
-                mapping=mapping, alignment=alignment,
+                mapping=mapping, redistribution=redistribution,
+                alignment=alignment,
                 allow_target_extra_influences=allow_target_extra_influences,
                 allow_unweighted_missing=allow_unweighted_missing)
             transfer = plan.transfer
@@ -197,7 +204,8 @@ class MayaPanelController:
             result = service.apply(source_skin, source_mesh,
                 target_skin, target_mesh, max_distance=max_distance,
                 max_discarded_weight=max_discarded_weight,
-                mapping=mapping, alignment=alignment,
+                mapping=mapping, redistribution=redistribution,
+                alignment=alignment,
                 allow_target_extra_influences=allow_target_extra_influences,
                 allow_unweighted_missing=allow_unweighted_missing)
             transfer, edited = result.plan.transfer, result.edit_result
