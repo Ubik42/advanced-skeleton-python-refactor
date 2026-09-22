@@ -44,7 +44,8 @@ def _node_connections(cmds, node):
     pairs = cmds.listConnections(node, source=True, destination=True,
                                  plugs=True, connections=True) or []
     return tuple(sorted((local.split('.', 1)[1], _plug_uuid(cmds, peer),
-                         peer.split('.', 1)[1])
+                         peer.split('.', 1)[1],
+                         bool(cmds.connectionInfo(local, isDestination=True)))
                         for local, peer in zip(pairs[::2], pairs[1::2])))
 
 
