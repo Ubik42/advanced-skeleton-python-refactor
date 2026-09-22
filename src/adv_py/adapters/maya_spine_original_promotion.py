@@ -198,34 +198,53 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
             raise CharacterRegistryError('附件变拓扑映射要求两个可变脊柱角色')
         old_roles = {row.path for row in source_reg.nodes}
         new_roles = {row.path for row in target_reg.nodes}
-        source_body_paths = {row.path for row in source_reg.body}
-        source_spine_body = set(source_reg.spine.body_joints)
-        source_body_names = [row.path.rsplit('|', 1)[-1]
-                             for row in source_reg.body]
-        if len(source_body_names) != len(set(source_body_names)):
-            raise CharacterRegistryError('来源 Body 关节短名不唯一')
-        target_body_by_name = {}
-        for row in target_reg.body:
-            name = row.path.rsplit('|', 1)[-1]
-            if name in target_body_by_name:
-                raise CharacterRegistryError('目标 Body 关节短名不唯一：' + name)
-            target_body_by_name[name] = row.path
+        source_nodes = {row.path: row for row in source_reg.nodes}
+        target_nodes = {row.path: row for row in target_reg.nodes}
+        source_by_name = {}
+        target_by_name = {}
+        for row in source_reg.nodes:
+            source_by_name.setdefault(row.path.rsplit('|', 1)[-1], []).append(row)
+        for row in target_reg.nodes:
+            target_by_name.setdefault(row.path.rsplit('|', 1)[-1], []).append(row)
+        source_channels = {}
+        target_channels = {}
+        for channel in source_reg.channels:
+            source_channels.setdefault(channel.node, set()).add(channel.key)
+        for channel in target_reg.channels:
+            target_channels.setdefault(channel.node, set()).add(channel.key)
+        variable_spine_nodes = (set(source_reg.spine.body_joints)
+            | {row.path for row in source_reg.spine.joints})
+        def normalized(lengths):
+            total = sum(lengths)
+            return tuple(sum(lengths[:index]) / total
+                         for index in range(len(lengths) + 1))
+        source_positions = normalized(source_reg.spine.lengths)
+        target_positions = normalized(target_reg.spine.lengths)
+        def mapped_index(index):
+            position = source_positions[index]
+            return min(range(len(target_positions)),
+                key=lambda candidate: (abs(target_positions[candidate] - position),
+                                       candidate))
         def target_role(logical):
             if logical in source_reg.spine.fk_controls:
-                source_index = source_reg.spine.fk_controls.index(logical)
-                def normalized(lengths):
-                    total=sum(lengths)
-                    return tuple(sum(lengths[:index])/total
-                                 for index in range(len(lengths)+1))
-                source_positions=normalized(source_reg.spine.lengths)
-                target_positions=normalized(target_reg.spine.lengths)
-                position=source_positions[source_index]
-                target_index=min(range(len(target_positions)),
-                    key=lambda index:(abs(target_positions[index]-position),index))
-                return target_reg.spine.fk_controls[target_index]
-            if logical in source_body_paths and logical not in source_spine_body:
-                return target_body_by_name.get(logical.rsplit('|', 1)[-1], logical)
-            return logical
+                return target_reg.spine.fk_controls[mapped_index(
+                    source_reg.spine.fk_controls.index(logical))]
+            if logical in source_reg.spine.body_joints:
+                return target_reg.spine.body_joints[mapped_index(
+                    source_reg.spine.body_joints.index(logical))]
+            if logical in new_roles:
+                return logical
+            if logical in variable_spine_nodes or logical not in source_nodes:
+                return logical
+            name = logical.rsplit('|', 1)[-1]
+            sources = source_by_name.get(name, ())
+            targets = target_by_name.get(name, ())
+            if (len(sources) != 1 or len(targets) != 1
+                    or sources[0].node_type != targets[0].node_type
+                    or source_channels.get(logical, set())
+                       != target_channels.get(targets[0].path, set())):
+                return logical
+            return targets[0].path
         moves = []
         used = set()
         current_time = cmds.currentTime(query=True)
