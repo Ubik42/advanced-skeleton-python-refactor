@@ -3715,6 +3715,7 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
             return SkinWeightInputState(None, None, 0, (), (), 0, False, ())
         skin = clusters[0]
         geometry = []
+        bound_shapes = []
         for shape in self._cmds.skinCluster(skin, query=True, geometry=True) or []:
             shape_paths = self._cmds.ls(shape, long=True, type="mesh") or []
             parents = (
@@ -3728,7 +3729,9 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
             )
             if len(parents) == 1:
                 geometry.append(parents[0])
+                bound_shapes.append(shape_paths[0])
         mesh = geometry[0] if len(geometry) == 1 else None
+        bound_shape = bound_shapes[0] if mesh else None
         vertex_count = int(self._cmds.polyEvaluate(mesh, vertex=True)) if mesh else 0
         influences = []
         locked = []
@@ -3746,26 +3749,25 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                 locked.append(path)
         vertices = []
         if mesh:
-            indices = (
-                range(vertex_count)
-                if vertex_indices is None
-                else vertex_indices
-            )
-            for vertex_index in indices:
-                if vertex_index >= vertex_count:
-                    continue
-                component = f"{mesh}.vtx[{vertex_index}]"
-                weights = []
-                for influence in influences:
-                    value = float(self._cmds.skinPercent(
-                        skin,
-                        component,
-                        query=True,
-                        transform=influence,
-                    ))
-                    if value > 1e-8:
-                        weights.append(SkinInfluenceWeight(influence, value))
-                vertices.append(SkinVertexWeights(vertex_index, tuple(weights)))
+            if vertex_indices is None:
+                vertices = list(self._capture_all_skin_vertices_api(
+                    skin, bound_shape, vertex_count, tuple(influences)))
+            else:
+                for vertex_index in vertex_indices:
+                    if vertex_index >= vertex_count:
+                        continue
+                    component = f"{mesh}.vtx[{vertex_index}]"
+                    weights = []
+                    for influence in influences:
+                        value = float(self._cmds.skinPercent(
+                            skin,
+                            component,
+                            query=True,
+                            transform=influence,
+                        ))
+                        if value > 1e-8:
+                            weights.append(SkinInfluenceWeight(influence, value))
+                    vertices.append(SkinVertexWeights(vertex_index, tuple(weights)))
         return SkinWeightInputState(
             skin,
             mesh,
@@ -3776,6 +3778,41 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
             bool(self._cmds.getAttr(f"{skin}.maintainMaxInfluences")),
             tuple(vertices),
         )
+
+    def _capture_all_skin_vertices_api(
+        self, skin: str, shape: str, vertex_count: int,
+        influences: tuple[str, ...],
+    ) -> tuple[SkinVertexWeights, ...]:
+        from maya.api import OpenMaya as om
+        from maya.api import OpenMayaAnim as oma
+
+        selection = om.MSelectionList()
+        selection.add(skin)
+        skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
+        selection = om.MSelectionList()
+        selection.add(shape)
+        dag = selection.getDagPath(0)
+        influence_order = {path.fullPathName(): index
+                           for index, path in enumerate(skin_fn.influenceObjects())}
+        if any(path not in influence_order for path in influences):
+            raise RuntimeError("skinCluster API 影响关节集合与场景查询不一致")
+        rows = []
+        for start in range(0, vertex_count, 4096):
+            indices = tuple(range(start, min(start + 4096, vertex_count)))
+            component_fn = om.MFnSingleIndexedComponent()
+            component = component_fn.create(om.MFn.kMeshVertComponent)
+            component_fn.addElements(indices)
+            values, influence_count = skin_fn.getWeights(dag, component)
+            if influence_count != len(influence_order) or len(values) != len(indices) * influence_count:
+                raise RuntimeError("skinCluster API 返回的权重矩阵维度无效")
+            for offset, vertex_index in enumerate(indices):
+                weights = []
+                for path in influences:
+                    value = float(values[offset * influence_count + influence_order[path]])
+                    if value > 1e-8:
+                        weights.append(SkinInfluenceWeight(path, value))
+                rows.append(SkinVertexWeights(vertex_index, tuple(weights)))
+        return tuple(rows)
 
     def apply_skin_weight_changes(
         self,
