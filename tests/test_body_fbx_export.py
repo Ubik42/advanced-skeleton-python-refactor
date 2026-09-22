@@ -119,6 +119,24 @@ class BodyFbxExportTests(unittest.TestCase):
                 FitUpAxis.Z, BodyFbxLinearUnit.CENTIMETER,
                 curve_policy="lossless_linear")
 
+    def test_bounded_linear_policy_requires_explicit_error_limits(self):
+        keys = tuple(BodyRootMotionKeyState(index, value, "linear", "linear")
+            for index, value in enumerate((0., 1.05, 2., 3.05, 4.), 1))
+        self.assertEqual(redundant_linear_key_frames(keys, tolerance=1e-9), ())
+        self.assertEqual(redundant_linear_key_frames(keys, tolerance=.1),
+                         (2, 3, 4))
+        profile = BodyFbxExportProfile(BodyFbxFileVersion.FBX_2020,
+            FitUpAxis.Z, BodyFbxLinearUnit.CENTIMETER,
+            curve_policy=BodyFbxCurvePolicy.BOUNDED_LINEAR,
+            value_tolerance=.1, matrix_tolerance=.01)
+        self.assertEqual(profile.curve_policy.value, "bounded_linear")
+        with self.assertRaises(ValueError):
+            replace(profile, matrix_tolerance=0.)
+        with self.assertRaises(ValueError):
+            replace(profile, value_tolerance=float("nan"))
+        with self.assertRaises(ValueError):
+            replace(profile, curve_policy=BodyFbxCurvePolicy.SAMPLED_LINEAR)
+
     def test_selection_and_readiness_require_complete_independent_bake(self):
         host = FakeFbxHost()
         selection = plan_body_fbx_export_selection(host.bake)

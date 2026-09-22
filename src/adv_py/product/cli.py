@@ -158,6 +158,8 @@ def parser() -> argparse.ArgumentParser:
     fbx.add_argument("--step", type=int, default=1)
     fbx.add_argument("--curve-policy", choices=tuple(item.value for item in
                      BodyFbxCurvePolicy), default=BodyFbxCurvePolicy.SAMPLED_LINEAR.value)
+    fbx.add_argument("--value-tolerance", type=float, default=0.)
+    fbx.add_argument("--matrix-tolerance", type=float, default=0.)
     fbx.add_argument("--output", type=Path, required=True)
     mocap = commands.add_parser("mocap-retarget",
         help="从外部 FBX 和版本化映射预设写入角色控制动画")
@@ -308,7 +310,8 @@ def _run(args, gateway) -> dict:
         _emit("export_skeleton_baked", frames=len(baked.plan.bake.frames))
         profile = BodyFbxExportProfile(BodyFbxFileVersion.FBX_2020,
             host.scene_up_axis(), host.scene_linear_unit(), BodyFbxEncoding.BINARY,
-            BodyFbxCurvePolicy(args.curve_policy))
+            BodyFbxCurvePolicy(args.curve_policy), args.value_tolerance,
+            args.matrix_tolerance)
         exported = ExportBodyFbx(host).apply(destination, start_frame=args.start,
             end_frame=args.end, sample_by=args.step, body_root_name=body_root,
             source_container=source_container, profile=profile)
@@ -320,7 +323,8 @@ def _run(args, gateway) -> dict:
                 "bytes": exported.artifact.byte_count,
                 "sha256": exported.artifact.content_sha256,
                 "curve_policy": exported.applied_profile.curve_policy,
-                "removed_linear_keys": exported.applied_profile.removed_linear_keys}
+                "removed_linear_keys": exported.applied_profile.removed_linear_keys,
+                "max_matrix_error": exported.applied_profile.max_matrix_error}
     if args.command == "mocap-retarget":
         from adv_py.adapters import MayaMocapClipHost, MayaMocapControlHost
 

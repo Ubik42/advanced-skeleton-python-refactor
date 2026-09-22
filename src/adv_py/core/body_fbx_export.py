@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
+from math import isfinite
 import re
 
 from .body_export_skeleton import (
@@ -41,6 +42,7 @@ class BodyFbxEncoding(str, Enum):
 class BodyFbxCurvePolicy(str, Enum):
     SAMPLED_LINEAR = "sampled_linear"
     LOSSLESS_LINEAR = "lossless_linear"
+    BOUNDED_LINEAR = "bounded_linear"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +52,8 @@ class BodyFbxExportProfile:
     linear_unit: BodyFbxLinearUnit
     encoding: BodyFbxEncoding = BodyFbxEncoding.BINARY
     curve_policy: BodyFbxCurvePolicy = BodyFbxCurvePolicy.SAMPLED_LINEAR
+    value_tolerance: float = 0.0
+    matrix_tolerance: float = 0.0
 
     def __post_init__(self) -> None:
         if (
@@ -60,6 +64,14 @@ class BodyFbxExportProfile:
             or not isinstance(self.curve_policy, BodyFbxCurvePolicy)
         ):
             raise ValueError("FBX 导出 Profile 字段无效")
+        tolerances = (self.value_tolerance, self.matrix_tolerance)
+        if (any(isinstance(value, bool) or not isinstance(value, (int, float))
+                or not isfinite(value) for value in tolerances)
+                or (self.curve_policy is BodyFbxCurvePolicy.BOUNDED_LINEAR
+                    and any(value <= 0 for value in tolerances))
+                or (self.curve_policy is not BodyFbxCurvePolicy.BOUNDED_LINEAR
+                    and any(value != 0 for value in tolerances))):
+            raise ValueError("有界 FBX 曲线策略须提供正的通道和矩阵误差上限")
 
     @property
     def format_version(self) -> int:
@@ -107,6 +119,7 @@ class BodyFbxAppliedProfile:
     encoding: str
     curve_policy: str = BodyFbxCurvePolicy.SAMPLED_LINEAR.value
     removed_linear_keys: int = 0
+    max_matrix_error: float = 0.0
 
 
 def redundant_linear_key_frames(
@@ -373,6 +386,9 @@ def audit_body_fbx_profile(
         issues.append("FBX exporter 编码回读不一致")
     if applied.curve_policy != profile.curve_policy.value:
         issues.append("FBX 发布曲线策略回读不一致")
+    if (profile.curve_policy is BodyFbxCurvePolicy.BOUNDED_LINEAR
+            and applied.max_matrix_error > profile.matrix_tolerance + tolerance):
+        issues.append("FBX 发布姿态超过矩阵误差上限")
     if artifact.encoding != profile.encoding.value:
         issues.append("FBX 文件编码与 Profile 不一致")
     if artifact.format_version != profile.format_version:

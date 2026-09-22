@@ -1737,6 +1737,7 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
         pushed = False
         applied_profile: BodyFbxAppliedProfile | None = None
         removed_linear_keys = 0
+        max_matrix_error = 0.0
         try:
             mel.eval("FBXPushSettings;")
             pushed = True
@@ -1801,7 +1802,23 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                         for path in selection.published_paths
                     ):
                         raise RuntimeError("FBX 发布名称临时映射复检失败")
-                    if profile.curve_policy == BodyFbxCurvePolicy.LOSSLESS_LINEAR:
+                    if profile.curve_policy in (BodyFbxCurvePolicy.LOSSLESS_LINEAR,
+                                                BodyFbxCurvePolicy.BOUNDED_LINEAR):
+                        def sample_matrices():
+                            poses = []
+                            for frame in range(selection.start_frame,
+                                               selection.end_frame + 1,
+                                               selection.sample_by):
+                                self._cmds.currentTime(frame, edit=True, update=True)
+                                poses.append(tuple(tuple(float(value) for value in
+                                    self._cmds.xform(path, query=True, worldSpace=True,
+                                                     matrix=True))
+                                    for path in selection.published_paths))
+                            return tuple(poses)
+
+                        original_matrices = (sample_matrices()
+                            if profile.curve_policy == BodyFbxCurvePolicy.BOUNDED_LINEAR
+                            else ())
                         root_attributes = (
                             ("translateX", "translateY", "rotateZ")
                             if self.scene_up_axis().value.lower() == "z"
@@ -1826,9 +1843,25 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                                     frame=int(round(float(frame))), value=float(value),
                                     in_tangent="linear", out_tangent="linear",
                                 ) for frame, value in zip(times, values))
-                                for frame in redundant_linear_key_frames(keys):
+                                value_tolerance = (profile.value_tolerance
+                                    if profile.curve_policy == BodyFbxCurvePolicy.BOUNDED_LINEAR
+                                    else 1e-9)
+                                for frame in redundant_linear_key_frames(
+                                        keys, tolerance=value_tolerance):
                                     self._cmds.cutKey(plug, time=(frame, frame), option="keys")
                                     removed_linear_keys += 1
+                        if original_matrices:
+                            simplified_matrices = sample_matrices()
+                            max_matrix_error = max(abs(a - b)
+                                for before_frame, after_frame in zip(
+                                    original_matrices, simplified_matrices)
+                                for before_joint, after_joint in zip(
+                                    before_frame, after_frame)
+                                for a, b in zip(before_joint, after_joint))
+                            if max_matrix_error > profile.matrix_tolerance:
+                                raise FitSkeletonValidationError(
+                                    "FBX 有界曲线简化超过世界矩阵误差上限："
+                                    f"{max_matrix_error:g} > {profile.matrix_tolerance:g}")
                     self._cmds.select(
                         selection.published_paths,
                         replace=True,
@@ -1871,6 +1904,7 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
             applied_profile,
             curve_policy=profile.curve_policy.value,
             removed_linear_keys=removed_linear_keys,
+            max_matrix_error=max_matrix_error,
         )
 
     def create_body_arm_ik_root(self, name: str) -> str:

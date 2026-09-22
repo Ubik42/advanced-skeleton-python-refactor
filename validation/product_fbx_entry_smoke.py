@@ -31,7 +31,7 @@ def _fixture(scene: Path) -> None:
         fit = CreateFitSkeleton(host).apply().state.path
         BuildSyntheticBodySourceFit(host).apply(fit)
         BuildOrientedBodySkeleton(host).apply(fit)
-        for frame, x in ((1, 0.), (3, 4.), (5, 8.)):
+        for frame, x in ((1, 0.), (3, 4.1), (5, 8.)):
             cmds.setKeyframe("|Root_M", attribute="translateX",
                              time=frame, value=x)
         cmds.file(rename=str(scene))
@@ -81,6 +81,12 @@ def main(mayapy: Path, report: Path) -> int:
         reduced = _run(mayapy, "fbx-publish", str(scene), "--namespace", ":",
                        "--start", "1", "--end", "5", "--curve-policy",
                        "lossless_linear", "--output", str(reduced_artifact))
+        bounded_artifact = folder / "bounded.fbx"
+        bounded = _run(mayapy, "fbx-publish", str(scene), "--namespace", ":",
+                       "--start", "1", "--end", "5", "--curve-policy",
+                       "bounded_linear", "--value-tolerance", "0.2",
+                       "--matrix-tolerance", "0.2", "--output",
+                       str(bounded_artifact))
         imported = subprocess.run([str(mayapy), str(Path(__file__)), "--inspect",
                                    str(artifact)], cwd=ROOT, capture_output=True,
                                   text=True, timeout=120) if artifact.exists() else None
@@ -94,6 +100,24 @@ def main(mayapy: Path, report: Path) -> int:
                 except ValueError:
                     pass
         inspected = rows[-1] if rows else None
+        bounded_import = (subprocess.run([str(mayapy), str(Path(__file__)),
+            "--inspect", str(bounded_artifact)], cwd=ROOT, capture_output=True,
+            text=True, timeout=120) if bounded_artifact.exists() else None)
+        bounded_rows = []
+        if bounded_import is not None:
+            for line in bounded_import.stdout.splitlines():
+                try:
+                    row = json.loads(line)
+                    if isinstance(row, dict) and "joints" in row:
+                        bounded_rows.append(row)
+                except ValueError:
+                    pass
+        bounded_inspected = bounded_rows[-1] if bounded_rows else None
+        too_tight = folder / "too-tight.fbx"
+        refused_error = _run(mayapy, "fbx-publish", str(scene),
+            "--namespace", ":", "--start", "1", "--end", "5",
+            "--curve-policy", "bounded_linear", "--value-tolerance", "0.2",
+            "--matrix-tolerance", "0.01", "--output", str(too_tight))
         collision = _run(mayapy, "fbx-publish", str(scene), "--namespace", ":",
                          "--start", "1", "--end", "5", "--output", str(artifact))
         rejected = folder / "rejected.fbx"
@@ -114,6 +138,20 @@ def main(mayapy: Path, report: Path) -> int:
                 and reduced_artifact.exists() and reduced[1] is not None
                 and reduced[1]["curve_policy"] == "lossless_linear"
                 and reduced[1]["removed_linear_keys"] > 0,
+            "bounded_curve_policy_reimports_with_measured_error":
+                bounded[0] == 0 and bounded[1] is not None
+                and reduced[1] is not None
+                and bounded_inspected is not None and bounded_import.returncode == 0
+                and bounded_inspected["joints"] == 31
+                and bounded[1]["curve_policy"] == "bounded_linear"
+                and bounded[1]["removed_linear_keys"]
+                    > reduced[1]["removed_linear_keys"]
+                and 0.01 < bounded[1]["max_matrix_error"] <= .2
+                and max(abs(positions[str(frame)][axis]
+                    - bounded_inspected["frames"][str(frame)][axis])
+                    for frame in (1, 3, 5) for axis in range(3)) <= .2,
+            "bounded_policy_refuses_too_tight_pose_limit":
+                refused_error[0] == 2 and not too_tight.exists(),
             "collision_rejected": collision[0] == 2,
             "invalid_range_rejected": bad_range[0] == 2 and not rejected.exists(),
             "source_scene_unchanged": source_hash == sha256(scene.read_bytes()).hexdigest(),
@@ -122,6 +160,10 @@ def main(mayapy: Path, report: Path) -> int:
         if not all(checks.values()):
             payload["diagnostics"] = {"published": published[2][-1000:],
                 "reduced": reduced[2][-1000:],
+                "bounded": bounded[2][-1000:],
+                "bounded_import": bounded_import.stderr[-800:] if bounded_import else "missing",
+                "bounded_inspected": bounded_inspected,
+                "refused_error": refused_error[2][-800:],
                 "imported": imported.stderr[-1000:] if imported else "no FBX",
                 "inspected": inspected, "bad_range": bad_range[2][-500:]}
     report.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",

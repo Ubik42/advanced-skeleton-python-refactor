@@ -56,7 +56,7 @@ def main(output: Path) -> int:
         shoulder = "|Root_M|Spine1_M|Chest_M|Scapula_R|Shoulder_R"
         for frame, root_x, root_y, root_z, yaw, shoulder_x in (
             (1, 0.0, 0.0, 8.0, 0.0, 0.0),
-            (3, 4.0, 6.0, 12.0, 30.0, 20.0),
+            (3, 4.1, 6.0, 12.0, 30.0, 20.0),
             (5, 8.0, 12.0, 16.0, 60.0, 40.0),
         ):
             for axis, value in zip("XYZ", (root_x, root_y, root_z)):
@@ -121,6 +121,14 @@ def main(output: Path) -> int:
             reduced_result=ExportBodyFbx(host).apply(
                 reduced_destination,start_frame=1,end_frame=5,
                 source_container=container,profile=reduced_profile)
+            bounded_destination=Path(directory)/'bounded-character.fbx'
+            bounded_profile=BodyFbxExportProfile(
+                BodyFbxFileVersion.FBX_2020, FitUpAxis.Z,
+                BodyFbxLinearUnit.CENTIMETER, BodyFbxEncoding.BINARY,
+                BodyFbxCurvePolicy.BOUNDED_LINEAR, .2, .2)
+            bounded_result=ExportBodyFbx(host).apply(
+                bounded_destination,start_frame=1,end_frame=5,
+                source_container=container,profile=bounded_profile)
             checks = {
                 "live_body_dependencies_detected": bool(live_dependencies),
                 "explicit_31_node_selection": result.plan.selection.node_count == 31,
@@ -206,12 +214,20 @@ def main(output: Path) -> int:
                 return joints,tuple(poses),key_count
             full_joints,full_poses,full_keys=imported_pose(destination)
             reduced_joints,reduced_poses,reduced_keys=imported_pose(reduced_destination)
+            bounded_joints,bounded_poses,bounded_keys=imported_pose(bounded_destination)
             max_pose_error=max(abs(left-right) for full_frame,reduced_frame in
                 zip(full_poses,reduced_poses) for full_joint,reduced_joint in
                 zip(full_frame,reduced_frame) for left,right in zip(full_joint,reduced_joint))
             checks['reduced_fbx_reimports_with_same_joint_poses']=(
                 full_joints==reduced_joints and reduced_keys<full_keys
                 and max_pose_error<1e-5)
+            bounded_pose_error=max(abs(left-right) for full_frame,bounded_frame in
+                zip(full_poses,bounded_poses) for full_joint,bounded_joint in
+                zip(full_frame,bounded_frame) for left,right in zip(full_joint,bounded_joint))
+            checks['bounded_fbx_reimports_with_limited_pose_error']=(
+                full_joints==bounded_joints and bounded_keys<reduced_keys
+                and .01<bounded_pose_error<=.2
+                and .01<bounded_result.applied_profile.max_matrix_error<=.2)
 
             cmds.file(new=True, force=True)
             cmds.file(
@@ -334,6 +350,8 @@ def main(output: Path) -> int:
             "full_reimport_key_count": full_keys,
             "reduced_reimport_key_count": reduced_keys,
             "reimport_max_pose_error": max_pose_error,
+            "bounded_reimport_max_pose_error": bounded_pose_error,
+            "bounded_removed_linear_keys": bounded_result.applied_profile.removed_linear_keys,
             "duration_seconds": round(time.perf_counter() - started, 3),
             "status": "passed" if passed else "failed",
         }

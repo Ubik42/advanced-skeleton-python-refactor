@@ -15,6 +15,7 @@ from adv_py.core.body_export_skeleton import (
 from adv_py.core.body_fbx_export import (
     BodyFbxAppliedProfile,
     BodyFbxArtifact,
+    BodyFbxCurvePolicy,
     BodyFbxEncoding,
     BodyFbxExportProfile,
     BodyFbxExportSelection,
@@ -221,13 +222,18 @@ class ExportBodyFbx:
                 )
             expected_removed = (
                 sum(
-                    len(redundant_linear_key_frames(channel.keys))
+                    len(redundant_linear_key_frames(channel.keys,
+                        tolerance=plan.profile.value_tolerance
+                        if plan.profile.curve_policy is BodyFbxCurvePolicy.BOUNDED_LINEAR
+                        else 1e-9))
                     for channel in (
                         *plan.baked.root_motion.channels,
                         *(channel for joint in plan.baked.joints for channel in joint.channels),
                     )
                 )
-                if plan.profile.curve_policy.value == "lossless_linear" else 0
+                if plan.profile.curve_policy in (BodyFbxCurvePolicy.LOSSLESS_LINEAR,
+                                                 BodyFbxCurvePolicy.BOUNDED_LINEAR)
+                else 0
             )
             if applied_profile.removed_linear_keys != expected_removed:
                 raise RuntimeError("FBX 发布曲线简化数量与预检快照不一致")
