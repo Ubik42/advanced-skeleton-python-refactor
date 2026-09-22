@@ -5,6 +5,39 @@ from .maya_mocap import MayaMocapSourceReader
 
 
 class MayaMocapControlHost(MayaBodyBuildHost):
+    def match_resampled_character_fk_positions(self, registration, samples, frames):
+        """Key the spline FK position extension against the resampled body."""
+        self._require_transaction()
+        installed = self.install_character_spline_animation(registration)
+        c = self._cmds
+        wanted = {frame: pose for frame, pose in samples}
+        with self._character_sampling_time(preserve_modified=False) as seek:
+            for frame in frames:
+                seek(frame)
+                pose = wanted[frame]
+                for index, (control, joint) in enumerate(zip(
+                        installed.spine.fk_controls, installed.spine.body_joints)):
+                    if not index:
+                        continue
+                    name = joint.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
+                    c.xform(control, worldSpace=True,
+                            translation=pose[name][12:15])
+                    for axis in 'XYZ':
+                        c.setKeyframe(control, attribute='translate'+axis,
+                                      time=frame, inTangentType='linear',
+                                      outTangentType='linear')
+            for frame in frames:
+                seek(frame)
+                pose = wanted[frame]
+                for row in installed.body:
+                    name = row.path.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
+                    actual = c.xform(row.path, query=True, worldSpace=True,
+                                     matrix=True)
+                    if max(abs(a-b) for a,b in zip(actual, pose[name])) > 1e-4:
+                        raise CharacterRegistryError(
+                            '跨段数 FK 身体矩阵不一致：frame='
+                            +str(frame)+' joint='+name)
+
     def prepare_resampled_character_target(self, registration, frames, reference):
         """Replace the destination take with its calibration pose in the span."""
         self._require_transaction()

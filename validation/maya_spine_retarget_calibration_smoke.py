@@ -40,7 +40,7 @@ def main():
                       worst_root=max(row for row in errors if row[2] == 'Root_M'))
         print('CALIBRATION', json.dumps(report), flush=True)
         if (abs(before-6.) > 1e-6 or abs(after-6.) > 1e-6
-                or report['worst_root'][0] > 1e-4):
+                or report['worst_body'][0] > 1e-4):
             raise RuntimeError(report)
     finally:
         maya.standalone.uninitialize()

@@ -86,5 +86,6 @@ class RetargetCharacterSpineFk:
             if any(tuple(sample.frame for sample in group) != frames
                    for group in (root_samples, *group_samples)):
                 raise RuntimeError('跨段数 FK 动画采样不完整')
+            self._host.match_resampled_character_fk_positions(target, samples, frames)
             self._host.delete_resampled_character_source(bridge_root)
         return root_samples, group_samples
