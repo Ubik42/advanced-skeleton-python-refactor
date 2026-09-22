@@ -367,8 +367,8 @@ def parser() -> argparse.ArgumentParser:
     original_replace.add_argument("scene", type=Path)
     original_replace.add_argument("--namespace", required=True)
     original_replace.add_argument("--replacement-namespace", required=True)
-    original_replace.add_argument("--skin", required=True)
-    original_replace.add_argument("--mesh", required=True)
+    original_replace.add_argument("--skin", action="append", required=True)
+    original_replace.add_argument("--mesh", action="append", required=True)
     original_replace.add_argument("--start", type=int, required=True)
     original_replace.add_argument("--end", type=int, required=True)
     original_replace.add_argument("--step", type=int, default=1)
@@ -660,19 +660,22 @@ def _run(args, gateway) -> dict:
         source_namespace = "" if args.namespace == ":" else args.namespace
         target_namespace = ("" if args.replacement_namespace == ":"
                             else args.replacement_namespace)
+        if len(args.skin) != len(args.mesh):
+            raise ValueError('每个 --skin 都需要对应位置的 --mesh')
         result = ReplaceRegisteredSpineCharacter(
-            MayaOriginalSkinSpineMigrationHost(namespace=target_namespace)).apply(
-                source_namespace, target_namespace, args.skin, args.mesh,
+            MayaOriginalSkinSpineMigrationHost(namespace=target_namespace)).apply_many(
+                source_namespace, target_namespace, tuple(zip(args.skin, args.mesh)),
                 start_frame=args.start, end_frame=args.end,
                 sample_by=args.step, reference_frame=args.reference)
         _emit("character_spine_replaced", frames=result.frames,
               groups=result.fk_groups, vertices=result.vertices,
-              removed=result.old_nodes_removed)
+              removed=result.old_nodes_removed, skins=result.skin_count)
         output = gateway.save_new(args.output)
         _emit("scene_saved", scene=str(output))
         return {"status": "ok", "output": str(output),
                 "frames": result.frames, "fk_groups": result.fk_groups,
                 "vertices": result.vertices,
+                "skins": result.skin_count,
                 "removed": result.old_nodes_removed,
                 "retained": result.retained_nodes,
                 "replacement": result.replacement_nodes}

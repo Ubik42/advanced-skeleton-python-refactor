@@ -127,6 +127,7 @@ class ReplacedSpineCharacterResult:
     old_nodes_removed: int
     retained_nodes: int
     replacement_nodes: int
+    skin_count: int = 1
 
 
 class ReplaceRegisteredSpineCharacter:
@@ -137,29 +138,50 @@ class ReplaceRegisteredSpineCharacter:
 
     def apply(self, source_namespace, target_namespace, skin_name, mesh_path,
               *, start_frame, end_frame, sample_by=1, reference_frame=None):
+        return self.apply_many(source_namespace, target_namespace,
+            ((skin_name, mesh_path),), start_frame=start_frame,
+            end_frame=end_frame, sample_by=sample_by,
+            reference_frame=reference_frame)
+
+    def apply_many(self, source_namespace, target_namespace, skins,
+                   *, start_frame, end_frame, sample_by=1,
+                   reference_frame=None):
         host = self._host
         if host.namespace != target_namespace:
             raise CharacterRegistryError('目标动画宿主与目标角色命名空间不一致')
+        skins = tuple(skins)
+        if (not skins or len(skins) != len({row[0] for row in skins})
+                or len(skins) != len({row[1] for row in skins})):
+            raise CharacterRegistryError('角色替换需要非空且唯一的 Skin／网格清单')
         global_host = host.original_skin_handoff_host()
         handoff = HandoffRegisteredSpineSkinCluster(global_host)
-        plan = handoff.plan(source_namespace, target_namespace, skin_name, mesh_path)
+        plans = tuple(handoff.plan(source_namespace, target_namespace,
+                                   skin_name, mesh_path)
+                      for skin_name, mesh_path in skins)
         # The ownership audit after Skin handoff is deliberately performed
         # within the same Undo chunk: its inputs depend on the new influences.
         with host.transaction('Replace registered variable-spine character'):
             global_host._transaction_active = True
             try:
-                result = handoff.apply_plan_in_transaction(
+                results = tuple(handoff.apply_plan_in_transaction(
                     plan, source_namespace, target_namespace, skin_name, mesh_path,
-                    before_mutation=host.mark_original_skin_mutation)
+                    before_mutation=host.mark_original_skin_mutation,
+                    release_bind_pose=False)
+                    for plan, (skin_name, mesh_path) in zip(plans, skins))
+                allowed = tuple(skin_name for skin_name, _ in skins)
+                for skin_name in allowed:
+                    global_host.release_old_bind_pose_members(
+                        skin_name, source_namespace, allowed_skins=allowed)
                 roots, groups = RetargetCharacterSpineFk(host).apply_in_transaction(
                     source_namespace, start_frame=start_frame,
                     end_frame=end_frame, sample_by=sample_by,
                     reference_frame=reference_frame)
-                promotion = global_host.plan_original_spine_promotion(
-                    source_namespace, target_namespace, skin_name, mesh_path)
+                promotion = global_host.plan_original_spine_promotion_many(
+                    source_namespace, target_namespace, skins)
                 global_host.apply_original_spine_promotion(promotion)
             finally:
                 global_host._transaction_active = False
         return ReplacedSpineCharacterResult(len(roots), len(groups),
-            result.vertex_count, len(promotion.deletion_uuids),
-            len(promotion.retained_uuids), len(promotion.target_uuids))
+            sum(result.vertex_count for result in results),
+            len(promotion.deletion_uuids), len(promotion.retained_uuids),
+            len(promotion.target_uuids), len(skins))

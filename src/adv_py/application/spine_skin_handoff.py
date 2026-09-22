@@ -95,7 +95,8 @@ class HandoffRegisteredSpineSkinCluster:
                                                   target_namespace, skin_name, mesh_path)
 
     def apply_plan_in_transaction(self, plan, source_namespace, target_namespace,
-                                  skin_name, mesh_path, *, before_mutation=None):
+                                  skin_name, mesh_path, *, before_mutation=None,
+                                  release_bind_pose=True):
         """Apply a checked handoff inside a larger character migration."""
         host = self._host
         host._require_transaction()
@@ -138,7 +139,8 @@ class HandoffRegisteredSpineSkinCluster:
         editor.apply_plan_in_transaction(edit)
         host.remove_skin_handoff_influences(skin_name,
                                             plan.source_state.influence_paths)
-        host.release_old_bind_pose_members(skin_name, source_namespace)
+        if release_bind_pose:
+            host.release_old_bind_pose_members(skin_name, source_namespace)
         final = host.capture_all_skin_weights(skin_name, mesh_path)
         if set(final.influence_paths) != set(plan.target_document.influence_paths):
             raise RuntimeError('原 skinCluster 的影响关节集合未完整交接')

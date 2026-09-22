@@ -69,7 +69,8 @@ class MayaSpineSkinHandoffHost(MayaFaceHost):
         for joint in influences:
             cmds.skinCluster(skin_name, edit=True, removeInfluence=joint)
 
-    def release_old_bind_pose_members(self, skin_name, source_namespace):
+    def release_old_bind_pose_members(self, skin_name, source_namespace,
+                                      allowed_skins=None):
         from maya import cmds
         self._require_transaction()
         poses = cmds.listConnections(skin_name + '.bindPose', source=True,
@@ -81,11 +82,12 @@ class MayaSpineSkinHandoffHost(MayaFaceHost):
         pose = poses[0]
         consumers = cmds.listConnections(pose + '.message', source=False,
                                          destination=True, type='skinCluster') or []
-        if set(consumers) != {skin_name}:
+        allowed = {skin_name} if allowed_skins is None else set(allowed_skins)
+        if not consumers or not set(consumers) <= allowed:
             raise CharacterRegistryError('bindPose 被其他 Skin 共享，不能清理旧骨架')
         outputs = cmds.listConnections(pose + '.message', source=False,
                                        destination=True, plugs=True) or []
-        if set(outputs) != {skin_name + '.bindPose'}:
+        if set(outputs) != {name + '.bindPose' for name in consumers}:
             raise CharacterRegistryError('bindPose 还连接其他对象，不能清理旧骨架')
         identity = CharacterIdentity(source_namespace)
         pairs = cmds.listConnections(pose, source=True, destination=False,
