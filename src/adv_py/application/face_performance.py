@@ -44,8 +44,10 @@ class ApplyFacePerformance:
                       if joint.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1] == "Head_M")
         if len(heads) != 1 or not control_path.startswith(heads[0] + "|"):
             raise CharacterRegistryError("面部控制不属于当前角色头部")
-        if self._host.read_face_manifest(control_path) != performance.channels:
-            raise CharacterRegistryError("面部动画通道与场景目标清单不一致")
+        manifest = self._host.read_face_manifest(control_path)
+        selected = set(performance.channels)
+        if tuple(channel for channel in manifest if channel in selected) != performance.channels:
+            raise CharacterRegistryError("面部动画通道不属于场景清单或顺序不一致")
         self._host.preflight_face_performance(control_path, performance)
         return FacePerformancePlan(registration, control_path, performance,
             self._host.capture_face_curve_state(control_path, performance))

@@ -22,7 +22,8 @@ def main(output: Path) -> int:
             RebuildBodyCharacter,
         )
         from adv_py.core import (FacePerformance, FaceShapeKind, FaceTarget,
-            face_performance_from_json, face_performance_to_json)
+            PhonemeCue, face_performance_from_json, face_performance_to_json,
+            phoneme_cues_to_performance)
         from adv_py.core.variable_body_fit import variable_axial_description
 
         cmds.file(new=True, force=True)
@@ -205,6 +206,36 @@ def main(output: Path) -> int:
                      uuid=True) or [None])[0] == deformer_uuid)
         checks["face_deformation_survives_rebuild"] = (
             rebuilt.capture_face_binding(result.plan).max_geometry_delta > .1)
+        smile_keys_before = tuple(cmds.keyframe(rebuilt.scene_address(
+            result.plan.control_path) + ".smile_R", query=True,
+            timeChange=True) or ())
+        cue_clip = phoneme_cues_to_performance(
+            performance.channels, performance.time_unit,
+            (PhonemeCue("a", 30, 36),), (("a", "viseme_A"),))
+        ApplyFacePerformance(rebuilt).apply(result.plan.control_path, cue_clip)
+        checks["phoneme_clip_preserves_expression_animation"] = (
+            cue_clip.channels == (("viseme_A", FaceShapeKind.VISEME),)
+            and tuple(cmds.keyframe(rebuilt.scene_address(
+                result.plan.control_path) + ".smile_R", query=True,
+                timeChange=True) or ()) == smile_keys_before
+            and abs(cmds.getAttr(rebuilt.scene_address(
+                result.plan.control_path) + ".viseme_A", time=33) - 1.) < 1e-8)
+        cue_time = float(cmds.currentTime(query=True))
+        try:
+            cmds.currentTime(28)
+            quiet_points = rebuilt.capture_face_mesh("|FaceNeutral").points
+            cmds.currentTime(33)
+            spoken_points = rebuilt.capture_face_mesh("|FaceNeutral").points
+        finally:
+            cmds.currentTime(cue_time)
+        checks["phoneme_clip_deforms_mesh"] = max(
+            abs(a - b) for p, q in zip(quiet_points, spoken_points)
+            for a, b in zip(p, q)) > .1
+        cmds.file(save=True, type="mayaAscii", force=True)
+        cmds.file(str(scene), open=True, force=True)
+        checks["phoneme_clip_reopens"] = (
+            abs(cmds.getAttr(MayaFaceHost(namespace="hero").scene_address(
+                result.plan.control_path) + ".viseme_A", time=33) - 1.) < 1e-8)
         payload = {**checks, "joint_count": len(registration.body),
                    "max_geometry_delta": result.binding.max_geometry_delta,
                    "status": "passed" if all(checks.values()) else "failed"}

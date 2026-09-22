@@ -686,10 +686,12 @@ from .validation import PlanValidationError, validate_plan
 
 from .face_shapes import FaceShapeKind, FaceTarget, FaceMeshSnapshot, validate_face_targets
 from .face_performance import FacePerformance, face_performance_to_json, face_performance_from_json
+from .phoneme_visemes import PhonemeCue, phoneme_cues_to_performance
 
 __all__ = [
     "FaceShapeKind", "FaceTarget", "FaceMeshSnapshot", "validate_face_targets",
     "FacePerformance", "face_performance_to_json", "face_performance_from_json",
+    "PhonemeCue", "phoneme_cues_to_performance",
     "BodyTorsoPlan",
     "BodyTorsoSnapshot",
     "BodySpaceAttachment",
