@@ -50,7 +50,7 @@ class FakeSkinBindHost:
             (plan.mesh_path,),
             plan.influence_paths,
             plan.maximum_influences,
-            True,
+            plan.maintain_maximum_influences,
             plan.bind_method,
             plan.normalization,
         )
@@ -76,12 +76,18 @@ class SkinBindTests(unittest.TestCase):
         self.assertEqual(plan.mesh_path, "|BodyMesh")
         self.assertEqual(plan.bind_method, SkinBindMethod.CLOSEST_DISTANCE)
         self.assertEqual(plan.normalization, SkinWeightNormalization.INTERACTIVE)
+        relaxed = plan_skin_bind("|BodyMesh", ("|JointA", "|JointB"),
+            maximum_influences=2, maintain_maximum_influences=False)
+        self.assertFalse(relaxed.maintain_maximum_influences)
 
     def test_rejects_duplicate_influences_and_invalid_limit(self):
         with self.assertRaises(SkinBindValidationError):
             plan_skin_bind("|BodyMesh", ("|JointA", "|JointA"))
         with self.assertRaises(SkinBindValidationError):
             plan_skin_bind("|BodyMesh", ("|JointA",), maximum_influences=0)
+        with self.assertRaises(SkinBindValidationError):
+            plan_skin_bind("|BodyMesh", ("|JointA",),
+                           maintain_maximum_influences=0)
 
     def test_preflight_blocks_existing_skin_without_transaction(self):
         state = SkinBindInputState(

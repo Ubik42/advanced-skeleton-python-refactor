@@ -68,12 +68,14 @@ class BindSkin:
         *,
         skin_name: str = "AdvPy_BodySkin",
         maximum_influences: int = 4,
+        maintain_maximum_influences: bool = True,
     ) -> SkinBindBuildPlan:
         bind = plan_skin_bind(
             mesh_path,
             influence_paths,
             skin_name=skin_name,
             maximum_influences=maximum_influences,
+            maintain_maximum_influences=maintain_maximum_influences,
         )
         state = self._host.capture_skin_bind_input(bind)
         return SkinBindBuildPlan(
@@ -90,12 +92,14 @@ class BindSkin:
         *,
         skin_name: str = "AdvPy_BodySkin",
         maximum_influences: int = 4,
+        maintain_maximum_influences: bool = True,
     ) -> SkinBindBuildResult:
         plan = self.plan(
             mesh_path,
             influence_paths,
             skin_name=skin_name,
             maximum_influences=maximum_influences,
+            maintain_maximum_influences=maintain_maximum_influences,
         )
         if not plan.ready:
             raise FitSkeletonValidationError(

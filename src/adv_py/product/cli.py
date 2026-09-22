@@ -13,6 +13,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     BuildOrientedBodySkeleton, BuildBodyCharacterRig, RegisterBodyCharacter,
     CreateAndImportFitSkeleton, ExportFitSkeleton,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget,
+    BindSkin,
     FaceAssetLibrary, ImportFaceTargetAsset, ExportSkinWeights, ImportSkinWeights,
     ImportMocapFbx, RetargetMocapFullFkToCharacter,
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
@@ -29,6 +30,8 @@ from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
                          face_performance_from_json)
 from adv_py.core.character_registry import safe_json
 from adv_py.core.variable_body_fit import variable_axial_description
+from adv_py.core.skin_weight_io import (SkinWeightPathMapping,
+    SkinWeightInfluenceMapping)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -176,7 +179,20 @@ def parser() -> argparse.ArgumentParser:
     skin_import.add_argument("scene", type=Path)
     skin_import.add_argument("--namespace", required=True)
     skin_import.add_argument("--weights", type=Path, required=True)
+    skin_import.add_argument("--mapping", type=Path,
+        help="显式目标网格、Skin 和影响关节路径映射文档")
+    skin_import.add_argument("--allow-unweighted-missing", action="store_true")
     skin_import.add_argument("--output", type=Path, required=True)
+    skin_bind = commands.add_parser("skin-bind",
+        help="将现有网格绑定到显式列出的关节")
+    skin_bind.add_argument("scene", type=Path)
+    skin_bind.add_argument("--namespace", required=True)
+    skin_bind.add_argument("--mesh", required=True)
+    skin_bind.add_argument("--influence", action="append", required=True)
+    skin_bind.add_argument("--skin", default="AdvPy_BodySkin")
+    skin_bind.add_argument("--max-influences", type=int, default=4)
+    skin_bind.add_argument("--no-maintain-max-influences", action="store_true")
+    skin_bind.add_argument("--output", type=Path, required=True)
     fbx = commands.add_parser("fbx-publish", help="从身体动画场景发布独立烘焙 FBX")
     fbx.add_argument("scene", type=Path)
     fbx.add_argument("--namespace", required=True)
@@ -246,6 +262,22 @@ def _face_build_spec(path: Path) -> tuple[str, tuple[FaceTarget, ...]]:
         targets.append(FaceTarget(row["name"], FaceShapeKind(row["kind"]),
                                   row["mesh"]))
     return document["neutral"], tuple(targets)
+
+
+def _skin_path_mapping(path: Path) -> SkinWeightPathMapping:
+    document = safe_json(_read_text(path, limit=64_000), max_bytes=64_000)
+    if (not isinstance(document, dict)
+            or set(document) != {"target_skin", "target_mesh", "influences"}
+            or not isinstance(document["influences"], list)
+            or not 1 <= len(document["influences"]) <= 256):
+        raise ValueError("蒙皮映射文档须包含目标 Skin、网格及 1–256 个影响关节对应")
+    rows = []
+    for entry in document["influences"]:
+        if not isinstance(entry, dict) or set(entry) != {"source", "target"}:
+            raise ValueError("影响关节映射须包含 source 和 target")
+        rows.append(SkinWeightInfluenceMapping(entry["source"], entry["target"]))
+    return SkinWeightPathMapping(document["target_skin"],
+                                 document["target_mesh"], tuple(rows))
 
 
 def _emit(event: str, **payload) -> None:
@@ -488,8 +520,22 @@ def _run(args, gateway) -> dict:
         return {"status": "ok", "output": str(saved),
                 "frames": len(animation.samples)}
     gateway.preflight_output(args.output)
+    if args.command == "skin-bind":
+        bound = BindSkin(host).apply(args.mesh, tuple(args.influence),
+            skin_name=args.skin, maximum_influences=args.max_influences,
+            maintain_maximum_influences=not args.no_maintain_max_influences)
+        _emit("skin_bound", vertices=bound.plan.input_state.vertex_count,
+              influences=len(bound.snapshot.influence_paths))
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output),
+                "vertices": bound.plan.input_state.vertex_count,
+                "influences": len(bound.snapshot.influence_paths)}
     if args.command == "skin-import":
-        imported = ImportSkinWeights(host).apply(args.weights)
+        mapping = _skin_path_mapping(args.mapping) if args.mapping else None
+        imported = ImportSkinWeights(host).apply(args.weights,
+            mapping=mapping,
+            allow_unweighted_missing=args.allow_unweighted_missing)
         _emit("skin_imported", vertices=imported.plan.target_document.vertex_count,
               changed_vertices=imported.edit_result.changed_vertex_count)
         output = gateway.save_new(args.output)

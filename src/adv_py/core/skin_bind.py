@@ -22,6 +22,7 @@ class SkinBindPlan:
     influence_paths: tuple[str, ...]
     skin_name: str
     maximum_influences: int
+    maintain_maximum_influences: bool
     bind_method: SkinBindMethod
     normalization: SkinWeightNormalization
 
@@ -59,6 +60,7 @@ def plan_skin_bind(
     *,
     skin_name: str = "AdvPy_BodySkin",
     maximum_influences: int = 4,
+    maintain_maximum_influences: bool = True,
 ) -> SkinBindPlan:
     if not isinstance(mesh_path, str) or not mesh_path.strip():
         raise SkinBindValidationError("Skin Bind 需要显式 mesh 路径")
@@ -81,11 +83,14 @@ def plan_skin_bind(
         or maximum_influences < 1
     ):
         raise SkinBindValidationError("Skin Bind 最大影响数必须是正整数")
+    if not isinstance(maintain_maximum_influences, bool):
+        raise SkinBindValidationError("Skin Bind 最大影响数开关必须是布尔值")
     return SkinBindPlan(
         mesh_path.strip(),
         tuple(path.strip() for path in influence_paths),
         skin_name.strip(),
         maximum_influences,
+        maintain_maximum_influences,
         SkinBindMethod.CLOSEST_DISTANCE,
         SkinWeightNormalization.INTERACTIVE,
     )
@@ -159,7 +164,8 @@ def audit_skin_bind_result(
         ),
         (
             snapshot.maximum_influences == plan.maximum_influences
-            and snapshot.maintain_maximum_influences,
+            and snapshot.maintain_maximum_influences
+                == plan.maintain_maximum_influences,
             "maximum_influences_mismatch",
             "最大影响数设置不一致",
         ),
