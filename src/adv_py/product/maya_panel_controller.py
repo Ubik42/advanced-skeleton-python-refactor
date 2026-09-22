@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from adv_py.adapters import MayaFaceHost
 from adv_py.application import (ApplyBodyCharacterAnimation,
@@ -105,12 +106,17 @@ class MayaPanelController:
                               len(result.registration.channels))
 
     def body_rebuild(self, namespace: str, replacement: str,
-                     extensions: tuple[str, ...] = ()) -> PanelCharacter:
+                     extensions: tuple[str, ...] = (), *,
+                     progress: Callable[[str], None] | None = None) -> PanelCharacter:
         if not isinstance(replacement, str) or not replacement.strip():
             raise ValueError("请填写尚未占用的重建暂存命名空间")
         host = self._host_factory(namespace="" if namespace == ":" else namespace)
+        if progress:
+            progress("暂存替换角色并核对需保留的数据")
         result = RebuildBodyCharacter(host).apply(replacement.strip(),
             extensions=extensions)
+        if progress:
+            progress("替换完成，原角色与保留数据已复核")
         return PanelCharacter(namespace, True, len(result.registration.body),
                               len(result.registration.channels))
 
@@ -236,7 +242,8 @@ class MayaPanelController:
                     start: int, end: int, step: int = 1,
                     curve_policy: str = "sampled_linear",
                     value_tolerance: float = 0.0,
-                    matrix_tolerance: float = 0.0) -> PanelFbxPublication:
+                    matrix_tolerance: float = 0.0, *,
+                    progress: Callable[[str], None] | None = None) -> PanelFbxPublication:
         destination = Path(destination).expanduser().absolute()
         if (destination.suffix.lower() != ".fbx" or not destination.parent.is_dir()
                 or destination.exists()):
@@ -252,13 +259,21 @@ class MayaPanelController:
         prefix = "" if namespace == ":" else namespace.strip(":") + ":"
         body_root = prefix + "Root_M"
         container = "|" + prefix + "FitSkeleton"
+        if progress:
+            progress("构建 Root Motion")
         BuildBodyRootMotion(host).apply(body_root_name=body_root,
                                         source_container=container)
+        if progress:
+            progress("构建独立导出骨架")
         BuildBodyExportSkeleton(host).apply(body_root_name=body_root,
                                             source_container=container)
+        if progress:
+            progress("烘焙采样帧")
         baked = BakeBodyExportSkeleton(host).apply(start_frame=start,
             end_frame=end, sample_by=step, body_root_name=body_root,
             source_container=container)
+        if progress:
+            progress("写入并复核 FBX 文件")
         exported = ExportBodyFbx(host).apply(destination, start_frame=start,
             end_frame=end, sample_by=step, body_root_name=body_root,
             source_container=container, profile=profile)
@@ -269,7 +284,8 @@ class MayaPanelController:
     def mocap_retarget(self, namespace: str, source: Path,
                        mapping: Path, source_namespace: str,
                        start: int, end: int, step: int = 1,
-                       mode: str = "fk") -> PanelMocapResult:
+                       mode: str = "fk", *,
+                       progress: Callable[[str], None] | None = None) -> PanelMocapResult:
         from adv_py.adapters import MayaMocapClipHost, MayaMocapControlHost
 
         if start > end or step < 1:
@@ -283,9 +299,20 @@ class MayaPanelController:
         target_namespace = "" if namespace == ":" else namespace
         target = MayaMocapControlHost(namespace=target_namespace)
         target.read_character_registration()
-        imported = ImportMocapFbx(MayaMocapClipHost()).apply(source,
+        clip_host = MayaMocapClipHost()
+        if progress:
+            progress("在独立进程读取并校验动捕 FBX")
+        imported = ImportMocapFbx(clip_host).apply(source,
             namespace=source_namespace)
-        samples = services[mode](target).apply_with_preset(imported.snapshot.root,
-            preset, start_frame=start, end_frame=end, sample_by=step)
+        try:
+            if progress:
+                progress("按映射预设写入角色控制曲线")
+            samples = services[mode](target).apply_with_preset(imported.snapshot.root,
+                preset, start_frame=start, end_frame=end, sample_by=step)
+        except Exception:
+            if progress:
+                progress("写入失败，撤销本次来源导入")
+            clip_host.rollback_import(source_namespace)
+            raise
         return PanelMocapResult(len(imported.clip.joints), len(samples[0]),
                                 imported.snapshot.root)

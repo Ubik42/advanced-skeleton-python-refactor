@@ -536,7 +536,8 @@ def create_panel(controller: MayaPanelController | None = None):
             extensions = tuple(line.strip() for line in
                 self.rebuild_extensions.toPlainText().splitlines() if line.strip())
             result = self.controller.body_rebuild(self._namespace(),
-                self.rebuild_namespace.text().strip(), extensions)
+                self.rebuild_namespace.text().strip(), extensions,
+                progress=self._progress)
             return (f"角色已原位重建并保留数据：{result.joint_count} 个关节、"
                     f"{result.channel_count} 个通道")
 
@@ -666,7 +667,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.fbx_end.value(), self.fbx_step.value(),
                 self.fbx_policy.currentData(),
                 self.fbx_value_tolerance.value(),
-                self.fbx_matrix_tolerance.value())
+                self.fbx_matrix_tolerance.value(), progress=self._progress)
             return (f"FBX 已发布：{result.joints} 个关节、{result.frames} 帧、"
                     f"{result.bytes_written} 字节；SHA-256 {result.sha256[:12]}…")
 
@@ -675,7 +676,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._path(self.mocap_source), self._path(self.mocap_mapping),
                 self.mocap_namespace.text().strip(), self.mocap_start.value(),
                 self.mocap_end.value(), self.mocap_step.value(),
-                self.mocap_mode.currentData())
+                self.mocap_mode.currentData(), progress=self._progress)
             return (f"动捕已写入：{result.source_joints} 个来源关节、"
                     f"{result.frames} 帧；来源根 {result.source_root}")
 
@@ -723,6 +724,10 @@ def create_panel(controller: MayaPanelController | None = None):
             finally:
                 QtWidgets.QApplication.restoreOverrideCursor()
                 self._busy = False
+
+        def _progress(self, stage):
+            self.status.setPlainText("正在执行：" + stage)
+            QtWidgets.QApplication.processEvents()
 
     return CharacterPanel()
 

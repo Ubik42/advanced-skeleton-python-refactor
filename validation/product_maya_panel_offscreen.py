@@ -37,8 +37,10 @@ class FakeController:
                            control_name, deformer_name))
         return 2
 
-    def body_rebuild(self, namespace, replacement, extensions):
+    def body_rebuild(self, namespace, replacement, extensions, *, progress=None):
         self.calls.append(("body_rebuild", namespace, replacement, extensions))
+        if progress:
+            progress("暂存替换角色并核对需保留的数据")
         return PanelCharacter(namespace, True, 30, 157)
 
 

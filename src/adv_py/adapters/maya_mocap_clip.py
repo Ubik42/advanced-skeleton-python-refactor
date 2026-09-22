@@ -9,6 +9,26 @@ class MayaMocapClipHost:
         from maya import cmds
         self._cmds=cmds
 
+    def rollback_import(self, namespace):
+        """Undo this host's latest successful import after retarget preflight fails."""
+        c=self._cmds
+        if not c.namespace(exists=namespace):
+            raise RuntimeError('动捕来源命名空间在回滚前已消失')
+        label=c.undoInfo(query=True,undoName=True)
+        if label!='Import isolated MoCap clip':
+            raise RuntimeError('动捕导入后撤销历史发生变化，拒绝撤销其他操作：'+str(label))
+        c.undo()
+        c.undoInfo(stateWithoutFlush=False)
+        try:
+            if c.namespace(exists=namespace):
+                if c.namespaceInfo(namespace,listOnlyDependencyNodes=True,recurse=True):
+                    raise RuntimeError('动捕导入撤销后仍有来源节点，未清理命名空间')
+                c.namespace(removeNamespace=namespace)
+        finally:
+            c.undoInfo(stateWithoutFlush=True)
+        if c.namespace(exists=namespace):
+            raise RuntimeError('动捕来源命名空间回滚失败')
+
     def mocap_scene_units(self):
         c=self._cmds
         return (str(c.upAxis(query=True,axis=True)),str(c.currentUnit(query=True,linear=True)),
