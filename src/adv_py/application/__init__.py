@@ -519,6 +519,7 @@ __all__ = [
     "RetargetCharacterSpineFk",
     "MigrateRegisteredSpineCharacter", "RegisteredSpineMigrationResult",
     "MigrateRegisteredSpineOnOriginalSkin", "OriginalSkinSpineMigrationResult",
+    "ReplaceRegisteredSpineCharacter", "ReplacedSpineCharacterResult",
     "HandoffRegisteredSpineSkinCluster", "SpineSkinHandoffPlan",
     "SpineSkinHandoffResult",
     "PromoteOriginalSpineCharacter", "OriginalSpinePromotionResult",
@@ -636,7 +637,8 @@ from .mocap_variable_retarget import (RetargetMocapVariableFullFkToCharacter,
 from .character_spine_retarget import RetargetCharacterSpineFk
 from .character_spine_migration import (MigrateRegisteredSpineCharacter,
     RegisteredSpineMigrationResult, MigrateRegisteredSpineOnOriginalSkin,
-    OriginalSkinSpineMigrationResult)
+    OriginalSkinSpineMigrationResult, ReplaceRegisteredSpineCharacter,
+    ReplacedSpineCharacterResult)
 from .spine_skin_handoff import (HandoffRegisteredSpineSkinCluster,
                                 SpineSkinHandoffPlan, SpineSkinHandoffResult)
 from .spine_original_promotion import (PromoteOriginalSpineCharacter,

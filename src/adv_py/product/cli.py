@@ -27,6 +27,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     RetargetCharacterSpineFk,
     MigrateRegisteredSpineCharacter,
     MigrateRegisteredSpineOnOriginalSkin,
+    ReplaceRegisteredSpineCharacter,
     HandoffRegisteredSpineSkinCluster,
     PromoteOriginalSpineCharacter,
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
@@ -361,6 +362,18 @@ def parser() -> argparse.ArgumentParser:
     original_promote.add_argument("--skin", required=True)
     original_promote.add_argument("--mesh", required=True)
     original_promote.add_argument("--output", type=Path, required=True)
+    original_replace = commands.add_parser("character-spine-replace",
+        help="一次事务完成变段数脊柱动画、原 Skin 和角色标识替换")
+    original_replace.add_argument("scene", type=Path)
+    original_replace.add_argument("--namespace", required=True)
+    original_replace.add_argument("--replacement-namespace", required=True)
+    original_replace.add_argument("--skin", required=True)
+    original_replace.add_argument("--mesh", required=True)
+    original_replace.add_argument("--start", type=int, required=True)
+    original_replace.add_argument("--end", type=int, required=True)
+    original_replace.add_argument("--step", type=int, default=1)
+    original_replace.add_argument("--reference", type=float)
+    original_replace.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
     rebuild.add_argument("scene", type=Path)
     rebuild.add_argument("--namespace", required=True)
@@ -637,6 +650,29 @@ def _run(args, gateway) -> dict:
         output = gateway.save_new(args.output)
         _emit("scene_saved", scene=str(output))
         return {"status": "ok", "output": str(output),
+                "removed": result.old_nodes_removed,
+                "retained": result.retained_nodes,
+                "replacement": result.replacement_nodes}
+    if args.command == "character-spine-replace":
+        from adv_py.adapters import MayaOriginalSkinSpineMigrationHost
+
+        gateway.preflight_output(args.output)
+        source_namespace = "" if args.namespace == ":" else args.namespace
+        target_namespace = ("" if args.replacement_namespace == ":"
+                            else args.replacement_namespace)
+        result = ReplaceRegisteredSpineCharacter(
+            MayaOriginalSkinSpineMigrationHost(namespace=target_namespace)).apply(
+                source_namespace, target_namespace, args.skin, args.mesh,
+                start_frame=args.start, end_frame=args.end,
+                sample_by=args.step, reference_frame=args.reference)
+        _emit("character_spine_replaced", frames=result.frames,
+              groups=result.fk_groups, vertices=result.vertices,
+              removed=result.old_nodes_removed)
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output),
+                "frames": result.frames, "fk_groups": result.fk_groups,
+                "vertices": result.vertices,
                 "removed": result.old_nodes_removed,
                 "retained": result.retained_nodes,
                 "replacement": result.replacement_nodes}

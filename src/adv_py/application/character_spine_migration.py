@@ -117,3 +117,49 @@ class MigrateRegisteredSpineOnOriginalSkin:
         return OriginalSkinSpineMigrationResult(
             len(roots), len(groups), result.vertex_count,
             result.target_influence_count)
+
+
+@dataclass(frozen=True, slots=True)
+class ReplacedSpineCharacterResult:
+    frames: int
+    fk_groups: int
+    vertices: int
+    old_nodes_removed: int
+    retained_nodes: int
+    replacement_nodes: int
+
+
+class ReplaceRegisteredSpineCharacter:
+    """Atomically hand over original Skin, write FK, and promote target Rig."""
+
+    def __init__(self, host):
+        self._host = host
+
+    def apply(self, source_namespace, target_namespace, skin_name, mesh_path,
+              *, start_frame, end_frame, sample_by=1, reference_frame=None):
+        host = self._host
+        if host.namespace != target_namespace:
+            raise CharacterRegistryError('目标动画宿主与目标角色命名空间不一致')
+        global_host = host.original_skin_handoff_host()
+        handoff = HandoffRegisteredSpineSkinCluster(global_host)
+        plan = handoff.plan(source_namespace, target_namespace, skin_name, mesh_path)
+        # The ownership audit after Skin handoff is deliberately performed
+        # within the same Undo chunk: its inputs depend on the new influences.
+        with host.transaction('Replace registered variable-spine character'):
+            global_host._transaction_active = True
+            try:
+                result = handoff.apply_plan_in_transaction(
+                    plan, source_namespace, target_namespace, skin_name, mesh_path,
+                    before_mutation=host.mark_original_skin_mutation)
+                roots, groups = RetargetCharacterSpineFk(host).apply_in_transaction(
+                    source_namespace, start_frame=start_frame,
+                    end_frame=end_frame, sample_by=sample_by,
+                    reference_frame=reference_frame)
+                promotion = global_host.plan_original_spine_promotion(
+                    source_namespace, target_namespace, skin_name, mesh_path)
+                global_host.apply_original_spine_promotion(promotion)
+            finally:
+                global_host._transaction_active = False
+        return ReplacedSpineCharacterResult(len(roots), len(groups),
+            result.vertex_count, len(promotion.deletion_uuids),
+            len(promotion.retained_uuids), len(promotion.target_uuids))
