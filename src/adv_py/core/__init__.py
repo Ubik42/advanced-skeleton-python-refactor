@@ -495,6 +495,10 @@ from .skin_weight_redistribution import (
     redistribute_skin_weight_document,
     linear_spine_weight_redistribution,
 )
+from .spine_pose_resampling import (
+    SpinePoseResamplingError,
+    resample_spine_world_matrices,
+)
 from .skin_weight_mirror import (
     SkinWeightMirrorRequest,
     SkinWeightVertexPair,
@@ -944,6 +948,8 @@ __all__ = [
     "SkinWeightRedistributionTarget",
     "redistribute_skin_weight_document",
     "linear_spine_weight_redistribution",
+    "SpinePoseResamplingError",
+    "resample_spine_world_matrices",
     "SkinWeightMirrorRequest",
     "SkinWeightVertexPair",
     "BODY_PROVENANCE_KIND",
