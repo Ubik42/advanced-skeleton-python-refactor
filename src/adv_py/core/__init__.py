@@ -694,6 +694,8 @@ from .face_target_asset import (FaceTargetAsset, FaceAssetMergeConflict,
     face_target_asset_from_json, merge_face_target_assets)
 from .face_surface_transfer import (FaceSurfaceAlignment, FaceSurfaceTransferResult,
     transfer_face_target_asset)
+from .skin_weight_surface_transfer import (SkinWeightSurfaceTransferResult,
+    transfer_skin_weights_by_surface)
 from .face_neutral_geometry import (FaceNeutralGeometry,
     face_neutral_geometry_to_json, face_neutral_geometry_from_json)
 

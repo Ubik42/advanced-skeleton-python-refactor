@@ -641,6 +641,8 @@ from .face_asset_library import FaceAssetLibrary, FaceAssetLibraryEntry
 from .face_surface_transfer import (TransferFaceTargetAsset, FaceAssetTransferPlan,
     ExportFaceNeutralGeometry, save_face_neutral_geometry,
     load_face_neutral_geometry)
+from .skin_weight_surface_transfer import (TransferSkinWeightsBySurface,
+    SkinWeightSurfacePlan, SkinWeightSurfaceResult)
 from .character_presets import InspectBodyCharacterPresets, CharacterPresetStatus
 from .registered_body_build import (BuildRegisteredBodyCharacter,
     RegisteredBodyBuildResult)

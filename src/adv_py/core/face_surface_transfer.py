@@ -89,6 +89,19 @@ class FaceSurfaceTransferResult:
     max_neutral_distance: float
 
 
+@dataclass(frozen=True, slots=True)
+class MeshSurfaceProjection:
+    triangle_index: int
+    barycentric: tuple[float, float, float]
+    distance: float
+
+
+@dataclass(frozen=True, slots=True)
+class MeshSurfaceProjectionResult:
+    rows: tuple[MeshSurfaceProjection, ...]
+    max_distance: float
+
+
 @dataclass(slots=True)
 class _Node:
     minimum: Point
@@ -215,6 +228,36 @@ def transfer_face_target_asset(source: FaceMeshSnapshot,
                                ) -> FaceSurfaceTransferResult:
     """Project each target vertex onto the source surface and interpolate deltas."""
     asset.points_for(source)
+    projection = project_mesh_surface(source, destination, triangles,
+        max_distance=max_distance, alignment=alignment)
+    frames = alignment.frames(source, destination) if alignment else None
+    sparse = {row[0]: row[1:] for row in asset.deltas}
+    deltas = []
+    for index, row in enumerate(projection.rows):
+        source_delta = tuple(sparse.get(vertex, (0., 0., 0.))
+                             for vertex in triangles[row.triangle_index])
+        displacement = _weighted(source_delta, row.barycentric)
+        if frames:
+            displacement = _rotate(displacement, frames[2], frames[3])
+        if max(abs(value) for value in displacement) > 1e-7:
+            deltas.append((index, *displacement))
+    if not deltas:
+        raise ValueError("跨拓扑转移后没有有效雕刻位移")
+    result = FaceTargetAsset(asset.name, asset.kind, destination.vertex_count,
+        destination.topology_digest, destination.position_digest, tuple(deltas))
+    return FaceSurfaceTransferResult(result, len(triangles), len(deltas),
+                                     projection.max_distance)
+
+
+def project_mesh_surface(source: FaceMeshSnapshot,
+                         destination: FaceMeshSnapshot,
+                         triangles: tuple[Triangle, ...], *,
+                         max_distance: float,
+                         alignment: FaceSurfaceAlignment | None = None
+                         ) -> MeshSurfaceProjectionResult:
+    """Map each destination vertex to its nearest source triangle."""
+    if not isinstance(source, FaceMeshSnapshot):
+        raise ValueError("跨拓扑转移的源网格无效")
     if (not isinstance(destination, FaceMeshSnapshot)
             or not isinstance(triangles, tuple) or not triangles
             or len(triangles) > 2_000_000
@@ -238,8 +281,7 @@ def transfer_face_target_asset(source: FaceMeshSnapshot,
     bounds = _bounds(source.points, triangles)
     tree = _build(tuple(range(len(triangles))), bounds)
     frames = alignment.frames(source, destination) if alignment else None
-    sparse = {row[0]: row[1:] for row in asset.deltas}
-    deltas = []
+    rows = []
     greatest = 0.
     threshold = float(max_distance) ** 2
     for index, point in enumerate(destination.points):
@@ -250,16 +292,6 @@ def transfer_face_target_asset(source: FaceMeshSnapshot,
         if distance > threshold + 1e-12:
             raise ValueError(f"目标顶点 {index} 距源表面超过最大允许距离")
         greatest = max(greatest, distance)
-        source_delta = tuple(sparse.get(vertex, (0., 0., 0.))
-                             for vertex in triangles[triangle_index])
-        displacement = _weighted(source_delta, weights)
-        if frames:
-            displacement = _rotate(displacement, frames[2], frames[3])
-        if max(abs(value) for value in displacement) > 1e-7:
-            deltas.append((index, *displacement))
-    if not deltas:
-        raise ValueError("跨拓扑转移后没有有效雕刻位移")
-    result = FaceTargetAsset(asset.name, asset.kind, destination.vertex_count,
-        destination.topology_digest, destination.position_digest, tuple(deltas))
-    return FaceSurfaceTransferResult(result, len(triangles), len(deltas),
-                                     sqrt(greatest))
+        rows.append(MeshSurfaceProjection(triangle_index, weights,
+                                          sqrt(distance)))
+    return MeshSurfaceProjectionResult(tuple(rows), sqrt(greatest))
