@@ -379,6 +379,8 @@ def parser() -> argparse.ArgumentParser:
     original_replace.add_argument("--max-body-error", type=float,
         help="IK／混合模式身体标记点最大允许误差（厘米）；默认与网格上限相同")
     original_replace.add_argument("--extension", action="append", default=[])
+    original_replace.add_argument("--retained-asset", action="append", default=[],
+        help="显式保留的原角色独立网格或其他 DAG 根；每个根各指定一次")
     original_replace.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
     rebuild.add_argument("scene", type=Path)
@@ -675,7 +677,8 @@ def _run(args, gateway) -> dict:
                 sample_by=args.step, reference_frame=args.reference,
                 extensions=tuple(args.extension), spine_mode=args.spine_mode,
                 max_mesh_error=args.max_mesh_error,
-                max_body_error=args.max_body_error)
+                max_body_error=args.max_body_error,
+                retained_assets=tuple(args.retained_asset))
         _emit("character_spine_replaced", frames=result.frames,
               groups=result.fk_groups, vertices=result.vertices,
               removed=result.old_nodes_removed, skins=result.skin_count,

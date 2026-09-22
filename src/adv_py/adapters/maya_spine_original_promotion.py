@@ -109,6 +109,36 @@ class OriginalSpinePromotionPlan:
 class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
     """Move a replacement Rig into the original namespace without touching Skin."""
 
+    def plan_original_spine_retained_assets(self, source_namespace, roots):
+        from maya import cmds
+
+        roots=tuple(roots)
+        if not roots:return ()
+        source=MayaBodyBuildHost(namespace=source_namespace)
+        registration=source.read_character_registration()
+        registered={source.scene_address(row.path) for row in registration.nodes}
+        owner=CharacterIdentity(source_namespace)
+        used=set()
+        for root in roots:
+            matches=cmds.ls(root,long=True,type='transform') or []
+            if (matches!=[root] or not owner.owns(root)
+                    or cmds.listRelatives(root,parent=True,fullPath=True)):
+                raise CharacterRegistryError('保留资产须为原角色的独立完整 DAG 根：'
+                                             +str(root))
+            nodes=(root,*(cmds.listRelatives(root,allDescendents=True,
+                                              fullPath=True) or ()))
+            if any(node in registered or not owner.owns(node)
+                   or cmds.referenceQuery(node,isNodeReferenced=True)
+                   or any(cmds.lockNode(node,query=True,lock=True) or [])
+                   for node in nodes):
+                raise CharacterRegistryError('保留资产不能包含原 Rig 或不可写节点：'
+                                             +root)
+            uuids={_uuid(cmds,node) for node in nodes}
+            if used.intersection(uuids):
+                raise CharacterRegistryError('保留资产根相互重复或嵌套：'+root)
+            used.update(uuids)
+        return tuple(sorted(used))
+
     def plan_original_spine_extensions(self, source_namespace,
                                        target_namespace, extensions, frames=()):
         from maya import cmds

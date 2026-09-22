@@ -142,17 +142,20 @@ class ReplaceRegisteredSpineCharacter:
 
     def apply(self, source_namespace, target_namespace, skin_name, mesh_path,
               *, start_frame, end_frame, sample_by=1, reference_frame=None,
-              spine_mode='fk', max_mesh_error=None, max_body_error=None):
+              spine_mode='fk', max_mesh_error=None, max_body_error=None,
+              retained_assets=()):
         return self.apply_many(source_namespace, target_namespace,
             ((skin_name, mesh_path),), start_frame=start_frame,
             end_frame=end_frame, sample_by=sample_by,
             reference_frame=reference_frame, spine_mode=spine_mode,
-            max_mesh_error=max_mesh_error, max_body_error=max_body_error)
+            max_mesh_error=max_mesh_error, max_body_error=max_body_error,
+            retained_assets=retained_assets)
 
     def apply_many(self, source_namespace, target_namespace, skins,
                    *, start_frame, end_frame, sample_by=1,
                    reference_frame=None, extensions=(), spine_mode='fk',
-                   max_mesh_error=None, max_body_error=None):
+                   max_mesh_error=None, max_body_error=None,
+                   retained_assets=()):
         host = self._host
         if host.namespace != target_namespace:
             raise CharacterRegistryError('目标动画宿主与目标角色命名空间不一致')
@@ -194,6 +197,8 @@ class ReplaceRegisteredSpineCharacter:
                 *((a+b)/2 for a,b in zip(sampled,sampled[1:]))})))
         extension_moves = global_host.plan_original_spine_extensions(
             source_namespace, target_namespace, extensions, extension_frames)
+        asset_uuids=global_host.plan_original_spine_retained_assets(
+            source_namespace,retained_assets)
         handoff = HandoffRegisteredSpineSkinCluster(global_host)
         plans = tuple(handoff.plan(source_namespace, target_namespace,
                                    skin_name, mesh_path)
@@ -232,6 +237,7 @@ class ReplaceRegisteredSpineCharacter:
                 promotion = global_host.plan_original_spine_promotion_many(
                     source_namespace, target_namespace, skins,
                     (*attachment_curves, *original_curves,
+                     *asset_uuids,
                      *(row.compensator_uuid for row in installed
                        if row.compensator_uuid),
                      *(uuid for move in extension_moves
