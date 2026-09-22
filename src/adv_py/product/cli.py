@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 from adv_py.application import (ApplyBodyCharacterAnimation,
-    ApplyBodyCharacterPose, ApplyFacePerformance, CaptureBodyCharacterAnimation,
+    ApplyBodyCharacterPose, ApplyFacePerformance, BuildFaceBlendShapes, CaptureBodyCharacterAnimation,
     CaptureBodyCharacterPose, GenerateFaceTarget, ResolveBodyCharacter,
     InspectBodyCharacterPresets, load_character_animation, load_character_pose, save_character_animation,
     save_character_pose, RebuildBodyCharacter)
@@ -38,6 +38,13 @@ def parser() -> argparse.ArgumentParser:
     animation.add_argument("--control", required=True)
     animation.add_argument("--clip", type=Path, required=True)
     animation.add_argument("--output", type=Path, required=True)
+    face_build = commands.add_parser("face-build", help="由现有目标网格构建面部控制与变形器")
+    face_build.add_argument("scene", type=Path)
+    face_build.add_argument("--namespace", required=True)
+    face_build.add_argument("--spec", type=Path, required=True)
+    face_build.add_argument("--control-name", default="AdvPy_FaceControls")
+    face_build.add_argument("--deformer-name", default="AdvPy_FaceBlendShape")
+    face_build.add_argument("--output", type=Path, required=True)
     pose_capture = commands.add_parser("pose-capture", help="捕获已登记角色的静态姿态文档")
     pose_capture.add_argument("scene", type=Path)
     pose_capture.add_argument("--namespace", required=True)
@@ -97,6 +104,21 @@ def _landmarks(path: Path) -> tuple[FaceLandmark, ...]:
     return tuple(result)
 
 
+def _face_build_spec(path: Path) -> tuple[str, tuple[FaceTarget, ...]]:
+    document = safe_json(_read_text(path))
+    if (not isinstance(document, dict) or set(document) != {"neutral", "targets"}
+            or not isinstance(document["neutral"], str)
+            or not isinstance(document["targets"], list)):
+        raise ValueError("面部构建文档须包含 neutral 和 targets")
+    targets = []
+    for row in document["targets"]:
+        if not isinstance(row, dict) or set(row) != {"name", "kind", "mesh"}:
+            raise ValueError("面部目标须包含 name、kind 和 mesh")
+        targets.append(FaceTarget(row["name"], FaceShapeKind(row["kind"]),
+                                  row["mesh"]))
+    return document["neutral"], tuple(targets)
+
+
 def _emit(event: str, **payload) -> None:
     print(json.dumps({"event": event, **payload}, ensure_ascii=False), file=sys.stderr,
           flush=True)
@@ -153,6 +175,18 @@ def _run(args, gateway) -> dict:
         return {"status": "ok", "output": str(saved),
                 "frames": len(animation.samples)}
     gateway.preflight_output(args.output)
+    if args.command == "face-build":
+        neutral, targets = _face_build_spec(args.spec)
+        built = BuildFaceBlendShapes(host).apply(neutral, targets,
+            control_name=args.control_name, deformer_name=args.deformer_name)
+        _emit("face_built", channels=len(built.binding.channels),
+              max_geometry_delta=built.binding.max_geometry_delta)
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output),
+                "control": built.binding.control_path,
+                "channels": len(built.binding.channels),
+                "max_geometry_delta": built.binding.max_geometry_delta}
     if args.command == "rebuild":
         result = RebuildBodyCharacter(host).apply(args.replacement,
             extensions=tuple(args.extension))

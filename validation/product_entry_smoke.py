@@ -55,7 +55,9 @@ def _inspect(mayapy: Path, scene: Path, control: str):
 
 def main(mayapy: Path, source: Path, report: Path) -> int:
     source = source.resolve(strict=True)
-    input_hash = _hash(source)
+    unbuilt = source.with_name(source.stem + "-unbuilt.ma")
+    unbuilt = unbuilt.resolve(strict=True)
+    input_hash = _hash(unbuilt)
     with tempfile.TemporaryDirectory(prefix="adv-py-product-",
                                      dir=report.parent.resolve()) as directory:
         folder = Path(directory)
@@ -64,10 +66,18 @@ def main(mayapy: Path, source: Path, report: Path) -> int:
             {"vertex": 3, "displacement": [0., .2, .1], "radius": 1.}]}),
             encoding="utf-8")
         target_scene = folder / "target.ma"
+        built_scene = folder / "built.ma"
         clip_scene = folder / "animated.ma"
         refused_scene = folder / "refused.ma"
-        discovered = _run(mayapy, "characters", str(source))
-        generated = _run(mayapy, "face-target", str(source),
+        specification = folder / "face-build.json"
+        specification.write_text(json.dumps({"neutral": "|FaceNeutral",
+            "targets": [
+                {"name": "smile_R", "kind": "expression", "mesh": "|SmileTarget"},
+                {"name": "viseme_A", "kind": "viseme", "mesh": "|VisemeATarget"},
+                {"name": "blink_L", "kind": "expression", "mesh": "|BlinkTarget"},
+            ]}), encoding="utf-8")
+        discovered = _run(mayapy, "characters", str(unbuilt))
+        generated = _run(mayapy, "face-target", str(unbuilt),
             "--namespace", "hero", "--neutral", "|FaceNeutral",
             "--name", "blink_L", "--kind", "expression",
             "--target", "|BlinkTarget", "--landmarks", str(labels),
@@ -75,23 +85,27 @@ def main(mayapy: Path, source: Path, report: Path) -> int:
         control = (discovered[1]["characters"][0]["face_control"]
                    if discovered[1] and discovered[1].get("characters") else "|MissingControl")
         target_hash = _hash(target_scene) if target_scene.exists() else None
-        collision = _run(mayapy, "face-target", str(source),
+        collision = _run(mayapy, "face-target", str(unbuilt),
             "--namespace", "hero", "--neutral", "|FaceNeutral",
             "--name", "blink_L", "--kind", "expression",
             "--target", "|BlinkTarget", "--landmarks", str(labels),
             "--output", str(target_scene))
+        built = _run(mayapy, "face-build", str(target_scene),
+            "--namespace", "hero", "--spec", str(specification),
+            "--output", str(built_scene))
+        built_hash = _hash(built_scene) if built_scene.exists() else None
         wrong = FacePerformance((("viseme_A", FaceShapeKind.VISEME),),
             "ntsc", ((40, (0.,)), (44, (1.,))))
         invalid_clip = folder / "invalid.json"
         invalid_clip.write_text(face_performance_to_json(wrong), encoding="utf-8")
-        rejected = _run(mayapy, "face-animation", str(target_scene),
+        rejected = _run(mayapy, "face-animation", str(built_scene),
             "--namespace", "hero", "--control", control,
             "--clip", str(invalid_clip), "--output", str(refused_scene))
         valid = FacePerformance((("viseme_A", FaceShapeKind.VISEME),),
             "film", ((40, (0.,)), (44, (1.,))))
         valid_clip = folder / "valid.json"
         valid_clip.write_text(face_performance_to_json(valid), encoding="utf-8")
-        applied = _run(mayapy, "face-animation", str(target_scene),
+        applied = _run(mayapy, "face-animation", str(built_scene),
             "--namespace", "hero", "--control", control,
             "--clip", str(valid_clip), "--output", str(clip_scene))
         inspected = (_inspect(mayapy, clip_scene, control)
@@ -102,28 +116,39 @@ def main(mayapy: Path, source: Path, report: Path) -> int:
                 and len(discovered[1]["characters"]) == 1
                 and discovered[1]["characters"][0]["namespace"] == "hero"
                 and discovered[1]["characters"][0]["writable"]),
+            "builds_face_controls_from_target_manifest": (
+                built[0] == 0 and built[1] is not None
+                and built[1]["channels"] == 3
+                and built[1]["max_geometry_delta"] > .1
+                and built_scene.is_file() and _hash(target_scene) == target_hash),
             "generates_new_scene_without_overwriting_input": (
                 generated[0] == 0 and generated[1] is not None
-                and target_scene.is_file() and _hash(source) == input_hash),
+                and target_scene.is_file()
+                and _hash(unbuilt) == input_hash),
             "rejects_existing_output_before_mutation": (
-                collision[0] == 2 and target_hash == _hash(target_scene)),
+                collision[0] == 2 and target_scene.is_file()
+                and target_hash == _hash(target_scene)),
             "rejects_wrong_time_unit_without_output": (
                 rejected[0] == 2 and not refused_scene.exists()
-                and target_hash == _hash(target_scene)),
+                and built_scene.is_file() and built_hash == _hash(built_scene)),
             "applies_clip_to_new_scene": (
                 applied[0] == 0 and applied[1] is not None
-                and clip_scene.is_file() and target_hash == _hash(target_scene)),
+                and clip_scene.is_file() and built_scene.is_file()
+                and built_hash == _hash(built_scene)),
             "fresh_process_reads_target_and_animation": (
                 inspected[0] == 0 and inspected[1] is not None
                 and inspected[1]["joint_count"] == 72
                 and inspected[1]["target_vertices"] == 4
                 and inspected[1]["provenance_channel"] == "blink_L"
+                and inspected[1]["face_channels"] == 3
+                and inspected[1]["mesh_delta"] > .1
                 and abs(inspected[1]["viseme_at_44"] - 1.) < 1e-8),
         }
         payload = {**checks, "status": "passed" if all(checks.values()) else "failed"}
         if not all(checks.values()):
             payload["diagnostics"] = {"discover": discovered[2][-500:],
-                "generate": generated[2][-500:], "collision": collision[2][-500:],
+                "build": built[2][-500:], "generate": generated[2][-500:],
+                "collision": collision[2][-500:],
                 "reject": rejected[2][-500:],
                 "apply": applied[2][-500:], "inspect": inspected[2][-500:]}
     report.parent.mkdir(parents=True, exist_ok=True)

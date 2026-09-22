@@ -87,6 +87,10 @@ def main(output: Path) -> int:
         targets = (
             smile_spec, viseme_spec,
         )
+        unbuilt_scene = output.with_name(output.stem + "-unbuilt.ma")
+        unbuilt_scene.parent.mkdir(parents=True, exist_ok=True)
+        cmds.file(rename=str(unbuilt_scene))
+        cmds.file(save=True, type="mayaAscii", force=True)
         wrong = cmds.polyCube(name="hero:WrongFaceTopology",
                               constructionHistory=False)[0]
         try:
