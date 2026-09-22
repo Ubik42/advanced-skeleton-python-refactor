@@ -22,6 +22,7 @@ from adv_py.core import (
     plan_body_fbx_export_selection,
     plan_body_root_motion,
     redundant_linear_key_frames,
+    fbx_curve_verification_times,
 )
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from test_body_export_skeleton import (
@@ -120,6 +121,12 @@ class BodyFbxExportTests(unittest.TestCase):
                 curve_policy="lossless_linear")
 
     def test_bounded_linear_policy_requires_explicit_error_limits(self):
+        self.assertEqual(fbx_curve_verification_times(1, 5, 2),
+                         (0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0))
+        self.assertEqual(fbx_curve_verification_times(1, 1, 1),
+                         (0.5, 1.0, 1.5))
+        with self.assertRaises(ValueError):
+            fbx_curve_verification_times(5, 1, 1)
         keys = tuple(BodyRootMotionKeyState(index, value, "linear", "linear")
             for index, value in enumerate((0., 1.05, 2., 3.05, 4.), 1))
         self.assertEqual(redundant_linear_key_frames(keys, tolerance=1e-9), ())

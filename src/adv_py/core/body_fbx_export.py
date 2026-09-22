@@ -155,6 +155,21 @@ def redundant_linear_key_frames(
     return tuple(removed)
 
 
+def fbx_curve_verification_times(start_frame: int, end_frame: int,
+                                 sample_by: int) -> tuple[float, ...]:
+    """Sample baked keys, interval midpoints, and both exterior boundaries."""
+    if (type(start_frame) is not int or type(end_frame) is not int
+            or type(sample_by) is not int or start_frame > end_frame
+            or sample_by < 1):
+        raise ValueError("FBX 曲线验证帧范围无效")
+    frames = tuple(range(start_frame, end_frame + 1, sample_by))
+    half_step = sample_by / 2.0
+    return (frames[0] - half_step,
+            *(value for pair in zip(frames, frames[1:])
+              for value in (float(pair[0]), (pair[0] + pair[1]) / 2.0)),
+            float(frames[-1]), frames[-1] + half_step)
+
+
 @dataclass(frozen=True, slots=True)
 class BodyFbxPublishedNode:
     scene_path: str

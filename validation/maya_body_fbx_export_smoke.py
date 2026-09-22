@@ -40,6 +40,7 @@ def main(output: Path) -> int:
             BodyFbxLinearUnit,
             BodyFbxNamingProfile,
             FitUpAxis,
+            fbx_curve_verification_times,
             plan_body_export_skeleton_bake,
             plan_body_fbx_export_selection,
         )
@@ -201,7 +202,7 @@ def main(output: Path) -> int:
                           mergeNamespacesOnClash=False, options='fbx')
                 joints=tuple(sorted(cmds.ls(type='joint',long=True) or []))
                 poses=[]
-                for frame in range(1,6):
+                for frame in fbx_curve_verification_times(1,5,1):
                     cmds.currentTime(frame,edit=True,update=True)
                     poses.append(tuple(tuple(float(value) for value in
                         cmds.xform(joint,query=True,worldSpace=True,matrix=True))
@@ -351,6 +352,7 @@ def main(output: Path) -> int:
             "reduced_reimport_key_count": reduced_keys,
             "reimport_max_pose_error": max_pose_error,
             "bounded_reimport_max_pose_error": bounded_pose_error,
+            "curve_verification_times": fbx_curve_verification_times(1,5,1),
             "bounded_removed_linear_keys": bounded_result.applied_profile.removed_linear_keys,
             "duration_seconds": round(time.perf_counter() - started, 3),
             "status": "passed" if passed else "failed",

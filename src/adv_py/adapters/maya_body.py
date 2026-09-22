@@ -111,6 +111,7 @@ from adv_py.core.body_fbx_export import (
     BodyFbxExportProfile,
     BodyFbxExportSelection,
     BodyFbxLinearUnit,
+    fbx_curve_verification_times,
     redundant_linear_key_frames,
 )
 from adv_py.core.body_hand_controls import (
@@ -1806,9 +1807,9 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                                                 BodyFbxCurvePolicy.BOUNDED_LINEAR):
                         def sample_matrices():
                             poses = []
-                            for frame in range(selection.start_frame,
-                                               selection.end_frame + 1,
-                                               selection.sample_by):
+                            for frame in fbx_curve_verification_times(
+                                    selection.start_frame, selection.end_frame,
+                                    selection.sample_by):
                                 self._cmds.currentTime(frame, edit=True, update=True)
                                 poses.append(tuple(tuple(float(value) for value in
                                     self._cmds.xform(path, query=True, worldSpace=True,

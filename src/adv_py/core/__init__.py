@@ -277,6 +277,7 @@ from .body_fbx_export import (
     inspect_body_fbx_bytes,
     plan_body_fbx_export_selection,
     redundant_linear_key_frames,
+    fbx_curve_verification_times,
 )
 from .mocap_source import (
     MOCAP_TRANSFORM_ATTRIBUTES,
