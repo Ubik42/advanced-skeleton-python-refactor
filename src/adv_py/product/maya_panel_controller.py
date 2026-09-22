@@ -12,7 +12,8 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     CaptureBodyCharacterAnimation, CaptureBodyCharacterPose,
     CreateAndImportFitSkeleton, ExportFitSkeleton, ExportSkinWeights,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget, ImportFaceTargetAsset,
-    ImportSkinWeights, InspectBodyCharacterPresets, ResolveBodyCharacter,
+    FaceAssetLibrary, ImportSkinWeights, InspectBodyCharacterPresets,
+    ResolveBodyCharacter,
     ImportMocapFbx, RetargetMocapFullFkToCharacter,
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
     load_mocap_mapping_preset,
@@ -187,6 +188,24 @@ class MayaPanelController:
         performance = face_performance_from_json(source.read_text(encoding="utf-8"))
         ApplyFacePerformance(self._host(namespace)).apply(control_path, performance)
         return len(performance.samples)
+
+    def face_library_list(self, directory: Path):
+        return FaceAssetLibrary(directory).list()
+
+    def face_library_add(self, directory: Path, asset_file: Path,
+                         release: str):
+        return FaceAssetLibrary(directory).add(load_face_target_asset(asset_file),
+                                               release)
+
+    def face_library_export(self, directory: Path, name: str, release: str,
+                            destination: Path) -> Path:
+        asset = FaceAssetLibrary(directory).resolve(name, release)
+        return save_face_target_asset(asset, destination)
+
+    def face_library_merge(self, directory: Path, name: str, base: str,
+                           left: str, right: str, release: str):
+        return FaceAssetLibrary(directory).merge(name, base, left, right,
+                                                 release)
 
     def presets(self, namespace: str, directory: Path):
         return InspectBodyCharacterPresets(self._host(namespace)).list(directory)

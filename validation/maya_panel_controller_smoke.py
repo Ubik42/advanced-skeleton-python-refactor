@@ -55,6 +55,15 @@ def main(report: Path) -> int:
             asset = folder / "smile.asset.json"
             exported_deltas = controller.face_asset_export(":", "|FaceNeutral",
                 "smile_R", "expression", "|SmileTarget", asset)
+            library = folder / "face-library"
+            for release in ("1.0.0", "1.1.0", "1.2.0"):
+                controller.face_library_add(library, asset, release)
+            merged = controller.face_library_merge(library, "smile_R",
+                "1.0.0", "1.1.0", "1.2.0", "1.3.0")
+            library_export = folder / "smile-merged.json"
+            controller.face_library_export(library, "smile_R", "1.3.0",
+                                           library_export)
+            library_entries = controller.face_library_list(library)
             imported_deltas = controller.face_asset_import(":", "|FaceNeutral",
                 asset, "|ImportedSmile")
             specification = folder / "face-build.json"
@@ -88,6 +97,10 @@ def main(report: Path) -> int:
                 "face_target_asset_roundtrip": face_vertices == 4
                     and exported_deltas > 0 and imported_deltas == exported_deltas
                     and cmds.objExists("ImportedSmile"),
+                "face_library_versions": merged.valid
+                    and len(library_entries) == 4
+                    and all(entry.valid for entry in library_entries)
+                    and library_export.is_file(),
                 "face_control_and_animation": face_channels == 1
                     and face_frames == 2
                     and cmds.objExists(head + "|AdvPy_FaceControls"),

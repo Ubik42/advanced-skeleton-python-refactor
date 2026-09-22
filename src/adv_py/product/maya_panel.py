@@ -336,6 +336,43 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("控制路径", self.face_control_path), ("动画文档", performance)])
             form.addRow(self._button("应用面部动画", self._face_performance_apply))
             stack.addWidget(group)
+
+            self.face_library_directory = QtWidgets.QLineEdit()
+            self.face_library_directory.setPlaceholderText("面部资产版本目录")
+            asset_source, self.face_library_source = self._file_field("登记目标资产")
+            self.face_library_release = QtWidgets.QLineEdit("1.0.0")
+            self.face_library_versions = QtWidgets.QComboBox()
+            asset_destination, self.face_library_destination = self._file_field(
+                "导出资产版本", save=True)
+            group, form = self._group("05 · 面部资产版本", [
+                ("版本目录", self.face_library_directory),
+                ("资产文件", asset_source),
+                ("登记版本", self.face_library_release),
+                ("已有版本", self.face_library_versions),
+                ("导出到", asset_destination)])
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("登记资产版本", self._face_library_add))
+            row.addWidget(self._button("刷新版本", self._face_library_refresh))
+            row.addWidget(self._button("导出所选版本", self._face_library_export))
+            form.addRow(row)
+            stack.addWidget(group)
+
+            self.face_merge_base = QtWidgets.QLineEdit()
+            self.face_merge_left = QtWidgets.QLineEdit()
+            self.face_merge_right = QtWidgets.QLineEdit()
+            self.face_merge_release = QtWidgets.QLineEdit()
+            for field, hint in ((self.face_merge_base, "基础版本，如 1.0.0"),
+                (self.face_merge_left, "左侧版本，如 1.1.0"),
+                (self.face_merge_right, "右侧版本，如 1.2.0"),
+                (self.face_merge_release, "新版本，如 1.3.0")):
+                field.setPlaceholderText(hint)
+            group, form = self._group("06 · 合并同一目标的三个版本", [
+                ("基础版本", self.face_merge_base),
+                ("左侧版本", self.face_merge_left),
+                ("右侧版本", self.face_merge_right),
+                ("合并为", self.face_merge_release)])
+            form.addRow(self._button("合并资产版本", self._face_library_merge))
+            stack.addWidget(group)
             stack.addStretch(1)
             return page
 
@@ -538,6 +575,50 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.face_control_path.text().strip(),
                 self._path(self.face_performance_document))
             return f"已应用 {frames} 帧面部动画"
+
+        def _face_library_dir(self):
+            value = self.face_library_directory.text().strip()
+            if not value:
+                raise ValueError("请填写面部资产版本目录")
+            return Path(value)
+
+        def _face_library_refresh(self):
+            entries = self.controller.face_library_list(self._face_library_dir())
+            self.face_library_versions.clear()
+            for entry in entries:
+                if entry.valid:
+                    self.face_library_versions.addItem(
+                        f"{entry.name} · {entry.release}",
+                        (entry.name, entry.release))
+            invalid = [entry for entry in entries if not entry.valid]
+            return (f"有效版本 {self.face_library_versions.count()} 个，"
+                    f"损坏引用 {len(invalid)} 个。"
+                    + ("\n" + "\n".join(f"{item.name}/{item.release}：{item.reason}"
+                        for item in invalid[:3]) if invalid else ""))
+
+        def _face_library_add(self):
+            entry = self.controller.face_library_add(self._face_library_dir(),
+                self._path(self.face_library_source),
+                self.face_library_release.text().strip())
+            self._face_library_refresh()
+            return f"已登记资产：{entry.name} · {entry.release}"
+
+        def _face_library_export(self):
+            selected = self.face_library_versions.currentData()
+            if not selected:
+                raise ValueError("请先刷新并选择有效的面部资产版本")
+            output = self.controller.face_library_export(self._face_library_dir(),
+                *selected, self._path(self.face_library_destination))
+            return f"已导出资产版本：{output}"
+
+        def _face_library_merge(self):
+            entry = self.controller.face_library_merge(self._face_library_dir(),
+                self.face_name.text().strip(), self.face_merge_base.text().strip(),
+                self.face_merge_left.text().strip(),
+                self.face_merge_right.text().strip(),
+                self.face_merge_release.text().strip())
+            self._face_library_refresh()
+            return f"已合并资产版本：{entry.name} · {entry.release}"
 
         def _inspect_presets(self):
             entries = self.controller.presets(self._namespace(),

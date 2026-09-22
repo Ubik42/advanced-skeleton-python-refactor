@@ -52,6 +52,7 @@ def main(report: Path) -> int:
     skin_image = report.with_name("maya-panel-skin.png")
     animation_image = report.with_name("maya-panel-animation.png")
     face_image = report.with_name("maya-panel-face.png")
+    face_library_image = report.with_name("maya-panel-face-library.png")
     publish_image = report.with_name("maya-panel-publish.png")
     mocap_image = report.with_name("maya-panel-mocap.png")
     pixmap = QtGui.QPixmap(panel.size())
@@ -69,6 +70,11 @@ def main(report: Path) -> int:
     app.processEvents()
     panel.render(pixmap)
     face_saved = pixmap.save(str(face_image))
+    face_page = panel.tabs.currentWidget()
+    face_page.verticalScrollBar().setValue(face_page.verticalScrollBar().maximum())
+    app.processEvents()
+    panel.render(pixmap)
+    face_library_saved = pixmap.save(str(face_library_image))
     panel.tabs.setCurrentIndex(4)
     app.processEvents()
     panel.render(pixmap)
@@ -102,7 +108,7 @@ def main(report: Path) -> int:
             and "157 通道" in panel.current.text(),
         "success_feedback_visible": "角色已登记" in panel.status.toPlainText(),
         "offscreen_views_rendered": fit_saved and skin_saved and animation_saved
-            and face_saved and mocap_saved and publish_saved,
+            and face_saved and face_library_saved and mocap_saved and publish_saved,
     }
     payload = {**checks, "status": "passed" if all(checks.values()) else "failed",
                "image_size": [panel.width(), panel.height()]}
