@@ -195,6 +195,17 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("构建并登记角色", self._build_character,
                                       primary=True))
             stack.addWidget(group)
+
+            self.rebuild_namespace = QtWidgets.QLineEdit("CharacterRebuildStage")
+            self.rebuild_extensions = QtWidgets.QPlainTextEdit()
+            self.rebuild_extensions.setPlaceholderText(
+                "每行一个附件根路径；如 |Root_M|…|Head_M|AdvPy_FaceControls")
+            self.rebuild_extensions.setMaximumHeight(88)
+            group, form = self._group("03 · 保留数据重建", [
+                ("暂存命名空间", self.rebuild_namespace),
+                ("用户附件根", self.rebuild_extensions)])
+            form.addRow(self._button("重建并保留数据", self._rebuild_character))
+            stack.addWidget(group)
             stack.addStretch(1)
             return page
 
@@ -520,6 +531,14 @@ def create_panel(controller: MayaPanelController | None = None):
                 spine_segments=value if value else None,
                 head_aim=self.head_aim.isChecked())
             return f"角色已登记：{result.joint_count} 个关节、{result.channel_count} 个通道"
+
+        def _rebuild_character(self):
+            extensions = tuple(line.strip() for line in
+                self.rebuild_extensions.toPlainText().splitlines() if line.strip())
+            result = self.controller.body_rebuild(self._namespace(),
+                self.rebuild_namespace.text().strip(), extensions)
+            return (f"角色已原位重建并保留数据：{result.joint_count} 个关节、"
+                    f"{result.channel_count} 个通道")
 
         def _bind_skin(self):
             influences = tuple(line.strip() for line in

@@ -37,6 +37,10 @@ class FakeController:
                            control_name, deformer_name))
         return 2
 
+    def body_rebuild(self, namespace, replacement, extensions):
+        self.calls.append(("body_rebuild", namespace, replacement, extensions))
+        return PanelCharacter(namespace, True, 30, 157)
+
 
 def main(report: Path) -> int:
     report.parent.mkdir(parents=True, exist_ok=True)
@@ -53,6 +57,7 @@ def main(report: Path) -> int:
     animation_image = report.with_name("maya-panel-animation.png")
     face_image = report.with_name("maya-panel-face.png")
     face_library_image = report.with_name("maya-panel-face-library.png")
+    rebuild_image = report.with_name("maya-panel-rebuild.png")
     publish_image = report.with_name("maya-panel-publish.png")
     mocap_image = report.with_name("maya-panel-mocap.png")
     pixmap = QtGui.QPixmap(panel.size())
@@ -96,6 +101,14 @@ def main(report: Path) -> int:
                panel.findChildren(QtWidgets.QPushButton)}
     buttons["构建并登记角色"].click()
     app.processEvents()
+    fit_page = panel.tabs.currentWidget()
+    fit_page.verticalScrollBar().setValue(fit_page.verticalScrollBar().maximum())
+    app.processEvents()
+    panel.render(pixmap)
+    rebuild_saved = pixmap.save(str(rebuild_image))
+    panel.rebuild_extensions.setPlainText("|Head_M|AdvPy_FaceControls")
+    buttons["重建并保留数据"].click()
+    app.processEvents()
     checks = {
         "six_chinese_workspaces": [panel.tabs.tabText(i)
             for i in range(panel.tabs.count())]
@@ -104,10 +117,14 @@ def main(report: Path) -> int:
         "role_selection_dispatches_application_action":
             ("body_build", "hero", "FitSkeleton", None, False)
             in controller.calls,
+        "rebuild_dispatches_declared_extensions":
+            ("body_rebuild", "hero", "CharacterRebuildStage",
+             ("|Head_M|AdvPy_FaceControls",)) in controller.calls,
         "result_updates_selected_role": "30 关节" in panel.current.text()
             and "157 通道" in panel.current.text(),
-        "success_feedback_visible": "角色已登记" in panel.status.toPlainText(),
-        "offscreen_views_rendered": fit_saved and skin_saved and animation_saved
+        "success_feedback_visible": "角色已原位重建" in panel.status.toPlainText(),
+        "offscreen_views_rendered": fit_saved and rebuild_saved
+            and skin_saved and animation_saved
             and face_saved and face_library_saved and mocap_saved and publish_saved,
     }
     payload = {**checks, "status": "passed" if all(checks.values()) else "failed",

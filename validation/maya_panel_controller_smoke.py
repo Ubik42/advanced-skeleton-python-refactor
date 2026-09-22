@@ -81,6 +81,9 @@ def main(report: Path) -> int:
                                  encoding="utf-8")
             face_frames = controller.face_performance_apply(":",
                 head + "|AdvPy_FaceControls", face_clip)
+            rebuilt = controller.body_rebuild(":", "PanelRebuildStage",
+                (head + "|AdvPy_FaceControls",))
+            rebuild_stage_removed = not cmds.namespace(exists="PanelRebuildStage")
             published = controller.publish_fbx(":", folder / "panel.fbx", 1, 3)
             checks = {
                 "fit_document_written": fit_count == 18 and fit.is_file(),
@@ -104,6 +107,9 @@ def main(report: Path) -> int:
                 "face_control_and_animation": face_channels == 1
                     and face_frames == 2
                     and cmds.objExists(head + "|AdvPy_FaceControls"),
+                "rebuild_preserves_character": rebuilt.joint_count == character.joint_count
+                    and rebuilt.channel_count == character.channel_count
+                    and rebuild_stage_removed,
                 "fbx_published": published.joints == character.joint_count
                     and published.frames == 3
                     and published.bytes_written > 64

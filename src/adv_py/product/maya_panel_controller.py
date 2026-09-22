@@ -13,7 +13,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     CreateAndImportFitSkeleton, ExportFitSkeleton, ExportSkinWeights,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget, ImportFaceTargetAsset,
     FaceAssetLibrary, ImportSkinWeights, InspectBodyCharacterPresets,
-    ResolveBodyCharacter,
+    RebuildBodyCharacter, ResolveBodyCharacter,
     ImportMocapFbx, RetargetMocapFullFkToCharacter,
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
     load_mocap_mapping_preset,
@@ -101,6 +101,16 @@ class MayaPanelController:
             if spine_segments is not None else None)
         result = BuildRegisteredBodyCharacter(self._host(namespace)).apply(
             container, axial_description=description, include_head_aim=head_aim)
+        return PanelCharacter(namespace, True, len(result.registration.body),
+                              len(result.registration.channels))
+
+    def body_rebuild(self, namespace: str, replacement: str,
+                     extensions: tuple[str, ...] = ()) -> PanelCharacter:
+        if not isinstance(replacement, str) or not replacement.strip():
+            raise ValueError("请填写尚未占用的重建暂存命名空间")
+        host = self._host_factory(namespace="" if namespace == ":" else namespace)
+        result = RebuildBodyCharacter(host).apply(replacement.strip(),
+            extensions=extensions)
         return PanelCharacter(namespace, True, len(result.registration.body),
                               len(result.registration.channels))
 
