@@ -182,15 +182,21 @@ class ReplaceRegisteredSpineCharacter:
                     source_namespace, start_frame=start_frame,
                     end_frame=end_frame, sample_by=sample_by,
                     reference_frame=reference_frame)
-                global_host.apply_original_spine_extensions(extension_moves)
-                attachment_curves = global_host.bake_original_spine_extensions(
+                installed = global_host.apply_original_spine_extensions(
                     extension_moves)
+                attachment_curves = global_host.bake_original_spine_extensions(
+                    installed)
+                original_curves = global_host.original_spine_extension_curve_uuids(
+                    extension_moves, source_namespace)
                 promotion = global_host.plan_original_spine_promotion_many(
                     source_namespace, target_namespace, skins,
-                    (*attachment_curves, *(uuid for move in extension_moves
-                                           for uuid in move.member_uuids)))
+                    (*attachment_curves, *original_curves,
+                     *(row.compensator_uuid for row in installed
+                       if row.compensator_uuid),
+                     *(uuid for move in extension_moves
+                       for uuid in move.member_uuids)))
                 global_host.apply_original_spine_promotion(promotion)
-                global_host.verify_promoted_spine_extensions(extension_moves)
+                global_host.verify_promoted_spine_extensions(installed)
             finally:
                 global_host._transaction_active = False
         return ReplacedSpineCharacterResult(len(roots), len(groups),

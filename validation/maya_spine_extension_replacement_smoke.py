@@ -14,19 +14,22 @@ def main(mode, folder):
         from maya import cmds
         from adv_py.adapters import MayaOriginalSkinSpineMigrationHost, MayaBodyBuildHost
         from adv_py.application import ReplaceRegisteredSpineCharacter
+        animated = 'animated' in mode
+        stem = 'spine-animated-extension' if animated else 'spine-extension'
         skins = (('source:SourceSkin', '|source:SourceMesh'),
                  ('source:SecondSkin', '|source:SecondMesh'))
-        if mode == 'inspect':
-            scene = sys.argv[3] if len(sys.argv) > 3 else 'spine-extension-replaced.ma'
+        if mode in ('inspect', 'animated-inspect'):
+            scene = sys.argv[3] if len(sys.argv) > 3 else stem + '-replaced.ma'
             cmds.file(str(folder / scene), open=True, force=True)
             MayaBodyBuildHost(namespace='source').read_character_registration()
             accessory = cmds.ls('source:Accessory', long=True) or []
             if (cmds.namespace(exists='target') or len(accessory) != 1
                     or cmds.getAttr(accessory[0] + '.assetCode') != 'rig-prop-A'):
                 raise RuntimeError('重开后附件未保留')
-            expected = json.loads((folder / 'spine-extension-replacement.json')
-                                  .read_text(encoding='utf8'))['original_world']
-            for frame, matrix in zip((1,10),expected):
+            expected = json.loads((folder / (stem + '-replacement.json'))
+                                  .read_text(encoding='utf8'))
+            for frame, matrix in zip(expected['sample_frames'],
+                                     expected['original_world']):
                 cmds.currentTime(frame, edit=True)
                 actual = cmds.xform(accessory[0], query=True,
                                     worldSpace=True, matrix=True)
@@ -34,9 +37,22 @@ def main(mode, folder):
                     raise RuntimeError('重开后附件世界轨迹改变')
             curves = cmds.listConnections(accessory[0], source=True,
                 destination=False, type='animCurve') or []
-            if len(set(curves)) != 9 or any(not curve.startswith('source:')
-                                           for curve in curves):
+            driven = (cmds.listRelatives(accessory[0],parent=True,
+                                         fullPath=True) or [None])[0] if animated else accessory[0]
+            baked_curves = cmds.listConnections(driven, source=True,
+                destination=False, type='animCurve') or []
+            if (len(set(baked_curves)) != 9
+                    or (animated and len(set(curves)) != 1)
+                    or any(not curve.startswith('source:')
+                           for curve in baked_curves)):
                 raise RuntimeError('附件动画曲线未归属原角色命名空间')
+            if animated:
+                curve = (cmds.ls(expected['original_curve_uuid']) or [None])[0]
+                if (curve is None or tuple(cmds.keyframe(curve, query=True,
+                        timeChange=True) or ()) != (1.,10.)
+                        or tuple(cmds.keyframe(curve, query=True,
+                        valueChange=True) or ()) != (0.,2.)):
+                    raise RuntimeError('重开后附件原动画曲线变化')
             print('REOPEN_OK', accessory[0], flush=True)
             return
         cmds.file(str(folder / 'multi-skin-spine-before.ma'),
@@ -53,6 +69,14 @@ def main(mode, folder):
         cmds.addAttr(accessory, longName='assetCode', dataType='string')
         cmds.setAttr(accessory + '.assetCode', 'rig-prop-A', type='string')
         accessory = (cmds.ls(accessory, long=True) or [None])[0]
+        if animated:
+            cmds.setKeyframe(accessory, attribute='translateX', time=1, value=0.)
+            cmds.setKeyframe(accessory, attribute='translateX', time=10, value=2.)
+            original_curve = (cmds.listConnections(accessory + '.translateX',
+                source=True,destination=False,type='animCurve') or [None])[0]
+            original_curve_uuid = cmds.ls(original_curve,uuid=True)[0]
+        else:
+            original_curve_uuid = None
         uuid = cmds.ls(accessory, uuid=True)[0]
         local = tuple(cmds.xform(accessory, query=True,
                                   objectSpace=True, matrix=True))
@@ -60,9 +84,10 @@ def main(mode, folder):
             cmds.currentTime(frame, edit=True)
             return tuple(cmds.xform(path, query=True,
                                     worldSpace=True, matrix=True))
-        original_world = tuple(world(accessory, frame) for frame in (1, 10))
+        sample_frames = (1,5.5,10)
+        original_world = tuple(world(accessory, frame) for frame in sample_frames)
         cmds.currentTime(1, edit=True)
-        cmds.file(rename=str(folder / 'spine-extension-before.ma'))
+        cmds.file(rename=str(folder / (stem + '-before.ma')))
         cmds.file(save=True, type='mayaAscii', force=True)
         from adv_py.adapters.maya_spine_original_promotion import MayaOriginalSpinePromotionHost
         class FailedPromotionHost(MayaOriginalSpinePromotionHost):
@@ -90,7 +115,9 @@ def main(mode, folder):
                 extensions=(accessory,))
         moved = (cmds.ls(uuid, long=True) or [None])[0]
         attached = (moved and moved.startswith('|source:')
-            and '|source:AdvPy_WristFK_R|source:Accessory' in moved
+            and '|source:AdvPy_WristFK_R|' in moved
+            and moved.endswith('|source:Accessory')
+            and (not animated or '|source:AdvPy_Extension_' in moved)
             and tuple(cmds.xform(moved, query=True,
                                  objectSpace=True, matrix=True)) == local
             and cmds.getAttr(moved + '.assetCode') == 'rig-prop-A')
@@ -100,21 +127,24 @@ def main(mode, folder):
         cmds.redo()
         redone = ((cmds.ls(uuid, long=True) or [None])[0] == moved
                   and not cmds.namespace(exists='target'))
-        moved_world = tuple(world(moved, frame) for frame in (1, 10))
+        moved_world = tuple(world(moved, frame) for frame in sample_frames)
         trajectory_error = max(abs(a-b) for before, after in
             zip(original_world, moved_world) for a,b in zip(before,after))
         cmds.currentTime(1, edit=True)
         report = dict(skins=result.skin_count, attached=bool(attached),
+                      animated=animated,
                       trajectory_error=trajectory_error,
+                      sample_frames=sample_frames,
+                      original_curve_uuid=original_curve_uuid,
                       original_world=original_world,
                       rollback=rollback, undo=undone, redo=redone)
-        (folder / 'spine-extension-replacement.json').write_text(
+        (folder / (stem + '-replacement.json')).write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding='utf8')
         if not all((result.skin_count == 2, attached,
                     trajectory_error < 1e-4, rollback,
                     undone, redone)):
             raise RuntimeError(report)
-        cmds.file(rename=str(folder / 'spine-extension-replaced.ma'))
+        cmds.file(rename=str(folder / (stem + '-replaced.ma')))
         cmds.file(save=True, type='mayaAscii', force=True)
     finally:
         maya.standalone.uninitialize()
