@@ -1843,10 +1843,24 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                                 values = self._cmds.keyframe(
                                     plug, query=True, time=frame_range, valueChange=True
                                 ) or []
+                                in_types = self._cmds.keyTangent(
+                                    plug, query=True, time=frame_range,
+                                    inTangentType=True) or []
+                                out_types = self._cmds.keyTangent(
+                                    plug, query=True, time=frame_range,
+                                    outTangentType=True) or []
+                                if (len(times)!=len(values)
+                                        or len(times)!=len(in_types)
+                                        or len(times)!=len(out_types)
+                                        or any(before!='linear' or after!='linear'
+                                               for before,after in zip(in_types,out_types))):
+                                    raise FitSkeletonValidationError(
+                                        'FBX 发布删键要求完整的线性烘焙曲线：'+plug)
                                 keys = tuple(BodyRootMotionKeyState(
                                     frame=int(round(float(frame))), value=float(value),
-                                    in_tangent="linear", out_tangent="linear",
-                                ) for frame, value in zip(times, values))
+                                    in_tangent=before, out_tangent=after,
+                                ) for frame,value,before,after in zip(
+                                    times,values,in_types,out_types))
                                 value_tolerance = (profile.value_tolerance
                                     if profile.curve_policy == BodyFbxCurvePolicy.BOUNDED_LINEAR
                                     else 1e-9)

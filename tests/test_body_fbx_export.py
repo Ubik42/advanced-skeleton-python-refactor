@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from dataclasses import replace
+from itertools import product
 from pathlib import Path
 
 from adv_py.application import ExportBodyFbx
@@ -102,6 +103,28 @@ class FakeFbxHost:
 
 
 class BodyFbxExportTests(unittest.TestCase):
+    def test_linear_reduction_bounds_original_keys_at_irregular_times(self):
+        frames=(1,2,4,5,8,13)
+        for values in product((0.,.1,.2,.3),repeat=len(frames)):
+            keys=tuple(BodyRootMotionKeyState(frame,value,'linear','linear')
+                for frame,value in zip(frames,values))
+            for tolerance in (0.,.1):
+                removed=set(redundant_linear_key_frames(keys,
+                    tolerance=tolerance))
+                self.assertNotIn(frames[0],removed)
+                self.assertNotIn(frames[-1],removed)
+                kept=tuple(key for key in keys if key.frame not in removed)
+                for key in keys:
+                    if key.frame not in removed:continue
+                    left=max((row for row in kept if row.frame<key.frame),
+                             key=lambda row:row.frame)
+                    right=min((row for row in kept if row.frame>key.frame),
+                              key=lambda row:row.frame)
+                    predicted=left.value+(key.frame-left.frame)/(
+                        right.frame-left.frame)*(right.value-left.value)
+                    self.assertLessEqual(abs(predicted-key.value),
+                                         tolerance+1e-12)
+
     def test_lossless_linear_policy_keeps_bends_and_endpoints(self):
         def keys(values):
             return tuple(BodyRootMotionKeyState(frame=index, value=value,
@@ -112,6 +135,23 @@ class BodyFbxExportTests(unittest.TestCase):
         self.assertEqual(redundant_linear_key_frames(keys((0., 2., 5., 6.))), ())
         self.assertEqual(redundant_linear_key_frames(keys((0., 2., 4., 7.))), (2,))
         self.assertEqual(redundant_linear_key_frames(keys((3., 3., 3.))), (2,))
+        with self.assertRaises(ValueError):
+            redundant_linear_key_frames((BodyRootMotionKeyState(1,0.,'linear','linear'),
+                BodyRootMotionKeyState(2,0.,'spline','spline'),
+                BodyRootMotionKeyState(3,0.,'linear','linear')))
+        bend=keys((.2, 0., 0., 0., 0.))
+        removed=set(redundant_linear_key_frames(bend,tolerance=.1))
+        self.assertEqual(len(removed),2)
+        retained=tuple(key for key in bend if key.frame not in removed)
+        for key in bend:
+            if key.frame not in removed:continue
+            left=max((row for row in retained if row.frame<key.frame),
+                     key=lambda row:row.frame)
+            right=min((row for row in retained if row.frame>key.frame),
+                      key=lambda row:row.frame)
+            predicted=left.value+(key.frame-left.frame)/(
+                right.frame-left.frame)*(right.value-left.value)
+            self.assertLessEqual(abs(predicted-key.value),.1+1e-12)
         self.assertEqual(BodyFbxExportProfile(BodyFbxFileVersion.FBX_2020,
             FitUpAxis.Z, BodyFbxLinearUnit.CENTIMETER).curve_policy,
             BodyFbxCurvePolicy.SAMPLED_LINEAR)

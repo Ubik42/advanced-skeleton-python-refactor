@@ -129,34 +129,37 @@ class BodyFbxAppliedProfile:
 def redundant_linear_key_frames(
     keys: tuple[BodyRootMotionKeyState, ...], *, tolerance: float = 1e-9
 ) -> tuple[int, ...]:
-    """Remove only interior linear keys whose original sampled values stay unchanged."""
+    """Keep a sampled key when no later endpoint fits every prior slope bound."""
+    if (isinstance(tolerance,bool) or not isinstance(tolerance,(int,float))
+            or not isfinite(tolerance) or tolerance<0):
+        raise ValueError("线性删键误差上限须为非负有限数")
     if len(keys) < 3:
         return ()
-    retained = [keys[0]]
-    removed: list[int] = []
-    for candidate in keys[1:-1]:
-        retained.append(candidate)
-        next_key = keys[len(retained) + len(removed)]
-        while len(retained) > 1:
-            previous = retained[-2]
-            current = retained[-1]
-            ratio = (current.frame - previous.frame) / (next_key.frame - previous.frame)
-            predicted = previous.value + ratio * (next_key.value - previous.value)
-            if abs(predicted - current.value) > tolerance:
-                break
-            removed.append(current.frame)
-            retained.pop()
-    retained.append(keys[-1])
-    retained_index = 0
-    for key in keys[1:-1]:
-        while key.frame >= retained[retained_index + 1].frame:
-            retained_index += 1
-        previous, following = retained[retained_index:retained_index + 2]
-        ratio = (key.frame - previous.frame) / (following.frame - previous.frame)
-        predicted = previous.value + ratio * (following.value - previous.value)
-        if abs(predicted - key.value) > tolerance:
-            return ()
-    return tuple(removed)
+    if (any(left.frame>=right.frame for left,right in zip(keys,keys[1:]))
+            or any(not isfinite(key.value) for key in keys)
+            or any(key.in_tangent!='linear' or key.out_tangent!='linear'
+                   for key in keys)):
+        raise ValueError("线性删键要求递增帧、有限通道值和线性切线")
+    kept=[0]
+    start=0
+    lower=float('-inf')
+    upper=float('inf')
+    for end in range(2,len(keys)):
+        interior=keys[end-1]
+        elapsed=interior.frame-keys[start].frame
+        lower=max(lower,(interior.value-keys[start].value-tolerance)/elapsed)
+        upper=min(upper,(interior.value-keys[start].value+tolerance)/elapsed)
+        slope=(keys[end].value-keys[start].value)/(
+            keys[end].frame-keys[start].frame)
+        if not lower<=slope<=upper:
+            kept.append(end-1)
+            start=end-1
+            lower=float('-inf')
+            upper=float('inf')
+    kept.append(len(keys)-1)
+    retained=set(kept)
+    return tuple(key.frame for index,key in enumerate(keys)
+                 if index not in retained)
 
 
 def fbx_curve_verification_times(start_frame: int, end_frame: int,
