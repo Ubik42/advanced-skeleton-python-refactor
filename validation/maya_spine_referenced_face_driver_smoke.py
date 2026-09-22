@@ -29,6 +29,8 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
                             cmds.referenceQuery(external, isNodeReferenced=True),
                         external_connection=source == external + ".outputX",
                         external_value=abs(cmds.getAttr(external + ".outputX") - .75) < 1e-6,
+                        unrelated_unloaded=cmds.objExists("unrelatedRN") and
+                            not cmds.referenceQuery("unrelatedRN", isLoaded=True),
                         follower_value=abs(cmds.getAttr(
                             "source:FaceFollower.translateX", time=5) - .75) < 1e-6,
                         skins_preserved=cmds.objExists("source:SourceSkin") and
@@ -57,6 +59,10 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
         cmds.namespace(removeNamespace=":external")
         cmds.file(str(asset), reference=True, namespace="external")
         cmds.connectAttr(external + ".outputX", "source:FaceGain.input2X", force=True)
+        cmds.file(str(asset), reference=True, namespace="unrelated")
+        unrelated_reference = cmds.referenceQuery(
+            "unrelated:SharedFaceScale", referenceNode=True)
+        cmds.file(unloadReference=unrelated_reference)
         original_uuid = (cmds.ls(external, uuid=True) or [None])[0]
         before = check()
         scene = folder / "face-topology-referenced-before.ma"
@@ -70,6 +76,26 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
             extensions=(data["control"], data["prop"], data["spine_prop"]),
             retained_assets=tuple(data["targets"]),
             retained_graph_roots=(data["driver"],))
+        reference_node = cmds.referenceQuery(external, referenceNode=True)
+        cmds.file(unloadReference=reference_node)
+        unloaded = folder / "face-topology-reference-unloaded-before.ma"
+        cmds.file(rename=str(unloaded))
+        cmds.file(save=True, type="mayaAscii", force=True)
+        try:
+            unloaded_replacement = ReplaceRegisteredSpineCharacter(
+                MayaOriginalSkinSpineMigrationHost(namespace="target"))
+            unloaded_replacement.apply_many(*args, **kwargs)
+        except ValueError as error:
+            unloaded_rejected = ("角色替换前须加载相关场景引用" in str(error)
+                and not cmds.referenceQuery(reference_node, isLoaded=True)
+                and len(MayaBodyBuildHost(namespace="source")
+                    .read_character_registration().spine.body_joints) == 5)
+        else:
+            unloaded_rejected = False
+        cmds.file(loadReference=reference_node)
+        cmds.file(rename=str(scene))
+        cmds.file(save=True, type="mayaAscii", force=True)
+        reload_restored = check() == before
 
         class FailedPromotionHost(MayaOriginalSpinePromotionHost):
             def apply_original_spine_promotion(self, plan):
@@ -106,13 +132,16 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
         cmds.file(str(output), open=True, force=True)
         reopened = check() == passed and cmds.referenceQuery(
             external, isNodeReferenced=True)
-        report = dict(before=before, passed=passed, rollback=rollback,
+        report = dict(before=before, passed=passed,
+                      unloaded_rejected=unloaded_rejected,
+                      reload_restored=reload_restored, rollback=rollback,
                       same_external_uuid=same_uuid, undo=undo, redo=redo,
                       reopened=reopened)
         (folder / "face-topology-referenced-result.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf8")
         print(json.dumps(report, ensure_ascii=False), flush=True)
-        return 0 if (rollback and same_uuid and undo and redo and reopened and
+        return 0 if (unloaded_rejected and reload_restored and rollback and
+            same_uuid and undo and redo and reopened and
             passed["spine_joints"] == 7 and
             all(value for key, value in passed.items() if key != "spine_joints")) else 1
     finally:

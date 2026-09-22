@@ -178,6 +178,8 @@ class ReplaceRegisteredSpineCharacter:
         if spine_mode == 'fk' and max_body_error is not None:
             raise CharacterRegistryError('FK 替换不使用 IK 身体误差上限')
         global_host = host.original_skin_handoff_host()
+        global_host.require_loaded_scene_references(
+            (source_namespace, target_namespace))
         from .mocap_control_retarget import character_sample_frames
         sampled = character_sample_frames(start_frame, end_frame, sample_by)
         ik_retarget = RetargetCharacterSpineIk(host) if spine_mode != 'fk' else None

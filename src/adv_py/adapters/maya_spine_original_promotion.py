@@ -120,6 +120,30 @@ class OriginalSpinePromotionPlan:
 class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
     """Move a replacement Rig into the original namespace without touching Skin."""
 
+    def require_loaded_scene_references(self, namespaces):
+        from maya import cmds
+
+        namespaces = tuple(namespace for namespace in namespaces if namespace)
+        owners = tuple(CharacterIdentity(namespace) for namespace in namespaces)
+        for node in cmds.ls(type='reference') or []:
+            if (node == 'sharedReferenceNode'
+                    or cmds.referenceQuery(node, isLoaded=True)):
+                continue
+            try:
+                namespace = cmds.referenceQuery(node, namespace=True).lstrip(':')
+            except RuntimeError:
+                # Maya may discard the namespace of a saved unloaded reference.
+                namespace = ''
+            if any(namespace == owner or namespace.startswith(owner + ':')
+                   for owner in namespaces):
+                raise CharacterRegistryError('角色替换前须加载相关场景引用：' + node)
+            edits = cmds.referenceQuery(node, editStrings=True) or []
+            for edit in edits:
+                endpoints = re.findall(r'"([^"]+)"', edit)
+                if any(owner.owns(endpoint.split('.', 1)[0])
+                       for owner in owners for endpoint in endpoints):
+                    raise CharacterRegistryError('角色替换前须加载相关场景引用：' + node)
+
     def plan_original_spine_retained_assets(self, source_namespace, roots):
         from maya import cmds
 
