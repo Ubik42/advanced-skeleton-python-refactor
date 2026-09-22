@@ -1,4 +1,4 @@
-"""Direct registered Spline IK take transfer with original-mesh error gate."""
+"""Spline-control transfer and FK event matching with spatial error gates."""
 from dataclasses import dataclass
 from math import isfinite
 
@@ -15,18 +15,20 @@ class RegisteredSpineIkTake:
     meshes: tuple
     body: tuple
     body_names: tuple[str, ...]
+    fk_frames: tuple[float, ...]
+    fk_source_frames: tuple[float, ...]
     max_mesh_error: float
     max_body_error: float
 
 
 class RetargetCharacterSpineIk:
-    """Transfer equivalent spline controls; reject visible mesh divergence."""
+    """Transfer source curves and match one stepped FK-to-IK transition."""
 
     def __init__(self, host):
         self._host = host
 
     def plan(self, source_namespace, skins, frames, *, max_mesh_error,
-             max_body_error=None):
+             max_body_error=None, allow_fk=False):
         if (isinstance(max_mesh_error, bool)
                 or not isinstance(max_mesh_error, (int, float))
                 or not isfinite(max_mesh_error) or max_mesh_error < 0):
@@ -67,18 +69,55 @@ class RetargetCharacterSpineIk:
         target_ik = {key for key in target_channels if key.startswith('spine.spline.')}
         if source_ik != target_ik or 'spine.spline.spineIkFk' not in source_ik:
             raise CharacterRegistryError('来源与目标 Spline IK 通道不对应')
+        schedule=host.capture_registered_spine_mode_curve(source_namespace,source) if allow_fk else None
+        event_times=(tuple(right for left,right,a,b in
+            zip(schedule[0],schedule[0][1:],schedule[1],schedule[1][1:])
+            if a!=b and frames[0]<right<=frames[-1]) if schedule else ())
         all_frames = tuple(sorted({*frames,
             *(a+(b-a)*fraction/4 for a,b in zip(frames,frames[1:])
-              for fraction in (1,2,3))}))
+              for fraction in (1,2,3)),
+            *(event-offset for event in event_times for offset in (.01,.001))}))
         body_names = tuple(source_body)
         channels, meshes, body = host.capture_registered_spine_ik_take(
             source_namespace, source, tuple(mesh for _,mesh in skins),
             body_names, all_frames)
         mode = 'spine.spline.spineIkFk'
-        if any(abs(dict(row)[mode]-1.) > 1e-8 for row in channels):
+        modes = tuple(dict(row)[mode] for row in channels)
+        if any(min(abs(value),abs(value-1.)) > 1e-8 for value in modes):
+            raise CharacterRegistryError('脊柱迁移不接受采样区间内的 FK/IK 混合权重')
+        if not allow_fk and any(abs(value-1.) > 1e-8 for value in modes):
             raise CharacterRegistryError('IK 跨段数迁移要求整个采样区间保持 Spline IK 模式')
+        if allow_fk:
+            if not any(abs(value) <= 1e-8 for value in modes) or not any(
+                    abs(value-1.) <= 1e-8 for value in modes):
+                raise CharacterRegistryError('混合脊柱迁移要求同时包含 FK 和 IK 帧')
+            if not schedule:
+                raise CharacterRegistryError('混合脊柱迁移要求原生模式事件曲线')
+            times,values,out_tangents=schedule
+            if (any(min(abs(value),abs(value-1.)) > 1e-8 for value in values)
+                    or any(tangent not in ('step','stepnext')
+                           for index,tangent in enumerate(out_tangents[:-1])
+                           if times[index] < frames[-1]
+                           and times[index+1] > frames[0])
+                    or any(right not in frames for left,right,a,b in
+                           zip(times,times[1:],values,values[1:])
+                           if a != b and frames[0] < right <= frames[-1])):
+                raise CharacterRegistryError('FK/IK 模式事件须为采样整数帧上的阶梯切换')
+        fk_pairs=[(frame,frame) for frame,value in zip(all_frames,modes)
+                  if abs(value)<=1e-8]
+        if allow_fk:
+            events=tuple((all_frames[index],modes[index-1],modes[index])
+                for index in range(1,len(all_frames))
+                if abs(modes[index]-modes[index-1])>1e-8)
+            if len(events)!=1 or abs(events[0][1])>1e-8 or abs(events[0][2]-1.)>1e-8:
+                raise CharacterRegistryError('混合脊柱迁移当前要求一次 FK→IK 阶梯事件')
+            event=events[0][0]
+            fk_pairs.append((event,event-1e-4))
+        fk_frames=tuple(frame for frame,_ in fk_pairs)
+        fk_source_frames=tuple(frame for _,frame in fk_pairs)
         return RegisteredSpineIkTake(source,target,all_frames,channels,
-            meshes,body,body_names,float(max_mesh_error),float(max_body_error))
+            meshes,body,body_names,fk_frames,fk_source_frames,
+            float(max_mesh_error),float(max_body_error))
 
     def apply_in_transaction(self, take, source_namespace, skins):
         host = self._host
@@ -87,6 +126,8 @@ class RetargetCharacterSpineIk:
                 or host.read_character_registration() != take.target_registration):
             raise CharacterRegistryError('IK 迁移角色登记在写入前发生变化')
         host.write_registered_spine_ik_take(take,source_namespace)
+        if take.fk_frames:
+            host.match_registered_spine_fk_take(take,source_namespace)
         self.verify_body(take)
         self.verify_meshes(take, skins)
 

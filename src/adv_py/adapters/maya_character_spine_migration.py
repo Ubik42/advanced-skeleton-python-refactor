@@ -25,6 +25,57 @@ class MayaOriginalSkinSpineMigrationHost(MayaMocapControlHost):
     def read_source_character_registration(self, namespace):
         return MayaBodyBuildHost(namespace=namespace).read_character_registration()
 
+    def capture_registered_spine_mode_curve(self, source_namespace, registration):
+        source=MayaBodyBuildHost(namespace=source_namespace)
+        channel=next(ch for ch in registration.channels
+                     if ch.key=='spine.spline.spineIkFk')
+        plug=channel.node+'.'+channel.attribute
+        driver=source._cmds.connectionInfo(plug,sourceFromDestination=True)
+        if not driver or not source._character_direct_animation(driver):
+            return None
+        curve=driver.rsplit('.',1)[0]
+        c=source._cmds
+        return (tuple(float(v) for v in c.keyframe(curve,q=True,timeChange=True) or ()),
+                tuple(float(v) for v in c.keyframe(curve,q=True,valueChange=True) or ()),
+                tuple(c.keyTangent(curve,q=True,outTangentType=True) or ()))
+
+    def match_registered_spine_fk_take(self, take, source_namespace):
+        from math import sqrt
+        from adv_py.core.character_registry import CharacterRegistryError
+
+        self._require_transaction()
+        target=self.install_character_spline_animation(take.target_registration)
+        _,samples=self.capture_resampled_character_source(
+            source_namespace,take.target_registration,take.fk_source_frames)
+        c=self._cmds
+        self._transaction_changed=True
+        with self._character_sampling_time(preserve_modified=False) as seek:
+            for frame,(_,pose) in zip(take.fk_frames,samples):
+                seek(frame)
+                for control,joint in zip(target.spine.fk_controls[1:],
+                                         target.spine.body_joints[1:]):
+                    name=joint.rsplit('|',1)[-1].rsplit(':',1)[-1]
+                    matrix=pose[name]
+                    root=self._spine_world_frame(target.spine.root_path)[0]
+                    scale=sqrt(sum(value*value for value in root[:3]))
+                    if scale<=1e-8:
+                        raise CharacterRegistryError('混合脊柱 FK 机制组缩放无效')
+                    for axis,offset in zip('XYZ',(0,4,8)):
+                        c.setAttr(control+'.matchScale'+axis,
+                            sqrt(sum(value*value for value in matrix[offset:offset+3]))/scale)
+                    self._spine_set_world_rotation(control,matrix)
+                    c.xform(control,worldSpace=True,translation=matrix[12:15])
+                    for kind in ('rotate','translate','matchScale'):
+                        for axis in 'XYZ':
+                            c.setKeyframe(control,attribute=kind+axis,time=frame,
+                                          inTangentType='linear',outTangentType='linear')
+                for joint in target.spine.body_joints:
+                    name=joint.rsplit('|',1)[-1].rsplit(':',1)[-1]
+                    actual=self._spine_world_frame(joint)[0]
+                    if max(abs(a-b) for a,b in zip(actual,pose[name]))>1e-4:
+                        raise CharacterRegistryError('混合脊柱 FK 身体姿态不一致：'
+                                                     +name+' frame='+str(frame))
+
     def _spine_mesh_points(self, mesh_path):
         from maya import cmds
         from maya.api import OpenMaya as om
@@ -126,8 +177,11 @@ class MayaOriginalSkinSpineMigrationHost(MayaMocapControlHost):
                             raw.getAttr(source_curve+'.'+attribute))
             before = capture_curve(source,source_curve)
             after = capture_curve(self,target_curve)
+            ignored={'node','uuid','input','outputs'}
+            if not before.weighted:
+                ignored.update(('in_weights','out_weights'))
             properties = tuple(field for field in fields(type(before))
-                if field.name not in ('node','uuid','input','outputs'))
+                if field.name not in ignored)
             if (not self._character_direct_animation(
                     self._cmds.connectionInfo(target_channel.node+'.'
                         +target_channel.attribute,sourceFromDestination=True))

@@ -373,11 +373,11 @@ def parser() -> argparse.ArgumentParser:
     original_replace.add_argument("--end", type=int, required=True)
     original_replace.add_argument("--step", type=int, default=1)
     original_replace.add_argument("--reference", type=float)
-    original_replace.add_argument("--spine-mode", choices=("fk", "ik"), default="fk")
+    original_replace.add_argument("--spine-mode", choices=("fk", "ik", "hybrid"), default="fk")
     original_replace.add_argument("--max-mesh-error", type=float,
-        help="IK 模式必填：原网格采样顶点的最大允许坐标误差（厘米）")
+        help="IK／混合模式必填：原网格采样顶点的最大允许坐标误差（厘米）")
     original_replace.add_argument("--max-body-error", type=float,
-        help="IK 模式身体标记点最大允许误差（厘米）；默认与网格上限相同")
+        help="IK／混合模式身体标记点最大允许误差（厘米）；默认与网格上限相同")
     original_replace.add_argument("--extension", action="append", default=[])
     original_replace.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
@@ -678,13 +678,15 @@ def _run(args, gateway) -> dict:
                 max_body_error=args.max_body_error)
         _emit("character_spine_replaced", frames=result.frames,
               groups=result.fk_groups, vertices=result.vertices,
-              removed=result.old_nodes_removed, skins=result.skin_count)
+              removed=result.old_nodes_removed, skins=result.skin_count,
+              spine_mode=result.spine_mode)
         output = gateway.save_new(args.output)
         _emit("scene_saved", scene=str(output))
         return {"status": "ok", "output": str(output),
                 "frames": result.frames, "fk_groups": result.fk_groups,
                 "vertices": result.vertices,
                 "skins": result.skin_count,
+                "spine_mode": result.spine_mode,
                 "removed": result.old_nodes_removed,
                 "retained": result.retained_nodes,
                 "replacement": result.replacement_nodes}

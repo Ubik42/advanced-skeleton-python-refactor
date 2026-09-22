@@ -129,6 +129,7 @@ class ReplacedSpineCharacterResult:
     retained_nodes: int
     replacement_nodes: int
     skin_count: int = 1
+    spine_mode: str = 'fk'
 
 
 class ReplaceRegisteredSpineCharacter:
@@ -157,12 +158,12 @@ class ReplaceRegisteredSpineCharacter:
         if (not skins or len(skins) != len({row[0] for row in skins})
                 or len(skins) != len({row[1] for row in skins})):
             raise CharacterRegistryError('角色替换需要非空且唯一的 Skin／网格清单')
-        if spine_mode not in ('fk','ik'):
-            raise CharacterRegistryError('脊柱替换模式须为 fk 或 ik')
-        if (spine_mode == 'ik') != (max_mesh_error is not None):
-            raise CharacterRegistryError('IK 替换须明确提供原网格误差上限，FK 不使用此参数')
-        if spine_mode == 'ik' and reference_frame is not None:
-            raise CharacterRegistryError('IK 控制直接迁移不使用 FK 校准帧')
+        if spine_mode not in ('fk','ik','hybrid'):
+            raise CharacterRegistryError('脊柱替换模式须为 fk、ik 或 hybrid')
+        if (spine_mode in ('ik','hybrid')) != (max_mesh_error is not None):
+            raise CharacterRegistryError('IK／混合替换须明确提供原网格误差上限，FK 不使用此参数')
+        if spine_mode in ('ik','hybrid') and reference_frame is not None:
+            raise CharacterRegistryError('IK／混合控制迁移不使用 FK 校准帧')
         if spine_mode == 'fk' and max_body_error is not None:
             raise CharacterRegistryError('FK 替换不使用 IK 身体误差上限')
         global_host = host.original_skin_handoff_host()
@@ -170,10 +171,11 @@ class ReplaceRegisteredSpineCharacter:
         sampled = character_sample_frames(start_frame, end_frame, sample_by)
         extension_frames = tuple(sorted({*sampled,
             *((a+b)/2 for a,b in zip(sampled,sampled[1:]))}))
-        ik_retarget = RetargetCharacterSpineIk(host) if spine_mode == 'ik' else None
+        ik_retarget = RetargetCharacterSpineIk(host) if spine_mode != 'fk' else None
         ik_take = (ik_retarget.plan(source_namespace, skins, sampled,
                                    max_mesh_error=max_mesh_error,
-                                   max_body_error=max_body_error)
+                                   max_body_error=max_body_error,
+                                   allow_fk=spine_mode=='hybrid')
                    if ik_retarget else None)
         extension_moves = global_host.plan_original_spine_extensions(
             source_namespace, target_namespace, extensions, extension_frames)
@@ -227,4 +229,4 @@ class ReplaceRegisteredSpineCharacter:
         return ReplacedSpineCharacterResult(len(roots), len(groups),
             sum(result.vertex_count for result in results),
             len(promotion.deletion_uuids), len(promotion.retained_uuids),
-            len(promotion.target_uuids), len(skins))
+            len(promotion.target_uuids), len(skins), spine_mode)
