@@ -16,6 +16,8 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
     load_mocap_mapping_preset,
     ResolveBodyCharacter, TransferFaceTargetAsset,
+    ExportFaceNeutralGeometry, load_face_neutral_geometry,
+    save_face_neutral_geometry,
     InspectBodyCharacterPresets, load_character_animation, load_character_pose, save_character_animation,
     save_character_pose, RebuildBodyCharacter, load_face_target_asset,
     save_face_target_asset)
@@ -72,11 +74,19 @@ def parser() -> argparse.ArgumentParser:
     asset_import.add_argument("--asset", type=Path, required=True)
     asset_import.add_argument("--target", required=True)
     asset_import.add_argument("--output", type=Path, required=True)
+    geometry_export = commands.add_parser("face-geometry-export",
+        help="导出跨场景转移所需的源中性网格几何")
+    geometry_export.add_argument("scene", type=Path)
+    geometry_export.add_argument("--namespace", required=True)
+    geometry_export.add_argument("--neutral", required=True)
+    geometry_export.add_argument("--output", type=Path, required=True)
     asset_transfer = commands.add_parser("face-asset-transfer",
         help="按源网格表面对应关系转移雕刻位移到不同拓扑")
     asset_transfer.add_argument("scene", type=Path)
     asset_transfer.add_argument("--namespace", required=True)
-    asset_transfer.add_argument("--source-neutral", required=True)
+    transfer_source = asset_transfer.add_mutually_exclusive_group(required=True)
+    transfer_source.add_argument("--source-neutral")
+    transfer_source.add_argument("--source-geometry", type=Path)
     asset_transfer.add_argument("--target-neutral", required=True)
     asset_transfer.add_argument("--asset", type=Path, required=True)
     asset_transfer.add_argument("--max-distance", type=float, required=True)
@@ -348,14 +358,30 @@ def _run(args, gateway) -> dict:
               changed_vertices=len(asset.deltas))
         return {"status": "ok", "output": str(saved),
                 "channel": asset.name, "changed_vertices": len(asset.deltas)}
+    if args.command == "face-geometry-export":
+        output = args.output.resolve()
+        if output.suffix.lower() != ".json" or output.exists():
+            raise ValueError("中性几何输出须为尚不存在的 .json 文件")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        geometry = ExportFaceNeutralGeometry(host).execute(args.neutral)
+        saved = save_face_neutral_geometry(geometry, output)
+        _emit("face_geometry_exported", vertices=geometry.mesh.vertex_count,
+              triangles=len(geometry.triangles))
+        return {"status": "ok", "output": str(saved),
+                "vertices": geometry.mesh.vertex_count,
+                "triangles": len(geometry.triangles)}
     if args.command == "face-asset-transfer":
         output = args.output.resolve()
         if output.suffix.lower() != ".json" or output.exists():
             raise ValueError("转移资产输出须为尚不存在的 .json 文件")
         output.parent.mkdir(parents=True, exist_ok=True)
         source = load_face_target_asset(args.asset)
-        plan = TransferFaceTargetAsset(host).execute(args.source_neutral,
+        service = TransferFaceTargetAsset(host)
+        plan = (service.execute_from_geometry(
+            load_face_neutral_geometry(args.source_geometry),
             args.target_neutral, source, max_distance=args.max_distance)
+            if args.source_geometry else service.execute(args.source_neutral,
+                args.target_neutral, source, max_distance=args.max_distance))
         saved = save_face_target_asset(plan.result.asset, output)
         _emit("face_asset_transferred",
               source_triangles=plan.result.source_triangle_count,

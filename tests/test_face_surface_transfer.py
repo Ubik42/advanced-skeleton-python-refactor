@@ -1,9 +1,12 @@
 """Cross-topology sculpt displacement projection and refusal boundaries."""
 from dataclasses import replace
+import json
 import unittest
 
-from adv_py.core import (FaceMeshSnapshot, FaceShapeKind, FaceTargetAsset,
-    transfer_face_target_asset)
+from adv_py.core import (FaceMeshSnapshot, FaceNeutralGeometry, FaceShapeKind,
+    FaceTargetAsset, face_neutral_geometry_from_json,
+    face_neutral_geometry_to_json, transfer_face_target_asset)
+from adv_py.core.character_registry import digest
 
 
 class FaceSurfaceTransferTests(unittest.TestCase):
@@ -61,6 +64,18 @@ class FaceSurfaceTransferTests(unittest.TestCase):
         self.assertAlmostEqual(result.asset.deltas[0][1], 1.)
         self.assertAlmostEqual(result.asset.deltas[1][1], .5)
         self.assertEqual(result.asset.deltas[-1][0], 1)
+
+    def test_geometry_document_round_trip_and_position_guard(self):
+        geometry = FaceNeutralGeometry(self.source, ((0, 1, 2),))
+        document = face_neutral_geometry_to_json(geometry)
+        self.assertEqual(face_neutral_geometry_from_json(document), geometry)
+        damaged = json.loads(document)
+        damaged["payload"]["points"][1][0] = 1.5
+        with self.assertRaisesRegex(ValueError, "摘要"):
+            face_neutral_geometry_from_json(json.dumps(damaged))
+        damaged["digest"] = digest(damaged["payload"])
+        with self.assertRaisesRegex(ValueError, "位置摘要"):
+            face_neutral_geometry_from_json(json.dumps(damaged))
 
 
 if __name__ == "__main__":
