@@ -142,12 +142,13 @@ class ReplaceRegisteredSpineCharacter:
 
     def apply(self, source_namespace, target_namespace, skin_name, mesh_path,
               *, start_frame, end_frame, sample_by=1, reference_frame=None,
-              spine_mode='fk', max_mesh_error=None, max_body_error=None,
+              spine_mode='fk', fk_substeps=1, max_mesh_error=None, max_body_error=None,
               retained_assets=(), retained_nodes=(), retained_graph_roots=()):
         return self.apply_many(source_namespace, target_namespace,
             ((skin_name, mesh_path),), start_frame=start_frame,
             end_frame=end_frame, sample_by=sample_by,
             reference_frame=reference_frame, spine_mode=spine_mode,
+            fk_substeps=fk_substeps,
             max_mesh_error=max_mesh_error, max_body_error=max_body_error,
             retained_assets=retained_assets, retained_nodes=retained_nodes,
             retained_graph_roots=retained_graph_roots)
@@ -155,7 +156,7 @@ class ReplaceRegisteredSpineCharacter:
     def apply_many(self, source_namespace, target_namespace, skins,
                    *, start_frame, end_frame, sample_by=1,
                    reference_frame=None, extensions=(), spine_mode='fk',
-                   max_mesh_error=None, max_body_error=None,
+                   fk_substeps=1, max_mesh_error=None, max_body_error=None,
                    retained_assets=(), retained_nodes=(), retained_graph_roots=()):
         host = self._host
         if host.namespace != target_namespace:
@@ -166,6 +167,10 @@ class ReplaceRegisteredSpineCharacter:
             raise CharacterRegistryError('角色替换需要非空且唯一的 Skin／网格清单')
         if spine_mode not in ('fk','ik','hybrid'):
             raise CharacterRegistryError('脊柱替换模式须为 fk、ik 或 hybrid')
+        if type(fk_substeps) is not int or not 1 <= fk_substeps <= 8:
+            raise CharacterRegistryError('FK 帧间写键细分数须为 1–8 的整数')
+        if spine_mode != 'fk' and fk_substeps != 1:
+            raise CharacterRegistryError('帧间写键细分仅适用于 FK 替换')
         if spine_mode in ('ik','hybrid') and max_mesh_error is None:
             raise CharacterRegistryError('IK／混合替换须明确提供原网格误差上限')
         if spine_mode=='fk' and max_mesh_error is not None and (
@@ -263,7 +268,8 @@ class ReplaceRegisteredSpineCharacter:
                     roots, groups = RetargetCharacterSpineFk(host).apply_in_transaction(
                         source_namespace, start_frame=start_frame,
                         end_frame=end_frame, sample_by=sample_by,
-                        reference_frame=reference_frame)
+                        reference_frame=reference_frame,
+                        fk_substeps=fk_substeps)
                     if fk_mesh_frames:
                         verify_registered_spine_meshes(host,skins,fk_mesh_frames,
                             fk_mesh_take,float(max_mesh_error),mode='FK')

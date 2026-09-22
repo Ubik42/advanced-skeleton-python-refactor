@@ -40,12 +40,12 @@ class RetargetMocapVariableFullFkToCharacter:
     def __init__(self,host):self._host=host
 
     def plan_with_preset(self,source_root,preset,*,start_frame,end_frame,sample_by=1,
-                         reference_frame=None):
+                         reference_frame=None,substeps=1):
         if not isinstance(preset,MocapMappingPreset):
             raise CharacterRegistryError('可变脊柱动捕需要版本化映射预设')
         root=RetargetMocapRootToCharacter(self._host).plan(source_root,
             start_frame=start_frame,end_frame=end_frame,sample_by=sample_by,
-            reference_frame=reference_frame)
+            reference_frame=reference_frame,substeps=substeps)
         reg=root.registration
         if not isinstance(reg.spine,BodySplinePlan):
             raise CharacterRegistryError('此入口要求已登记的可变脊柱 Spline 角色')

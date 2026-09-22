@@ -17,21 +17,24 @@ class RetargetCharacterSpineFk:
         self._host = host
 
     def apply(self, source_namespace, *, start_frame, end_frame, sample_by=1,
-              reference_frame=None):
+              reference_frame=None, fk_substeps=1):
         return self._apply(source_namespace, start_frame=start_frame,
             end_frame=end_frame, sample_by=sample_by,
-            reference_frame=reference_frame, own_transaction=True)
+            reference_frame=reference_frame, fk_substeps=fk_substeps,
+            own_transaction=True)
 
     def apply_in_transaction(self, source_namespace, *, start_frame, end_frame,
-                             sample_by=1, reference_frame=None):
+                             sample_by=1, reference_frame=None, fk_substeps=1):
         """Write inside the caller's transaction for combined animation/Skin edits."""
         return self._apply(source_namespace, start_frame=start_frame,
             end_frame=end_frame, sample_by=sample_by,
-            reference_frame=reference_frame, own_transaction=False)
+            reference_frame=reference_frame, fk_substeps=fk_substeps,
+            own_transaction=False)
 
     def _apply(self, source_namespace, *, start_frame, end_frame, sample_by,
-               reference_frame, own_transaction):
-        frames = character_sample_frames(start_frame, end_frame, sample_by)
+               reference_frame, fk_substeps, own_transaction):
+        frames = character_sample_frames(start_frame, end_frame, sample_by,
+                                         substeps=fk_substeps)
         if (reference_frame is not None and
                 (isinstance(reference_frame, bool) or
                  not isinstance(reference_frame, (int, float)) or
@@ -78,7 +81,8 @@ class RetargetCharacterSpineFk:
                       for name in names), len(target.body))
             service = RetargetMocapVariableFullFkToCharacter(self._host)
             options = dict(start_frame=start_frame, end_frame=end_frame,
-                           sample_by=sample_by, reference_frame=reference)
+                           sample_by=sample_by, reference_frame=reference,
+                           substeps=fk_substeps)
             plan = service.plan_with_preset(bridge_root, preset, **options)
             root_samples = self._host.write_mocap_root_control_keys(plan.root)
             group_samples = tuple(self._host.write_mocap_fk_group_keys(group)

@@ -133,10 +133,12 @@ class RetargetMocapRootToCharacter:
     """Write whole-body root motion as editable Global control curves."""
     def __init__(self,host: MocapRootControlHost):self._host=host
 
-    def plan(self,source_root,*,start_frame,end_frame,sample_by=1,reference_frame=None):
+    def plan(self,source_root,*,start_frame,end_frame,sample_by=1,reference_frame=None,
+             substeps=1):
         if not isinstance(source_root,str) or not source_root.strip():
             raise CharacterRegistryError('动捕来源根关节必须明确指定')
-        frames=character_sample_frames(start_frame,end_frame,sample_by)
+        frames=character_sample_frames(start_frame,end_frame,sample_by,
+                                       substeps=substeps)
         if reference_frame is not None and (not isinstance(reference_frame,(int,float))
                                             or isinstance(reference_frame,bool) or not isfinite(reference_frame)):
             raise CharacterRegistryError('动捕校准帧必须是有限数值')

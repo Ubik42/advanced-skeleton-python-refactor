@@ -372,6 +372,8 @@ def parser() -> argparse.ArgumentParser:
     original_replace.add_argument("--start", type=int, required=True)
     original_replace.add_argument("--end", type=int, required=True)
     original_replace.add_argument("--step", type=int, default=1)
+    original_replace.add_argument("--fk-substeps", type=int, default=1,
+        help="FK 模式下将每个 --step 间隔细分为 1–8 段写键；默认 1")
     original_replace.add_argument("--reference", type=float)
     original_replace.add_argument("--spine-mode", choices=("fk", "ik", "hybrid"), default="fk")
     original_replace.add_argument("--max-mesh-error", type=float,
@@ -685,6 +687,7 @@ def _run(args, gateway) -> dict:
                 source_namespace, target_namespace, tuple(zip(args.skin, args.mesh)),
                 start_frame=args.start, end_frame=args.end,
                 sample_by=args.step, reference_frame=args.reference,
+                fk_substeps=args.fk_substeps,
                 extensions=tuple(args.extension), spine_mode=args.spine_mode,
                 max_mesh_error=args.max_mesh_error,
                 max_body_error=args.max_body_error,

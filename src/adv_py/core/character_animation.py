@@ -16,12 +16,19 @@ class CharacterAnimation:
     samples: tuple[tuple[float, CharacterPose], ...]
 
 
-def character_sample_frames(start, end, step=1):
+def character_sample_frames(start, end, step=1, *, substeps=1):
     if any(type(v) is not int for v in (start, end, step)) or step <= 0 or end < start:
         raise CharacterRegistryError("采样范围要求整数帧、正步长和递增区间")
-    if (end-start) % step or (end-start)//step+1 > ANIMATION_MAX_SAMPLES:
+    if type(substeps) is not int or not 1 <= substeps <= 8:
+        raise CharacterRegistryError("帧间写键细分数须为 1–8 的整数")
+    if (end-start) % step or (end-start)//step*substeps+1 > ANIMATION_MAX_SAMPLES:
         raise CharacterRegistryError("结束帧必须落在步长上，采样数最多 2000")
-    return tuple(float(v) for v in range(start, end+1, step))
+    frames = tuple(float(v) for v in range(start, end+1, step))
+    if substeps == 1:
+        return frames
+    return tuple(left+(right-left)*index/substeps
+                 for left,right in zip(frames,frames[1:])
+                 for index in range(substeps))+(frames[-1],)
 
 
 def decode_character_animation(text):

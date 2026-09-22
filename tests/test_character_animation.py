@@ -31,6 +31,13 @@ class CharacterAnimationTests(unittest.TestCase):
 
     def test_frame_range_is_bounded_and_exact(self):
         self.assertEqual(character_sample_frames(-1,5,2),(-1.,1.,3.,5.))
+        self.assertEqual(character_sample_frames(1,3,1,substeps=4),
+                         (1.,1.25,1.5,1.75,2.,2.25,2.5,2.75,3.))
+        for substeps in (0,9,True,1.5):
+            with self.subTest(substeps=substeps),self.assertRaises(CharacterRegistryError):
+                character_sample_frames(1,3,substeps=substeps)
+        with self.assertRaises(CharacterRegistryError):
+            character_sample_frames(1,1001,substeps=2)
         for args in ((True,3,1),(0,3,2),(1,0,1),(1,3,0),(0,2000,1),(1.,3,1)):
             with self.subTest(args=args),self.assertRaises(CharacterRegistryError): character_sample_frames(*args)
 
