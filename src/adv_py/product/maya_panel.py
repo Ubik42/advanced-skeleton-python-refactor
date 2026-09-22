@@ -42,11 +42,14 @@ def create_panel(controller: MayaPanelController | None = None):
                     margin-top: 15px; padding: 12px 10px 8px; font-weight: 600; }
                 QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px;
                     color: #C8D5E4; }
-                QLineEdit, QPlainTextEdit, QSpinBox { background: #1C2733;
+                QLineEdit, QPlainTextEdit, QSpinBox, QComboBox { background: #1C2733;
                     color: #EDF2F7; border: 1px solid #496073; border-radius: 5px;
                     padding: 6px; selection-background-color: #A96631; }
-                QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus {
+                QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus,
+                QComboBox:focus {
                     border: 2px solid #F3BE6E; }
+                QComboBox QAbstractItemView { background: #1C2733;
+                    color: #EDF2F7; selection-background-color: #3B526C; }
                 QPushButton { background: #263649; color: #F0F4F9;
                     border: 1px solid #526478; border-radius: 6px;
                     padding: 7px 13px; min-height: 21px; }
@@ -84,7 +87,7 @@ def create_panel(controller: MayaPanelController | None = None):
             rail_layout = QtWidgets.QVBoxLayout(rail)
             rail_layout.setContentsMargins(18, 24, 14, 18)
             title = QtWidgets.QLabel("角色工作台", objectName="Title")
-            subtitle = QtWidgets.QLabel("Fit → 控制 → 蒙皮\n姿态 → 动画", objectName="Subtitle")
+            subtitle = QtWidgets.QLabel("Fit → 控制 → 蒙皮\n姿态 → 动画 → 面部", objectName="Subtitle")
             subtitle.setWordWrap(True)
             rail_layout.addWidget(title)
             rail_layout.addWidget(subtitle)
@@ -108,6 +111,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.tabs.addTab(self._fit_page(), "Fit 与构建")
             self.tabs.addTab(self._skin_page(), "蒙皮")
             self.tabs.addTab(self._animation_page(), "姿态与动画")
+            self.tabs.addTab(self._face_page(), "面部")
             layout.addWidget(self.tabs, 1)
             layout.addWidget(QtWidgets.QLabel("最近操作"))
             self.status = QtWidgets.QPlainTextEdit()
@@ -270,6 +274,65 @@ def create_panel(controller: MayaPanelController | None = None):
             row.addWidget(self._button("应用动画", self._apply_animation))
             form.addRow(row)
             stack.addWidget(group)
+            self.preset_directory = QtWidgets.QLineEdit()
+            self.preset_directory.setPlaceholderText("含姿态或动画 JSON 的文件夹")
+            self.preset_names = QtWidgets.QComboBox()
+            group, form = self._group("03 · 角色预设", [
+                ("预设目录", self.preset_directory),
+                ("可用预设", self.preset_names)])
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("检查兼容性", self._inspect_presets))
+            row.addWidget(self._button("应用所选预设", self._apply_preset))
+            form.addRow(row)
+            stack.addWidget(group)
+            stack.addStretch(1)
+            return page
+
+        def _face_page(self):
+            page, stack = self._page()
+            self.face_neutral = QtWidgets.QLineEdit()
+            self.face_neutral.setPlaceholderText("|FaceNeutral")
+            self.face_target = QtWidgets.QLineEdit()
+            self.face_target.setPlaceholderText("|SmileTarget")
+            self.face_name = QtWidgets.QLineEdit()
+            self.face_name.setPlaceholderText("smile_R")
+            self.face_kind = QtWidgets.QComboBox()
+            self.face_kind.addItem("表情", "expression")
+            self.face_kind.addItem("口型", "viseme")
+            landmarks, self.face_landmarks_document = self._file_field("顶点标记文档")
+            group, form = self._group("01 · 目标网格", [
+                ("中性网格", self.face_neutral), ("目标路径", self.face_target),
+                ("通道名称", self.face_name), ("通道类别", self.face_kind),
+                ("顶点标记", landmarks)])
+            form.addRow(self._button("从标记生成目标", self._face_generate))
+            stack.addWidget(group)
+
+            asset_out, self.face_asset_out = self._file_field("导出面部目标资产", save=True)
+            asset_in, self.face_asset_in = self._file_field("导入面部目标资产")
+            group, form = self._group("02 · 可移植目标资产", [
+                ("导出到", asset_out), ("从文件导入", asset_in)])
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("导出目标资产", self._face_asset_export))
+            row.addWidget(self._button("导入为目标网格", self._face_asset_import))
+            form.addRow(row)
+            stack.addWidget(group)
+
+            specification, self.face_build_document = self._file_field("面部构建文档")
+            self.face_control_name = QtWidgets.QLineEdit("AdvPy_FaceControls")
+            self.face_deformer_name = QtWidgets.QLineEdit("AdvPy_FaceBlendShape")
+            group, form = self._group("03 · 控制与变形器", [
+                ("构建文档", specification), ("控制名称", self.face_control_name),
+                ("变形器名称", self.face_deformer_name)])
+            form.addRow(self._button("构建面部控制", self._face_build, primary=True))
+            stack.addWidget(group)
+
+            performance, self.face_performance_document = self._file_field("面部动画文档")
+            self.face_control_path = QtWidgets.QLineEdit()
+            self.face_control_path.setPlaceholderText("|Head_M|AdvPy_FaceControls")
+            group, form = self._group("04 · 表情与口型动画", [
+                ("控制路径", self.face_control_path), ("动画文档", performance)])
+            form.addRow(self._button("应用面部动画", self._face_performance_apply))
+            stack.addWidget(group)
             stack.addStretch(1)
             return page
 
@@ -346,6 +409,60 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.end_frame.value(), self.frame_step.value())
             return f"已保存 {frames} 帧全身动画"
 
+        def _face_generate(self):
+            vertices = self.controller.face_generate(self._namespace(),
+                self.face_neutral.text().strip(), self.face_name.text().strip(),
+                self.face_kind.currentData(), self.face_target.text().strip(),
+                self._path(self.face_landmarks_document))
+            return f"已生成面部目标：{vertices} 个顶点"
+
+        def _face_asset_export(self):
+            changes = self.controller.face_asset_export(self._namespace(),
+                self.face_neutral.text().strip(), self.face_name.text().strip(),
+                self.face_kind.currentData(), self.face_target.text().strip(),
+                self._path(self.face_asset_out))
+            return f"已导出目标资产：{changes} 个变化顶点"
+
+        def _face_asset_import(self):
+            changes = self.controller.face_asset_import(self._namespace(),
+                self.face_neutral.text().strip(), self._path(self.face_asset_in),
+                self.face_target.text().strip())
+            return f"已导入目标网格：{changes} 个变化顶点"
+
+        def _face_build(self):
+            channels = self.controller.face_build(self._namespace(),
+                self._path(self.face_build_document),
+                self.face_control_name.text().strip(),
+                self.face_deformer_name.text().strip())
+            return f"面部控制已构建：{channels} 个通道"
+
+        def _face_performance_apply(self):
+            frames = self.controller.face_performance_apply(self._namespace(),
+                self.face_control_path.text().strip(),
+                self._path(self.face_performance_document))
+            return f"已应用 {frames} 帧面部动画"
+
+        def _inspect_presets(self):
+            entries = self.controller.presets(self._namespace(),
+                Path(self.preset_directory.text().strip()))
+            self.preset_names.clear()
+            for entry in entries:
+                if entry.applicable:
+                    label = "姿态" if entry.kind == "pose" else "动画"
+                    self.preset_names.addItem(f"{entry.filename} · {label}", entry.filename)
+            rejected = [entry for entry in entries if not entry.applicable]
+            return (f"可用 {self.preset_names.count()} 个预设；不可用 {len(rejected)} 个。"
+                    + ("\n" + "\n".join(f"{entry.filename}：{entry.reason}"
+                        for entry in rejected[:3]) if rejected else ""))
+
+        def _apply_preset(self):
+            filename = self.preset_names.currentData()
+            if not filename:
+                raise ValueError("请先检查并选择一个可用预设")
+            count = self.controller.preset_apply(self._namespace(),
+                Path(self.preset_directory.text().strip()), filename)
+            return f"已应用预设：{filename}，{count} 个通道或采样帧"
+
         def _role_changed(self, current, previous):
             del previous
             if current is None:
@@ -400,12 +517,8 @@ def show_panel(controller: MayaPanelController | None = None):
 
     panel = create_panel(controller)
     try:
-        from maya import OpenMayaUI
-        from shiboken2 import wrapInstance
-        main_window = OpenMayaUI.MQtUtil.mainWindow()
-        if main_window:
-            panel.setParent(wrapInstance(int(main_window), QtWidgets.QWidget),
-                            QtCore.Qt.Window)
+        from adv_py.adapters.maya_panel_window import attach_to_maya_window
+        attach_to_maya_window(panel)
     except (ImportError, RuntimeError):
         pass
     panel.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)

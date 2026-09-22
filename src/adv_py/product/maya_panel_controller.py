@@ -6,14 +6,19 @@ from pathlib import Path
 
 from adv_py.adapters import MayaFaceHost
 from adv_py.application import (ApplyBodyCharacterAnimation,
-    ApplyBodyCharacterPose, BindSkin, BuildRegisteredBodyCharacter,
+    ApplyBodyCharacterPose, ApplyFacePerformance, BindSkin,
+    BuildFaceBlendShapes, BuildRegisteredBodyCharacter,
     CaptureBodyCharacterAnimation, CaptureBodyCharacterPose,
     CreateAndImportFitSkeleton, ExportFitSkeleton, ExportSkinWeights,
-    ImportSkinWeights, ResolveBodyCharacter, load_character_animation,
-    load_character_pose, save_character_animation, save_character_pose)
+    ExportFaceTargetAsset, GenerateFaceTarget, ImportFaceTargetAsset,
+    ImportSkinWeights, InspectBodyCharacterPresets, ResolveBodyCharacter,
+    load_character_animation, load_character_pose, load_face_target_asset,
+    save_character_animation, save_character_pose, save_face_target_asset)
+from adv_py.core import FaceShapeKind, FaceTarget, face_performance_from_json
 from adv_py.core.variable_body_fit import variable_axial_description
 
-from .input_documents import load_skin_path_mapping
+from .input_documents import (load_face_build_spec, load_face_landmarks,
+                              load_skin_path_mapping)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,3 +127,57 @@ class MayaPanelController:
         animation = load_character_animation(source)
         ApplyBodyCharacterAnimation(self._host(namespace)).apply(animation)
         return len(animation.samples)
+
+    def face_generate(self, namespace: str, neutral: str, name: str,
+                      kind: str, target_mesh: str, landmarks: Path) -> int:
+        target = FaceTarget(name, FaceShapeKind(kind), target_mesh)
+        plan = GenerateFaceTarget(self._host(namespace)).apply(
+            neutral, target, load_face_landmarks(landmarks))
+        return plan.neutral.vertex_count
+
+    def face_build(self, namespace: str, specification: Path,
+                   control_name: str = "AdvPy_FaceControls",
+                   deformer_name: str = "AdvPy_FaceBlendShape") -> int:
+        neutral, targets = load_face_build_spec(specification)
+        result = BuildFaceBlendShapes(self._host(namespace)).apply(
+            neutral, targets, control_name=control_name,
+            deformer_name=deformer_name)
+        return len(result.binding.channels)
+
+    def face_asset_export(self, namespace: str, neutral: str, name: str,
+                          kind: str, target_mesh: str, destination: Path) -> int:
+        target = FaceTarget(name, FaceShapeKind(kind), target_mesh)
+        asset = ExportFaceTargetAsset(self._host(namespace)).execute(neutral, target)
+        save_face_target_asset(asset, destination)
+        return len(asset.deltas)
+
+    def face_asset_import(self, namespace: str, neutral: str, source: Path,
+                          target_mesh: str) -> int:
+        asset = load_face_target_asset(source)
+        result = ImportFaceTargetAsset(self._host(namespace)).apply(
+            neutral, asset, target_mesh)
+        return len(result.asset.deltas)
+
+    def face_performance_apply(self, namespace: str, control_path: str,
+                               source: Path) -> int:
+        source = Path(source).expanduser()
+        if source.stat().st_size > 8_000_000:
+            raise ValueError("面部动画文档超过 8 MB")
+        performance = face_performance_from_json(source.read_text(encoding="utf-8"))
+        ApplyFacePerformance(self._host(namespace)).apply(control_path, performance)
+        return len(performance.samples)
+
+    def presets(self, namespace: str, directory: Path):
+        return InspectBodyCharacterPresets(self._host(namespace)).list(directory)
+
+    def preset_apply(self, namespace: str, directory: Path, filename: str) -> int:
+        matches = [entry for entry in self.presets(namespace, directory)
+                   if entry.filename == filename]
+        if len(matches) != 1 or not matches[0].applicable:
+            raise ValueError("所选预设不存在或与当前角色不兼容")
+        source = Path(directory) / filename
+        if matches[0].kind == "pose":
+            return self.pose_apply(namespace, source)
+        if matches[0].kind == "animation":
+            return self.animation_apply(namespace, source)
+        raise ValueError("不支持的角色预设类型")

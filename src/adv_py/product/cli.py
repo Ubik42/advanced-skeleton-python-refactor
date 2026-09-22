@@ -30,7 +30,8 @@ from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
                          face_performance_from_json)
 from adv_py.core.character_registry import safe_json
 from adv_py.core.variable_body_fit import variable_axial_description
-from .input_documents import load_skin_path_mapping
+from .input_documents import (load_face_build_spec, load_face_landmarks,
+                              load_skin_path_mapping)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -231,36 +232,11 @@ def _read_text(path: Path, limit: int = 8_000_000) -> str:
 
 
 def _landmarks(path: Path) -> tuple[FaceLandmark, ...]:
-    document = safe_json(_read_text(path))
-    if not isinstance(document, dict) or set(document) != {"landmarks"}:
-        raise ValueError("顶点标记文档必须只含 landmarks 字段")
-    rows = document["landmarks"]
-    if not isinstance(rows, list):
-        raise ValueError("landmarks 必须是数组")
-    result = []
-    for row in rows:
-        if not isinstance(row, dict) or set(row) != {"vertex", "displacement", "radius"}:
-            raise ValueError("单个标记须包含 vertex、displacement 和 radius")
-        if not isinstance(row["displacement"], list):
-            raise ValueError("标记位移必须是三个数值的数组")
-        result.append(FaceLandmark(row["vertex"], tuple(row["displacement"]),
-                                   row["radius"]))
-    return tuple(result)
+    return load_face_landmarks(path)
 
 
 def _face_build_spec(path: Path) -> tuple[str, tuple[FaceTarget, ...]]:
-    document = safe_json(_read_text(path))
-    if (not isinstance(document, dict) or set(document) != {"neutral", "targets"}
-            or not isinstance(document["neutral"], str)
-            or not isinstance(document["targets"], list)):
-        raise ValueError("面部构建文档须包含 neutral 和 targets")
-    targets = []
-    for row in document["targets"]:
-        if not isinstance(row, dict) or set(row) != {"name", "kind", "mesh"}:
-            raise ValueError("面部目标须包含 name、kind 和 mesh")
-        targets.append(FaceTarget(row["name"], FaceShapeKind(row["kind"]),
-                                  row["mesh"]))
-    return document["neutral"], tuple(targets)
+    return load_face_build_spec(path)
 
 
 def _emit(event: str, **payload) -> None:
