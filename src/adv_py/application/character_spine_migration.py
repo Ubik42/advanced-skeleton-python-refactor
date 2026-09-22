@@ -5,6 +5,7 @@ from adv_py.core.character_registry import CharacterRegistryError
 from adv_py.core.skin_weight_redistribution import registered_spine_weight_redistribution
 
 from .character_spine_retarget import RetargetCharacterSpineFk
+from .character_spine_ik_retarget import RetargetCharacterSpineIk
 from .spine_skin_handoff import HandoffRegisteredSpineSkinCluster
 from .skin_weight_surface_transfer import TransferSkinWeightsBySurface
 from .skin_weights import EditSkinWeights
@@ -137,15 +138,18 @@ class ReplaceRegisteredSpineCharacter:
         self._host = host
 
     def apply(self, source_namespace, target_namespace, skin_name, mesh_path,
-              *, start_frame, end_frame, sample_by=1, reference_frame=None):
+              *, start_frame, end_frame, sample_by=1, reference_frame=None,
+              spine_mode='fk', max_mesh_error=None):
         return self.apply_many(source_namespace, target_namespace,
             ((skin_name, mesh_path),), start_frame=start_frame,
             end_frame=end_frame, sample_by=sample_by,
-            reference_frame=reference_frame)
+            reference_frame=reference_frame, spine_mode=spine_mode,
+            max_mesh_error=max_mesh_error)
 
     def apply_many(self, source_namespace, target_namespace, skins,
                    *, start_frame, end_frame, sample_by=1,
-                   reference_frame=None, extensions=()):
+                   reference_frame=None, extensions=(), spine_mode='fk',
+                   max_mesh_error=None):
         host = self._host
         if host.namespace != target_namespace:
             raise CharacterRegistryError('目标动画宿主与目标角色命名空间不一致')
@@ -153,11 +157,21 @@ class ReplaceRegisteredSpineCharacter:
         if (not skins or len(skins) != len({row[0] for row in skins})
                 or len(skins) != len({row[1] for row in skins})):
             raise CharacterRegistryError('角色替换需要非空且唯一的 Skin／网格清单')
+        if spine_mode not in ('fk','ik'):
+            raise CharacterRegistryError('脊柱替换模式须为 fk 或 ik')
+        if (spine_mode == 'ik') != (max_mesh_error is not None):
+            raise CharacterRegistryError('IK 替换须明确提供原网格误差上限，FK 不使用此参数')
+        if spine_mode == 'ik' and reference_frame is not None:
+            raise CharacterRegistryError('IK 控制直接迁移不使用 FK 校准帧')
         global_host = host.original_skin_handoff_host()
         from .mocap_control_retarget import character_sample_frames
         sampled = character_sample_frames(start_frame, end_frame, sample_by)
         extension_frames = tuple(sorted({*sampled,
             *((a+b)/2 for a,b in zip(sampled,sampled[1:]))}))
+        ik_retarget = RetargetCharacterSpineIk(host) if spine_mode == 'ik' else None
+        ik_take = (ik_retarget.plan(source_namespace, skins, sampled,
+                                   max_mesh_error=max_mesh_error)
+                   if ik_retarget else None)
         extension_moves = global_host.plan_original_spine_extensions(
             source_namespace, target_namespace, extensions, extension_frames)
         handoff = HandoffRegisteredSpineSkinCluster(global_host)
@@ -178,10 +192,14 @@ class ReplaceRegisteredSpineCharacter:
                 for skin_name in allowed:
                     global_host.release_old_bind_pose_members(
                         skin_name, source_namespace, allowed_skins=allowed)
-                roots, groups = RetargetCharacterSpineFk(host).apply_in_transaction(
-                    source_namespace, start_frame=start_frame,
-                    end_frame=end_frame, sample_by=sample_by,
-                    reference_frame=reference_frame)
+                if ik_take is None:
+                    roots, groups = RetargetCharacterSpineFk(host).apply_in_transaction(
+                        source_namespace, start_frame=start_frame,
+                        end_frame=end_frame, sample_by=sample_by,
+                        reference_frame=reference_frame)
+                else:
+                    ik_retarget.apply_in_transaction(ik_take,source_namespace,skins)
+                    roots, groups = sampled, ()
                 installed = global_host.apply_original_spine_extensions(
                     extension_moves)
                 attachment_curves = global_host.bake_original_spine_extensions(
@@ -197,6 +215,8 @@ class ReplaceRegisteredSpineCharacter:
                        for uuid in move.member_uuids)))
                 global_host.apply_original_spine_promotion(promotion)
                 global_host.verify_promoted_spine_extensions(installed)
+                if ik_take is not None:
+                    ik_retarget.verify_meshes(ik_take,skins)
             finally:
                 global_host._transaction_active = False
         return ReplacedSpineCharacterResult(len(roots), len(groups),
