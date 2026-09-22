@@ -19,9 +19,12 @@ def main(output: Path) -> int:
     try:
         from maya import cmds
         from adv_py.adapters import MayaBodyBuildHost
-        from adv_py.core import skin_weight_document_from_state
+        from adv_py.application import EditSkinWeights
+        from adv_py.core import (SkinInfluenceWeight, SkinVertexWeights,
+            skin_weight_document_from_state)
 
         cmds.file(new=True, force=True)
+        cmds.undoInfo(state=True)
         joints = []
         for index, position in enumerate(((-1., -1.), (1., -1.), (-1., 1.), (1., 1.))):
             cmds.select(clear=True)
@@ -42,6 +45,10 @@ def main(output: Path) -> int:
         capture_seconds = time.perf_counter() - captured_at
         document = skin_weight_document_from_state(state)
         samples = (0, 1, 4095, 4096, 5040)
+        sparse_indices = tuple(reversed(samples))
+        sparse_at = time.perf_counter()
+        sparse = host.capture_skin_vertices(skin, mesh, sparse_indices)
+        sparse_seconds = time.perf_counter() - sparse_at
         comparisons = []
         for index in samples:
             actual = {entry.influence_path: entry.weight
@@ -53,11 +60,29 @@ def main(output: Path) -> int:
         checks = {"all_vertices_captured": state.vertex_count == 5041
                   and len(state.vertices) == 5041,
                   "chunk_boundary_matches_commands": all(comparisons),
+                  "sparse_order_and_values_match": tuple(row.vertex_index for row in sparse.vertices)
+                  == sparse_indices and all(row == state.vertices[row.vertex_index]
+                                            for row in sparse.vertices),
                   "document_complete": len(document.vertices) == 5041,
                   "selection_preserved": (cmds.ls(selection=True, long=True) or []) == [marker]}
+        edited = list(state.vertices)
+        for index in (4095, 4096):
+            edited[index] = SkinVertexWeights(index, (
+                SkinInfluenceWeight(joints[0], .6),
+                SkinInfluenceWeight(joints[1], .4)))
+        applied = EditSkinWeights(host).apply(skin, mesh, tuple(edited))
+        after = host.capture_all_skin_weights(skin, mesh)
+        cmds.undo()
+        undone = host.capture_all_skin_weights(skin, mesh)
+        cmds.redo()
+        redone = host.capture_all_skin_weights(skin, mesh)
+        checks["full_request_changes_only_boundary"] = applied.changed_vertex_count == 2
+        checks["single_undo_restores_full_snapshot"] = undone == state
+        checks["redo_restores_full_snapshot"] = redone == after
         payload = {"host": "maya", "version": str(cmds.about(version=True)),
             "pid": os.getpid(), "slice": "skin_bulk_api_capture",
             **checks, "capture_seconds": round(capture_seconds, 3),
+            "sparse_capture_seconds": round(sparse_seconds, 3),
             "duration_seconds": round(time.perf_counter() - started, 3),
             "status": "passed" if all(checks.values()) else "failed"}
         output.parent.mkdir(parents=True, exist_ok=True)

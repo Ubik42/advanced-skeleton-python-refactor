@@ -3749,25 +3749,8 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                 locked.append(path)
         vertices = []
         if mesh:
-            if vertex_indices is None:
-                vertices = list(self._capture_all_skin_vertices_api(
-                    skin, bound_shape, vertex_count, tuple(influences)))
-            else:
-                for vertex_index in vertex_indices:
-                    if vertex_index >= vertex_count:
-                        continue
-                    component = f"{mesh}.vtx[{vertex_index}]"
-                    weights = []
-                    for influence in influences:
-                        value = float(self._cmds.skinPercent(
-                            skin,
-                            component,
-                            query=True,
-                            transform=influence,
-                        ))
-                        if value > 1e-8:
-                            weights.append(SkinInfluenceWeight(influence, value))
-                    vertices.append(SkinVertexWeights(vertex_index, tuple(weights)))
+            vertices = list(self._capture_skin_vertices_api(
+                skin, bound_shape, vertex_count, tuple(influences), vertex_indices))
         return SkinWeightInputState(
             skin,
             mesh,
@@ -3779,9 +3762,10 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
             tuple(vertices),
         )
 
-    def _capture_all_skin_vertices_api(
+    def _capture_skin_vertices_api(
         self, skin: str, shape: str, vertex_count: int,
         influences: tuple[str, ...],
+        vertex_indices: tuple[int, ...] | None,
     ) -> tuple[SkinVertexWeights, ...]:
         from maya.api import OpenMaya as om
         from maya.api import OpenMayaAnim as oma
@@ -3796,23 +3780,32 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                            for index, path in enumerate(skin_fn.influenceObjects())}
         if any(path not in influence_order for path in influences):
             raise RuntimeError("skinCluster API 影响关节集合与场景查询不一致")
+        requested = (tuple(range(vertex_count)) if vertex_indices is None
+                     else tuple(index for index in vertex_indices if index < vertex_count))
+        unique = requested if vertex_indices is None else tuple(sorted(set(requested)))
         rows = []
-        for start in range(0, vertex_count, 4096):
-            indices = tuple(range(start, min(start + 4096, vertex_count)))
+        for start in range(0, len(unique), 4096):
+            indices = unique[start:start + 4096]
             component_fn = om.MFnSingleIndexedComponent()
             component = component_fn.create(om.MFn.kMeshVertComponent)
             component_fn.addElements(indices)
+            component_indices = tuple(int(index) for index in component_fn.getElements())
             values, influence_count = skin_fn.getWeights(dag, component)
-            if influence_count != len(influence_order) or len(values) != len(indices) * influence_count:
+            if (influence_count != len(influence_order)
+                    or len(values) != len(component_indices) * influence_count
+                    or set(component_indices) != set(indices)):
                 raise RuntimeError("skinCluster API 返回的权重矩阵维度无效")
-            for offset, vertex_index in enumerate(indices):
+            for offset, vertex_index in enumerate(component_indices):
                 weights = []
                 for path in influences:
                     value = float(values[offset * influence_count + influence_order[path]])
                     if value > 1e-8:
                         weights.append(SkinInfluenceWeight(path, value))
                 rows.append(SkinVertexWeights(vertex_index, tuple(weights)))
-        return tuple(rows)
+        if vertex_indices is None:
+            return tuple(rows)
+        by_index = {row.vertex_index: row for row in rows}
+        return tuple(by_index[index] for index in requested)
 
     def apply_skin_weight_changes(
         self,
