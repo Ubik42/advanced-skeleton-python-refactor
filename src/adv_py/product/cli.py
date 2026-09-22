@@ -24,6 +24,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     CaptureSkinWeightSurfaceSource, save_skin_weight_surface_source,
     load_skin_weight_surface_source,
     ImportMocapFbx, RetargetMocapFullFkToCharacter,
+    RetargetCharacterSpineFk,
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
     load_mocap_mapping_preset,
     ResolveBodyCharacter, TransferFaceTargetAsset,
@@ -298,6 +299,16 @@ def parser() -> argparse.ArgumentParser:
     mocap.add_argument("--step", type=int, default=1)
     mocap.add_argument("--mode", choices=("fk", "limb-ik", "full-ik"), default="fk")
     mocap.add_argument("--output", type=Path, required=True)
+    spine_transfer = commands.add_parser("character-spine-retarget",
+        help="将同场景角色动画重采样到不同段数脊柱的 FK 控制")
+    spine_transfer.add_argument("scene", type=Path)
+    spine_transfer.add_argument("--namespace", required=True)
+    spine_transfer.add_argument("--source-namespace", required=True)
+    spine_transfer.add_argument("--start", type=int, required=True)
+    spine_transfer.add_argument("--end", type=int, required=True)
+    spine_transfer.add_argument("--step", type=int, default=1)
+    spine_transfer.add_argument("--reference", type=float)
+    spine_transfer.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
     rebuild.add_argument("scene", type=Path)
     rebuild.add_argument("--namespace", required=True)
@@ -484,6 +495,22 @@ def _run(args, gateway) -> dict:
         return {"status": "ok", "output": str(output), "mode": args.mode,
                 "source_joints": len(imported.clip.joints),
                 "frames": len(samples[0]), "source_root": imported.snapshot.root}
+    if args.command == "character-spine-retarget":
+        from adv_py.adapters import MayaMocapControlHost
+
+        gateway.preflight_output(args.output)
+        target_namespace = "" if args.namespace == ":" else args.namespace
+        source_namespace = "" if args.source_namespace == ":" else args.source_namespace
+        target = MayaMocapControlHost(namespace=target_namespace)
+        samples = RetargetCharacterSpineFk(target).apply(source_namespace,
+            start_frame=args.start, end_frame=args.end, sample_by=args.step,
+            reference_frame=args.reference)
+        _emit("character_spine_retargeted", frames=len(samples[0]),
+              source_namespace=source_namespace, target_namespace=target_namespace)
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output),
+                "frames": len(samples[0]), "mode": "fk"}
     if args.command == "face-asset-export":
         output = args.output.resolve()
         if output.suffix.lower() != ".json" or output.exists():

@@ -5,6 +5,18 @@ from .maya_mocap import MayaMocapSourceReader
 
 
 class MayaMocapControlHost(MayaBodyBuildHost):
+    def capture_resampled_character_source(self,source_namespace,target,frames):
+        from .maya_mocap_spine_bridge import capture_resampled_character_source
+        return capture_resampled_character_source(self,source_namespace,target,frames)
+
+    def create_resampled_character_source(self,target,samples):
+        from .maya_mocap_spine_bridge import create_resampled_character_source
+        return create_resampled_character_source(self,target,samples)
+
+    def delete_resampled_character_source(self,root):
+        from .maya_mocap_spine_bridge import delete_resampled_character_source
+        return delete_resampled_character_source(self,root)
+
     def preflight_mocap_mode_schedule(
             self, registration, mode_keys, frames, *, replace_existing_modes=False):
         channels={channel.key:channel for channel in registration.channels}
