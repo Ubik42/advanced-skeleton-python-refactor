@@ -8,7 +8,8 @@ from adv_py.core.character_animation import (
     CharacterAnimation, ANIMATION_MAX_BYTES, character_sample_frames,
     encode_character_animation, decode_character_animation, validate_character_animation,
 )
-from adv_py.core.character_pose import CharacterPose, POSE_TOLERANCE, character_pose_error
+from adv_py.core.character_pose import (CharacterPose, POSE_TOLERANCE,
+    character_pose_error, normalize_character_pose_compatibility)
 from adv_py.core.character_registry import CharacterRegistration, CharacterRegistryError
 
 
@@ -45,6 +46,9 @@ class ApplyBodyCharacterAnimation:
         animation=decode_character_animation(encode_character_animation(animation))
         reg=self._host.read_character_registration()
         validate_character_animation(animation,reg)
+        animation=CharacterAnimation(animation.time_unit, tuple((frame,
+            normalize_character_pose_compatibility(pose,reg))
+            for frame,pose in animation.samples))
         self._host.preflight_character_keyframe(reg)
         if animation.time_unit!=self._host.character_time_unit():
             raise CharacterRegistryError("动画与场景时间单位不一致；不隐式修改帧率")

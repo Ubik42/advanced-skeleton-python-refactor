@@ -85,13 +85,32 @@ class CharacterRegistration:
     spine: BodySpinePlan | BodySplinePlan
     spaces: BodyControlSpacesPlan
 
+    def _compatibility_value(self, *, portable: bool):
+        # UUIDs and absolute paths identify scene objects, not pose semantics.
+        # Maya ASCII and Fit document round trips can differ below 1e-14.
+        def scalar(number):
+            value = float(number)
+            if not portable:
+                return value
+            rounded = round(value, 8)
+            return 0.0 if rounded == 0 else float(rounded)
+        return {"body": [(j.path.split("|")[-1],
+                j.parent.split("|")[-1] if j.parent else None,
+                tuple(scalar(v) for v in j.matrix)) for j in self.body],
+            "channels": [(c.key,
+                scalar(c.minimum) if c.minimum is not None else None,
+                scalar(c.maximum) if c.maximum is not None else None)
+                for c in self.channels],
+            "lengths": tuple(scalar(v) for v in self.spine.lengths),
+            "spaces": [s.key for s in self.spaces.spaces]}
+
     @property
     def compatibility_digest(self):
-        # UUIDs and absolute paths identify scene objects, not pose semantics.
-        value = {"body": [(j.path.split("|")[-1], j.parent.split("|")[-1] if j.parent else None, tuple(float(v) for v in j.matrix)) for j in self.body],
-                 "channels": [(c.key,float(c.minimum) if c.minimum is not None else None,float(c.maximum) if c.maximum is not None else None) for c in self.channels],
-                 "lengths": tuple(float(v) for v in self.spine.lengths), "spaces": [s.key for s in self.spaces.spaces]}
-        return digest(value)
+        return digest(self._compatibility_value(portable=True))
+
+    @property
+    def legacy_compatibility_digest(self):
+        return digest(self._compatibility_value(portable=False))
 
 
 def canonical(value):

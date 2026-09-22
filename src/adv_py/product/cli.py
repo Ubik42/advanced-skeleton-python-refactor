@@ -11,6 +11,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     ApplyBodyCharacterPose, ApplyFacePerformance, BuildFaceBlendShapes, CaptureBodyCharacterAnimation,
     CaptureBodyCharacterPose, BuildBodyExportSkeleton, BuildBodyRootMotion,
     BuildOrientedBodySkeleton, BuildBodyCharacterRig, RegisterBodyCharacter,
+    CreateAndImportFitSkeleton, ExportFitSkeleton,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget,
     FaceAssetLibrary, ImportFaceTargetAsset, ExportSkinWeights, ImportSkinWeights,
     ImportMocapFbx, RetargetMocapFullFkToCharacter,
@@ -148,6 +149,19 @@ def parser() -> argparse.ArgumentParser:
         help="可变脊柱段数；标准双段角色可省略")
     body_build.add_argument("--head-aim", action="store_true")
     body_build.add_argument("--output", type=Path, required=True)
+    fit_export = commands.add_parser("fit-export",
+        help="导出现有 Fit 容器的完整文档")
+    fit_export.add_argument("scene", type=Path)
+    fit_export.add_argument("--namespace", required=True)
+    fit_export.add_argument("--fit", default="FitSkeleton")
+    fit_export.add_argument("--output", type=Path, required=True)
+    fit_import = commands.add_parser("fit-import",
+        help="在场景中新建 Fit 容器并导入完整文档")
+    fit_import.add_argument("scene", type=Path)
+    fit_import.add_argument("--namespace", required=True)
+    fit_import.add_argument("--document", type=Path, required=True)
+    fit_import.add_argument("--fit", default="FitSkeleton")
+    fit_import.add_argument("--output", type=Path, required=True)
     presets = commands.add_parser("presets", help="检查角色姿态与动画预设目录")
     presets.add_argument("scene", type=Path)
     presets.add_argument("--namespace", required=True)
@@ -290,6 +304,19 @@ def _run(args, gateway) -> dict:
     selected_namespace = ("" if args.command == "rebuild" else None)
     host = MayaFaceHost(namespace=selected_namespace if args.namespace == ":"
                         else args.namespace)
+    if args.command == "fit-export":
+        exported = ExportFitSkeleton(host).apply(args.output, args.fit)
+        _emit("fit_exported", joints=len(exported.plan.document.joints))
+        return {"status": "ok", "output": str(exported.plan.destination),
+                "joints": len(exported.plan.document.joints)}
+    if args.command == "fit-import":
+        output = gateway.preflight_output(args.output)
+        imported = CreateAndImportFitSkeleton(host).apply(args.document, args.fit)
+        _emit("fit_imported", joints=len(imported.joint_paths))
+        saved = gateway.save_new(output)
+        _emit("scene_saved", scene=str(saved))
+        return {"status": "ok", "output": str(saved),
+                "joints": len(imported.joint_paths)}
     if args.command == "body-build":
         output = gateway.preflight_output(args.output)
         description = (variable_axial_description(args.spine_segments)

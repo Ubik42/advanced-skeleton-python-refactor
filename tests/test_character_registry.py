@@ -34,6 +34,22 @@ class CharacterRegistryTests(unittest.TestCase):
         self.assertEqual(decoded.compatibility_digest,registration.compatibility_digest)
         self.assertEqual(replace(registration,nodes=tuple(replace(n,uuid=n.uuid+"a") for n in registration.nodes)).compatibility_digest,registration.compatibility_digest)
 
+    def test_fit_roundtrip_floating_noise_keeps_portable_compatibility(self):
+        registration=registration_fixture()
+        first=registration.body[1]
+        matrix=list(first.matrix)
+        matrix[12]=1e-12
+        noisy=replace(registration,body=(registration.body[0],
+            replace(first,matrix=tuple(matrix)),*registration.body[2:]))
+        self.assertEqual(noisy.compatibility_digest,registration.compatibility_digest)
+        self.assertNotEqual(noisy.legacy_compatibility_digest,
+                            registration.legacy_compatibility_digest)
+        matrix[12]=1e-4
+        changed=replace(registration,body=(registration.body[0],
+            replace(first,matrix=tuple(matrix)),*registration.body[2:]))
+        self.assertNotEqual(changed.compatibility_digest,
+                            registration.compatibility_digest)
+
     def test_document_rejects_unknown_corrupt_duplicate_nonfinite(self):
         text=encode_registration(registration_fixture())
         for update in ({"version":2},{"version":True},{"digest":"bad"},{"extra":1}):

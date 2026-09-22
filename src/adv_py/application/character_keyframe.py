@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from adv_py.core.character_pose import (
     CharacterPose, POSE_TOLERANCE, decode_character_pose, encode_character_pose,
     validate_character_pose, character_pose_error,
+    normalize_character_pose_compatibility,
 )
 from adv_py.core.character_registry import CharacterRegistration, CharacterRegistryError
 
@@ -23,7 +24,7 @@ class CaptureAnimatedBodyCharacterPose:
         registration=self._host.read_character_registration()
         self._host.preflight_character_keyframe(registration)
         pose=self._host.capture_character_pose(registration)
-        validate_character_pose(pose,registration)
+        pose=normalize_character_pose_compatibility(pose,registration)
         return pose
 
 
@@ -33,7 +34,7 @@ class KeyBodyCharacterPose:
     def plan(self,pose):
         pose=decode_character_pose(encode_character_pose(pose))
         registration=self._host.read_character_registration()
-        validate_character_pose(pose,registration)
+        pose=normalize_character_pose_compatibility(pose,registration)
         self._host.preflight_character_keyframe(registration)
         before=self._host.capture_character_pose(registration)
         validate_character_pose(before,registration)

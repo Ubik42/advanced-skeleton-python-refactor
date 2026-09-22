@@ -30,6 +30,20 @@ class CharacterPoseTests(unittest.TestCase):
         validate_character_pose(self.pose,self.registry)
         self.assertEqual(character_pose_error(self.pose,self.pose),0)
 
+    def test_legacy_same_scene_pose_can_upgrade_to_portable_digest(self):
+        first=self.registry.body[1]
+        matrix=list(first.matrix)
+        matrix[12]=1e-12
+        registration=replace(self.registry,body=(self.registry.body[0],
+            replace(first,matrix=tuple(matrix)),*self.registry.body[2:]))
+        legacy=replace(pose_fixture(registration),
+            compatibility=registration.legacy_compatibility_digest)
+        self.assertNotEqual(legacy.compatibility,registration.compatibility_digest)
+        validate_character_pose(legacy,registration)
+        upgraded=normalize_character_pose_compatibility(legacy,registration)
+        self.assertEqual(upgraded.compatibility,registration.compatibility_digest)
+        self.assertEqual(upgraded.channels,legacy.channels)
+
     def test_invalid_documents_and_full_contract(self):
         for mutation in ({'version':True},{'version':2},{'digest':'bad'},{'unknown':0}):
             raw=json.loads(encode_character_pose(self.pose));raw.update(mutation)

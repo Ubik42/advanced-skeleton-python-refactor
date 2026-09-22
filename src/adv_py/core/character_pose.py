@@ -1,5 +1,5 @@
 """Portable static character poses with explicit space frames and result references."""
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import re
 
 from .character_registry import canonical, digest, safe_json, exact, finite, vector, CharacterRegistryError
@@ -67,7 +67,8 @@ def validate_character_pose(pose, registration):
     decode_character_pose(encode_character_pose(pose))
     from .character_spaces import validate_space_values
     validate_space_values(pose.channels, pose.spaces)
-    if pose.compatibility!=registration.compatibility_digest:
+    if pose.compatibility not in (registration.compatibility_digest,
+                                    registration.legacy_compatibility_digest):
         raise CharacterRegistryError("姿态拓扑、绑定布局或特性与角色不兼容")
     if tuple(k for k,_ in pose.channels)!=tuple(c.key for c in registration.channels):
         raise CharacterRegistryError("姿态控制通道不完整或顺序不匹配")
@@ -80,6 +81,14 @@ def validate_character_pose(pose, registration):
     for channel,(_,value) in zip(registration.channels,pose.channels):
         if (channel.minimum is not None and value<channel.minimum) or (channel.maximum is not None and value>channel.maximum):
             raise CharacterRegistryError("姿态控制值超出范围："+channel.key)
+
+
+def normalize_character_pose_compatibility(pose, registration):
+    """Upgrade a same-scene legacy pose after its layout has been validated."""
+    validate_character_pose(pose, registration)
+    if pose.compatibility == registration.compatibility_digest:
+        return pose
+    return replace(pose, compatibility=registration.compatibility_digest)
 
 
 def character_pose_error(expected,actual):

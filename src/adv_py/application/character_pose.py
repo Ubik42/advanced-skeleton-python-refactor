@@ -9,6 +9,7 @@ from adv_py.core.character_registry import CharacterRegistration
 from adv_py.core.character_pose import (
     CharacterPose, POSE_TOLERANCE, validate_character_pose, character_pose_error,
     encode_character_pose, decode_character_pose,
+    normalize_character_pose_compatibility,
 )
 
 
@@ -34,7 +35,7 @@ class CaptureBodyCharacterPose:
         registration=self._host.read_character_registration()
         self._host.preflight_character_pose(registration)
         pose=self._host.capture_character_pose(registration)
-        validate_character_pose(pose,registration)
+        pose=normalize_character_pose_compatibility(pose,registration)
         return pose
 
 
@@ -44,7 +45,7 @@ class ApplyBodyCharacterPose:
     def plan(self,pose):
         pose=decode_character_pose(encode_character_pose(pose))
         registration=self._host.read_character_registration()
-        validate_character_pose(pose,registration)
+        pose=normalize_character_pose_compatibility(pose,registration)
         self._host.preflight_character_pose(registration)
         before=self._host.capture_character_pose(registration)
         validate_character_pose(before,registration)
