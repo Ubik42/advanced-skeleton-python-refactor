@@ -68,6 +68,7 @@ class OriginalSpineExtensionMove:
     parent_world_samples: tuple[tuple[float, tuple[float, ...]], ...] = ()
     curves: tuple[object, ...] = ()
     curve_outputs: tuple[tuple[str, str, str], ...] = ()
+    internal_connections: tuple[tuple[str, str, str, str], ...] = ()
     requires_compensation: bool = False
 
 
@@ -202,12 +203,14 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
             members = (path, *(cmds.listRelatives(path, allDescendents=True,
                                                   fullPath=True) or []))
             member_uuids = tuple(_uuid(cmds, node) for node in members)
+            member_set = set(member_uuids)
             if used.intersection(member_uuids):
                 raise CharacterRegistryError('附件根相互嵌套或重复')
             used.update(member_uuids)
             snapshots = []
             curves = {}
             curve_outputs = {}
+            internal_connections = set()
             for node in members:
                 if (not CharacterIdentity(source_namespace).owns(node)
                         or cmds.referenceQuery(node, isNodeReferenced=True)
@@ -217,6 +220,12 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
                     destination=False, plugs=True, connections=True) or []
                 for local, incoming in zip(inputs[::2], inputs[1::2]):
                     curve = incoming.rsplit('.',1)[0]
+                    incoming_uuid = _plug_uuid(cmds,incoming)
+                    if incoming_uuid in member_set:
+                        internal_connections.add((incoming_uuid,
+                            incoming.split('.',1)[1], _plug_uuid(cmds,local),
+                            local.split('.',1)[1]))
+                        continue
                     if (not cmds.nodeType(curve).startswith('animCurve')
                             or not incoming.endswith('.output')
                             or len(cmds.listConnections(curve + '.output',
@@ -253,7 +262,7 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
                 snapshots[0],member_uuids,tuple(snapshots),
                 tuple(world_samples),tuple(parent_samples),
                 tuple(curves.values()),tuple(curve_outputs.values()),
-                requires_compensation))
+                tuple(sorted(internal_connections)),requires_compensation))
         # Explicit attachments cannot retain hidden connections to the old Rig.
         old_uuids = {_uuid(cmds, source.scene_address(row.path))
                      for row in source_reg.nodes}
@@ -378,6 +387,13 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
                         or outputs[0].rsplit('.',1)[-1] != attribute):
                     raise RuntimeError('附件原有动画曲线连接被修改：'
                                        + _name(cmds,curve_uuid))
+            for source_uuid,source_attr,dest_uuid,dest_attr in move.internal_connections:
+                destination = _name(cmds,dest_uuid)+'.'+dest_attr
+                actual = cmds.connectionInfo(destination,
+                                             sourceFromDestination=True)
+                if (not actual or _plug_uuid(cmds,actual) != source_uuid
+                        or actual.split('.',1)[1] != source_attr):
+                    raise RuntimeError('附件内部驱动连接被修改：'+destination)
 
     def original_spine_extension_curve_uuids(self, moves, source_namespace):
         from maya import cmds

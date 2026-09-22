@@ -24,14 +24,17 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
             face = MayaFaceHost(namespace="source")
             registration = face.read_character_registration()
             controls = cmds.ls("source:AdvPy_FaceControls", long=True) or []
+            followers = cmds.ls("source:FaceFollower", long=True) or []
             good = (len(registration.spine.body_joints) == 7 and
-                    not cmds.namespace(exists="target") and len(controls) == 1 and
+                    not cmds.namespace(exists="target") and
+                    len(controls) == len(followers) == 1 and
                     cmds.objExists("source:FaceSkin") and
                     cmds.objExists("source:AdvPy_FaceBlendShape") and
                     all(cmds.objExists(name) for name in
                         ("source:SmileTarget", "source:VisemeATarget")) and
                     abs(cmds.getAttr(controls[0] + ".smile_R", time=5) - 1.) < 1e-6 and
-                    abs(cmds.getAttr(controls[0] + ".viseme_A", time=10) - 1.) < 1e-6)
+                    abs(cmds.getAttr(controls[0] + ".viseme_A", time=10) - 1.) < 1e-6 and
+                    abs(cmds.getAttr(followers[0] + ".translateX", time=5) - 1.) < 1e-6)
             print(json.dumps({"cli_reopen_face_valid": good}), flush=True)
             return 0 if good else 1
 
@@ -53,6 +56,9 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
         built = BuildFaceBlendShapes(face).apply("|FaceNeutral", (smile, viseme))
         control = face.scene_address(built.plan.control_path)
         deformer = face.scene_address(built.plan.deformer_name)
+        follower = cmds.createNode("transform", name="source:FaceFollower",
+                                   parent=control)
+        cmds.connectAttr(control + ".smile_R", follower + ".translateX")
         targets = (face.scene_address(smile.mesh), face.scene_address(viseme.mesh))
         for frame, values in ((0, (.15, 0.)), (1, (0., 0.)),
                               (5, (1., .4)), (10, (.2, 1.)),
@@ -61,7 +67,7 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
                 cmds.setKeyframe(control, attribute=attr, time=frame, value=value)
         identities = {node: (cmds.ls(node, uuid=True) or [None])[0]
                       for node in (neutral, "source:FaceSkin", control,
-                                   deformer, *targets)}
+                                   deformer, follower, *targets)}
         before = {}
         for frame in (1, 5, 10):
             cmds.currentTime(frame, edit=True)
@@ -107,6 +113,7 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
             active = MayaFaceHost(namespace="source")
             new_reg = active.read_character_registration()
             new_control = cmds.ls(identities[control], long=True) or []
+            new_follower = cmds.ls(identities[follower], long=True) or []
             new_head = next(j.path for j in new_reg.body
                             if j.path.rsplit("|", 1)[-1] == "Head_M")
             same_uuids = all(bool(cmds.ls(uuid, long=True))
@@ -133,6 +140,11 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
                         face_values_preserved=bool(new_control) and all(
                             abs(cmds.getAttr(new_control[0] + ".smile_R", time=frame) - value) < 1e-6
                             for frame, value in ((0, .15), (5, 1.), (20, .25))),
+                        internal_driver_preserved=bool(new_control and new_follower) and
+                            (cmds.ls(cmds.connectionInfo(new_follower[0] + ".translateX",
+                                sourceFromDestination=True).split('.', 1)[0], uuid=True)
+                                or [None])[0] == identities[control] and
+                            abs(cmds.getAttr(new_follower[0] + ".translateX", time=5) - 1.) < 1e-6,
                         deformation_live=mesh_error < .2 and
                             max(abs(a-b) for a,b in zip(current[1], current[5])) > .1,
                         face_mesh_max_error_cm=mesh_error)
@@ -160,7 +172,8 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
         return 0 if (rollback and undo and all(x == passed for x in (redo, reopened)) and
                      passed["spine_joints"] == 7 and passed["namespace_removed"] and
                      passed["identities_preserved"] and passed["face_control_on_new_head"] and
-                     passed["face_values_preserved"] and passed["deformation_live"]) else 1
+                     passed["face_values_preserved"] and passed["internal_driver_preserved"] and
+                     passed["deformation_live"]) else 1
     finally:
         maya.standalone.uninitialize()
 
