@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from adv_py.core.character_registry import safe_json
 from adv_py.core import (FaceLandmark, FaceShapeKind, FaceTarget,
@@ -10,6 +11,42 @@ from adv_py.core.skin_weight_io import (SkinWeightPathMapping,
     SkinWeightInfluenceMapping)
 from adv_py.core.skin_weight_redistribution import (SkinWeightRedistribution,
     SkinWeightInfluenceRedistribution, SkinWeightRedistributionTarget)
+
+
+def load_reference_path_map(path: Path) -> tuple[tuple[str, Path, Path, str], ...]:
+    source = Path(path).expanduser()
+    if source.stat().st_size > 64_000:
+        raise ValueError("引用路径映射文档超过 64 KB")
+    document = safe_json(source.read_text(encoding="utf-8"), max_bytes=64_000)
+    if (not isinstance(document, dict)
+            or set(document) != {"format", "version", "references"}
+            or document["format"] != "adv_py_reference_relocation"
+            or type(document["version"]) is not int or document["version"] != 1
+            or not isinstance(document["references"], list)
+            or not 1 <= len(document["references"]) <= 64):
+        raise ValueError("引用路径映射格式或版本无效")
+    rows = []
+    used = set()
+    for item in document["references"]:
+        if (not isinstance(item, dict)
+                or set(item) != {"node", "expected_path", "replacement_path", "sha256"}
+                or not isinstance(item["node"], str)
+                or not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9:]*", item["node"])
+                or item["node"] in used
+                or not isinstance(item["expected_path"], str)
+                or not isinstance(item["replacement_path"], str)
+                or not isinstance(item["sha256"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"])):
+            raise ValueError("引用路径映射条目无效或节点重复")
+        expected = Path(item["expected_path"])
+        replacement = Path(item["replacement_path"])
+        if (not expected.is_absolute() or not replacement.is_absolute()
+                or replacement.suffix.lower() not in (".ma", ".mb")):
+            raise ValueError("引用路径映射须使用绝对 Maya 场景路径")
+        used.add(item["node"])
+        rows.append((item["node"], expected, replacement,
+                     item["sha256"]))
+    return tuple(rows)
 
 
 def load_skin_path_mapping(path: Path) -> SkinWeightPathMapping:

@@ -46,7 +46,7 @@ from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
 from adv_py.core.variable_body_fit import variable_axial_description
 from .input_documents import (load_face_build_spec, load_face_landmarks,
                               load_skin_path_mapping, load_skin_redistribution,
-                              load_surface_alignment)
+                              load_surface_alignment, load_reference_path_map)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -385,6 +385,8 @@ def parser() -> argparse.ArgumentParser:
         help="显式保留的原角色独立 DG 工具节点；每个节点各指定一次")
     original_replace.add_argument("--retained-graph-root", action="append", default=[],
         help="沿数据连接收集并保留同一原角色的独立 DG 工具节点")
+    original_replace.add_argument("--reference-map", type=Path,
+        help="旧引用节点与新资产路径、摘要的一一对应 JSON 文档")
     original_replace.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
     rebuild.add_argument("scene", type=Path)
@@ -669,6 +671,10 @@ def _run(args, gateway) -> dict:
         from adv_py.adapters import MayaOriginalSkinSpineMigrationHost
 
         gateway.preflight_output(args.output)
+        if args.reference_map is not None:
+            remapped = gateway.relocate_references(
+                load_reference_path_map(args.reference_map))
+            _emit("references_relocated", nodes=remapped)
         source_namespace = "" if args.namespace == ":" else args.namespace
         target_namespace = ("" if args.replacement_namespace == ":"
                             else args.replacement_namespace)

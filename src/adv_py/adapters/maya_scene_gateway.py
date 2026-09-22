@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import tempfile
+from hashlib import sha256
 
 
 class MayaSceneGateway:
@@ -31,6 +32,41 @@ class MayaSceneGateway:
         cmds.file(str(source), open=True, force=True)
         cmds.undoInfo(state=True)
         self._source = source
+
+    def relocate_references(self, rows: tuple[tuple[str, Path, Path, str], ...]
+                            ) -> tuple[str, ...]:
+        from maya import cmds
+
+        if self._source is None:
+            raise RuntimeError("尚未打开输入场景")
+        prepared = []
+        for node, expected, replacement, digest in rows:
+            if (node == "sharedReferenceNode"
+                    or (cmds.ls(node, type="reference") or []) != [node]):
+                raise ValueError("引用路径映射中的引用节点缺失：" + node)
+            current = cmds.referenceQuery(node, filename=True,
+                                          withoutCopyNumber=True)
+            if (os.path.normcase(os.path.normpath(str(Path(current).resolve())))
+                    != os.path.normcase(os.path.normpath(str(expected.resolve())))):
+                raise ValueError("引用路径与映射预期不一致：" + node)
+            target = replacement.resolve(strict=True)
+            if not target.is_file():
+                raise ValueError("引用新路径不是文件：" + str(target))
+            content = sha256()
+            with target.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    content.update(chunk)
+            if content.hexdigest() != digest:
+                raise ValueError("引用新文件摘要不匹配：" + node)
+            prepared.append((node, target))
+        for node, target in prepared:
+            cmds.file(str(target), loadReference=node)
+            current = cmds.referenceQuery(node, filename=True,
+                                          withoutCopyNumber=True)
+            if (not cmds.referenceQuery(node, isLoaded=True)
+                    or Path(current).resolve() != target):
+                raise RuntimeError("引用重定位后未加载到指定文件：" + node)
+        return tuple(node for node, _ in prepared)
 
     def namespaces(self) -> tuple[str | None, ...]:
         from maya import cmds
