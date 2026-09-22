@@ -88,7 +88,7 @@ def create_panel(controller: MayaPanelController | None = None):
             rail_layout = QtWidgets.QVBoxLayout(rail)
             rail_layout.setContentsMargins(18, 24, 14, 18)
             title = QtWidgets.QLabel("角色工作台", objectName="Title")
-            subtitle = QtWidgets.QLabel("Fit → 控制 → 蒙皮\n姿态 → 动画 → 面部", objectName="Subtitle")
+            subtitle = QtWidgets.QLabel("Fit → 控制 → 蒙皮\n姿态 → 动画\n面部 · 动捕 · 发布", objectName="Subtitle")
             subtitle.setWordWrap(True)
             rail_layout.addWidget(title)
             rail_layout.addWidget(subtitle)
