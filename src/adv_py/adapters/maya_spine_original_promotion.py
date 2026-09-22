@@ -7,6 +7,7 @@ from adv_py.core.character_registry import CharacterRegistryError
 
 from .maya_body import MayaBodyBuildHost
 from .maya_spine_skin_handoff import MayaSpineSkinHandoffHost
+from .maya_character_preservation import capture_extension
 
 
 def _uuid(cmds, node):
@@ -53,6 +54,19 @@ class OriginalSpineRetainedSkin:
 
 
 @dataclass(frozen=True, slots=True)
+class OriginalSpineExtensionMove:
+    uuid: str
+    old_path: str
+    target_parent: str
+    old_parent_uuid: str
+    target_parent_uuid: str
+    snapshot: object
+    member_uuids: tuple[str, ...]
+    member_snapshots: tuple[object, ...]
+    world_samples: tuple[tuple[float, tuple[float, ...]], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class OriginalSpinePromotionPlan:
     source_namespace: str
     target_namespace: str
@@ -62,6 +76,7 @@ class OriginalSpinePromotionPlan:
     deletion_uuids: tuple[str, ...]
     retained_uuids: tuple[str, ...]
     target_uuids: tuple[str, ...]
+    extension_uuids: tuple[str, ...] = ()
 
     @property
     def skin_name(self):
@@ -83,13 +98,172 @@ class OriginalSpinePromotionPlan:
 class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
     """Move a replacement Rig into the original namespace without touching Skin."""
 
+    def plan_original_spine_extensions(self, source_namespace,
+                                       target_namespace, extensions, frames=()):
+        from maya import cmds
+        source = MayaBodyBuildHost(namespace=source_namespace)
+        target = MayaBodyBuildHost(namespace=target_namespace)
+        source_reg = source.read_character_registration()
+        target_reg = target.read_character_registration()
+        old_roles = {row.path for row in source_reg.nodes}
+        new_roles = {row.path for row in target_reg.nodes}
+        moves = []
+        used = set()
+        current_time = cmds.currentTime(query=True)
+        for path in tuple(extensions):
+            matches = cmds.ls(path, long=True, type='transform') or []
+            if len(matches) != 1 or matches[0] != path:
+                raise CharacterRegistryError('附件须是唯一的完整 transform 路径：' + path)
+            if not CharacterIdentity(source_namespace).owns(path):
+                raise CharacterRegistryError('附件不属于原角色：' + path)
+            parent = (cmds.listRelatives(path, parent=True, fullPath=True) or [None])[0]
+            logical = CharacterIdentity(source_namespace).to_local(parent)
+            if logical not in old_roles or logical not in new_roles:
+                raise CharacterRegistryError('附件父控制在目标角色没有同一路径：' + str(parent))
+            target_parent = CharacterIdentity(target_namespace).to_scene(logical)
+            if not cmds.objExists(target_parent):
+                raise CharacterRegistryError('目标附件父控制缺失：' + target_parent)
+            source_matrix = cmds.xform(parent, query=True, worldSpace=True, matrix=True)
+            target_matrix = cmds.xform(target_parent, query=True,
+                                       worldSpace=True, matrix=True)
+            if max(abs(a-b) for a,b in zip(source_matrix,target_matrix)) > 1e-4:
+                raise CharacterRegistryError('附件父控制与目标在当前帧不重合：' + path)
+            members = (path, *(cmds.listRelatives(path, allDescendents=True,
+                                                  fullPath=True) or []))
+            member_uuids = tuple(_uuid(cmds, node) for node in members)
+            if used.intersection(member_uuids):
+                raise CharacterRegistryError('附件根相互嵌套或重复')
+            used.update(member_uuids)
+            snapshots = []
+            for node in members:
+                if (not CharacterIdentity(source_namespace).owns(node)
+                        or cmds.referenceQuery(node, isNodeReferenced=True)
+                        or any(cmds.lockNode(node, query=True, lock=True) or [])):
+                    raise CharacterRegistryError('附件子节点不可迁移：' + node)
+                inputs = cmds.listConnections(node, source=True,
+                                              destination=False, plugs=True) or []
+                if inputs:
+                    raise CharacterRegistryError('附件有既存输入连接，须专用迁移协议：'
+                                                 + node)
+                snapshots.append(capture_extension(self,node))
+            for attribute in ('translateX','translateY','translateZ',
+                              'rotateX','rotateY','rotateZ',
+                              'scaleX','scaleY','scaleZ'):
+                if cmds.listConnections(path + '.' + attribute,
+                                        source=True, destination=False):
+                    raise CharacterRegistryError('附件已有动画或驱动，须先提供专用迁移协议：'
+                                                 + path)
+            world_samples = []
+            try:
+                for frame in frames:
+                    cmds.currentTime(frame, edit=True)
+                    world_samples.append((float(frame),tuple(cmds.xform(
+                        path, query=True, worldSpace=True, matrix=True))))
+            finally:
+                cmds.currentTime(current_time, edit=True)
+            moves.append(OriginalSpineExtensionMove(_uuid(cmds,path),path,
+                target_parent,_uuid(cmds,parent),_uuid(cmds,target_parent),
+                snapshots[0],member_uuids,tuple(snapshots),
+                tuple(world_samples)))
+        # Explicit attachments cannot retain hidden connections to the old Rig.
+        old_uuids = {_uuid(cmds, source.scene_address(row.path))
+                     for row in source_reg.nodes}
+        for move in moves:
+            for uuid in move.member_uuids:
+                node = _name(cmds,uuid)
+                for plug in cmds.listConnections(node, source=True,
+                    destination=True, plugs=True) or []:
+                    if _plug_uuid(cmds,plug) in old_uuids:
+                        raise CharacterRegistryError('附件仍连接旧 Rig：' + node)
+        return tuple(moves)
+
+    def apply_original_spine_extensions(self, moves):
+        from maya import cmds
+        self._require_transaction()
+        for move in moves:
+            if (_name(cmds,move.uuid) != move.old_path
+                    or _uuid(cmds,move.target_parent) != move.target_parent_uuid
+                    or _uuid(cmds,move.old_path.rsplit('|',1)[0])
+                    != move.old_parent_uuid
+                    or capture_extension(self,move.old_path) != move.snapshot):
+                raise CharacterRegistryError('附件在迁移前发生变化：' + move.old_path)
+            self._transaction_changed = True
+            cmds.parent(move.old_path, move.target_parent, relative=True)
+            current = capture_extension(self,_name(cmds,move.uuid))
+            if (current.uuid != move.uuid
+                    or current.attributes != move.snapshot.attributes
+                    or current.matrix != move.snapshot.matrix):
+                raise RuntimeError('附件迁移改变属性或局部变换：' + move.old_path)
+            self.verify_promoted_spine_extensions((move,))
+
+    def bake_original_spine_extensions(self, moves):
+        from maya import cmds
+        self._require_transaction()
+        current_time = cmds.currentTime(query=True)
+        attributes = ('translateX','translateY','translateZ',
+                      'rotateX','rotateY','rotateZ',
+                      'scaleX','scaleY','scaleZ')
+        curves = []
+        try:
+            for move in moves:
+                node = _name(cmds,move.uuid)
+                for frame, matrix in move.world_samples:
+                    cmds.currentTime(frame, edit=True)
+                    self._transaction_changed = True
+                    cmds.xform(node, worldSpace=True, matrix=matrix)
+                    for attribute in attributes:
+                        cmds.setKeyframe(node, attribute=attribute, time=frame)
+                    actual = tuple(cmds.xform(node, query=True,
+                                              worldSpace=True, matrix=True))
+                    if max(abs(a-b) for a,b in zip(actual,matrix)) > 1e-4:
+                        raise RuntimeError('附件世界轨迹在采样帧无法复现：' + node)
+                for frame, matrix in move.world_samples:
+                    cmds.currentTime(frame, edit=True)
+                    actual = tuple(cmds.xform(node, query=True,
+                                              worldSpace=True, matrix=True))
+                    if max(abs(a-b) for a,b in zip(actual,matrix)) > 1e-4:
+                        raise RuntimeError('附件关键帧写入改变先前世界轨迹：' + node)
+                for attribute in attributes:
+                    drivers = cmds.listConnections(node + '.' + attribute,
+                        source=True, destination=False, type='animCurve') or []
+                    if len(drivers) != 1:
+                        raise RuntimeError('附件烘焙曲线缺失或歧义：' + node)
+                    curve = drivers[0]
+                    outputs = cmds.listConnections(curve + '.output',
+                        source=False, destination=True, plugs=True) or []
+                    if (len(outputs) != 1
+                            or _plug_uuid(cmds,outputs[0]) != move.uuid
+                            or outputs[0].rsplit('.',1)[-1] != attribute):
+                        raise RuntimeError('附件烘焙曲线被其他通道共享：' + curve)
+                    uuid = _uuid(cmds,curve)
+                    owner = node.rsplit('|',1)[-1].split(':',1)[0]
+                    cmds.rename(curve, ':' + owner + ':AdvPy_Extension_'
+                                + move.uuid[:8].replace('-','') + '_' + attribute)
+                    curves.append(uuid)
+        finally:
+            cmds.currentTime(current_time, edit=True)
+        return tuple(curves)
+
+    def verify_promoted_spine_extensions(self, moves):
+        from maya import cmds
+        for move in moves:
+            for uuid, snapshot in zip(move.member_uuids,
+                                      move.member_snapshots):
+                actual = capture_extension(self,_name(cmds,uuid))
+                if (actual.uuid != uuid or actual.node_type != snapshot.node_type
+                        or actual.attributes != snapshot.attributes
+                        or (uuid != move.uuid and actual.matrix != snapshot.matrix)):
+                    raise RuntimeError('附件子节点属性或局部变换变化：'
+                                       + snapshot.path)
+
     def plan_original_spine_promotion(self, source_namespace, target_namespace,
                                        skin_name, mesh_path):
         return self.plan_original_spine_promotion_many(source_namespace,
             target_namespace, ((skin_name, mesh_path),))
 
     def plan_original_spine_promotion_many(self, source_namespace,
-                                            target_namespace, skins):
+                                            target_namespace, skins,
+                                            extension_uuids=()):
         from maya import cmds
         skins = tuple(skins)
         if (not skins or len(skins) != len({row[0] for row in skins})
@@ -145,6 +319,18 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
             assets.append(OriginalSpineRetainedSkin(
                 skin_name, mesh_path, state, boundary))
         retained &= set(source_nodes)
+        extension_uuids = tuple(sorted(set(extension_uuids)))
+        for uuid in extension_uuids:
+            if uuid not in source_nodes:
+                raise CharacterRegistryError('附件 UUID 不在原角色命名空间：' + uuid)
+            node = source_nodes[uuid]
+            parent = (cmds.listRelatives(node, parent=True,
+                        fullPath=True) or [None])[0] if 'dagNode' in (
+                            cmds.nodeType(node, inherited=True) or []) else None
+            if parent and (CharacterIdentity(source_namespace).owns(parent)
+                           and _uuid(cmds,parent) not in extension_uuids):
+                raise CharacterRegistryError('附件尚未挂到目标 Rig：' + node)
+        retained.update(extension_uuids)
         deletion = set(source_nodes) - retained
         source_registered = {source.scene_address(row.path)
                              for row in source_reg.nodes}
@@ -209,14 +395,15 @@ class MayaOriginalSpinePromotionHost(MayaSpineSkinHandoffHost):
         return OriginalSpinePromotionPlan(source_namespace, target_namespace,
             source_reg, target_reg, tuple(assets),
             tuple(sorted(deletion)), tuple(sorted(retained)),
-            tuple(sorted(target_nodes)))
+            tuple(sorted(target_nodes)), extension_uuids)
 
     def apply_original_spine_promotion(self, plan):
         from maya import cmds
         self._require_transaction()
         current = self.plan_original_spine_promotion_many(
             plan.source_namespace, plan.target_namespace,
-            ((asset.skin_name, asset.mesh_path) for asset in plan.assets))
+            ((asset.skin_name, asset.mesh_path) for asset in plan.assets),
+            plan.extension_uuids)
         if current != plan:
             raise CharacterRegistryError('原位接管输入在写入前发生变化')
         self._transaction_changed = True

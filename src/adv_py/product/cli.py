@@ -373,6 +373,7 @@ def parser() -> argparse.ArgumentParser:
     original_replace.add_argument("--end", type=int, required=True)
     original_replace.add_argument("--step", type=int, default=1)
     original_replace.add_argument("--reference", type=float)
+    original_replace.add_argument("--extension", action="append", default=[])
     original_replace.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
     rebuild.add_argument("scene", type=Path)
@@ -666,7 +667,8 @@ def _run(args, gateway) -> dict:
             MayaOriginalSkinSpineMigrationHost(namespace=target_namespace)).apply_many(
                 source_namespace, target_namespace, tuple(zip(args.skin, args.mesh)),
                 start_frame=args.start, end_frame=args.end,
-                sample_by=args.step, reference_frame=args.reference)
+                sample_by=args.step, reference_frame=args.reference,
+                extensions=tuple(args.extension))
         _emit("character_spine_replaced", frames=result.frames,
               groups=result.fk_groups, vertices=result.vertices,
               removed=result.old_nodes_removed, skins=result.skin_count)

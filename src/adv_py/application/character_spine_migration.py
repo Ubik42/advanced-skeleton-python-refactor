@@ -145,7 +145,7 @@ class ReplaceRegisteredSpineCharacter:
 
     def apply_many(self, source_namespace, target_namespace, skins,
                    *, start_frame, end_frame, sample_by=1,
-                   reference_frame=None):
+                   reference_frame=None, extensions=()):
         host = self._host
         if host.namespace != target_namespace:
             raise CharacterRegistryError('目标动画宿主与目标角色命名空间不一致')
@@ -154,6 +154,12 @@ class ReplaceRegisteredSpineCharacter:
                 or len(skins) != len({row[1] for row in skins})):
             raise CharacterRegistryError('角色替换需要非空且唯一的 Skin／网格清单')
         global_host = host.original_skin_handoff_host()
+        from .mocap_control_retarget import character_sample_frames
+        sampled = character_sample_frames(start_frame, end_frame, sample_by)
+        extension_frames = tuple(sorted({*sampled,
+            *((a+b)/2 for a,b in zip(sampled,sampled[1:]))}))
+        extension_moves = global_host.plan_original_spine_extensions(
+            source_namespace, target_namespace, extensions, extension_frames)
         handoff = HandoffRegisteredSpineSkinCluster(global_host)
         plans = tuple(handoff.plan(source_namespace, target_namespace,
                                    skin_name, mesh_path)
@@ -176,9 +182,15 @@ class ReplaceRegisteredSpineCharacter:
                     source_namespace, start_frame=start_frame,
                     end_frame=end_frame, sample_by=sample_by,
                     reference_frame=reference_frame)
+                global_host.apply_original_spine_extensions(extension_moves)
+                attachment_curves = global_host.bake_original_spine_extensions(
+                    extension_moves)
                 promotion = global_host.plan_original_spine_promotion_many(
-                    source_namespace, target_namespace, skins)
+                    source_namespace, target_namespace, skins,
+                    (*attachment_curves, *(uuid for move in extension_moves
+                                           for uuid in move.member_uuids)))
                 global_host.apply_original_spine_promotion(promotion)
+                global_host.verify_promoted_spine_extensions(extension_moves)
             finally:
                 global_host._transaction_active = False
         return ReplacedSpineCharacterResult(len(roots), len(groups),
