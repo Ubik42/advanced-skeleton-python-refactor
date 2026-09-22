@@ -4,7 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from adv_py.core.character_registry import safe_json
-from adv_py.core import FaceLandmark, FaceShapeKind, FaceTarget
+from adv_py.core import (FaceLandmark, FaceShapeKind, FaceTarget,
+                         FaceSurfaceAlignment)
 from adv_py.core.skin_weight_io import (SkinWeightPathMapping,
     SkinWeightInfluenceMapping)
 
@@ -26,6 +27,19 @@ def load_skin_path_mapping(path: Path) -> SkinWeightPathMapping:
         rows.append(SkinWeightInfluenceMapping(entry["source"], entry["target"]))
     return SkinWeightPathMapping(document["target_skin"],
                                  document["target_mesh"], tuple(rows))
+
+
+def load_surface_alignment(path: Path) -> FaceSurfaceAlignment:
+    source = Path(path).expanduser()
+    if source.stat().st_size > 4096:
+        raise ValueError("刚体对齐文档超过 4 KB")
+    spec = safe_json(source.read_text(encoding="utf-8"), max_bytes=4096)
+    if (not isinstance(spec, dict)
+            or set(spec) != {"pairs", "max_residual"}
+            or not isinstance(spec["pairs"], list)):
+        raise ValueError("刚体对齐文档须包含 pairs 和 max_residual")
+    return FaceSurfaceAlignment(tuple(tuple(row) if isinstance(row, list) else row
+                                     for row in spec["pairs"]), spec["max_residual"])
 
 
 def _face_document(path: Path) -> dict:

@@ -29,12 +29,11 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     save_face_target_asset)
 from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
                          BodyFbxExportProfile, BodyFbxFileVersion,
-                         FaceLandmark, FaceShapeKind, FaceTarget, FaceSurfaceAlignment,
+                         FaceLandmark, FaceShapeKind, FaceTarget,
                          face_performance_from_json)
-from adv_py.core.character_registry import safe_json
 from adv_py.core.variable_body_fit import variable_axial_description
 from .input_documents import (load_face_build_spec, load_face_landmarks,
-                              load_skin_path_mapping)
+                              load_skin_path_mapping, load_surface_alignment)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -263,21 +262,6 @@ def _read_text(path: Path, limit: int = 8_000_000) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _surface_alignment(path: Path | None) -> FaceSurfaceAlignment | None:
-    if path is None:
-        return None
-    if path.stat().st_size > 4096:
-        raise ValueError("刚体对齐文档超过 4 KB")
-    spec = safe_json(path.read_text(encoding="utf-8"), max_bytes=4096)
-    if (not isinstance(spec, dict)
-            or set(spec) != {"pairs", "max_residual"}
-            or not isinstance(spec["pairs"], list)):
-        raise ValueError("刚体对齐文档须包含 pairs 和 max_residual")
-    return FaceSurfaceAlignment(
-        tuple(tuple(row) if isinstance(row, list) else row
-              for row in spec["pairs"]), spec["max_residual"])
-
-
 def _landmarks(path: Path) -> tuple[FaceLandmark, ...]:
     return load_face_landmarks(path)
 
@@ -481,7 +465,7 @@ def _run(args, gateway) -> dict:
             raise ValueError("转移资产输出须为尚不存在的 .json 文件")
         output.parent.mkdir(parents=True, exist_ok=True)
         source = load_face_target_asset(args.asset)
-        alignment = _surface_alignment(args.alignment)
+        alignment = load_surface_alignment(args.alignment) if args.alignment else None
         service = TransferFaceTargetAsset(host)
         plan = (service.execute_from_geometry(
             load_face_neutral_geometry(args.source_geometry),
@@ -543,7 +527,7 @@ def _run(args, gateway) -> dict:
                 "changed_vertices": imported.edit_result.changed_vertex_count}
     if args.command == "skin-surface-transfer":
         mapping = load_skin_path_mapping(args.mapping) if args.mapping else None
-        alignment = _surface_alignment(args.alignment)
+        alignment = load_surface_alignment(args.alignment) if args.alignment else None
         operation = TransferSkinWeightsBySurface(host)
         if args.source_asset:
             if args.source_mesh:

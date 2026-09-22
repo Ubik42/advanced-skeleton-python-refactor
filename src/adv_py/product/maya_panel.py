@@ -70,7 +70,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
                     height: 0; }
                 QTabBar::tab { background: #1D2936; color: #B8C7D7;
-                    padding: 10px 18px; margin-right: 2px; }
+                    padding: 10px 10px; margin-right: 2px; }
                 QTabBar::tab:selected { background: #334960; color: #FFFFFF;
                     border-bottom: 3px solid #F3BE6E; }
                 QListWidget { background: transparent; border: none; color: #D5E0EA; }
@@ -243,8 +243,67 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("导出全部权重", self._export_skin))
             form.addRow(self._button("导入并复核权重", self._import_skin))
             stack.addWidget(group)
+
+            self.surface_source_skin = QtWidgets.QLineEdit()
+            self.surface_source_skin.setPlaceholderText("SourceSkin")
+            self.surface_source_skin.setToolTip("导出源资产时使用；选择当前场景源网格时也作为转移来源")
+            self.surface_source_mesh = QtWidgets.QLineEdit()
+            self.surface_source_mesh.setPlaceholderText("|SourceMesh")
+            self.surface_source_mesh.setToolTip("导出源资产时使用；选择当前场景源网格时也作为转移来源")
+            asset_out, self.surface_asset_out = self._file_field(
+                "导出蒙皮源资产", save=True)
+            group, form = self._group("03 · 跨场景源资产", [
+                ("源 Skin", self.surface_source_skin),
+                ("源网格", self.surface_source_mesh),
+                ("保存资产", asset_out)])
+            form.addRow(self._button("导出网格与权重", self._export_skin_surface_source))
+            stack.addWidget(group)
+
+            self.surface_mode = QtWidgets.QComboBox()
+            self.surface_mode.addItem("当前场景源网格", "scene")
+            self.surface_mode.addItem("跨场景源资产", "asset")
+            asset_in, self.surface_asset_in = self._file_field("读取蒙皮源资产")
+            self.surface_target_skin = QtWidgets.QLineEdit()
+            self.surface_target_skin.setPlaceholderText("TargetSkin")
+            self.surface_target_mesh = QtWidgets.QLineEdit()
+            self.surface_target_mesh.setPlaceholderText("|TargetMesh")
+            surface_mapping, self.surface_mapping = self._file_field("关节路径映射")
+            surface_alignment, self.surface_alignment = self._file_field("三点刚体对齐")
+            self.surface_distance = QtWidgets.QDoubleSpinBox()
+            self.surface_distance.setRange(0., 1_000_000.)
+            self.surface_distance.setDecimals(6)
+            self.surface_distance.setSingleStep(.01)
+            self.surface_distance.setValue(.01)
+            self.surface_distance.setToolTip("目标顶点到源表面的最大允许距离，单位与场景一致")
+            self.surface_discard = QtWidgets.QDoubleSpinBox()
+            self.surface_discard.setRange(0., .999999)
+            self.surface_discard.setDecimals(6)
+            self.surface_discard.setSingleStep(.01)
+            self.surface_discard.setToolTip("超过目标最大影响数时，允许裁掉的单顶点权重总量")
+            self.surface_extra = QtWidgets.QCheckBox("允许目标多出关节，并清零其目标权重")
+            self.surface_missing = QtWidgets.QCheckBox("映射可省略源中的零权重关节")
+            group, form = self._group("04 · 跨拓扑权重转移", [
+                ("来源方式", self.surface_mode),
+                ("源资产", asset_in),
+                ("目标 Skin", self.surface_target_skin),
+                ("目标网格", self.surface_target_mesh),
+                ("关节映射", surface_mapping),
+                ("刚体对齐", surface_alignment),
+                ("最大表面距离", self.surface_distance),
+                ("最大裁剪损失", self.surface_discard),
+                ("目标关节策略", self.surface_extra),
+                ("源关节策略", self.surface_missing)])
+            form.addRow(self._button("预检并转移权重", self._transfer_skin_surface,
+                                      primary=True))
+            stack.addWidget(group)
+            self.surface_mode.currentIndexChanged.connect(self._surface_mode_changed)
+            self._surface_mode_changed()
             stack.addStretch(1)
             return page
+
+        def _surface_mode_changed(self):
+            scene_source = self.surface_mode.currentData() == "scene"
+            self.surface_asset_in.setEnabled(not scene_source)
 
         def _animation_page(self):
             page, stack = self._page()
@@ -510,6 +569,33 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.skin.text().strip(), self.mesh.text().strip(),
                 self._path(self.weights_export_document))
             return f"已导出 {count} 个顶点的权重"
+
+        def _export_skin_surface_source(self):
+            count = self.controller.skin_surface_source_export(self._namespace(),
+                self.surface_source_skin.text().strip(),
+                self.surface_source_mesh.text().strip(),
+                self._path(self.surface_asset_out))
+            return f"已封装 {count} 个顶点的网格与权重"
+
+        def _transfer_skin_surface(self):
+            asset_mode = self.surface_mode.currentData() == "asset"
+            mapping = self.surface_mapping.text().strip()
+            alignment = self.surface_alignment.text().strip()
+            result = self.controller.skin_surface_transfer(self._namespace(),
+                self.surface_target_skin.text().strip(),
+                self.surface_target_mesh.text().strip(),
+                self.surface_distance.value(),
+                source_asset=self._path(self.surface_asset_in) if asset_mode else None,
+                source_skin="" if asset_mode else self.surface_source_skin.text().strip(),
+                source_mesh="" if asset_mode else self.surface_source_mesh.text().strip(),
+                mapping_file=Path(mapping) if mapping else None,
+                alignment_file=Path(alignment) if alignment else None,
+                max_discarded_weight=self.surface_discard.value(),
+                allow_target_extra_influences=self.surface_extra.isChecked(),
+                allow_unweighted_missing=self.surface_missing.isChecked())
+            return (f"已转移 {result.vertices} 个顶点的权重；"
+                    f"{result.changed_vertices} 个顶点发生变化，"
+                    f"最大表面距离 {result.max_surface_distance:.6g}")
 
         def _capture_pose(self):
             count = self.controller.pose_capture(self._namespace(),

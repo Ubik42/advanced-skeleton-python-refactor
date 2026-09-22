@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from PySide2 import QtCore, QtGui, QtWidgets
 from adv_py.product.maya_panel import create_panel
-from adv_py.product.maya_panel_controller import PanelCharacter
+from adv_py.product.maya_panel_controller import PanelCharacter, PanelSkinSurfaceResult
 
 
 class FakeController:
@@ -43,6 +43,17 @@ class FakeController:
             progress("暂存替换角色并核对需保留的数据")
         return PanelCharacter(namespace, True, 30, 157)
 
+    def skin_surface_source_export(self, namespace, skin, mesh, destination):
+        self.calls.append(("skin_surface_source_export", namespace, skin, mesh,
+                           destination.name))
+        return 4
+
+    def skin_surface_transfer(self, namespace, target_skin, target_mesh,
+                              max_distance, **options):
+        self.calls.append(("skin_surface_transfer", namespace, target_skin,
+                           target_mesh, max_distance, options))
+        return PanelSkinSurfaceResult(9, 7, 0., 0.)
+
 
 def main(report: Path) -> int:
     report.parent.mkdir(parents=True, exist_ok=True)
@@ -56,6 +67,8 @@ def main(report: Path) -> int:
     app.processEvents()
     fit_image = report.with_name("maya-panel-fit.png")
     skin_image = report.with_name("maya-panel-skin.png")
+    skin_transfer_image = report.with_name("maya-panel-skin-transfer.png")
+    skin_narrow_image = report.with_name("maya-panel-skin-transfer-narrow.png")
     animation_image = report.with_name("maya-panel-animation.png")
     face_image = report.with_name("maya-panel-face.png")
     face_library_image = report.with_name("maya-panel-face-library.png")
@@ -69,6 +82,34 @@ def main(report: Path) -> int:
     app.processEvents()
     panel.render(pixmap)
     skin_saved = pixmap.save(str(skin_image))
+    panel.roles.setCurrentRow(1)
+    panel.surface_source_skin.setText("SourceSkin")
+    panel.surface_source_mesh.setText("|SourceMesh")
+    panel.surface_asset_out.setText("C:/temp/source-asset.json")
+    skin_buttons = {button.text(): button for button in
+                    panel.findChildren(QtWidgets.QPushButton)}
+    skin_buttons["导出网格与权重"].click()
+    panel.surface_mode.setCurrentIndex(1)
+    panel.surface_asset_in.setText("C:/temp/source-asset.json")
+    panel.surface_target_skin.setText("TargetSkin")
+    panel.surface_target_mesh.setText("|TargetMesh")
+    panel.surface_distance.setValue(.01)
+    panel.surface_extra.setChecked(True)
+    skin_buttons["预检并转移权重"].click()
+    surface_dispatch = next((call for call in controller.calls
+        if isinstance(call, tuple) and call[0] == "skin_surface_transfer"), None)
+    skin_page = panel.tabs.currentWidget()
+    skin_page.verticalScrollBar().setValue(skin_page.verticalScrollBar().maximum())
+    app.processEvents()
+    panel.render(pixmap)
+    skin_transfer_saved = pixmap.save(str(skin_transfer_image))
+    panel.resize(790, 590)
+    app.processEvents()
+    narrow_pixmap = QtGui.QPixmap(panel.size())
+    panel.render(narrow_pixmap)
+    skin_narrow_saved = narrow_pixmap.save(str(skin_narrow_image))
+    panel.resize(950, 710)
+    app.processEvents()
     panel.tabs.setCurrentIndex(2)
     app.processEvents()
     panel.render(pixmap)
@@ -117,6 +158,12 @@ def main(report: Path) -> int:
             for i in range(panel.tabs.count())]
             == ["Fit 与构建", "蒙皮", "姿态与动画", "面部", "动捕", "发布"],
         "euler_filter_option_visible": panel.fbx_euler_filter.isChecked(),
+        "surface_source_export_dispatches": ("skin_surface_source_export",
+            "hero", "SourceSkin", "|SourceMesh", "source-asset.json") in controller.calls,
+        "surface_transfer_dispatches_asset": bool(surface_dispatch
+            and surface_dispatch[1:5] == ("hero", "TargetSkin", "|TargetMesh", .01)
+            and surface_dispatch[5]["source_asset"] == Path("C:/temp/source-asset.json")
+            and surface_dispatch[5]["allow_target_extra_influences"]),
         "face_build_dispatches_application_action": face_dispatched,
         "role_selection_dispatches_application_action":
             ("body_build", "hero", "FitSkeleton", None, False)
@@ -128,7 +175,8 @@ def main(report: Path) -> int:
             and "157 通道" in panel.current.text(),
         "success_feedback_visible": "角色已原位重建" in panel.status.toPlainText(),
         "offscreen_views_rendered": fit_saved and rebuild_saved
-            and skin_saved and animation_saved
+            and skin_saved and skin_transfer_saved and skin_narrow_saved
+            and animation_saved
             and face_saved and face_library_saved and mocap_saved and publish_saved,
     }
     payload = {**checks, "status": "passed" if all(checks.values()) else "failed",

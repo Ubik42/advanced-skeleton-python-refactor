@@ -14,6 +14,8 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     CreateAndImportFitSkeleton, ExportFitSkeleton, ExportSkinWeights,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget, ImportFaceTargetAsset,
     FaceAssetLibrary, ImportSkinWeights, InspectBodyCharacterPresets,
+    CaptureSkinWeightSurfaceSource, TransferSkinWeightsBySurface,
+    load_skin_weight_surface_source, save_skin_weight_surface_source,
     RebuildBodyCharacter, ResolveBodyCharacter,
     ImportMocapFbx, RetargetMocapFullFkToCharacter,
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
@@ -26,7 +28,7 @@ from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
 from adv_py.core.variable_body_fit import variable_axial_description
 
 from .input_documents import (load_face_build_spec, load_face_landmarks,
-                              load_skin_path_mapping)
+                              load_skin_path_mapping, load_surface_alignment)
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +54,14 @@ class PanelMocapResult:
     source_joints: int
     frames: int
     source_root: str
+
+
+@dataclass(frozen=True, slots=True)
+class PanelSkinSurfaceResult:
+    vertices: int
+    changed_vertices: int
+    max_surface_distance: float
+    max_discarded_weight: float
 
 
 class MayaPanelController:
@@ -144,6 +154,51 @@ class MayaPanelController:
             mapping=mapping,
             allow_unweighted_missing=allow_unweighted_missing)
         return result.edit_result.changed_vertex_count
+
+    def skin_surface_source_export(self, namespace: str, skin: str,
+                                   mesh: str, destination: Path) -> int:
+        source = CaptureSkinWeightSurfaceSource(self._host(namespace)).execute(skin, mesh)
+        save_skin_weight_surface_source(source, destination)
+        return source.weights.vertex_count
+
+    def skin_surface_transfer(self, namespace: str, target_skin: str,
+                              target_mesh: str, max_distance: float, *,
+                              source_asset: Path | None = None,
+                              source_skin: str = "", source_mesh: str = "",
+                              mapping_file: Path | None = None,
+                              alignment_file: Path | None = None,
+                              max_discarded_weight: float = 0.,
+                              allow_target_extra_influences: bool = False,
+                              allow_unweighted_missing: bool = False
+                              ) -> PanelSkinSurfaceResult:
+        mapping = load_skin_path_mapping(mapping_file) if mapping_file else None
+        alignment = load_surface_alignment(alignment_file) if alignment_file else None
+        service = TransferSkinWeightsBySurface(self._host(namespace))
+        if source_asset:
+            if source_skin or source_mesh:
+                raise ValueError("使用源资产时请清空场景源 Skin 和网格路径")
+            source = load_skin_weight_surface_source(source_asset)
+            plan, edited = service.apply_from_documents(source.weights,
+                source.geometry, target_skin, target_mesh,
+                max_distance=max_distance,
+                max_discarded_weight=max_discarded_weight,
+                mapping=mapping, alignment=alignment,
+                allow_target_extra_influences=allow_target_extra_influences,
+                allow_unweighted_missing=allow_unweighted_missing)
+            transfer = plan.transfer
+        else:
+            if not source_skin or not source_mesh:
+                raise ValueError("场景内转移需要源 Skin 和源网格路径")
+            result = service.apply(source_skin, source_mesh,
+                target_skin, target_mesh, max_distance=max_distance,
+                max_discarded_weight=max_discarded_weight,
+                mapping=mapping, alignment=alignment,
+                allow_target_extra_influences=allow_target_extra_influences,
+                allow_unweighted_missing=allow_unweighted_missing)
+            transfer, edited = result.plan.transfer, result.edit_result
+        return PanelSkinSurfaceResult(transfer.document.vertex_count,
+            edited.changed_vertex_count, transfer.max_surface_distance,
+            transfer.max_discarded_weight)
 
     def pose_capture(self, namespace: str, destination: Path) -> int:
         pose = CaptureBodyCharacterPose(self._host(namespace)).execute()
