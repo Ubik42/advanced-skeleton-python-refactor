@@ -16,6 +16,8 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     BindSkin,
     FaceAssetLibrary, ImportFaceTargetAsset, ExportSkinWeights, ImportSkinWeights,
     TransferSkinWeightsBySurface,
+    CaptureSkinWeightSurfaceSource, save_skin_weight_surface_source,
+    load_skin_weight_surface_source,
     ImportMocapFbx, RetargetMocapFullFkToCharacter,
     RetargetMocapFullLimbIkToCharacter, RetargetMocapFullIkToCharacter,
     load_mocap_mapping_preset,
@@ -184,12 +186,21 @@ def parser() -> argparse.ArgumentParser:
         help="显式目标网格、Skin 和影响关节路径映射文档")
     skin_import.add_argument("--allow-unweighted-missing", action="store_true")
     skin_import.add_argument("--output", type=Path, required=True)
+    skin_source = commands.add_parser("skin-surface-source-export",
+        help="在同一场景快照中封装源网格几何和完整权重")
+    skin_source.add_argument("scene", type=Path)
+    skin_source.add_argument("--namespace", required=True)
+    skin_source.add_argument("--skin", required=True)
+    skin_source.add_argument("--mesh", required=True)
+    skin_source.add_argument("--output", type=Path, required=True)
     skin_surface = commands.add_parser("skin-surface-transfer",
         help="按源网格表面投影，将完整权重转移到不同拓扑的目标网格")
     skin_surface.add_argument("scene", type=Path)
     skin_surface.add_argument("--namespace", required=True)
-    skin_surface.add_argument("--source-skin", required=True)
-    skin_surface.add_argument("--source-mesh", required=True)
+    surface_input = skin_surface.add_mutually_exclusive_group(required=True)
+    surface_input.add_argument("--source-skin")
+    surface_input.add_argument("--source-asset", type=Path)
+    skin_surface.add_argument("--source-mesh")
     skin_surface.add_argument("--target-skin", required=True)
     skin_surface.add_argument("--target-mesh", required=True)
     skin_surface.add_argument("--mapping", type=Path)
@@ -347,6 +358,13 @@ def _run(args, gateway) -> dict:
         return {"status": "ok", "output": str(exported.plan.destination),
                 "vertices": exported.plan.document.vertex_count,
                 "bytes": exported.bytes_written}
+    if args.command == "skin-surface-source-export":
+        source = CaptureSkinWeightSurfaceSource(host).execute(args.skin, args.mesh)
+        saved = save_skin_weight_surface_source(source, args.output)
+        _emit("skin_surface_source_exported", vertices=source.weights.vertex_count)
+        return {"status": "ok", "output": str(saved),
+                "vertices": source.weights.vertex_count,
+                "triangles": len(source.geometry.triangles)}
     if args.command == "fbx-publish":
         destination = args.output.resolve()
         if destination.suffix.lower() != ".fbx" or not destination.parent.is_dir():
@@ -516,20 +534,33 @@ def _run(args, gateway) -> dict:
                 "changed_vertices": imported.edit_result.changed_vertex_count}
     if args.command == "skin-surface-transfer":
         mapping = load_skin_path_mapping(args.mapping) if args.mapping else None
-        result = TransferSkinWeightsBySurface(host).apply(
-            args.source_skin, args.source_mesh, args.target_skin, args.target_mesh,
-            max_distance=args.max_distance,
-            max_discarded_weight=args.max_discarded_weight, mapping=mapping)
+        operation = TransferSkinWeightsBySurface(host)
+        if args.source_asset:
+            if args.source_mesh:
+                raise ValueError("使用源资产时不得同时指定源网格")
+            source = load_skin_weight_surface_source(args.source_asset)
+            plan, edit = operation.apply_from_documents(source.weights,
+                source.geometry, args.target_skin, args.target_mesh,
+                max_distance=args.max_distance,
+                max_discarded_weight=args.max_discarded_weight, mapping=mapping)
+            transfer = plan.transfer
+        else:
+            if not args.source_mesh:
+                raise ValueError("场景内转移须提供源网格路径")
+            result = operation.apply(args.source_skin, args.source_mesh,
+                args.target_skin, args.target_mesh, max_distance=args.max_distance,
+                max_discarded_weight=args.max_discarded_weight, mapping=mapping)
+            transfer, edit = result.plan.transfer, result.edit_result
         _emit("skin_surface_transferred",
-              vertices=result.plan.transfer.document.vertex_count,
-              changed_vertices=result.edit_result.changed_vertex_count)
+              vertices=transfer.document.vertex_count,
+              changed_vertices=edit.changed_vertex_count)
         output = gateway.save_new(args.output)
         _emit("scene_saved", scene=str(output))
         return {"status": "ok", "output": str(output),
-                "vertices": result.plan.transfer.document.vertex_count,
-                "changed_vertices": result.edit_result.changed_vertex_count,
-                "max_surface_distance": result.plan.transfer.max_surface_distance,
-                "max_discarded_weight": result.plan.transfer.max_discarded_weight}
+                "vertices": transfer.document.vertex_count,
+                "changed_vertices": edit.changed_vertex_count,
+                "max_surface_distance": transfer.max_surface_distance,
+                "max_discarded_weight": transfer.max_discarded_weight}
     if args.command == "face-asset-import":
         asset = load_face_target_asset(args.asset)
         imported = ImportFaceTargetAsset(host).apply(args.neutral, asset,

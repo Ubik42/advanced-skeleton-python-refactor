@@ -696,6 +696,8 @@ from .face_surface_transfer import (FaceSurfaceAlignment, FaceSurfaceTransferRes
     transfer_face_target_asset)
 from .skin_weight_surface_transfer import (SkinWeightSurfaceTransferResult,
     transfer_skin_weights_by_surface)
+from .skin_weight_surface_source import (SkinWeightSurfaceSource,
+    skin_weight_surface_source_to_json, skin_weight_surface_source_from_json)
 from .face_neutral_geometry import (FaceNeutralGeometry,
     face_neutral_geometry_to_json, face_neutral_geometry_from_json)
 

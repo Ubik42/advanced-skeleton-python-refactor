@@ -1,10 +1,14 @@
 """Cross-topology interpolation and refusal boundaries."""
 from dataclasses import replace
+import json
 import unittest
 
 from adv_py.core import (FaceMeshSnapshot, SkinInfluenceWeight,
     SkinVertexWeights, SkinWeightInputState, SkinWeightValidationError,
     skin_weight_document_from_state, transfer_skin_weights_by_surface)
+from adv_py.core.face_neutral_geometry import FaceNeutralGeometry
+from adv_py.core.skin_weight_surface_source import (SkinWeightSurfaceSource,
+    skin_weight_surface_source_from_json, skin_weight_surface_source_to_json)
 
 
 class SkinWeightSurfaceTests(unittest.TestCase):
@@ -49,6 +53,22 @@ class SkinWeightSurfaceTests(unittest.TestCase):
         self.assertAlmostEqual(result.max_discarded_weight, .25)
         self.assertEqual(result.document.vertices[3].weights,
                          (SkinInfluenceWeight("|A", 1.),))
+
+    def test_portable_source_binds_geometry_and_weights(self):
+        source = SkinWeightSurfaceSource(self.source,
+            FaceNeutralGeometry(self.source_mesh, ((0, 1, 2),), "y", "cm"))
+        text = skin_weight_surface_source_to_json(source)
+        self.assertEqual(skin_weight_surface_source_from_json(text), source)
+        damaged = json.loads(text)
+        damaged["payload"]["geometry"]["payload"]["points"][0][0] = 99.
+        with self.assertRaisesRegex(ValueError, "摘要"):
+            skin_weight_surface_source_from_json(json.dumps(damaged))
+        with self.assertRaisesRegex(ValueError, "重复字段"):
+            skin_weight_surface_source_from_json(text.replace(
+                '"version": 1\n}', '"version": 1, "version": 1\n}', 1))
+        with self.assertRaisesRegex(ValueError, "同一网格"):
+            SkinWeightSurfaceSource(self.source, FaceNeutralGeometry(
+                replace(self.source_mesh, path="|Other"), ((0, 1, 2),), "y", "cm"))
 
 
 if __name__ == "__main__":
