@@ -30,6 +30,7 @@ def transfer_skin_weights_by_surface(
     max_distance: float,
     max_discarded_weight: float = 0.0,
     alignment: FaceSurfaceAlignment | None = None,
+    allow_target_extra_influences: bool = False,
 ) -> SkinWeightSurfaceTransferResult:
     """Build a complete target document without modifying either mesh."""
     skin_weight_document_to_json(source)
@@ -40,7 +41,13 @@ def transfer_skin_weights_by_surface(
         raise SkinWeightValidationError("目标 skinCluster 与目标网格快照不匹配")
     if not target_state.skin_name or not target_state.influence_paths:
         raise SkinWeightValidationError("目标 skinCluster 或 influence 集合无效")
-    if set(source.influence_paths) != set(target_state.influence_paths):
+    if not isinstance(allow_target_extra_influences, bool):
+        raise SkinWeightValidationError("额外目标关节策略必须是布尔值")
+    source_influences = set(source.influence_paths)
+    target_influences = set(target_state.influence_paths)
+    if (not source_influences.issubset(target_influences)
+            or (not allow_target_extra_influences
+                and source_influences != target_influences)):
         raise SkinWeightValidationError("源权重与目标 skinCluster 的 influence 集合不同")
     if target_state.locked_influences:
         raise SkinWeightValidationError("目标 skinCluster 有锁定的 influence")

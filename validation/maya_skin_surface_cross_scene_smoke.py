@@ -107,6 +107,20 @@ def run(mode: str, directory: Path) -> int:
             payload = {"source_mesh_absent": not cmds.objExists("SourceMesh"),
                        "target_vertices": len(host.capture_face_mesh(mesh).points),
                        "alignment_pairs": pairs}
+        elif mode == "target_extra":
+            cmds.select(clear=True)
+            extra = cmds.joint(name="SurfaceJointExtra", position=(0., 0., 1.))
+            extra = (cmds.ls(extra, long=True) or [extra])[0]
+            mesh = cmds.polyPlane(name="TargetMesh", width=2., height=2.,
+                subdivisionsX=2, subdivisionsY=2, constructionHistory=False)[0]
+            mesh = (cmds.ls(mesh, long=True) or [mesh])[0]
+            cmds.skinCluster(*influences, extra, mesh, name="TargetSkin",
+                maximumInfluences=3, toSelectedBones=True)
+            cmds.file(rename=str(directory / "target_before_extra.ma"))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            payload = {"target_vertices": len(host.capture_face_mesh(mesh).points),
+                       "target_influences": len(host.capture_all_skin_weights(
+                           "TargetSkin", mesh).influence_paths)}
         elif mode == "inspect":
             scene_name = sys.argv[3] if len(sys.argv) > 3 else "transferred.ma"
             cmds.file(directory / scene_name,
@@ -124,6 +138,10 @@ def run(mode: str, directory: Path) -> int:
                 "center_interpolated": all(abs(center_weights.get(joint, 0.) - .5) < 1e-6
                                            for joint in influences),
                 "source_mesh_absent": not cmds.objExists("SourceMesh")}
+            if "extra" in scene_name:
+                payload["extra_zero"] = all(
+                    all(entry.influence_path != "|SurfaceJointExtra"
+                        for entry in vertex.weights) for vertex in state.vertices)
         else:
             raise ValueError(mode)
         (directory / (mode + ".json")).write_text(
@@ -136,8 +154,11 @@ def run(mode: str, directory: Path) -> int:
                 payload["undo_restored"], payload["redo_restored"])) else 1
         if mode == "target_aligned":
             return 0 if payload["source_mesh_absent"] and payload["target_vertices"] == 9 else 1
+        if mode == "target_extra":
+            return 0 if payload["target_vertices"] == 9 and payload["target_influences"] == 3 else 1
         return 0 if all((payload["reopened_vertices"] == 9,
-            payload["center_interpolated"], payload["source_mesh_absent"])) else 1
+            payload["center_interpolated"], payload["source_mesh_absent"],
+            payload.get("extra_zero", True))) else 1
     finally:
         maya.standalone.uninitialize()
 

@@ -69,7 +69,9 @@ class TransferSkinWeightsBySurface:
              target_mesh: str, *, max_distance: float,
              max_discarded_weight: float = 0.0,
              mapping: SkinWeightPathMapping | None = None,
-             alignment: FaceSurfaceAlignment | None = None) -> SkinWeightSurfacePlan:
+             alignment: FaceSurfaceAlignment | None = None,
+             allow_target_extra_influences: bool = False,
+             allow_unweighted_missing: bool = False) -> SkinWeightSurfacePlan:
         if source_mesh == target_mesh or source_skin == target_skin:
             raise FitSkeletonValidationError("表面权重转移需要不同的源和目标 skinCluster/mesh")
         source_state = self._host.capture_all_skin_weights(source_skin, source_mesh)
@@ -81,10 +83,14 @@ class TransferSkinWeightsBySurface:
         if mapping is not None:
             if mapping.target_skin_name != target_skin or mapping.target_mesh_path != target_mesh:
                 raise FitSkeletonValidationError("权重路径映射与目标 skinCluster/mesh 不一致")
-            document = remap_skin_weight_document(document, mapping)
+            document = remap_skin_weight_document(document, mapping,
+                allow_unweighted_missing=allow_unweighted_missing)
+        elif allow_unweighted_missing:
+            raise FitSkeletonValidationError("允许省略零权重关节时必须提供路径映射")
         transfer = transfer_skin_weights_by_surface(document, source_geometry,
             target_geometry, triangles, target_state, max_distance=max_distance,
-            max_discarded_weight=max_discarded_weight, alignment=alignment)
+            max_discarded_weight=max_discarded_weight, alignment=alignment,
+            allow_target_extra_influences=allow_target_extra_influences)
         edit_plan = self._editor.plan(target_skin, target_mesh, transfer.document.vertices)
         if not edit_plan.ready:
             raise FitSkeletonValidationError("表面权重转移目标预检失败，场景未修改："
@@ -96,10 +102,14 @@ class TransferSkinWeightsBySurface:
               target_mesh: str, *, max_distance: float,
               max_discarded_weight: float = 0.0,
               mapping: SkinWeightPathMapping | None = None,
-              alignment: FaceSurfaceAlignment | None = None) -> SkinWeightSurfaceResult:
+              alignment: FaceSurfaceAlignment | None = None,
+              allow_target_extra_influences: bool = False,
+              allow_unweighted_missing: bool = False) -> SkinWeightSurfaceResult:
         plan = self.plan(source_skin, source_mesh, target_skin, target_mesh,
             max_distance=max_distance, max_discarded_weight=max_discarded_weight,
-            mapping=mapping, alignment=alignment)
+            mapping=mapping, alignment=alignment,
+            allow_target_extra_influences=allow_target_extra_influences,
+            allow_unweighted_missing=allow_unweighted_missing)
         if (self._host.capture_all_skin_weights(source_skin, source_mesh) != plan.source_state
             or self._host.capture_all_skin_weights(target_skin, target_mesh) != plan.target_state
             or self._host.capture_face_mesh(source_mesh) != plan.source_mesh
@@ -115,7 +125,9 @@ class TransferSkinWeightsBySurface:
             geometry: FaceNeutralGeometry, target_skin: str, target_mesh: str,
             *, max_distance: float, max_discarded_weight: float = 0.,
             mapping: SkinWeightPathMapping | None = None,
-            alignment: FaceSurfaceAlignment | None = None
+            alignment: FaceSurfaceAlignment | None = None,
+            allow_target_extra_influences: bool = False,
+            allow_unweighted_missing: bool = False
             ) -> SkinWeightDocumentSurfacePlan:
         if weights.mesh_path != geometry.mesh.path or weights.vertex_count != geometry.mesh.vertex_count:
             raise FitSkeletonValidationError("源权重文档与源几何文档不属于同一网格")
@@ -125,15 +137,19 @@ class TransferSkinWeightsBySurface:
         if mapping is not None:
             if mapping.target_skin_name != target_skin or mapping.target_mesh_path != target_mesh:
                 raise FitSkeletonValidationError("权重路径映射与目标 skinCluster/mesh 不一致")
-            mapped = remap_skin_weight_document(weights, mapping)
+            mapped = remap_skin_weight_document(weights, mapping,
+                allow_unweighted_missing=allow_unweighted_missing)
         else:
+            if allow_unweighted_missing:
+                raise FitSkeletonValidationError("允许省略零权重关节时必须提供路径映射")
             mapped = weights
         target_state = self._host.capture_all_skin_weights(target_skin, target_mesh)
         target_geometry = self._host.capture_face_mesh(target_mesh)
         transfer = transfer_skin_weights_by_surface(mapped, geometry.mesh,
             target_geometry, geometry.triangles, target_state,
             max_distance=max_distance, max_discarded_weight=max_discarded_weight,
-            alignment=alignment)
+            alignment=alignment,
+            allow_target_extra_influences=allow_target_extra_influences)
         edit_plan = self._editor.plan(target_skin, target_mesh, transfer.document.vertices)
         if not edit_plan.ready:
             raise FitSkeletonValidationError("表面权重转移目标预检失败，场景未修改："
@@ -145,11 +161,15 @@ class TransferSkinWeightsBySurface:
             geometry: FaceNeutralGeometry, target_skin: str, target_mesh: str,
             *, max_distance: float, max_discarded_weight: float = 0.,
             mapping: SkinWeightPathMapping | None = None,
-            alignment: FaceSurfaceAlignment | None = None
+            alignment: FaceSurfaceAlignment | None = None,
+            allow_target_extra_influences: bool = False,
+            allow_unweighted_missing: bool = False
             ) -> tuple[SkinWeightDocumentSurfacePlan, SkinWeightEditResult]:
         plan = self.plan_from_documents(weights, geometry, target_skin, target_mesh,
             max_distance=max_distance, max_discarded_weight=max_discarded_weight,
-            mapping=mapping, alignment=alignment)
+            mapping=mapping, alignment=alignment,
+            allow_target_extra_influences=allow_target_extra_influences,
+            allow_unweighted_missing=allow_unweighted_missing)
         if (self._host.capture_all_skin_weights(target_skin, target_mesh) != plan.target_state
                 or self._host.capture_face_mesh(target_mesh) != plan.target_mesh
                 or self._host.scene_up_axis().value != geometry.up_axis

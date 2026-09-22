@@ -83,6 +83,18 @@ class SkinWeightSurfaceTests(unittest.TestCase):
         self.assertEqual(result.document.vertices[3].weights,
             (SkinInfluenceWeight("|A", .75), SkinInfluenceWeight("|B", .25)))
 
+    def test_explicit_policy_allows_extra_target_influence_with_zero_weights(self):
+        extra = replace(self.target, influence_paths=("|A", "|B", "|Extra"))
+        with self.assertRaisesRegex(SkinWeightValidationError, "influence 集合不同"):
+            transfer_skin_weights_by_surface(self.source, self.source_mesh,
+                self.target_mesh, ((0, 1, 2),), extra, max_distance=0.)
+        result = transfer_skin_weights_by_surface(self.source, self.source_mesh,
+            self.target_mesh, ((0, 1, 2),), extra, max_distance=0.,
+            allow_target_extra_influences=True)
+        self.assertEqual(result.document.influence_paths, ("|A", "|B", "|Extra"))
+        self.assertTrue(all("|Extra" not in (entry.influence_path
+            for entry in vertex.weights) for vertex in result.document.vertices))
+
 
 if __name__ == "__main__":
     unittest.main()

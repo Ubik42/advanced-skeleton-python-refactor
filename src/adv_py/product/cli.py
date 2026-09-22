@@ -208,6 +208,10 @@ def parser() -> argparse.ArgumentParser:
         help="三个源/目标顶点对应及误差上限的 JSON 文件")
     skin_surface.add_argument("--max-distance", type=float, required=True)
     skin_surface.add_argument("--max-discarded-weight", type=float, default=0.)
+    skin_surface.add_argument("--allow-target-extra-influences", action="store_true",
+        help="允许目标 skinCluster 多出关节；写入时将这些关节的目标顶点权重清零")
+    skin_surface.add_argument("--allow-unweighted-missing", action="store_true",
+        help="路径映射可省略在源资产所有顶点均为零权重的关节")
     skin_surface.add_argument("--output", type=Path, required=True)
     skin_bind = commands.add_parser("skin-bind",
         help="将现有网格绑定到显式列出的关节")
@@ -549,7 +553,9 @@ def _run(args, gateway) -> dict:
                 source.geometry, args.target_skin, args.target_mesh,
                 max_distance=args.max_distance,
                 max_discarded_weight=args.max_discarded_weight, mapping=mapping,
-                alignment=alignment)
+                alignment=alignment,
+                allow_target_extra_influences=args.allow_target_extra_influences,
+                allow_unweighted_missing=args.allow_unweighted_missing)
             transfer = plan.transfer
         else:
             if not args.source_mesh:
@@ -557,7 +563,9 @@ def _run(args, gateway) -> dict:
             result = operation.apply(args.source_skin, args.source_mesh,
                 args.target_skin, args.target_mesh, max_distance=args.max_distance,
                 max_discarded_weight=args.max_discarded_weight, mapping=mapping,
-                alignment=alignment)
+                alignment=alignment,
+                allow_target_extra_influences=args.allow_target_extra_influences,
+                allow_unweighted_missing=args.allow_unweighted_missing)
             transfer, edit = result.plan.transfer, result.edit_result
         _emit("skin_surface_transferred",
               vertices=transfer.document.vertex_count,
