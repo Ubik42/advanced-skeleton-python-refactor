@@ -53,6 +53,11 @@ class RetargetCharacterSpineFk:
         boundary = (self._host.transaction('Retarget character across spine counts')
                     if own_transaction else nullcontext())
         with boundary:
+            # Mocap writers apply source deltas to the target pose at each
+            # sampled frame. A prebuilt replacement may already be animated;
+            # establish one calibration pose first so those deltas are not
+            # added to its old motion.
+            self._host.prepare_resampled_character_target(target, frames, reference)
             bridge_root = self._host.create_resampled_character_source(target, samples)
             body_names = {short(joint.path) for joint in target.body}
             required = {short(target.body_root),

@@ -5,6 +5,22 @@ from .maya_mocap import MayaMocapSourceReader
 
 
 class MayaMocapControlHost(MayaBodyBuildHost):
+    def prepare_resampled_character_target(self, registration, frames, reference):
+        """Replace the destination take with its calibration pose in the span."""
+        self._require_transaction()
+        self.preflight_character_keyframe(registration)
+        c = self._cmds
+        with self._character_sampling_time() as seek:
+            seek(reference)
+            neutral = tuple(float(c.getAttr(ch.node+'.'+ch.attribute))
+                            for ch in registration.channels)
+        self._transaction_changed = True
+        for frame in frames:
+            for ch, value in zip(registration.channels, neutral):
+                c.setKeyframe(ch.node, attribute=ch.attribute,
+                              time=frame, value=value,
+                              inTangentType='linear', outTangentType='linear')
+
     def capture_resampled_character_source(self,source_namespace,target,frames):
         from .maya_mocap_spine_bridge import capture_resampled_character_source
         return capture_resampled_character_source(self,source_namespace,target,frames)
