@@ -10,7 +10,9 @@ import maya.standalone
 
 
 def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_full_ik=False,
-         with_mixed=False,mixed_spine_ik=False,with_scheduled=False):
+         with_mixed=False,mixed_spine_ik=False,with_scheduled=False,
+         with_replace=False):
+    with_scheduled=with_scheduled or with_replace
     with_ik=with_ik or with_full_ik or with_mixed or with_scheduled
     output.parent.mkdir(parents=True,exist_ok=True)
     maya.standalone.initialize(name='python')
@@ -74,7 +76,8 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
             limb_events={('arm','R'):((1,'fk'),(3,'ik'),(7,'fk')),
                          ('arm','L'):((1,'fk'),),
                          ('leg','R'):((1,'fk'),(6,'ik')),
-                         ('leg','L'):((1,'fk'),)})
+                         ('leg','L'):((1,'fk'),)},
+            replace_existing_modes=with_replace)
         invalid_mixed_rejected=True
         if with_mixed:
             try:RetargetMocapVariableMixedToCharacter(host,spine_mode='other',
@@ -103,14 +106,39 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
                 for frame,value in ((0,1.),(1,0.),(10,0.),(11,1.),(20,1.)):
                     host._cmds.setKeyframe(channel.node,attribute=channel.attribute,
                         time=frame,value=value,outTangentType='step')
-            channel=channels['spine.spline.spineIkFk']
-            host._cmds.setKeyframe(channel.node,attribute=channel.attribute,
-                time=5,value=1.,outTangentType='step')
-            try:service.plan_with_preset(source['Root_M'],preset,**options)
-            except ValueError:invalid_existing_mode_rejected=True
-            else:invalid_existing_mode_rejected=False
-            cmds.cutKey(host.scene_address(channel.node),
-                attribute=channel.attribute,time=(5,5))
+            if with_replace:
+                for key,values in (
+                    ('spine.spline.spineIkFk',((2,1.),(4,0.))),
+                    ('arm.settings.armIkFk_R',((8,1.),(10,0.)))):
+                    channel=channels[key]
+                    for frame,value in values:
+                        host._cmds.setKeyframe(channel.node,attribute=channel.attribute,
+                            time=frame,value=value,outTangentType='step')
+                strict_options={**scheduled_options,'replace_existing_modes':False}
+                strict=RetargetMocapVariableScheduledToCharacter(host,**strict_options)
+                try:strict.plan_with_preset(source['Root_M'],preset,**options)
+                except ValueError:invalid_existing_mode_rejected=True
+                else:invalid_existing_mode_rejected=False
+                channel=channels['spine.spline.spineIkFk']
+                host._cmds.setKeyframe(channel.node,attribute=channel.attribute,
+                    time=5,value=.5,outTangentType='step')
+                fractional_before=host.capture_character_key_state(registration)
+                try:service.plan_with_preset(source['Root_M'],preset,**options)
+                except ValueError:
+                    fractional_mode_rejected=(host.capture_character_key_state(
+                        registration)==fractional_before)
+                else:fractional_mode_rejected=False
+                cmds.cutKey(host.scene_address(channel.node),
+                    attribute=channel.attribute,time=(5,5))
+            else:
+                channel=channels['spine.spline.spineIkFk']
+                host._cmds.setKeyframe(channel.node,attribute=channel.attribute,
+                    time=5,value=1.,outTangentType='step')
+                try:service.plan_with_preset(source['Root_M'],preset,**options)
+                except ValueError:invalid_existing_mode_rejected=True
+                else:invalid_existing_mode_rejected=False
+                cmds.cutKey(host.scene_address(channel.node),
+                    attribute=channel.attribute,time=(5,5))
         imported=None
         if with_fbx:
             if not cmds.pluginInfo('fbxmaya',query=True,loaded=True):
@@ -261,6 +289,12 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
                 outside_tangents(key)==original_mode_tangents[key]
                 for key in original_mode_tangents)
             checks['existing_ik_inside_range_rejected']=invalid_existing_mode_rejected
+            checks['explicit_existing_ik_replacement']=not with_replace or (
+                plan.replace_existing_modes and
+                any(abs(value-1.)<1e-8 for row in before[1]
+                    if row[0] in ('spine.spline.spineIkFk','arm.settings.armIkFk_R')
+                    for value in row[3]))
+            checks['fractional_existing_mode_rejected']=not with_replace or fractional_mode_rejected
             mode_channels={ch.key:ch for ch in registration.channels}
             def mode_at(key,frame):
                 ch=mode_channels[key]
@@ -327,6 +361,7 @@ def main(output,segments=4,with_hand=False,with_ik=False,with_fbx=False,with_ful
                  'mixed_modes':with_mixed,
                  'mixed_spine_ik':mixed_spine_ik,
                  'scheduled_modes':with_scheduled,
+                 'replace_existing_modes':with_replace,
                  'status':'passed' if all(checks.values()) else 'failed'}
         output.write_text(json.dumps(payload,indent=2)+'\n',encoding='utf8')
         return 0 if all(checks.values()) else 1
@@ -337,4 +372,5 @@ if __name__=='__main__':raise SystemExit(main(Path(sys.argv[1]).resolve(),
     int(sys.argv[2]) if len(sys.argv)>2 and sys.argv[2].isdigit() else 4,
     '--hand' in sys.argv[2:],'--ik' in sys.argv[2:],'--fbx' in sys.argv[2:],
     '--full-ik' in sys.argv[2:],'--mixed' in sys.argv[2:],
-    '--mixed-spine-ik' in sys.argv[2:],'--scheduled' in sys.argv[2:]))
+    '--mixed-spine-ik' in sys.argv[2:],'--scheduled' in sys.argv[2:],
+    '--scheduled-replace' in sys.argv[2:]))

@@ -5,7 +5,8 @@ from .maya_mocap import MayaMocapSourceReader
 
 
 class MayaMocapControlHost(MayaBodyBuildHost):
-    def preflight_mocap_mode_schedule(self, registration, mode_keys, frames):
+    def preflight_mocap_mode_schedule(
+            self, registration, mode_keys, frames, *, replace_existing_modes=False):
         channels={channel.key:channel for channel in registration.channels}
         boundary=[]
         for key in mode_keys:
@@ -13,9 +14,12 @@ class MayaMocapControlHost(MayaBodyBuildHost):
             if channel is None:
                 raise CharacterRegistryError('动捕模式通道未登记：'+key)
             plug=self.scene_address(channel.node)+'.'+channel.attribute
-            if any(abs(float(self._cmds.getAttr(plug,time=frame)))>1e-8
-                   for frame in frames):
-                raise CharacterRegistryError('事件动捕要求写入区间的来源模式均为 FK 端点：'+key)
+            sampled=tuple(float(self._cmds.getAttr(plug,time=frame))
+                          for frame in frames)
+            if any((min(abs(value),abs(value-1.)) if replace_existing_modes
+                    else abs(value))>1e-8 for value in sampled):
+                raise CharacterRegistryError(
+                    '事件动捕要求写入区间的来源模式为可写的 FK/IK 端点：'+key)
             times=tuple(float(value) for value in
                 (self._cmds.keyframe(plug,query=True,timeChange=True) or []))
             values=tuple(float(value) for value in
@@ -29,10 +33,12 @@ class MayaMocapControlHost(MayaBodyBuildHost):
                 float(self._cmds.getAttr(plug,time=frames[-1]+1.))))
         return tuple(boundary)
 
-    def write_mocap_mode_base_keys(self, registration, boundary, frames):
+    def write_mocap_mode_base_keys(
+            self, registration, boundary, frames, *, replace_existing_modes=False):
         self._require_transaction()
         if self.preflight_mocap_mode_schedule(
-                registration,tuple(row[0] for row in boundary),frames)!=boundary:
+                registration,tuple(row[0] for row in boundary),frames,
+                replace_existing_modes=replace_existing_modes)!=boundary:
             raise RuntimeError('动捕模式边界或原曲线在写入前变化')
         channels={channel.key:channel for channel in registration.channels}
         self._transaction_changed=True

@@ -250,14 +250,18 @@ class MocapVariableScheduledPlan:
     limb_ik_frames: tuple[tuple[str,str,tuple[float,...]],...]
     mode_keys: tuple[str,...]
     boundary: tuple
+    replace_existing_modes: bool
 
 
 class RetargetMocapVariableScheduledToCharacter(RetargetMocapVariableFullFkToCharacter):
     """Apply explicit FK/IK mode events over one mapped variable-body take."""
     LIMBS=(('arm','R'),('arm','L'),('leg','R'),('leg','L'))
 
-    def __init__(self,host,*,spine_events,limb_events):
+    def __init__(self,host,*,spine_events,limb_events,replace_existing_modes=False):
         super().__init__(host)
+        if type(replace_existing_modes) is not bool:
+            raise CharacterRegistryError('已有模式覆盖选项必须是布尔值')
+        self._replace_existing_modes=replace_existing_modes
         if not isinstance(limb_events,dict) or set(limb_events)!=set(self.LIMBS):
             raise CharacterRegistryError('事件动捕须逐条指定四肢模式事件')
         self._spine_events=self._events(spine_events)
@@ -311,8 +315,10 @@ class RetargetMocapVariableScheduledToCharacter(RetargetMocapVariableFullFkToCha
         mode_keys=('spine.spline.spineIkFk',)+tuple(
             f'{limb}.settings.{limb}IkFk_{side}' for limb,side in self.LIMBS)
         boundary=self._host.preflight_mocap_mode_schedule(
-            full.root.registration,mode_keys,frames)
-        return MocapVariableScheduledPlan(full,spine_frames,limb_frames,mode_keys,boundary)
+            full.root.registration,mode_keys,frames,
+            replace_existing_modes=self._replace_existing_modes)
+        return MocapVariableScheduledPlan(full,spine_frames,limb_frames,mode_keys,
+            boundary,self._replace_existing_modes)
 
     def apply_with_preset(self,source_root,preset,*,start_frame,end_frame,sample_by=1,
                           reference_frame=None):
@@ -329,13 +335,14 @@ class RetargetMocapVariableScheduledToCharacter(RetargetMocapVariableFullFkToCha
         with host.transaction('Retarget variable-spine MoCap mode events'):
             if self.plan_with_preset(source_root,preset,**options)!=plan:
                 raise CharacterRegistryError('事件动捕或角色状态在写入前发生变化')
+            host.write_mocap_mode_base_keys(reg,plan.boundary,frames,
+                replace_existing_modes=plan.replace_existing_modes)
             root_samples=host.write_mocap_root_control_keys(plan.full_fk.root)
             groups=tuple(host.write_mocap_fk_group_keys(group) for group in plan.full_fk.groups)
             if any(tuple(sample.frame for sample in group)!=frames
                    for group in (root_samples,*groups)):
                 raise RuntimeError('事件动捕 FK 基础采样不完整')
             reference=host.sample_character_animation(reg,frames)
-            host.write_mocap_mode_base_keys(reg,plan.boundary,frames)
             unit=host.character_time_unit()
             conversions=[]
             selected=(('spine','',plan.spine_ik_frames),*plan.limb_ik_frames)

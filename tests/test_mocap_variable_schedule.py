@@ -31,6 +31,12 @@ class VariableMocapScheduleTests(unittest.TestCase):
                 object(), spine_events=((1, "fk"),),
                 limb_events={("arm", "R"): ((1, "ik"),)},
             )
+        with self.assertRaises(CharacterRegistryError):
+            RetargetMocapVariableScheduledToCharacter(
+                object(), spine_events=((1, "fk"),),
+                limb_events={pair: ((1, "fk"),) for pair in service.LIMBS},
+                replace_existing_modes=1,
+            )
 
 
 if __name__ == "__main__":
