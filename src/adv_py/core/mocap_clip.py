@@ -12,17 +12,29 @@ MOCAP_CLIP_SCHEMA=2
 MOCAP_CLIP_MAX_SAMPLES=2000
 
 
-def mocap_verification_times(key_times,maximum=MOCAP_CLIP_MAX_SAMPLES):
-    """Spread bounded world-pose checks across the entire keyed time range."""
+def mocap_verification_times(key_times,maximum=MOCAP_CLIP_MAX_SAMPLES,
+                             *,include_exterior=False):
+    """Spread bounded pose checks across keys, intervals, and optional exterior times."""
     keyed=tuple(sorted(set(key_times)))
-    if not keyed or maximum<2:
+    if not keyed or maximum<(4 if include_exterior else 2):
         raise MocapSourceValidationError('动捕验收需要关键帧和至少两个采样位置')
     if any(not isinstance(time,(int,float)) or isinstance(time,bool) or not isfinite(time) for time in keyed):
         raise MocapSourceValidationError('动捕关键帧时间必须有限')
-    candidates=tuple(sorted(set(keyed)|{(left+right)/2 for left,right in zip(keyed,keyed[1:])}))
-    if len(candidates)<=maximum:return candidates
-    indices=tuple(round(index*(len(candidates)-1)/(maximum-1)) for index in range(maximum))
-    return tuple(candidates[index] for index in indices)
+    def middle(left,right):
+        half=(right-left)/2
+        return left+half if isfinite(half) else left/2+right/2
+    candidates=tuple(sorted(set(keyed)|{middle(left,right) for left,right in zip(keyed,keyed[1:])}))
+    budget=maximum-2 if include_exterior else maximum
+    if len(candidates)>budget:
+        indices=tuple(round(index*(len(candidates)-1)/(budget-1)) for index in range(budget))
+        candidates=tuple(candidates[index] for index in indices)
+    if not include_exterior:return candidates
+    first_gap=keyed[1]-keyed[0] if len(keyed)>1 else 1.
+    last_gap=keyed[-1]-keyed[-2] if len(keyed)>1 else 1.
+    result=(keyed[0]-first_gap/2,*candidates,keyed[-1]+last_gap/2)
+    if any(not isfinite(time) for time in result):
+        raise MocapSourceValidationError('动捕关键帧范围无法生成有限的外侧验收时间')
+    return result
 
 
 @dataclass(frozen=True,slots=True)

@@ -31,7 +31,10 @@ def main(output):
             checks={
                 'source_has_1101_keys':len(result.clip.joints[0].channels[0].keys)==1101,
                 'bounded_world_samples':len(result.clip.samples)==2000,
-                'both_endpoints_verified':(result.clip.samples[0][0],result.clip.samples[-1][0])==(1.,1101.),
+                'key_range_and_exterior_verified':(
+                    result.clip.samples[0][0],result.clip.samples[1][0],
+                    result.clip.samples[-2][0],result.clip.samples[-1][0])
+                    ==(.5,1.,1101.,1101.5),
                 'full_curve_restored':len(cmds.keyframe('|LongTake:Hips.translateX',query=True,timeChange=True) or [])==1101,
                 'late_motion_restored':abs(cmds.getAttr('|LongTake:Hips.translateX',time=1099)-274.75)<1e-4,
             }

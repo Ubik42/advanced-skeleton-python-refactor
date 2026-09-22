@@ -24,18 +24,23 @@ def main(report: Path) -> int:
             c.setKeyframe(root,attribute='translateX',time=frame,value=value)
         curve=c.connectionInfo(root+'.translateX',sourceFromDestination=True).split('.',1)[0]
         c.keyTangent(curve,edit=True,weightedTangents=True)
+        for frame in (1,5):
+            c.keyTangent(curve,edit=True,time=(frame,frame),lock=False,
+                inTangentType='linear',outTangentType='linear')
         c.keyTangent(curve,edit=True,time=(3,3),inTangentType='fixed',outTangentType='fixed')
         c.keyTangent(curve,edit=True,time=(3,3),inAngle=25.,outAngle=-25.,
                      inWeight=1.5,outWeight=1.5)
         c.keyTangent(curve,edit=True,time=(3,3),lock=True,weightLock=True)
         c.keyframe(curve,edit=True,time=(3,3),breakdown=True)
+        c.setAttr(curve+'.preInfinity',1)
+        c.setAttr(curve+'.postInfinity',1)
         tangent=lambda flag:tuple(c.keyTangent(curve,query=True,**{flag:True}) or [])
         metadata={name:tangent(name) for name in ('inTangentType','outTangentType',
             'inAngle','outAngle','inWeight','outWeight','lock','weightLock')}
         breakdown=tuple(c.keyframe(curve,query=True,breakdown=True) or [])
         source_midpoints=tuple(float(c.getAttr(root+'.translateX',time=frame))
             for frame in (2.,4.))
-        frames=(1.,2.,3.,4.,5.)
+        frames=(.5,1.,2.,3.,4.,5.,5.5)
         samples=[]
         for frame in frames:
             c.currentTime(frame,edit=True,update=True)
@@ -43,7 +48,7 @@ def main(report: Path) -> int:
         channel=MocapClipChannel('translateX',((1.,0.),(3.,4.),(5.,0.)),
             *(metadata[name] for name in ('inTangentType','outTangentType',
               'inAngle','outAngle','inWeight','outWeight')),
-            True,0,0,metadata['lock'],metadata['weightLock'],breakdown)
+            True,1,1,metadata['lock'],metadata['weightLock'],breakdown)
         clip=MocapClip('y','cm','film',(MocapClipJoint('Hips',None,
             (0.,0.,0.),(0.,0.,0.),(0.,0.,0.),(1.,1.,1.),0,(channel,)),),
             tuple(samples))
@@ -63,6 +68,10 @@ def main(report: Path) -> int:
             'native_breakdown_restored':restored_breakdown==breakdown,
             'midpoint_interpolation_restored':max(abs(a-b) for a,b in zip(
                 source_midpoints,restored_midpoints))<1e-4,
+            'exterior_linear_extrapolation_restored':all(abs(
+                float(c.getAttr('|Imported:Hips.translateX',time=frame))
+                -sample[1][0][12])<1e-4 for frame,sample in ((.5,samples[0]),
+                    (5.5,samples[-1]))),
             'all_sampled_world_poses_restored':len(imported.joints)==1,
         }
         c.undo()

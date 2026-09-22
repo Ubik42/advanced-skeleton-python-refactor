@@ -21,6 +21,13 @@ class MocapClipTests(unittest.TestCase):
         self.assertTrue(any(time!=int(time) for time in selected))
         self.assertEqual(selected,tuple(sorted(set(selected))))
         self.assertEqual(mocap_verification_times((1.,5.,10.)),(1.,3.,5.,7.5,10.))
+        self.assertEqual(mocap_verification_times((1.,5.,10.),include_exterior=True),
+                         (-1.,1.,3.,5.,7.5,10.,12.5))
+        exterior=mocap_verification_times(keyed,include_exterior=True)
+        self.assertEqual(len(exterior),2000)
+        self.assertEqual((exterior[0],exterior[-1]),(.5,1201.5))
+        self.assertIn(1.,exterior)
+        self.assertIn(1201.,exterior)
 
     def fixture(self):
         joint=MocapClipJoint('Hips',None,(0.,0.,0.),(0.,0.,0.),(0.,0.,0.),(1.,1.,1.),0,

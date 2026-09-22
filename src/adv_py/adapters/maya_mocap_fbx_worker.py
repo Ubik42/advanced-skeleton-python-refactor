@@ -47,7 +47,9 @@ def read_fbx(source,units):
         result.append(MocapClipJoint(row.name,names[row.joint_parent] if row.joint_parent else None,
                                      vector('translate'),vector('rotate'),vector('jointOrient'),vector('scale'),
                                      int(c.getAttr(path+'.rotateOrder')),tuple(channels[path])))
-    frames=mocap_verification_times(time for joint in result for channel in joint.channels for time,_ in channel.keys)
+    frames=mocap_verification_times(
+        (time for joint in result for channel in joint.channels for time,_ in channel.keys),
+        include_exterior=True)
     samples=[]
     for frame in frames:
         c.currentTime(frame,edit=True,update=True)
