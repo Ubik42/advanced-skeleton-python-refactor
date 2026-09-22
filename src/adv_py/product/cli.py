@@ -7,15 +7,18 @@ import json
 from pathlib import Path
 import sys
 
-from adv_py.application import (ApplyBodyCharacterAnimation,
+from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkeleton,
     ApplyBodyCharacterPose, ApplyFacePerformance, BuildFaceBlendShapes, CaptureBodyCharacterAnimation,
-    CaptureBodyCharacterPose, ExportFaceTargetAsset, GenerateFaceTarget,
+    CaptureBodyCharacterPose, BuildBodyExportSkeleton, BuildBodyRootMotion,
+    ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget,
     FaceAssetLibrary, ImportFaceTargetAsset, ExportSkinWeights, ImportSkinWeights,
     ResolveBodyCharacter,
     InspectBodyCharacterPresets, load_character_animation, load_character_pose, save_character_animation,
     save_character_pose, RebuildBodyCharacter, load_face_target_asset,
     save_face_target_asset)
-from adv_py.core import (FaceLandmark, FaceShapeKind, FaceTarget,
+from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
+                         BodyFbxExportProfile, BodyFbxFileVersion,
+                         FaceLandmark, FaceShapeKind, FaceTarget,
                          face_performance_from_json)
 from adv_py.core.character_registry import safe_json
 
@@ -117,6 +120,15 @@ def parser() -> argparse.ArgumentParser:
     skin_import.add_argument("--namespace", required=True)
     skin_import.add_argument("--weights", type=Path, required=True)
     skin_import.add_argument("--output", type=Path, required=True)
+    fbx = commands.add_parser("fbx-publish", help="从身体动画场景发布独立烘焙 FBX")
+    fbx.add_argument("scene", type=Path)
+    fbx.add_argument("--namespace", required=True)
+    fbx.add_argument("--start", type=int, required=True)
+    fbx.add_argument("--end", type=int, required=True)
+    fbx.add_argument("--step", type=int, default=1)
+    fbx.add_argument("--curve-policy", choices=tuple(item.value for item in
+                     BodyFbxCurvePolicy), default=BodyFbxCurvePolicy.SAMPLED_LINEAR.value)
+    fbx.add_argument("--output", type=Path, required=True)
     rebuild = commands.add_parser("rebuild", help="保留原数据并原位重建同布局角色")
     rebuild.add_argument("scene", type=Path)
     rebuild.add_argument("--namespace", required=True)
@@ -226,6 +238,42 @@ def _run(args, gateway) -> dict:
         return {"status": "ok", "output": str(exported.plan.destination),
                 "vertices": exported.plan.document.vertex_count,
                 "bytes": exported.bytes_written}
+    if args.command == "fbx-publish":
+        destination = args.output.resolve()
+        if destination.suffix.lower() != ".fbx" or not destination.parent.is_dir():
+            raise ValueError("FBX 输出必须是现有目录中的 .fbx 路径")
+        if destination.exists():
+            raise FileExistsError("FBX 输出已存在：" + str(destination))
+        if args.start > args.end or args.step < 1:
+            raise ValueError("FBX 发布帧范围或采样步长无效")
+        namespace = "" if args.namespace == ":" else args.namespace.strip(":") + ":"
+        body_root = namespace + "Root_M"
+        source_container = "|" + namespace + "FitSkeleton"
+        BuildBodyRootMotion(host).apply(body_root_name=body_root,
+                                        source_container=source_container)
+        _emit("root_motion_built", namespace=args.namespace)
+        BuildBodyExportSkeleton(host).apply(body_root_name=body_root,
+                                            source_container=source_container)
+        _emit("export_skeleton_built", namespace=args.namespace)
+        baked = BakeBodyExportSkeleton(host).apply(start_frame=args.start,
+            end_frame=args.end, sample_by=args.step, body_root_name=body_root,
+            source_container=source_container)
+        _emit("export_skeleton_baked", frames=len(baked.plan.bake.frames))
+        profile = BodyFbxExportProfile(BodyFbxFileVersion.FBX_2020,
+            host.scene_up_axis(), host.scene_linear_unit(), BodyFbxEncoding.BINARY,
+            BodyFbxCurvePolicy(args.curve_policy))
+        exported = ExportBodyFbx(host).apply(destination, start_frame=args.start,
+            end_frame=args.end, sample_by=args.step, body_root_name=body_root,
+            source_container=source_container, profile=profile)
+        _emit("fbx_published", joints=len(baked.plan.body.joints),
+              bytes=exported.artifact.byte_count)
+        return {"status": "ok", "output": str(destination),
+                "joints": len(baked.plan.body.joints),
+                "frames": len(baked.plan.bake.frames),
+                "bytes": exported.artifact.byte_count,
+                "sha256": exported.artifact.content_sha256,
+                "curve_policy": exported.applied_profile.curve_policy,
+                "removed_linear_keys": exported.applied_profile.removed_linear_keys}
     if args.command == "face-asset-export":
         output = args.output.resolve()
         if output.suffix.lower() != ".json" or output.exists():
