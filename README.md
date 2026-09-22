@@ -109,7 +109,7 @@ py -3 -m unittest discover -s tests
 
 更多宿主命令见 [后台宿主验证](validation/README.md)。
 
-已登记角色的后台发现、面部目标生成和动画文档写入见 [后台产品入口](docs/后台产品入口.md)。这些操作通过 `mayapy -m adv_py.product` 在独立场景进程中运行。
+已登记角色的后台发现、身体姿态／动画文档操作、预设检查及面部目标生成见 [后台产品入口](docs/后台产品入口.md)。这些操作通过 `mayapy -m adv_py.product` 在独立场景进程中运行。
 
 ## 工程结构
 

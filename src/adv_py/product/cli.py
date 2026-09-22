@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 from pathlib import Path
 import sys
 
-from adv_py.application import (ApplyFacePerformance, GenerateFaceTarget,
-                                ResolveBodyCharacter)
+from adv_py.application import (ApplyBodyCharacterAnimation,
+    ApplyBodyCharacterPose, ApplyFacePerformance, CaptureBodyCharacterAnimation,
+    CaptureBodyCharacterPose, GenerateFaceTarget, ResolveBodyCharacter,
+    InspectBodyCharacterPresets, load_character_animation, load_character_pose, save_character_animation,
+    save_character_pose)
 from adv_py.core import (FaceLandmark, FaceShapeKind, FaceTarget,
                          face_performance_from_json)
 from adv_py.core.character_registry import safe_json
@@ -34,6 +38,32 @@ def parser() -> argparse.ArgumentParser:
     animation.add_argument("--control", required=True)
     animation.add_argument("--clip", type=Path, required=True)
     animation.add_argument("--output", type=Path, required=True)
+    pose_capture = commands.add_parser("pose-capture", help="捕获已登记角色的静态姿态文档")
+    pose_capture.add_argument("scene", type=Path)
+    pose_capture.add_argument("--namespace", required=True)
+    pose_capture.add_argument("--frame", type=int)
+    pose_capture.add_argument("--output", type=Path, required=True)
+    pose_apply = commands.add_parser("pose-apply", help="将静态姿态应用到角色")
+    pose_apply.add_argument("scene", type=Path)
+    pose_apply.add_argument("--namespace", required=True)
+    pose_apply.add_argument("--pose", type=Path, required=True)
+    pose_apply.add_argument("--output", type=Path, required=True)
+    clip_capture = commands.add_parser("animation-capture", help="采样全身动画片段")
+    clip_capture.add_argument("scene", type=Path)
+    clip_capture.add_argument("--namespace", required=True)
+    clip_capture.add_argument("--start", type=int, required=True)
+    clip_capture.add_argument("--end", type=int, required=True)
+    clip_capture.add_argument("--step", type=int, default=1)
+    clip_capture.add_argument("--output", type=Path, required=True)
+    clip_apply = commands.add_parser("animation-apply", help="写入全身动画片段")
+    clip_apply.add_argument("scene", type=Path)
+    clip_apply.add_argument("--namespace", required=True)
+    clip_apply.add_argument("--clip", type=Path, required=True)
+    clip_apply.add_argument("--output", type=Path, required=True)
+    presets = commands.add_parser("presets", help="检查角色姿态与动画预设目录")
+    presets.add_argument("scene", type=Path)
+    presets.add_argument("--namespace", required=True)
+    presets.add_argument("--directory", type=Path, required=True)
     return result
 
 
@@ -91,8 +121,48 @@ def _run(args, gateway) -> dict:
                     characters.append({"namespace": namespace, "name": name,
                         "writable": False, "reason": str(error)})
         return {"status": "ok", "characters": characters}
-    gateway.preflight_output(args.output)
     host = MayaFaceHost(namespace=None if args.namespace == ":" else args.namespace)
+    if args.command == "presets":
+        entries = InspectBodyCharacterPresets(host).list(args.directory)
+        return {"status": "ok", "presets": [asdict(entry) for entry in entries]}
+    if args.command in ("pose-capture", "animation-capture"):
+        output = args.output.resolve()
+        if output.suffix.lower() != ".json" or output.exists():
+            raise ValueError("文档输出须为尚不存在的 .json 文件")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if args.command == "pose-capture":
+            if args.frame is not None:
+                gateway.seek(args.frame)
+            pose = CaptureBodyCharacterPose(host).execute()
+            saved = save_character_pose(pose, output)
+            _emit("pose_captured", channels=len(pose.channels))
+            return {"status": "ok", "output": str(saved),
+                    "channels": len(pose.channels)}
+        animation = CaptureBodyCharacterAnimation(host).execute(
+            args.start, args.end, args.step)
+        saved = save_character_animation(animation, output)
+        _emit("animation_captured", frames=len(animation.samples))
+        return {"status": "ok", "output": str(saved),
+                "frames": len(animation.samples)}
+    gateway.preflight_output(args.output)
+    if args.command == "pose-apply":
+        pose = load_character_pose(args.pose)
+        ApplyBodyCharacterPose(host).apply(pose)
+        _emit("pose_applied", channels=len(pose.channels))
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output),
+                "channels": len(pose.channels)}
+    if args.command == "animation-apply":
+        animation = load_character_animation(args.clip)
+        ApplyBodyCharacterAnimation(host).apply(animation)
+        _emit("animation_applied", channels=len(animation.samples[0][1].channels),
+              frames=len(animation.samples))
+        output = gateway.save_new(args.output)
+        _emit("scene_saved", scene=str(output))
+        return {"status": "ok", "output": str(output),
+                "channels": len(animation.samples[0][1].channels),
+                "frames": len(animation.samples)}
     if args.command == "face-target":
         target = FaceTarget(args.name, FaceShapeKind(args.kind), args.target)
         plan = GenerateFaceTarget(host).apply(args.neutral, target,

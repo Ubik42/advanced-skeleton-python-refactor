@@ -39,6 +39,11 @@ class MayaSceneGateway:
         return (None,) + tuple(sorted(set(name.lstrip(":") for name in names
             if name.lstrip(":") not in ("UI", "shared"))))
 
+    def seek(self, frame: int) -> None:
+        from maya import cmds
+
+        cmds.currentTime(frame)
+
     def save_new(self, output: Path) -> Path:
         from maya import cmds
 
