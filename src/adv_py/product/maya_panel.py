@@ -1048,15 +1048,20 @@ def create_panel(controller: MayaPanelController | None = None):
 
 
 def show_panel(controller: MayaPanelController | None = None):
-    """Show the in-process panel from Maya's Python command line."""
+    """Show the AdvancedSkeleton-style navigation from Maya's command line."""
     from PySide2 import QtCore, QtWidgets
 
-    panel = create_panel(controller)
+    from .maya_adv_layout import create_adv_panel
+    panel = create_adv_panel(controller)
     try:
-        from adv_py.adapters.maya_panel_window import attach_to_maya_window
-        attach_to_maya_window(panel)
+        from adv_py.adapters.maya_panel_window import attach_to_maya_dock
+        attach_to_maya_dock(panel)
     except (ImportError, RuntimeError):
-        pass
+        try:
+            from adv_py.adapters.maya_panel_window import attach_to_maya_window
+            attach_to_maya_window(panel)
+        except (ImportError, RuntimeError):
+            pass
     panel.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
     _OPEN_PANELS.append(panel)
     panel.destroyed.connect(lambda: _OPEN_PANELS.remove(panel)
