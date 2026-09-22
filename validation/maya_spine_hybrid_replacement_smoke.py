@@ -16,9 +16,13 @@ def main(mode,folder):
         from adv_py.application import ReplaceRegisteredSpineCharacter
 
         mesh='|source:SourceMesh';skin='source:SourceSkin'
-        if mode=='inspect':
-            scene=sys.argv[3] if len(sys.argv)>3 else 'spine-hybrid-replaced.ma'
-            times=tuple(1+i*.25 for i in range(37))+(4.999,)
+        reverse=mode.endswith('_reverse')
+        roundtrip=mode.endswith('_roundtrip')
+        stem=('spine-hybrid-reverse' if reverse else
+              'spine-hybrid-roundtrip' if roundtrip else 'spine-hybrid')
+        if mode.startswith('inspect'):
+            scene=sys.argv[3] if len(sys.argv)>3 else stem+'-replaced.ma'
+            times=tuple(1+i*.25 for i in range(37))+(4.999,7.999)
             def mesh_points():
                 result={}
                 for frame in times:
@@ -26,7 +30,7 @@ def main(mode,folder):
                     result[frame]=tuple(tuple(cmds.xform(mesh+f'.vtx[{i}]',
                         q=True,ws=True,t=True)) for i in range(4))
                 return result
-            cmds.file(str(folder/'spine-hybrid-before.ma'),open=True,force=True)
+            cmds.file(str(folder/(stem+'-before.ma')),open=True,force=True)
             source_points=mesh_points()
             cmds.file(str(folder/scene),open=True,force=True)
             reg=MayaBodyBuildHost(namespace='source').read_character_registration()
@@ -36,14 +40,16 @@ def main(mode,folder):
             error=max(abs(a-b) for frame in times
                 for left,right in zip(source_points[frame],target_points[frame])
                 for a,b in zip(left,right))
-            def jump(rows):
-                return max(abs(a-b) for left,right in zip(rows[4.999],rows[5.])
+            def jump(rows,event):
+                return max(abs(a-b) for left,right in zip(rows[event-.001],rows[event])
                            for a,b in zip(left,right))
-            if error>.03 or abs(jump(source_points)-jump(target_points))>.0002:
+            events=(5.,8.) if roundtrip else (5.,)
+            if error>.03 or any(abs(jump(source_points,event)-
+                    jump(target_points,event))>.0002 for event in events):
                 raise RuntimeError('混合脊柱重开后的网格或切换边界超限')
             print('HYBRID_REOPEN_OK',json.dumps(dict(error=error,
-                source_boundary=jump(source_points),
-                target_boundary=jump(target_points))),flush=True)
+                source_boundaries=[jump(source_points,event) for event in events],
+                target_boundaries=[jump(target_points,event) for event in events])),flush=True)
             return
         cmds.file(str(folder/'full-spine-replacement-before.ma'),open=True,force=True)
         cmds.undoInfo(state=True)
@@ -60,18 +66,27 @@ def main(mode,folder):
                     time=frame,value=neutral[ch.key],
                     inTangentType='linear',outTangentType='linear')
         mode_channel=channels['spine.spline.spineIkFk']
-        for frame,value in ((1,0.),(3,0.),(4,0.),(5,1.),(10,1.)):
+        mode_keys=((1,1.),(3,1.),(4,1.),(5,0.),(10,0.)) if reverse else (
+            (1,0.),(3,0.),(4,0.),(5,1.),(7,1.),(8,0.),(10,0.)) if roundtrip else (
+            (1,0.),(3,0.),(4,0.),(5,1.),(10,1.))
+        for frame,value in mode_keys:
             source._cmds.setKeyframe(mode_channel.node,
                 attribute=mode_channel.attribute,time=frame,value=value,
                 inTangentType='linear',outTangentType='step')
         cmds.keyTangent(source.scene_address(mode_channel.node)+'.'
             +mode_channel.attribute,edit=True,outTangentType='step')
         fk=reg.spine.fk_controls[1]
-        for frame,value in ((1,0.),(3,15.),(5,0.),(10,0.)):
+        fk_keys=((1,0.),(5,0.),(7,15.),(10,0.)) if reverse else (
+            (1,0.),(3,15.),(5,0.),(8,0.),(9,15.),(10,0.)) if roundtrip else (
+            (1,0.),(3,15.),(5,0.),(10,0.))
+        for frame,value in fk_keys:
             source._cmds.setKeyframe(fk,attribute='rotateY',time=frame,
                 value=value,inTangentType='linear',outTangentType='linear')
         ik=channels['spine.spline.1.translateY']
-        for frame,value in ((1,0.),(5,0.),(10,.225)):
+        ik_keys=((1,0.),(3,.225),(5,0.),(10,0.)) if reverse else (
+            (1,0.),(5,0.),(7,.225),(8,0.),(10,0.)) if roundtrip else (
+            (1,0.),(5,0.),(10,.225))
+        for frame,value in ik_keys:
             source._cmds.setKeyframe(ik.node,attribute=ik.attribute,
                 time=frame,value=value,
                 inTangentType='linear',outTangentType='linear')
@@ -86,7 +101,7 @@ def main(mode,folder):
         wanted={frame:points(frame) for frame in frames}
         source_boundary=(points(4.999),points(5.))
         points(1)
-        cmds.file(rename=str(folder/'spine-hybrid-before.ma'))
+        cmds.file(rename=str(folder/(stem+'-before.ma')))
         cmds.file(save=True,type='mayaAscii',force=True)
         service=ReplaceRegisteredSpineCharacter(
             MayaOriginalSkinSpineMigrationHost(namespace='target'))
@@ -125,7 +140,7 @@ def main(mode,folder):
                     distance(target_boundary)<.002,
                     abs(distance(target_boundary)-distance(source_boundary))<.0002)):
             raise RuntimeError(report)
-        cmds.file(rename=str(folder/'spine-hybrid-replaced.ma'))
+        cmds.file(rename=str(folder/(stem+'-replaced.ma')))
         cmds.file(save=True,type='mayaAscii',force=True)
     finally:
         maya.standalone.uninitialize()

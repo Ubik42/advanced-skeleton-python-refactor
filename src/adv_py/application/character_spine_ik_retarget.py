@@ -22,7 +22,7 @@ class RegisteredSpineIkTake:
 
 
 class RetargetCharacterSpineIk:
-    """Transfer source curves and match one stepped FK-to-IK transition."""
+    """Transfer source curves and match stepped FK/IK mode events."""
 
     def __init__(self, host):
         self._host = host
@@ -95,7 +95,7 @@ class RetargetCharacterSpineIk:
                 raise CharacterRegistryError('混合脊柱迁移要求原生模式事件曲线')
             times,values,out_tangents=schedule
             if (any(min(abs(value),abs(value-1.)) > 1e-8 for value in values)
-                    or any(tangent not in ('step','stepnext')
+                    or any(tangent != 'step'
                            for index,tangent in enumerate(out_tangents[:-1])
                            if times[index] < frames[-1]
                            and times[index+1] > frames[0])
@@ -109,10 +109,10 @@ class RetargetCharacterSpineIk:
             events=tuple((all_frames[index],modes[index-1],modes[index])
                 for index in range(1,len(all_frames))
                 if abs(modes[index]-modes[index-1])>1e-8)
-            if len(events)!=1 or abs(events[0][1])>1e-8 or abs(events[0][2]-1.)>1e-8:
-                raise CharacterRegistryError('混合脊柱迁移当前要求一次 FK→IK 阶梯事件')
-            event=events[0][0]
-            fk_pairs.append((event,event-1e-4))
+            if not events or any(event not in event_times for event,_,_ in events):
+                raise CharacterRegistryError('混合脊柱迁移要求整数帧阶梯 FK/IK 事件')
+            fk_pairs.extend((event,event-1e-4) for event,before,after in events
+                            if abs(before)<=1e-8 and abs(after-1.)<=1e-8)
         fk_frames=tuple(frame for frame,_ in fk_pairs)
         fk_source_frames=tuple(frame for _,frame in fk_pairs)
         return RegisteredSpineIkTake(source,target,all_frames,channels,
