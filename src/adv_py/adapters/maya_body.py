@@ -205,6 +205,7 @@ from adv_py.core.skin_bind import (
     SkinWeightNormalization,
 )
 from adv_py.core.skin_weights import (
+    SKIN_WEIGHT_VISIBLE_THRESHOLD,
     SkinInfluenceWeight,
     SkinVertexWeights,
     SkinWeightChange,
@@ -3799,7 +3800,7 @@ class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, Maya
                 weights = []
                 for path in influences:
                     value = float(values[offset * influence_count + influence_order[path]])
-                    if value > 1e-8:
+                    if value > SKIN_WEIGHT_VISIBLE_THRESHOLD:
                         weights.append(SkinInfluenceWeight(path, value))
                 rows.append(SkinVertexWeights(vertex_index, tuple(weights)))
         if vertex_indices is None:

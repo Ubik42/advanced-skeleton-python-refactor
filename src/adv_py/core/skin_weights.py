@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from math import isfinite
 
 
+SKIN_WEIGHT_VISIBLE_THRESHOLD = 1e-8
+
+
 class SkinWeightValidationError(ValueError):
     pass
 
@@ -207,8 +210,8 @@ def plan_skin_weight_changes(
     current = {vertex.vertex_index: vertex.weights for vertex in state.vertices}
     changes = []
     for vertex in request.vertices:
-        before = _canonical_weights(current[vertex.vertex_index], tolerance)
-        after = _canonical_weights(vertex.weights, tolerance)
+        before = _canonical_weights(current[vertex.vertex_index], SKIN_WEIGHT_VISIBLE_THRESHOLD)
+        after = _canonical_weights(vertex.weights, SKIN_WEIGHT_VISIBLE_THRESHOLD)
         if not _weights_close(before, after, tolerance):
             changes.append(SkinWeightChange(vertex.vertex_index, before, after))
     return tuple(changes)
@@ -225,8 +228,8 @@ def audit_skin_weight_result(
     for vertex in request.vertices:
         weights = actual.get(vertex.vertex_index)
         if weights is not None and not _weights_close(
-            _canonical_weights(vertex.weights, tolerance),
-            _canonical_weights(weights, tolerance),
+            _canonical_weights(vertex.weights, SKIN_WEIGHT_VISIBLE_THRESHOLD),
+            _canonical_weights(weights, SKIN_WEIGHT_VISIBLE_THRESHOLD),
             tolerance,
         ):
             issues.append(

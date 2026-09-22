@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import maya.standalone
 
 
-def main(output: Path) -> int:
+def main(output: Path, subdivisions: int = 2) -> int:
     start = time.perf_counter()
     maya.standalone.initialize(name="python")
     try:
@@ -33,7 +33,7 @@ def main(output: Path) -> int:
                                 subdivisionsX=1, subdivisionsY=1,
                                 constructionHistory=False)[0]
         target = cmds.polyPlane(name="SurfaceTarget", width=2., height=2.,
-                                subdivisionsX=2, subdivisionsY=2,
+                                subdivisionsX=subdivisions, subdivisionsY=subdivisions,
                                 constructionHistory=False)[0]
         source = (cmds.ls(source, long=True) or [source])[0]
         target = (cmds.ls(target, long=True) or [target])[0]
@@ -53,16 +53,23 @@ def main(output: Path) -> int:
         before_source = host.capture_all_skin_weights("SurfaceSourceSkin", source)
         before_target = host.capture_all_skin_weights("SurfaceTargetSkin", target)
         operation = TransferSkinWeightsBySurface(host)
+        transfer_started = time.perf_counter()
         preview = operation.plan("SurfaceSourceSkin", source,
             "SurfaceTargetSkin", target, max_distance=1e-6)
         result = operation.apply("SurfaceSourceSkin", source,
             "SurfaceTargetSkin", target, max_distance=1e-6)
+        transfer_seconds = time.perf_counter() - transfer_started
         after_target = host.capture_all_skin_weights("SurfaceTargetSkin", target)
         expected = {row.vertex_index: row.weights for row in result.plan.transfer.document.vertices}
         actual = {row.vertex_index: row.weights for row in after_target.vertices}
         matches = all(len(expected[i]) == len(actual[i]) and all(
             a.influence_path == b.influence_path and abs(a.weight - b.weight) < 1e-6
             for a, b in zip(expected[i], actual[i])) for i in expected)
+        mismatches = [(i, [(w.influence_path, w.weight) for w in expected[i]],
+                       [(w.influence_path, w.weight) for w in actual[i]])
+                      for i in expected if len(expected[i]) != len(actual[i]) or any(
+                          a.influence_path != b.influence_path or abs(a.weight - b.weight) >= 1e-6
+                          for a, b in zip(expected[i], actual[i]))]
         neutral = host.capture_face_mesh(target)
         center = next(i for i, point in enumerate(neutral.points)
                       if abs(point[0]) < 1e-8 and abs(point[2]) < 1e-8)
@@ -72,18 +79,25 @@ def main(output: Path) -> int:
         cmds.redo()
         redone = host.capture_all_skin_weights("SurfaceTargetSkin", target)
         checks = {
-            "different_topology": len(before_source.vertices) == 4 and len(before_target.vertices) == 9,
-            "complete_target_document": len(preview.transfer.document.vertices) == 9,
+            "different_topology": len(before_source.vertices) == 4
+                and len(before_target.vertices) == (subdivisions + 1) ** 2,
+            "complete_target_document": len(preview.transfer.document.vertices)
+                == (subdivisions + 1) ** 2,
             "all_weights_match": matches,
             "center_interpolated": all(abs(center_weights.get(joint, 0.) - .5) < 1e-6
                                        for joint in joints),
             "source_unchanged": host.capture_all_skin_weights("SurfaceSourceSkin", source) == before_source,
             "single_undo_restores_target": undone == before_target,
             "redo_restores_transfer": redone == after_target,
-            "nine_vertices_changed": result.edit_result.changed_vertex_count > 0,
+            "vertices_changed": result.edit_result.changed_vertex_count > 0,
         }
         payload = {"host": "maya", "version": str(cmds.about(version=True)),
             "pid": os.getpid(), "slice": "skin_weight_surface_transfer",
+            "target_vertices": (subdivisions + 1) ** 2,
+            "changed_vertices": result.edit_result.changed_vertex_count,
+            "mismatch_count": len(mismatches),
+            "mismatch_examples": mismatches[:3],
+            "transfer_seconds": round(transfer_seconds, 3),
             **checks, "duration_seconds": round(time.perf_counter() - start, 3),
             "status": "passed" if all(checks.values()) else "failed"}
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -95,4 +109,4 @@ def main(output: Path) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(Path(sys.argv[1])))
+    raise SystemExit(main(Path(sys.argv[1]), int(sys.argv[2]) if len(sys.argv) > 2 else 2))

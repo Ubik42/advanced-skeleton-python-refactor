@@ -123,6 +123,15 @@ class SkinWeightTests(unittest.TestCase):
         self.assertEqual(result.changed_vertex_count, 0)
         self.assertEqual(host.transaction_count, 0)
 
+    def test_sparse_support_difference_is_written_even_below_value_tolerance(self):
+        host = FakeSkinWeightHost()
+        host.state = replace(host.state, vertices=(vertex(0,
+            (A, 0.9999993), (B, 0.0000007)),))
+        result = EditSkinWeights(host).apply("AdvPy_BodySkin", "|BodyMesh",
+                                       (vertex(0, (A, 1.0)),))
+        self.assertEqual(result.changed_vertex_count, 1)
+        self.assertEqual(host.state.vertices[0].weights, (SkinInfluenceWeight(A, 1.),))
+
     def test_applies_once_and_rolls_back_faulty_result(self):
         target = (vertex(0, (A, 1.0)),)
         host = FakeSkinWeightHost()
