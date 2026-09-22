@@ -82,14 +82,42 @@ def run(mode: str, directory: Path) -> int:
                        "changed": result.changed_vertex_count,
                        "undo_restored": undone == before,
                        "redo_restored": redone == after}
+        elif mode == "target_aligned":
+            source = load_skin_weight_surface_source(asset_path)
+            mesh = cmds.polyPlane(name="TargetMesh", width=2., height=2.,
+                subdivisionsX=2, subdivisionsY=2, constructionHistory=False)[0]
+            mesh = (cmds.ls(mesh, long=True) or [mesh])[0]
+            original = host.capture_face_mesh(mesh)
+            pairs = []
+            for source_index in (0, 1, 2):
+                source_point = source.geometry.mesh.points[source_index]
+                target_index = next(index for index, point in enumerate(original.points)
+                    if all(abs(a - b) < 1e-8 for a, b in zip(point, source_point)))
+                pairs.append((source_index, target_index))
+            for index, point in enumerate(original.points):
+                cmds.xform(f"{mesh}.vtx[{index}]", objectSpace=True,
+                    translation=(5. + point[2], point[1], 2. - point[0]))
+            cmds.skinCluster(*influences, mesh, name="TargetSkin",
+                maximumInfluences=2, toSelectedBones=True)
+            alignment = {"pairs": pairs, "max_residual": 1e-6}
+            (directory / "alignment.json").write_text(
+                json.dumps(alignment, indent=2) + "\n", encoding="utf-8")
+            cmds.file(rename=str(directory / "target_before_aligned.ma"))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            payload = {"source_mesh_absent": not cmds.objExists("SourceMesh"),
+                       "target_vertices": len(host.capture_face_mesh(mesh).points),
+                       "alignment_pairs": pairs}
         elif mode == "inspect":
-            cmds.file(directory / (sys.argv[3] if len(sys.argv) > 3 else "transferred.ma"),
+            scene_name = sys.argv[3] if len(sys.argv) > 3 else "transferred.ma"
+            cmds.file(directory / scene_name,
                       open=True, force=True)
             mesh = "|TargetMesh"
             state = host.capture_all_skin_weights("TargetSkin", mesh)
             points = host.capture_face_mesh(mesh).points
+            center_position = (5., 2.) if "aligned" in scene_name else (0., 0.)
             center = next(i for i, point in enumerate(points)
-                          if abs(point[0]) < 1e-8 and abs(point[2]) < 1e-8)
+                          if abs(point[0] - center_position[0]) < 1e-8
+                          and abs(point[2] - center_position[1]) < 1e-8)
             center_weights = {entry.influence_path: entry.weight
                               for entry in state.vertices[center].weights}
             payload = {"reopened_vertices": state.vertex_count,
@@ -106,6 +134,8 @@ def run(mode: str, directory: Path) -> int:
             return 0 if all((payload["target_vertices"] == 9,
                 payload["source_mesh_absent"], payload["changed"] > 0,
                 payload["undo_restored"], payload["redo_restored"])) else 1
+        if mode == "target_aligned":
+            return 0 if payload["source_mesh_absent"] and payload["target_vertices"] == 9 else 1
         return 0 if all((payload["reopened_vertices"] == 9,
             payload["center_interpolated"], payload["source_mesh_absent"])) else 1
     finally:

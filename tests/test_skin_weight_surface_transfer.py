@@ -3,7 +3,7 @@ from dataclasses import replace
 import json
 import unittest
 
-from adv_py.core import (FaceMeshSnapshot, SkinInfluenceWeight,
+from adv_py.core import (FaceMeshSnapshot, FaceSurfaceAlignment, SkinInfluenceWeight,
     SkinVertexWeights, SkinWeightInputState, SkinWeightValidationError,
     skin_weight_document_from_state, transfer_skin_weights_by_surface)
 from adv_py.core.face_neutral_geometry import FaceNeutralGeometry
@@ -69,6 +69,19 @@ class SkinWeightSurfaceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "同一网格"):
             SkinWeightSurfaceSource(self.source, FaceNeutralGeometry(
                 replace(self.source_mesh, path="|Other"), ((0, 1, 2),), "y", "cm"))
+
+    def test_rigid_alignment_transfers_translated_rotated_mesh(self):
+        moved = replace(self.target_mesh, points=tuple(
+            (5. - point[1], 2. + point[0], point[2])
+            for point in self.target_mesh.points))
+        with self.assertRaisesRegex(ValueError, "超过最大允许距离"):
+            transfer_skin_weights_by_surface(self.source, self.source_mesh,
+                moved, ((0, 1, 2),), self.target, max_distance=0.)
+        result = transfer_skin_weights_by_surface(self.source, self.source_mesh,
+            moved, ((0, 1, 2),), self.target, max_distance=0.,
+            alignment=FaceSurfaceAlignment(((0, 0), (1, 1), (2, 2)), 1e-6))
+        self.assertEqual(result.document.vertices[3].weights,
+            (SkinInfluenceWeight("|A", .75), SkinInfluenceWeight("|B", .25)))
 
 
 if __name__ == "__main__":
