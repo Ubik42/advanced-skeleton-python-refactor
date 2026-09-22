@@ -27,6 +27,7 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
             followers = cmds.ls("source:FaceFollower", long=True) or []
             drivers = cmds.ls("source:FaceDriver", long=True) or []
             gains = cmds.ls("source:FaceGain", long=True) or []
+            shared = cmds.ls("external:SharedFaceScale", long=True) or []
             props = cmds.ls("source:FingerProp", long=True) or []
             spine_props = cmds.ls("source:SpineProp", long=True) or []
             spine_parent = (cmds.listRelatives(spine_props[0], parent=True,
@@ -34,6 +35,7 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
             good = (len(registration.spine.body_joints) == 7 and
                     not cmds.namespace(exists="target") and
                     len(controls) == len(followers) == len(drivers) == len(gains)
+                    == len(shared)
                     == len(props) == len(spine_props) == 1 and
                     cmds.objExists("source:FaceSkin") and
                     cmds.objExists("source:AdvPy_FaceBlendShape") and
@@ -41,7 +43,8 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
                         ("source:SmileTarget", "source:VisemeATarget")) and
                     abs(cmds.getAttr(controls[0] + ".smile_R", time=5) - 1.) < 1e-6 and
                     abs(cmds.getAttr(controls[0] + ".viseme_A", time=10) - 1.) < 1e-6 and
-                    abs(cmds.getAttr(followers[0] + ".translateX", time=5) - 1.) < 1e-6 and
+                    abs(cmds.getAttr(followers[0] + ".translateX", time=5) - .75) < 1e-6 and
+                    bool(cmds.lockNode(shared[0], query=True, lock=True)[0]) and
                     abs(cmds.getAttr(props[0] + ".translateZ", time=10) - 1.) < 1e-6 and
                     bool(spine_parent) and (cmds.listRelatives(spine_parent,
                         parent=True, fullPath=True) or [None])[0]
@@ -73,11 +76,17 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
                                    parent=control)
         driver = cmds.createNode("multiplyDivide", name="source:FaceDriver")
         gain = cmds.createNode("multiplyDivide", name="source:FaceGain")
+        cmds.namespace(addNamespace="external")
+        shared = cmds.createNode("multiplyDivide", name="external:SharedFaceScale")
         cmds.setAttr(driver + ".input2X", 1.)
         cmds.setAttr(gain + ".input2X", 1.)
+        cmds.setAttr(shared + ".input1X", .75)
+        cmds.setAttr(shared + ".input2X", 1.)
         cmds.connectAttr(control + ".smile_R", driver + ".input1X")
         cmds.connectAttr(driver + ".outputX", gain + ".input1X")
+        cmds.connectAttr(shared + ".outputX", gain + ".input2X", force=True)
         cmds.connectAttr(gain + ".outputX", follower + ".translateX")
+        cmds.lockNode(shared, lock=True)
         prop = cmds.createNode("transform", name="source:FingerProp",
                                parent=face.scene_address(finger))
         prop = (cmds.ls(prop, long=True) or [prop])[0]
@@ -107,7 +116,7 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
             old_rig_graph_root_rejected = False
         identities = {node: (cmds.ls(node, uuid=True) or [None])[0]
                       for node in (neutral, "source:FaceSkin", control,
-                                   deformer, follower, driver, gain, prop, prop_curve,
+                                   deformer, follower, driver, gain, shared, prop, prop_curve,
                                    spine_prop, *targets)}
         before = {}
         prop_before = {}
@@ -178,6 +187,7 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
             new_follower = cmds.ls(identities[follower], long=True) or []
             new_driver = cmds.ls(identities[driver], long=True) or []
             new_gain = cmds.ls(identities[gain], long=True) or []
+            new_shared = cmds.ls(identities[shared], long=True) or []
             new_prop = cmds.ls(identities[prop], long=True) or []
             new_spine_prop = cmds.ls(identities[spine_prop], long=True) or []
             new_head = next(j.path for j in new_reg.body
@@ -233,7 +243,7 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
                             abs(cmds.getAttr(new_control[0] + ".smile_R", time=frame) - value) < 1e-6
                             for frame, value in ((0, .15), (5, 1.), (20, .25))),
                         internal_driver_preserved=bool(new_control and new_follower
-                            and new_driver and new_gain) and
+                            and new_driver and new_gain and new_shared) and
                             (cmds.ls(cmds.connectionInfo(new_follower[0] + ".translateX",
                                 sourceFromDestination=True).split('.', 1)[0], uuid=True)
                                 or [None])[0] == identities[gain] and
@@ -243,7 +253,11 @@ def main(folder: Path, inspect_scene: str | None = None) -> int:
                             (cmds.ls(cmds.connectionInfo(new_driver[0] + ".input1X",
                                 sourceFromDestination=True).split('.', 1)[0], uuid=True)
                                 or [None])[0] == identities[control] and
-                            abs(cmds.getAttr(new_follower[0] + ".translateX", time=5) - 1.) < 1e-6,
+                            (cmds.ls(cmds.connectionInfo(new_gain[0] + ".input2X",
+                                sourceFromDestination=True).split('.', 1)[0], uuid=True)
+                                or [None])[0] == identities[shared] and
+                            bool(cmds.lockNode(new_shared[0], query=True, lock=True)[0]) and
+                            abs(cmds.getAttr(new_follower[0] + ".translateX", time=5) - .75) < 1e-6,
                         deformation_live=mesh_error < .2 and
                             max(abs(a-b) for a,b in zip(current[1], current[5])) > .1,
                         face_mesh_max_error_cm=mesh_error)
