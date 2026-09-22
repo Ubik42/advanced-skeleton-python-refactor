@@ -7,6 +7,7 @@ from .maya_mocap_control import MayaMocapControlHost
 from .blender import BlenderAdapterStatus, BlenderRigHost
 from .maya import MayaAdapterStatus, MayaRigHost
 from .maya_body import MayaBodyBuildHost
+from .maya_face import MayaFaceHost
 from .maya_fit import MayaFitJointHost, MayaJointLabelHost
 from .maya_mocap import (
     MayaMocapConnectionHost,
@@ -25,6 +26,7 @@ __all__ = [
     "InMemoryRigHost",
     "MayaAdapterStatus",
     "MayaBodyBuildHost",
+    "MayaFaceHost",
     "MayaFitJointHost",
     "MayaJointLabelHost",
     "MayaMocapSourceReader",

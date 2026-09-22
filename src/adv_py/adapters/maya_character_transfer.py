@@ -223,7 +223,11 @@ def verify_retained(host,staged):
         if actual!=expected:
             raise RuntimeError('交接改变了原蒙皮数据')
     from .maya_character_preservation import capture_deformers
-    if capture_deformers(host,staged.original.skins)!=staged.original.deformers:
+    captured_deformers=capture_deformers(host,staged.original.skins)
+    expected_deformers=tuple(replace(row,
+        connections=tuple(sorted((local(a),local(b)) for a,b in row.connections)))
+        for row in staged.original.deformers)
+    if captured_deformers!=expected_deformers:
         raise RuntimeError('交接改变了生产变形器参数、连接或网格顺序')
     for row in staged.original.extensions:
         actual=capture_extension(host,_by_uuid(c,row.uuid))

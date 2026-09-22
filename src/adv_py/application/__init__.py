@@ -519,6 +519,7 @@ __all__ = [
     "RetargetMocapVariableFullIkToCharacter",
     "RetargetMocapVariableMixedToCharacter",
     "RetargetMocapVariableScheduledToCharacter", "MocapVariableScheduledPlan",
+    "BuildFaceBlendShapes", "FaceBuildPlan", "FaceBuildResult", "FaceBinding",
     "ConnectMocapBody",
     "DisconnectMocapBody",
     "MocapBodyConnectionHost",
@@ -629,3 +630,4 @@ from .mocap_variable_retarget import RetargetMocapVariableFullIkToCharacter
 from .mocap_variable_retarget import RetargetMocapVariableMixedToCharacter
 from .mocap_variable_retarget import (RetargetMocapVariableScheduledToCharacter,
                                       MocapVariableScheduledPlan)
+from .face_shapes import BuildFaceBlendShapes, FaceBuildPlan, FaceBuildResult, FaceBinding

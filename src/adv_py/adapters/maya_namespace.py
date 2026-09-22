@@ -18,6 +18,9 @@ _NODE_RESULTS |= {'aimConstraint'}
 _CREATE |= {'aimConstraint'}
 _NODE_RESULTS |= {'curve'}
 _CREATE |= {'curve'}
+_NODE_ARGS |= {'blendShape'}
+_NODE_RESULTS |= {'blendShape'}
+_CREATE |= {'blendShape'}
 
 
 class MayaCharacterCommands:
