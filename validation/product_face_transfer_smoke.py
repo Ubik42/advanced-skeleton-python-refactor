@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "validation")]
 
 from product_entry_smoke import _run
+from adv_py.core.character_registry import digest
 
 
 def _fixture(source: Path, output: Path, target_only: Path) -> None:
@@ -21,6 +22,7 @@ def _fixture(source: Path, output: Path, target_only: Path) -> None:
     maya.standalone.initialize(name="python")
     try:
         from maya import cmds
+        from maya.api import OpenMaya as om
         from adv_py.adapters import MayaFaceHost
 
         cmds.file(str(source), open=True, force=True)
@@ -31,6 +33,19 @@ def _fixture(source: Path, output: Path, target_only: Path) -> None:
         cmds.delete(dense, constructionHistory=True)
         cmds.polySmooth(dense, divisions=1)
         cmds.delete(dense, constructionHistory=True)
+        rigid = cmds.duplicate(original, name="hero:FaceNeutralRigid",
+                               returnRootsOnly=True)[0]
+        cmds.delete(rigid, constructionHistory=True)
+        cmds.polyPoke(rigid + ".f[*]")
+        cmds.delete(rigid, constructionHistory=True)
+        selection = om.MSelectionList()
+        selection.add(rigid)
+        mesh = om.MFnMesh(selection.getDagPath(0))
+        points = mesh.getPoints(om.MSpace.kObject)
+        for point in points:
+            x, y, z = point.x, point.y, point.z
+            point.x, point.y, point.z = 4. - y, 7. + x, 2. + z
+        mesh.setPoints(points, om.MSpace.kObject)
         far = cmds.duplicate(dense, name="hero:FaceNeutralFar",
                              returnRootsOnly=True)[0]
         cmds.move(0, 0, 5, far + ".vtx[*]", relative=True, objectSpace=True)
@@ -45,7 +60,8 @@ def _fixture(source: Path, output: Path, target_only: Path) -> None:
 
 
 def _inspect(scene: Path, asset_path: Path,
-             geometry_path: Path | None = None) -> None:
+             geometry_path: Path | None = None,
+             target_name: str = "|FaceNeutralDense") -> None:
     import maya.standalone
 
     maya.standalone.initialize(name="python")
@@ -60,16 +76,16 @@ def _inspect(scene: Path, asset_path: Path,
         host = MayaFaceHost(namespace="hero")
         source = (load_face_neutral_geometry(geometry_path).mesh
                   if geometry_path else host.capture_face_mesh("|FaceNeutral"))
-        neutral = host.capture_face_mesh("|FaceNeutralDense")
+        neutral = host.capture_face_mesh(target_name)
         sculpt = host.capture_face_mesh("|DenseSmile")
         expected = load_face_target_asset(asset_path).points_for(neutral)
         error = max(abs(a - b) for actual, wanted in zip(sculpt.points, expected)
                     for a, b in zip(actual, wanted))
-        built = BuildFaceBlendShapes(host).apply("|FaceNeutralDense",
+        built = BuildFaceBlendShapes(host).apply(target_name,
             (FaceTarget("smile_R", FaceShapeKind.EXPRESSION, "|DenseSmile"),))
-        before = host.capture_face_mesh("|FaceNeutralDense").points
+        before = host.capture_face_mesh(target_name).points
         cmds.setAttr(host.scene_address(built.plan.control_path) + ".smile_R", 1.)
-        after = host.capture_face_mesh("|FaceNeutralDense").points
+        after = host.capture_face_mesh(target_name).points
         deformation = max(abs(a - b) for first, second in zip(before, after)
                           for a, b in zip(first, second))
         print(json.dumps({"source_vertices": source.vertex_count,
@@ -138,6 +154,26 @@ def main(mayapy: Path, source: Path, report: Path) -> int:
             cwd=ROOT, capture_output=True, text=True, timeout=120)
             if cross_scene.exists() else None)
         cross_details = _result(cross_inspected) if cross_inspected else None
+        alignment_path = folder / "rigid.alignment.json"
+        alignment_path.write_text(json.dumps({"pairs": [[0, 0], [1, 1], [2, 2]],
+            "max_residual": 0.0001}), encoding="utf-8")
+        rigid_asset = folder / "rigid.asset.json"
+        rigid_transfer = _run(mayapy, "face-asset-transfer", str(target_only),
+            "--namespace", "hero", "--source-geometry", str(geometry_path),
+            "--target-neutral", "|FaceNeutralRigid", "--asset", str(original),
+            "--alignment", str(alignment_path), "--max-distance", "0.001",
+            "--output", str(rigid_asset))
+        rigid_scene = folder / "rigid-imported.ma"
+        rigid_import = (_run(mayapy, "face-asset-import", str(target_only),
+            "--namespace", "hero", "--neutral", "|FaceNeutralRigid",
+            "--asset", str(rigid_asset), "--target", "|DenseSmile",
+            "--output", str(rigid_scene)) if rigid_asset.exists()
+            else (1, None, "rigid asset missing"))
+        rigid_inspected = (subprocess.run([str(mayapy), str(Path(__file__)),
+            "--inspect", str(rigid_scene), str(rigid_asset), str(geometry_path),
+            "|FaceNeutralRigid"], cwd=ROOT, capture_output=True, text=True,
+            timeout=120) if rigid_scene.exists() else None)
+        rigid_details = _result(rigid_inspected) if rigid_inspected else None
         corrupt_geometry = folder / "corrupt.geometry.json"
         if geometry_path.exists():
             damaged = json.loads(geometry_path.read_text(encoding="utf-8"))
@@ -149,6 +185,19 @@ def main(mayapy: Path, source: Path, report: Path) -> int:
             "--target-neutral", "|FaceNeutralDense", "--asset", str(original),
             "--max-distance", "0.001", "--output", str(corrupt_output))
             if corrupt_geometry.exists() else (1, None, "corrupt geometry missing"))
+        wrong_unit = folder / "wrong-unit.geometry.json"
+        if geometry_path.exists():
+            changed = json.loads(geometry_path.read_text(encoding="utf-8"))
+            changed["payload"]["linear_unit"] = (
+                "m" if changed["payload"]["linear_unit"] == "cm" else "cm")
+            changed["digest"] = digest(changed["payload"])
+            wrong_unit.write_text(json.dumps(changed), encoding="utf-8")
+        wrong_unit_output = folder / "wrong-unit.asset.json"
+        wrong_unit_rejected = (_run(mayapy, "face-asset-transfer", str(target_only),
+            "--namespace", "hero", "--source-geometry", str(wrong_unit),
+            "--target-neutral", "|FaceNeutralDense", "--asset", str(original),
+            "--max-distance", "0.001", "--output", str(wrong_unit_output))
+            if wrong_unit.exists() else (1, None, "unit geometry missing"))
         imported = (_run(mayapy, "face-asset-import", str(scene),
             "--namespace", "hero", "--neutral", "|FaceNeutralDense",
             "--asset", str(transferred), "--target", "|DenseSmile",
@@ -177,8 +226,15 @@ def main(mayapy: Path, source: Path, report: Path) -> int:
                 and cross_inspected.returncode == 0 and cross_details is not None
                 and cross_details["max_error"] < 1e-6
                 and cross_details["max_deformation"] > .01,
+            "rigid_alignment_transfer_import_and_binding": rigid_transfer[0] == 0
+                and rigid_import[0] == 0 and rigid_inspected is not None
+                and rigid_inspected.returncode == 0 and rigid_details is not None
+                and rigid_details["max_error"] < 1e-6
+                and rigid_details["max_deformation"] > .01,
             "corrupt_geometry_rejected_without_asset": corrupt_rejected[0] == 2
                 and not corrupt_output.exists(),
+            "different_scene_units_rejected_without_asset": wrong_unit_rejected[0] == 2
+                and not wrong_unit_output.exists(),
             "imported_geometry_and_blendshape_verified": imported[0] == 0
                 and inspected is not None and inspected.returncode == 0
                 and details is not None and details["target_vertices"]
@@ -191,6 +247,7 @@ def main(mayapy: Path, source: Path, report: Path) -> int:
                 and target_hash == sha256(target_only.read_bytes()).hexdigest(),
         }
         payload = {**checks, "details": details, "cross_scene_details": cross_details,
+                   "rigid_details": rigid_details,
                    "status": "passed" if all(checks.values()) else "failed"}
         if not all(checks.values()):
             payload["diagnostics"] = {"export": exported[2][-800:],
@@ -200,6 +257,10 @@ def main(mayapy: Path, source: Path, report: Path) -> int:
                 "cross_import": cross_import[2][-800:],
                 "cross_inspect": cross_inspected.stderr[-800:]
                     if cross_inspected else "missing",
+                "rigid_transfer": rigid_transfer[2][-800:],
+                "rigid_import": rigid_import[2][-800:],
+                "rigid_inspect": rigid_inspected.stderr[-800:]
+                    if rigid_inspected else "missing",
                 "corrupt_rejected": corrupt_rejected[2][-800:],
                 "inspect": inspected.stderr[-900:] if inspected else "missing",
                 "refused": refused[2][-700:]}
@@ -213,7 +274,8 @@ if __name__ == "__main__":
         _fixture(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
     elif sys.argv[1] == "--inspect":
         _inspect(Path(sys.argv[2]), Path(sys.argv[3]),
-                 Path(sys.argv[4]) if len(sys.argv) > 4 else None)
+                 Path(sys.argv[4]) if len(sys.argv) > 4 else None,
+                 sys.argv[5] if len(sys.argv) > 5 else "|FaceNeutralDense")
     else:
         raise SystemExit(main(Path(sys.argv[1]), Path(sys.argv[2]),
                               Path(sys.argv[3])))

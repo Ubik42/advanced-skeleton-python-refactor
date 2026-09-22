@@ -16,6 +16,8 @@ FACE_NEUTRAL_GEOMETRY_MAX_BYTES = 128_000_000
 class FaceNeutralGeometry:
     mesh: FaceMeshSnapshot
     triangles: tuple[tuple[int, int, int], ...]
+    up_axis: str = ""
+    linear_unit: str = ""
 
     def __post_init__(self):
         if (not isinstance(self.mesh, FaceMeshSnapshot)
@@ -30,6 +32,10 @@ class FaceNeutralGeometry:
                            for index in row)
                     or len(set(row)) != 3):
                 raise ValueError("面部中性几何包含无效三角面")
+        if (self.up_axis, self.linear_unit) != ("", "") and (
+                self.up_axis not in ("y", "z")
+                or self.linear_unit not in ("cm", "m")):
+            raise ValueError("面部中性几何的坐标轴或长度单位无效")
 
 
 def face_neutral_geometry_to_json(geometry: FaceNeutralGeometry) -> str:
@@ -40,9 +46,10 @@ def face_neutral_geometry_to_json(geometry: FaceNeutralGeometry) -> str:
         "topology_digest": mesh.topology_digest,
         "position_digest": mesh.position_digest,
         "points": [list(point) for point in mesh.points],
-        "triangles": [list(row) for row in geometry.triangles]}
+        "triangles": [list(row) for row in geometry.triangles],
+        "up_axis": geometry.up_axis, "linear_unit": geometry.linear_unit}
     text = canonical({"format": FACE_NEUTRAL_GEOMETRY_FORMAT,
-        "version": 1, "payload": payload, "digest": digest(payload)})
+        "version": 2, "payload": payload, "digest": digest(payload)})
     if len(text.encode("utf-8")) + 1 > FACE_NEUTRAL_GEOMETRY_MAX_BYTES:
         raise ValueError("面部中性几何文档超过 128 MB")
     return text
@@ -54,10 +61,12 @@ def face_neutral_geometry_from_json(source: str) -> FaceNeutralGeometry:
         ("format", "version", "payload", "digest"))
     if (document["format"] != FACE_NEUTRAL_GEOMETRY_FORMAT
             or type(document["version"]) is not int
-            or document["version"] != 1):
+            or document["version"] not in (1, 2)):
         raise ValueError("面部中性几何文档格式或版本无效")
-    payload = exact(document["payload"], ("path", "vertex_count",
-        "topology_digest", "position_digest", "points", "triangles"))
+    fields = ("path", "vertex_count", "topology_digest", "position_digest",
+              "points", "triangles")
+    payload = exact(document["payload"], fields + (("up_axis", "linear_unit")
+        if document["version"] == 2 else ()))
     if digest(payload) != document["digest"]:
         raise ValueError("面部中性几何文档内容摘要不匹配")
     if (not isinstance(payload["topology_digest"], str)
@@ -70,7 +79,8 @@ def face_neutral_geometry_from_json(source: str) -> FaceNeutralGeometry:
             payload["topology_digest"],
             tuple(tuple(point) for point in payload["points"]))
         triangles = tuple(tuple(row) for row in payload["triangles"])
-        geometry = FaceNeutralGeometry(mesh, triangles)
+        geometry = FaceNeutralGeometry(mesh, triangles,
+            payload.get("up_axis", ""), payload.get("linear_unit", ""))
     except (TypeError, ValueError, KeyError) as error:
         raise ValueError("面部中性几何文档结构无效") from error
     if mesh.position_digest != payload["position_digest"]:

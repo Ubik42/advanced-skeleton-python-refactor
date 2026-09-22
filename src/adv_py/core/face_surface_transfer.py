@@ -12,6 +12,75 @@ Point = tuple[float, float, float]
 Triangle = tuple[int, int, int]
 
 
+def _cross(a: Point, b: Point) -> Point:
+    return (a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0])
+
+
+def _unit(vector: Point) -> Point:
+    length = sqrt(_dot(vector, vector))
+    if length <= 1e-9:
+        raise ValueError("对齐标记点重合或共线")
+    return tuple(value / length for value in vector)  # type: ignore[return-value]
+
+
+def _frame(points: tuple[Point, Point, Point]) -> tuple[Point, Point, Point]:
+    first = _unit(_subtract(points[1], points[0]))
+    normal = _unit(_cross(first, _subtract(points[2], points[0])))
+    return first, _cross(normal, first), normal
+
+
+@dataclass(frozen=True, slots=True)
+class FaceSurfaceAlignment:
+    """Three corresponding vertex pairs define a source-to-target rigid frame."""
+    pairs: tuple[tuple[int, int], tuple[int, int], tuple[int, int]]
+    max_residual: float
+
+    def __post_init__(self):
+        if (not isinstance(self.pairs, tuple) or len(self.pairs) != 3
+                or any(not isinstance(row, tuple) or len(row) != 2
+                       or any(type(index) is not int or index < 0 for index in row)
+                       for row in self.pairs)
+                or len({row[0] for row in self.pairs}) != 3
+                or len({row[1] for row in self.pairs}) != 3
+                or isinstance(self.max_residual, bool)
+                or not isinstance(self.max_residual, (float, int))
+                or not isfinite(self.max_residual) or self.max_residual < 0.):
+            raise ValueError("刚体对齐需要三个不重复的顶点对应和有效误差上限")
+
+    def frames(self, source: FaceMeshSnapshot, destination: FaceMeshSnapshot
+               ) -> tuple[Point, Point, tuple[Point, Point, Point],
+                          tuple[Point, Point, Point]]:
+        if any(s >= source.vertex_count or t >= destination.vertex_count
+               for s, t in self.pairs):
+            raise ValueError("刚体对齐顶点索引越界")
+        source_points = tuple(source.points[s] for s, _ in self.pairs)
+        target_points = tuple(destination.points[t] for _, t in self.pairs)
+        source_frame = _frame(source_points)  # type: ignore[arg-type]
+        target_frame = _frame(target_points)  # type: ignore[arg-type]
+        for source_point, target_point in zip(source_points, target_points):
+            projected = _map(source_point, source_points[0], target_points[0],
+                             source_frame, target_frame)
+            if sqrt(_distance_squared(projected, target_point)) > self.max_residual + 1e-9:
+                raise ValueError("刚体对齐标记点误差超过上限；检查顶点对应或网格尺度")
+        return source_points[0], target_points[0], source_frame, target_frame
+
+
+def _rotate(vector: Point, origin_frame: tuple[Point, Point, Point],
+            destination_frame: tuple[Point, Point, Point]) -> Point:
+    coordinates = tuple(_dot(vector, axis) for axis in origin_frame)
+    return tuple(sum(coordinates[i] * destination_frame[i][axis]
+                     for i in range(3)) for axis in range(3))  # type: ignore[return-value]
+
+
+def _map(point: Point, origin: Point, destination: Point,
+         origin_frame: tuple[Point, Point, Point],
+         destination_frame: tuple[Point, Point, Point]) -> Point:
+    rotated = _rotate(_subtract(point, origin), origin_frame, destination_frame)
+    return tuple(destination[i] + rotated[i] for i in range(3))  # type: ignore[return-value]
+
+
 @dataclass(frozen=True, slots=True)
 class FaceSurfaceTransferResult:
     asset: FaceTargetAsset
@@ -141,7 +210,9 @@ def transfer_face_target_asset(source: FaceMeshSnapshot,
                                destination: FaceMeshSnapshot,
                                triangles: tuple[Triangle, ...],
                                asset: FaceTargetAsset, *,
-                               max_distance: float) -> FaceSurfaceTransferResult:
+                               max_distance: float,
+                               alignment: FaceSurfaceAlignment | None = None
+                               ) -> FaceSurfaceTransferResult:
     """Project each target vertex onto the source surface and interpolate deltas."""
     asset.points_for(source)
     if (not isinstance(destination, FaceMeshSnapshot)
@@ -166,12 +237,15 @@ def transfer_face_target_asset(source: FaceMeshSnapshot,
             raise ValueError("源网格存在退化三角面，无法可靠转移")
     bounds = _bounds(source.points, triangles)
     tree = _build(tuple(range(len(triangles))), bounds)
+    frames = alignment.frames(source, destination) if alignment else None
     sparse = {row[0]: row[1:] for row in asset.deltas}
     deltas = []
     greatest = 0.
     threshold = float(max_distance) ** 2
     for index, point in enumerate(destination.points):
-        distance, triangle_index, weights = _closest(point, tree,
+        source_point = (_map(point, frames[1], frames[0], frames[3], frames[2])
+                        if frames else point)
+        distance, triangle_index, weights = _closest(source_point, tree,
             source.points, triangles)
         if distance > threshold + 1e-12:
             raise ValueError(f"目标顶点 {index} 距源表面超过最大允许距离")
@@ -179,6 +253,8 @@ def transfer_face_target_asset(source: FaceMeshSnapshot,
         source_delta = tuple(sparse.get(vertex, (0., 0., 0.))
                              for vertex in triangles[triangle_index])
         displacement = _weighted(source_delta, weights)
+        if frames:
+            displacement = _rotate(displacement, frames[2], frames[3])
         if max(abs(value) for value in displacement) > 1e-7:
             deltas.append((index, *displacement))
     if not deltas:

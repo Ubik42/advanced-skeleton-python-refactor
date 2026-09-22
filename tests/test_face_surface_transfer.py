@@ -3,7 +3,7 @@ from dataclasses import replace
 import json
 import unittest
 
-from adv_py.core import (FaceMeshSnapshot, FaceNeutralGeometry, FaceShapeKind,
+from adv_py.core import (FaceMeshSnapshot, FaceNeutralGeometry, FaceSurfaceAlignment, FaceShapeKind,
     FaceTargetAsset, face_neutral_geometry_from_json,
     face_neutral_geometry_to_json, transfer_face_target_asset)
 from adv_py.core.character_registry import digest
@@ -66,7 +66,7 @@ class FaceSurfaceTransferTests(unittest.TestCase):
         self.assertEqual(result.asset.deltas[-1][0], 1)
 
     def test_geometry_document_round_trip_and_position_guard(self):
-        geometry = FaceNeutralGeometry(self.source, ((0, 1, 2),))
+        geometry = FaceNeutralGeometry(self.source, ((0, 1, 2),), "y", "cm")
         document = face_neutral_geometry_to_json(geometry)
         self.assertEqual(face_neutral_geometry_from_json(document), geometry)
         damaged = json.loads(document)
@@ -76,6 +76,20 @@ class FaceSurfaceTransferTests(unittest.TestCase):
         damaged["digest"] = digest(damaged["payload"])
         with self.assertRaisesRegex(ValueError, "位置摘要"):
             face_neutral_geometry_from_json(json.dumps(damaged))
+
+    def test_rigid_alignment_rotates_displacement_and_rejects_scale(self):
+        target = FaceMeshSnapshot("|Turned", 4, "b" * 64,
+            ((4., 7., 2.), (4., 8., 2.), (3., 7., 2.), (3.75, 7.25, 2.)))
+        alignment = FaceSurfaceAlignment(((0, 0), (1, 1), (2, 2)), 1e-6)
+        result = transfer_face_target_asset(self.source, target, ((0, 1, 2),),
+            self.asset, max_distance=0., alignment=alignment)
+        self.assertEqual(result.asset.deltas, ((1, 0., 1., 0.),
+                                               (3, 0., .25, 0.)))
+        scaled = replace(target, points=target.points[:2] + ((2., 7., 2.),)
+                         + target.points[3:])
+        with self.assertRaisesRegex(ValueError, "误差超过上限"):
+            transfer_face_target_asset(self.source, scaled, ((0, 1, 2),),
+                self.asset, max_distance=0., alignment=alignment)
 
 
 if __name__ == "__main__":

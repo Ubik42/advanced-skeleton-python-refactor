@@ -23,7 +23,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     save_face_target_asset)
 from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
                          BodyFbxExportProfile, BodyFbxFileVersion,
-                         FaceLandmark, FaceShapeKind, FaceTarget,
+                         FaceLandmark, FaceShapeKind, FaceTarget, FaceSurfaceAlignment,
                          face_performance_from_json)
 from adv_py.core.character_registry import safe_json
 
@@ -90,6 +90,8 @@ def parser() -> argparse.ArgumentParser:
     asset_transfer.add_argument("--target-neutral", required=True)
     asset_transfer.add_argument("--asset", type=Path, required=True)
     asset_transfer.add_argument("--max-distance", type=float, required=True)
+    asset_transfer.add_argument("--alignment", type=Path,
+        help="三个源/目标顶点对应及误差上限的 JSON 文件")
     asset_transfer.add_argument("--output", type=Path, required=True)
     library_add = commands.add_parser("face-library-add",
         help="将面部目标资产登记到不可覆盖的版本目录")
@@ -380,12 +382,27 @@ def _run(args, gateway) -> dict:
             raise ValueError("转移资产输出须为尚不存在的 .json 文件")
         output.parent.mkdir(parents=True, exist_ok=True)
         source = load_face_target_asset(args.asset)
+        alignment = None
+        if args.alignment:
+            if args.alignment.stat().st_size > 4096:
+                raise ValueError("刚体对齐文档超过 4 KB")
+            spec = safe_json(args.alignment.read_text(encoding="utf-8"),
+                             max_bytes=4096)
+            if (not isinstance(spec, dict)
+                    or set(spec) != {"pairs", "max_residual"}
+                    or not isinstance(spec["pairs"], list)):
+                raise ValueError("刚体对齐文档须包含 pairs 和 max_residual")
+            alignment = FaceSurfaceAlignment(
+                tuple(tuple(row) if isinstance(row, list) else row
+                      for row in spec["pairs"]), spec["max_residual"])
         service = TransferFaceTargetAsset(host)
         plan = (service.execute_from_geometry(
             load_face_neutral_geometry(args.source_geometry),
-            args.target_neutral, source, max_distance=args.max_distance)
+            args.target_neutral, source, max_distance=args.max_distance,
+            alignment=alignment)
             if args.source_geometry else service.execute(args.source_neutral,
-                args.target_neutral, source, max_distance=args.max_distance))
+                args.target_neutral, source, max_distance=args.max_distance,
+                alignment=alignment))
         saved = save_face_target_asset(plan.result.asset, output)
         _emit("face_asset_transferred",
               source_triangles=plan.result.source_triangle_count,
