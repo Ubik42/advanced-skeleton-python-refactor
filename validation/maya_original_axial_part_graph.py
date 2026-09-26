@@ -24,6 +24,8 @@ def main(scene: Path, report: Path) -> None:
             names.add("IKX" + part)
             names.add("FK" + part)
             names.add("FKExtra" + part)
+            names.add("FKPS2" + part)
+            names.add("FKPS1" + part)
         names.update(("FKRoot_M", "FKSpine1_M", "FKNeck_M"))
         for stem in ("Root", "Spine1", "Neck"):
             names.update((f"InbetweenBase{stem}_M",
@@ -92,6 +94,9 @@ def main(scene: Path, report: Path) -> None:
                 drivers[name] = {"type": cmds.nodeType(name),
                     "connections": list(zip(plugs[::2], plugs[1::2])),
                 }
+                if cmds.nodeType(name) == "multMatrix":
+                    drivers[name]["matrix_sum"] = cmds.getAttr(
+                        name + ".matrixSum")
         for stem in ("Root", "Spine1", "Neck"):
             for position in ("Mid", "End"):
                 name = f"FK{stem}{position}BiasRV_M"
@@ -100,9 +105,24 @@ def main(scene: Path, report: Path) -> None:
                 drivers[name] = {"type": cmds.nodeType(name),
                     "connections": list(zip(plugs[::2], plugs[1::2])),
                     "out_value": cmds.getAttr(name + ".outValue")}
+        poses = {}
+        for stem in ("Root", "Spine1", "Neck"):
+            control = "FK" + stem + "_M"
+            cmds.setAttr(control + ".rotateY", 20.0)
+            poses[stem] = {name: {
+                "world_matrix": cmds.xform(name, query=True,
+                                            worldSpace=True, matrix=True),
+                "rotate": cmds.getAttr(name + ".rotate")[0],
+            } for name in (control, "FKX" + stem + "_M",
+                *(f"FKOffset{stem}Part{i}_M" for i in (1, 2)),
+                *(f"FKPS2{stem}Part{i}_M" for i in (1, 2)),
+                *(f"FKPS1{stem}Part{i}_M" for i in (1, 2)),
+                *(f"FKX{stem}Part{i}_M" for i in (1, 2)),
+                *(f"{stem}Part{i}_M" for i in (1, 2)))}
+            cmds.setAttr(control + ".rotateY", 0.0)
         report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text(json.dumps({"source": scene.name, "nodes": rows,
-                                      "drivers": drivers},
+                                      "drivers": drivers, "poses": poses},
                                      indent=2) + "\n", encoding="utf-8")
     finally:
         maya.standalone.uninitialize()
