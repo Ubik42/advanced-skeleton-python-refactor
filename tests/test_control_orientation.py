@@ -115,6 +115,13 @@ class ControlOrientationTests(unittest.TestCase):
                          tuple(change.after.world_matrix for change in
                                first.changes))
 
+    def test_side_marker_before_fk_suffix_uses_left_mirror_frame(self):
+        left = ControlOrientationState("|TorsoScapula_LFK", IDENTITY)
+        planned = plan_control_orientation_axis(
+            (left,), "X", "Y", mirrored_behavior=True)
+        self.assertNotEqual(planned.changes[0].after.world_matrix,
+                            left.world_matrix)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -390,8 +390,8 @@ class MayaPanelController:
             registered_set = set(registered)
             for source in tuple(resolved):
                 for marker, opposite in (("_R", "_L"), ("_L", "_R")):
-                    if re.search(re.escape(marker) + r"(?=\||$)", source):
-                        target = re.sub(re.escape(marker) + r"(?=\||$)",
+                    if re.search(re.escape(marker) + r"(?=(?:FK|IK|PV|Offset)?(?:\||$))", source):
+                        target = re.sub(re.escape(marker) + r"(?=(?:FK|IK|PV|Offset)?(?:\||$))",
                                         opposite, source)
                         if target in registered_set:
                             resolved.append(target)

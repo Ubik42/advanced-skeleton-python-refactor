@@ -433,9 +433,22 @@ def main(report: Path) -> int:
         elbow_behavior = hero_host.capture_control_orientations(
             (elbow_right, elbow_left))
         elbow_behavior_registry = hero_host.read_character_registration()
+        from adv_py.adapters.maya_control_orient_behavior import (
+            _paired_body_probes, _sample_probes, _sample_axis,
+            _reflection_error)
         coverage = {}
+        leg_ik_reopen = False
+        scapula_pair = False
         for role in ("WristFK", "HipFK", "KneeFK", "AnkleFK", "ToesFK",
                      "ArmIK", "ArmPV", "LegIK", "LegPV", "ToeIK"):
+            if role == "ArmIK":
+                for side in ("R", "L"):
+                    hero_host._cmds.setAttr(
+                        "AdvPy_ArmSettings.armIkFk_" + side, 1.)
+            if role == "LegIK":
+                for side in ("R", "L"):
+                    hero_host._cmds.setAttr(
+                        "AdvPy_LegSettings.legIkFk_" + side, 1.)
             paired = next(path for path in hero_controls
                           if path.endswith(role + "_R"))
             role_body_before = _world_matrices(hero_host._cmds,
@@ -445,6 +458,38 @@ def main(report: Path) -> int:
                     "hero", (paired,), "X", "Y", False, True, True)
                 role_body_enabled = _world_matrices(hero_host._cmds,
                                                     hero_body_paths)
+                opposite = next(path for path in hero_controls
+                                if path.endswith(role + "_L"))
+                paired_states = hero_host.capture_control_orientations(
+                    (paired, opposite))
+                if not all(state.mirrored_behavior for state in paired_states):
+                    raise RuntimeError("双侧镜像行为状态未写入")
+                if role == "LegIK":
+                    probes = _paired_body_probes(hero_host)
+                    neutral_pose = _sample_probes(hero_host, probes)
+                    errors = []
+                    for axis in "XYZ":
+                        right_pose = _sample_axis(
+                            hero_host, probes, paired, axis, 15.)
+                        left_pose = _sample_axis(
+                            hero_host, probes, opposite, axis, 15.)
+                        error, movement = _reflection_error(
+                            neutral_pose, right_pose, left_pose)
+                        errors.append(error <= max(1e-6, movement * .01))
+                    with tempfile.TemporaryDirectory(
+                            prefix="adv-py-leg-ik-orient-",
+                            dir=report.parent.resolve()) as folder:
+                        scene = Path(folder) / "leg_ik.ma"
+                        cmds.file(rename=str(scene))
+                        cmds.file(save=True, type="mayaAscii", force=True)
+                        cmds.file(new=True, force=True)
+                        cmds.file(str(scene), open=True, force=True)
+                        leg_ik_reopen = (all(errors)
+                            and hero_host.read_character_registration().body
+                                == hero_registration.body
+                            and all(_close(a, b) for a, b in zip(
+                                role_body_before, _world_matrices(
+                                    hero_host._cmds, hero_body_paths))))
                 controller.control_orient_axis(
                     "hero", (paired,), "X", "Y", False, True, False)
                 role_body_disabled = _world_matrices(hero_host._cmds,
@@ -464,6 +509,87 @@ def main(report: Path) -> int:
                     coverage[role] = "passed"
             except Exception as exc:
                 coverage[role] = str(exc)
+        scapula_right = next(path for path in hero_controls
+                             if path.endswith("TorsoScapula_RFK"))
+        scapula_left = next(path for path in hero_controls
+                            if path.endswith("TorsoScapula_LFK"))
+        for side in ("R", "L"):
+            hero_host._cmds.setAttr("AdvPy_ArmSettings.armIkFk_" + side, 0.)
+            hero_host._cmds.setAttr("AdvPy_LegSettings.legIkFk_" + side, 0.)
+        scapula_body_before = _world_matrices(hero_host._cmds,
+                                              hero_body_paths)
+        scapula_count = 0
+        scapula_state = ()
+        scapula_ik_errors = {}
+        try:
+            scapula_count = controller.control_orient_axis(
+                "hero", (scapula_right,), "X", "Y", False, True, True)
+            scapula_state = hero_host.capture_control_orientations(
+                (scapula_right, scapula_left))
+            for side in ("R", "L"):
+                hero_host._cmds.setAttr(
+                    "AdvPy_ArmSettings.armIkFk_" + side, 1.)
+            scapula_ik_probes = _paired_body_probes(hero_host)
+            scapula_ik_neutral = _sample_probes(hero_host,
+                                                scapula_ik_probes)
+            scapula_ik_errors = {}
+            for axis in "XYZ":
+                right_pose = _sample_axis(
+                    hero_host, scapula_ik_probes,
+                    scapula_right, axis, 10.)
+                left_pose = _sample_axis(
+                    hero_host, scapula_ik_probes,
+                    scapula_left, axis, 10.)
+                scapula_ik_errors[axis] = _reflection_error(
+                    scapula_ik_neutral, right_pose, left_pose)
+            for side in ("R", "L"):
+                hero_host._cmds.setAttr(
+                    "AdvPy_ArmSettings.armIkFk_" + side, 0.)
+            controller.control_orient_axis(
+                "hero", (scapula_right,), "X", "Y", False, True, False)
+            scapula_pair = (scapula_count == 2
+                and all(state.mirrored_behavior for state in scapula_state)
+                and all(_close(a, b) for a, b in zip(
+                    scapula_body_before,
+                    _world_matrices(hero_host._cmds, hero_body_paths))))
+        except Exception as exc:
+            coverage["TorsoScapula"] = str(exc)
+        arm_ik_from_fk = False
+        arm_ik_from_fk_error = ""
+        try:
+            arm_right = next(path for path in hero_controls
+                             if path.endswith("ArmIK_R"))
+            arm_left = next(path for path in hero_controls
+                            if path.endswith("ArmIK_L"))
+            arm_body_before = _world_matrices(hero_host._cmds,
+                                              hero_body_paths)
+            controller.control_orient_axis(
+                "hero", (arm_right,), "X", "Y", False, True, True)
+            for side in ("R", "L"):
+                hero_host._cmds.setAttr(
+                    "AdvPy_ArmSettings.armIkFk_" + side, 1.)
+            arm_probes = _paired_body_probes(hero_host)
+            arm_neutral = _sample_probes(hero_host, arm_probes)
+            arm_ik_errors = []
+            for axis in "XYZ":
+                source = _sample_axis(
+                    hero_host, arm_probes, arm_right, axis, 12.)
+                target = _sample_axis(
+                    hero_host, arm_probes, arm_left, axis, 12.)
+                error, movement = _reflection_error(
+                    arm_neutral, source, target)
+                arm_ik_errors.append(error <= max(1e-6, movement * .01))
+            for side in ("R", "L"):
+                hero_host._cmds.setAttr(
+                    "AdvPy_ArmSettings.armIkFk_" + side, 0.)
+            controller.control_orient_axis(
+                "hero", (arm_right,), "X", "Y", False, True, False)
+            arm_ik_from_fk = (all(arm_ik_errors)
+                and all(_close(a, b) for a, b in zip(
+                    arm_body_before,
+                    _world_matrices(hero_host._cmds, hero_body_paths))))
+        except Exception as exc:
+            arm_ik_from_fk_error = str(exc)
 
         checks = {
             "fresh_character_save_reopen": all(
@@ -626,8 +752,9 @@ def main(report: Path) -> int:
                 and all(state.mirrored_behavior for state in elbow_behavior)
                 and elbow_behavior_registry.body == hero_registration.body,
             "mirrored_behavior_coverage_pose_retained": all(
-                not value.startswith("body_pose_changed")
-                for value in coverage.values()),
+                value == "passed" for value in coverage.values())
+                and leg_ik_reopen and scapula_pair,
+            "arm_ik_calibrated_from_fk_mode": arm_ik_from_fk,
         }
         payload = {
             **checks,
@@ -636,6 +763,8 @@ def main(report: Path) -> int:
                                       for axis, values in axis_samples.items()},
             "mixed_rotation_reflection_error": mixed_error,
             "control_type_probe": coverage,
+            "scapula_ik_axis_error": scapula_ik_errors,
+            "arm_ik_from_fk_error": arm_ik_from_fk_error,
             "status": "passed" if all(checks.values()) else "failed",
         }
         report.write_text(json.dumps(

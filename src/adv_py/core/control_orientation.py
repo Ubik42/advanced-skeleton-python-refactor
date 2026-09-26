@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from math import sqrt
+import re
 
 
 class ControlOrientationValidationError(ValueError):
@@ -168,7 +169,8 @@ def _opposite_semantic_axes(matrix, primary, secondary):
 
 
 def _is_left_control(control):
-    return control.rsplit("|", 1)[-1].endswith("_L")
+    return bool(re.search(r"_L(?=(?:FK|IK|PV)?$)",
+                          control.rsplit("|", 1)[-1]))
 
 
 def plan_control_orientation_axis(

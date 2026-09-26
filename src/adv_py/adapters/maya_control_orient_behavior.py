@@ -105,6 +105,36 @@ def _reflection_error(neutral, source, target):
     return error, movement
 
 
+def _calibration_pose(host, probes, right):
+    """Use an observable IK state when the current FK state hides the drive."""
+    c = host._cmds
+    neutral = _sample_probes(host, probes)
+    movement = tuple(_reflection_error(
+        neutral, _sample_axis(host, probes, right, axis, 10.),
+        neutral)[1] for axis in "XYZ")
+    if all(value >= 1e-8 for value in movement):
+        return neutral, (), movement
+    settings = tuple(
+        name + "." + attribute + side
+        for name, attribute in (("AdvPy_ArmSettings", "armIkFk_"),
+                                ("AdvPy_LegSettings", "legIkFk_"))
+        for side in ("R", "L")
+        if c.objExists(name + "." + attribute + side)
+        and c.getAttr(name + "." + attribute + side, settable=True))
+    originals = tuple((plug, c.getAttr(plug)) for plug in settings)
+    for plug, _ in originals:
+        c.setAttr(plug, 1.)
+    ik_neutral = _sample_probes(host, probes)
+    ik_movement = tuple(_reflection_error(
+        ik_neutral, _sample_axis(host, probes, right, axis, 10.),
+        ik_neutral)[1] for axis in "XYZ")
+    if all(value >= 1e-8 for value in ik_movement):
+        return ik_neutral, originals, ik_movement
+    for plug, value in originals:
+        c.setAttr(plug, value)
+    return neutral, (), movement
+
+
 def _rotation_destinations(c, control):
     links = c.listConnections(
         control + ".rotate", source=False, destination=True,
@@ -120,9 +150,6 @@ def _rotation_destinations(c, control):
             raise ControlOrientationValidationError(
                 f"镜像行为尚不能安全接管此旋转驱动：{destination}")
         destinations.append(destination)
-    if not destinations:
-        raise ControlOrientationValidationError(
-            f"控制器没有可校准的旋转约束：{control}")
     return tuple(dict.fromkeys(destinations))
 
 
@@ -139,7 +166,8 @@ def _existing_node(c, control):
 
 def sync_mirrored_behavior(host, control, enabled):
     """Install or remove a calibrated sign correction on the left control."""
-    if not control.rsplit("|", 1)[-1].endswith("_L"):
+    if not re.search(r"_L(?=(?:FK|IK|PV)?$)",
+                     control.rsplit("|", 1)[-1]):
         return
     c = host._cmds
     existing = _existing_node(c, control)
@@ -183,7 +211,7 @@ def sync_mirrored_behavior(host, control, enabled):
     if existing is not None:
         sync_mirrored_behavior(host, control, False)
 
-    right = re.sub(r"_L(?=\||$)", "_R", control)
+    right = re.sub(r"_L(?=(?:FK|IK|PV|Offset)?(?:\||$))", "_R", control)
     if right == control or not c.objExists(right):
         raise ControlOrientationValidationError(
             f"镜像行为需要已登记的右侧配对控制器：{control}")
@@ -198,7 +226,15 @@ def sync_mirrored_behavior(host, control, enabled):
     registration = host.read_character_registration()
     destinations = _rotation_destinations(c, control)
     probes = _paired_body_probes(host)
-    neutral = _sample_probes(host, probes)
+    neutral, mode_restore, movements = _calibration_pose(host, probes, right)
+    children = c.listRelatives(control, children=True, fullPath=True,
+                               type="transform") or []
+    if not destinations:
+        if all(value < 1e-8 for value in movements):
+            return
+        if not children:
+            raise ControlOrientationValidationError(
+                f"控制器旋转影响 Body，但没有可补偿的旋转驱动：{control}")
     name = "AdvPy_MirroredBehavior_" + control.rsplit("|", 1)[-1]
     if c.objExists(name):
         raise ControlOrientationValidationError("镜像行为驱动节点名称冲突：" + name)
@@ -211,8 +247,6 @@ def sync_mirrored_behavior(host, control, enabled):
     c.connectAttr(control + ".rotate", node + ".input1")
     for destination in destinations:
         c.connectAttr(node + ".output", destination, force=True)
-    children = c.listRelatives(control, children=True, fullPath=True,
-                               type="transform") or []
     c.addAttr(node, longName=_CHILDREN, dataType="string")
     c.setAttr(node + "." + _CHILDREN, json.dumps(children), type="string")
     utilities = []
@@ -282,3 +316,5 @@ def sync_mirrored_behavior(host, control, enabled):
                 f"误差 {error:.5g}，动作量 {movement:.5g}，"
                 f"主要骨骼 {pair_errors[:3]}")
     _refresh_registered_children(host, registration, children)
+    for plug, value in mode_restore:
+        c.setAttr(plug, value)
