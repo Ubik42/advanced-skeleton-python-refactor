@@ -218,6 +218,17 @@ def main(report: Path) -> int:
             hero_host.capture_control_curves(tuple(dict.fromkeys(
                 channel.node for channel in hero_registration.channels)),
                 strict=False))
+        fresh_paths = tuple(joint.path for joint in hero_registration.body)
+        fresh_body = _world_matrices(hero_host._cmds, fresh_paths)
+        with tempfile.TemporaryDirectory(
+                prefix="adv-py-orient-baseline-",
+                dir=report.parent.resolve()) as folder:
+            fresh_scene = Path(folder) / "baseline.ma"
+            cmds.file(rename=str(fresh_scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(fresh_scene), open=True, force=True)
+            fresh_reopen_body = _world_matrices(hero_host._cmds, fresh_paths)
         hero_proxies = controller.control_orient_custom_detach("hero")
         hero_previews = hero_host.capture_custom_control_orientation_previews()
         hero_host._cmds.setAttr(hero_proxies[0] + ".rotateY", 11.0)
@@ -233,6 +244,18 @@ def main(report: Path) -> int:
             and hero_host.read_character_registration() == hero_registration
             and not hero_host._cmds.objExists(
                 "AdvPy_ControlOrientCustomSession"))
+        cmds.file(new=True, force=True)
+        cmds.upAxis(axis="z", rotateView=False)
+        cmds.namespace(addNamespace="hero")
+        hero_host = MayaBodyBuildHost(namespace="hero")
+        hero_container = CreateFitSkeleton(hero_host).apply().state.path
+        BuildSyntheticBodySourceFit(hero_host).apply(hero_container)
+        controller.body_build("hero")
+        hero_registration = hero_host.read_character_registration()
+        hero_controls = tuple(state.control for state in
+            hero_host.capture_control_curves(tuple(dict.fromkeys(
+                channel.node for channel in hero_registration.channels)),
+                strict=False))
         hero_right = next(path for path in hero_controls
                           if "ShoulderFK_R" in path)
         hero_left = next(path for path in hero_controls
@@ -266,6 +289,8 @@ def main(report: Path) -> int:
             mirror_reopen = hero_host.capture_control_orientations(
                 (hero_right, hero_left))
             mirror_reopen_registry = hero_host.read_character_registration()
+            mirror_reopen_body = _world_matrices(hero_host._cmds,
+                                                 hero_body_paths)
 
         behavior_before = hero_host.capture_control_orientations(
             (hero_right, hero_left))
@@ -300,6 +325,8 @@ def main(report: Path) -> int:
             behavior_reopen = hero_host.capture_control_orientations(
                 (hero_right, hero_left))
             behavior_reopen_registry = hero_host.read_character_registration()
+            behavior_body_reopen = _world_matrices(hero_host._cmds,
+                                                  hero_body_paths)
             elbows = tuple(next(joint.path for joint in hero_registration.body
                                 if joint.path.endswith("Elbow_" + side))
                            for side in ("R", "L"))
@@ -378,11 +405,14 @@ def main(report: Path) -> int:
                 - (-1. if k == 0 else 1.) *
                 (right_mixed[j-6][k] - neutral[j-6][k]))
                 for k in range(3)) for j in range(6, 12))
+            behavior_body_after_samples = _world_matrices(
+                hero_host._cmds, hero_body_paths)
 
         disable_count = controller.control_orient_axis(
             "hero", (hero_right,), "Z", "X", False, True, False)
         behavior_disabled = hero_host.capture_control_orientations(
             (hero_right, hero_left))
+        disable_body = _world_matrices(hero_host._cmds, hero_body_paths)
         disable_registry = hero_host.read_character_registration()
         old_driver = hero_host._cmds.objExists(
             "AdvPy_MirroredBehavior_AdvPy_ShoulderFK_L")
@@ -408,16 +438,37 @@ def main(report: Path) -> int:
                      "ArmIK", "ArmPV", "LegIK", "LegPV", "ToeIK"):
             paired = next(path for path in hero_controls
                           if path.endswith(role + "_R"))
+            role_body_before = _world_matrices(hero_host._cmds,
+                                               hero_body_paths)
             try:
                 controller.control_orient_axis(
                     "hero", (paired,), "X", "Y", False, True, True)
+                role_body_enabled = _world_matrices(hero_host._cmds,
+                                                    hero_body_paths)
                 controller.control_orient_axis(
                     "hero", (paired,), "X", "Y", False, True, False)
-                coverage[role] = "passed"
+                role_body_disabled = _world_matrices(hero_host._cmds,
+                                                     hero_body_paths)
+                enabled_changed = [path for path, a, b in zip(
+                    hero_body_paths, role_body_before, role_body_enabled)
+                    if not _close(a, b)]
+                disabled_changed = [path for path, a, b in zip(
+                    hero_body_paths, role_body_before, role_body_disabled)
+                    if not _close(a, b)]
+                if enabled_changed or disabled_changed:
+                    coverage[role] = ("body_pose_changed: enabled="
+                                      + str(enabled_changed[:5])
+                                      + ", disabled="
+                                      + str(disabled_changed[:5]))
+                else:
+                    coverage[role] = "passed"
             except Exception as exc:
                 coverage[role] = str(exc)
 
         checks = {
+            "fresh_character_save_reopen": all(
+                _close(a, b) for a, b in zip(fresh_body,
+                                              fresh_reopen_body)),
             "explicit_registered_route": count == 1,
             "target_world_axis_applied": _close(
                 after.world_matrix, expected.world_matrix)
@@ -516,7 +567,9 @@ def main(report: Path) -> int:
                 _close(actual.world_matrix, change.after.world_matrix)
                 and actual.mirror for actual, change in
                 zip(mirror_reopen, mirror_expected))
-                and mirror_reopen_registry == hero_registration,
+                and mirror_reopen_registry == hero_registration
+                and all(_close(a, b) for a, b in zip(
+                    mirror_body_after, mirror_reopen_body)),
             "mirrored_behavior_pair_orientation": behavior_count == 2
                 and all(_close(actual.world_matrix,
                                change.after.world_matrix)
@@ -548,13 +601,20 @@ def main(report: Path) -> int:
                 and actual.mirrored_behavior
                 for actual, change in
                 zip(behavior_reopen, behavior_expected))
-                and behavior_reopen_registry == behavior_registry,
+                and behavior_reopen_registry == behavior_registry
+                and all(_close(a, b) for a, b in zip(
+                    behavior_body_before, behavior_body_reopen)),
             "same_local_rotation_is_symmetric": symmetric_elbow_motion
                 and all(errors[0] < 1e-4 and errors[1] > 1e-2
                         for errors in axis_samples.values())
                 and mixed_error < 1e-4,
+            "rotation_sampling_returns_to_bind_pose": all(
+                _close(a, b) for a, b in zip(
+                    behavior_body_before, behavior_body_after_samples)),
             "mirrored_behavior_disable_restores": disable_count == 2
                 and behavior_disabled == behavior_before
+                and all(_close(a, b) for a, b in zip(
+                    disable_body, behavior_body_before))
                 and disable_registry == hero_registration
                 and not old_driver,
             "mirrored_behavior_disable_undo_redo":
@@ -565,6 +625,9 @@ def main(report: Path) -> int:
             "mirrored_behavior_elbow_pair": elbow_behavior_count == 2
                 and all(state.mirrored_behavior for state in elbow_behavior)
                 and elbow_behavior_registry.body == hero_registration.body,
+            "mirrored_behavior_coverage_pose_retained": all(
+                not value.startswith("body_pose_changed")
+                for value in coverage.values()),
         }
         payload = {
             **checks,

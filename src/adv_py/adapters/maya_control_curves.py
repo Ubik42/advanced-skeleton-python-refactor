@@ -203,6 +203,8 @@ class MayaControlCurveMixin:
 
         self._require_transaction()
         control, _ = self._control_curve_shapes(state.control, strict=True)
+        if not state.mirrored_behavior:
+            sync_mirrored_behavior(self, control, False)
         original_selection = self._cmds.ls(selection=True, long=True) or []
         for axis in "XYZ":
             plug = control + ".rotate" + axis
@@ -232,6 +234,11 @@ class MayaControlCurveMixin:
                            degrees(euler.z), type="double3")
         for child, matrix in child_world:
             self._cmds.xform(child, worldSpace=True, matrix=matrix)
+            for kind in ("translate", "rotate"):
+                for axis in "XYZ":
+                    plug = child + "." + kind + axis
+                    if self._cmds.getAttr(plug, settable=True):
+                        self._cmds.setAttr(plug, self._cmds.getAttr(plug))
         enum_names = ":".join(axis.value for axis in _CONTROL_AXES)
         for attribute, value in (("primaryAxis", state.primary_axis),
                                  ("secondaryAxis", state.secondary_axis)):
@@ -251,7 +258,8 @@ class MayaControlCurveMixin:
             self._cmds.addAttr(control, longName="mirror",
                                attributeType="bool")
         self._cmds.setAttr(control + ".mirror", state.mirror)
-        sync_mirrored_behavior(self, control, state.mirrored_behavior)
+        if state.mirrored_behavior:
+            sync_mirrored_behavior(self, control, True)
         if not self._cmds.attributeQuery(
                 "mirroredBehaviour", node=control, exists=True):
             self._cmds.addAttr(control, longName="mirroredBehaviour",
