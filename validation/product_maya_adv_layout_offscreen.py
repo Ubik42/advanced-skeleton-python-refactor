@@ -70,6 +70,15 @@ def main() -> None:
     panel.operation_buttons[("Publish", None, "准备并烘焙发布骨架")].click()
     assert panel.detail.tabs.currentIndex() == 5
     assert panel.detail.windowTitle().endswith("Publish")
+    panel.operation_buttons[("Publish", None, "导出独立 Maya 场景")].click()
+    for (section, subsection), entries in ADV_OPERATIONS.items():
+        for label, tab, group in entries:
+            panel.operation_buttons[(section, subsection, label)].click()
+            page = panel.detail.tabs.widget(tab)
+            visible = [widget.title() for widget in
+                       page.findChildren(QtWidgets.QGroupBox)
+                       if widget.isVisible()]
+            assert visible == [group], (section, subsection, label, visible)
     panel.detail.close()
     app.processEvents()
     panel.operation_buttons[("Body", "Fit", "导出当前 Fit")].click()

@@ -31,7 +31,8 @@ from adv_py.core import (
     plan_body_export_skeleton_bake,
     plan_body_root_motion,
 )
-from adv_py.core.body_skeleton import BodySkeletonProvenanceState
+from adv_py.core.body_skeleton import (BodySkeletonProvenanceState,
+                                      body_skeleton_unchanged)
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 
@@ -315,6 +316,18 @@ class FakeExportHost:
 
 
 class BodyExportSkeletonTests(unittest.TestCase):
+    def test_body_snapshot_accepts_evaluation_noise_but_rejects_changes(self):
+        body = make_body()
+        finger = body.joints[-1]
+        noise = replace(body, joints=body.joints[:-1] + (
+            replace(finger, rotation=(0.0, 0.0, 1e-15)),))
+        changed = replace(body, joints=body.joints[:-1] + (
+            replace(finger, rotation=(0.0, 0.0, 1e-4)),))
+        self.assertTrue(body_skeleton_unchanged(body, noise))
+        self.assertFalse(body_skeleton_unchanged(body, changed))
+        self.assertFalse(body_skeleton_unchanged(body,
+            replace(body, joints=body.joints[:-1])))
+
     def test_plan_builds_complete_hierarchy_below_root_motion(self):
         plan = plan_body_export_skeleton(make_body(), make_root_motion_plan())
 

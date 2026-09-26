@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 
-def main(scene: Path, report: Path) -> int:
+def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
     import maya.standalone
     maya.standalone.initialize(name="python")
     try:
@@ -60,6 +60,11 @@ def main(scene: Path, report: Path) -> int:
                            for name in ("BodyMesh", "GarmentMesh"))
             original_points = tuple(point(mesh) for mesh in meshes)
             cmds.undoInfo(state=True)
+            if prepare_only:
+                prepared = report.resolve()
+                cmds.file(rename=str(prepared))
+                cmds.file(save=True, type="mayaBinary", force=True)
+                return 0
 
             def fault(stage):
                 if stage == "skins-bound":
@@ -150,4 +155,5 @@ def main(scene: Path, report: Path) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(Path(sys.argv[1]), Path(sys.argv[2])))
+    raise SystemExit(main(Path(sys.argv[1]), Path(sys.argv[2]),
+                          prepare_only="--prepare" in sys.argv[3:]))

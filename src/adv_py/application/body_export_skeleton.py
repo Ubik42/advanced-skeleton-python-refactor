@@ -25,6 +25,7 @@ from adv_py.core.body_root_motion import (
 from adv_py.core.body_skeleton import (
     BodySkeletonSnapshot,
     audit_body_provenance,
+    body_skeleton_unchanged,
     oriented_body_provenance,
 )
 from adv_py.core.fit_container import FitUpAxis
@@ -182,7 +183,8 @@ class BuildBodyExportSkeleton:
             )
 
         with self._host.transaction("构建游戏导出 Skeleton"):
-            if self._host.capture_body_skeleton(body_root_name) != plan.body:
+            if not body_skeleton_unchanged(plan.body,
+                self._host.capture_body_skeleton(body_root_name)):
                 raise RuntimeError("Export Skeleton 执行前 Body 输入发生变化")
             if (
                 self._host.capture_body_root_motion(plan.root_motion)
@@ -212,7 +214,7 @@ class BuildBodyExportSkeleton:
                     )
                 )
             body = self._host.capture_body_skeleton(body_root_name)
-            if body != plan.body:
+            if not body_skeleton_unchanged(plan.body, body):
                 raise RuntimeError("Export Skeleton 创建改变了 Body skeleton")
             if (
                 self._host.capture_body_root_motion(plan.root_motion)
@@ -307,7 +309,8 @@ class BakeBodyExportSkeleton:
         export = plan.bake.export_skeleton
         root_motion = plan.bake.root_motion.root_motion
         with self._host.transaction("烘焙独立游戏导出 Skeleton"):
-            if self._host.capture_body_skeleton(body_root_name) != plan.body:
+            if not body_skeleton_unchanged(plan.body,
+                self._host.capture_body_skeleton(body_root_name)):
                 raise RuntimeError("Export Skeleton bake 前 Body 输入发生变化")
             if (
                 self._host.capture_body_root_motion(root_motion)
@@ -343,6 +346,6 @@ class BakeBodyExportSkeleton:
                     )
                 )
             body = self._host.capture_body_skeleton(body_root_name)
-            if body != plan.body:
+            if not body_skeleton_unchanged(plan.body, body):
                 raise RuntimeError("Export Skeleton bake 改变了 Body skeleton")
         return BodyExportSkeletonBakeResult(plan, samples, verified, body)

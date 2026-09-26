@@ -19,6 +19,7 @@ from adv_py.core.body_root_motion import (
 from adv_py.core.body_skeleton import (
     BodySkeletonSnapshot,
     audit_body_provenance,
+    body_skeleton_unchanged,
     oriented_body_provenance,
 )
 from adv_py.core.fit_container import FitUpAxis
@@ -151,7 +152,8 @@ class BuildBodyRootMotion:
             )
 
         with self._host.transaction("构建游戏导出 Root Motion 驱动"):
-            if self._host.capture_body_skeleton(body_root_name) != plan.body:
+            if not body_skeleton_unchanged(plan.body,
+                self._host.capture_body_skeleton(body_root_name)):
                 raise RuntimeError("Root Motion 执行前 Body 输入发生变化")
             if any(
                 self._host.find_name_collisions(name)
@@ -167,7 +169,7 @@ class BuildBodyRootMotion:
                     + "；".join(issue.message for issue in issues)
                 )
             body = self._host.capture_body_skeleton(body_root_name)
-            if body != plan.body:
+            if not body_skeleton_unchanged(plan.body, body):
                 raise RuntimeError("Root Motion 创建改变了 Body skeleton")
         return BodyRootMotionBuildResult(plan, verified, body)
 
@@ -238,7 +240,8 @@ class BakeBodyRootMotion:
             )
 
         with self._host.transaction("烘焙游戏导出 Root Motion 动画"):
-            if self._host.capture_body_skeleton(body_root_name) != plan.body:
+            if not body_skeleton_unchanged(plan.body,
+                self._host.capture_body_skeleton(body_root_name)):
                 raise RuntimeError("Root Motion bake 前 Body 输入发生变化")
             if self._host.capture_body_root_motion(plan.bake.root_motion) != plan.live:
                 raise RuntimeError("Root Motion bake 前实时驱动发生变化")
@@ -258,6 +261,6 @@ class BakeBodyRootMotion:
                     + "；".join(issue.message for issue in issues)
                 )
             body = self._host.capture_body_skeleton(body_root_name)
-            if body != plan.body:
+            if not body_skeleton_unchanged(plan.body, body):
                 raise RuntimeError("Root Motion bake 改变了 Body skeleton")
         return BodyRootMotionBakeResult(plan, samples, verified, body)

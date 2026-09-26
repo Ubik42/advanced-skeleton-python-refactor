@@ -129,6 +129,31 @@ class BodySkeletonSnapshot:
     provenance: BodySkeletonProvenanceState | None = None
 
 
+def body_skeleton_unchanged(before: BodySkeletonSnapshot,
+                            after: BodySkeletonSnapshot, *,
+                            tolerance: float = 1e-8) -> bool:
+    """Compare identity exactly and evaluated Maya channels within noise."""
+    if (before.root != after.root or before.provenance != after.provenance
+            or len(before.joints) != len(after.joints)):
+        return False
+    for old, new in zip(before.joints, after.joints):
+        if ((old.path, old.name, old.parent_path, old.side, old.label,
+             old.writable_joint_orient_axes) !=
+            (new.path, new.name, new.parent_path, new.side, new.label,
+             new.writable_joint_orient_axes)):
+            return False
+        numeric = ((old.world_position, new.world_position),
+                   (old.joint_orient, new.joint_orient),
+                   (old.rotation, new.rotation),
+                   (old.world_scale, new.world_scale))
+        numeric += tuple(zip(old.world_axes, new.world_axes))
+        if any(any(not (isfinite(a) and isfinite(b))
+                   or abs(a - b) > tolerance for a, b in zip(left, right))
+               for left, right in numeric):
+            return False
+    return True
+
+
 @dataclass(frozen=True, slots=True)
 class BodySkeletonIssue:
     code: str
