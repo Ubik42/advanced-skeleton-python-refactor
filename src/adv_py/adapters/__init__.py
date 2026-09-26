@@ -20,6 +20,7 @@ from .maya_root_volume import MayaRootVolumeHost
 from .maya_sdk_volume import MayaSdkVolumeHost
 from .maya_volume_half_parent import MayaVolumeHalfParentHost
 from .maya_angle_sampler import MayaAngleSamplerHost
+from .maya_dense_skin import MayaDenseSkinHost
 from .maya_fit import MayaFitJointHost, MayaJointLabelHost
 from .maya_mocap import (
     MayaMocapConnectionHost,
@@ -51,6 +52,7 @@ __all__ = [
     "MayaSdkVolumeHost",
     "MayaVolumeHalfParentHost",
     "MayaAngleSamplerHost",
+    "MayaDenseSkinHost",
     "MayaFitJointHost",
     "MayaJointLabelHost",
     "MayaMocapSourceReader",
