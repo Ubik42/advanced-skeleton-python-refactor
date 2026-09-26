@@ -8,7 +8,7 @@ import tempfile
 
 
 def main(scene: Path, report: Path, isolated_build: bool = False,
-         isolated_skin: bool = False) -> int:
+         isolated_skin: bool = False, isolated_export: bool = False) -> int:
     import maya.standalone
 
     maya.standalone.initialize(name="python")
@@ -19,6 +19,10 @@ def main(scene: Path, report: Path, isolated_build: bool = False,
         from adv_py.application.oriented_body_skeleton import BuildOrientedBodySkeleton
         from adv_py.application.body_character_rig import BuildBodyCharacterRig
         from adv_py.application.skin_bind import BindSkin
+        from adv_py.application.body_root_motion import BuildBodyRootMotion
+        from adv_py.application.body_export_skeleton import (
+            BuildBodyExportSkeleton, BakeBodyExportSkeleton)
+        from adv_py.application.body_fbx_export import ExportBodyFbx
         from adv_py.core.joint_labels import JointLabel
         from adv_py.application.fit_symmetry import PlanFitSymmetry
 
@@ -217,6 +221,54 @@ def main(scene: Path, report: Path, isolated_build: bool = False,
                                         left, right)) < 1e-4
                                 with tempfile.TemporaryDirectory() as temporary:
                                     output = Path(temporary) / "sam-fit-built.mb"
+                                    if isolated_export:
+                                        for frame, angle in ((1, 0.0),
+                                                             (3, 15.0),
+                                                             (5, 30.0)):
+                                            cmds.setKeyframe(
+                                                control.control_path,
+                                                attribute="rotateX",
+                                                time=frame, value=angle)
+                                        cmds.currentTime(1, edit=True,
+                                                         update=True)
+                                        frame_one = tuple(cmds.xform(
+                                            joint, query=True,
+                                            worldSpace=True, matrix=True))
+                                        cmds.currentTime(5, edit=True,
+                                                         update=True)
+                                        frame_five = tuple(cmds.xform(
+                                            joint, query=True,
+                                            worldSpace=True, matrix=True))
+                                        cmds.currentTime(3, edit=True,
+                                                         update=True)
+                                        result["isolated_build"]["animation"] = {
+                                            "frame_1_vs_5_changed": not near(
+                                                frame_one, frame_five),
+                                        }
+                                        BuildBodyRootMotion(host).apply(
+                                            source_container=fit[0])
+                                        export = BuildBodyExportSkeleton(
+                                            host).apply(
+                                                source_container=fit[0])
+                                        baked = BakeBodyExportSkeleton(
+                                            host).apply(
+                                                start_frame=1, end_frame=5,
+                                                source_container=fit[0])
+                                        destination = (Path(temporary) /
+                                                       "sam-export.fbx")
+                                        published = ExportBodyFbx(host).apply(
+                                            destination, start_frame=1,
+                                            end_frame=5,
+                                            source_container=fit[0])
+                                        result["isolated_build"]["export"] = {
+                                            "status": "passed",
+                                            "export_joint_count": len(
+                                                export.plan.export_skeleton.joints),
+                                            "sample_count": len(baked.samples),
+                                            "fbx_bytes": destination.stat().st_size,
+                                            "plugin_version":
+                                                published.plugin_version,
+                                        }
                                     cmds.file(rename=str(output))
                                     cmds.file(save=True, type="mayaBinary")
                                     cmds.file(str(output), open=True, force=True,
@@ -224,6 +276,22 @@ def main(scene: Path, report: Path, isolated_build: bool = False,
                                     reopened = tuple(cmds.xform(
                                         joint, query=True, worldSpace=True,
                                         matrix=True))
+                                    if isolated_export:
+                                        cmds.currentTime(1, edit=True,
+                                                         update=True)
+                                        reopened_one = tuple(cmds.xform(
+                                            joint, query=True,
+                                            worldSpace=True, matrix=True))
+                                        cmds.currentTime(5, edit=True,
+                                                         update=True)
+                                        reopened_five = tuple(cmds.xform(
+                                            joint, query=True,
+                                            worldSpace=True, matrix=True))
+                                        result["isolated_build"]["animation"][
+                                            "reopen_frames_match"] = (
+                                                near(frame_one, reopened_one)
+                                                and near(frame_five,
+                                                         reopened_five))
                                     if mesh_copy is not None:
                                         skin_nodes = cmds.ls(
                                             "AdvPy_SamBodySkin",
@@ -235,6 +303,37 @@ def main(scene: Path, report: Path, isolated_build: bool = False,
                                                 influence=True) or [])
                                             if len(skin_nodes) == 1 else 0)
                                     cmds.file(new=True, force=True)
+                                    if isolated_export:
+                                        cmds.file(
+                                            str(destination), i=True,
+                                            type="FBX", ignoreVersion=True,
+                                            mergeNamespacesOnClash=False,
+                                            options="fbx")
+                                        imported_joints = cmds.ls(
+                                            type="joint", long=True) or []
+                                        imported_finger = cmds.ls(
+                                            "IndexFinger1_R", type="joint",
+                                            long=True) or []
+                                        if len(imported_finger) == 1:
+                                            cmds.currentTime(
+                                                1, edit=True, update=True)
+                                            imported_one = tuple(cmds.xform(
+                                                imported_finger[0], query=True,
+                                                worldSpace=True, matrix=True))
+                                            cmds.currentTime(
+                                                5, edit=True, update=True)
+                                            imported_five = tuple(cmds.xform(
+                                                imported_finger[0], query=True,
+                                                worldSpace=True, matrix=True))
+                                        result["isolated_build"]["export"].update({
+                                            "reimport_joint_count": len(
+                                                imported_joints),
+                                            "reimport_finger_animated": (
+                                                len(imported_finger) == 1
+                                                and not near(imported_one,
+                                                             imported_five)),
+                                        })
+                                        cmds.file(new=True, force=True)
                                 result["isolated_build"]["hand_drive"] = {
                                     "joint": joint.rsplit("|", 1)[-1],
                                     "control_count": len(
@@ -280,13 +379,30 @@ def main(scene: Path, report: Path, isolated_build: bool = False,
                                       "reopen_influence_count") !=
                                       built.get("body_count")):
                 return 1
+            if isolated_export and (
+                    not built.get("animation", {}).get(
+                        "frame_1_vs_5_changed")
+                    or not built.get("animation", {}).get(
+                        "reopen_frames_match")
+                    or built.get("export", {}).get("status") != "passed"
+                    or built["export"].get("export_joint_count") !=
+                        built.get("body_count")
+                    or built["export"].get("reimport_joint_count") !=
+                        built.get("body_count") + 1
+                    or not built["export"].get(
+                        "reimport_finger_animated")
+                    or built["export"].get("fbx_bytes", 0) < 1000):
+                return 1
         return 0
     finally:
         maya.standalone.uninitialize()
 
 
 if __name__ == "__main__":
+    export_mode = "--isolated-export" in sys.argv[3:]
     raise SystemExit(main(Path(sys.argv[1]), Path(sys.argv[2]),
                           any(flag in sys.argv[3:] for flag in (
-                              "--isolated-build", "--isolated-skin")),
-                          "--isolated-skin" in sys.argv[3:]))
+                              "--isolated-build", "--isolated-skin",
+                              "--isolated-export")),
+                          "--isolated-skin" in sys.argv[3:] or export_mode,
+                          export_mode))
