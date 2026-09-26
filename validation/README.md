@@ -430,6 +430,8 @@ $env:PYTHONPATH = 'src'
 
 `maya_original_finger_helper_inventory.py` 只读记录原版十根手指 `_00` Transform、Finger3 Body 关节和 `_50` 影响关节的层级、矩阵及驱动。`maya_original_finger_mid_smoke.py` 从原版 Fit 重建角色并生成十个 `_50` 关节，核对默认位置、控制器动作、单次 Undo／Redo、保存重开与角色登记。全身镜像轴修正后，68 个同名 Body 关节的静止世界矩阵最大分量差约 `2.2e-6`；新 Body 独有的六个足部关节另列，不纳入同名对照。十根手指 `_50` 的 12° 控制动作与原版矩阵最大分量差小于 `0.003`。该用例仍不覆盖原权重与动作后的网格顶点。
 
+体积关节验收使用原版 `sam.mb`：先运行 `maya_original_volume_joint_graph.py` 和 `maya_original_angle_driver_graph.py` 生成本地导向 JSON；再运行 `maya_original_angle_sampler_smoke.py`、`maya_original_angle_volume_smoke.py` 对照角度采样与 22 个关节的 FK 动作。`maya_original_all_influences_smoke.py` 同场景组装所有辅助关节，核对 Skin 的 121 个影响关节名称和 40 个体积关节静止矩阵。脚本均以 `executeScriptNodes=False` 只读打开原版资产，结果写入 `validation/results/`。完整组装报告还保留轴向 Part 和手指 `_50` 的残差；此处未迁移原权重或验证网格顶点。
+
 局部机制定位使用 `maya_body_spine_smoke.py` 与 `maya_body_control_spaces_smoke.py`，输出路径作为第一个参数，`--basic` 切换为 30 关节。两者包含非法状态拒绝和失败回滚；空间脚本另外验证身体 / Global 跟随关系。结果写入已忽略的 `validation/results/`，不提交本机日志。
 
 

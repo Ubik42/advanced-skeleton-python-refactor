@@ -1,19 +1,60 @@
 """Recreate original SDK graphs against rebuilt deformation parents."""
 from __future__ import annotations
 
+from hashlib import sha256
+import json
+
 from adv_py.core.sdk_volume_deform import SdkVolumeSpec
 from .maya_body import MayaBodyBuildHost
 
 
 class MayaSdkVolumeHost(MayaBodyBuildHost):
+    @staticmethod
+    def _graph_signature(node: dict) -> str:
+        payload = json.dumps(node, sort_keys=True,
+                             separators=(",", ":")).encode("utf-8")
+        return sha256(payload).hexdigest()
+
+    def preflight_sdk_graph_node(self, source_name: str, node: dict) -> None:
+        c = self._cmds
+        name = "AdvPy_" + source_name
+        matches = c.ls(name, long=True) or []
+        if not matches:
+            return
+        if (len(matches) != 1 or c.nodeType(matches[0]) != node["type"]
+                or not c.attributeQuery("advPySdkSource",
+                                        node=matches[0], exists=True)
+                or not c.attributeQuery("advPySdkSignature",
+                                        node=matches[0], exists=True)
+                or c.getAttr(matches[0] + ".advPySdkSource") != source_name
+                or c.getAttr(matches[0] + ".advPySdkSignature")
+                    != self._graph_signature(node)):
+            raise ValueError("共享 SDK 节点与原版导向不一致：" + source_name)
+
     def _build_graph(self, spec: SdkVolumeSpec, sdk: str) -> None:
         c = self._cmds
         graph = spec.guide["sdk_sources"]
         renamed = {}
+        reused = set()
         for source_name, node in graph.items():
             new_name = "AdvPy_" + source_name
-            renamed[source_name] = c.createNode(node["type"], name=new_name)
+            self.preflight_sdk_graph_node(source_name, node)
+            existing = c.ls(new_name, long=True) or []
+            if existing:
+                renamed[source_name] = existing[0]
+                reused.add(source_name)
+                continue
+            created = c.createNode(node["type"], name=new_name)
+            renamed[source_name] = created
+            for attribute, value in (("advPySdkSource", source_name),
+                                     ("advPySdkSignature",
+                                      self._graph_signature(node))):
+                c.addAttr(created, longName=attribute, dataType="string")
+                c.setAttr(created + "." + attribute, value,
+                          type="string", lock=True)
         for source_name, node in graph.items():
+            if source_name in reused:
+                continue
             target = renamed[source_name]
             kind = node["type"]
             if kind.startswith("animCurve"):
@@ -46,6 +87,8 @@ class MayaSdkVolumeHost(MayaBodyBuildHost):
             raise RuntimeError("体积曲线包含未知连接：" + plug)
 
         for source_name, node in graph.items():
+            if source_name in reused:
+                continue
             for destination, origin in node["connections"]:
                 destination_attr = destination.split(".", 1)[1]
                 c.connectAttr(resolve(origin), renamed[source_name] + "."
@@ -69,6 +112,15 @@ class MayaSdkVolumeHost(MayaBodyBuildHost):
         current = c.xform(spec.parent, query=True, worldSpace=True, matrix=True)
         if max(abs(float(a) - b) for a, b in zip(source, current)) > 1e-3:
             raise ValueError("体积关节的来源和目标父关节姿态不匹配：" + spec.name)
+
+    def preflight_sdk_volume_driver(self, spec: SdkVolumeSpec) -> None:
+        c = self._cmds
+        for plug in spec.guide.get("external_drivers", {}):
+            node = plug.split(".", 1)[0]
+            if (node != spec.driver_name or not c.objExists(plug)
+                    or not c.listConnections(plug, source=True,
+                                             destination=False)):
+                raise ValueError("体积关节缺少动态角度输入：" + plug)
 
     def create_sdk_volume_joint(self, spec: SdkVolumeSpec) -> None:
         self._require_transaction()

@@ -719,3 +719,5 @@ from .chest_volume_deform import BuildChestVolumeDeform
 from .knee_volume_deform import BuildKneeVolumeDeform
 from .volume_half_parent import BuildVolumeHalfParents
 from .bend_volume_deform import BuildBendVolumeDeform
+from .angle_sampler_deform import BuildAngleSamplers
+from .angle_volume_deform import BuildAngleVolumeDeform
