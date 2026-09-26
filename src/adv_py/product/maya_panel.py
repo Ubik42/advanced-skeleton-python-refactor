@@ -182,6 +182,17 @@ def create_panel(controller: MayaPanelController | None = None):
             prep_row.addWidget(self._button("新建绑定场景", self._new_preparation_scene))
             prep_row.addWidget(self._button("引用模型文件", self._reference_preparation_model))
             form.addRow(prep_row)
+            self.preparation_reference_namespace = QtWidgets.QLineEdit("model")
+            self.preparation_reference_namespace.setPlaceholderText("model 或 model1")
+            form.addRow("目标引用命名空间", self.preparation_reference_namespace)
+            manage_row = QtWidgets.QHBoxLayout()
+            manage_row.addWidget(self._button("重新加载模型引用",
+                self._reload_preparation_model))
+            manage_row.addWidget(self._button("替换模型引用文件",
+                self._replace_preparation_model))
+            manage_row.addWidget(self._button("移除模型引用",
+                self._remove_preparation_model))
+            form.addRow(manage_row)
             stack.addWidget(group)
 
             self.preparation_object_fields = {}
@@ -982,8 +993,27 @@ def create_panel(controller: MayaPanelController | None = None):
         def _reference_preparation_model(self):
             source = self._path(self.preparation_model_source)
             result = self.controller.preparation_reference_model(source)
+            self.preparation_reference_namespace.setText(result.namespace)
             return (f"已引用 {source.name} 到 {result.namespace}；"
                     f"{len(result.top_nodes)} 个顶层对象位于 Hi 显示层")
+
+        def _reload_preparation_model(self):
+            result = self.controller.preparation_reload_model(
+                self.preparation_reference_namespace.text().strip())
+            return (f"已重新加载 {result.namespace}：{result.source.name}，"
+                    f"{len(result.top_nodes)} 个顶层对象")
+
+        def _replace_preparation_model(self):
+            result = self.controller.preparation_replace_model(
+                self.preparation_reference_namespace.text().strip(),
+                self._path(self.preparation_model_source))
+            return (f"已替换 {result.namespace} 的模型文件：{result.source.name}，"
+                    f"{len(result.top_nodes)} 个顶层对象")
+
+        def _remove_preparation_model(self):
+            result = self.controller.preparation_remove_model(
+                self.preparation_reference_namespace.text().strip())
+            return f"已移除 {result.namespace} 的模型引用：{result.source.name}"
 
         def _record_preparation_objects(self, role):
             objects = self.controller.preparation_record_objects(self._namespace(), role)

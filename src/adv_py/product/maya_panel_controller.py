@@ -171,6 +171,25 @@ class MayaPanelController:
 
         return ReferencePreparationModel(MayaPreparationReferenceHost()).execute(source)
 
+    def preparation_reload_model(self, namespace: str):
+        from adv_py.adapters.maya_preparation_reference import MayaPreparationReferenceHost
+        from adv_py.application.preparation_reference import ManagePreparationModelReference
+
+        return ManagePreparationModelReference(MayaPreparationReferenceHost()).reload(namespace)
+
+    def preparation_replace_model(self, namespace: str, source: Path):
+        from adv_py.adapters.maya_preparation_reference import MayaPreparationReferenceHost
+        from adv_py.application.preparation_reference import ManagePreparationModelReference
+
+        return ManagePreparationModelReference(MayaPreparationReferenceHost()).replace(
+            namespace, source)
+
+    def preparation_remove_model(self, namespace: str):
+        from adv_py.adapters.maya_preparation_reference import MayaPreparationReferenceHost
+        from adv_py.application.preparation_reference import ManagePreparationModelReference
+
+        return ManagePreparationModelReference(MayaPreparationReferenceHost()).remove(namespace)
+
     def preparation_record_objects(self, namespace: str, role: str) -> tuple[str, ...]:
         from adv_py.adapters.maya_preparation_objects import MayaPreparationObjectsHost
         from adv_py.application.preparation_objects import RecordPreparationObjects

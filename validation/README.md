@@ -8,6 +8,8 @@ Preparation / Model Check：`maya_model_check_smoke.py` 构造带父级平移、
 
 Preparation / Rig 引用模型：`maya_preparation_reference_smoke.py` 生成模型文件与空模型文件，检查空文件失败清理、两个独立命名空间、`Hi` 显示层、绑定场景保存重开，以及修改源模型后重新载入引用。Maya 原生文件引用不进入 Undo 队列；测试不把显示层的 Undo 误判为引用撤销。
 
+同一用例还检查指定 `model`／`model1` 命名空间的重新加载、替换、移除：空文件替换失败后恢复原引用，保留未删除对象的 Preparation/Skin 记录，移除时清理对应记录并保留另一引用，已有 Skin 时拒绝替换和移除。`maya_preparation_reference_manage_visible.py` 在 Maya 图形窗口实际点击四个入口并保存面板截图。Maya 文件引用操作不保证 Undo，验收以失败恢复和保存重开为准。
+
 ```powershell
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_preparation_reference_smoke.py
 ```
