@@ -355,9 +355,11 @@ from .control_curves import (
     ControlCurveColorResult,
     ControlCurveHost,
     ControlCurveMirrorResult,
+    ControlCurveSwapResult,
     ControlCurveScaleResult,
     ScaleControlCurves,
     MirrorControlCurves,
+    SwapControlCurves,
 )
 
 __all__ = [
@@ -367,9 +369,11 @@ __all__ = [
     "ControlCurveColorResult",
     "ControlCurveHost",
     "ControlCurveMirrorResult",
+    "ControlCurveSwapResult",
     "ControlCurveScaleResult",
     "ScaleControlCurves",
     "MirrorControlCurves",
+    "SwapControlCurves",
     "KeyBodyCharacterPose", "CaptureAnimatedBodyCharacterPose",
     "CaptureBodyCharacterAnimation", "ApplyBodyCharacterAnimation", "save_character_animation", "load_character_animation",
     "BakeBodyCharacterSpineMode",

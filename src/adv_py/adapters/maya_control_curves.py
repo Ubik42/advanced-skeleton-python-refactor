@@ -177,3 +177,51 @@ class MayaControlCurveMixin:
                 state, tuple(keys), radius, float(distance), extent,
                 self._cmds.upAxis(query=True, axis=True).lower()))
         return tuple(result)
+
+    def replace_control_curve_shapes(self, source: str, target: str) -> None:
+        self._require_transaction()
+        source_control, source_shapes = self._control_curve_shapes(
+            source, strict=True)
+        target_control, target_shapes = self._control_curve_shapes(
+            target, strict=True)
+        if source_control == target_control:
+            raise ControlCurveValidationError("自定义曲线不能同时作为替换目标")
+        original_selection = self._cmds.ls(selection=True, long=True) or []
+        style_shape = target_shapes[0]
+        style = {
+            "overrideEnabled": bool(self._cmds.getAttr(
+                style_shape + ".overrideEnabled")),
+            "overrideRGBColors": bool(self._cmds.getAttr(
+                style_shape + ".overrideRGBColors")),
+            "overrideColor": int(self._cmds.getAttr(
+                style_shape + ".overrideColor")),
+            "overrideColorRGB": tuple(float(value) for value in
+                self._cmds.getAttr(style_shape + ".overrideColorRGB")[0]),
+            "lineWidth": float(self._cmds.getAttr(style_shape + ".lineWidth")),
+        }
+        self._cmds.delete(list(target_shapes))
+        base = target_control.rsplit("|", 1)[-1].split(":")[-1] + "Shape"
+        for index, source_shape in enumerate(source_shapes):
+            temporary = self._cmds.duplicateCurve(
+                source_shape, constructionHistory=False, local=True)[0]
+            duplicate_shape = (self._cmds.listRelatives(
+                temporary, shapes=True, fullPath=True, type="nurbsCurve") or [])[0]
+            parented = self._cmds.parent(
+                duplicate_shape, target_control, shape=True, relative=True)[0]
+            if self._cmds.objExists(temporary):
+                self._cmds.delete(temporary)
+            path = self._cmds.rename(parented, base if index == 0
+                                     else f"{base}{index + 1}")
+            self._cmds.setAttr(path + ".overrideEnabled",
+                               style["overrideEnabled"])
+            self._cmds.setAttr(path + ".overrideRGBColors",
+                               style["overrideRGBColors"])
+            self._cmds.setAttr(path + ".overrideColor", style["overrideColor"])
+            self._cmds.setAttr(path + ".overrideColorRGB",
+                               *style["overrideColorRGB"], type="double3")
+            self._cmds.setAttr(path + ".lineWidth", style["lineWidth"])
+        if original_selection:
+            self._cmds.select(original_selection, replace=True)
+        else:
+            self._cmds.select(clear=True)
+        self._transaction_changed = True

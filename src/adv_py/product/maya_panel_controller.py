@@ -18,7 +18,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     BakeBodyCharacterLimbMode, BakeBodyCharacterSpineMode,
     SwitchBodyCharacterSpace,
     AutoScaleControlCurves, ColorControlCurves, MirrorControlCurves,
-    ScaleControlCurves,
+    ScaleControlCurves, SwapControlCurves,
     CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
     ExportFitSkeleton, ExportSkinWeights, OrientSimpleFitChain,
     OrientWorldFitJoints,
@@ -337,6 +337,29 @@ class MayaPanelController:
                 raise ValueError(f"镜像目标控制器未登记：{target}")
             pairs.append((source_path, target))
         result = MirrorControlCurves(host).apply(tuple(dict.fromkeys(pairs)), "x")
+        return len(result.verified)
+
+    def control_curves_swap(self, namespace: str, targets: tuple[str, ...],
+                            source: str) -> int:
+        if not targets or not source.strip():
+            raise ValueError("曲线替换需要至少一个目标控制器和一个自定义曲线")
+        host = self._host(namespace)
+        resolver = ResolveBodyCharacter(host)
+        names = resolver.discover()
+        if len(names) != 1:
+            raise ValueError("当前命名空间必须恰好包含一个已登记角色")
+        registration = resolver.execute(names[0])
+        registered = tuple(dict.fromkeys(
+            channel.node for channel in registration.channels))
+        resolved = []
+        for target in targets:
+            matches = [path for path in registered
+                       if path == target or path.rsplit("|", 1)[-1] == target]
+            if len(matches) != 1:
+                raise ValueError(f"替换目标未登记或名称不唯一：{target}")
+            resolved.append(matches[0])
+        result = SwapControlCurves(host).apply(
+            source.strip(), tuple(dict.fromkeys(resolved)))
         return len(result.verified)
 
     def skin_bind(self, namespace: str, mesh: str,

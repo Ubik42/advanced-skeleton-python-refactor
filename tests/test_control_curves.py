@@ -3,7 +3,7 @@ from contextlib import contextmanager
 
 from adv_py.application import (
     AutoScaleControlCurves, ColorControlCurves, MirrorControlCurves,
-    ScaleControlCurves,
+    ScaleControlCurves, SwapControlCurves,
 )
 from adv_py.core import (
     ControlCurveAutoScaleMetric, ControlCurveColorMode, ControlCurveColorState,
@@ -13,6 +13,7 @@ from adv_py.core import (
     SIDE_PALETTE, TYPE_PALETTE, control_curve_side, control_curve_type,
     plan_control_curve_auto_scale, plan_control_curve_colors,
     plan_control_curve_mirror, plan_control_curve_scale,
+    plan_control_curve_swap,
 )
 
 
@@ -55,6 +56,16 @@ class Host:
         return tuple(ControlCurveAutoScaleMetric(
             self.states[name], semantics.get(name, ()), 2., 3.,
             (10., 20., 30.), "z") for name in controls)
+
+    def replace_control_curve_shapes(self, source, target):
+        source_state = self.states[source]
+        target_state = self.states[target]
+        self.states[target] = ControlCurveState(
+            target, target_state.world_matrix,
+            tuple(ControlCurveShapeState(
+                target + f"|Shape{index}", shape.degree, shape.form,
+                shape.points) for index, shape in enumerate(
+                    source_state.shapes, 1)))
 
 
 class ColorHost:
@@ -189,6 +200,24 @@ class ControlCurveMirrorTests(unittest.TestCase):
             ((source.control, target.control),))
         self.assertEqual(host.states[source.control], source)
         self.assertEqual(result.verified[0].control, target.control)
+
+
+class ControlCurveSwapTests(unittest.TestCase):
+    def test_plan_rejects_source_as_target(self):
+        source = state("|Custom")
+        with self.assertRaises(ControlCurveValidationError):
+            plan_control_curve_swap(source, (source,))
+
+    def test_application_replaces_geometry_and_preserves_target_transform(self):
+        host = Host()
+        source = state("|Custom", ((2., 0., 0.), (0., 3., 0.)))
+        target = state("|Control", ((1., 0., 0.), (0., 1., 0.)))
+        host.states = {source.control: source, target.control: target}
+        result = SwapControlCurves(host).apply(source.control, (target.control,))
+        self.assertEqual(result.verified[0].world_matrix, target.world_matrix)
+        self.assertEqual(result.verified[0].shapes[0].points,
+                         source.shapes[0].points)
+        self.assertEqual(host.states[source.control], source)
 
 
 if __name__ == "__main__":

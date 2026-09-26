@@ -137,6 +137,12 @@ class ControlCurveMirrorPlan:
     after: tuple[ControlCurveState, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ControlCurveSwapPlan:
+    source: ControlCurveState
+    targets: tuple[ControlCurveState, ...]
+
+
 SIDE_PALETTE = {
     "left": (0.18, 0.45, 1.0),
     "right": (1.0, 0.22, 0.18),
@@ -313,3 +319,13 @@ def plan_control_curve_mirror(
         after.append(ControlCurveState(pair.target.control,
                                        pair.target.world_matrix, tuple(shapes)))
     return ControlCurveMirrorPlan(axis, pairs, tuple(after))
+
+
+def plan_control_curve_swap(
+    source: ControlCurveState, targets: tuple[ControlCurveState, ...]
+) -> ControlCurveSwapPlan:
+    if (not targets or source.control in {target.control for target in targets}
+            or len({target.control for target in targets}) != len(targets)):
+        raise ControlCurveValidationError(
+            "自定义曲线来源必须独立于不重复的目标控制器")
+    return ControlCurveSwapPlan(source, targets)

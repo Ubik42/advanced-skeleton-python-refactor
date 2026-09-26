@@ -71,6 +71,29 @@ def _same_color_states(left, right):
         _same_color_state(a, b) for a, b in zip(left, right))
 
 
+def _same_icon_geometry(source, target):
+    return (
+        len(source.shapes) == len(target.shapes)
+        and all(
+            old.degree == new.degree and old.form == new.form
+            and len(old.points) == len(new.points)
+            and all(_close(a, b) for a, b in zip(old.points, new.points))
+            for old, new in zip(source.shapes, target.shapes)
+        )
+    )
+
+
+def _shape_style(cmds, shape):
+    return (
+        bool(cmds.getAttr(shape + ".overrideEnabled")),
+        bool(cmds.getAttr(shape + ".overrideRGBColors")),
+        int(cmds.getAttr(shape + ".overrideColor")),
+        tuple(float(value) for value in
+              cmds.getAttr(shape + ".overrideColorRGB")[0]),
+        float(cmds.getAttr(shape + ".lineWidth")),
+    )
+
+
 def main(report: Path) -> int:
     import maya.standalone
     maya.standalone.initialize(name="python")
@@ -128,6 +151,16 @@ def main(report: Path) -> int:
         skin = cmds.polyCube(name="AutoScaleSkin", width=16., height=10.,
                              depth=40.)[0]
         cmds.setAttr(skin + ".translateZ", 20.)
+        custom = cmds.curve(name="CustomControlIcon", degree=1,
+            point=((-1., 0., 0.), (0., 1.5, 0.), (1., 0., 0.),
+                   (0., -1.5, 0.), (-1., 0., 0.)))
+        custom_ring = cmds.circle(name="CustomControlIconRing", normal=(0, 0, 1),
+                                  radius=.55, sections=8, constructionHistory=False)[0]
+        ring_shape = (cmds.listRelatives(
+            custom_ring, shapes=True, fullPath=True, type="nurbsCurve") or [])[0]
+        cmds.parent(ring_shape, custom, shape=True, relative=True)
+        cmds.delete(custom_ring)
+        custom = (cmds.ls(custom, long=True, type="transform") or [custom])[0]
         marker = cmds.createNode("transform", name="CurveScaleSelection",
                                  skipSelect=True)
         cmds.select(marker, replace=True)
@@ -172,6 +205,44 @@ def main(report: Path) -> int:
                 host.capture_control_curves(
                     tuple(pair.target.control for pair in mirror_pairs),
                     strict=True), mirror_pairs))
+
+        swap_targets = (before_all[0], before_all[1])
+        swap_styles = []
+        for index, state in enumerate(swap_targets):
+            shape = state.shapes[0].path
+            cmds.setAttr(shape + ".overrideEnabled", True)
+            cmds.setAttr(shape + ".overrideRGBColors", True)
+            cmds.setAttr(shape + ".overrideColorRGB", .2 + index * .2,
+                         .4, .8 - index * .2, type="double3")
+            cmds.setAttr(shape + ".lineWidth", 2. + index)
+            swap_styles.append(_shape_style(cmds, shape))
+        custom_before = host.capture_control_curves((custom,), strict=True)[0]
+        swap_count = controller.control_curves_swap(
+            ":", tuple(state.control for state in swap_targets), custom)
+        swap_after = host.capture_control_curves(
+            tuple(state.control for state in swap_targets), strict=True)
+        swap_applied = swap_count == 2 and all(
+            _same_icon_geometry(custom_before, state)
+            and _close(state.world_matrix, before.world_matrix)
+            for state, before in zip(swap_after, swap_targets))
+        swap_style_preserved = all(
+            all(_shape_style(cmds, shape.path) == style
+                for shape in state.shapes)
+            for state, style in zip(swap_after, swap_styles))
+        swap_source_preserved = _same_state(
+            host.capture_control_curves((custom,), strict=True)[0], custom_before)
+        swap_selection_preserved = tuple(
+            cmds.ls(selection=True, long=True) or []) == selection_before
+        cmds.undo()
+        swap_undo = all(_same_state(found, expected) for found, expected in zip(
+            host.capture_control_curves(
+                tuple(state.control for state in swap_targets), strict=True),
+            swap_targets))
+        cmds.redo()
+        swap_redo = all(_same_icon_geometry(custom_before, state) for state in
+            host.capture_control_curves(
+                tuple(state.control for state in swap_targets), strict=True))
+        cmds.undo()
 
         auto_metrics = host.measure_control_curve_auto_scale(
             candidates, skin, semantics, strict=False)
@@ -323,6 +394,19 @@ def main(report: Path) -> int:
             mirror_save_reopen_preserved = all(
                 _same_state(found, expected) for found, expected in
                 zip(mirror_reopened, persisted_mirror_plan.after))
+            current_custom = host.capture_control_curves((custom,), strict=True)[0]
+            controller.control_curves_swap(
+                ":", tuple(state.control for state in swap_targets), custom)
+            swap_scene = Path(folder) / "swapped.ma"
+            cmds.file(rename=str(swap_scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(swap_scene), open=True, force=True)
+            swap_reopened = host.capture_control_curves(
+                tuple(state.control for state in swap_targets), strict=True)
+            swap_save_reopen_preserved = all(
+                _same_icon_geometry(current_custom, state)
+                for state in swap_reopened)
 
         checks = {
             "curves_discovered": len(before_all) > 1,
@@ -334,6 +418,12 @@ def main(report: Path) -> int:
             "registered_all_mirror_route": all_mirror_applied,
             "registered_all_mirror_single_undo": all_mirror_undo,
             "mirror_save_reopen_preserved": mirror_save_reopen_preserved,
+            "custom_icon_multi_target_route": swap_applied,
+            "custom_icon_source_preserved": swap_source_preserved,
+            "custom_icon_style_preserved": swap_style_preserved,
+            "custom_icon_selection_preserved": swap_selection_preserved,
+            "custom_icon_single_undo_redo": swap_undo and swap_redo,
+            "custom_icon_save_reopen_preserved": swap_save_reopen_preserved,
             "explicit_mesh_auto_scale_route": explicit_auto_count == 1
                 and explicit_auto_applied,
             "auto_scale_selection_preserved": auto_selection_preserved,

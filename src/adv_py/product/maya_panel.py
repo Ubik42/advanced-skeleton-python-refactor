@@ -362,16 +362,21 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_curve_mirror_side = QtWidgets.QComboBox()
             self.control_curve_mirror_side.addItem("右侧 → 左侧", "R")
             self.control_curve_mirror_side.addItem("左侧 → 右侧", "L")
+            self.control_curve_custom_source = QtWidgets.QLineEdit()
+            self.control_curve_custom_source.setPlaceholderText(
+                "自定义 NURBS 曲线 Transform 路径")
             group, form = self._group("06 · Control Curves", [
                 ("目标控制器", self.control_curve_targets),
                 ("缩放倍率", self.control_curve_factor),
                 ("颜色规则", self.control_curve_color_mode),
                 ("Skin 网格", self.control_curve_skin),
-                ("镜像方向", self.control_curve_mirror_side)])
+                ("镜像方向", self.control_curve_mirror_side),
+                ("自定义曲线", self.control_curve_custom_source)])
             form.addRow(self._button("缩放控制曲线", self._scale_control_curves))
             form.addRow(self._button("按 Skin 自动缩放", self._auto_scale_control_curves))
             form.addRow(self._button("设置控制曲线颜色", self._color_control_curves))
             form.addRow(self._button("镜像控制曲线形状", self._mirror_control_curves))
+            form.addRow(self._button("替换控制器图标", self._swap_control_curves))
             stack.addWidget(group)
             self._spine_replace_mode_changed()
             stack.addStretch(1)
@@ -975,6 +980,15 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(), controls,
                 self.control_curve_mirror_side.currentData())
             return f"已镜像 {count} 对控制曲线"
+
+        def _swap_control_curves(self):
+            targets = tuple(line.strip() for line in
+                self.control_curve_targets.toPlainText().splitlines()
+                if line.strip())
+            count = self.controller.control_curves_swap(
+                self._namespace(), targets,
+                self.control_curve_custom_source.text())
+            return f"已替换 {count} 个控制器图标"
 
         def _bind_skin(self):
             influences = tuple(line.strip() for line in

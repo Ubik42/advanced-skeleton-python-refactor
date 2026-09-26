@@ -8,10 +8,12 @@ from typing import Protocol
 from adv_py.core.control_curves import (
     ControlCurveAutoScaleMetric, ControlCurveAutoScalePlan,
     ControlCurveMirrorPair, ControlCurveMirrorPlan,
+    ControlCurveSwapPlan,
     ControlCurveColorMode, ControlCurveColorPlan, ControlCurveColorState,
     ControlCurveScalePlan, ControlCurveState, ControlCurveValidationError,
     plan_control_curve_auto_scale, plan_control_curve_colors,
     plan_control_curve_mirror,
+    plan_control_curve_swap,
     plan_control_curve_scale,
 )
 
@@ -40,6 +42,8 @@ class ControlCurveHost(Protocol):
         semantic_keys: tuple[tuple[str, tuple[str, ...]], ...], *, strict: bool,
     ) -> tuple[ControlCurveAutoScaleMetric, ...]: ...
 
+    def replace_control_curve_shapes(self, source: str, target: str) -> None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class ControlCurveScaleResult:
@@ -62,6 +66,12 @@ class ControlCurveAutoScaleResult:
 @dataclass(frozen=True, slots=True)
 class ControlCurveMirrorResult:
     plan: ControlCurveMirrorPlan
+    verified: tuple[ControlCurveState, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ControlCurveSwapResult:
+    plan: ControlCurveSwapPlan
     verified: tuple[ControlCurveState, ...]
 
 
@@ -206,3 +216,44 @@ class MirrorControlCurves:
                 1.0, tuple(pair.target for pair in plan.pairs), plan.after),
                 verified)
         return ControlCurveMirrorResult(plan, verified)
+
+
+class SwapControlCurves:
+    def __init__(self, host: ControlCurveHost) -> None:
+        self._host = host
+
+    def apply(self, source: str, targets: tuple[str, ...]
+              ) -> ControlCurveSwapResult:
+        source_state = self._host.capture_control_curves((source,), strict=True)[0]
+        target_states = self._host.capture_control_curves(targets, strict=True)
+        plan = plan_control_curve_swap(source_state, target_states)
+        with self._host.transaction(
+                f"用自定义曲线替换 {len(plan.targets)} 个控制器图标"):
+            for target in plan.targets:
+                self._host.replace_control_curve_shapes(
+                    plan.source.control, target.control)
+            verified = self._host.capture_control_curves(
+                tuple(target.control for target in plan.targets), strict=True)
+            self._verify(plan, verified)
+        return ControlCurveSwapResult(plan, verified)
+
+    @staticmethod
+    def _verify(plan: ControlCurveSwapPlan,
+                actual: tuple[ControlCurveState, ...]) -> None:
+        if len(actual) != len(plan.targets):
+            raise RuntimeError("控制曲线替换后复检失败：目标数量变化")
+        for before, found in zip(plan.targets, actual):
+            if (found.control != before.control
+                    or any(abs(a - b) > 1e-8 for a, b in
+                           zip(found.world_matrix, before.world_matrix))
+                    or len(found.shapes) != len(plan.source.shapes)):
+                raise RuntimeError("控制曲线替换后复检失败：控制器或形状数量变化")
+            for source_shape, found_shape in zip(plan.source.shapes, found.shapes):
+                if (found_shape.degree != source_shape.degree
+                        or found_shape.form != source_shape.form
+                        or len(found_shape.points) != len(source_shape.points)
+                        or any(abs(a - b) > 1e-6
+                               for expected, current in zip(source_shape.points,
+                                                            found_shape.points)
+                               for a, b in zip(expected, current))):
+                    raise RuntimeError("控制曲线替换后复检失败：曲线几何不一致")
