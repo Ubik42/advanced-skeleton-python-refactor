@@ -222,6 +222,10 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
             fault_rolled_back = False
         pose_errors = {}
         pose_joint_worst = {}
+        pose_joint_frames = {}
+        diagnostic_names = ("Root_M", "Spine1_M", "Chest_M", "Neck_M",
+            "Head_M", "Hip_R", "Hip_L", "Knee_R", "Knee_L",
+            "Ankle_R", "Ankle_L", "Toes_R", "Toes_L")
         for label, (_, target_plug, value) in controls.items():
             cmds.setAttr(target_plug, value)
             posed = _points(duplicate)
@@ -234,6 +238,12 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
                 for name in source_names}
             pose_joint_worst[label] = sorted(matrix_errors.items(),
                 key=lambda row: row[1], reverse=True)[:15]
+            if label in ("root_y20", "neck_y20"):
+                pose_joint_frames[label] = {name: {
+                    "source": source_pose_matrices[label][name],
+                    "target": tuple(cmds.xform(paths[name][0], query=True,
+                        worldSpace=True, matrix=True)),
+                } for name in diagnostic_names}
             cmds.setAttr(target_plug, 0.0)
         saved = report.with_suffix(".mb").resolve()
         report.parent.mkdir(parents=True, exist_ok=True)
@@ -258,6 +268,7 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
                 "maximum_weight_error": weight_error,
                 "pose_world_point_errors": pose_errors,
                 "pose_joint_worst": pose_joint_worst,
+                "pose_joint_frames": pose_joint_frames,
                 "undo_removed_skin": undo_removed_skin,
                 "undo_removed_copy": undo_removed_copy,
                 "undo_restored_source_skin": undo_restored_source,
