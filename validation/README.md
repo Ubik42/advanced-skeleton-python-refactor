@@ -375,6 +375,8 @@ py -3 -m unittest discover -s tests
 
 外部原版示例场景可用 `maya_original_sample_inventory.py` 只读盘点：传入本机 `.ma`／`.mb` 路径和本地报告路径；脚本以 `executeScriptNodes=False` 打开场景，记录 Fit 关节、Body／控制数量和顶层层级，不改写来源文件。`sam.mb` 的本机报告显示 Y Up、厘米单位、41 个 Fit 关节、294 个总关节、141 个曲线控制 Transform 和 1 个网格。该盘点只证明原版资产结构，不代表重构框架已能直接导入或构建此资产。
 
+`maya_original_fit_compatibility.py` 接受相同的场景与报告路径，读取原版 Fit 元数据、对称规划和 Body 预检。附加 `--isolated-build` 时，仅在未保存的内存场景中移除原有 Rig、给缺失标签的 Fit 关节按名称补标签，再执行 Body 和 Character Rig 构建；不写入来源文件。`sam.mb` 的结果为 41 个 Fit → 74 个 Body，Arm／Leg／Torso／Global 构建通过，Hand 因原版手指命名和 Cup 父链与当前模板不同而跳过。
+
 局部机制定位使用 `maya_body_spine_smoke.py` 与 `maya_body_control_spaces_smoke.py`，输出路径作为第一个参数，`--basic` 切换为 30 关节。两者包含非法状态拒绝和失败回滚；空间脚本另外验证身体 / Global 跟随关系。结果写入已忽略的 `validation/results/`，不提交本机日志。
 
 
