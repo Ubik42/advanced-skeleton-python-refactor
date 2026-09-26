@@ -335,7 +335,8 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
             self._cmds.attributeQuery("advPyAuxiliaryInfluenceKind",
                                       node=path, exists=True)
             and self._cmds.getAttr(path + ".advPyAuxiliaryInfluenceKind")
-                in {"axial-part-v1", "finger-mid-v1", "limb-part-v1"})]
+                in {"axial-part-v1", "finger-mid-v1", "limb-part-v1",
+                    "root-volume-v1"})]
         states: list[BodyJointState] = []
         for path in paths:
             parents = self._cmds.listRelatives(path, parent=True, fullPath=True) or []

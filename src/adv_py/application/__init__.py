@@ -714,3 +714,4 @@ from .external_mesh_io import (ExportExternalMesh, ImportExternalMesh,
 from .axial_part_deform import BuildAxialPartDeform
 from .finger_mid_deform import BuildFingerMidDeform
 from .limb_part_deform import BuildLimbPartDeform
+from .root_volume_deform import BuildRootVolumeDeform

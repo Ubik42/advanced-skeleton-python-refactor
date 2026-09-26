@@ -1,5 +1,11 @@
 # 后台宿主验证
 
+原版 RootA 体积关节对照：`maya_original_root_volume_smoke.py` 从公开示例场景读取左右 `RootAJoint` 的原始局部变换，在同一 Fit 重建的新角色中生成两个有权重的辅助关节。对比静止世界矩阵，验证总控位移、注入故障后的回滚、撤销／重做、保存重开及 Body 登记。`maya_original_volume_joint_graph.py` 可单独导出全部 40 个体积关节的原始驱动层级和 SDK 上游节点；输出均放在忽略目录。
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_original_root_volume_smoke.py 'C:\path\to\sam.mb' validation/results/maya2024-original-root-volume.json
+```
+
 公开示例角色的四肢分段对照：`maya_original_limb_part_smoke.py` 读取本机 `sam.mb`，禁用脚本节点执行，比较 12 个有权重的 `Part1/Part2` 关节在静止、FK 单轴与混合旋转、FK 非等比缩放、可调扭转、全 IK 位移、Fatness 和体积保持中的结果；同时检查中途故障回滚、一次撤销／重做、保存重开和角色登记。原版 FK／IK 数值 `10` 对应本项目数值 `1`。结果写入忽略目录，不提交原资产或本机路径。
 
 ```powershell

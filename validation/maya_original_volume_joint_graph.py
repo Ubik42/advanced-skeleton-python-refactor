@@ -90,6 +90,9 @@ def main(scene: Path, report: Path) -> None:
                     worldSpace=True, matrix=True),
                 "joint_local_translate": cmds.getAttr(name + ".translate")[0],
                 "joint_local_rotate": cmds.getAttr(name + ".rotate")[0],
+                "joint_orient": cmds.getAttr(name + ".jointOrient")[0],
+                "joint_rotate_order": cmds.getAttr(name + ".rotateOrder"),
+                "joint_local_scale": cmds.getAttr(name + ".scale")[0],
                 "target_local_translate": cmds.getAttr(target + ".translate")[0],
                 "target_local_rotate": cmds.getAttr(target + ".rotate")[0],
                 "target_inputs": inputs(target),
@@ -103,6 +106,8 @@ def main(scene: Path, report: Path) -> None:
             raise ValueError("expected 40 weighted volume joints, got " + str(len(rows)))
         report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text(json.dumps({"source": scene.name,
+            "root_world_matrix": cmds.xform("Root_M", query=True,
+                worldSpace=True, matrix=True),
             "count": len(rows), "joints": rows}, ensure_ascii=False,
             indent=2) + "\n", encoding="utf-8")
     finally:
