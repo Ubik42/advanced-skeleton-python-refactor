@@ -48,6 +48,7 @@ ADV_OPERATIONS = {
         ("预检并转移权重", 1, "04 · 跨拓扑权重转移")),
     ("Body", "Control Curves"): (
         ("缩放控制曲线", 0, "06 · Control Curves"),
+        ("按 Skin 自动缩放", 0, "06 · Control Curves"),
         ("设置控制曲线颜色", 0, "06 · Control Curves")),
     ("Face", "Pre"): (
         ("从标记生成目标", 3, "01 · 目标网格"),

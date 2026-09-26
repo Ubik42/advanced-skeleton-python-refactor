@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from adv_py.core.control_curves import (
-    ControlCurveColorState, ControlCurveShapeColorState, ControlCurveShapeState,
-    ControlCurveState, ControlCurveValidationError,
+    ControlCurveAutoScaleMetric, ControlCurveColorState,
+    ControlCurveShapeColorState, ControlCurveShapeState, ControlCurveState,
+    ControlCurveValidationError,
 )
 
 
@@ -117,3 +118,62 @@ class MayaControlCurveMixin:
         self._cmds.setAttr(shape + ".overrideRGBColors", True)
         self._cmds.setAttr(shape + ".overrideColorRGB", *color, type="double3")
         self._transaction_changed = True
+
+    def measure_control_curve_auto_scale(
+        self, controls: tuple[str, ...], mesh: str,
+        semantic_keys: tuple[tuple[str, tuple[str, ...]], ...], *, strict: bool,
+    ) -> tuple[ControlCurveAutoScaleMetric, ...]:
+        from maya.api import OpenMaya as om
+
+        matches = self._cmds.ls(mesh, long=True) or []
+        mesh_shapes = []
+        for match in matches:
+            node_type = self._cmds.nodeType(match)
+            if node_type == "mesh":
+                mesh_shapes.append(match)
+            elif node_type == "transform":
+                mesh_shapes.extend(self._cmds.listRelatives(
+                    match, shapes=True, fullPath=True, type="mesh") or [])
+        mesh_shapes = tuple(dict.fromkeys(
+            shape for shape in mesh_shapes
+            if not self._cmds.getAttr(shape + ".intermediateObject")))
+        if len(mesh_shapes) != 1:
+            raise ControlCurveValidationError("Skin 必须明确解析为一个可用网格")
+        mesh_shape = mesh_shapes[0]
+        mesh_transform = (self._cmds.listRelatives(
+            mesh_shape, parent=True, fullPath=True) or [mesh_shape])[0]
+        bounds = self._cmds.exactWorldBoundingBox(mesh_transform)
+        extent = tuple(float(bounds[index + 3] - bounds[index])
+                       for index in range(3))
+        selection = om.MSelectionList()
+        selection.add(mesh_shape)
+        mesh_fn = om.MFnMesh(selection.getDagPath(0))
+        states = self.capture_control_curves(controls, strict=strict)
+        semantic_map = dict(semantic_keys)
+        result = []
+        for state in states:
+            pivot_values = self._cmds.xform(
+                state.control, query=True, worldSpace=True, rotatePivot=True)
+            pivot = om.MPoint(*pivot_values)
+            closest, _ = mesh_fn.getClosestPoint(pivot, om.MSpace.kWorld)
+            distance = (closest - pivot).length()
+            radius = 0.0
+            for shape in state.shapes:
+                values = self._cmds.xform(
+                    shape.path + ".cv[*]", query=True, worldSpace=True,
+                    translation=True) or []
+                for index in range(0, len(values), 3):
+                    radius = max(radius, (om.MPoint(
+                        values[index], values[index + 1], values[index + 2]
+                    ) - pivot).length())
+            keys = semantic_map.get(state.control, ())
+            if not keys:
+                requested = next((name for name in controls
+                                  if (self._cmds.ls(name, long=True,
+                                                   type="transform") or [None])[0]
+                                  == state.control), None)
+                keys = semantic_map.get(requested, ())
+            result.append(ControlCurveAutoScaleMetric(
+                state, tuple(keys), radius, float(distance), extent,
+                self._cmds.upAxis(query=True, axis=True).lower()))
+        return tuple(result)

@@ -1,12 +1,16 @@
 import unittest
 from contextlib import contextmanager
 
-from adv_py.application import ColorControlCurves, ScaleControlCurves
+from adv_py.application import (
+    AutoScaleControlCurves, ColorControlCurves, ScaleControlCurves,
+)
 from adv_py.core import (
-    ControlCurveColorMode, ControlCurveColorState, ControlCurveShapeColorState,
+    ControlCurveAutoScaleMetric, ControlCurveColorMode, ControlCurveColorState,
+    ControlCurveShapeColorState,
     ControlCurveShapeState, ControlCurveState, ControlCurveValidationError,
     SIDE_PALETTE, TYPE_PALETTE, control_curve_side, control_curve_type,
-    plan_control_curve_colors, plan_control_curve_scale,
+    plan_control_curve_auto_scale, plan_control_curve_colors,
+    plan_control_curve_scale,
 )
 
 
@@ -40,6 +44,13 @@ class Host:
         self.states["|Control"] = ControlCurveState(
             current.control, current.world_matrix,
             (ControlCurveShapeState(shape, 1, 0, points),))
+
+    def measure_control_curve_auto_scale(self, controls, mesh, semantic_keys, *,
+                                         strict):
+        semantics = dict(semantic_keys)
+        return tuple(ControlCurveAutoScaleMetric(
+            self.states[name], semantics.get(name, ()), 2., 3.,
+            (10., 20., 30.), "z") for name in controls)
 
 
 class ColorHost:
@@ -123,6 +134,32 @@ class ControlCurveColorTests(unittest.TestCase):
         shape = result.verified[0].shapes[0]
         self.assertTrue(shape.override_enabled and shape.rgb_enabled)
         self.assertEqual(shape.color, TYPE_PALETTE["fk"])
+
+
+class ControlCurveAutoScaleTests(unittest.TestCase):
+    def test_plan_uses_surface_distance_and_global_horizontal_extent(self):
+        local = ControlCurveAutoScaleMetric(
+            state(), ("arm.fk.Wrist_R",), 2., 3., (10., 20., 30.), "z")
+        global_state = state("|Global")
+        global_metric = ControlCurveAutoScaleMetric(
+            global_state, ("global.translateX",), 2., 3.,
+            (10., 20., 30.), "z")
+        plan = plan_control_curve_auto_scale("|Skin", (local, global_metric))
+        self.assertAlmostEqual(plan.changes[0].target_world_radius, 3.45)
+        self.assertAlmostEqual(plan.changes[1].target_world_radius, 12.)
+
+    def test_application_writes_each_planned_factor_and_verifies(self):
+        host = Host()
+        result = AutoScaleControlCurves(host).apply(
+            ("|Control",), "|Skin",
+            (("|Control", ("arm.fk.Wrist_R",)),))
+        self.assertEqual(len(host.transactions), 1)
+        self.assertAlmostEqual(result.plan.changes[0].factor, 1.725)
+        self.assertTrue(all(
+            abs(value - expected) <= 1e-9
+            for point, wanted in zip(result.verified[0].shapes[0].points,
+                                     ((1.725, 0., 0.), (0., 3.45, 0.)))
+            for value, expected in zip(point, wanted)))
 
 
 if __name__ == "__main__":

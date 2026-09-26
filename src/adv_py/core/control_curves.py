@@ -89,6 +89,41 @@ class ControlCurveColorPlan:
     after: tuple[ControlCurveColorState, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ControlCurveAutoScaleMetric:
+    state: ControlCurveState
+    semantic_keys: tuple[str, ...]
+    current_world_radius: float
+    surface_distance: float
+    mesh_extent: Vector3
+    up_axis: str
+
+    def __post_init__(self) -> None:
+        numbers = (self.current_world_radius, self.surface_distance,
+                   *self.mesh_extent)
+        if (self.up_axis not in "xyz" or len(self.mesh_extent) != 3
+                or not all(isfinite(float(value)) and float(value) >= 0.0
+                           for value in numbers)
+                or self.current_world_radius <= 1e-8
+                or max(self.mesh_extent) <= 1e-8):
+            raise ControlCurveValidationError("控制曲线自动缩放测量无效")
+
+
+@dataclass(frozen=True, slots=True)
+class ControlCurveAutoScaleChange:
+    control: str
+    factor: float
+    target_world_radius: float
+    before: ControlCurveState
+    after: ControlCurveState
+
+
+@dataclass(frozen=True, slots=True)
+class ControlCurveAutoScalePlan:
+    mesh: str
+    changes: tuple[ControlCurveAutoScaleChange, ...]
+
+
 SIDE_PALETTE = {
     "left": (0.18, 0.45, 1.0),
     "right": (1.0, 0.22, 0.18),
@@ -178,3 +213,27 @@ def plan_control_curve_scale(
               for shape in state.shapes))
         for state in controls)
     return ControlCurveScalePlan(value, controls, after)
+
+
+def plan_control_curve_auto_scale(
+    mesh: str, metrics: tuple[ControlCurveAutoScaleMetric, ...]
+) -> ControlCurveAutoScalePlan:
+    if not mesh or not metrics or len({row.state.control for row in metrics}) != len(metrics):
+        raise ControlCurveValidationError("自动缩放需要网格和不重复的控制器测量")
+    changes = []
+    for row in metrics:
+        diagonal = sum(value * value for value in row.mesh_extent) ** 0.5
+        keys = tuple(key.lower() for key in row.semantic_keys)
+        if any(key == "global" or key.startswith("global.") for key in keys):
+            horizontal = tuple(value for axis, value in zip("xyz", row.mesh_extent)
+                               if axis != row.up_axis)
+            target = max(horizontal) * 0.6
+        else:
+            target = min(max(row.surface_distance * 1.15, diagonal * 0.015),
+                         diagonal * 0.18)
+        factor = min(max(target / row.current_world_radius, 0.05), 20.0)
+        after = plan_control_curve_scale((row.state,), factor).after[0]
+        changes.append(ControlCurveAutoScaleChange(
+            row.state.control, factor, row.current_world_radius * factor,
+            row.state, after))
+    return ControlCurveAutoScalePlan(mesh, tuple(changes))

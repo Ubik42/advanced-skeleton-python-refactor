@@ -1,4 +1,4 @@
-"""Validate post-build control curve scaling through the product controller."""
+"""Validate post-build control-curve scale, auto-scale, and color workflows."""
 from __future__ import annotations
 
 import json
@@ -79,7 +79,10 @@ def main(report: Path) -> int:
         from adv_py.application import (
             BuildSyntheticBodySourceFit, CreateFitSkeleton, ResolveBodyCharacter,
         )
-        from adv_py.core import control_curve_side, plan_control_curve_colors
+        from adv_py.core import (
+            control_curve_side, plan_control_curve_auto_scale,
+            plan_control_curve_colors,
+        )
         from adv_py.product.maya_panel_controller import MayaPanelController
 
         report.parent.mkdir(parents=True, exist_ok=True)
@@ -104,10 +107,54 @@ def main(report: Path) -> int:
                           for control, keys in semantic_map.items())
         before_all = host.capture_control_curves(candidates, strict=False)
         target = before_all[0].control
+        skin = cmds.polyCube(name="AutoScaleSkin", width=16., height=10.,
+                             depth=40.)[0]
+        cmds.setAttr(skin + ".translateZ", 20.)
         marker = cmds.createNode("transform", name="CurveScaleSelection",
                                  skipSelect=True)
         cmds.select(marker, replace=True)
         selection_before = tuple(cmds.ls(selection=True, long=True) or [])
+
+        auto_metrics = host.measure_control_curve_auto_scale(
+            candidates, skin, semantics, strict=False)
+        global_metric = next(row for row in auto_metrics
+                             if any(key == "global" or key.startswith("global.")
+                                    for key in row.semantic_keys))
+        explicit_auto_plan = plan_control_curve_auto_scale(
+            skin, (global_metric,))
+        explicit_auto_count = controller.control_curves_auto_scale(
+            ":", (global_metric.state.control,), skin)
+        explicit_auto_after = host.capture_control_curves(
+            (global_metric.state.control,), strict=True)[0]
+        explicit_auto_applied = _same_state(
+            explicit_auto_after, explicit_auto_plan.changes[0].after)
+        auto_selection_preserved = tuple(
+            cmds.ls(selection=True, long=True) or []) == selection_before
+        cmds.undo()
+        explicit_auto_undo = _same_state(
+            host.capture_control_curves(
+                (global_metric.state.control,), strict=True)[0],
+            global_metric.state)
+        cmds.redo()
+        explicit_auto_redo = _same_state(
+            host.capture_control_curves(
+                (global_metric.state.control,), strict=True)[0],
+            explicit_auto_plan.changes[0].after)
+        cmds.undo()
+
+        all_auto_plan = plan_control_curve_auto_scale(skin, auto_metrics)
+        all_auto_count = controller.control_curves_auto_scale(":", (), skin)
+        all_auto_after = host.capture_control_curves(candidates, strict=False)
+        all_auto_applied = (
+            all_auto_count == len(before_all)
+            and all(_same_state(actual, change.after)
+                    for actual, change in zip(all_auto_after,
+                                              all_auto_plan.changes)))
+        cmds.undo()
+        all_auto_undo = all(
+            _same_state(old, restored)
+            for old, restored in zip(
+                before_all, host.capture_control_curves(candidates, strict=False)))
 
         explicit_count = controller.control_curves_scale(":", (target,), 1.25)
         explicit_after = host.capture_control_curves((target,), strict=True)[0]
@@ -185,9 +232,32 @@ def main(report: Path) -> int:
                 candidates, semantics, strict=False)
             color_reopen_preserved = _same_color_states(
                 reopened_colors, expected_all_colors)
+            persisted_auto_metrics = host.measure_control_curve_auto_scale(
+                candidates, skin, semantics, strict=False)
+            persisted_auto_plan = plan_control_curve_auto_scale(
+                skin, persisted_auto_metrics)
+            controller.control_curves_auto_scale(":", (), skin)
+            auto_scene = Path(folder) / "auto-scaled.ma"
+            cmds.file(rename=str(auto_scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(auto_scene), open=True, force=True)
+            auto_reopened = host.capture_control_curves(candidates, strict=False)
+            auto_save_reopen_preserved = all(
+                _same_state(actual, change.after)
+                for actual, change in zip(auto_reopened,
+                                          persisted_auto_plan.changes))
 
         checks = {
             "curves_discovered": len(before_all) > 1,
+            "explicit_mesh_auto_scale_route": explicit_auto_count == 1
+                and explicit_auto_applied,
+            "auto_scale_selection_preserved": auto_selection_preserved,
+            "explicit_auto_scale_single_undo_redo": explicit_auto_undo
+                and explicit_auto_redo,
+            "registered_all_mesh_auto_scale_route": all_auto_applied,
+            "registered_all_auto_scale_single_undo": all_auto_undo,
+            "auto_scale_save_reopen_preserved": auto_save_reopen_preserved,
             "explicit_product_route": explicit_count == 1 and explicit_scaled,
             "selection_preserved": selection_preserved,
             "explicit_single_undo_redo": explicit_undo and explicit_redo,

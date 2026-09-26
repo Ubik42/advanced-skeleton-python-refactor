@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from adv_py.core.control_curves import (
+    ControlCurveAutoScaleMetric, ControlCurveAutoScalePlan,
     ControlCurveColorMode, ControlCurveColorPlan, ControlCurveColorState,
     ControlCurveScalePlan, ControlCurveState, ControlCurveValidationError,
-    plan_control_curve_colors, plan_control_curve_scale,
+    plan_control_curve_auto_scale, plan_control_curve_colors,
+    plan_control_curve_scale,
 )
 
 
@@ -31,6 +33,11 @@ class ControlCurveHost(Protocol):
     def set_control_curve_color(self, shape: str,
                                 color: tuple[float, float, float]) -> None: ...
 
+    def measure_control_curve_auto_scale(
+        self, controls: tuple[str, ...], mesh: str,
+        semantic_keys: tuple[tuple[str, tuple[str, ...]], ...], *, strict: bool,
+    ) -> tuple[ControlCurveAutoScaleMetric, ...]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class ControlCurveScaleResult:
@@ -42,6 +49,12 @@ class ControlCurveScaleResult:
 class ControlCurveColorResult:
     plan: ControlCurveColorPlan
     verified: tuple[ControlCurveColorState, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ControlCurveAutoScaleResult:
+    plan: ControlCurveAutoScalePlan
+    verified: tuple[ControlCurveState, ...]
 
 
 class ScaleControlCurves:
@@ -132,3 +145,29 @@ class ColorControlCurves:
                         or any(abs(a - b) > 1e-6
                                for a, b in zip(current.color, wanted.color))):
                     raise RuntimeError("控制曲线着色后复检失败：显示颜色不一致")
+
+
+class AutoScaleControlCurves:
+    def __init__(self, host: ControlCurveHost) -> None:
+        self._host = host
+
+    def apply(self, controls: tuple[str, ...], mesh: str,
+              semantic_keys: tuple[tuple[str, tuple[str, ...]], ...] = (), *,
+              strict: bool = True) -> ControlCurveAutoScaleResult:
+        if not controls or len(set(controls)) != len(controls):
+            raise ControlCurveValidationError("控制器列表不能为空或重复")
+        metrics = self._host.measure_control_curve_auto_scale(
+            controls, mesh, semantic_keys, strict=strict)
+        plan = plan_control_curve_auto_scale(mesh, metrics)
+        with self._host.transaction(
+                f"按网格为 {len(plan.changes)} 个控制曲线自动缩放"):
+            for change in plan.changes:
+                for shape in change.after.shapes:
+                    self._host.set_control_curve_points(shape.path, shape.points)
+            verified = self._host.capture_control_curves(
+                tuple(change.control for change in plan.changes), strict=True)
+            ScaleControlCurves._verify(
+                ControlCurveScalePlan(1.0,
+                    tuple(change.before for change in plan.changes),
+                    tuple(change.after for change in plan.changes)), verified)
+        return ControlCurveAutoScaleResult(plan, verified)

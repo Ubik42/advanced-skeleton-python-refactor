@@ -349,7 +349,9 @@ from .upper_body_fit import (
 )
 
 from .control_curves import (
+    AutoScaleControlCurves,
     ColorControlCurves,
+    ControlCurveAutoScaleResult,
     ControlCurveColorResult,
     ControlCurveHost,
     ControlCurveScaleResult,
@@ -357,7 +359,9 @@ from .control_curves import (
 )
 
 __all__ = [
+    "AutoScaleControlCurves",
     "ColorControlCurves",
+    "ControlCurveAutoScaleResult",
     "ControlCurveColorResult",
     "ControlCurveHost",
     "ControlCurveScaleResult",

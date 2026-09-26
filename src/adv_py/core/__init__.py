@@ -714,6 +714,9 @@ from .face_neutral_geometry import (FaceNeutralGeometry,
     face_neutral_geometry_to_json, face_neutral_geometry_from_json)
 
 from .control_curves import (
+    ControlCurveAutoScaleChange,
+    ControlCurveAutoScaleMetric,
+    ControlCurveAutoScalePlan,
     ControlCurveColorMode,
     ControlCurveColorPlan,
     ControlCurveColorState,
@@ -726,11 +729,15 @@ from .control_curves import (
     TYPE_PALETTE,
     control_curve_side,
     control_curve_type,
+    plan_control_curve_auto_scale,
     plan_control_curve_colors,
     plan_control_curve_scale,
 )
 
 __all__ = [
+    "ControlCurveAutoScaleChange",
+    "ControlCurveAutoScaleMetric",
+    "ControlCurveAutoScalePlan",
     "ControlCurveColorMode",
     "ControlCurveColorPlan",
     "ControlCurveColorState",
@@ -743,6 +750,7 @@ __all__ = [
     "TYPE_PALETTE",
     "control_curve_side",
     "control_curve_type",
+    "plan_control_curve_auto_scale",
     "plan_control_curve_colors",
     "plan_control_curve_scale",
     "FaceShapeKind", "FaceTarget", "FaceMeshSnapshot", "validate_face_targets",
