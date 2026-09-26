@@ -6,6 +6,12 @@ Preparation / Model Check：`maya_model_check_smoke.py` 构造带父级平移、
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_model_check_smoke.py
 ```
 
+Preparation / Rig 引用模型：`maya_preparation_reference_smoke.py` 生成模型文件与空模型文件，检查空文件失败清理、两个独立命名空间、`Hi` 显示层、绑定场景保存重开，以及修改源模型后重新载入引用。Maya 原生文件引用不进入 Undo 队列；测试不把显示层的 Undo 误判为引用撤销。
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_preparation_reference_smoke.py
+```
+
 四肢 `_50` 体积父节点及肘／膝 A/B 加权关节对照：先导出原版驱动导向，再分别运行以下两个用例。`_50` 用例覆盖双侧六部位共 12 个中间父节点的静止、FK 动作、来源父链核对、故障回滚和重开。肘／膝用例在同一父链上构建 8 个带 SDK 曲线的加权关节，以肘 `80°`、膝 `-110°` 对比原版动作；两者均检查撤销／重做和 Body 登记。
 
 ```powershell

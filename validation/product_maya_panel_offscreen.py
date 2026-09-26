@@ -27,6 +27,17 @@ class FakeController:
         return ModelCheckResult("|Model|Body", 8,
             (ModelTransformIssue("|Model", "translateY", 3.0, 0.0),), (), ())
 
+    def preparation_reference_model(self, source):
+        self.calls.append(("preparation_reference_model", source))
+        return SimpleNamespace(namespace="model", top_nodes=("|model:Body",))
+
+    def preparation_scene_modified(self):
+        self.calls.append("preparation_scene_modified")
+        return False
+
+    def preparation_new_scene(self):
+        self.calls.append("preparation_new_scene")
+
     def characters(self):
         self.calls.append("characters")
         return (PanelCharacter(":", False),
@@ -204,6 +215,9 @@ def main(report: Path) -> int:
     panel = create_panel(controller)
     panel._check_model()
     assert "|Model.translateY" in panel.model_check_results.toPlainText()
+    panel.preparation_model_source.setText("C:/temp/model.ma")
+    assert "model" in panel._reference_preparation_model()
+    assert "空白绑定场景" in panel._new_preparation_scene()
     panel.show()
     app.processEvents()
     panel.roles.setCurrentRow(0)

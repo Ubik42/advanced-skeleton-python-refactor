@@ -174,6 +174,16 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _fit_page(self):
             page, stack = self._page()
+            model_source, self.preparation_model_source = self._file_field(
+                "选择 Maya 模型文件", filter_text="Maya 场景 (*.ma *.mb)")
+            group, form = self._group("00 · 绑定场景", [
+                ("模型文件", model_source)])
+            prep_row = QtWidgets.QHBoxLayout()
+            prep_row.addWidget(self._button("新建绑定场景", self._new_preparation_scene))
+            prep_row.addWidget(self._button("引用模型文件", self._reference_preparation_model))
+            form.addRow(prep_row)
+            stack.addWidget(group)
+
             self.model_check_results = QtWidgets.QPlainTextEdit()
             self.model_check_results.setReadOnly(True)
             self.model_check_results.setPlaceholderText(
@@ -920,6 +930,33 @@ def create_panel(controller: MayaPanelController | None = None):
             return (f"模型检查完成：{len(result.transform_issues)} 项变换、"
                     f"{len(result.history_issues)} 项历史、"
                     f"{len(result.symmetry_issues)} 处对称偏差")
+
+        def _new_preparation_scene(self):
+            if self.controller.preparation_scene_modified():
+                choice = QtWidgets.QMessageBox.question(
+                    self, "新建绑定场景", "当前场景有未保存的修改。是否先保存？",
+                    QtWidgets.QMessageBox.Save | QtWidgets.QMessageBox.Discard |
+                    QtWidgets.QMessageBox.Cancel, QtWidgets.QMessageBox.Cancel)
+                if choice == QtWidgets.QMessageBox.Cancel:
+                    return "已取消新建场景"
+                if choice == QtWidgets.QMessageBox.Save:
+                    name = self.controller.preparation_scene_name()
+                    if not name:
+                        name, _ = QtWidgets.QFileDialog.getSaveFileName(
+                            self, "保存当前 Maya 场景", "", "Maya 场景 (*.ma *.mb)")
+                        if not name:
+                            return "已取消新建场景"
+                        self.controller.preparation_save_scene(Path(name))
+                    else:
+                        self.controller.preparation_save_scene()
+            self.controller.preparation_new_scene()
+            return "已打开空白绑定场景"
+
+        def _reference_preparation_model(self):
+            source = self._path(self.preparation_model_source)
+            result = self.controller.preparation_reference_model(source)
+            return (f"已引用 {source.name} 到 {result.namespace}；"
+                    f"{len(result.top_nodes)} 个顶层对象位于 Hi 显示层")
 
         def _import_fit(self):
             count = self.controller.fit_import(self._namespace(),

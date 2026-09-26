@@ -29,6 +29,9 @@ ADV_SECTIONS = (
 ADV_OPERATIONS = {
     ("Preparation", "Model"): (
         ("检查选中模型", 0, "00 · 模型检查"),),
+    ("Preparation", "Rig"): (
+        ("新建绑定场景", 0, "00 · 绑定场景"),
+        ("引用模型文件", 0, "00 · 绑定场景")),
     ("Body", "Fit"): (
         ("导出当前 Fit", 0, "01 · Fit 数据"),
         ("从文档导入", 0, "01 · Fit 数据")),

@@ -145,6 +145,32 @@ class MayaPanelController:
 
         return CheckModel(MayaModelCheckHost()).execute()
 
+    def preparation_new_scene(self) -> None:
+        from adv_py.adapters.maya_preparation_reference import MayaPreparationReferenceHost
+
+        MayaPreparationReferenceHost().new_scene()
+
+    def preparation_scene_modified(self) -> bool:
+        from adv_py.adapters.maya_preparation_reference import MayaPreparationReferenceHost
+
+        return MayaPreparationReferenceHost().scene_modified()
+
+    def preparation_scene_name(self) -> str:
+        from adv_py.adapters.maya_preparation_reference import MayaPreparationReferenceHost
+
+        return MayaPreparationReferenceHost().scene_name()
+
+    def preparation_save_scene(self, destination: Path | None = None) -> None:
+        from adv_py.adapters.maya_preparation_reference import MayaPreparationReferenceHost
+
+        MayaPreparationReferenceHost().save_scene(destination)
+
+    def preparation_reference_model(self, source: Path):
+        from adv_py.adapters.maya_preparation_reference import MayaPreparationReferenceHost
+        from adv_py.application.preparation_reference import ReferencePreparationModel
+
+        return ReferencePreparationModel(MayaPreparationReferenceHost()).execute(source)
+
     def characters(self) -> tuple[PanelCharacter, ...]:
         from adv_py.adapters.maya_scene_gateway import MayaSceneGateway
 
