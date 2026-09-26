@@ -344,6 +344,21 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("替换脊柱角色并保留数据",
                                       self._replace_spine_character))
             stack.addWidget(group)
+
+            self.control_curve_targets = QtWidgets.QPlainTextEdit()
+            self.control_curve_targets.setPlaceholderText(
+                "每行一个控制器路径；留空时缩放当前角色的全部已登记控制曲线")
+            self.control_curve_targets.setMaximumHeight(76)
+            self.control_curve_factor = QtWidgets.QDoubleSpinBox()
+            self.control_curve_factor.setRange(.01, 100.)
+            self.control_curve_factor.setDecimals(3)
+            self.control_curve_factor.setSingleStep(.1)
+            self.control_curve_factor.setValue(1.1)
+            group, form = self._group("06 · Control Curves", [
+                ("目标控制器", self.control_curve_targets),
+                ("缩放倍率", self.control_curve_factor)])
+            form.addRow(self._button("缩放控制曲线", self._scale_control_curves))
+            stack.addWidget(group)
             self._spine_replace_mode_changed()
             stack.addStretch(1)
             return page
@@ -912,6 +927,14 @@ def create_panel(controller: MayaPanelController | None = None):
                 progress=self._progress)
             return (f"跨段数角色已替换：{result.frames} 个写键时刻、"
                     f"{result.fk_groups} 组 FK 控制、{result.skin_count} 个 Skin")
+
+        def _scale_control_curves(self):
+            controls = tuple(line.strip() for line in
+                self.control_curve_targets.toPlainText().splitlines()
+                if line.strip())
+            count = self.controller.control_curves_scale(
+                self._namespace(), controls, self.control_curve_factor.value())
+            return f"已缩放 {count} 个控制曲线"
 
         def _bind_skin(self):
             influences = tuple(line.strip() for line in

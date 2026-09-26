@@ -348,7 +348,16 @@ from .upper_body_fit import (
     upper_body_orientation_request,
 )
 
+from .control_curves import (
+    ControlCurveHost,
+    ControlCurveScaleResult,
+    ScaleControlCurves,
+)
+
 __all__ = [
+    "ControlCurveHost",
+    "ControlCurveScaleResult",
+    "ScaleControlCurves",
     "KeyBodyCharacterPose", "CaptureAnimatedBodyCharacterPose",
     "CaptureBodyCharacterAnimation", "ApplyBodyCharacterAnimation", "save_character_animation", "load_character_animation",
     "BakeBodyCharacterSpineMode",

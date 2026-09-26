@@ -713,7 +713,20 @@ from .skin_weight_surface_source import (SkinWeightSurfaceSource,
 from .face_neutral_geometry import (FaceNeutralGeometry,
     face_neutral_geometry_to_json, face_neutral_geometry_from_json)
 
+from .control_curves import (
+    ControlCurveScalePlan,
+    ControlCurveShapeState,
+    ControlCurveState,
+    ControlCurveValidationError,
+    plan_control_curve_scale,
+)
+
 __all__ = [
+    "ControlCurveScalePlan",
+    "ControlCurveShapeState",
+    "ControlCurveState",
+    "ControlCurveValidationError",
+    "plan_control_curve_scale",
     "FaceShapeKind", "FaceTarget", "FaceMeshSnapshot", "validate_face_targets",
     "FacePerformance", "face_performance_to_json", "face_performance_from_json",
     "PhonemeCue", "phoneme_cues_to_performance",

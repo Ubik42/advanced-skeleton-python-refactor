@@ -18,7 +18,7 @@
 | 角色结构 | 30 关节基础 Body、70 关节五指 Body、31 关节独立导出骨架 |
 | 数据合同 | FitSkeleton、Hand Pose 与 Skin Weight 使用路径无关的 JSON 文档和 SHA-256 内容摘要 |
 | 写入边界 | 修改前预检；单一 Maya Undo 事务提交；执行后从场景读回复检 |
-| 自动验证 | 392 项纯 Python 回归测试；Maya 2024 后台场景与独立进程验收命令见 `validation/README.md` |
+| 自动验证 | 394 项纯 Python 回归测试；Maya 2024 后台场景与独立进程验收命令见 `validation/README.md` |
 
 v0.96.0 加入躯干 / 颈头 FK、独立脊柱 IK/FK、双向姿态匹配、头部 / 手脚空间切换，以及不同脊柱段数角色的受控替换。调用方式见 [核心绑定架构](docs/核心绑定架构.md)，完整 Fit → Body → 控制 → 显式蒙皮入口见 [全身示例](examples/README.md)。当前仍是阶段版本，尚未完成 AdvancedSkeleton 全量替代。
 
@@ -153,6 +153,7 @@ docs/                   架构、路线、调研与阶段说明
 - [兼容与旧实现依赖清点](docs/兼容清点.md)
 - [开发计划](docs/开发计划.md)
 - [功能覆盖矩阵](docs/功能覆盖矩阵.md)
+- [原版公开功能来源](docs/原版公开功能来源.md)
 - [剩余开发清单](docs/剩余开发清单.md)
 - [v0.96 历史验收记录](docs/历史验收记录-v0.96.md)
 - [Maya 可见界面验收](docs/Maya可见界面验收.md)

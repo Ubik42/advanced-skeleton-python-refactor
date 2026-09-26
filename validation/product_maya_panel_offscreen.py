@@ -63,6 +63,10 @@ class FakeController:
             options["progress"]("角色已接管原命名空间")
         return SimpleNamespace(frames=37, fk_groups=7, skin_count=len(skins))
 
+    def control_curves_scale(self, namespace, controls, factor):
+        self.calls.append(("control_curves_scale", namespace, controls, factor))
+        return len(controls) if controls else 42
+
     def skin_surface_source_export(self, namespace, skin, mesh, destination):
         self.calls.append(("skin_surface_source_export", namespace, skin, mesh,
                            destination.name))
@@ -240,6 +244,9 @@ def main(report: Path) -> int:
     buttons["更新 Fit 元数据"].click()
     buttons["重新定向 Fit"].click()
     buttons["构建并登记角色"].click()
+    panel.control_curve_targets.setPlainText("|hero:Global")
+    panel.control_curve_factor.setValue(1.25)
+    buttons["缩放控制曲线"].click()
     app.processEvents()
     fit_page = panel.tabs.currentWidget()
     fit_page.verticalScrollBar().setValue(fit_page.verticalScrollBar().maximum())
@@ -316,6 +323,9 @@ def main(report: Path) -> int:
              "2", False),
             ("fit_orient", "hero", ("Spine1",), "FitSkeleton",
              {"child_selections": (("Spine1", "Chest"),), "world": True}))),
+        "control_curve_scale_dispatches":
+            ("control_curves_scale", "hero", ("|hero:Global",), 1.25)
+            in controller.calls,
         "role_selection_dispatches_application_action":
             ("body_build", "hero", "FitSkeleton", None, False)
             in controller.calls,

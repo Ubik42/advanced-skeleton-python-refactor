@@ -16,6 +16,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     EnableBodyCharacterSplineAnimation, EnableBodyCharacterSpaceAnimation,
     BakeBodyCharacterLimbMode, BakeBodyCharacterSpineMode,
     SwitchBodyCharacterSpace,
+    ScaleControlCurves,
     CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
     ExportFitSkeleton, ExportSkinWeights, OrientSimpleFitChain,
     OrientWorldFitJoints,
@@ -244,6 +245,21 @@ class MayaPanelController:
         if progress:
             progress("角色已接管原命名空间，Skin、动画与保留数据已复检")
         return result
+
+    def control_curves_scale(self, namespace: str, controls: tuple[str, ...],
+                             factor: float) -> int:
+        host = self._host(namespace)
+        strict = bool(controls)
+        if not controls:
+            resolver = ResolveBodyCharacter(host)
+            names = resolver.discover()
+            if len(names) != 1:
+                raise ValueError("当前命名空间必须恰好包含一个已登记角色")
+            registration = resolver.execute(names[0])
+            controls = tuple(dict.fromkeys(
+                channel.node for channel in registration.channels))
+        result = ScaleControlCurves(host).apply(controls, factor, strict=strict)
+        return len(result.verified)
 
     def skin_bind(self, namespace: str, mesh: str,
                   influences: tuple[str, ...], skin: str, maximum: int, *,

@@ -239,6 +239,7 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_symmetry import FitBuildSide
 
 from .maya_fit import MayaFitJointHost
+from .maya_control_curves import MayaControlCurveMixin
 
 
 _MAYA_SIDE_FROM_CORE = {
@@ -271,7 +272,7 @@ _BODY_EXPORT_BAKE_ATTRIBUTES = {
 }
 
 
-class MayaBodyBuildHost(MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
+class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
     """Maya scene adapter for the first materialized Body skeleton stage."""
 
     def create_body_joint(self, spec: BodyJointSpec) -> str:
