@@ -25,7 +25,8 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     SetControlOrientationWorldMatch,
     DetachCustomControlOrientations, AttachCustomControlOrientations,
     CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
-    ExportFitSkeleton, ExportSkinWeights, OrientSimpleFitChain,
+    ExportFitSkeleton, ExportExternalFitSkeleton, ExportSkinWeights,
+    OrientSimpleFitChain,
     OrientWorldFitJoints,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget, ImportFaceTargetAsset,
     FaceAssetLibrary, ImportSkinWeights, InspectBodyCharacterPresets,
@@ -158,8 +159,14 @@ class MayaPanelController:
         return tuple(entries)
 
     def fit_export(self, namespace: str, destination: Path,
-                   container: str = "FitSkeleton") -> int:
-        result = ExportFitSkeleton(self._host(namespace)).apply(destination, container)
+                   container: str = "FitSkeleton", *,
+                   external_compatibility: bool = False) -> int:
+        if external_compatibility:
+            result = ExportExternalFitSkeleton(self._host(namespace)).apply(
+                destination, container)
+            return len(result.document.joints)
+        result = ExportFitSkeleton(self._host(namespace)).apply(
+            destination, container)
         return len(result.plan.document.joints)
 
     def fit_import(self, namespace: str, source: Path,

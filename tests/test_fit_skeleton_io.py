@@ -7,6 +7,7 @@ import unittest
 
 from adv_py.application import (
     CreateAndImportFitSkeleton,
+    ExportExternalFitSkeleton,
     ExportFitSkeleton,
     ImportFitSkeleton,
     MergeFitSkeleton,
@@ -379,6 +380,30 @@ def _document(host):
 
 
 class FitSkeletonIoTests(unittest.TestCase):
+    def test_external_nested_fit_infers_labels_without_editing_source(self):
+        source = FakeFitSkeletonDocumentHost(populated=True)
+        source.container = "|Group|FitSkeleton"
+        source.settings = _settings(source.container, source=True)
+        source.joints = (
+            replace(source.joints[0], local_position=(0.0, 0.0, 8.0)),
+            replace(source.joints[1], label=None),
+            source.joints[2],
+        )
+        original = source.joints
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "external.fit.json"
+            with self.assertRaisesRegex(ValueError, "根级"):
+                ExportFitSkeleton(source).plan(path)
+            exported = ExportExternalFitSkeleton(source).apply(path)
+            self.assertEqual(len(exported.inferred_labels), 1)
+            self.assertEqual(exported.document.joints[0].local_position,
+                             (0.0, 0.0, 8.0))
+            self.assertEqual(exported.document.joints[1].label.text,
+                             "Spine1")
+            self.assertEqual(source.joints, original)
+            with self.assertRaisesRegex(ValueError, "拒绝覆盖"):
+                ExportExternalFitSkeleton(source).apply(path)
+
     def test_document_round_trip_is_path_free_and_tamper_evident(self):
         document = _document(FakeFitSkeletonDocumentHost(populated=True))
         text = fit_skeleton_document_to_json(document)

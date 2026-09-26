@@ -361,6 +361,7 @@ from .control_curves import (
     MirrorControlCurves,
     SwapControlCurves,
 )
+from .external_fit_export import ExportExternalFitSkeleton
 from .control_orientation import (
     ControlOrientationHost,
     ControlOrientationResult,
@@ -589,6 +590,7 @@ __all__ = [
     "EnsureFitSkeletonSettings",
     "CreateAndImportFitSkeleton",
     "ExportFitSkeleton",
+    "ExportExternalFitSkeleton",
     "ImportFitSkeleton",
     "MergeFitSkeleton",
     "FitContainerCreatePlan",

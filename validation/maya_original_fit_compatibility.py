@@ -24,6 +24,9 @@ def main(scene: Path, report: Path, isolated_build: bool = False,
             BuildBodyExportSkeleton, BakeBodyExportSkeleton)
         from adv_py.application.body_fbx_export import ExportBodyFbx
         from adv_py.application.fit_symmetry import PlanFitSymmetry
+        from adv_py.core.fit_skeleton_io import (
+            fit_skeleton_document_from_snapshot)
+        from adv_py.core.joint_labels import JointLabel
 
         if not scene.is_file() or scene.suffix.lower() not in (".ma", ".mb"):
             raise ValueError("输入必须是已有的 Maya 场景文件")
@@ -58,6 +61,23 @@ def main(scene: Path, report: Path, isolated_build: bool = False,
             except Exception as exc:
                 result["plan"] = {"status": "failed",
                                   "error": f"{type(exc).__name__}: {exc}"}
+            try:
+                snapshot = host.capture_fit_orientation(fit[0])
+                settings = host.read_fit_skeleton_settings(fit[0])
+                labels = tuple((node.path,
+                                host.read_joint_label(node.path) or
+                                JointLabel.parse(node.short_name))
+                               for node in snapshot.hierarchy.joints)
+                portable = fit_skeleton_document_from_snapshot(
+                    snapshot, settings, labels)
+                result["portable_document"] = {
+                    "status": "ready",
+                    "joint_count": len(portable.joints),
+                }
+            except Exception as exc:
+                result["portable_document"] = {
+                    "status": "failed",
+                    "error": f"{type(exc).__name__}: {exc}"}
             try:
                 build = BuildBodySkeleton(host).plan(fit[0])
                 result["body_build"] = {

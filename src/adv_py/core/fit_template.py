@@ -245,8 +245,8 @@ def validate_fit_template(template: FitTemplateSpec) -> None:
         raise FitSkeletonValidationError("Fit 模板必须有且只有一个根关节")
     if roots[0].name != "Root":
         raise FitSkeletonValidationError("Fit 模板根关节必须命名为 Root")
-    if any(abs(value) > 1e-8 for value in roots[0].local_position):
-        raise FitSkeletonValidationError("Fit 模板根关节必须位于容器原点")
+    if abs(roots[0].local_position[0]) > 1e-8:
+        raise FitSkeletonValidationError("Fit 模板根关节必须位于镜像中心面")
 
     by_name = {joint.name: joint for joint in template.joints}
     for joint in template.joints:

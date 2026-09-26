@@ -35,6 +35,12 @@ class FakeController:
         self.built = True
         return PanelCharacter(namespace, True, 30, 157)
 
+    def fit_export(self, namespace, destination, container, *,
+                   external_compatibility):
+        self.calls.append(("fit_export", namespace, destination, container,
+                           external_compatibility))
+        return 41
+
     def fit_edit_positions(self, namespace, edits, container):
         self.calls.append(("fit_edit_positions", namespace, edits, container))
         return len(edits)
@@ -299,6 +305,9 @@ def main(report: Path) -> int:
     buttons["更新 Fit 位置"].click()
     buttons["更新 Fit 元数据"].click()
     buttons["重新定向 Fit"].click()
+    panel.fit_export_document.setText("C:/temp/sam.fit.json")
+    panel.external_fit_export.setChecked(True)
+    buttons["导出当前 Fit"].click()
     buttons["构建并登记角色"].click()
     panel.infer_missing_fit_labels.setChecked(True)
     buttons["构建并登记角色"].click()
@@ -445,6 +454,9 @@ def main(report: Path) -> int:
             in controller.calls and
             ("body_build", "hero", "FitSkeleton", None, False, True)
             in controller.calls,
+        "external_fit_export_dispatches":
+            ("fit_export", "hero", Path("C:/temp/sam.fit.json"),
+             "FitSkeleton", True) in controller.calls,
         "rebuild_dispatches_declared_extensions":
             ("body_rebuild", "hero", "CharacterRebuildStage",
              ("|Head_M|AdvPy_FaceControls",)) in controller.calls,

@@ -177,9 +177,12 @@ def create_panel(controller: MayaPanelController | None = None):
             fit_out, self.fit_export_document = self._file_field("导出 Fit 文档", save=True)
             fit_in, self.fit_import_document = self._file_field("导入 Fit 文档")
             self.fit_container = QtWidgets.QLineEdit("FitSkeleton")
+            self.external_fit_export = QtWidgets.QCheckBox(
+                "兼容导出原版 Fit（缺失标签写入文档）")
             group, form = self._group("01 · Fit 数据", [
                 ("容器名称", self.fit_container), ("导出到", fit_out),
-                ("从文件导入", fit_in)])
+                ("从文件导入", fit_in),
+                ("导出模式", self.external_fit_export)])
             row = QtWidgets.QHBoxLayout()
             row.addWidget(self._button("导出当前 Fit", self._export_fit))
             row.addWidget(self._button("从文档导入", self._import_fit))
@@ -846,7 +849,9 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _export_fit(self):
             count = self.controller.fit_export(self._namespace(),
-                self._path(self.fit_export_document), self.fit_container.text().strip())
+                self._path(self.fit_export_document),
+                self.fit_container.text().strip(),
+                external_compatibility=self.external_fit_export.isChecked())
             return f"已导出 {count} 个关节"
 
         def _import_fit(self):
