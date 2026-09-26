@@ -17,8 +17,6 @@ def main(output: Path) -> int:
     checked = 0
     for path in sorted(PACKAGE.rglob("*.py")):
         relative = path.relative_to(PACKAGE).as_posix()
-        if relative.startswith("legacy/"):
-            continue
         checked += 1
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         isolated = relative.startswith(("core/", "application/", "product/"))
