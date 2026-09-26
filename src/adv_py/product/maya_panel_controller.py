@@ -733,6 +733,7 @@ class MayaPanelController:
                     value_tolerance: float = 0.0,
                     matrix_tolerance: float = 0.0, *,
                     euler_filter: bool = False,
+                    include_skins: bool = False,
                     progress: Callable[[str], None] | None = None) -> PanelFbxPublication:
         destination = Path(destination).expanduser().absolute()
         if (destination.suffix.lower() != ".fbx" or not destination.parent.is_dir()
@@ -766,7 +767,8 @@ class MayaPanelController:
             progress("写入并复核 FBX 文件")
         exported = ExportBodyFbx(host).apply(destination, start_frame=start,
             end_frame=end, sample_by=step, body_root_name=body_root,
-            source_container=container, profile=profile)
+            source_container=container, profile=profile,
+            include_skins=include_skins)
         return PanelFbxPublication(len(baked.plan.body.joints),
             len(baked.plan.bake.frames), exported.artifact.byte_count,
             exported.artifact.content_sha256,

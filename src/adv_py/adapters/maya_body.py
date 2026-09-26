@@ -1729,11 +1729,114 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         }
         return tuple(sorted(collisions))
 
+    def _capture_fbx_skin_sources(self, influence_map):
+        from .maya_dense_skin import MayaDenseSkinHost
+
+        c = self._cmds
+        source_paths = {source: target for source, target in influence_map}
+        source_names = {path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]:
+                        target for path, target in influence_map}
+        if len(source_paths) != len(influence_map) or len(source_names) != len(influence_map):
+            raise FitSkeletonValidationError("FBX 蒙皮影响关节映射不唯一")
+        root = influence_map[0][0]
+        host = MayaDenseSkinHost(namespace=self.namespace)
+        rows = []
+        for skin in c.ls(type="skinCluster") or []:
+            influences = c.skinCluster(skin, query=True,
+                                       influence=True) or []
+            resolved = [c.ls(joint, long=True, type="joint") or []
+                        for joint in influences]
+            owned = [len(paths) == 1 and (paths[0] == root or
+                paths[0].startswith(root + "|")) for paths in resolved]
+            if not any(owned):
+                continue
+            if not all(owned) or any(paths[0] not in source_paths
+                                     for paths in resolved):
+                raise FitSkeletonValidationError(
+                    "角色 Skin 混用了发布骨架之外的影响关节：" + skin)
+            shapes = c.skinCluster(skin, query=True, geometry=True) or []
+            if len(shapes) != 1:
+                raise FitSkeletonValidationError("角色 Skin 需要唯一网格：" + skin)
+            shape = c.ls(shapes[0], long=True, type="mesh") or []
+            mesh = (c.listRelatives(shape[0], parent=True,
+                fullPath=True) or []) if len(shape) == 1 else []
+            if len(mesh) != 1:
+                raise FitSkeletonValidationError("角色 Skin 网格路径不唯一：" + skin)
+            data = host.capture_dense_skin(skin)
+            if len({name.rsplit(":", 1)[-1]
+                    for name in data.influence_names}) != len(data.influence_names):
+                raise FitSkeletonValidationError("Skin 影响关节名称不唯一：" + skin)
+            rows.append((mesh[0], data,
+                         int(c.getAttr(skin + ".maxInfluences")),
+                         bool(c.getAttr(skin + ".maintainMaxInfluences")),
+                         source_names))
+        if not rows:
+            raise FitSkeletonValidationError("当前角色没有可发布的 Skin 网格")
+        return tuple(rows)
+
+    def _copy_fbx_skinned_meshes(self, sources, bind_frame):
+        from array import array
+        from maya.api import OpenMaya as om
+        from maya.api import OpenMayaAnim as oma
+
+        c = self._cmds
+        c.currentTime(bind_frame, edit=True, update=True)
+        copied = []
+        for index, (mesh, data, maximum, maintain, mapping) in enumerate(
+                sources, 1):
+            target_paths = tuple(mapping[name.rsplit(":", 1)[-1]]
+                                 for name in data.influence_names)
+            clone = c.duplicate(mesh, returnRootsOnly=True,
+                                renameChildren=True)[0]
+            if c.listRelatives(clone, parent=True):
+                clone = c.parent(clone, world=True)[0]
+            clone = c.rename(clone, f"AdvPy_FBXMesh_{index}")
+            c.delete(clone, constructionHistory=True)
+            name = f"AdvPy_FBXExportSkin_{index}"
+            skin = c.skinCluster(target_paths, clone, toSelectedBones=True,
+                bindMethod=0, normalizeWeights=1,
+                maximumInfluences=maximum,
+                obeyMaxInfluences=False, name=name)[0]
+            selection = om.MSelectionList()
+            selection.add(self.scene_address(skin))
+            skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
+            shapes = c.skinCluster(skin, query=True, geometry=True) or []
+            shape = (c.ls(shapes[0], long=True, type="mesh") or [])[0]
+            selection = om.MSelectionList()
+            selection.add(self.scene_address(shape))
+            dag = selection.getDagPath(0)
+            component_fn = om.MFnSingleIndexedComponent()
+            component = component_fn.create(om.MFn.kMeshVertComponent)
+            component_fn.addElements(range(data.vertex_count))
+            source_indices = {name.rsplit(":", 1)[-1]: offset
+                              for offset, name in enumerate(data.influence_names)}
+            published_to_source = {target.rsplit("|", 1)[-1]: source
+                for source, target in mapping.items()}
+            target_names = tuple(path.fullPathName().rsplit("|", 1)[-1]
+                .rsplit(":", 1)[-1] for path in skin_fn.influenceObjects())
+            order = tuple(source_indices[published_to_source[name]]
+                          for name in target_names)
+            original = array("d")
+            original.frombytes(data.values)
+            width = len(order)
+            values = array("d", (original[vertex * width + offset]
+                for vertex in range(data.vertex_count)
+                for offset in order))
+            skin_fn.setWeights(dag, component,
+                om.MIntArray(range(width)),
+                om.MDoubleArray(values.tolist()), normalize=False)
+            c.setAttr(skin + ".maintainMaxInfluences", maintain)
+            copied.append((c.ls(clone, long=True,
+                                 type="transform") or [])[0])
+        return tuple(copied)
+
     def export_fbx_selection(
         self,
         destination: Path,
         selection: BodyFbxExportSelection,
         profile: BodyFbxExportProfile,
+        *,
+        skin_influence_map: tuple[tuple[str, str], ...] = (),
     ) -> BodyFbxAppliedProfile:
         from maya import mel
 
@@ -1763,6 +1866,8 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         original_undo_name = str(
             self._cmds.undoInfo(query=True, undoName=True) or ""
         )
+        skin_sources = (self._capture_fbx_skin_sources(skin_influence_map)
+            if skin_influence_map else ())
         pushed = False
         applied_profile: BodyFbxAppliedProfile | None = None
         removed_linear_keys = 0
@@ -1777,8 +1882,10 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
             mel.eval("FBXExportConstraints -v false;")
             mel.eval("FBXExportCameras -v false;")
             mel.eval("FBXExportLights -v false;")
-            mel.eval("FBXExportShapes -v false;")
-            mel.eval("FBXExportSkins -v false;")
+            mel.eval("FBXExportShapes -v " +
+                     ("true;" if skin_sources else "false;"))
+            mel.eval("FBXExportSkins -v " +
+                     ("true;" if skin_sources else "false;"))
             mel.eval(f"FBXExportFileVersion -v {profile.file_version.value};")
             mel.eval(f"FBXExportUpAxis {profile.up_axis.value.lower()};")
             target_centimeters = float(mel.eval(
@@ -1826,6 +1933,8 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                             node.published_name,
                             ignoreShape=True,
                         )
+                    copied_meshes = self._copy_fbx_skinned_meshes(
+                        skin_sources, selection.start_frame)
                     if any(
                         (self._cmds.ls(path, long=True, type="joint") or [])
                         != [path]
@@ -1938,7 +2047,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                                 "FBX 有界曲线简化超过世界矩阵误差上限："
                                 f"{max_matrix_error:g} > {profile.matrix_tolerance:g}")
                     self._cmds.select(
-                        selection.published_paths,
+                        (*selection.published_paths, *copied_meshes),
                         replace=True,
                         noExpand=True,
                     )

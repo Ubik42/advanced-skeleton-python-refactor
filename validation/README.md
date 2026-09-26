@@ -556,4 +556,4 @@ write 先捕获非中性姿态，再扰动全部登记控制与空间；read 从
 默认交接 30 关节角色，`--partner` 交接 70 关节角色。两者均加入加权曲线、循环设置、带动画与 Rig 矩阵输入的两级附件，核对保留对象身份、曲线和蒙皮内容、其他角色不变、Undo / Redo 与故障回滚。`--reopen` 比较保存场景中的身体、空间、实际网格和附件。该入口不删除旧 Rig，完整原位替换仍在开发中。
 `maya_migrated_scene_export_smoke.py` 读取已迁移的单 Skin 与双 Skin 引用来源场景，调用面板控制层导出独立 `.mb`，重开验证无文件引用、权重和第 5 帧顶点位置、74 个 Body 登记，并确认来源场景与选择不变。
 `maya_standard_fit_skinned_build_smoke.py` 从公开 `sam.mb` 只读导出 Fit 与静态网格，在空场景中用产品控制层一次构建主体和配件双 Skin；验证故障回滚、总控驱动、Undo／Redo、重开及命名空间构建。新权重由 Maya Closest Distance 生成，不是原版权重迁移。
-同脚本的 `--prepare` 模式生成未构建的隔离 `.mb`，供 `maya_standard_fit_full_chain_visible.py` 在 Maya 2024 图形窗口依次点击 Body 构建、Pose 写键和 Export 发布；后者检查绑定场景重开和 FBX 重导入的 75 关节及 RootMotion 位移。`product_maya_adv_layout_offscreen.py` 逐入口确认被点击的栏目只显示目标参数组。
+同脚本的 `--prepare` 模式生成未构建的隔离 `.mb`，供 `maya_standard_fit_full_chain_visible.py` 在 Maya 2024 图形窗口依次点击 Body 构建、Pose 写键和 Export 发布；后者检查绑定场景重开和 FBX 重导入的 75 关节、2 套 Skin 及 RootMotion 位移。`maya_skinned_fbx_roundtrip_smoke.py` 从保存的双 Skin 动画场景发布 FBX，检查来源权重未变、18,151＋8 顶点重导入、逐影响权重差、1／5 帧采样世界点差，以及重导入骨架驱动网格变形；本机 FBX 往返最大单项权重差为 0.001884。`product_maya_adv_layout_offscreen.py` 逐入口确认被点击的栏目只显示目标参数组。

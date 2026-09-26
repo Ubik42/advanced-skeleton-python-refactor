@@ -798,6 +798,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.fbx_policy.addItem("无损线性精简", "lossless_linear")
             self.fbx_policy.addItem("有界线性精简", "bounded_linear")
             self.fbx_euler_filter = QtWidgets.QCheckBox("整理旋转跨圈跳变（Euler Filter）")
+            self.fbx_include_skins = QtWidgets.QCheckBox("包含当前角色的已绑定网格与 Skin")
             self.fbx_value_tolerance = QtWidgets.QDoubleSpinBox()
             self.fbx_matrix_tolerance = QtWidgets.QDoubleSpinBox()
             for field in (self.fbx_value_tolerance, self.fbx_matrix_tolerance):
@@ -811,6 +812,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("输出文件", output), ("采样帧", frames),
                 ("曲线策略", self.fbx_policy),
                 ("旋转处理", self.fbx_euler_filter),
+                ("角色网格", self.fbx_include_skins),
                 ("通道容差", self.fbx_value_tolerance),
                 ("矩阵容差", self.fbx_matrix_tolerance)])
             form.addRow(self._button("发布 FBX", self._publish_fbx, primary=True))
@@ -1365,6 +1367,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.fbx_value_tolerance.value(),
                 self.fbx_matrix_tolerance.value(),
                 euler_filter=self.fbx_euler_filter.isChecked(),
+                include_skins=self.fbx_include_skins.isChecked(),
                 progress=self._progress)
             return (f"FBX 已发布：{result.joints} 个关节、{result.frames} 帧、"
                     f"{result.bytes_written} 字节；SHA-256 {result.sha256[:12]}…")

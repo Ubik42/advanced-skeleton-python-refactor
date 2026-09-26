@@ -76,6 +76,7 @@ def schedule(scene: str, output_directory: str) -> None:
             detail.fbx_output.setText(str(fbx))
             detail.fbx_start.setValue(1)
             detail.fbx_end.setValue(5)
+            detail.fbx_include_skins.setChecked(True)
             data["export_entry_visible"] = (detail.fbx_output.isVisible()
                 and any(button.text() == "发布 FBX" and button.isVisible()
                         for button in detail.findChildren(
@@ -125,6 +126,7 @@ def schedule(scene: str, output_directory: str) -> None:
             cmds.file(str(fbx), i=True, type="FBX",
                       ignoreVersion=True, executeScriptNodes=False)
             data["fbx_joint_count"] = len(cmds.ls(type="joint") or [])
+            data["fbx_skin_count"] = len(cmds.ls(type="skinCluster") or [])
             root_motion = (cmds.ls("RootMotion",
                                     type="joint") or [None])[0]
             data["fbx_root_motion"] = root_motion
@@ -145,6 +147,7 @@ def schedule(scene: str, output_directory: str) -> None:
                 and data["reopen_keys"] == [1.0, 5.0]
                 and data["fbx_bytes"] > 10000
                 and data["fbx_joint_count"] == 75
+                and data["fbx_skin_count"] == 2
                 and abs(data.get("fbx_root_delta_x", 0) - 2.0) < 1e-4)
         except BaseException:
             data["error"] = traceback.format_exc()

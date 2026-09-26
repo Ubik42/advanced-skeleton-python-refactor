@@ -32,6 +32,7 @@ from adv_py.core.body_root_motion import plan_body_root_motion
 from adv_py.core.body_skeleton import (
     BodySkeletonSnapshot,
     audit_body_provenance,
+    body_skeleton_unchanged,
     oriented_body_provenance,
 )
 from adv_py.core.fit_container import FitUpAxis
@@ -172,7 +173,8 @@ class ExportBodyFbx:
             ),
         )
 
-    def apply(self, destination, **kwargs) -> BodyFbxExportResult:
+    def apply(self, destination, *, include_skins: bool = False,
+              **kwargs) -> BodyFbxExportResult:
         plan = self.plan(destination, **kwargs)
         if not plan.ready:
             raise FitSkeletonValidationError(
@@ -195,8 +197,9 @@ class ExportBodyFbx:
                 self._host.scene_up_axis()
                 != plan.bake.root_motion.root_motion.up_axis
                 or self._host.scene_linear_unit() != plan.source_linear_unit
-                or self._host.capture_body_skeleton(kwargs.get("body_root_name", "Root_M"))
-                != plan.body
+                or not body_skeleton_unchanged(plan.body,
+                    self._host.capture_body_skeleton(
+                        kwargs.get("body_root_name", "Root_M")))
                 or self._host.capture_baked_body_export_skeleton(plan.bake) != plan.baked
                 or self._host.capture_body_export_dependency_plugs(
                     plan.body.root, plan.selection.node_paths
@@ -206,9 +209,18 @@ class ExportBodyFbx:
                 ) != plan.published_name_collisions
             ):
                 raise RuntimeError("FBX 导出执行前场景输入发生变化")
-            applied_profile = self._host.export_fbx_selection(
-                temporary, plan.selection, plan.profile
-            )
+            if include_skins:
+                published = {node.scene_path: node.published_path
+                             for node in plan.selection.published_nodes}
+                influence_map = tuple((joint.source_path,
+                    published[joint.output_path]) for joint in
+                    plan.bake.export_skeleton.joints)
+                applied_profile = self._host.export_fbx_selection(
+                    temporary, plan.selection, plan.profile,
+                    skin_influence_map=influence_map)
+            else:
+                applied_profile = self._host.export_fbx_selection(
+                    temporary, plan.selection, plan.profile)
             temporary_artifact = inspect_body_fbx_bytes(temporary.read_bytes())
             profile_issues = audit_body_fbx_profile(
                 plan.profile,
