@@ -196,11 +196,14 @@ class MayaPanelController:
 
     def body_build(self, namespace: str, container: str = "FitSkeleton", *,
                    spine_segments: int | None = None,
-                   head_aim: bool = False) -> PanelCharacter:
+                   head_aim: bool = False,
+                   infer_missing_labels: bool = False) -> PanelCharacter:
         description = (variable_axial_description(spine_segments)
             if spine_segments is not None else None)
         result = BuildRegisteredBodyCharacter(self._host(namespace)).apply(
-            container, axial_description=description, include_head_aim=head_aim)
+            container, axial_description=description,
+            include_head_aim=head_aim,
+            infer_missing_labels=infer_missing_labels)
         return PanelCharacter(namespace, True, len(result.registration.body),
                               len(result.registration.channels))
 

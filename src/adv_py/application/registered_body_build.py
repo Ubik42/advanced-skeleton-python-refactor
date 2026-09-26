@@ -42,15 +42,18 @@ class BuildRegisteredBodyCharacter:
         self._host = host
 
     def apply(self, container_name: str = "FitSkeleton", *,
-              axial_description=None, include_head_aim: bool = False
+              axial_description=None, include_head_aim: bool = False,
+              infer_missing_labels: bool = False,
               ) -> RegisteredBodyBuildResult:
-        preview = BuildOrientedBodySkeleton(self._host).plan(container_name)
+        preview = BuildOrientedBodySkeleton(self._host).plan(
+            container_name, infer_missing_labels=infer_missing_labels)
         if not preview.ready:
             raise FitSkeletonValidationError(
                 "角色构建预检失败，场景未修改：" + "；".join(preview.blockers))
         with self._host.transaction("构建并登记完整 Body 角色"):
             joined = _JoinedTransactionHost(self._host)
-            skeleton = BuildOrientedBodySkeleton(joined).apply(container_name)
+            skeleton = BuildOrientedBodySkeleton(joined).apply(
+                container_name, infer_missing_labels=infer_missing_labels)
             rig = BuildBodyCharacterRig(joined).apply(container_name,
                 include_torso=True, include_spine_ik=True,
                 include_control_spaces=True, axial_description=axial_description,

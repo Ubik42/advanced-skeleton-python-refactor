@@ -181,7 +181,7 @@ def decode_registration(text):
         for row in data["body"]:
             exact(row,("path","parent","matrix"))
             body.append(CharacterBindJoint(path(row["path"]),path(row["parent"]) if row["parent"] else None,vector(row["matrix"],16)))
-        if (not 2 <= len(body) <= 256 if spline_document else len(body) not in (30,70)) or len({j.path for j in body}) != len(body) or {j.path for j in body if j.parent is None} != {root}:
+        if not 2 <= len(body) <= 256 or len({j.path for j in body}) != len(body) or {j.path for j in body if j.parent is None} != {root}:
             raise CharacterRegistryError("登记身体数量或根节点无效")
         paths = {j.path for j in body}
         if any(j.parent and (j.parent not in paths or j.path.rsplit("|",1)[0] != j.parent) for j in body):

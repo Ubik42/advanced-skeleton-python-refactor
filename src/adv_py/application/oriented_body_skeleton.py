@@ -75,10 +75,12 @@ class BuildOrientedBodySkeleton:
         container_name: str = "FitSkeleton",
         *,
         center_tolerance: float = 0.01,
+        infer_missing_labels: bool = False,
     ) -> OrientedBodySkeletonBuildPlan:
         build = self._builder.plan(
             container_name,
             center_tolerance=center_tolerance,
+            infer_missing_labels=infer_missing_labels,
         )
         return OrientedBodySkeletonBuildPlan(
             build,
@@ -93,10 +95,12 @@ class BuildOrientedBodySkeleton:
         container_name: str = "FitSkeleton",
         *,
         center_tolerance: float = 0.01,
+        infer_missing_labels: bool = False,
     ) -> OrientedBodySkeletonBuildResult:
         plan = self.plan(
             container_name,
             center_tolerance=center_tolerance,
+            infer_missing_labels=infer_missing_labels,
         )
         if not plan.ready:
             raise FitSkeletonValidationError(

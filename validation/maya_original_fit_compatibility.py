@@ -23,7 +23,6 @@ def main(scene: Path, report: Path, isolated_build: bool = False,
         from adv_py.application.body_export_skeleton import (
             BuildBodyExportSkeleton, BakeBodyExportSkeleton)
         from adv_py.application.body_fbx_export import ExportBodyFbx
-        from adv_py.core.joint_labels import JointLabel
         from adv_py.application.fit_symmetry import PlanFitSymmetry
 
         if not scene.is_file() or scene.suffix.lower() not in (".ma", ".mb"):
@@ -98,20 +97,24 @@ def main(scene: Path, report: Path, isolated_build: bool = False,
                 cmds.delete(siblings)
                 fit_before = {node.short_name: node.world_position
                               for node in hierarchy.joints}
+                fit_labels_before = {node.path: host.read_joint_label(
+                    node.path) for node in hierarchy.joints}
                 try:
-                    with host.transaction("标注原版 Fit 副本"):
-                        for node in hierarchy.joints:
-                            if host.read_joint_label(node.path) is None:
-                                host.set_joint_label(
-                                    node.path, JointLabel.parse(node.short_name))
-                    built = BuildOrientedBodySkeleton(host).apply(fit[0])
+                    built = BuildOrientedBodySkeleton(host).apply(
+                        fit[0], infer_missing_labels=True)
                     current_fit = host.capture_fit_hierarchy(fit[0])
                     result["isolated_build"] = {
                         "status": "passed",
                         "body_count": len(built.snapshot.joints),
+                        "inferred_label_count": len(
+                            built.plan.build.inferred_labels),
                         "fit_unchanged": fit_before == {
                             node.short_name: node.world_position
                             for node in current_fit.joints},
+                        "fit_labels_unchanged": all(
+                            host.read_joint_label(node.path) ==
+                            fit_labels_before[node.path]
+                            for node in hierarchy.joints),
                     }
                     try:
                         character = BuildBodyCharacterRig(host).plan(
@@ -361,6 +364,7 @@ def main(scene: Path, report: Path, isolated_build: bool = False,
                     or built.get("body_count") != result.get(
                         "plan", {}).get("instance_count")
                     or not built.get("fit_unchanged")
+                    or not built.get("fit_labels_unchanged")
                     or built.get("character_rig", {}).get("status") != "passed"
                     or drive.get("control_count") != 30
                     or built.get("all_hand_controls", {}).get("count") != 30

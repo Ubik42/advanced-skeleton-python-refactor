@@ -1798,6 +1798,22 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertTrue(audit.owned)
         self.assertEqual(audit.snapshot.provenance, result.snapshot.provenance)
 
+    def test_optional_name_labels_build_without_editing_fit(self):
+        host = FakeBodySkeletonHost()
+        missing = next(iter(host.labels))
+        host.labels.pop(missing)
+        builder = BuildOrientedBodySkeleton(host)
+
+        self.assertFalse(builder.plan().ready)
+        preview = builder.plan(infer_missing_labels=True)
+        self.assertTrue(preview.ready)
+        self.assertEqual(preview.build.inferred_labels, (missing,))
+        result = builder.apply(infer_missing_labels=True)
+        self.assertEqual(len(result.snapshot.joints), 30)
+        self.assertNotIn(missing, host.labels)
+        with self.assertRaisesRegex(FitSkeletonValidationError, "布尔值"):
+            builder.plan(infer_missing_labels="yes")
+
     def test_atomic_body_build_collision_stops_before_transaction(self):
         host = FakeBodySkeletonHost()
         host.collisions["Hip_L"] = ("|Existing|Hip_L",)

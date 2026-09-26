@@ -237,8 +237,11 @@ def create_panel(controller: MayaPanelController | None = None):
             self.spine_segments.setRange(0, 63)
             self.spine_segments.setSpecialValueText("标准双段")
             self.head_aim = QtWidgets.QCheckBox("包含头部瞄准控制")
+            self.infer_missing_fit_labels = QtWidgets.QCheckBox(
+                "按关节名补全缺失标签（原版 Fit 兼容）")
             group, form = self._group("03 · 完整角色", [
-                ("脊柱配置", self.spine_segments), ("附加控制", self.head_aim)])
+                ("脊柱配置", self.spine_segments), ("附加控制", self.head_aim),
+                ("Fit 标签", self.infer_missing_fit_labels)])
             form.addRow(self._button("构建并登记角色", self._build_character,
                                       primary=True))
             stack.addWidget(group)
@@ -957,7 +960,8 @@ def create_panel(controller: MayaPanelController | None = None):
             result = self.controller.body_build(self._namespace(),
                 self.fit_container.text().strip(),
                 spine_segments=value if value else None,
-                head_aim=self.head_aim.isChecked())
+                head_aim=self.head_aim.isChecked(),
+                infer_missing_labels=self.infer_missing_fit_labels.isChecked())
             return f"角色已登记：{result.joint_count} 个关节、{result.channel_count} 个通道"
 
         def _rebuild_character(self):

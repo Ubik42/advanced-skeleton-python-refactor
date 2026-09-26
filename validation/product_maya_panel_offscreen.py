@@ -27,9 +27,11 @@ class FakeController:
                 PanelCharacter("hero", self.built,
                     30 if self.built else 0, 157 if self.built else 0))
 
-    def body_build(self, namespace, container, *, spine_segments, head_aim):
+    def body_build(self, namespace, container, *, spine_segments, head_aim,
+                   infer_missing_labels):
         self.calls.append(("body_build", namespace, container,
-                           spine_segments, head_aim))
+                           spine_segments, head_aim,
+                           infer_missing_labels))
         self.built = True
         return PanelCharacter(namespace, True, 30, 157)
 
@@ -298,6 +300,8 @@ def main(report: Path) -> int:
     buttons["更新 Fit 元数据"].click()
     buttons["重新定向 Fit"].click()
     buttons["构建并登记角色"].click()
+    panel.infer_missing_fit_labels.setChecked(True)
+    buttons["构建并登记角色"].click()
     panel.control_curve_targets.setPlainText("|hero:Global")
     panel.control_curve_factor.setValue(1.25)
     buttons["缩放控制曲线"].click()
@@ -437,7 +441,9 @@ def main(report: Path) -> int:
             ("control_orient_custom_detach", "hero") in controller.calls
             and ("control_orient_custom_attach", "hero") in controller.calls,
         "role_selection_dispatches_application_action":
-            ("body_build", "hero", "FitSkeleton", None, False)
+            ("body_build", "hero", "FitSkeleton", None, False, False)
+            in controller.calls and
+            ("body_build", "hero", "FitSkeleton", None, False, True)
             in controller.calls,
         "rebuild_dispatches_declared_extensions":
             ("body_rebuild", "hero", "CharacterRebuildStage",

@@ -34,6 +34,21 @@ class CharacterRegistryTests(unittest.TestCase):
         self.assertEqual(decoded.compatibility_digest,registration.compatibility_digest)
         self.assertEqual(replace(registration,nodes=tuple(replace(n,uuid=n.uuid+"a") for n in registration.nodes)).compatibility_digest,registration.compatibility_digest)
 
+    def test_original_size_body_registration_roundtrip(self):
+        original = registration_fixture()
+        body = list(original.body)
+        nodes = list(original.nodes)
+        for index in range(30, 74):
+            parent = body[-1].path
+            path = parent + "|J" + str(index)
+            body.append(CharacterBindJoint(path, parent, body[0].matrix))
+            nodes.append(CharacterNode(path, "original-" + str(index),
+                                       "joint", parent))
+        registration = replace(original, body=tuple(body),
+                               nodes=tuple(nodes))
+        self.assertEqual(decode_registration(
+            encode_registration(registration)), registration)
+
     def test_fit_roundtrip_floating_noise_keeps_portable_compatibility(self):
         registration=registration_fixture()
         first=registration.body[1]
@@ -64,7 +79,7 @@ class CharacterRegistryTests(unittest.TestCase):
             doc=json.loads(json.dumps(original));fn(doc["payload"]);doc["digest"]=digest(doc["payload"])
             with self.assertRaises(CharacterRegistryError): decode_registration(json.dumps(doc))
         mutate(lambda p:p["channels"].append(p["channels"][0]))
-        mutate(lambda p:p["body"].pop())
+        mutate(lambda p:p["body"].pop(1))
         mutate(lambda p:p["spine"]["lengths"].__setitem__(0,-1))
         mutate(lambda p:p["nodes"].pop())
         mutate(lambda p:p.__setitem__("container","|N:FitSkeleton"))

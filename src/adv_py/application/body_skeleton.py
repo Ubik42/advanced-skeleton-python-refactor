@@ -42,6 +42,7 @@ class BodySkeletonBuildPlan:
     specs: tuple[BodyJointSpec, ...]
     missing_labels: tuple[str, ...]
     name_collisions: tuple[str, ...]
+    inferred_labels: tuple[str, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -80,18 +81,26 @@ class BuildBodySkeleton:
         container_name: str = "FitSkeleton",
         *,
         center_tolerance: float = 0.01,
+        infer_missing_labels: bool = False,
     ) -> BodySkeletonBuildPlan:
+        if not isinstance(infer_missing_labels, bool):
+            raise FitSkeletonValidationError("推断缺失关节标签必须是布尔值")
         symmetry = self._symmetry.execute(
             container_name,
             center_tolerance=center_tolerance,
         )
         labels: dict[str, JointLabel] = {}
         missing_labels: list[str] = []
+        inferred_labels: list[str] = []
         for node in symmetry.source.hierarchy.joints:
             label = self._host.read_joint_label(node.path)
             if label is None:
-                missing_labels.append(node.path)
-            else:
+                if infer_missing_labels:
+                    label = JointLabel.parse(node.short_name)
+                    inferred_labels.append(node.path)
+                else:
+                    missing_labels.append(node.path)
+            if label is not None:
                 labels[node.path] = label
         specs = tuple(
             BodyJointSpec.from_symmetry(instance, labels[instance.source_joint])
@@ -108,6 +117,7 @@ class BuildBodySkeleton:
             specs,
             tuple(missing_labels),
             collisions,
+            tuple(inferred_labels),
         )
 
     def apply(
@@ -115,10 +125,12 @@ class BuildBodySkeleton:
         container_name: str = "FitSkeleton",
         *,
         center_tolerance: float = 0.01,
+        infer_missing_labels: bool = False,
     ) -> BodySkeletonBuildResult:
         plan = self.plan(
             container_name,
             center_tolerance=center_tolerance,
+            infer_missing_labels=infer_missing_labels,
         )
         if not plan.ready:
             raise FitSkeletonValidationError(

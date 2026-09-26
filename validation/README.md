@@ -384,6 +384,8 @@ $env:PYTHONPATH = 'src'
 
 原版场景直接重建、原权重保留、网格随发布骨架打包及可见界面全链路仍待验。
 
+`maya_original_registered_build_smoke.py` 在原版场景的未保存隔离副本中移除旧 Rig，然后通过完整角色产品用例启用“按关节名补全缺失标签”。`sam.mb` 构建并登记 74 个 Body 关节和 30 个 Hand FK 控制，Fit 标签与位置不变；单次 Undo、Redo 和保存重开通过。此脚本验证产品构建入口，来源文件保持不变。
+
 局部机制定位使用 `maya_body_spine_smoke.py` 与 `maya_body_control_spaces_smoke.py`，输出路径作为第一个参数，`--basic` 切换为 30 关节。两者包含非法状态拒绝和失败回滚；空间脚本另外验证身体 / Global 跟随关系。结果写入已忽略的 `validation/results/`，不提交本机日志。
 
 
