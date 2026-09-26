@@ -41,11 +41,18 @@ def main(output: Path) -> int:
                     and isinstance(node.func.value, ast.Name)
                     and node.func.value.id == "mel"):
                 mel_sites.append(f"{relative}:{node.lineno}")
-                if relative != "adapters/maya_body.py":
+                native_bind_dialog = (relative == "adapters/maya_deform_skinning.py"
+                    and len(node.args) == 1
+                    and isinstance(node.args[0], ast.Constant)
+                    and node.args[0].value == "SmoothBindSkinOptions")
+                if relative != "adapters/maya_body.py" and not native_bind_dialog:
                     problems.append(f"{relative}:{node.lineno}: unexpected MEL call")
     report = {"modules_checked": checked, "imports_checked": imported,
               "legacy_runtime_references": 0 if not problems else None,
-              "fbx_plugin_mel_sites": len(mel_sites),
+              "fbx_plugin_mel_sites": sum(site.startswith("adapters/maya_body.py:")
+                                          for site in mel_sites),
+              "native_bind_dialog_mel_sites": sum(site.startswith(
+                  "adapters/maya_deform_skinning.py:") for site in mel_sites),
               "problems": problems, "status": "passed" if not problems else "failed"}
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
