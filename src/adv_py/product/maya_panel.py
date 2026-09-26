@@ -211,15 +211,24 @@ def create_panel(controller: MayaPanelController | None = None):
             self.fit_metadata_value = QtWidgets.QLineEdit()
             self.fit_metadata_value.setPlaceholderText("整数、数值、true/false 或枚举值")
             self.fit_metadata_remove = QtWidgets.QCheckBox("删除所选字段")
+            self.fit_orientation_children = QtWidgets.QPlainTextEdit()
+            self.fit_orientation_children.setPlaceholderText(
+                "分支关节每行：目标关节  指定直接子级\n例如：Root  Spine1")
+            self.fit_orientation_children.setMaximumHeight(66)
+            self.fit_orientation_mode = QtWidgets.QComboBox()
+            self.fit_orientation_mode.addItem("按指定子级 Aim", "child")
+            self.fit_orientation_mode.addItem("按 World Orient 元数据", "world")
             group, form = self._group("02 · Fit 编辑", [
                 ("位置批量编辑", self.fit_position_edits),
                 ("目标关节", self.fit_edit_joints),
                 ("元数据字段", self.fit_metadata_field),
                 ("字段值", self.fit_metadata_value),
-                ("字段操作", self.fit_metadata_remove)])
+                ("字段操作", self.fit_metadata_remove),
+                ("朝向模式", self.fit_orientation_mode),
+                ("分支子级映射", self.fit_orientation_children)])
             position_row = QtWidgets.QHBoxLayout()
             position_row.addWidget(self._button("更新 Fit 位置", self._edit_fit_positions))
-            position_row.addWidget(self._button("按子级重新定向", self._orient_fit))
+            position_row.addWidget(self._button("重新定向 Fit", self._orient_fit))
             form.addRow(position_row)
             form.addRow(self._button("更新 Fit 元数据", self._edit_fit_metadata))
             stack.addWidget(group)
@@ -795,9 +804,21 @@ def create_panel(controller: MayaPanelController | None = None):
             return f"已更新 {count} 项 Fit 元数据"
 
         def _orient_fit(self):
+            selections = []
+            for number, line in enumerate(
+                    self.fit_orientation_children.toPlainText().splitlines(), 1):
+                if not line.strip():
+                    continue
+                parts = line.replace(",", " ").split()
+                if len(parts) != 2:
+                    raise ValueError(f"分支子级映射第 {number} 行必须包含目标和直接子级")
+                selections.append((parts[0], parts[1]))
             count = self.controller.fit_orient(self._namespace(),
-                self._fit_joint_lines(), self.fit_container.text().strip())
-            return f"已重新定向 {count} 个 Fit joint"
+                self._fit_joint_lines(), self.fit_container.text().strip(),
+                child_selections=tuple(selections),
+                world=self.fit_orientation_mode.currentData() == "world")
+            mode = "World Orient" if self.fit_orientation_mode.currentData() == "world" else "子级 Aim"
+            return f"已按 {mode} 重新定向 {count} 个 Fit joint"
 
         def _export_skin(self):
             count = self.controller.skin_export(self._namespace(),

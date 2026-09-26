@@ -42,8 +42,8 @@ class FakeController:
                            value, remove))
         return len(joints)
 
-    def fit_orient(self, namespace, joints, container):
-        self.calls.append(("fit_orient", namespace, joints, container))
+    def fit_orient(self, namespace, joints, container, **options):
+        self.calls.append(("fit_orient", namespace, joints, container, options))
         return len(joints)
 
     def face_build(self, namespace, specification, control_name, deformer_name):
@@ -234,9 +234,11 @@ def main(report: Path) -> int:
     panel.fit_position_edits.setPlainText("Spine1 0 0 8")
     panel.fit_edit_joints.setPlainText("Spine1")
     panel.fit_metadata_value.setText("2")
+    panel.fit_orientation_children.setPlainText("Spine1 Chest")
+    panel.fit_orientation_mode.setCurrentIndex(1)
     buttons["更新 Fit 位置"].click()
     buttons["更新 Fit 元数据"].click()
-    buttons["按子级重新定向"].click()
+    buttons["重新定向 Fit"].click()
     buttons["构建并登记角色"].click()
     app.processEvents()
     fit_page = panel.tabs.currentWidget()
@@ -312,7 +314,8 @@ def main(report: Path) -> int:
              "FitSkeleton"),
             ("fit_edit_metadata", "hero", ("Spine1",), "twist_joints",
              "2", False),
-            ("fit_orient", "hero", ("Spine1",), "FitSkeleton"))),
+            ("fit_orient", "hero", ("Spine1",), "FitSkeleton",
+             {"child_selections": (("Spine1", "Chest"),), "world": True}))),
         "role_selection_dispatches_application_action":
             ("body_build", "hero", "FitSkeleton", None, False)
             in controller.calls,

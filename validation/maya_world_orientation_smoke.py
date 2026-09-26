@@ -35,6 +35,7 @@ def main(output: Path) -> int:
             FitOrientationRequest,
             FitOrientationValidationError,
         )
+        from adv_py.product.maya_panel_controller import MayaPanelController
 
         cmds.file(new=True, force=True)
         cmds.undoInfo(state=True)
@@ -114,6 +115,25 @@ def main(output: Path) -> int:
             )
         )
         metadata_survived_undo = restored.metadata == before.metadata
+
+        panel_controller = MayaPanelController()
+        cmds.setAttr(f"{root}.jointOrientX", restored_state.joint_orient[0] + 10.)
+        panel_world_changes = panel_controller.fit_orient(
+            ":", ("Root",), container, world=True)
+        panel_world_state = next(item for item in
+            host.capture_fit_orientation(container).joints if item.joint == root)
+        panel_world_axes_match = all(
+            vectors_match(current, expected)
+            for current, expected in zip(panel_world_state.world_axes, expected_axes)
+        )
+        cmds.undo()
+        panel_world_undo = vectors_match(
+            next(item for item in host.capture_fit_orientation(container).joints
+                 if item.joint == root).joint_orient,
+            (restored_state.joint_orient[0] + 10.,
+             restored_state.joint_orient[1], restored_state.joint_orient[2]),
+        )
+        cmds.setAttr(f"{root}.jointOrient", *restored_state.joint_orient)
 
         EditFitJointMetadata(host).apply(
             (root,),
@@ -195,6 +215,9 @@ def main(output: Path) -> int:
                 idempotent,
                 single_undo_restored,
                 metadata_survived_undo,
+                panel_world_changes == 1,
+                panel_world_axes_match,
+                panel_world_undo,
                 free_preview_clean,
                 free_planned_axes_match,
                 free_world_axes_match,
@@ -223,6 +246,9 @@ def main(output: Path) -> int:
             "repeat_plan_is_noop": idempotent,
             "single_undo_restored_orientation": single_undo_restored,
             "metadata_survived_undo": metadata_survived_undo,
+            "panel_world_changes": panel_world_changes,
+            "panel_world_axes_match": panel_world_axes_match,
+            "panel_world_single_undo": panel_world_undo,
             "free_preview_did_not_modify_scene": free_preview_clean,
             "free_planned_axes_match": free_planned_axes_match,
             "free_world_axes_match": free_world_axes_match,

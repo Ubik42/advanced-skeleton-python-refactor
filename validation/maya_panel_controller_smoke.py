@@ -59,7 +59,7 @@ def main(report: Path) -> int:
             cmds.setAttr(spine1 + ".jointOrientX", original_orient[0] + 10.)
             before_orient = tuple(cmds.getAttr(spine1 + ".jointOrient")[0])
             orientation_changes = controller.fit_orient(
-                ":", ("Spine1",))
+                ":", ("Spine1",), child_selections=())
             orientation_applied = tuple(cmds.getAttr(
                 spine1 + ".jointOrient")[0]) != before_orient
             cmds.undo()
@@ -68,6 +68,24 @@ def main(report: Path) -> int:
             orientation_undo = tuple(cmds.getAttr(
                 restored_spine1 + ".jointOrient")[0]) == before_orient
             cmds.setAttr(restored_spine1 + ".jointOrient", *original_orient)
+            root = next(path for path in cmds.ls(type="joint", long=True)
+                        if path.rsplit("|", 1)[-1] == "Root")
+            original_root_orient = tuple(cmds.getAttr(root + ".jointOrient")[0])
+            cmds.setAttr(root + ".jointOrientX", original_root_orient[0] + 10.)
+            branch_before = tuple(cmds.getAttr(root + ".jointOrient")[0])
+            branch_changes = controller.fit_orient(
+                ":", ("Root",), child_selections=(("Root", "Spine1"),))
+            branch_applied = tuple(cmds.getAttr(root + ".jointOrient")[0]) \
+                != branch_before
+            cmds.undo()
+            restored_root = next(path for path in cmds.ls(type="joint", long=True)
+                                 if path.rsplit("|", 1)[-1] == "Root")
+            branch_restored = tuple(cmds.getAttr(
+                restored_root + ".jointOrient")[0])
+            branch_undo = all(abs(current - expected) <= 1e-6
+                              for current, expected in
+                              zip(branch_restored, branch_before))
+            cmds.setAttr(restored_root + ".jointOrient", *original_root_orient)
             fit_count = controller.fit_export(":", fit)
             character = controller.body_build(":")
             roles = controller.characters()
@@ -125,7 +143,8 @@ def main(report: Path) -> int:
                     and position_applied and position_undo
                     and metadata_changes == 1 and metadata_applied
                     and metadata_undo and orientation_changes == 1
-                    and orientation_applied and orientation_undo,
+                    and orientation_applied and orientation_undo
+                    and branch_changes == 1 and branch_applied and branch_undo,
                 "fit_document_written": fit_count == 18 and fit.is_file(),
                 "registered_character_discovered": character.registered
                     and character.joint_count == 30
@@ -170,6 +189,11 @@ def main(report: Path) -> int:
                     "orientation_changes": orientation_changes,
                     "orientation_applied": orientation_applied,
                     "orientation_undo": orientation_undo,
+                    "branch_changes": branch_changes,
+                    "branch_applied": branch_applied,
+                    "branch_undo": branch_undo,
+                    "branch_before": branch_before,
+                    "branch_restored": branch_restored,
                 },
                 "status": "passed" if all(checks.values()) else "failed"}
             report.write_text(json.dumps(payload, ensure_ascii=False, indent=2)

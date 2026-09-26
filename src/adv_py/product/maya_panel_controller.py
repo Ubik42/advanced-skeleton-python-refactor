@@ -18,6 +18,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     SwitchBodyCharacterSpace,
     CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
     ExportFitSkeleton, ExportSkinWeights, OrientSimpleFitChain,
+    OrientWorldFitJoints,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget, ImportFaceTargetAsset,
     FaceAssetLibrary, ImportSkinWeights, InspectBodyCharacterPresets,
     CaptureSkinWeightSurfaceSource, TransferSkinWeightsBySurface,
@@ -31,7 +32,8 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
 from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
     BodyFbxExportProfile, BodyFbxFileVersion, FaceShapeKind, FaceTarget,
     FitJointField, FitJointFieldEdit, FitJointPatch,
-    FitJointPositionEdit, FitJointPositionPatch, FitOrientationRequest,
+    FitJointPositionEdit, FitJointPositionPatch, FitOrientationChildSelection,
+    FitOrientationRequest,
     face_performance_from_json)
 from adv_py.core.variable_body_fit import variable_axial_description
 
@@ -174,9 +176,14 @@ class MayaPanelController:
         return len(result.plan.changes)
 
     def fit_orient(self, namespace: str, joints: tuple[str, ...],
-                   container: str = "FitSkeleton") -> int:
-        result = OrientSimpleFitChain(self._host(namespace)).apply(
-            FitOrientationRequest(joints), container)
+                   container: str = "FitSkeleton", *,
+                   child_selections: tuple[tuple[str, str], ...] = (),
+                   world: bool = False) -> int:
+        request = FitOrientationRequest(joints, tuple(
+            FitOrientationChildSelection(joint, child)
+            for joint, child in child_selections))
+        use_case = OrientWorldFitJoints if world else OrientSimpleFitChain
+        result = use_case(self._host(namespace)).apply(request, container)
         return len(result.plan.changes)
 
     def body_build(self, namespace: str, container: str = "FitSkeleton", *,
