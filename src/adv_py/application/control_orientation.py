@@ -20,7 +20,8 @@ class ControlOrientationHost(Protocol):
         self, controls: tuple[str, ...]
     ) -> tuple[ControlOrientationState, ...]: ...
     def capture_control_orientation_child_targets(
-        self, controls: tuple[str, ...]
+        self, controls: tuple[str, ...],
+        child_selections: tuple[tuple[str, str], ...] = ()
     ) -> tuple[tuple[str, tuple[float, float, float]], ...]: ...
     def capture_control_curve_world_points(
         self, controls: tuple[str, ...]
@@ -114,9 +115,12 @@ class SetControlOrientationWorldMatch(SetControlOrientationAxis):
     def apply(self, controls: tuple[str, ...], primary: ControlAxis | str,
               secondary: ControlAxis | str, world_up: ControlAxis | str,
               curve_unaffected: bool = False,
-              mirror: bool = False) -> ControlOrientationResult:
+              mirror: bool = False,
+              child_selections: tuple[tuple[str, str], ...] = ()
+              ) -> ControlOrientationResult:
         states = self._host.capture_control_orientations(controls)
-        children = self._host.capture_control_orientation_child_targets(controls)
+        children = self._host.capture_control_orientation_child_targets(
+            controls, child_selections)
         plan = plan_control_orientation_world_match(
             states, children, primary, secondary, world_up,
             curve_unaffected, mirror)

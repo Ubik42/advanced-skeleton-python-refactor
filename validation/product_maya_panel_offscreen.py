@@ -100,10 +100,11 @@ class FakeController:
 
     def control_orient_world_match(self, namespace, controls, primary,
                                    secondary, world_up,
-                                   curve_unaffected=False, mirror=False):
+                                   curve_unaffected=False, mirror=False,
+                                   child_selections=()):
         self.calls.append(("control_orient_world_match", namespace, controls,
                            primary, secondary, world_up,
-                           curve_unaffected, mirror))
+                           curve_unaffected, mirror, child_selections))
         return len(controls)
 
     def control_orient_custom_detach(self, namespace):
@@ -307,6 +308,8 @@ def main(report: Path) -> int:
     panel.control_orient_curve_unaffected.setChecked(True)
     buttons["设置控制器局部轴"].click()
     buttons["对齐世界坐标轴"].click()
+    panel.control_orient_child_selections.setPlainText(
+        "AdvPy_ShoulderFK_R = AdvPy_ElbowFKDriver_R")
     buttons["世界匹配（朝向子关节）"].click()
     buttons["分离全部控制器"].click()
     buttons["重新附着全部控制器"].click()
@@ -410,7 +413,8 @@ def main(report: Path) -> int:
             and not panel.control_orient_mirrored_behavior.isChecked(),
         "control_orient_world_match_dispatches":
             ("control_orient_world_match", "hero",
-             ("|hero:ShoulderFK_R",), "Z", "X", "Y", True, True)
+             ("|hero:ShoulderFK_R",), "Z", "X", "Y", True, True,
+             (("AdvPy_ShoulderFK_R", "AdvPy_ElbowFKDriver_R"),))
             in controller.calls,
         "control_orient_custom_dispatches":
             ("control_orient_custom_detach", "hero") in controller.calls

@@ -22,11 +22,14 @@ class Host:
         self.state = ControlOrientationState("|Control", IDENTITY)
         self.transactions = []
         self.points = (("|Control|Shape", ((1., 2., 3.),)),)
+        self.child_selections = ()
 
     def capture_control_orientations(self, controls):
         return (self.state,)
 
-    def capture_control_orientation_child_targets(self, controls):
+    def capture_control_orientation_child_targets(
+            self, controls, child_selections=()):
+        self.child_selections = child_selections
         return (("|Control", (3., 0., 0.)),)
 
     @contextmanager
@@ -195,9 +198,11 @@ class ControlOrientationTests(unittest.TestCase):
     def test_world_match_uses_one_verified_transaction(self):
         host = Host()
         result = SetControlOrientationWorldMatch(host).apply(
-            ("|Control",), "X", "Y", "Y", True)
+            ("|Control",), "X", "Y", "Y", True, False,
+            (("|Control", "Child"),))
         self.assertEqual(result.verified[0].world_matrix, IDENTITY)
         self.assertEqual(len(host.transactions), 1)
+        self.assertEqual(host.child_selections, (("|Control", "Child"),))
 
 
 if __name__ == "__main__":

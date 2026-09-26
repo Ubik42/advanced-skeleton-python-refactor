@@ -383,6 +383,10 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_orient_targets.setPlaceholderText(
                 "每行一个已登记控制器路径")
             self.control_orient_targets.setMaximumHeight(76)
+            self.control_orient_child_selections = QtWidgets.QPlainTextEdit()
+            self.control_orient_child_selections.setPlaceholderText(
+                "分支关节填写：控制器名 = 直接子关节名；镜像时两侧分别填写")
+            self.control_orient_child_selections.setMaximumHeight(64)
             self.control_orient_primary = QtWidgets.QComboBox()
             self.control_orient_secondary = QtWidgets.QComboBox()
             self.control_orient_world_up = QtWidgets.QComboBox()
@@ -404,6 +408,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("Primary Axis", self.control_orient_primary),
                 ("Secondary Axis", self.control_orient_secondary),
                 ("World Match Up", self.control_orient_world_up),
+                ("World Match 子关节", self.control_orient_child_selections),
                 ("Curve Unaffected", self.control_orient_curve_unaffected),
                 ("Mirror", self.control_orient_mirror),
                 ("Mirrored Behavior",
@@ -1054,13 +1059,22 @@ def create_panel(controller: MayaPanelController | None = None):
             controls = tuple(line.strip() for line in
                 self.control_orient_targets.toPlainText().splitlines()
                 if line.strip())
+            child_selections = []
+            for line in self.control_orient_child_selections.toPlainText().splitlines():
+                if not line.strip():
+                    continue
+                control, separator, child = line.partition("=")
+                if not separator or not control.strip() or not child.strip():
+                    raise ValueError("子关节指定应为：控制器名 = 直接子关节名")
+                child_selections.append((control.strip(), child.strip()))
             count = self.controller.control_orient_world_match(
                 self._namespace(), controls,
                 self.control_orient_primary.currentData(),
                 self.control_orient_secondary.currentData(),
                 self.control_orient_world_up.currentData(),
                 self.control_orient_curve_unaffected.isChecked(),
-                self.control_orient_mirror.isChecked())
+                self.control_orient_mirror.isChecked(),
+                tuple(child_selections))
             self.control_orient_mirrored_behavior.setChecked(False)
             return f"已匹配 {count} 个控制器的世界方向与子关节；镜像行为已关闭"
 

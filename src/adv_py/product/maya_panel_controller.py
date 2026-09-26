@@ -391,12 +391,23 @@ class MayaPanelController:
                                    controls: tuple[str, ...], primary: str,
                                    secondary: str, world_up: str,
                                    curve_unaffected: bool = False,
-                                   mirror: bool = False) -> int:
+                                   mirror: bool = False,
+                                   child_selections: tuple[tuple[str, str], ...]
+                                   = ()) -> int:
         host, resolved = self._control_orient_targets(
             namespace, controls, mirror)
+        mapped = []
+        for requested, child in child_selections:
+            matches = tuple(path for path in resolved
+                            if path == requested
+                            or path.rsplit("|", 1)[-1] == requested)
+            if len(matches) != 1:
+                raise ValueError(
+                    f"World Match 子关节指定的控制器未登记或名称不唯一：{requested}")
+            mapped.append((matches[0], child))
         result = SetControlOrientationWorldMatch(host).apply(
             resolved, primary, secondary, world_up,
-            curve_unaffected, mirror)
+            curve_unaffected, mirror, tuple(mapped))
         return len(result.verified)
 
     def _control_orient_targets(self, namespace, controls, mirror):

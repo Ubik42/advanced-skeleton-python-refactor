@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from adv_py.core.control_curves import (
     ControlCurveAutoScaleMetric, ControlCurveColorState,
@@ -196,40 +197,95 @@ class MayaControlCurveMixin:
             resolved.add(control)
         return tuple(result)
 
-    def capture_control_orientation_child_targets(self, controls):
-        """Resolve an FK control's driven joint and its single direct child."""
+    def _control_orientation_child_joints(self, control):
+        """Find direct children of the joint driven by one FK control."""
         from adv_py.adapters.maya_control_orient_behavior import (
             _DESTINATIONS, _existing_node, _rotation_destinations)
 
         c = self._cmds
+        node = _existing_node(c, control)
+        destinations = (tuple(json.loads(c.getAttr(node + "." + _DESTINATIONS)))
+                        if node else _rotation_destinations(c, control))
+        constraints = tuple(dict.fromkeys(
+            destination.split(".", 1)[0] for destination in destinations))
+        if len(constraints) != 1:
+            raise ControlOrientationValidationError(
+                f"World Match 需要唯一的 FK 朝向约束：{control}")
+        driven = c.listConnections(
+            constraints[0] + ".constraintRotateX", source=False,
+            destination=True, plugs=True, skipConversionNodes=True) or []
+        joints = tuple(dict.fromkeys(
+            (c.ls(plug.split(".", 1)[0], long=True) or [None])[0]
+            for plug in driven if plug.endswith(".rotateX")))
+        if len(joints) != 1 or c.nodeType(joints[0]) != "joint":
+            raise ControlOrientationValidationError(
+                f"World Match 无法确定约束驱动的关节：{control}")
+        children = tuple(c.listRelatives(
+            joints[0], children=True, fullPath=True, type="joint") or ())
+        if children:
+            return children
+        driver_leaf = joints[0].rsplit("|", 1)[-1]
+        namespace, separator, driver_name = driver_leaf.rpartition(":")
+        if not separator:
+            driver_name = driver_leaf
+        driver_match = re.fullmatch(
+            r"AdvPy_(.+)FKDriver_([RL])", driver_name)
+        if driver_match is None:
+            return ()
+        body_name = (namespace + ":" if separator else "") + (
+            f"{driver_match.group(1)}_{driver_match.group(2)}")
+        body = tuple(joint.path for joint in
+                     self.read_character_registration().body
+                     if joint.path.rsplit("|", 1)[-1] == body_name)
+        if len(body) != 1:
+            return ()
+        driver_position = c.xform(joints[0], query=True,
+                                  worldSpace=True, translation=True)
+        body_position = c.xform(body[0], query=True,
+                                worldSpace=True, translation=True)
+        if any(abs(a - b) > 1e-4 for a, b in zip(
+                driver_position, body_position)):
+            raise ControlOrientationValidationError(
+                f"World Match FK 驱动关节与 Body 关节位置不一致：{control}")
+        return tuple(c.listRelatives(
+            body[0], children=True, fullPath=True, type="joint") or ())
+
+    def capture_control_orientation_child_targets(
+            self, controls, child_selections=()):
+        """Resolve one direct child for each FK controller before scene edits."""
+        selections = dict(child_selections)
+        if len(selections) != len(child_selections):
+            raise ControlOrientationValidationError("World Match 子关节指定重复")
         result = []
         for requested in controls:
             control, _ = self._control_curve_shapes(requested, strict=True)
-            node = _existing_node(c, control)
-            destinations = (tuple(json.loads(c.getAttr(node + "." + _DESTINATIONS)))
-                            if node else _rotation_destinations(c, control))
-            constraints = tuple(dict.fromkeys(
-                destination.split(".", 1)[0] for destination in destinations))
-            if len(constraints) != 1:
-                raise ControlOrientationValidationError(
-                    f"World Match 需要唯一的 FK 朝向约束：{control}")
-            driven = c.listConnections(
-                constraints[0] + ".constraintRotateX", source=False,
-                destination=True, plugs=True, skipConversionNodes=True) or []
-            joints = tuple(dict.fromkeys(
-                (c.ls(plug.split(".", 1)[0], long=True) or [None])[0]
-                for plug in driven if plug.endswith(".rotateX")))
-            if len(joints) != 1 or c.nodeType(joints[0]) != "joint":
-                raise ControlOrientationValidationError(
-                    f"World Match 无法确定约束驱动的关节：{control}")
-            children = c.listRelatives(
-                joints[0], children=True, fullPath=True, type="joint") or []
-            if len(children) != 1:
-                raise ControlOrientationValidationError(
-                    f"World Match 需要唯一的直接子关节：{joints[0]}")
-            position = c.xform(children[0], query=True,
+            children = self._control_orientation_child_joints(control)
+            selected = selections.pop(control, None)
+            if selected is None:
+                if len(children) != 1:
+                    raise ControlOrientationValidationError(
+                        f"World Match 需要唯一的直接子关节：{control}；候选："
+                        + ", ".join(path.rsplit("|", 1)[-1]
+                                    for path in children))
+                child = children[0]
+            else:
+                matches = tuple(path for path in children
+                                if path == selected
+                                or path.rsplit("|", 1)[-1] == selected
+                                or path.rsplit("|", 1)[-1].rsplit(
+                                    ":", 1)[-1] == selected)
+                if len(matches) != 1:
+                    raise ControlOrientationValidationError(
+                        f"World Match 指定的关节不是唯一直接子关节："
+                        f"{control} = {selected}")
+                child = matches[0]
+            position = self._cmds.xform(child, query=True,
                                worldSpace=True, translation=True)
             result.append((control, tuple(float(value) for value in position)))
+        if selections:
+            raise ControlOrientationValidationError(
+                "World Match 子关节指定包含非目标控制器："
+                + ", ".join(selections))
         return tuple(result)
 
     def apply_control_orientation(self, state: ControlOrientationState) -> None:
