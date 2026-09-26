@@ -213,6 +213,16 @@ class MayaPanelController:
         return ReselectPreparationObjects(MayaPreparationObjectsHost(namespace)).execute(
             PreparationObjectRole(role))
 
+    def preparation_one_joint_prop(self, namespace: str):
+        from adv_py.adapters.maya_one_joint_prop import MayaOneJointPropHost
+        from adv_py.application.one_joint_prop import BuildOneJointProp
+
+        skins = self.preparation_read_objects(namespace, "Skin")
+        all_meshes = self.preparation_read_objects(namespace, "All")
+        return BuildOneJointProp(MayaOneJointPropHost(
+            namespace=None if namespace == ":" else namespace)).apply(
+            skins, all_meshes)
+
     def characters(self) -> tuple[PanelCharacter, ...]:
         from adv_py.adapters.maya_scene_gateway import MayaSceneGateway
 

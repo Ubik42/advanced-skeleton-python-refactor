@@ -16,6 +16,8 @@ Preparation / Rig 引用模型：`maya_preparation_reference_smoke.py` 生成模
 
 Preparation / Rig 的 Skin／All／左右眼对象记录：`maya_preparation_objects_smoke.py` 从同一模型文件引用四件网格，在 Fit 创建前保存四组输入，重开后读回并重新选中；创建 FitSkeleton 后检查原版字符串属性，以及单次 Undo／Redo 和再次重开。
 
+`maya_one_joint_prop_smoke.py` 从一件 Skin、两件 All 引用网格创建单关节道具：检查 Skin＋All 去重、FitSkeleton 原版对象字段、Root_M 与 Main、两套 Skin 的控制位移、故障回滚、Undo／Redo 和重开。`maya_one_joint_prop_visible.py` 在 Maya 图形窗口实际点击记录 Skin、记录 All 和构建入口，并保存面板截图。原版完整控制层仍需逐项对照。
+
 ```powershell
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_preparation_objects_smoke.py
 ```

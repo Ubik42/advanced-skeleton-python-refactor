@@ -215,6 +215,13 @@ def create_panel(controller: MayaPanelController | None = None):
                 form.addRow(role, row)
             stack.addWidget(group)
 
+            group, form = self._group("02 · One Joint Prop", [])
+            form.addRow(QtWidgets.QLabel(
+                "使用已记录的 Skin 与 All 模型，创建单关节道具绑定。"))
+            form.addRow(self._button("创建单关节道具绑定",
+                                     self._build_one_joint_prop, primary=True))
+            stack.addWidget(group)
+
             self.model_check_results = QtWidgets.QPlainTextEdit()
             self.model_check_results.setReadOnly(True)
             self.model_check_results.setPlaceholderText(
@@ -1019,6 +1026,11 @@ def create_panel(controller: MayaPanelController | None = None):
             objects = self.controller.preparation_record_objects(self._namespace(), role)
             self.preparation_object_fields[role].setText(" ".join(objects))
             return f"已记录 {role}：{len(objects)} 件模型"
+
+        def _build_one_joint_prop(self):
+            result = self.controller.preparation_one_joint_prop(self._namespace())
+            return (f"单关节道具已构建：{len(result.meshes)} 件模型、"
+                    f"{len(result.skins)} 套 Skin；控制器 Main")
 
         def _reselect_preparation_objects(self, role):
             objects = self.controller.preparation_reselect_objects(self._namespace(), role)
