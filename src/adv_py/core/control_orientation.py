@@ -235,3 +235,59 @@ def plan_control_orientation_world(
     return ControlOrientationPlan(
         ControlAxis.X, ControlAxis.Y, curve_unaffected, mirror, False,
         tuple(changes))
+
+
+def plan_control_orientation_world_match(
+    states: tuple[ControlOrientationState, ...],
+    child_positions: tuple[tuple[str, tuple[float, float, float]], ...],
+    primary_axis: ControlAxis | str,
+    secondary_axis: ControlAxis | str,
+    world_up_axis: ControlAxis | str,
+    curve_unaffected: bool = False,
+    mirror: bool = False,
+) -> ControlOrientationPlan:
+    """Aim a local axis at the child; project world up around that aim."""
+    primary = ControlAxis(primary_axis)
+    secondary = ControlAxis(secondary_axis)
+    up = ControlAxis(world_up_axis)
+    _validate_axis_pair(primary, secondary)
+    if not states or len({state.control for state in states}) != len(states):
+        raise ControlOrientationValidationError("至少需要一个且不能重复的控制器")
+    if (len(child_positions) != len(states)
+            or tuple(name for name, _ in child_positions)
+            != tuple(state.control for state in states)):
+        raise ControlOrientationValidationError("控制器与子关节目标不一致")
+    if not isinstance(curve_unaffected, bool) or not isinstance(mirror, bool):
+        raise ControlOrientationValidationError("控制器方向选项必须为布尔值")
+    up_index, up_sign = _axis(up)
+    up_world = tuple(up_sign if index == up_index else 0.
+                     for index in range(3))
+    changes = []
+    for state, (_, child) in zip(states, child_positions):
+        if len(child) != 3:
+            raise ControlOrientationValidationError("子关节位置必须是三维坐标")
+        origin = state.world_matrix[12:15]
+        aim, _ = _normal(tuple(value - base for value, base
+                               in zip(child, origin)))
+        dot = sum(a * b for a, b in zip(aim, up_world))
+        projected, _ = _normal(tuple(
+            value - dot * direction
+            for value, direction in zip(up_world, aim)))
+        third, _ = _normal(_cross(aim, projected))
+        lengths = tuple(_normal(
+            state.world_matrix[index * 4:index * 4 + 3])[1]
+            for index in range(3))
+        reference = ControlOrientationState(
+            state.control,
+            (*tuple(value * lengths[0] for value in aim), 0.,
+             *tuple(value * lengths[1] for value in projected), 0.,
+             *tuple(value * lengths[2] for value in third), 0.,
+             *origin, 1.))
+        target = _target_matrix(reference, primary, secondary)
+        changes.append(ControlOrientationChange(
+            state, ControlOrientationState(
+                state.control, target, primary, secondary,
+                curve_unaffected, mirror, False)))
+    return ControlOrientationPlan(primary, secondary,
+                                  curve_unaffected, mirror, False,
+                                  tuple(changes))

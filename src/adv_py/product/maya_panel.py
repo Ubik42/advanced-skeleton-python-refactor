@@ -385,10 +385,13 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_orient_targets.setMaximumHeight(76)
             self.control_orient_primary = QtWidgets.QComboBox()
             self.control_orient_secondary = QtWidgets.QComboBox()
+            self.control_orient_world_up = QtWidgets.QComboBox()
             for axis in ("X", "Y", "Z", "-X", "-Y", "-Z"):
                 self.control_orient_primary.addItem(axis, axis)
                 self.control_orient_secondary.addItem(axis, axis)
+                self.control_orient_world_up.addItem(axis, axis)
             self.control_orient_secondary.setCurrentIndex(1)
+            self.control_orient_world_up.setCurrentIndex(1)
             self.control_orient_curve_unaffected = QtWidgets.QCheckBox(
                 "改变方向后保持曲线世界形状")
             self.control_orient_mirror = QtWidgets.QCheckBox("同时设置对侧控制器")
@@ -400,12 +403,14 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("目标控制器", self.control_orient_targets),
                 ("Primary Axis", self.control_orient_primary),
                 ("Secondary Axis", self.control_orient_secondary),
+                ("World Match Up", self.control_orient_world_up),
                 ("Curve Unaffected", self.control_orient_curve_unaffected),
                 ("Mirror", self.control_orient_mirror),
                 ("Mirrored Behavior",
                  self.control_orient_mirrored_behavior)])
             form.addRow(self._button("设置控制器局部轴", self._set_control_orient_axis))
             form.addRow(self._button("对齐世界坐标轴", self._set_control_orient_world))
+            form.addRow(self._button("世界匹配（朝向子关节）", self._set_control_orient_world_match))
             form.addRow(self._button("分离全部控制器", self._detach_control_orient_custom))
             form.addRow(self._button("重新附着全部控制器", self._attach_control_orient_custom))
             stack.addWidget(group)
@@ -1044,6 +1049,20 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.control_orient_mirror.isChecked())
             self.control_orient_mirrored_behavior.setChecked(False)
             return f"已将 {count} 个控制器对齐世界坐标轴；镜像行为已关闭"
+
+        def _set_control_orient_world_match(self):
+            controls = tuple(line.strip() for line in
+                self.control_orient_targets.toPlainText().splitlines()
+                if line.strip())
+            count = self.controller.control_orient_world_match(
+                self._namespace(), controls,
+                self.control_orient_primary.currentData(),
+                self.control_orient_secondary.currentData(),
+                self.control_orient_world_up.currentData(),
+                self.control_orient_curve_unaffected.isChecked(),
+                self.control_orient_mirror.isChecked())
+            self.control_orient_mirrored_behavior.setChecked(False)
+            return f"已匹配 {count} 个控制器的世界方向与子关节；镜像行为已关闭"
 
         def _detach_control_orient_custom(self):
             proxies = self.controller.control_orient_custom_detach(

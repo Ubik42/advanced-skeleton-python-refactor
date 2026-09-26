@@ -21,6 +21,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     ScaleControlCurves, SwapControlCurves,
     SetControlOrientationAxis,
     SetControlOrientationWorld,
+    SetControlOrientationWorldMatch,
     DetachCustomControlOrientations, AttachCustomControlOrientations,
     CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
     ExportFitSkeleton, ExportSkinWeights, OrientSimpleFitChain,
@@ -384,6 +385,18 @@ class MayaPanelController:
             namespace, controls, mirror)
         result = SetControlOrientationWorld(host).apply(
             resolved, curve_unaffected, mirror)
+        return len(result.verified)
+
+    def control_orient_world_match(self, namespace: str,
+                                   controls: tuple[str, ...], primary: str,
+                                   secondary: str, world_up: str,
+                                   curve_unaffected: bool = False,
+                                   mirror: bool = False) -> int:
+        host, resolved = self._control_orient_targets(
+            namespace, controls, mirror)
+        result = SetControlOrientationWorldMatch(host).apply(
+            resolved, primary, secondary, world_up,
+            curve_unaffected, mirror)
         return len(result.verified)
 
     def _control_orient_targets(self, namespace, controls, mirror):

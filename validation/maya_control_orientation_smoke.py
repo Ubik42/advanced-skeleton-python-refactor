@@ -43,7 +43,8 @@ def main(report: Path) -> int:
             ResolveBodyCharacter,
         )
         from adv_py.core import (plan_control_orientation_axis,
-                                 plan_control_orientation_world)
+                                 plan_control_orientation_world,
+                                 plan_control_orientation_world_match)
         from adv_py.product.maya_panel_controller import MayaPanelController
 
         report.parent.mkdir(parents=True, exist_ok=True)
@@ -159,6 +160,31 @@ def main(report: Path) -> int:
             world_reopen = host.capture_control_orientations((control,))[0]
             world_reopen_body = _world_matrices(cmds, body_paths)
             world_reopen_registry = resolver.execute(name)
+
+        match_before = host.capture_control_orientations((control,))[0]
+        match_targets = host.capture_control_orientation_child_targets((control,))
+        match_expected = plan_control_orientation_world_match(
+            (match_before,), match_targets, "X", "Y", "Y", True)
+        match_body_before = _world_matrices(cmds, body_paths)
+        match_children_before = _world_matrices(cmds, children)
+        match_count = controller.control_orient_world_match(
+            ":", (control,), "X", "Y", "Y", True, False)
+        match_after = host.capture_control_orientations((control,))[0]
+        match_body_after = _world_matrices(cmds, body_paths)
+        match_children_after = _world_matrices(cmds, children)
+        cmds.undo()
+        match_undo = host.capture_control_orientations((control,))[0]
+        cmds.redo()
+        match_redo = host.capture_control_orientations((control,))[0]
+        with tempfile.TemporaryDirectory(
+                prefix="adv-py-world-match-",
+                dir=report.parent.resolve()) as folder:
+            match_scene = Path(folder) / "match.ma"
+            cmds.file(rename=str(match_scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(match_scene), open=True, force=True)
+            match_reopen = host.capture_control_orientations((control,))[0]
 
         all_controls = tuple(state.control for state in
             host.capture_control_curves(candidates, strict=False))
@@ -696,6 +722,18 @@ def main(report: Path) -> int:
                 and all(_close(a, b) for a, b in zip(
                     world_body_before, world_reopen_body))
                 and world_reopen_registry == registration,
+            "world_match_aims_at_child": match_count == 1
+                and _close(match_after.world_matrix,
+                           match_expected.changes[0].after.world_matrix)
+                and not match_after.mirrored_behavior,
+            "world_match_preserves_body_and_children": all(
+                _close(a, b) for a, b in zip(
+                    match_body_before, match_body_after))
+                and all(_close(a, b) for a, b in zip(
+                    match_children_before, match_children_after)),
+            "world_match_undo_redo_reopen": match_undo == match_before
+                and match_redo == match_after
+                and match_reopen == match_after,
             "custom_all_controls_detach": len(proxies) == len(all_controls)
                 and len(detached) == len(all_controls) and session_exists
                 and hidden_original,

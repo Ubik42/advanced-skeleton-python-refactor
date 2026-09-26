@@ -2,11 +2,13 @@ import unittest
 from contextlib import contextmanager
 
 from adv_py.application import (SetControlOrientationAxis,
-                                SetControlOrientationWorld)
+                                SetControlOrientationWorld,
+                                SetControlOrientationWorldMatch)
 from adv_py.core import (
     ControlAxis, ControlOrientationState, ControlOrientationValidationError,
     CustomOrientationPreview, plan_control_orientation_axis,
     plan_control_orientation_world,
+    plan_control_orientation_world_match,
     plan_custom_control_orientations,
 )
 
@@ -23,6 +25,9 @@ class Host:
 
     def capture_control_orientations(self, controls):
         return (self.state,)
+
+    def capture_control_orientation_child_targets(self, controls):
+        return (("|Control", (3., 0., 0.)),)
 
     @contextmanager
     def transaction(self, label):
@@ -146,6 +151,30 @@ class ControlOrientationTests(unittest.TestCase):
                           0., 0., 1., 0., 0., 0., 0., 1.))
         result = SetControlOrientationWorld(host).apply(
             ("|Control",), True)
+        self.assertEqual(result.verified[0].world_matrix, IDENTITY)
+        self.assertEqual(len(host.transactions), 1)
+
+    def test_world_match_aims_at_child_with_world_up(self):
+        state = ControlOrientationState("|Control", IDENTITY)
+        plan = plan_control_orientation_world_match(
+            (state,), (("|Control", (0., 0., 3.)),),
+            "X", "Y", "Y", True)
+        matrix = plan.changes[0].after.world_matrix
+        self.assertEqual(matrix[:12], (
+            0., 0., 1., 0., 0., 1., 0., 0.,
+            -1., 0., 0., 0.))
+        self.assertFalse(plan.mirrored_behavior)
+
+    def test_world_match_rejects_parallel_up_and_aim(self):
+        with self.assertRaises(ControlOrientationValidationError):
+            plan_control_orientation_world_match(
+                (ControlOrientationState("|Control", IDENTITY),),
+                (("|Control", (0., 3., 0.)),), "X", "Y", "Y")
+
+    def test_world_match_uses_one_verified_transaction(self):
+        host = Host()
+        result = SetControlOrientationWorldMatch(host).apply(
+            ("|Control",), "X", "Y", "Y", True)
         self.assertEqual(result.verified[0].world_matrix, IDENTITY)
         self.assertEqual(len(host.transactions), 1)
 

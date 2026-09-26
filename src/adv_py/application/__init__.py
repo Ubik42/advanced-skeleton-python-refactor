@@ -366,6 +366,7 @@ from .control_orientation import (
     ControlOrientationResult,
     SetControlOrientationAxis,
     SetControlOrientationWorld,
+    SetControlOrientationWorldMatch,
     DetachCustomControlOrientations,
     AttachCustomControlOrientations,
 )
@@ -374,6 +375,7 @@ __all__ = [
     "ControlOrientationHost",
     "ControlOrientationResult",
     "SetControlOrientationAxis",
+    "SetControlOrientationWorldMatch",
     "DetachCustomControlOrientations",
     "AttachCustomControlOrientations",
     "AutoScaleControlCurves",

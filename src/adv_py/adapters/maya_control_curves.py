@@ -196,6 +196,42 @@ class MayaControlCurveMixin:
             resolved.add(control)
         return tuple(result)
 
+    def capture_control_orientation_child_targets(self, controls):
+        """Resolve an FK control's driven joint and its single direct child."""
+        from adv_py.adapters.maya_control_orient_behavior import (
+            _DESTINATIONS, _existing_node, _rotation_destinations)
+
+        c = self._cmds
+        result = []
+        for requested in controls:
+            control, _ = self._control_curve_shapes(requested, strict=True)
+            node = _existing_node(c, control)
+            destinations = (tuple(json.loads(c.getAttr(node + "." + _DESTINATIONS)))
+                            if node else _rotation_destinations(c, control))
+            constraints = tuple(dict.fromkeys(
+                destination.split(".", 1)[0] for destination in destinations))
+            if len(constraints) != 1:
+                raise ControlOrientationValidationError(
+                    f"World Match 需要唯一的 FK 朝向约束：{control}")
+            driven = c.listConnections(
+                constraints[0] + ".constraintRotateX", source=False,
+                destination=True, plugs=True, skipConversionNodes=True) or []
+            joints = tuple(dict.fromkeys(
+                (c.ls(plug.split(".", 1)[0], long=True) or [None])[0]
+                for plug in driven if plug.endswith(".rotateX")))
+            if len(joints) != 1 or c.nodeType(joints[0]) != "joint":
+                raise ControlOrientationValidationError(
+                    f"World Match 无法确定约束驱动的关节：{control}")
+            children = c.listRelatives(
+                joints[0], children=True, fullPath=True, type="joint") or []
+            if len(children) != 1:
+                raise ControlOrientationValidationError(
+                    f"World Match 需要唯一的直接子关节：{joints[0]}")
+            position = c.xform(children[0], query=True,
+                               worldSpace=True, translation=True)
+            result.append((control, tuple(float(value) for value in position)))
+        return tuple(result)
+
     def apply_control_orientation(self, state: ControlOrientationState) -> None:
         from math import degrees
         from maya.api import OpenMaya as om
