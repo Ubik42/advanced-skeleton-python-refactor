@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -408,6 +409,51 @@ class FakeBodyHandPoseDocumentHost(FakeBodyHandFkHost):
 
 
 class BodyHandControlTests(unittest.TestCase):
+    def test_original_finger_names_and_cup_parent_build_thirty_controls(self):
+        _, body = _hand_scene()
+
+        def original_path(path):
+            if path is None:
+                return None
+            parts = []
+            for part in path.split("|"):
+                if not part:
+                    continue
+                match = re.fullmatch(
+                    r"(Thumb|Index|Middle|Ring|Pinky)(1|2|3|End)_([RL])",
+                    part,
+                )
+                if match:
+                    digit, segment, side = match.groups()
+                    if digit in ("Ring", "Pinky") and segment == "1":
+                        parts.append(f"Cup_{side}")
+                    part = f"{digit}Finger{4 if segment == 'End' else segment}_{side}"
+                parts.append(part)
+            return "|" + "|".join(parts)
+
+        joints = []
+        for state in body.joints:
+            path = original_path(state.path)
+            name = path.rsplit("|", 1)[-1]
+            parent = path.rsplit("|", 1)[0] or None
+            joints.append(replace(state, path=path, name=name,
+                                  parent_path=parent))
+            if state.name in ("Wrist_R", "Wrist_L"):
+                side = state.name[-1]
+                cup = f"{path}|Cup_{side}"
+                joints.append(replace(state, path=cup, name=f"Cup_{side}",
+                                      parent_path=path))
+        original = replace(body, joints=tuple(joints))
+        plan = plan_body_hand_fk_controls(original)
+        self.assertEqual(len(plan.controls), 30)
+        self.assertTrue(any(
+            spec.driven_joint.endswith("|Cup_R|RingFinger1_R")
+            for spec in plan.controls))
+        without_cup = replace(original, joints=tuple(
+            state for state in original.joints if state.name != "Cup_R"))
+        with self.assertRaisesRegex(ValueError, "Cup_R"):
+            plan_body_hand_fk_controls(without_cup)
+
     def test_plans_two_wrist_roots_and_thirty_hierarchical_controls(self):
         _, body = _hand_scene()
         plan = plan_body_hand_fk_controls(body, radius=0.3)

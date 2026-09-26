@@ -36,6 +36,15 @@ def body_hand_source_joint_names() -> tuple[str, ...]:
     )
 
 
+def advanced_skeleton_hand_source_joint_names() -> tuple[str, ...]:
+    """Names used by the public AdvancedSkeleton 6.925 sample Fit hand."""
+    return tuple(
+        f"{digit.value}Finger{index}"
+        for digit in BODY_HAND_DIGITS
+        for index in range(1, 5)
+    )
+
+
 def synthetic_body_with_hand_source_fit_template(
     up_axis: FitUpAxis,
     *,

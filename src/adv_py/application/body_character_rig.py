@@ -10,7 +10,9 @@ from adv_py.core.body_character_global import (
     audit_body_character_global,
     plan_body_character_global,
 )
-from adv_py.core.body_hand_fit import body_hand_source_joint_names
+from adv_py.core.body_hand_fit import (
+    advanced_skeleton_hand_source_joint_names, body_hand_source_joint_names,
+)
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -177,17 +179,28 @@ class BuildBodyCharacterRig:
             for source_name in body_hand_source_joint_names()
             for suffix in ("R", "L")
         }
+        original_hand_names = {
+            f"{source_name}_{suffix}"
+            for source_name in advanced_skeleton_hand_source_joint_names()
+            for suffix in ("R", "L")
+        }
         body_names = {joint.name for joint in arm.safety.body.joints}
         present_hand_names = body_names & expected_hand_names
+        present_original_names = body_names & original_hand_names
         hand = None
         hand_schema_blockers = ()
-        if present_hand_names == expected_hand_names:
+        if ((present_hand_names == expected_hand_names and not present_original_names)
+                or (present_original_names == original_hand_names
+                    and not present_hand_names)):
             hand = self._hand.plan_from_safety(
                 arm.safety,
                 control_radius=hand_control_radius,
             )
-        elif present_hand_names:
-            missing = sorted(expected_hand_names - present_hand_names)
+        elif present_hand_names or present_original_names:
+            expected = (original_hand_names if present_original_names
+                        else expected_hand_names)
+            present = present_hand_names | present_original_names
+            missing = sorted(expected - present)
             hand_schema_blockers = (
                 "Body 包含不完整的双侧五指集合，Hand FK 不会静默跳过；"
                 f"缺少 {len(missing)} 个关节：" + "、".join(missing),

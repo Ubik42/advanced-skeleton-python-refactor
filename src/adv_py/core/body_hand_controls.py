@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 
-from .body_hand_fit import BODY_HAND_DIGITS, BODY_HAND_SEGMENTS, BodyHandDigit
+from .body_hand_fit import (
+    BODY_HAND_DIGITS, BODY_HAND_SEGMENTS, BodyHandDigit,
+    advanced_skeleton_hand_source_joint_names, body_hand_source_joint_names,
+)
 from .body_limb_controls import (
     BodyLimbControlIssue,
     BodyLimbFkControlPlan,
@@ -221,6 +224,19 @@ def plan_body_hand_fk_controls(
     by_name = {joint.name: joint for joint in body.joints}
     if len(by_name) != len(body.joints):
         raise BodyHandControlValidationError("Body joint 名称不唯一")
+    canonical = {f"{name}_{side}" for name in body_hand_source_joint_names()
+                 for side in ("R", "L")}
+    original = {f"{name}_{side}"
+                for name in advanced_skeleton_hand_source_joint_names()
+                for side in ("R", "L")}
+    available = set(by_name)
+    if canonical <= available and not original & available:
+        original_names = False
+    elif original <= available and not canonical & available:
+        original_names = True
+    else:
+        raise BodyHandControlValidationError(
+            "Body 五指关节必须完整使用模板名称或原版 Finger1～Finger4 名称")
 
     roots = []
     controls = []
@@ -246,11 +262,20 @@ def plan_body_hand_fk_controls(
         for digit in BODY_HAND_DIGITS:
             states = []
             previous_path = wrist.path
-            for segment in BODY_HAND_SEGMENTS:
-                state = by_name.get(f"{digit.value}{segment}_{suffix}")
+            if original_names and digit in (BodyHandDigit.RING, BodyHandDigit.PINKY):
+                cup = by_name.get(f"Cup_{suffix}")
+                if (cup is None or cup.side is not side
+                        or cup.parent_path != wrist.path):
+                    raise BodyHandControlValidationError(
+                        f"原版 Hand 缺少 Wrist_{suffix} 下的 Cup_{suffix}")
+                previous_path = cup.path
+            for index, segment in enumerate(BODY_HAND_SEGMENTS, start=1):
+                name = (f"{digit.value}Finger{index}" if original_names
+                        else f"{digit.value}{segment}")
+                state = by_name.get(f"{name}_{suffix}")
                 if state is None:
                     raise BodyHandControlValidationError(
-                        f"Body 缺少 {digit.value}{segment}_{suffix}"
+                        f"Body 缺少 {name}_{suffix}"
                     )
                 if state.side is not side or state.parent_path != previous_path:
                     raise BodyHandControlValidationError(

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+import tempfile
 
 
 def main(scene: Path, report: Path, isolated_build: bool = False) -> int:
@@ -111,6 +112,49 @@ def main(scene: Path, report: Path, isolated_build: bool = False) -> int:
                                     for node in host.capture_fit_hierarchy(
                                         fit[0]).joints},
                             }
+                            if rig.hand is not None:
+                                control = next(item for item in
+                                    rig.hand.snapshot.controls
+                                    if item.control_path.rsplit("|", 1)[-1]
+                                    == "AdvPy_Index1FK_R")
+                                joint = control.driven_joint
+                                before = tuple(cmds.xform(
+                                    joint, query=True, worldSpace=True,
+                                    matrix=True))
+                                cmds.setAttr(f"{control.control_path}.rotateX", 15.0)
+                                moved = tuple(cmds.xform(
+                                    joint, query=True, worldSpace=True,
+                                    matrix=True))
+                                cmds.undo()
+                                undone = tuple(cmds.xform(
+                                    joint, query=True, worldSpace=True,
+                                    matrix=True))
+                                cmds.redo()
+                                redone = tuple(cmds.xform(
+                                    joint, query=True, worldSpace=True,
+                                    matrix=True))
+                                def near(left, right):
+                                    return max(abs(a - b) for a, b in zip(
+                                        left, right)) < 1e-4
+                                with tempfile.TemporaryDirectory() as temporary:
+                                    output = Path(temporary) / "sam-fit-built.mb"
+                                    cmds.file(rename=str(output))
+                                    cmds.file(save=True, type="mayaBinary")
+                                    cmds.file(str(output), open=True, force=True,
+                                              executeScriptNodes=False)
+                                    reopened = tuple(cmds.xform(
+                                        joint, query=True, worldSpace=True,
+                                        matrix=True))
+                                    cmds.file(new=True, force=True)
+                                result["isolated_build"]["hand_drive"] = {
+                                    "joint": joint.rsplit("|", 1)[-1],
+                                    "control_count": len(
+                                        rig.hand.snapshot.controls),
+                                    "changed": not near(before, moved),
+                                    "undo_restored": near(before, undone),
+                                    "redo_restored": near(moved, redone),
+                                    "reopen_restored": near(moved, reopened),
+                                }
                     except Exception as exc:
                         result["isolated_build"]["character_rig"] = {
                             "status": "failed",
@@ -122,6 +166,19 @@ def main(scene: Path, report: Path, isolated_build: bool = False) -> int:
         report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n",
                           encoding="utf-8")
+        if isolated_build:
+            built = result.get("isolated_build", {})
+            drive = built.get("hand_drive", {})
+            if (built.get("status") != "passed"
+                    or built.get("body_count") != result.get(
+                        "plan", {}).get("instance_count")
+                    or not built.get("fit_unchanged")
+                    or built.get("character_rig", {}).get("status") != "passed"
+                    or drive.get("control_count") != 30
+                    or not all(drive.get(key) for key in (
+                        "changed", "undo_restored", "redo_restored",
+                        "reopen_restored"))):
+                return 1
         return 0
     finally:
         maya.standalone.uninitialize()
