@@ -50,6 +50,26 @@ def _scaled(before, after, factor):
     )
 
 
+def _same_color_state(left, right):
+    return (
+        left.control == right.control
+        and left.semantic_keys == right.semantic_keys
+        and len(left.shapes) == len(right.shapes)
+        and all(
+            old.path == new.path
+            and old.override_enabled == new.override_enabled
+            and old.rgb_enabled == new.rgb_enabled
+            and _close(old.color, new.color)
+            for old, new in zip(left.shapes, right.shapes)
+        )
+    )
+
+
+def _same_color_states(left, right):
+    return len(left) == len(right) and all(
+        _same_color_state(a, b) for a, b in zip(left, right))
+
+
 def main(report: Path) -> int:
     import maya.standalone
     maya.standalone.initialize(name="python")
@@ -59,6 +79,7 @@ def main(report: Path) -> int:
         from adv_py.application import (
             BuildSyntheticBodySourceFit, CreateFitSkeleton, ResolveBodyCharacter,
         )
+        from adv_py.core import control_curve_side, plan_control_curve_colors
         from adv_py.product.maya_panel_controller import MayaPanelController
 
         report.parent.mkdir(parents=True, exist_ok=True)
@@ -76,6 +97,11 @@ def main(report: Path) -> int:
         registration = resolver.execute(character_name)
         candidates = tuple(dict.fromkeys(
             channel.node for channel in registration.channels))
+        semantic_map = {}
+        for channel in registration.channels:
+            semantic_map.setdefault(channel.node, []).append(channel.key)
+        semantics = tuple((control, tuple(keys))
+                          for control, keys in semantic_map.items())
         before_all = host.capture_control_curves(candidates, strict=False)
         target = before_all[0].control
         marker = cmds.createNode("transform", name="CurveScaleSelection",
@@ -107,6 +133,43 @@ def main(report: Path) -> int:
                 before_all, host.capture_control_curves(candidates, strict=False)))
         cmds.redo()
 
+        before_colors = host.capture_control_curve_colors(
+            candidates, semantics, strict=False)
+        right = next(state for state in before_colors
+                     if control_curve_side(state) == "right")
+        expected_right = plan_control_curve_colors((right,), "side").after[0]
+        explicit_color_count = controller.control_curves_color(
+            ":", (right.control,), "side")
+        explicit_color_after = host.capture_control_curve_colors(
+            (right.control,), semantics, strict=True)[0]
+        explicit_color_applied = _same_color_state(
+            explicit_color_after, expected_right)
+        color_selection_preserved = tuple(
+            cmds.ls(selection=True, long=True) or []) == selection_before
+        cmds.undo()
+        explicit_color_undo = _same_color_state(
+            host.capture_control_curve_colors(
+                (right.control,), semantics, strict=True)[0], right)
+        cmds.redo()
+        explicit_color_redo = _same_color_state(
+            host.capture_control_curve_colors(
+                (right.control,), semantics, strict=True)[0], expected_right)
+        cmds.undo()
+
+        expected_all_colors = plan_control_curve_colors(
+            before_colors, "type").after
+        all_color_count = controller.control_curves_color(":", (), "type")
+        all_colors_after = host.capture_control_curve_colors(
+            candidates, semantics, strict=False)
+        all_colors_applied = (
+            all_color_count == len(before_colors)
+            and _same_color_states(all_colors_after, expected_all_colors))
+        cmds.undo()
+        all_colors_undo = _same_color_states(
+            host.capture_control_curve_colors(
+                candidates, semantics, strict=False), before_colors)
+        cmds.redo()
+
         with tempfile.TemporaryDirectory(prefix="adv-py-curves-",
                                          dir=report.parent.resolve()) as folder:
             scene = Path(folder) / "scaled.ma"
@@ -118,6 +181,10 @@ def main(report: Path) -> int:
             reopen_preserved = all(
                 _scaled(old, new, 1.1)
                 for old, new in zip(before_all, reopened))
+            reopened_colors = host.capture_control_curve_colors(
+                candidates, semantics, strict=False)
+            color_reopen_preserved = _same_color_states(
+                reopened_colors, expected_all_colors)
 
         checks = {
             "curves_discovered": len(before_all) > 1,
@@ -127,6 +194,14 @@ def main(report: Path) -> int:
             "registered_all_product_route": all_scaled,
             "registered_all_single_undo": all_undo,
             "save_reopen_preserved": reopen_preserved,
+            "explicit_side_color_route": explicit_color_count == 1
+                and explicit_color_applied,
+            "color_selection_preserved": color_selection_preserved,
+            "explicit_color_single_undo_redo": explicit_color_undo
+                and explicit_color_redo,
+            "registered_all_type_color_route": all_colors_applied,
+            "registered_all_color_single_undo": all_colors_undo,
+            "color_save_reopen_preserved": color_reopen_preserved,
         }
         payload = {
             **checks,

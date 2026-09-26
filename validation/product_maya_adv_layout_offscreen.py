@@ -42,6 +42,11 @@ def main() -> None:
     panel.operation_buttons[("Face", "Build", "构建面部控制")].click()
     assert panel.detail.tabs.currentIndex() == 3
     assert panel.detail.windowTitle().endswith("Face / Build")
+    panel.section_buttons[("Body", "Control Curves")].click()
+    panel.operation_buttons[("Body", "Control Curves",
+                             "设置控制曲线颜色")].click()
+    assert panel.detail.tabs.currentIndex() == 0
+    assert panel.detail.windowTitle().endswith("Body / Control Curves")
     panel.section_buttons[("Pose", None)].click()
     panel.section_buttons[("Pose", "Driving Systems")].click()
     panel.operation_buttons[("Pose", "Driving Systems", "转换脊柱模式")].click()

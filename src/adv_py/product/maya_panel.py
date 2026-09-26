@@ -347,17 +347,22 @@ def create_panel(controller: MayaPanelController | None = None):
 
             self.control_curve_targets = QtWidgets.QPlainTextEdit()
             self.control_curve_targets.setPlaceholderText(
-                "每行一个控制器路径；留空时缩放当前角色的全部已登记控制曲线")
+                "每行一个控制器路径；留空时处理当前角色的全部已登记控制曲线")
             self.control_curve_targets.setMaximumHeight(76)
             self.control_curve_factor = QtWidgets.QDoubleSpinBox()
             self.control_curve_factor.setRange(.01, 100.)
             self.control_curve_factor.setDecimals(3)
             self.control_curve_factor.setSingleStep(.1)
             self.control_curve_factor.setValue(1.1)
+            self.control_curve_color_mode = QtWidgets.QComboBox()
+            self.control_curve_color_mode.addItem("按左右侧", "side")
+            self.control_curve_color_mode.addItem("按控制类型", "type")
             group, form = self._group("06 · Control Curves", [
                 ("目标控制器", self.control_curve_targets),
-                ("缩放倍率", self.control_curve_factor)])
+                ("缩放倍率", self.control_curve_factor),
+                ("颜色规则", self.control_curve_color_mode)])
             form.addRow(self._button("缩放控制曲线", self._scale_control_curves))
+            form.addRow(self._button("设置控制曲线颜色", self._color_control_curves))
             stack.addWidget(group)
             self._spine_replace_mode_changed()
             stack.addStretch(1)
@@ -935,6 +940,15 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.control_curves_scale(
                 self._namespace(), controls, self.control_curve_factor.value())
             return f"已缩放 {count} 个控制曲线"
+
+        def _color_control_curves(self):
+            controls = tuple(line.strip() for line in
+                self.control_curve_targets.toPlainText().splitlines()
+                if line.strip())
+            count = self.controller.control_curves_color(
+                self._namespace(), controls,
+                self.control_curve_color_mode.currentData())
+            return f"已为 {count} 个控制曲线设置颜色"
 
         def _bind_skin(self):
             influences = tuple(line.strip() for line in

@@ -67,6 +67,10 @@ class FakeController:
         self.calls.append(("control_curves_scale", namespace, controls, factor))
         return len(controls) if controls else 42
 
+    def control_curves_color(self, namespace, controls, mode):
+        self.calls.append(("control_curves_color", namespace, controls, mode))
+        return len(controls) if controls else 42
+
     def skin_surface_source_export(self, namespace, skin, mesh, destination):
         self.calls.append(("skin_surface_source_export", namespace, skin, mesh,
                            destination.name))
@@ -247,6 +251,8 @@ def main(report: Path) -> int:
     panel.control_curve_targets.setPlainText("|hero:Global")
     panel.control_curve_factor.setValue(1.25)
     buttons["缩放控制曲线"].click()
+    panel.control_curve_color_mode.setCurrentIndex(1)
+    buttons["设置控制曲线颜色"].click()
     app.processEvents()
     fit_page = panel.tabs.currentWidget()
     fit_page.verticalScrollBar().setValue(fit_page.verticalScrollBar().maximum())
@@ -325,6 +331,9 @@ def main(report: Path) -> int:
              {"child_selections": (("Spine1", "Chest"),), "world": True}))),
         "control_curve_scale_dispatches":
             ("control_curves_scale", "hero", ("|hero:Global",), 1.25)
+            in controller.calls,
+        "control_curve_color_dispatches":
+            ("control_curves_color", "hero", ("|hero:Global",), "type")
             in controller.calls,
         "role_selection_dispatches_application_action":
             ("body_build", "hero", "FitSkeleton", None, False)

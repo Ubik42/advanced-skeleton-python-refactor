@@ -16,7 +16,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     EnableBodyCharacterSplineAnimation, EnableBodyCharacterSpaceAnimation,
     BakeBodyCharacterLimbMode, BakeBodyCharacterSpineMode,
     SwitchBodyCharacterSpace,
-    ScaleControlCurves,
+    ColorControlCurves, ScaleControlCurves,
     CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
     ExportFitSkeleton, ExportSkinWeights, OrientSimpleFitChain,
     OrientWorldFitJoints,
@@ -259,6 +259,27 @@ class MayaPanelController:
             controls = tuple(dict.fromkeys(
                 channel.node for channel in registration.channels))
         result = ScaleControlCurves(host).apply(controls, factor, strict=strict)
+        return len(result.verified)
+
+    def control_curves_color(self, namespace: str, controls: tuple[str, ...],
+                             mode: str) -> int:
+        host = self._host(namespace)
+        resolver = ResolveBodyCharacter(host)
+        names = resolver.discover()
+        registration = resolver.execute(names[0]) if len(names) == 1 else None
+        semantic_map: dict[str, list[str]] = {}
+        if registration:
+            for channel in registration.channels:
+                semantic_map.setdefault(channel.node, []).append(channel.key)
+        strict = bool(controls)
+        if not controls:
+            if registration is None:
+                raise ValueError("当前命名空间必须恰好包含一个已登记角色")
+            controls = tuple(semantic_map)
+        semantics = tuple(
+            (control, tuple(semantic_map.get(control, ()))) for control in controls)
+        result = ColorControlCurves(host).apply(
+            controls, mode, semantics, strict=strict)
         return len(result.verified)
 
     def skin_bind(self, namespace: str, mesh: str,

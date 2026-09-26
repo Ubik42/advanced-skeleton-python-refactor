@@ -349,12 +349,16 @@ from .upper_body_fit import (
 )
 
 from .control_curves import (
+    ColorControlCurves,
+    ControlCurveColorResult,
     ControlCurveHost,
     ControlCurveScaleResult,
     ScaleControlCurves,
 )
 
 __all__ = [
+    "ColorControlCurves",
+    "ControlCurveColorResult",
     "ControlCurveHost",
     "ControlCurveScaleResult",
     "ScaleControlCurves",
