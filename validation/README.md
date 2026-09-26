@@ -390,6 +390,8 @@ $env:PYTHONPATH = 'src'
 
 `maya_original_skin_driver_inventory.py` 以相同的场景和报告路径参数只读清查原 Skin 中未被新 Body 同名覆盖的影响关节，记录父关节、平移／旋转／缩放输入以及约束目标和权重。`sam.mb` 中的 68 个关节全部有驱动连接；18 个分段、40 个体积、10 个手指末段辅助关节分别承载 4,729.15、2,685.66、100 的权重质量。该清查用于设计后续驱动重建，不构成蒙皮迁移验收。
 
+`maya_original_segment_graph.py` 从原版 18 个有权重的 `Part1/Part2` 关节向上读取三层 Maya 节点连接，用于区分四肢矩阵／扭转／体积驱动与脊柱、颈部 FK／IK 约束驱动。`maya_original_mesh_roundtrip.py` 使用内部静态网格导出／导入用例，将原版网格带进 Fit 文档构建的新角色场景，核对逐顶点世界坐标和保存重开。该导入使用 Maya 文件命令，不能单次撤销；原权重尚未迁移，不能当作完整 Skin 工作流。
+
 局部机制定位使用 `maya_body_spine_smoke.py` 与 `maya_body_control_spaces_smoke.py`，输出路径作为第一个参数，`--basic` 切换为 30 关节。两者包含非法状态拒绝和失败回滚；空间脚本另外验证身体 / Global 跟随关系。结果写入已忽略的 `validation/results/`，不提交本机日志。
 
 

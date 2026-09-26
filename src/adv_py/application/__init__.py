@@ -708,3 +708,6 @@ from .skin_weight_surface_transfer import (TransferSkinWeightsBySurface,
 from .character_presets import InspectBodyCharacterPresets, CharacterPresetStatus
 from .registered_body_build import (BuildRegisteredBodyCharacter,
     RegisteredBodyBuildResult)
+
+from .external_mesh_io import (ExportExternalMesh, ImportExternalMesh,
+    ExternalMeshResult)
