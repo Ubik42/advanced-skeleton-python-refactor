@@ -765,6 +765,21 @@ class MayaPanelController:
             deformer_name=deformer_name)
         return len(result.binding.channels)
 
+    def face_eye_selected_mesh(self, namespace: str) -> str:
+        from adv_py.adapters.maya_face_eye import MayaFaceEyeHost
+
+        return MayaFaceEyeHost(
+            namespace=None if namespace == ":" else namespace).selected_eye_mesh()
+
+    def face_eye_build(self, namespace: str, head_joint: str,
+                       right_eye: str, left_eye: str):
+        from adv_py.adapters.maya_face_eye import MayaFaceEyeHost
+        from adv_py.application.face_eye_rig import BuildFaceEyeRig
+
+        return BuildFaceEyeRig(MayaFaceEyeHost(
+            namespace=None if namespace == ":" else namespace)).apply(
+            head_joint, right_eye, left_eye)
+
     def face_asset_export(self, namespace: str, neutral: str, name: str,
                           kind: str, target_mesh: str, destination: Path) -> int:
         target = FaceTarget(name, FaceShapeKind(kind), target_mesh)

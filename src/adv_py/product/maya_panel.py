@@ -746,6 +746,23 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _face_page(self):
             page, stack = self._page()
+            self.face_eye_head = QtWidgets.QLineEdit()
+            self.face_eye_head.setPlaceholderText("|Group|Rig|Head_M")
+            self.face_eye_right = QtWidgets.QLineEdit()
+            self.face_eye_right.setPlaceholderText("|model:RightEye")
+            self.face_eye_left = QtWidgets.QLineEdit()
+            self.face_eye_left.setPlaceholderText("|model:LeftEye")
+            group, form = self._group("00 · 眼球输入与控制", [
+                ("Head 关节", self.face_eye_head),
+                ("右眼网格", self.face_eye_right),
+                ("左眼网格", self.face_eye_left)])
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("记录所选右眼", self._face_record_right_eye))
+            row.addWidget(self._button("记录所选左眼", self._face_record_left_eye))
+            form.addRow(row)
+            form.addRow(self._button("建立双眼控制与蒙皮",
+                                     self._face_build_eyes, primary=True))
+            stack.addWidget(group)
             self.face_neutral = QtWidgets.QLineEdit()
             self.face_neutral.setPlaceholderText("|FaceNeutral")
             self.face_target = QtWidgets.QLineEdit()
@@ -1453,6 +1470,24 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.face_control_name.text().strip(),
                 self.face_deformer_name.text().strip())
             return f"面部控制已构建：{channels} 个通道"
+
+        def _face_record_right_eye(self):
+            path = self.controller.face_eye_selected_mesh(self._namespace())
+            self.face_eye_right.setText(path)
+            return "已记录右眼网格：" + path
+
+        def _face_record_left_eye(self):
+            path = self.controller.face_eye_selected_mesh(self._namespace())
+            self.face_eye_left.setText(path)
+            return "已记录左眼网格：" + path
+
+        def _face_build_eyes(self):
+            result = self.controller.face_eye_build(self._namespace(),
+                self.face_eye_head.text().strip(),
+                self.face_eye_right.text().strip(),
+                self.face_eye_left.text().strip())
+            return ("双眼控制已构建：左右眼各一套 Skin；"
+                    "整体与独立眼球控制可用")
 
         def _face_performance_apply(self):
             frames = self.controller.face_performance_apply(self._namespace(),
