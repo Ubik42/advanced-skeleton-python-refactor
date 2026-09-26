@@ -436,6 +436,8 @@ $env:PYTHONPATH = 'src'
 
 `maya_original_skin_121_smoke.py` 依次接收 `sam.mb`、体积／角度／轴向导向 JSON 和报告路径。在同一场景复制原版网格并去除复制件历史，重建 121 个影响关节，按顶点和影响关节名迁移原 Skin 的全部权重。`TransferDenseSkinWeights` 使用可撤销的 Maya 命令批量写入；报告检查权重、静止顶点、UV／材质连接、整条迁移链的一次撤销／重做、保存重开，以及 Root、Neck、Spine、双髋、右肩和右肘的 16 组单轴及组合动作的顶点和关节矩阵差。运行后可用 `maya_original_skin_121_reopen.py` 在独立 Maya 进程中读取报告和生成的 `.mb`，复查 18,151 顶点、121 影响关节、权重哈希、UV、材质连接和 74 个 Body 关节登记。当前 16 组动作的逐顶点最大差为 `1.91e-6 cm`；轴向 IK／缩放、动画曲线、命名空间、引用与完整界面迁移仍待验。
 
+`maya_original_skin_migration_smoke.py` 使用同样的场景和三份导向，调用可复用的 `MayaOriginalSkinMigration`，验证导向来源不一致时预检拒绝、网格复制后与 Rig 构建后的整链故障回滚、迁移后的关节数和静止顶点、单次撤销／重做及保存重开。当前服务仍要求预先生成导向 JSON，尚无面板入口。
+
 局部机制定位使用 `maya_body_spine_smoke.py` 与 `maya_body_control_spaces_smoke.py`，输出路径作为第一个参数，`--basic` 切换为 30 关节。两者包含非法状态拒绝和失败回滚；空间脚本另外验证身体 / Global 跟随关系。结果写入已忽略的 `validation/results/`，不提交本机日志。
 
 
