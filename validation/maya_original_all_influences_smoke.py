@@ -80,6 +80,11 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
         volume_names = {row["name"] for row in volume["joints"]}
         volume_errors = {name: errors[name] for name in volume_names
                          if name in errors}
+        axial_names = ("RootPart1_M", "RootPart2_M", "Spine1Part1_M",
+                       "Spine1Part2_M", "NeckPart1_M", "NeckPart2_M")
+        axial_differences = {name: [a - b for a, b in zip(
+            original[name], matrix(cmds, matches[name][0]))]
+            for name in axial_names}
         data = {"source": scene.name, "source_influence_count": len(names),
                 "matched_influence_count": len(errors),
                 "missing_or_ambiguous": {name: paths for name, paths in
@@ -90,6 +95,7 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
                 "volume_joint_count": len(volume_errors),
                 "maximum_volume_rest_matrix_error": (
                     max(volume_errors.values()) if volume_errors else None),
+                "axial_rest_matrix_differences": axial_differences,
                 "registered_body_count": len(
                     ResolveBodyCharacter(MayaBodyBuildHost()).execute().body)}
         report.parent.mkdir(parents=True, exist_ok=True)
@@ -97,6 +103,8 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
         if (data["matched_influence_count"] != 121
                 or data["volume_joint_count"] != 40
                 or data["maximum_volume_rest_matrix_error"] > 1e-4
+                or max(abs(value) for row in axial_differences.values()
+                       for value in row[12:15]) > 1e-4
                 or data["registered_body_count"] != 74):
             raise AssertionError(data)
         return 0
