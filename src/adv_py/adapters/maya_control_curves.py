@@ -40,6 +40,9 @@ class MayaControlCurveMixin:
                     control, query=True, worldSpace=True, matrix=True)),
                 axis("primaryAxis", ControlAxis.X),
                 axis("secondaryAxis", ControlAxis.Y),
+                bool(self._cmds.getAttr(control + ".curveUnafeccted"))
+                if self._cmds.attributeQuery(
+                    "curveUnafeccted", node=control, exists=True) else False,
             ))
             resolved.add(control)
         return tuple(result)
@@ -88,10 +91,50 @@ class MayaControlCurveMixin:
                                    attributeType="enum", enumName=enum_names)
             self._cmds.setAttr(control + "." + attribute,
                                _CONTROL_AXES.index(value))
+        if not self._cmds.attributeQuery(
+                "curveUnafeccted", node=control, exists=True):
+            self._cmds.addAttr(control, longName="curveUnafeccted",
+                               attributeType="bool")
+        self._cmds.setAttr(control + ".curveUnafeccted",
+                           state.curve_unaffected)
         if original_selection:
             self._cmds.select(original_selection, replace=True)
         else:
             self._cmds.select(clear=True)
+        self._transaction_changed = True
+
+    def capture_control_curve_world_points(self, controls):
+        result = []
+        for control in controls:
+            _, shapes = self._control_curve_shapes(control, strict=True)
+            for shape in shapes:
+                values = self._cmds.xform(
+                    shape + ".cv[*]", query=True, worldSpace=True,
+                    translation=True) or []
+                if len(values) % 3:
+                    raise ControlOrientationValidationError(
+                        f"控制曲线 CV 读取不完整：{shape}")
+                result.append((shape, tuple(
+                    (float(values[index]), float(values[index + 1]),
+                     float(values[index + 2]))
+                    for index in range(0, len(values), 3))))
+        return tuple(result)
+
+    def restore_control_curve_world_points(self, shapes):
+        self._require_transaction()
+        for shape, points in shapes:
+            if not self._cmds.objExists(shape):
+                raise ControlOrientationValidationError(
+                    f"控制曲线形状已失效：{shape}")
+            values = self._cmds.xform(
+                shape + ".cv[*]", query=True, objectSpace=True,
+                translation=True) or []
+            if len(values) != len(points) * 3:
+                raise ControlOrientationValidationError(
+                    f"控制曲线 CV 数量已变化：{shape}")
+            for index, point in enumerate(points):
+                self._cmds.xform(f"{shape}.cv[{index}]", worldSpace=True,
+                                 translation=point)
         self._transaction_changed = True
 
     def _control_curve_shapes(self, requested: str, *, strict: bool):

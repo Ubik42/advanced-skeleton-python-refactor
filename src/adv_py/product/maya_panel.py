@@ -389,10 +389,13 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.control_orient_primary.addItem(axis, axis)
                 self.control_orient_secondary.addItem(axis, axis)
             self.control_orient_secondary.setCurrentIndex(1)
+            self.control_orient_curve_unaffected = QtWidgets.QCheckBox(
+                "改变方向后保持曲线世界形状")
             group, form = self._group("07 · Control Orient", [
                 ("目标控制器", self.control_orient_targets),
                 ("Primary Axis", self.control_orient_primary),
-                ("Secondary Axis", self.control_orient_secondary)])
+                ("Secondary Axis", self.control_orient_secondary),
+                ("Curve Unaffected", self.control_orient_curve_unaffected)])
             form.addRow(self._button("设置控制器局部轴", self._set_control_orient_axis))
             stack.addWidget(group)
             self._spine_replace_mode_changed()
@@ -1014,7 +1017,8 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.control_orient_axis(
                 self._namespace(), controls,
                 self.control_orient_primary.currentData(),
-                self.control_orient_secondary.currentData())
+                self.control_orient_secondary.currentData(),
+                self.control_orient_curve_unaffected.isChecked())
             return f"已设置 {count} 个控制器的局部轴"
 
         def _bind_skin(self):

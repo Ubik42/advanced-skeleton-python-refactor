@@ -25,6 +25,7 @@ class ControlOrientationState:
     world_matrix: tuple[float, ...]
     primary_axis: ControlAxis = ControlAxis.X
     secondary_axis: ControlAxis = ControlAxis.Y
+    curve_unaffected: bool = False
 
     def __post_init__(self) -> None:
         if not self.control or len(self.world_matrix) != 16:
@@ -42,6 +43,7 @@ class ControlOrientationChange:
 class ControlOrientationPlan:
     primary_axis: ControlAxis
     secondary_axis: ControlAxis
+    curve_unaffected: bool
     changes: tuple[ControlOrientationChange, ...]
 
 
@@ -111,15 +113,18 @@ def plan_control_orientation_axis(
     states: tuple[ControlOrientationState, ...],
     primary_axis: ControlAxis | str,
     secondary_axis: ControlAxis | str,
+    curve_unaffected: bool = False,
 ) -> ControlOrientationPlan:
     primary = ControlAxis(primary_axis)
     secondary = ControlAxis(secondary_axis)
     _validate_axis_pair(primary, secondary)
     if not states or len({state.control for state in states}) != len(states):
         raise ControlOrientationValidationError("至少需要一个且不能重复的控制器")
+    if not isinstance(curve_unaffected, bool):
+        raise ControlOrientationValidationError("Curve Unaffected 必须为布尔值")
     changes = tuple(ControlOrientationChange(
         state,
         ControlOrientationState(state.control, _target_matrix(
-            state, primary, secondary), primary, secondary),
+            state, primary, secondary), primary, secondary, curve_unaffected),
     ) for state in states)
-    return ControlOrientationPlan(primary, secondary, changes)
+    return ControlOrientationPlan(primary, secondary, curve_unaffected, changes)

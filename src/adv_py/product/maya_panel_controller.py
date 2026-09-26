@@ -364,7 +364,8 @@ class MayaPanelController:
         return len(result.verified)
 
     def control_orient_axis(self, namespace: str, controls: tuple[str, ...],
-                            primary: str, secondary: str) -> int:
+                            primary: str, secondary: str,
+                            curve_unaffected: bool = False) -> int:
         if not controls:
             raise ValueError("请指定至少一个已登记控制器")
         host = self._host(namespace)
@@ -383,7 +384,8 @@ class MayaPanelController:
                 raise ValueError(f"控制器未登记或名称不唯一：{control}")
             resolved.append(matches[0])
         result = SetControlOrientationAxis(host).apply(
-            tuple(dict.fromkeys(resolved)), primary, secondary)
+            tuple(dict.fromkeys(resolved)), primary, secondary,
+            curve_unaffected)
         return len(result.verified)
 
     def skin_bind(self, namespace: str, mesh: str,

@@ -102,6 +102,29 @@ def main(report: Path) -> int:
             reopened = host.capture_control_orientations((control,))[0]
             reopen_registration = resolver.execute(name)
 
+            curve_preserved_before = _world_points(cmds, control)
+            unaffected_expected = plan_control_orientation_axis(
+                (reopened,), "Y", "Z", True).changes[0].after
+            unaffected_count = controller.control_orient_axis(
+                ":", (control,), "Y", "Z", True)
+            unaffected = host.capture_control_orientations((control,))[0]
+            unaffected_curve = _world_points(cmds, control)
+            unaffected_body = _world_matrices(cmds, body_paths)
+            unaffected_registration = resolver.execute(name)
+            cmds.undo()
+            unaffected_undo = host.capture_control_orientations((control,))[0]
+            unaffected_undo_curve = _world_points(cmds, control)
+            cmds.redo()
+            unaffected_redo = host.capture_control_orientations((control,))[0]
+            unaffected_redo_curve = _world_points(cmds, control)
+            unaffected_scene = Path(folder) / "curve-unaffected.ma"
+            cmds.file(rename=str(unaffected_scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(unaffected_scene), open=True, force=True)
+            unaffected_reopen = host.capture_control_orientations((control,))[0]
+            unaffected_reopen_curve = _world_points(cmds, control)
+
         checks = {
             "explicit_registered_route": count == 1,
             "target_world_axis_applied": _close(
@@ -134,6 +157,28 @@ def main(report: Path) -> int:
                 and reopened.primary_axis.value == "Z"
                 and reopened.secondary_axis.value == "X"
                 and reopen_registration == registration,
+            "curve_unaffected_world_shape": unaffected_count == 1
+                and unaffected.curve_unaffected
+                and _close(unaffected.world_matrix,
+                           unaffected_expected.world_matrix)
+                and _close(curve_preserved_before, unaffected_curve),
+            "curve_unaffected_body_and_registry": all(
+                _close(old, new) for old, new in
+                zip(body_before, unaffected_body))
+                and unaffected_registration == registration,
+            "curve_unaffected_undo_redo": _close(
+                unaffected_undo.world_matrix, reopened.world_matrix)
+                and not unaffected_undo.curve_unaffected
+                and _close(curve_preserved_before, unaffected_undo_curve)
+                and _close(unaffected_redo.world_matrix,
+                           unaffected_expected.world_matrix)
+                and unaffected_redo.curve_unaffected
+                and _close(curve_preserved_before, unaffected_redo_curve),
+            "curve_unaffected_save_reopen": _close(
+                unaffected_reopen.world_matrix,
+                unaffected_expected.world_matrix)
+                and unaffected_reopen.curve_unaffected
+                and _close(curve_preserved_before, unaffected_reopen_curve),
         }
         payload = {
             **checks,

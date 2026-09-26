@@ -16,6 +16,7 @@ class Host:
     def __init__(self):
         self.state = ControlOrientationState("|Control", IDENTITY)
         self.transactions = []
+        self.points = (("|Control|Shape", ((1., 2., 3.),)),)
 
     def capture_control_orientations(self, controls):
         return (self.state,)
@@ -27,6 +28,12 @@ class Host:
 
     def apply_control_orientation(self, state):
         self.state = state
+
+    def capture_control_curve_world_points(self, controls):
+        return self.points
+
+    def restore_control_curve_world_points(self, shapes):
+        self.points = shapes
 
 
 class ControlOrientationTests(unittest.TestCase):
@@ -53,6 +60,14 @@ class ControlOrientationTests(unittest.TestCase):
         self.assertEqual(len(host.transactions), 1)
         self.assertEqual(result.verified[0].primary_axis, ControlAxis.NEG_Y)
         self.assertEqual(result.verified[0].secondary_axis, ControlAxis.Z)
+
+    def test_curve_unaffected_flows_through_plan_and_verification(self):
+        host = Host()
+        result = SetControlOrientationAxis(host).apply(
+            ("|Control",), "Z", "X", True)
+        self.assertTrue(result.plan.curve_unaffected)
+        self.assertTrue(result.verified[0].curve_unaffected)
+        self.assertEqual(host.points[0][1], ((1., 2., 3.),))
 
 
 if __name__ == "__main__":
