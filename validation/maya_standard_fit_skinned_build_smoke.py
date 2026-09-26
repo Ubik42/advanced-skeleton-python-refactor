@@ -132,6 +132,39 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
             namespaced_built = (namespaced.joint_count == 74
                 and namespaced_skins == ("Hero:AdvPy_BodySkin",
                                      "Hero:AdvPy_BodySkin_2"))
+            cmds.setKeyframe("Hero:AdvPy_Global", attribute="translateX",
+                             time=1, value=0)
+            cmds.setKeyframe("Hero:AdvPy_Global", attribute="translateX",
+                             time=2, value=2)
+            cmds.currentTime(1)
+            namespaced_fbx = temp / "hero.fbx"
+            MayaPanelController().publish_fbx("Hero", namespaced_fbx,
+                start=1, end=2, include_skins=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(namespaced_fbx), i=True, type="FBX",
+                      ignoreVersion=True, executeScriptNodes=False)
+            imported_meshes = sorted({(cmds.listRelatives(shape,
+                parent=True, fullPath=True) or [""])[0].rsplit("|", 1)[-1]
+                for shape in cmds.ls(type="mesh", long=True) or []
+                if not cmds.getAttr(shape + ".intermediateObject")})
+            imported_vertices = sorted(int(cmds.polyEvaluate(mesh,
+                vertex=True)) for mesh in imported_meshes)
+            root_candidates = [joint for joint in cmds.ls(type="joint",
+                long=True) or [] if not cmds.listRelatives(joint,
+                    parent=True, type="joint")]
+            imported_root = root_candidates[0] if len(root_candidates) == 1 else ""
+            cmds.currentTime(1)
+            first_root_x = cmds.xform(imported_root, query=True,
+                                      worldSpace=True, translation=True)[0]
+            cmds.currentTime(2)
+            last_root_x = cmds.xform(imported_root, query=True,
+                                     worldSpace=True, translation=True)[0]
+            namespaced_fbx_passed = (len(cmds.ls(type="joint") or []) == 75
+                and len(cmds.ls(type="skinCluster") or []) == 2
+                and imported_vertices == [8, 18151]
+                and abs(last_root_x - first_root_x - 2.0) < 1e-4
+                and imported_meshes == ["Hero:BodyMesh",
+                                        "Hero:GarmentMesh"])
             data = {"source": scene.name, "meshes": len(meshes),
                     "skins": skins, "influences": influences,
                     "body_joints": body_joints,
@@ -141,13 +174,19 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
                     "undo_restored": undo_restored,
                     "redo_restored": redo_restored,
                     "reopen_restored": reopen_restored,
-                    "namespaced_built": namespaced_built}
+                    "namespaced_built": namespaced_built,
+                    "namespaced_fbx_passed": namespaced_fbx_passed,
+                    "namespaced_fbx_meshes": imported_meshes,
+                    "namespaced_fbx_vertices": imported_vertices,
+                    "namespaced_fbx_root": imported_root,
+                    "namespaced_fbx_root_delta_x": last_root_x - first_root_x}
             report.write_text(json.dumps(data, indent=2) + "\n",
                               encoding="utf-8")
             if not (len(skins) == 2 and body_joints == 74
                     and built.channel_count > 200 and moved
                     and undo_restored and redo_restored
-                    and reopen_restored and namespaced_built):
+                    and reopen_restored and namespaced_built
+                    and namespaced_fbx_passed):
                 raise AssertionError(data)
             return 0
     finally:

@@ -23,10 +23,10 @@ class MayaDenseSkinHost(MayaBodyBuildHost):
             raise ValueError("Skin 需要唯一网格：" + skin_name)
         shape = (c.ls(shapes[0], long=True, type="mesh") or [])[0]
         selection = om.MSelectionList()
-        selection.add(skins[0])
+        selection.add(self.scene_address(skins[0]))
         skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
         selection = om.MSelectionList()
-        selection.add(shape)
+        selection.add(self.scene_address(shape))
         dag = selection.getDagPath(0)
         count = int(c.polyEvaluate(shape, vertex=True))
         component_fn = om.MFnSingleIndexedComponent()

@@ -12,7 +12,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 
 def _samples(cmds, mesh: str, count: int):
-    indices = (0, count // 2, count - 1)
+    indices = (0, count // 2, count - 1,
+               *((12743,) if count > 12743 else ()))
     return tuple(tuple(cmds.pointPosition(
         f"{mesh}.vtx[{index}]", world=True)) for index in indices)
 
@@ -61,11 +62,24 @@ def main(scene: Path, report: Path) -> int:
         from adv_py.adapters.maya_body import MayaBodyBuildHost
         from adv_py.adapters.maya_dense_skin import MayaDenseSkinHost
         from adv_py.application.body_fbx_export import ExportBodyFbx
+        from adv_py.application.body_export_skeleton import (
+            BakeBodyExportSkeleton, BuildBodyExportSkeleton)
+        from adv_py.application.body_root_motion import BuildBodyRootMotion
 
         report.parent.mkdir(parents=True, exist_ok=True)
         cmds.file(str(scene.resolve()), open=True, force=True,
                   executeScriptNodes=False)
         cmds.undoInfo(state=True)
+        cmds.currentTime(5)
+        cmds.setKeyframe("AdvPy_KneeFK_L", attribute="rotateX",
+                         time=5, value=20.0)
+        cmds.currentTime(1)
+        cmds.delete("|AdvPy_GameRootMotion")
+        build_host = MayaBodyBuildHost()
+        BuildBodyRootMotion(build_host).apply()
+        BuildBodyExportSkeleton(build_host).apply()
+        BakeBodyExportSkeleton(build_host).apply(
+            start_frame=1, end_frame=5)
         skins = sorted(cmds.ls(type="skinCluster") or [])
         assert len(skins) == 2
         host = MayaDenseSkinHost()
@@ -76,8 +90,11 @@ def main(scene: Path, report: Path) -> int:
             cmds.currentTime(frame)
             before[frame] = tuple(_samples(cmds, mesh, data.vertex_count)
                                   for mesh, data in zip(meshes, source))
+        source_knee_motion = abs(before[5][0][-1][2]
+                                 - before[1][0][-1][2])
         original_scene = cmds.file(query=True, sceneName=True)
         original_skins = tuple(cmds.ls(type="skinCluster") or [])
+        original_meshes = tuple(cmds.ls(type="mesh", long=True) or [])
 
         with tempfile.TemporaryDirectory(prefix="advpy-skinned-fbx-") as temp:
             destination = Path(temp) / "character.fbx"
@@ -85,7 +102,9 @@ def main(scene: Path, report: Path) -> int:
                 start_frame=1, end_frame=5, include_skins=True)
             source_intact = (cmds.file(query=True, sceneName=True)
                 == original_scene and tuple(cmds.ls(type="skinCluster") or [])
-                == original_skins and all(host.capture_dense_skin(skin)
+                == original_skins and tuple(cmds.ls(type="mesh", long=True)
+                    or []) == original_meshes
+                and all(host.capture_dense_skin(skin)
                     == data for skin, data in zip(skins, source)))
             cmds.file(new=True, force=True)
             cmds.file(str(destination), i=True, type="FBX",
@@ -134,6 +153,8 @@ def main(scene: Path, report: Path) -> int:
                     "imported_skins": len(imported),
                     "vertex_counts": [item.vertex_count
                                       for item in imported],
+                    "imported_mesh_names": [mesh.rsplit("|", 1)[-1]
+                                            for mesh in imported_meshes],
                     "max_weight_error": weight_error,
                     "max_weight_detail": weight_detail,
                     "source_vertex_weights": _vertex_weights(
@@ -141,14 +162,18 @@ def main(scene: Path, report: Path) -> int:
                     "imported_vertex_weights": _vertex_weights(
                         imported[affected], weight_detail[1]),
                     "max_sampled_world_point_error": point_error,
+                    "source_knee_motion_z_cm": source_knee_motion,
                     "knee_deformation_cm": knee_deformation}
             report.write_text(json.dumps(data, indent=2) + "\n",
                               encoding="utf-8")
             if not (source_intact and data["imported_joints"] == 75
                     and len(imported) == 2
                     and data["vertex_counts"] == [18151, 8]
+                    and data["imported_mesh_names"] == [
+                        "BodyMesh", "GarmentMesh"]
                     and weight_error < 0.002
                     and point_error < 1e-4
+                    and source_knee_motion > 0.01
                     and knee_deformation > 0.01):
                 raise AssertionError(data)
             return 0

@@ -1729,7 +1729,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         }
         return tuple(sorted(collisions))
 
-    def _capture_fbx_skin_sources(self, influence_map):
+    def _capture_fbx_skin_sources(self, influence_map, published_names):
         from .maya_dense_skin import MayaDenseSkinHost
 
         c = self._cmds
@@ -1741,6 +1741,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         root = influence_map[0][0]
         host = MayaDenseSkinHost(namespace=self.namespace)
         rows = []
+        mesh_names = set()
         for skin in c.ls(type="skinCluster") or []:
             influences = c.skinCluster(skin, query=True,
                                        influence=True) or []
@@ -1762,6 +1763,11 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                 fullPath=True) or []) if len(shape) == 1 else []
             if len(mesh) != 1:
                 raise FitSkeletonValidationError("角色 Skin 网格路径不唯一：" + skin)
+            mesh_name = mesh[0].rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            if mesh_name in mesh_names or mesh_name in published_names:
+                raise FitSkeletonValidationError(
+                    "FBX 发布网格名称与其他网格或关节冲突：" + mesh_name)
+            mesh_names.add(mesh_name)
             data = host.capture_dense_skin(skin)
             if len({name.rsplit(":", 1)[-1]
                     for name in data.influence_names}) != len(data.influence_names):
@@ -1782,15 +1788,20 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         c = self._cmds
         c.currentTime(bind_frame, edit=True, update=True)
         copied = []
+        group = c.createNode("transform",
+            name="AdvPy_FBXTemporaryMeshGroup") if sources else None
         for index, (mesh, data, maximum, maintain, mapping) in enumerate(
                 sources, 1):
             target_paths = tuple(mapping[name.rsplit(":", 1)[-1]]
                                  for name in data.influence_names)
             clone = c.duplicate(mesh, returnRootsOnly=True,
                                 renameChildren=True)[0]
-            if c.listRelatives(clone, parent=True):
-                clone = c.parent(clone, world=True)[0]
-            clone = c.rename(clone, f"AdvPy_FBXMesh_{index}")
+            clone = c.parent(clone, group)[0]
+            mesh_name = mesh.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            clone = c.rename(clone, mesh_name)
+            if clone.rsplit("|", 1)[-1] != mesh_name:
+                raise FitSkeletonValidationError(
+                    "FBX 临时网格未能保留源名称：" + mesh_name)
             c.delete(clone, constructionHistory=True)
             name = f"AdvPy_FBXExportSkin_{index}"
             skin = c.skinCluster(target_paths, clone, toSelectedBones=True,
@@ -1866,7 +1877,8 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         original_undo_name = str(
             self._cmds.undoInfo(query=True, undoName=True) or ""
         )
-        skin_sources = (self._capture_fbx_skin_sources(skin_influence_map)
+        skin_sources = (self._capture_fbx_skin_sources(skin_influence_map,
+            {node.published_name for node in selection.published_nodes})
             if skin_influence_map else ())
         pushed = False
         applied_profile: BodyFbxAppliedProfile | None = None

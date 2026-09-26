@@ -749,7 +749,10 @@ class MayaPanelController:
             value_tolerance, matrix_tolerance, euler_filter)
         prefix = "" if namespace == ":" else namespace.strip(":") + ":"
         body_root = prefix + "Root_M"
-        container = "|" + prefix + "FitSkeleton"
+        provenance = host.capture_body_skeleton(body_root).provenance
+        if provenance is None or not provenance.source_container:
+            raise ValueError("角色缺少原始 Fit 来源记录")
+        container = provenance.source_container
         if progress:
             progress("构建 Root Motion")
         BuildBodyRootMotion(host).apply(body_root_name=body_root,
