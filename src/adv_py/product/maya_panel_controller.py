@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Callable
 
 from adv_py.adapters import MayaFaceHost, MayaOriginalSkinSpineMigrationHost
@@ -16,7 +17,8 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     EnableBodyCharacterSplineAnimation, EnableBodyCharacterSpaceAnimation,
     BakeBodyCharacterLimbMode, BakeBodyCharacterSpineMode,
     SwitchBodyCharacterSpace,
-    AutoScaleControlCurves, ColorControlCurves, ScaleControlCurves,
+    AutoScaleControlCurves, ColorControlCurves, MirrorControlCurves,
+    ScaleControlCurves,
     CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
     ExportFitSkeleton, ExportSkinWeights, OrientSimpleFitChain,
     OrientWorldFitJoints,
@@ -301,6 +303,40 @@ class MayaPanelController:
             (control, tuple(semantic_map.get(control, ()))) for control in controls)
         result = AutoScaleControlCurves(host).apply(
             controls, mesh.strip(), semantics, strict=strict)
+        return len(result.verified)
+
+    def control_curves_mirror(self, namespace: str, controls: tuple[str, ...],
+                              source_side: str) -> int:
+        if source_side not in ("R", "L"):
+            raise ValueError("镜像来源侧必须是 R 或 L")
+        host = self._host(namespace)
+        resolver = ResolveBodyCharacter(host)
+        names = resolver.discover()
+        if len(names) != 1:
+            raise ValueError("当前命名空间必须恰好包含一个已登记角色")
+        registration = resolver.execute(names[0])
+        registered = tuple(dict.fromkeys(
+            channel.node for channel in registration.channels))
+        registered_set = set(registered)
+        marker = "_" + source_side
+        opposite = "_" + ("L" if source_side == "R" else "R")
+        sources = controls or tuple(path for path in registered
+                                    if re.search(re.escape(marker) + r"(?=\||$)", path))
+        pairs = []
+        for source in sources:
+            matches = [path for path in registered
+                       if path == source or path.rsplit("|", 1)[-1] == source]
+            if len(matches) != 1:
+                raise ValueError(f"镜像来源控制器未登记或名称不唯一：{source}")
+            source_path = matches[0]
+            if not re.search(re.escape(marker) + r"(?=\||$)", source_path):
+                raise ValueError(f"控制器不属于来源侧 {source_side}：{source_path}")
+            target = re.sub(re.escape(marker) + r"(?=\||$)", opposite,
+                            source_path)
+            if target not in registered_set:
+                raise ValueError(f"镜像目标控制器未登记：{target}")
+            pairs.append((source_path, target))
+        result = MirrorControlCurves(host).apply(tuple(dict.fromkeys(pairs)), "x")
         return len(result.verified)
 
     def skin_bind(self, namespace: str, mesh: str,

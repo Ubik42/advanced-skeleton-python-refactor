@@ -359,14 +359,19 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_curve_color_mode.addItem("按控制类型", "type")
             self.control_curve_skin = QtWidgets.QLineEdit()
             self.control_curve_skin.setPlaceholderText("用于尺寸检测的 Skin 网格路径")
+            self.control_curve_mirror_side = QtWidgets.QComboBox()
+            self.control_curve_mirror_side.addItem("右侧 → 左侧", "R")
+            self.control_curve_mirror_side.addItem("左侧 → 右侧", "L")
             group, form = self._group("06 · Control Curves", [
                 ("目标控制器", self.control_curve_targets),
                 ("缩放倍率", self.control_curve_factor),
                 ("颜色规则", self.control_curve_color_mode),
-                ("Skin 网格", self.control_curve_skin)])
+                ("Skin 网格", self.control_curve_skin),
+                ("镜像方向", self.control_curve_mirror_side)])
             form.addRow(self._button("缩放控制曲线", self._scale_control_curves))
             form.addRow(self._button("按 Skin 自动缩放", self._auto_scale_control_curves))
             form.addRow(self._button("设置控制曲线颜色", self._color_control_curves))
+            form.addRow(self._button("镜像控制曲线形状", self._mirror_control_curves))
             stack.addWidget(group)
             self._spine_replace_mode_changed()
             stack.addStretch(1)
@@ -961,6 +966,15 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.control_curves_auto_scale(
                 self._namespace(), controls, self.control_curve_skin.text())
             return f"已按 Skin 自动缩放 {count} 个控制曲线"
+
+        def _mirror_control_curves(self):
+            controls = tuple(line.strip() for line in
+                self.control_curve_targets.toPlainText().splitlines()
+                if line.strip())
+            count = self.controller.control_curves_mirror(
+                self._namespace(), controls,
+                self.control_curve_mirror_side.currentData())
+            return f"已镜像 {count} 对控制曲线"
 
         def _bind_skin(self):
             influences = tuple(line.strip() for line in

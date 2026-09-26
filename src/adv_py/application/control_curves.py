@@ -7,9 +7,11 @@ from typing import Protocol
 
 from adv_py.core.control_curves import (
     ControlCurveAutoScaleMetric, ControlCurveAutoScalePlan,
+    ControlCurveMirrorPair, ControlCurveMirrorPlan,
     ControlCurveColorMode, ControlCurveColorPlan, ControlCurveColorState,
     ControlCurveScalePlan, ControlCurveState, ControlCurveValidationError,
     plan_control_curve_auto_scale, plan_control_curve_colors,
+    plan_control_curve_mirror,
     plan_control_curve_scale,
 )
 
@@ -54,6 +56,12 @@ class ControlCurveColorResult:
 @dataclass(frozen=True, slots=True)
 class ControlCurveAutoScaleResult:
     plan: ControlCurveAutoScalePlan
+    verified: tuple[ControlCurveState, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ControlCurveMirrorResult:
+    plan: ControlCurveMirrorPlan
     verified: tuple[ControlCurveState, ...]
 
 
@@ -171,3 +179,30 @@ class AutoScaleControlCurves:
                     tuple(change.before for change in plan.changes),
                     tuple(change.after for change in plan.changes)), verified)
         return ControlCurveAutoScaleResult(plan, verified)
+
+
+class MirrorControlCurves:
+    def __init__(self, host: ControlCurveHost) -> None:
+        self._host = host
+
+    def apply(self, pairs: tuple[tuple[str, str], ...], axis: str = "x"
+              ) -> ControlCurveMirrorResult:
+        if not pairs or len(set(pairs)) != len(pairs):
+            raise ControlCurveValidationError("镜像控制器配对不能为空或重复")
+        source_states = self._host.capture_control_curves(
+            tuple(source for source, _ in pairs), strict=True)
+        target_states = self._host.capture_control_curves(
+            tuple(target for _, target in pairs), strict=True)
+        plan = plan_control_curve_mirror(tuple(
+            ControlCurveMirrorPair(source, target)
+            for source, target in zip(source_states, target_states)), axis)
+        with self._host.transaction(f"镜像 {len(plan.pairs)} 对控制曲线"):
+            for state in plan.after:
+                for shape in state.shapes:
+                    self._host.set_control_curve_points(shape.path, shape.points)
+            verified = self._host.capture_control_curves(
+                tuple(state.control for state in plan.after), strict=True)
+            ScaleControlCurves._verify(ControlCurveScalePlan(
+                1.0, tuple(pair.target for pair in plan.pairs), plan.after),
+                verified)
+        return ControlCurveMirrorResult(plan, verified)

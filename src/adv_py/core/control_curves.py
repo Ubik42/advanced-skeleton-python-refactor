@@ -124,6 +124,19 @@ class ControlCurveAutoScalePlan:
     changes: tuple[ControlCurveAutoScaleChange, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ControlCurveMirrorPair:
+    source: ControlCurveState
+    target: ControlCurveState
+
+
+@dataclass(frozen=True, slots=True)
+class ControlCurveMirrorPlan:
+    axis: str
+    pairs: tuple[ControlCurveMirrorPair, ...]
+    after: tuple[ControlCurveState, ...]
+
+
 SIDE_PALETTE = {
     "left": (0.18, 0.45, 1.0),
     "right": (1.0, 0.22, 0.18),
@@ -237,3 +250,66 @@ def plan_control_curve_auto_scale(
             row.state.control, factor, row.current_world_radius * factor,
             row.state, after))
     return ControlCurveAutoScalePlan(mesh, tuple(changes))
+
+
+def _inverse_matrix(matrix: tuple[float, ...]) -> tuple[float, ...]:
+    rows = [[float(matrix[row * 4 + column]) for column in range(4)]
+            + [1.0 if row == column else 0.0 for column in range(4)]
+            for row in range(4)]
+    for column in range(4):
+        pivot = max(range(column, 4), key=lambda row: abs(rows[row][column]))
+        if abs(rows[pivot][column]) <= 1e-12:
+            raise ControlCurveValidationError("控制器世界矩阵不可逆")
+        rows[column], rows[pivot] = rows[pivot], rows[column]
+        scale = rows[column][column]
+        rows[column] = [value / scale for value in rows[column]]
+        for row in range(4):
+            if row != column:
+                factor = rows[row][column]
+                rows[row] = [value - factor * current
+                             for value, current in zip(rows[row], rows[column])]
+    return tuple(rows[row][column] for row in range(4)
+                 for column in range(4, 8))
+
+
+def _transform_point(point: Vector3, matrix: tuple[float, ...]) -> Vector3:
+    vector = (*point, 1.0)
+    result = tuple(sum(vector[row] * matrix[row * 4 + column]
+                       for row in range(4)) for column in range(4))
+    if abs(result[3]) <= 1e-12:
+        raise ControlCurveValidationError("控制曲线点的齐次坐标无效")
+    return tuple(result[index] / result[3] for index in range(3))
+
+
+def plan_control_curve_mirror(
+    pairs: tuple[ControlCurveMirrorPair, ...], axis: str = "x"
+) -> ControlCurveMirrorPlan:
+    if axis not in "xyz" or not pairs:
+        raise ControlCurveValidationError("镜像需要配对控制器和 x、y 或 z 轴")
+    if len({pair.target.control for pair in pairs}) != len(pairs):
+        raise ControlCurveValidationError("镜像目标控制器不能重复")
+    axis_index = "xyz".index(axis)
+    after = []
+    for pair in pairs:
+        if (pair.source.control == pair.target.control
+                or len(pair.source.shapes) != len(pair.target.shapes)):
+            raise ControlCurveValidationError("镜像来源与目标不成对")
+        target_inverse = _inverse_matrix(pair.target.world_matrix)
+        shapes = []
+        for source_shape, target_shape in zip(pair.source.shapes,
+                                               pair.target.shapes):
+            if (source_shape.degree != target_shape.degree
+                    or source_shape.form != target_shape.form
+                    or len(source_shape.points) != len(target_shape.points)):
+                raise ControlCurveValidationError("镜像控制曲线拓扑不一致")
+            points = []
+            for point in source_shape.points:
+                world = list(_transform_point(point, pair.source.world_matrix))
+                world[axis_index] *= -1.0
+                points.append(_transform_point(tuple(world), target_inverse))
+            shapes.append(ControlCurveShapeState(
+                target_shape.path, target_shape.degree, target_shape.form,
+                tuple(points)))
+        after.append(ControlCurveState(pair.target.control,
+                                       pair.target.world_matrix, tuple(shapes)))
+    return ControlCurveMirrorPlan(axis, pairs, tuple(after))

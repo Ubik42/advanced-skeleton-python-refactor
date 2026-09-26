@@ -720,6 +720,8 @@ from .control_curves import (
     ControlCurveColorMode,
     ControlCurveColorPlan,
     ControlCurveColorState,
+    ControlCurveMirrorPair,
+    ControlCurveMirrorPlan,
     ControlCurveShapeColorState,
     ControlCurveScalePlan,
     ControlCurveShapeState,
@@ -731,6 +733,7 @@ from .control_curves import (
     control_curve_type,
     plan_control_curve_auto_scale,
     plan_control_curve_colors,
+    plan_control_curve_mirror,
     plan_control_curve_scale,
 )
 
@@ -741,6 +744,8 @@ __all__ = [
     "ControlCurveColorMode",
     "ControlCurveColorPlan",
     "ControlCurveColorState",
+    "ControlCurveMirrorPair",
+    "ControlCurveMirrorPlan",
     "ControlCurveShapeColorState",
     "ControlCurveScalePlan",
     "ControlCurveShapeState",
@@ -752,6 +757,7 @@ __all__ = [
     "control_curve_type",
     "plan_control_curve_auto_scale",
     "plan_control_curve_colors",
+    "plan_control_curve_mirror",
     "plan_control_curve_scale",
     "FaceShapeKind", "FaceTarget", "FaceMeshSnapshot", "validate_face_targets",
     "FacePerformance", "face_performance_to_json", "face_performance_from_json",

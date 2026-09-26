@@ -75,6 +75,11 @@ class FakeController:
         self.calls.append(("control_curves_auto_scale", namespace, controls, mesh))
         return len(controls) if controls else 42
 
+    def control_curves_mirror(self, namespace, controls, source_side):
+        self.calls.append(("control_curves_mirror", namespace, controls,
+                           source_side))
+        return len(controls) if controls else 18
+
     def skin_surface_source_export(self, namespace, skin, mesh, destination):
         self.calls.append(("skin_surface_source_export", namespace, skin, mesh,
                            destination.name))
@@ -259,6 +264,7 @@ def main(report: Path) -> int:
     buttons["按 Skin 自动缩放"].click()
     panel.control_curve_color_mode.setCurrentIndex(1)
     buttons["设置控制曲线颜色"].click()
+    buttons["镜像控制曲线形状"].click()
     app.processEvents()
     fit_page = panel.tabs.currentWidget()
     fit_page.verticalScrollBar().setValue(fit_page.verticalScrollBar().maximum())
@@ -344,6 +350,9 @@ def main(report: Path) -> int:
         "control_curve_auto_scale_dispatches":
             ("control_curves_auto_scale", "hero", ("|hero:Global",),
              "|hero:Skin") in controller.calls,
+        "control_curve_mirror_dispatches":
+            ("control_curves_mirror", "hero", ("|hero:Global",), "R")
+            in controller.calls,
         "role_selection_dispatches_application_action":
             ("body_build", "hero", "FitSkeleton", None, False)
             in controller.calls,

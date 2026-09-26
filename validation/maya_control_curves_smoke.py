@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import sys
 import tempfile
 
@@ -81,7 +82,8 @@ def main(report: Path) -> int:
         )
         from adv_py.core import (
             control_curve_side, plan_control_curve_auto_scale,
-            plan_control_curve_colors,
+            plan_control_curve_colors, plan_control_curve_mirror,
+            ControlCurveMirrorPair,
         )
         from adv_py.product.maya_panel_controller import MayaPanelController
 
@@ -106,6 +108,22 @@ def main(report: Path) -> int:
         semantics = tuple((control, tuple(keys))
                           for control, keys in semantic_map.items())
         before_all = host.capture_control_curves(candidates, strict=False)
+        by_control = {state.control: state for state in before_all}
+        mirror_sources = tuple(state for state in before_all
+            if re.search(r"_R(?=\||$)", state.control)
+            and re.sub(r"_R(?=\||$)", "_L", state.control) in by_control)
+        mirror_source = mirror_sources[0]
+        mirror_target = by_control[
+            re.sub(r"_R(?=\||$)", "_L", mirror_source.control)]
+        sculpt_shape = mirror_source.shapes[0]
+        sculpt_point = list(sculpt_shape.points[0])
+        sculpt_point[1] += .37
+        cmds.xform(sculpt_shape.path + ".cv[0]", objectSpace=True,
+                   translation=sculpt_point)
+        before_all = host.capture_control_curves(candidates, strict=False)
+        by_control = {state.control: state for state in before_all}
+        mirror_source = by_control[mirror_source.control]
+        mirror_target = by_control[mirror_target.control]
         target = before_all[0].control
         skin = cmds.polyCube(name="AutoScaleSkin", width=16., height=10.,
                              depth=40.)[0]
@@ -114,6 +132,46 @@ def main(report: Path) -> int:
                                  skipSelect=True)
         cmds.select(marker, replace=True)
         selection_before = tuple(cmds.ls(selection=True, long=True) or [])
+
+        explicit_mirror_plan = plan_control_curve_mirror((
+            ControlCurveMirrorPair(mirror_source, mirror_target),))
+        explicit_mirror_count = controller.control_curves_mirror(
+            ":", (mirror_source.control,), "R")
+        explicit_mirror_after = host.capture_control_curves(
+            (mirror_target.control,), strict=True)[0]
+        explicit_mirror_applied = _same_state(
+            explicit_mirror_after, explicit_mirror_plan.after[0])
+        mirror_selection_preserved = tuple(
+            cmds.ls(selection=True, long=True) or []) == selection_before
+        cmds.undo()
+        explicit_mirror_undo = _same_state(
+            host.capture_control_curves(
+                (mirror_target.control,), strict=True)[0], mirror_target)
+        cmds.redo()
+        explicit_mirror_redo = _same_state(
+            host.capture_control_curves(
+                (mirror_target.control,), strict=True)[0],
+            explicit_mirror_plan.after[0])
+        cmds.undo()
+
+        mirror_pairs = tuple(ControlCurveMirrorPair(
+            by_control[source.control],
+            by_control[re.sub(r"_R(?=\||$)", "_L", source.control)])
+            for source in mirror_sources)
+        all_mirror_plan = plan_control_curve_mirror(mirror_pairs)
+        all_mirror_count = controller.control_curves_mirror(":", (), "R")
+        all_mirror_after = host.capture_control_curves(
+            tuple(state.control for state in all_mirror_plan.after), strict=True)
+        all_mirror_applied = (
+            all_mirror_count == len(mirror_pairs)
+            and all(_same_state(found, expected) for found, expected in
+                    zip(all_mirror_after, all_mirror_plan.after)))
+        cmds.undo()
+        all_mirror_undo = all(_same_state(
+            found, pair.target) for found, pair in zip(
+                host.capture_control_curves(
+                    tuple(pair.target.control for pair in mirror_pairs),
+                    strict=True), mirror_pairs))
 
         auto_metrics = host.measure_control_curve_auto_scale(
             candidates, skin, semantics, strict=False)
@@ -247,9 +305,35 @@ def main(report: Path) -> int:
                 _same_state(actual, change.after)
                 for actual, change in zip(auto_reopened,
                                           persisted_auto_plan.changes))
+            current_map = {state.control: state for state in auto_reopened}
+            persisted_mirror_pairs = tuple(ControlCurveMirrorPair(
+                current_map[pair.source.control], current_map[pair.target.control])
+                for pair in mirror_pairs)
+            persisted_mirror_plan = plan_control_curve_mirror(
+                persisted_mirror_pairs)
+            controller.control_curves_mirror(":", (), "R")
+            mirror_scene = Path(folder) / "mirrored.ma"
+            cmds.file(rename=str(mirror_scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(mirror_scene), open=True, force=True)
+            mirror_reopened = host.capture_control_curves(
+                tuple(state.control for state in persisted_mirror_plan.after),
+                strict=True)
+            mirror_save_reopen_preserved = all(
+                _same_state(found, expected) for found, expected in
+                zip(mirror_reopened, persisted_mirror_plan.after))
 
         checks = {
             "curves_discovered": len(before_all) > 1,
+            "explicit_world_mirror_route": explicit_mirror_count == 1
+                and explicit_mirror_applied,
+            "mirror_selection_preserved": mirror_selection_preserved,
+            "explicit_mirror_single_undo_redo": explicit_mirror_undo
+                and explicit_mirror_redo,
+            "registered_all_mirror_route": all_mirror_applied,
+            "registered_all_mirror_single_undo": all_mirror_undo,
+            "mirror_save_reopen_preserved": mirror_save_reopen_preserved,
             "explicit_mesh_auto_scale_route": explicit_auto_count == 1
                 and explicit_auto_applied,
             "auto_scale_selection_preserved": auto_selection_preserved,

@@ -2,15 +2,17 @@ import unittest
 from contextlib import contextmanager
 
 from adv_py.application import (
-    AutoScaleControlCurves, ColorControlCurves, ScaleControlCurves,
+    AutoScaleControlCurves, ColorControlCurves, MirrorControlCurves,
+    ScaleControlCurves,
 )
 from adv_py.core import (
     ControlCurveAutoScaleMetric, ControlCurveColorMode, ControlCurveColorState,
+    ControlCurveMirrorPair,
     ControlCurveShapeColorState,
     ControlCurveShapeState, ControlCurveState, ControlCurveValidationError,
     SIDE_PALETTE, TYPE_PALETTE, control_curve_side, control_curve_type,
     plan_control_curve_auto_scale, plan_control_curve_colors,
-    plan_control_curve_scale,
+    plan_control_curve_mirror, plan_control_curve_scale,
 )
 
 
@@ -40,8 +42,10 @@ class Host:
         yield
 
     def set_control_curve_points(self, shape, points):
-        current = self.states["|Control"]
-        self.states["|Control"] = ControlCurveState(
+        name, current = next((name, current)
+            for name, current in self.states.items()
+            if any(item.path == shape for item in current.shapes))
+        self.states[name] = ControlCurveState(
             current.control, current.world_matrix,
             (ControlCurveShapeState(shape, 1, 0, points),))
 
@@ -160,6 +164,31 @@ class ControlCurveAutoScaleTests(unittest.TestCase):
             for point, wanted in zip(result.verified[0].shapes[0].points,
                                      ((1.725, 0., 0.), (0., 3.45, 0.)))
             for value, expected in zip(point, wanted)))
+
+
+class ControlCurveMirrorTests(unittest.TestCase):
+    def test_plan_reflects_world_x_then_converts_to_target_local(self):
+        right_matrix = IDENTITY[:12] + (-2., 0., 0., 1.)
+        left_matrix = IDENTITY[:12] + (2., 0., 0., 1.)
+        right = ControlCurveState("|Control_R", right_matrix, (
+            ControlCurveShapeState("|Control_R|Shape", 1, 0,
+                                   ((1., 2., 0.), (0., 3., 0.))),))
+        left = ControlCurveState("|Control_L", left_matrix, (
+            ControlCurveShapeState("|Control_L|Shape", 1, 0,
+                                   ((0., 0., 0.), (0., 1., 0.))),))
+        plan = plan_control_curve_mirror((ControlCurveMirrorPair(right, left),))
+        self.assertEqual(plan.after[0].shapes[0].points,
+                         ((-1., 2., 0.), (0., 3., 0.)))
+
+    def test_application_updates_only_target_and_verifies(self):
+        host = Host()
+        source = state("|Control_R", ((1., 0., 0.), (0., 2., 0.)))
+        target = state("|Control_L", ((4., 0., 0.), (0., 5., 0.)))
+        host.states = {source.control: source, target.control: target}
+        result = MirrorControlCurves(host).apply(
+            ((source.control, target.control),))
+        self.assertEqual(host.states[source.control], source)
+        self.assertEqual(result.verified[0].control, target.control)
 
 
 if __name__ == "__main__":

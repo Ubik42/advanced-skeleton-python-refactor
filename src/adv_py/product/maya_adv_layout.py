@@ -49,7 +49,8 @@ ADV_OPERATIONS = {
     ("Body", "Control Curves"): (
         ("缩放控制曲线", 0, "06 · Control Curves"),
         ("按 Skin 自动缩放", 0, "06 · Control Curves"),
-        ("设置控制曲线颜色", 0, "06 · Control Curves")),
+        ("设置控制曲线颜色", 0, "06 · Control Curves"),
+        ("镜像控制曲线形状", 0, "06 · Control Curves")),
     ("Face", "Pre"): (
         ("从标记生成目标", 3, "01 · 目标网格"),
         ("导出目标资产", 3, "02 · 可移植目标资产"),
