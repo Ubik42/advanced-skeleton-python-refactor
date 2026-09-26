@@ -105,7 +105,33 @@ def main() -> None:
         assert cmds.objExists("AdvPy_EyeAim")
         assert any(row.namespace == ":" and row.registered
                    for row in MayaPanelController().characters())
-        print("Face eye controls and referenced skin Maya smoke: OK")
+        cmds.setKeyframe("AdvPy_EyeAim.translateX", time=1, value=0)
+        cmds.setKeyframe("AdvPy_EyeAim.translateX", time=5, value=.8)
+        expected = {}
+        for frame in (1, 5):
+            cmds.currentTime(frame, edit=True)
+            expected[frame] = (point(right), point(left))
+        exported = folder / "eyes.fbx"
+        publication = MayaPanelController().publish_fbx(
+            ":", exported, 1, 5, include_skins=True)
+        assert publication.bytes_written > 0 and exported.is_file()
+        assert len(cmds.ls("AdvPy_EyeSkin_*", type="skinCluster") or []) == 2
+        cmds.file(new=True, force=True)
+        cmds.file(str(exported), i=True, type="FBX", ignoreVersion=True,
+                  executeScriptNodes=False)
+        assert len(cmds.ls(type="skinCluster") or []) == 2
+        for name in ("AdvPy_Eye_R", "AdvPy_Eye_L"):
+            assert len(cmds.ls(name, type="joint", long=True) or []) == 1
+        maximum_error = 0.0
+        for frame in (1, 5):
+            cmds.currentTime(frame, edit=True)
+            actual = (point("EyeRight"), point("EyeLeft"))
+            maximum_error = max(maximum_error, *(abs(a - b)
+                for source, target in zip(expected[frame], actual)
+                for a, b in zip(source, target)))
+        assert maximum_error < .01, maximum_error
+        print("Face eye controls and skinned FBX roundtrip: OK",
+              maximum_error, flush=True)
 
 
 if __name__ == "__main__":

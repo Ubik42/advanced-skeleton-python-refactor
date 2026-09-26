@@ -1824,6 +1824,65 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
             raise FitSkeletonValidationError("当前角色没有可发布的 Skin 网格")
         return tuple(rows)
 
+    def _face_eye_fbx_influences(self, influence_map):
+        """Map the owned eye joints into the temporary published Head branch."""
+        c = self._cmds
+        body_root = influence_map[0][0]
+        body_targets = dict(influence_map)
+        head = next((source for source in body_targets
+            if source.rsplit("|", 1)[-1].rsplit(":", 1)[-1] == "Head_M"), None)
+        descendants = c.listRelatives(body_root, allDescendents=True,
+            fullPath=True, type="joint") or []
+        eyes = {}
+        for path in descendants:
+            if not c.attributeQuery("advPyAuxiliaryInfluenceKind",
+                                    node=path, exists=True):
+                continue
+            if c.getAttr(path + ".advPyAuxiliaryInfluenceKind") != "face-eye-v1":
+                continue
+            side = path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            if side not in ("AdvPy_Eye_R", "AdvPy_Eye_L") or side in eyes:
+                raise FitSkeletonValidationError("Face 眼关节名称不唯一或无效")
+            eyes[side] = path
+        if not eyes:
+            return ()
+        if head is None or set(eyes) != {"AdvPy_Eye_R", "AdvPy_Eye_L"}:
+            raise FitSkeletonValidationError("Face 双眼关节与 Body Head 不完整")
+        target_head = body_targets[head]
+        return tuple((eyes[name], target_head + "|" + name)
+                     for name in ("AdvPy_Eye_R", "AdvPy_Eye_L"))
+
+    def _bake_temporary_face_eye_joints(self, eye_influences, selection, *,
+                                        namespace_free=False):
+        if not eye_influences:
+            return ()
+        c = self._cmds.raw if namespace_free else self._cmds
+        frames = tuple(range(selection.start_frame, selection.end_frame + 1,
+                             selection.sample_by))
+        created = []
+        for source, target in eye_influences:
+            parent, name = target.rsplit("|", 1)
+            if c.objExists(target):
+                raise FitSkeletonValidationError("FBX 眼关节发布名称冲突：" + target)
+            node = c.createNode("joint", name=(":" if namespace_free else "")
+                                + name, parent=parent, skipSelect=True)
+            node = (c.ls(node, long=True, type="joint") or [None])[0]
+            if node != target:
+                raise RuntimeError("FBX 眼关节路径漂移：" + target)
+            c.setAttr(node + ".rotateOrder",
+                      int(self._cmds.getAttr(source + ".rotateOrder")))
+            created.append((source, node))
+        for frame in frames:
+            c.currentTime(frame, edit=True, update=True)
+            for source, target in created:
+                matrix = self._cmds.xform(source, query=True,
+                                          worldSpace=True, matrix=True)
+                c.xform(target, worldSpace=True, matrix=matrix)
+                for kind in ("translate", "rotate", "scale"):
+                    c.setKeyframe(target, attribute=kind, time=frame,
+                                  inTangentType="linear", outTangentType="linear")
+        return tuple(target for _, target in created)
+
     def _copy_fbx_skinned_meshes(self, sources, bind_frame, *,
                                  namespace_free=False):
         from array import array
@@ -1933,9 +1992,13 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         original_undo_name = str(
             self._cmds.undoInfo(query=True, undoName=True) or ""
         )
-        skin_sources = (self._capture_fbx_skin_sources(skin_influence_map,
-            {node.published_name for node in selection.published_nodes})
-            if skin_influence_map else ())
+        eye_influences = (self._face_eye_fbx_influences(skin_influence_map)
+                          if skin_influence_map else ())
+        full_influence_map = skin_influence_map + eye_influences
+        skin_sources = (self._capture_fbx_skin_sources(full_influence_map,
+            {node.published_name for node in selection.published_nodes}
+            | {path.rsplit("|", 1)[-1] for _, path in eye_influences})
+            if full_influence_map else ())
         pushed = False
         applied_profile: BodyFbxAppliedProfile | None = None
         removed_linear_keys = 0
@@ -2003,6 +2066,11 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                             + node.published_name,
                             ignoreShape=True,
                         )
+                    published_eyes = self._bake_temporary_face_eye_joints(
+                        eye_influences, selection,
+                        namespace_free=namespace_free)
+                    published_paths = (*selection.published_paths,
+                                       *published_eyes)
                     copied_meshes = self._copy_fbx_skinned_meshes(
                         skin_sources, selection.start_frame,
                         namespace_free=namespace_free)
@@ -2020,7 +2088,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                             poses.append(tuple(tuple(float(value) for value in
                                 published_cmds.xform(path, query=True, worldSpace=True,
                                                  matrix=True))
-                                for path in selection.published_paths))
+                                for path in published_paths))
                         return tuple(poses)
 
                     verification_times = fbx_curve_verification_times(
@@ -2036,7 +2104,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                             if self.scene_up_axis().value.lower() == "z"
                             else ("translateX", "translateZ", "rotateY")
                         )
-                        for path in selection.published_paths:
+                        for path in published_paths:
                             attributes = (
                                 root_attributes
                                 if path == selection.published_root_path
@@ -2080,7 +2148,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                         baked_frames = tuple(range(selection.start_frame,
                             selection.end_frame + 1, selection.sample_by))
                         before_filter = sample_matrices(baked_frames)
-                        for path in selection.published_paths[1:]:
+                        for path in published_paths[1:]:
                             curves = []
                             for axis in "XYZ":
                                 found = published_cmds.listConnections(
@@ -2119,7 +2187,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                                 "FBX 有界曲线简化超过世界矩阵误差上限："
                                 f"{max_matrix_error:g} > {profile.matrix_tolerance:g}")
                     published_cmds.select(
-                        (*selection.published_paths, *copied_meshes),
+                        (*published_paths, *copied_meshes),
                         replace=True,
                         noExpand=True,
                     )
