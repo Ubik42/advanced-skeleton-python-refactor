@@ -184,6 +184,22 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(prep_row)
             stack.addWidget(group)
 
+            self.preparation_object_fields = {}
+            group, form = self._group("01 · 模型对象", [])
+            for role in ("Skin", "All", "Right Eye", "Left Eye"):
+                field = QtWidgets.QLineEdit()
+                field.setReadOnly(True)
+                field.setPlaceholderText("未记录")
+                self.preparation_object_fields[role] = field
+                row = QtWidgets.QHBoxLayout()
+                row.addWidget(field, 1)
+                row.addWidget(self._button("记录所选", lambda r=role:
+                    self._record_preparation_objects(r)))
+                row.addWidget(self._button("重新选中", lambda r=role:
+                    self._reselect_preparation_objects(r)))
+                form.addRow(role, row)
+            stack.addWidget(group)
+
             self.model_check_results = QtWidgets.QPlainTextEdit()
             self.model_check_results.setReadOnly(True)
             self.model_check_results.setPlaceholderText(
@@ -958,6 +974,16 @@ def create_panel(controller: MayaPanelController | None = None):
             return (f"已引用 {source.name} 到 {result.namespace}；"
                     f"{len(result.top_nodes)} 个顶层对象位于 Hi 显示层")
 
+        def _record_preparation_objects(self, role):
+            objects = self.controller.preparation_record_objects(self._namespace(), role)
+            self.preparation_object_fields[role].setText(" ".join(objects))
+            return f"已记录 {role}：{len(objects)} 件模型"
+
+        def _reselect_preparation_objects(self, role):
+            objects = self.controller.preparation_reselect_objects(self._namespace(), role)
+            self.preparation_object_fields[role].setText(" ".join(objects))
+            return f"已重新选中 {role}：{len(objects)} 件模型"
+
         def _import_fit(self):
             count = self.controller.fit_import(self._namespace(),
                 self._path(self.fit_import_document), self.fit_container.text().strip())
@@ -1461,6 +1487,14 @@ def create_panel(controller: MayaPanelController | None = None):
                 return
             detail = current.data(QtCore.Qt.UserRole + 1)
             self.current.setText("当前角色：" + detail)
+            if hasattr(self, "preparation_object_fields"):
+                for role, field in self.preparation_object_fields.items():
+                    try:
+                        objects = self.controller.preparation_read_objects(
+                            self._namespace(), role)
+                        field.setText(" ".join(objects))
+                    except ValueError as error:
+                        field.setText("记录需更新：" + str(error))
 
         def refresh_characters(self):
             previous = self.roles.currentItem()

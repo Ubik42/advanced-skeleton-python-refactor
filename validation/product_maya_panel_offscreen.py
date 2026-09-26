@@ -38,6 +38,17 @@ class FakeController:
     def preparation_new_scene(self):
         self.calls.append("preparation_new_scene")
 
+    def preparation_read_objects(self, namespace, role):
+        return ("|model:BodyMesh",) if role == "Skin" else ()
+
+    def preparation_record_objects(self, namespace, role):
+        self.calls.append(("preparation_record_objects", namespace, role))
+        return ("|model:BodyMesh",)
+
+    def preparation_reselect_objects(self, namespace, role):
+        self.calls.append(("preparation_reselect_objects", namespace, role))
+        return ("|model:BodyMesh",)
+
     def characters(self):
         self.calls.append("characters")
         return (PanelCharacter(":", False),
@@ -218,6 +229,8 @@ def main(report: Path) -> int:
     panel.preparation_model_source.setText("C:/temp/model.ma")
     assert "model" in panel._reference_preparation_model()
     assert "空白绑定场景" in panel._new_preparation_scene()
+    assert "1 件模型" in panel._record_preparation_objects("Skin")
+    assert "1 件模型" in panel._reselect_preparation_objects("Skin")
     panel.show()
     app.processEvents()
     panel.roles.setCurrentRow(0)

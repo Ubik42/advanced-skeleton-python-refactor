@@ -12,6 +12,12 @@ Preparation / Rig 引用模型：`maya_preparation_reference_smoke.py` 生成模
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_preparation_reference_smoke.py
 ```
 
+Preparation / Rig 的 Skin／All／左右眼对象记录：`maya_preparation_objects_smoke.py` 从同一模型文件引用四件网格，在 Fit 创建前保存四组输入，重开后读回并重新选中；创建 FitSkeleton 后检查原版字符串属性，以及单次 Undo／Redo 和再次重开。
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_preparation_objects_smoke.py
+```
+
 四肢 `_50` 体积父节点及肘／膝 A/B 加权关节对照：先导出原版驱动导向，再分别运行以下两个用例。`_50` 用例覆盖双侧六部位共 12 个中间父节点的静止、FK 动作、来源父链核对、故障回滚和重开。肘／膝用例在同一父链上构建 8 个带 SDK 曲线的加权关节，以肘 `80°`、膝 `-110°` 对比原版动作；两者均检查撤销／重做和 Body 登记。
 
 ```powershell

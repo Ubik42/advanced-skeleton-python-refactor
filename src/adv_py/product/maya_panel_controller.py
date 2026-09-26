@@ -171,6 +171,29 @@ class MayaPanelController:
 
         return ReferencePreparationModel(MayaPreparationReferenceHost()).execute(source)
 
+    def preparation_record_objects(self, namespace: str, role: str) -> tuple[str, ...]:
+        from adv_py.adapters.maya_preparation_objects import MayaPreparationObjectsHost
+        from adv_py.application.preparation_objects import RecordPreparationObjects
+        from adv_py.core.preparation_objects import PreparationObjectRole
+
+        return RecordPreparationObjects(MayaPreparationObjectsHost(namespace)).execute(
+            PreparationObjectRole(role))
+
+    def preparation_read_objects(self, namespace: str, role: str) -> tuple[str, ...]:
+        from adv_py.adapters.maya_preparation_objects import MayaPreparationObjectsHost
+        from adv_py.core.preparation_objects import PreparationObjectRole
+
+        return MayaPreparationObjectsHost(namespace).read_objects(
+            PreparationObjectRole(role))
+
+    def preparation_reselect_objects(self, namespace: str, role: str) -> tuple[str, ...]:
+        from adv_py.adapters.maya_preparation_objects import MayaPreparationObjectsHost
+        from adv_py.application.preparation_objects import ReselectPreparationObjects
+        from adv_py.core.preparation_objects import PreparationObjectRole
+
+        return ReselectPreparationObjects(MayaPreparationObjectsHost(namespace)).execute(
+            PreparationObjectRole(role))
+
     def characters(self) -> tuple[PanelCharacter, ...]:
         from adv_py.adapters.maya_scene_gateway import MayaSceneGateway
 
