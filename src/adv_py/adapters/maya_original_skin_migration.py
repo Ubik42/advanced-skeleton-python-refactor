@@ -24,6 +24,9 @@ from .maya_body import MayaBodyBuildHost
 from .maya_dense_skin import MayaDenseSkinHost
 from .maya_finger_mid import MayaFingerMidHost
 from .maya_limb_part import MayaLimbPartHost
+from .maya_original_control_animation import (
+    clone_original_control_animation, connect_original_control_animation,
+    plan_original_control_animation)
 from .maya_original_guide_capture import capture_original_guides
 from .maya_root_volume import MayaRootVolumeHost
 from .maya_sdk_volume import MayaSdkVolumeHost
@@ -37,6 +40,7 @@ class OriginalSkinMigrationResult:
     vertices: int
     influences: int
     body_joints: int
+    animation_curves: int = 0
 
 
 class MayaOriginalSkinMigration:
@@ -122,6 +126,7 @@ class MayaOriginalSkinMigration:
         if referenced:
             raise ValueError("待替换的原版角色或源 Skin 含引用节点："
                              + referenced[0])
+        animation = plan_original_control_animation(c, fit_parent)
         if any(c.objExists(name) for name in (target_mesh, target_skin)):
             raise ValueError("目标网格或 Skin 名称已被占用")
         for guide, key in ((volume, "joints"), (angle, "angles"),
@@ -144,6 +149,8 @@ class MayaOriginalSkinMigration:
             c.delete(copy, constructionHistory=True)
             if on_stage:
                 on_stage("mesh-copied")
+            animation_clones = clone_original_control_animation(c,
+                                                                 animation)
             c.delete(tuple(path for path in (c.listRelatives(
                 fit_parent, children=True, fullPath=True) or ())
                 if path != fits[0]))
@@ -178,6 +185,7 @@ class MayaOriginalSkinMigration:
             result = MayaDenseSkinHost().capture_dense_skin(target_skin)
             if result.vertex_count != source.vertex_count:
                 raise RuntimeError("迁移后的顶点数变化")
+            connect_original_control_animation(c, animation_clones)
             if on_stage:
                 on_stage("weights-copied")
         except BaseException:
@@ -188,4 +196,4 @@ class MayaOriginalSkinMigration:
             c.undoInfo(closeChunk=True)
         return OriginalSkinMigrationResult(copy, target_skin,
             result.vertex_count, len(result.influence_names),
-            len(built.registration.body))
+            len(built.registration.body), len(animation_clones))

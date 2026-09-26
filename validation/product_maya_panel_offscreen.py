@@ -37,7 +37,8 @@ class FakeController:
 
     def original_skin_migrate(self, namespace, source_skin):
         self.calls.append(("original_skin_migrate", namespace, source_skin))
-        return SimpleNamespace(vertices=18151, influences=121, body_joints=74)
+        return SimpleNamespace(vertices=18151, influences=121,
+                               body_joints=74, animation_curves=0)
 
     def fit_export(self, namespace, destination, container, *,
                    external_compatibility):

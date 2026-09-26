@@ -990,7 +990,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(), self.original_source_skin.text())
             return (f"已迁移 {result.vertices} 个顶点、"
                     f"{result.influences} 个影响关节；"
-                    f"登记 {result.body_joints} 个 Body 关节")
+                    f"登记 {result.body_joints} 个 Body 关节；"
+                    f"保留 {result.animation_curves} 条动画曲线")
 
         def _rebuild_character(self):
             extensions = tuple(line.strip() for line in
