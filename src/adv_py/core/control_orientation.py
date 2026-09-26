@@ -230,10 +230,10 @@ def plan_control_orientation_world(
                   *state.world_matrix[12:15], 1.)
         changes.append(ControlOrientationChange(
             state, ControlOrientationState(
-                state.control, target, ControlAxis.X, ControlAxis.Y,
+                state.control, target, ControlAxis.X, ControlAxis.Z,
                 curve_unaffected, mirror, False)))
     return ControlOrientationPlan(
-        ControlAxis.X, ControlAxis.Y, curve_unaffected, mirror, False,
+        ControlAxis.X, ControlAxis.Z, curve_unaffected, mirror, False,
         tuple(changes))
 
 

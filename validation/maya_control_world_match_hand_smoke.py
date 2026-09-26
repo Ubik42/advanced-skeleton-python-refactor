@@ -120,6 +120,35 @@ def main(report: Path) -> int:
             cmds.file(str(scene), open=True, force=True)
             reopened = host.capture_control_orientations((right, left))
             reopened_registration = resolver.execute(name)
+
+        finger_right = next(path for path in controls
+                            if path.endswith("|AdvPy_Index1FK_R"))
+        finger_left = next(path for path in controls
+                           if path.endswith("|AdvPy_Index1FK_L"))
+        finger_before = host.capture_control_orientations(
+            (finger_right, finger_left))
+        finger_body_before = tuple(_matrix(c, path) for path in body_paths)
+        finger_count = controller.control_orient_world(
+            "hero", (finger_right,), True, True)
+        finger_after = host.capture_control_orientations(
+            (finger_right, finger_left))
+        finger_body_after = tuple(_matrix(c, path) for path in body_paths)
+        cmds.undo()
+        finger_undo = host.capture_control_orientations(
+            (finger_right, finger_left))
+        cmds.redo()
+        finger_redo = host.capture_control_orientations(
+            (finger_right, finger_left))
+        with tempfile.TemporaryDirectory(
+                prefix="adv-py-world-orient-finger-",
+                dir=report.parent.resolve()) as folder:
+            scene = Path(folder) / "finger.ma"
+            cmds.file(rename=str(scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(scene), open=True, force=True)
+            finger_reopen = host.capture_control_orientations(
+                (finger_right, finger_left))
         checks = {
             "five_direct_body_children_each_side":
                 len(right_children) == len(left_children) == 5
@@ -143,6 +172,19 @@ def main(report: Path) -> int:
                 undone == before and redone == after
                 and reopened == after
                 and reopened_registration == registration,
+            "world_orient_namespaced_finger_pair":
+                finger_count == 2
+                and all(state.primary_axis.value == "X"
+                        and state.secondary_axis.value == "Z"
+                        and not state.mirrored_behavior
+                        and all(abs(state.world_matrix[index]) <= 1e-5
+                                for index in (1, 2, 4, 6, 8, 9))
+                        for state in finger_after)
+                and all(_close(a, b) for a, b in zip(
+                    finger_body_before, finger_body_after))
+                and finger_undo == finger_before
+                and finger_redo == finger_after
+                and finger_reopen == finger_after,
         }
         payload = {**checks, "status": "passed" if all(
             checks.values()) else "failed"}

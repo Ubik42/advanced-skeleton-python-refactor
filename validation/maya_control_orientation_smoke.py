@@ -234,6 +234,51 @@ def main(report: Path) -> int:
                 world_match_roles[role] = (str(exc) if unchanged else
                                            "拒绝后 Body 姿态发生变化：" + str(exc))
 
+        world_orient_roles = {}
+        for role in ("ShoulderFK", "ElbowFK", "WristFK", "HipFK",
+                     "KneeFK", "AnkleFK", "ToesFK", "ArmIK", "ArmPV",
+                     "LegIK", "LegPV", "ToeIK"):
+            right = next((path for path in candidates
+                          if path.endswith(role + "_R")), None)
+            left = next((path for path in candidates
+                         if path.endswith(role + "_L")), None)
+            if right is None or left is None:
+                world_orient_roles[role] = "missing registered pair"
+                continue
+            role_controls = (right, left)
+            role_states = host.capture_control_orientations(role_controls)
+            role_expected = plan_control_orientation_world(
+                role_states, True, True)
+            role_body = _world_matrices(cmds, body_paths)
+            applied = False
+            try:
+                role_count = controller.control_orient_world(
+                    ":", (right,), True, True)
+                applied = True
+                role_after = host.capture_control_orientations(role_controls)
+                if role_count != 2 or any(
+                        actual.control != change.after.control
+                        or actual.primary_axis != change.after.primary_axis
+                        or actual.secondary_axis != change.after.secondary_axis
+                        or not _close(actual.world_matrix,
+                                      change.after.world_matrix)
+                        for actual, change in zip(
+                            role_after, role_expected.changes)):
+                    raise RuntimeError("双侧世界轴或数量复检失败")
+                if not all(_close(a, b) for a, b in zip(
+                        role_body, _world_matrices(cmds, body_paths))):
+                    raise RuntimeError("World Orient 改变了 Body 姿态")
+                cmds.undo()
+                applied = False
+                if host.capture_control_orientations(
+                        role_controls) != role_states:
+                    raise RuntimeError("World Orient 单次撤销失败")
+                world_orient_roles[role] = "passed"
+            except Exception as exc:
+                if applied:
+                    cmds.undo()
+                world_orient_roles[role] = str(exc)
+
         all_controls = tuple(state.control for state in
             host.capture_control_curves(candidates, strict=False))
         custom_before = host.capture_control_orientations(all_controls)
@@ -756,7 +801,7 @@ def main(report: Path) -> int:
                 and _close(world_after.world_matrix,
                            world_expected.world_matrix)
                 and world_after.primary_axis.value == "X"
-                and world_after.secondary_axis.value == "Y"
+                and world_after.secondary_axis.value == "Z"
                 and not world_after.mirrored_behavior,
             "world_orient_preserves_body_and_children": all(
                 _close(a, b) for a, b in zip(
@@ -795,6 +840,10 @@ def main(report: Path) -> int:
             "world_match_ambiguous_and_parallel_rejected":
                 "唯一的直接子关节" in world_match_roles["WristFK"]
                 and toes_parallel_rejected,
+            "world_orient_control_type_probe": world_orient_roles,
+            "world_orient_twelve_control_pairs": all(
+                value == "passed" for value in world_orient_roles.values())
+                and len(world_orient_roles) == 12,
             "custom_all_controls_detach": len(proxies) == len(all_controls)
                 and len(detached) == len(all_controls) and session_exists
                 and hidden_original,

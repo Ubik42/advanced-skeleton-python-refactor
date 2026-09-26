@@ -308,9 +308,11 @@ def main(report: Path) -> int:
     panel.control_orient_curve_unaffected.setChecked(True)
     buttons["设置控制器局部轴"].click()
     buttons["对齐世界坐标轴"].click()
+    panel.control_orient_primary.setCurrentIndex(2)
+    panel.control_orient_secondary.setCurrentIndex(0)
     panel.control_orient_child_selections.setPlainText(
         "AdvPy_ShoulderFK_R = AdvPy_ElbowFKDriver_R")
-    buttons["世界匹配（朝向子关节）"].click()
+    buttons["朝向子关节（扩展）"].click()
     buttons["分离全部控制器"].click()
     buttons["重新附着全部控制器"].click()
     app.processEvents()

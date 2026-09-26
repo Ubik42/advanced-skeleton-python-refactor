@@ -415,7 +415,7 @@ def create_panel(controller: MayaPanelController | None = None):
                  self.control_orient_mirrored_behavior)])
             form.addRow(self._button("设置控制器局部轴", self._set_control_orient_axis))
             form.addRow(self._button("对齐世界坐标轴", self._set_control_orient_world))
-            form.addRow(self._button("世界匹配（朝向子关节）", self._set_control_orient_world_match))
+            form.addRow(self._button("朝向子关节（扩展）", self._set_control_orient_world_match))
             form.addRow(self._button("分离全部控制器", self._detach_control_orient_custom))
             form.addRow(self._button("重新附着全部控制器", self._attach_control_orient_custom))
             stack.addWidget(group)
@@ -1052,6 +1052,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(), controls,
                 self.control_orient_curve_unaffected.isChecked(),
                 self.control_orient_mirror.isChecked())
+            self.control_orient_primary.setCurrentIndex(0)
+            self.control_orient_secondary.setCurrentIndex(2)
             self.control_orient_mirrored_behavior.setChecked(False)
             return f"已将 {count} 个控制器对齐世界坐标轴；镜像行为已关闭"
 
@@ -1076,7 +1078,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.control_orient_mirror.isChecked(),
                 tuple(child_selections))
             self.control_orient_mirrored_behavior.setChecked(False)
-            return f"已匹配 {count} 个控制器的世界方向与子关节；镜像行为已关闭"
+            return f"已将 {count} 个控制器朝向子关节；镜像行为已关闭"
 
         def _detach_control_orient_custom(self):
             proxies = self.controller.control_orient_custom_detach(

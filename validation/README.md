@@ -372,6 +372,8 @@ py -3 -m unittest discover -s tests
 
 综合脚本覆盖 Fit → Body → Spine / Torso / Arm / Leg / Hand / Global / 控制空间 → 显式蒙皮，核对权重和实际顶点变形。一次 Undo / Redo 必须恢复原有世界矩阵与网格位置，不能只以节点存在判断重做成功。蒙皮后注入失败必须移除整个新建角色，保留原有场景标记和选择。
 
+外部原版示例场景可用 `maya_original_sample_inventory.py` 只读盘点：传入本机 `.ma`／`.mb` 路径和本地报告路径；脚本以 `executeScriptNodes=False` 打开场景，记录 Fit 关节、Body／控制数量和顶层层级，不改写来源文件。`sam.mb` 的本机报告显示 Y Up、厘米单位、41 个 Fit 关节、294 个总关节、141 个曲线控制 Transform 和 1 个网格。该盘点只证明原版资产结构，不代表重构框架已能直接导入或构建此资产。
+
 局部机制定位使用 `maya_body_spine_smoke.py` 与 `maya_body_control_spaces_smoke.py`，输出路径作为第一个参数，`--basic` 切换为 30 关节。两者包含非法状态拒绝和失败回滚；空间脚本另外验证身体 / Global 跟随关系。结果写入已忽略的 `validation/results/`，不提交本机日志。
 
 

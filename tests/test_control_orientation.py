@@ -143,7 +143,7 @@ class ControlOrientationTests(unittest.TestCase):
             2., 0., 0., 0., 0., 3., 0., 0.,
             0., 0., 4., 0., 1., 2., 3., 1.))
         self.assertEqual((after.primary_axis, after.secondary_axis),
-                         (ControlAxis.X, ControlAxis.Y))
+                         (ControlAxis.X, ControlAxis.Z))
         self.assertTrue(after.curve_unaffected and after.mirror)
         self.assertFalse(after.mirrored_behavior)
 
