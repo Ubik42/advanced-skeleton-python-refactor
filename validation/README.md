@@ -434,7 +434,7 @@ $env:PYTHONPATH = 'src'
 
 `maya_original_axial_part_graph.py` 从原版场景只读记录六个轴向 Part 关节、FK／IK 中间关节、位置与朝向混合节点的世界矩阵、父链和输入连接。完整组装报告的 `axial_rest_matrix_differences` 与 `axial_extra_pose_matrix_errors` 分别核对静止和 FK 动作；后者覆盖三控制器 X／Z 单轴及组合姿态。原版动态 HipSwing、FK／IK 混合、缩放和网格顶点尚未覆盖。
 
-`maya_original_skin_121_smoke.py` 依次接收 `sam.mb`、体积／角度／轴向导向 JSON 和报告路径。在同一场景复制原版网格并去除复制件历史，重建 121 个影响关节，按顶点和影响关节名迁移原 Skin 的全部权重。`TransferDenseSkinWeights` 使用可撤销的 Maya 命令批量写入；报告检查权重、静止顶点、UV／材质连接、整条迁移链的一次撤销／重做、保存重开，以及 Root、Neck、右肘、右髋动作的顶点和关节矩阵差。运行后可用 `maya_original_skin_121_reopen.py` 在独立 Maya 进程中读取报告和生成的 `.mb`，复查 18,151 顶点、121 影响关节、权重哈希、UV、材质连接和角色登记。当前 Root、Neck 动作未通过原版网格等价，不能将该用例视为完整绑定验收。
+`maya_original_skin_121_smoke.py` 依次接收 `sam.mb`、体积／角度／轴向导向 JSON 和报告路径。在同一场景复制原版网格并去除复制件历史，重建 121 个影响关节，按顶点和影响关节名迁移原 Skin 的全部权重。`TransferDenseSkinWeights` 使用可撤销的 Maya 命令批量写入；报告检查权重、静止顶点、UV／材质连接、整条迁移链的一次撤销／重做、保存重开，以及 Root、Neck、右肘、右髋动作的顶点和关节矩阵差。运行后可用 `maya_original_skin_121_reopen.py` 在独立 Maya 进程中读取报告和生成的 `.mb`，复查 18,151 顶点、121 影响关节、权重哈希、UV、材质连接和角色登记。当前 Root Y 20°、Neck Y 20°、右肘 Z 80°、右髋 Y 30° 四组动作的逐顶点最大差均低于 `1e-6 cm`；更多组合姿态、轴向 IK／缩放与完整界面迁移仍待验，不能将这四组取样视为完整绑定验收。
 
 局部机制定位使用 `maya_body_spine_smoke.py` 与 `maya_body_control_spaces_smoke.py`，输出路径作为第一个参数，`--basic` 切换为 30 关节。两者包含非法状态拒绝和失败回滚；空间脚本另外验证身体 / Global 跟随关系。结果写入已忽略的 `validation/results/`，不提交本机日志。
 

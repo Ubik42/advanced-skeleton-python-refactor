@@ -41,6 +41,8 @@ class LimbPartSegmentSpec:
     twist1_comp_name: str
     twist2_comp_name: str
     positions: tuple[tuple[float, float, float], ...]
+    twist_ik_source: str | None = None
+    twist_mode_blend_name: str | None = None
 
 
 def plan_limb_parts(body: BodySkeletonSnapshot) -> tuple[LimbPartSegmentSpec, ...]:
@@ -74,7 +76,8 @@ def plan_limb_parts(body: BodySkeletonSnapshot) -> tuple[LimbPartSegmentSpec, ..
                 f"AdvPy_{ik_limb}IK_{side}", fatness_attribute,
                 prefix + "FatnessAdd",
                 f"AdvPy_{ik_limb}VolumeBlend_{side}.outputR",
-                start.path + ".rotate", prefix + "TwistCompose",
+                (f"AdvPy_HipFKDriver_{side}.rotate" if stem == "Hip"
+                 else start.path + ".rotate"), prefix + "TwistCompose",
                 prefix + "TwistDecompose", prefix + "TwistProject",
                 (f"AdvPy_{up_label}TwistProject_{side}.outputRotateX"
                  if up_label else None),
@@ -86,5 +89,8 @@ def plan_limb_parts(body: BodySkeletonSnapshot) -> tuple[LimbPartSegmentSpec, ..
                 prefix + "UpBlend" if up_label else None,
                 prefix + "Twist1", prefix + "Twist2",
                 prefix + "Twist1Sum", prefix + "Twist2Sum",
-                prefix + "Twist1Comp", prefix + "Twist2Comp", positions))
+                prefix + "Twist1Comp", prefix + "Twist2Comp", positions,
+                (f"AdvPy_HipIKDriver_{side}.rotate" if stem == "Hip"
+                 else None),
+                (prefix + "TwistModeBlend" if stem == "Hip" else None)))
     return tuple(result)

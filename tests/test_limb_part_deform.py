@@ -56,6 +56,11 @@ class LimbPartPlanTests(unittest.TestCase):
         self.assertEqual(hip.fatness_control, "AdvPy_LegIK_R")
         self.assertEqual(hip.volume_source,
                          "AdvPy_LegVolumeBlend_R.outputR")
+        self.assertEqual(hip.twist_source, "AdvPy_HipFKDriver_R.rotate")
+        self.assertEqual(hip.twist_ik_source,
+                         "AdvPy_HipIKDriver_R.rotate")
+        self.assertEqual(hip.twist_mode_blend_name,
+                         "AdvPy_HipPart_RTwistModeBlend")
 
     def test_rejects_missing_endpoint(self):
         with self.assertRaisesRegex(ValueError, "Hip_L"):

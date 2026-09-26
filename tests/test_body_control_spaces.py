@@ -20,6 +20,8 @@ class BodyControlSpacesTests(unittest.TestCase):
         self.assertEqual(len(plan.node_names), 9)
         self.assertTrue(plan.space("head").rotation_only)
         self.assertEqual(plan.space("head").initial_mode, "body")
+        self.assertTrue(plan.space("head").body_source.endswith(
+            "|AdvPy_TorsoNeck_MFK"))
         self.assertTrue(all(len(s.targets) == 2 for s in plan.spaces[1:]))
         with self.assertRaises(FitSkeletonValidationError):
             plan.space("unknown")

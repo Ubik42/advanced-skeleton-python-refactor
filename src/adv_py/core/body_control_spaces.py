@@ -50,7 +50,13 @@ def plan_body_control_spaces(body, torso, arm, leg, global_control):
     heads = tuple(spec for spec in torso.controls.controls if spec.driven_joint == joints.get("Head_M"))
     if len(heads) != 1 or "Neck_M" not in joints:
         raise FitSkeletonValidationError("空间计划需要完整 Torso 头颈控制")
-    spaces = [BodyControlSpaceSpec("head", (heads[0].offset_path,), joints["Neck_M"], global_control.control_path, True, "body")]
+    neck_controls = tuple(spec for spec in torso.controls.controls
+                          if spec.driven_joint == joints["Neck_M"])
+    if len(neck_controls) != 1:
+        raise FitSkeletonValidationError("空间计划需要唯一 Neck FK 控制")
+    spaces = [BodyControlSpaceSpec("head", (heads[0].offset_path,),
+        neck_controls[0].control_path, global_control.control_path,
+        True, "body")]
     for module, label, source in ((arm, "hand", joints["Chest_M"]), (leg, "foot", body.root)):
         for limb in module.ik.limbs:
             goal = limb.wrist_offset_path if label == "hand" else limb.ankle_offset_path

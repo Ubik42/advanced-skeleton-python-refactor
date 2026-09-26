@@ -15,6 +15,7 @@ class AxialPartHost(Protocol):
     def transaction(self, label: str): ...
     def create_axial_part(self, spec: AxialPartSpec,
                           guide: Mapping[str, object] | None = None) -> None: ...
+    def complete_guided_axial_body(self) -> None: ...
     def capture_axial_part(self, spec: AxialPartSpec) -> tuple[str, str, tuple[float, float, float]]: ...
 
 
@@ -56,6 +57,8 @@ class BuildAxialPartDeform:
                     self._host.create_axial_part(spec)
                 else:
                     self._host.create_axial_part(spec, guide)
+            if guide is not None:
+                self._host.complete_guided_axial_body()
             for spec in specs:
                 path, parent, position = self._host.capture_axial_part(spec)
                 if (path != spec.path or parent != spec.parent

@@ -8,7 +8,11 @@ from .maya_body import MayaBodyBuildHost
 class MayaLimbPartHost(MayaBodyBuildHost):
     def preflight_limb_part_source(self, spec: LimbPartSegmentSpec) -> None:
         if not self._cmds.objExists(spec.twist_source):
-            raise ValueError("四肢分段需要有效的 Body 关节旋转：" + spec.twist_source)
+            raise ValueError("四肢分段需要有效的关节旋转：" + spec.twist_source)
+        if spec.twist_ik_source and not self._cmds.objExists(
+                spec.twist_ik_source):
+            raise ValueError("四肢分段缺少 IK 关节旋转：" +
+                             spec.twist_ik_source)
         if spec.up_twist_source and not self._cmds.objExists(spec.up_twist_source):
             raise ValueError("四肢分段缺少远端扭转来源：" + spec.up_twist_source)
         if spec.up_twist_source:
@@ -63,7 +67,16 @@ class MayaLimbPartHost(MayaBodyBuildHost):
         twist_decompose = c.createNode("decomposeMatrix",
                                          name=spec.twist_decompose_name)
         project = c.createNode("quatToEuler", name=spec.twist_project_name)
-        c.connectAttr(spec.twist_source, compose + ".inputRotate")
+        twist_source = spec.twist_source
+        if spec.twist_mode_blend_name:
+            mode_blend = c.createNode("blendColors",
+                                      name=spec.twist_mode_blend_name)
+            c.connectAttr(spec.twist_ik_source, mode_blend + ".color1")
+            c.connectAttr(spec.twist_source, mode_blend + ".color2")
+            c.connectAttr("AdvPy_LegSettings.legIkFk_" + spec.side,
+                          mode_blend + ".blender")
+            twist_source = mode_blend + ".output"
+        c.connectAttr(twist_source, compose + ".inputRotate")
         c.connectAttr(spec.start + ".rotateOrder",
                       compose + ".inputRotateOrder")
         c.connectAttr(compose + ".outputMatrix",

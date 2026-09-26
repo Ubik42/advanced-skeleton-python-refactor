@@ -32,6 +32,8 @@ class BuildLimbPartDeform:
                          spec.fatness_add_name,
                          spec.twist_compose_name, spec.twist_decompose_name,
                          spec.twist_project_name,
+                         *((spec.twist_mode_blend_name,)
+                           if spec.twist_mode_blend_name else ()),
                          spec.twist1_name, spec.twist2_name,
                          spec.twist1_sum_name, spec.twist2_sum_name,
                          spec.twist1_comp_name, spec.twist2_comp_name):

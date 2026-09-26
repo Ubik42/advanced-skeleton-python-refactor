@@ -1,6 +1,7 @@
 """Maya construction of exact-name axial deformation influences."""
 from __future__ import annotations
 
+from dataclasses import replace
 from math import isfinite
 from typing import Mapping
 
@@ -9,6 +10,160 @@ from .maya_body import MayaBodyBuildHost
 
 
 class MayaAxialPartHost(MayaBodyBuildHost):
+    def complete_guided_axial_body(self) -> None:
+        """Connect axial FK positions and keep the source pelvis leg space."""
+        self._require_transaction()
+        c = self._cmds
+        registration = self.read_character_registration()
+        def only(name, kind):
+            nodes = c.ls(name, long=True, type=kind) or []
+            if len(nodes) != 1:
+                raise ValueError("导向轴向驱动缺少唯一节点：" + name)
+            return nodes[0]
+
+        root = only("Root_M", "joint")
+        head = only("Head_M", "joint")
+        chest = only("Chest_M", "joint")
+        only("AdvPy_AxialFrameSpine1_M", "transform")
+        only("AdvPy_AxialFKXSpine1Part2_M", "transform")
+        only("AdvPy_AxialFKXNeckPart2_M", "transform")
+        torso_root = only("AdvPy_TorsoControls", "transform")
+        new_names = ("AdvPy_AxialWaistPoint", "AdvPy_AxialChestPosition",
+                     "AdvPy_AxialChestPoint", "AdvPy_AxialHeadPosition",
+                     "AdvPy_AxialHeadPoint", "AdvPy_AxialPelvisLegSpace",
+                     "AdvPy_AxialPelvisLegPoint", "AdvPy_AxialHipPoint_R",
+                     "AdvPy_AxialHipPoint_L")
+        if any(self.find_name_collisions(name) for name in new_names):
+            raise ValueError("轴向身体驱动节点名称冲突")
+        for stem in ("Root", "Neck"):
+            control = only("AdvPy_Torso" + stem + "_MFK", "transform")
+            constraint = only("AdvPy_Torso" + stem + "_MOrient",
+                              "orientConstraint")
+            targets = c.orientConstraint(constraint, query=True,
+                                         targetList=True) or []
+            resolved = [(c.ls(node, long=True) or [node])[0]
+                        for node in targets]
+            if resolved != [control]:
+                raise ValueError(stem + " 原驱动已被外部修改")
+            only("AdvPy_AxialFKX" + stem + "_M", "transform")
+        for name in (head, only("AdvPy_SpineFKWaist", "joint"),
+                     only("AdvPy_SpineFKChest", "joint"),
+                     only("Hip_R", "joint"), only("Hip_L", "joint")):
+            if any(not c.getAttr(name + ".translate" + axis,
+                                 settable=True) for axis in "XYZ"):
+                raise ValueError("轴向目标位移通道已被占用：" + name)
+        leg_constraints = []
+        for side in ("R", "L"):
+            blend = only("AdvPy_HipIKFKBlend_" + side,
+                         "orientConstraint")
+            drivers = c.orientConstraint(blend, query=True,
+                                         targetList=True) or []
+            if len(drivers) != 2:
+                raise ValueError("Hip FK／IK 驱动数量错误：" + side)
+            for role in ("FKSpace", "FKOrigin", "IKOrigin", "StretchOrigin"):
+                name = "AdvPy_TorsoLeg" + role + "_" + side
+                constraint = only(name, "parentConstraint")
+                targets = c.parentConstraint(constraint, query=True,
+                                             targetList=True) or []
+                if len(targets) != 1 or (c.ls(targets[0], long=True)
+                                          or []) != [root]:
+                    raise ValueError("Leg 空间来源已被外部修改：" + name)
+                outputs = c.listConnections(
+                    constraint + ".constraintTranslateX", source=False,
+                    destination=True, plugs=True) or []
+                if len(outputs) != 1:
+                    raise ValueError("Leg 空间目标已被外部修改：" + name)
+                leg_constraints.append((name, role, outputs[0].split(".")[0]))
+        self._transaction_changed = True
+        chest_position = c.xform(chest, query=True, worldSpace=True,
+                                 translation=True)
+        head_position = c.xform(head, query=True, worldSpace=True,
+                                translation=True)
+        root_matrix = c.xform(root, query=True, worldSpace=True,
+                              matrix=True)
+        for stem in ("Root", "Neck"):
+            c.delete("AdvPy_Torso" + stem + "_MOrient")
+            c.orientConstraint("AdvPy_AxialFKX" + stem + "_M",
+                               stem + "_M", maintainOffset=False,
+                               name="AdvPy_Torso" + stem + "_MOrient")
+        c.pointConstraint("AdvPy_AxialFrameSpine1_M",
+                          "AdvPy_SpineFKWaist", maintainOffset=False,
+                          name="AdvPy_AxialWaistPoint")
+        for label, parent, target, position in (
+            ("Chest", "AdvPy_AxialFKXSpine1Part2_M",
+             "AdvPy_SpineFKChest", chest_position),
+            ("Head", "AdvPy_AxialFKXNeckPart2_M", head,
+             head_position),
+        ):
+            frame = c.createNode("transform",
+                                 name="AdvPy_Axial" + label + "Position",
+                                 parent=parent, skipSelect=True)
+            c.xform(frame, worldSpace=True, translation=position)
+            c.pointConstraint(frame, target, maintainOffset=False,
+                              name="AdvPy_Axial" + label + "Point")
+        pelvis = c.createNode("transform",
+                              name="AdvPy_AxialPelvisLegSpace",
+                              parent=torso_root, skipSelect=True)
+        c.xform(pelvis, worldSpace=True, matrix=root_matrix)
+        c.pointConstraint(root, pelvis, maintainOffset=False,
+                          name="AdvPy_AxialPelvisLegPoint")
+        for name, role, target in leg_constraints:
+            c.delete(name)
+            options = ({"skipRotate": ("x", "y", "z")}
+                       if role != "FKSpace" else {})
+            c.parentConstraint(pelvis, target, maintainOffset=True,
+                               name=name, **options)
+        for side in ("R", "L"):
+            blend = "AdvPy_HipIKFKBlend_" + side
+            drivers = c.orientConstraint(blend, query=True,
+                                         targetList=True) or []
+            source_weights = c.orientConstraint(
+                blend, query=True, weightAliasList=True) or []
+            point = c.pointConstraint(
+                *drivers, "Hip_" + side, maintainOffset=False,
+                name="AdvPy_AxialHipPoint_" + side)[0]
+            target_weights = c.pointConstraint(
+                point, query=True, weightAliasList=True) or []
+            if len(source_weights) != 2 or len(target_weights) != 2:
+                raise RuntimeError("Hip FK／IK 位置混合权重数量错误")
+            for source, target in zip(source_weights, target_weights):
+                c.connectAttr(blend + "." + source, point + "." + target)
+        expected_new_inputs = {
+            "AdvPy_SpineFKWaist": "AdvPy_AxialWaistPoint",
+            "AdvPy_SpineFKChest": "AdvPy_AxialChestPoint",
+            "Head_M": "AdvPy_AxialHeadPoint",
+            "Hip_R": "AdvPy_AxialHipPoint_R",
+            "Hip_L": "AdvPy_AxialHipPoint_L",
+        }
+        refreshed = []
+        for node in registration.nodes:
+            current = self._registry_node(node.path)
+            if replace(current, inputs=node.inputs) != node:
+                raise RuntimeError("轴向驱动改变登记节点身份：" + node.path)
+            constraint_name = expected_new_inputs.get(
+                node.path.rsplit("|", 1)[-1])
+            if constraint_name is None:
+                if current.inputs != node.inputs:
+                    raise RuntimeError("轴向驱动改变其他登记输入：" + node.path)
+                refreshed.append(node)
+                continue
+            before = dict(node.inputs)
+            after = dict(current.inputs)
+            for axis in "XYZ":
+                attribute = "translate" + axis
+                source = after.get(attribute, "")
+                if (attribute in before or source.rsplit("|", 1)[-1]
+                        != constraint_name + ".constraintTranslate" + axis):
+                    raise RuntimeError("轴向位移输入不符合预期：" + node.path)
+                del after[attribute]
+            if after != before:
+                raise RuntimeError("轴向驱动替换了既有登记输入：" + node.path)
+            refreshed.append(current)
+        updated = replace(registration, nodes=tuple(refreshed))
+        self.write_character_registration_extension(registration, updated)
+        if self.read_character_registration() != updated:
+            raise RuntimeError("轴向驱动登记写后读回失败")
+
     def preflight_axial_part_guide(self, spec: AxialPartSpec,
                                   guide: Mapping[str, object]) -> None:
         nodes = guide.get("nodes")

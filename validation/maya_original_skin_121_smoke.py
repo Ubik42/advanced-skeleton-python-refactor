@@ -76,6 +76,7 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
         from adv_py.application.angle_volume_deform import BuildAngleVolumeDeform
         from adv_py.application.skin_bind import BindSkin
         from adv_py.application.dense_skin_transfer import TransferDenseSkinWeights
+        from adv_py.application.character_registry import ResolveBodyCharacter
 
         volume = json.loads(volume_file.read_text(encoding="utf-8"))
         angle = json.loads(angle_file.read_text(encoding="utf-8"))
@@ -142,6 +143,26 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
             fit_parent, children=True, fullPath=True) or ()) if path != fits[0]))
         BuildRegisteredBodyCharacter(MayaBodyBuildHost()).apply(
             fits[0], infer_missing_labels=True)
+        registration_before_axial = ResolveBodyCharacter(
+            MayaBodyBuildHost()).execute()
+        class FaultyAxialHost(MayaAxialPartHost):
+            def complete_guided_axial_body(self):
+                super().complete_guided_axial_body()
+                raise RuntimeError("injected guided axial failure")
+        try:
+            BuildAxialPartDeform(FaultyAxialHost()).apply(guide=axial)
+        except RuntimeError as exc:
+            axial_fault_rolled_back = (
+                str(exc) == "injected guided axial failure"
+                and not cmds.objExists("RootPart1_M")
+                and not cmds.objExists("AdvPy_AxialHeadPosition")
+                and ResolveBodyCharacter(
+                    MayaBodyBuildHost()).execute()
+                    == registration_before_axial)
+        else:
+            axial_fault_rolled_back = False
+        if not axial_fault_rolled_back:
+            raise AssertionError("导向轴向故障回滚失败")
         BuildAxialPartDeform(MayaAxialPartHost()).apply(guide=axial)
         BuildFingerMidDeform(MayaFingerMidHost()).apply()
         BuildLimbPartDeform(MayaLimbPartHost()).apply()
@@ -225,7 +246,9 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
         pose_joint_frames = {}
         diagnostic_names = ("Root_M", "Spine1_M", "Chest_M", "Neck_M",
             "Head_M", "Hip_R", "Hip_L", "Knee_R", "Knee_L",
-            "Ankle_R", "Ankle_L", "Toes_R", "Toes_L")
+            "Ankle_R", "Ankle_L", "Toes_R", "Toes_L",
+            "HipPart1_R", "HipPart1_L", "HipPart2_R", "HipPart2_L",
+            "HipCJoint_R", "HipCJoint_L")
         for label, (_, target_plug, value) in controls.items():
             cmds.setAttr(target_plug, value)
             posed = _points(duplicate)
@@ -275,6 +298,7 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
                 "redo_weight_error": redo_weight_error,
                 "mismatch_rejected": mismatch_rejected,
                 "fault_rolled_back": fault_rolled_back,
+                "axial_fault_rolled_back": axial_fault_rolled_back,
                 "reopen_weight_error": reopen_weight_error,
                 "source_uv_sets": source_uv_sets,
                 "target_uv_sets": copy_uv_sets,
@@ -289,9 +313,14 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
                 or copy_error > 1e-5 or point_error > 1e-5
                 or weight_error > 1e-6 or copy_uv_sets != source_uv_sets
                 or copy_shaders != source_shaders
+                or pose_errors["root_y20"] > 1e-5
+                or pose_errors["neck_y20"] > 1e-5
+                or pose_errors["elbow_r_z80"] > 1e-5
+                or pose_errors["hip_r_y30"] > 1e-5
                 or not all((undo_removed_skin, undo_removed_copy,
                             undo_restored_source, mismatch_rejected,
-                            fault_rolled_back)) or redo_weight_error > 1e-6
+                            fault_rolled_back, axial_fault_rolled_back))
+                or redo_weight_error > 1e-6
                 or reopen_weight_error > 1e-6):
             raise AssertionError(data)
         return 0
