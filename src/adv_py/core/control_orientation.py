@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from math import sqrt
+from math import isfinite, sqrt
 import re
 
 
@@ -266,13 +266,29 @@ def plan_control_orientation_world_match(
     for state, (_, child) in zip(states, child_positions):
         if len(child) != 3:
             raise ControlOrientationValidationError("子关节位置必须是三维坐标")
+        try:
+            child = tuple(float(value) for value in child)
+        except (TypeError, ValueError) as exc:
+            raise ControlOrientationValidationError(
+                "子关节位置必须是有限的三维坐标") from exc
+        if any(not isfinite(value) for value in child):
+            raise ControlOrientationValidationError(
+                "子关节位置必须是有限的三维坐标")
         origin = state.world_matrix[12:15]
-        aim, _ = _normal(tuple(value - base for value, base
-                               in zip(child, origin)))
+        direction = tuple(value - base for value, base
+                          in zip(child, origin))
+        if sum(value * value for value in direction) <= 1e-20:
+            raise ControlOrientationValidationError(
+                f"World Match 控制器与子关节位置重合：{state.control}")
+        aim, _ = _normal(direction)
         dot = sum(a * b for a, b in zip(aim, up_world))
-        projected, _ = _normal(tuple(
+        projection = tuple(
             value - dot * direction
-            for value, direction in zip(up_world, aim)))
+            for value, direction in zip(up_world, aim))
+        if sum(value * value for value in projection) <= 1e-20:
+            raise ControlOrientationValidationError(
+                f"World Match 世界参考轴与子关节方向平行：{state.control}")
+        projected, _ = _normal(projection)
         third, _ = _normal(_cross(aim, projected))
         lengths = tuple(_normal(
             state.world_matrix[index * 4:index * 4 + 3])[1]

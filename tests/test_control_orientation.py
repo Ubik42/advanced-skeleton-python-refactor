@@ -171,6 +171,27 @@ class ControlOrientationTests(unittest.TestCase):
                 (ControlOrientationState("|Control", IDENTITY),),
                 (("|Control", (0., 3., 0.)),), "X", "Y", "Y")
 
+    def test_world_match_rejects_coincident_or_nonfinite_child(self):
+        state = ControlOrientationState("|Control", IDENTITY)
+        for child in ((0., 0., 0.), (float("nan"), 0., 1.)):
+            with self.subTest(child=child):
+                with self.assertRaises(ControlOrientationValidationError):
+                    plan_control_orientation_world_match(
+                        (state,), (("|Control", child),), "X", "Y", "Y")
+
+    def test_world_match_signed_axes_preserve_position_and_scale(self):
+        matrix = (2., 0., 0., 0., 0., 3., 0., 0.,
+                  0., 0., 4., 0., 1., 2., 3., 1.)
+        plan = plan_control_orientation_world_match(
+            (ControlOrientationState("|Control", matrix),),
+            (("|Control", (1., 2., 8.)),), "-Z", "X", "Y")
+        result = plan.changes[0].after.world_matrix
+        self.assertEqual(result[12:16], matrix[12:16])
+        self.assertEqual(result[:12], (
+            0., 2., 0., 0.,
+            3., 0., 0., 0.,
+            0., 0., -4., 0.))
+
     def test_world_match_uses_one_verified_transaction(self):
         host = Host()
         result = SetControlOrientationWorldMatch(host).apply(

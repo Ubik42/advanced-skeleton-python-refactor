@@ -172,6 +172,14 @@ def main(report: Path) -> int:
         match_after = host.capture_control_orientations((control,))[0]
         match_body_after = _world_matrices(cmds, body_paths)
         match_children_after = _world_matrices(cmds, children)
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            cmds.setAttr(control + ".rotateY", 10.)
+            match_body_turned = _world_matrices(cmds, body_paths)
+            cmds.setAttr(control + ".rotateY", 0.)
+            match_body_reset = _world_matrices(cmds, body_paths)
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
         cmds.undo()
         match_undo = host.capture_control_orientations((control,))[0]
         cmds.redo()
@@ -185,6 +193,46 @@ def main(report: Path) -> int:
             cmds.file(new=True, force=True)
             cmds.file(str(match_scene), open=True, force=True)
             match_reopen = host.capture_control_orientations((control,))[0]
+
+        world_match_roles = {}
+        toes_parallel_rejected = False
+        for role in ("ShoulderFK", "ElbowFK", "HipFK", "KneeFK",
+                     "AnkleFK", "ToesFK", "WristFK"):
+            paired = next((path for path in candidates
+                           if path.endswith(role + "_R")), None)
+            if paired is None:
+                world_match_roles[role] = "missing registered control"
+                continue
+            role_before = _world_matrices(cmds, body_paths)
+            if role == "ToesFK":
+                try:
+                    controller.control_orient_world_match(
+                        ":", (paired,), "X", "Y", "Y", True, True)
+                except ValueError as exc:
+                    toes_parallel_rejected = "方向平行" in str(exc)
+            applied = False
+            try:
+                role_count = controller.control_orient_world_match(
+                    ":", (paired,), "X", "Y",
+                    "Z" if role == "ToesFK" else "Y", True, True)
+                applied = True
+                role_after = _world_matrices(cmds, body_paths)
+                if role_count != 2 or not all(
+                        _close(a, b) for a, b in zip(role_before,
+                                                     role_after)):
+                    raise RuntimeError("镜像数量或 Body 静止复检失败")
+                cmds.undo()
+                if not all(_close(a, b) for a, b in zip(
+                        role_before, _world_matrices(cmds, body_paths))):
+                    raise RuntimeError("撤销后 Body 姿态复检失败")
+                world_match_roles[role] = "passed"
+            except Exception as exc:
+                if applied:
+                    cmds.undo()
+                unchanged = all(_close(a, b) for a, b in zip(
+                    role_before, _world_matrices(cmds, body_paths)))
+                world_match_roles[role] = (str(exc) if unchanged else
+                                           "拒绝后 Body 姿态发生变化：" + str(exc))
 
         all_controls = tuple(state.control for state in
             host.capture_control_curves(candidates, strict=False))
@@ -731,9 +779,22 @@ def main(report: Path) -> int:
                     match_body_before, match_body_after))
                 and all(_close(a, b) for a, b in zip(
                     match_children_before, match_children_after)),
+            "world_match_controls_body_after_edit": any(
+                not _close(a, b) for a, b in zip(
+                    match_body_after, match_body_turned))
+                and all(_close(a, b) for a, b in zip(
+                    match_body_after, match_body_reset)),
             "world_match_undo_redo_reopen": match_undo == match_before
                 and match_redo == match_after
                 and match_reopen == match_after,
+            "world_match_control_type_probe": world_match_roles,
+            "world_match_six_fk_pairs": all(
+                world_match_roles[role] == "passed"
+                for role in ("ShoulderFK", "ElbowFK", "HipFK",
+                             "KneeFK", "AnkleFK", "ToesFK")),
+            "world_match_ambiguous_and_parallel_rejected":
+                "唯一的直接子关节" in world_match_roles["WristFK"]
+                and toes_parallel_rejected,
             "custom_all_controls_detach": len(proxies) == len(all_controls)
                 and len(detached) == len(all_controls) and session_exists
                 and hidden_original,
