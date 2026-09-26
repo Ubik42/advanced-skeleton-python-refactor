@@ -149,6 +149,33 @@ def main(report: Path) -> int:
             cmds.file(str(scene), open=True, force=True)
             finger_reopen = host.capture_control_orientations(
                 (finger_right, finger_left))
+
+        original_match_before = host.capture_control_orientations(
+            (finger_right, finger_left))
+        original_match_body_before = tuple(_matrix(c, path)
+                                           for path in body_paths)
+        original_match_count = controller.control_orient_world_axis_match(
+            "hero", (finger_right,), True, True)
+        original_match_after = host.capture_control_orientations(
+            (finger_right, finger_left))
+        original_match_body_after = tuple(_matrix(c, path)
+                                          for path in body_paths)
+        cmds.undo()
+        original_match_undo = host.capture_control_orientations(
+            (finger_right, finger_left))
+        cmds.redo()
+        original_match_redo = host.capture_control_orientations(
+            (finger_right, finger_left))
+        with tempfile.TemporaryDirectory(
+                prefix="adv-py-original-world-match-finger-",
+                dir=report.parent.resolve()) as folder:
+            scene = Path(folder) / "finger-match.ma"
+            cmds.file(rename=str(scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(scene), open=True, force=True)
+            original_match_reopen = host.capture_control_orientations(
+                (finger_right, finger_left))
         checks = {
             "five_direct_body_children_each_side":
                 len(right_children) == len(left_children) == 5
@@ -185,6 +212,16 @@ def main(report: Path) -> int:
                 and finger_undo == finger_before
                 and finger_redo == finger_after
                 and finger_reopen == finger_after,
+            "original_world_match_namespaced_finger_pair":
+                original_match_count == 2
+                and all(state.primary_axis.value == "X"
+                        and state.secondary_axis.value == "Z"
+                        for state in original_match_after)
+                and all(_close(a, b) for a, b in zip(
+                    original_match_body_before, original_match_body_after))
+                and original_match_undo == original_match_before
+                and original_match_redo == original_match_after
+                and original_match_reopen == original_match_after,
         }
         payload = {**checks, "status": "passed" if all(
             checks.values()) else "failed"}

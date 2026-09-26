@@ -396,6 +396,12 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.control_orient_world_up.addItem(axis, axis)
             self.control_orient_secondary.setCurrentIndex(1)
             self.control_orient_world_up.setCurrentIndex(1)
+            self.control_orient_world_orient = QtWidgets.QCheckBox("World Orient")
+            self.control_orient_world_match_mode = QtWidgets.QCheckBox("World Match")
+            self.control_orient_world_orient.toggled.connect(
+                self._control_orient_mode_changed)
+            self.control_orient_world_match_mode.toggled.connect(
+                self._control_orient_mode_changed)
             self.control_orient_curve_unaffected = QtWidgets.QCheckBox(
                 "改变方向后保持曲线世界形状")
             self.control_orient_mirror = QtWidgets.QCheckBox("同时设置对侧控制器")
@@ -407,14 +413,15 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("目标控制器", self.control_orient_targets),
                 ("Primary Axis", self.control_orient_primary),
                 ("Secondary Axis", self.control_orient_secondary),
-                ("World Match Up", self.control_orient_world_up),
-                ("World Match 子关节", self.control_orient_child_selections),
+                ("World Orient", self.control_orient_world_orient),
+                ("World Match", self.control_orient_world_match_mode),
                 ("Curve Unaffected", self.control_orient_curve_unaffected),
                 ("Mirror", self.control_orient_mirror),
                 ("Mirrored Behavior",
                  self.control_orient_mirrored_behavior)])
             form.addRow(self._button("设置控制器局部轴", self._set_control_orient_axis))
-            form.addRow(self._button("对齐世界坐标轴", self._set_control_orient_world))
+            form.addRow("扩展参考轴", self.control_orient_world_up)
+            form.addRow("扩展子关节", self.control_orient_child_selections)
             form.addRow(self._button("朝向子关节（扩展）", self._set_control_orient_world_match))
             form.addRow(self._button("分离全部控制器", self._detach_control_orient_custom))
             form.addRow(self._button("重新附着全部控制器", self._attach_control_orient_custom))
@@ -1032,6 +1039,10 @@ def create_panel(controller: MayaPanelController | None = None):
             return f"已替换 {count} 个控制器图标"
 
         def _set_control_orient_axis(self):
+            if self.control_orient_world_orient.isChecked():
+                return self._set_control_orient_world()
+            if self.control_orient_world_match_mode.isChecked():
+                return self._set_control_orient_world_axis_match()
             controls = tuple(line.strip() for line in
                 self.control_orient_targets.toPlainText().splitlines()
                 if line.strip())
@@ -1043,6 +1054,18 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.control_orient_mirror.isChecked(),
                 self.control_orient_mirrored_behavior.isChecked())
             return f"已设置 {count} 个控制器的局部轴"
+
+        def _control_orient_mode_changed(self, checked):
+            if checked:
+                sender = self.sender()
+                other = (self.control_orient_world_match_mode
+                         if sender is self.control_orient_world_orient
+                         else self.control_orient_world_orient)
+                other.setChecked(False)
+            manual = not (self.control_orient_world_orient.isChecked()
+                          or self.control_orient_world_match_mode.isChecked())
+            self.control_orient_primary.setEnabled(manual)
+            self.control_orient_secondary.setEnabled(manual)
 
         def _set_control_orient_world(self):
             controls = tuple(line.strip() for line in
@@ -1056,6 +1079,19 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_orient_secondary.setCurrentIndex(2)
             self.control_orient_mirrored_behavior.setChecked(False)
             return f"已将 {count} 个控制器对齐世界坐标轴；镜像行为已关闭"
+
+        def _set_control_orient_world_axis_match(self):
+            controls = tuple(line.strip() for line in
+                self.control_orient_targets.toPlainText().splitlines()
+                if line.strip())
+            count = self.controller.control_orient_world_axis_match(
+                self._namespace(), controls,
+                self.control_orient_curve_unaffected.isChecked(),
+                self.control_orient_mirror.isChecked())
+            self.control_orient_primary.setCurrentIndex(0)
+            self.control_orient_secondary.setCurrentIndex(2)
+            self.control_orient_mirrored_behavior.setChecked(False)
+            return f"已按变形关节的世界轴匹配 {count} 个控制器"
 
         def _set_control_orient_world_match(self):
             controls = tuple(line.strip() for line in

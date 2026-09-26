@@ -98,6 +98,12 @@ class FakeController:
                            curve_unaffected, mirror))
         return len(controls)
 
+    def control_orient_world_axis_match(self, namespace, controls,
+                                        curve_unaffected=False, mirror=False):
+        self.calls.append(("control_orient_world_axis_match", namespace,
+                           controls, curve_unaffected, mirror))
+        return len(controls)
+
     def control_orient_world_match(self, namespace, controls, primary,
                                    secondary, world_up,
                                    curve_unaffected=False, mirror=False,
@@ -307,7 +313,11 @@ def main(report: Path) -> int:
     panel.control_orient_secondary.setCurrentIndex(0)
     panel.control_orient_curve_unaffected.setChecked(True)
     buttons["设置控制器局部轴"].click()
-    buttons["对齐世界坐标轴"].click()
+    panel.control_orient_world_orient.setChecked(True)
+    buttons["设置控制器局部轴"].click()
+    panel.control_orient_world_match_mode.setChecked(True)
+    buttons["设置控制器局部轴"].click()
+    panel.control_orient_world_match_mode.setChecked(False)
     panel.control_orient_primary.setCurrentIndex(2)
     panel.control_orient_secondary.setCurrentIndex(0)
     panel.control_orient_child_selections.setPlainText(
@@ -413,6 +423,11 @@ def main(report: Path) -> int:
             ("control_orient_world", "hero", ("|hero:ShoulderFK_R",),
              True, True) in controller.calls
             and not panel.control_orient_mirrored_behavior.isChecked(),
+        "control_orient_world_match_dispatches":
+            ("control_orient_world_axis_match", "hero",
+             ("|hero:ShoulderFK_R",), True, True)
+            in controller.calls
+            and not panel.control_orient_world_orient.isChecked(),
         "control_orient_world_match_dispatches":
             ("control_orient_world_match", "hero",
              ("|hero:ShoulderFK_R",), "Z", "X", "Y", True, True,

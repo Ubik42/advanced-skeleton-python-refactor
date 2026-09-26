@@ -197,6 +197,42 @@ class MayaControlCurveMixin:
             resolved.add(control)
         return tuple(result)
 
+    def capture_control_orientation_source_axes(self, controls):
+        """Read each control's corresponding registered deform-joint X axis."""
+        body = {}
+        for joint in self.read_character_registration().body:
+            leaf = joint.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            body.setdefault(leaf, []).append(joint.path)
+        result = []
+        end_roles = {"ArmIK": "Wrist", "ArmPV": "Elbow",
+                     "LegIK": "Ankle", "LegPV": "Knee",
+                     "ToeIK": "Toes"}
+        for requested in controls:
+            control, _ = self._control_curve_shapes(requested, strict=True)
+            leaf = control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            fk = re.fullmatch(r"AdvPy_(.+)FK_([RL])", leaf)
+            other = re.fullmatch(
+                r"AdvPy_(ArmIK|ArmPV|LegIK|LegPV|ToeIK)_([RL])", leaf)
+            scapula = re.fullmatch(r"AdvPy_TorsoScapula_([RL])FK", leaf)
+            if fk:
+                name = f"{fk.group(1)}_{fk.group(2)}"
+            elif other:
+                name = f"{end_roles[other.group(1)]}_{other.group(2)}"
+            elif scapula:
+                name = f"Scapula_{scapula.group(1)}"
+            else:
+                raise ControlOrientationValidationError(
+                    f"World Match 尚不能定位控制器的变形关节：{control}")
+            matches = body.get(name, ())
+            if len(matches) != 1:
+                raise ControlOrientationValidationError(
+                    f"World Match 变形关节缺失或不唯一：{control} → {name}")
+            matrix = self._cmds.xform(
+                matches[0], query=True, worldSpace=True, matrix=True)
+            result.append((control, tuple(float(value)
+                                          for value in matrix[:3])))
+        return tuple(result)
+
     def _control_orientation_child_joints(self, control):
         """Find direct children of the joint driven by one FK control."""
         from adv_py.adapters.maya_control_orient_behavior import (

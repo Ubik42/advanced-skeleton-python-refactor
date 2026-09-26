@@ -3,11 +3,13 @@ from contextlib import contextmanager
 
 from adv_py.application import (SetControlOrientationAxis,
                                 SetControlOrientationWorld,
+                                SetControlOrientationWorldAxisMatch,
                                 SetControlOrientationWorldMatch)
 from adv_py.core import (
     ControlAxis, ControlOrientationState, ControlOrientationValidationError,
     CustomOrientationPreview, plan_control_orientation_axis,
     plan_control_orientation_world,
+    plan_control_orientation_world_axis_match,
     plan_control_orientation_world_match,
     plan_custom_control_orientations,
 )
@@ -31,6 +33,9 @@ class Host:
             self, controls, child_selections=()):
         self.child_selections = child_selections
         return (("|Control", (3., 0., 0.)),)
+
+    def capture_control_orientation_source_axes(self, controls):
+        return (("|Control", (0., 0., 1.)),)
 
     @contextmanager
     def transaction(self, label):
@@ -156,6 +161,32 @@ class ControlOrientationTests(unittest.TestCase):
             ("|Control",), True)
         self.assertEqual(result.verified[0].world_matrix, IDENTITY)
         self.assertEqual(len(host.transactions), 1)
+
+    def test_world_axis_match_uses_deform_axis_dominant_component(self):
+        state = ControlOrientationState("|Control", IDENTITY)
+        samples = (
+            ((1., 0., 0.), IDENTITY[:12]),
+            ((-1., 0., 0.), (-1., 0., 0., 0., 0., 1., 0., 0.,
+                               0., 0., -1., 0.)),
+            ((0., 1., 0.), (0., -1., 0., 0., 1., 0., 0., 0.,
+                              0., 0., 1., 0.)),
+            ((0., 0., -1.), (0., 0., 1., 0., 0., 1., 0., 0.,
+                               -1., 0., 0., 0.)),
+        )
+        for source, expected in samples:
+            with self.subTest(source=source):
+                result = plan_control_orientation_world_axis_match(
+                    (state,), (("|Control", source),))
+                self.assertEqual(result.changes[0].after.world_matrix[:12],
+                                 expected)
+                self.assertEqual(result.secondary_axis, ControlAxis.Z)
+
+    def test_world_axis_match_uses_one_verified_transaction(self):
+        host = Host()
+        result = SetControlOrientationWorldAxisMatch(host).apply(
+            ("|Control",), True)
+        self.assertEqual(len(host.transactions), 1)
+        self.assertEqual(result.verified[0].secondary_axis, ControlAxis.Z)
 
     def test_world_match_aims_at_child_with_world_up(self):
         state = ControlOrientationState("|Control", IDENTITY)

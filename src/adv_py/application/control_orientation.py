@@ -9,6 +9,7 @@ from adv_py.core.control_orientation import (
     ControlAxis, ControlOrientationPlan, ControlOrientationState,
     CustomOrientationPreview, plan_control_orientation_axis,
     plan_control_orientation_world,
+    plan_control_orientation_world_axis_match,
     plan_control_orientation_world_match,
     plan_custom_control_orientations,
 )
@@ -22,6 +23,9 @@ class ControlOrientationHost(Protocol):
     def capture_control_orientation_child_targets(
         self, controls: tuple[str, ...],
         child_selections: tuple[tuple[str, str], ...] = ()
+    ) -> tuple[tuple[str, tuple[float, float, float]], ...]: ...
+    def capture_control_orientation_source_axes(
+        self, controls: tuple[str, ...]
     ) -> tuple[tuple[str, tuple[float, float, float]], ...]: ...
     def capture_control_curve_world_points(
         self, controls: tuple[str, ...]
@@ -108,6 +112,17 @@ class SetControlOrientationWorld(SetControlOrientationAxis):
         plan = plan_control_orientation_world(
             self._host.capture_control_orientations(controls),
             curve_unaffected, mirror)
+        return self._apply_plan(plan, controls)
+
+
+class SetControlOrientationWorldAxisMatch(SetControlOrientationAxis):
+    def apply(self, controls: tuple[str, ...],
+              curve_unaffected: bool = False,
+              mirror: bool = False) -> ControlOrientationResult:
+        states = self._host.capture_control_orientations(controls)
+        axes = self._host.capture_control_orientation_source_axes(controls)
+        plan = plan_control_orientation_world_axis_match(
+            states, axes, curve_unaffected, mirror)
         return self._apply_plan(plan, controls)
 
 

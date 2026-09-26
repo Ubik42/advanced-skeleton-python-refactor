@@ -366,6 +366,7 @@ py -3 -m unittest discover -s tests
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_control_curves_smoke.py validation/results/maya2024-control-curves.json
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_control_orientation_smoke.py validation/results/maya2024-control-orientation.json
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_control_world_match_hand_smoke.py validation/results/maya2024-control-world-match-hand.json
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_world_match_axis_math_smoke.py validation/results/maya2024-world-match-axis-math.json
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_complete_character_smoke.py validation/results/maya2024-complete-character.json
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_complete_character_smoke.py validation/results/maya2024-complete-character-basic.json --basic
 ```

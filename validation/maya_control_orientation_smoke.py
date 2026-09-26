@@ -44,6 +44,7 @@ def main(report: Path) -> int:
         )
         from adv_py.core import (plan_control_orientation_axis,
                                  plan_control_orientation_world,
+                                 plan_control_orientation_world_axis_match,
                                  plan_control_orientation_world_match)
         from adv_py.product.maya_panel_controller import MayaPanelController
 
@@ -160,6 +161,36 @@ def main(report: Path) -> int:
             world_reopen = host.capture_control_orientations((control,))[0]
             world_reopen_body = _world_matrices(cmds, body_paths)
             world_reopen_registry = resolver.execute(name)
+
+        axis_match_controls = (control, opposite_control)
+        axis_match_before = host.capture_control_orientations(
+            axis_match_controls)
+        axis_match_sources = host.capture_control_orientation_source_axes(
+            axis_match_controls)
+        axis_match_expected = plan_control_orientation_world_axis_match(
+            axis_match_before, axis_match_sources, True, True)
+        axis_match_body_before = _world_matrices(cmds, body_paths)
+        axis_match_count = controller.control_orient_world_axis_match(
+            ":", (control,), True, True)
+        axis_match_after = host.capture_control_orientations(
+            axis_match_controls)
+        axis_match_body_after = _world_matrices(cmds, body_paths)
+        cmds.undo()
+        axis_match_undo = host.capture_control_orientations(
+            axis_match_controls)
+        cmds.redo()
+        axis_match_redo = host.capture_control_orientations(
+            axis_match_controls)
+        with tempfile.TemporaryDirectory(
+                prefix="adv-py-world-axis-match-",
+                dir=report.parent.resolve()) as folder:
+            axis_match_scene = Path(folder) / "match.ma"
+            cmds.file(rename=str(axis_match_scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(axis_match_scene), open=True, force=True)
+            axis_match_reopen = host.capture_control_orientations(
+                axis_match_controls)
 
         match_before = host.capture_control_orientations((control,))[0]
         match_targets = host.capture_control_orientation_child_targets((control,))
@@ -278,6 +309,49 @@ def main(report: Path) -> int:
                 if applied:
                     cmds.undo()
                 world_orient_roles[role] = str(exc)
+
+        axis_match_roles = {}
+        for role in ("ShoulderFK", "ElbowFK", "WristFK", "HipFK",
+                     "KneeFK", "AnkleFK", "ToesFK", "ArmIK", "ArmPV",
+                     "LegIK", "LegPV", "ToeIK"):
+            right = next(path for path in candidates
+                         if path.endswith(role + "_R"))
+            left = next(path for path in candidates
+                        if path.endswith(role + "_L"))
+            role_controls = (right, left)
+            role_states = host.capture_control_orientations(role_controls)
+            role_sources = host.capture_control_orientation_source_axes(
+                role_controls)
+            role_expected = plan_control_orientation_world_axis_match(
+                role_states, role_sources, True, True)
+            role_body = _world_matrices(cmds, body_paths)
+            applied = False
+            try:
+                role_count = controller.control_orient_world_axis_match(
+                    ":", (right,), True, True)
+                applied = True
+                role_after = host.capture_control_orientations(role_controls)
+                if role_count != 2 or any(
+                        not _close(actual.world_matrix,
+                                   change.after.world_matrix)
+                        or actual.primary_axis.value != "X"
+                        or actual.secondary_axis.value != "Z"
+                        for actual, change in zip(
+                            role_after, role_expected.changes)):
+                    raise RuntimeError("双侧 World Match 朝向复检失败")
+                if not all(_close(a, b) for a, b in zip(
+                        role_body, _world_matrices(cmds, body_paths))):
+                    raise RuntimeError("World Match 改变了 Body 姿态")
+                cmds.undo()
+                applied = False
+                if host.capture_control_orientations(
+                        role_controls) != role_states:
+                    raise RuntimeError("World Match 单次撤销失败")
+                axis_match_roles[role] = "passed"
+            except Exception as exc:
+                if applied:
+                    cmds.undo()
+                axis_match_roles[role] = str(exc)
 
         all_controls = tuple(state.control for state in
             host.capture_control_curves(candidates, strict=False))
@@ -815,6 +889,18 @@ def main(report: Path) -> int:
                 and all(_close(a, b) for a, b in zip(
                     world_body_before, world_reopen_body))
                 and world_reopen_registry == registration,
+            "world_axis_match_mirrored_pair": axis_match_count == 2
+                and all(_close(actual.world_matrix,
+                               change.after.world_matrix)
+                        and actual.primary_axis.value == "X"
+                        and actual.secondary_axis.value == "Z"
+                        for actual, change in zip(
+                            axis_match_after, axis_match_expected.changes))
+                and all(_close(a, b) for a, b in zip(
+                    axis_match_body_before, axis_match_body_after))
+                and axis_match_undo == axis_match_before
+                and axis_match_redo == axis_match_after
+                and axis_match_reopen == axis_match_after,
             "world_match_aims_at_child": match_count == 1
                 and _close(match_after.world_matrix,
                            match_expected.changes[0].after.world_matrix)
@@ -844,6 +930,10 @@ def main(report: Path) -> int:
             "world_orient_twelve_control_pairs": all(
                 value == "passed" for value in world_orient_roles.values())
                 and len(world_orient_roles) == 12,
+            "world_axis_match_control_type_probe": axis_match_roles,
+            "world_axis_match_twelve_control_pairs": all(
+                value == "passed" for value in axis_match_roles.values())
+                and len(axis_match_roles) == 12,
             "custom_all_controls_detach": len(proxies) == len(all_controls)
                 and len(detached) == len(all_controls) and session_exists
                 and hidden_original,

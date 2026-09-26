@@ -237,6 +237,63 @@ def plan_control_orientation_world(
         tuple(changes))
 
 
+def plan_control_orientation_world_axis_match(
+    states: tuple[ControlOrientationState, ...],
+    source_axes: tuple[tuple[str, tuple[float, float, float]], ...],
+    curve_unaffected: bool = False,
+    mirror: bool = False,
+) -> ControlOrientationPlan:
+    """Match the dominant world component of each deform joint's local X."""
+    if not states or len({state.control for state in states}) != len(states):
+        raise ControlOrientationValidationError("至少需要一个且不能重复的控制器")
+    if (len(source_axes) != len(states)
+            or tuple(name for name, _ in source_axes)
+            != tuple(state.control for state in states)):
+        raise ControlOrientationValidationError("控制器与变形关节轴不一致")
+    if not isinstance(curve_unaffected, bool) or not isinstance(mirror, bool):
+        raise ControlOrientationValidationError("控制器方向选项必须为布尔值")
+    changes = []
+    for state, (_, source) in zip(states, source_axes):
+        if len(source) != 3 or not all(isfinite(value) for value in source):
+            raise ControlOrientationValidationError("变形关节 X 轴必须是有限三维向量")
+        axis, _ = _normal(source)
+        magnitudes = tuple(abs(value) for value in axis)
+        dominant = next((index for index in range(3)
+                         if all(magnitudes[index] > magnitudes[other]
+                                for other in range(3) if other != index)), None)
+        rows = [None, None, None]
+        if dominant is None:
+            # The MEL keeps its initial X aim and Z up when no component wins.
+            rows[0], rows[2] = (1., 0., 0.), (0., 0., 1.)
+        else:
+            rows[dominant] = ((1. if axis[dominant] > 0. else -1.),
+                              0., 0.)
+            up_index = 2 if dominant == 1 else 1
+            rows[up_index] = ((0., 0., 1.) if dominant == 1
+                              else (0., 1., 0.))
+        missing = next(index for index, row in enumerate(rows) if row is None)
+        if missing == 0:
+            rows[0] = _cross(rows[1], rows[2])
+        elif missing == 1:
+            rows[1] = _cross(rows[2], rows[0])
+        else:
+            rows[2] = _cross(rows[0], rows[1])
+        lengths = tuple(_normal(
+            state.world_matrix[index * 4:index * 4 + 3])[1]
+            for index in range(3))
+        values = tuple(value * lengths[index]
+                       for index, row in enumerate(rows)
+                       for value in (*row, 0.))
+        target = (*values, *state.world_matrix[12:15], 1.)
+        changes.append(ControlOrientationChange(
+            state, ControlOrientationState(
+                state.control, target, ControlAxis.X, ControlAxis.Z,
+                curve_unaffected, mirror, False)))
+    return ControlOrientationPlan(
+        ControlAxis.X, ControlAxis.Z, curve_unaffected, mirror, False,
+        tuple(changes))
+
+
 def plan_control_orientation_world_match(
     states: tuple[ControlOrientationState, ...],
     child_positions: tuple[tuple[str, tuple[float, float, float]], ...],
