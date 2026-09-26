@@ -486,6 +486,21 @@ class MayaPanelController:
             maintain_maximum_influences=maintain_maximum)
         return result.plan.input_state.vertex_count
 
+    def skinning_select_deform_joints(self, namespace: str) -> int:
+        from adv_py.adapters.maya_deform_skinning import select_deform_joints
+
+        host = self._host(namespace)
+        resolver = ResolveBodyCharacter(host)
+        names = resolver.discover()
+        registration = resolver.execute(names[0]) if len(names) == 1 else None
+        joints = tuple(item.path for item in registration.body) if registration else ()
+        return select_deform_joints("" if namespace == ":" else namespace, joints)
+
+    def skinning_set_smooth_bind_options(self) -> None:
+        from adv_py.adapters.maya_deform_skinning import set_smooth_bind_options
+
+        set_smooth_bind_options()
+
     def skin_export(self, namespace: str, skin: str, mesh: str,
                     destination: Path) -> int:
         result = ExportSkinWeights(self._host(namespace)).apply(

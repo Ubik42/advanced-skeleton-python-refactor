@@ -446,6 +446,11 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _skin_page(self):
             page, stack = self._page()
+            group, form = self._group("00 · 原版 Skinning", [])
+            form.addRow(QtWidgets.QLabel("先选择待绑定网格，再追加变形关节并设置 Maya 绑定选项。"))
+            form.addRow(self._button("追加选择变形关节", self._select_deform_joints))
+            form.addRow(self._button("设置 Smooth Bind 选项", self._set_smooth_bind_options))
+            stack.addWidget(group)
             self.mesh = QtWidgets.QLineEdit()
             self.mesh.setPlaceholderText("|BodyMesh")
             self.skin = QtWidgets.QLineEdit("AdvPy_BodySkin")
@@ -1143,6 +1148,14 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.max_influences.value(),
                 maintain_maximum=self.maintain_maximum.isChecked())
             return f"已绑定网格：{vertices} 个顶点"
+
+        def _select_deform_joints(self):
+            count = self.controller.skinning_select_deform_joints(self._namespace())
+            return f"已追加选择 {count} 个变形关节；原有网格选择保留"
+
+        def _set_smooth_bind_options(self):
+            self.controller.skinning_set_smooth_bind_options()
+            return "已设置原版 Smooth Bind 选项，并打开 Maya 绑定选项窗口"
 
         def _import_skin(self):
             mapping = self.mapping_document.text().strip()
