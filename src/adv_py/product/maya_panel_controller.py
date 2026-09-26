@@ -753,25 +753,63 @@ class MayaPanelController:
         if provenance is None or not provenance.source_container:
             raise ValueError("角色缺少原始 Fit 来源记录")
         container = provenance.source_container
-        if progress:
-            progress("构建 Root Motion")
-        BuildBodyRootMotion(host).apply(body_root_name=body_root,
-                                        source_container=container)
-        if progress:
-            progress("构建独立导出骨架")
-        BuildBodyExportSkeleton(host).apply(body_root_name=body_root,
+        root_plan = BuildBodyRootMotion(host).plan(
+            body_root_name=body_root, source_container=container)
+        if root_plan.provenance_blockers:
+            raise ValueError("角色 Body 来源无效：" +
+                             "；".join(root_plan.provenance_blockers))
+        cmds = host._cmds
+        original_time = float(cmds.currentTime(query=True))
+        original_selection = cmds.ls(selection=True, long=True) or []
+        original_modified = bool(cmds.file(query=True, modified=True))
+        changed = False
+        cmds.undoInfo(openChunk=True, chunkName="发布 FBX")
+        try:
+            if cmds.objExists(root_plan.root_motion.output_path):
+                if progress:
+                    progress("检查并刷新已有发布层")
+                host.remove_existing_body_export_layer(
+                    root_plan.body, root_plan.root_motion)
+                changed = True
+            if progress:
+                progress("构建 Root Motion")
+            BuildBodyRootMotion(host).apply(body_root_name=body_root,
                                             source_container=container)
-        if progress:
-            progress("烘焙采样帧")
-        baked = BakeBodyExportSkeleton(host).apply(start_frame=start,
-            end_frame=end, sample_by=step, body_root_name=body_root,
-            source_container=container)
-        if progress:
-            progress("写入并复核 FBX 文件")
-        exported = ExportBodyFbx(host).apply(destination, start_frame=start,
-            end_frame=end, sample_by=step, body_root_name=body_root,
-            source_container=container, profile=profile,
-            include_skins=include_skins)
+            changed = True
+            if progress:
+                progress("构建独立导出骨架")
+            BuildBodyExportSkeleton(host).apply(body_root_name=body_root,
+                                                source_container=container)
+            changed = True
+            if progress:
+                progress("烘焙采样帧")
+            baked = BakeBodyExportSkeleton(host).apply(
+                start_frame=start, end_frame=end, sample_by=step,
+                body_root_name=body_root, source_container=container)
+            changed = True
+            if progress:
+                progress("写入并复核 FBX 文件")
+            exported = ExportBodyFbx(host).apply(destination,
+                start_frame=start, end_frame=end, sample_by=step,
+                body_root_name=body_root, source_container=container,
+                profile=profile, include_skins=include_skins)
+        except Exception:
+            cmds.undoInfo(closeChunk=True)
+            if changed:
+                cmds.undo()
+            cmds.undoInfo(stateWithoutFlush=False)
+            try:
+                cmds.currentTime(original_time, edit=True, update=True)
+                if original_selection:
+                    cmds.select(original_selection, replace=True)
+                else:
+                    cmds.select(clear=True)
+                cmds.file(modified=original_modified)
+            finally:
+                cmds.undoInfo(stateWithoutFlush=True)
+            raise
+        else:
+            cmds.undoInfo(closeChunk=True)
         return PanelFbxPublication(len(baked.plan.body.joints),
             len(baked.plan.bake.frames), exported.artifact.byte_count,
             exported.artifact.content_sha256,

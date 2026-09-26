@@ -104,6 +104,7 @@ from adv_py.core.body_export_skeleton import (
     BodyExportSkeletonPlan,
     BodyExportSkeletonSample,
     BodyExportSkeletonSnapshot,
+    plan_body_export_skeleton,
 )
 from adv_py.core.body_fbx_export import (
     BodyFbxAppliedProfile,
@@ -1227,6 +1228,50 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                 self._cmds.select(selection, replace=True)
             else:
                 self._cmds.select(clear=True)
+
+    def remove_existing_body_export_layer(
+        self, body: BodySkeletonSnapshot, root_motion: BodyRootMotionPlan,
+    ) -> bool:
+        """Remove only an intact, tool-owned publication layer for rebuilding."""
+        c = self._cmds
+        root = root_motion.output_path
+        if not (c.ls(root, long=True, type="joint") or []):
+            return False
+        export = plan_body_export_skeleton(body, root_motion)
+        expected_joints = {joint.output_path for joint in export.joints}
+        descendants = set(c.listRelatives(root, allDescendents=True,
+                                          fullPath=True) or [])
+        if descendants != expected_joints:
+            raise FitSkeletonValidationError(
+                "已有发布层含额外或缺失节点，拒绝刷新")
+        export_root = export.root.output_path
+        metadata = {
+            "owner": BODY_EXPORT_OWNER,
+            "artifact_kind": BODY_EXPORT_KIND,
+            "schema_version": BODY_EXPORT_SCHEMA_VERSION,
+            "source_body_root": body.root,
+            "joint_count": len(export.joints),
+        }
+        if any(not c.objExists(f"{export_root}.{_BODY_EXPORT_PROVENANCE_ATTRIBUTES[key]}")
+               or c.getAttr(f"{export_root}.{_BODY_EXPORT_PROVENANCE_ATTRIBUTES[key]}")
+                   != value for key, value in metadata.items()):
+            raise FitSkeletonValidationError(
+                "已有发布骨架的所有权或来源不符，拒绝刷新")
+        for skin in c.ls(type="skinCluster") or []:
+            for influence in c.skinCluster(skin, query=True,
+                                           influence=True) or []:
+                paths = c.ls(influence, long=True, type="joint") or []
+                if any(path in expected_joints or path == root for path in paths):
+                    raise FitSkeletonValidationError(
+                        "已有发布骨架被 Skin 使用，拒绝刷新：" + skin)
+        if any(c.listConnections(path, source=False, destination=True)
+               for path in (root, *expected_joints)):
+            raise FitSkeletonValidationError(
+                "已有发布骨架被其他节点依赖，拒绝刷新")
+        with self.transaction("刷新已有游戏发布层"):
+            self._transaction_changed = True
+            c.delete(root)
+        return True
 
     def capture_body_export_skeleton(
         self,

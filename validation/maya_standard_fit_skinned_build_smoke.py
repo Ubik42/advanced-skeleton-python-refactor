@@ -140,8 +140,18 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
             namespaced_fbx = temp / "hero.fbx"
             MayaPanelController().publish_fbx("Hero", namespaced_fbx,
                 start=1, end=2, include_skins=True)
+            cmds.currentTime(2)
+            first_baked_x = cmds.xform("Hero:AdvPy_GameRootMotion",
+                query=True, worldSpace=True, translation=True)[0]
+            cmds.setKeyframe("Hero:AdvPy_Global", attribute="translateX",
+                             time=2, value=3)
+            cmds.currentTime(1)
+            namespaced_updated_fbx = temp / "hero-updated.fbx"
+            MayaPanelController().publish_fbx("Hero",
+                namespaced_updated_fbx, start=1, end=2,
+                include_skins=True)
             cmds.file(new=True, force=True)
-            cmds.file(str(namespaced_fbx), i=True, type="FBX",
+            cmds.file(str(namespaced_updated_fbx), i=True, type="FBX",
                       ignoreVersion=True, executeScriptNodes=False)
             imported_meshes = sorted({(cmds.listRelatives(shape,
                 parent=True, fullPath=True) or [""])[0].rsplit("|", 1)[-1]
@@ -162,7 +172,8 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
             namespaced_fbx_passed = (len(cmds.ls(type="joint") or []) == 75
                 and len(cmds.ls(type="skinCluster") or []) == 2
                 and imported_vertices == [8, 18151]
-                and abs(last_root_x - first_root_x - 2.0) < 1e-4
+                and abs(first_baked_x - 2.0) < 1e-4
+                and abs(last_root_x - first_root_x - 3.0) < 1e-4
                 and imported_meshes == ["Hero:BodyMesh",
                                         "Hero:GarmentMesh"])
             data = {"source": scene.name, "meshes": len(meshes),
@@ -179,6 +190,7 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
                     "namespaced_fbx_meshes": imported_meshes,
                     "namespaced_fbx_vertices": imported_vertices,
                     "namespaced_fbx_root": imported_root,
+                    "namespaced_first_baked_x": first_baked_x,
                     "namespaced_fbx_root_delta_x": last_root_x - first_root_x}
             report.write_text(json.dumps(data, indent=2) + "\n",
                               encoding="utf-8")
