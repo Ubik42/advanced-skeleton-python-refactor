@@ -58,7 +58,7 @@ class FakeSymmetryHost:
 
 
 class FitSymmetryTests(unittest.TestCase):
-    def test_reflects_aim_and_secondary_then_rebuilds_right_handed_z(self):
+    def test_mirrors_original_deformation_joint_frame(self):
         source = (
             (0.8, 0.6, 0.0),
             (-0.6, 0.8, 0.0),
@@ -67,8 +67,8 @@ class FitSymmetryTests(unittest.TestCase):
 
         mirrored = mirror_behavior_axes_yz(source)
 
-        self.assertEqual(mirrored[0], (-0.8, 0.6, 0.0))
-        self.assertEqual(mirrored[1], (0.6, 0.8, 0.0))
+        self.assertEqual(mirrored[0], (0.8, -0.6, 0.0))
+        self.assertEqual(mirrored[1], (-0.6, -0.8, 0.0))
         self.assertAlmostEqual(mirrored[2][2], -1.0)
         cross = (
             mirrored[0][1] * mirrored[1][2] - mirrored[0][2] * mirrored[1][1],

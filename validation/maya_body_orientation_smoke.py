@@ -81,8 +81,8 @@ def main(output: Path) -> int:
         right = by_name["Scapula_R"].world_axes
         left = by_name["Scapula_L"].world_axes
         scapula_behavior_mirrored = (
-            _close(left[0], (-right[0][0], right[0][1], right[0][2]))
-            and _close(left[1], (-right[1][0], right[1][1], right[1][2]))
+            _close(left[0], (right[0][0], -right[0][1], -right[0][2]))
+            and _close(left[1], (right[1][0], -right[1][1], -right[1][2]))
             and _close(left[2], _cross(left[0], left[1]))
         )
         fit_preserved = host.capture_fit_orientation(container) == source_before

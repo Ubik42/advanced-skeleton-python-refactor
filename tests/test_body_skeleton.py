@@ -1748,7 +1748,7 @@ class BodySkeletonTests(unittest.TestCase):
             state for state in result.verified.joints if state.name == "Scapula_L"
         )
         self.assertEqual(right.world_axes[0], (0.8, 0.6, 0.0))
-        self.assertEqual(left.world_axes[0], (-0.8, 0.6, 0.0))
+        self.assertEqual(left.world_axes[0], (0.8, -0.6, 0.0))
         self.assertFalse(use_case.plan().changes)
 
     def test_locked_body_joint_orient_blocks_before_transaction(self):

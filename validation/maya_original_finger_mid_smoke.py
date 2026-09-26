@@ -35,6 +35,9 @@ def main(scene: Path, report: Path) -> int:
         original_tip_rest_matrix = {name: tuple(cmds.xform(
             name.removesuffix("_50"), query=True, worldSpace=True,
             matrix=True)) for name in original}
+        original_body_frames = {path.rsplit("|", 1)[-1]: tuple(cmds.xform(
+            path, query=True, worldSpace=True, matrix=True)) for path in
+            cmds.ls(type="joint", long=True) or []}
         original_posed = {}
         original_tip_posed = {}
         for name in original:
@@ -52,6 +55,15 @@ def main(scene: Path, report: Path) -> int:
             parent, children=True, fullPath=True) or ()) if path != fits[0]))
         built = BuildRegisteredBodyCharacter(MayaBodyBuildHost()).apply(
             fits[0], infer_missing_labels=True)
+        body_frame_errors = {item.path.rsplit("|", 1)[-1]: max(
+            abs(a - b) for a, b in zip(
+                original_body_frames[item.path.rsplit("|", 1)[-1]],
+                cmds.xform(item.path, query=True, worldSpace=True,
+                           matrix=True))) for item in built.registration.body
+            if item.path.rsplit("|", 1)[-1] in original_body_frames}
+        unmatched_body_names = sorted(item.path.rsplit("|", 1)[-1]
+            for item in built.registration.body
+            if item.path.rsplit("|", 1)[-1] not in original_body_frames)
         specs = BuildFingerMidDeform(MayaFingerMidHost()).apply()
         maximum_position_error = max(max(abs(a - b) for a, b in zip(
             original[spec.name], cmds.xform(spec.path, query=True,
@@ -65,6 +77,9 @@ def main(scene: Path, report: Path) -> int:
         data = {"source": scene.name, "body_count": len(built.registration.body),
                 "finger_mid_count": len(specs),
                 "maximum_original_position_error": maximum_position_error,
+                "body_comparison_count": len(body_frame_errors),
+                "unmatched_body_names": unmatched_body_names,
+                "body_frame_errors": body_frame_errors,
                 "original_rest_errors": rest_errors,
                 "original_tip_rest_errors": tip_rest_errors}
         cmds.undo()
@@ -76,7 +91,6 @@ def main(scene: Path, report: Path) -> int:
         hand = built.rig.hand.snapshot.controls
         pose_errors = {}
         tip_pose_errors = {}
-        reverse_pose_errors = {}
         motion_count = 0
         for spec in specs:
             control = next(item.control_path for item in hand
@@ -95,22 +109,12 @@ def main(scene: Path, report: Path) -> int:
             tip_pose_errors[spec.name] = max(abs(a - b) for a, b in zip(
                 original_tip_posed[spec.name], tip_posed))
             cmds.setAttr(control + ".rotateX", 0.0)
-            if spec.name.endswith("_L_50"):
-                cmds.setAttr(control + ".rotateX", -12.0)
-                reverse_posed = tuple(cmds.xform(spec.path, query=True,
-                    worldSpace=True, matrix=True))
-                reverse_pose_errors[spec.name] = max(abs(a - b)
-                    for a, b in zip(original_posed[spec.name], reverse_posed))
-                cmds.setAttr(control + ".rotateX", 0.0)
         data["finger_mid_control_motion_count"] = motion_count
         data["original_pose_errors"] = pose_errors
         data["original_tip_pose_errors"] = tip_pose_errors
-        data["left_reverse_pose_errors"] = reverse_pose_errors
         data["maximum_original_pose_matrix_error"] = max(pose_errors.values())
-        data["right_pose_matrix_error"] = max(value for name, value in
-            pose_errors.items() if name.endswith("_R_50"))
-        data["left_body_rest_mismatch"] = min(value for name, value in
-            tip_rest_errors.items() if name.endswith("_L_50")) > 1.0
+        data["maximum_original_tip_pose_error"] = max(tip_pose_errors.values())
+        data["maximum_original_body_frame_error"] = max(body_frame_errors.values())
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "finger-mid.mb"
             cmds.file(rename=str(output))
@@ -123,11 +127,13 @@ def main(scene: Path, report: Path) -> int:
             names = resolver.discover()
             data["registration_body_count"] = len(resolver.execute(names[0]).body)
         data["status"] = "passed" if (
-            data["body_count"] == 74 and data["finger_mid_count"] == 10
+            data["body_count"] == 74 and data["body_comparison_count"] == 68
+            and data["finger_mid_count"] == 10
             and data["maximum_original_position_error"] < 0.02
             and data["finger_mid_control_motion_count"] == 10
-            and data["right_pose_matrix_error"] < 0.005
-            and data["left_body_rest_mismatch"]
+            and data["maximum_original_body_frame_error"] < 1e-5
+            and data["maximum_original_tip_pose_error"] < 1e-5
+            and data["maximum_original_pose_matrix_error"] < 0.005
             and data["undo_removed_helpers"] and data["redo_restored_helpers"]
             and data["reopen_helper_count"] == 10
             and data["registration_body_count"] == 74) else "failed"

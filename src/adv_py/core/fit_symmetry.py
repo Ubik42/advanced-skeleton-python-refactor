@@ -165,11 +165,13 @@ def expand_fit_symmetry(
 
 
 def mirror_behavior_axes_yz(axes: AxisFrame) -> AxisFrame:
-    """Reflect aim/secondary vectors across YZ and rebuild a right-handed Z."""
+    """Mirror the 6.925 deformation-joint frame across the YZ plane."""
 
     source = _validated_frame(axes, joint="镜像源")
-    aim = _normalize((-source[0][0], source[0][1], source[0][2]))
-    secondary = _normalize((-source[1][0], source[1][1], source[1][2]))
+    # Maya's original left-side deformation joints reverse their local X and
+    # Y after reflection; this preserves the local Z axis and handedness.
+    aim = _normalize((source[0][0], -source[0][1], -source[0][2]))
+    secondary = _normalize((source[1][0], -source[1][1], -source[1][2]))
     tertiary = _normalize(_cross(aim, secondary))
     return (aim, secondary, tertiary)
 
