@@ -137,9 +137,28 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
             cmds.setKeyframe("Hero:AdvPy_Global", attribute="translateX",
                              time=2, value=2)
             cmds.currentTime(1)
+            unrelated_root = cmds.createNode("joint", name=":RootMotion")
+            unrelated_uuid = cmds.ls(unrelated_root, uuid=True)[0]
+            collision_fbx = temp / "hero-collision.fbx"
+            try:
+                MayaPanelController().publish_fbx("Hero", collision_fbx,
+                    start=1, end=2, include_skins=True)
+            except Exception as error:
+                collision_rejected = "根命名空间已有 FBX 发布根节点" in str(error)
+            else:
+                collision_rejected = False
+            collision_rejected = (collision_rejected
+                and not collision_fbx.exists()
+                and cmds.ls(unrelated_root, uuid=True) == [unrelated_uuid]
+                and not cmds.objExists("Hero:AdvPy_GameRootMotion"))
+            cmds.delete(unrelated_root)
             namespaced_fbx = temp / "hero.fbx"
             MayaPanelController().publish_fbx("Hero", namespaced_fbx,
                 start=1, end=2, include_skins=True)
+            first_scene_scoped = (cmds.objExists("Hero:AdvPy_GameRootMotion")
+                and cmds.objExists("Hero:BodyMesh")
+                and not cmds.objExists("|RootMotion")
+                and not cmds.objExists("|AdvPy_FBXTemporaryMeshGroup"))
             cmds.currentTime(2)
             first_baked_x = cmds.xform("Hero:AdvPy_GameRootMotion",
                 query=True, worldSpace=True, translation=True)[0]
@@ -149,7 +168,12 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
             namespaced_updated_fbx = temp / "hero-updated.fbx"
             MayaPanelController().publish_fbx("Hero",
                 namespaced_updated_fbx, start=1, end=2,
+                curve_policy="lossless_linear", euler_filter=True,
                 include_skins=True)
+            second_scene_scoped = (cmds.objExists("Hero:AdvPy_GameRootMotion")
+                and cmds.objExists("Hero:BodyMesh")
+                and not cmds.objExists("|RootMotion")
+                and not cmds.objExists("|AdvPy_FBXTemporaryMeshGroup"))
             cmds.file(new=True, force=True)
             cmds.file(str(namespaced_updated_fbx), i=True, type="FBX",
                       ignoreVersion=True, executeScriptNodes=False)
@@ -163,6 +187,8 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
                 long=True) or [] if not cmds.listRelatives(joint,
                     parent=True, type="joint")]
             imported_root = root_candidates[0] if len(root_candidates) == 1 else ""
+            imported_joint_names = tuple(joint.rsplit("|", 1)[-1]
+                for joint in cmds.ls(type="joint", long=True) or [])
             cmds.currentTime(1)
             first_root_x = cmds.xform(imported_root, query=True,
                                       worldSpace=True, translation=True)[0]
@@ -172,10 +198,13 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
             namespaced_fbx_passed = (len(cmds.ls(type="joint") or []) == 75
                 and len(cmds.ls(type="skinCluster") or []) == 2
                 and imported_vertices == [8, 18151]
+                and imported_root == "|RootMotion"
+                and not any(":" in joint for joint in imported_joint_names)
+                and collision_rejected
+                and first_scene_scoped and second_scene_scoped
                 and abs(first_baked_x - 2.0) < 1e-4
                 and abs(last_root_x - first_root_x - 3.0) < 1e-4
-                and imported_meshes == ["Hero:BodyMesh",
-                                        "Hero:GarmentMesh"])
+                and imported_meshes == ["BodyMesh", "GarmentMesh"])
             data = {"source": scene.name, "meshes": len(meshes),
                     "skins": skins, "influences": influences,
                     "body_joints": body_joints,
@@ -190,6 +219,9 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
                     "namespaced_fbx_meshes": imported_meshes,
                     "namespaced_fbx_vertices": imported_vertices,
                     "namespaced_fbx_root": imported_root,
+                    "namespaced_collision_rejected": collision_rejected,
+                    "namespaced_scene_restored": (first_scene_scoped
+                                                   and second_scene_scoped),
                     "namespaced_first_baked_x": first_baked_x,
                     "namespaced_fbx_root_delta_x": last_root_x - first_root_x}
             report.write_text(json.dumps(data, indent=2) + "\n",

@@ -1825,41 +1825,45 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
             raise FitSkeletonValidationError("当前角色没有可发布的 Skin 网格")
         return tuple(rows)
 
-    def _copy_fbx_skinned_meshes(self, sources, bind_frame):
+    def _copy_fbx_skinned_meshes(self, sources, bind_frame, *,
+                                 namespace_free=False):
         from array import array
         from maya.api import OpenMaya as om
         from maya.api import OpenMayaAnim as oma
 
-        c = self._cmds
+        c = self._cmds.raw if namespace_free else self._cmds
         c.currentTime(bind_frame, edit=True, update=True)
         copied = []
         group = c.createNode("transform",
-            name="AdvPy_FBXTemporaryMeshGroup") if sources else None
+            name=(":AdvPy_FBXTemporaryMeshGroup" if namespace_free
+                  else "AdvPy_FBXTemporaryMeshGroup")) if sources else None
         for index, (mesh, data, maximum, maintain, mapping) in enumerate(
                 sources, 1):
             target_paths = tuple(mapping[name.rsplit(":", 1)[-1]]
                                  for name in data.influence_names)
-            clone = c.duplicate(mesh, returnRootsOnly=True,
+            clone = c.duplicate(self.scene_address(mesh) if namespace_free
+                                else mesh, returnRootsOnly=True,
                                 renameChildren=True)[0]
             clone = c.parent(clone, group)[0]
             mesh_name = mesh.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-            clone = c.rename(clone, mesh_name)
-            if clone.rsplit("|", 1)[-1] != mesh_name:
+            clone = c.rename(clone, (":" if namespace_free else "")
+                             + mesh_name)
+            if clone.rsplit("|", 1)[-1].rsplit(":", 1)[-1] != mesh_name:
                 raise FitSkeletonValidationError(
                     "FBX 临时网格未能保留源名称：" + mesh_name)
             c.delete(clone, constructionHistory=True)
-            name = f"AdvPy_FBXExportSkin_{index}"
+            name = (":" if namespace_free else "") + f"AdvPy_FBXExportSkin_{index}"
             skin = c.skinCluster(target_paths, clone, toSelectedBones=True,
                 bindMethod=0, normalizeWeights=1,
                 maximumInfluences=maximum,
                 obeyMaxInfluences=False, name=name)[0]
             selection = om.MSelectionList()
-            selection.add(self.scene_address(skin))
+            selection.add(skin if namespace_free else self.scene_address(skin))
             skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
             shapes = c.skinCluster(skin, query=True, geometry=True) or []
             shape = (c.ls(shapes[0], long=True, type="mesh") or [])[0]
             selection = om.MSelectionList()
-            selection.add(self.scene_address(shape))
+            selection.add(shape if namespace_free else self.scene_address(shape))
             dag = selection.getDagPath(0)
             component_fn = om.MFnSingleIndexedComponent()
             component = component_fn.create(om.MFn.kMeshVertComponent)
@@ -1912,6 +1916,14 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
             raise FitSkeletonValidationError(
                 "FBX 发布名称路径已存在：" + "、".join(collisions)
             )
+        namespace_free = self.namespace is not None
+        published_cmds = (self._cmds.raw if namespace_free
+                          else self._cmds)
+        if namespace_free and published_cmds.objExists(
+                selection.published_root_path):
+            raise FitSkeletonValidationError(
+                "根命名空间已有 FBX 发布根节点：" +
+                selection.published_root_path)
         if not self._cmds.undoInfo(query=True, state=True):
             raise FitSkeletonValidationError(
                 "FBX 临时发布名称需要启用 Maya Undo"
@@ -1985,15 +1997,19 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                         key=lambda item: item.scene_path.count("|"),
                         reverse=True,
                     ):
-                        self._cmds.rename(
-                            node.scene_path,
-                            node.published_name,
+                        published_cmds.rename(
+                            self.scene_address(node.scene_path)
+                            if namespace_free else node.scene_path,
+                            (":" if namespace_free else "")
+                            + node.published_name,
                             ignoreShape=True,
                         )
                     copied_meshes = self._copy_fbx_skinned_meshes(
-                        skin_sources, selection.start_frame)
+                        skin_sources, selection.start_frame,
+                        namespace_free=namespace_free)
                     if any(
-                        (self._cmds.ls(path, long=True, type="joint") or [])
+                        (published_cmds.ls(path, long=True,
+                                             type="joint") or [])
                         != [path]
                         for path in selection.published_paths
                     ):
@@ -2001,9 +2017,9 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                     def sample_matrices(times):
                         poses = []
                         for frame in times:
-                            self._cmds.currentTime(frame, edit=True, update=True)
+                            published_cmds.currentTime(frame, edit=True, update=True)
                             poses.append(tuple(tuple(float(value) for value in
-                                self._cmds.xform(path, query=True, worldSpace=True,
+                                published_cmds.xform(path, query=True, worldSpace=True,
                                                  matrix=True))
                                 for path in selection.published_paths))
                         return tuple(poses)
@@ -2030,16 +2046,16 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                             for attribute in attributes:
                                 plug = f"{path}.{attribute}"
                                 frame_range = (selection.start_frame, selection.end_frame)
-                                times = self._cmds.keyframe(
+                                times = published_cmds.keyframe(
                                     plug, query=True, time=frame_range, timeChange=True
                                 ) or []
-                                values = self._cmds.keyframe(
+                                values = published_cmds.keyframe(
                                     plug, query=True, time=frame_range, valueChange=True
                                 ) or []
-                                in_types = self._cmds.keyTangent(
+                                in_types = published_cmds.keyTangent(
                                     plug, query=True, time=frame_range,
                                     inTangentType=True) or []
-                                out_types = self._cmds.keyTangent(
+                                out_types = published_cmds.keyTangent(
                                     plug, query=True, time=frame_range,
                                     outTangentType=True) or []
                                 if (len(times)!=len(values)
@@ -2059,7 +2075,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                                     else 1e-9)
                                 for frame in redundant_linear_key_frames(
                                         keys, tolerance=value_tolerance):
-                                    self._cmds.cutKey(plug, time=(frame, frame), option="keys")
+                                    published_cmds.cutKey(plug, time=(frame, frame), option="keys")
                                     removed_linear_keys += 1
                     if profile.euler_filter:
                         baked_frames = tuple(range(selection.start_frame,
@@ -2068,7 +2084,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                         for path in selection.published_paths[1:]:
                             curves = []
                             for axis in "XYZ":
-                                found = self._cmds.listConnections(
+                                found = published_cmds.listConnections(
                                     f"{path}.rotate{axis}", source=True,
                                     destination=False, type="animCurve") or []
                                 if len(found) != 1:
@@ -2076,7 +2092,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                                         "FBX Euler Filter 要求每个导出关节都有独立的旋转曲线："
                                         + path)
                                 curves.append(found[0])
-                            euler_filtered_curves += int(self._cmds.filterCurve(
+                            euler_filtered_curves += int(published_cmds.filterCurve(
                                 *curves, filter="euler",
                                 startTime=selection.start_frame,
                                 endTime=selection.end_frame))
@@ -2103,7 +2119,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                             raise FitSkeletonValidationError(
                                 "FBX 有界曲线简化超过世界矩阵误差上限："
                                 f"{max_matrix_error:g} > {profile.matrix_tolerance:g}")
-                    self._cmds.select(
+                    published_cmds.select(
                         (*selection.published_paths, *copied_meshes),
                         replace=True,
                         noExpand=True,
