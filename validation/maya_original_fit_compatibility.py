@@ -7,7 +7,8 @@ import sys
 import tempfile
 
 
-def main(scene: Path, report: Path, isolated_build: bool = False) -> int:
+def main(scene: Path, report: Path, isolated_build: bool = False,
+         isolated_skin: bool = False) -> int:
     import maya.standalone
 
     maya.standalone.initialize(name="python")
@@ -17,6 +18,7 @@ def main(scene: Path, report: Path, isolated_build: bool = False) -> int:
         from adv_py.application.body_skeleton import BuildBodySkeleton
         from adv_py.application.oriented_body_skeleton import BuildOrientedBodySkeleton
         from adv_py.application.body_character_rig import BuildBodyCharacterRig
+        from adv_py.application.skin_bind import BindSkin
         from adv_py.core.joint_labels import JointLabel
         from adv_py.application.fit_symmetry import PlanFitSymmetry
 
@@ -68,6 +70,20 @@ def main(scene: Path, report: Path, isolated_build: bool = False) -> int:
             if isolated_build:
                 # The source file stays untouched. Only this unsaved in-memory
                 # scene loses the existing rig so names can be built afresh.
+                mesh_copy = None
+                if isolated_skin:
+                    shapes = cmds.ls(type="mesh", long=True,
+                                     noIntermediate=True) or []
+                    if len(shapes) != 1:
+                        raise ValueError("原版网格不是唯一的可见 mesh")
+                    source_mesh = (cmds.listRelatives(
+                        shapes[0], parent=True, fullPath=True) or [""])[0]
+                    mesh_copy = cmds.duplicate(
+                        source_mesh, name="AdvPy_SamMesh",
+                        returnRootsOnly=True)[0]
+                    mesh_copy = cmds.parent(mesh_copy, world=True)[0]
+                    cmds.delete(mesh_copy, constructionHistory=True)
+                    mesh_copy = (cmds.ls(mesh_copy, long=True) or [""])[0]
                 group = (cmds.listRelatives(fit[0], parent=True,
                                             fullPath=True) or [""])[0]
                 scene_siblings = (cmds.listRelatives(
@@ -113,6 +129,69 @@ def main(scene: Path, report: Path, isolated_build: bool = False) -> int:
                                         fit[0]).joints},
                             }
                             if rig.hand is not None:
+                                hand_failures = []
+                                for item in rig.hand.snapshot.controls:
+                                    driven = item.driven_joint
+                                    baseline = tuple(cmds.xform(
+                                        driven, query=True, worldSpace=True,
+                                        matrix=True))
+                                    cmds.setAttr(f"{item.control_path}.rotateX", 12.0)
+                                    posed = tuple(cmds.xform(
+                                        driven, query=True, worldSpace=True,
+                                        matrix=True))
+                                    cmds.undo()
+                                    restored = tuple(cmds.xform(
+                                        driven, query=True, worldSpace=True,
+                                        matrix=True))
+                                    changed = max(abs(a - b) for a, b in zip(
+                                        baseline, posed)) > 1e-4
+                                    undone = max(abs(a - b) for a, b in zip(
+                                        baseline, restored)) < 1e-4
+                                    if not changed or not undone:
+                                        hand_failures.append({
+                                            "control": item.control_path,
+                                            "joint": driven,
+                                            "changed": changed,
+                                            "undo_restored": undone,
+                                        })
+                                result["isolated_build"]["all_hand_controls"] = {
+                                    "count": len(rig.hand.snapshot.controls),
+                                    "failures": hand_failures,
+                                }
+                                if mesh_copy is not None:
+                                    influences = tuple(
+                                        state.path for state in rig.body.joints)
+                                    bound = BindSkin(host).apply(
+                                        mesh_copy, influences,
+                                        skin_name="AdvPy_SamBodySkin")
+                                    result["isolated_build"]["skin"] = {
+                                        "status": "passed",
+                                        "mesh": mesh_copy,
+                                        "influence_count": len(
+                                            bound.snapshot.influence_paths),
+                                        "vertex_count": cmds.polyEvaluate(
+                                            mesh_copy, vertex=True),
+                                    }
+                                    vertex = f"{mesh_copy}.vtx[0]"
+                                    neutral_vertex = tuple(cmds.pointPosition(
+                                        vertex, world=True))
+                                    global_control = (
+                                        "|AdvPy_CharacterControls|"
+                                        "AdvPy_GlobalOffset|AdvPy_Global")
+                                    cmds.setAttr(
+                                        f"{global_control}.translateX", 2.0)
+                                    moved_vertex = tuple(cmds.pointPosition(
+                                        vertex, world=True))
+                                    cmds.undo()
+                                    restored_vertex = tuple(cmds.pointPosition(
+                                        vertex, world=True))
+                                    result["isolated_build"]["skin"].update({
+                                        "global_motion": abs(
+                                            moved_vertex[0] - neutral_vertex[0]),
+                                        "undo_restored": max(abs(a - b)
+                                            for a, b in zip(neutral_vertex,
+                                                            restored_vertex)) < 1e-4,
+                                    })
                                 control = next(item for item in
                                     rig.hand.snapshot.controls
                                     if item.control_path.rsplit("|", 1)[-1]
@@ -145,6 +224,16 @@ def main(scene: Path, report: Path, isolated_build: bool = False) -> int:
                                     reopened = tuple(cmds.xform(
                                         joint, query=True, worldSpace=True,
                                         matrix=True))
+                                    if mesh_copy is not None:
+                                        skin_nodes = cmds.ls(
+                                            "AdvPy_SamBodySkin",
+                                            type="skinCluster") or []
+                                        result["isolated_build"]["skin"][
+                                            "reopen_influence_count"] = (
+                                            len(cmds.skinCluster(
+                                                skin_nodes[0], query=True,
+                                                influence=True) or [])
+                                            if len(skin_nodes) == 1 else 0)
                                     cmds.file(new=True, force=True)
                                 result["isolated_build"]["hand_drive"] = {
                                     "joint": joint.rsplit("|", 1)[-1],
@@ -175,9 +264,21 @@ def main(scene: Path, report: Path, isolated_build: bool = False) -> int:
                     or not built.get("fit_unchanged")
                     or built.get("character_rig", {}).get("status") != "passed"
                     or drive.get("control_count") != 30
+                    or built.get("all_hand_controls", {}).get("count") != 30
+                    or built.get("all_hand_controls", {}).get("failures")
                     or not all(drive.get(key) for key in (
                         "changed", "undo_restored", "redo_restored",
                         "reopen_restored"))):
+                return 1
+            if isolated_skin and (built.get("skin", {}).get("status") != "passed"
+                                  or built["skin"].get("influence_count") !=
+                                  built.get("body_count")
+                                  or abs(built["skin"].get(
+                                      "global_motion", 0.0) - 2.0) > 1e-3
+                                  or not built["skin"].get("undo_restored")
+                                  or built["skin"].get(
+                                      "reopen_influence_count") !=
+                                      built.get("body_count")):
                 return 1
         return 0
     finally:
@@ -186,4 +287,6 @@ def main(scene: Path, report: Path, isolated_build: bool = False) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(Path(sys.argv[1]), Path(sys.argv[2]),
-                          "--isolated-build" in sys.argv[3:]))
+                          any(flag in sys.argv[3:] for flag in (
+                              "--isolated-build", "--isolated-skin")),
+                          "--isolated-skin" in sys.argv[3:]))
