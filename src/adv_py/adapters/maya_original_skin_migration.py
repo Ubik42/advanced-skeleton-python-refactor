@@ -114,6 +114,14 @@ class MayaOriginalSkinMigration:
                                      fullPath=True) or [None])[0]
         if not fit_parent:
             raise ValueError("FitSkeleton 没有可替换的原版角色容器")
+        replace_nodes = (fit_parent, source_skin, source_mesh,
+            *(c.listRelatives(fit_parent, allDescendents=True,
+                              fullPath=True) or ()))
+        referenced = [node for node in replace_nodes
+                      if c.referenceQuery(node, isNodeReferenced=True)]
+        if referenced:
+            raise ValueError("待替换的原版角色或源 Skin 含引用节点："
+                             + referenced[0])
         if any(c.objExists(name) for name in (target_mesh, target_skin)):
             raise ValueError("目标网格或 Skin 名称已被占用")
         for guide, key in ((volume, "joints"), (angle, "angles"),
