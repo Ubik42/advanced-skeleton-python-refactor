@@ -914,7 +914,10 @@ class MayaFitJointHost:
             for channel in channels:
                 for axis in ("XY", "XZ", "YZ") if channel == "shear" else "XYZ":
                     plug = node + "." + channel + axis
-                    if c.objExists(plug) and not c.listConnections(plug, source=True, destination=False):
+                    if (c.objExists(plug)
+                            and c.getAttr(plug, settable=True)
+                            and not c.listConnections(
+                                plug, source=True, destination=False)):
                         rows.append((plug, c.getAttr(plug), c.getAttr(plug, lock=True)))
         for plug, value, locked in rows:
             if locked:

@@ -27,6 +27,7 @@ class ControlOrientationState:
     secondary_axis: ControlAxis = ControlAxis.Y
     curve_unaffected: bool = False
     mirror: bool = False
+    mirrored_behavior: bool = False
 
     def __post_init__(self) -> None:
         if not self.control or len(self.world_matrix) != 16:
@@ -46,6 +47,7 @@ class ControlOrientationPlan:
     secondary_axis: ControlAxis
     curve_unaffected: bool
     mirror: bool
+    mirrored_behavior: bool
     changes: tuple[ControlOrientationChange, ...]
 
 
@@ -87,7 +89,8 @@ def plan_custom_control_orientations(
                     f"手工方向仅允许旋转，不允许缩放：{state.control}")
         changes.append(ControlOrientationChange(state, ControlOrientationState(
             state.control, preview.preview_matrix, state.primary_axis,
-            state.secondary_axis, state.curve_unaffected, state.mirror)))
+            state.secondary_axis, state.curve_unaffected, state.mirror,
+            state.mirrored_behavior)))
     return tuple(changes)
 
 
@@ -153,25 +156,52 @@ def _target_matrix(state, primary, secondary):
     return tuple(values)
 
 
+def _opposite_semantic_axes(matrix, primary, secondary):
+    """Reverse aim and up together while keeping a right-handed frame."""
+    rows = list(matrix)
+    for axis in (primary, secondary):
+        index, _ = _axis(axis)
+        for column in range(3):
+            offset = index * 4 + column
+            rows[offset] = -rows[offset]
+    return tuple(rows)
+
+
+def _is_left_control(control):
+    return control.rsplit("|", 1)[-1].endswith("_L")
+
+
 def plan_control_orientation_axis(
     states: tuple[ControlOrientationState, ...],
     primary_axis: ControlAxis | str,
     secondary_axis: ControlAxis | str,
     curve_unaffected: bool = False,
     mirror: bool = False,
+    mirrored_behavior: bool = False,
 ) -> ControlOrientationPlan:
     primary = ControlAxis(primary_axis)
     secondary = ControlAxis(secondary_axis)
     _validate_axis_pair(primary, secondary)
     if not states or len({state.control for state in states}) != len(states):
         raise ControlOrientationValidationError("至少需要一个且不能重复的控制器")
-    if not isinstance(curve_unaffected, bool) or not isinstance(mirror, bool):
+    if any(not isinstance(value, bool) for value in (
+            curve_unaffected, mirror, mirrored_behavior)):
         raise ControlOrientationValidationError("控制器方向选项必须为布尔值")
-    changes = tuple(ControlOrientationChange(
-        state,
-        ControlOrientationState(state.control, _target_matrix(
-            state, primary, secondary), primary, secondary, curve_unaffected,
-            mirror),
-    ) for state in states)
+    changes = []
+    for state in states:
+        canonical = state
+        if _is_left_control(state.control) and state.mirrored_behavior:
+            canonical = ControlOrientationState(
+                state.control, _opposite_semantic_axes(
+                    state.world_matrix, state.primary_axis, state.secondary_axis),
+                state.primary_axis, state.secondary_axis,
+                state.curve_unaffected, state.mirror, False)
+        target = _target_matrix(canonical, primary, secondary)
+        if _is_left_control(state.control) and mirrored_behavior:
+            target = _opposite_semantic_axes(target, primary, secondary)
+        changes.append(ControlOrientationChange(
+            state, ControlOrientationState(
+                state.control, target, primary, secondary,
+                curve_unaffected, mirror, mirrored_behavior)))
     return ControlOrientationPlan(primary, secondary, curve_unaffected,
-                                  mirror, changes)
+                                  mirror, mirrored_behavior, tuple(changes))

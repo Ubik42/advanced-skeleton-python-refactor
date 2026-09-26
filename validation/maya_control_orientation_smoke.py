@@ -36,6 +36,7 @@ def main(report: Path) -> int:
     maya.standalone.initialize(name="python")
     try:
         from maya import cmds
+        from maya.api import OpenMaya as om
         from adv_py.adapters import MayaBodyBuildHost
         from adv_py.application import (
             BuildSyntheticBodySourceFit, CreateFitSkeleton,
@@ -266,6 +267,156 @@ def main(report: Path) -> int:
                 (hero_right, hero_left))
             mirror_reopen_registry = hero_host.read_character_registration()
 
+        behavior_before = hero_host.capture_control_orientations(
+            (hero_right, hero_left))
+        behavior_expected = plan_control_orientation_axis(
+            behavior_before, "Z", "X", mirror=True,
+            mirrored_behavior=True).changes
+        behavior_body_before = _world_matrices(hero_host._cmds,
+                                               hero_body_paths)
+        behavior_count = controller.control_orient_axis(
+            "hero", (hero_right,), "Z", "X", False, True, True)
+        behavior_after = hero_host.capture_control_orientations(
+            (hero_right, hero_left))
+        behavior_body_after = _world_matrices(hero_host._cmds,
+                                              hero_body_paths)
+        behavior_registry = hero_host.read_character_registration()
+        cmds.undo()
+        behavior_undo = hero_host.capture_control_orientations(
+            (hero_right, hero_left))
+        behavior_undo_registry = hero_host.read_character_registration()
+        cmds.redo()
+        behavior_redo = hero_host.capture_control_orientations(
+            (hero_right, hero_left))
+        behavior_redo_registry = hero_host.read_character_registration()
+        with tempfile.TemporaryDirectory(
+                prefix="adv-py-mirrored-behavior-",
+                dir=report.parent.resolve()) as folder:
+            behavior_scene = Path(folder) / "behavior.ma"
+            cmds.file(rename=str(behavior_scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(behavior_scene), open=True, force=True)
+            behavior_reopen = hero_host.capture_control_orientations(
+                (hero_right, hero_left))
+            behavior_reopen_registry = hero_host.read_character_registration()
+            elbows = tuple(next(joint.path for joint in hero_registration.body
+                                if joint.path.endswith("Elbow_" + side))
+                           for side in ("R", "L"))
+            elbow_before = tuple(tuple(hero_host._cmds.xform(
+                path, query=True, worldSpace=True, translation=True))
+                for path in elbows)
+            for path in (hero_right, hero_left):
+                hero_host._cmds.setAttr(path + ".rotateY", 15.0)
+            elbow_after = tuple(tuple(hero_host._cmds.xform(
+                path, query=True, worldSpace=True, translation=True))
+                for path in elbows)
+            for path in (hero_right, hero_left):
+                hero_host._cmds.setAttr(path + ".rotateY", 0.0)
+            elbow_delta = tuple(tuple(a - b for a, b in zip(after, before))
+                                for before, after in
+                                zip(elbow_before, elbow_after))
+            symmetric_elbow_motion = (
+                max(abs(value) for value in elbow_delta[0]) > 1e-3
+                and _close(elbow_delta[1], (-elbow_delta[0][0],
+                                            elbow_delta[0][1],
+                                            elbow_delta[0][2]), 1e-4))
+            axis_samples = {}
+            probe_paths = tuple(next(joint.path for joint in hero_registration.body
+                                     if joint.path.endswith(name + "_" + side))
+                                for side in ("R", "L")
+                                for name in ("Elbow", "Wrist"))
+            probe_local = []
+            for path in probe_paths:
+                frame = om.MMatrix(hero_host._cmds.xform(
+                    path, query=True, worldSpace=True, matrix=True))
+                origin = tuple(frame[index] for index in range(12, 15))
+                inverse = frame.inverse()
+                probe_local.append(tuple(
+                    om.MPoint(origin[0] + offset[0],
+                              origin[1] + offset[1],
+                              origin[2] + offset[2]) * inverse
+                    for offset in ((0., 0., 0.), (0., 1., 0.),
+                                   (0., 0., 1.))))
+            def probe_positions():
+                result = []
+                for path, points in zip(probe_paths, probe_local):
+                    frame = om.MMatrix(hero_host._cmds.xform(
+                        path, query=True, worldSpace=True, matrix=True))
+                    result.extend(tuple((point * frame)[index]
+                                        for index in range(3))
+                                  for point in points)
+                return tuple(result)
+            neutral = probe_positions()
+            for axis in "XYZ":
+                hero_host._cmds.setAttr(hero_right + ".rotate" + axis, 15.0)
+                right_pose = probe_positions()
+                hero_host._cmds.setAttr(hero_right + ".rotate" + axis, 0.0)
+                errors = []
+                for sign in (1., -1.):
+                    hero_host._cmds.setAttr(hero_left + ".rotate" + axis,
+                                            sign * 15.0)
+                    left_pose = probe_positions()
+                    hero_host._cmds.setAttr(hero_left + ".rotate" + axis, 0.0)
+                    errors.append(sum(sum(abs((left_pose[j][k]-neutral[j][k])
+                        - (-1. if k == 0 else 1.) *
+                        (right_pose[j-6][k]-neutral[j-6][k]))
+                        for k in range(3)) for j in range(6, 12)))
+                axis_samples[axis] = errors
+            def mixed_pose(control):
+                for axis, value in zip("XYZ", (11., -17., 7.)):
+                    hero_host._cmds.setAttr(control + ".rotate" + axis, value)
+                try:
+                    return probe_positions()
+                finally:
+                    for axis in "XYZ":
+                        hero_host._cmds.setAttr(control + ".rotate" + axis, 0.)
+            right_mixed = mixed_pose(hero_right)
+            left_mixed = mixed_pose(hero_left)
+            mixed_error = sum(sum(abs(
+                (left_mixed[j][k] - neutral[j][k])
+                - (-1. if k == 0 else 1.) *
+                (right_mixed[j-6][k] - neutral[j-6][k]))
+                for k in range(3)) for j in range(6, 12))
+
+        disable_count = controller.control_orient_axis(
+            "hero", (hero_right,), "Z", "X", False, True, False)
+        behavior_disabled = hero_host.capture_control_orientations(
+            (hero_right, hero_left))
+        disable_registry = hero_host.read_character_registration()
+        old_driver = hero_host._cmds.objExists(
+            "AdvPy_MirroredBehavior_AdvPy_ShoulderFK_L")
+        cmds.undo()
+        disable_undo = hero_host.capture_control_orientations(
+            (hero_right, hero_left))
+        disable_undo_registry = hero_host.read_character_registration()
+        cmds.redo()
+        disable_redo = hero_host.capture_control_orientations(
+            (hero_right, hero_left))
+        disable_redo_registry = hero_host.read_character_registration()
+        elbow_right = next(path for path in hero_controls
+                           if "ElbowFK_R" in path)
+        elbow_left = next(path for path in hero_controls
+                          if "ElbowFK_L" in path)
+        elbow_behavior_count = controller.control_orient_axis(
+            "hero", (elbow_right,), "X", "Y", False, True, True)
+        elbow_behavior = hero_host.capture_control_orientations(
+            (elbow_right, elbow_left))
+        elbow_behavior_registry = hero_host.read_character_registration()
+        coverage = {}
+        for role in ("WristFK", "HipFK", "KneeFK", "AnkleFK", "ToesFK",
+                     "ArmIK", "ArmPV", "LegIK", "LegPV", "ToeIK"):
+            paired = next(path for path in hero_controls
+                          if path.endswith(role + "_R"))
+            try:
+                controller.control_orient_axis(
+                    "hero", (paired,), "X", "Y", False, True, True)
+                controller.control_orient_axis(
+                    "hero", (paired,), "X", "Y", False, True, False)
+                coverage[role] = "passed"
+            except Exception as exc:
+                coverage[role] = str(exc)
+
         checks = {
             "explicit_registered_route": count == 1,
             "target_world_axis_applied": _close(
@@ -366,10 +517,62 @@ def main(report: Path) -> int:
                 and actual.mirror for actual, change in
                 zip(mirror_reopen, mirror_expected))
                 and mirror_reopen_registry == hero_registration,
+            "mirrored_behavior_pair_orientation": behavior_count == 2
+                and all(_close(actual.world_matrix,
+                               change.after.world_matrix)
+                        and actual.mirrored_behavior
+                        for actual, change in
+                        zip(behavior_after, behavior_expected)),
+            "mirrored_behavior_body_and_registry": all(
+                _close(old, new) for old, new in
+                zip(behavior_body_before, behavior_body_after))
+                and behavior_registry.body == hero_registration.body
+                and behavior_registry.channels == hero_registration.channels
+                and all((old.path, old.uuid, old.parent)
+                        == (new.path, new.uuid, new.parent)
+                        for old, new in zip(hero_registration.nodes,
+                                            behavior_registry.nodes)),
+            "mirrored_behavior_single_undo_redo": all(
+                _close(actual.world_matrix, prior.world_matrix)
+                and actual.mirrored_behavior == prior.mirrored_behavior
+                for actual, prior in zip(behavior_undo, behavior_before))
+                and all(_close(actual.world_matrix,
+                               change.after.world_matrix)
+                        and actual.mirrored_behavior
+                        for actual, change in
+                        zip(behavior_redo, behavior_expected))
+                and behavior_undo_registry == hero_registration
+                and behavior_redo_registry == behavior_registry,
+            "mirrored_behavior_save_reopen": all(
+                _close(actual.world_matrix, change.after.world_matrix)
+                and actual.mirrored_behavior
+                for actual, change in
+                zip(behavior_reopen, behavior_expected))
+                and behavior_reopen_registry == behavior_registry,
+            "same_local_rotation_is_symmetric": symmetric_elbow_motion
+                and all(errors[0] < 1e-4 and errors[1] > 1e-2
+                        for errors in axis_samples.values())
+                and mixed_error < 1e-4,
+            "mirrored_behavior_disable_restores": disable_count == 2
+                and behavior_disabled == behavior_before
+                and disable_registry == hero_registration
+                and not old_driver,
+            "mirrored_behavior_disable_undo_redo":
+                disable_undo == behavior_reopen
+                and disable_undo_registry == behavior_registry
+                and disable_redo == behavior_disabled
+                and disable_redo_registry == disable_registry,
+            "mirrored_behavior_elbow_pair": elbow_behavior_count == 2
+                and all(state.mirrored_behavior for state in elbow_behavior)
+                and elbow_behavior_registry.body == hero_registration.body,
         }
         payload = {
             **checks,
             "control": control,
+            "axis_reflection_error": {axis: values[0]
+                                      for axis, values in axis_samples.items()},
+            "mixed_rotation_reflection_error": mixed_error,
+            "control_type_probe": coverage,
             "status": "passed" if all(checks.values()) else "failed",
         }
         report.write_text(json.dumps(

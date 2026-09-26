@@ -47,10 +47,12 @@ class SetControlOrientationAxis:
     def apply(self, controls: tuple[str, ...], primary: ControlAxis | str,
               secondary: ControlAxis | str,
               curve_unaffected: bool = False,
-              mirror: bool = False) -> ControlOrientationResult:
+              mirror: bool = False,
+              mirrored_behavior: bool = False) -> ControlOrientationResult:
         plan = plan_control_orientation_axis(
             self._host.capture_control_orientations(controls),
-            primary, secondary, curve_unaffected, mirror)
+            primary, secondary, curve_unaffected, mirror,
+            mirrored_behavior)
         points = (self._host.capture_control_curve_world_points(controls)
                   if curve_unaffected else ())
         with self._host.transaction(
@@ -84,6 +86,7 @@ class SetControlOrientationAxis:
                     or found.secondary_axis != expected.secondary_axis
                     or found.curve_unaffected != expected.curve_unaffected
                     or found.mirror != expected.mirror
+                    or found.mirrored_behavior != expected.mirrored_behavior
                     or any(abs(a - b) > 1e-5 for a, b in
                            zip(found.world_matrix, expected.world_matrix))):
                 raise RuntimeError("控制器方向复检失败：坐标轴或世界矩阵不一致")
@@ -136,6 +139,7 @@ class AttachCustomControlOrientations:
                     or actual.secondary_axis != change.after.secondary_axis
                     or actual.curve_unaffected != change.after.curve_unaffected
                     or actual.mirror != change.after.mirror
+                    or actual.mirrored_behavior != change.after.mirrored_behavior
                     or any(abs(a - b) > 1e-5 for a, b in zip(
                         actual.world_matrix, change.after.world_matrix))
                     for actual, change in zip(found, changes)):

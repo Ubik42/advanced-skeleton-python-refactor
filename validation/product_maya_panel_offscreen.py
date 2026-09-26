@@ -85,9 +85,11 @@ class FakeController:
         return len(targets)
 
     def control_orient_axis(self, namespace, controls, primary, secondary,
-                            curve_unaffected=False, mirror=False):
+                            curve_unaffected=False, mirror=False,
+                            mirrored_behavior=False):
         self.calls.append(("control_orient_axis", namespace, controls,
-                           primary, secondary, curve_unaffected, mirror))
+                           primary, secondary, curve_unaffected, mirror,
+                           mirrored_behavior))
         return len(controls)
 
     def control_orient_custom_detach(self, namespace):
@@ -385,7 +387,7 @@ def main(report: Path) -> int:
              "|CustomIcon") in controller.calls,
         "control_orient_axis_dispatches":
             ("control_orient_axis", "hero", ("|hero:ShoulderFK_R",),
-             "Z", "X", True, True) in controller.calls,
+             "Z", "X", True, True, True) in controller.calls,
         "control_orient_custom_dispatches":
             ("control_orient_custom_detach", "hero") in controller.calls
             and ("control_orient_custom_attach", "hero") in controller.calls,

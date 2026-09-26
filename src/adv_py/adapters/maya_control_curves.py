@@ -188,6 +188,10 @@ class MayaControlCurveMixin:
                 bool(self._cmds.getAttr(control + ".mirror"))
                 if self._cmds.attributeQuery(
                     "mirror", node=control, exists=True) else False,
+                bool(self._cmds.getAttr(control + ".mirroredBehaviour"))
+                if self._cmds.attributeQuery(
+                    "mirroredBehaviour", node=control,
+                    exists=True) else False,
             ))
             resolved.add(control)
         return tuple(result)
@@ -195,6 +199,7 @@ class MayaControlCurveMixin:
     def apply_control_orientation(self, state: ControlOrientationState) -> None:
         from math import degrees
         from maya.api import OpenMaya as om
+        from adv_py.adapters.maya_control_orient_behavior import sync_mirrored_behavior
 
         self._require_transaction()
         control, _ = self._control_curve_shapes(state.control, strict=True)
@@ -246,6 +251,13 @@ class MayaControlCurveMixin:
             self._cmds.addAttr(control, longName="mirror",
                                attributeType="bool")
         self._cmds.setAttr(control + ".mirror", state.mirror)
+        sync_mirrored_behavior(self, control, state.mirrored_behavior)
+        if not self._cmds.attributeQuery(
+                "mirroredBehaviour", node=control, exists=True):
+            self._cmds.addAttr(control, longName="mirroredBehaviour",
+                               attributeType="bool")
+        self._cmds.setAttr(control + ".mirroredBehaviour",
+                           state.mirrored_behavior)
         if original_selection:
             self._cmds.select(original_selection, replace=True)
         else:

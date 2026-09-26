@@ -97,6 +97,24 @@ class ControlOrientationTests(unittest.TestCase):
         self.assertNotEqual(plan.changes[0].after.world_matrix,
                             plan.changes[1].after.world_matrix)
 
+    def test_mirrored_behavior_is_symmetric_and_idempotent(self):
+        left = (-1., 0., 0., 0., 0., 1., 0., 0.,
+                0., 0., -1., 0., 0., 0., 0., 1.)
+        states = (ControlOrientationState("|Shoulder_R", IDENTITY),
+                  ControlOrientationState("|Shoulder_L", left))
+        first = plan_control_orientation_axis(
+            states, "X", "Y", mirror=True, mirrored_behavior=True)
+        self.assertEqual(first.changes[1].after.world_matrix[:12], (
+            1., 0., 0., 0., 0., -1., 0., 0.,
+            0., 0., -1., 0.))
+        second = plan_control_orientation_axis(
+            tuple(change.after for change in first.changes),
+            "X", "Y", mirror=True, mirrored_behavior=True)
+        self.assertEqual(tuple(change.after.world_matrix for change in
+                               second.changes),
+                         tuple(change.after.world_matrix for change in
+                               first.changes))
+
 
 if __name__ == "__main__":
     unittest.main()
