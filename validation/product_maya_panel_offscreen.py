@@ -84,6 +84,11 @@ class FakeController:
         self.calls.append(("control_curves_swap", namespace, targets, source))
         return len(targets)
 
+    def control_orient_axis(self, namespace, controls, primary, secondary):
+        self.calls.append(("control_orient_axis", namespace, controls,
+                           primary, secondary))
+        return len(controls)
+
     def skin_surface_source_export(self, namespace, skin, mesh, destination):
         self.calls.append(("skin_surface_source_export", namespace, skin, mesh,
                            destination.name))
@@ -271,6 +276,10 @@ def main(report: Path) -> int:
     buttons["镜像控制曲线形状"].click()
     panel.control_curve_custom_source.setText("|CustomIcon")
     buttons["替换控制器图标"].click()
+    panel.control_orient_targets.setPlainText("|hero:ShoulderFK_R")
+    panel.control_orient_primary.setCurrentIndex(2)
+    panel.control_orient_secondary.setCurrentIndex(0)
+    buttons["设置控制器局部轴"].click()
     app.processEvents()
     fit_page = panel.tabs.currentWidget()
     fit_page.verticalScrollBar().setValue(fit_page.verticalScrollBar().maximum())
@@ -362,6 +371,9 @@ def main(report: Path) -> int:
         "control_curve_swap_dispatches":
             ("control_curves_swap", "hero", ("|hero:Global",),
              "|CustomIcon") in controller.calls,
+        "control_orient_axis_dispatches":
+            ("control_orient_axis", "hero", ("|hero:ShoulderFK_R",),
+             "Z", "X") in controller.calls,
         "role_selection_dispatches_application_action":
             ("body_build", "hero", "FitSkeleton", None, False)
             in controller.calls,

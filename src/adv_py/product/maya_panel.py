@@ -378,6 +378,23 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("镜像控制曲线形状", self._mirror_control_curves))
             form.addRow(self._button("替换控制器图标", self._swap_control_curves))
             stack.addWidget(group)
+
+            self.control_orient_targets = QtWidgets.QPlainTextEdit()
+            self.control_orient_targets.setPlaceholderText(
+                "每行一个已登记控制器路径")
+            self.control_orient_targets.setMaximumHeight(76)
+            self.control_orient_primary = QtWidgets.QComboBox()
+            self.control_orient_secondary = QtWidgets.QComboBox()
+            for axis in ("X", "Y", "Z", "-X", "-Y", "-Z"):
+                self.control_orient_primary.addItem(axis, axis)
+                self.control_orient_secondary.addItem(axis, axis)
+            self.control_orient_secondary.setCurrentIndex(1)
+            group, form = self._group("07 · Control Orient", [
+                ("目标控制器", self.control_orient_targets),
+                ("Primary Axis", self.control_orient_primary),
+                ("Secondary Axis", self.control_orient_secondary)])
+            form.addRow(self._button("设置控制器局部轴", self._set_control_orient_axis))
+            stack.addWidget(group)
             self._spine_replace_mode_changed()
             stack.addStretch(1)
             return page
@@ -989,6 +1006,16 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(), targets,
                 self.control_curve_custom_source.text())
             return f"已替换 {count} 个控制器图标"
+
+        def _set_control_orient_axis(self):
+            controls = tuple(line.strip() for line in
+                self.control_orient_targets.toPlainText().splitlines()
+                if line.strip())
+            count = self.controller.control_orient_axis(
+                self._namespace(), controls,
+                self.control_orient_primary.currentData(),
+                self.control_orient_secondary.currentData())
+            return f"已设置 {count} 个控制器的局部轴"
 
         def _bind_skin(self):
             influences = tuple(line.strip() for line in

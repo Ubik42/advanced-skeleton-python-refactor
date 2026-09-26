@@ -47,6 +47,11 @@ def main() -> None:
                              "设置控制曲线颜色")].click()
     assert panel.detail.tabs.currentIndex() == 0
     assert panel.detail.windowTitle().endswith("Body / Control Curves")
+    panel.section_buttons[("Body", "Control Orient")].click()
+    panel.operation_buttons[("Body", "Control Orient",
+                             "设置控制器局部轴")].click()
+    assert panel.detail.tabs.currentIndex() == 0
+    assert panel.detail.windowTitle().endswith("Body / Control Orient")
     panel.section_buttons[("Pose", None)].click()
     panel.section_buttons[("Pose", "Driving Systems")].click()
     panel.operation_buttons[("Pose", "Driving Systems", "转换脊柱模式")].click()

@@ -6,9 +6,94 @@ from adv_py.core.control_curves import (
     ControlCurveShapeColorState, ControlCurveShapeState, ControlCurveState,
     ControlCurveValidationError,
 )
+from adv_py.core.control_orientation import (
+    ControlAxis, ControlOrientationState, ControlOrientationValidationError,
+)
+
+
+_CONTROL_AXES = tuple(ControlAxis)
 
 
 class MayaControlCurveMixin:
+    def capture_control_orientations(
+        self, controls: tuple[str, ...]
+    ) -> tuple[ControlOrientationState, ...]:
+        result = []
+        resolved = set()
+        for requested in controls:
+            control, shapes = self._control_curve_shapes(requested, strict=True)
+            if control in resolved:
+                raise ControlOrientationValidationError(
+                    f"控制器重复：{control}")
+            def axis(attribute, default):
+                if not self._cmds.attributeQuery(
+                        attribute, node=control, exists=True):
+                    return default
+                index = int(self._cmds.getAttr(control + "." + attribute))
+                if not 0 <= index < len(_CONTROL_AXES):
+                    raise ControlOrientationValidationError(
+                        f"控制器轴枚举无效：{control}.{attribute}")
+                return _CONTROL_AXES[index]
+            result.append(ControlOrientationState(
+                control,
+                tuple(float(value) for value in self._cmds.xform(
+                    control, query=True, worldSpace=True, matrix=True)),
+                axis("primaryAxis", ControlAxis.X),
+                axis("secondaryAxis", ControlAxis.Y),
+            ))
+            resolved.add(control)
+        return tuple(result)
+
+    def apply_control_orientation(self, state: ControlOrientationState) -> None:
+        from math import degrees
+        from maya.api import OpenMaya as om
+
+        self._require_transaction()
+        control, _ = self._control_curve_shapes(state.control, strict=True)
+        original_selection = self._cmds.ls(selection=True, long=True) or []
+        for axis in "XYZ":
+            plug = control + ".rotate" + axis
+            if self._cmds.listConnections(plug, source=True,
+                                          destination=False):
+                raise ControlOrientationValidationError(
+                    f"控制器必须在无旋转输入的构建姿态设置方向：{control}")
+            if abs(float(self._cmds.getAttr(plug))) > 1e-7:
+                raise ControlOrientationValidationError(
+                    f"控制器必须在零旋转的构建姿态设置方向：{control}")
+        children = self._cmds.listRelatives(
+            control, children=True, fullPath=True, type="transform") or []
+        child_world = tuple((child, tuple(self._cmds.xform(
+            child, query=True, worldSpace=True, matrix=True)))
+                            for child in children)
+        parents = self._cmds.listRelatives(
+            control, parent=True, fullPath=True, type="transform") or []
+        parent_world = (om.MMatrix(self._cmds.xform(
+            parents[0], query=True, worldSpace=True, matrix=True))
+                        if parents else om.MMatrix())
+        local_target = om.MMatrix(state.world_matrix) * parent_world.inverse()
+        orientation = om.MTransformationMatrix(
+            local_target).rotation(asQuaternion=True)
+        euler = orientation.asEulerRotation()
+        self._cmds.setAttr(control + ".rotateAxis",
+                           degrees(euler.x), degrees(euler.y),
+                           degrees(euler.z), type="double3")
+        for child, matrix in child_world:
+            self._cmds.xform(child, worldSpace=True, matrix=matrix)
+        enum_names = ":".join(axis.value for axis in _CONTROL_AXES)
+        for attribute, value in (("primaryAxis", state.primary_axis),
+                                 ("secondaryAxis", state.secondary_axis)):
+            if not self._cmds.attributeQuery(attribute, node=control,
+                                             exists=True):
+                self._cmds.addAttr(control, longName=attribute,
+                                   attributeType="enum", enumName=enum_names)
+            self._cmds.setAttr(control + "." + attribute,
+                               _CONTROL_AXES.index(value))
+        if original_selection:
+            self._cmds.select(original_selection, replace=True)
+        else:
+            self._cmds.select(clear=True)
+        self._transaction_changed = True
+
     def _control_curve_shapes(self, requested: str, *, strict: bool):
         matches = self._cmds.ls(requested, long=True, type="transform") or []
         if len(matches) != 1:

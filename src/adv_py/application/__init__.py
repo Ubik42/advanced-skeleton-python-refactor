@@ -361,8 +361,16 @@ from .control_curves import (
     MirrorControlCurves,
     SwapControlCurves,
 )
+from .control_orientation import (
+    ControlOrientationHost,
+    ControlOrientationResult,
+    SetControlOrientationAxis,
+)
 
 __all__ = [
+    "ControlOrientationHost",
+    "ControlOrientationResult",
+    "SetControlOrientationAxis",
     "AutoScaleControlCurves",
     "ColorControlCurves",
     "ControlCurveAutoScaleResult",

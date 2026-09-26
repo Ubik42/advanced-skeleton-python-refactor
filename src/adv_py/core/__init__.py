@@ -738,8 +738,22 @@ from .control_curves import (
     plan_control_curve_swap,
     plan_control_curve_scale,
 )
+from .control_orientation import (
+    ControlAxis,
+    ControlOrientationChange,
+    ControlOrientationPlan,
+    ControlOrientationState,
+    ControlOrientationValidationError,
+    plan_control_orientation_axis,
+)
 
 __all__ = [
+    "ControlAxis",
+    "ControlOrientationChange",
+    "ControlOrientationPlan",
+    "ControlOrientationState",
+    "ControlOrientationValidationError",
+    "plan_control_orientation_axis",
     "ControlCurveAutoScaleChange",
     "ControlCurveAutoScaleMetric",
     "ControlCurveAutoScalePlan",

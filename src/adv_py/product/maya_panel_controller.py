@@ -19,6 +19,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     SwitchBodyCharacterSpace,
     AutoScaleControlCurves, ColorControlCurves, MirrorControlCurves,
     ScaleControlCurves, SwapControlCurves,
+    SetControlOrientationAxis,
     CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
     ExportFitSkeleton, ExportSkinWeights, OrientSimpleFitChain,
     OrientWorldFitJoints,
@@ -360,6 +361,29 @@ class MayaPanelController:
             resolved.append(matches[0])
         result = SwapControlCurves(host).apply(
             source.strip(), tuple(dict.fromkeys(resolved)))
+        return len(result.verified)
+
+    def control_orient_axis(self, namespace: str, controls: tuple[str, ...],
+                            primary: str, secondary: str) -> int:
+        if not controls:
+            raise ValueError("请指定至少一个已登记控制器")
+        host = self._host(namespace)
+        resolver = ResolveBodyCharacter(host)
+        names = resolver.discover()
+        if len(names) != 1:
+            raise ValueError("当前命名空间必须恰好包含一个已登记角色")
+        registration = resolver.execute(names[0])
+        registered = tuple(dict.fromkeys(
+            channel.node for channel in registration.channels))
+        resolved = []
+        for control in controls:
+            matches = [path for path in registered
+                       if path == control or path.rsplit("|", 1)[-1] == control]
+            if len(matches) != 1:
+                raise ValueError(f"控制器未登记或名称不唯一：{control}")
+            resolved.append(matches[0])
+        result = SetControlOrientationAxis(host).apply(
+            tuple(dict.fromkeys(resolved)), primary, secondary)
         return len(result.verified)
 
     def skin_bind(self, namespace: str, mesh: str,

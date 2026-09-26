@@ -364,6 +364,7 @@ python validation\architecture_boundary_audit.py validation\results\architecture
 $env:PYTHONPATH = 'src'
 py -3 -m unittest discover -s tests
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_control_curves_smoke.py validation/results/maya2024-control-curves.json
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_control_orientation_smoke.py validation/results/maya2024-control-orientation.json
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_complete_character_smoke.py validation/results/maya2024-complete-character.json
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_complete_character_smoke.py validation/results/maya2024-complete-character-basic.json --basic
 ```
