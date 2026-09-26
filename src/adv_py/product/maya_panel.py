@@ -391,11 +391,14 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_orient_secondary.setCurrentIndex(1)
             self.control_orient_curve_unaffected = QtWidgets.QCheckBox(
                 "改变方向后保持曲线世界形状")
+            self.control_orient_mirror = QtWidgets.QCheckBox("同时设置对侧控制器")
+            self.control_orient_mirror.setChecked(True)
             group, form = self._group("07 · Control Orient", [
                 ("目标控制器", self.control_orient_targets),
                 ("Primary Axis", self.control_orient_primary),
                 ("Secondary Axis", self.control_orient_secondary),
-                ("Curve Unaffected", self.control_orient_curve_unaffected)])
+                ("Curve Unaffected", self.control_orient_curve_unaffected),
+                ("Mirror", self.control_orient_mirror)])
             form.addRow(self._button("设置控制器局部轴", self._set_control_orient_axis))
             form.addRow(self._button("分离全部控制器", self._detach_control_orient_custom))
             form.addRow(self._button("重新附着全部控制器", self._attach_control_orient_custom))
@@ -1020,7 +1023,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(), controls,
                 self.control_orient_primary.currentData(),
                 self.control_orient_secondary.currentData(),
-                self.control_orient_curve_unaffected.isChecked())
+                self.control_orient_curve_unaffected.isChecked(),
+                self.control_orient_mirror.isChecked())
             return f"已设置 {count} 个控制器的局部轴"
 
         def _detach_control_orient_custom(self):

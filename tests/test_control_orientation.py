@@ -85,6 +85,18 @@ class ControlOrientationTests(unittest.TestCase):
                 (ControlOrientationState("|Control", IDENTITY),),
                 (CustomOrientationPreview("|Control", IDENTITY, moved),))
 
+    def test_mirror_axis_option_reorients_each_side_from_its_own_frame(self):
+        left = (-1., 0., 0., 0., 0., -1., 0., 0.,
+                0., 0., 1., 0., 0., 0., 0., 1.)
+        plan = plan_control_orientation_axis((
+            ControlOrientationState("|Shoulder_R", IDENTITY),
+            ControlOrientationState("|Shoulder_L", left),
+        ), "Z", "X", mirror=True)
+        self.assertTrue(plan.mirror)
+        self.assertTrue(all(change.after.mirror for change in plan.changes))
+        self.assertNotEqual(plan.changes[0].after.world_matrix,
+                            plan.changes[1].after.world_matrix)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -61,6 +61,10 @@ def main(report: Path) -> int:
             channel.node for channel in registration.channels))
         control = next(path for path in candidates
                        if "ShoulderFK_R" in path)
+        opposite_control = next(path for path in candidates
+                                if path.endswith("|AdvPy_ShoulderFK_L"))
+        opposite_before = host.capture_control_orientations(
+            (opposite_control,))[0]
         before = host.capture_control_orientations((control,))[0]
         expected = plan_control_orientation_axis(
             (before,), "Z", "X").changes[0].after
@@ -78,6 +82,8 @@ def main(report: Path) -> int:
         count = controller.control_orient_axis(
             ":", (control.rsplit("|", 1)[-1],), "Z", "X")
         after = host.capture_control_orientations((control,))[0]
+        opposite_after = host.capture_control_orientations(
+            (opposite_control,))[0]
         curve_after = _world_points(cmds, control)
         child_after = _world_matrices(cmds, children)
         body_after = _world_matrices(cmds, body_paths)
@@ -226,6 +232,39 @@ def main(report: Path) -> int:
             and hero_host.read_character_registration() == hero_registration
             and not hero_host._cmds.objExists(
                 "AdvPy_ControlOrientCustomSession"))
+        hero_right = next(path for path in hero_controls
+                          if "ShoulderFK_R" in path)
+        hero_left = next(path for path in hero_controls
+                         if "ShoulderFK_L" in path)
+        mirror_before = hero_host.capture_control_orientations(
+            (hero_right, hero_left))
+        mirror_expected = plan_control_orientation_axis(
+            mirror_before, "Z", "X", mirror=True).changes
+        hero_body_paths = tuple(joint.path for joint in hero_registration.body)
+        hero_body_before = _world_matrices(hero_host._cmds, hero_body_paths)
+        mirror_count = controller.control_orient_axis(
+            "hero", (hero_right,), "Z", "X", False, True)
+        mirror_after = hero_host.capture_control_orientations(
+            (hero_right, hero_left))
+        mirror_body_after = _world_matrices(hero_host._cmds, hero_body_paths)
+        mirror_registration = hero_host.read_character_registration()
+        cmds.undo()
+        mirror_undo = hero_host.capture_control_orientations(
+            (hero_right, hero_left))
+        cmds.redo()
+        mirror_redo = hero_host.capture_control_orientations(
+            (hero_right, hero_left))
+        with tempfile.TemporaryDirectory(
+                prefix="adv-py-mirror-orient-",
+                dir=report.parent.resolve()) as folder:
+            mirror_scene = Path(folder) / "mirror.ma"
+            cmds.file(rename=str(mirror_scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(mirror_scene), open=True, force=True)
+            mirror_reopen = hero_host.capture_control_orientations(
+                (hero_right, hero_left))
+            mirror_reopen_registry = hero_host.read_character_registration()
 
         checks = {
             "explicit_registered_route": count == 1,
@@ -233,6 +272,8 @@ def main(report: Path) -> int:
                 after.world_matrix, expected.world_matrix)
                 and after.primary_axis.value == "Z"
                 and after.secondary_axis.value == "X",
+            "mirror_disabled_leaves_opposite_unchanged":
+                opposite_after == opposite_before,
             "curve_follows_orientation": not _close(
                 curve_before, curve_after),
             "direct_children_compensated": all(
@@ -302,6 +343,29 @@ def main(report: Path) -> int:
                                           edit_target)
                 and custom_reopen_registry == registration,
             "custom_namespaced_character": namespaced_custom,
+            "mirror_pair_uses_each_side_frame": mirror_count == 2
+                and all(_close(actual.world_matrix, change.after.world_matrix)
+                        and actual.mirror for actual, change in
+                        zip(mirror_after, mirror_expected))
+                and not _close(mirror_after[0].world_matrix,
+                               mirror_after[1].world_matrix),
+            "mirror_body_and_registry": all(
+                _close(old, new) for old, new in
+                zip(hero_body_before, mirror_body_after))
+                and mirror_registration == hero_registration,
+            "mirror_single_undo_redo": all(
+                _close(actual.world_matrix, prior.world_matrix)
+                and actual.mirror == prior.mirror
+                for actual, prior in zip(mirror_undo, mirror_before))
+                and all(_close(actual.world_matrix,
+                               change.after.world_matrix)
+                        and actual.mirror for actual, change in
+                        zip(mirror_redo, mirror_expected)),
+            "mirror_save_reopen": all(
+                _close(actual.world_matrix, change.after.world_matrix)
+                and actual.mirror for actual, change in
+                zip(mirror_reopen, mirror_expected))
+                and mirror_reopen_registry == hero_registration,
         }
         payload = {
             **checks,

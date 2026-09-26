@@ -185,6 +185,9 @@ class MayaControlCurveMixin:
                 bool(self._cmds.getAttr(control + ".curveUnafeccted"))
                 if self._cmds.attributeQuery(
                     "curveUnafeccted", node=control, exists=True) else False,
+                bool(self._cmds.getAttr(control + ".mirror"))
+                if self._cmds.attributeQuery(
+                    "mirror", node=control, exists=True) else False,
             ))
             resolved.add(control)
         return tuple(result)
@@ -239,6 +242,10 @@ class MayaControlCurveMixin:
                                attributeType="bool")
         self._cmds.setAttr(control + ".curveUnafeccted",
                            state.curve_unaffected)
+        if not self._cmds.attributeQuery("mirror", node=control, exists=True):
+            self._cmds.addAttr(control, longName="mirror",
+                               attributeType="bool")
+        self._cmds.setAttr(control + ".mirror", state.mirror)
         if original_selection:
             self._cmds.select(original_selection, replace=True)
         else:

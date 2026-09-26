@@ -366,7 +366,8 @@ class MayaPanelController:
 
     def control_orient_axis(self, namespace: str, controls: tuple[str, ...],
                             primary: str, secondary: str,
-                            curve_unaffected: bool = False) -> int:
+                            curve_unaffected: bool = False,
+                            mirror: bool = False) -> int:
         if not controls:
             raise ValueError("请指定至少一个已登记控制器")
         host = self._host(namespace)
@@ -384,9 +385,19 @@ class MayaPanelController:
             if len(matches) != 1:
                 raise ValueError(f"控制器未登记或名称不唯一：{control}")
             resolved.append(matches[0])
+        if mirror:
+            registered_set = set(registered)
+            for source in tuple(resolved):
+                for marker, opposite in (("_R", "_L"), ("_L", "_R")):
+                    if re.search(re.escape(marker) + r"(?=\||$)", source):
+                        target = re.sub(re.escape(marker) + r"(?=\||$)",
+                                        opposite, source)
+                        if target in registered_set:
+                            resolved.append(target)
+                        break
         result = SetControlOrientationAxis(host).apply(
             tuple(dict.fromkeys(resolved)), primary, secondary,
-            curve_unaffected)
+            curve_unaffected, mirror)
         return len(result.verified)
 
     def control_orient_custom_detach(self, namespace: str) -> tuple[str, ...]:
