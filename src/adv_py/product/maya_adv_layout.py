@@ -27,6 +27,8 @@ ADV_SECTIONS = (
 # Original headings stay in their original order; unsupported sections remain
 # visibly inactive instead of implying that their MEL behavior was ported.
 ADV_OPERATIONS = {
+    ("Preparation", "Model"): (
+        ("检查选中模型", 0, "00 · 模型检查"),),
     ("Body", "Fit"): (
         ("导出当前 Fit", 0, "01 · Fit 数据"),
         ("从文档导入", 0, "01 · Fit 数据")),

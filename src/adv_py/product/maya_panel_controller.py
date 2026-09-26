@@ -139,6 +139,12 @@ class MayaPanelController:
             raise ValueError("请选择角色命名空间")
         return self._host_factory(namespace=None if namespace == ":" else namespace)
 
+    def model_check(self):
+        from adv_py.adapters.maya_model_checker import MayaModelCheckHost
+        from adv_py.application.model_check import CheckModel
+
+        return CheckModel(MayaModelCheckHost()).execute()
+
     def characters(self) -> tuple[PanelCharacter, ...]:
         from adv_py.adapters.maya_scene_gateway import MayaSceneGateway
 

@@ -14,12 +14,18 @@ sys.path.insert(0, str(ROOT / "src"))
 from PySide2 import QtCore, QtGui, QtWidgets
 from adv_py.product.maya_panel import create_panel
 from adv_py.product.maya_panel_controller import PanelCharacter, PanelSkinSurfaceResult
+from adv_py.core.model_checker import ModelCheckResult, ModelTransformIssue
 
 
 class FakeController:
     def __init__(self):
         self.built = False
         self.calls = []
+
+    def model_check(self):
+        self.calls.append("model_check")
+        return ModelCheckResult("|Model|Body", 8,
+            (ModelTransformIssue("|Model", "translateY", 3.0, 0.0),), (), ())
 
     def characters(self):
         self.calls.append("characters")
@@ -196,6 +202,8 @@ def main(report: Path) -> int:
         QtGui.QFontDatabase.addApplicationFont(str(font))
     controller = FakeController()
     panel = create_panel(controller)
+    panel._check_model()
+    assert "|Model.translateY" in panel.model_check_results.toPlainText()
     panel.show()
     app.processEvents()
     panel.roles.setCurrentRow(0)

@@ -1,5 +1,11 @@
 # 后台宿主验证
 
+Preparation / Model Check：`maya_model_check_smoke.py` 构造带父级平移、非默认枢轴和构建历史的对称模型，确认报告内容、临时节点清理与场景修改标志；移动一个顶点后确认对称问题及顶点选中。公开 `sam.mb` 的 18,151 顶点 `model:body` 另经 Maya 2024 实测，变换、历史、对称问题均为 0，检查阶段约 8.8 秒。打开公开文件时禁用脚本节点执行。
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_model_check_smoke.py
+```
+
 四肢 `_50` 体积父节点及肘／膝 A/B 加权关节对照：先导出原版驱动导向，再分别运行以下两个用例。`_50` 用例覆盖双侧六部位共 12 个中间父节点的静止、FK 动作、来源父链核对、故障回滚和重开。肘／膝用例在同一父链上构建 8 个带 SDK 曲线的加权关节，以肘 `80°`、膝 `-110°` 对比原版动作；两者均检查撤销／重做和 Body 登记。
 
 ```powershell

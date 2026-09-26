@@ -174,6 +174,16 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _fit_page(self):
             page, stack = self._page()
+            self.model_check_results = QtWidgets.QPlainTextEdit()
+            self.model_check_results.setReadOnly(True)
+            self.model_check_results.setPlaceholderText(
+                "选择多边形模型，检查父级变换、构建历史和左右对称性")
+            self.model_check_results.setMaximumHeight(180)
+            group, form = self._group("00 · 模型检查", [
+                ("检查报告", self.model_check_results)])
+            form.addRow(self._button("检查选中模型", self._check_model))
+            stack.addWidget(group)
+
             fit_out, self.fit_export_document = self._file_field("导出 Fit 文档", save=True)
             fit_in, self.fit_import_document = self._file_field("导入 Fit 文档")
             self.fit_container = QtWidgets.QLineEdit("FitSkeleton")
@@ -889,6 +899,27 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.fit_container.text().strip(),
                 external_compatibility=self.external_fit_export.isChecked())
             return f"已导出 {count} 个关节"
+
+        def _check_model(self):
+            result = self.controller.model_check()
+            lines = [f"模型：{result.mesh}", f"顶点：{result.vertex_count}"]
+            if result.clean:
+                lines.append("通过：变换、历史和左右对称性均未发现问题")
+            else:
+                for issue in result.transform_issues:
+                    lines.append(f"变换  {issue.path}.{issue.attribute}: "
+                                 f"{issue.value:g}（默认 {issue.expected:g}）")
+                for issue in result.history_issues:
+                    lines.append(f"历史  {issue.name} [{issue.node_type}]")
+                for issue in result.symmetry_issues[:100]:
+                    lines.append(f"对称  顶点 {issue.vertex} → {issue.closest_vertex}: "
+                                 f"偏差 {issue.distance:.6g} cm")
+                if len(result.symmetry_issues) > 100:
+                    lines.append(f"其余 {len(result.symmetry_issues) - 100} 处对称偏差已在模型上选中")
+            self.model_check_results.setPlainText("\n".join(lines))
+            return (f"模型检查完成：{len(result.transform_issues)} 项变换、"
+                    f"{len(result.history_issues)} 项历史、"
+                    f"{len(result.symmetry_issues)} 处对称偏差")
 
         def _import_fit(self):
             count = self.controller.fit_import(self._namespace(),
