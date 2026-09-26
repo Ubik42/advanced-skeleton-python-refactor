@@ -193,10 +193,14 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.preparation_object_fields[role] = field
                 row = QtWidgets.QHBoxLayout()
                 row.addWidget(field, 1)
-                row.addWidget(self._button("记录所选", lambda r=role:
-                    self._record_preparation_objects(r)))
-                row.addWidget(self._button("重新选中", lambda r=role:
-                    self._reselect_preparation_objects(r)))
+                record = self._button("记录所选", lambda r=role:
+                    self._record_preparation_objects(r))
+                record.setObjectName("AdvPyPrepRecord" + role.replace(" ", ""))
+                row.addWidget(record)
+                reselect = self._button("重新选中", lambda r=role:
+                    self._reselect_preparation_objects(r))
+                reselect.setObjectName("AdvPyPrepReselect" + role.replace(" ", ""))
+                row.addWidget(reselect)
                 form.addRow(role, row)
             stack.addWidget(group)
 

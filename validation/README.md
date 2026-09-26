@@ -20,6 +20,8 @@ Preparation / Rig 的 Skin／All／左右眼对象记录：`maya_preparation_obj
 
 引用模型到完整 Body：`maya_preparation_to_skinned_body_smoke.py` 从公开 Sam 静态场景导出主体和配件为独立模型引用，记录 Preparation/Skin，再从 41 关节 Fit 构建双 Skin 角色。覆盖第二套 Skin 后故障回滚、控制器驱动网格、一次构建 Undo／Redo、保存重开、1／5 帧含网格 FBX 发布与重导入，且引用源文件哈希保持不变。
 
+`maya_preparation_to_skinned_body_visible.py` 在 Maya 图形窗口实际点击引用模型、记录 Skin 和留空网格框的 Body 构建入口；输出面板截图、状态及重开检查到 `validation/results/preparation-visible/`。`maya_referenced_model_update_probe.py` 在临时副本上更新引用源，比较顶点位置和拓扑变化后 Maya 保留的 Skin 状态；Skin 节点仍在不能单独证明权重兼容。
+
 ```powershell
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_standard_fit_skinned_build_smoke.py 'C:\path\to\sam.mb' validation/results/maya2024-standard-fit-visible-source.mb --prepare
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_preparation_to_skinned_body_smoke.py validation/results/maya2024-standard-fit-visible-source.mb
