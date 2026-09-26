@@ -3844,6 +3844,51 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
+    def capture_skin_rebind_state(self, skin: str, mesh: str):
+        from adv_py.application.skin_rebind import SkinRebindState
+        from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
+
+        c = self._cmds
+        skins = c.ls(skin, type="skinCluster") or []
+        meshes = c.ls(mesh, long=True, type="transform") or []
+        if len(skins) != 1 or skins[0] != skin or len(meshes) != 1 or meshes[0] != mesh:
+            raise FitSkeletonValidationError("重绑目标 Skin 或网格不存在或名称不唯一")
+        if c.referenceQuery(skin, isNodeReferenced=True):
+            raise FitSkeletonValidationError("不能修改引用来源中的 Skin")
+        if not c.attributeQuery(TOPOLOGY_ATTRIBUTE, node=skin, exists=True):
+            raise FitSkeletonValidationError("旧 Skin 缺少绑定拓扑记录，不能自动重绑")
+        shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
+                                 fullPath=True, type="mesh") or []
+        if len(shapes) != 1:
+            raise FitSkeletonValidationError("重绑目标必须有唯一可见网格")
+        geometry = c.skinCluster(skin, query=True, geometry=True) or []
+        bound = c.ls(geometry[0], long=True, type="mesh") if len(geometry) == 1 else []
+        parents = c.listRelatives(bound[0], parent=True, fullPath=True) if bound else []
+        if parents != [mesh]:
+            raise FitSkeletonValidationError("Skin 与重绑目标网格不匹配")
+        history = c.listHistory(shapes[0], pruneDagObjects=True) or []
+        skin_history = {node for node in history if c.nodeType(node) == "skinCluster"}
+        if skin_history != {skin}:
+            raise FitSkeletonValidationError("目标网格有多套 Skin，不能自动重绑")
+        influences = []
+        for joint in c.skinCluster(skin, query=True, influence=True) or []:
+            paths = c.ls(joint, long=True, type="joint") or []
+            if len(paths) != 1:
+                raise FitSkeletonValidationError("Skin 影响关节缺失或名称不唯一")
+            influences.append(paths[0])
+        if not influences:
+            raise FitSkeletonValidationError("Skin 没有影响关节")
+        return SkinRebindState(skin, mesh, tuple(influences),
+            int(c.getAttr(f"{skin}.maxInfluences")),
+            bool(c.getAttr(f"{skin}.maintainMaxInfluences")),
+            c.getAttr(f"{skin}.{TOPOLOGY_ATTRIBUTE}"),
+            mesh_topology_digest(shapes[0]))
+
+    def remove_skin_bind_for_rebind(self, skin: str) -> None:
+        self._require_transaction()
+        self._transaction_changed = True
+        self._cmds.delete(skin)
+
     def capture_skin_bind(self, plan: SkinBindPlan) -> SkinBindSnapshot:
         clusters = self._cmds.ls(plan.skin_name, type="skinCluster") or []
         if len(clusters) != 1:

@@ -586,6 +586,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.surface_discard.setRange(0., .999999)
             self.surface_discard.setDecimals(6)
             self.surface_discard.setSingleStep(.01)
+            self.surface_discard.setValue(.000001)
             self.surface_discard.setToolTip("超过目标最大影响数时，允许裁掉的单顶点权重总量")
             self.surface_extra = QtWidgets.QCheckBox("允许目标多出关节，并清零其目标权重")
             self.surface_missing = QtWidgets.QCheckBox("映射可省略源中的零权重关节")
@@ -603,6 +604,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("源关节策略", self.surface_missing)])
             form.addRow(self._button("预检并转移权重", self._transfer_skin_surface,
                                       primary=True))
+            form.addRow(self._button("引用模型改拓扑后重绑并转移",
+                                     self._rebind_skin_from_source_asset))
             stack.addWidget(group)
             self.surface_mode.currentIndexChanged.connect(self._surface_mode_changed)
             self._surface_mode_changed()
@@ -1082,6 +1085,18 @@ def create_panel(controller: MayaPanelController | None = None):
             return (f"已转移 {result.vertices} 个顶点的权重；"
                     f"{result.changed_vertices} 个顶点发生变化，"
                     f"最大表面距离 {result.max_surface_distance:.6g}")
+
+        def _rebind_skin_from_source_asset(self):
+            if self.surface_mode.currentData() != "asset":
+                raise ValueError("重绑前请先选“跨场景源资产”，并读取改拓扑前导出的资产")
+            result = self.controller.skin_rebind_from_source_asset(
+                self._namespace(), self.surface_target_skin.text().strip(),
+                self.surface_target_mesh.text().strip(),
+                self._path(self.surface_asset_in), self.surface_distance.value(),
+                max_discarded_weight=self.surface_discard.value())
+            return (f"已重绑并转移 {result.vertices} 个顶点的权重；"
+                    f"{result.changed_vertices} 个顶点重新写入，"
+                    f"最大表面距离 {result.maximum_distance:.6g}")
 
         def _capture_pose(self):
             count = self.controller.pose_capture(self._namespace(),

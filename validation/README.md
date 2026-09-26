@@ -22,6 +22,8 @@ Preparation / Rig 的 Skin／All／左右眼对象记录：`maya_preparation_obj
 
 `maya_preparation_to_skinned_body_visible.py` 在 Maya 图形窗口实际点击引用模型、记录 Skin 和留空网格框的 Body 构建入口；输出面板截图、状态及重开检查到 `validation/results/preparation-visible/`。`maya_referenced_model_update_probe.py` 在临时副本上更新引用源：只移动顶点时权重读取有效；三角化一个面且顶点数不变、或细分使顶点增加后，Maya 虽保留 Skin 节点，带绑定拓扑指纹的权重读取均会拒绝沿用旧权重。旧场景没有指纹，不在此检测范围内。
 
+`maya_referenced_skin_rebind_smoke.py` 在临时副本上先采集旧网格及权重，修改引用源拓扑，再将拆旧 Skin、重绑和表面转移作为一次撤销事务。覆盖同顶点数改面、增加 5 个顶点、零裁剪容差失败回滚、Undo／Redo、保存重开；`maya_referenced_skin_rebind_visible.py` 在 Maya 图形窗口点击导出源资产与重绑入口并保存截图。源资产必须在引用源拓扑更新前保存；未预存时不会从已失效的旧 Skin 推测权重。
+
 ```powershell
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_standard_fit_skinned_build_smoke.py 'C:\path\to\sam.mb' validation/results/maya2024-standard-fit-visible-source.mb --prepare
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_preparation_to_skinned_body_smoke.py validation/results/maya2024-standard-fit-visible-source.mb

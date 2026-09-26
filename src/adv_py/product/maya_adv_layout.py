@@ -51,7 +51,9 @@ ADV_OPERATIONS = {
     ("Body", "Deform option1"): (
         ("追加选择变形关节", 1, "00 · 原版 Skinning"),
         ("设置 Smooth Bind 选项", 1, "00 · 原版 Skinning"),
-        ("绑定当前网格", 1, "01 · 建立 Skin")),
+        ("绑定当前网格", 1, "01 · 建立 Skin"),
+        ("导出网格与权重", 1, "03 · 跨场景源资产"),
+        ("引用模型改拓扑后重绑并转移", 1, "04 · 跨拓扑权重转移")),
     ("Body", "Control Curves"): (
         ("缩放控制曲线", 0, "06 · Control Curves"),
         ("按 Skin 自动缩放", 0, "06 · Control Curves"),

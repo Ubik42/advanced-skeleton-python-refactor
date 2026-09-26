@@ -602,6 +602,16 @@ class MayaPanelController:
         save_skin_weight_surface_source(source, destination)
         return source.weights.vertex_count
 
+    def skin_rebind_from_source_asset(self, namespace: str, skin: str,
+            mesh: str, source_asset: Path, max_distance: float,
+            *, max_discarded_weight: float = 0.0):
+        from adv_py.application.skin_rebind import RebindSkinFromSurfaceSource
+
+        source = load_skin_weight_surface_source(source_asset)
+        return RebindSkinFromSurfaceSource(self._host(namespace)).apply(
+            source, skin, mesh, max_distance=max_distance,
+            max_discarded_weight=max_discarded_weight)
+
     def skin_surface_transfer(self, namespace: str, target_skin: str,
                               target_mesh: str, max_distance: float, *,
                               source_asset: Path | None = None,

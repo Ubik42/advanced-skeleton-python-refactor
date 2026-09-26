@@ -1,0 +1,1 @@
+python("import os,sys; p=os.environ['ADV_PY_REPO']; sys.path.insert(0,p+'/src'); sys.path.insert(0,p+'/validation'); import maya_referenced_skin_rebind_visible as v; v.schedule(os.environ['ADV_PY_RIG'],os.environ['ADV_PY_OUTPUT'])");
