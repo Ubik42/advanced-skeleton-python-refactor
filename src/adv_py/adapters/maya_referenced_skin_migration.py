@@ -85,19 +85,46 @@ class MayaReferencedSkinMigration:
             isNodeReferenced=True) or c.referenceQuery(
             source_item.source_mesh, referenceNode=True) != source_reference):
             raise ValueError("源网格与 Skin 不属于同一角色引用")
+        items = [source_item]
+        primary_names = {_base_name(name) for name in
+                         source_item.source.influence_names}
         for candidate in c.ls(type="skinCluster") or []:
             if candidate == source_skin:
                 continue
             influences = c.skinCluster(candidate, query=True,
                                        influence=True) or []
-            if any((c.ls(joint, long=True, type="joint") or [""])[0]
-                   .startswith(fit_parent + "|") for joint in influences):
-                raise ValueError("引用角色还有附加 Skin，须先完整登记：" + candidate)
-        source = DenseSkinWeights(source_item.source.skin_name,
-            source_item.source.vertex_count,
+            resolved = [c.ls(joint, long=True, type="joint") or []
+                        for joint in influences]
+            owned = [len(paths) == 1 and paths[0].startswith(
+                fit_parent + "|") for paths in resolved]
+            if not any(owned):
+                continue
+            if (not all(owned) or not set(_base_name(paths[0])
+                for paths in resolved).issubset(primary_names)):
+                raise ValueError("附加 Skin 使用了无法迁移的影响关节："
+                                 + candidate)
+            if (c.referenceQuery(candidate, isNodeReferenced=True)
+                and c.referenceQuery(candidate,
+                    referenceNode=True) != source_reference):
+                raise ValueError("附加 Skin 属于其他 Maya 引用：" + candidate)
+            index = len(items) + 1
+            item = _skin_item(c, candidate,
+                f"{target_mesh}_{index}", f"{target_skin}_{index}")
+            if (c.referenceQuery(item.source_mesh, isNodeReferenced=True)
+                and c.referenceQuery(item.source_mesh,
+                    referenceNode=True) != source_reference):
+                raise ValueError("附加网格属于其他 Maya 引用：" + candidate)
+            if (not item.source_mesh.startswith(fit_parent + "|")
+                and not c.getAttr(item.source_mesh + ".visibility",
+                                  settable=True)):
+                raise ValueError("附加网格的可见性不可写：" + item.source_mesh)
+            items.append(item)
+        sources = tuple(DenseSkinWeights(item.source.skin_name,
+            item.source.vertex_count,
             tuple(_base_name(name) for name in
-                  source_item.source.influence_names),
-            source_item.source.values)
+                  item.source.influence_names), item.source.values)
+            for item in items)
+        source = sources[0]
         if len(source.influence_names) != 121 or len(set(
                 source.influence_names)) != 121:
             raise ValueError("公开角色源 Skin 必须有 121 个唯一影响关节")
@@ -129,8 +156,9 @@ class MayaReferencedSkinMigration:
             raise ValueError("引用骨架与采集导向的静止姿态不一致")
         if not c.getAttr(fit_parent + ".visibility", settable=True):
             raise ValueError("引用角色容器的可见性不可写")
-        if any(c.objExists(f"{target_namespace}:{name}") for name in
-               (target_mesh, target_skin)):
+        if any(c.objExists(f"{target_namespace}:{name}")
+               for item in items for name in
+               (item.target_mesh, item.target_skin)):
             raise ValueError("迁移目标网格或 Skin 名称已被占用")
 
         with tempfile.TemporaryDirectory(prefix="advpy-referenced-fit-") as temp:
@@ -146,16 +174,16 @@ class MayaReferencedSkinMigration:
             try:
                 imported = CreateAndImportFitSkeleton(MayaBodyBuildHost(
                     namespace=target_namespace)).apply(fit_document)
-                copy = c.duplicate(source_item.source_mesh,
-                    returnRootsOnly=True, renameChildren=True)[0]
-                if c.listRelatives(copy, parent=True):
-                    copy = c.parent(copy, world=True)[0]
-                copy = c.rename(copy,
-                    f"{target_namespace}:{target_mesh}")
-                c.delete(copy, constructionHistory=True)
+                for item in items:
+                    copy = c.duplicate(item.source_mesh,
+                        returnRootsOnly=True, renameChildren=True)[0]
+                    if c.listRelatives(copy, parent=True):
+                        copy = c.parent(copy, world=True)[0]
+                    copy = c.rename(copy,
+                        f"{target_namespace}:{item.target_mesh}")
+                    c.delete(copy, constructionHistory=True)
                 c.namespace(setNamespace=":" + target_namespace)
                 c.namespace(relativeNames=True)
-                copy = target_mesh
                 if on_stage:
                     on_stage("mesh-copied")
                 animation_clones = clone_original_control_animation(c,
@@ -183,26 +211,36 @@ class MayaReferencedSkinMigration:
                 if on_stage:
                     on_stage("rig-built")
                 paths = {name: c.ls(name, long=True, type="joint") or []
-                         for name in source.influence_names}
+                         for data in sources for name in data.influence_names}
                 if any(len(found) != 1 for found in paths.values()):
                     raise ValueError("原版 121 个影响关节未全部重建")
-                BindSkin(MayaBodyBuildHost()).apply(
-                    (c.ls(copy, long=True, type="transform") or [])[0],
-                    tuple(paths[name][0] for name in source.influence_names),
-                    skin_name=target_skin,
-                    maximum_influences=source_item.maximum_influences,
-                    maintain_maximum_influences=False)
-                TransferDenseSkinWeights(MayaDenseSkinHost()).apply(
-                    source, target_skin)
-                c.setAttr(target_skin + ".maintainMaxInfluences",
-                          source_item.maintain_maximum)
-                result = MayaDenseSkinHost().capture_dense_skin(target_skin)
-                if result.vertex_count != source.vertex_count:
-                    raise RuntimeError("引用迁移后网格顶点数变化")
+                results = []
+                for item, data in zip(items, sources):
+                    BindSkin(MayaBodyBuildHost()).apply(
+                        (c.ls(item.target_mesh, long=True,
+                              type="transform") or [])[0],
+                        tuple(paths[name][0] for name in
+                              data.influence_names),
+                        skin_name=item.target_skin,
+                        maximum_influences=item.maximum_influences,
+                        maintain_maximum_influences=False)
+                    TransferDenseSkinWeights(MayaDenseSkinHost()).apply(
+                        data, item.target_skin)
+                    c.setAttr(item.target_skin + ".maintainMaxInfluences",
+                              item.maintain_maximum)
+                    result = MayaDenseSkinHost().capture_dense_skin(
+                        item.target_skin)
+                    if result.vertex_count != data.vertex_count:
+                        raise RuntimeError("引用迁移后网格顶点数变化："
+                                           + item.target_skin)
+                    results.append(result)
                 connect_original_control_animation(c, animation_clones)
                 c.namespace(relativeNames=before_relative)
                 c.namespace(setNamespace=before_namespace)
                 c.setAttr(fit_parent + ".visibility", 0)
+                for item in items[1:]:
+                    if not item.source_mesh.startswith(fit_parent + "|"):
+                        c.setAttr(item.source_mesh + ".visibility", 0)
                 if on_stage:
                     on_stage("weights-copied")
             except BaseException:
@@ -216,9 +254,10 @@ class MayaReferencedSkinMigration:
                 raise
             else:
                 c.undoInfo(closeChunk=True)
-        qualified_mesh = target_namespace + ":" + target_mesh
-        qualified_skin = target_namespace + ":" + target_skin
-        return OriginalSkinMigrationResult(qualified_mesh, qualified_skin,
-            result.vertex_count, len(result.influence_names),
+        migrated = tuple((target_namespace + ":" + item.target_mesh,
+                          target_namespace + ":" + item.target_skin)
+                         for item in items)
+        return OriginalSkinMigrationResult(migrated[0][0], migrated[0][1],
+            results[0].vertex_count, len(results[0].influence_names),
             len(built.registration.body), len(animation_clones),
-            ((qualified_mesh, qualified_skin),))
+            migrated)
