@@ -365,12 +365,16 @@ from .control_orientation import (
     ControlOrientationHost,
     ControlOrientationResult,
     SetControlOrientationAxis,
+    DetachCustomControlOrientations,
+    AttachCustomControlOrientations,
 )
 
 __all__ = [
     "ControlOrientationHost",
     "ControlOrientationResult",
     "SetControlOrientationAxis",
+    "DetachCustomControlOrientations",
+    "AttachCustomControlOrientations",
     "AutoScaleControlCurves",
     "ColorControlCurves",
     "ControlCurveAutoScaleResult",

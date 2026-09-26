@@ -53,7 +53,9 @@ ADV_OPERATIONS = {
         ("镜像控制曲线形状", 0, "06 · Control Curves"),
         ("替换控制器图标", 0, "06 · Control Curves")),
     ("Body", "Control Orient"): (
-        ("设置控制器局部轴", 0, "07 · Control Orient"),),
+        ("设置控制器局部轴", 0, "07 · Control Orient"),
+        ("分离全部控制器", 0, "07 · Control Orient"),
+        ("重新附着全部控制器", 0, "07 · Control Orient")),
     ("Face", "Pre"): (
         ("从标记生成目标", 3, "01 · 目标网格"),
         ("导出目标资产", 3, "02 · 可移植目标资产"),

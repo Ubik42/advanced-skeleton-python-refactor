@@ -90,6 +90,14 @@ class FakeController:
                            primary, secondary, curve_unaffected))
         return len(controls)
 
+    def control_orient_custom_detach(self, namespace):
+        self.calls.append(("control_orient_custom_detach", namespace))
+        return ("|PreviewA", "|PreviewB")
+
+    def control_orient_custom_attach(self, namespace):
+        self.calls.append(("control_orient_custom_attach", namespace))
+        return 2
+
     def skin_surface_source_export(self, namespace, skin, mesh, destination):
         self.calls.append(("skin_surface_source_export", namespace, skin, mesh,
                            destination.name))
@@ -282,6 +290,8 @@ def main(report: Path) -> int:
     panel.control_orient_secondary.setCurrentIndex(0)
     panel.control_orient_curve_unaffected.setChecked(True)
     buttons["设置控制器局部轴"].click()
+    buttons["分离全部控制器"].click()
+    buttons["重新附着全部控制器"].click()
     app.processEvents()
     fit_page = panel.tabs.currentWidget()
     fit_page.verticalScrollBar().setValue(fit_page.verticalScrollBar().maximum())
@@ -376,6 +386,9 @@ def main(report: Path) -> int:
         "control_orient_axis_dispatches":
             ("control_orient_axis", "hero", ("|hero:ShoulderFK_R",),
              "Z", "X", True) in controller.calls,
+        "control_orient_custom_dispatches":
+            ("control_orient_custom_detach", "hero") in controller.calls
+            and ("control_orient_custom_attach", "hero") in controller.calls,
         "role_selection_dispatches_application_action":
             ("body_build", "hero", "FitSkeleton", None, False)
             in controller.calls,

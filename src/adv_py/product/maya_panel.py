@@ -397,6 +397,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("Secondary Axis", self.control_orient_secondary),
                 ("Curve Unaffected", self.control_orient_curve_unaffected)])
             form.addRow(self._button("设置控制器局部轴", self._set_control_orient_axis))
+            form.addRow(self._button("分离全部控制器", self._detach_control_orient_custom))
+            form.addRow(self._button("重新附着全部控制器", self._attach_control_orient_custom))
             stack.addWidget(group)
             self._spine_replace_mode_changed()
             stack.addStretch(1)
@@ -1020,6 +1022,16 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.control_orient_secondary.currentData(),
                 self.control_orient_curve_unaffected.isChecked())
             return f"已设置 {count} 个控制器的局部轴"
+
+        def _detach_control_orient_custom(self):
+            proxies = self.controller.control_orient_custom_detach(
+                self._namespace())
+            return f"已分离 {len(proxies)} 个控制器；旋转橙色预览曲线后重新附着"
+
+        def _attach_control_orient_custom(self):
+            count = self.controller.control_orient_custom_attach(
+                self._namespace())
+            return f"已重新附着 {count} 个控制器并保留手工方向"
 
         def _bind_skin(self):
             influences = tuple(line.strip() for line in

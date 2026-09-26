@@ -20,6 +20,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     AutoScaleControlCurves, ColorControlCurves, MirrorControlCurves,
     ScaleControlCurves, SwapControlCurves,
     SetControlOrientationAxis,
+    DetachCustomControlOrientations, AttachCustomControlOrientations,
     CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
     ExportFitSkeleton, ExportSkinWeights, OrientSimpleFitChain,
     OrientWorldFitJoints,
@@ -387,6 +388,23 @@ class MayaPanelController:
             tuple(dict.fromkeys(resolved)), primary, secondary,
             curve_unaffected)
         return len(result.verified)
+
+    def control_orient_custom_detach(self, namespace: str) -> tuple[str, ...]:
+        host = self._host(namespace)
+        resolver = ResolveBodyCharacter(host)
+        names = resolver.discover()
+        if len(names) != 1:
+            raise ValueError("当前命名空间必须恰好包含一个已登记角色")
+        registration = resolver.execute(names[0])
+        controls = tuple(dict.fromkeys(
+            channel.node for channel in registration.channels))
+        controls = tuple(state.control for state in
+            host.capture_control_curves(controls, strict=False))
+        return DetachCustomControlOrientations(host).apply(controls)
+
+    def control_orient_custom_attach(self, namespace: str) -> int:
+        host = self._host(namespace)
+        return AttachCustomControlOrientations(host).apply()
 
     def skin_bind(self, namespace: str, mesh: str,
                   influences: tuple[str, ...], skin: str, maximum: int, *,

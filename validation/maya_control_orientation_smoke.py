@@ -125,6 +125,108 @@ def main(report: Path) -> int:
             unaffected_reopen = host.capture_control_orientations((control,))[0]
             unaffected_reopen_curve = _world_points(cmds, control)
 
+        all_controls = tuple(state.control for state in
+            host.capture_control_curves(candidates, strict=False))
+        custom_before = host.capture_control_orientations(all_controls)
+        custom_body_before = _world_matrices(cmds, body_paths)
+        custom_curve_before = _world_points(cmds, control)
+        proxies = controller.control_orient_custom_detach(":")
+        detached = host.capture_custom_control_orientation_previews()
+        session_exists = cmds.objExists("AdvPy_ControlOrientCustomSession")
+        hidden_original = all(
+            cmds.getAttr(shape + ".overrideEnabled")
+            and not cmds.getAttr(shape + ".overrideVisibility")
+            for shape in cmds.listRelatives(
+                control, shapes=True, fullPath=True, type="nurbsCurve") or [])
+        cmds.undo()
+        detach_undo = (not cmds.objExists("AdvPy_ControlOrientCustomSession")
+                       and resolver.execute(name) == registration)
+        cmds.redo()
+        detach_redo = cmds.objExists("AdvPy_ControlOrientCustomSession")
+        with tempfile.TemporaryDirectory(
+                prefix="adv-py-detached-orient-",
+                dir=report.parent.resolve()) as folder:
+            detached_scene = Path(folder) / "detached.ma"
+            cmds.file(rename=str(detached_scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(detached_scene), open=True, force=True)
+            detached_reopen = host.capture_custom_control_orientation_previews()
+            detached_registration = resolver.execute(name)
+        detached = host.capture_custom_control_orientation_previews()
+        edit_index = next(index for index, row in enumerate(detached)
+                          if row.control == control)
+        proxy = proxies[edit_index]
+        cmds.setAttr(proxy + ".translateX",
+                     cmds.getAttr(proxy + ".translateX") + 1.0)
+        try:
+            controller.control_orient_custom_attach(":")
+        except ValueError:
+            moved_proxy_rejected = (
+                cmds.objExists("AdvPy_ControlOrientCustomSession")
+                and _world_matrices(cmds, body_paths) == custom_body_before)
+        else:
+            moved_proxy_rejected = False
+        cmds.setAttr(proxy + ".translateX",
+                     cmds.getAttr(proxy + ".translateX") - 1.0)
+        cmds.setAttr(proxy + ".rotateY", 17.0)
+        edited = host.capture_custom_control_orientation_previews()
+        edit_target = edited[edit_index].preview_matrix
+        custom_count = controller.control_orient_custom_attach(":")
+        custom_after = host.capture_control_orientations((control,))[0]
+        custom_body_after = _world_matrices(cmds, body_paths)
+        custom_registry = resolver.execute(name)
+        custom_curve_after = _world_points(cmds, control)
+        session_removed = not cmds.objExists("AdvPy_ControlOrientCustomSession")
+        original_visible = all(
+            cmds.getAttr(shape + ".overrideVisibility")
+            for shape in cmds.listRelatives(
+                control, shapes=True, fullPath=True, type="nurbsCurve") or [])
+        cmds.undo()
+        attach_undo = cmds.objExists("AdvPy_ControlOrientCustomSession")
+        cmds.redo()
+        attach_redo = (not cmds.objExists("AdvPy_ControlOrientCustomSession")
+                       and _close(host.capture_control_orientations(
+                           (control,))[0].world_matrix, edit_target))
+        with tempfile.TemporaryDirectory(
+                prefix="adv-py-custom-orient-",
+                dir=report.parent.resolve()) as folder:
+            custom_scene = Path(folder) / "custom.ma"
+            cmds.file(rename=str(custom_scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(custom_scene), open=True, force=True)
+            custom_reopen = host.capture_control_orientations((control,))[0]
+            custom_reopen_registry = resolver.execute(name)
+
+        cmds.file(new=True, force=True)
+        cmds.upAxis(axis="z", rotateView=False)
+        cmds.namespace(addNamespace="hero")
+        hero_host = MayaBodyBuildHost(namespace="hero")
+        hero_container = CreateFitSkeleton(hero_host).apply().state.path
+        BuildSyntheticBodySourceFit(hero_host).apply(hero_container)
+        controller.body_build("hero")
+        hero_registration = hero_host.read_character_registration()
+        hero_controls = tuple(state.control for state in
+            hero_host.capture_control_curves(tuple(dict.fromkeys(
+                channel.node for channel in hero_registration.channels)),
+                strict=False))
+        hero_proxies = controller.control_orient_custom_detach("hero")
+        hero_previews = hero_host.capture_custom_control_orientation_previews()
+        hero_host._cmds.setAttr(hero_proxies[0] + ".rotateY", 11.0)
+        hero_target = hero_host.capture_custom_control_orientation_previews()[
+            0].preview_matrix
+        hero_attached = controller.control_orient_custom_attach("hero")
+        hero_after = hero_host.capture_control_orientations(
+            (hero_previews[0].control,))[0]
+        namespaced_custom = (
+            len(hero_proxies) == len(hero_controls)
+            and hero_attached == len(hero_controls)
+            and _close(hero_after.world_matrix, hero_target)
+            and hero_host.read_character_registration() == hero_registration
+            and not hero_host._cmds.objExists(
+                "AdvPy_ControlOrientCustomSession"))
+
         checks = {
             "explicit_registered_route": count == 1,
             "target_world_axis_applied": _close(
@@ -179,6 +281,27 @@ def main(report: Path) -> int:
                 unaffected_expected.world_matrix)
                 and unaffected_reopen.curve_unaffected
                 and _close(curve_preserved_before, unaffected_reopen_curve),
+            "custom_all_controls_detach": len(proxies) == len(all_controls)
+                and len(detached) == len(all_controls) and session_exists
+                and hidden_original,
+            "custom_detach_single_undo_redo": detach_undo and detach_redo,
+            "custom_detached_save_reopen":
+                len(detached_reopen) == len(all_controls)
+                and detached_registration == registration,
+            "custom_moved_proxy_rejected": moved_proxy_rejected,
+            "custom_attach_orientation": custom_count == len(all_controls)
+                and _close(custom_after.world_matrix, edit_target)
+                and session_removed and original_visible,
+            "custom_attach_body_and_registry": all(
+                _close(old, new) for old, new in
+                zip(custom_body_before, custom_body_after))
+                and custom_registry == registration
+                and _close(custom_curve_before, custom_curve_after),
+            "custom_attach_single_undo_redo": attach_undo and attach_redo,
+            "custom_save_reopen": _close(custom_reopen.world_matrix,
+                                          edit_target)
+                and custom_reopen_registry == registration,
+            "custom_namespaced_character": namespaced_custom,
         }
         payload = {
             **checks,

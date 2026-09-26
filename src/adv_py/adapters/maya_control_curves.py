@@ -1,6 +1,8 @@
 """Maya materialization for post-build NURBS controller curve edits."""
 from __future__ import annotations
 
+import json
+
 from adv_py.core.control_curves import (
     ControlCurveAutoScaleMetric, ControlCurveColorState,
     ControlCurveShapeColorState, ControlCurveShapeState, ControlCurveState,
@@ -8,13 +10,153 @@ from adv_py.core.control_curves import (
 )
 from adv_py.core.control_orientation import (
     ControlAxis, ControlOrientationState, ControlOrientationValidationError,
+    CustomOrientationPreview,
 )
 
 
 _CONTROL_AXES = tuple(ControlAxis)
+_CUSTOM_SESSION = "AdvPy_ControlOrientCustomSession"
+_CUSTOM_GROUP = "AdvPy_ControlOrientDetached"
 
 
 class MayaControlCurveMixin:
+    def detach_custom_control_orientations(self, states):
+        self._require_transaction()
+        c = self._cmds
+        if c.objExists(_CUSTOM_SESSION) or c.objExists(_CUSTOM_GROUP):
+            raise ControlOrientationValidationError(
+                "当前角色已有手工方向编辑会话或同名节点")
+        if not states or len({state.control for state in states}) != len(states):
+            raise ControlOrientationValidationError("手工方向目标为空或重复")
+        for state in states:
+            control, shapes = self._control_curve_shapes(state.control, strict=True)
+            if self.capture_control_orientations((control,))[0] != state:
+                raise ControlOrientationValidationError(
+                    f"手工方向预检期间控制器已变化：{control}")
+            for axis in "XYZ":
+                plug = control + ".rotate" + axis
+                if (abs(float(c.getAttr(plug))) > 1e-7
+                        or c.listConnections(plug, source=True,
+                                             destination=False)):
+                    raise ControlOrientationValidationError(
+                        f"手工方向要求全部控制器处于零旋转构建姿态：{control}")
+            for shape in shapes:
+                for attribute in ("overrideEnabled", "overrideVisibility"):
+                    plug = shape + "." + attribute
+                    if (c.getAttr(plug, lock=True)
+                            or c.listConnections(plug, source=True,
+                                                 destination=False)):
+                        raise ControlOrientationValidationError(
+                            f"控制曲线显示状态不可写：{plug}")
+        self._transaction_changed = True
+        session = c.createNode("network", name=_CUSTOM_SESSION, skipSelect=True)
+        group = c.createNode("transform", name=_CUSTOM_GROUP, skipSelect=True)
+        c.addAttr(session, longName="document", dataType="string")
+        c.addAttr(session, longName="members", attributeType="message",
+                  multi=True)
+        rows = []
+        proxies = []
+        for index, state in enumerate(states):
+            control, shapes = self._control_curve_shapes(state.control, strict=True)
+            proxy = c.createNode(
+                "transform", name=f"AdvPy_OrientPreview_{index:03d}",
+                parent=group, skipSelect=True)
+            proxy = c.ls(proxy, long=True, type="transform")[0]
+            c.xform(proxy, worldSpace=True, matrix=state.world_matrix)
+            c.connectAttr(proxy + ".message", session + f".members[{index}]")
+            styles = []
+            for shape in shapes:
+                styles.append((shape, bool(c.getAttr(shape + ".overrideEnabled")),
+                               bool(c.getAttr(shape + ".overrideVisibility"))))
+                temporary = c.duplicateCurve(
+                    shape, constructionHistory=False, local=True)[0]
+                duplicate_shape = (c.listRelatives(
+                    temporary, shapes=True, fullPath=True,
+                    type="nurbsCurve") or [])[0]
+                copy = c.parent(duplicate_shape, proxy, shape=True,
+                                relative=True)[0]
+                c.delete(temporary)
+                c.setAttr(copy + ".overrideEnabled", True)
+                c.setAttr(copy + ".overrideVisibility", True)
+                c.setAttr(copy + ".overrideRGBColors", True)
+                c.setAttr(copy + ".overrideColorRGB", .98, .52, .12,
+                          type="double3")
+                c.setAttr(shape + ".overrideEnabled", True)
+                c.setAttr(shape + ".overrideVisibility", False)
+            rows.append({
+                "control": control,
+                "uuid": c.ls(control, uuid=True)[0],
+                "matrix": list(state.world_matrix),
+                "styles": styles,
+            })
+            proxies.append(proxy)
+        c.setAttr(session + ".document", json.dumps(
+            {"version": 1, "rows": rows}, separators=(",", ":")),
+                  type="string")
+        c.select(proxies, replace=True)
+        return tuple(proxies)
+
+    def _custom_orientation_session(self):
+        c = self._cmds
+        if not c.objExists(_CUSTOM_SESSION) or not c.objExists(_CUSTOM_GROUP):
+            raise ControlOrientationValidationError("当前角色没有手工方向编辑会话")
+        if c.nodeType(_CUSTOM_SESSION) != "network":
+            raise ControlOrientationValidationError("手工方向会话节点类型无效")
+        try:
+            document = json.loads(c.getAttr(_CUSTOM_SESSION + ".document"))
+            rows = document["rows"]
+            if (document["version"] != 1 or not isinstance(rows, list)
+                    or not rows):
+                raise ValueError("invalid document")
+        except (TypeError, ValueError, KeyError) as exc:
+            raise ControlOrientationValidationError(
+                "手工方向会话文档无效") from exc
+        proxies = []
+        for index, row in enumerate(rows):
+            connected = c.listConnections(
+                _CUSTOM_SESSION + f".members[{index}]", source=True,
+                destination=False, type="transform") or []
+            if len(connected) != 1:
+                raise ControlOrientationValidationError(
+                    "手工方向预览节点缺失或连接歧义")
+            proxy = c.ls(connected[0], long=True, type="transform")[0]
+            if (c.listRelatives(proxy, parent=True, fullPath=True) or []) != [
+                    c.ls(_CUSTOM_GROUP, long=True, type="transform")[0]]:
+                raise ControlOrientationValidationError(
+                    "手工方向预览节点已移出编辑组")
+            control = row["control"]
+            if (not c.objExists(control)
+                    or c.ls(control, uuid=True) != [row["uuid"]]):
+                raise ControlOrientationValidationError(
+                    f"手工方向原控制器身份已变化：{control}")
+            proxies.append(proxy)
+        return rows, tuple(proxies)
+
+    def capture_custom_control_orientation_previews(self):
+        rows, proxies = self._custom_orientation_session()
+        c = self._cmds
+        return tuple(CustomOrientationPreview(
+            row["control"], tuple(float(v) for v in row["matrix"]),
+            tuple(float(v) for v in c.xform(
+                proxy, query=True, worldSpace=True, matrix=True)))
+            for row, proxy in zip(rows, proxies))
+
+    def finish_custom_control_orientations(self):
+        self._require_transaction()
+        rows, _ = self._custom_orientation_session()
+        c = self._cmds
+        self._transaction_changed = True
+        for row in rows:
+            for shape, enabled, visible in row["styles"]:
+                if not c.objExists(shape):
+                    raise ControlOrientationValidationError(
+                        f"手工方向原曲线已消失：{shape}")
+                c.setAttr(shape + ".overrideEnabled", enabled)
+                c.setAttr(shape + ".overrideVisibility", visible)
+        c.delete(_CUSTOM_SESSION)
+        if c.objExists(_CUSTOM_GROUP):
+            c.delete(_CUSTOM_GROUP)
+
     def capture_control_orientations(
         self, controls: tuple[str, ...]
     ) -> tuple[ControlOrientationState, ...]:

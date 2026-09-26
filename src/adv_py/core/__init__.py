@@ -740,20 +740,24 @@ from .control_curves import (
 )
 from .control_orientation import (
     ControlAxis,
+    CustomOrientationPreview,
     ControlOrientationChange,
     ControlOrientationPlan,
     ControlOrientationState,
     ControlOrientationValidationError,
     plan_control_orientation_axis,
+    plan_custom_control_orientations,
 )
 
 __all__ = [
     "ControlAxis",
+    "CustomOrientationPreview",
     "ControlOrientationChange",
     "ControlOrientationPlan",
     "ControlOrientationState",
     "ControlOrientationValidationError",
     "plan_control_orientation_axis",
+    "plan_custom_control_orientations",
     "ControlCurveAutoScaleChange",
     "ControlCurveAutoScaleMetric",
     "ControlCurveAutoScalePlan",

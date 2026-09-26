@@ -47,6 +47,48 @@ class ControlOrientationPlan:
     changes: tuple[ControlOrientationChange, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class CustomOrientationPreview:
+    control: str
+    original_matrix: tuple[float, ...]
+    preview_matrix: tuple[float, ...]
+
+
+def plan_custom_control_orientations(
+    states: tuple[ControlOrientationState, ...],
+    previews: tuple[CustomOrientationPreview, ...],
+) -> tuple[ControlOrientationChange, ...]:
+    """Translate manually rotated proxies into stable registered controls."""
+    by_control = {state.control: state for state in states}
+    if (not by_control or len(by_control) != len(states)
+            or len(previews) != len(states)
+            or {preview.control for preview in previews} != set(by_control)):
+        raise ControlOrientationValidationError("手工方向预览与登记控制器不一致")
+    changes = []
+    for preview in previews:
+        state = by_control[preview.control]
+        if (len(preview.original_matrix) != 16
+                or len(preview.preview_matrix) != 16
+                or any(abs(a - b) > 1e-5 for a, b in
+                       zip(state.world_matrix, preview.original_matrix))):
+            raise ControlOrientationValidationError(
+                f"手工方向预览期间原控制器已变化：{state.control}")
+        if any(abs(a - b) > 1e-5 for a, b in zip(
+                preview.preview_matrix[12:15], state.world_matrix[12:15])):
+            raise ControlOrientationValidationError(
+                f"手工方向仅允许旋转，不允许移动：{state.control}")
+        for row in range(3):
+            old_length = _normal(state.world_matrix[row * 4:row * 4 + 3])[1]
+            new_length = _normal(preview.preview_matrix[row * 4:row * 4 + 3])[1]
+            if abs(old_length - new_length) > 1e-5:
+                raise ControlOrientationValidationError(
+                    f"手工方向仅允许旋转，不允许缩放：{state.control}")
+        changes.append(ControlOrientationChange(state, ControlOrientationState(
+            state.control, preview.preview_matrix, state.primary_axis,
+            state.secondary_axis, state.curve_unaffected)))
+    return tuple(changes)
+
+
 def _axis(axis: ControlAxis | str) -> tuple[int, float]:
     try:
         value = ControlAxis(axis)

@@ -24,6 +24,9 @@ _CREATE |= {'blendShape'}
 _NODE_ARGS |= {'duplicate'}
 _NODE_RESULTS |= {'duplicate'}
 _CREATE |= {'duplicate'}
+_NODE_ARGS |= {'duplicateCurve'}
+_NODE_RESULTS |= {'duplicateCurve'}
+_CREATE |= {'duplicateCurve'}
 
 
 class MayaCharacterCommands:

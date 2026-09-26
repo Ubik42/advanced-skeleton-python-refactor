@@ -4,7 +4,8 @@ from contextlib import contextmanager
 from adv_py.application import SetControlOrientationAxis
 from adv_py.core import (
     ControlAxis, ControlOrientationState, ControlOrientationValidationError,
-    plan_control_orientation_axis,
+    CustomOrientationPreview, plan_control_orientation_axis,
+    plan_custom_control_orientations,
 )
 
 
@@ -68,6 +69,21 @@ class ControlOrientationTests(unittest.TestCase):
         self.assertTrue(result.plan.curve_unaffected)
         self.assertTrue(result.verified[0].curve_unaffected)
         self.assertEqual(host.points[0][1], ((1., 2., 3.),))
+
+    def test_custom_preview_preserves_manual_orientation(self):
+        rotated = (0., 1., 0., 0., -1., 0., 0., 0.,
+                   0., 0., 1., 0., 0., 0., 0., 1.)
+        changes = plan_custom_control_orientations(
+            (ControlOrientationState("|Control", IDENTITY),),
+            (CustomOrientationPreview("|Control", IDENTITY, rotated),))
+        self.assertEqual(changes[0].after.world_matrix, rotated)
+
+    def test_custom_preview_rejects_movement_before_writing(self):
+        moved = (*IDENTITY[:12], 1., 0., 0., 1.)
+        with self.assertRaises(ControlOrientationValidationError):
+            plan_custom_control_orientations(
+                (ControlOrientationState("|Control", IDENTITY),),
+                (CustomOrientationPreview("|Control", IDENTITY, moved),))
 
 
 if __name__ == "__main__":
