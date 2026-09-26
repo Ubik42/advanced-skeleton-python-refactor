@@ -392,6 +392,8 @@ $env:PYTHONPATH = 'src'
 
 `maya_original_segment_graph.py` 从原版 18 个有权重的 `Part1/Part2` 关节向上读取三层 Maya 节点连接，用于区分四肢矩阵／扭转／体积驱动与脊柱、颈部 FK／IK 约束驱动。`maya_original_mesh_roundtrip.py` 使用内部静态网格导出／导入用例，将原版网格带进 Fit 文档构建的新角色场景，核对逐顶点世界坐标和保存重开。该导入使用 Maya 文件命令，不能单次撤销；原权重尚未迁移，不能当作完整 Skin 工作流。
 
+同一网格往返脚本还构建轴向 6 个 `Part1/Part2` 变形关节，比较原版默认位置，检查颈部控制驱动、单次 Undo／Redo、保存重开与 74 关节角色登记。辅助关节带独立标记，不进入 Body 拓扑计数；无标记额外关节仍被登记验证拒绝。原版关节朝向、缩放和动作后的网格顶点尚未对照。
+
 局部机制定位使用 `maya_body_spine_smoke.py` 与 `maya_body_control_spaces_smoke.py`，输出路径作为第一个参数，`--basic` 切换为 30 关节。两者包含非法状态拒绝和失败回滚；空间脚本另外验证身体 / Global 跟随关系。结果写入已忽略的 `validation/results/`，不提交本机日志。
 
 

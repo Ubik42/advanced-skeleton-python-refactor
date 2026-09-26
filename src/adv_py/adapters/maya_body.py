@@ -331,6 +331,11 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         ) or []
         paths.append(root)
         paths = sorted(set(paths), key=lambda path: (path.count("|"), path))
+        paths = [path for path in paths if not (
+            self._cmds.attributeQuery("advPyAuxiliaryInfluenceKind",
+                                      node=path, exists=True)
+            and self._cmds.getAttr(path + ".advPyAuxiliaryInfluenceKind")
+                == "axial-part-v1")]
         states: list[BodyJointState] = []
         for path in paths:
             parents = self._cmds.listRelatives(path, parent=True, fullPath=True) or []

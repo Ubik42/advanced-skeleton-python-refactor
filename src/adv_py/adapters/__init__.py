@@ -13,6 +13,7 @@ from .maya import MayaAdapterStatus, MayaRigHost
 from .maya_body import MayaBodyBuildHost
 from .maya_face import MayaFaceHost
 from .maya_external_mesh import MayaExternalMeshHost
+from .maya_axial_part import MayaAxialPartHost
 from .maya_fit import MayaFitJointHost, MayaJointLabelHost
 from .maya_mocap import (
     MayaMocapConnectionHost,
@@ -37,6 +38,7 @@ __all__ = [
     "MayaBodyBuildHost",
     "MayaFaceHost",
     "MayaExternalMeshHost",
+    "MayaAxialPartHost",
     "MayaFitJointHost",
     "MayaJointLabelHost",
     "MayaMocapSourceReader",

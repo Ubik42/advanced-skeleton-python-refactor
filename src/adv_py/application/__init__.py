@@ -711,3 +711,4 @@ from .registered_body_build import (BuildRegisteredBodyCharacter,
 
 from .external_mesh_io import (ExportExternalMesh, ImportExternalMesh,
     ExternalMeshResult)
+from .axial_part_deform import BuildAxialPartDeform
