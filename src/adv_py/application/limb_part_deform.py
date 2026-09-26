@@ -21,8 +21,10 @@ class BuildLimbPartDeform:
     def __init__(self, host: LimbPartHost):
         self._host = host
 
-    def apply(self, root: str = "Root_M") -> tuple[LimbPartSegmentSpec, ...]:
-        specs = plan_limb_parts(self._host.capture_body_skeleton(root))
+    def apply(self, root: str = "Root_M", *, split_body_twist: bool = False
+              ) -> tuple[LimbPartSegmentSpec, ...]:
+        specs = plan_limb_parts(self._host.capture_body_skeleton(root),
+                                split_body_twist=split_body_twist)
         for spec in specs:
             self._host.preflight_limb_part_source(spec)
             for name in (spec.part1_name, spec.part2_name,
@@ -34,6 +36,12 @@ class BuildLimbPartDeform:
                          spec.twist_project_name,
                          *((spec.twist_mode_blend_name,)
                            if spec.twist_mode_blend_name else ()),
+                         *((spec.twist_mode_blend_name + suffix
+                            for suffix in ("IkCompose", "IkDecompose",
+                                           "IkProject"))
+                           if spec.twist_mode_blend_name else ()),
+                         *((spec.twist_compose_name + "BodyReverse",)
+                           if spec.split_body_twist else ()),
                          spec.twist1_name, spec.twist2_name,
                          spec.twist1_sum_name, spec.twist2_sum_name,
                          spec.twist1_comp_name, spec.twist2_comp_name):
@@ -44,6 +52,11 @@ class BuildLimbPartDeform:
                          spec.up_fk_project_name, spec.up_blend_name):
                 if name and self._host.find_name_collisions(name):
                     raise ValueError("四肢分段上游扭转名称冲突：" + name)
+            if spec.split_body_twist and spec.stem == "Shoulder":
+                for name in (f"AdvPy_ElbowOriginalLocal_{spec.side}",
+                             f"AdvPy_ElbowOriginalLocalOrient_{spec.side}"):
+                    if self._host.find_name_collisions(name):
+                        raise ValueError("肘部原局部角度代理名称冲突：" + name)
         with self._host.transaction("构建四肢分段变形关节"):
             for spec in specs:
                 self._host.create_limb_part_segment(spec)

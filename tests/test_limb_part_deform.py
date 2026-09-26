@@ -61,6 +61,12 @@ class LimbPartPlanTests(unittest.TestCase):
                          "AdvPy_HipIKDriver_R.rotate")
         self.assertEqual(hip.twist_mode_blend_name,
                          "AdvPy_HipPart_RTwistModeBlend")
+        self.assertFalse(hip.split_body_twist)
+        guided = plan_limb_parts(body(), split_body_twist=True)
+        self.assertTrue(guided[2].split_body_twist)
+        self.assertTrue(guided[0].split_body_twist)
+        self.assertEqual(guided[0].twist_source,
+                         "AdvPy_ShoulderFK_R.rotate")
 
     def test_rejects_missing_endpoint(self):
         with self.assertRaisesRegex(ValueError, "Hip_L"):

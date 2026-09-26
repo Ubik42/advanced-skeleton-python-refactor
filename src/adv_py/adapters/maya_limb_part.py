@@ -13,6 +13,16 @@ class MayaLimbPartHost(MayaBodyBuildHost):
                 spec.twist_ik_source):
             raise ValueError("四肢分段缺少 IK 关节旋转：" +
                              spec.twist_ik_source)
+        if spec.split_body_twist:
+            c = self._cmds
+            marker = "AdvPy_AxialFKXSpine1_M.advPyAxialBodyOwner"
+            constraint = f"AdvPy_{spec.stem}IKFKBlend_{spec.side}"
+            if (not c.objExists(marker)
+                    or c.getAttr(marker) != "adv_py.axial_body.v1"
+                    or not c.objExists(constraint + ".offsetX")
+                    or not c.getAttr(constraint + ".offsetX",
+                                     settable=True)):
+                raise ValueError("四肢分段扭转需要完整的轴向导向驱动")
         if spec.up_twist_source and not self._cmds.objExists(spec.up_twist_source):
             raise ValueError("四肢分段缺少远端扭转来源：" + spec.up_twist_source)
         if spec.up_twist_source:
@@ -67,17 +77,10 @@ class MayaLimbPartHost(MayaBodyBuildHost):
         twist_decompose = c.createNode("decomposeMatrix",
                                          name=spec.twist_decompose_name)
         project = c.createNode("quatToEuler", name=spec.twist_project_name)
-        twist_source = spec.twist_source
-        if spec.twist_mode_blend_name:
-            mode_blend = c.createNode("blendColors",
-                                      name=spec.twist_mode_blend_name)
-            c.connectAttr(spec.twist_ik_source, mode_blend + ".color1")
-            c.connectAttr(spec.twist_source, mode_blend + ".color2")
-            c.connectAttr("AdvPy_LegSettings.legIkFk_" + spec.side,
-                          mode_blend + ".blender")
-            twist_source = mode_blend + ".output"
-        c.connectAttr(twist_source, compose + ".inputRotate")
-        c.connectAttr(spec.start + ".rotateOrder",
+        c.connectAttr(spec.twist_source, compose + ".inputRotate")
+        rotate_order_source = (spec.twist_source.rsplit(".", 1)[0]
+                               if spec.twist_mode_blend_name else spec.start)
+        c.connectAttr(rotate_order_source + ".rotateOrder",
                       compose + ".inputRotateOrder")
         c.connectAttr(compose + ".outputMatrix",
                       twist_decompose + ".inputMatrix")
@@ -85,6 +88,43 @@ class MayaLimbPartHost(MayaBodyBuildHost):
                       project + ".inputQuatX")
         c.connectAttr(twist_decompose + ".outputQuatW",
                       project + ".inputQuatW")
+        twist_angle = project + ".outputRotateX"
+        if spec.twist_mode_blend_name:
+            ik_compose = c.createNode("composeMatrix",
+                name=spec.twist_mode_blend_name + "IkCompose")
+            ik_decompose = c.createNode("decomposeMatrix",
+                name=spec.twist_mode_blend_name + "IkDecompose")
+            ik_project = c.createNode("quatToEuler",
+                name=spec.twist_mode_blend_name + "IkProject")
+            ik_driver = spec.twist_ik_source.rsplit(".", 1)[0]
+            c.connectAttr(spec.twist_ik_source,
+                          ik_compose + ".inputRotate")
+            c.connectAttr(ik_driver + ".rotateOrder",
+                          ik_compose + ".inputRotateOrder")
+            c.connectAttr(ik_compose + ".outputMatrix",
+                          ik_decompose + ".inputMatrix")
+            c.connectAttr(ik_decompose + ".outputQuatX",
+                          ik_project + ".inputQuatX")
+            c.connectAttr(ik_decompose + ".outputQuatW",
+                          ik_project + ".inputQuatW")
+            mode_blend = c.createNode("blendTwoAttr",
+                                      name=spec.twist_mode_blend_name)
+            c.connectAttr(twist_angle, mode_blend + ".input[0]")
+            c.connectAttr(ik_project + ".outputRotateX",
+                          mode_blend + ".input[1]")
+            module = "Leg" if spec.stem == "Hip" else "Arm"
+            c.connectAttr(f"AdvPy_{module}Settings."
+                          + f"{module.lower()}IkFk_{spec.side}",
+                          mode_blend + ".attributesBlender")
+            twist_angle = mode_blend + ".output"
+        if spec.split_body_twist:
+            reverse = c.createNode("multDoubleLinear",
+                name=spec.twist_compose_name + "BodyReverse")
+            c.setAttr(reverse + ".input2", -1.0)
+            c.connectAttr(twist_angle,
+                          reverse + ".input1")
+            c.connectAttr(reverse + ".output",
+                f"AdvPy_{spec.stem}IKFKBlend_{spec.side}.offsetX")
 
         parent = spec.start
         # The original Body end lies below both Part joints. The new Body end
@@ -121,7 +161,7 @@ class MayaLimbPartHost(MayaBodyBuildHost):
         first_comp = c.createNode("plusMinusAverage", name=spec.twist1_comp_name)
         second_comp = c.createNode("plusMinusAverage", name=spec.twist2_comp_name)
         for amount_node, joint in ((first, spec.part1), (second, spec.part2)):
-            c.connectAttr(project + ".outputRotateX", amount_node + ".input1")
+            c.connectAttr(twist_angle, amount_node + ".input1")
             c.connectAttr(joint + ".twistAmount", amount_node + ".input2")
         for amount_node, sum_node, joint in (
                 (first, first_sum, spec.part1),
@@ -161,12 +201,29 @@ class MayaLimbPartHost(MayaBodyBuildHost):
         c.setAttr(first_comp + ".operation", 2)
         c.setAttr(second_comp + ".operation", 2)
         c.connectAttr(first_sum + ".output1D", first_comp + ".input1D[0]")
-        c.connectAttr(project + ".outputRotateX",
+        c.connectAttr(twist_angle,
                       first_comp + ".input1D[1]")
         c.connectAttr(second_sum + ".output1D", second_comp + ".input1D[0]")
         c.connectAttr(first_sum + ".output1D", second_comp + ".input1D[1]")
-        c.connectAttr(first_comp + ".output1D", spec.part1 + ".rotateX")
+        c.connectAttr((first_sum if spec.split_body_twist else first_comp)
+                      + ".output1D", spec.part1 + ".rotateX")
         c.connectAttr(second_comp + ".output1D", spec.part2 + ".rotateX")
+        if spec.split_body_twist and spec.stem == "Shoulder":
+            proxy = c.createNode("joint",
+                name=f"AdvPy_ElbowOriginalLocal_{spec.side}",
+                parent=spec.part2, skipSelect=True)
+            c.addAttr(proxy, longName="advPyAuxiliaryInfluenceKind",
+                      dataType="string")
+            c.setAttr(proxy + ".advPyAuxiliaryInfluenceKind",
+                      "original-local-angle-v1", type="string", lock=True)
+            c.setAttr(proxy + ".rotateOrder", c.getAttr(
+                f"AdvPy_ElbowFK_{spec.side}.rotateOrder"))
+            c.setAttr(proxy + ".jointOrient", *c.getAttr(
+                spec.end + ".jointOrient")[0])
+            c.xform(proxy, worldSpace=True, matrix=c.xform(
+                spec.end, query=True, worldSpace=True, matrix=True))
+            c.orientConstraint(spec.end, proxy, maintainOffset=False,
+                name=f"AdvPy_ElbowOriginalLocalOrient_{spec.side}")
 
     def capture_limb_part_segment(self, spec: LimbPartSegmentSpec
                                   ) -> tuple[tuple[str, str, tuple[float, float, float]], ...]:

@@ -96,20 +96,49 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
             parent=True, fullPath=True) or [])[0]
         source_points = _points(source_mesh)
         controls = {
-            "root_y20": ("FKRoot_M.rotateY", "AdvPy_TorsoRoot_MFK.rotateY", 20.0),
-            "neck_y20": ("FKNeck_M.rotateY", "AdvPy_TorsoNeck_MFK.rotateY", 20.0),
-            "elbow_r_z80": ("FKElbow_R.rotateZ", "AdvPy_ElbowFK_R.rotateZ", 80.0),
-            "hip_r_y30": ("FKHip_R.rotateY", "AdvPy_HipFK_R.rotateY", 30.0),
+            "root_y20": (("FKRoot_M.rotateY", "AdvPy_TorsoRoot_MFK.rotateY", 20.0),),
+            "neck_y20": (("FKNeck_M.rotateY", "AdvPy_TorsoNeck_MFK.rotateY", 20.0),),
+            "elbow_r_z80": (("FKElbow_R.rotateZ", "AdvPy_ElbowFK_R.rotateZ", 80.0),),
+            "hip_r_y30": (("FKHip_R.rotateY", "AdvPy_HipFK_R.rotateY", 30.0),),
+            "root_x20": (("FKRoot_M.rotateX", "AdvPy_TorsoRoot_MFK.rotateX", 20.0),),
+            "root_z20": (("FKRoot_M.rotateZ", "AdvPy_TorsoRoot_MFK.rotateZ", 20.0),),
+            "neck_x20": (("FKNeck_M.rotateX", "AdvPy_TorsoNeck_MFK.rotateX", 20.0),),
+            "neck_z20": (("FKNeck_M.rotateZ", "AdvPy_TorsoNeck_MFK.rotateZ", 20.0),),
+            "spine_x20": (("FKSpine1_M.rotateX", "AdvPy_TorsoSpine1_MFK.rotateX", 20.0),),
+            "spine_y20": (("FKSpine1_M.rotateY", "AdvPy_TorsoSpine1_MFK.rotateY", 20.0),),
+            "spine_z20": (("FKSpine1_M.rotateZ", "AdvPy_TorsoSpine1_MFK.rotateZ", 20.0),),
+            "axial_mixed": (
+                ("FKRoot_M.rotateY", "AdvPy_TorsoRoot_MFK.rotateY", 12.0),
+                ("FKSpine1_M.rotateX", "AdvPy_TorsoSpine1_MFK.rotateX", 10.0),
+                ("FKNeck_M.rotateZ", "AdvPy_TorsoNeck_MFK.rotateZ", -8.0)),
+            "hip_r_mixed": (
+                ("FKHip_R.rotateX", "AdvPy_HipFK_R.rotateX", 12.0),
+                ("FKHip_R.rotateY", "AdvPy_HipFK_R.rotateY", 7.0),
+                ("FKHip_R.rotateZ", "AdvPy_HipFK_R.rotateZ", -5.0)),
+            "hip_l_mixed": (
+                ("FKHip_L.rotateX", "AdvPy_HipFK_L.rotateX", 12.0),
+                ("FKHip_L.rotateY", "AdvPy_HipFK_L.rotateY", 7.0),
+                ("FKHip_L.rotateZ", "AdvPy_HipFK_L.rotateZ", -5.0)),
+            "shoulder_r_mixed": (
+                ("FKShoulder_R.rotateX", "AdvPy_ShoulderFK_R.rotateX", 12.0),
+                ("FKShoulder_R.rotateY", "AdvPy_ShoulderFK_R.rotateY", 7.0),
+                ("FKShoulder_R.rotateZ", "AdvPy_ShoulderFK_R.rotateZ", -5.0)),
+            "elbow_r_mixed": (
+                ("FKElbow_R.rotateX", "AdvPy_ElbowFK_R.rotateX", 12.0),
+                ("FKElbow_R.rotateY", "AdvPy_ElbowFK_R.rotateY", 7.0),
+                ("FKElbow_R.rotateZ", "AdvPy_ElbowFK_R.rotateZ", -5.0)),
         }
         source_pose_points = {}
         source_pose_matrices = {}
-        for label, (source_plug, _, value) in controls.items():
-            cmds.setAttr(source_plug, value)
+        for label, actions in controls.items():
+            for source_plug, _, value in actions:
+                cmds.setAttr(source_plug, value)
             source_pose_points[label] = _points(source_mesh)
             source_pose_matrices[label] = {name: tuple(cmds.xform(
                 name, query=True, worldSpace=True, matrix=True))
                 for name in source_names}
-            cmds.setAttr(source_plug, 0.0)
+            for source_plug, _, _ in reversed(actions):
+                cmds.setAttr(source_plug, 0.0)
         source_uv_sets = tuple(cmds.polyUVSet(source_mesh, query=True,
                                              allUVSets=True) or [])
         source_shaders = tuple(sorted(set(cmds.listConnections(
@@ -165,7 +194,8 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
             raise AssertionError("导向轴向故障回滚失败")
         BuildAxialPartDeform(MayaAxialPartHost()).apply(guide=axial)
         BuildFingerMidDeform(MayaFingerMidHost()).apply()
-        BuildLimbPartDeform(MayaLimbPartHost()).apply()
+        BuildLimbPartDeform(MayaLimbPartHost()).apply(
+            split_body_twist=True)
         BuildRootVolumeDeform(MayaRootVolumeHost()).apply(volume)
         BuildChestVolumeDeform(MayaSdkVolumeHost()).apply(volume)
         BuildKneeVolumeDeform(MayaSdkVolumeHost()).apply(volume)
@@ -249,8 +279,9 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
             "Ankle_R", "Ankle_L", "Toes_R", "Toes_L",
             "HipPart1_R", "HipPart1_L", "HipPart2_R", "HipPart2_L",
             "HipCJoint_R", "HipCJoint_L")
-        for label, (_, target_plug, value) in controls.items():
-            cmds.setAttr(target_plug, value)
+        for label, actions in controls.items():
+            for _, target_plug, value in actions:
+                cmds.setAttr(target_plug, value)
             posed = _points(duplicate)
             pose_errors[label] = max(abs(a - b) for source, target in zip(
                 source_pose_points[label], posed)
@@ -267,7 +298,8 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
                     "target": tuple(cmds.xform(paths[name][0], query=True,
                         worldSpace=True, matrix=True)),
                 } for name in diagnostic_names}
-            cmds.setAttr(target_plug, 0.0)
+            for _, target_plug, _ in reversed(actions):
+                cmds.setAttr(target_plug, 0.0)
         saved = report.with_suffix(".mb").resolve()
         report.parent.mkdir(parents=True, exist_ok=True)
         cmds.file(rename=str(saved))
@@ -313,10 +345,7 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
                 or copy_error > 1e-5 or point_error > 1e-5
                 or weight_error > 1e-6 or copy_uv_sets != source_uv_sets
                 or copy_shaders != source_shaders
-                or pose_errors["root_y20"] > 1e-5
-                or pose_errors["neck_y20"] > 1e-5
-                or pose_errors["elbow_r_z80"] > 1e-5
-                or pose_errors["hip_r_y30"] > 1e-5
+                or max(pose_errors.values()) > 1e-5
                 or not all((undo_removed_skin, undo_removed_copy,
                             undo_restored_source, mismatch_rejected,
                             fault_rolled_back, axial_fault_rolled_back))

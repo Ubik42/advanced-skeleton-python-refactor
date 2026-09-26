@@ -152,7 +152,18 @@ class MayaBodySpineMixin:
             ("AdvPy_SpineBaseFKOrient", "AdvPy_TorsoSpine1_MOrient", "AdvPy_TorsoChest_MOrient"),
             plan.fk_controls, plan.joints[:3],
         ):
-            targets(name, c.orientConstraint, (control,))
+            source = control
+            if name == "AdvPy_TorsoSpine1_MOrient" and c.objExists(
+                    "AdvPy_AxialFKXSpine1_M.advPyAxialBodyOwner"):
+                marker = "AdvPy_AxialFKXSpine1_M.advPyAxialBodyOwner"
+                if c.getAttr(marker) != "adv_py.axial_body.v1":
+                    raise FitSkeletonValidationError("轴向脊柱驱动归属无效")
+                proxy = c.ls("AdvPy_AxialFKXSpine1_M", long=True,
+                             type="transform") or []
+                if len(proxy) != 1:
+                    raise FitSkeletonValidationError("轴向脊柱驱动缺失")
+                source = proxy[0]
+            targets(name, c.orientConstraint, (source,))
             if any(not c.isConnected(name + ".constraintRotate" + axis, joint.path + ".rotate" + axis) for axis in "XYZ"):
                 raise FitSkeletonValidationError("Spine FK 驱动输出改变")
         handle = "AdvPy_SpineIKHandle"

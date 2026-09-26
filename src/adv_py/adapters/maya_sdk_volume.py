@@ -83,6 +83,19 @@ class MayaSdkVolumeHost(MayaBodyBuildHost):
                 paths = c.ls(node, long=True, type="joint") or []
                 if len(paths) != 1:
                     raise RuntimeError("体积驱动关节缺失：" + node)
+                if node.startswith("Elbow_") and attribute.startswith(
+                        "rotate"):
+                    side = node.rsplit("_", 1)[-1]
+                    proxy = c.ls(f"AdvPy_ElbowOriginalLocal_{side}",
+                                 long=True, type="joint") or []
+                    if proxy:
+                        if (len(proxy) != 1 or not c.objExists(proxy[0]
+                                + ".advPyAuxiliaryInfluenceKind")
+                                or c.getAttr(proxy[0]
+                                + ".advPyAuxiliaryInfluenceKind")
+                                != "original-local-angle-v1"):
+                            raise RuntimeError("肘部原局部角度代理归属无效")
+                        return proxy[0] + "." + attribute
                 return paths[0] + "." + attribute
             raise RuntimeError("体积曲线包含未知连接：" + plug)
 

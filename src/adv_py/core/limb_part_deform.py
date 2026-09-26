@@ -43,9 +43,12 @@ class LimbPartSegmentSpec:
     positions: tuple[tuple[float, float, float], ...]
     twist_ik_source: str | None = None
     twist_mode_blend_name: str | None = None
+    split_body_twist: bool = False
 
 
-def plan_limb_parts(body: BodySkeletonSnapshot) -> tuple[LimbPartSegmentSpec, ...]:
+def plan_limb_parts(body: BodySkeletonSnapshot, *,
+                    split_body_twist: bool = False
+                    ) -> tuple[LimbPartSegmentSpec, ...]:
     by_name = {joint.name: joint for joint in body.joints}
     if len(by_name) != len(body.joints):
         raise ValueError("Body 关节名称不唯一")
@@ -76,7 +79,10 @@ def plan_limb_parts(body: BodySkeletonSnapshot) -> tuple[LimbPartSegmentSpec, ..
                 f"AdvPy_{ik_limb}IK_{side}", fatness_attribute,
                 prefix + "FatnessAdd",
                 f"AdvPy_{ik_limb}VolumeBlend_{side}.outputR",
-                (f"AdvPy_HipFKDriver_{side}.rotate" if stem == "Hip"
+                (f"AdvPy_{stem}FKDriver_{side}.rotate"
+                 if stem == "Hip" else
+                 f"AdvPy_{stem}FK_{side}.rotate"
+                 if split_body_twist
                  else start.path + ".rotate"), prefix + "TwistCompose",
                 prefix + "TwistDecompose", prefix + "TwistProject",
                 (f"AdvPy_{up_label}TwistProject_{side}.outputRotateX"
@@ -90,7 +96,10 @@ def plan_limb_parts(body: BodySkeletonSnapshot) -> tuple[LimbPartSegmentSpec, ..
                 prefix + "Twist1", prefix + "Twist2",
                 prefix + "Twist1Sum", prefix + "Twist2Sum",
                 prefix + "Twist1Comp", prefix + "Twist2Comp", positions,
-                (f"AdvPy_HipIKDriver_{side}.rotate" if stem == "Hip"
+                (f"AdvPy_{stem}IKDriver_{side}.rotate"
+                 if stem == "Hip" or split_body_twist
                  else None),
-                (prefix + "TwistModeBlend" if stem == "Hip" else None)))
+                (prefix + "TwistModeBlend"
+                 if stem == "Hip" or split_body_twist else None),
+                split_body_twist))
     return tuple(result)

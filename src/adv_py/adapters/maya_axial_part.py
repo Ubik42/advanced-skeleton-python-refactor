@@ -35,7 +35,7 @@ class MayaAxialPartHost(MayaBodyBuildHost):
                      "AdvPy_AxialHipPoint_L")
         if any(self.find_name_collisions(name) for name in new_names):
             raise ValueError("轴向身体驱动节点名称冲突")
-        for stem in ("Root", "Neck"):
+        for stem in ("Root", "Spine1", "Neck"):
             control = only("AdvPy_Torso" + stem + "_MFK", "transform")
             constraint = only("AdvPy_Torso" + stem + "_MOrient",
                               "orientConstraint")
@@ -81,10 +81,17 @@ class MayaAxialPartHost(MayaBodyBuildHost):
                                 translation=True)
         root_matrix = c.xform(root, query=True, worldSpace=True,
                               matrix=True)
-        for stem in ("Root", "Neck"):
+        spine_proxy = only("AdvPy_AxialFKXSpine1_M", "transform")
+        c.addAttr(spine_proxy, longName="advPyAxialBodyOwner",
+                  dataType="string")
+        c.setAttr(spine_proxy + ".advPyAxialBodyOwner",
+                  "adv_py.axial_body.v1", type="string", lock=True)
+        for stem in ("Root", "Spine1", "Neck"):
             c.delete("AdvPy_Torso" + stem + "_MOrient")
+            target = ("AdvPy_SpineFKWaist" if stem == "Spine1"
+                      else stem + "_M")
             c.orientConstraint("AdvPy_AxialFKX" + stem + "_M",
-                               stem + "_M", maintainOffset=False,
+                               target, maintainOffset=False,
                                name="AdvPy_Torso" + stem + "_MOrient")
         c.pointConstraint("AdvPy_AxialFrameSpine1_M",
                           "AdvPy_SpineFKWaist", maintainOffset=False,
