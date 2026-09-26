@@ -153,6 +153,12 @@ class MayaOriginalSkinMigration:
         if len(matches) != 1:
             raise ValueError("源 Skin 不存在或名称不唯一：" + requested)
         skin = matches[0]
+        if c.referenceQuery(skin, isNodeReferenced=True):
+            from .maya_referenced_skin_migration import (
+                MayaReferencedSkinMigration)
+            return MayaReferencedSkinMigration(c).apply(
+                source_skin=skin, target_mesh=target_mesh,
+                target_skin=target_skin, on_stage=on_stage)
         relative_before = bool(c.namespace(query=True, relativeNames=True))
         namespace_before = c.namespaceInfo(currentNamespace=True,
                                             absoluteName=True)

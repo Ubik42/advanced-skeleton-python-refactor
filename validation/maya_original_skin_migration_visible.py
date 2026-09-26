@@ -27,10 +27,14 @@ def _points(mesh: str):
 
 
 def schedule(scene: str, output_directory: str,
-             namespace: str = ":") -> None:
+             namespace: str = ":",
+             target_namespace: str | None = None) -> None:
     output = Path(output_directory)
     output.mkdir(parents=True, exist_ok=True)
     prefix = "" if namespace == ":" else namespace.strip(":") + ":"
+    target_role = target_namespace or namespace
+    target_prefix = ("" if target_role == ":" else
+                     target_role.strip(":") + ":")
 
     def run() -> None:
         data = {"scene": Path(scene).name}
@@ -98,10 +102,12 @@ def schedule(scene: str, output_directory: str,
             data["status"] = detail.status.toPlainText()
             data["roles_after"] = [detail.roles.item(i).text()
                                    for i in range(detail.roles.count())]
+            data["selected_role_after"] = (detail.roles.currentItem().data(
+                QtCore.Qt.UserRole) if detail.roles.currentItem() else None)
             detail.grab().save(str(output / "maya-visible-migration-after.png"))
             panel.grab().save(str(output / "maya-visible-migration-navigation.png"))
-            target_skin = prefix + "AdvPy_MigratedSkin"
-            target_mesh = prefix + "AdvPy_MigratedMesh"
+            target_skin = target_prefix + "AdvPy_MigratedSkin"
+            target_mesh = target_prefix + "AdvPy_MigratedMesh"
             if not cmds.objExists(target_skin):
                 raise AssertionError("图形入口没有生成目标 Skin：" + data["status"])
 
@@ -110,16 +116,17 @@ def schedule(scene: str, output_directory: str,
             data["vertices"] = captured.vertex_count
             data["influences"] = len(captured.influence_names)
             data["body_joints"] = len(ResolveBodyCharacter(
-                MayaBodyBuildHost(namespace=None if namespace == ":"
-                    else namespace)).execute().body)
-            cmds.setAttr(prefix + "AdvPy_TorsoRoot_MFK.rotateY", 20.0)
+                MayaBodyBuildHost(namespace=None if target_role == ":"
+                    else target_role)).execute().body)
+            cmds.setAttr(target_prefix + "AdvPy_TorsoRoot_MFK.rotateY", 20.0)
             posed = _points(target_mesh)
             data["root_y20_world_point_error"] = max(abs(a - b)
                 for source, target in zip(expected, posed)
                 for a, b in zip(source, target))
-            cmds.setAttr(prefix + "AdvPy_TorsoRoot_MFK.rotateY", 0.0)
+            cmds.setAttr(target_prefix + "AdvPy_TorsoRoot_MFK.rotateY", 0.0)
             data["passed"] = (data["entry_visible"]
                 and "已迁移" in data["status"]
+                and data["selected_role_after"] == target_role
                 and data["vertices"] == 18151
                 and data["influences"] == 121
                 and data["body_joints"] == 74

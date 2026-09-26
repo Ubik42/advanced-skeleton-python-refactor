@@ -986,13 +986,20 @@ def create_panel(controller: MayaPanelController | None = None):
             return f"角色已登记：{result.joint_count} 个关节、{result.channel_count} 个通道"
 
         def _migrate_original_skin(self):
+            source_namespace = self._namespace()
             result = self.controller.original_skin_migrate(
-                self._namespace(), self.original_source_skin.text())
+                source_namespace, self.original_source_skin.text())
+            target_namespace = (result.skin.rsplit(":", 1)[0]
+                if ":" in getattr(result, "skin", "") else source_namespace)
+            if target_namespace != source_namespace:
+                self._next_role = target_namespace
+            destination = (f"；新角色 {target_namespace}"
+                if target_namespace != source_namespace else "")
             return (f"已迁移 {result.vertices} 个顶点、"
                     f"{result.influences} 个影响关节；"
                     f"登记 {result.body_joints} 个 Body 关节；"
                     f"保留 {result.animation_curves} 条动画曲线；"
-                    f"共 {len(result.migrated_skins)} 个网格")
+                    f"共 {len(result.migrated_skins)} 个网格{destination}")
 
         def _rebuild_character(self):
             extensions = tuple(line.strip() for line in
@@ -1358,7 +1365,9 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def refresh_characters(self):
             previous = self.roles.currentItem()
-            selected = previous.data(QtCore.Qt.UserRole) if previous else ":"
+            selected = getattr(self, "_next_role", None) or (
+                previous.data(QtCore.Qt.UserRole) if previous else ":")
+            self._next_role = None
             self.roles.clear()
             for entry in self.controller.characters():
                 title = ("根命名空间" if entry.namespace == ":" else entry.namespace)
