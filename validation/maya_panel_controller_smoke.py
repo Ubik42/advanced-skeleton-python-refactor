@@ -35,6 +35,39 @@ def main(report: Path) -> int:
             fit = folder / "panel.fit.json"
             pose = folder / "panel.pose.json"
             animation = folder / "panel.animation.json"
+            spine1 = next(path for path in cmds.ls(type="joint", long=True)
+                          if path.rsplit("|", 1)[-1] == "Spine1")
+            before_position = tuple(cmds.getAttr(spine1 + ".translate")[0])
+            edited_position = (before_position[0], before_position[1],
+                               before_position[2] + .25)
+            position_changes = controller.fit_edit_positions(
+                ":", (("Spine1", edited_position),))
+            position_applied = tuple(cmds.getAttr(spine1 + ".translate")[0]) \
+                == edited_position
+            cmds.undo()
+            position_undo = tuple(cmds.getAttr(spine1 + ".translate")[0]) \
+                == before_position
+            metadata_before = host.read_fit_joint_metadata(spine1)
+            metadata_value = "false" if metadata_before.global_translate else "true"
+            metadata_changes = controller.fit_edit_metadata(
+                ":", ("Spine1",), "global_translate", metadata_value)
+            metadata_applied = host.read_fit_joint_metadata(
+                spine1).global_translate != metadata_before.global_translate
+            cmds.undo()
+            metadata_undo = host.read_fit_joint_metadata(spine1) == metadata_before
+            original_orient = tuple(cmds.getAttr(spine1 + ".jointOrient")[0])
+            cmds.setAttr(spine1 + ".jointOrientX", original_orient[0] + 10.)
+            before_orient = tuple(cmds.getAttr(spine1 + ".jointOrient")[0])
+            orientation_changes = controller.fit_orient(
+                ":", ("Spine1",))
+            orientation_applied = tuple(cmds.getAttr(
+                spine1 + ".jointOrient")[0]) != before_orient
+            cmds.undo()
+            restored_spine1 = next(path for path in cmds.ls(type="joint", long=True)
+                                   if path.rsplit("|", 1)[-1] == "Spine1")
+            orientation_undo = tuple(cmds.getAttr(
+                restored_spine1 + ".jointOrient")[0]) == before_orient
+            cmds.setAttr(restored_spine1 + ".jointOrient", *original_orient)
             fit_count = controller.fit_export(":", fit)
             character = controller.body_build(":")
             roles = controller.characters()
@@ -88,6 +121,11 @@ def main(report: Path) -> int:
             published = controller.publish_fbx(":", folder / "panel.fbx", 1, 3,
                 euler_filter=True, progress=stages.append)
             checks = {
+                "fit_edit_controller_roundtrip": position_changes == 1
+                    and position_applied and position_undo
+                    and metadata_changes == 1 and metadata_applied
+                    and metadata_undo and orientation_changes == 1
+                    and orientation_applied and orientation_undo,
                 "fit_document_written": fit_count == 18 and fit.is_file(),
                 "registered_character_discovered": character.registered
                     and character.joint_count == 30
@@ -121,8 +159,19 @@ def main(report: Path) -> int:
                     and "Root Motion" in stages[2]
                     and "FBX" in stages[-1],
             }
-            payload = {**checks, "status": "passed" if all(checks.values())
-                       else "failed"}
+            payload = {**checks,
+                "fit_edit_details": {
+                    "position_changes": position_changes,
+                    "position_applied": position_applied,
+                    "position_undo": position_undo,
+                    "metadata_changes": metadata_changes,
+                    "metadata_applied": metadata_applied,
+                    "metadata_undo": metadata_undo,
+                    "orientation_changes": orientation_changes,
+                    "orientation_applied": orientation_applied,
+                    "orientation_undo": orientation_undo,
+                },
+                "status": "passed" if all(checks.values()) else "failed"}
             report.write_text(json.dumps(payload, ensure_ascii=False, indent=2)
                               + "\n", encoding="utf-8")
             return 0 if all(checks.values()) else 1

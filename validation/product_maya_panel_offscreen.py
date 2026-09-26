@@ -33,6 +33,19 @@ class FakeController:
         self.built = True
         return PanelCharacter(namespace, True, 30, 157)
 
+    def fit_edit_positions(self, namespace, edits, container):
+        self.calls.append(("fit_edit_positions", namespace, edits, container))
+        return len(edits)
+
+    def fit_edit_metadata(self, namespace, joints, field, value, *, remove=False):
+        self.calls.append(("fit_edit_metadata", namespace, joints, field,
+                           value, remove))
+        return len(joints)
+
+    def fit_orient(self, namespace, joints, container):
+        self.calls.append(("fit_orient", namespace, joints, container))
+        return len(joints)
+
     def face_build(self, namespace, specification, control_name, deformer_name):
         self.calls.append(("face_build", namespace, specification.name,
                            control_name, deformer_name))
@@ -218,6 +231,12 @@ def main(report: Path) -> int:
     panel.roles.setCurrentRow(1)
     buttons = {button.text(): button for button in
                panel.findChildren(QtWidgets.QPushButton)}
+    panel.fit_position_edits.setPlainText("Spine1 0 0 8")
+    panel.fit_edit_joints.setPlainText("Spine1")
+    panel.fit_metadata_value.setText("2")
+    buttons["更新 Fit 位置"].click()
+    buttons["更新 Fit 元数据"].click()
+    buttons["按子级重新定向"].click()
     buttons["构建并登记角色"].click()
     app.processEvents()
     fit_page = panel.tabs.currentWidget()
@@ -288,6 +307,12 @@ def main(report: Path) -> int:
         "animation_narrow_no_horizontal_overflow":
             animation_narrow_horizontal_overflow == 0,
         "face_build_dispatches_application_action": face_dispatched,
+        "fit_edit_actions_dispatch": all(call in controller.calls for call in (
+            ("fit_edit_positions", "hero", (("Spine1", (0., 0., 8.)),),
+             "FitSkeleton"),
+            ("fit_edit_metadata", "hero", ("Spine1",), "twist_joints",
+             "2", False),
+            ("fit_orient", "hero", ("Spine1",), "FitSkeleton"))),
         "role_selection_dispatches_application_action":
             ("body_build", "hero", "FitSkeleton", None, False)
             in controller.calls,

@@ -186,11 +186,49 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(row)
             stack.addWidget(group)
 
+            self.fit_position_edits = QtWidgets.QPlainTextEdit()
+            self.fit_position_edits.setPlaceholderText(
+                "每行：关节名  本地X  本地Y  本地Z\n例如：Spine1  0  0  8")
+            self.fit_position_edits.setMaximumHeight(82)
+            self.fit_edit_joints = QtWidgets.QPlainTextEdit()
+            self.fit_edit_joints.setPlaceholderText("每行一个 Fit joint 名称或完整路径")
+            self.fit_edit_joints.setMaximumHeight(72)
+            self.fit_metadata_field = QtWidgets.QComboBox()
+            for label, value in (
+                    ("Twist 关节数", "twist_joints"),
+                    ("Bendy 控制器数", "bendy_controls"),
+                    ("Inbetween 关节数", "inbetween_joints"),
+                    ("UnTwister", "untwister"),
+                    ("禁止镜像", "no_mirror"),
+                    ("左侧禁止镜像", "no_mirror_left"),
+                    ("Child Of Part", "child_of_part"),
+                    ("Global 权重", "global_weight"),
+                    ("Global Translate", "global_translate"),
+                    ("World Orient Up", "world_orient_up"),
+                    ("World Orient Forward", "world_orient_forward"),
+                    ("IK Local Mode", "ik_local_mode")):
+                self.fit_metadata_field.addItem(label, value)
+            self.fit_metadata_value = QtWidgets.QLineEdit()
+            self.fit_metadata_value.setPlaceholderText("整数、数值、true/false 或枚举值")
+            self.fit_metadata_remove = QtWidgets.QCheckBox("删除所选字段")
+            group, form = self._group("02 · Fit 编辑", [
+                ("位置批量编辑", self.fit_position_edits),
+                ("目标关节", self.fit_edit_joints),
+                ("元数据字段", self.fit_metadata_field),
+                ("字段值", self.fit_metadata_value),
+                ("字段操作", self.fit_metadata_remove)])
+            position_row = QtWidgets.QHBoxLayout()
+            position_row.addWidget(self._button("更新 Fit 位置", self._edit_fit_positions))
+            position_row.addWidget(self._button("按子级重新定向", self._orient_fit))
+            form.addRow(position_row)
+            form.addRow(self._button("更新 Fit 元数据", self._edit_fit_metadata))
+            stack.addWidget(group)
+
             self.spine_segments = QtWidgets.QSpinBox()
             self.spine_segments.setRange(0, 63)
             self.spine_segments.setSpecialValueText("标准双段")
             self.head_aim = QtWidgets.QCheckBox("包含头部瞄准控制")
-            group, form = self._group("02 · 完整角色", [
+            group, form = self._group("03 · 完整角色", [
                 ("脊柱配置", self.spine_segments), ("附加控制", self.head_aim)])
             form.addRow(self._button("构建并登记角色", self._build_character,
                                       primary=True))
@@ -201,7 +239,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.rebuild_extensions.setPlaceholderText(
                 "每行一个附件根路径；如 |Root_M|…|Head_M|AdvPy_FaceControls")
             self.rebuild_extensions.setMaximumHeight(88)
-            group, form = self._group("03 · 保留数据重建", [
+            group, form = self._group("04 · 保留数据重建", [
                 ("暂存命名空间", self.rebuild_namespace),
                 ("用户附件根", self.rebuild_extensions)])
             form.addRow(self._button("重建并保留数据", self._rebuild_character))
@@ -282,7 +320,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 row.addStretch(1)
                 row.addWidget(field)
                 limit_rows.addLayout(row)
-            group, form = self._group("04 · 跨段数脊柱角色替换", [
+            group, form = self._group("05 · 跨段数脊柱角色替换", [
                 ("目标命名空间", self.spine_replacement),
                 ("原 Skin", self.spine_skins),
                 ("原网格", self.spine_meshes),
@@ -721,6 +759,45 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.fit_import(self._namespace(),
                 self._path(self.fit_import_document), self.fit_container.text().strip())
             return f"已导入 {count} 个关节"
+
+        def _fit_joint_lines(self):
+            joints = tuple(line.strip() for line in
+                self.fit_edit_joints.toPlainText().splitlines() if line.strip())
+            if not joints:
+                raise ValueError("请至少填写一个 Fit joint")
+            return joints
+
+        def _edit_fit_positions(self):
+            edits = []
+            for number, line in enumerate(
+                    self.fit_position_edits.toPlainText().splitlines(), 1):
+                if not line.strip():
+                    continue
+                parts = line.replace(",", " ").split()
+                if len(parts) != 4:
+                    raise ValueError(f"位置编辑第 {number} 行必须包含关节名和三个数值")
+                try:
+                    position = tuple(float(value) for value in parts[1:])
+                except ValueError as error:
+                    raise ValueError(f"位置编辑第 {number} 行包含无效数值") from error
+                edits.append((parts[0], position))
+            if not edits:
+                raise ValueError("请至少填写一行 Fit 位置编辑")
+            count = self.controller.fit_edit_positions(self._namespace(),
+                tuple(edits), self.fit_container.text().strip())
+            return f"已更新 {count} 个 Fit joint 的位置"
+
+        def _edit_fit_metadata(self):
+            count = self.controller.fit_edit_metadata(self._namespace(),
+                self._fit_joint_lines(), self.fit_metadata_field.currentData(),
+                self.fit_metadata_value.text(),
+                remove=self.fit_metadata_remove.isChecked())
+            return f"已更新 {count} 项 Fit 元数据"
+
+        def _orient_fit(self):
+            count = self.controller.fit_orient(self._namespace(),
+                self._fit_joint_lines(), self.fit_container.text().strip())
+            return f"已重新定向 {count} 个 Fit joint"
 
         def _export_skin(self):
             count = self.controller.skin_export(self._namespace(),

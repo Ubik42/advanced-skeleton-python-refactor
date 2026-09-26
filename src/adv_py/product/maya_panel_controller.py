@@ -16,7 +16,8 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     EnableBodyCharacterSplineAnimation, EnableBodyCharacterSpaceAnimation,
     BakeBodyCharacterLimbMode, BakeBodyCharacterSpineMode,
     SwitchBodyCharacterSpace,
-    CreateAndImportFitSkeleton, ExportFitSkeleton, ExportSkinWeights,
+    CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
+    ExportFitSkeleton, ExportSkinWeights, OrientSimpleFitChain,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget, ImportFaceTargetAsset,
     FaceAssetLibrary, ImportSkinWeights, InspectBodyCharacterPresets,
     CaptureSkinWeightSurfaceSource, TransferSkinWeightsBySurface,
@@ -29,6 +30,8 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     save_character_animation, save_character_pose, save_face_target_asset)
 from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
     BodyFbxExportProfile, BodyFbxFileVersion, FaceShapeKind, FaceTarget,
+    FitJointField, FitJointFieldEdit, FitJointPatch,
+    FitJointPositionEdit, FitJointPositionPatch, FitOrientationRequest,
     face_performance_from_json)
 from adv_py.core.variable_body_fit import variable_axial_description
 
@@ -68,6 +71,49 @@ class PanelSkinSurfaceResult:
     changed_vertices: int
     max_surface_distance: float
     max_discarded_weight: float
+
+
+_FIT_INTEGER_FIELDS = frozenset({
+    FitJointField.TWIST_JOINTS,
+    FitJointField.BENDY_CONTROLS,
+    FitJointField.INBETWEEN_JOINTS,
+    FitJointField.CHILD_OF_PART,
+})
+_FIT_BOOLEAN_FIELDS = frozenset({
+    FitJointField.UNTWISTER,
+    FitJointField.NO_MIRROR,
+    FitJointField.NO_MIRROR_LEFT,
+    FitJointField.GLOBAL_TRANSLATE,
+})
+
+
+def parse_fit_metadata_value(field: str, text: str, *, remove: bool = False):
+    """Parse one panel field without weakening the core validation contract."""
+    try:
+        key = FitJointField(field)
+    except ValueError as error:
+        raise ValueError(f"未知 Fit 元数据字段：{field}") from error
+    if remove:
+        return key, None
+    value = text.strip()
+    if not value:
+        raise ValueError("请填写 Fit 元数据值，或选择删除字段")
+    if key in _FIT_INTEGER_FIELDS:
+        try:
+            return key, int(value)
+        except ValueError as error:
+            raise ValueError(f"{field} 必须是整数") from error
+    if key in _FIT_BOOLEAN_FIELDS:
+        normalized = value.lower()
+        if normalized not in {"true", "false", "1", "0"}:
+            raise ValueError(f"{field} 必须是 true、false、1 或 0")
+        return key, normalized in {"true", "1"}
+    if key is FitJointField.GLOBAL_WEIGHT:
+        try:
+            return key, float(value)
+        except ValueError as error:
+            raise ValueError("global_weight 必须是数值") from error
+    return key, value
 
 
 class MayaPanelController:
@@ -111,6 +157,27 @@ class MayaPanelController:
         result = CreateAndImportFitSkeleton(self._host(namespace)).apply(
             source, container)
         return len(result.joint_paths)
+
+    def fit_edit_positions(self, namespace: str,
+                           edits: tuple[tuple[str, tuple[float, float, float]], ...],
+                           container: str = "FitSkeleton") -> int:
+        patch = FitJointPositionPatch(tuple(
+            FitJointPositionEdit(joint, position) for joint, position in edits))
+        result = EditFitJointPositions(self._host(namespace)).apply(patch, container)
+        return len(result.plan.changes)
+
+    def fit_edit_metadata(self, namespace: str, joints: tuple[str, ...],
+                          field: str, value: str, *, remove: bool = False) -> int:
+        key, parsed = parse_fit_metadata_value(field, value, remove=remove)
+        patch = FitJointPatch((FitJointFieldEdit(key, parsed),))
+        result = EditFitJointMetadata(self._host(namespace)).apply(joints, patch)
+        return len(result.plan.changes)
+
+    def fit_orient(self, namespace: str, joints: tuple[str, ...],
+                   container: str = "FitSkeleton") -> int:
+        result = OrientSimpleFitChain(self._host(namespace)).apply(
+            FitOrientationRequest(joints), container)
+        return len(result.plan.changes)
 
     def body_build(self, namespace: str, container: str = "FitSkeleton", *,
                    spine_segments: int | None = None,
