@@ -38,6 +38,8 @@ def main(scene: Path, report: Path) -> None:
                     "translate": cmds.getAttr(node + ".translate")[0],
                     "rotate": cmds.getAttr(node + ".rotate")[0],
                     "scale": cmds.getAttr(node + ".scale")[0],
+                    "world_matrix": cmds.xform(node, query=True,
+                        worldSpace=True, matrix=True),
                     "inputs": inputs(node),
                 })
                 node = result[-1]["parent"]
@@ -58,7 +60,32 @@ def main(scene: Path, report: Path) -> None:
                     continue
                 sources = cmds.listConnections(node, source=True,
                     destination=False, plugs=True) or []
-                result[node] = {"type": node_type, "sources": sorted(set(sources))}
+                pairs = cmds.listConnections(node, source=True,
+                    destination=False, plugs=True, connections=True) or []
+                record = {"type": node_type,
+                          "sources": sorted(set(sources)),
+                          "connections": [pairs[index:index + 2]
+                                          for index in range(0, len(pairs), 2)]}
+                if node_type.startswith("animCurve"):
+                    record["keys"] = list(zip(
+                        cmds.keyframe(node, query=True, floatChange=True) or [],
+                        cmds.keyframe(node, query=True, valueChange=True) or []))
+                    record["pre_infinity"] = cmds.getAttr(node + ".preInfinity")
+                    record["post_infinity"] = cmds.getAttr(node + ".postInfinity")
+                    record["in_tangent_types"] = cmds.keyTangent(node,
+                        query=True, inTangentType=True) or []
+                    record["out_tangent_types"] = cmds.keyTangent(node,
+                        query=True, outTangentType=True) or []
+                    record["weighted_tangents"] = bool((cmds.keyTangent(node,
+                        query=True, weightedTangents=True) or [False])[0])
+                elif node_type == "unitConversion":
+                    record["conversion_factor"] = cmds.getAttr(
+                        node + ".conversionFactor")
+                elif node_type == "blendWeighted":
+                    indices = cmds.getAttr(node + ".input", multiIndices=True) or []
+                    record["weights"] = {str(index): cmds.getAttr(
+                        f"{node}.weight[{index}]") for index in indices}
+                result[node] = record
                 pending.extend(sources)
             return result
 
@@ -93,6 +120,18 @@ def main(scene: Path, report: Path) -> None:
                 "joint_orient": cmds.getAttr(name + ".jointOrient")[0],
                 "joint_rotate_order": cmds.getAttr(name + ".rotateOrder"),
                 "joint_local_scale": cmds.getAttr(name + ".scale")[0],
+                "joint_inputs": inputs(name),
+                "joint_scale_driver": [{"name": node,
+                    "type": cmds.nodeType(node),
+                    "input1": cmds.getAttr(node + ".input1")[0],
+                    "input2": cmds.getAttr(node + ".input2")[0],
+                    "connections": [pair[index:index + 2]
+                        for index in range(0, len(pair), 2)]}
+                    for node in (cmds.listConnections(name + ".scale",
+                        source=True, destination=False) or [])
+                    for pair in [cmds.listConnections(node, source=True,
+                        destination=False, plugs=True, connections=True) or []]
+                    if cmds.nodeType(node) == "multiplyDivide"],
                 "target_local_translate": cmds.getAttr(target + ".translate")[0],
                 "target_local_rotate": cmds.getAttr(target + ".rotate")[0],
                 "target_inputs": inputs(target),
@@ -108,6 +147,9 @@ def main(scene: Path, report: Path) -> None:
         report.write_text(json.dumps({"source": scene.name,
             "root_world_matrix": cmds.xform("Root_M", query=True,
                 worldSpace=True, matrix=True),
+            "body_world_matrices": {name: cmds.xform(name, query=True,
+                worldSpace=True, matrix=True) for name in
+                ("Chest_M", "Scapula_R", "Scapula_L")},
             "count": len(rows), "joints": rows}, ensure_ascii=False,
             indent=2) + "\n", encoding="utf-8")
     finally:

@@ -1,5 +1,12 @@
 # 后台宿主验证
 
+胸部／肩胛体积关节对照：先用 `maya_original_volume_joint_graph.py` 导出本机原版驱动导向，再运行 `maya_original_chest_volume_smoke.py`。后者在相同 Fit 重建的新角色中创建双侧 `ChestAJoint` 和 `ScapulaAJoint`，比较静止及肩胛 Y／Z 轴 12° 动作的关节世界矩阵，同时检查来源骨架不匹配、故障回滚、撤销／重做、保存重开及角色登记。
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_original_volume_joint_graph.py 'C:\path\to\sam.mb' validation/results/maya2024-original-volume-joint-graph.json
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_original_chest_volume_smoke.py 'C:\path\to\sam.mb' validation/results/maya2024-original-volume-joint-graph.json validation/results/maya2024-original-chest-volume.json
+```
+
 原版 RootA 体积关节对照：`maya_original_root_volume_smoke.py` 从公开示例场景读取左右 `RootAJoint` 的原始局部变换，在同一 Fit 重建的新角色中生成两个有权重的辅助关节。对比静止世界矩阵，验证总控位移、注入故障后的回滚、撤销／重做、保存重开及 Body 登记。`maya_original_volume_joint_graph.py` 可单独导出全部 40 个体积关节的原始驱动层级和 SDK 上游节点；输出均放在忽略目录。
 
 ```powershell
