@@ -555,3 +555,4 @@ write 先捕获非中性姿态，再扰动全部登记控制与空间；read 从
 
 默认交接 30 关节角色，`--partner` 交接 70 关节角色。两者均加入加权曲线、循环设置、带动画与 Rig 矩阵输入的两级附件，核对保留对象身份、曲线和蒙皮内容、其他角色不变、Undo / Redo 与故障回滚。`--reopen` 比较保存场景中的身体、空间、实际网格和附件。该入口不删除旧 Rig，完整原位替换仍在开发中。
 `maya_migrated_scene_export_smoke.py` 读取已迁移的单 Skin 与双 Skin 引用来源场景，调用面板控制层导出独立 `.mb`，重开验证无文件引用、权重和第 5 帧顶点位置、74 个 Body 登记，并确认来源场景与选择不变。
+`maya_standard_fit_skinned_build_smoke.py` 从公开 `sam.mb` 只读导出 Fit 与静态网格，在空场景中用产品控制层一次构建主体和配件双 Skin；验证故障回滚、总控驱动、Undo／Redo、重开及命名空间构建。新权重由 Maya Closest Distance 生成，不是原版权重迁移。

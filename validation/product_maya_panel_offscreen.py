@@ -28,10 +28,11 @@ class FakeController:
                     30 if self.built else 0, 157 if self.built else 0))
 
     def body_build(self, namespace, container, *, spine_segments, head_aim,
-                   infer_missing_labels):
+                   infer_missing_labels, meshes=(), maximum_influences=4):
         self.calls.append(("body_build", namespace, container,
                            spine_segments, head_aim,
-                           infer_missing_labels))
+                           infer_missing_labels, meshes,
+                           maximum_influences))
         self.built = True
         return PanelCharacter(namespace, True, 30, 157)
 
@@ -336,6 +337,9 @@ def main(report: Path) -> int:
     buttons["构建并登记角色"].click()
     panel.infer_missing_fit_labels.setChecked(True)
     buttons["构建并登记角色"].click()
+    panel.build_meshes.setPlainText("|hero:BodyMesh\n|hero:GarmentMesh")
+    panel.build_max_influences.setValue(6)
+    buttons["构建并登记角色"].click()
     panel.control_curve_targets.setPlainText("|hero:Global")
     panel.control_curve_factor.setValue(1.25)
     buttons["缩放控制曲线"].click()
@@ -478,9 +482,13 @@ def main(report: Path) -> int:
             ("control_orient_custom_detach", "hero") in controller.calls
             and ("control_orient_custom_attach", "hero") in controller.calls,
         "role_selection_dispatches_application_action":
-            ("body_build", "hero", "FitSkeleton", None, False, False)
+            ("body_build", "hero", "FitSkeleton", None, False, False,
+             (), 4)
             in controller.calls and
-            ("body_build", "hero", "FitSkeleton", None, False, True)
+            ("body_build", "hero", "FitSkeleton", None, False, True,
+             (), 4) in controller.calls and
+            ("body_build", "hero", "FitSkeleton", None, False, True,
+             ("|hero:BodyMesh", "|hero:GarmentMesh"), 6)
             in controller.calls,
         "external_fit_export_dispatches":
             ("fit_export", "hero", Path("C:/temp/sam.fit.json"),

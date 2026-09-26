@@ -512,6 +512,8 @@ __all__ = [
     "BuildBodyCharacterRig",
     "BuildRegisteredBodyCharacter",
     "RegisteredBodyBuildResult",
+    "BuildRegisteredSkinnedBodyCharacter",
+    "RegisteredSkinnedBodyBuildResult",
     "BuildBodyRootMotion",
     "BakeBodyRootMotion",
     "BuildBodyExportSkeleton",
@@ -708,6 +710,8 @@ from .skin_weight_surface_transfer import (TransferSkinWeightsBySurface,
 from .character_presets import InspectBodyCharacterPresets, CharacterPresetStatus
 from .registered_body_build import (BuildRegisteredBodyCharacter,
     RegisteredBodyBuildResult)
+from .registered_skinned_body_build import (BuildRegisteredSkinnedBodyCharacter,
+    RegisteredSkinnedBodyBuildResult)
 
 from .external_mesh_io import (ExportExternalMesh, ImportExternalMesh,
     ExternalMeshResult)

@@ -275,6 +275,25 @@ _BODY_EXPORT_BAKE_ATTRIBUTES = {
 class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
     """Maya scene adapter for the first materialized Body skeleton stage."""
 
+    def preflight_body_mesh(self, mesh_path: str) -> int:
+        c = self._cmds
+        matches = c.ls(mesh_path, long=True, type="transform") or []
+        if len(matches) != 1 or matches[0] != mesh_path:
+            raise FitSkeletonValidationError("网格路径不存在或不唯一：" + mesh_path)
+        if c.referenceQuery(mesh_path, isNodeReferenced=True):
+            raise FitSkeletonValidationError("标准 Fit 绑定要求可写的本地网格")
+        shapes = c.listRelatives(mesh_path, shapes=True,
+            noIntermediate=True, fullPath=True, type="mesh") or []
+        if len(shapes) != 1:
+            raise FitSkeletonValidationError("网格必须恰好有一个可见多边形 Shape")
+        history = c.listHistory(shapes[0], pruneDagObjects=True) or []
+        if any(c.nodeType(node) == "skinCluster" for node in history):
+            raise FitSkeletonValidationError("网格已有 Skin，不能重复绑定：" + mesh_path)
+        vertices = int(c.polyEvaluate(mesh_path, vertex=True))
+        if vertices < 1:
+            raise FitSkeletonValidationError("网格没有顶点：" + mesh_path)
+        return vertices
+
     def create_body_joint(self, spec: BodyJointSpec) -> str:
         self._require_transaction()
         if self.find_name_collisions(spec.name):

@@ -24,6 +24,8 @@ v0.96.0 加入躯干 / 颈头 FK、独立脊柱 IK/FK、双向姿态匹配、头
 
 Maya 图形入口 `adv_py.product.maya_panel.show_panel()` 现按原版 AdvancedSkeleton 6.925 的顶层和子栏目顺序提供左侧折叠导航；已迁移操作从对应入口打开中文参数窗，其他栏目标明尚未实现。界面层级及真实 Maya 操作验收见 [Maya 可见界面验收](docs/Maya可见界面验收.md)。
 
+`Body / Build` 可在构建 Fit 角色时填写多件未绑定网格，一次完成 Body、控制器、角色登记和新 Skin。绑定使用 Maya Closest Distance；若要保留已有原版权重，应使用“迁移当前原版角色与蒙皮”。
+
 从原版文件引用迁移出本地 `*_AdvPy` 角色后，可在面板的 `Publish` 页导出独立 `.mb` 角色场景。输出包含目标角色的网格、Skin、控制器和动画，不包含原版文件引用；当前工作场景仍保留来源引用。此入口已用单 Skin 与双 Skin 示例验收。
 
 [查看 v0.96.0 阶段说明](docs/阶段发布-v0.96.md)

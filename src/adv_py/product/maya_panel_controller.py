@@ -11,6 +11,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     ApplyBodyCharacterPose, ApplyFacePerformance, BindSkin,
     BakeBodyExportSkeleton, BuildBodyExportSkeleton, BuildBodyRootMotion,
     BuildFaceBlendShapes, BuildRegisteredBodyCharacter,
+    BuildRegisteredSkinnedBodyCharacter,
     CaptureBodyCharacterAnimation, CaptureBodyCharacterPose,
     CaptureAnimatedBodyCharacterPose, KeyBodyCharacterPose,
     EnableBodyCharacterLimbAnimation, EnableBodyCharacterStretchMatching,
@@ -204,13 +205,27 @@ class MayaPanelController:
     def body_build(self, namespace: str, container: str = "FitSkeleton", *,
                    spine_segments: int | None = None,
                    head_aim: bool = False,
-                   infer_missing_labels: bool = False) -> PanelCharacter:
+                   infer_missing_labels: bool = False,
+                   meshes: tuple[str, ...] = (),
+                   maximum_influences: int = 4) -> PanelCharacter:
         description = (variable_axial_description(spine_segments)
             if spine_segments is not None else None)
-        result = BuildRegisteredBodyCharacter(self._host(namespace)).apply(
-            container, axial_description=description,
-            include_head_aim=head_aim,
-            infer_missing_labels=infer_missing_labels)
+        host = self._host(namespace)
+        if meshes:
+            identity = getattr(host._cmds, "identity", None)
+            local_meshes = tuple(identity.to_local(mesh) if identity
+                                 else mesh for mesh in meshes)
+            result = BuildRegisteredSkinnedBodyCharacter(host).apply(
+                local_meshes, container_name=container,
+                maximum_influences=maximum_influences,
+                axial_description=description,
+                include_head_aim=head_aim,
+                infer_missing_labels=infer_missing_labels).character
+        else:
+            result = BuildRegisteredBodyCharacter(host).apply(
+                container, axial_description=description,
+                include_head_aim=head_aim,
+                infer_missing_labels=infer_missing_labels)
         return PanelCharacter(namespace, True, len(result.registration.body),
                               len(result.registration.channels))
 

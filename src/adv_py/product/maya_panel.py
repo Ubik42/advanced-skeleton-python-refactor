@@ -242,9 +242,18 @@ def create_panel(controller: MayaPanelController | None = None):
             self.head_aim = QtWidgets.QCheckBox("包含头部瞄准控制")
             self.infer_missing_fit_labels = QtWidgets.QCheckBox(
                 "按关节名补全缺失标签（原版 Fit 兼容）")
+            self.build_meshes = QtWidgets.QPlainTextEdit()
+            self.build_meshes.setPlaceholderText(
+                "每行一个未绑定的本地网格完整路径；留空时只构建 Rig")
+            self.build_meshes.setMaximumHeight(76)
+            self.build_max_influences = QtWidgets.QSpinBox()
+            self.build_max_influences.setRange(1, 256)
+            self.build_max_influences.setValue(4)
             group, form = self._group("03 · 完整角色", [
                 ("脊柱配置", self.spine_segments), ("附加控制", self.head_aim),
-                ("Fit 标签", self.infer_missing_fit_labels)])
+                ("Fit 标签", self.infer_missing_fit_labels),
+                ("待绑定网格", self.build_meshes),
+                ("最大影响数", self.build_max_influences)])
             form.addRow(self._button("构建并登记角色", self._build_character,
                                       primary=True))
             stack.addWidget(group)
@@ -987,12 +996,17 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _build_character(self):
             value = self.spine_segments.value()
+            meshes = tuple(line.strip() for line in
+                self.build_meshes.toPlainText().splitlines() if line.strip())
             result = self.controller.body_build(self._namespace(),
                 self.fit_container.text().strip(),
                 spine_segments=value if value else None,
                 head_aim=self.head_aim.isChecked(),
-                infer_missing_labels=self.infer_missing_fit_labels.isChecked())
-            return f"角色已登记：{result.joint_count} 个关节、{result.channel_count} 个通道"
+                infer_missing_labels=self.infer_missing_fit_labels.isChecked(),
+                meshes=meshes,
+                maximum_influences=self.build_max_influences.value())
+            return (f"角色已登记：{result.joint_count} 个关节、"
+                    f"{result.channel_count} 个通道、{len(meshes)} 套 Skin")
 
         def _migrate_original_skin(self):
             source_namespace = self._namespace()
