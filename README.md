@@ -18,11 +18,13 @@
 | 角色结构 | 30 关节基础 Body、70 关节五指 Body、31 关节独立导出骨架 |
 | 数据合同 | FitSkeleton、Hand Pose 与 Skin Weight 使用路径无关的 JSON 文档和 SHA-256 内容摘要 |
 | 写入边界 | 修改前预检；单一 Maya Undo 事务提交；执行后从场景读回复检 |
-| 自动验证 | 410 项纯 Python 回归测试；Maya 2024 后台场景与独立进程验收命令见 `validation/README.md` |
+| 自动验证 | 432 项纯 Python 回归测试；Maya 2024 后台场景与独立进程验收命令见 `validation/README.md` |
 
 v0.96.0 加入躯干 / 颈头 FK、独立脊柱 IK/FK、双向姿态匹配、头部 / 手脚空间切换，以及不同脊柱段数角色的受控替换。调用方式见 [核心绑定架构](docs/核心绑定架构.md)，完整 Fit → Body → 控制 → 显式蒙皮入口见 [全身示例](examples/README.md)。当前仍是阶段版本，尚未完成 AdvancedSkeleton 全量替代。
 
 Maya 图形入口 `adv_py.product.maya_panel.show_panel()` 现按原版 AdvancedSkeleton 6.925 的顶层和子栏目顺序提供左侧折叠导航；已迁移操作从对应入口打开中文参数窗，其他栏目标明尚未实现。界面层级及真实 Maya 操作验收见 [Maya 可见界面验收](docs/Maya可见界面验收.md)。
+
+从原版文件引用迁移出本地 `*_AdvPy` 角色后，可在面板的 `Publish` 页导出独立 `.mb` 角色场景。输出包含目标角色的网格、Skin、控制器和动画，不包含原版文件引用；当前工作场景仍保留来源引用。此入口已用单 Skin 与双 Skin 示例验收。
 
 [查看 v0.96.0 阶段说明](docs/阶段发布-v0.96.md)
 

@@ -757,6 +757,12 @@ class MayaPanelController:
             exported.artifact.content_sha256,
             exported.applied_profile.euler_filtered_curves)
 
+    def publish_migrated_maya_scene(self, namespace: str,
+                                    destination: Path) -> int:
+        from adv_py.adapters.maya_character_scene_export import (
+            MayaCharacterSceneExport)
+        return MayaCharacterSceneExport().apply(namespace, destination)
+
     def mocap_retarget(self, namespace: str, source: Path,
                        mapping: Path, source_namespace: str,
                        start: int, end: int, step: int = 1,

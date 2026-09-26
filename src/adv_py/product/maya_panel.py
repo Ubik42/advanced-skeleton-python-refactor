@@ -757,6 +757,15 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _publish_page(self):
             page, stack = self._page()
+            maya_output, self.maya_output = self._file_field(
+                "独立 Maya 场景", save=True, filter_text="Maya Binary (*.mb)")
+            maya_group, maya_form = self._group(
+                "01 · 导出迁移后的完整角色", [("输出文件", maya_output)])
+            maya_form.addRow(self._button("导出独立 Maya 场景",
+                                           self._publish_maya_scene, primary=True))
+            stack.addWidget(maya_group)
+            stack.addWidget(QtWidgets.QLabel(
+                "仅适用于从原版引用迁移的本地角色；导出网格、Skin、控制器与动画。"))
             output, self.fbx_output = self._file_field("发布 FBX", save=True,
                                                        filter_text="FBX 文件 (*.fbx)")
             frames = QtWidgets.QWidget()
@@ -789,7 +798,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 field.setEnabled(False)
             self.fbx_policy.currentIndexChanged.connect(
                 lambda: self._fbx_policy_changed())
-            group, form = self._group("01 · 烘焙并发布独立骨架", [
+            group, form = self._group("02 · 烘焙并发布独立骨架", [
                 ("输出文件", output), ("采样帧", frames),
                 ("曲线策略", self.fbx_policy),
                 ("旋转处理", self.fbx_euler_filter),
@@ -1345,6 +1354,11 @@ def create_panel(controller: MayaPanelController | None = None):
                 progress=self._progress)
             return (f"FBX 已发布：{result.joints} 个关节、{result.frames} 帧、"
                     f"{result.bytes_written} 字节；SHA-256 {result.sha256[:12]}…")
+
+        def _publish_maya_scene(self):
+            size = self.controller.publish_migrated_maya_scene(
+                self._namespace(), self._path(self.maya_output))
+            return f"独立 Maya 角色场景已导出：{size} 字节"
 
         def _mocap_retarget(self):
             result = self.controller.mocap_retarget(self._namespace(),

@@ -42,6 +42,11 @@ class FakeController:
                                migrated_skins=(("AdvPy_MigratedMesh",
                                                 "AdvPy_MigratedSkin"),))
 
+    def publish_migrated_maya_scene(self, namespace, destination):
+        self.calls.append(("publish_migrated_maya_scene", namespace,
+                           destination))
+        return 6937240
+
     def fit_export(self, namespace, destination, container, *,
                    external_compatibility):
         self.calls.append(("fit_export", namespace, destination, container,
@@ -300,6 +305,12 @@ def main(report: Path) -> int:
     panel.fbx_euler_filter.setChecked(True)
     panel.render(pixmap)
     publish_saved = pixmap.save(str(publish_image))
+    panel.maya_output.setText("C:/temp/migrated.mb")
+    panel.roles.setCurrentRow(1)
+    publish_button = next(button for button in
+        panel.findChildren(QtWidgets.QPushButton)
+        if button.text() == "导出独立 Maya 场景")
+    publish_button.click()
     panel.face_build_document.setText("C:/temp/face-build.json")
     buttons = {button.text(): button for button in
                panel.findChildren(QtWidgets.QPushButton)}
@@ -394,6 +405,9 @@ def main(report: Path) -> int:
     panel.resize(950, 710)
     app.processEvents()
     checks = {
+        "independent_maya_export_dispatches": (
+            "publish_migrated_maya_scene", "hero",
+            Path("C:/temp/migrated.mb")) in controller.calls,
         "six_chinese_workspaces": [panel.tabs.tabText(i)
             for i in range(panel.tabs.count())]
             == ["Fit 与构建", "蒙皮", "姿态与动画", "面部", "动捕", "发布"],
