@@ -3812,8 +3812,16 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
 
     def create_skin_bind(self, plan: SkinBindPlan) -> None:
         self._require_transaction()
+        from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
+
         if self.find_name_collisions(plan.skin_name):
             raise FitSkeletonValidationError(f"Skin Bind 节点名称冲突：{plan.skin_name}")
+        mesh_shapes = self._cmds.listRelatives(
+            plan.mesh_path, shapes=True, noIntermediate=True,
+            fullPath=True, type="mesh") or []
+        if len(mesh_shapes) != 1:
+            raise FitSkeletonValidationError("Skin Bind 需要唯一可见网格")
+        topology = mesh_topology_digest(mesh_shapes[0])
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self._transaction_changed = True
@@ -3829,6 +3837,10 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
             )
             if not created or created[0] != plan.skin_name:
                 raise RuntimeError("Maya 未按计划创建 skinCluster")
+            self._cmds.addAttr(created[0], longName=TOPOLOGY_ATTRIBUTE,
+                               dataType="string")
+            self._cmds.setAttr(f"{created[0]}.{TOPOLOGY_ATTRIBUTE}",
+                               topology, type="string")
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
@@ -3837,9 +3849,12 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         if len(clusters) != 1:
             raise FitSkeletonValidationError("Skin Bind 结果节点无效")
         skin = clusters[0]
+        from .maya_mesh_topology import assert_bound_topology
         geometry = []
         for shape in self._cmds.skinCluster(skin, query=True, geometry=True) or []:
             shape_paths = self._cmds.ls(shape, long=True, type="mesh") or []
+            if len(shape_paths) == 1:
+                assert_bound_topology(self._cmds, skin, shape_paths[0])
             parents = (
                 self._cmds.listRelatives(
                     shape_paths[0],
@@ -3954,6 +3969,9 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                 bound_shapes.append(shape_paths[0])
         mesh = geometry[0] if len(geometry) == 1 else None
         bound_shape = bound_shapes[0] if mesh else None
+        if bound_shape:
+            from .maya_mesh_topology import assert_bound_topology
+            assert_bound_topology(self._cmds, skin, bound_shape)
         vertex_count = int(self._cmds.polyEvaluate(mesh, vertex=True)) if mesh else 0
         influences = []
         locked = []

@@ -22,6 +22,8 @@ class MayaDenseSkinHost(MayaBodyBuildHost):
         if len(shapes) != 1:
             raise ValueError("Skin 需要唯一网格：" + skin_name)
         shape = (c.ls(shapes[0], long=True, type="mesh") or [])[0]
+        from .maya_mesh_topology import assert_bound_topology
+        assert_bound_topology(c, skins[0], shape)
         selection = om.MSelectionList()
         selection.add(self.scene_address(skins[0]))
         skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
