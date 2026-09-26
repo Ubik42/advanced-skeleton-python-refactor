@@ -1,6 +1,7 @@
 """Replace an original public character rig while retaining its mesh and Skin."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -74,6 +75,37 @@ def _skin_item(cmds, skin: str, target_mesh: str,
         bool(cmds.getAttr(skin + ".maintainMaxInfluences")))
 
 
+@contextmanager
+def _without_undo_recording(cmds):
+    """Change Maya's namespace view without adding undo queue entries."""
+    enabled = bool(cmds.undoInfo(query=True, state=True))
+    if enabled:
+        cmds.undoInfo(stateWithoutFlush=False)
+    try:
+        yield
+    finally:
+        if enabled:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+
+def _capture_guides(cmds) -> tuple[dict, dict, dict]:
+    if not cmds.undoInfo(query=True, state=True):
+        raise ValueError("迁移原版角色需要启用 Maya 撤销")
+    for stem in ("Root", "Spine1", "Neck"):
+        values = cmds.getAttr(f"FK{stem}_M.rotate")[0]
+        if any(abs(value) > 1e-8 for value in values):
+            raise ValueError("采集驱动导向前须将躯干 FK 控制归零")
+    cmds.undoInfo(openChunk=True, chunkName="只读采集原版驱动导向")
+    try:
+        for side in ("R", "L"):
+            cmds.setAttr(f"FKIKLeg_{side}.FKIKBlend", 0.0)
+        return capture_original_guides(cmds,
+            Path(cmds.file(query=True, sceneName=True)).name)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        cmds.undo()
+
+
 class MayaOriginalSkinMigration:
     """One undoable replacement of the open original scene's character rig.
 
@@ -93,6 +125,76 @@ class MayaOriginalSkinMigration:
               target_skin: str = "AdvPy_MigratedSkin",
               on_stage=None) -> OriginalSkinMigrationResult:
         c = self._cmds
+        requested = source_skin.strip()
+        if not requested:
+            candidates = c.ls(type="skinCluster") or []
+            if len(candidates) != 1:
+                raise ValueError("请填写唯一的原版源 Skin 名称")
+            requested = candidates[0]
+        matches = c.ls(requested, type="skinCluster") or []
+        if len(matches) != 1:
+            raise ValueError("源 Skin 不存在或名称不唯一：" + requested)
+        skin = matches[0]
+        relative_before = bool(c.namespace(query=True, relativeNames=True))
+        namespace_before = c.namespaceInfo(currentNamespace=True,
+                                            absoluteName=True)
+        influences = c.skinCluster(skin, query=True, influence=True) or []
+        namespaces = {name.rsplit(":", 1)[0] if ":" in name else
+            (namespace_before.lstrip(":") if relative_before else "")
+            for name in influences}
+        if len(namespaces) != 1:
+            raise ValueError("源 Skin 的影响关节跨越多个命名空间")
+        namespace = namespaces.pop()
+        if not namespace:
+            return self._apply_scoped(source_skin=skin, volume=volume,
+                angle=angle, axial=axial, target_mesh=target_mesh,
+                target_skin=target_skin, on_stage=on_stage)
+        skin_namespace = skin.rsplit(":", 1)[0] if ":" in skin else (
+            namespace_before.lstrip(":") if relative_before else "")
+        scoped_skin = (skin.rsplit(":", 1)[-1]
+                       if skin_namespace == namespace else ":" + skin)
+        if volume is None and angle is None and axial is None:
+            try:
+                with _without_undo_recording(c):
+                    c.namespace(setNamespace=":" + namespace)
+                    c.namespace(relativeNames=True)
+                volume, angle, axial = _capture_guides(c)
+            finally:
+                with _without_undo_recording(c):
+                    c.namespace(relativeNames=relative_before)
+                    c.namespace(setNamespace=namespace_before)
+        c.undoInfo(openChunk=True, chunkName="迁移命名空间原版角色与蒙皮")
+        try:
+            c.namespace(setNamespace=":" + namespace)
+            c.namespace(relativeNames=True)
+            result = self._apply_scoped(source_skin=scoped_skin,
+                volume=volume, angle=angle, axial=axial,
+                target_mesh=target_mesh, target_skin=target_skin,
+                on_stage=on_stage, manage_transaction=False)
+        except BaseException:
+            c.namespace(relativeNames=relative_before)
+            c.namespace(setNamespace=namespace_before)
+            c.undoInfo(closeChunk=True)
+            c.undo()
+            raise
+        else:
+            c.namespace(relativeNames=relative_before)
+            c.namespace(setNamespace=namespace_before)
+            c.undoInfo(closeChunk=True)
+        def qualify(name: str) -> str:
+            return namespace + ":" + name
+        return OriginalSkinMigrationResult(qualify(result.mesh),
+            qualify(result.skin), result.vertices, result.influences,
+            result.body_joints, result.animation_curves,
+            tuple((qualify(mesh), qualify(skin)) for mesh, skin in
+                  result.migrated_skins))
+
+    def _apply_scoped(self, *, source_skin: str, volume: dict | None,
+                      angle: dict | None, axial: dict | None,
+                      target_mesh: str, target_skin: str,
+                      on_stage, manage_transaction: bool = True
+                      ) -> OriginalSkinMigrationResult:
+        c = self._cmds
         source_skin = source_skin.strip()
         if not source_skin:
             candidates = c.ls(type="skinCluster") or []
@@ -104,21 +206,7 @@ class MayaOriginalSkinMigration:
             raise ValueError("源 Skin 不存在或名称不唯一：" + source_skin)
         source_skin = matches[0]
         if volume is None and angle is None and axial is None:
-            if not c.undoInfo(query=True, state=True):
-                raise ValueError("迁移原版角色需要启用 Maya 撤销")
-            for stem in ("Root", "Spine1", "Neck"):
-                values = c.getAttr(f"FK{stem}_M.rotate")[0]
-                if any(abs(value) > 1e-8 for value in values):
-                    raise ValueError("采集驱动导向前须将躯干 FK 控制归零")
-            c.undoInfo(openChunk=True, chunkName="只读采集原版驱动导向")
-            try:
-                for side in ("R", "L"):
-                    c.setAttr(f"FKIKLeg_{side}.FKIKBlend", 0.0)
-                volume, angle, axial = capture_original_guides(c,
-                    Path(c.file(query=True, sceneName=True)).name)
-            finally:
-                c.undoInfo(closeChunk=True)
-                c.undo()
+            volume, angle, axial = _capture_guides(c)
         elif any(guide is None for guide in (volume, angle, axial)):
             raise ValueError("须同时提供三份驱动导向，或由当前场景自动采集")
         source = MayaDenseSkinHost().capture_dense_skin(source_skin)
@@ -186,7 +274,8 @@ class MayaOriginalSkinMigration:
                            (axial, "nodes")):
             if key not in guide:
                 raise ValueError("驱动导向缺少数据：" + key)
-        c.undoInfo(openChunk=True, chunkName="迁移原版角色与完整蒙皮")
+        if manage_transaction:
+            c.undoInfo(openChunk=True, chunkName="迁移原版角色与完整蒙皮")
         try:
             for side in ("R", "L"):
                 plug = f"FKIKLeg_{side}.FKIKBlend"
@@ -250,11 +339,13 @@ class MayaOriginalSkinMigration:
             if on_stage:
                 on_stage("weights-copied")
         except BaseException:
-            c.undoInfo(closeChunk=True)
-            c.undo()
+            if manage_transaction:
+                c.undoInfo(closeChunk=True)
+                c.undo()
             raise
         else:
-            c.undoInfo(closeChunk=True)
+            if manage_transaction:
+                c.undoInfo(closeChunk=True)
         return OriginalSkinMigrationResult(copies[0], target_skin,
             results[0].vertex_count, len(results[0].influence_names),
             len(built.registration.body), len(animation_clones),
