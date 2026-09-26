@@ -37,6 +37,11 @@ def main() -> None:
     assert panel.detail.tabs.currentIndex() == 0
     assert not panel.detail.tabs.tabBar().isVisible()
     assert panel.detail.windowTitle().endswith("Body / Fit")
+    panel.section_buttons[("Body", "Build")].click()
+    panel.operation_buttons[("Body", "Build",
+                             "迁移当前原版角色与蒙皮")].click()
+    assert panel.detail.tabs.currentIndex() == 0
+    assert panel.detail.windowTitle().endswith("Body / Build")
     panel.section_buttons[("Face", None)].click()
     panel.section_buttons[("Face", "Build")].click()
     panel.operation_buttons[("Face", "Build", "构建面部控制")].click()

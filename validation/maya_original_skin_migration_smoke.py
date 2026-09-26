@@ -29,6 +29,7 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
         from adv_py.adapters.maya_dense_skin import MayaDenseSkinHost
         from adv_py.adapters.maya_original_skin_migration import (
             MayaOriginalSkinMigration)
+        from adv_py.product.maya_panel_controller import MayaPanelController
 
         volume = json.loads(volume_file.read_text(encoding="utf-8"))
         angle = json.loads(angle_file.read_text(encoding="utf-8"))
@@ -74,8 +75,7 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
                 fault_results[stage] = False
             if not fault_results[stage]:
                 raise AssertionError("整链故障回滚失败：" + stage)
-        result = operation.apply(source_skin=source_skin, volume=volume,
-                                 angle=angle, axial=axial)
+        result = MayaPanelController().original_skin_migrate(":")
         migrated = MayaDenseSkinHost().capture_dense_skin(result.skin)
         rest_error = max(abs(a - b) for source, target in zip(
             source_points, _points(result.mesh)) for a, b in zip(source,

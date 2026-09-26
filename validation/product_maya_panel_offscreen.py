@@ -35,6 +35,10 @@ class FakeController:
         self.built = True
         return PanelCharacter(namespace, True, 30, 157)
 
+    def original_skin_migrate(self, namespace, source_skin):
+        self.calls.append(("original_skin_migrate", namespace, source_skin))
+        return SimpleNamespace(vertices=18151, influences=121, body_joints=74)
+
     def fit_export(self, namespace, destination, container, *,
                    external_compatibility):
         self.calls.append(("fit_export", namespace, destination, container,
@@ -185,6 +189,13 @@ def main(report: Path) -> int:
     panel = create_panel(controller)
     panel.show()
     app.processEvents()
+    panel.roles.setCurrentRow(0)
+    migration_button = next(button for button in panel.findChildren(
+        QtWidgets.QPushButton)
+        if button.text() == "迁移当前原版角色与蒙皮")
+    migration_button.click()
+    assert ("original_skin_migrate", ":", "") in controller.calls
+    assert "18151 个顶点" in panel.status.toPlainText()
     fit_image = report.with_name("maya-panel-fit.png")
     skin_image = report.with_name("maya-panel-skin.png")
     skin_transfer_image = report.with_name("maya-panel-skin-transfer.png")

@@ -24,6 +24,7 @@ from .maya_body import MayaBodyBuildHost
 from .maya_dense_skin import MayaDenseSkinHost
 from .maya_finger_mid import MayaFingerMidHost
 from .maya_limb_part import MayaLimbPartHost
+from .maya_original_guide_capture import capture_original_guides
 from .maya_root_volume import MayaRootVolumeHost
 from .maya_sdk_volume import MayaSdkVolumeHost
 from .maya_volume_half_parent import MayaVolumeHalfParentHost
@@ -41,8 +42,8 @@ class OriginalSkinMigrationResult:
 class MayaOriginalSkinMigration:
     """One undoable replacement of the open original scene's character rig.
 
-    The three guide documents must have been captured from this same source
-    scene before its rig is removed. This operation never opens another file.
+    The guide can be captured from the current scene before its rig is removed.
+    This operation never opens another file.
     """
 
     def __init__(self, cmds=None):
@@ -51,11 +52,36 @@ class MayaOriginalSkinMigration:
             cmds = maya_cmds
         self._cmds = cmds
 
-    def apply(self, *, source_skin: str, volume: dict, angle: dict,
-              axial: dict, target_mesh: str = "AdvPy_MigratedMesh",
+    def apply(self, *, source_skin: str = "", volume: dict | None = None,
+              angle: dict | None = None, axial: dict | None = None,
+              target_mesh: str = "AdvPy_MigratedMesh",
               target_skin: str = "AdvPy_MigratedSkin",
               on_stage=None) -> OriginalSkinMigrationResult:
         c = self._cmds
+        source_skin = source_skin.strip()
+        if not source_skin:
+            candidates = c.ls(type="skinCluster") or []
+            if len(candidates) != 1:
+                raise ValueError("请填写唯一的原版源 Skin 名称")
+            source_skin = candidates[0]
+        if volume is None and angle is None and axial is None:
+            if not c.undoInfo(query=True, state=True):
+                raise ValueError("迁移原版角色需要启用 Maya 撤销")
+            for stem in ("Root", "Spine1", "Neck"):
+                values = c.getAttr(f"FK{stem}_M.rotate")[0]
+                if any(abs(value) > 1e-8 for value in values):
+                    raise ValueError("采集驱动导向前须将躯干 FK 控制归零")
+            c.undoInfo(openChunk=True, chunkName="只读采集原版驱动导向")
+            try:
+                for side in ("R", "L"):
+                    c.setAttr(f"FKIKLeg_{side}.FKIKBlend", 0.0)
+                volume, angle, axial = capture_original_guides(c,
+                    Path(c.file(query=True, sceneName=True)).name)
+            finally:
+                c.undoInfo(closeChunk=True)
+                c.undo()
+        elif any(guide is None for guide in (volume, angle, axial)):
+            raise ValueError("须同时提供三份驱动导向，或由当前场景自动采集")
         source = MayaDenseSkinHost().capture_dense_skin(source_skin)
         if len(source.influence_names) != 121:
             raise ValueError("公开角色源 Skin 必须有 121 个影响关节")

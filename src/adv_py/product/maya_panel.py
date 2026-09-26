@@ -249,6 +249,17 @@ def create_panel(controller: MayaPanelController | None = None):
                                       primary=True))
             stack.addWidget(group)
 
+            self.original_source_skin = QtWidgets.QLineEdit()
+            self.original_source_skin.setPlaceholderText(
+                "留空时自动识别场景中唯一的 Skin")
+            group, form = self._group("原版角色迁移", [
+                ("原版 Skin", self.original_source_skin)])
+            form.addRow(QtWidgets.QLabel(
+                "从当前原版 Fit 重建角色，并将原网格的完整权重迁移到新绑定。"))
+            form.addRow(self._button("迁移当前原版角色与蒙皮",
+                                     self._migrate_original_skin))
+            stack.addWidget(group)
+
             self.rebuild_namespace = QtWidgets.QLineEdit("CharacterRebuildStage")
             self.rebuild_extensions = QtWidgets.QPlainTextEdit()
             self.rebuild_extensions.setPlaceholderText(
@@ -973,6 +984,13 @@ def create_panel(controller: MayaPanelController | None = None):
                 head_aim=self.head_aim.isChecked(),
                 infer_missing_labels=self.infer_missing_fit_labels.isChecked())
             return f"角色已登记：{result.joint_count} 个关节、{result.channel_count} 个通道"
+
+        def _migrate_original_skin(self):
+            result = self.controller.original_skin_migrate(
+                self._namespace(), self.original_source_skin.text())
+            return (f"已迁移 {result.vertices} 个顶点、"
+                    f"{result.influences} 个影响关节；"
+                    f"登记 {result.body_joints} 个 Body 关节")
 
         def _rebuild_character(self):
             extensions = tuple(line.strip() for line in
