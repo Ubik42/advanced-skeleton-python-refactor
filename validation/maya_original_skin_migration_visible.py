@@ -26,9 +26,11 @@ def _points(mesh: str):
                  for point in om.MFnMesh(dag).getPoints(om.MSpace.kWorld))
 
 
-def schedule(scene: str, output_directory: str) -> None:
+def schedule(scene: str, output_directory: str,
+             namespace: str = ":") -> None:
     output = Path(output_directory)
     output.mkdir(parents=True, exist_ok=True)
+    prefix = "" if namespace == ":" else namespace.strip(":") + ":"
 
     def run() -> None:
         data = {"scene": Path(scene).name}
@@ -40,9 +42,9 @@ def schedule(scene: str, output_directory: str) -> None:
                             geometry=True) or [])[0]
             source_mesh = (cmds.listRelatives(source_shape, parent=True,
                                               fullPath=True) or [])[0]
-            cmds.setAttr("FKRoot_M.rotateY", 20.0)
+            cmds.setAttr(prefix + "FKRoot_M.rotateY", 20.0)
             expected = _points(source_mesh)
-            cmds.setAttr("FKRoot_M.rotateY", 0.0)
+            cmds.setAttr(prefix + "FKRoot_M.rotateY", 0.0)
 
             panel = create_adv_panel()
             panel.show()
@@ -52,6 +54,12 @@ def schedule(scene: str, output_directory: str) -> None:
                 "Body", "Build", "迁移当前原版角色与蒙皮")]
             button.click()
             detail = panel.detail
+            role = next((detail.roles.item(i) for i in
+                range(detail.roles.count()) if detail.roles.item(i).data(
+                    QtCore.Qt.UserRole) == namespace), None)
+            if role is None:
+                raise AssertionError("面板没有列出来源角色命名空间：" + namespace)
+            detail.roles.setCurrentItem(role)
             QtWidgets.QApplication.processEvents()
             data["entry_visible"] = (panel.isVisible()
                 and detail.isVisible() and button.isVisible())
@@ -92,21 +100,24 @@ def schedule(scene: str, output_directory: str) -> None:
                                    for i in range(detail.roles.count())]
             detail.grab().save(str(output / "maya-visible-migration-after.png"))
             panel.grab().save(str(output / "maya-visible-migration-navigation.png"))
-            if not cmds.objExists("AdvPy_MigratedSkin"):
+            target_skin = prefix + "AdvPy_MigratedSkin"
+            target_mesh = prefix + "AdvPy_MigratedMesh"
+            if not cmds.objExists(target_skin):
                 raise AssertionError("图形入口没有生成目标 Skin：" + data["status"])
 
             captured = MayaDenseSkinHost().capture_dense_skin(
-                "AdvPy_MigratedSkin")
+                target_skin)
             data["vertices"] = captured.vertex_count
             data["influences"] = len(captured.influence_names)
             data["body_joints"] = len(ResolveBodyCharacter(
-                MayaBodyBuildHost()).execute().body)
-            cmds.setAttr("AdvPy_TorsoRoot_MFK.rotateY", 20.0)
-            posed = _points("AdvPy_MigratedMesh")
+                MayaBodyBuildHost(namespace=None if namespace == ":"
+                    else namespace)).execute().body)
+            cmds.setAttr(prefix + "AdvPy_TorsoRoot_MFK.rotateY", 20.0)
+            posed = _points(target_mesh)
             data["root_y20_world_point_error"] = max(abs(a - b)
                 for source, target in zip(expected, posed)
                 for a, b in zip(source, target))
-            cmds.setAttr("AdvPy_TorsoRoot_MFK.rotateY", 0.0)
+            cmds.setAttr(prefix + "AdvPy_TorsoRoot_MFK.rotateY", 0.0)
             data["passed"] = (data["entry_visible"]
                 and "已迁移" in data["status"]
                 and data["vertices"] == 18151
