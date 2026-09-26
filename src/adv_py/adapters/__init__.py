@@ -18,6 +18,7 @@ from .maya_finger_mid import MayaFingerMidHost
 from .maya_limb_part import MayaLimbPartHost
 from .maya_root_volume import MayaRootVolumeHost
 from .maya_sdk_volume import MayaSdkVolumeHost
+from .maya_volume_half_parent import MayaVolumeHalfParentHost
 from .maya_fit import MayaFitJointHost, MayaJointLabelHost
 from .maya_mocap import (
     MayaMocapConnectionHost,
@@ -47,6 +48,7 @@ __all__ = [
     "MayaLimbPartHost",
     "MayaRootVolumeHost",
     "MayaSdkVolumeHost",
+    "MayaVolumeHalfParentHost",
     "MayaFitJointHost",
     "MayaJointLabelHost",
     "MayaMocapSourceReader",

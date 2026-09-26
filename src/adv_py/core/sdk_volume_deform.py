@@ -12,4 +12,3 @@ class SdkVolumeSpec:
     parent: str
     driver_name: str
     guide: Mapping[str, object]
-

@@ -110,6 +110,10 @@ def main(scene: Path, report: Path) -> None:
             target_parent = (cmds.listRelatives(target, parent=True,
                 fullPath=False) or [None])[0]
             target_chain = chain(target)
+            graph = source_nodes(target_chain)
+            external = sorted({plug for node in graph.values()
+                for plug in node["sources"]
+                if plug.split(".", 1)[0] not in graph})
             rows.append({
                 "name": name, "parent": parent, "target": target,
                 "parent_world_matrix": cmds.xform(parent, query=True,
@@ -140,7 +144,60 @@ def main(scene: Path, report: Path) -> None:
                 "target_local_rotate": cmds.getAttr(target + ".rotate")[0],
                 "target_inputs": inputs(target),
                 "target_chain": target_chain,
-                "sdk_sources": source_nodes(target_chain),
+                "sdk_sources": graph,
+                "external_drivers": {plug: {
+                    "value": cmds.getAttr(plug),
+                    "source": cmds.listConnections(plug, source=True,
+                        destination=False, plugs=True) or []}
+                    for plug in external},
+                "parent_node": {"type": cmds.nodeType(parent),
+                    "world_matrix": cmds.xform(parent, query=True,
+                        worldSpace=True, matrix=True),
+                    "rotate_order": cmds.getAttr(parent + ".rotateOrder"),
+                    "parent_world_matrix": cmds.xform(
+                        (cmds.listRelatives(parent, parent=True,
+                            fullPath=False) or [None])[0], query=True,
+                        worldSpace=True, matrix=True),
+                    "translate": cmds.getAttr(parent + ".translate")[0],
+                    "rotate": cmds.getAttr(parent + ".rotate")[0],
+                    "joint_orient": (cmds.getAttr(parent + ".jointOrient")[0]
+                        if cmds.nodeType(parent) == "joint" else None),
+                    "scale": cmds.getAttr(parent + ".scale")[0],
+                    "inputs": inputs(parent),
+                    "constraints": [{"name": constraint,
+                        "type": kind,
+                        "targets": (cmds.pointConstraint(constraint,
+                            query=True, targetList=True) if kind == "pointConstraint"
+                            else cmds.orientConstraint(constraint,
+                                query=True, targetList=True)) or [],
+                        "weights": (cmds.pointConstraint(constraint,
+                            query=True, weightAliasList=True) if kind == "pointConstraint"
+                            else cmds.orientConstraint(constraint,
+                                query=True, weightAliasList=True)) or [],
+                        "weight_values": [cmds.getAttr(constraint + "." + alias)
+                            for alias in ((cmds.pointConstraint(constraint,
+                                query=True, weightAliasList=True)
+                                if kind == "pointConstraint" else
+                                cmds.orientConstraint(constraint, query=True,
+                                    weightAliasList=True)) or [])],
+                        "offset": cmds.getAttr(constraint + ".offset")[0],
+                        "interp_type": (cmds.getAttr(constraint + ".interpType")
+                            if kind == "orientConstraint" else None)}
+                        for kind in ("pointConstraint", "orientConstraint")
+                        for constraint in sorted(set(cmds.listConnections(parent,
+                            source=True, destination=False, type=kind) or []))]},
+                "parent_zero": ({"name": parent.removesuffix("_50") + "_00",
+                    "parent": (cmds.listRelatives(
+                        parent.removesuffix("_50") + "_00", parent=True,
+                        fullPath=False) or [None])[0],
+                    "translate": cmds.getAttr(
+                        parent.removesuffix("_50") + "_00.translate")[0],
+                    "rotate": cmds.getAttr(
+                        parent.removesuffix("_50") + "_00.rotate")[0],
+                    "scale": cmds.getAttr(
+                        parent.removesuffix("_50") + "_00.scale")[0]}
+                    if parent.endswith("_50") and cmds.objExists(
+                        parent.removesuffix("_50") + "_00") else None),
                 "parent_inputs": inputs(parent) if parent else None,
                 "parent_parent": (cmds.listRelatives(parent, parent=True,
                     fullPath=False) or [None])[0] if parent else None,

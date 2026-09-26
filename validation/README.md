@@ -1,5 +1,13 @@
 # 后台宿主验证
 
+四肢 `_50` 体积父节点及肘／膝 A/B 加权关节对照：先导出原版驱动导向，再分别运行以下两个用例。`_50` 用例覆盖双侧六部位共 12 个中间父节点的静止、FK 动作、来源父链核对、故障回滚和重开。肘／膝用例在同一父链上构建 8 个带 SDK 曲线的加权关节，以肘 `80°`、膝 `-110°` 对比原版动作；两者均检查撤销／重做和 Body 登记。
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_original_volume_joint_graph.py 'C:\path\to\sam.mb' validation/results/maya2024-original-volume-joint-graph.json
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_original_volume_half_parent_smoke.py 'C:\path\to\sam.mb' validation/results/maya2024-original-volume-joint-graph.json validation/results/maya2024-original-volume-half-parent.json
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_original_bend_volume_smoke.py 'C:\path\to\sam.mb' validation/results/maya2024-original-volume-joint-graph.json validation/results/maya2024-original-bend-volume.json
+```
+
 膝部 C／D 体积关节对照：先导出原版驱动导向，再运行 `maya_original_knee_volume_smoke.py`。脚本重建四肢 `Part` 链和双侧四个膝部辅助关节，用 FK 膝控制器 `-110°` 动作比较原版世界矩阵，并检查父关节姿态预检、事务回滚、撤销／重做、保存重开和角色登记。
 
 ```powershell
