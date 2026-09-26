@@ -19,6 +19,10 @@ class LimbPartSegmentSpec:
     translation_name: str
     first_translation_name: str
     scale_blend_name: str
+    fatness_control: str
+    fatness_attribute: str
+    fatness_add_name: str
+    volume_source: str
     twist_source: str
     twist_compose_name: str
     twist_decompose_name: str
@@ -55,6 +59,8 @@ def plan_limb_parts(body: BodySkeletonSnapshot) -> tuple[LimbPartSegmentSpec, ..
                 raise ValueError("四肢分段需要直接父子 Body 端点："
                                  f"{stem}_{side} → {end_stem}_{side}")
             prefix = f"AdvPy_{stem}Part_{side}"
+            ik_limb = "Arm" if stem in ("Shoulder", "Elbow") else "Leg"
+            fatness_attribute = "Fatness2" if stem == "Elbow" else "Fatness1"
             up_label = {"Elbow": "LowerArm", "Hip": "UpperLeg"}.get(stem)
             name1, name2 = (f"{stem}Part{index}_{side}" for index in (1, 2))
             path1 = start.path + "|" + name1
@@ -65,6 +71,9 @@ def plan_limb_parts(body: BodySkeletonSnapshot) -> tuple[LimbPartSegmentSpec, ..
                 path1, path1 + "|" + name2, name1, name2,
                 prefix + "TranslateThird", prefix + "TranslateFirst",
                 prefix + "ScaleBlend",
+                f"AdvPy_{ik_limb}IK_{side}", fatness_attribute,
+                prefix + "FatnessAdd",
+                f"AdvPy_{ik_limb}VolumeBlend_{side}.outputR",
                 start.path + ".rotate", prefix + "TwistCompose",
                 prefix + "TwistDecompose", prefix + "TwistProject",
                 (f"AdvPy_{up_label}TwistProject_{side}.outputRotateX"

@@ -29,6 +29,7 @@ class BuildLimbPartDeform:
                          spec.translation_name,
                          spec.first_translation_name,
                          spec.scale_blend_name,
+                         spec.fatness_add_name,
                          spec.twist_compose_name, spec.twist_decompose_name,
                          spec.twist_project_name,
                          spec.twist1_name, spec.twist2_name,

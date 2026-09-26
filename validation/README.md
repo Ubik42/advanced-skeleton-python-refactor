@@ -1,6 +1,6 @@
 # 后台宿主验证
 
-公开示例角色的四肢分段对照：`maya_original_limb_part_smoke.py` 读取本机 `sam.mb`，禁用脚本节点执行，比较 12 个有权重的 `Part1/Part2` 关节在静止、FK 单轴与混合旋转、FK 非等比缩放、可调扭转、全 IK 位移中的世界矩阵；同时检查一次撤销／重做、保存重开和角色登记。原版 FK／IK 数值 `10` 对应本项目数值 `1`。结果写入忽略目录，不提交原资产或本机路径。
+公开示例角色的四肢分段对照：`maya_original_limb_part_smoke.py` 读取本机 `sam.mb`，禁用脚本节点执行，比较 12 个有权重的 `Part1/Part2` 关节在静止、FK 单轴与混合旋转、FK 非等比缩放、可调扭转、全 IK 位移、Fatness 和体积保持中的结果；同时检查中途故障回滚、一次撤销／重做、保存重开和角色登记。原版 FK／IK 数值 `10` 对应本项目数值 `1`。结果写入忽略目录，不提交原资产或本机路径。
 
 ```powershell
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_original_limb_part_smoke.py 'C:\path\to\sam.mb' validation/results/maya2024-original-limb-part.json

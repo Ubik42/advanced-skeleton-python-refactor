@@ -44,6 +44,18 @@ class LimbPartPlanTests(unittest.TestCase):
         self.assertEqual(shoulder.part1, shoulder.start + "|ShoulderPart1_R")
         self.assertEqual(shoulder.part2, shoulder.part1 + "|ShoulderPart2_R")
         self.assertEqual(shoulder.twist_source, shoulder.start + ".rotate")
+        self.assertEqual(shoulder.fatness_control, "AdvPy_ArmIK_R")
+        self.assertEqual(shoulder.fatness_attribute, "Fatness1")
+        self.assertEqual(shoulder.volume_source,
+                         "AdvPy_ArmVolumeBlend_R.outputR")
+        elbow = specs[1]
+        self.assertEqual(elbow.fatness_attribute, "Fatness2")
+        self.assertEqual(elbow.up_twist_source,
+                         "AdvPy_LowerArmTwistProject_R.outputRotateX")
+        hip = specs[2]
+        self.assertEqual(hip.fatness_control, "AdvPy_LegIK_R")
+        self.assertEqual(hip.volume_source,
+                         "AdvPy_LegVolumeBlend_R.outputR")
 
     def test_rejects_missing_endpoint(self):
         with self.assertRaisesRegex(ValueError, "Hip_L"):
