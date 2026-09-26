@@ -281,8 +281,6 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         matches = c.ls(mesh_path, long=True, type="transform") or []
         if len(matches) != 1 or matches[0] != mesh_path:
             raise FitSkeletonValidationError("网格路径不存在或不唯一：" + mesh_path)
-        if c.referenceQuery(mesh_path, isNodeReferenced=True):
-            raise FitSkeletonValidationError("标准 Fit 绑定要求可写的本地网格")
         shapes = c.listRelatives(mesh_path, shapes=True,
             noIntermediate=True, fullPath=True, type="mesh") or []
         if len(shapes) != 1:

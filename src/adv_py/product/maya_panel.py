@@ -280,8 +280,11 @@ def create_panel(controller: MayaPanelController | None = None):
                 "按关节名补全缺失标签（原版 Fit 兼容）")
             self.build_meshes = QtWidgets.QPlainTextEdit()
             self.build_meshes.setPlaceholderText(
-                "每行一个未绑定的本地网格完整路径；留空时只构建 Rig")
+                "每行一个未绑定网格的完整路径；留空时可使用 Preparation / Skin")
             self.build_meshes.setMaximumHeight(76)
+            self.build_use_preparation_skin = QtWidgets.QCheckBox(
+                "留空时使用 Preparation / Skin 记录")
+            self.build_use_preparation_skin.setChecked(True)
             self.build_max_influences = QtWidgets.QSpinBox()
             self.build_max_influences.setRange(1, 256)
             self.build_max_influences.setValue(4)
@@ -289,6 +292,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("脊柱配置", self.spine_segments), ("附加控制", self.head_aim),
                 ("Fit 标签", self.infer_missing_fit_labels),
                 ("待绑定网格", self.build_meshes),
+                ("准备输入", self.build_use_preparation_skin),
                 ("最大影响数", self.build_max_influences)])
             form.addRow(self._button("构建并登记角色", self._build_character,
                                       primary=True))
@@ -1090,10 +1094,17 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._path(self.animation_import_document))
             return f"已应用 {count} 帧"
 
-        def _build_character(self):
-            value = self.spine_segments.value()
+        def _build_mesh_paths(self):
             meshes = tuple(line.strip() for line in
                 self.build_meshes.toPlainText().splitlines() if line.strip())
+            if not meshes and self.build_use_preparation_skin.isChecked():
+                meshes = self.controller.preparation_read_objects(
+                    self._namespace(), "Skin")
+            return meshes
+
+        def _build_character(self):
+            value = self.spine_segments.value()
+            meshes = self._build_mesh_paths()
             result = self.controller.body_build(self._namespace(),
                 self.fit_container.text().strip(),
                 spine_segments=value if value else None,

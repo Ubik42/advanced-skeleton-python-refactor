@@ -18,6 +18,13 @@ Preparation / Rig 的 Skin／All／左右眼对象记录：`maya_preparation_obj
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_preparation_objects_smoke.py
 ```
 
+引用模型到完整 Body：`maya_preparation_to_skinned_body_smoke.py` 从公开 Sam 静态场景导出主体和配件为独立模型引用，记录 Preparation/Skin，再从 41 关节 Fit 构建双 Skin 角色。覆盖第二套 Skin 后故障回滚、控制器驱动网格、一次构建 Undo／Redo、保存重开、1／5 帧含网格 FBX 发布与重导入，且引用源文件哈希保持不变。
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_standard_fit_skinned_build_smoke.py 'C:\path\to\sam.mb' validation/results/maya2024-standard-fit-visible-source.mb --prepare
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_preparation_to_skinned_body_smoke.py validation/results/maya2024-standard-fit-visible-source.mb
+```
+
 四肢 `_50` 体积父节点及肘／膝 A/B 加权关节对照：先导出原版驱动导向，再分别运行以下两个用例。`_50` 用例覆盖双侧六部位共 12 个中间父节点的静止、FK 动作、来源父链核对、故障回滚和重开。肘／膝用例在同一父链上构建 8 个带 SDK 曲线的加权关节，以肘 `80°`、膝 `-110°` 对比原版动作；两者均检查撤销／重做和 Body 登记。
 
 ```powershell

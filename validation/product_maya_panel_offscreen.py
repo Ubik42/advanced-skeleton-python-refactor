@@ -231,6 +231,8 @@ def main(report: Path) -> int:
     assert "空白绑定场景" in panel._new_preparation_scene()
     assert "1 件模型" in panel._record_preparation_objects("Skin")
     assert "1 件模型" in panel._reselect_preparation_objects("Skin")
+    assert panel._build_mesh_paths() == ("|model:BodyMesh",)
+    panel.build_use_preparation_skin.setChecked(False)
     panel.show()
     app.processEvents()
     panel.roles.setCurrentRow(0)
@@ -555,6 +557,15 @@ def main(report: Path) -> int:
             and animation_saved and animation_edit_saved and animation_narrow_saved
             and face_saved and face_library_saved and mocap_saved and publish_saved,
     }
+    panel.roles.setCurrentRow(0)
+    panel.build_meshes.clear()
+    panel.build_max_influences.setValue(4)
+    panel.build_use_preparation_skin.setChecked(True)
+    panel.infer_missing_fit_labels.setChecked(True)
+    message = panel._build_character()
+    checks["preparation_skin_dispatches_build"] = (
+        "body_build", ":", "FitSkeleton", None, False, True,
+        ("|model:BodyMesh",), 4) in controller.calls and "1 套 Skin" in message
     payload = {**checks, "status": "passed" if all(checks.values()) else "failed",
                "image_size": [panel.width(), panel.height()],
                "animation_narrow_horizontal_overflow": animation_narrow_horizontal_overflow,
