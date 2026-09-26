@@ -119,13 +119,31 @@ class MayaOriginalSkinMigration:
             cmds = maya_cmds
         self._cmds = cmds
 
-    def apply(self, *, source_skin: str = "", volume: dict | None = None,
+    def apply(self, *, namespace: str = ":", source_skin: str = "",
+              volume: dict | None = None,
               angle: dict | None = None, axial: dict | None = None,
               target_mesh: str = "AdvPy_MigratedMesh",
               target_skin: str = "AdvPy_MigratedSkin",
               on_stage=None) -> OriginalSkinMigrationResult:
         c = self._cmds
         requested = source_skin.strip()
+        if namespace != ":":
+            if not isinstance(namespace, str) or not namespace.strip(":"):
+                raise ValueError("请选择角色命名空间")
+            scope = namespace.strip(":")
+            if requested:
+                if ":" in requested:
+                    if requested.rsplit(":", 1)[0].lstrip(":") != scope:
+                        raise ValueError("源 Skin 不属于所选角色命名空间")
+                else:
+                    requested = f"{scope}:{requested}"
+            else:
+                candidates = [skin for skin in c.ls(
+                    type="skinCluster") or [] if ":" in skin
+                    and skin.rsplit(":", 1)[0].lstrip(":") == scope]
+                if len(candidates) != 1:
+                    raise ValueError("所选命名空间内须有唯一的原版源 Skin")
+                requested = candidates[0]
         if not requested:
             candidates = c.ls(type="skinCluster") or []
             if len(candidates) != 1:

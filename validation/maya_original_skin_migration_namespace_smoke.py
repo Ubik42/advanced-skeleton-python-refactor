@@ -28,6 +28,7 @@ def main(scene: Path, report: Path) -> int:
         from adv_py.adapters.maya_dense_skin import MayaDenseSkinHost
         from adv_py.adapters.maya_original_skin_migration import (
             MayaOriginalSkinMigration)
+        from adv_py.product.maya_panel_controller import MayaPanelController
 
         cmds.file(new=True, force=True)
         cmds.file(str(scene.resolve()), i=True, namespace="Sam",
@@ -66,7 +67,7 @@ def main(scene: Path, report: Path) -> int:
         if not fault_rolled_back:
             raise AssertionError("命名空间迁移故障未整体回滚")
 
-        result = operation.apply(source_skin=skin)
+        result = MayaPanelController().original_skin_migrate("Sam")
         target = MayaDenseSkinHost().capture_dense_skin(result.skin)
         scoped_names = all(name.startswith("Sam:") for name in
             (result.mesh, result.skin))

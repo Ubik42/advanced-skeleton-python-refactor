@@ -217,13 +217,11 @@ class MayaPanelController:
     def original_skin_migrate(self, namespace: str,
                               source_skin: str = ""):
         """Rebuild the open original character and retain its complete Skin."""
-        if namespace != ":":
-            raise ValueError("原版角色迁移目前只支持无命名空间场景")
         from adv_py.adapters.maya_original_skin_migration import (
             MayaOriginalSkinMigration)
 
         return MayaOriginalSkinMigration().apply(
-            source_skin=source_skin)
+            namespace=namespace, source_skin=source_skin)
 
     def body_rebuild(self, namespace: str, replacement: str,
                      extensions: tuple[str, ...] = (), *,
