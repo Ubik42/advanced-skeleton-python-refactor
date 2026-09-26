@@ -746,6 +746,7 @@ from .control_orientation import (
     ControlOrientationState,
     ControlOrientationValidationError,
     plan_control_orientation_axis,
+    plan_control_orientation_world,
     plan_custom_control_orientations,
 )
 
@@ -757,6 +758,7 @@ __all__ = [
     "ControlOrientationState",
     "ControlOrientationValidationError",
     "plan_control_orientation_axis",
+    "plan_control_orientation_world",
     "plan_custom_control_orientations",
     "ControlCurveAutoScaleChange",
     "ControlCurveAutoScaleMetric",

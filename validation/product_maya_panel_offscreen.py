@@ -92,6 +92,12 @@ class FakeController:
                            mirrored_behavior))
         return len(controls)
 
+    def control_orient_world(self, namespace, controls,
+                             curve_unaffected=False, mirror=False):
+        self.calls.append(("control_orient_world", namespace, controls,
+                           curve_unaffected, mirror))
+        return len(controls)
+
     def control_orient_custom_detach(self, namespace):
         self.calls.append(("control_orient_custom_detach", namespace))
         return ("|PreviewA", "|PreviewB")
@@ -292,6 +298,7 @@ def main(report: Path) -> int:
     panel.control_orient_secondary.setCurrentIndex(0)
     panel.control_orient_curve_unaffected.setChecked(True)
     buttons["设置控制器局部轴"].click()
+    buttons["对齐世界坐标轴"].click()
     buttons["分离全部控制器"].click()
     buttons["重新附着全部控制器"].click()
     app.processEvents()
@@ -388,6 +395,10 @@ def main(report: Path) -> int:
         "control_orient_axis_dispatches":
             ("control_orient_axis", "hero", ("|hero:ShoulderFK_R",),
              "Z", "X", True, True, True) in controller.calls,
+        "control_orient_world_dispatches":
+            ("control_orient_world", "hero", ("|hero:ShoulderFK_R",),
+             True, True) in controller.calls
+            and not panel.control_orient_mirrored_behavior.isChecked(),
         "control_orient_custom_dispatches":
             ("control_orient_custom_detach", "hero") in controller.calls
             and ("control_orient_custom_attach", "hero") in controller.calls,

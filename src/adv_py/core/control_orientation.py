@@ -207,3 +207,31 @@ def plan_control_orientation_axis(
                 curve_unaffected, mirror, mirrored_behavior)))
     return ControlOrientationPlan(primary, secondary, curve_unaffected,
                                   mirror, mirrored_behavior, tuple(changes))
+
+
+def plan_control_orientation_world(
+    states: tuple[ControlOrientationState, ...],
+    curve_unaffected: bool = False,
+    mirror: bool = False,
+) -> ControlOrientationPlan:
+    """Align local XYZ to world XYZ while retaining position and axis lengths."""
+    if not states or len({state.control for state in states}) != len(states):
+        raise ControlOrientationValidationError("至少需要一个且不能重复的控制器")
+    if not isinstance(curve_unaffected, bool) or not isinstance(mirror, bool):
+        raise ControlOrientationValidationError("控制器方向选项必须为布尔值")
+    changes = []
+    for state in states:
+        lengths = tuple(_normal(
+            state.world_matrix[index * 4:index * 4 + 3])[1]
+            for index in range(3))
+        target = (lengths[0], 0., 0., 0.,
+                  0., lengths[1], 0., 0.,
+                  0., 0., lengths[2], 0.,
+                  *state.world_matrix[12:15], 1.)
+        changes.append(ControlOrientationChange(
+            state, ControlOrientationState(
+                state.control, target, ControlAxis.X, ControlAxis.Y,
+                curve_unaffected, mirror, False)))
+    return ControlOrientationPlan(
+        ControlAxis.X, ControlAxis.Y, curve_unaffected, mirror, False,
+        tuple(changes))

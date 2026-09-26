@@ -42,7 +42,8 @@ def main(report: Path) -> int:
             BuildSyntheticBodySourceFit, CreateFitSkeleton,
             ResolveBodyCharacter,
         )
-        from adv_py.core import plan_control_orientation_axis
+        from adv_py.core import (plan_control_orientation_axis,
+                                 plan_control_orientation_world)
         from adv_py.product.maya_panel_controller import MayaPanelController
 
         report.parent.mkdir(parents=True, exist_ok=True)
@@ -131,6 +132,33 @@ def main(report: Path) -> int:
             cmds.file(str(unaffected_scene), open=True, force=True)
             unaffected_reopen = host.capture_control_orientations((control,))[0]
             unaffected_reopen_curve = _world_points(cmds, control)
+
+        world_before = host.capture_control_orientations((control,))[0]
+        world_expected = plan_control_orientation_world(
+            (world_before,), True).changes[0].after
+        world_body_before = _world_matrices(cmds, body_paths)
+        world_children_before = _world_matrices(cmds, children)
+        world_count = controller.control_orient_world(
+            ":", (control,), True, False)
+        world_after = host.capture_control_orientations((control,))[0]
+        world_body_after = _world_matrices(cmds, body_paths)
+        world_children_after = _world_matrices(cmds, children)
+        world_registry = resolver.execute(name)
+        cmds.undo()
+        world_undo = host.capture_control_orientations((control,))[0]
+        cmds.redo()
+        world_redo = host.capture_control_orientations((control,))[0]
+        with tempfile.TemporaryDirectory(
+                prefix="adv-py-world-orient-",
+                dir=report.parent.resolve()) as folder:
+            world_scene = Path(folder) / "world.ma"
+            cmds.file(rename=str(world_scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(world_scene), open=True, force=True)
+            world_reopen = host.capture_control_orientations((control,))[0]
+            world_reopen_body = _world_matrices(cmds, body_paths)
+            world_reopen_registry = resolver.execute(name)
 
         all_controls = tuple(state.control for state in
             host.capture_control_curves(candidates, strict=False))
@@ -650,6 +678,24 @@ def main(report: Path) -> int:
                 unaffected_expected.world_matrix)
                 and unaffected_reopen.curve_unaffected
                 and _close(curve_preserved_before, unaffected_reopen_curve),
+            "world_orient_sets_world_axes": world_count == 1
+                and _close(world_after.world_matrix,
+                           world_expected.world_matrix)
+                and world_after.primary_axis.value == "X"
+                and world_after.secondary_axis.value == "Y"
+                and not world_after.mirrored_behavior,
+            "world_orient_preserves_body_and_children": all(
+                _close(a, b) for a, b in zip(
+                    world_body_before, world_body_after))
+                and all(_close(a, b) for a, b in zip(
+                    world_children_before, world_children_after))
+                and world_registry == registration,
+            "world_orient_undo_redo": world_undo == world_before
+                and world_redo == world_after,
+            "world_orient_save_reopen": world_reopen == world_after
+                and all(_close(a, b) for a, b in zip(
+                    world_body_before, world_reopen_body))
+                and world_reopen_registry == registration,
             "custom_all_controls_detach": len(proxies) == len(all_controls)
                 and len(detached) == len(all_controls) and session_exists
                 and hidden_original,

@@ -1,10 +1,12 @@
 import unittest
 from contextlib import contextmanager
 
-from adv_py.application import SetControlOrientationAxis
+from adv_py.application import (SetControlOrientationAxis,
+                                SetControlOrientationWorld)
 from adv_py.core import (
     ControlAxis, ControlOrientationState, ControlOrientationValidationError,
     CustomOrientationPreview, plan_control_orientation_axis,
+    plan_control_orientation_world,
     plan_custom_control_orientations,
 )
 
@@ -121,6 +123,31 @@ class ControlOrientationTests(unittest.TestCase):
             (left,), "X", "Y", mirrored_behavior=True)
         self.assertNotEqual(planned.changes[0].after.world_matrix,
                             left.world_matrix)
+
+    def test_world_orientation_preserves_position_and_axis_lengths(self):
+        rotated = (0., 2., 0., 0., -3., 0., 0., 0.,
+                   0., 0., 4., 0., 1., 2., 3., 1.)
+        before = ControlOrientationState(
+            "|Control", rotated, mirrored_behavior=True)
+        plan = plan_control_orientation_world((before,), True, True)
+        after = plan.changes[0].after
+        self.assertEqual(after.world_matrix, (
+            2., 0., 0., 0., 0., 3., 0., 0.,
+            0., 0., 4., 0., 1., 2., 3., 1.))
+        self.assertEqual((after.primary_axis, after.secondary_axis),
+                         (ControlAxis.X, ControlAxis.Y))
+        self.assertTrue(after.curve_unaffected and after.mirror)
+        self.assertFalse(after.mirrored_behavior)
+
+    def test_world_orientation_uses_one_verified_transaction(self):
+        host = Host()
+        host.state = ControlOrientationState(
+            "|Control", (0., 1., 0., 0., -1., 0., 0., 0.,
+                          0., 0., 1., 0., 0., 0., 0., 1.))
+        result = SetControlOrientationWorld(host).apply(
+            ("|Control",), True)
+        self.assertEqual(result.verified[0].world_matrix, IDENTITY)
+        self.assertEqual(len(host.transactions), 1)
 
 
 if __name__ == "__main__":

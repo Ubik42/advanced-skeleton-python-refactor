@@ -20,6 +20,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     AutoScaleControlCurves, ColorControlCurves, MirrorControlCurves,
     ScaleControlCurves, SwapControlCurves,
     SetControlOrientationAxis,
+    SetControlOrientationWorld,
     DetachCustomControlOrientations, AttachCustomControlOrientations,
     CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
     ExportFitSkeleton, ExportSkinWeights, OrientSimpleFitChain,
@@ -369,6 +370,23 @@ class MayaPanelController:
                             curve_unaffected: bool = False,
                             mirror: bool = False,
                             mirrored_behavior: bool = False) -> int:
+        host, resolved = self._control_orient_targets(
+            namespace, controls, mirror)
+        result = SetControlOrientationAxis(host).apply(
+            resolved, primary, secondary,
+            curve_unaffected, mirror, mirrored_behavior)
+        return len(result.verified)
+
+    def control_orient_world(self, namespace: str, controls: tuple[str, ...],
+                             curve_unaffected: bool = False,
+                             mirror: bool = False) -> int:
+        host, resolved = self._control_orient_targets(
+            namespace, controls, mirror)
+        result = SetControlOrientationWorld(host).apply(
+            resolved, curve_unaffected, mirror)
+        return len(result.verified)
+
+    def _control_orient_targets(self, namespace, controls, mirror):
         if not controls:
             raise ValueError("请指定至少一个已登记控制器")
         host = self._host(namespace)
@@ -396,10 +414,7 @@ class MayaPanelController:
                         if target in registered_set:
                             resolved.append(target)
                         break
-        result = SetControlOrientationAxis(host).apply(
-            tuple(dict.fromkeys(resolved)), primary, secondary,
-            curve_unaffected, mirror, mirrored_behavior)
-        return len(result.verified)
+        return host, tuple(dict.fromkeys(resolved))
 
     def control_orient_custom_detach(self, namespace: str) -> tuple[str, ...]:
         host = self._host(namespace)

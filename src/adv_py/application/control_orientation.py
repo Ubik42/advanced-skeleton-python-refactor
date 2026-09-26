@@ -8,6 +8,7 @@ from typing import Protocol
 from adv_py.core.control_orientation import (
     ControlAxis, ControlOrientationPlan, ControlOrientationState,
     CustomOrientationPreview, plan_control_orientation_axis,
+    plan_control_orientation_world,
     plan_custom_control_orientations,
 )
 
@@ -53,18 +54,21 @@ class SetControlOrientationAxis:
             self._host.capture_control_orientations(controls),
             primary, secondary, curve_unaffected, mirror,
             mirrored_behavior)
+        return self._apply_plan(plan, controls)
+
+    def _apply_plan(self, plan, controls):
         points = (self._host.capture_control_curve_world_points(controls)
-                  if curve_unaffected else ())
+                  if plan.curve_unaffected else ())
         with self._host.transaction(
-                f"设置 {len(plan.changes)} 个控制器的 Primary/Secondary Axis"):
+                f"设置 {len(plan.changes)} 个控制器的方向"):
             for change in plan.changes:
                 self._host.apply_control_orientation(change.after)
-            if curve_unaffected:
+            if plan.curve_unaffected:
                 self._host.restore_control_curve_world_points(points)
             verified = self._host.capture_control_orientations(
                 tuple(change.after.control for change in plan.changes))
             self._verify(plan, verified)
-            if curve_unaffected:
+            if plan.curve_unaffected:
                 restored = self._host.capture_control_curve_world_points(controls)
                 if (len(restored) != len(points) or any(
                         path != expected_path or len(actual) != len(expected)
@@ -90,6 +94,16 @@ class SetControlOrientationAxis:
                     or any(abs(a - b) > 1e-5 for a, b in
                            zip(found.world_matrix, expected.world_matrix))):
                 raise RuntimeError("控制器方向复检失败：坐标轴或世界矩阵不一致")
+
+
+class SetControlOrientationWorld(SetControlOrientationAxis):
+    def apply(self, controls: tuple[str, ...],
+              curve_unaffected: bool = False,
+              mirror: bool = False) -> ControlOrientationResult:
+        plan = plan_control_orientation_world(
+            self._host.capture_control_orientations(controls),
+            curve_unaffected, mirror)
+        return self._apply_plan(plan, controls)
 
 
 class DetachCustomControlOrientations:

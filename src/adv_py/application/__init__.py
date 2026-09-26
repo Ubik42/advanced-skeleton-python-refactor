@@ -365,6 +365,7 @@ from .control_orientation import (
     ControlOrientationHost,
     ControlOrientationResult,
     SetControlOrientationAxis,
+    SetControlOrientationWorld,
     DetachCustomControlOrientations,
     AttachCustomControlOrientations,
 )
