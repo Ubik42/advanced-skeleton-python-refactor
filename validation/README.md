@@ -1,5 +1,12 @@
 # 后台宿主验证
 
+膝部 C／D 体积关节对照：先导出原版驱动导向，再运行 `maya_original_knee_volume_smoke.py`。脚本重建四肢 `Part` 链和双侧四个膝部辅助关节，用 FK 膝控制器 `-110°` 动作比较原版世界矩阵，并检查父关节姿态预检、事务回滚、撤销／重做、保存重开和角色登记。
+
+```powershell
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_original_volume_joint_graph.py 'C:\path\to\sam.mb' validation/results/maya2024-original-volume-joint-graph.json
+& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_original_knee_volume_smoke.py 'C:\path\to\sam.mb' validation/results/maya2024-original-volume-joint-graph.json validation/results/maya2024-original-knee-volume.json
+```
+
 胸部／肩胛体积关节对照：先用 `maya_original_volume_joint_graph.py` 导出本机原版驱动导向，再运行 `maya_original_chest_volume_smoke.py`。后者在相同 Fit 重建的新角色中创建双侧 `ChestAJoint` 和 `ScapulaAJoint`，比较静止及肩胛 Y／Z 轴 12° 动作的关节世界矩阵，同时检查来源骨架不匹配、故障回滚、撤销／重做、保存重开及角色登记。
 
 ```powershell

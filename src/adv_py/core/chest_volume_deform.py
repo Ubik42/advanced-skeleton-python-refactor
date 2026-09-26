@@ -1,11 +1,11 @@
 """Chest and scapula volume influence plans from an original rig graph."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from math import isfinite
 from typing import Mapping
 
 from .body_skeleton import BodySkeletonSnapshot
+from .sdk_volume_deform import SdkVolumeSpec
 
 
 STEMS = ("ChestA", "ScapulaA")
@@ -14,18 +14,9 @@ NODE_TYPES = frozenset(("blendWeighted", "animCurveUA", "animCurveUL",
                         "animCurveUU", "animCurveUT", "unitConversion"))
 
 
-@dataclass(frozen=True, slots=True)
-class ChestVolumeSpec:
-    name: str
-    path: str
-    parent: str
-    side: str
-    guide: Mapping[str, object]
-
-
 def plan_chest_volume_influences(
     body: BodySkeletonSnapshot, guide: Mapping[str, object]
-) -> tuple[ChestVolumeSpec, ...]:
+) -> tuple[SdkVolumeSpec, ...]:
     by_name = {joint.name: joint for joint in body.joints}
     if "Chest_M" not in by_name or any(
         "Scapula_" + side not in by_name for side in SIDES
@@ -77,6 +68,6 @@ def plan_chest_volume_influences(
                     if source_node not in graph and source_plug not in (
                             f"Scapula_{side}.rotateY", f"Scapula_{side}.rotateZ"):
                         raise ValueError("原版胸部体积关节有未知外部驱动：" + source_plug)
-            specs.append(ChestVolumeSpec(name, parent + "|" + name,
-                                          parent, side, row))
+            specs.append(SdkVolumeSpec(name, parent + "|" + name,
+                                        parent, "Scapula_" + side, row))
     return tuple(specs)

@@ -20,7 +20,7 @@ def main(scene: Path, guide_file: Path, report: Path) -> int:
     try:
         from maya import cmds
         from adv_py.adapters.maya_body import MayaBodyBuildHost
-        from adv_py.adapters.maya_chest_volume import MayaChestVolumeHost
+        from adv_py.adapters.maya_sdk_volume import MayaSdkVolumeHost
         from adv_py.application.registered_body_build import BuildRegisteredBodyCharacter
         from adv_py.application.chest_volume_deform import BuildChestVolumeDeform
         from adv_py.application.character_registry import ResolveBodyCharacter
@@ -59,16 +59,16 @@ def main(scene: Path, guide_file: Path, report: Path) -> int:
         wrong_guide["body_world_matrices"] = wrong_frames
         mismatched_guide_rejected = False
         try:
-            BuildChestVolumeDeform(MayaChestVolumeHost()).apply(wrong_guide)
+            BuildChestVolumeDeform(MayaSdkVolumeHost()).apply(wrong_guide)
         except ValueError:
             mismatched_guide_rejected = all(not cmds.objExists(name)
                                             for name in names)
 
-        class FaultHost(MayaChestVolumeHost):
+        class FaultHost(MayaSdkVolumeHost):
             calls = 0
 
-            def create_chest_volume_joint(self, spec):
-                super().create_chest_volume_joint(spec)
+            def create_sdk_volume_joint(self, spec):
+                super().create_sdk_volume_joint(spec)
                 self.calls += 1
                 if self.calls == 1:
                     raise RuntimeError("injected fault")
@@ -79,7 +79,7 @@ def main(scene: Path, guide_file: Path, report: Path) -> int:
         except RuntimeError as exc:
             fault_rolled_back = str(exc) == "injected fault" and all(
                 not cmds.objExists(name) for name in names)
-        specs = BuildChestVolumeDeform(MayaChestVolumeHost()).apply(guide)
+        specs = BuildChestVolumeDeform(MayaSdkVolumeHost()).apply(guide)
         rest_errors = {spec.name: max(abs(a - b) for a, b in zip(
             original_rest[spec.name], matrix(cmds, spec.path))) for spec in specs}
         cmds.undo()
@@ -100,7 +100,7 @@ def main(scene: Path, guide_file: Path, report: Path) -> int:
                 pose_errors[key] = {spec.name: max(abs(a - b)
                     for a, b in zip(original_pose[key][spec.name],
                                     matrix(cmds, spec.path)))
-                    for spec in specs if spec.side == side}
+                    for spec in specs if spec.driver_name.endswith("_" + side)}
                 cmds.setAttr(control + ".rotate" + axis, 0.0)
         data = {"source": scene.name, "count": len(specs),
                 "rest_errors": rest_errors,

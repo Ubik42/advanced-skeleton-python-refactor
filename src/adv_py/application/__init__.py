@@ -716,3 +716,4 @@ from .finger_mid_deform import BuildFingerMidDeform
 from .limb_part_deform import BuildLimbPartDeform
 from .root_volume_deform import BuildRootVolumeDeform
 from .chest_volume_deform import BuildChestVolumeDeform
+from .knee_volume_deform import BuildKneeVolumeDeform

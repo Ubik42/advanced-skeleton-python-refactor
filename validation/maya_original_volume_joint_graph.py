@@ -17,6 +17,8 @@ def main(scene: Path, report: Path) -> None:
         from maya import cmds
         cmds.file(str(scene.resolve()), open=True, force=True,
                   executeScriptNodes=False)
+        for side in ("R", "L"):
+            cmds.setAttr(f"FKIKLeg_{side}.FKIKBlend", 0.0)
 
         def inputs(node):
             return {attr: cmds.listConnections(node + "." + attr,
@@ -110,6 +112,8 @@ def main(scene: Path, report: Path) -> None:
             target_chain = chain(target)
             rows.append({
                 "name": name, "parent": parent, "target": target,
+                "parent_world_matrix": cmds.xform(parent, query=True,
+                    worldSpace=True, matrix=True),
                 "target_parent": target_parent,
                 "joint_world_matrix": cmds.xform(name, query=True,
                     worldSpace=True, matrix=True),
@@ -149,7 +153,8 @@ def main(scene: Path, report: Path) -> None:
                 worldSpace=True, matrix=True),
             "body_world_matrices": {name: cmds.xform(name, query=True,
                 worldSpace=True, matrix=True) for name in
-                ("Chest_M", "Scapula_R", "Scapula_L")},
+                ("Chest_M", "Scapula_R", "Scapula_L",
+                 "Knee_R", "Knee_L")},
             "count": len(rows), "joints": rows}, ensure_ascii=False,
             indent=2) + "\n", encoding="utf-8")
     finally:
