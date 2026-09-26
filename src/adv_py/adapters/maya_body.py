@@ -335,7 +335,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
             self._cmds.attributeQuery("advPyAuxiliaryInfluenceKind",
                                       node=path, exists=True)
             and self._cmds.getAttr(path + ".advPyAuxiliaryInfluenceKind")
-                in {"axial-part-v1", "finger-mid-v1"})]
+                in {"axial-part-v1", "finger-mid-v1", "limb-part-v1"})]
         states: list[BodyJointState] = []
         for path in paths:
             parents = self._cmds.listRelatives(path, parent=True, fullPath=True) or []
@@ -5691,6 +5691,8 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                 raise RuntimeError(
                     f"{limb_label} FK 控制路径漂移：{spec.control_name}"
                 )
+            self._cmds.setAttr(control + ".rotateOrder", spec.rotate_order)
+            self._cmds.setAttr(driven[0] + ".rotateOrder", spec.rotate_order)
             self._cmds.orientConstraint(
                 control,
                 driven[0],

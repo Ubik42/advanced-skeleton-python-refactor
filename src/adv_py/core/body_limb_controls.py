@@ -28,6 +28,7 @@ class BodyLimbFkControlSpec:
     world_position: Vector3
     world_axes: AxisFrame
     radius: float
+    rotate_order: int = 0
     control_parent_path: str | None = None
 
 
@@ -166,6 +167,9 @@ def plan_body_limb_fk_controls(
                 world_position=state.world_position,
                 world_axes=state.world_axes,
                 radius=float(radius),
+                rotate_order={"Shoulder": 5, "Elbow": 5, "Wrist": 5,
+                              "Hip": 2, "Knee": 2, "Ankle": 3,
+                              "Toes": 5}.get(joint_name, 0),
             ))
             parent_path = control_path
             previous_joint = state.path

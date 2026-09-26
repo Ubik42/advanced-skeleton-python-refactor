@@ -15,6 +15,7 @@ from .maya_face import MayaFaceHost
 from .maya_external_mesh import MayaExternalMeshHost
 from .maya_axial_part import MayaAxialPartHost
 from .maya_finger_mid import MayaFingerMidHost
+from .maya_limb_part import MayaLimbPartHost
 from .maya_fit import MayaFitJointHost, MayaJointLabelHost
 from .maya_mocap import (
     MayaMocapConnectionHost,
@@ -41,6 +42,7 @@ __all__ = [
     "MayaExternalMeshHost",
     "MayaAxialPartHost",
     "MayaFingerMidHost",
+    "MayaLimbPartHost",
     "MayaFitJointHost",
     "MayaJointLabelHost",
     "MayaMocapSourceReader",
