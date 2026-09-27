@@ -24,6 +24,8 @@ from .maya_face_pre import MayaFacePreHost
 
 _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
 _CLOSED_LOWER_UPWARD_FOLLOW = .6
+_YAW_DEPTH_FULL_ANGLE_DEG = 18.5
+_YAW_DEPTH_EYE_RADIUS_FRACTION = .14
 
 
 class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
@@ -472,6 +474,12 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                       control + "UpwardBlink",
                                       control + "UpwardScale",
                                       control + "UpwardSum"))
+                    if arc == "upper" and mobile_inners[side]:
+                        names.extend((control + "YawNegative",
+                                      control + "YawMagnitude",
+                                      control + "YawDepthScale",
+                                      control + "YawDepthLimit",
+                                      control + "YawDepthBlink"))
                     if layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
                         names.extend((control + "BlinkFraction",
                                       control + "BlinkOffset"))
@@ -580,7 +588,11 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                             name=control_name + "FleshyBlink")
                         c.connectAttr(amount + ".output",
                                       blink_fade + ".input1")
-                        c.setAttr(blink_fade + ".input2X", 1.)
+                        if mobile_inners[side]:
+                            c.connectAttr(reverse + ".outputX",
+                                          blink_fade + ".input2X")
+                        else:
+                            c.setAttr(blink_fade + ".input2X", 1.)
                         c.connectAttr(reverse + ".outputX",
                                       blink_fade + ".input2Y")
                         motion_sum = c.createNode("plusMinusAverage",
@@ -619,6 +631,44 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                         else:
                             c.connectAttr(blink_fade + ".output",
                                           motion_sum + ".input3D[1]")
+                        if arc == "upper" and mobile_inners[side]:
+                            negative = c.createNode("multDoubleLinear",
+                                name=control_name + "YawNegative")
+                            c.setAttr(negative + ".input2", -1.)
+                            c.connectAttr(eye_joints[side] + ".rotateY",
+                                          negative + ".input1")
+                            magnitude = c.createNode("condition",
+                                name=control_name + "YawMagnitude")
+                            c.setAttr(magnitude + ".operation", 2)
+                            c.connectAttr(eye_joints[side] + ".rotateY",
+                                          magnitude + ".firstTerm")
+                            c.connectAttr(eye_joints[side] + ".rotateY",
+                                          magnitude + ".colorIfTrueR")
+                            c.connectAttr(negative + ".output",
+                                          magnitude + ".colorIfFalseR")
+                            depth_scale = c.createNode("multDoubleLinear",
+                                name=control_name + "YawDepthScale")
+                            c.setAttr(depth_scale + ".input2",
+                                eye_radii[side] *
+                                _YAW_DEPTH_EYE_RADIUS_FRACTION /
+                                _YAW_DEPTH_FULL_ANGLE_DEG)
+                            c.connectAttr(magnitude + ".outColorR",
+                                          depth_scale + ".input1")
+                            depth_limit = c.createNode("clamp",
+                                name=control_name + "YawDepthLimit")
+                            c.setAttr(depth_limit + ".maxR",
+                                eye_radii[side] *
+                                _YAW_DEPTH_EYE_RADIUS_FRACTION)
+                            c.connectAttr(depth_scale + ".output",
+                                          depth_limit + ".inputR")
+                            depth_blink = c.createNode("multiplyDivide",
+                                name=control_name + "YawDepthBlink")
+                            c.connectAttr(depth_limit + ".outputR",
+                                          depth_blink + ".input1X")
+                            c.connectAttr(eye_fraction + ".outputX",
+                                          depth_blink + ".input2X")
+                            c.connectAttr(depth_blink + ".outputX",
+                                motion_sum + ".input3D[3].input3Dz")
                         if layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
                             fraction = c.createNode("multiplyDivide",
                                 name=control_name + "BlinkFraction")

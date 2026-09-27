@@ -33,9 +33,22 @@ def polygon_area(mesh: om.MFnMesh, index: int) -> float:
 def main() -> None:
     scene = Path(sys.argv[1]).resolve()
     output = Path(sys.argv[2]).resolve()
-    original_head = sys.argv[3] if len(sys.argv) > 3 else None
+    original_head = (sys.argv[3] if len(sys.argv) > 3
+                     and sys.argv[3] != "-" else None)
+    aim_dx = float(sys.argv[4]) if len(sys.argv) > 4 else 0.
+    aim_dy = float(sys.argv[5]) if len(sys.argv) > 5 else 0.
     cmds.file(str(scene), open=True, force=True,
               executeScriptNodes=False)
+    aim_initial = {}
+    if not original_head:
+        cmds.currentTime(1, edit=True)
+        aim_initial = {suffix + axis: cmds.getAttr(
+            "AdvPy_EyeAim_" + suffix + ".translate" + axis)
+            for suffix in ("R", "L") for axis in "XY"}
+    def set_aim():
+        for key, value in aim_initial.items():
+            cmds.setAttr("AdvPy_EyeAim_" + key[0] + ".translate" + key[1],
+                         value + (aim_dx if key[1] == "X" else aim_dy))
     head = mesh_fn(original_head or "head")
     rows = {}
     for side, suffix in (("Right", ""), ("Left", "Left")):
@@ -80,12 +93,14 @@ def main() -> None:
         if not indices or len(indices) != len(set(indices)):
             raise RuntimeError(side + " 眼睑区域面记录无效")
         cmds.currentTime(1, edit=True)
+        set_aim()
         cmds.setAttr("ctrlEye_R.blink", 0)
         cmds.setAttr("ctrlEye_L.blink", 0)
         opened = [(head.getPolygonNormal(index, om.MSpace.kWorld),
                    polygon_area(head, index))
                   for index in indices]
         cmds.currentTime(10, edit=True)
+        set_aim()
         cmds.setAttr("ctrlEye_R.blink", 10)
         cmds.setAttr("ctrlEye_L.blink", 10)
         closed = [(head.getPolygonNormal(index, om.MSpace.kWorld),
