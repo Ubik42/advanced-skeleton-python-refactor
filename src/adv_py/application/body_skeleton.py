@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_skeleton import (
     BodyJointSpec,
     FitDeformProfile,
@@ -12,7 +13,7 @@ from adv_py.core.body_skeleton import (
 )
 from adv_py.core.fit_orientation import FitOrientationSnapshot
 from adv_py.core.fit_settings import (
-    FitSkeletonField, FitSkeletonSettings, FitSkeletonValidationError,
+    FitSkeletonSettings, FitSkeletonValidationError,
 )
 from adv_py.core.joint_labels import JointLabel
 from adv_py.core.fit_part import (
@@ -60,6 +61,7 @@ class BodySkeletonBuildPlan:
     inferred_labels: tuple[str, ...] = ()
     fit_parts: tuple[FitPartJointSpec, ...] = ()
     fit_part_reparents: tuple[FitPartReparentSpec, ...] = ()
+    build_options: BodyBuildOptions = BodyBuildOptions()
 
     @property
     def ready(self) -> bool:
@@ -119,8 +121,8 @@ class BuildBodySkeleton:
             node.path: self._host.read_fit_rotation_order(node.path)
             for node in symmetry.source.hierarchy.joints
         }
-        segment_scale_compensate = not bool(symmetry.settings.value(
-            FitSkeletonField.USE_OFFSET_PARENT_MATRIX))
+        build_options = BodyBuildOptions.from_fit_settings(symmetry.settings)
+        segment_scale_compensate = not build_options.use_offset_parent_matrix
         missing_labels: list[str] = []
         inferred_labels: list[str] = []
         for node in symmetry.source.hierarchy.joints:
@@ -166,6 +168,7 @@ class BuildBodySkeleton:
             tuple(inferred_labels),
             fit_parts,
             fit_part_reparents,
+            build_options,
         )
 
     def apply(
