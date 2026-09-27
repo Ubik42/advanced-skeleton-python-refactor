@@ -22,6 +22,7 @@ class FBXRigFitGuide:
     parent: str | None
     source_joint: str
     world_position: Vector3
+    local_position: Vector3
     end_control: bool
 
 
@@ -53,6 +54,7 @@ class FBXRigImportPlan:
     first_bake_frame: int | None
     last_bake_frame: int | None
     names_requiring_underscore_removal: tuple[str, ...]
+    collapsed_fit_source_joints: tuple[str, ...] = ()
 
 
 def plan_fbx_rig_import(
@@ -121,10 +123,20 @@ def plan_fbx_rig_import(
                  if joint.world_position[0] > threshold)
     kept = tuple(joint for joint in descendants
                  if joint.world_position[0] <= threshold)
+    # 6.925 removes direct Fit Root children shorter than the side threshold,
+    # then reparents their children to Root. The source skeleton stays intact.
+    collapsed = frozenset(
+        joint.path for joint in kept
+        if joint.parent == root.path
+        and dist(joint.world_position, root.world_position) < threshold
+    )
     names = {}
     guides = [FBXRigFitGuide("Root", None, root.path,
-                             root.world_position, False)]
+                             root.world_position, root.world_position, False)]
+    guide_positions = {"Root": root.world_position}
     for joint in kept:
+        if joint.path in collapsed:
+            continue
         name = joint.name.rsplit(":", 1)[-1].replace("_", "")
         if not name or name in names or name == "Root":
             raise ValueError("FBX rig 关节映射到重复 Fit 名称：" + name)
@@ -134,13 +146,20 @@ def plan_fbx_rig_import(
             if parent not in by_path:
                 raise ValueError("FBX rig Fit 父级无法解析：" + name)
             parent = by_path[parent].parent
+        parent_name = "Root" if parent == root.path else names[parent]
+        parent_position = guide_positions[parent_name]
         guides.append(FBXRigFitGuide(
-            name, "Root" if parent == root.path else names[parent],
-            joint.path, joint.world_position, not children[joint.path]))
+            name, parent_name, joint.path, joint.world_position,
+            tuple(value - origin for value, origin in zip(
+                joint.world_position, parent_position)),
+            not children[joint.path]))
+        guide_positions[name] = joint.world_position
     pairs = []
     if not left and any(joint.world_position[0] < -threshold for joint in kept):
         raise ValueError("FBX rig 右侧骨架缺少左侧镜像关节")
     for joint in kept:
+        if joint.path in collapsed:
+            continue
         x, y, z = joint.world_position
         if x >= -threshold:
             continue
@@ -155,6 +174,8 @@ def plan_fbx_rig_import(
     pair_by_right = {pair.right_joint: pair.left_joint for pair in pairs}
     control_links = [FBXRigControlLink("FKRoot_M", root.path, "M")]
     for joint in kept:
+        if joint.path in collapsed:
+            continue
         name = names[joint.path]
         right_side = joint.world_position[0] < -threshold
         side = "R" if right_side else "M"
@@ -189,4 +210,5 @@ def plan_fbx_rig_import(
         top.path, root.path, game_root, scale, threshold,
         tuple(guides), tuple(pairs), tuple(control_links), tuple(labels),
         -1 if last_frame is not None else None, last_frame,
-        tuple(joint.path for joint in joints if "_" in joint.name))
+        tuple(joint.path for joint in joints if "_" in joint.name),
+        tuple(joint.path for joint in kept if joint.path in collapsed))
