@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from array import array
 
-from adv_py.core.dense_skin_transfer import DenseSkinWeights
 from adv_py.core.face_source_skin_mapping import (
     face_influence_base, plan_face_source_skin_mapping,
+    transfer_face_source_skin_weights,
 )
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
@@ -151,48 +151,18 @@ class MayaFaceSourceSkinHost(MayaFaceEyeLidRigHost):
                 c.skinCluster(target_skin, edit=True,
                               addInfluence=joint, weight=0.)
             target = self.capture_dense_skin(target_skin)
-            target_index = {name: i for i, name in
-                            enumerate(target.influence_names)}
             target_by_base = {face_influence_base(name): name
                               for name in target.influence_names}
             source_map.extend((index, target_by_base[
                 "lowerLidOuterJoint_" + side])
                 for side, (index, _) in auxiliary.items())
-            width = len(target.influence_names)
-            old_width = len(before.influence_names)
-            old_index = {name: i for i, name in
-                         enumerate(before.influence_names)}
-            old = memoryview(before.values).cast("d")
-            values = array("d", [0.] * (before.vertex_count * width))
-            lid_columns = {target_index[name] for _, name in source_map}
-            non_lid = [(target_index[name], old_index[name])
-                       for name in before.influence_names
-                       if target_index[name] not in lid_columns]
-            head_index = target_index[target_by_base["Head_M"]]
-            for vertex in range(before.vertex_count):
-                mass = 0.
-                for source_index, name in source_map:
-                    amount = max(0., source_values[
-                        vertex * len(source_joints) + source_index])
-                    values[vertex * width + target_index[name]] += amount
-                    mass += amount
-                if mass > 1. + 1e-5:
-                    raise FitSkeletonValidationError(
-                        f"原版顶点 {vertex} 的眼睑权重超过 1")
-                remaining = max(0., 1. - mass)
-                old_remaining = sum(max(0., old[
-                    vertex * old_width + index]) for _, index in non_lid)
-                if old_remaining > 1e-8:
-                    for new_index, source_index in non_lid:
-                        values[vertex * width + new_index] = (
-                            remaining * max(0., old[
-                                vertex * old_width + source_index]) /
-                            old_remaining)
-                else:
-                    values[vertex * width + head_index] += remaining
-            self.apply_dense_skin(DenseSkinWeights(target_skin,
-                before.vertex_count, target.influence_names,
-                values.tobytes()))
+            try:
+                transferred = transfer_face_source_skin_weights(
+                    source_values, len(source_joints), before, target,
+                    tuple(source_map))
+            except ValueError as error:
+                raise FitSkeletonValidationError(str(error)) from error
+            self.apply_dense_skin(transferred)
             blend = array("d", source_blend)
             if source_method == 0:
                 blend = array("d", [0.] * before.vertex_count)
