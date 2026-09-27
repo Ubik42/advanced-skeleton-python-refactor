@@ -1,8 +1,6 @@
 """Maya graph for the Root Inbetween HipSwingReverse OPM branch."""
 from __future__ import annotations
 
-from math import sqrt
-
 from adv_py.core.fit_inbetween_hip_swing import HipSwingReversePlan
 
 
@@ -18,7 +16,9 @@ class MayaHipSwingReverseMixin:
             (plan.end_body_path, "joint"),
             (plan.part1_name, "joint"),
         ):
-            if (c.ls(path, long=True, type=kind) or []) != [path]:
+            matches = c.ls(path, long=True, type=kind) or []
+            if len(matches) != 1 or (path.startswith("|")
+                                     and matches[0] != path):
                 raise ValueError("HipSwingReverse 来源不唯一：" + path)
         names = [plan.control_offset_name, plan.control_name,
                  plan.reverse_name, plan.blend_name,
@@ -34,7 +34,7 @@ class MayaHipSwingReverseMixin:
         matrices = ((plan.root_inbetween_matrix_name, 2),) + tuple(
             (part.fk_matrix_name, 3) for part in plan.parts[1:])
         for name, count in matrices:
-            if (c.ls(name, type="multMatrix") or []) != [name]:
+            if len(c.ls(name, type="multMatrix") or []) != 1:
                 raise ValueError("HipSwingReverse 接收矩阵不存在：" + name)
             if any(not c.connectionInfo(
                     f"{name}.matrixIn[{index}]",
@@ -73,14 +73,9 @@ class MayaHipSwingReverseMixin:
         before = {node: c.xform(node, query=True,
                                 worldSpace=True, matrix=True)
                   for node in observed}
-        start = c.xform(plan.start_body_path, query=True,
-                        worldSpace=True, translation=True)
-        part1 = c.xform(plan.part1_name, query=True,
-                        worldSpace=True, translation=True)
-        step = sqrt(sum((float(b) - float(a)) ** 2
-                        for a, b in zip(start, part1)))
-        if step <= 1e-6:
-            raise ValueError("HipSwingReverse Root Part 段长为零")
+        step = float(c.getAttr(plan.part1_name + ".translateX"))
+        if abs(step) <= 1e-6:
+            raise ValueError("HipSwingReverse 要求 RootPart1 的本地 X 段长非零")
         end_matrix = c.xform(plan.end_body_path, query=True,
                              worldSpace=True, matrix=True)
         offset = c.createNode("transform",
