@@ -499,7 +499,10 @@ def create_panel(controller: MayaPanelController | None = None):
             self.custom_softmod_source = QtWidgets.QLineEdit()
             self.custom_softmod_source.setPlaceholderText("已绘制的 SoftMod 节点路径")
             self.custom_control_name = QtWidgets.QLineEdit()
-            self.custom_control_name.setPlaceholderText("例如 Bicep_R")
+            self.custom_control_name.setPlaceholderText("例如 Bicep；侧别由位置确定")
+            self.custom_control_middle = QtWidgets.QCheckBox("middle")
+            self.custom_control_local = QtWidgets.QCheckBox("local")
+            self.custom_control_local.setChecked(True)
             self.custom_control_parent = QtWidgets.QLineEdit()
             self.custom_control_parent.setPlaceholderText(
                 "可留空；默认选择最近的变形关节")
@@ -511,6 +514,8 @@ def create_panel(controller: MayaPanelController | None = None):
             group, form = self._group("06 · Custom Controllers", [
                 ("SoftMod 区域", self.custom_softmod_source),
                 ("控制器名称", self.custom_control_name),
+                ("中心控制", self.custom_control_middle),
+                ("局部朝向", self.custom_control_local),
                 ("指定父关节", self.custom_control_parent),
                 ("已有控制器", self.custom_control_existing),
                 ("新增网格", self.custom_control_mesh)])
@@ -1648,7 +1653,9 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(), self.custom_softmod_source.text().strip(),
                 self.custom_control_name.text().strip(),
                 self.custom_control_parent.text().strip(),
-                face=getattr(self, "custom_control_face", False))
+                face=getattr(self, "custom_control_face", False),
+                middle=self.custom_control_middle.isChecked(),
+                local=self.custom_control_local.isChecked())
             self.custom_control_existing.setText(state.control)
             return f"已创建 SoftMod 控制器：{state.control}"
 
@@ -1661,7 +1668,9 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(), self.custom_softmod_source.text().strip(),
                 self.custom_control_name.text().strip(),
                 self.custom_control_parent.text().strip(),
-                face=getattr(self, "custom_control_face", False))
+                face=getattr(self, "custom_control_face", False),
+                middle=self.custom_control_middle.isChecked(),
+                local=self.custom_control_local.isChecked())
             self.custom_control_existing.setText(state.control)
             return f"已创建 Cluster 控制器：{state.control}"
 
@@ -1670,7 +1679,9 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(), self.custom_softmod_source.text().strip(),
                 self.custom_control_name.text().strip(),
                 self.custom_control_parent.text().strip(),
-                face=getattr(self, "custom_control_face", False))
+                face=getattr(self, "custom_control_face", False),
+                middle=self.custom_control_middle.isChecked(),
+                local=self.custom_control_local.isChecked())
             self.custom_control_existing.setText(state.control)
             return f"已创建 Skin 控制器：{state.control}"
 

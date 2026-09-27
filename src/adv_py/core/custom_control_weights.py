@@ -43,9 +43,9 @@ def cluster_weights_from_probe(probe: SoftModProbe) -> ClusterWeightTransfer:
 
 def paired_cluster_control_name(control_name: str) -> tuple[str, str]:
     """Return the opposite control name and source side for an L/R control."""
-    match = re.fullmatch(r"(.+)_([LR])Control", control_name)
+    match = re.fullmatch(r"(.+)_([LR])", control_name)
     if not match:
-        raise ValueError("Cluster 镜像要求控制器名称以 _LControl 或 _RControl 结尾")
+        raise ValueError("Cluster 镜像要求控制器名称以 _L 或 _R 结尾")
     stem, side = match.groups()
     opposite = "L" if side == "R" else "R"
-    return stem + "_" + opposite + "Control", side
+    return stem + "_" + opposite, side

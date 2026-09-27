@@ -37,6 +37,52 @@ class MayaCustomControllerHost(MayaFaceHost):
                 parent=self._unique(motion_name, "transform"))
         return cmds.createNode("transform", name=name)
 
+    def _prepare_custom_source(self, plan: CustomControllerPlan) -> None:
+        from maya import cmds
+
+        if not plan.middle:
+            return
+        source = self._unique(plan.region.deformer, "softMod")
+        handle = self._unique(plan.region.source_handle, "transform")
+        cmds.setAttr(source + ".falloffCenterX", 0.0)
+        for shape in cmds.listRelatives(handle, shapes=True,
+                                        fullPath=True) or []:
+            if cmds.objExists(shape + ".originX"):
+                cmds.setAttr(shape + ".originX", 0.0)
+
+    def _attach_to_custom_parent(self, attach: str, parent: str,
+                                 local: bool) -> None:
+        from maya import cmds
+
+        if local:
+            cmds.delete(cmds.orientConstraint(parent, attach))
+        cmds.parentConstraint(parent, attach, maintainOffset=True)
+
+    def _register_custom_nodes(self, paths: tuple[str, ...],
+                               control: str, base: str | None = None) -> None:
+        from maya import cmds
+
+        if not cmds.objExists(self.scene_address(REGISTRY_NAME)):
+            if self.face:
+                return
+            raise ValueError("Body 自定义控制器缺少角色登记")
+        previous = self.read_character_registration()
+        local = (self._cmds.identity.to_local if self.namespace is not None
+                 else lambda path: path)
+        nodes = tuple(self._registry_node(local(path)) for path in paths)
+        controls = (("control", control),)
+        if base:
+            controls = (("base", base),) + controls
+        channels = tuple(CharacterChannel(
+            f"custom.{control.rsplit('|', 1)[-1].rsplit(':', 1)[-1]}."
+            f"{role}.{channel}{axis}", local(path), channel + axis)
+            for role, path in controls
+            for channel in ("translate", "rotate", "scale")
+            for axis in "XYZ")
+        updated = replace(previous, nodes=previous.nodes + nodes,
+                          channels=previous.channels + channels)
+        self.write_character_registration_extension(previous, updated)
+
     def _probe_softmod(self, region: SoftModRegion) -> ClusterWeightTransfer:
         """Measure effective falloff, not the stored geometry-filter mask."""
         from maya import cmds
@@ -284,13 +330,16 @@ class MayaCustomControllerHost(MayaFaceHost):
         from maya import cmds
 
         self._mesh(mesh)
-        registration = self.read_character_registration()
         candidates = []
-        for item in registration.body:
-            path = self._unique(self.scene_address(item.path), "joint")
-            center = tuple(float(value) for value in cmds.xform(
-                path, query=True, worldSpace=True, translation=True))
-            candidates.append(DeformJointCandidate(path, center))
+        if cmds.objExists(self.scene_address(REGISTRY_NAME)):
+            registration = self.read_character_registration()
+            for item in registration.body:
+                path = self._unique(self.scene_address(item.path), "joint")
+                center = tuple(float(value) for value in cmds.xform(
+                    path, query=True, worldSpace=True, translation=True))
+                candidates.append(DeformJointCandidate(path, center))
+        elif not self.face:
+            raise ValueError("Body 自定义控制器要求已登记角色")
         if self.face and cmds.objExists(self.scene_address(
                 "FaceDeformationSystem")):
             root = self._unique("FaceDeformationSystem", "transform")
@@ -301,6 +350,17 @@ class MayaCustomControllerHost(MayaFaceHost):
                 center = tuple(float(value) for value in cmds.xform(
                     path, query=True, worldSpace=True, translation=True))
                 candidates.append(DeformJointCandidate(path, center))
+        if self.face and cmds.objExists(self.scene_address("FaceFitSkeleton")):
+            fit = self._unique("FaceFitSkeleton", "transform")
+            if cmds.objExists(fit + ".HeadJoint"):
+                head_name = cmds.getAttr(fit + ".HeadJoint")
+                if head_name and cmds.objExists(self.scene_address(head_name)):
+                    path = self._unique(head_name, "joint")
+                    if path not in {item.path for item in candidates}:
+                        center = tuple(float(value) for value in cmds.xform(
+                            path, query=True, worldSpace=True,
+                            translation=True))
+                        candidates.insert(0, DeformJointCandidate(path, center))
         return tuple(candidates)
 
     def preflight_custom_controller(self, plan: CustomControllerPlan) -> None:
@@ -332,22 +392,23 @@ class MayaCustomControllerHost(MayaFaceHost):
 
         self._require_transaction()
         self.preflight_custom_controller(plan)
+        self._transaction_changed = True
+        self._prepare_custom_source(plan)
         if plan.kind is CustomControlKind.SKIN:
             self._create_skin_controller(plan)
             return
         if plan.kind is CustomControlKind.CLUSTER:
             self._create_cluster_controller(plan)
             return
-        self._transaction_changed = True
         parent = self._unique(plan.parent_joint, "joint")
         mesh = self._mesh(plan.region.mesh)
         source = self._unique(plan.region.deformer, "softMod")
         source_handle = self._unique(plan.region.source_handle, "transform")
         custom_system = self._custom_system()
         attach = cmds.createNode("transform", name=self.scene_address(
-            plan.control_name + "Attach"), parent=custom_system)
+            plan.auxiliary_name("attach")), parent=custom_system)
         cmds.xform(attach, worldSpace=True, translation=plan.region.center)
-        cmds.parentConstraint(parent, attach, maintainOffset=True)
+        self._attach_to_custom_parent(attach, parent, plan.local)
         offset = cmds.createNode("transform", name=self.scene_address(
             plan.offset_name), parent=attach)
         radius = max(0.1, plan.region.falloff_radius * 0.25)
@@ -382,7 +443,7 @@ class MayaCustomControllerHost(MayaFaceHost):
         cmds.setAttr(deformer + ".falloffCenter",
                      *plan.region.center, type="double3")
         locator = cmds.spaceLocator(name=self.scene_address(
-            plan.control_name + "BaseLocator"))[0]
+            plan.auxiliary_name("locator")))[0]
         locator = cmds.parent(locator, base, relative=True)[0]
         cmds.setAttr(locator + ".visibility", False)
         shape = (cmds.listRelatives(locator, shapes=True,
@@ -401,7 +462,7 @@ class MayaCustomControllerHost(MayaFaceHost):
         cmds.connectAttr(base + ".worldMatrix[0]",
                          deformer + ".preMatrix", force=True)
         matrix = cmds.createNode("multMatrix", name=self.scene_address(
-            plan.control_name + "SoftModMultMatrix"))
+            plan.auxiliary_name("matrix")))
         cmds.connectAttr(control + ".worldMatrix[0]",
                          matrix + ".matrixIn[0]")
         cmds.connectAttr(control + ".parentInverseMatrix[0]",
@@ -416,9 +477,9 @@ class MayaCustomControllerHost(MayaFaceHost):
         cmds.connectAttr(control + ".falloffMode",
                          deformer + ".falloffMode", force=True)
         radius_factor = cmds.createNode("multiplyDivide", name=self.scene_address(
-            plan.control_name + "RadiusFactor"))
+            plan.auxiliary_name("radius_factor")))
         radius_scale = cmds.createNode("multiplyDivide", name=self.scene_address(
-            plan.control_name + "RadiusScale"))
+            plan.auxiliary_name("radius_scale")))
         cmds.connectAttr(control + ".falloffRadius",
                          radius_factor + ".input1X")
         cmds.setAttr(radius_factor + ".input2X", plan.region.falloff_radius)
@@ -447,22 +508,8 @@ class MayaCustomControllerHost(MayaFaceHost):
         cmds.delete(source_handle)
         if cmds.objExists(source):
             cmds.delete(source)
-        previous = self.read_character_registration()
-        local = (self._cmds.identity.to_local if self.namespace is not None
-                 else lambda path: path)
-        nodes = tuple(self._registry_node(local(path))
-                      for path in (attach, offset, base, control))
-        channels = tuple(
-            CharacterChannel(
-                f"custom.{plan.control_name}.{role}.{channel}{axis}",
-                local(path), channel + axis)
-            for role, path in (("base", base), ("control", control))
-            for channel in ("translate", "rotate", "scale")
-            for axis in "XYZ")
-        updated = replace(previous,
-                          nodes=previous.nodes + nodes,
-                          channels=previous.channels + channels)
-        self.write_character_registration_extension(previous, updated)
+        self._register_custom_nodes((attach, offset, base, control),
+                                    control, base)
 
     def _create_skin_controller(self, plan: CustomControllerPlan) -> None:
         from maya import cmds
@@ -484,9 +531,9 @@ class MayaCustomControllerHost(MayaFaceHost):
                      "custom-skin-v1", type="string", lock=True)
         system = self._custom_system()
         attach = cmds.createNode("transform", name=self.scene_address(
-            plan.control_name + "Attach"), parent=system)
+            plan.auxiliary_name("attach")), parent=system)
         cmds.xform(attach, worldSpace=True, translation=plan.region.center)
-        cmds.parentConstraint(parent, attach, maintainOffset=True)
+        self._attach_to_custom_parent(attach, parent, plan.local)
         offset = cmds.createNode("transform", name=self.scene_address(
             plan.offset_name), parent=attach)
         scale = max(0.1, plan.region.falloff_radius / 4.0) / 2.0
@@ -553,19 +600,7 @@ class MayaCustomControllerHost(MayaFaceHost):
         cmds.delete(self._unique(plan.region.source_handle, "transform"))
         if cmds.objExists(plan.region.deformer):
             cmds.delete(plan.region.deformer)
-        previous = self.read_character_registration()
-        local = (self._cmds.identity.to_local if self.namespace is not None
-                 else lambda path: path)
-        nodes = tuple(self._registry_node(local(path))
-                      for path in (attach, offset, control, joint))
-        channels = tuple(CharacterChannel(
-            f"custom.{plan.control_name}.control.{channel}{axis}",
-            local(control), channel + axis)
-            for channel in ("translate", "rotate", "scale")
-            for axis in "XYZ")
-        updated = replace(previous, nodes=previous.nodes + nodes,
-                          channels=previous.channels + channels)
-        self.write_character_registration_extension(previous, updated)
+        self._register_custom_nodes((attach, offset, control, joint), control)
 
     def _create_cluster_controller(self, plan: CustomControllerPlan) -> None:
         from maya import cmds
@@ -576,9 +611,9 @@ class MayaCustomControllerHost(MayaFaceHost):
         mesh = self._mesh(plan.region.mesh)
         custom_system = self._custom_system()
         attach = cmds.createNode("transform", name=self.scene_address(
-            plan.control_name + "Attach"), parent=custom_system)
+            plan.auxiliary_name("attach")), parent=custom_system)
         cmds.xform(attach, worldSpace=True, translation=plan.region.center)
-        cmds.parentConstraint(parent, attach, maintainOffset=True)
+        self._attach_to_custom_parent(attach, parent, plan.local)
         offset = cmds.createNode("transform", name=self.scene_address(
             plan.offset_name), parent=attach)
         control = cmds.sphere(name=self.scene_address(plan.control_name),
@@ -591,7 +626,7 @@ class MayaCustomControllerHost(MayaFaceHost):
             raise RuntimeError("创建 Cluster 未返回变形器和操作柄")
         deformer = self._unique(created[0], "cluster")
         handle = cmds.rename(self._unique(created[1], "transform"),
-                             self.scene_address(plan.control_name + "Handle"))
+                             self.scene_address(plan.auxiliary_name("handle")))
         cmds.xform(handle, worldSpace=True, translation=plan.region.center)
         cmds.parent(handle, custom_system)
         cmds.parentConstraint(control, handle, maintainOffset=False)
@@ -623,19 +658,7 @@ class MayaCustomControllerHost(MayaFaceHost):
         cmds.delete(self._unique(plan.region.source_handle, "transform"))
         if cmds.objExists(plan.region.deformer):
             cmds.delete(plan.region.deformer)
-        previous = self.read_character_registration()
-        local = (self._cmds.identity.to_local if self.namespace is not None
-                 else lambda path: path)
-        nodes = tuple(self._registry_node(local(path))
-                      for path in (attach, offset, control))
-        channels = tuple(CharacterChannel(
-            f"custom.{plan.control_name}.control.{channel}{axis}",
-            local(control), channel + axis)
-            for channel in ("translate", "rotate", "scale")
-            for axis in "XYZ")
-        updated = replace(previous, nodes=previous.nodes + nodes,
-                          channels=previous.channels + channels)
-        self.write_character_registration_extension(previous, updated)
+        self._register_custom_nodes((attach, offset, control), control)
 
     def capture_custom_controller(self, plan: CustomControllerPlan
                                   ) -> CustomControllerState:
@@ -682,12 +705,17 @@ class MayaCustomControllerHost(MayaFaceHost):
         parent = self._unique(parents[0], "joint")
         local = (self._cmds.identity.to_local if self.namespace is not None
                  else lambda node: node)
-        registered = {node.path for node in
-                      self.read_character_registration().nodes}
+        has_registry = cmds.objExists(self.scene_address(REGISTRY_NAME))
+        registered = ({node.path for node in
+                       self.read_character_registration().nodes}
+                      if has_registry else set())
         expected = {local(attach), local(offset), local(path)}
         if base:
             expected.add(local(base))
-        if not expected <= registered:
+        face_path = any(segment.rsplit(":", 1)[-1] == "FaceCustomSystem"
+                        for segment in path.split("|") if segment)
+        if (has_registry and not expected <= registered
+                or not has_registry and not face_path):
             raise ValueError("自定义控制器未登记到角色")
         joint = None
         if kind is CustomControlKind.SKIN:
@@ -697,7 +725,7 @@ class MayaCustomControllerHost(MayaFaceHost):
             if len(joints) != 1:
                 raise ValueError("Skin Control 缺少唯一影响关节")
             joint = self._unique(joints[0], "joint")
-            if local(joint) not in registered:
+            if has_registry and local(joint) not in registered:
                 raise ValueError("Skin Control 影响关节未登记到角色")
         return CustomControllerState(
             kind, offset, path, base, parent,
@@ -873,40 +901,41 @@ class MayaCustomControllerHost(MayaFaceHost):
                                     fullPath=True) or [None])[0]
         if not attach:
             raise ValueError("自定义控制器缺少附着层")
-        before = self.read_character_registration()
-        local = (self._cmds.identity.to_local if self.namespace is not None
-                 else lambda path: path)
-        attach_local = local(attach)
-        removed = {node.path for node in before.nodes
-                   if node.path == attach_local
-                   or node.path.startswith(attach_local + "|")}
-        if state.joint:
-            removed.add(local(state.joint))
-        after = replace(before,
-                        nodes=tuple(node for node in before.nodes
-                                    if node.path not in removed),
-                        channels=tuple(channel for channel in before.channels
-                                       if channel.node not in removed))
-        if len(after.nodes) == len(before.nodes):
-            raise ValueError("自定义控制器不在角色登记中")
-        self._validate_character_registration(after)
-        registry = self.scene_address(REGISTRY_NAME)
-        document = registry + ".advPyRegistryDocument"
-        members = registry + ".members"
-        cmds.setAttr(document, lock=False)
-        cmds.setAttr(document, encode_registration(after), type="string")
-        cmds.setAttr(document, lock=True)
-        cmds.setAttr(members, lock=False)
-        for index in cmds.getAttr(members, multiIndices=True) or []:
-            destination = members + "[%d]" % index
-            for source in cmds.listConnections(
-                    destination, source=True, destination=False,
-                    plugs=True) or []:
-                cmds.disconnectAttr(source, destination)
-        for index, member in enumerate(after.nodes):
-            cmds.connectAttr(self.scene_address(member.path) + ".message",
-                             members + "[%d]" % index)
-        cmds.setAttr(members, lock=True)
+        if cmds.objExists(self.scene_address(REGISTRY_NAME)):
+            before = self.read_character_registration()
+            local = (self._cmds.identity.to_local if self.namespace is not None
+                     else lambda path: path)
+            attach_local = local(attach)
+            removed = {node.path for node in before.nodes
+                       if node.path == attach_local
+                       or node.path.startswith(attach_local + "|")}
+            if state.joint:
+                removed.add(local(state.joint))
+            after = replace(before,
+                            nodes=tuple(node for node in before.nodes
+                                        if node.path not in removed),
+                            channels=tuple(channel for channel in before.channels
+                                           if channel.node not in removed))
+            if len(after.nodes) == len(before.nodes):
+                raise ValueError("自定义控制器不在角色登记中")
+            self._validate_character_registration(after)
+            registry = self.scene_address(REGISTRY_NAME)
+            document = registry + ".advPyRegistryDocument"
+            members = registry + ".members"
+            cmds.setAttr(document, lock=False)
+            cmds.setAttr(document, encode_registration(after), type="string")
+            cmds.setAttr(document, lock=True)
+            cmds.setAttr(members, lock=False)
+            for index in cmds.getAttr(members, multiIndices=True) or []:
+                destination = members + "[%d]" % index
+                for source in cmds.listConnections(
+                        destination, source=True, destination=False,
+                        plugs=True) or []:
+                    cmds.disconnectAttr(source, destination)
+            for index, member in enumerate(after.nodes):
+                cmds.connectAttr(self.scene_address(member.path) + ".message",
+                                 members + "[%d]" % index)
+            cmds.setAttr(members, lock=True)
         if state.kind is CustomControlKind.SKIN:
             joint = self._unique(state.joint, "joint")
             for skin in cmds.ls(type="skinCluster") or []:
@@ -935,17 +964,20 @@ class MayaCustomControllerHost(MayaFaceHost):
                                     CustomControlKind.SOFT_MOD else "cluster")
             cmds.delete(deformer)
             if state.kind is CustomControlKind.CLUSTER:
-                handle = self.scene_address(
-                    state.control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-                    + "Handle")
+                stem, side = state.control.rsplit("|", 1)[-1].rsplit(
+                    ":", 1)[-1].rsplit("_", 1)
+                handle = self.scene_address("Cluster" + stem + "_" + side
+                                            + "Handle")
                 if cmds.objExists(handle):
                     cmds.delete(handle)
             else:
-                prefix = state.control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-                for suffix in ("SoftModMultMatrix", "RadiusFactor",
-                               "RadiusScale"):
-                    helper = self.scene_address(prefix + suffix)
+                stem, side = state.control.rsplit("|", 1)[-1].rsplit(
+                    ":", 1)[-1].rsplit("_", 1)
+                for role in ("SoftModMultMatrix", "MainScaleForSoftModMPD1",
+                             "MainScaleForSoftModMPD2"):
+                    helper = self.scene_address(stem + role + "_" + side)
                     if cmds.objExists(helper):
                         cmds.delete(helper)
         cmds.delete(attach)
-        self.read_character_registration()
+        if cmds.objExists(self.scene_address(REGISTRY_NAME)):
+            self.read_character_registration()

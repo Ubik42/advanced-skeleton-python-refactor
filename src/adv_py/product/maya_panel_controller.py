@@ -695,7 +695,8 @@ class MayaPanelController:
 
     def custom_softmod_create(self, namespace: str, deformer: str,
                               base_name: str, parent_joint: str = "",
-                              *, face: bool = False):
+                              *, face: bool = False, middle: bool = False,
+                              local: bool = True):
         from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
         from adv_py.application.custom_controller import BuildCustomController
         from adv_py.core.custom_controller import CustomControlKind
@@ -704,7 +705,8 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace, face=face)
         return BuildCustomController(host).apply(
             deformer, CustomControlKind.SOFT_MOD, base_name,
-            parent_joint=parent_joint or None).state
+            parent_joint=parent_joint or None,
+            middle=middle, local=local).state
 
     def custom_softmod_tool(self) -> None:
         from maya import mel
@@ -713,7 +715,8 @@ class MayaPanelController:
 
     def custom_cluster_create(self, namespace: str, deformer: str,
                               base_name: str, parent_joint: str = "",
-                              *, face: bool = False):
+                              *, face: bool = False, middle: bool = False,
+                              local: bool = True):
         from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
         from adv_py.application.custom_controller import BuildCustomController
         from adv_py.core.custom_controller import CustomControlKind
@@ -722,11 +725,13 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace, face=face)
         return BuildCustomController(host).apply(
             deformer, CustomControlKind.CLUSTER, base_name,
-            parent_joint=parent_joint or None).state
+            parent_joint=parent_joint or None,
+            middle=middle, local=local).state
 
     def custom_skin_create(self, namespace: str, deformer: str,
                            base_name: str, parent_joint: str = "",
-                           *, face: bool = False):
+                           *, face: bool = False, middle: bool = False,
+                           local: bool = True):
         from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
         from adv_py.application.custom_controller import BuildCustomController
         from adv_py.core.custom_controller import CustomControlKind
@@ -735,7 +740,8 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace, face=face)
         return BuildCustomController(host).apply(
             deformer, CustomControlKind.SKIN, base_name,
-            parent_joint=parent_joint or None).state
+            parent_joint=parent_joint or None,
+            middle=middle, local=local).state
 
     def custom_softmod_add_mesh(self, namespace: str, control: str,
                                 mesh: str):
