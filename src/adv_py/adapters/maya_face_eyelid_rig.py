@@ -13,7 +13,8 @@ from adv_py.core.face_build_requirements import FaceInclude
 from adv_py.core.face_eyelid_fit import (
     eye_lid_blink_offsets, order_eye_lid_loop)
 from adv_py.core.face_eyelid_skin import (
-    eyelid_skin_factors, outer_eyelid_skin_factors, split_arc_weight)
+    eyelid_skin_factors, inner_eyelid_skin_factors,
+    outer_eyelid_skin_factors, split_arc_weight)
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .maya_dense_skin import MayaDenseSkinHost
@@ -81,18 +82,39 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
         eye_y = float(c.xform(pre.read_eye_ball_fit(side), query=True,
                               worldSpace=True, translation=True)[1])
         ordered = {}
-        for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
+        for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER,
+                      EyeLidLayer.INNER):
             edges, corners = rings[layer]
             points = {vertex: positions[vertex]
                       for _, first, second in edges
                       for vertex in (first, second)}
-            ordered[layer] = order_eye_lid_loop(edges, points,
-                    eye_center_y=eye_y, corner_vertices=corners,
-                    side=side.value)
+            if layer is not EyeLidLayer.INNER:
+                ordered[layer] = order_eye_lid_loop(edges, points,
+                        eye_center_y=eye_y, corner_vertices=corners,
+                        side=side.value)
         boundary = {vertex for layer in (EyeLidLayer.OUTER,
                         EyeLidLayer.INNER)
                     for _, first, second in rings[layer][0]
                     for vertex in (first, second)}
+        selected_inner_edges = {row[0] for row in rings[EyeLidLayer.INNER][0]}
+        boundary_edges = set()
+        edge_it = om.MItMeshEdge(selection.getDagPath(0))
+        while not edge_it.isDone():
+            if len(edge_it.getConnectedFaces()) == 1:
+                boundary_edges.add(edge_it.index())
+            edge_it.next()
+        open_inner = selected_inner_edges <= boundary_edges
+        if selected_inner_edges & boundary_edges and not open_inner:
+            raise FitSkeletonValidationError(
+                "EyeLid Inner 环混合了眼孔边界与表面内部边")
+        if open_inner:
+            edges, corners = rings[EyeLidLayer.INNER]
+            ordered[EyeLidLayer.INNER] = order_eye_lid_loop(
+                edges, {vertex: positions[vertex]
+                        for _, first, second in edges
+                        for vertex in (first, second)},
+                eye_center_y=eye_y, corner_vertices=corners,
+                side=side.value)
         area, _ = pre.read_eye_lid_area(side)
         face_ids = []
         for item in (c.getAttr(area + ".selection") or "").split():
@@ -122,13 +144,30 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                 positions, area_vertices, outer.upper_vertices,
                 outer.lower_vertices),
         }
+        if open_inner:
+            inner = ordered[EyeLidLayer.INNER]
+            factors[EyeLidLayer.INNER] = inner_eyelid_skin_factors(
+                adjacency, positions, area_vertices,
+                inner.upper_vertices, inner.lower_vertices)
+            for vertex, pair in factors[EyeLidLayer.INNER].items():
+                remaining = 1. - sum(pair)
+                for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
+                    old = factors[layer].get(vertex)
+                    if old is not None:
+                        factors[layer][vertex] = tuple(
+                            value * remaining for value in old)
         arcs = {(layer, "upper"): ordered[layer].upper_vertices
                 for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER)}
         arcs.update({(layer, "lower"): ordered[layer].lower_vertices
                      for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER)})
+        if open_inner:
+            arcs[(EyeLidLayer.INNER, "upper")] = (
+                ordered[EyeLidLayer.INNER].upper_vertices)
+            arcs[(EyeLidLayer.INNER, "lower")] = (
+                ordered[EyeLidLayer.INNER].lower_vertices)
         span = max(positions[index][0] for index in main.upper_vertices) \
              - min(positions[index][0] for index in main.upper_vertices)
-        return factors, arcs, positions, span
+        return factors, arcs, positions, span, open_inner
 
     def build(self) -> dict:
         c = self._cmds
@@ -222,18 +261,24 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
         arcs = {}
         positions = {}
         spans = {}
+        open_inners = {}
         for side in FaceSide:
-            factors[side], arcs[side], positions[side], spans[side] = self._surface_factors(
+            (factors[side], arcs[side], positions[side], spans[side],
+             open_inners[side]) = self._surface_factors(
                 pre, mesh, side)
+        layers = {side: ((EyeLidLayer.MAIN, EyeLidLayer.OUTER,
+                          EyeLidLayer.INNER) if open_inners[side] else
+                         (EyeLidLayer.MAIN, EyeLidLayer.OUTER))
+                  for side in FaceSide}
         def weighted(side):
-            return {vertex for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER)
+            return {vertex for layer in layers[side]
                     for vertex, pair in factors[side][layer].items()
                     if sum(pair) > 1e-9}
         if weighted(FaceSide.RIGHT) & weighted(FaceSide.LEFT):
             raise FitSkeletonValidationError("左右眼睑区域发生重叠")
         blink_offsets = {}
         for side in FaceSide:
-            for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
+            for layer in layers[side]:
                 blink_offsets[(side, layer)] = eye_lid_blink_offsets(
                     arcs[side][(layer, "upper")],
                     arcs[side][(layer, "lower")], positions[side])
@@ -244,11 +289,12 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                           "ctrlEye" + suffix + "_Offset",
                           "ctrlEye" + suffix + "BlinkFraction",
                           "ctrlEye" + suffix + "BlinkReverse"))
-            for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
+            for layer in layers[side]:
                 for arc in ("upper", "lower"):
                     label = "Upper" if arc == "upper" else "Lower"
                     control = "ctrl" + label + "EyeLid" + (
-                        "Outer" if layer is EyeLidLayer.OUTER else "") + suffix
+                        "Outer" if layer is EyeLidLayer.OUTER else
+                        "Inner" if layer is EyeLidLayer.INNER else "") + suffix
                     names.extend((control, control + "_Offset"))
                     names.extend((control + "FleshyScale",
                                   control + "FleshyAmount",
@@ -307,13 +353,14 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                 c.connectAttr(fraction + ".outputX", reverse + ".inputX")
                 eye_control_names[side] = (
                     c.ls(eye_control, long=True, type="transform") or [eye_control])[0]
-                for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
+                for layer in layers[side]:
                     for arc in ("upper", "lower"):
                         vertices = arcs[side][(layer, arc)]
                         interior = vertices[1:-1]
                         label = "Upper" if arc == "upper" else "Lower"
                         control_name = "ctrl" + label + "EyeLid" + (
-                            "Outer" if layer is EyeLidLayer.OUTER else "") + suffix
+                            "Outer" if layer is EyeLidLayer.OUTER else
+                            "Inner" if layer is EyeLidLayer.INNER else "") + suffix
                         center = tuple(sum(positions[side][index][axis]
                                          for index in interior) / len(interior)
                                        for axis in range(3))
@@ -325,6 +372,8 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                             name=control_name + "_Offset", parent=motion)
                         c.xform(offset, worldSpace=True, translation=center)
                         control = c.parent(control, offset, relative=True)[0]
+                        if layer is EyeLidLayer.INNER:
+                            c.setAttr(control + ".visibility", False)
                         fleshy_default = (7. if arc == "upper" else 3.)
                         if layer is EyeLidLayer.OUTER:
                             fleshy_default /= 5.
@@ -441,7 +490,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
             for vertex in range(original.vertex_count):
                 lid_weights = {}
                 for side in FaceSide:
-                    for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
+                    for layer in layers[side]:
                         pair = factors[side][layer].get(vertex, (0., 0.))
                         for arc, mass in (("upper", pair[0]),
                                           ("lower", pair[1])):
@@ -470,6 +519,8 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
             c.select(selected, replace=True) if selected else c.select(clear=True)
         return {"skin": skin, "mesh": mesh,
                 "controls": control_names, "joints": joint_names,
+                "aperture_sides": tuple(side.value for side in FaceSide
+                                        if open_inners[side]),
                 "eye_controls": eye_control_names,
                 "work_curves": work_curves,
                 "area_vertices": {side.value: len(weighted(side))

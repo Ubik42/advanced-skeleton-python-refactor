@@ -1,7 +1,8 @@
 import unittest
 
 from adv_py.core.face_eyelid_skin import (
-    eyelid_skin_factors, outer_eyelid_skin_factors, split_arc_weight)
+    eyelid_skin_factors, inner_eyelid_skin_factors,
+    outer_eyelid_skin_factors, split_arc_weight)
 
 
 class EyeLidSkinFactorsTests(unittest.TestCase):
@@ -45,3 +46,20 @@ class EyeLidSkinFactorsTests(unittest.TestCase):
         self.assertNotIn(12, outer)
         self.assertEqual(split_arc_weight(1.5, positions,
                          (6, 7, 8), .6), {6: .3, 7: .3})
+
+    def test_open_aperture_inner_influence_fades_into_neighboring_row(self):
+        adjacency = {index: set() for index in range(25)}
+        positions = {index: (float(index % 5), float(index // 5), 0.)
+                     for index in range(25)}
+        for index in range(25):
+            for neighbor in (index - 1, index + 1, index - 5, index + 5):
+                if (0 <= neighbor < 25 and
+                        abs(neighbor // 5 - index // 5)
+                        + abs(neighbor % 5 - index % 5) == 1):
+                    adjacency[index].add(neighbor)
+        factors = inner_eyelid_skin_factors(adjacency, positions,
+            set(range(25)), (16, 17, 18), (6, 7, 8))
+        self.assertEqual(factors[17], (1., 0.))
+        self.assertEqual(factors[7], (0., 1.))
+        self.assertAlmostEqual(sum(factors[12]), 2./3.)
+        self.assertEqual(factors[6], (0., 0.))

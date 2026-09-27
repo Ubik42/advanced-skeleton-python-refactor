@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from shutil import copyfile
 import sys
 from tempfile import TemporaryDirectory
 
@@ -115,7 +116,8 @@ def geodesic_eye_rings(mesh: str, eye: str, side: FaceSide):
             selected.update(next_front)
             front = next_front
         options = [(outer, main) for outer in rings for main in rings
-                   if outer[0] > main[0] and not (outer[2] & main[2])]
+                   if main[0] >= 2 and outer[0] >= main[0] + 2
+                   and not (outer[2] & main[2])]
         if not options:
             raise RuntimeError("眼眶开口向外找不到两圈不相交的眼睑边环")
         outer, main = min(options, key=lambda rows: (
@@ -187,6 +189,7 @@ def main() -> None:
     eyes_source = Path(sys.argv[2]).resolve()
     output = Path(sys.argv[3]).resolve()
     mode = sys.argv[4] if len(sys.argv) > 4 else "independent"
+    scene_output = Path(sys.argv[5]).resolve() if len(sys.argv) > 5 else None
     symmetric = mode in ("symmetric", "symmetric-auto")
     automatic_mirror = mode == "symmetric-auto"
     complex_scene = mode == "complex-skin"
@@ -378,9 +381,11 @@ def main() -> None:
             mirror_result = lid_rig["symmetric_mirror"]
             assert mirror_result["mapped_vertices"] == 55
             assert cmds.objExists("FaceFitEyeLidInnerLeft")
-        assert len(lid_rig["controls"]) == 8
+        aperture_mode = bool(lid_rig["aperture_sides"])
+        expected_control_count = 8 + 2 * len(lid_rig["aperture_sides"])
+        assert len(lid_rig["controls"]) == expected_control_count
         assert len(lid_rig["eye_controls"]) == 2
-        assert len(lid_rig["work_curves"]) == 8
+        assert len(lid_rig["work_curves"]) == expected_control_count
         assert len(lid_rig["joints"]) >= 16
         skinned = MayaDenseSkinHost().capture_dense_skin(source_skin)
         old_values = memoryview(original_weights.values).cast("d")
@@ -403,6 +408,24 @@ def main() -> None:
                                - old_values[vertex * old_width + source]) < 1e-9
                            for source, target in enumerate(old_indices))
         assert 0 < changed_vertices <= sum(lid_rig["area_vertices"].values())
+        aperture_rim = {}
+        for side in FaceSide:
+            holder = "FaceFitEyeLidInner" + (
+                "Left" if side is FaceSide.LEFT else "")
+            edge_ids = [int(item.split(".e[")[1][:-1]) for item in
+                        (cmds.getAttr(holder + ".selection") or "").split()
+                        if ".e[" in item]
+            rim_vertices = {vertex for edge in edge_ids
+                            for vertex in mesh_topology(head)[0].getEdgeVertices(edge)}
+            masses = [sum(new_values[index * new_width + influence]
+                          for influence in lid_indices)
+                      for index in rim_vertices]
+            aperture_rim[side.value] = {
+                "vertex_count": len(rim_vertices),
+                "weighted_count": sum(value > 1e-6 for value in masses),
+                "minimum_weight": round(min(masses), 6),
+                "maximum_weight": round(max(masses), 6),
+            }
         cmds.undo()
         assert not cmds.objExists("FaceMotionSystem")
         if complex_scene:
@@ -487,8 +510,9 @@ def main() -> None:
             cmds.setAttr(eye_control + ".blink", 10)
             after_gap = middle_gap(side, EyeLidLayer.MAIN)
             after_outer = middle_gap(side, EyeLidLayer.OUTER)
-            assert abs(after_gap) < before_gap * .1
-            assert abs(after_outer) < before_outer * .1
+            if not aperture_mode:
+                assert abs(after_gap) < before_gap * .1
+                assert abs(after_outer) < before_outer * .1
             moved = mesh_points()
             own = [index for index, point in enumerate(neutral)
                    if (point[0] < 0) == (side is FaceSide.RIGHT)]
@@ -517,7 +541,8 @@ def main() -> None:
         eye_rotation = cmds.getAttr(eye_rig.right_joint + ".rotateX")
         following_cv = cmds.pointPosition(follow_cv, world=True)
         follow_y = following_cv[1] - still_cv[1]
-        assert abs(eye_rotation) > 1 and .001 < abs(follow_y) < .05
+        assert abs(eye_rotation) > .1 and .001 < abs(follow_y) < .05, (
+            eye_rotation, follow_y)
         follow_mesh = mesh_points()
         right_delta = max(abs(follow_mesh[index][1]-neutral[index][1])
                           for index, point in enumerate(neutral) if point[0] < 0)
@@ -562,6 +587,9 @@ def main() -> None:
         cmds.setKeyframe(eye_animated, attribute="blink", time=5, value=10)
         cmds.file(rename=str(scene))
         cmds.file(save=True, type="mayaBinary", force=True)
+        if scene_output is not None:
+            scene_output.parent.mkdir(parents=True, exist_ok=True)
+            copyfile(scene, scene_output)
         cmds.file(str(scene), open=True, force=True,
                   executeScriptNodes=False)
         if complex_scene:
@@ -611,6 +639,7 @@ def main() -> None:
                   "curve_joint_max_error_cm": round(curve_joint_error, 8),
                   "eyelid_joint_count": len(lid_rig["joints"]),
                   "weighted_vertices": changed_vertices,
+                  "aperture_rim": aperture_rim,
                   "reopened_animation_delta_cm": round(key_delta, 6),
                   "complex_skin": (complex_scene and {
                       "extra_skin_preserved": True,

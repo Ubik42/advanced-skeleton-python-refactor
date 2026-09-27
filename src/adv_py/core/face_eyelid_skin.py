@@ -23,8 +23,9 @@ def eyelid_skin_factors(adjacency: dict[int, set[int]],
                         area_vertices: set[int], boundary_vertices: set[int],
                         upper_vertices: tuple[int, ...],
                         lower_vertices: tuple[int, ...],
-                        maximum: float = .85) -> dict[int, tuple[float, float]]:
-    """Return upper/lower weights; zero on both boundaries and eye corners."""
+                        maximum: float = .85,
+                        ) -> dict[int, tuple[float, float]]:
+    """Return upper/lower weights for the band between Main and its boundary."""
     upper, lower = set(upper_vertices), set(lower_vertices)
     main = upper | lower
     if (not 0 < maximum <= 1 or len(upper_vertices) < 3
@@ -98,6 +99,48 @@ def outer_eyelid_skin_factors(adjacency: dict[int, set[int]],
         result[vertex] = (total * upper_share,
                           total * (1. - upper_share))
     return result
+
+
+def inner_eyelid_skin_factors(adjacency: dict[int, set[int]],
+                             positions: dict[int, tuple[float, float, float]],
+                             area_vertices: set[int],
+                             upper_vertices: tuple[int, ...],
+                             lower_vertices: tuple[int, ...],
+                             rows: int = 2,
+                             ) -> dict[int, tuple[float, float]]:
+    """Move an open eye rim and fade its influence into adjacent face rows."""
+    upper = set(upper_vertices[1:-1])
+    lower = set(lower_vertices[1:-1])
+    rim = set(upper_vertices) | set(lower_vertices)
+    if (not upper or not lower or upper & lower or rows < 1
+            or not rim <= area_vertices or not area_vertices <= positions.keys()):
+        raise ValueError("真实眼孔边环或衰减区域无效")
+    depth = _distances(adjacency, rim, area_vertices)
+    d_upper = _distances(adjacency, upper, area_vertices)
+    d_lower = _distances(adjacency, lower, area_vertices)
+    if any(len(row) != len(area_vertices)
+           for row in (depth, d_upper, d_lower)):
+        raise ValueError("真实眼孔衰减区域不连通")
+    left_x = min(positions[index][0] for index in rim)
+    right_x = max(positions[index][0] for index in rim)
+    if right_x - left_x <= 1e-6:
+        raise ValueError("真实眼孔缺少水平跨度")
+    factors = {}
+    for vertex, distance in depth.items():
+        if distance > rows:
+            continue
+        x = min(1., max(0., (positions[vertex][0] - left_x)
+                         / (right_x - left_x)))
+        taper = min(1., 8. * min(x, 1. - x))
+        total = taper * (rows + 1 - distance) / (rows + 1)
+        if vertex in upper:
+            share = 1.
+        elif vertex in lower:
+            share = 0.
+        else:
+            share = d_lower[vertex] / (d_upper[vertex] + d_lower[vertex])
+        factors[vertex] = (total * share, total * (1. - share))
+    return factors
 
 
 def split_arc_weight(x: float,

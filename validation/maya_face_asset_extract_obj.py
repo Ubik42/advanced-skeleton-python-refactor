@@ -42,7 +42,10 @@ def export_obj(mesh: str, path: Path) -> None:
 def main() -> None:
     source = Path(sys.argv[1]).resolve()
     output = Path(sys.argv[2]).resolve()
-    head_name, right_name, left_name = sys.argv[3:6]
+    if len(sys.argv) not in (5, 6):
+        raise ValueError("用法：FBX 输出目录 头部网格 双眼网格，或头部网格 右眼网格 左眼网格")
+    head_name = sys.argv[3]
+    eye_names = sys.argv[4:]
     if not source.is_file() or source.suffix.lower() != ".fbx":
         raise FileNotFoundError("需要存在的本地 FBX 文件")
     output.mkdir(parents=True, exist_ok=True)
@@ -52,13 +55,16 @@ def main() -> None:
     cmds.file(str(source), i=True, type="FBX", ignoreVersion=True,
               mergeNamespacesOnClash=False, options="fbx")
     head = static_copy(one_mesh(head_name), "head")
-    right = static_copy(one_mesh(right_name), "eyeOutterRight")
-    left = static_copy(one_mesh(left_name), "eyeOutterLeft")
-    eyes = cmds.polyUnite(right, left, name="eyeOutter",
-                          constructionHistory=False)[0]
-    remaining = [path for path in (right, left) if cmds.objExists(path)]
-    if remaining:
-        cmds.delete(remaining)
+    if len(eye_names) == 1:
+        eyes = static_copy(one_mesh(eye_names[0]), "eyeOutter")
+    else:
+        right = static_copy(one_mesh(eye_names[0]), "eyeOutterRight")
+        left = static_copy(one_mesh(eye_names[1]), "eyeOutterLeft")
+        eyes = cmds.polyUnite(right, left, name="eyeOutter",
+                              constructionHistory=False)[0]
+        remaining = [path for path in (right, left) if cmds.objExists(path)]
+        if remaining:
+            cmds.delete(remaining)
     head_obj = output / "head.obj"
     eye_obj = output / "eyes.obj"
     export_obj(head, head_obj)
@@ -66,7 +72,7 @@ def main() -> None:
     result = {
         "source_name": source.name,
         "head_mesh": head_name,
-        "eye_meshes": [right_name, left_name],
+        "eye_meshes": list(eye_names),
         "head_vertices": int(cmds.polyEvaluate(head, vertex=True)),
         "head_faces": int(cmds.polyEvaluate(head, face=True)),
         "eye_vertices": int(cmds.polyEvaluate(eyes, vertex=True)),
