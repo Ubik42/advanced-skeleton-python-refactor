@@ -123,8 +123,8 @@ class MayaFitInbetweenMixin:
             c.xform(joint, worldSpace=True,
                     translation=part.world_position)
             parent = joint
-        c.parent(end, parent, absolute=True)
-        after = tuple(c.xform(end, query=True, worldSpace=True,
+        moved_end = c.parent(end, parent, absolute=True)[0]
+        after = tuple(c.xform(moved_end, query=True, worldSpace=True,
                               matrix=True))
         if max(abs(a - b) for a, b in zip(before, after)) > 1e-5:
             raise RuntimeError("Inbetween IK 插入改变了原有绑定姿态")

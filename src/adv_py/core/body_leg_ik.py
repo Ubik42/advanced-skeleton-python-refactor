@@ -35,6 +35,7 @@ class BodyLegIkSpec:
     radius: float
     ankle_constraint_name: str
     toe_driver_path: str
+    solver_joint_list: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,7 +251,7 @@ def audit_body_leg_ik(
                 "Ankle IK 朝向驱动不一致",
             ),
             (
-                state.joint_list == spec.chain[:2],
+                state.joint_list == (spec.solver_joint_list or spec.chain[:2]),
                 "ik_chain_mismatch",
                 "RP IK 求解链不一致",
             ),

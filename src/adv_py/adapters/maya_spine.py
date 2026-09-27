@@ -188,7 +188,8 @@ class MayaBodySpineMixin:
                 raise FitSkeletonValidationError("Spine FK 驱动输出改变")
         handle = "AdvPy_SpineIKHandle"
         chain = tuple(self._resolve_connected_node(node) for node in c.ikHandle(handle, query=True, jointList=True))
-        if (chain != tuple(j.path for j in plan.joints[3:5])
+        if (chain != (plan.solver_joint_list or
+                      tuple(j.path for j in plan.joints[3:5]))
                 or (c.listRelatives(handle, parent=True, fullPath=True) or []) != [plan.ik_control]
                 or not c.isConnected(plan.blend_plug, "AdvPy_SpineReverse.inputX")):
             raise FitSkeletonValidationError("Spine IK handle 或混合输入结构改变")

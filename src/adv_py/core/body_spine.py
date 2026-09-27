@@ -35,6 +35,7 @@ class BodySpinePlan:
     waist_output: str
     chest_space: str
     lengths: tuple[float, float]
+    solver_joint_list: tuple[str, ...] | None = None
 
     @property
     def blend_plug(self) -> str:

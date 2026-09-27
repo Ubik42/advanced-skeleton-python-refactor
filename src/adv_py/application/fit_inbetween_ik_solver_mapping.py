@@ -1,13 +1,18 @@
 """Group registered Inbetween segments by their existing RP solver handle."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from adv_py.core.fit_inbetween_ik_parts import (
     InbetweenIkPartsPlan, plan_inbetween_ik_parts,
 )
 from adv_py.core.fit_inbetween_ik_solver import (
     InbetweenIkSolverPlan, plan_inbetween_ik_solver,
+)
+from adv_py.core.fit_inbetween_ik_rebase import (
+    rebase_inbetween_ik_mechanisms,
+    rebase_inbetween_ik_reference,
+    rebase_inbetween_spine_mechanisms,
 )
 
 from .body_character_rig import BodyCharacterRigBuildPlan
@@ -100,3 +105,45 @@ def plan_character_inbetween_ik_solvers(
         without_solver.append(binding)
     return InbetweenIkSolverMapping(tuple(requests),
                                     tuple(without_solver))
+
+
+def rebase_character_rig_after_inbetween_ik(
+    rig: BodyCharacterRigBuildPlan,
+    mapping: InbetweenIkSolverMapping,
+) -> BodyCharacterRigBuildPlan:
+    """Return a rig plan whose paths and IK audits describe expanded chains.
+
+    This is a plan rewrite only.  The caller must apply the matching solver
+    operations in the scene before using the returned plan to capture nodes.
+    """
+    solvers = tuple(request.plan for request in mapping.requests)
+    if not solvers:
+        return rig
+    by_handle = {solver.handle_name: solver for solver in solvers}
+    if len(by_handle) != len(solvers):
+        raise ValueError("Inbetween IK 求解器重复登记")
+    rebased = rebase_inbetween_ik_reference(rig, solvers)
+    arm_ik = replace(rebased.arm.ik, limbs=tuple(
+        replace(spec, solver_joint_list=by_handle[spec.handle_name].solved_joint_list)
+        if spec.handle_name in by_handle else spec
+        for spec in rebased.arm.ik.limbs))
+    leg_ik = replace(rebased.leg.ik, limbs=tuple(
+        replace(spec, solver_joint_list=by_handle[spec.handle_name].solved_joint_list)
+        if spec.handle_name in by_handle else spec
+        for spec in rebased.leg.ik.limbs))
+    arm = replace(rebased.arm, ik=arm_ik,
+                  mechanisms=rebase_inbetween_ik_mechanisms(
+                      rig.arm.mechanisms, solvers))
+    leg = replace(rebased.leg, ik=leg_ik,
+                  mechanisms=rebase_inbetween_ik_mechanisms(
+                      rig.leg.mechanisms, solvers))
+    torso = rebased.torso
+    if torso is not None and torso.torso.spine is not None:
+        spine = rebase_inbetween_spine_mechanisms(
+            rig.torso.torso.spine, solvers)
+        spine_solver = by_handle.get("AdvPy_SpineIKHandle")
+        if spine_solver is not None:
+            spine = replace(spine,
+                            solver_joint_list=spine_solver.solved_joint_list)
+        torso = replace(torso, torso=replace(torso.torso, spine=spine))
+    return replace(rebased, arm=arm, leg=leg, torso=torso)

@@ -35,6 +35,7 @@ class BodyArmIkSpec:
     pole_position: Vector3
     radius: float
     wrist_constraint_name: str
+    solver_joint_list: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,7 +154,7 @@ def audit_body_arm_ik(plan: BodyArmIkPlan, snapshot: BodyArmIkSnapshot, *, toler
             (state.handle_name == spec.handle_name and state.handle_parent_path == spec.wrist_control_path, "ik_handle_mismatch", "IK Handle 或父级不一致"),
             (state.pole_constraint_name == spec.pole_constraint_name, "ik_pole_constraint", "Pole Vector 约束名称不一致"),
             (state.wrist_constraint_name == spec.wrist_constraint_name and state.wrist_source == spec.wrist_control_path and state.wrist_driven_joint == spec.chain[2], "ik_wrist_orientation", "Wrist IK 朝向驱动不一致"),
-            (state.joint_list == spec.chain[:2], "ik_chain_mismatch", "RP IK 求解链不一致"),
+            (state.joint_list == (spec.solver_joint_list or spec.chain[:2]), "ik_chain_mismatch", "RP IK 求解链不一致"),
             (state.pole_source == spec.pole_control_path, "ik_pole_wiring", "Pole Vector 连线不一致"),
             (state.wrist_shape == "nurbsCurve" and state.pole_shape == "nurbsCurve", "ik_shape_mismatch", "IK 控制缺少 NURBS 曲线"),
         )
