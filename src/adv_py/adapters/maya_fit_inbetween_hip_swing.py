@@ -78,11 +78,20 @@ class MayaHipSwingReverseMixin:
             raise ValueError("HipSwingReverse 要求 RootPart1 的本地 X 段长非零")
         end_matrix = c.xform(plan.end_body_path, query=True,
                              worldSpace=True, matrix=True)
+        root_matrix = c.xform(plan.start_body_path, query=True,
+                              worldSpace=True, matrix=True)
+        root_position = c.xform(plan.start_body_path, query=True,
+                                worldSpace=True, translation=True)
+        child_position = c.xform(plan.end_body_path, query=True,
+                                 worldSpace=True, translation=True)
         offset = c.createNode("transform",
                               name=plan.control_offset_name,
                               parent=plan.start_fk_control_path,
                               skipSelect=True)
-        c.xform(offset, worldSpace=True, matrix=end_matrix)
+        c.xform(offset, worldSpace=True, matrix=root_matrix)
+        c.xform(offset, worldSpace=True, translation=tuple(
+            (a + b) * 0.5 for a, b in zip(root_position, child_position)))
+        c.setAttr(offset + ".translateX", plan.control_local_x_bias)
         selection = c.ls(selection=True, long=True) or []
         try:
             control = c.circle(name=plan.control_name,
@@ -185,6 +194,9 @@ class MayaHipSwingReverseMixin:
         if (not c.objExists(plan.control_path + ".advPyHipSwingOwner")
                 or c.getAttr(plan.control_path + ".advPyHipSwingOwner")
                 != "adv_py.hip_swing.v1"
+                or abs(float(c.getAttr(
+                    plan.control_path.rsplit("|", 1)[0] + ".translateX"))
+                    - plan.control_local_x_bias) > 1e-6
                 or c.connectionInfo(
                     plan.blend_name + ".target[0].targetMatrix",
                     sourceFromDestination=True)

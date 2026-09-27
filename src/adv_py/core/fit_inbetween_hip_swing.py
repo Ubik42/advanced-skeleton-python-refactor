@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 
+from .body_skeleton import FitDeformProfile
 from .fit_part import FitPartJointSpec
 from .fit_orientation import FitOrientationSnapshot
 
@@ -72,6 +73,7 @@ class HipSwingReversePlan:
     count: int
     rotate_order: int
     radius: float
+    control_local_x_bias: float
     control_offset_name: str
     control_name: str
     reverse_name: str
@@ -88,6 +90,10 @@ class HipSwingReversePlan:
     def reverse_root_name(self) -> str:
         return self.parts[0].aligned_name
 
+    @property
+    def control_position_sources(self) -> tuple[str, str]:
+        return self.start_body_path, self.end_body_path
+
 
 def plan_hip_swing_reverse(
     body_parts: tuple[FitPartJointSpec, ...], *,
@@ -95,6 +101,7 @@ def plan_hip_swing_reverse(
     start_fk_control_path: str,
     end_body_path: str,
     radius: float,
+    root_profile: FitDeformProfile,
 ) -> HipSwingReversePlan:
     """Insert per-Part correction matrices before the existing FK matrices.
 
@@ -109,7 +116,8 @@ def plan_hip_swing_reverse(
             or not end_body_path.startswith("|")
             or isinstance(radius, bool)
             or not isinstance(radius, (int, float))
-            or not isfinite(radius) or radius <= 0):
+            or not isfinite(radius) or radius <= 0
+            or not isinstance(root_profile, FitDeformProfile)):
         raise ValueError("HipSwingReverse 需要 Root FK 控制和正半径")
     ordered = tuple(sorted(body_parts, key=lambda item: item.index))
     first = ordered[0]
@@ -138,6 +146,7 @@ def plan_hip_swing_reverse(
         start_fk_offset_path, start_fk_control_path,
         first.start_body, end_body_path, "AdvPy_Root_M_InbetweenMM",
         first.name, n, first.rotation_order, float(radius),
+        -1.4 * root_profile.fat * root_profile.fat_width,
         "AdvPy_HipSwingerOffset", "AdvPy_HipSwinger",
         "AdvPy_HipSwingReverse", "AdvPy_HipSwingReversePartBM",
         "AdvPy_HipSwingPartDM", parts,

@@ -262,6 +262,10 @@ class BuildRegisteredBodyCharacter:
                             end_body_path=final_paths.remap_body_reference(
                                 root_binding.parts[-1].end_body),
                             radius=root_binding.part_control_radius * 3.0,
+                            root_profile=next(
+                                spec.deform_profile
+                                for spec in part_plan.specs
+                                if spec.name == "Root_M"),
                         )
                 driven_body = joined.capture_body_skeleton(
                     skeleton.snapshot.root)
