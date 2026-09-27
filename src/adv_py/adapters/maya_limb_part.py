@@ -130,9 +130,11 @@ class MayaLimbPartHost(MayaBodyBuildHost):
         # The original Body end lies below both Part joints. The new Body end
         # is a direct child of start; compensate the proximal twist on the
         # helper branch while retaining the original editable amounts.
-        for name, path, amount in (
-                (spec.part1_name, spec.part1, 1.0 / 3.0),
-                (spec.part2_name, spec.part2, 2.0 / 3.0)):
+        for name, path, amount, profile in (
+                (spec.part1_name, spec.part1, 1.0 / 3.0,
+                 spec.deform_profiles[0]),
+                (spec.part2_name, spec.part2, 2.0 / 3.0,
+                 spec.deform_profiles[1])):
             joint = c.createNode("joint", name=name, parent=parent,
                                  skipSelect=True)
             joint = (c.ls(joint, long=True) or [joint])[0]
@@ -146,6 +148,11 @@ class MayaLimbPartHost(MayaBodyBuildHost):
                       defaultValue=amount, keyable=True)
             c.addAttr(joint, longName="twistAddition", attributeType="double",
                       defaultValue=0.0, keyable=True)
+            for attr, value in (("fat", profile.fat),
+                                ("fatFront", profile.fat_front),
+                                ("fatWidth", profile.fat_width)):
+                c.addAttr(joint, longName=attr, attributeType="double",
+                          minValue=0.0, defaultValue=value, keyable=False)
             c.connectAttr((first_translation if amount < 0.5 else translation)
                           + ".output", joint + ".translate")
             c.connectAttr(parent + ".scale", joint + ".inverseScale")

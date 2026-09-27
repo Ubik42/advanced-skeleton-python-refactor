@@ -24,6 +24,30 @@ class BodySkeletonValidationError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class FitDeformProfile:
+    fat: float = 1.0
+    fat_front: float = 1.0
+    fat_width: float = 1.0
+
+    def __post_init__(self) -> None:
+        if any(not isfinite(float(value)) or float(value) < 0.0
+               for value in (self.fat, self.fat_front, self.fat_width)):
+            raise BodySkeletonValidationError("Fit 体积参数必须为有限非负数")
+
+    def interpolate(self, other: "FitDeformProfile", fraction: float
+                    ) -> "FitDeformProfile":
+        if not isfinite(fraction) or not 0.0 <= fraction <= 1.0:
+            raise BodySkeletonValidationError("体积参数插值比例必须在 0 到 1 之间")
+        return FitDeformProfile(*(
+            left + (right - left) * fraction
+            for left, right in zip(
+                (self.fat, self.fat_front, self.fat_width),
+                (other.fat, other.fat_front, other.fat_width),
+            )
+        ))
+
+
+@dataclass(frozen=True, slots=True)
 class BodyJointSpec:
     source_joint: str
     path: str
@@ -32,12 +56,14 @@ class BodyJointSpec:
     side: FitBuildSide
     world_position: Vector3
     label: JointLabel
+    deform_profile: FitDeformProfile = FitDeformProfile()
 
     @classmethod
     def from_symmetry(
         cls,
         instance: FitSymmetryInstance,
         label: JointLabel,
+        deform_profile: FitDeformProfile = FitDeformProfile(),
     ) -> "BodyJointSpec":
         return cls(
             source_joint=instance.source_joint,
@@ -47,6 +73,7 @@ class BodyJointSpec:
             side=instance.side,
             world_position=instance.world_position,
             label=label,
+            deform_profile=deform_profile,
         )
 
     def __post_init__(self) -> None:
@@ -76,6 +103,7 @@ class BodyJointState:
     world_axes: AxisFrame = IDENTITY_FRAME
     writable_joint_orient_axes: frozenset[str] = ALL_ORIENT_AXES
     world_scale: Vector3 = (1.0, 1.0, 1.0)
+    deform_profile: FitDeformProfile = FitDeformProfile()
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +174,10 @@ def body_skeleton_unchanged(before: BodySkeletonSnapshot,
                    (old.joint_orient, new.joint_orient),
                    (old.rotation, new.rotation),
                    (old.world_scale, new.world_scale))
+        numeric += (((old.deform_profile.fat, old.deform_profile.fat_front,
+                       old.deform_profile.fat_width),
+                     (new.deform_profile.fat, new.deform_profile.fat_front,
+                      new.deform_profile.fat_width)),)
         numeric += tuple(zip(old.world_axes, new.world_axes))
         if any(any(not (isfinite(a) and isfinite(b))
                    or abs(a - b) > tolerance for a, b in zip(left, right))
@@ -247,6 +279,13 @@ def audit_body_skeleton(
             issues.append(BodySkeletonIssue("side_mismatch", "关节侧向标签不一致", path))
         if state.label != spec.label:
             issues.append(BodySkeletonIssue("label_mismatch", "关节标签不一致", path))
+        if any(abs(current - wanted) > tolerance for current, wanted in zip(
+            (state.deform_profile.fat, state.deform_profile.fat_front,
+             state.deform_profile.fat_width),
+            (spec.deform_profile.fat, spec.deform_profile.fat_front,
+             spec.deform_profile.fat_width))):
+            issues.append(BodySkeletonIssue(
+                "deform_profile_mismatch", "Fit 体积参数不一致", path))
         if any(
             abs(current - wanted) > tolerance
             for current, wanted in zip(state.world_position, spec.world_position)

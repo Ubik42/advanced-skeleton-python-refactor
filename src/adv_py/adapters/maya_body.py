@@ -232,6 +232,7 @@ from adv_py.core.body_skeleton import (
     BodyJointOrientationChange,
     BodyJointSpec,
     BodyJointState,
+    FitDeformProfile,
     BodySkeletonProvenance,
     BodySkeletonProvenanceState,
     BodySkeletonSnapshot,
@@ -319,6 +320,22 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
             raise FitSkeletonValidationError("网格没有顶点：" + mesh_path)
         return vertices
 
+    def read_fit_deform_profile(self, joint: str) -> FitDeformProfile:
+        c = self._cmds
+        matches = c.ls(joint, long=True, type="joint") or []
+        if len(matches) != 1 or matches[0] != joint:
+            raise FitSkeletonValidationError("Fit 体积来源关节无效：" + joint)
+
+        def read(*names: str) -> float:
+            for name in names:
+                if c.attributeQuery(name, node=joint, exists=True):
+                    return float(c.getAttr(f"{joint}.{name}"))
+            return 1.0
+
+        return FitDeformProfile(
+            read("fat"), read("fatFront", "fatY"),
+            read("fatWidth", "fatZ"))
+
     def create_body_joint(self, spec: BodyJointSpec) -> str:
         self._require_transaction()
         if self.find_name_collisions(spec.name):
@@ -349,6 +366,13 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         )
         self.set_joint_label(path, spec.label)
         self._cmds.setAttr(f"{path}.side", _MAYA_SIDE_FROM_CORE[spec.side])
+        for name, value in (
+            ("fat", spec.deform_profile.fat),
+            ("fatFront", spec.deform_profile.fat_front),
+            ("fatWidth", spec.deform_profile.fat_width),
+        ):
+            self._cmds.addAttr(path, longName=name, attributeType="double",
+                               minValue=0.0, defaultValue=value, keyable=False)
         return path
 
     def scene_linear_unit(self) -> BodyFbxLinearUnit:
@@ -435,6 +459,12 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                     world_axes=world_axes,
                     writable_joint_orient_axes=writable_axes,
                     world_scale=tuple(sum(float(v)*float(v) for v in matrix[i:i+3])**0.5 for i in (0,4,8)),
+                    deform_profile=FitDeformProfile(*(
+                        float(self._cmds.getAttr(f"{path}.{name}"))
+                        if self._cmds.attributeQuery(name, node=path, exists=True)
+                        else 1.0
+                        for name in ("fat", "fatFront", "fatWidth")
+                    )),
                 )
             )
         return BodySkeletonSnapshot(

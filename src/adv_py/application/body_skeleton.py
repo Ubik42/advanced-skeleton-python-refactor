@@ -6,6 +6,7 @@ from typing import Protocol
 
 from adv_py.core.body_skeleton import (
     BodyJointSpec,
+    FitDeformProfile,
     BodySkeletonSnapshot,
     audit_body_skeleton,
 )
@@ -26,6 +27,8 @@ class BodySkeletonHost(Protocol):
     ) -> FitSkeletonSettings: ...
 
     def read_joint_label(self, joint: str) -> JointLabel | None: ...
+
+    def read_fit_deform_profile(self, joint: str) -> FitDeformProfile: ...
 
     def find_name_collisions(self, name: str) -> tuple[str, ...]: ...
 
@@ -90,6 +93,10 @@ class BuildBodySkeleton:
             center_tolerance=center_tolerance,
         )
         labels: dict[str, JointLabel] = {}
+        profiles = {
+            node.path: self._host.read_fit_deform_profile(node.path)
+            for node in symmetry.source.hierarchy.joints
+        }
         missing_labels: list[str] = []
         inferred_labels: list[str] = []
         for node in symmetry.source.hierarchy.joints:
@@ -103,7 +110,9 @@ class BuildBodySkeleton:
             if label is not None:
                 labels[node.path] = label
         specs = tuple(
-            BodyJointSpec.from_symmetry(instance, labels[instance.source_joint])
+            BodyJointSpec.from_symmetry(
+                instance, labels[instance.source_joint],
+                profiles[instance.source_joint])
             for instance in symmetry.instances
             if instance.source_joint in labels
         )

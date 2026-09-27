@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .body_skeleton import BodySkeletonSnapshot
+from .body_skeleton import BodySkeletonSnapshot, FitDeformProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +44,8 @@ class LimbPartSegmentSpec:
     twist_ik_source: str | None = None
     twist_mode_blend_name: str | None = None
     split_body_twist: bool = False
+    deform_profiles: tuple[FitDeformProfile, FitDeformProfile] = (
+        FitDeformProfile(), FitDeformProfile())
 
 
 def plan_limb_parts(body: BodySkeletonSnapshot, *,
@@ -101,5 +103,7 @@ def plan_limb_parts(body: BodySkeletonSnapshot, *,
                  else None),
                 (prefix + "TwistModeBlend"
                  if stem == "Hip" or split_body_twist else None),
-                split_body_twist))
+                split_body_twist,
+                (start.deform_profile.interpolate(end.deform_profile, 1.0 / 3.0),
+                 start.deform_profile.interpolate(end.deform_profile, 2.0 / 3.0))))
     return tuple(result)

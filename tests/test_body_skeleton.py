@@ -1,6 +1,7 @@
 import unittest
 from contextlib import contextmanager
 from dataclasses import replace
+from adv_py.core.body_skeleton import FitDeformProfile
 
 from adv_py.application import (
     BuildBodyArmMechanisms,
@@ -285,6 +286,10 @@ class FakeBodySkeletonHost:
     def read_joint_label(self, joint):
         return self.labels.get(joint)
 
+    def read_fit_deform_profile(self, joint):
+        del joint
+        return FitDeformProfile()
+
     def find_name_collisions(self, name):
         existing_body = tuple(
             state.path for state in self.body if state.name == name
@@ -456,6 +461,7 @@ class FakeBodySkeletonHost:
                 spec.label,
                 (0.0, 0.0, 0.0),
                 (0.0, 0.0, 0.0),
+                deform_profile=spec.deform_profile,
             )
         )
         return spec.path
