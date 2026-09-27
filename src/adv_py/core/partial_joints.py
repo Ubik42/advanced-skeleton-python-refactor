@@ -23,15 +23,24 @@ class PartialJointSpec:
     count: int
     include_controller: bool
     auto_bind: bool
+    use_opm: bool = False
 
     @property
     def names(self) -> tuple[str, ...]:
         if self.count == 1:
-            names = [self.stem + "Partial_" + self.side,
-                     self.stem + "_" + self.side + "_00",
-                     self.stem + "_" + self.side + "_00Offset",
-                     "FK" + self.stem + "Partial_" + self.side + "SR",
-                     self.stem + "_" + self.side + "_00Offset_parentConstraint1"]
+            names = [self.stem + "Partial_" + self.side]
+            if self.use_opm:
+                names.extend((self.stem + "PartialBM_" + self.side,
+                              ("FK" + self.stem + "Partial_" + self.side
+                               if self.include_controller else self.stem + "Partial_" + self.side)
+                              + "FollowMDL_" + self.side))
+                if self.include_controller:
+                    names.append(self.stem + "PartialMM_" + self.side)
+            else:
+                names.extend((self.stem + "_" + self.side + "_00",
+                              self.stem + "_" + self.side + "_00Offset",
+                              "FK" + self.stem + "Partial_" + self.side + "SR",
+                              self.stem + "_" + self.side + "_00Offset_parentConstraint1"))
             target = self.stem + "Partial_" + self.side
             if self.include_controller:
                 names.extend(("FKOffset" + self.stem + "Partial_" + self.side,
@@ -40,8 +49,9 @@ class PartialJointSpec:
                               target + "_parentConstraint1",
                               target + "_scaleConstraint1"))
                 target = "FKOffset" + target
-            names.extend(target + "_" + kind + "Constraint1"
-                         for kind in ("orient", "point", "scale"))
+            if not self.use_opm:
+                names.extend(target + "_" + kind + "Constraint1"
+                             for kind in ("orient", "point", "scale"))
             return tuple(names)
         names = [self.stem + "Partial%d_%s" % (index, self.side)
                  for index in range(1, self.count + 1)]
@@ -98,10 +108,12 @@ def plan_create_partial_joints(
         candidates: tuple[PartialJointCandidate, ...],
         selected: tuple[str, ...] = (), *,
         count: int = 1, include_controller: bool = False,
-        auto_bind: bool = False) -> PartialJointPlan:
+        auto_bind: bool = False, use_opm: bool = False) -> PartialJointPlan:
     if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 128:
         raise ValueError("Partial 关节段数须为 1～128")
-    if not isinstance(include_controller, bool) or not isinstance(auto_bind, bool):
+    if (not isinstance(include_controller, bool)
+            or not isinstance(auto_bind, bool)
+            or not isinstance(use_opm, bool)):
         raise ValueError("Partial 选项须为布尔值")
     if auto_bind and count == 1:
         raise ValueError("自动蒙皮只适用于多段 Partial Joints")
@@ -120,7 +132,8 @@ def plan_create_partial_joints(
         stem, side = naming
         specs.append(PartialJointSpec(candidate.joint, candidate.parent,
                                       stem, side, count,
-                                      include_controller, auto_bind))
+                                      include_controller, auto_bind,
+                                      use_opm and count == 1))
     if not specs:
         raise ValueError("没有可创建的 Partial Joints 目标")
     names = [name for spec in specs for name in spec.names]

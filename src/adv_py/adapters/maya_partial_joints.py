@@ -71,6 +71,13 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
                 found.append(joint)
         return tuple(found)
 
+    def partial_uses_opm(self) -> bool:
+        c = self._cmds
+        fit = self._node("FitSkeleton")
+        return bool(c.objExists(fit) and c.attributeQuery(
+            "useOffsetParentMatrix", node=fit, exists=True)
+            and c.getAttr(fit + ".useOffsetParentMatrix"))
+
     def preflight_partial_scene(self, *, include_controller: bool,
                                 multi: bool, auto_bind: bool) -> None:
         c = self._cmds
@@ -130,7 +137,8 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
         parent = self._unique(spec.parent, "joint")
         system = self._system("PartialJointsSystem",
                               self._unique("MotionSystem", "transform"))
-        constraints = self._system("PartialJointsConstraints", system)
+        constraints = (None if spec.use_opm else self._system(
+            "PartialJointsConstraints", system))
         stem_side = spec.stem + "_" + spec.side
         name = spec.stem + "Partial_" + spec.side
         world = c.xform(source, query=True, worldSpace=True, matrix=True)
@@ -144,17 +152,19 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
         c.addAttr(joint, longName="partialJoint", attributeType="bool",
                   defaultValue=True)
         c.sets(joint, add=self._node("DeformSet"))
-        offset = c.createNode("transform", name=self._node(stem_side + "_00Offset"),
-                              parent=system, skipSelect=True)
-        c.xform(offset, worldSpace=True, matrix=world)
-        c.setAttr(offset + ".rotateOrder", c.getAttr(source + ".rotateOrder"))
-        zero = c.createNode("transform", name=self._node(stem_side + "_00"),
-                            parent=offset, skipSelect=True)
-        c.addAttr(zero, longName="partialJoint", attributeType="bool")
-        parent_constraint = c.parentConstraint(
-            parent, offset, maintainOffset=True,
-            name=self._node(stem_side + "_00Offset_parentConstraint1"))[0]
-        c.parent(parent_constraint, constraints)
+        zero = None
+        if not spec.use_opm:
+            offset = c.createNode("transform", name=self._node(
+                stem_side + "_00Offset"), parent=system, skipSelect=True)
+            c.xform(offset, worldSpace=True, matrix=world)
+            c.setAttr(offset + ".rotateOrder", c.getAttr(source + ".rotateOrder"))
+            zero = c.createNode("transform", name=self._node(
+                stem_side + "_00"), parent=offset, skipSelect=True)
+            c.addAttr(zero, longName="partialJoint", attributeType="bool")
+            parent_constraint = c.parentConstraint(
+                parent, offset, maintainOffset=True,
+                name=self._node(stem_side + "_00Offset_parentConstraint1"))[0]
+            c.parent(parent_constraint, constraints)
         target = joint
         follow = joint
         if spec.include_controller:
@@ -177,6 +187,15 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
                           defaultValue=True, keyable=True)
         side_factor = -1 if spec.side == "L" else 1
         delta = side_factor * self._height() / 5000.0
+        c.addAttr(follow, longName="follow", attributeType="double",
+                  minValue=0.0, maxValue=10.0, defaultValue=5.0,
+                  keyable=True)
+        if spec.use_opm:
+            self._connect_partial_opm(spec, source, parent, target,
+                                      follow, delta)
+            if spec.include_controller:
+                self._update_custom_build_pose(control, base=extra, add=True)
+            return
         target_name = self._leaf(target)
         orient = c.orientConstraint(
             zero, source, target, maintainOffset=False,
@@ -191,9 +210,6 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
             name=self._node(target_name + "_scaleConstraint1"))[0]
         if not spec.include_controller:
             c.parent((orient, point, scale), constraints)
-        c.addAttr(follow, longName="follow", attributeType="double",
-                  minValue=0.0, maxValue=10.0, defaultValue=5.0,
-                  keyable=True)
         aliases = c.orientConstraint(orient, query=True, weightAliasList=True) or []
         if len(aliases) != 2:
             raise RuntimeError("Partial Joints 双目标约束未建立")
@@ -209,6 +225,44 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
         c.connectAttr(weight + ".outValueX", orient + "." + aliases[1])
         if spec.include_controller:
             self._update_custom_build_pose(control, base=extra, add=True)
+
+    def _connect_partial_opm(self, spec: PartialJointSpec, source: str,
+                             parent: str, target: str, follow: str,
+                             delta: float) -> None:
+        c = self._cmds
+        if not spec.include_controller:
+            c.setAttr(target + ".jointOrient", 0, 0, 0)
+        c.setAttr(target + ".translate", 0, 0, 0)
+        c.setAttr(target + ".rotate", 0, 0, 0)
+        temporary = c.createNode("transform", parent=source,
+                                 skipSelect=True)
+        try:
+            c.setAttr(temporary + ".translateX", delta)
+            temporary = c.parent(temporary, parent)[0]
+            matrix = c.getAttr(temporary + ".matrix")
+        finally:
+            if c.objExists(temporary):
+                c.delete(temporary)
+        blend = c.createNode("blendMatrix", name=self._node(
+            spec.stem + "PartialBM_" + spec.side), skipSelect=True)
+        c.setAttr(blend + ".inputMatrix", *matrix, type="matrix")
+        c.connectAttr(source + ".offsetParentMatrix",
+                      blend + ".target[0].targetMatrix")
+        output = blend + ".outputMatrix"
+        if spec.include_controller:
+            multiply = c.createNode("multMatrix", name=self._node(
+                spec.stem + "PartialMM_" + spec.side), skipSelect=True)
+            c.connectAttr(output, multiply + ".matrixIn[0]")
+            c.connectAttr(parent + ".worldMatrix[0]",
+                          multiply + ".matrixIn[1]")
+            output = multiply + ".matrixSum"
+        c.connectAttr(output, target + ".offsetParentMatrix", force=True)
+        multiplier = c.createNode("multDoubleLinear", name=self._node(
+            self._leaf(follow) + "FollowMDL_" + spec.side), skipSelect=True)
+        c.setAttr(multiplier + ".input2", 0.1)
+        c.connectAttr(follow + ".follow", multiplier + ".input1")
+        c.connectAttr(multiplier + ".output",
+                      blend + ".target[0].weight")
 
     def _create_control_icon(self, name: str, parent: str) -> str:
         c = self._cmds
@@ -271,12 +325,12 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
         handle = c.rename(handle, self._node("IkHandlePartial" + suffix))
         c.rename(effector, self._node("EffectorPartial" + suffix))
         curve = c.rename(curve, self._node("IKCurve" + suffix))
+        c.setAttr(handle + ".visibility", False, lock=True)
+        c.parent((handle, curve), group)
         curve_shape = (c.listRelatives(curve, shapes=True,
                                        fullPath=True, type="nurbsCurve") or [None])[0]
         if curve_shape is None:
             raise RuntimeError("Partial IK 曲线缺少 NURBS 形状")
-        c.setAttr(handle + ".visibility", False, lock=True)
-        c.parent((handle, curve), group)
         for index in range(4):
             transform = c.createNode("transform", name=self._node(
                 "PMJX%d%s" % (index, suffix)), parent=group, skipSelect=True)
@@ -344,6 +398,10 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
                 self._update_custom_build_pose(control, add=False)
             names = ("FKOffset" + single, single, suffix + "_00Offset",
                      "FK" + single + "SR",
+                     spec.stem + "PartialBM_" + spec.side,
+                     spec.stem + "PartialMM_" + spec.side,
+                     single + "FollowMDL_" + spec.side,
+                     "FK" + single + "FollowMDL_" + spec.side,
                      suffix + "_00Offset_parentConstraint1",
                      single + "_orientConstraint1",
                      single + "_pointConstraint1",

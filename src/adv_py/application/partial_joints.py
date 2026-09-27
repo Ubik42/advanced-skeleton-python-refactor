@@ -12,6 +12,7 @@ from adv_py.core.partial_joints import (
 class PartialJointsHost(Protocol):
     def capture_partial_candidates(self) -> tuple[PartialJointCandidate, ...]: ...
     def resolve_partial_selection(self) -> tuple[str, ...]: ...
+    def partial_uses_opm(self) -> bool: ...
     def preflight_partial_scene(self, *, include_controller: bool,
                                 multi: bool, auto_bind: bool) -> None: ...
     def find_name_collisions(self, name: str): ...
@@ -31,7 +32,8 @@ class CreatePartialJoints:
         plan = plan_create_partial_joints(
             self._host.capture_partial_candidates(),
             self._host.resolve_partial_selection(), count=count,
-            include_controller=include_controller, auto_bind=auto_bind)
+            include_controller=include_controller, auto_bind=auto_bind,
+            use_opm=self._host.partial_uses_opm())
         self._host.preflight_partial_scene(
             include_controller=include_controller, multi=count > 1,
             auto_bind=auto_bind)
