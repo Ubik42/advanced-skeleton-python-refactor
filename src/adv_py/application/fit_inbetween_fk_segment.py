@@ -58,7 +58,7 @@ class BuildInbetweenFkSegment:
         fk_system_path: str,
         start_fk_driver_path: str,
         start_fk_constraint_name: str,
-        downstream_fk_offset_path: str,
+        downstream_fk_offset_path: str | None,
         rotate_order: int,
         part_control_radius: float,
     ) -> InbetweenFkSegmentResult:

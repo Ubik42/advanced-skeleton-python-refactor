@@ -4,7 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from adv_py.core.body_limb_mechanisms import BodyLimbMechanismRole
-from adv_py.core.fit_part import FitPartJointSpec
+from adv_py.core.body_hand_fit import BODY_HAND_DIGITS
+from adv_py.core.fit_part import FitPartFinalPaths, FitPartJointSpec
 
 from .body_character_rig import BodyCharacterRigBuildPlan
 
@@ -18,6 +19,19 @@ _SUPPORTED_EDGES = {
 }
 _SPINE_EDGES = {("Root_M", "Spine1_M"),
                 ("Spine1_M", "Chest_M")}
+_HAND_EDGES = {
+    (f"{digit.value}{prefix}{index}",
+     f"{digit.value}{prefix}{index + 1}")
+    for digit in BODY_HAND_DIGITS
+    for prefix in ("", "Finger")
+    for index in (1, 2)
+} | {
+    (f"{digit.value}Finger3", f"{digit.value}Finger4")
+    for digit in BODY_HAND_DIGITS
+} | {
+    (f"{digit.value}3", f"{digit.value}End")
+    for digit in BODY_HAND_DIGITS
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,8 +60,8 @@ class InbetweenFkBinding:
     fk_system_path: str
     start_fk_driver_path: str
     start_fk_constraint_name: str
-    downstream_fk_offset_path: str
-    end_fk_control_path: str
+    downstream_fk_offset_path: str | None
+    end_fk_control_path: str | None
     rotate_order: int
     part_control_radius: float
 
@@ -55,6 +69,7 @@ class InbetweenFkBinding:
 def plan_inbetween_limb_bindings(
     parts: tuple[FitPartJointSpec, ...],
     rig: BodyCharacterRigBuildPlan,
+    *, final_paths: FitPartFinalPaths | None = None,
 ) -> tuple[InbetweenLimbBinding | InbetweenFkBinding, ...]:
     """Map Inbetween chains to the actual FK/IK mechanism and control paths."""
     grouped: dict[str, list[FitPartJointSpec]] = {}
@@ -69,9 +84,11 @@ def plan_inbetween_limb_bindings(
         end_name, end_side = first.end_body_name.rsplit("_", 1)
         branch = _SUPPORTED_EDGES.get((start_name, end_name))
         spine_edge = (first.start_body_name, first.end_body_name) in _SPINE_EDGES
+        hand_edge = (start_name, end_name) in _HAND_EDGES
         neck_edge = (first.start_body_name,
                      first.end_body_name) == ("Neck_M", "Head_M")
-        if ((branch is None and not spine_edge and not neck_edge)
+        if ((branch is None and not spine_edge
+             and not neck_edge and not hand_edge)
                 or side != end_side
                 or any(part.start_body != first.start_body
                        or part.end_body != first.end_body
@@ -81,6 +98,36 @@ def plan_inbetween_limb_bindings(
                        for index, part in enumerate(chain, 1))):
             raise ValueError("Inbetween 段尚不能映射到标准 Rig："
                              + first.start_body_name)
+        if hand_edge:
+            if rig.hand is None or final_paths is None:
+                raise ValueError("手指 Inbetween 需要完整 Hand FK 和 Part 路径")
+            controls = rig.hand.controls.controls
+            starts = [item for item in controls
+                      if item.driven_joint == start_path]
+            ends = [item for item in controls
+                    if item.driven_joint == first.end_body]
+            roots = [item for item in rig.hand.controls.roots
+                     if item.side == first.side]
+            terminal = (start_name.endswith("Finger3")
+                        or start_name.endswith("3"))
+            if (len(starts) != 1 or len(ends) != (0 if terminal else 1)
+                    or len(roots) != 1):
+                raise ValueError("手指 Inbetween FK 控制映射不完整："
+                                 + first.start_body_name)
+            start_control = starts[0]
+            end_control = ends[0] if ends else None
+            remap = final_paths.remap_body_reference
+            bindings.append(InbetweenFkBinding(
+                tuple(chain), remap(start_control.offset_path),
+                remap(start_control.control_path), remap(roots[0].path),
+                start_path, start_control.constraint_name,
+                (remap(end_control.offset_path)
+                 if end_control else None),
+                (remap(end_control.control_path)
+                 if end_control else None),
+                first.rotation_order, start_control.radius * 0.2,
+            ))
+            continue
         if neck_edge:
             if rig.torso is None:
                 raise ValueError("颈部 Inbetween 需要标准 Torso FK 控制")

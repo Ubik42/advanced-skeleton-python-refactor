@@ -35,7 +35,7 @@ class BuildInbetweenFkRewire:
         self, graph: InbetweenFkGraphResult, *,
         start_fk_driver_path: str,
         start_fk_constraint_name: str,
-        downstream_fk_offset_path: str,
+        downstream_fk_offset_path: str | None,
     ) -> InbetweenFkRewirePlan:
         if graph.parts is None:
             raise ValueError("Inbetween FK 改接缺少 Part 接收层")

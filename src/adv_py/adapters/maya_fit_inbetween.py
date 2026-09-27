@@ -200,12 +200,15 @@ class MayaFitInbetweenMixin:
         for name, node_type in (
             (plan.start_fk_control_path, "transform"),
             (plan.start_fk_driver_path, "joint"),
-            (plan.downstream_fk_offset_path, "transform"),
             (plan.start_fkx_name, "joint"),
             (plan.last_part_fkx_name, "joint"),
         ):
             if len(c.ls(name, long=True, type=node_type) or []) != 1:
                 raise ValueError("Inbetween FK 改接节点不唯一：" + name)
+        if (plan.downstream_fk_offset_path is not None
+                and len(c.ls(plan.downstream_fk_offset_path,
+                             long=True, type="transform") or []) != 1):
+            raise ValueError("Inbetween 下游 FK Offset 不唯一")
         constraints = c.ls(plan.start_fk_constraint_name,
                             type="orientConstraint") or []
         if len(constraints) != 1:
@@ -223,13 +226,15 @@ class MayaFitInbetweenMixin:
             if (not source or source.split(".", 1)[0].rsplit("|", 1)[-1]
                     != plan.start_fk_constraint_name):
                 raise ValueError("Inbetween 起点 FK 机制输入已变化")
-        if c.objExists(plan.follow_constraint_name):
-            raise ValueError("Inbetween 下游 FK 跟随节点名称冲突")
-        offset = plan.downstream_fk_offset_path
-        if any(not c.getAttr(offset + "." + channel + axis,
-                             settable=True)
-               for channel in ("translate", "rotate") for axis in "XYZ"):
-            raise ValueError("Inbetween 下游 FK Offset 通道被占用")
+        if plan.follow_constraint_name is not None:
+            if c.objExists(plan.follow_constraint_name):
+                raise ValueError("Inbetween 下游 FK 跟随节点名称冲突")
+            offset = plan.downstream_fk_offset_path
+            if any(not c.getAttr(offset + "." + channel + axis,
+                                 settable=True)
+                   for channel in ("translate", "rotate")
+                   for axis in "XYZ"):
+                raise ValueError("Inbetween 下游 FK Offset 通道被占用")
 
     def apply_inbetween_fk_rewire(
         self, plan: InbetweenFkRewirePlan
@@ -238,22 +243,26 @@ class MayaFitInbetweenMixin:
         c = self._cmds
         before_driver = c.xform(plan.start_fk_driver_path,
                                 query=True, worldSpace=True, matrix=True)
-        before_offset = c.xform(plan.downstream_fk_offset_path,
-                                query=True, worldSpace=True, matrix=True)
+        before_offset = (c.xform(plan.downstream_fk_offset_path,
+                                 query=True, worldSpace=True, matrix=True)
+                         if plan.downstream_fk_offset_path is not None
+                         else None)
         self._transaction_changed = True
         c.delete(plan.start_fk_constraint_name)
         c.orientConstraint(plan.start_fkx_name,
                            plan.start_fk_driver_path,
                            maintainOffset=False,
                            name=plan.start_fk_constraint_name)
-        c.parentConstraint(plan.last_part_fkx_name,
-                           plan.downstream_fk_offset_path,
-                           maintainOffset=True,
-                           name=plan.follow_constraint_name)
-        for node, before in (
-            (plan.start_fk_driver_path, before_driver),
-            (plan.downstream_fk_offset_path, before_offset),
-        ):
+        if plan.downstream_fk_offset_path is not None:
+            c.parentConstraint(plan.last_part_fkx_name,
+                               plan.downstream_fk_offset_path,
+                               maintainOffset=True,
+                               name=plan.follow_constraint_name)
+        observed = [(plan.start_fk_driver_path, before_driver)]
+        if before_offset is not None:
+            observed.append((plan.downstream_fk_offset_path,
+                             before_offset))
+        for node, before in observed:
             after = c.xform(node, query=True, worldSpace=True,
                             matrix=True)
             if max(abs(float(a) - float(b)) for a, b in zip(
@@ -266,12 +275,18 @@ class MayaFitInbetweenMixin:
         c = self._cmds
         orient = c.ls(plan.start_fk_constraint_name,
                       type="orientConstraint") or []
-        follow = c.ls(plan.follow_constraint_name,
-                      type="parentConstraint") or []
-        if len(orient) != 1 or len(follow) != 1:
+        if len(orient) != 1:
             return False
         orient_targets = c.orientConstraint(
             orient[0], query=True, targetList=True) or []
+        if plan.follow_constraint_name is None:
+            return (len(orient_targets) == 1
+                    and orient_targets[0].rsplit("|", 1)[-1]
+                    == plan.start_fkx_name)
+        follow = c.ls(plan.follow_constraint_name,
+                      type="parentConstraint") or []
+        if len(follow) != 1:
+            return False
         follow_targets = c.parentConstraint(
             follow[0], query=True, targetList=True) or []
         return (

@@ -158,7 +158,8 @@ class BuildRegisteredBodyCharacter:
                     if part.kind == "inbetween")
                 if inbetween_parts:
                     bindings = plan_inbetween_limb_bindings(
-                        inbetween_parts, rig.plan)
+                        inbetween_parts, rig.plan,
+                        final_paths=final_paths)
                     built_segments = []
                     for binding in bindings:
                         if isinstance(binding, InbetweenFkBinding):
@@ -203,6 +204,13 @@ class BuildRegisteredBodyCharacter:
                                     binding.part_control_radius),
                             ))
                     inbetween_segments = tuple(built_segments)
+                    if any(binding.parts[0].source_joint
+                           in untwister_sources
+                           and (binding.end_fk_control_path is None
+                                or binding.downstream_fk_offset_path is None)
+                           for binding in bindings):
+                        raise ValueError(
+                            "末端 Inbetween UnTwister 缺少下游 FK 旋转来源")
                     inbetween_untwisters = tuple(
                         BuildInbetweenUnTwister(joined).apply(
                             binding.parts,
