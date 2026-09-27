@@ -9,6 +9,41 @@ from .maya_panel_controller import MayaPanelController
 _OPEN_PANELS = []
 
 
+def format_face_eye_lid_build_result(result: dict) -> str:
+    mirrored = ("；已从右侧 Fit 自动镜像左侧"
+                if result.get("symmetric_mirror") else "")
+    depth_changes = [f"{label} {result['eye_depth_alignment'][side]['applied_cm']:.3f} cm"
+                     for side, label in (("Right", "右"), ("Left", "左"))
+                     if result["eye_depth_alignment"][side]["applied_cm"] > 0]
+    aligned = ("；眼球深度已自动校准：" + "、".join(depth_changes)
+               if depth_changes else "")
+    failed = [(label, result["eye_depth_alignment"][side])
+              for side, label in (("Right", "右眼"), ("Left", "左眼"))
+              if result["eye_depth_alignment"][side]["status"] not in
+              ("aligned", "already_closed", "stationary_aperture")]
+    reasons = {
+        "missing_front_surface": "闭眼时缺少遮挡眼球的前表面",
+        "calibration_rejected": "校准会破坏张眼可见性",
+        "eye_joint_unavailable": "眼球关节不可调整",
+        "insufficient_open_visibility": "张眼可见范围不足",
+    }
+    warning = ("；眼区验收未通过：" + "、".join(
+        f"{label}闭眼仍有{detail.get('final_closed_visible', 0)}个采样点可见眼球"
+        + (f"（所需深度{detail['required_cm']:.3f} cm，"
+           f"上限{detail['depth_limit_cm']:.3f} cm）"
+           if detail["status"] == "depth_limit_exceeded" else
+           f"（{reasons.get(detail['status'], '深度校准未完成')}）")
+        for label, detail in failed)
+        + "；需修正眼区模型或 Fit 后重新验收"
+        if failed else "")
+    return (f"双侧眼睑控制已建立：{len(result['controls'])} 个控制器、"
+            f"{len(result['eye_controls'])} 个眨眼主控、"
+            f"{len(result['joints'])} 个分段关节；"
+            + f"右侧区域 {result['area_vertices']['Right']} 顶点，"
+            + f"左侧区域 {result['area_vertices']['Left']} 顶点"
+            + mirrored + aligned + warning + "。")
+
+
 def create_panel(controller: MayaPanelController | None = None):
     """Create a panel inside an existing Maya Qt application; do not show it."""
     from PySide2 import QtCore, QtWidgets
@@ -1684,19 +1719,7 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _face_build_eye_lids(self):
             result = self.controller.face_build_eye_lids(self._namespace())
-            mirrored = ("；已从右侧 Fit 自动镜像左侧"
-                        if result.get("symmetric_mirror") else "")
-            depth_changes = [f"{label} {result['eye_depth_alignment'][side]['applied_cm']:.3f} cm"
-                             for side, label in (("Right", "右"), ("Left", "左"))
-                             if result["eye_depth_alignment"][side]["applied_cm"] > 0]
-            aligned = ("；眼球深度已自动校准：" + "、".join(depth_changes)
-                       if depth_changes else "")
-            return (f"双侧眼睑控制已建立：{len(result['controls'])} 个控制器、"
-                    f"{len(result['eye_controls'])} 个眨眼主控、"
-                    f"{len(result['joints'])} 个分段关节；"
-                    + f"右侧区域 {result['area_vertices']['Right']} 顶点，"
-                    + f"左侧区域 {result['area_vertices']['Left']} 顶点"
-                    + mirrored + aligned + "。")
+            return format_face_eye_lid_build_result(result)
 
         def _face_outer_blink_read(self):
             side = self.face_outer_side.currentData()
