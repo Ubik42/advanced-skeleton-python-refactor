@@ -80,6 +80,14 @@ ADV_OPERATIONS = {
         ("设置控制器局部轴", 0, "08 · Control Orient"),
         ("分离全部控制器", 0, "08 · Control Orient"),
         ("重新附着全部控制器", 0, "08 · Control Orient")),
+    ("Body", "Partial Joints"): (
+        ("包含控制器", 0, "09 · Partial Joints"),
+        ("创建 Partial Joints", 0, "09 · Partial Joints"),
+        ("删除 Partial Joints", 0, "09 · Partial Joints"),
+        ("多段关节数", 0, "09 · Partial Joints"),
+        ("自动加入现有蒙皮", 0, "09 · Partial Joints"),
+        ("创建 Multi Partial Joints", 0, "09 · Partial Joints"),
+        ("删除 Multi Partial Joints", 0, "09 · Partial Joints")),
     ("Face", "Pre"): (
         ("Mask", 3, "00 · 面部输入"),
         ("Face", 3, "00 · 面部输入"),

@@ -784,6 +784,26 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace, face=face)
         return DeleteCustomController(host).apply(control)
 
+    def partial_joints_create(self, namespace: str, *, count: int = 1,
+                              include_controller: bool = False,
+                              auto_bind: bool = False):
+        from adv_py.adapters.maya_partial_joints import MayaPartialJointsHost
+        from adv_py.application.partial_joints import CreatePartialJoints
+
+        host = MayaPartialJointsHost(
+            namespace=None if namespace == ":" else namespace)
+        return CreatePartialJoints(host).apply(
+            count=count, include_controller=include_controller,
+            auto_bind=auto_bind)
+
+    def partial_joints_delete(self, namespace: str):
+        from adv_py.adapters.maya_partial_joints import MayaPartialJointsHost
+        from adv_py.application.partial_joints import DeletePartialJoints
+
+        host = MayaPartialJointsHost(
+            namespace=None if namespace == ":" else namespace)
+        return DeletePartialJoints(host).apply()
+
     def skin_bind(self, namespace: str, mesh: str,
                   influences: tuple[str, ...], skin: str, maximum: int, *,
                   maintain_maximum: bool = True) -> int:

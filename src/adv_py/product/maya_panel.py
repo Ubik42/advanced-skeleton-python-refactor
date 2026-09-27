@@ -642,6 +642,25 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("分离全部控制器", self._detach_control_orient_custom))
             form.addRow(self._button("重新附着全部控制器", self._attach_control_orient_custom))
             stack.addWidget(group)
+
+            self.partial_include_controller = QtWidgets.QCheckBox("包含控制器")
+            self.partial_multi_count = QtWidgets.QSpinBox()
+            self.partial_multi_count.setRange(2, 128)
+            self.partial_multi_count.setValue(12)
+            self.partial_multi_bind = QtWidgets.QCheckBox("自动加入现有蒙皮")
+            group, form = self._group("09 · Partial Joints", [
+                ("单段", self.partial_include_controller),
+                ("多段关节数", self.partial_multi_count),
+                ("多段蒙皮", self.partial_multi_bind)])
+            form.addRow(self._button("创建 Partial Joints",
+                                     self._create_partial_joints))
+            form.addRow(self._button("删除 Partial Joints",
+                                     self._delete_partial_joints))
+            form.addRow(self._button("创建 Multi Partial Joints",
+                                     self._create_multi_partial_joints))
+            form.addRow(self._button("删除 Multi Partial Joints",
+                                     self._delete_partial_joints))
+            stack.addWidget(group)
             self._spine_replace_mode_changed()
             stack.addStretch(1)
             return page
@@ -1724,6 +1743,22 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.control_orient_custom_attach(
                 self._namespace())
             return f"已重新附着 {count} 个控制器并保留手工方向"
+
+        def _create_partial_joints(self):
+            specs = self.controller.partial_joints_create(
+                self._namespace(),
+                include_controller=self.partial_include_controller.isChecked())
+            return f"已创建 {len(specs)} 个 Partial Joints"
+
+        def _create_multi_partial_joints(self):
+            specs = self.controller.partial_joints_create(
+                self._namespace(), count=self.partial_multi_count.value(),
+                auto_bind=self.partial_multi_bind.isChecked())
+            return f"已创建 {len(specs)} 组 Multi Partial Joints"
+
+        def _delete_partial_joints(self):
+            specs = self.controller.partial_joints_delete(self._namespace())
+            return f"已删除 {len(specs)} 组 Partial Joints"
 
         def _custom_fields(self, face=False):
             if face:
