@@ -30,6 +30,9 @@ from .fit_inbetween_ik_solver_mapping import (
     InbetweenIkSolverMapping, plan_character_inbetween_ik_solvers,
 )
 from .fit_inbetween_limb_mapping import InbetweenLimbBinding
+from .fit_inbetween_spline_ik import (
+    BuildInbetweenSplineIk, InbetweenSplineIkHost,
+)
 from .body_character_rig import BodyCharacterRigBuildPlan
 from adv_py.core.fit_inbetween_ik_rebase import rebase_inbetween_ik_reference
 
@@ -42,7 +45,8 @@ class InbetweenLimbSegmentHost(
 
 
 class InbetweenLimbSegmentsHost(
-    InbetweenLimbSegmentHost, InbetweenIkSolverHost, Protocol,
+    InbetweenLimbSegmentHost, InbetweenIkSolverHost,
+    InbetweenSplineIkHost, Protocol,
 ):
     pass
 
@@ -85,7 +89,9 @@ class BuildInbetweenLimbSegments:
         bindings: tuple[InbetweenLimbBinding, ...],
         rig: BodyCharacterRigBuildPlan,
     ) -> InbetweenLimbSegmentsResult:
-        mapping = plan_character_inbetween_ik_solvers(bindings, rig)
+        mapping = plan_character_inbetween_ik_solvers(
+            tuple(binding for binding in bindings
+                  if binding.spline_root_path is None), rig)
         ik_by_edge = {
             (segment.start_ik_driver, segment.end_ik_driver): segment
             for request in mapping.requests
@@ -118,6 +124,15 @@ class BuildInbetweenLimbSegments:
                     handle_parent_path=plan.handle_parent_path,
                     pole_control_path=plan.pole_control_path,
                     pole_constraint_name=plan.pole_constraint_name)
+            for binding in bindings:
+                if binding.spline_root_path is not None:
+                    ik_by_edge[(binding.start_ik_driver,
+                                binding.end_ik_driver)] = (
+                        BuildInbetweenSplineIk(joined).apply(
+                            binding.parts,
+                            root_path=binding.spline_root_path,
+                            start_output_path=binding.start_ik_driver,
+                            end_output_path=binding.end_ik_driver))
             rp_solvers = tuple(
                 request.plan for request in mapping.requests
                 if request.plan.solver_name != "ikSCsolver")

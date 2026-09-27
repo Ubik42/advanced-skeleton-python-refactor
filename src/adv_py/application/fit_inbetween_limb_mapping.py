@@ -50,6 +50,7 @@ class InbetweenLimbBinding:
     ik_weight_plug: str
     rotate_order: int
     part_control_radius: float
+    spline_root_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,10 +85,15 @@ def plan_inbetween_limb_bindings(
         end_name, end_side = first.end_body_name.rsplit("_", 1)
         branch = _SUPPORTED_EDGES.get((start_name, end_name))
         spine_edge = (first.start_body_name, first.end_body_name) in _SPINE_EDGES
+        spline = (rig.torso.torso.spline if rig.torso is not None else None)
+        spline_index = (next((index for index, pair in enumerate(
+            zip(spline.body_joints, spline.body_joints[1:]))
+            if pair == (start_path, first.end_body)), None)
+            if spline is not None else None)
         hand_edge = (start_name, end_name) in _HAND_EDGES
         neck_edge = (first.start_body_name,
                      first.end_body_name) == ("Neck_M", "Head_M")
-        if ((branch is None and not spine_edge
+        if ((branch is None and not spine_edge and spline_index is None
              and not neck_edge and not hand_edge)
                 or side != end_side
                 or any(part.start_body != first.start_body
@@ -147,6 +153,33 @@ def plan_inbetween_limb_bindings(
                 end_controls[0].offset_path,
                 end_controls[0].control_path,
                 first.rotation_order, start_control.radius * 0.2,
+            ))
+            continue
+        if spline_index is not None:
+            assert spline is not None and rig.torso is not None
+            torso = rig.torso.torso
+            controls = torso.controls.controls
+            start_fk = spline.joints[spline_index].path
+            end_fk = spline.joints[spline_index + 1].path
+            starts = [item for item in controls
+                      if item.driven_joint == start_fk]
+            ends = [item for item in controls
+                    if item.driven_joint == end_fk]
+            if len(starts) != 1 or len(ends) != 1:
+                raise ValueError("Spline Inbetween FK 控制映射不完整："
+                                 + first.start_body_name)
+            start_control, end_control = starts[0], ends[0]
+            bindings.append(InbetweenLimbBinding(
+                tuple(chain), start_control.offset_path,
+                start_control.control_path, torso.controls.root_path,
+                start_fk, start_control.constraint_name,
+                end_control.offset_path, end_control.control_path,
+                spline.ik_outputs[spline_index],
+                spline.ik_outputs[spline_index + 1],
+                "AdvPy_SplineReverse.outputX",
+                spline.settings + ".spineIkFk",
+                first.rotation_order, start_control.radius * 0.2,
+                spline.root_path,
             ))
             continue
         if spine_edge:
