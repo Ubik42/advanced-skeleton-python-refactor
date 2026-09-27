@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 from adv_py.core.character_registry import CharacterRegistration
+from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .axial_part_deform import BuildAxialPartDeform
@@ -68,14 +69,15 @@ class BuildRegisteredBodyCharacter:
                 raise RuntimeError("登记骨架数量与本次构建结果不一致")
             segments: list[str] = []
             if include_segment_influences:
-                # The five-finger and standard axial helpers are optional Body
+                # The five-finger and described axial helpers are optional Body
                 # branches; the limb segments exist on every supported Body.
                 body_names = {item.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
                               for item in registration.body}
-                axial = {"Root_M", "Spine1_M", "Chest_M", "Neck_M", "Head_M"}
-                if axial_description is None and axial <= body_names:
+                axial = axial_description or BodyAxialDescription()
+                if set(axial.spine + axial.neck) <= body_names:
                     segments.extend(spec.path for spec in
-                        BuildAxialPartDeform(joined).apply())
+                        BuildAxialPartDeform(joined).apply(
+                            axial_description=axial))
                 original_fingers = {f"{digit}Finger{index}_{side}"
                                     for side in ("R", "L")
                                     for digit in ("Thumb", "Index", "Middle", "Ring", "Pinky")

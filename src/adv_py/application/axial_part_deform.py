@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Mapping, Protocol
 
 from adv_py.core.axial_part_deform import AxialPartSpec, plan_axial_parts
+from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
 
 
@@ -24,9 +25,11 @@ class BuildAxialPartDeform:
         self._host = host
 
     def apply(self, root: str = "Root_M",
-              guide: Mapping[str, object] | None = None
+              guide: Mapping[str, object] | None = None,
+              *, axial_description: BodyAxialDescription | None = None,
               ) -> tuple[AxialPartSpec, ...]:
-        specs = plan_axial_parts(self._host.capture_body_skeleton(root))
+        specs = plan_axial_parts(self._host.capture_body_skeleton(root),
+                                 axial_description)
         for spec in specs:
             if guide is not None:
                 self._host.preflight_axial_part_guide(spec, guide)
