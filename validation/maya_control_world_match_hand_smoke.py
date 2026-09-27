@@ -176,6 +176,64 @@ def main(report: Path) -> int:
             cmds.file(str(scene), open=True, force=True)
             original_match_reopen = host.capture_control_orientations(
                 (finger_right, finger_left))
+        from adv_py.adapters.maya_control_orient_behavior import (
+            _paired_body_probes, _sample_probes, _sample_axis,
+            _reflection_error)
+        mirrored_before = host.capture_control_orientations(
+            (finger_right, finger_left))
+        mirrored_body_before = tuple(_matrix(c, path) for path in body_paths)
+        mirrored_count = controller.control_orient_axis(
+            "hero", (finger_right,), "X", "Y", False, True, True)
+        mirrored_after = host.capture_control_orientations(
+            (finger_right, finger_left))
+        mirror_node = "AdvPy_MirroredBehavior_AdvPy_Index1FK_L"
+        mirror_destinations = json.loads(c.getAttr(
+            mirror_node + ".advPyMirroredDestinations"))
+        cmds.undo()
+        mirrored_undo = host.capture_control_orientations(
+            (finger_right, finger_left))
+        cmds.redo()
+        mirrored_redo = host.capture_control_orientations(
+            (finger_right, finger_left))
+        probes = _paired_body_probes(host)
+        neutral = _sample_probes(host, probes)
+        mirrored_errors = {}
+        for axis in "XYZ":
+            source = _sample_axis(host, probes, finger_right, axis, 12.)
+            target = _sample_axis(host, probes, finger_left, axis, 12.)
+            mirrored_errors[axis] = _reflection_error(neutral, source, target)
+        mirrored_body_after = tuple(_matrix(c, path) for path in body_paths)
+        with tempfile.TemporaryDirectory(
+                prefix="adv-py-mirrored-finger-",
+                dir=report.parent.resolve()) as folder:
+            scene = Path(folder) / "finger-mirror.ma"
+            cmds.file(rename=str(scene))
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(scene), open=True, force=True)
+            mirrored_reopen = host.capture_control_orientations(
+                (finger_right, finger_left))
+            reopened_neutral = _sample_probes(host, probes)
+            reopened_errors = {}
+            for axis in "XYZ":
+                source = _sample_axis(host, probes, finger_right, axis, 12.)
+                target = _sample_axis(host, probes, finger_left, axis, 12.)
+                reopened_errors[axis] = _reflection_error(
+                    reopened_neutral, source, target)
+        mirrored_disable_count = controller.control_orient_axis(
+            "hero", (finger_right,), "X", "Y", False, True, False)
+        mirrored_disabled = host.capture_control_orientations(
+            (finger_right, finger_left))
+        mirrored_body_disabled = tuple(_matrix(c, path) for path in body_paths)
+        mirrored_links_restored = (not c.objExists(mirror_node)
+            and all(c.isConnected(finger_left + ".rotate", destination)
+                    for destination in mirror_destinations))
+        cmds.undo()
+        mirrored_disable_undo = host.capture_control_orientations(
+            (finger_right, finger_left))
+        cmds.redo()
+        mirrored_disable_redo = host.capture_control_orientations(
+            (finger_right, finger_left))
         checks = {
             "five_direct_body_children_each_side":
                 len(right_children) == len(left_children) == 5
@@ -222,8 +280,31 @@ def main(report: Path) -> int:
                 and original_match_undo == original_match_before
                 and original_match_redo == original_match_after
                 and original_match_reopen == original_match_after,
+            "mirrored_finger_three_axes_and_reopen":
+                mirrored_count == 2
+                and all(state.mirrored_behavior for state in mirrored_after)
+                and mirrored_undo == mirrored_before
+                and mirrored_redo == mirrored_after
+                and mirrored_reopen == mirrored_after
+                and all(error <= max(1e-6, movement * .01)
+                        for error, movement in mirrored_errors.values())
+                and all(error <= max(1e-6, movement * .01)
+                        for error, movement in reopened_errors.values())
+                and all(_close(a, b) for a, b in zip(
+                    mirrored_body_before, mirrored_body_after)),
+            "mirrored_finger_disable_restores":
+                mirrored_disable_count == 2
+                and mirrored_disable_undo == mirrored_after
+                and mirrored_disable_redo == mirrored_disabled
+                and mirrored_links_restored
+                and all(not state.mirrored_behavior
+                        for state in mirrored_disabled)
+                and all(_close(a, b) for a, b in zip(
+                    mirrored_body_before, mirrored_body_disabled)),
         }
-        payload = {**checks, "status": "passed" if all(
+        payload = {**checks, "mirrored_finger_axis_error": mirrored_errors,
+                   "mirrored_finger_reopen_error": reopened_errors,
+                   "status": "passed" if all(
             checks.values()) else "failed"}
         report.write_text(json.dumps(
             payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
