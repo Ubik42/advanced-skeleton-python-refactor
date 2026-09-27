@@ -1179,9 +1179,12 @@ class FakeBodySkeletonHost:
             for name in (
                 *(pivot.name for pivot in side.pivots),
                 *(pivot.multiplier_name for pivot in side.pivots if pivot.multiplier_name),
-                side.toe_constraint_name,
                 side.toe_offset_name,
                 side.toe_control_name,
+                side.toe_handle_name,
+                side.toe_effector_name,
+                side.toe_end_handle_name,
+                side.toe_end_effector_name,
                 *(node.name for node in side.roll.nodes),
             )
             if self.find_name_collisions(name)
@@ -1219,9 +1222,6 @@ class FakeBodySkeletonHost:
             spec.ankle_constraint_name,
             spec.ankle_orientation_source_path,
             spec.ankle_driver_path,
-            spec.toe_constraint_name,
-            spec.toe_orientation_source_path,
-            spec.toe_driver_path,
             spec.toe_offset_path,
             next(
                 pivot.path for pivot in spec.pivots
@@ -1253,6 +1253,12 @@ class FakeBodySkeletonHost:
                     for node in spec.roll.nodes
                 ),
             ),
+            spec.toe_handle_parent_path,
+            (spec.ankle_driver_path,),
+            "ikSCsolver",
+            spec.toe_control_path,
+            (spec.toe_driver_path,),
+            "ikSCsolver",
         )
         sides = self.leg_foot_snapshot.sides if self.leg_foot_snapshot else ()
         self.leg_foot_snapshot = BodyLegFootSnapshot((*sides, state))
@@ -2921,11 +2927,8 @@ class BodySkeletonTests(unittest.TestCase):
             and side.ankle_driven_joint.endswith(
                 f"AdvPy_AnkleIKDriver_{side.side.value}"
             )
-            and side.toe_orientation_source
-            == side.toe_control_path
-            and side.toe_driven_joint.endswith(
-                f"AdvPy_ToesIKDriver_{side.side.value}"
-            )
+            and side.toe_handle_parent_path == side.pivots[-1].path
+            and side.toe_end_handle_parent_path == side.toe_control_path
             for side in result.snapshot.sides
         ))
 

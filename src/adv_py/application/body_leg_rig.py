@@ -307,9 +307,12 @@ class BuildBodyLegRig:
         for side in foot.sides:
             names.extend(pivot.name for pivot in side.pivots)
             names.extend((
-                side.toe_constraint_name,
                 side.toe_offset_name,
                 side.toe_control_name,
+                side.toe_handle_name,
+                side.toe_effector_name,
+                side.toe_end_handle_name,
+                side.toe_end_effector_name,
             ))
             names.extend(node.name for node in side.roll.nodes)
             names.extend(

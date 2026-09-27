@@ -35,6 +35,7 @@ class BodyLegIkSpec:
     radius: float
     ankle_constraint_name: str
     toe_driver_path: str
+    toe_end_driver_path: str = ""
     solver_joint_list: tuple[str, ...] | None = None
 
 
@@ -126,16 +127,18 @@ def plan_body_leg_ik(
         if any(source.side is not side for source in sources):
             raise BodyLegIkValidationError("Leg Body side 与名称不一致")
         toe_source = body_by_name.get(f"Toes_{suffix}")
+        toe_end_source = body_by_name.get(f"ToesEnd_{suffix}")
         try:
             drivers = tuple(ik_by_source[source.path] for source in sources)
             toe_driver = ik_by_source[toe_source.path] if toe_source else None
+            toe_end_driver = ik_by_source[toe_end_source.path] if toe_end_source else None
         except KeyError as exc:
             raise BodyLegIkValidationError(
                 "Leg IK mechanism 必须为每侧提供完整 Hip/Knee/Ankle/Toes 链"
             ) from exc
-        if toe_driver is None:
+        if toe_driver is None or toe_end_driver is None:
             raise BodyLegIkValidationError(
-                "Leg IK mechanism 必须为每侧提供完整 Hip/Knee/Ankle/Toes 链"
+                "Leg IK mechanism 必须为每侧提供完整 Hip/Knee/Ankle/Toes/ToesEnd 链"
             )
         hip, knee, ankle = (joint.world_position for joint in sources)
         fallback_axis = _least_parallel_axis(
@@ -177,6 +180,7 @@ def plan_body_leg_ik(
             radius=float(radius),
             ankle_constraint_name=f"AdvPy_LegIKAnkleOrient_{suffix}",
             toe_driver_path=toe_driver,
+            toe_end_driver_path=toe_end_driver,
         ))
     return BodyLegIkPlan(root_path, root_name, tuple(limbs))
 

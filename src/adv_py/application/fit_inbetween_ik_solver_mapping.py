@@ -111,7 +111,7 @@ def plan_character_inbetween_ik_solvers(
             chain, (segment,), handle_name=foot.toe_handle_name,
             effector_name=foot.toe_effector_name,
             solver_name="ikSCsolver",
-            handle_parent_path=foot.toe_control_path,
+            handle_parent_path=foot.toe_handle_parent_path,
             pole_control_path=None, pole_constraint_name=None)
         requests.append(InbetweenIkSolverRequest(
             toe_plan, (segment,)))

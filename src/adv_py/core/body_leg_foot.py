@@ -66,7 +66,6 @@ class BodyLegFootSideSpec:
     ankle_driver_path: str
     toe_driver_path: str
     ankle_constraint_name: str
-    toe_constraint_name: str
     toe_offset_name: str
     toe_offset_path: str
     toe_control_name: str
@@ -79,6 +78,14 @@ class BodyLegFootSideSpec:
     toe_handle_name: str = ""
     toe_effector_name: str = ""
     toe_solver_joint_list: tuple[str, ...] | None = None
+    toe_end_driver_path: str = ""
+    toe_end_handle_name: str = ""
+    toe_end_effector_name: str = ""
+
+    @property
+    def toe_handle_parent_path(self) -> str:
+        return next(pivot.path for pivot in self.pivots
+                    if pivot.role is BodyLegFootPivotRole.BALL)
 
     @property
     def attributes(self) -> tuple[str, ...]:
@@ -93,11 +100,6 @@ class BodyLegFootSideSpec:
     @property
     def ankle_orientation_source_path(self) -> str:
         return self.pivots[-1].path
-
-    @property
-    def toe_orientation_source_path(self) -> str:
-        return self.toe_control_path
-
 
 @dataclass(frozen=True, slots=True)
 class BodyLegFootPlan:
@@ -149,9 +151,6 @@ class BodyLegFootSideState:
     ankle_constraint_name: str | None
     ankle_orientation_source: str | None
     ankle_driven_joint: str | None
-    toe_constraint_name: str | None
-    toe_orientation_source: str | None
-    toe_driven_joint: str | None
     toe_offset_path: str | None
     toe_offset_parent_path: str | None
     toe_control_path: str | None
@@ -165,6 +164,9 @@ class BodyLegFootSideState:
     toe_handle_parent_path: str | None = None
     toe_handle_joint_list: tuple[str, ...] = ()
     toe_handle_solver: str | None = None
+    toe_end_handle_parent_path: str | None = None
+    toe_end_handle_joint_list: tuple[str, ...] = ()
+    toe_end_handle_solver: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -317,7 +319,6 @@ def plan_body_leg_foot(
             ankle_driver_path=limb.chain[2],
             toe_driver_path=limb.toe_driver_path,
             ankle_constraint_name=limb.ankle_constraint_name,
-            toe_constraint_name=f"AdvPy_LegIKToesOrient_{suffix}",
             toe_offset_name=toe_offset_name,
             toe_offset_path=toe_offset_path,
             toe_control_name=toe_control_name,
@@ -336,6 +337,9 @@ def plan_body_leg_foot(
             pivots=tuple(pivots),
             toe_handle_name=f"AdvPy_LegIKToesHandle_{suffix}",
             toe_effector_name=f"AdvPy_LegIKToesEffector_{suffix}",
+            toe_end_driver_path=limb.toe_end_driver_path,
+            toe_end_handle_name=f"AdvPy_LegIKToesEndHandle_{suffix}",
+            toe_end_effector_name=f"AdvPy_LegIKToesEndEffector_{suffix}",
         ))
     return BodyLegFootPlan(tuple(sides))
 
@@ -418,13 +422,19 @@ def audit_body_leg_foot(
                 issues.append(BodyLegFootIssue("foot_multiplier", "Foot 符号节点不一致", subject))
         if state.handle_parent_path != spec.final_handle_parent_path:
             issues.append(BodyLegFootIssue("foot_handle_parent", "Leg IK Handle 未挂到 Ball pivot", spec.side.value))
-        if (state.toe_handle_parent_path != spec.toe_control_path
+        if (state.toe_handle_parent_path != spec.toe_handle_parent_path
                 or state.toe_handle_joint_list != (
                     spec.toe_solver_joint_list
                     or (spec.ankle_driver_path,))
                 or state.toe_handle_solver != "ikSCsolver"):
             issues.append(BodyLegFootIssue(
                 "foot_toe_ik_handle", "Toes 单链 IK 求解器结构不一致",
+                spec.side.value))
+        if (state.toe_end_handle_parent_path != spec.toe_control_path
+                or state.toe_end_handle_joint_list != (spec.toe_driver_path,)
+                or state.toe_end_handle_solver != "ikSCsolver"):
+            issues.append(BodyLegFootIssue(
+                "foot_toe_end_ik_handle", "ToesEnd 单链 IK 求解器结构不一致",
                 spec.side.value))
         if (
             state.ankle_constraint_name != spec.ankle_constraint_name
@@ -527,16 +537,6 @@ def audit_body_leg_foot(
             issues.append(BodyLegFootIssue(
                 "foot_toe_control_pose",
                 "Toe IK 控制初始世界帧或本地通道不一致",
-                spec.side.value,
-            ))
-        if (
-            state.toe_constraint_name != spec.toe_constraint_name
-            or state.toe_orientation_source != spec.toe_orientation_source_path
-            or state.toe_driven_joint != spec.toe_driver_path
-        ):
-            issues.append(BodyLegFootIssue(
-                "foot_toe_orientation",
-                "Toe IK 控制未正确驱动 Toes IK 朝向",
                 spec.side.value,
             ))
     return tuple(issues)
