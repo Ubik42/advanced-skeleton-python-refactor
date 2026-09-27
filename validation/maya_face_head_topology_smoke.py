@@ -445,6 +445,15 @@ def main() -> None:
                 assert abs(roll[0][1]) < abs(roll[len(roll)//2][1]) * .1
             else:
                 assert abs(depth) < 1e-9
+            outer = "ctrlUpperEyeLidOuter" + suffix
+            outer_y = cmds.getAttr(outer + ".blinkOffsetY")
+            if (side.value in lid_rig["aperture_sides"] and
+                    side.value not in lid_rig["stationary_aperture_sides"]):
+                assert outer_y < 0
+                assert cmds.getAttr("ctrlLowerEyeLidOuter" + suffix
+                                    + ".blinkOffsetY") > 0
+            else:
+                assert abs(outer_y) < 1e-9
         if scene_output is not None:
             scene_output.parent.mkdir(parents=True, exist_ok=True)
             cmds.file(rename=str(scene))

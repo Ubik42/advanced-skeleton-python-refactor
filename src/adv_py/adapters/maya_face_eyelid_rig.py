@@ -337,6 +337,12 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
              open_inners[side], mobile_inners[side],
              fit_ring_vertices[side]) = self._surface_factors(
                 pre, mesh, side)
+        face_scale = float(c.getAttr(fit + ".faceScale"))
+        if not isfinite(face_scale) or face_scale <= 0:
+            raise FitSkeletonValidationError("Face Mask 比例无效")
+        outer_pose_scales = {side: min(face_scale / 14.43,
+                                       eye_radii[side] * .5)
+                             for side in FaceSide}
         layers = {side: (EyeLidLayer.MAIN, EyeLidLayer.OUTER)
                   for side in FaceSide}
         def weighted(side):
@@ -503,6 +509,15 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                     if (layer is EyeLidLayer.MAIN and
                                         axis == "Z" and open_inners[side] and
                                         not mobile_inners[side]) else 0.)
+                                if layer is EyeLidLayer.OUTER and mobile_inners[side]:
+                                    scale = outer_pose_scales[side]
+                                    if axis == "X":
+                                        default = scale * (.05 if arc == "upper"
+                                            else .1) * (1 if side is FaceSide.RIGHT
+                                            else -1)
+                                    elif axis == "Y":
+                                        default = scale * (-.07 if arc == "upper"
+                                            else .1)
                                 c.addAttr(control,
                                     longName="blinkOffset" + axis,
                                     attributeType="double", keyable=True,
