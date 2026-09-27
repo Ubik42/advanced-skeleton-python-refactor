@@ -8,10 +8,136 @@ from adv_py.core.fit_inbetween import (
 )
 from adv_py.core.fit_orientation import FitOrientationSnapshot
 from adv_py.core.fit_inbetween_bias import InbetweenBiasPlan
+from adv_py.core.fit_inbetween_matrix import (
+    InbetweenMatrixDestination, InbetweenMatrixPlan,
+    InbetweenMatrixStep,
+)
 from adv_py.core.joint_labels import JointLabel
 
 
 class MayaFitInbetweenMixin:
+    def preflight_inbetween_matrix_destinations(
+        self, destinations: tuple[InbetweenMatrixDestination, ...]
+    ) -> None:
+        c = self._cmds
+        for destination in destinations:
+            if (not c.objExists(destination.source_plug)
+                    or not c.objExists(destination.target_plug)):
+                raise ValueError("Inbetween FK 矩阵来源或接收端不存在："
+                                 + destination.joint_name)
+            if c.connectionInfo(destination.target_plug,
+                                sourceFromDestination=True):
+                raise ValueError("Inbetween FK 矩阵接收端已被占用："
+                                 + destination.target_plug)
+
+    def connect_inbetween_matrix_destination(
+        self, destination: InbetweenMatrixDestination
+    ) -> None:
+        self._require_transaction()
+        self._cmds.connectAttr(destination.source_plug,
+                               destination.target_plug)
+        self._transaction_changed = True
+
+    def capture_inbetween_matrix_destination(
+        self, destination: InbetweenMatrixDestination
+    ) -> str | None:
+        source = self._cmds.connectionInfo(
+            destination.target_plug, sourceFromDestination=True)
+        return source or None
+
+    def preflight_inbetween_matrices(
+        self, plan: InbetweenMatrixPlan
+    ) -> None:
+        c = self._cmds
+        for plug in (plan.base_world_plug, plan.target_world_plug,
+                     plan.parent_inverse_plug):
+            if not c.objExists(plug):
+                raise ValueError("Inbetween 矩阵输入不存在：" + plug)
+        names = []
+        for step in plan.steps:
+            if not c.objExists(step.weight_plug):
+                raise ValueError("Inbetween 权重输出不存在："
+                                 + step.weight_plug)
+            names.extend((step.blend_name, step.local_matrix_name))
+            if step.index == 0:
+                names.extend((step.legacy_blend_decompose_name,
+                              step.legacy_target_decompose_name,
+                              step.legacy_compose_name))
+        if len(names) != len(set(names)) or any(
+                c.objExists(name) for name in names):
+            raise ValueError("Inbetween 矩阵节点名称冲突")
+
+    def create_inbetween_matrix_step(
+        self, plan: InbetweenMatrixPlan,
+        step: InbetweenMatrixStep,
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        blend = c.createNode("blendMatrix", name=step.blend_name)
+        local = c.createNode("multMatrix", name=step.local_matrix_name)
+        self._transaction_changed = True
+        c.connectAttr(plan.base_world_plug, blend + ".inputMatrix")
+        c.connectAttr(plan.target_world_plug,
+                      blend + ".target[0].targetMatrix")
+        c.connectAttr(plan.parent_inverse_plug, local + ".matrixIn[1]")
+        modern = c.objExists(blend + ".target[0].translateWeight")
+        if modern:
+            if step.rotation_only:
+                for channel in ("translateWeight", "scaleWeight",
+                                "shearWeight"):
+                    c.setAttr(blend + ".target[0]." + channel, 0.0)
+            c.connectAttr(step.weight_plug,
+                          blend + ".target[0].rotateWeight")
+            c.connectAttr(blend + ".outputMatrix",
+                          local + ".matrixIn[0]")
+            return
+        if step.rotation_only:
+            for channel in ("useTranslate", "useScale", "useShear"):
+                c.setAttr(blend + ".target[0]." + channel, False)
+        c.connectAttr(step.weight_plug, blend + ".target[0].weight")
+        if step.index > 0:
+            c.connectAttr(blend + ".outputMatrix",
+                          local + ".matrixIn[0]")
+            return
+        # Maya 2022 及更早版本没有分量权重。首节旋转来自混合矩阵，
+        # 位移、缩放和剪切保持目标 FK 的世界矩阵分量。
+        mixed = c.createNode("decomposeMatrix",
+                             name=step.legacy_blend_decompose_name)
+        target = c.createNode("decomposeMatrix",
+                              name=step.legacy_target_decompose_name)
+        composed = c.createNode("composeMatrix",
+                                name=step.legacy_compose_name)
+        c.connectAttr(blend + ".outputMatrix", mixed + ".inputMatrix")
+        c.connectAttr(plan.target_world_plug, target + ".inputMatrix")
+        for component in ("Translate", "Scale", "Shear"):
+            c.connectAttr(target + ".output" + component,
+                          composed + ".input" + component)
+        c.connectAttr(mixed + ".outputRotate",
+                      composed + ".inputRotate")
+        c.connectAttr(composed + ".outputMatrix",
+                      local + ".matrixIn[0]")
+
+    def capture_inbetween_matrix_output(
+        self, step: InbetweenMatrixStep
+    ) -> str | None:
+        c = self._cmds
+        if not c.objExists(step.output_plug):
+            return None
+        modern = c.objExists(step.blend_name
+                             + ".target[0].translateWeight")
+        weight_destination = ("rotateWeight" if modern else "weight")
+        if c.connectionInfo(step.blend_name + ".target[0]."
+                            + weight_destination,
+                            sourceFromDestination=True) != step.weight_plug:
+            return None
+        matrix_source = (step.legacy_compose_name + ".outputMatrix"
+                         if step.index == 0 and not modern
+                         else step.blend_name + ".outputMatrix")
+        if c.connectionInfo(step.local_matrix_name + ".matrixIn[0]",
+                            sourceFromDestination=True) != matrix_source:
+            return None
+        return step.output_plug
+
     def preflight_inbetween_bias(self, plan: InbetweenBiasPlan) -> None:
         c = self._cmds
         control, _, attribute = plan.control_plug.rpartition(".")
