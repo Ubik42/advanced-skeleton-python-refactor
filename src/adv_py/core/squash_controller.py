@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 
+from .body_game_engine import BodyGameEnginePolicy, BodyOperation
+
 
 LATTICE_DIVISIONS = (2, 11, 2)
 IK_JOINT_COUNT = 11
@@ -76,8 +78,8 @@ class SquashPlan:
 
 def plan_squash_controller(selection: SquashSelection,
                            base_name: str) -> SquashPlan:
-    if selection.game_engine:
-        raise ValueError("ADV Game Engine 模式下不能创建 Squash Controller")
+    BodyGameEnginePolicy(selection.game_engine).require(
+        BodyOperation.SQUASH_CONTROLLER)
     if not selection.vertices:
         raise ValueError("须先选择受 Squash 影响的网格顶点")
     if len(set(selection.vertices)) != len(selection.vertices):

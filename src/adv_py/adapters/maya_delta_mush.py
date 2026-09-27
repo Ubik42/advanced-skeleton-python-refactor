@@ -1,6 +1,21 @@
 """AdvancedSkeleton Body Delta Mush operations on selected skinned meshes."""
 from __future__ import annotations
 
+from adv_py.core.body_game_engine import BodyGameEnginePolicy, BodyOperation
+
+
+def _require_delta_mush_available(cmds, namespace: str) -> None:
+    if not isinstance(namespace, str):
+        raise ValueError("角色命名空间无效")
+    scope = namespace.strip(":")
+    fit = (scope + ":" if scope else "") + "FitSkeleton"
+    if not cmds.objExists(fit):
+        return
+    enabled = (cmds.attributeQuery("gameEngine", node=fit, exists=True)
+               and bool(cmds.getAttr(fit + ".gameEngine")))
+    BodyGameEnginePolicy(bool(enabled)).require(BodyOperation.DELTA_MUSH)
+
+
 def _selected_skinned_meshes(cmds):
     selection = tuple(cmds.ls(selection=True, long=True) or ())
     if not selection:
@@ -21,13 +36,15 @@ def _selected_skinned_meshes(cmds):
     return selection, targets
 
 
-def harden_weights_on_selected(*, cmds=None) -> tuple[str, ...]:
+def harden_weights_on_selected(*, cmds=None,
+                               namespace: str = "") -> tuple[str, ...]:
     """Assign each vertex fully to its strongest influence, as asHardenWeights does."""
     if cmds is None:
         from maya import cmds
     from maya.api import OpenMaya as om
     from maya.api import OpenMayaAnim as oma
 
+    _require_delta_mush_available(cmds, namespace)
     selection, targets = _selected_skinned_meshes(cmds)
     planned = []
     for mesh, shape, skin, _history in targets:
@@ -103,10 +120,12 @@ def harden_weights_on_selected(*, cmds=None) -> tuple[str, ...]:
     return tuple(mesh for mesh, *_rest in planned)
 
 
-def apply_delta_mush_to_selected(*, cmds=None) -> tuple[str, ...]:
+def apply_delta_mush_to_selected(*, cmds=None,
+                                 namespace: str = "") -> tuple[str, ...]:
     if cmds is None:
         from maya import cmds
 
+    _require_delta_mush_available(cmds, namespace)
     selection, skinned = _selected_skinned_meshes(cmds)
     targets = []
     for mesh, shape, skin, history in skinned:

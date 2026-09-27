@@ -796,10 +796,22 @@ class MayaCustomControllerHost(MayaFaceHost):
         game_engine = self.scene_address(
             "FaceFitSkeleton.GameEngine" if self.face
             else "FitSkeleton.gameEngine")
-        if (plan.kind is not CustomControlKind.SKIN
-                and cmds.objExists(game_engine)
-                and bool(cmds.getAttr(game_engine))):
-            raise ValueError("游戏引擎模式仅允许 Skin Control")
+        if not self.face:
+            from adv_py.core.body_game_engine import (
+                BodyGameEnginePolicy, BodyOperation)
+
+            operation = {
+                CustomControlKind.SKIN: BodyOperation.SKIN_CONTROL,
+                CustomControlKind.CLUSTER: BodyOperation.CLUSTER_CONTROL,
+                CustomControlKind.SOFT_MOD: BodyOperation.SOFT_MOD_CONTROL,
+            }[plan.kind]
+            enabled = bool(cmds.objExists(game_engine)
+                           and cmds.getAttr(game_engine))
+            BodyGameEnginePolicy(enabled).require(operation)
+        elif (plan.kind is not CustomControlKind.SKIN
+              and cmds.objExists(game_engine)
+              and bool(cmds.getAttr(game_engine))):
+            raise ValueError("Face 游戏引擎模式仅允许 Skin Control")
         if mesh not in self._softmod_meshes(source):
             raise ValueError("SoftMod 与区域网格不匹配")
         if (cmds.referenceQuery(source, isNodeReferenced=True)

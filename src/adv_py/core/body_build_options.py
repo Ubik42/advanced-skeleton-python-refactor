@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .body_game_engine import BodyGameEnginePolicy
 from .fit_settings import (
     FitSkeletonField, FitSkeletonSetting, FitSkeletonSettings,
     FitSkeletonValidationError, audit_fit_skeleton_settings,
@@ -34,6 +35,10 @@ class BodyBuildOptions:
     def settings(self) -> tuple[FitSkeletonSetting, ...]:
         return tuple(FitSkeletonSetting(field, getattr(self, field.value))
                      for field in BODY_BUILD_OPTION_FIELDS)
+
+    @property
+    def game_engine_policy(self) -> BodyGameEnginePolicy:
+        return BodyGameEnginePolicy(self.game_engine)
 
     @classmethod
     def from_fit_settings(cls, settings: FitSkeletonSettings) -> "BodyBuildOptions":

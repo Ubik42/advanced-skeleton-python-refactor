@@ -947,15 +947,15 @@ class MayaPanelController:
 
         set_smooth_bind_options()
 
-    def delta_mush_apply(self) -> int:
+    def delta_mush_apply(self, namespace: str = "") -> int:
         from adv_py.adapters.maya_delta_mush import apply_delta_mush_to_selected
 
-        return len(apply_delta_mush_to_selected())
+        return len(apply_delta_mush_to_selected(namespace=namespace))
 
-    def delta_mush_harden_weights(self) -> int:
+    def delta_mush_harden_weights(self, namespace: str = "") -> int:
         from adv_py.adapters.maya_delta_mush import harden_weights_on_selected
 
-        return len(harden_weights_on_selected())
+        return len(harden_weights_on_selected(namespace=namespace))
 
     def skin_export(self, namespace: str, skin: str, mesh: str,
                     destination: Path) -> int:

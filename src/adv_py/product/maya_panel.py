@@ -2019,11 +2019,11 @@ def create_panel(controller: MayaPanelController | None = None):
             return "已设置原版 Smooth Bind 选项，并打开 Maya 绑定选项窗口"
 
         def _apply_delta_mush(self):
-            count = self.controller.delta_mush_apply()
+            count = self.controller.delta_mush_apply(self._namespace())
             return f"已为 {count} 个网格应用 Delta Mush"
 
         def _harden_delta_mush_weights(self):
-            count = self.controller.delta_mush_harden_weights()
+            count = self.controller.delta_mush_harden_weights(self._namespace())
             return f"已硬化 {count} 个网格的蒙皮权重"
 
         def _import_skin(self):
