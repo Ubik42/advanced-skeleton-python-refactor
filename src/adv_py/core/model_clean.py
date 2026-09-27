@@ -2,10 +2,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
+import json
 import re
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def model_clean_content_sha256(payload: object) -> str:
+    """Hash canonical, JSON-compatible scene data for both capture passes."""
+    data = json.dumps(payload, sort_keys=True, ensure_ascii=False,
+                      allow_nan=False, separators=(",", ":"))
+    return sha256(data.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +27,10 @@ class ModelCleanNode:
     uv_sets: tuple[str, ...] = ()
     material_slots: tuple[str, ...] = ()
     user_attributes: tuple[str, ...] = ()
+    surface_sha256: str = ""
+    uv_content_sha256: str = ""
+    material_assignment_sha256: str = ""
+    attribute_content_sha256: str = ""
     referenced: bool = False
     instanced: bool = False
 
@@ -29,6 +42,7 @@ class ModelCleanScene:
     nodes: tuple[ModelCleanNode, ...]
     other_scene_nodes: tuple[str, ...] = ()
     reference_files: tuple[str, ...] = ()
+    material_network_sha256: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +57,10 @@ class ModelCleanItem:
     uv_sets: tuple[str, ...]
     material_slots: tuple[str, ...]
     user_attributes: tuple[str, ...]
+    surface_sha256: str
+    uv_content_sha256: str
+    material_assignment_sha256: str
+    attribute_content_sha256: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +70,7 @@ class ModelCleanPlan:
     items: tuple[ModelCleanItem, ...]
     discarded_scene_nodes: tuple[str, ...]
     discarded_reference_files: tuple[str, ...]
+    material_network_sha256: str
 
     @property
     def meshes(self) -> tuple[ModelCleanItem, ...]:
@@ -67,6 +86,10 @@ class ModelCleanArchiveItem:
     uv_sets: tuple[str, ...]
     material_slots: tuple[str, ...]
     user_attributes: tuple[str, ...]
+    surface_sha256: str
+    uv_content_sha256: str
+    material_assignment_sha256: str
+    attribute_content_sha256: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +106,8 @@ def plan_model_clean(scene: ModelCleanScene) -> ModelCleanPlan:
     """Resolve scene names and preserve the information OBJ cannot carry."""
     if scene.geo_root != "|geo" or not scene.nodes:
         raise ValueError("Model Clean 需要唯一的顶层 |geo 组")
+    if _SHA256.fullmatch(scene.material_network_sha256) is None:
+        raise ValueError("Model Clean 材质网络缺少内容摘要")
     by_path = {node.path: node for node in scene.nodes}
     if len(by_path) != len(scene.nodes):
         raise ValueError("Model Clean 层级包含重复 DAG 路径")
@@ -121,6 +146,17 @@ def plan_model_clean(scene: ModelCleanScene) -> ModelCleanPlan:
                     *node.uv_sets, *node.material_slots,
                     *node.user_attributes))):
             raise ValueError("Model Clean UV、材质或用户属性记录无效")
+        content_digests = (
+            node.surface_sha256, node.uv_content_sha256,
+            node.material_assignment_sha256,
+            node.attribute_content_sha256)
+        required = (
+            node.kind == "mesh", bool(node.uv_sets),
+            bool(node.material_slots), bool(node.user_attributes))
+        if any((bool(digest) != needed or
+                (needed and _SHA256.fullmatch(digest) is None))
+               for digest, needed in zip(content_digests, required)):
+            raise ValueError("Model Clean 网格、UV、材质或用户属性摘要无效")
         leaf = node.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
         if not leaf or (node.path == "|geo" and leaf != "geo"):
             raise ValueError("Model Clean 对象名称无效")
@@ -138,11 +174,13 @@ def plan_model_clean(scene: ModelCleanScene) -> ModelCleanPlan:
             node.path, target_path, node.kind, obj_key,
             node.shape_name.rsplit(":", 1)[-1] if node.shape_name else None,
             node.vertex_count, node.face_count, node.uv_sets,
-            node.material_slots, node.user_attributes))
+            node.material_slots, node.user_attributes,
+            *content_digests))
     if not any(item.kind == "mesh" for item in items):
         raise ValueError("Model Clean 的 |geo 下没有多边形网格")
     return ModelCleanPlan(scene.scene_name, scene.geo_root, tuple(items),
-                          scene.other_scene_nodes, scene.reference_files)
+                          scene.other_scene_nodes, scene.reference_files,
+                          scene.material_network_sha256)
 
 
 def validate_model_clean_archive(
@@ -156,6 +194,8 @@ def validate_model_clean_archive(
                archive.attribute_payload_sha256)
     if any(_SHA256.fullmatch(digest) is None for digest in digests):
         raise ValueError("Model Clean 临时场景、材质、UV 或属性归档缺少摘要")
+    if archive.material_payload_sha256 != plan.material_network_sha256:
+        raise ValueError("Model Clean 材质网络归档与来源不一致")
     expected = {item.obj_key: item for item in plan.meshes}
     actual = {item.obj_key: item for item in archive.items}
     if (len(actual) != len(archive.items) or set(actual) != set(expected)):
@@ -167,7 +207,13 @@ def validate_model_clean_archive(
                 or item.face_count != original.face_count
                 or item.uv_sets != original.uv_sets
                 or item.material_slots != original.material_slots
-                or item.user_attributes != original.user_attributes):
+                or item.user_attributes != original.user_attributes
+                or item.surface_sha256 != original.surface_sha256
+                or item.uv_content_sha256 != original.uv_content_sha256
+                or item.material_assignment_sha256 !=
+                    original.material_assignment_sha256
+                or item.attribute_content_sha256 !=
+                    original.attribute_content_sha256):
             raise ValueError("Model Clean 归档未保留网格结构、UV、材质或属性："
                              + original.source_path)
 
@@ -177,7 +223,9 @@ def validate_model_clean_result(
 ) -> None:
     expected = {item.target_path: item for item in plan.items}
     actual = {node.path: node for node in scene.nodes}
-    if (scene.geo_root != "|geo" or len(actual) != len(scene.nodes)
+    if (scene.geo_root != "|geo"
+            or scene.material_network_sha256 != plan.material_network_sha256
+            or len(actual) != len(scene.nodes)
             or set(actual) != set(expected)):
         raise ValueError("Model Clean 重建后的 geo 层级与计划不一致")
     for path, item in expected.items():
@@ -188,5 +236,11 @@ def validate_model_clean_result(
                 or node.face_count != item.face_count
                 or node.uv_sets != item.uv_sets
                 or node.material_slots != item.material_slots
-                or node.user_attributes != item.user_attributes):
+                or node.user_attributes != item.user_attributes
+                or node.surface_sha256 != item.surface_sha256
+                or node.uv_content_sha256 != item.uv_content_sha256
+                or node.material_assignment_sha256 !=
+                    item.material_assignment_sha256
+                or node.attribute_content_sha256 !=
+                    item.attribute_content_sha256):
             raise ValueError("Model Clean 重建后网格或属性不完整：" + path)
