@@ -1,6 +1,8 @@
 """Build segmented Main/Outer eyelid joints from bilateral Face Fit bands."""
 from __future__ import annotations
 
+from math import isfinite
+
 from array import array
 from contextlib import nullcontext
 import json
@@ -26,6 +28,44 @@ _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
 
 
 class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
+    def _outer_blink_control(self, side: FaceSide, arc: str) -> str:
+        if not isinstance(side, FaceSide) or arc not in ("upper", "lower"):
+            raise ValueError("Outer 眨眼修形的侧别或上下眼睑无效")
+        suffix = "_R" if side is FaceSide.RIGHT else "_L"
+        name = ("ctrlUpper" if arc == "upper" else "ctrlLower") \
+               + "EyeLidOuter" + suffix
+        controls = self._cmds.ls(name, long=True, type="transform") or []
+        if len(controls) != 1 or any(not self._cmds.attributeQuery(
+                "blinkOffset" + axis, node=controls[0], exists=True)
+                for axis in "XYZ"):
+            raise FitSkeletonValidationError("Outer 眼睑修形控制缺失；先建立眼睑绑定")
+        return controls[0]
+
+    def read_outer_blink_offset(self, side: FaceSide,
+                                arc: str) -> tuple[float, float, float]:
+        control = self._outer_blink_control(side, arc)
+        return tuple(float(self._cmds.getAttr(control + ".blinkOffset" + axis))
+                     for axis in "XYZ")
+
+    def set_outer_blink_offset(self, side: FaceSide, arc: str,
+                               offset: tuple[float, float, float]
+                               ) -> tuple[float, float, float]:
+        if len(offset) != 3 or any(not isfinite(value) for value in offset):
+            raise ValueError("Outer 眨眼修形需要三个有限的局部位移值")
+        control = self._outer_blink_control(side, arc)
+        c = self._cmds
+        if c.referenceQuery(control, isNodeReferenced=True):
+            raise FitSkeletonValidationError("不能修改引用中的眼睑修形控制")
+        plugs = tuple(control + ".blinkOffset" + axis for axis in "XYZ")
+        if any(c.getAttr(plug, lock=True) or
+               c.connectionInfo(plug, isDestination=True) for plug in plugs):
+            raise FitSkeletonValidationError("眼睑修形通道已锁定或由其他节点驱动")
+        with self.transaction("调整 Outer 眨眼修形"):
+            self._transaction_changed = True
+            for plug, value in zip(plugs, offset):
+                c.setAttr(plug, float(value))
+        return self.read_outer_blink_offset(side, arc)
+
     def _ring(self, pre: MayaFaceBuildHost, mesh: str, mesh_fn, side: FaceSide,
               layer: EyeLidLayer):
         c = self._cmds

@@ -858,6 +858,39 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._face_build_inspect_inputs))
             form.addRow(self._button("建立双侧眼睑关节与蒙皮",
                                      self._face_build_eye_lids))
+            self.face_outer_side = QtWidgets.QComboBox()
+            self.face_outer_side.addItem("右眼", "Right")
+            self.face_outer_side.addItem("左眼", "Left")
+            self.face_outer_arc = QtWidgets.QComboBox()
+            self.face_outer_arc.addItem("上眼睑", "upper")
+            self.face_outer_arc.addItem("下眼睑", "lower")
+            self.face_outer_loaded_key = None
+            self.face_outer_side.currentIndexChanged.connect(
+                self._face_outer_selection_changed)
+            self.face_outer_arc.currentIndexChanged.connect(
+                self._face_outer_selection_changed)
+            eye_part = QtWidgets.QHBoxLayout()
+            eye_part.addWidget(self.face_outer_side)
+            eye_part.addWidget(self.face_outer_arc)
+            form.addRow("Outer 闭眼修形", eye_part)
+            self.face_outer_offsets = []
+            offsets = QtWidgets.QHBoxLayout()
+            for axis in "XYZ":
+                field = QtWidgets.QDoubleSpinBox()
+                field.setRange(-1000., 1000.)
+                field.setDecimals(6)
+                field.setSingleStep(.01)
+                field.setToolTip("眨眼值为 10 时的局部 " + axis + " 位移")
+                offsets.addWidget(QtWidgets.QLabel(axis))
+                offsets.addWidget(field)
+                self.face_outer_offsets.append(field)
+            form.addRow("局部位移", offsets)
+            outer_actions = QtWidgets.QHBoxLayout()
+            outer_actions.addWidget(self._button("读取 Outer 修形",
+                                                 self._face_outer_blink_read))
+            outer_actions.addWidget(self._button("应用 Outer 修形",
+                                                 self._face_outer_blink_apply))
+            form.addRow(outer_actions)
             form.addRow(self._button("构建面部控制", self._face_build, primary=True))
             stack.addWidget(group)
 
@@ -1640,6 +1673,31 @@ def create_panel(controller: MayaPanelController | None = None):
                     + f"左侧区域 {result['area_vertices']['Left']} 顶点"
                     + mirrored + "。")
 
+        def _face_outer_blink_read(self):
+            side = self.face_outer_side.currentData()
+            arc = self.face_outer_arc.currentData()
+            values = self.controller.face_outer_blink_read(self._namespace(),
+                                                           side, arc)
+            for field, value in zip(self.face_outer_offsets, values):
+                field.setValue(value)
+            self.face_outer_loaded_key = (self._namespace(), side, arc)
+            return ("已读取" + ("右" if side == "Right" else "左")
+                    + ("上" if arc == "upper" else "下") + "眼睑 Outer 修形")
+
+        def _face_outer_selection_changed(self, *_):
+            self.face_outer_loaded_key = None
+
+        def _face_outer_blink_apply(self):
+            side = self.face_outer_side.currentData()
+            arc = self.face_outer_arc.currentData()
+            if self.face_outer_loaded_key != (self._namespace(), side, arc):
+                raise ValueError("先读取当前眼睑的 Outer 修形")
+            values = tuple(field.value() for field in self.face_outer_offsets)
+            self.controller.face_outer_blink_apply(self._namespace(), side,
+                                                   arc, values)
+            return ("已应用" + ("右" if side == "Right" else "左")
+                    + ("上" if arc == "upper" else "下") + "眼睑 Outer 修形")
+
         def _face_performance_apply(self):
             frames = self.controller.face_performance_apply(self._namespace(),
                 self.face_control_path.text().strip(),
@@ -1740,6 +1798,8 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _role_changed(self, current, previous):
             del previous
+            if hasattr(self, "face_outer_loaded_key"):
+                self.face_outer_loaded_key = None
             if current is None:
                 self.current.setText("当前角色：未选择")
                 return

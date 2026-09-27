@@ -866,6 +866,25 @@ class MayaPanelController:
         return BuildFaceEyeLids(MayaFaceEyeLidRigHost(
             namespace=None if namespace == ":" else namespace)).execute()
 
+    def face_outer_blink_read(self, namespace: str, side: str,
+                              arc: str) -> tuple[float, float, float]:
+        from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
+        from adv_py.application.face_pre import FaceSide
+
+        return MayaFaceEyeLidRigHost(
+            namespace=None if namespace == ":" else namespace
+            ).read_outer_blink_offset(FaceSide(side), arc)
+
+    def face_outer_blink_apply(self, namespace: str, side: str, arc: str,
+                               offset: tuple[float, float, float]
+                               ) -> tuple[float, float, float]:
+        from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
+        from adv_py.application.face_pre import FaceSide
+
+        return MayaFaceEyeLidRigHost(
+            namespace=None if namespace == ":" else namespace
+            ).set_outer_blink_offset(FaceSide(side), arc, offset)
+
     def face_eye_build(self, namespace: str, head_joint: str,
                        right_eye: str, left_eye: str):
         from adv_py.adapters.maya_face_eye import MayaFaceEyeHost
