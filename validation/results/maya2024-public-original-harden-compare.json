@@ -1,0 +1,12 @@
+{
+  "all_weights_match": true,
+  "influence_order_matches": true,
+  "joint_locks_match": true,
+  "source_file_unchanged": true,
+  "asset": "sam.mb",
+  "vertex_count": 18151,
+  "influence_count": 121,
+  "maximum_weight_error": 0.0,
+  "rms_weight_error": 0.0,
+  "status": "passed"
+}
