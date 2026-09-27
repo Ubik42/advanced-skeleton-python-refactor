@@ -121,7 +121,9 @@ def plan_fit_inbetween(
         end = _rla_child(start, children.get(start.path, ()),
                          center_tolerance)
         if end is None:
-            continue
+            raise FitInbetweenValidationError(
+                "Inbetween 关节缺少同侧下游关节：" + start.path
+            )
         parent_name = start.short_name
         for index in range(1, count + 1):
             name = start.short_name + "Part" + str(index)

@@ -215,12 +215,12 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
                 "Bendy 控制器设置需要 Twist 模式",
             )
         )
-    if metadata.untwister and metadata.inbetween_joints is None:
+    if metadata.untwister and not metadata.inbetween_joints:
         issues.append(
             FitJointIssue(
                 metadata.joint,
                 "untwister_without_inbetween",
-                "UnTwister 设置需要 Inbetween 模式",
+                "UnTwister 设置需要至少一段 Inbetween 关节",
             )
         )
     if metadata.no_mirror_left and not metadata.no_mirror:
