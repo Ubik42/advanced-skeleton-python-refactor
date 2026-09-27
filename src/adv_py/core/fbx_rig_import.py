@@ -70,6 +70,7 @@ class FBXRigImportPlan:
     last_bake_frame: int | None
     names_requiring_underscore_removal: tuple[str, ...]
     collapsed_fit_source_joints: tuple[str, ...] = ()
+    bind_pose_joints: tuple[FBXRigSourceJoint, ...] = ()
 
 
 def plan_fbx_control_transfer(
@@ -98,6 +99,30 @@ def plan_fbx_control_transfer(
     if len({link.source_joint for link in links}) != len(links):
         raise ValueError("FBX rig 多个控制器指向同一来源关节")
     return FBXRigControlTransferPlan(tuple(links))
+
+
+def fbx_bind_pose_matches(
+    expected: tuple[FBXRigSourceJoint, ...],
+    actual: tuple[FBXRigSourceJoint, ...],
+    *,
+    tolerance: float = 1e-4,
+) -> bool:
+    """Require the prepared scene to match the read-only bind-pose capture."""
+    if not isfinite(tolerance) or tolerance < 0:
+        raise ValueError("FBX rig 绑定姿态容差无效")
+    by_path = {joint.path: joint for joint in actual}
+    if len(by_path) != len(actual) or len(expected) != len(actual):
+        return False
+    return all(
+        (candidate := by_path.get(joint.path)) is not None
+        and candidate.name == joint.name
+        and candidate.parent == joint.parent
+        and len(candidate.world_position) == 3
+        and all(abs(before - after) <= tolerance
+                for before, after in zip(joint.world_position,
+                                         candidate.world_position))
+        for joint in expected
+    )
 
 
 def plan_fbx_rig_import(
@@ -249,4 +274,5 @@ def plan_fbx_rig_import(
         tuple(guides), tuple(pairs), tuple(control_links), tuple(labels),
         -1 if last_frame is not None else None, last_frame,
         tuple(joint.path for joint in joints if "_" in joint.name),
-        tuple(joint.path for joint in kept if joint.path in collapsed))
+        tuple(joint.path for joint in kept if joint.path in collapsed),
+        joints)

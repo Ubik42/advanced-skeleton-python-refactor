@@ -8,7 +8,7 @@ from typing import Mapping, Protocol
 
 from adv_py.core.fbx_rig_import import (
     FBXRigControlTransferPlan, FBXRigImportPlan, FBXRigSourceJoint,
-    plan_fbx_control_transfer, plan_fbx_rig_import,
+    fbx_bind_pose_matches, plan_fbx_control_transfer, plan_fbx_rig_import,
 )
 
 
@@ -60,6 +60,10 @@ class FBXRigGeneratedTargets:
 class FBXRigHost(Protocol):
     def existing_advanced_skeleton_nodes(self) -> tuple[str, ...]: ...
     def capture_fbx_rig_source(self) -> FBXRigSourceCapture: ...
+    # Temporarily inspect the bind pose and restore the scene before returning.
+    def capture_fbx_bind_pose_joints(
+        self, source: FBXRigSourceCapture,
+    ) -> tuple[FBXRigSourceJoint, ...]: ...
     def choose_fbx_rig_route(
         self, detected_application: str | None,
     ) -> str: ...  # fbx_rig, name_matcher, cancel
@@ -116,20 +120,31 @@ class BuildFBXRig:
     def __init__(self, host: FBXRigHost) -> None:
         self._host = host
 
-    def plan(self) -> tuple[FBXRigSourceCapture, FBXRigImportPlan]:
+    def plan(
+        self, source: FBXRigSourceCapture | None = None,
+    ) -> tuple[FBXRigSourceCapture, FBXRigImportPlan]:
+        existing = self._host.existing_advanced_skeleton_nodes()
+        if existing:
+            raise ValueError("场景已有 AdvancedSkeleton 角色：" +
+                             "、".join(existing))
+        if source is None:
+            source = self._host.capture_fbx_rig_source()
+        bind_joints = self._host.capture_fbx_bind_pose_joints(source)
+        plan = plan_fbx_rig_import(
+            bind_joints,
+            animation_key_times=source.animation_key_times,
+            highest_descendant_y=source.highest_descendant_y)
+        if {joint.path for joint in bind_joints} != {
+                joint.path for joint in source.joints}:
+            raise ValueError("FBX rig 绑定姿态关节集合与当前来源不一致")
+        return source, plan
+
+    def execute(self) -> FBXRigBuildAudit:
         existing = self._host.existing_advanced_skeleton_nodes()
         if existing:
             raise ValueError("场景已有 AdvancedSkeleton 角色：" +
                              "、".join(existing))
         source = self._host.capture_fbx_rig_source()
-        plan = plan_fbx_rig_import(
-            source.joints,
-            animation_key_times=source.animation_key_times,
-            highest_descendant_y=source.highest_descendant_y)
-        return source, plan
-
-    def execute(self) -> FBXRigBuildAudit:
-        source, plan = self.plan()
         route = self._host.choose_fbx_rig_route(
             source.detected_application)
         if route == "name_matcher":
@@ -139,10 +154,14 @@ class BuildFBXRig:
             if route == "cancel":
                 raise FBXRigCancelled("FBX rig 已取消")
             raise ValueError("FBX rig 入口选择无效")
+        source, plan = self.plan(source)
         self._host.preflight_fbx_rig_import(plan, source)
         with self._host.transaction("从 FBX 骨架构建 ADV 控制"):
             try:
                 self._host.prepare_fbx_bind_pose(plan, source)
+                prepared = self._host.capture_fbx_rig_source().joints
+                if not fbx_bind_pose_matches(plan.bind_pose_joints, prepared):
+                    raise RuntimeError("FBX rig 恢复后的来源绑定姿态与计划不一致")
                 source_paths = self._host.move_fbx_source_to_namespace(plan)
                 if (set(source_paths) != {joint.path for joint in source.joints}
                         or len(set(source_paths.values())) != len(source_paths)):
