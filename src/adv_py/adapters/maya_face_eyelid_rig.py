@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from array import array
+from contextlib import nullcontext
 import json
 from math import radians
 import re
@@ -17,12 +18,13 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .maya_dense_skin import MayaDenseSkinHost
 from .maya_face_build import MayaFaceBuildHost
+from .maya_face_pre import MayaFacePreHost
 
 
 _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
 
 
-class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
+class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
     def _ring(self, pre: MayaFaceBuildHost, mesh: str, mesh_fn, side: FaceSide,
               layer: EyeLidLayer):
         c = self._cmds
@@ -121,6 +123,36 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
         return factors, arcs, positions, span
 
     def build(self) -> dict:
+        c = self._cmds
+        pre = MayaFaceBuildHost(namespace=self.namespace)
+        fit = pre._fit(required=True)
+        symmetric = not (c.attributeQuery("NonSym", node=fit, exists=True)
+                         and c.getAttr(fit + ".NonSym"))
+        if symmetric:
+            try:
+                pre.read_eye_ball_fit(FaceSide.LEFT)
+                for layer in EyeLidLayer:
+                    pre.read_eye_lid_fit(layer, FaceSide.LEFT)
+            except FitSkeletonValidationError:
+                if pre.read_include() is not FaceInclude.EYES_ONLY:
+                    raise FitSkeletonValidationError(
+                        "当前眼睑构建阶段需要 Skip Above+Below Eyes")
+                eye_groups = c.ls("AdvPy_FaceEyes", long=True,
+                                  type="transform") or []
+                if len(eye_groups) != 1 or not c.attributeQuery(
+                        "advPyLeftEyeMesh", node=eye_groups[0], exists=True):
+                    raise FitSkeletonValidationError(
+                        "先从 Face / Pre 构建双眼控制与蒙皮，再建立眼睑")
+                left_eye = c.getAttr(eye_groups[0] + ".advPyLeftEyeMesh")
+                with self.transaction("镜像 Fit 并建立双侧眼睑与 Skin"):
+                    self._transaction_changed = True
+                    mirror = self.mirror_right_eye_fit_to_left(left_eye)
+                    result = self._build_prepared()
+                    result["symmetric_mirror"] = mirror
+                    return result
+        return self._build_prepared()
+
+    def _build_prepared(self) -> dict:
         c = self._cmds
         pre = MayaFaceBuildHost(namespace=self.namespace)
         readiness = pre.inspect_build_inputs()
@@ -231,7 +263,8 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
         control_names = {}
         eye_control_names = {}
         work_curves = {}
-        with self.transaction("建立双侧多关节眼睑与 Skin"):
+        with (nullcontext() if self._transaction_active else
+              self.transaction("建立双侧多关节眼睑与 Skin")):
             self._transaction_changed = True
             c.select(clear=True)
             face_joint = c.joint(name="FaceJoint_M")

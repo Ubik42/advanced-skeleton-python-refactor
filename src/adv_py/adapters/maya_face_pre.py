@@ -609,7 +609,8 @@ class MayaFacePreHost(MayaFaceHost):
             left_rows[layer] = (loop, left_positions,
                                 tuple(reflected), left_corners)
         selected = c.ls(selection=True, long=True) or []
-        with self.transaction("从右侧镜像生成左侧眼睑 Fit"):
+        with (nullcontext() if self._transaction_active else
+              self.transaction("从右侧镜像生成左侧眼睑 Fit")):
             self._transaction_changed = True
             if not c.attributeQuery("NonSymSide", node=fit, exists=True):
                 c.addAttr(fit, longName="NonSymSide", dataType="string")

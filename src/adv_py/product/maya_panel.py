@@ -1631,11 +1631,14 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _face_build_eye_lids(self):
             result = self.controller.face_build_eye_lids(self._namespace())
+            mirrored = ("；已从右侧 Fit 自动镜像左侧"
+                        if result.get("symmetric_mirror") else "")
             return (f"双侧眼睑控制已建立：{len(result['controls'])} 个控制器、"
                     f"{len(result['eye_controls'])} 个眨眼主控、"
                     f"{len(result['joints'])} 个分段关节；"
                     + f"右侧区域 {result['area_vertices']['Right']} 顶点，"
-                    + f"左侧区域 {result['area_vertices']['Left']} 顶点。")
+                    + f"左侧区域 {result['area_vertices']['Left']} 顶点"
+                    + mirrored + "。")
 
         def _face_performance_apply(self):
             frames = self.controller.face_performance_apply(self._namespace(),

@@ -98,7 +98,9 @@ def main() -> None:
     head_source = Path(sys.argv[1]).resolve()
     eyes_source = Path(sys.argv[2]).resolve()
     output = Path(sys.argv[3]).resolve()
-    symmetric = len(sys.argv) > 4 and sys.argv[4] == "symmetric"
+    mode = sys.argv[4] if len(sys.argv) > 4 else "independent"
+    symmetric = mode in ("symmetric", "symmetric-auto")
+    automatic_mirror = mode == "symmetric-auto"
     if not head_source.is_file() or not eyes_source.is_file():
         raise FileNotFoundError("头部或双眼 OBJ 缺失")
     with TemporaryDirectory(prefix="advpy-head-face-") as folder:
@@ -181,7 +183,7 @@ def main() -> None:
                 "preview_faces": int(cmds.polyEvaluate(preview, face=True)),
             })
         mirror_result = None
-        if symmetric:
+        if symmetric and not automatic_mirror:
             mirror_result = controller.face_fit_mirror_right_to_left(
                 ":", left_eye)
             assert mirror_result["mapped_vertices"] >= 20
@@ -197,11 +199,17 @@ def main() -> None:
         assert not incomplete["ready"] and "FaceFitJaw" in incomplete["missing"]
         assert controller.face_build_set_include(":", FaceInclude.EYES_ONLY.value) \
             == FaceInclude.EYES_ONLY.value
-        assert controller.face_build_inspect_inputs(":")["ready"]
+        readiness_after_include = controller.face_build_inspect_inputs(":")
+        if automatic_mirror:
+            assert not readiness_after_include["ready"]
+            assert "LeftEye" in readiness_after_include["missing"]
+        else:
+            assert readiness_after_include["ready"]
         cmds.undo()
         assert MayaFaceBuildHost().read_include() is FaceInclude.ALL
         cmds.redo()
-        assert controller.face_build_inspect_inputs(":")["ready"]
+        assert controller.face_build_inspect_inputs(":")["ready"] \
+            is not automatic_mirror
         try:
             MayaFaceEyeLidRigHost().build()
         except FitSkeletonValidationError as error:
@@ -228,8 +236,14 @@ def main() -> None:
         else:
             raise AssertionError("眼睑构建故障未触发")
         assert not cmds.objExists("FaceMotionSystem")
+        if automatic_mirror:
+            assert not cmds.objExists("FaceFitEyeLidInnerLeft")
         assert MayaDenseSkinHost().capture_dense_skin(source_skin) == original_weights
         lid_rig = controller.face_build_eye_lids(":")
+        if automatic_mirror:
+            mirror_result = lid_rig["symmetric_mirror"]
+            assert mirror_result["mapped_vertices"] == 55
+            assert cmds.objExists("FaceFitEyeLidInnerLeft")
         assert len(lid_rig["controls"]) == 8
         assert len(lid_rig["eye_controls"]) == 2
         assert len(lid_rig["work_curves"]) == 8
@@ -257,10 +271,14 @@ def main() -> None:
         assert 0 < changed_vertices <= sum(lid_rig["area_vertices"].values())
         cmds.undo()
         assert not cmds.objExists("FaceMotionSystem")
+        if automatic_mirror:
+            assert not cmds.objExists("FaceFitEyeLidInnerLeft")
         assert len(cmds.skinCluster(lid_rig["skin"], query=True,
                                     influence=True) or []) == 1
         cmds.redo()
         assert cmds.objExists("FaceMotionSystem")
+        if automatic_mirror:
+            assert cmds.objExists("FaceFitEyeLidInnerLeft")
         def mesh_points():
             mesh_fn, _, _ = mesh_topology(head)
             return [tuple(point[axis] for axis in range(3))
