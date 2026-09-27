@@ -29,6 +29,8 @@ class FitPartJointSpec:
     world_position: Vector3
     deform_profile: FitDeformProfile
     skin_enabled: bool = True
+    rotation_order: int = 0
+    segment_scale_compensate: bool = True
 
     @property
     def start_body_name(self) -> str:
@@ -59,6 +61,8 @@ class FitPartJointState:
     world_position: Vector3
     deform_profile: FitDeformProfile
     skin_enabled: bool = True
+    rotation_order: int = 0
+    segment_scale_compensate: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +101,10 @@ def audit_fit_part_hierarchy(
             issues.append("Part 父级不一致：" + spec.name)
         if state.skin_enabled != spec.skin_enabled:
             issues.append("Part Skin 影响开关不一致：" + spec.name)
+        if state.rotation_order != spec.rotation_order:
+            issues.append("Part 旋转顺序不一致：" + spec.name)
+        if state.segment_scale_compensate != spec.segment_scale_compensate:
+            issues.append("Part 分段缩放补偿不一致：" + spec.name)
         if any(abs(a - b) > tolerance for a, b in zip(
                 state.world_position, spec.world_position)):
             issues.append("Part 世界位置不一致：" + spec.name)
@@ -172,7 +180,9 @@ def plan_fit_part_joints(
                 start.side, index, count, path, name, parent, position,
                 start_body.deform_profile.interpolate(
                     end_body.deform_profile, fraction),
-                start_body.skin_enabled))
+                start_body.skin_enabled,
+                start_body.rotation_order,
+                start_body.segment_scale_compensate))
             parent = path
     return tuple(parts)
 

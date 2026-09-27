@@ -294,6 +294,10 @@ class FakeBodySkeletonHost:
         del joint
         return True
 
+    def read_fit_rotation_order(self, joint):
+        del joint
+        return 0
+
     def find_name_collisions(self, name):
         existing_body = tuple(
             state.path for state in self.body if state.name == name
@@ -467,6 +471,8 @@ class FakeBodySkeletonHost:
                 (0.0, 0.0, 0.0),
                 deform_profile=spec.deform_profile,
                 skin_enabled=spec.skin_enabled,
+                rotation_order=spec.rotation_order,
+                segment_scale_compensate=spec.segment_scale_compensate,
             )
         )
         return spec.path

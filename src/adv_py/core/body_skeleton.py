@@ -58,6 +58,8 @@ class BodyJointSpec:
     label: JointLabel
     deform_profile: FitDeformProfile = FitDeformProfile()
     skin_enabled: bool = True
+    rotation_order: int = 0
+    segment_scale_compensate: bool = True
 
     @classmethod
     def from_symmetry(
@@ -66,6 +68,8 @@ class BodyJointSpec:
         label: JointLabel,
         deform_profile: FitDeformProfile = FitDeformProfile(),
         skin_enabled: bool = True,
+        rotation_order: int = 0,
+        segment_scale_compensate: bool = True,
     ) -> "BodyJointSpec":
         return cls(
             source_joint=instance.source_joint,
@@ -77,6 +81,8 @@ class BodyJointSpec:
             label=label,
             deform_profile=deform_profile,
             skin_enabled=skin_enabled,
+            rotation_order=rotation_order,
+            segment_scale_compensate=segment_scale_compensate,
         )
 
     def __post_init__(self) -> None:
@@ -93,6 +99,10 @@ class BodyJointSpec:
             raise BodySkeletonValidationError("构建关节世界位置必须是有限三维向量")
         if not isinstance(self.skin_enabled, bool):
             raise BodySkeletonValidationError("Skin 影响开关必须是布尔值")
+        if type(self.rotation_order) is not int or not 0 <= self.rotation_order <= 5:
+            raise BodySkeletonValidationError("Maya 旋转顺序必须是 0 到 5 的整数")
+        if not isinstance(self.segment_scale_compensate, bool):
+            raise BodySkeletonValidationError("分段缩放补偿开关必须是布尔值")
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +120,8 @@ class BodyJointState:
     world_scale: Vector3 = (1.0, 1.0, 1.0)
     deform_profile: FitDeformProfile = FitDeformProfile()
     skin_enabled: bool = True
+    rotation_order: int = 0
+    segment_scale_compensate: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,9 +184,11 @@ def body_skeleton_unchanged(before: BodySkeletonSnapshot,
         return False
     for old, new in zip(before.joints, after.joints):
         if ((old.path, old.name, old.parent_path, old.side, old.label,
-             old.writable_joint_orient_axes, old.skin_enabled) !=
+             old.writable_joint_orient_axes, old.skin_enabled,
+             old.rotation_order, old.segment_scale_compensate) !=
             (new.path, new.name, new.parent_path, new.side, new.label,
-             new.writable_joint_orient_axes, new.skin_enabled)):
+             new.writable_joint_orient_axes, new.skin_enabled,
+             new.rotation_order, new.segment_scale_compensate)):
             return False
         numeric = ((old.world_position, new.world_position),
                    (old.joint_orient, new.joint_orient),
@@ -288,6 +302,12 @@ def audit_body_skeleton(
         if state.skin_enabled != spec.skin_enabled:
             issues.append(BodySkeletonIssue(
                 "skin_policy_mismatch", "Skin 影响开关不一致", path))
+        if state.rotation_order != spec.rotation_order:
+            issues.append(BodySkeletonIssue(
+                "rotation_order_mismatch", "旋转顺序不一致", path))
+        if state.segment_scale_compensate != spec.segment_scale_compensate:
+            issues.append(BodySkeletonIssue(
+                "segment_scale_mismatch", "分段缩放补偿不一致", path))
         if any(abs(current - wanted) > tolerance for current, wanted in zip(
             (state.deform_profile.fat, state.deform_profile.fat_front,
              state.deform_profile.fat_width),

@@ -53,9 +53,9 @@ class MayaFitPartHost(MayaBodyBuildHost):
                              skipSelect=True)
         joint = self._unique_fit_part_joint(spec.name)
         self._transaction_changed = True
-        c.setAttr(joint + ".rotateOrder", int(c.getAttr(
-            self._unique_fit_part_joint(spec.start_body_name)
-            + ".rotateOrder")))
+        c.setAttr(joint + ".rotateOrder", spec.rotation_order)
+        c.setAttr(joint + ".segmentScaleCompensate",
+                  spec.segment_scale_compensate)
         c.xform(joint, worldSpace=True, translation=spec.world_position)
         c.addAttr(joint, longName="advPyAuxiliaryInfluenceKind",
                   dataType="string")
@@ -102,6 +102,8 @@ class MayaFitPartHost(MayaBodyBuildHost):
                     for attr in ("fat", "fatFront", "fatWidth")
                 )),
                 bool(c.getAttr(joint + ".advPySkinEnabled")),
+                int(c.getAttr(joint + ".rotateOrder")),
+                bool(c.getAttr(joint + ".segmentScaleCompensate")),
             ))
         return tuple(result)
 

@@ -11,7 +11,9 @@ from adv_py.core.body_skeleton import (
     audit_body_skeleton,
 )
 from adv_py.core.fit_orientation import FitOrientationSnapshot
-from adv_py.core.fit_settings import FitSkeletonSettings, FitSkeletonValidationError
+from adv_py.core.fit_settings import (
+    FitSkeletonField, FitSkeletonSettings, FitSkeletonValidationError,
+)
 from adv_py.core.joint_labels import JointLabel
 from adv_py.core.fit_part import (
     FitPartJointSpec,
@@ -37,6 +39,8 @@ class BodySkeletonHost(Protocol):
     def read_fit_deform_profile(self, joint: str) -> FitDeformProfile: ...
 
     def read_fit_skin_enabled(self, joint: str) -> bool: ...
+
+    def read_fit_rotation_order(self, joint: str) -> int: ...
 
     def find_name_collisions(self, name: str) -> tuple[str, ...]: ...
 
@@ -111,6 +115,12 @@ class BuildBodySkeleton:
             node.path: self._host.read_fit_skin_enabled(node.path)
             for node in symmetry.source.hierarchy.joints
         }
+        rotation_orders = {
+            node.path: self._host.read_fit_rotation_order(node.path)
+            for node in symmetry.source.hierarchy.joints
+        }
+        segment_scale_compensate = not bool(symmetry.settings.value(
+            FitSkeletonField.USE_OFFSET_PARENT_MATRIX))
         missing_labels: list[str] = []
         inferred_labels: list[str] = []
         for node in symmetry.source.hierarchy.joints:
@@ -127,7 +137,9 @@ class BuildBodySkeleton:
             BodyJointSpec.from_symmetry(
                 instance, labels[instance.source_joint],
                 profiles[instance.source_joint],
-                skin_enabled[instance.source_joint])
+                skin_enabled[instance.source_joint],
+                rotation_orders[instance.source_joint],
+                segment_scale_compensate)
             for instance in symmetry.instances
             if instance.source_joint in labels
         )

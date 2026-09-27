@@ -350,6 +350,12 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
             node = parents[0] if parents else ""
         return True
 
+    def read_fit_rotation_order(self, joint: str) -> int:
+        matches = self._cmds.ls(joint, long=True, type="joint") or []
+        if len(matches) != 1 or matches[0] != joint:
+            raise FitSkeletonValidationError("Fit 旋转顺序来源关节无效：" + joint)
+        return int(self._cmds.getAttr(joint + ".rotateOrder"))
+
     def read_skin_influence_enabled(self, joint: str) -> bool:
         c = self._cmds
         matches = c.ls(joint, long=True, type="joint") or []
@@ -394,6 +400,9 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         )
         self.set_joint_label(path, spec.label)
         self._cmds.setAttr(f"{path}.side", _MAYA_SIDE_FROM_CORE[spec.side])
+        self._cmds.setAttr(f"{path}.rotateOrder", spec.rotation_order)
+        self._cmds.setAttr(f"{path}.segmentScaleCompensate",
+                           spec.segment_scale_compensate)
         for name, value in (
             ("fat", spec.deform_profile.fat),
             ("fatFront", spec.deform_profile.fat_front),
@@ -501,6 +510,10 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                         if self._cmds.attributeQuery(
                             "advPySkinEnabled", node=path, exists=True)
                         else True),
+                    rotation_order=int(self._cmds.getAttr(
+                        path + ".rotateOrder")),
+                    segment_scale_compensate=bool(self._cmds.getAttr(
+                        path + ".segmentScaleCompensate")),
                 )
             )
         return BodySkeletonSnapshot(
