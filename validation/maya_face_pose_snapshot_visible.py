@@ -7,7 +7,21 @@ import traceback
 
 from maya import cmds
 import maya.utils
-from PySide2 import QtCore
+from PySide2 import QtCore, QtGui
+
+
+def visible_eye_pixels(path: Path) -> int:
+    image = QtGui.QImage(str(path)).convertToFormat(
+        QtGui.QImage.Format_RGBA8888)
+    if image.isNull():
+        raise RuntimeError("Maya 截图无法读取：" + str(path))
+    bits = image.constBits()
+    rgba = bytes(bits)
+    return sum(1 for index in range(0, len(rgba), 4)
+               if rgba[index] > 80 and
+               rgba[index] - rgba[index + 1] > 35 and
+               rgba[index] > rgba[index + 1] * 1.25 and
+               rgba[index] > rgba[index + 2] * 1.25)
 
 
 def schedule(source_directory: str, output_directory: str) -> None:
@@ -84,8 +98,12 @@ def schedule(source_directory: str, output_directory: str) -> None:
                     widthHeight=(1280, 900), percent=100,
                     filename=str(output / ("snapshot-" + label)),
                     forceOverwrite=True)
+                data[label + "_visible_eye_pixels"] = visible_eye_pixels(
+                    output / (f"snapshot-{label}.{frame:04d}.png"))
             data["passed"] = (bool(list(output.glob("snapshot-open.*.png")))
-                              and bool(list(output.glob("snapshot-blink.*.png"))))
+                              and bool(list(output.glob("snapshot-blink.*.png")))
+                              and data["open_visible_eye_pixels"] > 0
+                              and data["blink_visible_eye_pixels"] == 0)
         except BaseException:
             data["error"] = traceback.format_exc()
             data["passed"] = False
