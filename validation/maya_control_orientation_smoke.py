@@ -742,6 +742,7 @@ def main(report: Path) -> int:
         scapula_count = 0
         scapula_state = ()
         scapula_ik_errors = {}
+        scapula_ik_joint_errors = {}
         try:
             scapula_count = controller.control_orient_axis(
                 "hero", (scapula_right,), "X", "Y", False, True, True)
@@ -763,6 +764,12 @@ def main(report: Path) -> int:
                     scapula_left, axis, 10.)
                 scapula_ik_errors[axis] = _reflection_error(
                     scapula_ik_neutral, right_pose, left_pose)
+                scapula_ik_joint_errors[axis] = sorted((
+                    (pair[0].rsplit("|", 1)[-1], *_reflection_error(
+                        (scapula_ik_neutral[index],),
+                        (right_pose[index],), (left_pose[index],)))
+                    for index, pair in enumerate(scapula_ik_probes)),
+                    key=lambda item: item[1], reverse=True)[:8]
             for side in ("R", "L"):
                 hero_host._cmds.setAttr(
                     "AdvPy_ArmSettings.armIkFk_" + side, 0.)
@@ -1048,6 +1055,7 @@ def main(report: Path) -> int:
             "mixed_rotation_reflection_error": mixed_error,
             "control_type_probe": coverage,
             "scapula_ik_axis_error": scapula_ik_errors,
+            "scapula_ik_joint_error": scapula_ik_joint_errors,
             "arm_ik_from_fk_error": arm_ik_from_fk_error,
             "status": "passed" if all(checks.values()) else "failed",
         }
