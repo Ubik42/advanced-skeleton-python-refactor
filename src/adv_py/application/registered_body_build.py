@@ -176,18 +176,23 @@ class BuildRegisteredBodyCharacter:
         if use_fit_part_hierarchy:
             fit_source, inbetween_plan = PrepareFitInbetween(self._host).plan(
                 container_name)
-            hip_selection = plan_hip_swing_fit_selection(fit_source)
-            if (hip_selection.enabled
+            hip_selection = plan_hip_swing_fit_selection(
+                fit_source,
+                allow_missing_child=(axial_description is not None
+                                     and axial_description
+                                     != BodyAxialDescription()))
+            if (hip_selection is not None and hip_selection.enabled
+                    and hip_selection.root_inbetween_count
                     and hip_selection.child_name != "Spine1"):
                 raise FitSkeletonValidationError(
-                    "HipSwinger 目前只支持 Spine1 子关节")
+                    "有 Root Part 的 HipSwinger 目前只支持 Spine1 子关节")
             untwister_sources = frozenset(
                 item.joint for item in fit_source.metadata
                 if item.untwister and (item.inbetween_joints or 0) > 0)
             if inbetween_plan.guides:
                 part_plan = plan_combined_part_hierarchy(
                     preview.build, inbetween_plan)
-            if (hip_selection.enabled
+            if (hip_selection is not None and hip_selection.enabled
                     and hip_selection.root_inbetween_count
                     and not any(part.kind == "inbetween"
                                 and part.start_body_name == "Root_M"
@@ -205,10 +210,12 @@ class BuildRegisteredBodyCharacter:
             else:
                 preview_sources = fit_part_twist_sources
             plan_fit_part_twist(twist_parts, preview_sources)
-        elif (axial_description is None
-              or axial_description == BodyAxialDescription()):
+        else:
             hip_selection = plan_hip_swing_fit_selection(
-                self._host.capture_fit_orientation(container_name))
+                self._host.capture_fit_orientation(container_name),
+                allow_missing_child=(axial_description is not None
+                                     and axial_description
+                                     != BodyAxialDescription()))
         with self._host.transaction("构建并登记完整 Body 角色"):
             joined = _JoinedTransactionHost(self._host)
             skeleton = BuildOrientedBodySkeleton(joined).apply(
@@ -450,7 +457,8 @@ class BuildRegisteredBodyCharacter:
                         rig = replace(rig, torso=torso_snapshot)
             if (hip_selection is not None and hip_selection.enabled
                     and hip_selection.root_inbetween_count == 0):
-                topology = character_hip_swing_no_parts_topology(rig.plan)
+                topology = character_hip_swing_no_parts_topology(
+                    rig.plan, child_name=hip_selection.child_name)
                 torso_plan = rig.plan.torso.torso
                 root_control = next(
                     control for control in torso_plan.controls.controls

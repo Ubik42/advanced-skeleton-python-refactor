@@ -20,7 +20,8 @@ class HipSwingFitSelection:
 
 def plan_hip_swing_fit_selection(
     fit: FitOrientationSnapshot,
-) -> HipSwingFitSelection:
+    *, allow_missing_child: bool = False,
+) -> HipSwingFitSelection | None:
     """Follow MEL's default Spine1 and explicit root-child label rules."""
     nodes = {node.path: node for node in fit.hierarchy.joints}
     metadata = {item.joint: item for item in fit.metadata}
@@ -44,6 +45,8 @@ def plan_hip_swing_fit_selection(
         (node for node in children if node.short_name == "Spine1"),
         None))
     if child is None:
+        if allow_missing_child:
+            return None
         raise ValueError("HipSwinger 缺少 Spine1 或显式标记的 Root 子关节")
     return HipSwingFitSelection(
         metadata[root.path].hip_swinger is not False,

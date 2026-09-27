@@ -15,19 +15,25 @@ from .body_character_rig import BodyCharacterRigBuildPlan
 
 def character_hip_swing_no_parts_topology(
     rig: BodyCharacterRigBuildPlan,
+    *, child_name: str,
 ) -> HipSwingNoPartsTopology:
-    """Resolve real Root, Spine1 and LegLock receivers from the rig plan."""
-    if rig.torso is None or rig.torso.torso.spine is None:
-        raise ValueError("无分段 HipSwinger 需要标准 Spine IK 的 Torso 计划")
+    """Resolve Root, selected first-spine child and LegLock receivers."""
+    if rig.torso is None:
+        raise ValueError("无分段 HipSwinger 需要 Torso 计划")
     torso = rig.torso.torso
+    axial = torso.spine if torso.spine is not None else torso.spline
+    if axial is None or len(axial.body_joints) < 2:
+        raise ValueError("无分段 HipSwinger 需要 Spine FK／IK 父链")
+    if axial.body_joints[1].rsplit("|", 1)[-1] != child_name + "_M":
+        raise ValueError("HipSwinger Fit 子关节与当前 Spine 首段不一致")
     root = next((control for control in torso.controls.controls
                  if control.driven_joint == torso.pelvis_translation.target),
                 None)
-    spine1 = next((control for control in torso.controls.controls
-                   if control.driven_joint == torso.spine.joints[1].path),
-                  None)
-    if root is None or spine1 is None:
-        raise ValueError("无分段 HipSwinger 缺少 Root／Spine1 FK 控制")
+    child_control = next((control for control in torso.controls.controls
+                          if control.driven_joint == axial.joints[1].path),
+                         None)
+    if root is None or child_control is None:
+        raise ValueError("无分段 HipSwinger 缺少 Root／下游 FK 控制")
     if (root.source_override_path != torso.root_fkx_path
             or torso.leg_lock.root_fkx_path != torso.root_fkx_path):
         raise ValueError("无分段 HipSwinger 的 Root FKX／LegLock 来源不一致")
@@ -35,10 +41,10 @@ def character_hip_swing_no_parts_topology(
         fk_root_path=root.control_path,
         fk_root_offset_path=root.offset_path,
         root_fkx_path=torso.root_fkx_path,
-        child_fk_offset_path=spine1.offset_path,
+        child_fk_offset_path=child_control.offset_path,
         leg_lock_matrix_input=torso.leg_lock.compensation_input,
         root_body_path=torso.pelvis_translation.target,
-        child_body_path=torso.spine.body_joints[1],
+        child_body_path=axial.body_joints[1],
     )
 
 

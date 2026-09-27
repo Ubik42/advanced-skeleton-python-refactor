@@ -153,12 +153,11 @@ def plan_hip_swing_no_parts(
     inputs may additionally provide those ports and a Root-child inverter.
     """
     if (not selection.enabled or selection.root_inbetween_count != 0
-            or selection.child_name != "Spine1"
             or isinstance(radius, bool)
             or not isinstance(radius, (int, float))
             or not isfinite(radius) or radius <= 0
             or not isinstance(root_profile, FitDeformProfile)):
-        raise ValueError("无分段 HipSwinger 需要标准 Root→Spine1 和正半径")
+        raise ValueError("无分段 HipSwinger 需要 Root 下游 FK 子链和正半径")
     if not isinstance(topology, HipSwingNoPartsTopology):
         raise ValueError("无分段 HipSwinger 缺少 Root／腿部空间拓扑")
     paths = (topology.fk_root_path, topology.fk_root_offset_path,
@@ -186,7 +185,8 @@ def plan_hip_swing_no_parts(
             or (topology.child_no_shear_input is None
                 and not topology.child_fk_offset_path.startswith(
                     topology.fk_root_path + "|"))
-            or topology.child_body_path.rsplit("|", 1)[-1] != "Spine1_M"
+            or topology.child_body_path.rsplit("|", 1)[-1]
+            != selection.child_name + "_M"
             or topology.root_body_path.rsplit("|", 1)[-1] != "Root_M"):
         raise ValueError("无分段 HipSwinger 的宿主路径或矩阵端口不完整")
     plan = HipSwingNoPartsPlan(
