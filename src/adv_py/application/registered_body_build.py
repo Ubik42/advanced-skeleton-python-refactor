@@ -81,6 +81,9 @@ def _with_inbetween_fk_sources(
         if name in sources:
             raise ValueError("Inbetween FK 约束被多条段重复改接：" + name)
         anchor = segment.fk.anchor
+        if rewire.start_fkx_name != anchor.fkx_name:
+            raise ValueError("Inbetween FKX 计划与实际改接来源不一致："
+                             + name)
         sources[name] = (rewire.start_fk_control_path,
                          anchor.fk_offset_path + "|" + anchor.fkx_name)
     matched: set[str] = set()
