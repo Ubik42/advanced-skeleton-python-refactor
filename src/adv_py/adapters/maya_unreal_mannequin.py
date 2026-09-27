@@ -65,6 +65,9 @@ class MayaMannequinHost(MayaCustomControllerHost):
         root = c.ls("root", type="joint", long=True) or []
         if len(root) != 1 or root[0] != "|root":
             raise ValueError("模板导入后没有得到唯一的场景根级 root")
+        c.addAttr(root[0], longName="advPyMannequinTemplate", dataType="string")
+        c.setAttr(root[0] + ".advPyMannequinTemplate", plan.template,
+                  type="string")
 
     def fit_scale(self, plan: MannequinPlan) -> None:
         self._require_transaction()
@@ -220,7 +223,9 @@ class MayaMannequinHost(MayaCustomControllerHost):
 
     def has_mannequin(self) -> bool:
         return bool(self._cmds.objExists("|root") and
-                    self._cmds.objExists("|root|pelvis"))
+                    self._cmds.objExists("|root|pelvis") and
+                    self._cmds.attributeQuery("advPyMannequinTemplate",
+                                              node="|root", exists=True))
 
     def transfer_skin(self) -> int:
         self._require_transaction()
@@ -319,6 +324,8 @@ class MayaMannequinHost(MayaCustomControllerHost):
     def delete_mannequin(self) -> None:
         self._require_transaction()
         c = self._cmds
+        if not self.has_mannequin():
+            raise ValueError("场景中没有本工具创建的 Mannequin 骨架")
         for node in ("|Geometry", "|root", "unrealMannequinSkeletonScaleToMatch"):
             if c.objExists(node):
                 c.delete(node)
