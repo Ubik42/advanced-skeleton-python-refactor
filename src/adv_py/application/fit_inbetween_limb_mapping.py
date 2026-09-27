@@ -80,7 +80,7 @@ def plan_inbetween_limb_bindings(
             raise ValueError("Inbetween 段尚不能映射到标准 Rig："
                              + first.start_body_name)
         if neck_edge:
-            if rig.torso is None or rig.torso.torso.head_aim is not None:
+            if rig.torso is None:
                 raise ValueError("颈部 Inbetween 需要标准 Torso FK 控制")
             torso = rig.torso.torso
             controls = torso.controls.controls
