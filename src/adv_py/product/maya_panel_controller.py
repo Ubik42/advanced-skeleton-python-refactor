@@ -337,11 +337,11 @@ class MayaPanelController:
         try:
             host = MayaSourceSkeletonFitHost(
                 namespace=None if target_namespace == ":" else target_namespace)
-            count = BuildFitFromSourceSkeleton(host).apply(selection[0], container)
+            fit = BuildFitFromSourceSkeleton(host).apply(selection[0], container)
         except Exception:
             _remove_empty_source_target(cmds, created)
             raise
-        return count, target_namespace
+        return fit.joint_count, target_namespace
 
     def fit_edit_positions(self, namespace: str,
                            edits: tuple[tuple[str, tuple[float, float, float]], ...],
@@ -422,7 +422,10 @@ class MayaPanelController:
             identity = host._cmds.identity
             with host.transaction("从标准骨架构建并蒙皮角色"):
                 joined = _JoinedTransactionHost(host)
-                BuildFitFromSourceSkeleton(joined).apply(source_root, container)
+                fit = BuildFitFromSourceSkeleton(joined).apply(
+                    source_root, container)
+                description = (variable_axial_description(fit.spine_segments)
+                    if fit.spine_segments != 2 else None)
                 local_meshes = []
                 for mesh in meshes:
                     paths = cmds.ls(mesh, long=True, type="transform") or []
@@ -446,11 +449,13 @@ class MayaPanelController:
                     result = BuildRegisteredSkinnedBodyCharacter(joined).apply(
                         tuple(local_meshes), container_name=container,
                         maximum_influences=maximum_influences,
+                        axial_description=description,
                         include_head_aim=head_aim,
                         include_segment_influences=segment_influences).character
                 else:
                     result = BuildRegisteredBodyCharacter(joined).apply(
-                        container, include_head_aim=head_aim,
+                        container, axial_description=description,
+                        include_head_aim=head_aim,
                         include_segment_influences=segment_influences)
         except Exception:
             _remove_empty_source_target(cmds, created_namespace)

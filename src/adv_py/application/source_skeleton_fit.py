@@ -7,15 +7,13 @@ import re
 from typing import Protocol
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
-from adv_py.core.fit_template import (
-    FitJointSpec, FitTemplateSpec, synthetic_body_source_fit_template)
-from adv_py.core.body_hand_fit import synthetic_body_with_hand_source_fit_template
+from adv_py.core.fit_template import FitJointSpec, FitTemplateSpec
+from adv_py.core.variable_body_fit import variable_axial_description
 
-from .body_hand_fit import body_with_hand_orientation_request
 from .fit_container import CreateFitSkeleton
 from .oriented_fit_template import BuildOrientedFitTemplate
 from .registered_body_build import _JoinedTransactionHost
-from .upper_body_fit import body_source_orientation_request
+from .variable_body_fit import BuildVariableBodySourceFit
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +22,12 @@ class SourceSkeletonJoint:
     name: str
     parent: str | None
     world_position: tuple[float, float, float]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceSkeletonFitResult:
+    joint_count: int
+    spine_segments: int
 
 
 class SourceSkeletonFitHost(Protocol):
@@ -59,6 +63,33 @@ def _fit_name(source_name: str) -> str | None:
         return finger.group(1) + ("End" if finger.group(2) == "4"
                                   else finger.group(2))
     return _ALIASES.get(name, name)
+
+
+def _axial_source_paths(source: tuple[SourceSkeletonJoint, ...]) -> tuple[str, ...]:
+    by_path = {joint.path: joint for joint in source}
+    root = source[0]
+    if _fit_name(root.name) != "Root":
+        raise FitSkeletonValidationError("来源根关节须为 Root、Pelvis 或 Hips")
+    necks = [joint for joint in source if _fit_name(joint.name) == "Neck"]
+    if len(necks) != 1:
+        raise FitSkeletonValidationError("来源骨架须有唯一的 Neck 关节")
+    paths = []
+    parent = necks[0].parent
+    while parent and parent in by_path and parent != root.path:
+        joint = by_path[parent]
+        name = _base_name(joint.name)
+        if name and (name in {"Chest", "UpperChest", "Spine"}
+                     or re.fullmatch(r"Spine\d+", name)):
+            paths.append(parent)
+        elif _fit_name(joint.name) != "Root":
+            raise FitSkeletonValidationError(
+                "Neck 与 Root 之间存在非脊柱关节：" + joint.name)
+        parent = joint.parent
+    if parent != root.path or not paths:
+        raise FitSkeletonValidationError("来源骨架缺少 Root 到 Neck 的脊柱链")
+    if len(paths) > 63:
+        raise FitSkeletonValidationError("来源脊柱超过 63 段")
+    return tuple(reversed(paths))
 
 
 def _add_optional_end_markers(by_name: dict[str, SourceSkeletonJoint],
@@ -106,13 +137,20 @@ class BuildFitFromSourceSkeleton:
     def __init__(self, host: SourceSkeletonFitHost):
         self._host = host
 
-    def apply(self, source_root: str, container: str = "FitSkeleton") -> int:
+    def apply(self, source_root: str,
+              container: str = "FitSkeleton") -> SourceSkeletonFitResult:
         source = self._host.capture_source_skeleton(source_root)
         if not source:
             raise FitSkeletonValidationError("所选骨架没有关节")
+        axial_paths = _axial_source_paths(source)
+        axial_names = tuple(f"Spine{index}" for index in
+                            range(1, len(axial_paths))) + ("Chest",)
+        name_by_path = dict(zip(axial_paths, axial_names))
+        def mapped_name(joint: SourceSkeletonJoint) -> str | None:
+            return name_by_path.get(joint.path) or _fit_name(joint.name)
         by_name: dict[str, SourceSkeletonJoint] = {}
         for joint in source:
-            name = _fit_name(joint.name)
+            name = mapped_name(joint)
             if name is None:
                 continue
             if name in by_name:
@@ -130,11 +168,12 @@ class BuildFitFromSourceSkeleton:
 
         axis = self._host.scene_up_axis()
         _add_optional_end_markers(by_name, axis.value)
-        body = synthetic_body_source_fit_template(axis)
-        hand = synthetic_body_with_hand_source_fit_template(axis)
+        variable = BuildVariableBodySourceFit(self._host)
+        body, body_request = variable.inputs(len(axial_paths), 1.0, False)
+        hand, hand_request = variable.inputs(len(axial_paths), 1.0, True)
         if all(spec.name in by_name for spec in hand.joints):
             reference = hand
-            request = body_with_hand_orientation_request()
+            request = hand_request
         elif all(spec.name in by_name for spec in body.joints):
             hand_names = {spec.name for spec in hand.joints}
             partial_hand = (hand_names - {spec.name for spec in body.joints})
@@ -143,7 +182,7 @@ class BuildFitFromSourceSkeleton:
                 raise FitSkeletonValidationError(
                     "来源骨架五指链不完整：" + "、".join(missing_hand))
             reference = body
-            request = body_source_orientation_request()
+            request = body_request
         else:
             missing = [spec.name for spec in body.joints
                        if spec.name not in by_name]
@@ -158,11 +197,11 @@ class BuildFitFromSourceSkeleton:
             expected_parent = reference_joint.parent
             parent_path = joint.parent
             while parent_path and parent_path in source_by_path:
-                parent_name = _fit_name(source_by_path[parent_path].name)
+                parent_name = mapped_name(source_by_path[parent_path])
                 if parent_name in reference_names and parent_name != reference_joint.name:
                     break
                 parent_path = source_by_path[parent_path].parent
-            actual_parent = (_fit_name(source_by_path[parent_path].name)
+            actual_parent = (mapped_name(source_by_path[parent_path])
                              if parent_path in source_by_path else None)
             if actual_parent != expected_parent:
                 raise FitSkeletonValidationError(
@@ -184,4 +223,5 @@ class BuildFitFromSourceSkeleton:
                 template, request, container,
                 transaction_label="从标准骨架创建并朝向 Fit",
                 error_context="标准骨架 Fit")
-        return len(result.template.joint_paths)
+        return SourceSkeletonFitResult(len(result.template.joint_paths),
+                                       len(axial_paths))

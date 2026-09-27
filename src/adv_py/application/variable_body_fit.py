@@ -10,7 +10,7 @@ from .oriented_fit_template import BuildOrientedFitTemplate
 class BuildVariableBodySourceFit:
     def __init__(self,host):self._host=host
 
-    def _inputs(self,spine_segments,scale,with_hand):
+    def inputs(self,spine_segments,scale,with_hand):
         template=variable_body_fit_template(self._host.scene_up_axis(),spine_segments=spine_segments,scale=scale,with_hand=with_hand)
         description=variable_axial_description(spine_segments)
         base=(body_with_hand_orientation_request if with_hand else body_source_orientation_request)()
@@ -20,10 +20,10 @@ class BuildVariableBodySourceFit:
         return template,request
 
     def plan(self,container_name='FitSkeleton',*,spine_segments=2,scale=1.,with_hand=True):
-        template,request=self._inputs(spine_segments,scale,with_hand)
+        template,request=self.inputs(spine_segments,scale,with_hand)
         return BuildOrientedFitTemplate(self._host).plan(template,request,container_name)
 
     def apply(self,container_name='FitSkeleton',*,spine_segments=2,scale=1.,with_hand=True):
-        template,request=self._inputs(spine_segments,scale,with_hand)
+        template,request=self.inputs(spine_segments,scale,with_hand)
         return BuildOrientedFitTemplate(self._host).apply(template,request,container_name,
             transaction_label='构建可变脊柱全身 Fit',error_context='可变脊柱全身 Fit')

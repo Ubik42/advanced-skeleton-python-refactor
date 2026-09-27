@@ -13,7 +13,9 @@ def main() -> None:
     maya.standalone.initialize(name="python")
     from maya import cmds
     from adv_py.core.fit_template import synthetic_body_source_fit_template
+    from adv_py.core.fit_template import ordered_fit_joints
     from adv_py.core.fit_container import FitUpAxis
+    from adv_py.core.variable_body_fit import variable_body_fit_template
     from adv_py.product.maya_panel_controller import MayaPanelController
 
     cmds.file(new=True, force=True)
@@ -70,6 +72,27 @@ def main() -> None:
     assert fit_namespace == "AdvPy2" and fit_count >= 18
     assert cmds.objExists("AdvPy2:FitSkeleton")
     assert cmds.objExists("Root")
+    cmds.file(new=True, force=True)
+    variable = {}
+    template = variable_body_fit_template(
+        FitUpAxis.Y, spine_segments=3, with_hand=False)
+    for spec in ordered_fit_joints(template):
+        if spec.name in ("HeadEnd", "Heel", "FootSideInner",
+                         "FootSideOuter", "ToesEnd"):
+            continue
+        parent = variable.get(spec.parent)
+        joint = cmds.createNode("joint", name=spec.name,
+                                **({"parent": parent} if parent else {}))
+        cmds.setAttr(joint + ".translate", *spec.local_position)
+        variable[spec.name] = joint
+    mesh = cmds.polyCube(name="VariableMesh", width=8, height=18,
+                         depth=5)[0]
+    variable_result = MayaPanelController().body_build_from_source(
+        ":", cmds.ls(variable["Root"], long=True)[0],
+        meshes=(cmds.ls(mesh, long=True)[0],), segment_influences=True)
+    assert variable_result.joint_count == 31, variable_result
+    assert cmds.objExists("AdvPy:Spine2_M")
+    assert len(cmds.ls("AdvPy:*", type="skinCluster") or []) == 1
     print("PASS root source to namespaced skinned Body", result)
 
 
