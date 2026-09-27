@@ -49,7 +49,7 @@ def visible_samples(head: om.MFnMesh, eye: om.MFnMesh,
 
 
 def sample(scene: Path, original: bool, aim_dx: float,
-           fleshy_scale: float = 1.) -> dict:
+           fleshy_scale: float = 1., blink_bias: float = 0.) -> dict:
     cmds.file(str(scene), open=True, force=True, executeScriptNodes=False)
     cmds.currentTime(1, edit=True)
     head = mesh("model:head" if original else "head")
@@ -80,8 +80,10 @@ def sample(scene: Path, original: bool, aim_dx: float,
     visibility = {}
     eye_meshes = {side: mesh(name) for side, name in eye_names.items()}
     for blink in (0., 2.5, 5., 7.5, 10.):
+        driven_blink = min(10., max(0., blink +
+                                   blink_bias * blink * (10. - blink)))
         for side in ("R", "L"):
-            cmds.setAttr("ctrlEye_" + side + ".blink", blink)
+            cmds.setAttr("ctrlEye_" + side + ".blink", driven_blink)
         points = head.getPoints(om.MSpace.kWorld)
         frames[str(blink)] = [[points[i].x, points[i].y, points[i].z]
                               for i in indices]
@@ -108,8 +110,9 @@ def main() -> None:
     original_dx = float(sys.argv[4])
     product_dx = float(sys.argv[5])
     fleshy_scale = float(sys.argv[6]) if len(sys.argv) > 6 else 1.
+    blink_bias = float(sys.argv[7]) if len(sys.argv) > 7 else 0.
     reference = sample(source, True, original_dx)
-    rebuilt = sample(product, False, product_dx, fleshy_scale)
+    rebuilt = sample(product, False, product_dx, fleshy_scale, blink_bias)
     if reference["vertex_count"] != rebuilt["vertex_count"]:
         raise ValueError("原版与重构头部顶点数量不同")
     shared = sorted(set(reference["indices"]) & set(rebuilt["indices"]))
@@ -143,6 +146,7 @@ def main() -> None:
               "original_control_dx": original_dx,
               "product_aim_dx_cm": product_dx,
               "product_fleshy_scale": fleshy_scale,
+              "product_blink_bias": blink_bias,
               "original_yaw_degrees": reference["eye_yaw_degrees"],
               "product_yaw_degrees": rebuilt["eye_yaw_degrees"],
               "compared_head_vertices": len(shared),

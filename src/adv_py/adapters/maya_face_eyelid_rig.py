@@ -35,6 +35,8 @@ _STATIONARY_OUTER_POSE_RADIUS_FRACTIONS = {
     "lower": (.058, -.024),
 }
 _STATIONARY_LOWER_MAIN_SEAL_RADIUS_FRACTION = .0054
+_STATIONARY_MID_GAZE_DEPTH_RADIUS_FRACTION = .027
+_STATIONARY_MID_GAZE_FULL_ANGLE_DEG = 30.
 
 
 class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
@@ -479,6 +481,11 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                           "ctrlEye" + suffix + "_Offset",
                           "ctrlEye" + suffix + "BlinkFraction",
                           "ctrlEye" + suffix + "BlinkReverse"))
+            if open_inners[side] and not mobile_inners[side]:
+                names.extend("ctrlEye" + suffix + label for label in (
+                    "YawNegative", "YawMagnitude", "YawLimit",
+                    "YawDepthScale", "MidBlink", "MidBlinkScale",
+                    "MidGazeDepth"))
             for layer in layers[side]:
                 for arc in ("upper", "lower"):
                     label = "Upper" if arc == "upper" else "Lower"
@@ -566,6 +573,51 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                     name=eye_name + "BlinkReverse")
                 c.connectAttr(fraction + ".outputX", reverse + ".inputX")
                 eye_fraction = fraction
+                stationary_mid_depth = None
+                if open_inners[side] and not mobile_inners[side]:
+                    negative = c.createNode("multDoubleLinear",
+                        name=eye_name + "YawNegative")
+                    c.setAttr(negative + ".input2", -1.)
+                    c.connectAttr(eye_joints[side] + ".rotateY",
+                                  negative + ".input1")
+                    magnitude = c.createNode("condition",
+                        name=eye_name + "YawMagnitude")
+                    c.setAttr(magnitude + ".operation", 2)
+                    c.connectAttr(eye_joints[side] + ".rotateY",
+                                  magnitude + ".firstTerm")
+                    c.connectAttr(eye_joints[side] + ".rotateY",
+                                  magnitude + ".colorIfTrueR")
+                    c.connectAttr(negative + ".output",
+                                  magnitude + ".colorIfFalseR")
+                    limit = c.createNode("clamp", name=eye_name + "YawLimit")
+                    c.setAttr(limit + ".maxR",
+                              _STATIONARY_MID_GAZE_FULL_ANGLE_DEG)
+                    c.connectAttr(magnitude + ".outColorR",
+                                  limit + ".inputR")
+                    yaw_scale = c.createNode("multDoubleLinear",
+                        name=eye_name + "YawDepthScale")
+                    c.setAttr(yaw_scale + ".input2", eye_radii[side] *
+                        _STATIONARY_MID_GAZE_DEPTH_RADIUS_FRACTION /
+                        _STATIONARY_MID_GAZE_FULL_ANGLE_DEG)
+                    c.connectAttr(limit + ".outputR",
+                                  yaw_scale + ".input1")
+                    mid_blink = c.createNode("multDoubleLinear",
+                        name=eye_name + "MidBlink")
+                    c.connectAttr(fraction + ".outputX",
+                                  mid_blink + ".input1")
+                    c.connectAttr(reverse + ".outputX",
+                                  mid_blink + ".input2")
+                    mid_scale = c.createNode("multDoubleLinear",
+                        name=eye_name + "MidBlinkScale")
+                    c.setAttr(mid_scale + ".input2", 4.)
+                    c.connectAttr(mid_blink + ".output",
+                                  mid_scale + ".input1")
+                    stationary_mid_depth = c.createNode("multDoubleLinear",
+                        name=eye_name + "MidGazeDepth")
+                    c.connectAttr(yaw_scale + ".output",
+                                  stationary_mid_depth + ".input1")
+                    c.connectAttr(mid_scale + ".output",
+                                  stationary_mid_depth + ".input2")
                 eye_control_names[side] = (
                     c.ls(eye_control, long=True, type="transform") or [eye_control])[0]
                 for layer in layers[side]:
@@ -627,6 +679,9 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                             name=control_name + "MotionSum")
                         c.connectAttr(control + ".translate",
                                       motion_sum + ".input3D[0]")
+                        if arc == "upper" and stationary_mid_depth:
+                            c.connectAttr(stationary_mid_depth + ".output",
+                                motion_sum + ".input3D[5].input3Dz")
                         if arc == "lower" and mobile_inners[side]:
                             upward = c.createNode("clamp",
                                 name=control_name + "UpwardFollow")

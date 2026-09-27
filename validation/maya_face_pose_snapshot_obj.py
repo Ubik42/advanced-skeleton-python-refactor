@@ -1,6 +1,8 @@
 """Export evaluated head and eye meshes at open and blink poses as OBJ.
 
-Optional args: Eye Aim X/Y offsets and a diagnostic eyelid fleshy multiplier.
+Optional args: Eye Aim X/Y offsets, a diagnostic eyelid fleshy multiplier,
+the value used for the second blink snapshot (default 10), and a diagnostic
+upper Main/Outer Z displacement for the second pose.
 """
 from __future__ import annotations
 
@@ -22,6 +24,8 @@ def main() -> None:
     aim_dx = float(sys.argv[3]) if len(sys.argv) > 3 else 0.
     aim_dy = float(sys.argv[4]) if len(sys.argv) > 4 else 0.
     fleshy_scale = float(sys.argv[5]) if len(sys.argv) > 5 else 1.
+    blink_value = float(sys.argv[6]) if len(sys.argv) > 6 else 10.
+    upper_z_offset = float(sys.argv[7]) if len(sys.argv) > 7 else 0.
     if fleshy_scale != 1.:
         for control in cmds.ls("ctrl*EyeLid*", type="transform") or ():
             if cmds.attributeQuery("fleshy", node=control, exists=True):
@@ -45,11 +49,16 @@ def main() -> None:
         meshes[label] = (mesh, faces)
     for frame, label in ((1, "open"), (10, "blink")):
         cmds.currentTime(frame, edit=True)
+        for suffix in ("R", "L"):
+            for layer in ("", "Outer"):
+                control = "ctrlUpperEyeLid" + layer + "_" + suffix
+                cmds.setAttr(control + ".translateZ",
+                             upper_z_offset if frame == 10 else 0.)
         for key, value in aim_initial.items():
             cmds.setAttr("AdvPy_EyeAim_" + key[0] + ".translate" + key[1],
                          value + (aim_dx if key[1] == "X" else aim_dy))
-        cmds.setAttr("ctrlEye_R.blink", 10 if frame == 10 else 0)
-        cmds.setAttr("ctrlEye_L.blink", 10 if frame == 10 else 0)
+        cmds.setAttr("ctrlEye_R.blink", blink_value if frame == 10 else 0)
+        cmds.setAttr("ctrlEye_L.blink", blink_value if frame == 10 else 0)
         for mesh_label, (mesh, faces) in meshes.items():
             points = mesh.getPoints(om.MSpace.kWorld)
             path = output / (label + "-" + mesh_label + ".obj")

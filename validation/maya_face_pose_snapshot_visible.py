@@ -24,7 +24,8 @@ def visible_eye_pixels(path: Path) -> int:
                rgba[index] > rgba[index + 2] * 1.25)
 
 
-def schedule(source_directory: str, output_directory: str) -> None:
+def schedule(source_directory: str, output_directory: str,
+             blink_value: float = 10.) -> None:
     source = Path(source_directory).resolve()
     output = Path(output_directory).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -106,10 +107,12 @@ def schedule(source_directory: str, output_directory: str) -> None:
                 round(data["blink_visible_eye_pixels"] /
                       data["open_visible_eye_pixels"], 6)
                 if data["open_visible_eye_pixels"] else None)
+            data["blink_value"] = blink_value
+            data["closed_occlusion_gate_applied"] = blink_value >= 10.
             data["passed"] = (data["rendered"] and
-                              data["blink_eye_pixel_fraction_of_open"]
-                              is not None and
-                              data["blink_eye_pixel_fraction_of_open"] <= .01)
+                (blink_value < 10. or
+                 (data["blink_eye_pixel_fraction_of_open"] is not None and
+                  data["blink_eye_pixel_fraction_of_open"] <= .01)))
         except BaseException:
             data["error"] = traceback.format_exc()
             data["passed"] = False

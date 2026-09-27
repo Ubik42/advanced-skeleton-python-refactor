@@ -701,18 +701,42 @@ def main() -> None:
                          for index, point in enumerate(neutral) if point[0] >= 0)
         assert right_delta > .001 and left_delta < 1e-5
         cmds.setAttr(eye_rig.right_control + ".translateY", 0)
-        cmds.setAttr(eye_rig.right_control + ".translateX", .1)
+        horizontal_baseline = cmds.getAttr(
+            eye_rig.right_control + ".translateX")
+        horizontal_baseline_rotation = cmds.getAttr(
+            eye_rig.right_joint + ".rotateY")
+        cmds.setAttr(eye_rig.right_control + ".translateX",
+                     horizontal_baseline + .1)
         horizontal_rotation = cmds.getAttr(
             eye_rig.right_joint + ".rotateY")
         horizontal_delta = (cmds.pointPosition(follow_cv, world=True)[0]
                             - still_cv[0])
-        assert abs(horizontal_rotation) > 1
+        assert abs(horizontal_rotation - horizontal_baseline_rotation) > .1
         eye_bounds = cmds.exactWorldBoundingBox(right_eye)
         if FaceSide.RIGHT.value in lid_rig["stationary_aperture_sides"]:
             assert abs(horizontal_delta) < 1e-5
+            eye_blink = lid_rig["eye_controls"][FaceSide.RIGHT] + ".blink"
+            depth_plug = "ctrlEye_RMidGazeDepth.output"
+            assert abs(cmds.getAttr(depth_plug)) < 1e-8
+            cmds.setAttr(eye_blink, 5)
+            mid_depth = cmds.getAttr(depth_plug)
+            assert 1e-6 < mid_depth < eye_bounds[3] - eye_bounds[0]
+            cmds.setAttr(eye_blink, 10)
+            assert abs(cmds.getAttr(depth_plug)) < 1e-8
+            cmds.setAttr(eye_blink, 0)
+            cmds.setAttr(eye_rig.right_control + ".translateX",
+                         horizontal_baseline - .1)
+            cmds.setAttr(eye_blink, 5)
+            assert 1e-6 < cmds.getAttr(depth_plug) < eye_bounds[3] - eye_bounds[0]
+            cmds.setAttr(eye_blink, 0)
         else:
             assert .001 < abs(horizontal_delta) < eye_bounds[3] - eye_bounds[0]
-        cmds.setAttr(eye_rig.right_control + ".translateX", 0)
+        cmds.setAttr(eye_rig.right_control + ".translateX",
+                     horizontal_baseline)
+        if FaceSide.RIGHT.value in lid_rig["stationary_aperture_sides"]:
+            cmds.setAttr(eye_blink, 5)
+            assert abs(cmds.getAttr(depth_plug)) < 1e-8
+            cmds.setAttr(eye_blink, 0)
         upper_control = lid_rig["controls"][(FaceSide.RIGHT,
                                               EyeLidLayer.MAIN, "upper")]
         cmds.setAttr(upper_control + ".fleshy", 0)

@@ -18,6 +18,7 @@ def main() -> None:
         raise ValueError("需要头部、右眼和左眼三个原版网格名称")
     aim_dx = float(sys.argv[6]) if len(sys.argv) > 6 else 0.
     aim_dy = float(sys.argv[7]) if len(sys.argv) > 7 else 0.
+    blink_value = float(sys.argv[8]) if len(sys.argv) > 8 else 10.
     output.mkdir(parents=True, exist_ok=True)
     cmds.file(str(scene), open=True, force=True,
               executeScriptNodes=False)
@@ -33,7 +34,7 @@ def main() -> None:
     initial = {side + axis: cmds.getAttr(
         "ctrlEye_" + side + ".translate" + axis)
         for side in ("R", "L") for axis in "XY"}
-    for label, blink in (("open", 0), ("blink", 10)):
+    for label, blink in (("open", 0), ("blink", blink_value)):
         for key, value in initial.items():
             cmds.setAttr("ctrlEye_" + key[0] + ".translate" + key[1],
                          value + (aim_dx if key[1] == "X" else aim_dy))
