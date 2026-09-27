@@ -13,6 +13,7 @@ class FitJointField(str, Enum):
     BENDY_CONTROLS = "bendy_controls"
     INBETWEEN_JOINTS = "inbetween_joints"
     UNTWISTER = "untwister"
+    HIP_SWINGER = "hip_swinger"
     NO_MIRROR = "no_mirror"
     NO_MIRROR_LEFT = "no_mirror_left"
     NO_FLIP = "no_flip"
@@ -69,6 +70,7 @@ class FitJointMetadata:
     bendy_controls: int | None = None
     inbetween_joints: int | None = None
     untwister: bool = False
+    hip_swinger: bool | None = None
     no_mirror: bool = False
     no_mirror_left: bool = False
     no_flip: bool = False
@@ -96,6 +98,7 @@ _INTEGER_FIELDS = {
 }
 _BOOLEAN_FIELDS = {
     FitJointField.UNTWISTER,
+    FitJointField.HIP_SWINGER,
     FitJointField.NO_MIRROR,
     FitJointField.NO_MIRROR_LEFT,
     FitJointField.NO_FLIP,
@@ -156,7 +159,9 @@ def predict_fit_joint_metadata(
         if edit.value is None:
             present.discard(edit.field)
             values[edit.field.value] = (
-                False if edit.field in _BOOLEAN_FIELDS else None
+                False if (edit.field in _BOOLEAN_FIELDS
+                          and edit.field is not FitJointField.HIP_SWINGER)
+                else None
             )
         else:
             present.add(edit.field)
