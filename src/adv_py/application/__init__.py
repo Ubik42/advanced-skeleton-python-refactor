@@ -9,6 +9,7 @@ from .character_registry import RegisterBodyCharacter, ResolveBodyCharacter
 """Host-independent application use cases."""
 
 from .fit_part import BuildFitPartHierarchy, FitPartHierarchyHost, FitPartHierarchyResult
+from .fit_part_twist import BuildFitPartTwistDrivers, FitPartTwistHost
 
 from .body_control_spaces import SwitchBodyControlSpace
 from .body_spine import MatchBodySpine
