@@ -379,28 +379,67 @@ class MayaPanelController:
             MayaSourceSkeletonFitHost)
         from adv_py.application.registered_body_build import _JoinedTransactionHost
         from adv_py.application.source_skeleton_fit import BuildFitFromSourceSkeleton
+        from maya import cmds
 
         if not source_root.strip():
             raise ValueError("请填写来源骨架根关节路径")
-        host = MayaSourceSkeletonFitHost(
-            namespace=None if namespace == ":" else namespace)
-        identity = getattr(host._cmds, "identity", None)
-        local_meshes = tuple(identity.to_local(mesh) if identity else mesh
-                             for mesh in meshes)
-        with host.transaction("从标准骨架构建并蒙皮角色"):
-            joined = _JoinedTransactionHost(host)
-            BuildFitFromSourceSkeleton(joined).apply(source_root, container)
-            if local_meshes:
-                result = BuildRegisteredSkinnedBodyCharacter(joined).apply(
-                    local_meshes, container_name=container,
-                    maximum_influences=maximum_influences,
-                    include_head_aim=head_aim,
-                    include_segment_influences=segment_influences).character
-            else:
-                result = BuildRegisteredBodyCharacter(joined).apply(
-                    container, include_head_aim=head_aim,
-                    include_segment_influences=segment_influences)
-        return PanelCharacter(namespace, True, len(result.registration.body),
+        matches = cmds.ls(source_root, long=True, type="joint") or []
+        if len(matches) != 1:
+            raise ValueError("请选择唯一的来源根关节")
+        source_namespace = (matches[0].rsplit("|", 1)[-1].rsplit(":", 1)[0]
+                            if ":" in matches[0].rsplit("|", 1)[-1] else ":")
+        target_namespace = namespace
+        created_namespace = None
+        if source_namespace == namespace:
+            index = 1
+            while cmds.namespace(exists="AdvPy" if index == 1 else f"AdvPy{index}"):
+                index += 1
+            target_namespace = "AdvPy" if index == 1 else f"AdvPy{index}"
+            cmds.namespace(addNamespace=":" + target_namespace)
+            created_namespace = target_namespace
+        try:
+            host = MayaSourceSkeletonFitHost(
+                namespace=None if target_namespace == ":" else target_namespace)
+            identity = host._cmds.identity
+            with host.transaction("从标准骨架构建并蒙皮角色"):
+                joined = _JoinedTransactionHost(host)
+                BuildFitFromSourceSkeleton(joined).apply(source_root, container)
+                local_meshes = []
+                for mesh in meshes:
+                    paths = cmds.ls(mesh, long=True, type="transform") or []
+                    if len(paths) != 1:
+                        raise ValueError("网格路径不存在或不唯一：" + mesh)
+                    path = paths[0]
+                    if not identity.owns(path):
+                        host.preflight_body_mesh(identity.to_local(path))
+                        copy = cmds.duplicate(path, returnRootsOnly=True,
+                                              renameChildren=True)[0]
+                        leaf = path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                        target_name = (":" + leaf if target_namespace == ":" else
+                                       ":" + target_namespace + ":" + leaf)
+                        copy = cmds.rename(copy, target_name)
+                        if cmds.listRelatives(copy, parent=True):
+                            copy = cmds.parent(copy, world=True)[0]
+                        cmds.delete(copy, constructionHistory=True)
+                        path = (cmds.ls(copy, long=True) or [copy])[0]
+                    local_meshes.append(identity.to_local(path))
+                if local_meshes:
+                    result = BuildRegisteredSkinnedBodyCharacter(joined).apply(
+                        tuple(local_meshes), container_name=container,
+                        maximum_influences=maximum_influences,
+                        include_head_aim=head_aim,
+                        include_segment_influences=segment_influences).character
+                else:
+                    result = BuildRegisteredBodyCharacter(joined).apply(
+                        container, include_head_aim=head_aim,
+                        include_segment_influences=segment_influences)
+        except Exception:
+            if created_namespace and cmds.namespace(exists=created_namespace):
+                if not (cmds.namespaceInfo(created_namespace,
+                        listOnlyDependencyNodes=True, recurse=True) or []):
+                    cmds.namespace(removeNamespace=created_namespace)
+            raise
+        return PanelCharacter(target_namespace, True, len(result.registration.body),
                               len(result.registration.channels),
                               segment_joint_count=len(result.segment_influences))
 

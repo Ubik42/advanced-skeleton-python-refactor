@@ -1400,15 +1400,20 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _build_from_source(self):
             meshes = self._build_mesh_paths()
+            selected_namespace = self._namespace()
             result = self.controller.body_build_from_source(
-                self._namespace(), self.build_source_root.text().strip(),
+                selected_namespace, self.build_source_root.text().strip(),
                 self.fit_container.text().strip(), meshes=meshes,
                 maximum_influences=self.build_max_influences.value(),
                 head_aim=self.head_aim.isChecked(),
                 segment_influences=self.build_segment_influences.isChecked())
+            if result.namespace != selected_namespace:
+                self._next_role = result.namespace
+            destination = (f"；新角色 {result.namespace}"
+                if result.namespace != selected_namespace else "")
             return (f"已从来源骨架构建：{result.joint_count} 个 Body 关节、"
                     f"{result.segment_joint_count} 个分段变形关节、"
-                    f"{len(meshes)} 套 Skin")
+                    f"{len(meshes)} 套 Skin{destination}")
 
         def _migrate_original_skin(self):
             source_namespace = self._namespace()
