@@ -25,6 +25,9 @@ class FitPartLimbScaleChain:
     fatness_attribute: str
     blend_name: str
     fatness_add_name: str
+    use_offset_parent_matrix: bool = False
+    scale_compose_name: str | None = None
+    scale_matrix_name: str | None = None
 
     @property
     def output_plug(self) -> str:
@@ -50,13 +53,16 @@ def plan_fit_part_scale(
         raise ValueError("Fit Part 缩放计划存在重名关节")
     grouped: dict[str, list[FitPartJointSpec]] = {}
     for part in parts:
-        if part.segment_scale_compensate:
-            grouped.setdefault(part.start_body_name, []).append(part)
+        grouped.setdefault(part.start_body_name, []).append(part)
     direct = []
     limbs = []
     for start, chain in grouped.items():
         chain.sort(key=lambda part: part.index)
         stem, side = start.rsplit("_", 1)
+        use_opm = not chain[0].segment_scale_compensate
+        if any(part.segment_scale_compensate
+               != chain[0].segment_scale_compensate for part in chain):
+            raise ValueError("Fit Part 链的缩放补偿模式不一致：" + start)
         if stem in ("Shoulder", "Elbow", "Hip"):
             module = "Arm" if stem != "Hip" else "Leg"
             prefix = f"AdvPy_{stem}_FitPart_{side}"
@@ -68,8 +74,11 @@ def plan_fit_part_scale(
                 f"AdvPy_{module}IK_{side}",
                 "Fatness2" if stem == "Elbow" else "Fatness1",
                 prefix + "ScaleBlend", prefix + "FatnessAdd",
+                use_opm,
+                prefix + "ScaleCompose" if use_opm else None,
+                prefix + "ScaleMatrix" if use_opm else None,
             ))
-        else:
+        elif not use_opm:
             direct.extend(FitPartScaleStep(
                 part.name, start, start + ".scale", part.name + ".scale",
             ) for part in chain)

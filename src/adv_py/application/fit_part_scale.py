@@ -32,7 +32,7 @@ class FitPartScaleHost(Protocol):
 
     def capture_fit_part_limb_scale(
         self, chain: FitPartLimbScaleChain
-    ) -> tuple[str | None, ...]: ...
+    ) -> bool: ...
 
 
 class BuildFitPartScaleDrivers:
@@ -56,8 +56,7 @@ class BuildFitPartScaleDrivers:
                 if self._host.capture_fit_part_scale_source(step) != step.source_plug:
                     raise RuntimeError("Fit Part 缩放输出连接不一致：" + step.part_name)
             for chain in plan.limbs:
-                if self._host.capture_fit_part_limb_scale(chain) != (
-                        chain.output_plug,) * len(chain.part_names):
+                if not self._host.capture_fit_part_limb_scale(chain):
                     raise RuntimeError("Fit Part 四肢缩放连接不一致："
                                        + chain.start_body_name)
         return plan

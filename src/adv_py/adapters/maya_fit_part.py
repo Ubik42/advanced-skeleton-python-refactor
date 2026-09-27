@@ -29,14 +29,23 @@ class MayaFitPartMixin:
             raise ValueError("Fit Part 四肢缩放缺少控制或体积输入："
                              + chain.start_body_name)
         if any(c.objExists(name) for name in
-               (chain.blend_name, chain.fatness_add_name)):
+               (chain.blend_name, chain.fatness_add_name,
+                chain.scale_compose_name, chain.scale_matrix_name) if name):
             raise ValueError("Fit Part 四肢缩放节点名称冲突："
                              + chain.start_body_name)
+        if chain.use_offset_parent_matrix:
+            body = self._unique_fit_part_joint(chain.start_body_name)
+            if not c.objExists(body + ".offsetParentMatrix"):
+                raise ValueError("Fit Part OPM 缺少 Body 矩阵目标："
+                                 + chain.start_body_name)
         for name in chain.part_names:
             part = self._unique_fit_part_joint(name)
-            if (not c.getAttr(part + ".segmentScaleCompensate")
-                    or any(not c.getAttr(part + ".scale" + axis,
-                                         settable=True) for axis in "XYZ")):
+            if (bool(c.getAttr(part + ".segmentScaleCompensate"))
+                    == chain.use_offset_parent_matrix):
+                raise ValueError("Fit Part 四肢缩放目标不可写：" + name)
+            if not chain.use_offset_parent_matrix and any(
+                    not c.getAttr(part + ".scale" + axis,
+                                  settable=True) for axis in "XYZ"):
                 raise ValueError("Fit Part 四肢缩放目标不可写：" + name)
 
     def connect_fit_part_limb_scale(
@@ -63,17 +72,51 @@ class MayaFitPartMixin:
                           blend + ".color1" + color)
         c.connectAttr(chain.fk_scale_plug, blend + ".color2")
         c.connectAttr(chain.mode_plug, blend + ".blender")
-        for name in chain.part_names:
-            part = self._unique_fit_part_joint(name)
-            c.connectAttr(blend + ".output", part + ".scale")
+        if chain.use_offset_parent_matrix:
+            body = self._unique_fit_part_joint(chain.start_body_name)
+            target = body + ".offsetParentMatrix"
+            old_source = c.connectionInfo(target,
+                                          sourceFromDestination=True)
+            old_matrix = c.getAttr(target)
+            if old_matrix and isinstance(old_matrix[0], (tuple, list)):
+                old_matrix = old_matrix[0]
+            compose = c.createNode("composeMatrix",
+                                   name=chain.scale_compose_name)
+            matrix = c.createNode("multMatrix",
+                                  name=chain.scale_matrix_name)
+            for axis, color in zip("XYZ", "RGB"):
+                c.connectAttr(blend + ".output" + color,
+                              compose + ".inputScale" + axis)
+            c.connectAttr(compose + ".outputMatrix",
+                          matrix + ".matrixIn[0]")
+            if old_source:
+                c.disconnectAttr(old_source, target)
+                c.connectAttr(old_source, matrix + ".matrixIn[1]")
+            else:
+                c.setAttr(matrix + ".matrixIn[1]", *old_matrix,
+                          type="matrix")
+            c.connectAttr(matrix + ".matrixSum", target)
+        else:
+            for name in chain.part_names:
+                part = self._unique_fit_part_joint(name)
+                c.connectAttr(blend + ".output", part + ".scale")
 
     def capture_fit_part_limb_scale(
         self, chain: FitPartLimbScaleChain
-    ) -> tuple[str | None, ...]:
+    ) -> bool:
         c = self._cmds
-        return tuple(c.connectionInfo(self._unique_fit_part_joint(name)
-                     + ".scale", sourceFromDestination=True) or None
-                     for name in chain.part_names)
+        if chain.use_offset_parent_matrix:
+            body = self._unique_fit_part_joint(chain.start_body_name)
+            if c.connectionInfo(body + ".offsetParentMatrix",
+                    sourceFromDestination=True) != chain.scale_matrix_name + ".matrixSum":
+                return False
+            return all(c.connectionInfo(chain.scale_compose_name
+                       + ".inputScale" + axis, sourceFromDestination=True)
+                       == chain.blend_name + ".output" + color
+                       for axis, color in zip("XYZ", "RGB"))
+        return all(c.connectionInfo(self._unique_fit_part_joint(name)
+                   + ".scale", sourceFromDestination=True)
+                   == chain.output_plug for name in chain.part_names)
 
     def preflight_fit_part_scale(self, step: FitPartScaleStep) -> None:
         c = self._cmds
