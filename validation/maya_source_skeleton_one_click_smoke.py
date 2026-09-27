@@ -72,6 +72,19 @@ def main() -> None:
     assert fit_namespace == "AdvPy2" and fit_count >= 18
     assert cmds.objExists("AdvPy2:FitSkeleton")
     assert cmds.objExists("Root")
+    try:
+        MayaPanelController().body_build(
+            "AdvPy2", meshes=("|SourceMesh",), maximum_influences=0)
+    except ValueError:
+        assert not cmds.objExists("AdvPy2:SourceMesh")
+        assert cmds.objExists("AdvPy2:FitSkeleton")
+    else:
+        raise AssertionError("分步构建失败后保留了外部网格副本")
+    staged = MayaPanelController().body_build(
+        "AdvPy2", meshes=("|SourceMesh",), segment_influences=True)
+    assert staged.joint_count == 30
+    assert cmds.objExists("AdvPy2:SourceMesh")
+    assert len(cmds.ls("AdvPy2:*", type="skinCluster") or []) == 1
     cmds.file(new=True, force=True)
     variable = {}
     template = variable_body_fit_template(
@@ -93,6 +106,14 @@ def main() -> None:
     assert variable_result.joint_count == 31, variable_result
     assert cmds.objExists("AdvPy:Spine2_M")
     assert len(cmds.ls("AdvPy:*", type="skinCluster") or []) == 1
+    cmds.select(variable["Root"], replace=True)
+    count, target = MayaPanelController().fit_from_selected_skeleton(":")
+    assert target == "AdvPy2" and count >= 19
+    staged_variable = MayaPanelController().body_build(
+        target, meshes=("|VariableMesh",), segment_influences=True)
+    assert staged_variable.joint_count == 31
+    assert cmds.objExists("AdvPy2:Spine2_M")
+    assert len(cmds.ls("AdvPy2:*", type="skinCluster") or []) == 1
     print("PASS root source to namespaced skinned Body", result)
 
 

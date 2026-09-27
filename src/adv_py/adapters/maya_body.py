@@ -276,6 +276,32 @@ _BODY_EXPORT_BAKE_ATTRIBUTES = {
 class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
     """Maya scene adapter for the first materialized Body skeleton stage."""
 
+    def copy_external_mesh_for_character(self, mesh_path: str) -> str:
+        """Keep a source mesh intact when building a separate character."""
+        self._require_transaction()
+        c = self._cmds.raw
+        identity = self._cmds.identity
+        matches = c.ls(mesh_path, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise FitSkeletonValidationError(
+                "网格路径不存在或不唯一：" + mesh_path)
+        path = matches[0]
+        local = identity.to_local(path)
+        self.preflight_body_mesh(local)
+        if identity.owns(path):
+            return local
+        copy = c.duplicate(path, returnRootsOnly=True,
+                           renameChildren=True)[0]
+        self._transaction_changed = True
+        leaf = path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        target = (":" + identity.namespace + ":" + leaf
+                  if identity.namespace else ":" + leaf)
+        copy = c.rename(copy, target)
+        if c.listRelatives(copy, parent=True):
+            copy = c.parent(copy, world=True)[0]
+        c.delete(copy, constructionHistory=True)
+        return identity.to_local((c.ls(copy, long=True) or [copy])[0])
+
     def preflight_body_mesh(self, mesh_path: str) -> int:
         c = self._cmds
         matches = c.ls(mesh_path, long=True, type="transform") or []
