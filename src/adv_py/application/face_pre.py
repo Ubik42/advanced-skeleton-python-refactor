@@ -37,3 +37,17 @@ class RecordFacePreInput:
         if self.host.read_face_objects(role) != meshes:
             raise RuntimeError("Face Pre 对象写后读回不一致")
         return meshes
+
+
+class CreateFaceEyeBallFit:
+    def __init__(self, host) -> None:
+        self.host = host
+
+    def execute(self, right_eye: str, head_joint: str) -> str:
+        if not right_eye or not head_joint:
+            raise ValueError("EyeBall Fit 需要右眼网格和 Head 关节")
+        self.host.read_face_mask()
+        result = self.host.create_eye_ball_fit(right_eye, head_joint)
+        if self.host.read_eye_ball_fit() != result:
+            raise RuntimeError("EyeBall Fit 写后读回不一致")
+        return result

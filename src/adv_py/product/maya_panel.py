@@ -783,6 +783,15 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("建立双眼控制与蒙皮",
                                      self._face_build_eyes, primary=True))
             stack.addWidget(group)
+            self.face_fit_right_eye = QtWidgets.QLineEdit()
+            self.face_fit_right_eye.setPlaceholderText("|model:RightEye")
+            self.face_fit_head = QtWidgets.QLineEdit("Head_M")
+            group, form = self._group("01 · EyeBall Fit", [
+                ("右眼网格", self.face_fit_right_eye),
+                ("Head 关节", self.face_fit_head)])
+            form.addRow(self._button("建立 EyeBall Fit",
+                                     self._face_fit_eye_ball, primary=True))
+            stack.addWidget(group)
             self.face_neutral = QtWidgets.QLineEdit()
             self.face_neutral.setPlaceholderText("|FaceNeutral")
             self.face_target = QtWidgets.QLineEdit()
@@ -1494,6 +1503,7 @@ def create_panel(controller: MayaPanelController | None = None):
         def _face_record_right_eye(self):
             path = self.controller.face_eye_selected_mesh(self._namespace())
             self.face_eye_right.setText(path)
+            self.face_fit_right_eye.setText(path)
             return "已记录右眼网格：" + path
 
         def _face_record_mask(self):
@@ -1538,6 +1548,12 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.face_eye_left.text().strip())
             return ("双眼控制已构建：左右眼各一套 Skin；"
                     "整体与独立眼球控制可用")
+
+        def _face_fit_eye_ball(self):
+            path = self.controller.face_fit_eye_ball(self._namespace(),
+                self.face_fit_right_eye.text().strip(),
+                self.face_fit_head.text().strip())
+            return "已建立 EyeBall Fit：" + path
 
         def _face_performance_apply(self):
             frames = self.controller.face_performance_apply(self._namespace(),

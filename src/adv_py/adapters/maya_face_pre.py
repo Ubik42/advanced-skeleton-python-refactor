@@ -81,6 +81,8 @@ class MayaFacePreHost(MayaFaceHost):
             raise FitSkeletonValidationError("不能改写引用中的 FaceFitSkeleton")
         if fit and not c.attributeQuery("advPyMaskFaces", node=fit, exists=True):
             raise FitSkeletonValidationError("已有原版 FaceFitSkeleton，拒绝覆盖其引导曲线")
+        if c.ls("FitEyeBall", long=True, type="transform"):
+            raise FitSkeletonValidationError("眼球 Fit 已建立，不能重置 Mask")
         for name in ("FaceGroup", "FaceFitSkeleton"):
             matches = c.ls(name, long=True) or []
             if len(matches) > 1 or any(c.nodeType(path) != "transform"
@@ -88,9 +90,8 @@ class MayaFacePreHost(MayaFaceHost):
                 raise FitSkeletonValidationError("Face 引导节点名称已冲突：" + name)
         width = bounds[3] - bounds[0]
         height = bounds[4] - bounds[1]
-        center = ((bounds[0] + bounds[3]) / 2,
-                  (bounds[1] + bounds[4]) / 2,
-                  (bounds[2] + bounds[5]) / 2)
+        depth = bounds[5] - bounds[2]
+        depth_center = (bounds[2] + bounds[5]) / 2
         if width <= 1e-6 or height <= 1e-6:
             raise FitSkeletonValidationError("Mask 宽度或高度无效")
         payload = json.dumps({"mesh": mesh, "faces": list(faces),
@@ -111,20 +112,29 @@ class MayaFacePreHost(MayaFaceHost):
                 fit = c.ls(fit, long=True, type="transform")[0]
             for shape in c.listRelatives(fit, shapes=True, fullPath=True) or []:
                 c.delete(shape)
-            for name, y_offset, radius in (
-                    ("FaceFitSkeletonShape", 0, width / 2),
-                    ("FaceFitSkeletonHeightShape", height, width / 2),
-                    ("FaceFitSkeletonCircleShape", 0, width / 2),
-                    ("FaceFitSkeletonHeightCircleShape", height, width / 2)):
-                temporary = c.circle(center=(center[0], center[1] + y_offset,
-                                             center[2]), normal=(0, 0, 1),
-                                     radius=radius, constructionHistory=False)[0]
+            for name, upper in (
+                    ("FaceFitSkeletonShape", False),
+                    ("FaceFitSkeletonHeightShape", True),
+                    ("FaceFitSkeletonCircleShape", False),
+                    ("FaceFitSkeletonHeightCircleShape", True)):
+                temporary = c.circle(center=(0, 0, 0), normal=(0, 1, 0),
+                                     radius=.5, degree=3, sections=8,
+                                     constructionHistory=False)[0]
                 shape = (c.listRelatives(temporary, shapes=True,
                                          fullPath=True) or [None])[0]
                 shape = c.parent(shape, fit, add=True, shape=True,
                                  relative=True)[0]
                 c.delete(temporary)
                 shape = c.rename(shape, name)
+                cvs = shape + ".cv[0:99]"
+                c.rotate(0, -90, 0, cvs, relative=True,
+                         objectSpace=True, pivot=(0, 0, 0))
+                if upper:
+                    c.move(0, 1, 0, cvs, relative=True, objectSpace=True)
+                c.scale(width, height, depth, cvs, relative=True,
+                        pivot=(0, 0, 0))
+                c.move(0, bounds[1], depth_center, cvs,
+                       relative=True, objectSpace=True)
                 c.setAttr(shape + ".overrideEnabled", True)
                 c.setAttr(shape + ".overrideColor", 13)
             if not c.attributeQuery("faceScale", node=fit, exists=True):
@@ -232,3 +242,73 @@ class MayaFacePreHost(MayaFaceHost):
                     c.addAttr(fit, longName="HeadJoint", dataType="string")
                 c.setAttr(fit + ".HeadJoint",
                           heads[0].rsplit("|", 1)[-1], type="string")
+
+    def create_eye_ball_fit(self, right_eye: str, head_joint: str) -> str:
+        c = self._cmds
+        fit = self._fit(required=True)
+        matches = c.ls(right_eye, long=True, type="transform") or []
+        if matches != [right_eye]:
+            raise FitSkeletonValidationError("右眼网格路径不存在或不唯一")
+        shape = c.listRelatives(right_eye, shapes=True, noIntermediate=True,
+                                fullPath=True, type="mesh") or []
+        if len(shape) != 1:
+            raise FitSkeletonValidationError("右眼需要唯一可见多边形 Shape")
+        heads = c.ls(head_joint, long=True, type="joint") or []
+        if len(heads) != 1:
+            raise FitSkeletonValidationError("EyeBall Fit 需要唯一的 Head 关节")
+        if c.ls("Eye_R", long=True, type="joint") or c.ls("Eye_M", long=True,
+                                                           type="joint"):
+            raise FitSkeletonValidationError(
+                "已存在 Body 眼关节；当前 EyeBall Fit 不支持替换其 Skin 影响")
+        for name in ("FaceFitEyeBall", "FitEyeBall", "FitEyeSphere"):
+            if c.ls(name, long=True):
+                raise FitSkeletonValidationError("眼球 Fit 节点名称已占用：" + name)
+        bounds = tuple(float(value) for value in c.exactWorldBoundingBox(right_eye))
+        diameter = bounds[4] - bounds[1]
+        if diameter <= 1e-6:
+            raise FitSkeletonValidationError("右眼网格高度无效")
+        center = tuple((bounds[axis] + bounds[axis + 3]) / 2
+                       for axis in range(3))
+        if c.referenceQuery(fit, isNodeReferenced=True):
+            raise FitSkeletonValidationError("不能在引用中的 FaceFitSkeleton 创建眼球 Fit")
+        with self.transaction("建立 Face EyeBall Fit"):
+            self._transaction_changed = True
+            holder = c.createNode("transform", name="FaceFitEyeBall", parent=fit)
+            locator = c.spaceLocator(name="FitEyeBall")[0]
+            locator = c.parent(locator, holder, absolute=True)[0]
+            c.setAttr(locator + ".rotateOrder", 2)
+            c.setAttr(locator + "Shape.localScale", 1.5, 1.5, 1.5,
+                      type="double3")
+            c.xform(locator, worldSpace=True, translation=center)
+            c.setAttr(locator + ".scale", diameter, diameter, diameter,
+                      type="double3")
+            sphere = c.polySphere(name="FitEyeSphere", radius=.5,
+                                  subdivisionsX=8, subdivisionsY=8,
+                                  constructionHistory=False)[0]
+            sphere = c.parent(sphere, locator, relative=True)[0]
+            c.setAttr(sphere + ".rotateX", 90)
+            shape = (c.listRelatives(sphere, shapes=True,
+                                     fullPath=True) or [None])[0]
+            c.setAttr(shape + ".overrideEnabled", True)
+            c.setAttr(shape + ".overrideDisplayType", 2)
+            if not c.attributeQuery("RightEye", node=fit, exists=True):
+                c.addAttr(fit, longName="RightEye", dataType="string")
+            c.setAttr(fit + ".RightEye", right_eye.rsplit("|", 1)[-1],
+                      type="string")
+            c.setAttr(locator + ".rotateZ", lock=True)
+            for kind in ("translate", "rotate", "scale"):
+                for axis in "XYZ":
+                    c.setAttr(fit + "." + kind + axis, lock=True)
+        return (c.ls(locator, long=True, type="transform") or [locator])[0]
+
+    def read_eye_ball_fit(self) -> str:
+        c = self._cmds
+        fit = self._fit(required=True)
+        matches = c.ls("FitEyeBall", long=True, type="transform") or []
+        if len(matches) != 1 or not matches[0].startswith(fit + "|"):
+            raise FitSkeletonValidationError("EyeBall Fit 缺失或父级无效")
+        locator = matches[0]
+        if not c.ls(locator + "|FitEyeSphere", long=True,
+                    type="transform"):
+            raise FitSkeletonValidationError("EyeBall Fit 的球体预览缺失")
+        return locator

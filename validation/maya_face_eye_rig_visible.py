@@ -107,6 +107,14 @@ def schedule(output_directory: str) -> None:
                           if b.text() == "记录所选左眼")
             button.click()
             data["left_status"] = detail.status.toPlainText()
+            panel.section_buttons[("Face", "Fit")].click()
+            panel.operation_buttons[("Face", "Fit", "建立 EyeBall Fit")].click()
+            detail.face_fit_head.setText("Head_M")
+            fit_button = next(b for b in detail.findChildren(QtWidgets.QPushButton)
+                              if b.text() == "建立 EyeBall Fit")
+            fit_button.click()
+            data["eye_fit_status"] = detail.status.toPlainText()
+            detail.grab().save(str(output / "face-fit-eye-ball-panel.png"))
             panel.operation_buttons[("Face", "Pre",
                                      "建立双眼控制与蒙皮")].click()
             button = next(b for b in detail.findChildren(QtWidgets.QPushButton)
@@ -126,6 +134,7 @@ def schedule(output_directory: str) -> None:
                 type="skinCluster") or [])
             data["reopen_controls"] = all(cmds.objExists(name) for name in (
                 "AdvPy_EyeAim", "AdvPy_EyeAim_R", "AdvPy_EyeAim_L"))
+            data["reopen_eye_fit"] = cmds.objExists("FitEyeBall")
             data["reopen_face_pre"] = (cmds.objExists("FaceFitSkeleton.faceScale")
                 and cmds.getAttr("FaceFitSkeleton.Face") == "FaceMesh"
                 and set(cmds.getAttr("FaceFitSkeleton.AllHead").split())
@@ -136,10 +145,11 @@ def schedule(output_directory: str) -> None:
                 and "已重选 Mask" in data["reselect_mask_status"]
                 and "已记录右眼" in data["right_status"]
                 and "已记录左眼" in data["left_status"]
+                and "已建立 EyeBall Fit" in data["eye_fit_status"]
                 and "双眼控制已构建" in data["build_status"]
                 and data["skin_count"] == data["reopen_skin_count"] == 2
                 and data["body_registered"] and data["reopen_controls"]
-                and data["reopen_face_pre"]
+                and data["reopen_face_pre"] and data["reopen_eye_fit"]
                 and "modal_error" not in data)
         except BaseException:
             data["error"] = traceback.format_exc()

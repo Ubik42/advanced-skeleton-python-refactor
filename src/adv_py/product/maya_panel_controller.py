@@ -796,6 +796,15 @@ class MayaPanelController:
             return host.select_face_mask()
         return len(host.select_face_objects(FacePreRole(role)))
 
+    def face_fit_eye_ball(self, namespace: str, right_eye: str,
+                          head_joint: str) -> str:
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        from adv_py.application.face_pre import CreateFaceEyeBallFit
+
+        return CreateFaceEyeBallFit(MayaFacePreHost(
+            namespace=None if namespace == ":" else namespace)).execute(
+                right_eye, head_joint or "Head_M")
+
     def face_eye_build(self, namespace: str, head_joint: str,
                        right_eye: str, left_eye: str):
         from adv_py.adapters.maya_face_eye import MayaFaceEyeHost

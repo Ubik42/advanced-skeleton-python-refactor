@@ -18,7 +18,7 @@ Preparation / Rig 的 Skin／All／左右眼对象记录：`maya_preparation_obj
 
 `maya_one_joint_prop_smoke.py` 从一件 Skin、两件 All 引用网格创建单关节道具：检查 Skin＋All 去重、FitSkeleton 原版对象字段、Root_M 与 Main、两套 Skin 的控制位移、故障回滚、Undo／Redo 和重开。`maya_one_joint_prop_visible.py` 在 Maya 图形窗口实际点击记录 Skin、记录 All 和构建入口，并保存面板截图。原版完整控制层仍需逐项对照。
 
-`maya_face_pre_inputs_smoke.py` 在 Maya 2024 验证 Mask 面选择、Face／All Head 记录、单影响 Skin、错误输入、Undo／Redo 和保存重开。`maya_face_eye_rig_smoke.py` 在已登记 Body 的 Head_M 下，以两件独立引用眼球生成全局及单侧 Aim 控制、两个 Face 辅助眼关节和两套 Skin；检查右眼独立动作不影响左眼、全局动作驱动双眼、Body 登记保持、故障回滚、Undo／Redo、保存重开及含眼球 Skin 的 FBX 重导入。`maya_face_eye_rig_visible.py` 在图形窗口点击 Face / Pre 的 Mask、Face、All Head、左右眼记录与双眼构建入口，保存状态和截图。眼睑 Fit 与完整 FaceSetup 尚未覆盖。
+`maya_face_pre_inputs_smoke.py` 在 Maya 2024 验证 Mask 面选择、原版式四条引导曲线的上下层世界范围、Face／All Head 记录、单影响 Skin、EyeBall Fit 的位置／比例、错误输入、Undo／Redo 和保存重开。`maya_face_eye_rig_smoke.py` 在已登记 Body 的 Head_M 下，以两件独立引用眼球生成全局及单侧 Aim 控制、两个 Face 辅助眼关节和两套 Skin；检查右眼独立动作不影响左眼、全局动作驱动双眼、Body 登记保持、故障回滚、Undo／Redo、保存重开及含眼球 Skin 的 FBX 重导入。`maya_face_eye_rig_visible.py` 在图形窗口点击 Face / Pre 的 Mask、Face、All Head、左右眼记录、Face / Fit 的 EyeBall，以及双眼构建入口，保存状态和截图。眼睑 Fit 与完整 FaceSetup 尚未覆盖。
 
 ```powershell
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_preparation_objects_smoke.py
