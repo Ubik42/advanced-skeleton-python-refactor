@@ -240,6 +240,12 @@ class MayaCustomControllerHost(MayaFaceHost):
                                control: str, base: str | None = None) -> None:
         from maya import cmds
 
+        self._update_custom_build_pose(control, add=True)
+        control_set = self.scene_address("FaceControlSet" if self.face
+                                         else "ControlSet")
+        if cmds.objExists(control_set):
+            cmds.sets([node for node in (control, base) if node],
+                      add=control_set)
         if not cmds.objExists(self.scene_address(REGISTRY_NAME)):
             if self.face:
                 return
@@ -260,6 +266,29 @@ class MayaCustomControllerHost(MayaFaceHost):
         updated = replace(previous, nodes=previous.nodes + nodes,
                           channels=previous.channels + channels)
         self.write_character_registration_extension(previous, updated)
+
+    def _update_custom_build_pose(self, control: str, *, add: bool) -> None:
+        """Maintain the original buildPose custom-channel reset command."""
+        from maya import cmds
+
+        node = self.scene_address("faceBuildPose" if self.face else "buildPose")
+        if not cmds.objExists(node):
+            return
+        plug = node + ".udExtraAttr"
+        if not cmds.objExists(plug):
+            if not add:
+                return
+            cmds.addAttr(node, longName="udExtraAttr", dataType="string")
+        script = cmds.getAttr(plug) or ""
+        command = ('xform -os -t 0 0 0 -ro 0 0 0 -s 1 1 1 '
+                   '"%s";' % control)
+        if add:
+            if command in script:
+                raise ValueError("控制器已经写入 buildPose 附加命令")
+            script += command
+        else:
+            script = script.replace(command, "", 1)
+        cmds.setAttr(plug, script, type="string")
 
     def _probe_softmod(self, region: SoftModRegion) -> ClusterWeightTransfer:
         """Measure effective falloff, not the stored geometry-filter mask."""
@@ -792,16 +821,37 @@ class MayaCustomControllerHost(MayaFaceHost):
         parent = self._unique(plan.parent_joint, "joint")
         mesh = self._mesh(plan.region.mesh)
         custom_system = self._custom_system()
+        group = cmds.createNode("transform", name=self.scene_address(
+            plan.auxiliary_name("cluster_group")), parent=custom_system)
+        cmds.setAttr(group + ".inheritsTransform", False, lock=True)
         attach = cmds.createNode("transform", name=self.scene_address(
-            plan.auxiliary_name("attach")), parent=custom_system)
+            plan.auxiliary_name("attach")), parent=group)
         cmds.xform(attach, worldSpace=True, translation=plan.region.center)
-        self._attach_to_custom_parent(attach, parent, plan.local)
+        offset_decompose = cmds.createNode("decomposeMatrix",
+            name=self.scene_address(plan.auxiliary_name("offset_decompose")))
+        cmds.connectAttr(parent + ".worldMatrix[0]",
+                         offset_decompose + ".inputMatrix")
+        cmds.connectAttr(offset_decompose + ".outputRotate",
+                         attach + ".rotate")
+        cmds.connectAttr(offset_decompose + ".outputScale",
+                         attach + ".scale")
         offset = cmds.createNode("transform", name=self.scene_address(
             plan.offset_name), parent=attach)
+        if not plan.local:
+            cmds.xform(offset, worldSpace=True, rotation=(0.0, 0.0, 0.0))
+        subtract = cmds.createNode("transform", name=self.scene_address(
+            plan.auxiliary_name("subtract")), parent=offset)
         control = cmds.sphere(name=self.scene_address(plan.control_name),
                               radius=max(0.1, plan.region.falloff_radius / 4.0),
                               constructionHistory=False)[0]
-        control = cmds.parent(control, offset, relative=True)[0]
+        control = cmds.parent(control, subtract, relative=True)[0]
+        translate_subtract = cmds.createNode("plusMinusAverage",
+            name=self.scene_address(plan.auxiliary_name("translation_subtract")))
+        cmds.setAttr(translate_subtract + ".operation", 2)
+        cmds.connectAttr(control + ".translate",
+                         translate_subtract + ".input3D[1]")
+        cmds.connectAttr(translate_subtract + ".output3D",
+                         subtract + ".translate")
         created = cmds.cluster(mesh, name=self.scene_address(
             plan.deformer_name))
         if len(created) != 2:
@@ -810,12 +860,103 @@ class MayaCustomControllerHost(MayaFaceHost):
         handle = cmds.rename(self._unique(created[1], "transform"),
                              self.scene_address(plan.auxiliary_name("handle")))
         cmds.xform(handle, worldSpace=True, translation=plan.region.center)
-        cmds.parent(handle, custom_system)
-        cmds.parentConstraint(control, handle, maintainOffset=False)
+        handle_shape = (cmds.listRelatives(handle, shapes=True,
+                                           fullPath=True) or [None])[0]
+        if handle_shape and cmds.objExists(handle_shape + ".origin"):
+            cmds.setAttr(handle_shape + ".origin", *plan.region.center,
+                         type="float3")
+        cmds.xform(handle, worldSpace=True, pivots=plan.region.center)
+        handle = cmds.parent(handle, group)[0]
         cmds.setAttr(handle + ".visibility", False)
+        cmds.setAttr(handle + ".visibility", lock=True)
+        matrix_nodes = {}
+        for role, matrix_role, decompose_role, slot in (
+                ("translation", "translate_matrix", "translate_decompose", 0),
+                ("rotation", "rotate_matrix", "rotate_decompose", 1)):
+            matrix = cmds.createNode("multMatrix", name=self.scene_address(
+                plan.auxiliary_name(matrix_role)))
+            decompose = cmds.createNode("decomposeMatrix",
+                name=self.scene_address(plan.auxiliary_name(decompose_role)))
+            cmds.connectAttr(control + ".matrix",
+                             matrix + ".matrixIn[%d]" % slot)
+            cmds.connectAttr(matrix + ".matrixSum",
+                             decompose + ".inputMatrix")
+            cmds.connectAttr(control + ".rotateOrder",
+                             decompose + ".inputRotateOrder")
+            matrix_nodes[role] = (matrix, decompose)
+        temp = cmds.createNode("transform", name=self.scene_address(
+            plan.name + "ClusterMatrixTemp" + plan.side))
+        try:
+            cmds.delete(cmds.orientConstraint(control, temp))
+            frame = cmds.xform(temp, query=True, objectSpace=True,
+                               matrix=True)
+            inverse = cmds.getAttr(temp + ".inverseMatrix")
+            if len(inverse) == 1 and isinstance(inverse[0], (tuple, list)):
+                inverse = inverse[0]
+            translate_matrix, translate_decompose = matrix_nodes["translation"]
+            rotate_matrix, rotate_decompose = matrix_nodes["rotation"]
+            cmds.setAttr(translate_matrix + ".matrixIn[1]", *frame,
+                         type="matrix")
+            cmds.setAttr(rotate_matrix + ".matrixIn[0]", *inverse,
+                         type="matrix")
+            cmds.setAttr(rotate_matrix + ".matrixIn[2]", *frame,
+                         type="matrix")
+        finally:
+            cmds.delete(temp)
+        cmds.connectAttr(translate_decompose + ".outputTranslate",
+                         handle + ".translate")
+        cmds.connectAttr(translate_decompose + ".outputScale",
+                         handle + ".scale")
+        cmds.connectAttr(rotate_decompose + ".outputRotate",
+                         handle + ".rotate")
         for item in transfer.weights:
             cmds.percent(deformer, "%s.vtx[%d]" % (mesh, item.index),
                          value=item.weight)
+        vertex = "%s.vtx[%d]" % (mesh, transfer.attachment_vertex)
+        edges = cmds.ls(cmds.polyListComponentConversion(
+            vertex, toEdge=True) or [], flatten=True) or []
+        if not edges:
+            raise RuntimeError("最强权重顶点没有可用网格边")
+        duplicated = cmds.duplicateCurve(edges[0], constructionHistory=True,
+                                          range=False, local=False)
+        if len(duplicated) != 2:
+            raise RuntimeError("网格边曲线未返回曲线与历史节点")
+        curve = cmds.rename(duplicated[0], self.scene_address(
+            plan.auxiliary_name("edge_curve")))
+        cmds.rename(duplicated[1], self.scene_address(
+            plan.auxiliary_name("edge_source")))
+        curve = cmds.parent(curve, group)[0]
+        cmds.setAttr(curve + ".visibility", False, lock=True)
+        curve_shape = (cmds.listRelatives(curve, shapes=True,
+                                          fullPath=True) or [None])[0]
+        if not curve_shape:
+            raise RuntimeError("网格边曲线缺少 Shape 节点")
+        point_on_curve = cmds.createNode("pointOnCurveInfo",
+            name=self.scene_address(plan.auxiliary_name("curve_point")))
+        cmds.setAttr(point_on_curve + ".turnOnPercentage", True)
+        cmds.connectAttr(curve_shape + ".worldSpace[0]",
+                         point_on_curve + ".inputCurve")
+        target_position = cmds.xform(vertex, query=True,
+                                     worldSpace=True, translation=True)
+        endpoints = []
+        for parameter in (0.0, 1.0):
+            cmds.setAttr(point_on_curve + ".parameter", parameter)
+            location = cmds.getAttr(point_on_curve + ".position")[0]
+            endpoints.append(sum((a - b) ** 2 for a, b in zip(
+                target_position, location)))
+        cmds.setAttr(point_on_curve + ".parameter",
+                     0.0 if endpoints[0] <= endpoints[1] else 1.0)
+        cmds.connectAttr(point_on_curve + ".position",
+                         attach + ".translate", force=True)
+        cmds.xform(offset, worldSpace=True, translation=plan.region.center)
+        skins = cmds.ls(cmds.listHistory(mesh,
+                                        pruneDagObjects=True) or [],
+                        type="skinCluster") or []
+        if skins:
+            try:
+                cmds.reorderDeformers(skins[-1], deformer, mesh)
+            except RuntimeError:
+                pass
         cmds.addAttr(control, longName="advPyCustomControlKind",
                      dataType="string")
         cmds.setAttr(control + ".advPyCustomControlKind", plan.kind.value,
@@ -840,7 +981,8 @@ class MayaCustomControllerHost(MayaFaceHost):
         cmds.delete(self._unique(plan.region.source_handle, "transform"))
         if cmds.objExists(plan.region.deformer):
             cmds.delete(plan.region.deformer)
-        self._register_custom_nodes((attach, offset, control), control)
+        self._register_custom_nodes((group, attach, offset, subtract, control),
+                                    control)
 
     def capture_custom_controller(self, plan: CustomControllerPlan
                                   ) -> CustomControllerState:
@@ -875,6 +1017,13 @@ class MayaCustomControllerHost(MayaFaceHost):
                                         fullPath=True) or [None])[0]
             if not offset:
                 raise ValueError("自定义控制器缺少偏移层")
+        elif kind is CustomControlKind.CLUSTER:
+            subtract = base
+            offset = (cmds.listRelatives(subtract, parent=True,
+                                        fullPath=True) or [None])[0]
+            if not offset:
+                raise ValueError("Cluster Control 缺少偏移层")
+            base = None
         else:
             offset, base = base, None
         attach = (cmds.listRelatives(offset, parent=True,
@@ -894,6 +1043,13 @@ class MayaCustomControllerHost(MayaFaceHost):
         expected = {local(attach), local(offset), local(path)}
         if base:
             expected.add(local(base))
+        if kind is CustomControlKind.CLUSTER:
+            group = (cmds.listRelatives(attach, parent=True,
+                                       fullPath=True) or [None])[0]
+            if (not group or group.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                    != "ClusterControlGrp" + path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]):
+                raise ValueError("Cluster Control 缺少控制组")
+            expected.update((local(subtract), local(group)))
         face_path = any(segment.rsplit(":", 1)[-1] == "FaceCustomSystem"
                         for segment in path.split("|") if segment)
         if (has_registry and not expected <= registered
@@ -1079,15 +1235,22 @@ class MayaCustomControllerHost(MayaFaceHost):
         self._require_transaction()
         self.preflight_delete_custom_control(state)
         self._transaction_changed = True
+        self._update_custom_build_pose(state.control, add=False)
         attach = (cmds.listRelatives(state.offset, parent=True,
                                     fullPath=True) or [None])[0]
         if not attach:
             raise ValueError("自定义控制器缺少附着层")
+        delete_root = attach
+        if state.kind is CustomControlKind.CLUSTER:
+            delete_root = (cmds.listRelatives(attach, parent=True,
+                                             fullPath=True) or [None])[0]
+            if not delete_root:
+                raise ValueError("Cluster Control 缺少控制组")
         if cmds.objExists(self.scene_address(REGISTRY_NAME)):
             before = self.read_character_registration()
             local = (self._cmds.identity.to_local if self.namespace is not None
                      else lambda path: path)
-            attach_local = local(attach)
+            attach_local = local(delete_root)
             removed = {node.path for node in before.nodes
                        if node.path == attach_local
                        or node.path.startswith(attach_local + "|")}
@@ -1148,10 +1311,12 @@ class MayaCustomControllerHost(MayaFaceHost):
             if state.kind is CustomControlKind.CLUSTER:
                 stem, side = state.control.rsplit("|", 1)[-1].rsplit(
                     ":", 1)[-1].rsplit("_", 1)
-                handle = self.scene_address("Cluster" + stem + "_" + side
-                                            + "Handle")
-                if cmds.objExists(handle):
-                    cmds.delete(handle)
+                for role in ("OffsetDM", "PlusMinusAverage", "MMT", "DMT",
+                             "MMR", "DMR", "CurveFromMeshEdge",
+                             "PointOnCurveInfo"):
+                    helper = self.scene_address(role + stem + "_" + side)
+                    if cmds.objExists(helper):
+                        cmds.delete(helper)
             else:
                 stem, side = state.control.rsplit("|", 1)[-1].rsplit(
                     ":", 1)[-1].rsplit("_", 1)
@@ -1160,6 +1325,6 @@ class MayaCustomControllerHost(MayaFaceHost):
                     helper = self.scene_address(stem + role + "_" + side)
                     if cmds.objExists(helper):
                         cmds.delete(helper)
-        cmds.delete(attach)
+        cmds.delete(delete_root)
         if cmds.objExists(self.scene_address(REGISTRY_NAME)):
             self.read_character_registration()

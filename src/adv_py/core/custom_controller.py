@@ -65,6 +65,17 @@ class CustomControllerPlan:
             "matrix": stem + "SoftModMultMatrix" + side,
             "radius_factor": stem + "MainScaleForSoftModMPD1" + side,
             "radius_scale": stem + "MainScaleForSoftModMPD2" + side,
+            "cluster_group": "ClusterControlGrp" + stem + side,
+            "subtract": "Subtract" + stem + side,
+            "offset_decompose": "OffsetDM" + stem + side,
+            "translation_subtract": "PlusMinusAverage" + stem + side,
+            "translate_matrix": "MMT" + stem + side,
+            "translate_decompose": "DMT" + stem + side,
+            "rotate_matrix": "MMR" + stem + side,
+            "rotate_decompose": "DMR" + stem + side,
+            "edge_curve": "Curve" + stem + side,
+            "edge_source": "CurveFromMeshEdge" + stem + side,
+            "curve_point": "PointOnCurveInfo" + stem + side,
         }
         return names[role]
 
@@ -77,7 +88,11 @@ class CustomControllerPlan:
             names.extend(self.auxiliary_name(role) for role in
                          ("locator", "matrix", "radius_factor", "radius_scale"))
         if self.kind is CustomControlKind.CLUSTER:
-            names.append(self.auxiliary_name("handle"))
+            names.extend(self.auxiliary_name(role) for role in (
+                "handle", "cluster_group", "subtract", "offset_decompose",
+                "translation_subtract", "translate_matrix",
+                "translate_decompose", "rotate_matrix", "rotate_decompose",
+                "edge_curve", "edge_source", "curve_point"))
         if self.joint_name is not None:
             names.append(self.joint_name)
         if (self.deformer_name is not None
