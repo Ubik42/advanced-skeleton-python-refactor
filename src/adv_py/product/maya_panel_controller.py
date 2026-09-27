@@ -771,6 +771,31 @@ class MayaPanelController:
         return MayaFaceEyeHost(
             namespace=None if namespace == ":" else namespace).selected_eye_mesh()
 
+    def face_pre_record_mask(self, namespace: str):
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        from adv_py.application.face_pre import RecordFacePreInput
+
+        return RecordFacePreInput(MayaFacePreHost(
+            namespace=None if namespace == ":" else namespace)).mask()
+
+    def face_pre_record_objects(self, namespace: str, role: str,
+                                head_joint: str):
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        from adv_py.application.face_pre import FacePreRole, RecordFacePreInput
+
+        return RecordFacePreInput(MayaFacePreHost(
+            namespace=None if namespace == ":" else namespace)).objects(
+                FacePreRole(role), head_joint or "Head_M")
+
+    def face_pre_reselect(self, namespace: str, role: str):
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        from adv_py.application.face_pre import FacePreRole
+
+        host = MayaFacePreHost(namespace=None if namespace == ":" else namespace)
+        if role == "Mask":
+            return host.select_face_mask()
+        return len(host.select_face_objects(FacePreRole(role)))
+
     def face_eye_build(self, namespace: str, head_joint: str,
                        right_eye: str, left_eye: str):
         from adv_py.adapters.maya_face_eye import MayaFaceEyeHost

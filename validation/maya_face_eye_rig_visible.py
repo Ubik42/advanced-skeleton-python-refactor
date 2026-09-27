@@ -67,9 +67,36 @@ def schedule(output_directory: str) -> None:
             panel.show()
             panel.section_buttons[("Face", None)].click()
             panel.section_buttons[("Face", "Pre")].click()
-            panel.operation_buttons[("Face", "Pre", "记录所选右眼")].click()
+            panel.operation_buttons[("Face", "Pre", "Mask")].click()
             detail = panel.detail
             detail.face_eye_head.setText(head)
+            face = cmds.polySphere(name="FaceMesh", radius=1,
+                                   subdivisionsX=12, subdivisionsY=8,
+                                   constructionHistory=False)[0]
+            cmds.xform(face, worldSpace=True, translation=(
+                head_pos[0], head_pos[1], head_pos[2] + .5))
+            hair = cmds.polyCube(name="HairMesh", width=2, height=.4,
+                                 depth=1.4, constructionHistory=False)[0]
+            cmds.xform(hair, worldSpace=True, translation=(
+                head_pos[0], head_pos[1] + 1, head_pos[2] + .2))
+
+            def click_detail(label):
+                panel.operation_buttons[("Face", "Pre", label)].click()
+                button = next(b for b in detail.findChildren(QtWidgets.QPushButton)
+                              if b.text() == label)
+                button.click()
+                return detail.status.toPlainText()
+
+            cmds.select(face + ".f[0:11]", replace=True)
+            data["mask_status"] = click_detail("Mask")
+            cmds.select(face, replace=True)
+            data["face_status"] = click_detail("Face")
+            cmds.select(face, hair, replace=True)
+            data["all_head_status"] = click_detail("All Head")
+            data["reselect_mask_status"] = click_detail("重选 Mask")
+            panel.operation_buttons[("Face", "Pre", "Mask")].click()
+            detail.grab().save(str(output / "face-pre-panel.png"))
+            panel.grab().save(str(output / "face-pre-accordion.png"))
             cmds.select("model:EyeRight", replace=True)
             button = next(b for b in detail.findChildren(QtWidgets.QPushButton)
                           if b.text() == "记录所选右眼")
@@ -99,11 +126,20 @@ def schedule(output_directory: str) -> None:
                 type="skinCluster") or [])
             data["reopen_controls"] = all(cmds.objExists(name) for name in (
                 "AdvPy_EyeAim", "AdvPy_EyeAim_R", "AdvPy_EyeAim_L"))
-            data["passed"] = ("已记录右眼" in data["right_status"]
+            data["reopen_face_pre"] = (cmds.objExists("FaceFitSkeleton.faceScale")
+                and cmds.getAttr("FaceFitSkeleton.Face") == "FaceMesh"
+                and set(cmds.getAttr("FaceFitSkeleton.AllHead").split())
+                    == {"FaceMesh", "HairMesh"})
+            data["passed"] = ("已记录 Mask" in data["mask_status"]
+                and "已记录 Face" in data["face_status"]
+                and "已记录 All Head" in data["all_head_status"]
+                and "已重选 Mask" in data["reselect_mask_status"]
+                and "已记录右眼" in data["right_status"]
                 and "已记录左眼" in data["left_status"]
                 and "双眼控制已构建" in data["build_status"]
                 and data["skin_count"] == data["reopen_skin_count"] == 2
                 and data["body_registered"] and data["reopen_controls"]
+                and data["reopen_face_pre"]
                 and "modal_error" not in data)
         except BaseException:
             data["error"] = traceback.format_exc()

@@ -746,14 +746,34 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _face_page(self):
             page, stack = self._page()
+            self.face_pre_mask = QtWidgets.QLineEdit()
+            self.face_pre_mask.setReadOnly(True)
+            self.face_pre_face = QtWidgets.QLineEdit()
+            self.face_pre_face.setReadOnly(True)
+            self.face_pre_all_head = QtWidgets.QLineEdit()
+            self.face_pre_all_head.setReadOnly(True)
             self.face_eye_head = QtWidgets.QLineEdit()
-            self.face_eye_head.setPlaceholderText("|Group|Rig|Head_M")
+            self.face_eye_head.setPlaceholderText("Head_M（Face Pre 默认）")
+            group, form = self._group("00 · 面部输入", [
+                ("Mask 多边形面", self.face_pre_mask),
+                ("Face 网格", self.face_pre_face),
+                ("All Head 网格", self.face_pre_all_head),
+                ("Head 关节", self.face_eye_head)])
+            for label, record, reselect in (
+                    ("Mask", self._face_record_mask, self._face_reselect_mask),
+                    ("Face", self._face_record_face, self._face_reselect_face),
+                    ("All Head", self._face_record_all_head,
+                     self._face_reselect_all_head)):
+                row = QtWidgets.QHBoxLayout()
+                row.addWidget(self._button(label, record))
+                row.addWidget(self._button("重选 " + label, reselect))
+                form.addRow(row)
+            stack.addWidget(group)
             self.face_eye_right = QtWidgets.QLineEdit()
             self.face_eye_right.setPlaceholderText("|model:RightEye")
             self.face_eye_left = QtWidgets.QLineEdit()
             self.face_eye_left.setPlaceholderText("|model:LeftEye")
             group, form = self._group("00 · 眼球输入与控制", [
-                ("Head 关节", self.face_eye_head),
                 ("右眼网格", self.face_eye_right),
                 ("左眼网格", self.face_eye_left)])
             row = QtWidgets.QHBoxLayout()
@@ -1475,6 +1495,36 @@ def create_panel(controller: MayaPanelController | None = None):
             path = self.controller.face_eye_selected_mesh(self._namespace())
             self.face_eye_right.setText(path)
             return "已记录右眼网格：" + path
+
+        def _face_record_mask(self):
+            mesh, count, scale = self.controller.face_pre_record_mask(
+                self._namespace())
+            self.face_pre_mask.setText(f"{mesh} · {count} 面")
+            return f"已记录 Mask：{count} 个多边形面；面部高度 {scale:g} cm"
+
+        def _face_record_face(self):
+            meshes = self.controller.face_pre_record_objects(
+                self._namespace(), "Face", self.face_eye_head.text().strip())
+            self.face_pre_face.setText(meshes[0])
+            return "已记录 Face 网格：" + meshes[0]
+
+        def _face_record_all_head(self):
+            meshes = self.controller.face_pre_record_objects(
+                self._namespace(), "AllHead", self.face_eye_head.text().strip())
+            self.face_pre_all_head.setText(" ".join(meshes))
+            return f"已记录 All Head：{len(meshes)} 件网格"
+
+        def _face_reselect_mask(self):
+            count = self.controller.face_pre_reselect(self._namespace(), "Mask")
+            return f"已重选 Mask：{count} 个多边形面"
+
+        def _face_reselect_face(self):
+            count = self.controller.face_pre_reselect(self._namespace(), "Face")
+            return f"已重选 Face：{count} 件网格"
+
+        def _face_reselect_all_head(self):
+            count = self.controller.face_pre_reselect(self._namespace(), "AllHead")
+            return f"已重选 All Head：{count} 件网格"
 
         def _face_record_left_eye(self):
             path = self.controller.face_eye_selected_mesh(self._namespace())
