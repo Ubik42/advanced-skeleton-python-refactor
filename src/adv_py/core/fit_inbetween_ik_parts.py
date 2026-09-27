@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 
 from .fit_part import FitPartJointSpec
 
@@ -15,6 +16,7 @@ class InbetweenIkPartSpec:
     ikx_name: str
     distance_name: str
     rotate_order: int
+    world_position: tuple[float, float, float]
 
     @property
     def interval_fraction(self) -> float:
@@ -50,6 +52,8 @@ def plan_inbetween_ik_parts(
                    or part.end_body != ordered[0].end_body
                    or part.index != index
                    or part.count != len(ordered)
+                   or len(part.world_position) != 3
+                   or not all(isfinite(value) for value in part.world_position)
                    for index, part in enumerate(ordered, 1))):
         raise ValueError("Inbetween IK Part 链不连续")
     result = []
@@ -59,7 +63,7 @@ def plan_inbetween_ik_parts(
         spec = InbetweenIkPartSpec(
             part.name, part.index, part.count, parent,
             prefix + "IKX", prefix + "IKDistance",
-            part.rotation_order)
+            part.rotation_order, part.world_position)
         result.append(spec)
         parent = spec.ikx_name
     return InbetweenIkPartsPlan(

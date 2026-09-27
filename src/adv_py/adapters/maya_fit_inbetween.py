@@ -15,6 +15,7 @@ from adv_py.core.fit_inbetween_fk_parts import (
 from adv_py.core.fit_inbetween_ik_parts import (
     InbetweenIkPartSpec, InbetweenIkPartsPlan,
 )
+from adv_py.core.fit_inbetween_ik_solver import InbetweenIkSolverPlan
 from adv_py.core.fit_inbetween_body_driver import (
     InbetweenBodyDriverPlan, InbetweenBodyDriverSpec,
 )
@@ -33,6 +34,152 @@ from adv_py.core.joint_labels import JointLabel
 
 
 class MayaFitInbetweenMixin:
+    def preflight_inbetween_ik_solver(
+        self, plan: InbetweenIkSolverPlan,
+    ) -> None:
+        c = self._cmds
+        if any((c.ls(path, long=True, type="joint") or []) != [path]
+               for path in plan.original_chain):
+            raise ValueError("Inbetween IK 原始骨链缺失")
+        if any((c.listRelatives(child, parent=True, fullPath=True) or [])
+               != [parent] for parent, child in zip(
+                   plan.original_chain, plan.original_chain[1:])):
+            raise ValueError("Inbetween IK 原始骨链父子关系改变")
+        handles = c.ls(plan.handle_name, long=True, type="ikHandle") or []
+        if len(handles) != 1:
+            raise ValueError("Inbetween IK handle 不唯一或缺失")
+        handle = handles[0]
+        actual_chain = tuple((c.ls(node, long=True) or [node])[0]
+                             for node in (c.ikHandle(handle, query=True,
+                                                     jointList=True) or []))
+        if (actual_chain != plan.original_chain[:-1]
+                or c.ikHandle(handle, query=True, solver=True)
+                != plan.solver_name
+                or (c.listRelatives(handle, parent=True, fullPath=True)
+                    or []) != [plan.handle_parent_path]):
+            raise ValueError("Inbetween IK handle 与原始求解计划不一致")
+        effectors = c.ikHandle(handle, query=True, endEffector=True) or []
+        if isinstance(effectors, str):
+            effectors = [effectors]
+        if len(effectors) != 1:
+            raise ValueError("Inbetween IK effector 不唯一")
+        if (c.objExists(plan.effector_name)
+                and effectors[0].rsplit("|", 1)[-1]
+                != plan.effector_name):
+            raise ValueError("Inbetween IK effector 名称冲突")
+        poles = c.ls(plan.pole_constraint_name,
+                     type="poleVectorConstraint") or []
+        pole_sources = tuple(
+            (c.ls(node, long=True) or [node])[0]
+            for node in (c.poleVectorConstraint(
+                poles[0], query=True, targetList=True) or [])
+        ) if len(poles) == 1 else ()
+        if pole_sources != (plan.pole_control_path,):
+            raise ValueError("Inbetween IK pole vector 来源改变")
+        if any(c.objExists(part.name) for part in plan.inserted_joints):
+            raise ValueError("Inbetween IK 插入关节名称冲突")
+
+    def remove_inbetween_ik_solver(
+        self, plan: InbetweenIkSolverPlan,
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        effector = c.ikHandle(plan.handle_name, query=True,
+                              endEffector=True)
+        if isinstance(effector, (tuple, list)):
+            if len(effector) != 1:
+                raise ValueError("Inbetween IK effector 不唯一")
+            effector = effector[0]
+        visibility = bool(c.getAttr(plan.handle_name + ".visibility"))
+        if not hasattr(self, "_inbetween_solver_visibility"):
+            self._inbetween_solver_visibility = {}
+        self._inbetween_solver_visibility[plan.handle_name] = visibility
+        self._transaction_changed = True
+        c.delete(plan.pole_constraint_name)
+        c.delete(plan.handle_name)
+        if c.objExists(effector):
+            c.delete(effector)
+
+    def insert_inbetween_ik_solver_segment(
+        self, plan: InbetweenIkSolverPlan,
+        segment: InbetweenIkPartsPlan,
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        parent = segment.start_ik_driver
+        end = segment.end_ik_driver
+        if ((c.listRelatives(end, parent=True, fullPath=True) or [])
+                != [parent]):
+            raise ValueError("Inbetween IK 待插入骨段已被修改")
+        before = tuple(c.xform(end, query=True, worldSpace=True,
+                               matrix=True))
+        self._transaction_changed = True
+        for part in segment.parts:
+            joint = c.createNode("joint", name=part.ikx_name,
+                                 parent=parent, skipSelect=True)
+            c.setAttr(joint + ".drawStyle", 2)
+            c.setAttr(joint + ".segmentScaleCompensate", 0)
+            c.setAttr(joint + ".rotateOrder", part.rotate_order)
+            c.xform(joint, worldSpace=True,
+                    translation=part.world_position)
+            parent = joint
+        c.parent(end, parent, absolute=True)
+        after = tuple(c.xform(end, query=True, worldSpace=True,
+                              matrix=True))
+        if max(abs(a - b) for a, b in zip(before, after)) > 1e-5:
+            raise RuntimeError("Inbetween IK 插入改变了原有绑定姿态")
+
+    def restore_inbetween_ik_solver(
+        self, plan: InbetweenIkSolverPlan,
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        handle, effector = c.ikHandle(
+            name=plan.handle_name,
+            startJoint=plan.expanded_chain[0],
+            endEffector=plan.expanded_chain[-1],
+            solver=plan.solver_name)
+        c.rename(effector, plan.effector_name)
+        c.parent(handle, plan.handle_parent_path, absolute=True)
+        c.setAttr(handle + ".visibility",
+                  self._inbetween_solver_visibility.pop(
+                      plan.handle_name))
+        c.poleVectorConstraint(plan.pole_control_path, handle,
+                               name=plan.pole_constraint_name)
+        self._transaction_changed = True
+
+    def capture_inbetween_ik_solver(
+        self, plan: InbetweenIkSolverPlan,
+    ) -> bool:
+        c = self._cmds
+        if any((c.ls(path, long=True, type="joint") or []) != [path]
+               for path in plan.expanded_chain):
+            return False
+        if any((c.listRelatives(child, parent=True, fullPath=True) or [])
+               != [parent] for parent, child in zip(
+                   plan.expanded_chain, plan.expanded_chain[1:])):
+            return False
+        handles = c.ls(plan.handle_name, long=True, type="ikHandle") or []
+        if len(handles) != 1:
+            return False
+        joint_list = tuple((c.ls(node, long=True) or [node])[0]
+                           for node in (c.ikHandle(handles[0], query=True,
+                                                   jointList=True) or []))
+        poles = c.ls(plan.pole_constraint_name,
+                     type="poleVectorConstraint") or []
+        pole_sources = tuple(
+            (c.ls(node, long=True) or [node])[0]
+            for node in (c.poleVectorConstraint(
+                poles[0], query=True, targetList=True) or [])
+        ) if len(poles) == 1 else ()
+        return (joint_list == plan.solved_joint_list
+                and c.ikHandle(handles[0], query=True, solver=True)
+                == plan.solver_name
+                and (c.listRelatives(handles[0], parent=True,
+                                     fullPath=True) or [])
+                == [plan.handle_parent_path]
+                and pole_sources == (plan.pole_control_path,))
+
     def preflight_inbetween_untwister(
         self, plan: InbetweenUnTwisterPlan,
     ) -> None:
