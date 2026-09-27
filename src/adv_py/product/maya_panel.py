@@ -665,6 +665,10 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
 
             group, form = self._group("11 · Unreal Joints", [])
+            form.addRow(self._button("重命名为 Unreal 关节",
+                                     self._rename_to_unreal))
+            form.addRow(self._button("恢复 ADV 关节名称",
+                                     self._restore_unreal_names))
             form.addRow(self._button("创建通用 Unreal IK 关节",
                                      self._create_unreal_joints))
             form.addRow(self._button("删除通用 Unreal IK 关节",
@@ -1824,6 +1828,14 @@ def create_panel(controller: MayaPanelController | None = None):
         def _delete_unreal_twist_hierarchy(self):
             count = self.controller.unreal_twist_hierarchy(self._namespace(), False)
             return f"已恢复 {count} 个 Twist 层级关节"
+
+        def _rename_to_unreal(self):
+            plan = self.controller.unreal_rename(self._namespace())
+            return f"已将 {len(plan.names)} 个 ADV 关节重命名为 Unreal 层级"
+
+        def _restore_unreal_names(self):
+            self.controller.unreal_restore_names(self._namespace())
+            return "已恢复 ADV 关节名称与原层级"
 
         def _create_squash_controller(self):
             plans = self.controller.squash_controller_create(

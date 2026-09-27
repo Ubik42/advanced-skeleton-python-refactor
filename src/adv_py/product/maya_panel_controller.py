@@ -855,6 +855,22 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)
         return SetUnrealTwistHierarchy(host).apply(enable)
 
+    def unreal_rename(self, namespace: str):
+        from adv_py.adapters.maya_unreal_rename import MayaUnrealRenameHost
+        from adv_py.application.unreal_rename import RenameToUnreal
+
+        host = MayaUnrealRenameHost(
+            namespace=None if namespace == ":" else namespace)
+        return RenameToUnreal(host).apply()
+
+    def unreal_restore_names(self, namespace: str) -> None:
+        from adv_py.adapters.maya_unreal_rename import MayaUnrealRenameHost
+        from adv_py.application.unreal_rename import RestoreAdvNames
+
+        host = MayaUnrealRenameHost(
+            namespace=None if namespace == ":" else namespace)
+        RestoreAdvNames(host).apply()
+
     def squash_controller_create(self, namespace: str, *, mirror: bool = True):
         from adv_py.adapters.maya_squash_controller import MayaSquashControllerHost
         from adv_py.application.squash_controller import CreateSquashController

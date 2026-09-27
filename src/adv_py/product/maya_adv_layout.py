@@ -88,6 +88,8 @@ ADV_OPERATIONS = {
         ("分离全部控制器", 0, "10 · Control Orient"),
         ("重新附着全部控制器", 0, "10 · Control Orient")),
     ("Body", "Unreal Joints"): (
+        ("重命名为 Unreal 关节", 0, "11 · Unreal Joints"),
+        ("恢复 ADV 关节名称", 0, "11 · Unreal Joints"),
         ("创建通用 Unreal IK 关节", 0, "11 · Unreal Joints"),
         ("删除通用 Unreal IK 关节", 0, "11 · Unreal Joints"),
         ("Mannequin 模板", 0, "11 · Unreal Joints"),
