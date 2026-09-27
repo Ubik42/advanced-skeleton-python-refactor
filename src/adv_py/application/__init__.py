@@ -515,6 +515,14 @@ __all__ = [
     "BuildFitFromSourceSkeleton",
     "SourceSkeletonJoint",
     "SourceSkeletonFitResult",
+    "SourceSkeletonFitPlan",
+    "plan_source_skeleton_fit",
+    "BuildCharacterFromFit",
+    "CharacterFromFitResult",
+    "CharacterFromFitPlan",
+    "BuildCharacterFromSourceSkeleton",
+    "SourceCharacterBuildPlan",
+    "SourceCharacterBuildResult",
     "BuildRegisteredSkinnedBodyCharacter",
     "RegisteredSkinnedBodyBuildResult",
     "BuildBodyRootMotion",
@@ -716,7 +724,12 @@ from .registered_body_build import (BuildRegisteredBodyCharacter,
 from .registered_skinned_body_build import (BuildRegisteredSkinnedBodyCharacter,
     RegisteredSkinnedBodyBuildResult)
 from .source_skeleton_fit import (BuildFitFromSourceSkeleton,
-    SourceSkeletonJoint, SourceSkeletonFitResult)
+    SourceSkeletonJoint, SourceSkeletonFitPlan, SourceSkeletonFitResult,
+    plan_source_skeleton_fit)
+from .character_from_fit import (BuildCharacterFromFit, CharacterFromFitPlan,
+                                 CharacterFromFitResult)
+from .character_from_source import (BuildCharacterFromSourceSkeleton,
+    SourceCharacterBuildPlan, SourceCharacterBuildResult)
 
 from .external_mesh_io import (ExportExternalMesh, ImportExternalMesh,
     ExternalMeshResult)

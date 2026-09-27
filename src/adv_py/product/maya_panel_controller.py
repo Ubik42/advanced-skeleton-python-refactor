@@ -10,8 +10,7 @@ from adv_py.adapters import MayaFaceHost, MayaOriginalSkinSpineMigrationHost
 from adv_py.application import (ApplyBodyCharacterAnimation,
     ApplyBodyCharacterPose, ApplyFacePerformance, BindSkin,
     BakeBodyExportSkeleton, BuildBodyExportSkeleton, BuildBodyRootMotion,
-    BuildFaceBlendShapes, BuildRegisteredBodyCharacter,
-    BuildRegisteredSkinnedBodyCharacter,
+    BuildFaceBlendShapes,
     CaptureBodyCharacterAnimation, CaptureBodyCharacterPose,
     CaptureAnimatedBodyCharacterPose, KeyBodyCharacterPose,
     EnableBodyCharacterLimbAnimation, EnableBodyCharacterStretchMatching,
@@ -45,7 +44,6 @@ from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
     FitJointPositionEdit, FitJointPositionPatch, FitOrientationChildSelection,
     FitOrientationRequest,
     face_performance_from_json)
-from adv_py.core.variable_body_fit import variable_axial_description
 
 from .input_documents import (load_face_build_spec, load_face_landmarks,
                               load_skin_path_mapping, load_skin_redistribution,
@@ -108,20 +106,6 @@ def _remove_empty_source_target(cmds, namespace: str | None) -> None:
         if not (cmds.namespaceInfo(namespace,
                 listOnlyDependencyNodes=True, recurse=True) or []):
             cmds.namespace(removeNamespace=namespace)
-
-
-def _fit_axial_description(host, container: str,
-                           requested: int | None):
-    names = {joint.short_name for joint in
-             host.capture_fit_hierarchy(container).joints}
-    indices = sorted(int(name[5:]) for name in names
-                     if re.fullmatch(r"Spine[1-9]\d*", name))
-    if "Chest" not in names or indices != list(range(1, len(indices) + 1)):
-        raise ValueError("Fit 脊柱关节须为连续 Spine1…SpineN，末端为 Chest")
-    actual = len(indices) + 1
-    if requested is not None and requested != actual:
-        raise ValueError(f"Fit 实际脊柱为 {actual} 段，输入为 {requested} 段")
-    return variable_axial_description(actual) if actual != 2 else None
 
 
 _FIT_INTEGER_FIELDS = frozenset({
@@ -390,30 +374,19 @@ class MayaPanelController:
                    meshes: tuple[str, ...] = (),
                    maximum_influences: int = 4,
                    segment_influences: bool = False) -> PanelCharacter:
+        from adv_py.application.character_from_fit import BuildCharacterFromFit
+
         host = self._host(namespace)
-        description = _fit_axial_description(host, container, spine_segments)
-        if meshes:
-            from adv_py.application.registered_body_build import _JoinedTransactionHost
-            with host.transaction("复制模型并构建蒙皮角色"):
-                local_meshes = tuple(host.copy_external_mesh_for_character(mesh)
-                                     for mesh in meshes)
-                result = BuildRegisteredSkinnedBodyCharacter(
-                    _JoinedTransactionHost(host)).apply(
-                    local_meshes, container_name=container,
-                    maximum_influences=maximum_influences,
-                    axial_description=description,
-                    include_head_aim=head_aim,
-                    infer_missing_labels=infer_missing_labels,
-                    include_segment_influences=segment_influences).character
-        else:
-            result = BuildRegisteredBodyCharacter(host).apply(
-                container, axial_description=description,
-                include_head_aim=head_aim,
-                infer_missing_labels=infer_missing_labels,
-                include_segment_influences=segment_influences)
-        return PanelCharacter(namespace, True, len(result.registration.body),
-                              len(result.registration.channels),
-                              segment_joint_count=len(result.segment_influences))
+        result = BuildCharacterFromFit(host).apply(
+            container, meshes=meshes, spine_segments=spine_segments,
+            maximum_influences=maximum_influences,
+            include_head_aim=head_aim,
+            infer_missing_labels=infer_missing_labels,
+            include_segment_influences=segment_influences)
+        character = result.body
+        return PanelCharacter(namespace, True, len(character.registration.body),
+                              len(character.registration.channels),
+                              segment_joint_count=len(character.segment_influences))
 
     def body_build_from_source(self, namespace: str, source_root: str,
                                container: str = "FitSkeleton", *,
@@ -423,8 +396,8 @@ class MayaPanelController:
                                segment_influences: bool = True) -> PanelCharacter:
         from adv_py.adapters.maya_source_skeleton_fit import (
             MayaSourceSkeletonFitHost)
-        from adv_py.application.registered_body_build import _JoinedTransactionHost
-        from adv_py.application.source_skeleton_fit import BuildFitFromSourceSkeleton
+        from adv_py.application.character_from_source import (
+            BuildCharacterFromSourceSkeleton)
         from maya import cmds
 
         if not source_root.strip():
@@ -434,32 +407,18 @@ class MayaPanelController:
         try:
             host = MayaSourceSkeletonFitHost(
                 namespace=None if target_namespace == ":" else target_namespace)
-            with host.transaction("从标准骨架构建并蒙皮角色"):
-                joined = _JoinedTransactionHost(host)
-                fit = BuildFitFromSourceSkeleton(joined).apply(
-                    source_root, container)
-                description = (variable_axial_description(fit.spine_segments)
-                    if fit.spine_segments != 2 else None)
-                local_meshes = tuple(host.copy_external_mesh_for_character(mesh)
-                                     for mesh in meshes)
-                if local_meshes:
-                    result = BuildRegisteredSkinnedBodyCharacter(joined).apply(
-                        local_meshes, container_name=container,
-                        maximum_influences=maximum_influences,
-                        axial_description=description,
-                        include_head_aim=head_aim,
-                        include_segment_influences=segment_influences).character
-                else:
-                    result = BuildRegisteredBodyCharacter(joined).apply(
-                        container, axial_description=description,
-                        include_head_aim=head_aim,
-                        include_segment_influences=segment_influences)
+            built = BuildCharacterFromSourceSkeleton(host).apply(
+                source_root, container, meshes=meshes,
+                maximum_influences=maximum_influences,
+                include_head_aim=head_aim,
+                include_segment_influences=segment_influences)
         except Exception:
             _remove_empty_source_target(cmds, created_namespace)
             raise
-        return PanelCharacter(target_namespace, True, len(result.registration.body),
-                              len(result.registration.channels),
-                              segment_joint_count=len(result.segment_influences))
+        character = built.character.body
+        return PanelCharacter(target_namespace, True, len(character.registration.body),
+                              len(character.registration.channels),
+                              segment_joint_count=len(character.segment_influences))
 
     def original_skin_migrate(self, namespace: str,
                               source_skin: str = ""):

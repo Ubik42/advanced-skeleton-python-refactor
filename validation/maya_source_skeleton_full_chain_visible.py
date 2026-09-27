@@ -15,26 +15,32 @@ from adv_py.core.fit_template import synthetic_body_source_fit_template
 from adv_py.product.maya_adv_layout import create_adv_panel
 
 
-def schedule(output_directory: str) -> None:
+def schedule(output_directory: str, scene: str = "") -> None:
     output = Path(output_directory)
     output.mkdir(parents=True, exist_ok=True)
 
     def run() -> None:
         data = {}
         try:
-            cmds.file(new=True, force=True)
-            joints = {}
-            omitted = {"HeadEnd", "Heel", "FootSideInner",
-                       "FootSideOuter", "ToesEnd"}
-            for spec in synthetic_body_source_fit_template(FitUpAxis.Y).joints:
-                if spec.name in omitted:
-                    continue
-                parent = joints.get(spec.parent)
-                joint = cmds.createNode("joint", name=spec.name,
-                    **({"parent": parent} if parent else {}))
-                cmds.setAttr(joint + ".translate", *spec.local_position)
-                joints[spec.name] = joint
-            cmds.polyCube(name="SourceMesh", width=8, height=18, depth=5)
+            source_mesh = "SourceBodyMesh" if scene else "SourceMesh"
+            if scene:
+                cmds.file(scene, open=True, force=True,
+                          executeScriptNodes=False)
+            else:
+                cmds.file(new=True, force=True)
+                joints = {}
+                omitted = {"HeadEnd", "Heel", "FootSideInner",
+                           "FootSideOuter", "ToesEnd"}
+                for spec in synthetic_body_source_fit_template(FitUpAxis.Y).joints:
+                    if spec.name in omitted:
+                        continue
+                    parent = joints.get(spec.parent)
+                    joint = cmds.createNode("joint", name=spec.name,
+                        **({"parent": parent} if parent else {}))
+                    cmds.setAttr(joint + ".translate", *spec.local_position)
+                    joints[spec.name] = joint
+                cmds.polyCube(name=source_mesh, width=8,
+                              height=18, depth=5)
             cmds.undoInfo(state=True)
 
             panel = create_adv_panel()
@@ -45,7 +51,7 @@ def schedule(output_directory: str) -> None:
                 "构建并登记角色")].click()
             detail = panel.detail
             detail.build_source_root.setText("|Root")
-            detail.build_meshes.setPlainText("|SourceMesh")
+            detail.build_meshes.setPlainText("|" + source_mesh)
             QtWidgets.QApplication.processEvents()
             data["build_entry_visible"] = (panel.isVisible()
                 and detail.build_source_root.isVisible()
@@ -60,7 +66,7 @@ def schedule(output_directory: str) -> None:
             data["selected_role"] = (detail.roles.currentItem().data(
                 QtCore.Qt.UserRole) if detail.roles.currentItem() else None)
             data["source_preserved"] = (cmds.objExists("Root")
-                and cmds.objExists("SourceMesh"))
+                and cmds.objExists(source_mesh))
             data["body_count"] = len(cmds.ls("AdvPy:*", type="joint") or [])
             data["skin_count"] = len(cmds.ls("AdvPy:*",
                 type="skinCluster") or [])
@@ -122,10 +128,10 @@ def schedule(output_directory: str) -> None:
             data["fbx_bytes"] = fbx.stat().st_size if fbx.exists() else 0
             detail.grab().save(str(output / "source-export-after.png"))
 
-            scene = (output / "source-visible.mb").resolve()
-            cmds.file(rename=str(scene))
+            saved_scene = (output / "source-visible.mb").resolve()
+            cmds.file(rename=str(saved_scene))
             cmds.file(save=True, type="mayaBinary", force=True)
-            cmds.file(str(scene), open=True, force=True,
+            cmds.file(str(saved_scene), open=True, force=True,
                       executeScriptNodes=False)
             data["reopen_skin_count"] = len(cmds.ls("AdvPy:*",
                 type="skinCluster") or [])
