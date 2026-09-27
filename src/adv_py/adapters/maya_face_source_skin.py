@@ -70,6 +70,9 @@ class MayaFaceSourceSkinHost(MayaFaceEyeLidRigHost):
         if len(motion) != 1 or not c.attributeQuery(
                 "advPyFaceMesh", node=motion[0], exists=True):
             raise FitSkeletonValidationError("目标场景尚未建立 Python 眼睑绑定")
+        simpler_eyelid = (c.attributeQuery(
+            "advPySimplerEyeLid", node=motion[0], exists=True)
+            and bool(c.getAttr(motion[0] + ".advPySimplerEyeLid")))
         target_mesh = c.getAttr(motion[0] + ".advPyFaceMesh")
         target_shape = (c.listRelatives(target_mesh, shapes=True,
                         noIntermediate=True, fullPath=True,
@@ -136,18 +139,38 @@ class MayaFaceSourceSkinHost(MayaFaceEyeLidRigHost):
                 auxiliary[side] = (index, joint)
         if not source_map:
             raise FitSkeletonValidationError("来源不是已绑定的原版眼睑 Skin")
+        if simpler_eyelid and set(auxiliary) != {"R", "L"}:
+            raise FitSkeletonValidationError(
+                "简化眼睑来源需要双侧眼下外围影响关节")
         roots = c.ls("FaceJoint_M", long=True, type="joint") or []
         if len(roots) != 1:
             raise FitSkeletonValidationError("目标 FaceJoint_M 缺失或不唯一")
         for side in auxiliary:
-            if c.objExists("lowerLidOuterJoint_" + side):
-                raise FitSkeletonValidationError("目标外围关节已存在")
-            if not c.objExists("ctrlLowerEyeLidOuter_" + side + "MotionSum"):
-                raise FitSkeletonValidationError("目标下 Outer 驱动缺失")
+            joint_name = "lowerLidOuterJoint_" + side
+            if simpler_eyelid:
+                joint = c.ls(joint_name, long=True, type="joint") or []
+                if (len(joint) != 1
+                        or joint_name not in target_by_base
+                        or not c.attributeQuery(
+                            "advPyAuxiliaryInfluenceKind", node=joint[0],
+                            exists=True)
+                        or c.getAttr(joint[0] +
+                            ".advPyAuxiliaryInfluenceKind") !=
+                            "face-lower-outer-v1"):
+                    raise FitSkeletonValidationError(
+                        "简化眼睑目标外围关节未完成")
+            else:
+                if c.objExists(joint_name):
+                    raise FitSkeletonValidationError("目标外围关节已存在")
+                if not c.objExists(
+                    "ctrlLowerEyeLidOuter_" + side + "MotionSum"):
+                    raise FitSkeletonValidationError("目标下 Outer 驱动缺失")
         selected = c.ls(selection=True, long=True) or []
         with self.transaction("迁移原版眼睑 Skin"):
             self._transaction_changed = True
             for side, (_, source_joint) in auxiliary.items():
+                if simpler_eyelid:
+                    continue
                 name = "lowerLidOuterJoint_" + side
                 pivot = raw.xform(source_joint, query=True,
                                   worldSpace=True, translation=True)
