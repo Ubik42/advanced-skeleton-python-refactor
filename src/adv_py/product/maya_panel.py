@@ -514,7 +514,10 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("指定父关节", self.custom_control_parent),
                 ("已有控制器", self.custom_control_existing),
                 ("新增网格", self.custom_control_mesh)])
-            form.addRow(QtWidgets.QLabel("First create a SoftMod, then:"))
+            form.addRow(QtWidgets.QLabel("First create a SoftMod:"))
+            form.addRow(self._button("SoftMod Tool",
+                                     self._open_custom_softmod_tool))
+            form.addRow(QtWidgets.QLabel("Then:"))
             form.addRow(self._button("Create Skin Control",
                                      self._create_custom_skin))
             form.addRow(self._button("Create Cluster Control",
@@ -1648,6 +1651,10 @@ def create_panel(controller: MayaPanelController | None = None):
                 face=getattr(self, "custom_control_face", False))
             self.custom_control_existing.setText(state.control)
             return f"已创建 SoftMod 控制器：{state.control}"
+
+        def _open_custom_softmod_tool(self):
+            self.controller.custom_softmod_tool()
+            return "已打开 SoftMod 工具"
 
         def _create_custom_cluster(self):
             state = self.controller.custom_cluster_create(

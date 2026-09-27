@@ -706,6 +706,11 @@ class MayaPanelController:
             deformer, CustomControlKind.SOFT_MOD, base_name,
             parent_joint=parent_joint or None).state
 
+    def custom_softmod_tool(self) -> None:
+        from maya import mel
+
+        mel.eval("SoftModTool;")
+
     def custom_cluster_create(self, namespace: str, deformer: str,
                               base_name: str, parent_joint: str = "",
                               *, face: bool = False):

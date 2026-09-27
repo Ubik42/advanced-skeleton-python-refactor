@@ -62,6 +62,7 @@ ADV_OPERATIONS = {
         ("硬化权重", 1, "05 · Delta Mush"),
         ("应用 Delta Mush", 1, "05 · Delta Mush"),),
     ("Body", "Custom Controllers"): (
+        ("SoftMod Tool", 0, "06 · Custom Controllers"),
         ("Create Skin Control", 0, "06 · Custom Controllers"),
         ("Create Cluster Control", 0, "06 · Custom Controllers"),
         ("Create SoftMod Control", 0, "06 · Custom Controllers"),
@@ -117,6 +118,7 @@ ADV_OPERATIONS = {
         ("导出所选版本", 3, "05 · 面部资产版本"),
         ("合并资产版本", 3, "06 · 合并同一目标的三个版本")),
     ("Face", "Custom Controllers"): (
+        ("SoftMod Tool", 0, "06 · Custom Controllers"),
         ("Create Skin Control", 0, "06 · Custom Controllers"),
         ("Create Cluster Control", 0, "06 · Custom Controllers"),
         ("Create SoftMod Control", 0, "06 · Custom Controllers"),
