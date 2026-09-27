@@ -1,6 +1,7 @@
 """Maya scene port for SoftMod custom controls and influenced meshes."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import replace
 
 from adv_py.application.custom_controller import CustomControllerState
@@ -14,6 +15,7 @@ from adv_py.core.custom_controller import (
 from adv_py.core.custom_control_weights import (
     ClusterWeightTransfer, SoftModProbe, cluster_weights_from_probe,
 )
+from adv_py.core.custom_surface_anchor import anchor_on_polygon
 
 from .maya_face import MayaFaceHost
 
@@ -36,6 +38,111 @@ class MayaCustomControllerHost(MayaFaceHost):
             return cmds.createNode("transform", name=name,
                 parent=self._unique(motion_name, "transform"))
         return cmds.createNode("transform", name=name)
+
+    @contextmanager
+    def build_pose_session(self, deformer: str):
+        """Map the painted surface point to build pose, then restore the pose."""
+        from maya import cmds
+        from maya.api import OpenMaya as om
+
+        source = self._unique(deformer, "softMod")
+        meshes = self._softmod_meshes(source)
+        if len(meshes) != 1:
+            raise ValueError("构建姿态定位要求 SoftMod 只影响一件网格")
+        mesh = meshes[0]
+        handles = cmds.listConnections(source + ".matrix", source=True,
+                                       destination=False,
+                                       type="transform") or []
+        if len(handles) != 1:
+            raise ValueError("构建姿态定位要求唯一 SoftMod 操作柄")
+        handle = self._unique(handles[0], "transform")
+        selection = om.MSelectionList()
+        selection.add(mesh)
+        fn = om.MFnMesh(selection.getDagPath(0))
+        handle_translation = tuple(float(value) for value in
+                                   cmds.getAttr(handle + ".translate")[0])
+        handle_pivot = tuple(float(value) for value in
+                             cmds.xform(handle, query=True,
+                                        worldSpace=True, pivots=True)[:3])
+        falloff_center = tuple(float(value) for value in
+                               cmds.getAttr(source + ".falloffCenter")[0])
+        shapes = cmds.listRelatives(handle, shapes=True,
+                                    fullPath=True) or []
+        origins = {shape: tuple(cmds.getAttr(shape + ".origin")[0])
+                   for shape in shapes if cmds.objExists(shape + ".origin")}
+        channel_state = []
+        if cmds.objExists(self.scene_address(REGISTRY_NAME)):
+            registration = self.read_character_registration()
+            plugs = [self.scene_address(channel.node) + "." + channel.attribute
+                     for channel in registration.channels]
+        else:
+            control_set = self.scene_address("FaceControlSet")
+            controls = cmds.sets(control_set, query=True) or [] if cmds.objExists(
+                control_set) else []
+            plugs = [node + "." + kind + axis
+                     for node in controls
+                     for kind in ("translate", "rotate", "scale")
+                     for axis in "XYZ" if cmds.objExists(node + "." + kind + axis)]
+        try:
+            cmds.setAttr(handle + ".translate", 0.0, 0.0, 0.0,
+                         type="double3")
+            posed_center = tuple(float(value) for value in
+                                 cmds.xform(handle, query=True,
+                                            worldSpace=True, pivots=True)[:3])
+            closest, face = fn.getClosestPoint(om.MPoint(*posed_center),
+                                               om.MSpace.kWorld)
+            posed_points = tuple((float(p.x), float(p.y), float(p.z))
+                                 for p in fn.getPoints(om.MSpace.kWorld))
+            anchor = anchor_on_polygon(
+                (float(closest.x), float(closest.y), float(closest.z)),
+                tuple(int(index) for index in fn.getPolygonVertices(face)),
+                posed_points)
+            for plug in dict.fromkeys(plugs):
+                if (not cmds.objExists(plug)
+                        or cmds.getAttr(plug, lock=True)):
+                    continue
+                value = cmds.getAttr(plug)
+                if not isinstance(value, (int, float)):
+                    continue
+                source_plug = cmds.connectionInfo(
+                    plug, sourceFromDestination=True)
+                if source_plug:
+                    driver = source_plug.rsplit(".", 1)[0]
+                    if not cmds.nodeType(driver).startswith("animCurve"):
+                        continue
+                    cmds.disconnectAttr(source_plug, plug)
+                channel_state.append((plug, float(value), source_plug))
+                attribute = plug.rsplit(".", 1)[-1]
+                default = (1.0 if attribute.startswith("scale")
+                           else 0.0)
+                cmds.setAttr(plug, default)
+            build_points = tuple((float(p.x), float(p.y), float(p.z))
+                                 for p in fn.getPoints(om.MSpace.kWorld))
+            build_center = anchor.resolve(build_points)
+            cmds.xform(handle, worldSpace=True, pivots=build_center)
+            for shape in origins:
+                cmds.setAttr(shape + ".origin", *build_center,
+                             type="float3")
+            cmds.setAttr(source + ".falloffCenter", *build_center,
+                         type="float3")
+            yield
+        finally:
+            if cmds.objExists(handle):
+                cmds.setAttr(handle + ".translate", *handle_translation,
+                             type="double3")
+                cmds.xform(handle, worldSpace=True, pivots=handle_pivot)
+                for shape, origin in origins.items():
+                    if cmds.objExists(shape):
+                        cmds.setAttr(shape + ".origin", *origin,
+                                     type="float3")
+            if cmds.objExists(source):
+                cmds.setAttr(source + ".falloffCenter", *falloff_center,
+                             type="float3")
+            for plug, value, source_plug in reversed(channel_state):
+                if cmds.objExists(plug):
+                    cmds.setAttr(plug, value)
+                    if source_plug:
+                        cmds.connectAttr(source_plug, plug)
 
     def _prepare_custom_source(self, plan: CustomControllerPlan) -> None:
         from maya import cmds
@@ -514,7 +621,7 @@ class MayaCustomControllerHost(MayaFaceHost):
                 cmds.setAttr(deformer + ".weightList[0].weights[%d]" %
                              item.index, item.weight)
         cmds.setAttr(deformer + ".falloffCenter",
-                     *plan.region.center, type="double3")
+                     *plan.region.center, type="float3")
         locator = cmds.spaceLocator(name=self.scene_address(
             plan.auxiliary_name("locator")))[0]
         locator = cmds.parent(locator, base, relative=True)[0]
