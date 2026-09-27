@@ -23,6 +23,7 @@ from .maya_face_pre import MayaFacePreHost
 
 
 _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
+_CLOSED_LOWER_UPWARD_FOLLOW = .6
 
 
 class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
@@ -466,6 +467,11 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                   control + "FleshyAmount",
                                   control + "FleshyBlink",
                                   control + "MotionSum"))
+                    if arc == "lower" and mobile_inners[side]:
+                        names.extend((control + "UpwardFollow",
+                                      control + "UpwardBlink",
+                                      control + "UpwardScale",
+                                      control + "UpwardSum"))
                     if layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
                         names.extend((control + "BlinkFraction",
                                       control + "BlinkOffset"))
@@ -522,6 +528,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                 reverse = c.createNode("reverse",
                     name=eye_name + "BlinkReverse")
                 c.connectAttr(fraction + ".outputX", reverse + ".inputX")
+                eye_fraction = fraction
                 eye_control_names[side] = (
                     c.ls(eye_control, long=True, type="transform") or [eye_control])[0]
                 for layer in layers[side]:
@@ -580,8 +587,38 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                             name=control_name + "MotionSum")
                         c.connectAttr(control + ".translate",
                                       motion_sum + ".input3D[0]")
-                        c.connectAttr(blink_fade + ".output",
-                                      motion_sum + ".input3D[1]")
+                        if arc == "lower" and mobile_inners[side]:
+                            upward = c.createNode("clamp",
+                                name=control_name + "UpwardFollow")
+                            c.setAttr(upward + ".maxR",
+                                      eye_radii[side] * 10.)
+                            c.connectAttr(amount + ".outputY",
+                                          upward + ".inputR")
+                            upward_blink = c.createNode("multiplyDivide",
+                                name=control_name + "UpwardBlink")
+                            c.connectAttr(upward + ".outputR",
+                                          upward_blink + ".input1X")
+                            c.connectAttr(eye_fraction + ".outputX",
+                                          upward_blink + ".input2X")
+                            upward_scale = c.createNode("multDoubleLinear",
+                                name=control_name + "UpwardScale")
+                            c.setAttr(upward_scale + ".input2",
+                                      _CLOSED_LOWER_UPWARD_FOLLOW)
+                            c.connectAttr(upward_blink + ".outputX",
+                                          upward_scale + ".input1")
+                            upward_sum = c.createNode("plusMinusAverage",
+                                name=control_name + "UpwardSum")
+                            c.connectAttr(blink_fade + ".outputY",
+                                          upward_sum + ".input1D[0]")
+                            c.connectAttr(upward_scale + ".output",
+                                          upward_sum + ".input1D[1]")
+                            c.connectAttr(blink_fade + ".outputX",
+                                          motion_sum + ".input3D[1].input3Dx")
+                            c.connectAttr(upward_sum + ".output1D",
+                                          motion_sum + ".input3D[1].input3Dy")
+                        else:
+                            c.connectAttr(blink_fade + ".output",
+                                          motion_sum + ".input3D[1]")
                         if layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
                             fraction = c.createNode("multiplyDivide",
                                 name=control_name + "BlinkFraction")

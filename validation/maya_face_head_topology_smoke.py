@@ -469,6 +469,11 @@ def main() -> None:
                     alignment["initial_closed_visible"]
             eye_depth_after_build[side.value] = cmds.getAttr(
                 "AdvPy_Eye" + suffix + ".translateZ")
+            mobile_aperture = (side.value in lid_rig["aperture_sides"]
+                and side.value not in lid_rig["stationary_aperture_sides"])
+            for outer in ("", "Outer"):
+                assert cmds.objExists("ctrlLowerEyeLid" + outer + suffix
+                    + "UpwardSum") == mobile_aperture
             depth = cmds.getAttr("ctrlUpperEyeLid" + suffix
                                  + ".blinkOffsetZ")
             if side.value in lid_rig["stationary_aperture_sides"]:

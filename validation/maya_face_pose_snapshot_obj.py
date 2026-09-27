@@ -16,6 +16,12 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=True)
     cmds.file(str(scene), open=True, force=True,
               executeScriptNodes=False)
+    aim_dx = float(sys.argv[3]) if len(sys.argv) > 3 else 0.
+    aim_dy = float(sys.argv[4]) if len(sys.argv) > 4 else 0.
+    cmds.currentTime(1, edit=True)
+    aim_initial = {suffix + axis: cmds.getAttr(
+        "AdvPy_EyeAim_" + suffix + ".translate" + axis)
+        for suffix in ("R", "L") for axis in "XY"}
     meshes = {}
     for label, name in (("head", "head"),
                         ("right-eye", cmds.skinCluster(
@@ -30,9 +36,11 @@ def main() -> None:
         meshes[label] = (mesh, faces)
     for frame, label in ((1, "open"), (10, "blink")):
         cmds.currentTime(frame, edit=True)
-        if frame == 10:
-            cmds.setAttr("ctrlEye_R.blink", 10)
-            cmds.setAttr("ctrlEye_L.blink", 10)
+        for key, value in aim_initial.items():
+            cmds.setAttr("AdvPy_EyeAim_" + key[0] + ".translate" + key[1],
+                         value + (aim_dx if key[1] == "X" else aim_dy))
+        cmds.setAttr("ctrlEye_R.blink", 10 if frame == 10 else 0)
+        cmds.setAttr("ctrlEye_L.blink", 10 if frame == 10 else 0)
         for mesh_label, (mesh, faces) in meshes.items():
             points = mesh.getPoints(om.MSpace.kWorld)
             path = output / (label + "-" + mesh_label + ".obj")
