@@ -61,16 +61,19 @@ ADV_OPERATIONS = {
     ("Body", "Deform DeltaMush"): (
         ("硬化权重", 1, "05 · Delta Mush"),
         ("应用 Delta Mush", 1, "05 · Delta Mush"),),
+    ("Body", "Custom Controllers"): (
+        ("创建 SoftMod Control", 0, "06 · Custom Controllers"),
+        ("Add influenced object", 0, "06 · Custom Controllers")),
     ("Body", "Control Curves"): (
-        ("缩放控制曲线", 0, "06 · Control Curves"),
-        ("按 Skin 自动缩放", 0, "06 · Control Curves"),
-        ("设置控制曲线颜色", 0, "06 · Control Curves"),
-        ("镜像控制曲线形状", 0, "06 · Control Curves"),
-        ("替换控制器图标", 0, "06 · Control Curves")),
+        ("缩放控制曲线", 0, "07 · Control Curves"),
+        ("按 Skin 自动缩放", 0, "07 · Control Curves"),
+        ("设置控制曲线颜色", 0, "07 · Control Curves"),
+        ("镜像控制曲线形状", 0, "07 · Control Curves"),
+        ("替换控制器图标", 0, "07 · Control Curves")),
     ("Body", "Control Orient"): (
-        ("设置控制器局部轴", 0, "07 · Control Orient"),
-        ("分离全部控制器", 0, "07 · Control Orient"),
-        ("重新附着全部控制器", 0, "07 · Control Orient")),
+        ("设置控制器局部轴", 0, "08 · Control Orient"),
+        ("分离全部控制器", 0, "08 · Control Orient"),
+        ("重新附着全部控制器", 0, "08 · Control Orient")),
     ("Face", "Pre"): (
         ("Mask", 3, "00 · 面部输入"),
         ("Face", 3, "00 · 面部输入"),
@@ -108,6 +111,9 @@ ADV_OPERATIONS = {
         ("刷新版本", 3, "05 · 面部资产版本"),
         ("导出所选版本", 3, "05 · 面部资产版本"),
         ("合并资产版本", 3, "06 · 合并同一目标的三个版本")),
+    ("Face", "Custom Controllers"): (
+        ("创建 SoftMod Control", 0, "06 · Custom Controllers"),
+        ("Add influenced object", 0, "06 · Custom Controllers")),
     ("Pose", "Driving Systems"): (
         ("启用四肢动画", 2, "03 · 动画通道"),
         ("启用拉伸匹配", 2, "03 · 动画通道"),

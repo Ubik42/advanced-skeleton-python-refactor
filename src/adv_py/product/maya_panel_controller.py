@@ -693,6 +693,27 @@ class MayaPanelController:
         host = self._host(namespace)
         return AttachCustomControlOrientations(host).apply()
 
+    def custom_softmod_create(self, namespace: str, deformer: str,
+                              base_name: str, parent_joint: str = ""):
+        from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
+        from adv_py.application.custom_controller import BuildCustomController
+        from adv_py.core.custom_controller import CustomControlKind
+
+        host = MayaCustomControllerHost(
+            namespace=None if namespace == ":" else namespace)
+        return BuildCustomController(host).apply(
+            deformer, CustomControlKind.SOFT_MOD, base_name,
+            parent_joint=parent_joint or None).state
+
+    def custom_softmod_add_mesh(self, namespace: str, control: str,
+                                mesh: str):
+        from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
+        from adv_py.application.custom_controller import ExtendSoftModController
+
+        host = MayaCustomControllerHost(
+            namespace=None if namespace == ":" else namespace)
+        return ExtendSoftModController(host).apply(control, mesh)
+
     def skin_bind(self, namespace: str, mesh: str,
                   influences: tuple[str, ...], skin: str, maximum: int, *,
                   maintain_maximum: bool = True) -> int:

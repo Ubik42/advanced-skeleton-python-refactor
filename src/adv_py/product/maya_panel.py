@@ -496,6 +496,30 @@ def create_panel(controller: MayaPanelController | None = None):
                                       self._replace_spine_character))
             stack.addWidget(group)
 
+            self.custom_softmod_source = QtWidgets.QLineEdit()
+            self.custom_softmod_source.setPlaceholderText("已绘制的 SoftMod 节点路径")
+            self.custom_control_name = QtWidgets.QLineEdit()
+            self.custom_control_name.setPlaceholderText("例如 Bicep_R")
+            self.custom_control_parent = QtWidgets.QLineEdit()
+            self.custom_control_parent.setPlaceholderText(
+                "可留空；默认选择最近的变形关节")
+            self.custom_control_existing = QtWidgets.QLineEdit()
+            self.custom_control_existing.setPlaceholderText(
+                "已有 SoftMod 控制器路径")
+            self.custom_control_mesh = QtWidgets.QLineEdit()
+            self.custom_control_mesh.setPlaceholderText("新增受影响网格路径")
+            group, form = self._group("06 · Custom Controllers", [
+                ("SoftMod 区域", self.custom_softmod_source),
+                ("控制器名称", self.custom_control_name),
+                ("指定父关节", self.custom_control_parent),
+                ("已有控制器", self.custom_control_existing),
+                ("新增网格", self.custom_control_mesh)])
+            form.addRow(self._button("创建 SoftMod Control",
+                                     self._create_custom_softmod))
+            form.addRow(self._button("Add influenced object",
+                                     self._add_custom_softmod_mesh))
+            stack.addWidget(group)
+
             self.control_curve_targets = QtWidgets.QPlainTextEdit()
             self.control_curve_targets.setPlaceholderText(
                 "每行一个控制器路径；留空时处理当前角色的全部已登记控制曲线")
@@ -516,7 +540,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_curve_custom_source = QtWidgets.QLineEdit()
             self.control_curve_custom_source.setPlaceholderText(
                 "自定义 NURBS 曲线 Transform 路径")
-            group, form = self._group("06 · Control Curves", [
+            group, form = self._group("07 · Control Curves", [
                 ("目标控制器", self.control_curve_targets),
                 ("缩放倍率", self.control_curve_factor),
                 ("颜色规则", self.control_curve_color_mode),
@@ -560,7 +584,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_orient_mirrored_behavior = QtWidgets.QCheckBox(
                 "左右同轴旋转产生对称动作")
             self.control_orient_mirrored_behavior.setChecked(True)
-            group, form = self._group("07 · Control Orient", [
+            group, form = self._group("08 · Control Orient", [
                 ("目标控制器", self.control_orient_targets),
                 ("Primary Axis", self.control_orient_primary),
                 ("Secondary Axis", self.control_orient_secondary),
@@ -1601,6 +1625,20 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.control_orient_custom_attach(
                 self._namespace())
             return f"已重新附着 {count} 个控制器并保留手工方向"
+
+        def _create_custom_softmod(self):
+            state = self.controller.custom_softmod_create(
+                self._namespace(), self.custom_softmod_source.text().strip(),
+                self.custom_control_name.text().strip(),
+                self.custom_control_parent.text().strip())
+            self.custom_control_existing.setText(state.control)
+            return f"已创建 SoftMod 控制器：{state.control}"
+
+        def _add_custom_softmod_mesh(self):
+            state = self.controller.custom_softmod_add_mesh(
+                self._namespace(), self.custom_control_existing.text().strip(),
+                self.custom_control_mesh.text().strip())
+            return f"SoftMod 当前影响 {len(state.influenced_meshes)} 件网格"
 
         def _bind_skin(self):
             influences = tuple(line.strip() for line in
