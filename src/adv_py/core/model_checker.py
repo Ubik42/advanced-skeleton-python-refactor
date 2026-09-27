@@ -56,11 +56,45 @@ class ModelCheckResult:
     transform_issues: tuple[ModelTransformIssue, ...]
     history_issues: tuple[ModelHistoryNode, ...]
     symmetry_issues: tuple[ModelSymmetryIssue, ...]
+    symmetry_checked: bool = True
 
     @property
     def clean(self) -> bool:
-        return not (self.transform_issues or self.history_issues
+        return self.symmetry_checked and not (self.transform_issues or self.history_issues
                     or self.symmetry_issues)
+
+
+@dataclass(frozen=True, slots=True)
+class ModelCheckGate:
+    category: str
+    subject: str
+    issues: tuple[ModelTransformIssue | ModelHistoryNode |
+                  ModelSymmetryIssue, ...]
+
+
+def plan_model_check_gates(
+    result: ModelCheckResult,
+    transform_order: tuple[str, ...],
+) -> tuple[ModelCheckGate, ...]:
+    """Mirror the MEL prompt order: each Transform, history, symmetry."""
+    if len(set(transform_order)) != len(transform_order):
+        raise ValueError("模型父级变换顺序包含重复对象")
+    unknown = {issue.path for issue in result.transform_issues} - set(transform_order)
+    if unknown:
+        raise ValueError("模型变换问题不属于所选模型父链")
+    gates = []
+    for path in transform_order:
+        issues = tuple(issue for issue in result.transform_issues
+                       if issue.path == path)
+        if issues:
+            gates.append(ModelCheckGate("transform", path, issues))
+    if result.history_issues:
+        gates.append(ModelCheckGate("history", result.mesh,
+                                    result.history_issues))
+    if result.symmetry_checked and result.symmetry_issues:
+        gates.append(ModelCheckGate("symmetry", result.mesh,
+                                    result.symmetry_issues))
+    return tuple(gates)
 
 
 def inspect_model_transforms(

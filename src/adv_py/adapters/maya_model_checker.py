@@ -34,6 +34,9 @@ class MayaModelCheckHost:
             raise ValueError("请选择恰有一个非中间多边形 Shape 的模型")
         return meshes[0]
 
+    def vertex_count(self, mesh: str) -> int:
+        return int(self.cmds.polyEvaluate(mesh, vertex=True))
+
     def transform_chain(self, mesh: str) -> tuple[ModelTransformState, ...]:
         cmds = self.cmds
         transform = (cmds.listRelatives(mesh, parent=True, fullPath=True) or [None])[0]
