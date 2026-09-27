@@ -774,6 +774,13 @@ def create_panel(controller: MayaPanelController | None = None):
             row.addWidget(self._button("编辑左侧", lambda: self._face_fit_switch_side("Left")))
             form.addRow(self.face_fit_side_status)
             form.addRow(row)
+            self.face_include = QtWidgets.QComboBox()
+            for label in ("Complete", "Skip Above Eyes", "Skip Below Eyes",
+                          "Skip Above+Below Eyes"):
+                self.face_include.addItem(label)
+            form.addRow("Include", self.face_include)
+            self.face_include.currentIndexChanged.connect(
+                lambda _: self._run("设置 Face Include", self._face_save_include))
             stack.addWidget(group)
             self.face_eye_right = QtWidgets.QLineEdit()
             self.face_eye_right.setPlaceholderText("|model:RightEye")
@@ -845,6 +852,8 @@ def create_panel(controller: MayaPanelController | None = None):
             group, form = self._group("03 · 控制与变形器", [
                 ("构建文档", specification), ("控制名称", self.face_control_name),
                 ("变形器名称", self.face_deformer_name)])
+            form.addRow(self._button("检查 FaceSetup 输入",
+                                     self._face_build_inspect_inputs))
             form.addRow(self._button("构建面部控制", self._face_build, primary=True))
             stack.addWidget(group)
 
@@ -1596,6 +1605,19 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(), layer)
             return f"已重选 EyeLid {layer}：{count} 条边"
 
+        def _face_save_include(self):
+            include = self.controller.face_build_set_include(
+                self._namespace(), self.face_include.currentText())
+            return "Face Include 已保存：" + include
+
+        def _face_build_inspect_inputs(self):
+            report = self.controller.face_build_inspect_inputs(self._namespace())
+            if report["ready"]:
+                return ("FaceSetup 输入齐全：" + report["include"]
+                        + f"，Fit 标记 {report['required_fit_count']} 项。")
+            return ("FaceSetup 尚缺 " + str(len(report["missing"]))
+                    + " 项：" + "、".join(report["missing"]))
+
         def _face_performance_apply(self):
             frames = self.controller.face_performance_apply(self._namespace(),
                 self.face_control_path.text().strip(),
@@ -1708,6 +1730,15 @@ def create_panel(controller: MayaPanelController | None = None):
                     side = "Right"
                 self.face_fit_side_status.setText(
                     "Fit 编辑侧：" + ("左侧" if side == "Left" else "右侧"))
+            if hasattr(self, "face_include"):
+                try:
+                    include = self.controller.face_build_get_include(
+                        self._namespace())
+                except ValueError:
+                    include = "Complete"
+                self.face_include.blockSignals(True)
+                self.face_include.setCurrentText(include)
+                self.face_include.blockSignals(False)
             if hasattr(self, "preparation_object_fields"):
                 for role, field in self.preparation_object_fields.items():
                     try:

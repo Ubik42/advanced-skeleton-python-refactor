@@ -18,7 +18,9 @@ from maya import cmds
 from maya.api import OpenMaya as om
 
 from adv_py.adapters.maya_face_pre import MayaFacePreHost
+from adv_py.adapters.maya_face_build import MayaFaceBuildHost
 from adv_py.application.face_pre import EyeLidLayer, FaceSide
+from adv_py.core.face_build_requirements import FaceInclude
 from adv_py.core.face_eyelid_fit import order_eye_lid_loop
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.product.maya_panel_controller import MayaPanelController
@@ -173,6 +175,15 @@ def main() -> None:
                 "area_faces": int(cmds.polyEvaluate(area, face=True)),
                 "preview_faces": int(cmds.polyEvaluate(preview, face=True)),
             })
+        incomplete = controller.face_build_inspect_inputs(":")
+        assert not incomplete["ready"] and "FaceFitJaw" in incomplete["missing"]
+        assert controller.face_build_set_include(":", FaceInclude.EYES_ONLY.value) \
+            == FaceInclude.EYES_ONLY.value
+        assert controller.face_build_inspect_inputs(":")["ready"]
+        cmds.undo()
+        assert MayaFaceBuildHost().read_include() is FaceInclude.ALL
+        cmds.redo()
+        assert controller.face_build_inspect_inputs(":")["ready"]
         cmds.file(rename=str(scene))
         cmds.file(save=True, type="mayaBinary", force=True)
         cmds.file(str(scene), open=True, force=True,
@@ -184,9 +195,12 @@ def main() -> None:
                            host.read_eye_lid_fit(layer, side))
             assert all(cmds.objExists(path) for path in
                        host.read_eye_lid_area(side))
+        readiness = controller.face_build_inspect_inputs(":")
+        assert readiness["ready"] and readiness["required_fit_count"] == 8
         result = {"head_vertex_count": int(cmds.polyEvaluate(head, vertex=True)),
                   "head_face_count": int(cmds.polyEvaluate(head, face=True)),
                   "mask_face_count": len(mask_faces), "sides": rows,
+                  "face_build_readiness": readiness,
                   "passed": True}
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(result, ensure_ascii=False, indent=2)

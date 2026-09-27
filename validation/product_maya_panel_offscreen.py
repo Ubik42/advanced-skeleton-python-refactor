@@ -21,9 +21,23 @@ class FakeController:
     def __init__(self):
         self.built = False
         self.calls = []
+        self.include = "Complete"
 
     def face_fit_current_side(self, namespace):
         return "Right"
+
+    def face_build_set_include(self, namespace, include):
+        self.calls.append(("face_build_set_include", namespace, include))
+        self.include = include
+        return include
+
+    def face_build_get_include(self, namespace):
+        return self.include
+
+    def face_build_inspect_inputs(self, namespace):
+        self.calls.append(("face_build_inspect_inputs", namespace))
+        return {"include": "Skip Above+Below Eyes", "ready": False,
+                "required_fit_count": 8, "missing": ("LeftEye",)}
 
     def model_check(self):
         self.calls.append("model_check")
@@ -356,6 +370,8 @@ def main(report: Path) -> int:
     buttons = {button.text(): button for button in
                panel.findChildren(QtWidgets.QPushButton)}
     panel.roles.setCurrentRow(1)
+    panel.face_include.setCurrentText("Skip Above+Below Eyes")
+    buttons["检查 FaceSetup 输入"].click()
     buttons["构建面部控制"].click()
     face_dispatched = ("face_build", "hero", "face-build.json",
                        "AdvPy_FaceControls", "AdvPy_FaceBlendShape") in controller.calls
@@ -479,6 +495,9 @@ def main(report: Path) -> int:
         "animation_narrow_no_horizontal_overflow":
             animation_narrow_horizontal_overflow == 0,
         "face_build_dispatches_application_action": face_dispatched,
+        "face_setup_preflight_dispatches": all(call in controller.calls for call in (
+            ("face_build_set_include", "hero", "Skip Above+Below Eyes"),
+            ("face_build_inspect_inputs", "hero"))),
         "fit_edit_actions_dispatch": all(call in controller.calls for call in (
             ("fit_edit_positions", "hero", (("Spine1", (0., 0., 8.)),),
              "FitSkeleton"),

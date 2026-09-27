@@ -833,6 +833,25 @@ class MayaPanelController:
         return MayaFacePreHost(namespace=None if namespace == ":" else namespace
             ).select_eye_lid_fit(EyeLidLayer(layer))
 
+    def face_build_set_include(self, namespace: str, include: str) -> str:
+        from adv_py.adapters.maya_face_build import MayaFaceBuildHost
+        from adv_py.core.face_build_requirements import FaceInclude
+
+        return MayaFaceBuildHost(namespace=None if namespace == ":" else namespace
+            ).set_include(FaceInclude(include)).value
+
+    def face_build_get_include(self, namespace: str) -> str:
+        from adv_py.adapters.maya_face_build import MayaFaceBuildHost
+
+        return MayaFaceBuildHost(namespace=None if namespace == ":" else namespace
+            ).read_include().value
+
+    def face_build_inspect_inputs(self, namespace: str) -> dict:
+        from adv_py.adapters.maya_face_build import MayaFaceBuildHost
+
+        return MayaFaceBuildHost(namespace=None if namespace == ":" else namespace
+            ).inspect_build_inputs()
+
     def face_eye_build(self, namespace: str, head_joint: str,
                        right_eye: str, left_eye: str):
         from adv_py.adapters.maya_face_eye import MayaFaceEyeHost
