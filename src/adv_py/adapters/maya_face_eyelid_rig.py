@@ -617,11 +617,8 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                             name=control_name + "FleshyBlink")
                         c.connectAttr(amount + ".output",
                                       blink_fade + ".input1")
-                        if mobile_inners[side]:
-                            c.connectAttr(reverse + ".outputX",
-                                          blink_fade + ".input2X")
-                        else:
-                            c.setAttr(blink_fade + ".input2X", 1.)
+                        c.connectAttr(reverse + ".outputX",
+                                      blink_fade + ".input2X")
                         c.connectAttr(reverse + ".outputX",
                                       blink_fade + ".input2Y")
                         motion_sum = c.createNode("plusMinusAverage",
