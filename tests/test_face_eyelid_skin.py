@@ -1,6 +1,7 @@
 import unittest
 
-from adv_py.core.face_eyelid_skin import eyelid_skin_factors
+from adv_py.core.face_eyelid_skin import (
+    eyelid_skin_factors, outer_eyelid_skin_factors, split_arc_weight)
 
 
 class EyeLidSkinFactorsTests(unittest.TestCase):
@@ -24,3 +25,23 @@ class EyeLidSkinFactorsTests(unittest.TestCase):
         self.assertEqual(factors[17], (0., .85))
         self.assertEqual(factors[12], (0., 0.))
         self.assertTrue(all(factors[index] == (0., 0.) for index in boundary))
+
+    def test_outer_falloff_and_arc_segment_interpolation(self):
+        adjacency = {index: set() for index in range(25)}
+        positions = {index: (float(index % 5), float(index // 5), 0.)
+                     for index in range(25)}
+        for index in range(25):
+            for neighbor in (index - 1, index + 1,
+                             index - 5, index + 5):
+                if (0 <= neighbor < 25 and
+                        abs(neighbor // 5 - index // 5)
+                        + abs(neighbor % 5 - index % 5) == 1):
+                    adjacency[index].add(neighbor)
+        outer = outer_eyelid_skin_factors(adjacency, positions,
+            {6, 7, 8, 11, 12, 13, 16, 17, 18},
+            (6, 7, 8), (16, 17, 18))
+        self.assertAlmostEqual(sum(outer[7]), .35)
+        self.assertAlmostEqual(sum(outer[2]), .35 * 2 / 3)
+        self.assertNotIn(12, outer)
+        self.assertEqual(split_arc_weight(1.5, positions,
+                         (6, 7, 8), .6), {6: .3, 7: .3})

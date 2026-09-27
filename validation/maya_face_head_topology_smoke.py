@@ -203,8 +203,8 @@ def main() -> None:
         assert not cmds.objExists("FaceMotionSystem")
         assert MayaDenseSkinHost().capture_dense_skin(source_skin) == original_weights
         lid_rig = controller.face_build_eye_lids(":")
-        assert len(lid_rig["controls"]) == 4
-        assert len(lid_rig["joints"]) == 4
+        assert len(lid_rig["controls"]) == 8
+        assert len(lid_rig["joints"]) >= 16
         skinned = MayaDenseSkinHost().capture_dense_skin(source_skin)
         old_values = memoryview(original_weights.values).cast("d")
         new_values = memoryview(skinned.values).cast("d")
@@ -213,7 +213,8 @@ def main() -> None:
         old_indices = [skinned.influence_names.index(name)
                        for name in original_weights.influence_names]
         lid_indices = [skinned.influence_names.index(name) for name in
-                       lid_rig["joints"].values()]
+                       (path.rsplit("|", 1)[-1] for path in
+                        lid_rig["joints"].values())]
         changed_vertices = 0
         for vertex in range(original_weights.vertex_count):
             lid_mass = sum(new_values[vertex * new_width + index]
@@ -236,10 +237,19 @@ def main() -> None:
             return [tuple(point[axis] for axis in range(3))
                     for point in mesh_fn.getPoints(om.MSpace.kWorld)]
         neutral = mesh_points()
+        curve_joint_error = max(
+            max(abs(cmds.xform(path, query=True, worldSpace=True,
+                               translation=True)[axis] - neutral[vertex][axis])
+                for axis in range(3))
+            for (_side, _layer, _arc, vertex), path in
+            lid_rig["joints"].items())
+        assert curve_joint_error < 1e-5
         displacement = {}
-        for side, arc, amount in ((FaceSide.RIGHT, "upper", -.05),
-                                  (FaceSide.LEFT, "lower", .05)):
-            control = lid_rig["controls"][(side, arc)]
+        for side, layer, arc, amount in (
+                (FaceSide.RIGHT, EyeLidLayer.MAIN, "upper", -.05),
+                (FaceSide.LEFT, EyeLidLayer.MAIN, "lower", .05),
+                (FaceSide.RIGHT, EyeLidLayer.OUTER, "upper", .05)):
+            control = lid_rig["controls"][(side, layer, arc)]
             cmds.setAttr(control + ".translateY", amount)
             moved = mesh_points()
             same_side = [index for index, point in enumerate(neutral)
@@ -251,12 +261,13 @@ def main() -> None:
             other_delta = max(abs(moved[index][1] - neutral[index][1])
                               for index in opposite)
             assert own_delta > .005 and other_delta < 1e-5
-            displacement[side.value + arc] = round(own_delta, 6)
+            displacement[side.value + layer.value + arc] = round(own_delta, 6)
             cmds.setAttr(control + ".translateY", 0)
             reset = mesh_points()
             assert max(abs(reset[index][1]-neutral[index][1])
                        for index in range(len(reset))) < 1e-5
-        animated = lid_rig["controls"][(FaceSide.RIGHT, "upper")]
+        animated = lid_rig["controls"][(FaceSide.RIGHT,
+                                        EyeLidLayer.MAIN, "upper")]
         cmds.setKeyframe(animated, attribute="translateY", time=1, value=0)
         cmds.setKeyframe(animated, attribute="translateY", time=5, value=-.05)
         cmds.file(rename=str(scene))
@@ -274,7 +285,7 @@ def main() -> None:
         assert readiness["ready"] and readiness["required_fit_count"] == 8
         assert cmds.objExists("FaceMotionSystem")
         assert len(cmds.skinCluster(lid_rig["skin"], query=True,
-                                    influence=True) or []) == 5
+                                    influence=True) or []) == 1 + len(lid_rig["joints"])
         cmds.currentTime(1, edit=True)
         frame1 = mesh_points()
         cmds.currentTime(5, edit=True)
@@ -288,6 +299,8 @@ def main() -> None:
                   "mask_face_count": len(mask_faces), "sides": rows,
                   "face_build_readiness": readiness,
                   "eyelid_deformation_cm": displacement,
+                  "curve_joint_max_error_cm": round(curve_joint_error, 8),
+                  "eyelid_joint_count": len(lid_rig["joints"]),
                   "weighted_vertices": changed_vertices,
                   "reopened_animation_delta_cm": round(key_delta, 6),
                   "passed": True}

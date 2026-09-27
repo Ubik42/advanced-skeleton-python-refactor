@@ -1622,7 +1622,8 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _face_build_eye_lids(self):
             result = self.controller.face_build_eye_lids(self._namespace())
-            return ("双侧眼睑控制已建立：4 个控制器、4 个变形关节；"
+            return (f"双侧眼睑控制已建立：{len(result['controls'])} 个控制器、"
+                    f"{len(result['joints'])} 个分段关节；"
                     + f"右侧区域 {result['area_vertices']['Right']} 顶点，"
                     + f"左侧区域 {result['area_vertices']['Left']} 顶点。")
 

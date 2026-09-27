@@ -1,4 +1,4 @@
-"""Build an initial joint-driven eyelid layer from bilateral Face Fit bands."""
+"""Build segmented Main/Outer eyelid joints from bilateral Face Fit bands."""
 from __future__ import annotations
 
 from array import array
@@ -9,7 +9,8 @@ from adv_py.application.face_pre import EyeLidLayer, FacePreRole, FaceSide
 from adv_py.core.dense_skin_transfer import DenseSkinWeights
 from adv_py.core.face_build_requirements import FaceInclude
 from adv_py.core.face_eyelid_fit import order_eye_lid_loop
-from adv_py.core.face_eyelid_skin import eyelid_skin_factors
+from adv_py.core.face_eyelid_skin import (
+    eyelid_skin_factors, outer_eyelid_skin_factors, split_arc_weight)
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .maya_dense_skin import MayaDenseSkinHost
@@ -73,13 +74,15 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
             adjacency[second].add(first)
         rings = {layer: self._ring(pre, mesh, fn, side, layer)
                  for layer in EyeLidLayer}
-        main_edges, corners = rings[EyeLidLayer.MAIN]
-        main_points = {vertex: positions[vertex]
-                       for _, first, second in main_edges
-                       for vertex in (first, second)}
         eye_y = float(c.xform(pre.read_eye_ball_fit(side), query=True,
                               worldSpace=True, translation=True)[1])
-        ordered = order_eye_lid_loop(main_edges, main_points,
+        ordered = {}
+        for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
+            edges, corners = rings[layer]
+            points = {vertex: positions[vertex]
+                      for _, first, second in edges
+                      for vertex in (first, second)}
+            ordered[layer] = order_eye_lid_loop(edges, points,
                     eye_center_y=eye_y, corner_vertices=corners,
                     side=side.value)
         boundary = {vertex for layer in (EyeLidLayer.OUTER,
@@ -97,19 +100,23 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
             face_ids.append(int(match.group(2)))
         area_vertices = {vertex for face in face_ids
                          for vertex in fn.getPolygonVertices(face)}
-        factors = eyelid_skin_factors(adjacency, positions, area_vertices,
-                    boundary, ordered.upper_vertices,
-                    ordered.lower_vertices)
-        centers = {}
-        for arc, vertices in (("upper", ordered.upper_vertices),
-                              ("lower", ordered.lower_vertices)):
-            interior = vertices[1:-1]
-            centers[arc] = tuple(sum(positions[index][axis]
-                               for index in interior) / len(interior)
-                               for axis in range(3))
-        span = max(positions[index][0] for index in ordered.upper_vertices) \
-             - min(positions[index][0] for index in ordered.upper_vertices)
-        return factors, centers, span
+        main = ordered[EyeLidLayer.MAIN]
+        outer = ordered[EyeLidLayer.OUTER]
+        factors = {
+            EyeLidLayer.MAIN: eyelid_skin_factors(adjacency, positions,
+                area_vertices, boundary, main.upper_vertices,
+                main.lower_vertices),
+            EyeLidLayer.OUTER: outer_eyelid_skin_factors(adjacency,
+                positions, area_vertices, outer.upper_vertices,
+                outer.lower_vertices),
+        }
+        arcs = {(layer, "upper"): ordered[layer].upper_vertices
+                for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER)}
+        arcs.update({(layer, "lower"): ordered[layer].lower_vertices
+                     for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER)})
+        span = max(positions[index][0] for index in main.upper_vertices) \
+             - min(positions[index][0] for index in main.upper_vertices)
+        return factors, arcs, positions, span
 
     def build(self) -> dict:
         c = self._cmds
@@ -136,30 +143,41 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
         if len(skins) != 1:
             raise FitSkeletonValidationError("Face 网格需要唯一 Skin")
         skin = skins[0]
-        names = ("FaceJoint_M", "EyeLidJoints_M", "FaceMotionSystem",
-                 "ctrlUpperEyeLid_R", "ctrlLowerEyeLid_R",
-                 "ctrlUpperEyeLid_L", "ctrlLowerEyeLid_L",
-                 "ctrlUpperEyeLid_R_Offset", "ctrlLowerEyeLid_R_Offset",
-                 "ctrlUpperEyeLid_L_Offset", "ctrlLowerEyeLid_L_Offset",
-                 "upperLidMain_R", "lowerLidMain_R",
-                 "upperLidMain_L", "lowerLidMain_L")
-        if any(c.ls(name) for name in names):
-            raise FitSkeletonValidationError("眼睑绑定节点名称已被占用")
         if c.referenceQuery(mesh, isNodeReferenced=True):
             raise FitSkeletonValidationError("不能在引用中的 Face 网格写入眼睑权重")
         factors = {}
-        centers = {}
+        arcs = {}
+        positions = {}
         spans = {}
         for side in FaceSide:
-            factors[side], centers[side], spans[side] = self._surface_factors(
+            factors[side], arcs[side], positions[side], spans[side] = self._surface_factors(
                 pre, mesh, side)
-        if set(factors[FaceSide.RIGHT]) & set(factors[FaceSide.LEFT]):
+        def weighted(side):
+            return {vertex for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER)
+                    for vertex, pair in factors[side][layer].items()
+                    if sum(pair) > 1e-9}
+        if weighted(FaceSide.RIGHT) & weighted(FaceSide.LEFT):
             raise FitSkeletonValidationError("左右眼睑区域发生重叠")
+        names = ["FaceJoint_M", "EyeLidJoints_M", "FaceMotionSystem"]
+        for side in FaceSide:
+            suffix = "_R" if side is FaceSide.RIGHT else "_L"
+            for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
+                for arc in ("upper", "lower"):
+                    label = "Upper" if arc == "upper" else "Lower"
+                    control = "ctrl" + label + "EyeLid" + (
+                        "Outer" if layer is EyeLidLayer.OUTER else "") + suffix
+                    names.extend((control, control + "_Offset"))
+                    for index in range(1, len(arcs[side][(layer, arc)]) - 1):
+                        name = arc + "Lid" + layer.value + str(index) + suffix
+                        names.extend((name, name + "POCI", name + "Offset",
+                                      name + "ControlScale"))
+        if any(c.ls(name) for name in names):
+            raise FitSkeletonValidationError("眼睑绑定节点名称已被占用")
         original = self.capture_dense_skin(skin)
         selected = c.ls(selection=True, long=True) or []
         joint_names = {}
         control_names = {}
-        with self.transaction("建立双侧眼睑关节与 Skin"):
+        with self.transaction("建立双侧多关节眼睑与 Skin"):
             self._transaction_changed = True
             c.select(clear=True)
             face_joint = c.joint(name="FaceJoint_M")
@@ -173,50 +191,104 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
                                   parent=head)
             for side in FaceSide:
                 suffix = "_R" if side is FaceSide.RIGHT else "_L"
-                for arc in ("upper", "lower"):
-                    label = "Upper" if arc == "upper" else "Lower"
-                    c.select(clear=True)
-                    joint = c.joint(name=arc + "LidMain" + suffix,
-                                    position=centers[side][arc])
-                    joint = c.parent(joint, root, absolute=True)[0]
-                    c.setAttr(joint + ".radius", max(spans[side] / 30., .001))
-                    c.addAttr(joint, longName="advPyAuxiliaryInfluenceKind",
-                              dataType="string")
-                    c.setAttr(joint + ".advPyAuxiliaryInfluenceKind",
-                              "face-eyelid-v1", type="string", lock=True)
-                    control = c.circle(name="ctrl" + label + "EyeLid" + suffix,
-                        normal=(0, 0, 1), radius=max(spans[side] / 8., .005),
-                        constructionHistory=False)[0]
-                    offset = c.createNode("transform",
-                        name="ctrl" + label + "EyeLid" + suffix + "_Offset",
-                        parent=motion)
-                    c.xform(offset, worldSpace=True,
-                            translation=centers[side][arc])
-                    control = c.parent(control, offset, relative=True)[0]
-                    c.pointConstraint(control, joint, maintainOffset=True)
-                    c.skinCluster(skin, edit=True, addInfluence=joint,
-                                  weight=0.0)
-                    joint_names[(side, arc)] = joint.rsplit("|", 1)[-1]
-                    control_names[(side, arc)] = control.rsplit("|", 1)[-1]
+                for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
+                    for arc in ("upper", "lower"):
+                        vertices = arcs[side][(layer, arc)]
+                        interior = vertices[1:-1]
+                        label = "Upper" if arc == "upper" else "Lower"
+                        control_name = "ctrl" + label + "EyeLid" + (
+                            "Outer" if layer is EyeLidLayer.OUTER else "") + suffix
+                        center = tuple(sum(positions[side][index][axis]
+                                         for index in interior) / len(interior)
+                                       for axis in range(3))
+                        control = c.circle(name=control_name,
+                            normal=(0, 0, 1),
+                            radius=max(spans[side] / 8., .005),
+                            constructionHistory=False)[0]
+                        offset = c.createNode("transform",
+                            name=control_name + "_Offset", parent=motion)
+                        c.xform(offset, worldSpace=True, translation=center)
+                        control = c.parent(control, offset, relative=True)[0]
+                        control_names[(side, layer, arc)] = (
+                            c.ls(control, long=True, type="transform") or [control])[0]
+                        curve = pre.read_eye_lid_fit(layer, side)[
+                            0 if arc == "upper" else 1]
+                        curve_shape = (c.listRelatives(curve, shapes=True,
+                                      fullPath=True, type="nurbsCurve") or [None])[0]
+                        for index, vertex in enumerate(vertices[1:-1], 1):
+                            name = arc + "Lid" + layer.value + str(index) + suffix
+                            point = c.createNode("pointOnCurveInfo",
+                                                 name=name + "POCI")
+                            c.connectAttr(curve_shape + ".worldSpace[0]",
+                                          point + ".inputCurve")
+                            c.setAttr(point + ".parameter", index)
+                            joint_offset = c.createNode("transform",
+                                name=name + "Offset", parent=root)
+                            c.setAttr(joint_offset + ".inheritsTransform", False)
+                            c.connectAttr(point + ".position",
+                                          joint_offset + ".translate")
+                            c.select(clear=True)
+                            joint = c.joint(name=name)
+                            joint = c.parent(joint, joint_offset,
+                                             relative=True)[0]
+                            c.setAttr(joint + ".radius",
+                                      max(spans[side] / 40., .001))
+                            c.addAttr(joint,
+                                longName="advPyAuxiliaryInfluenceKind",
+                                dataType="string")
+                            c.setAttr(joint + ".advPyAuxiliaryInfluenceKind",
+                                "face-eyelid-segment-v2", type="string",
+                                lock=True)
+                            tapered = (index / (len(vertices) - 1))
+                            tapered = min(1., 2. * min(tapered, 1. - tapered))
+                            scale = c.createNode("multiplyDivide",
+                                                 name=name + "ControlScale")
+                            c.setAttr(scale + ".input2", tapered, tapered,
+                                      tapered, type="double3")
+                            c.connectAttr(control + ".translate",
+                                          scale + ".input1")
+                            c.connectAttr(scale + ".output",
+                                          joint + ".translate")
+                            c.skinCluster(skin, edit=True, addInfluence=joint,
+                                          weight=0.0)
+                            joint_names[(side, layer, arc, vertex)] = (
+                                c.ls(joint, long=True, type="joint") or [joint])[0]
             target_skin = self.capture_dense_skin(skin)
             old_width = len(original.influence_names)
             new_names = target_skin.influence_names
             new_width = len(new_names)
             old_indices = [new_names.index(name) for name in
                            original.influence_names]
-            lid_indices = {key: new_names.index(name) for key, name in
+            lid_indices = {key: new_names.index(name.rsplit("|", 1)[-1])
+                           for key, name in
                            joint_names.items()}
             before = memoryview(original.values).cast("d")
             values = array("d", [0.] * (original.vertex_count * new_width))
             for vertex in range(original.vertex_count):
-                lid_weights = {key: factors[key[0]].get(vertex, (0., 0.))[
-                    0 if key[1] == "upper" else 1] for key in joint_names}
+                lid_weights = {}
+                for side in FaceSide:
+                    for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
+                        pair = factors[side][layer].get(vertex, (0., 0.))
+                        for arc, mass in (("upper", pair[0]),
+                                          ("lower", pair[1])):
+                            if mass <= 0:
+                                continue
+                            segments = split_arc_weight(
+                                positions[side][vertex][0], positions[side],
+                                arcs[side][(layer, arc)][1:-1], mass)
+                            for segment_vertex, weight in segments.items():
+                                key = (side, layer, arc, segment_vertex)
+                                lid_weights[key] = (
+                                    lid_weights.get(key, 0.) + weight)
                 remaining = 1. - sum(lid_weights.values())
+                if remaining < -1e-6:
+                    raise FitSkeletonValidationError("眼睑区域权重之和超过 1")
                 for source_index, target_index in enumerate(old_indices):
                     values[vertex * new_width + target_index] = (
                         before[vertex * old_width + source_index] * remaining)
                 for key, target_index in lid_indices.items():
-                    values[vertex * new_width + target_index] = lid_weights[key]
+                    values[vertex * new_width + target_index] = (
+                        lid_weights.get(key, 0.))
             self.apply_dense_skin(DenseSkinWeights(skin,
                 original.vertex_count, new_names, values.tobytes()))
             c.addAttr(motion, longName="advPyFaceMesh", dataType="string")
@@ -224,5 +296,9 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
             c.select(selected, replace=True) if selected else c.select(clear=True)
         return {"skin": skin, "mesh": mesh,
                 "controls": control_names, "joints": joint_names,
-                "area_vertices": {side.value: len(factors[side])
-                                  for side in FaceSide}}
+                "area_vertices": {side.value: len(weighted(side))
+                                  for side in FaceSide},
+                "main_vertices": {side.value: len(factors[side][
+                    EyeLidLayer.MAIN]) for side in FaceSide},
+                "outer_vertices": {side.value: len(factors[side][
+                    EyeLidLayer.OUTER]) for side in FaceSide}}

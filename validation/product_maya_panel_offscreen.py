@@ -41,7 +41,8 @@ class FakeController:
 
     def face_build_eye_lids(self, namespace):
         self.calls.append(("face_build_eye_lids", namespace))
-        return {"area_vertices": {"Right": 80, "Left": 80}}
+        return {"area_vertices": {"Right": 80, "Left": 80},
+                "controls": tuple(range(8)), "joints": tuple(range(82))}
 
     def model_check(self):
         self.calls.append("model_check")

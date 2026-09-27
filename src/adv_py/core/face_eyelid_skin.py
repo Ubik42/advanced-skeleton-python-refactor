@@ -58,3 +58,64 @@ def eyelid_skin_factors(adjacency: dict[int, set[int]],
         result[vertex] = (total * upper_share,
                           total * (1. - upper_share))
     return result
+
+
+def outer_eyelid_skin_factors(adjacency: dict[int, set[int]],
+                             positions: dict[int, tuple[float, float, float]],
+                             inner_band_vertices: set[int],
+                             upper_vertices: tuple[int, ...],
+                             lower_vertices: tuple[int, ...],
+                             maximum: float = .35,
+                             rows: int = 2) -> dict[int, tuple[float, float]]:
+    """Add a short falloff outside the Outer ring without crossing the inner band."""
+    boundary = set(upper_vertices) | set(lower_vertices)
+    if (not boundary or not boundary <= positions.keys()
+            or not 0 < maximum <= 1 or rows < 1):
+        raise ValueError("眼睑 Outer 环或衰减设置无效")
+    allowed = set(positions) - (inner_band_vertices - boundary)
+    distance = _distances(adjacency, boundary, allowed)
+    left_x = min(positions[index][0] for index in boundary)
+    right_x = max(positions[index][0] for index in boundary)
+    if right_x - left_x <= 1e-6:
+        raise ValueError("眼睑 Outer 环横向宽度无效")
+
+    def nearest(vertex: int, arc: tuple[int, ...]) -> float:
+        point = positions[vertex]
+        return min(sum((point[axis] - positions[index][axis]) ** 2
+                       for axis in range(3)) ** .5 for index in arc)
+
+    result = {}
+    for vertex, depth in distance.items():
+        if depth > rows:
+            continue
+        x = (positions[vertex][0] - left_x) / (right_x - left_x)
+        taper = sin(pi * min(1., max(0., x)))
+        upper_distance = nearest(vertex, upper_vertices)
+        lower_distance = nearest(vertex, lower_vertices)
+        denominator = upper_distance + lower_distance
+        upper_share = lower_distance / denominator if denominator else .5
+        total = maximum * (rows + 1 - depth) / (rows + 1) * taper
+        result[vertex] = (total * upper_share,
+                          total * (1. - upper_share))
+    return result
+
+
+def split_arc_weight(x: float,
+                     positions: dict[int, tuple[float, float, float]],
+                     arc_vertices: tuple[int, ...],
+                     mass: float) -> dict[int, float]:
+    """Interpolate one vertex's weight between adjacent joints along an arc."""
+    if mass < 0 or not arc_vertices or any(index not in positions
+                                           for index in arc_vertices):
+        raise ValueError("眼睑分段权重输入无效")
+    if mass == 0:
+        return {}
+    ordered = sorted(arc_vertices, key=lambda index: positions[index][0])
+    if x <= positions[ordered[0]][0]:
+        return {ordered[0]: mass}
+    for first, second in zip(ordered, ordered[1:]):
+        a, b = positions[first][0], positions[second][0]
+        if x <= b:
+            ratio = min(1., max(0., (x - a) / (b - a))) if b > a else 0.
+            return {first: mass * (1. - ratio), second: mass * ratio}
+    return {ordered[-1]: mass}
