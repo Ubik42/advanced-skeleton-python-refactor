@@ -7,7 +7,8 @@ from math import isfinite
 from typing import Mapping, Protocol
 
 from adv_py.core.fbx_rig_import import (
-    FBXRigImportPlan, FBXRigSourceJoint, plan_fbx_rig_import,
+    FBXRigControlTransferPlan, FBXRigImportPlan, FBXRigSourceJoint,
+    plan_fbx_control_transfer, plan_fbx_rig_import,
 )
 
 
@@ -45,6 +46,15 @@ class FBXRigBuildAudit:
     bound_meshes_preserved: bool
     temporary_bake_links_removed: bool = False
     source_joint_animation_removed: bool = False
+    connected_source_paths: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class FBXRigGeneratedTargets:
+    """Unqualified names of controls and deformation joints actually built."""
+
+    control_names: tuple[str, ...]
+    deform_joint_names: tuple[str, ...]
 
 
 class FBXRigHost(Protocol):
@@ -67,22 +77,34 @@ class FBXRigHost(Protocol):
     def create_fbx_fit_guides(self, plan: FBXRigImportPlan) -> None: ...
     def build_fbx_advanced_skeleton(self, plan: FBXRigImportPlan) -> None: ...
     def enlarge_small_fbx_fk_controls(self, plan: FBXRigImportPlan) -> None: ...
+    def capture_fbx_generated_targets(
+        self, plan: FBXRigImportPlan,
+    ) -> FBXRigGeneratedTargets: ...
     def connect_fbx_source_animation_to_controls(
-        self, plan: FBXRigImportPlan, source_paths: Mapping[str, str],
+        self, transfer: FBXRigControlTransferPlan,
+        source_paths: Mapping[str, str],
     ) -> None: ...
     def bake_fbx_control_animation(
-        self, plan: FBXRigImportPlan, source_paths: Mapping[str, str],
+        self, plan: FBXRigImportPlan,
+        transfer: FBXRigControlTransferPlan,
+        source_paths: Mapping[str, str],
     ) -> None: ...
     def remove_fbx_source_animation_and_bake_links(
-        self, plan: FBXRigImportPlan, source_paths: Mapping[str, str],
+        self, transfer: FBXRigControlTransferPlan,
+        source_paths: Mapping[str, str],
     ) -> None: ...
     def connect_fbx_controls_to_source(
-        self, plan: FBXRigImportPlan, source_paths: Mapping[str, str],
+        self, transfer: FBXRigControlTransferPlan,
+        source_paths: Mapping[str, str],
     ) -> None: ...
     def connect_fbx_game_root_motion(
         self, plan: FBXRigImportPlan, source_paths: Mapping[str, str],
     ) -> None: ...
-    def capture_fbx_rig_audit(self, plan: FBXRigImportPlan) -> FBXRigBuildAudit: ...
+    def capture_fbx_rig_audit(
+        self, plan: FBXRigImportPlan,
+        transfer: FBXRigControlTransferPlan,
+        source_paths: Mapping[str, str],
+    ) -> FBXRigBuildAudit: ...
     def restore_fbx_scene_time(self, source: FBXRigSourceCapture) -> None: ...
 
 
@@ -128,24 +150,35 @@ class BuildFBXRig:
                 self._host.create_fbx_fit_guides(plan)
                 self._host.build_fbx_advanced_skeleton(plan)
                 self._host.enlarge_small_fbx_fk_controls(plan)
+                targets = self._host.capture_fbx_generated_targets(plan)
+                transfer = plan_fbx_control_transfer(
+                    plan, targets.control_names, targets.deform_joint_names)
                 if plan.last_bake_frame is not None:
                     self._host.connect_fbx_source_animation_to_controls(
-                        plan, source_paths)
-                    self._host.bake_fbx_control_animation(plan, source_paths)
+                        transfer, source_paths)
+                    self._host.bake_fbx_control_animation(
+                        plan, transfer, source_paths)
                     self._host.remove_fbx_source_animation_and_bake_links(
-                        plan, source_paths)
+                        transfer, source_paths)
                 if plan.game_root_joint is not None:
                     self._host.connect_fbx_game_root_motion(plan, source_paths)
-                self._host.connect_fbx_controls_to_source(plan, source_paths)
-                audit = self._host.capture_fbx_rig_audit(plan)
-                candidates = {link.control_name
-                              for link in plan.candidate_control_links}
+                self._host.connect_fbx_controls_to_source(
+                    transfer, source_paths)
+                audit = self._host.capture_fbx_rig_audit(
+                    plan, transfer, source_paths)
+                expected_controls = set(transfer.bake_control_names)
+                expected_sources = {
+                    source_paths[link.source_joint] for link in transfer.links}
                 if (audit.fit_guide_count != len(plan.fit_guides)
                         or audit.paired_side_count != len(plan.mirror_pairs)
                         or len(set(audit.connected_control_names)) !=
                             len(audit.connected_control_names)
-                        or not set(audit.connected_control_names) <= candidates
-                        or "FKRoot_M" not in audit.connected_control_names
+                        or set(audit.connected_control_names) !=
+                            expected_controls
+                        or len(set(audit.connected_source_paths)) !=
+                            len(audit.connected_source_paths)
+                        or set(audit.connected_source_paths) !=
+                            expected_sources
                         or not audit.original_skeleton_constrained
                         or not audit.bound_meshes_preserved
                         or audit.control_animation_baked !=

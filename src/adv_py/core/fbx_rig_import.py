@@ -40,6 +40,22 @@ class FBXRigControlLink:
 
 
 @dataclass(frozen=True, slots=True)
+class FBXRigResolvedControlLink:
+    control_name: str
+    source_joint: str
+    deform_driver_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class FBXRigControlTransferPlan:
+    links: tuple[FBXRigResolvedControlLink, ...]
+
+    @property
+    def bake_control_names(self) -> tuple[str, ...]:
+        return tuple(link.control_name for link in self.links)
+
+
+@dataclass(frozen=True, slots=True)
 class FBXRigImportPlan:
     top_joint: str
     root_joint: str
@@ -54,6 +70,34 @@ class FBXRigImportPlan:
     last_bake_frame: int | None
     names_requiring_underscore_removal: tuple[str, ...]
     collapsed_fit_source_joints: tuple[str, ...] = ()
+
+
+def plan_fbx_control_transfer(
+    plan: FBXRigImportPlan,
+    control_names: tuple[str, ...],
+    deform_joint_names: tuple[str, ...],
+) -> FBXRigControlTransferPlan:
+    """Resolve the controls actually built before making either constraint set."""
+    if (len(set(control_names)) != len(control_names)
+            or len(set(deform_joint_names)) != len(deform_joint_names)):
+        raise ValueError("FBX rig 构建结果包含重复控制器或变形关节")
+    controls = set(control_names)
+    deform = set(deform_joint_names)
+    if "FKRoot_M" not in controls:
+        raise ValueError("FBX rig 缺少 Root FK 控制器")
+    links = []
+    for candidate in plan.candidate_control_links:
+        if candidate.control_name not in controls:
+            continue
+        driver = ("FKRoot_M" if candidate.control_name == "FKRoot_M"
+                  else candidate.control_name.removeprefix("FK"))
+        if candidate.control_name != "FKRoot_M" and driver not in deform:
+            raise ValueError("FBX rig 控制器缺少同名变形关节：" + driver)
+        links.append(FBXRigResolvedControlLink(
+            candidate.control_name, candidate.source_joint, driver))
+    if len({link.source_joint for link in links}) != len(links):
+        raise ValueError("FBX rig 多个控制器指向同一来源关节")
+    return FBXRigControlTransferPlan(tuple(links))
 
 
 def plan_fbx_rig_import(
