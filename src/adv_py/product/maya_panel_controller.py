@@ -852,6 +852,13 @@ class MayaPanelController:
         return MayaFaceBuildHost(namespace=None if namespace == ":" else namespace
             ).inspect_build_inputs()
 
+    def face_build_eye_lids(self, namespace: str) -> dict:
+        from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
+        from adv_py.application.face_eyelid_rig import BuildFaceEyeLids
+
+        return BuildFaceEyeLids(MayaFaceEyeLidRigHost(
+            namespace=None if namespace == ":" else namespace)).execute()
+
     def face_eye_build(self, namespace: str, head_joint: str,
                        right_eye: str, left_eye: str):
         from adv_py.adapters.maya_face_eye import MayaFaceEyeHost

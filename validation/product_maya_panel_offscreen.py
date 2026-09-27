@@ -39,6 +39,10 @@ class FakeController:
         return {"include": "Skip Above+Below Eyes", "ready": False,
                 "required_fit_count": 8, "missing": ("LeftEye",)}
 
+    def face_build_eye_lids(self, namespace):
+        self.calls.append(("face_build_eye_lids", namespace))
+        return {"area_vertices": {"Right": 80, "Left": 80}}
+
     def model_check(self):
         self.calls.append("model_check")
         return ModelCheckResult("|Model|Body", 8,
@@ -372,6 +376,7 @@ def main(report: Path) -> int:
     panel.roles.setCurrentRow(1)
     panel.face_include.setCurrentText("Skip Above+Below Eyes")
     buttons["检查 FaceSetup 输入"].click()
+    buttons["建立双侧眼睑关节与蒙皮"].click()
     buttons["构建面部控制"].click()
     face_dispatched = ("face_build", "hero", "face-build.json",
                        "AdvPy_FaceControls", "AdvPy_FaceBlendShape") in controller.calls
@@ -498,6 +503,8 @@ def main(report: Path) -> int:
         "face_setup_preflight_dispatches": all(call in controller.calls for call in (
             ("face_build_set_include", "hero", "Skip Above+Below Eyes"),
             ("face_build_inspect_inputs", "hero"))),
+        "face_eye_lid_build_dispatches":
+            ("face_build_eye_lids", "hero") in controller.calls,
         "fit_edit_actions_dispatch": all(call in controller.calls for call in (
             ("fit_edit_positions", "hero", (("Spine1", (0., 0., 8.)),),
              "FitSkeleton"),

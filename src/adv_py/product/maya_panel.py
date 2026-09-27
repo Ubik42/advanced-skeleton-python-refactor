@@ -854,6 +854,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("变形器名称", self.face_deformer_name)])
             form.addRow(self._button("检查 FaceSetup 输入",
                                      self._face_build_inspect_inputs))
+            form.addRow(self._button("建立双侧眼睑关节与蒙皮",
+                                     self._face_build_eye_lids))
             form.addRow(self._button("构建面部控制", self._face_build, primary=True))
             stack.addWidget(group)
 
@@ -1617,6 +1619,12 @@ def create_panel(controller: MayaPanelController | None = None):
                         + f"，Fit 标记 {report['required_fit_count']} 项。")
             return ("FaceSetup 尚缺 " + str(len(report["missing"]))
                     + " 项：" + "、".join(report["missing"]))
+
+        def _face_build_eye_lids(self):
+            result = self.controller.face_build_eye_lids(self._namespace())
+            return ("双侧眼睑控制已建立：4 个控制器、4 个变形关节；"
+                    + f"右侧区域 {result['area_vertices']['Right']} 顶点，"
+                    + f"左侧区域 {result['area_vertices']['Left']} 顶点。")
 
         def _face_performance_apply(self):
             frames = self.controller.face_performance_apply(self._namespace(),

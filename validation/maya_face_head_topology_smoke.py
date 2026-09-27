@@ -19,6 +19,8 @@ from maya.api import OpenMaya as om
 
 from adv_py.adapters.maya_face_pre import MayaFacePreHost
 from adv_py.adapters.maya_face_build import MayaFaceBuildHost
+from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
+from adv_py.adapters.maya_dense_skin import MayaDenseSkinHost
 from adv_py.application.face_pre import EyeLidLayer, FaceSide
 from adv_py.core.face_build_requirements import FaceInclude
 from adv_py.core.face_eyelid_fit import order_eye_lid_loop
@@ -184,6 +186,79 @@ def main() -> None:
         assert MayaFaceBuildHost().read_include() is FaceInclude.ALL
         cmds.redo()
         assert controller.face_build_inspect_inputs(":")["ready"]
+        source_skin = (cmds.ls(type="skinCluster") or [None])[0]
+        original_weights = MayaDenseSkinHost().capture_dense_skin(source_skin)
+        fault_host = MayaFaceEyeLidRigHost()
+        original_apply = fault_host.apply_dense_skin
+        def injected_failure(data):
+            original_apply(data)
+            raise RuntimeError("眼睑权重写入故障注入")
+        fault_host.apply_dense_skin = injected_failure
+        try:
+            fault_host.build()
+        except RuntimeError as error:
+            assert "故障注入" in str(error)
+        else:
+            raise AssertionError("眼睑构建故障未触发")
+        assert not cmds.objExists("FaceMotionSystem")
+        assert MayaDenseSkinHost().capture_dense_skin(source_skin) == original_weights
+        lid_rig = controller.face_build_eye_lids(":")
+        assert len(lid_rig["controls"]) == 4
+        assert len(lid_rig["joints"]) == 4
+        skinned = MayaDenseSkinHost().capture_dense_skin(source_skin)
+        old_values = memoryview(original_weights.values).cast("d")
+        new_values = memoryview(skinned.values).cast("d")
+        old_width = len(original_weights.influence_names)
+        new_width = len(skinned.influence_names)
+        old_indices = [skinned.influence_names.index(name)
+                       for name in original_weights.influence_names]
+        lid_indices = [skinned.influence_names.index(name) for name in
+                       lid_rig["joints"].values()]
+        changed_vertices = 0
+        for vertex in range(original_weights.vertex_count):
+            lid_mass = sum(new_values[vertex * new_width + index]
+                           for index in lid_indices)
+            if lid_mass > 1e-9:
+                changed_vertices += 1
+            else:
+                assert all(abs(new_values[vertex * new_width + target]
+                               - old_values[vertex * old_width + source]) < 1e-9
+                           for source, target in enumerate(old_indices))
+        assert 0 < changed_vertices <= sum(lid_rig["area_vertices"].values())
+        cmds.undo()
+        assert not cmds.objExists("FaceMotionSystem")
+        assert len(cmds.skinCluster(lid_rig["skin"], query=True,
+                                    influence=True) or []) == 1
+        cmds.redo()
+        assert cmds.objExists("FaceMotionSystem")
+        def mesh_points():
+            mesh_fn, _, _ = mesh_topology(head)
+            return [tuple(point[axis] for axis in range(3))
+                    for point in mesh_fn.getPoints(om.MSpace.kWorld)]
+        neutral = mesh_points()
+        displacement = {}
+        for side, arc, amount in ((FaceSide.RIGHT, "upper", -.05),
+                                  (FaceSide.LEFT, "lower", .05)):
+            control = lid_rig["controls"][(side, arc)]
+            cmds.setAttr(control + ".translateY", amount)
+            moved = mesh_points()
+            same_side = [index for index, point in enumerate(neutral)
+                         if (point[0] < 0) == (side is FaceSide.RIGHT)]
+            opposite = [index for index, point in enumerate(neutral)
+                        if (point[0] < 0) != (side is FaceSide.RIGHT)]
+            own_delta = max(abs(moved[index][1] - neutral[index][1])
+                            for index in same_side)
+            other_delta = max(abs(moved[index][1] - neutral[index][1])
+                              for index in opposite)
+            assert own_delta > .005 and other_delta < 1e-5
+            displacement[side.value + arc] = round(own_delta, 6)
+            cmds.setAttr(control + ".translateY", 0)
+            reset = mesh_points()
+            assert max(abs(reset[index][1]-neutral[index][1])
+                       for index in range(len(reset))) < 1e-5
+        animated = lid_rig["controls"][(FaceSide.RIGHT, "upper")]
+        cmds.setKeyframe(animated, attribute="translateY", time=1, value=0)
+        cmds.setKeyframe(animated, attribute="translateY", time=5, value=-.05)
         cmds.file(rename=str(scene))
         cmds.file(save=True, type="mayaBinary", force=True)
         cmds.file(str(scene), open=True, force=True,
@@ -197,10 +272,24 @@ def main() -> None:
                        host.read_eye_lid_area(side))
         readiness = controller.face_build_inspect_inputs(":")
         assert readiness["ready"] and readiness["required_fit_count"] == 8
+        assert cmds.objExists("FaceMotionSystem")
+        assert len(cmds.skinCluster(lid_rig["skin"], query=True,
+                                    influence=True) or []) == 5
+        cmds.currentTime(1, edit=True)
+        frame1 = mesh_points()
+        cmds.currentTime(5, edit=True)
+        frame5 = mesh_points()
+        key_delta = max(abs(frame1[index][1] - frame5[index][1])
+                        for index in range(len(frame1))
+                        if frame1[index][0] < 0)
+        assert key_delta > .005
         result = {"head_vertex_count": int(cmds.polyEvaluate(head, vertex=True)),
                   "head_face_count": int(cmds.polyEvaluate(head, face=True)),
                   "mask_face_count": len(mask_faces), "sides": rows,
                   "face_build_readiness": readiness,
+                  "eyelid_deformation_cm": displacement,
+                  "weighted_vertices": changed_vertices,
+                  "reopened_animation_delta_cm": round(key_delta, 6),
                   "passed": True}
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(result, ensure_ascii=False, indent=2)
