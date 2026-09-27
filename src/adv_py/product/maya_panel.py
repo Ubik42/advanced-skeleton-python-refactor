@@ -345,7 +345,7 @@ def create_panel(controller: MayaPanelController | None = None):
 
             self.spine_segments = QtWidgets.QSpinBox()
             self.spine_segments.setRange(0, 63)
-            self.spine_segments.setSpecialValueText("标准双段")
+            self.spine_segments.setSpecialValueText("自动读取 Fit")
             self.head_aim = QtWidgets.QCheckBox("包含头部瞄准控制")
             self.infer_missing_fit_labels = QtWidgets.QCheckBox(
                 "按关节名补全缺失标签（原版 Fit 兼容）")

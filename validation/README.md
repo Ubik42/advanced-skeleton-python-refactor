@@ -1,5 +1,7 @@
 # 后台宿主验证
 
+来源骨架可见整链：`maya_source_skeleton_full_chain_visible.mel` 在独立 Maya 2024 图形进程中调用同名 Python 脚本，自建未绑定标准骨架与网格，点击 `Body / Build` 来源直建、`Pose / Pose Functions` 写键及 `Export` 含 Skin FBX，保存并重开角色场景。结果与面板截图写入 `validation/results/source-skeleton-visible/`。已验收 30 Body 关节、18 分段影响关节、1 Skin、两帧关键帧及 515,152 字节 FBX；独立进程重导入该 FBX 得到 49 关节、1 Skin、2 cm RootMotion 位移。该样本用于核验界面操作链，不代表生产网格或原版权重等价。
+
 Preparation / Model Check：`maya_model_check_smoke.py` 构造带父级平移、非默认枢轴和构建历史的对称模型，确认报告内容、临时节点清理与场景修改标志；移动一个顶点后确认对称问题及顶点选中。公开 `sam.mb` 的 18,151 顶点 `model:body` 另经 Maya 2024 实测，变换、历史、对称问题均为 0，检查阶段约 8.8 秒。打开公开文件时禁用脚本节点执行。
 
 ```powershell
