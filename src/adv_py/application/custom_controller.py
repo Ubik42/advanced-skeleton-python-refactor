@@ -26,6 +26,7 @@ class CustomControllerState:
 
 
 class CustomControllerHost(Protocol):
+    def softmod_pose_center(self, deformer: str) -> tuple[float, float, float]: ...
     def build_pose_session(self, deformer: str) -> AbstractContextManager[None]: ...
     def capture_softmod_region(self, deformer: str) -> SoftModRegion: ...
     def deform_joint_candidates(self, mesh: str) -> tuple[DeformJointCandidate, ...]: ...
@@ -34,12 +35,17 @@ class CustomControllerHost(Protocol):
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
     def create_custom_controller(self, plan: CustomControllerPlan) -> None: ...
     def capture_custom_controller(self, plan: CustomControllerPlan) -> CustomControllerState: ...
+    def create_mirrored_softmod(self, plan: CustomControllerPlan,
+                                posed_center: tuple[float, float, float]) -> str: ...
+    def mirrored_parent_joint(self, parent: str) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
 class CustomControllerBuildResult:
     plan: CustomControllerPlan
     state: CustomControllerState
+    mirror_plan: CustomControllerPlan | None = None
+    mirror_state: CustomControllerState | None = None
 
 
 class BuildCustomController:
@@ -81,8 +87,15 @@ class BuildCustomController:
               base_name: str, *, parent_joint: str | None = None,
               middle: bool = False, local: bool = True,
               partial_parent: bool = False,
-              skin_cluster: str | None = None
+              skin_cluster: str | None = None,
+              mirror: bool = True,
               ) -> CustomControllerBuildResult:
+        if not isinstance(mirror, bool):
+            raise ValueError("自动镜像选项须为布尔值")
+        posed_center = (self._host.softmod_pose_center(deformer)
+                        if mirror and not middle else None)
+        mirror_plan = None
+        mirror_state = None
         with self._host.transaction("创建自定义控制器"):
             with self._host.build_pose_session(deformer):
                 plan = self._plan_in_build_pose(
@@ -92,6 +105,26 @@ class BuildCustomController:
                     skin_cluster=skin_cluster)
                 self._host.create_custom_controller(plan)
                 state = self._host.capture_custom_controller(plan)
+            if mirror and plan.side == "_R":
+                if posed_center is None:
+                    raise RuntimeError("自动镜像缺少原姿态 SoftMod 中心")
+                mirror_source = self._host.create_mirrored_softmod(
+                    plan, posed_center)
+                mirror_parent = self._host.mirrored_parent_joint(
+                    plan.parent_joint)
+                mirror_skin = (state.deformer if skin_cluster == "*new"
+                               else skin_cluster)
+                with self._host.build_pose_session(mirror_source):
+                    mirror_plan = self._plan_in_build_pose(
+                        mirror_source, kind, base_name,
+                        parent_joint=mirror_parent, middle=False,
+                        local=local, partial_parent=partial_parent,
+                        skin_cluster=mirror_skin)
+                    if mirror_plan.side != "_L":
+                        raise ValueError("自动镜像源未落在左侧")
+                    self._host.create_custom_controller(mirror_plan)
+                    mirror_state = self._host.capture_custom_controller(
+                        mirror_plan)
             if (state.kind is not plan.kind or state.parent_joint != plan.parent_joint
                     or set(state.influenced_meshes) != {plan.region.mesh}
                     or state.offset.rsplit("|", 1)[-1] != plan.offset_name
@@ -115,7 +148,18 @@ class BuildCustomController:
                                      CustomControlKind.SKIN)
                         and state.weighted_vertex_count < 1)):
                 raise RuntimeError("自定义控制器写后复检失败")
-        return CustomControllerBuildResult(plan, state)
+            if (mirror_plan is not None
+                    and (mirror_state is None
+                         or mirror_state.kind is not plan.kind
+                         or mirror_state.parent_joint !=
+                            mirror_plan.parent_joint
+                         or set(mirror_state.influenced_meshes) !=
+                            {mirror_plan.region.mesh}
+                         or mirror_state.control.rsplit("|", 1)[-1] !=
+                            mirror_plan.control_name)):
+                raise RuntimeError("镜像自定义控制器写后复检失败")
+        return CustomControllerBuildResult(plan, state,
+                                           mirror_plan, mirror_state)
 
 
 @dataclass(frozen=True, slots=True)

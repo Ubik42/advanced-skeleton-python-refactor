@@ -500,7 +500,15 @@ def create_panel(controller: MayaPanelController | None = None):
             self.custom_softmod_source.setPlaceholderText("已绘制的 SoftMod 节点路径")
             self.custom_control_name = QtWidgets.QLineEdit()
             self.custom_control_name.setPlaceholderText("例如 Bicep；侧别由位置确定")
+            self.custom_control_mirror = QtWidgets.QCheckBox("mirror")
+            self.custom_control_mirror.setChecked(True)
             self.custom_control_middle = QtWidgets.QCheckBox("middle")
+            self.custom_control_mirror.toggled.connect(
+                lambda enabled: self.custom_control_middle.setChecked(False)
+                if enabled else None)
+            self.custom_control_middle.toggled.connect(
+                lambda enabled: self.custom_control_mirror.setChecked(False)
+                if enabled else None)
             self.custom_control_local = QtWidgets.QCheckBox("local")
             self.custom_control_local.setChecked(True)
             self.custom_control_partial_parent = QtWidgets.QCheckBox(
@@ -521,6 +529,7 @@ def create_panel(controller: MayaPanelController | None = None):
             group, form = self._group("06 · Custom Controllers", [
                 ("SoftMod 区域", self.custom_softmod_source),
                 ("控制器名称", self.custom_control_name),
+                ("自动镜像", self.custom_control_mirror),
                 ("中心控制", self.custom_control_middle),
                 ("局部朝向", self.custom_control_local),
                 ("父关节中间层", self.custom_control_partial_parent),
@@ -1664,10 +1673,13 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.custom_control_name.text().strip(),
                 self.custom_control_parent.text().strip(),
                 face=getattr(self, "custom_control_face", False),
+                mirror=self.custom_control_mirror.isChecked(),
                 middle=self.custom_control_middle.isChecked(),
                 local=self.custom_control_local.isChecked())
             self.custom_control_existing.setText(state.control)
-            return f"已创建 SoftMod 控制器：{state.control}"
+            paired = ("及对侧" if self.custom_control_mirror.isChecked()
+                      and state.control.endswith("_R") else "")
+            return f"已创建 SoftMod 控制器{paired}：{state.control}"
 
         def _open_custom_softmod_tool(self):
             self.controller.custom_softmod_tool()
@@ -1679,10 +1691,13 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.custom_control_name.text().strip(),
                 self.custom_control_parent.text().strip(),
                 face=getattr(self, "custom_control_face", False),
+                mirror=self.custom_control_mirror.isChecked(),
                 middle=self.custom_control_middle.isChecked(),
                 local=self.custom_control_local.isChecked())
             self.custom_control_existing.setText(state.control)
-            return f"已创建 Cluster 控制器：{state.control}"
+            paired = ("及对侧" if self.custom_control_mirror.isChecked()
+                      and state.control.endswith("_R") else "")
+            return f"已创建 Cluster 控制器{paired}：{state.control}"
 
         def _create_custom_skin(self):
             chosen_skin = self.custom_skin_cluster.text().strip()
@@ -1693,13 +1708,16 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.custom_control_name.text().strip(),
                 self.custom_control_parent.text().strip(),
                 face=getattr(self, "custom_control_face", False),
+                mirror=self.custom_control_mirror.isChecked(),
                 middle=self.custom_control_middle.isChecked(),
                 local=self.custom_control_local.isChecked(),
                 partial_parent=self.custom_control_partial_parent.isChecked(),
                 skin_cluster=("*new" if self.custom_skin_new_layer.isChecked()
                               else chosen_skin or None))
             self.custom_control_existing.setText(state.control)
-            return f"已创建 Skin 控制器：{state.control}"
+            paired = ("及对侧" if self.custom_control_mirror.isChecked()
+                      and state.control.endswith("_R") else "")
+            return f"已创建 Skin 控制器{paired}：{state.control}"
 
         def _add_custom_softmod_mesh(self):
             state = self.controller.custom_softmod_add_mesh(

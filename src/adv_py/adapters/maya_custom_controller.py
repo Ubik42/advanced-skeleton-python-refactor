@@ -26,6 +26,92 @@ class MayaCustomControllerHost(MayaFaceHost):
         super().__init__(namespace=namespace)
         self.face = face
 
+    def softmod_pose_center(self, deformer: str) -> tuple[float, float, float]:
+        from maya import cmds
+
+        source = self._unique(deformer, "softMod")
+        handles = cmds.listConnections(source + ".matrix", source=True,
+                                       destination=False,
+                                       type="transform") or []
+        if len(handles) != 1:
+            raise ValueError("SoftMod 缺少唯一操作柄")
+        handle = self._unique(handles[0], "transform")
+        return tuple(float(value) for value in cmds.xform(
+            handle, query=True, worldSpace=True, pivots=True)[:3])
+
+    def mirrored_parent_joint(self, parent: str) -> str:
+        leaf = parent.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if not leaf.endswith("_R"):
+            return self._unique(parent, "joint")
+        return self._unique(leaf[:-1] + "L", "joint")
+
+    def create_mirrored_softmod(
+            self, plan: CustomControllerPlan,
+            posed_center: tuple[float, float, float]) -> str:
+        """Build the temporary mirrored SoftMod used by ADV's recursive pass."""
+        from maya import cmds
+
+        self._require_transaction()
+        if plan.side != "_R":
+            raise ValueError("自动镜像仅从右侧创建左侧控制器")
+        names = (self.scene_address("CustomControlMirrorSoftMod"),
+                 self.scene_address("CustomControlMirrorSoftModHandle"))
+        if any(cmds.objExists(name) for name in names):
+            raise ValueError("自动镜像的临时 SoftMod 名称已占用")
+        self._transaction_changed = True
+        source_mesh = self._mesh(plan.region.mesh)
+        reflected = (-posed_center[0], posed_center[1], posed_center[2])
+        bbox = cmds.exactWorldBoundingBox(source_mesh)
+        target = source_mesh
+        if bbox[3] < reflected[0]:
+            sampler = cmds.createNode("closestPointOnMesh")
+            try:
+                best = None
+                for shape in cmds.ls(type="mesh", noIntermediate=True,
+                                     long=True) or []:
+                    mesh = (cmds.listRelatives(shape, parent=True,
+                        fullPath=True) or [None])[0]
+                    if not mesh:
+                        continue
+                    cmds.connectAttr(shape + ".outMesh",
+                                     sampler + ".inMesh", force=True)
+                    cmds.connectAttr(shape + ".worldMatrix[0]",
+                                     sampler + ".inputMatrix", force=True)
+                    cmds.setAttr(sampler + ".inPosition", *reflected,
+                                 type="double3")
+                    position = cmds.getAttr(sampler + ".position")[0]
+                    distance = sum((a - b) ** 2 for a, b in zip(
+                        reflected, position))
+                    candidate = (distance, mesh)
+                    if best is None or candidate < best:
+                        best = candidate
+                if best is None:
+                    raise ValueError("自动镜像未找到左侧网格")
+                target = self._mesh(best[1])
+            finally:
+                cmds.delete(sampler)
+        created = cmds.softMod(target, name=names[0])
+        if len(created) != 2:
+            raise RuntimeError("镜像 SoftMod 未返回变形器和操作柄")
+        source = self._unique(created[0], "softMod")
+        handle = cmds.rename(self._unique(created[1], "transform"),
+                             names[1])
+        for shape in cmds.listRelatives(handle, shapes=True,
+                                        fullPath=True) or []:
+            if cmds.objExists(shape + ".origin"):
+                cmds.setAttr(shape + ".origin", *reflected, type="float3")
+        cmds.xform(handle, worldSpace=True, pivots=reflected)
+        cmds.setAttr(source + ".falloffCenter", *reflected, type="float3")
+        cmds.setAttr(source + ".falloffRadius", plan.region.falloff_radius)
+        cmds.setAttr(source + ".falloffMode", plan.region.falloff_mode)
+        for index, (value, position, interpolation) in enumerate(
+                plan.region.falloff_curve):
+            plug = source + ".falloffCurve[%d]." % index
+            cmds.setAttr(plug + "falloffCurve_FloatValue", value)
+            cmds.setAttr(plug + "falloffCurve_Position", position)
+            cmds.setAttr(plug + "falloffCurve_Interp", interpolation)
+        return source
+
     def _custom_system(self) -> str:
         from maya import cmds
 
