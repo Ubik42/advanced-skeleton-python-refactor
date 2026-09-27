@@ -1230,6 +1230,19 @@ class MayaCustomControllerHost(MayaFaceHost):
 
         return bool(cmds.objExists(control))
 
+    def paired_custom_control(self, control: str) -> str | None:
+        from maya import cmds
+
+        leaf = control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if not leaf.endswith(("_L", "_R")):
+            return None
+        opposite = leaf[:-1] + ("R" if leaf.endswith("_L") else "L")
+        matches = cmds.ls(self.scene_address(opposite), long=True,
+                          type="transform") or []
+        if len(matches) > 1:
+            raise ValueError("同名对侧控制器不唯一")
+        return matches[0] if matches else None
+
     def preflight_delete_custom_control(self,
                                         state: CustomControllerState) -> None:
         from maya import cmds

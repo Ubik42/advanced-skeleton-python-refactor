@@ -224,6 +224,7 @@ class MirrorClusterControlWeights:
 
 class DeleteCustomControllerHost(Protocol):
     def capture_custom_control(self, control: str) -> CustomControllerState: ...
+    def paired_custom_control(self, control: str) -> str | None: ...
     def preflight_delete_custom_control(self,
                                         state: CustomControllerState) -> None: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
@@ -237,9 +238,17 @@ class DeleteCustomController:
 
     def apply(self, control: str) -> CustomControllerState:
         state = self._host.capture_custom_control(control)
-        self._host.preflight_delete_custom_control(state)
+        paired_path = self._host.paired_custom_control(state.control)
+        states = (state,) if paired_path is None else (
+            state, self._host.capture_custom_control(paired_path))
+        for candidate in states:
+            if candidate.kind is not state.kind:
+                raise ValueError("左右自定义控制器类型不一致")
+            self._host.preflight_delete_custom_control(candidate)
         with self._host.transaction("删除自定义控制器"):
-            self._host.delete_custom_control(state)
-            if self._host.custom_control_exists(state.control):
+            for candidate in states:
+                self._host.delete_custom_control(candidate)
+            if any(self._host.custom_control_exists(candidate.control)
+                   for candidate in states):
                 raise RuntimeError("自定义控制器删除后复检失败")
         return state
