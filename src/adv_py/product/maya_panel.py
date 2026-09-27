@@ -561,6 +561,14 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._delete_custom_control))
             stack.addWidget(group)
 
+            group, form = self._group("07 · Squash Controller", [])
+            form.addRow(QtWidgets.QLabel("选择要影响的网格顶点"))
+            form.addRow(self._button("创建 Squash Controller",
+                                     self._create_squash_controller))
+            form.addRow(self._button("删除 Squash Controller",
+                                     self._delete_squash_controller))
+            stack.addWidget(group)
+
             self.control_curve_targets = QtWidgets.QPlainTextEdit()
             self.control_curve_targets.setPlaceholderText(
                 "每行一个控制器路径；留空时处理当前角色的全部已登记控制曲线")
@@ -581,7 +589,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_curve_custom_source = QtWidgets.QLineEdit()
             self.control_curve_custom_source.setPlaceholderText(
                 "自定义 NURBS 曲线 Transform 路径")
-            group, form = self._group("07 · Control Curves", [
+            group, form = self._group("08 · Control Curves", [
                 ("目标控制器", self.control_curve_targets),
                 ("缩放倍率", self.control_curve_factor),
                 ("颜色规则", self.control_curve_color_mode),
@@ -625,7 +633,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_orient_mirrored_behavior = QtWidgets.QCheckBox(
                 "左右同轴旋转产生对称动作")
             self.control_orient_mirrored_behavior.setChecked(True)
-            group, form = self._group("08 · Control Orient", [
+            group, form = self._group("09 · Control Orient", [
                 ("目标控制器", self.control_orient_targets),
                 ("Primary Axis", self.control_orient_primary),
                 ("Secondary Axis", self.control_orient_secondary),
@@ -643,7 +651,7 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("重新附着全部控制器", self._attach_control_orient_custom))
             stack.addWidget(group)
 
-            group, form = self._group("09 · Unreal Joints", [])
+            group, form = self._group("10 · Unreal Joints", [])
             form.addRow(self._button("创建通用 Unreal IK 关节",
                                      self._create_unreal_joints))
             form.addRow(self._button("删除通用 Unreal IK 关节",
@@ -655,7 +663,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.partial_multi_count.setRange(2, 128)
             self.partial_multi_count.setValue(12)
             self.partial_multi_bind = QtWidgets.QCheckBox("自动加入现有蒙皮")
-            group, form = self._group("10 · Partial Joints", [
+            group, form = self._group("11 · Partial Joints", [
                 ("单段", self.partial_include_controller),
                 ("多段关节数", self.partial_multi_count),
                 ("多段蒙皮", self.partial_multi_bind)])
@@ -1758,6 +1766,15 @@ def create_panel(controller: MayaPanelController | None = None):
         def _delete_unreal_joints(self):
             self.controller.unreal_joints_delete(self._namespace())
             return "已删除通用 Unreal IK 关节"
+
+        def _create_squash_controller(self):
+            plan = self.controller.squash_controller_create(self._namespace())
+            return f"已创建 Squash Controller：{plan.control}"
+
+        def _delete_squash_controller(self):
+            controls = self.controller.squash_controller_delete(
+                self._namespace())
+            return f"已删除 {len(controls)} 个 Squash Controller"
 
         def _create_partial_joints(self):
             specs = self.controller.partial_joints_create(

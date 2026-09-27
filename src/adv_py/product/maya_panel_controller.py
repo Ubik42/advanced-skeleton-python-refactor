@@ -820,6 +820,26 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)
         DeleteUnrealJoints(host).apply()
 
+    def squash_controller_create(self, namespace: str):
+        from adv_py.adapters.maya_squash_controller import MayaSquashControllerHost
+        from adv_py.application.squash_controller import CreateSquashController
+
+        host = MayaSquashControllerHost(
+            namespace=None if namespace == ":" else namespace)
+        return CreateSquashController(host).apply()
+
+    def squash_controller_delete(self, namespace: str):
+        from maya import cmds
+        from adv_py.adapters.maya_squash_controller import MayaSquashControllerHost
+        from adv_py.application.squash_controller import DeleteSquashController
+
+        selected = cmds.ls(selection=True, long=True, objectsOnly=True) or []
+        if len(selected) != 1:
+            raise ValueError("须选择一个 Squash Controller")
+        host = MayaSquashControllerHost(
+            namespace=None if namespace == ":" else namespace)
+        return DeleteSquashController(host).apply(selected[0])
+
     def skin_bind(self, namespace: str, mesh: str,
                   influences: tuple[str, ...], skin: str, maximum: int, *,
                   maintain_maximum: bool = True) -> int:

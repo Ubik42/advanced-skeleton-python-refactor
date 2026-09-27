@@ -54,4 +54,7 @@ class DeleteSquashController:
         with self._host.transaction("删除 Squash Controller"):
             for control in controls:
                 self._host.delete_squash_controller(control)
+            for control in controls:
+                if self._host.find_name_collisions(control):
+                    raise RuntimeError("Squash Controller 删除复检失败：" + control)
         return controls
