@@ -461,12 +461,16 @@ def main() -> None:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
             alignment = lid_rig["eye_depth_alignment"][side.value]
             assert alignment["applied_cm"] >= 0
+            assert alignment["status"] != "not_attempted"
             assert abs(cmds.getAttr("FaceMotionSystem."
                 + "advPyEyeDepthCorrection" + suffix[-1])
                 - alignment["applied_cm"]) < 1e-6
             if alignment["applied_cm"]:
+                assert alignment["status"] == "aligned"
                 assert alignment["final_closed_visible"] <= \
                     alignment["initial_closed_visible"]
+            if alignment["status"] == "depth_limit_exceeded":
+                assert alignment["required_cm"] > alignment["depth_limit_cm"]
             eye_depth_after_build[side.value] = cmds.getAttr(
                 "AdvPy_Eye" + suffix + ".translateZ")
             mobile_aperture = (side.value in lid_rig["aperture_sides"]

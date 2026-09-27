@@ -35,7 +35,7 @@ _YAW_EDGE_LOWER_RADIUS_FRACTION = .35
 class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
     def _calibrate_eye_depth(self, mesh: str, eye_mesh: str,
                              eye_joint: str, eye_control: str,
-                             eye_radius: float) -> dict[str, float | int]:
+                             eye_radius: float) -> dict[str, float | int | str]:
         """Seat a mobile-aperture eye behind its closed lid when geometry permits."""
         from maya.api import OpenMaya as om
 
@@ -86,12 +86,21 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                       "final_closed_visible": closed[1],
                       "initial_missing_front_surface": closed[2],
                       "initial_depth_deficit_cm": round(closed[3], 6),
-                      "applied_cm": 0.}
-            if (opened[0] < 50 or opened[1] < 20 or closed[2]
-                    or closed[1] / max(1, closed[0]) <= .01):
+                      "depth_limit_cm": round(eye_radius * .15, 6),
+                      "applied_cm": 0., "status": "not_attempted"}
+            if opened[0] < 50 or opened[1] < 20:
+                result["status"] = "insufficient_open_visibility"
+                return result
+            if closed[2]:
+                result["status"] = "missing_front_surface"
+                return result
+            if closed[1] / max(1, closed[0]) <= .01:
+                result["status"] = "already_closed"
                 return result
             correction = closed[3] + eye_radius * .03
+            result["required_cm"] = round(correction, 6)
             if correction > eye_radius * .15:
+                result["status"] = "depth_limit_exceeded"
                 return result
             plugs = tuple(eye_joint + ".translate" + axis
                           for axis in "XYZ")
@@ -99,6 +108,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                     or any(c.getAttr(plug, lock=True)
                            or c.connectionInfo(plug, isDestination=True)
                            for plug in plugs)):
+                result["status"] = "eye_joint_unavailable"
                 return result
             position = c.xform(eye_joint, query=True, worldSpace=True,
                                translation=True)
@@ -110,9 +120,11 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
             if (revised[1] / max(1, revised[0]) > .01 or revised[2]
                     or reopened[1] < max(20, opened[1] * .8)):
                 c.xform(eye_joint, worldSpace=True, translation=position)
+                result["status"] = "calibration_rejected"
                 return result
             result["final_closed_visible"] = revised[1]
             result["applied_cm"] = round(correction, 6)
+            result["status"] = "aligned"
             return result
         finally:
             c.setAttr(eye_control + ".blink", 0)
@@ -922,7 +934,8 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                         mesh, eye_meshes[side], eye_joints[side],
                         eye_control_names[side], eye_radii[side])
                 else:
-                    eye_depth_alignment[side.value] = {"applied_cm": 0.}
+                    eye_depth_alignment[side.value] = {
+                        "applied_cm": 0., "status": "stationary_aperture"}
                 c.addAttr(motion,
                     longName="advPyEyeDepthCorrection" + suffix,
                     attributeType="double",
