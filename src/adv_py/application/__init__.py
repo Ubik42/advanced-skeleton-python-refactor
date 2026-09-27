@@ -520,6 +520,8 @@ __all__ = [
     "BuildCharacterFromFit",
     "CharacterFromFitResult",
     "CharacterFromFitPlan",
+    "BuildCustomController",
+    "CustomControllerBuildResult",
     "BuildCharacterFromSourceSkeleton",
     "SourceCharacterBuildPlan",
     "SourceCharacterBuildResult",
@@ -731,6 +733,8 @@ from .character_from_fit import (BuildCharacterFromFit, CharacterFromFitPlan,
                                  CharacterFromFitResult)
 from .character_from_source import (BuildCharacterFromSourceSkeleton,
     SourceCharacterBuildPlan, SourceCharacterBuildResult)
+from .custom_controller import (BuildCustomController,
+    CustomControllerBuildResult)
 
 from .external_mesh_io import (ExportExternalMesh, ImportExternalMesh,
     ExternalMeshResult)
