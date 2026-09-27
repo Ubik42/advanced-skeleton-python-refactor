@@ -609,6 +609,11 @@ class MayaPanelController:
 
         set_smooth_bind_options()
 
+    def delta_mush_apply(self) -> int:
+        from adv_py.adapters.maya_delta_mush import apply_delta_mush_to_selected
+
+        return len(apply_delta_mush_to_selected())
+
     def skin_export(self, namespace: str, skin: str, mesh: str,
                     destination: Path) -> int:
         result = ExportSkinWeights(self._host(namespace)).apply(

@@ -627,6 +627,10 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
             self.surface_mode.currentIndexChanged.connect(self._surface_mode_changed)
             self._surface_mode_changed()
+            group, form = self._group("05 · Delta Mush", [])
+            form.addRow(QtWidgets.QLabel("选择已蒙皮的多边形网格。"))
+            form.addRow(self._button("应用 Delta Mush", self._apply_delta_mush))
+            stack.addWidget(group)
             stack.addStretch(1)
             return page
 
@@ -1492,6 +1496,10 @@ def create_panel(controller: MayaPanelController | None = None):
         def _set_smooth_bind_options(self):
             self.controller.skinning_set_smooth_bind_options()
             return "已设置原版 Smooth Bind 选项，并打开 Maya 绑定选项窗口"
+
+        def _apply_delta_mush(self):
+            count = self.controller.delta_mush_apply()
+            return f"已为 {count} 个网格应用 Delta Mush"
 
         def _import_skin(self):
             mapping = self.mapping_document.text().strip()

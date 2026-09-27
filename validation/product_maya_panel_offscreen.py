@@ -43,7 +43,10 @@ class FakeController:
         self.calls.append(("face_build_eye_lids", namespace))
         return {"area_vertices": {"Right": 80, "Left": 80},
                 "controls": tuple(range(8)), "eye_controls": ("R", "L"),
-                "joints": tuple(range(82))}
+                "joints": tuple(range(82)),
+                "eye_depth_alignment": {
+                    "Right": {"applied_cm": 0.},
+                    "Left": {"applied_cm": 0.}}}
 
     def face_fit_mirror_right_to_left(self, namespace, left_eye_mesh):
         self.calls.append(("face_fit_mirror_right_to_left", namespace,
@@ -204,6 +207,10 @@ class FakeController:
                            destination.name))
         return 4
 
+    def delta_mush_apply(self):
+        self.calls.append("delta_mush_apply")
+        return 1
+
     def skin_surface_transfer(self, namespace, target_skin, target_mesh,
                               max_distance, **options):
         self.calls.append(("skin_surface_transfer", namespace, target_skin,
@@ -298,6 +305,7 @@ def main(report: Path) -> int:
     panel.surface_asset_out.setText("C:/temp/source-asset.json")
     skin_buttons = {button.text(): button for button in
                     panel.findChildren(QtWidgets.QPushButton)}
+    skin_buttons["应用 Delta Mush"].click()
     skin_buttons["导出网格与权重"].click()
     panel.surface_mode.setCurrentIndex(1)
     panel.surface_asset_in.setText("C:/temp/source-asset.json")
@@ -489,6 +497,7 @@ def main(report: Path) -> int:
         "euler_filter_option_visible": panel.fbx_euler_filter.isChecked(),
         "surface_source_export_dispatches": ("skin_surface_source_export",
             "hero", "SourceSkin", "|SourceMesh", "source-asset.json") in controller.calls,
+        "delta_mush_dispatches": "delta_mush_apply" in controller.calls,
         "surface_transfer_dispatches_asset": bool(surface_dispatch
             and surface_dispatch[1:5] == ("hero", "TargetSkin", "|TargetMesh", .01)
             and surface_dispatch[5]["source_asset"] == Path("C:/temp/source-asset.json")

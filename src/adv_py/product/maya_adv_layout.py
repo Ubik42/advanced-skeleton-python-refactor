@@ -58,6 +58,8 @@ ADV_OPERATIONS = {
         ("绑定当前网格", 1, "01 · 建立 Skin"),
         ("导出网格与权重", 1, "03 · 跨场景源资产"),
         ("引用模型改拓扑后重绑并转移", 1, "04 · 跨拓扑权重转移")),
+    ("Body", "Deform DeltaMush"): (
+        ("应用 Delta Mush", 1, "05 · Delta Mush"),),
     ("Body", "Control Curves"): (
         ("缩放控制曲线", 0, "06 · Control Curves"),
         ("按 Skin 自动缩放", 0, "06 · Control Curves"),
