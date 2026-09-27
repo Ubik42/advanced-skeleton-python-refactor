@@ -1155,9 +1155,14 @@ def create_panel(controller: MayaPanelController | None = None):
             return f"已创建 {count} 个 Fit 关节；调整关节位置后可构建 Body"
 
         def _fit_from_selected_skeleton(self):
-            count = self.controller.fit_from_selected_skeleton(
-                self._namespace(), self.fit_container.text().strip())
-            return f"已从来源骨架创建 {count} 个 Fit 关节"
+            selected_namespace = self._namespace()
+            count, target_namespace = self.controller.fit_from_selected_skeleton(
+                selected_namespace, self.fit_container.text().strip())
+            if target_namespace != selected_namespace:
+                self._next_role = target_namespace
+            destination = (f"；新角色 {target_namespace}"
+                if target_namespace != selected_namespace else "")
+            return f"已从来源骨架创建 {count} 个 Fit 关节{destination}"
 
         def _check_model(self):
             result = self.controller.model_check()

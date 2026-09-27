@@ -65,6 +65,11 @@ def main() -> None:
         cmds.file(scene, open=True, force=True, executeScriptNodes=False)
         assert cmds.objExists("AdvPy:Root_M")
         assert len(cmds.ls("AdvPy:*", type="skinCluster") or []) == 1
+    cmds.select("Root", replace=True)
+    fit_count, fit_namespace = MayaPanelController().fit_from_selected_skeleton(":")
+    assert fit_namespace == "AdvPy2" and fit_count >= 18
+    assert cmds.objExists("AdvPy2:FitSkeleton")
+    assert cmds.objExists("Root")
     print("PASS root source to namespaced skinned Body", result)
 
 

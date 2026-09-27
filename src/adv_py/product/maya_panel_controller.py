@@ -86,6 +86,30 @@ class PanelSkinSurfaceResult:
     max_discarded_weight: float
 
 
+def _target_for_source_skeleton(cmds, namespace: str,
+                                source_root: str) -> tuple[str, str | None]:
+    matches = cmds.ls(source_root, long=True, type="joint") or []
+    if len(matches) != 1:
+        raise ValueError("请选择唯一的来源根关节")
+    leaf = matches[0].rsplit("|", 1)[-1]
+    source_namespace = leaf.rsplit(":", 1)[0] if ":" in leaf else ":"
+    if source_namespace != namespace:
+        return namespace, None
+    index = 1
+    while cmds.namespace(exists="AdvPy" if index == 1 else f"AdvPy{index}"):
+        index += 1
+    target = "AdvPy" if index == 1 else f"AdvPy{index}"
+    cmds.namespace(addNamespace=":" + target)
+    return target, target
+
+
+def _remove_empty_source_target(cmds, namespace: str | None) -> None:
+    if namespace and cmds.namespace(exists=namespace):
+        if not (cmds.namespaceInfo(namespace,
+                listOnlyDependencyNodes=True, recurse=True) or []):
+            cmds.namespace(removeNamespace=namespace)
+
+
 _FIT_INTEGER_FIELDS = frozenset({
     FitJointField.TWIST_JOINTS,
     FitJointField.BENDY_CONTROLS,
@@ -298,7 +322,7 @@ class MayaPanelController:
         return tuple(dict.fromkeys(meshes))
 
     def fit_from_selected_skeleton(self, namespace: str,
-                                   container: str = "FitSkeleton") -> int:
+                                   container: str = "FitSkeleton") -> tuple[int, str]:
         from maya import cmds
         from adv_py.adapters.maya_source_skeleton_fit import (
             MayaSourceSkeletonFitHost)
@@ -308,9 +332,16 @@ class MayaPanelController:
         selection = cmds.ls(selection=True, long=True, type="joint") or []
         if len(selection) != 1:
             raise ValueError("请只选中来源骨架的根关节")
-        host = MayaSourceSkeletonFitHost(
-            namespace=None if namespace == ":" else namespace)
-        return BuildFitFromSourceSkeleton(host).apply(selection[0], container)
+        target_namespace, created = _target_for_source_skeleton(
+            cmds, namespace, selection[0])
+        try:
+            host = MayaSourceSkeletonFitHost(
+                namespace=None if target_namespace == ":" else target_namespace)
+            count = BuildFitFromSourceSkeleton(host).apply(selection[0], container)
+        except Exception:
+            _remove_empty_source_target(cmds, created)
+            raise
+        return count, target_namespace
 
     def fit_edit_positions(self, namespace: str,
                            edits: tuple[tuple[str, tuple[float, float, float]], ...],
@@ -383,20 +414,8 @@ class MayaPanelController:
 
         if not source_root.strip():
             raise ValueError("请填写来源骨架根关节路径")
-        matches = cmds.ls(source_root, long=True, type="joint") or []
-        if len(matches) != 1:
-            raise ValueError("请选择唯一的来源根关节")
-        source_namespace = (matches[0].rsplit("|", 1)[-1].rsplit(":", 1)[0]
-                            if ":" in matches[0].rsplit("|", 1)[-1] else ":")
-        target_namespace = namespace
-        created_namespace = None
-        if source_namespace == namespace:
-            index = 1
-            while cmds.namespace(exists="AdvPy" if index == 1 else f"AdvPy{index}"):
-                index += 1
-            target_namespace = "AdvPy" if index == 1 else f"AdvPy{index}"
-            cmds.namespace(addNamespace=":" + target_namespace)
-            created_namespace = target_namespace
+        target_namespace, created_namespace = _target_for_source_skeleton(
+            cmds, namespace, source_root)
         try:
             host = MayaSourceSkeletonFitHost(
                 namespace=None if target_namespace == ":" else target_namespace)
@@ -434,10 +453,7 @@ class MayaPanelController:
                         container, include_head_aim=head_aim,
                         include_segment_influences=segment_influences)
         except Exception:
-            if created_namespace and cmds.namespace(exists=created_namespace):
-                if not (cmds.namespaceInfo(created_namespace,
-                        listOnlyDependencyNodes=True, recurse=True) or []):
-                    cmds.namespace(removeNamespace=created_namespace)
+            _remove_empty_source_target(cmds, created_namespace)
             raise
         return PanelCharacter(target_namespace, True, len(result.registration.body),
                               len(result.registration.channels),
