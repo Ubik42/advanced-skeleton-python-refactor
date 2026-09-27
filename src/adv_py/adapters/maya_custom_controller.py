@@ -125,12 +125,47 @@ class MayaCustomControllerHost(MayaFaceHost):
         name = self.scene_address("FaceCustomSystem" if self.face
                                   else "CustomSystem")
         if cmds.objExists(name):
-            return self._unique(name, "transform")
-        motion_name = "FaceMotionSystem" if self.face else "MotionSystem"
-        if cmds.objExists(self.scene_address(motion_name)):
-            return cmds.createNode("transform", name=name,
-                parent=self._unique(motion_name, "transform"))
-        return cmds.createNode("transform", name=name)
+            system = self._unique(name, "transform")
+        else:
+            motion_name = "FaceMotionSystem" if self.face else "MotionSystem"
+            if cmds.objExists(self.scene_address(motion_name)):
+                system = cmds.createNode("transform", name=name,
+                    parent=self._unique(motion_name, "transform"))
+            else:
+                system = cmds.createNode("transform", name=name)
+        if self.face:
+            control_box = self.scene_address("ctrlBox")
+            source = control_box + ".CustomCtrlVis"
+            if cmds.objExists(source):
+                self._connect_custom_system(source, system + ".visibility")
+        else:
+            main = self.scene_address("Main")
+            if cmds.objExists(main):
+                source = main + ".customVis"
+                if not cmds.objExists(source):
+                    cmds.addAttr(main, longName="customVis",
+                                 attributeType="bool", defaultValue=True,
+                                 keyable=True)
+                    cmds.setAttr(source, keyable=False, channelBox=True)
+                self._connect_custom_system(source, system + ".visibility")
+            scale = self.scene_address("MainScaleMultiplyDivide")
+            if cmds.objExists(scale + ".output"):
+                self._connect_custom_system(scale + ".output",
+                                            system + ".scale")
+        return system
+
+    @staticmethod
+    def _connect_custom_system(source: str, destination: str) -> None:
+        from maya import cmds
+
+        if cmds.isConnected(source, destination):
+            return
+        incoming = cmds.listConnections(destination, source=True,
+                                        destination=False,
+                                        plugs=True) or []
+        if incoming:
+            raise ValueError("CustomSystem 已由其他节点驱动：" + destination)
+        cmds.connectAttr(source, destination)
 
     @contextmanager
     def build_pose_session(self, deformer: str):
