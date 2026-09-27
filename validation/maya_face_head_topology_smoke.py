@@ -6,6 +6,7 @@ copied into this repository.
 from __future__ import annotations
 
 import json
+from math import dist
 from pathlib import Path
 from shutil import copyfile
 import sys
@@ -500,14 +501,9 @@ def main() -> None:
             depth = cmds.getAttr("ctrlUpperEyeLid" + suffix
                                  + ".blinkOffsetZ")
             if side.value in lid_rig["stationary_aperture_sides"]:
-                assert depth > 0
-                roll = sorted((int(node.split("Main", 1)[1].split("_", 1)[0]),
-                               cmds.getAttr(node + ".input2X"))
-                              for node in cmds.ls(type="multiplyDivide") or []
-                              if node.startswith("upperLidMain") and
-                              node.endswith(suffix + "BlinkRoll"))
-                assert len(roll) >= 3
-                assert abs(roll[0][1]) < abs(roll[len(roll)//2][1]) * .1
+                assert abs(depth) < 1e-9
+                assert cmds.ls("upperLidMain*" + suffix + "AimConstraint",
+                               type="aimConstraint")
             else:
                 assert abs(depth) < 1e-9
             outer = "ctrlUpperEyeLidOuter" + suffix
@@ -675,11 +671,28 @@ def main() -> None:
         blink_results = {}
         for side in FaceSide:
             eye_control = lid_rig["eye_controls"][side]
+            stationary_joint = None
+            if side.value in lid_rig["stationary_aperture_sides"]:
+                suffix = "_R" if side is FaceSide.RIGHT else "_L"
+                candidates = cmds.ls("upperLidMain*" + suffix,
+                                     long=True, type="joint") or []
+                stationary_joint = sorted(candidates)[len(candidates) // 2]
+                aim = stationary_joint.rsplit("|", 1)[-1] + "Aim"
+                center = cmds.xform(aim, query=True, worldSpace=True,
+                                    translation=True)
+                open_joint = cmds.xform(stationary_joint, query=True,
+                                        worldSpace=True, translation=True)
             before_gap = middle_gap(side, EyeLidLayer.MAIN)
             before_outer = middle_gap(side, EyeLidLayer.OUTER)
             assert before_gap > .005
             assert before_outer > .005
             cmds.setAttr(eye_control + ".blink", 10)
+            if stationary_joint:
+                closed_joint = cmds.xform(stationary_joint, query=True,
+                                          worldSpace=True, translation=True)
+                assert abs(dist(center, closed_joint)
+                           - dist(center, open_joint)) < 1e-5
+                assert dist(open_joint, closed_joint) > .01
             after_gap = middle_gap(side, EyeLidLayer.MAIN)
             after_outer = middle_gap(side, EyeLidLayer.OUTER)
             if not aperture_mode:

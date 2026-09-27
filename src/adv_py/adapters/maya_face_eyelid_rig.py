@@ -4,7 +4,7 @@ from __future__ import annotations
 from array import array
 from contextlib import nullcontext
 import json
-from math import isfinite, pi, radians, sin
+from math import dist, isfinite, radians
 import re
 
 from adv_py.application.face_pre import EyeLidLayer, FacePreRole, FaceSide
@@ -648,7 +648,11 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                         name = arc + "Lid" + layer.value + str(index) + suffix
                         names.extend((name, name + "POCI", name + "Offset"))
                         if layer is EyeLidLayer.MAIN:
-                            names.append(name + "BlinkRoll")
+                            if open_inners[side] and not mobile_inners[side]:
+                                names.extend((name + "Aim", name + "AimTarget",
+                                              name + "AimConstraint"))
+                            else:
+                                names.append(name + "BlinkRoll")
         if any(c.ls(name) for name in names):
             raise FitSkeletonValidationError("眼睑绑定节点名称已被占用")
         original = self.capture_dense_skin(skin)
@@ -928,10 +932,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                             correction = c.createNode("multiplyDivide",
                                 name=control_name + "BlinkOffset")
                             for axis in "XYZ":
-                                default = (eye_radii[side] * .135
-                                    if (layer is EyeLidLayer.MAIN and
-                                        axis == "Z" and open_inners[side] and
-                                        not mobile_inners[side]) else 0.)
+                                default = 0.
                                 if layer is EyeLidLayer.OUTER and mobile_inners[side]:
                                     scale = outer_pose_scales[side]
                                     if axis == "X":
@@ -1022,23 +1023,43 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                             c.connectAttr(curve_shape + ".worldSpace[0]",
                                           point + ".inputCurve")
                             c.setAttr(point + ".parameter", index)
-                            joint_offset = c.createNode("transform",
-                                name=name + "Offset", parent=root)
-                            c.setAttr(joint_offset + ".inheritsTransform", False)
-                            c.connectAttr(point + ".position",
-                                          joint_offset + ".translate")
+                            stationary_main = (layer is EyeLidLayer.MAIN and
+                                open_inners[side] and not mobile_inners[side])
+                            if stationary_main:
+                                aim = c.createNode("transform", name=name + "Aim",
+                                                   parent=root)
+                                c.setAttr(aim + ".inheritsTransform", False)
+                                c.setAttr(aim + ".translate", *eye_centers[side],
+                                          type="double3")
+                                target = c.createNode("transform",
+                                    name=name + "AimTarget", parent=root)
+                                c.setAttr(target + ".inheritsTransform", False)
+                                c.connectAttr(point + ".position",
+                                              target + ".translate")
+                                c.aimConstraint(target, aim, aimVector=(1, 0, 0),
+                                                upVector=(0, 1, 0),
+                                                worldUpType="vector",
+                                                worldUpVector=(0, 1, 0),
+                                                name=name + "AimConstraint")
+                                joint_offset = c.createNode("transform",
+                                    name=name + "Offset", parent=aim)
+                                c.setAttr(joint_offset + ".translateX",
+                                    dist(positions[side][vertex], eye_centers[side]))
+                            else:
+                                joint_offset = c.createNode("transform",
+                                    name=name + "Offset", parent=root)
+                                c.setAttr(joint_offset + ".inheritsTransform", False)
+                                c.connectAttr(point + ".position",
+                                              joint_offset + ".translate")
                             c.select(clear=True)
                             joint = c.joint(name=name)
                             joint = c.parent(joint, joint_offset,
                                              relative=True)[0]
-                            if layer is EyeLidLayer.MAIN:
+                            if layer is EyeLidLayer.MAIN and not stationary_main:
                                 delta_y = blink_offsets[(side, layer)][arc][index]
                                 _, angle = eye_lid_sphere_blink(
                                     positions[side][vertex],
                                     eye_centers[side], delta_y)
-                                if open_inners[side] and not mobile_inners[side]:
-                                    arc_fraction = index / (len(vertices) - 1)
-                                    angle *= sin(pi * arc_fraction) ** 4
                                 roll = c.createNode("multiplyDivide",
                                     name=name + "BlinkRoll")
                                 c.setAttr(roll + ".input2X", angle / 10.)
