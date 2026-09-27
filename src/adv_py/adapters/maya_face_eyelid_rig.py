@@ -34,6 +34,7 @@ _STATIONARY_OUTER_POSE_RADIUS_FRACTIONS = {
     "upper": (.029, .077),
     "lower": (.058, -.024),
 }
+_STATIONARY_LOWER_MAIN_SEAL_RADIUS_FRACTION = .0054
 
 
 class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
@@ -776,6 +777,12 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                             (1 if side is FaceSide.RIGHT else -1))
                                     elif axis == "Y":
                                         default = eye_radii[side] * vertical
+                                elif (layer is EyeLidLayer.MAIN and
+                                      arc == "lower" and axis == "Y" and
+                                      open_inners[side] and
+                                      not mobile_inners[side]):
+                                    default = (eye_radii[side] *
+                                        _STATIONARY_LOWER_MAIN_SEAL_RADIUS_FRACTION)
                                 c.addAttr(control,
                                     longName="blinkOffset" + axis,
                                     attributeType="double", keyable=True,
