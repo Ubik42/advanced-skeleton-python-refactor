@@ -30,6 +30,10 @@ _YAW_EDGE_START_ANGLE_DEG = 18.5
 _YAW_EDGE_FULL_ANGLE_DEG = 26.5
 _YAW_EDGE_UPPER_RADIUS_FRACTION = .49
 _YAW_EDGE_LOWER_RADIUS_FRACTION = .35
+_STATIONARY_OUTER_POSE_RADIUS_FRACTIONS = {
+    "upper": (.029, .077),
+    "lower": (.058, -.024),
+}
 
 
 class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
@@ -762,6 +766,16 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                     elif axis == "Y":
                                         default = scale * (-.07 if arc == "upper"
                                             else .1)
+                                elif (layer is EyeLidLayer.OUTER and
+                                      open_inners[side] and
+                                      not mobile_inners[side]):
+                                    horizontal, vertical = (
+                                        _STATIONARY_OUTER_POSE_RADIUS_FRACTIONS[arc])
+                                    if axis == "X":
+                                        default = (eye_radii[side] * horizontal *
+                                            (1 if side is FaceSide.RIGHT else -1))
+                                    elif axis == "Y":
+                                        default = eye_radii[side] * vertical
                                 c.addAttr(control,
                                     longName="blinkOffset" + axis,
                                     attributeType="double", keyable=True,
