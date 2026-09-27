@@ -12,10 +12,12 @@ from adv_py.application.face_performance import FacePerformancePlan
 from adv_py.application.face_landmarks import FaceTargetGenerationPlan
 from adv_py.application.face_target_asset import FaceTargetAssetImportPlan
 
-from .maya_body import MayaBodyBuildHost
+from .maya_axial_part import MayaAxialPartHost
+from .maya_finger_mid import MayaFingerMidHost
+from .maya_limb_part import MayaLimbPartHost
 
 
-class MayaFaceHost(MayaBodyBuildHost):
+class MayaFaceHost(MayaAxialPartHost, MayaFingerMidHost, MayaLimbPartHost):
     def face_target_path_available(self, path: str) -> bool:
         from maya import cmds
 

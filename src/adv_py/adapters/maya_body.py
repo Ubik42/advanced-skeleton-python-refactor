@@ -1824,51 +1824,62 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
             raise FitSkeletonValidationError("当前角色没有可发布的 Skin 网格")
         return tuple(rows)
 
-    def _face_eye_fbx_influences(self, influence_map):
-        """Map the owned eye joints into the temporary published Head branch."""
+    def _extra_fbx_skin_influences(self, influence_map):
+        """Preserve every owned Skin influence absent from the export skeleton."""
         c = self._cmds
         body_root = influence_map[0][0]
-        body_targets = dict(influence_map)
-        head = next((source for source in body_targets
-            if source.rsplit("|", 1)[-1].rsplit(":", 1)[-1] == "Head_M"), None)
-        descendants = c.listRelatives(body_root, allDescendents=True,
-            fullPath=True, type="joint") or []
-        eyes = {}
-        for path in descendants:
-            if not c.attributeQuery("advPyAuxiliaryInfluenceKind",
-                                    node=path, exists=True):
-                continue
-            if c.getAttr(path + ".advPyAuxiliaryInfluenceKind") != "face-eye-v1":
-                continue
-            side = path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-            if side not in ("AdvPy_Eye_R", "AdvPy_Eye_L") or side in eyes:
-                raise FitSkeletonValidationError("Face 眼关节名称不唯一或无效")
-            eyes[side] = path
-        if not eyes:
-            return ()
-        if head is None or set(eyes) != {"AdvPy_Eye_R", "AdvPy_Eye_L"}:
-            raise FitSkeletonValidationError("Face 双眼关节与 Body Head 不完整")
-        target_head = body_targets[head]
-        return tuple((eyes[name], target_head + "|" + name)
-                     for name in ("AdvPy_Eye_R", "AdvPy_Eye_L"))
+        targets = dict(influence_map)
+        owned = set()
+        for skin in c.ls(type="skinCluster") or []:
+            for influence in c.skinCluster(skin, query=True,
+                                           influence=True) or []:
+                paths = c.ls(influence, long=True, type="joint") or []
+                if len(paths) != 1:
+                    raise FitSkeletonValidationError(
+                        "FBX Skin 影响关节路径不唯一：" + influence)
+                path = paths[0]
+                if path == body_root or path.startswith(body_root + "|"):
+                    owned.add(path)
+        missing = owned - targets.keys()
+        known_names = {target.rsplit("|", 1)[-1]
+                       for target in targets.values()}
+        ordered = []
+        for source in sorted(missing, key=lambda path: (path.count("|"), path)):
+            name = source.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            if name in known_names:
+                raise FitSkeletonValidationError(
+                    "FBX Skin 影响关节发布名称重复：" + name)
+            parent = (c.listRelatives(source, parent=True,
+                                      fullPath=True) or [None])[0]
+            while parent not in targets and parent is not None:
+                parent = (c.listRelatives(parent, parent=True,
+                                          fullPath=True) or [None])[0]
+            if parent is None:
+                raise FitSkeletonValidationError(
+                    "FBX Skin 影响关节不属于可发布 Body：" + source)
+            target = targets[parent] + "|" + name
+            targets[source] = target
+            known_names.add(name)
+            ordered.append((source, target))
+        return tuple(ordered)
 
-    def _bake_temporary_face_eye_joints(self, eye_influences, selection, *,
-                                        namespace_free=False):
-        if not eye_influences:
+    def _bake_temporary_skin_joints(self, extra_influences, selection, *,
+                                    namespace_free=False):
+        if not extra_influences:
             return ()
         c = self._cmds.raw if namespace_free else self._cmds
         frames = tuple(range(selection.start_frame, selection.end_frame + 1,
                              selection.sample_by))
         created = []
-        for source, target in eye_influences:
+        for source, target in extra_influences:
             parent, name = target.rsplit("|", 1)
             if c.objExists(target):
-                raise FitSkeletonValidationError("FBX 眼关节发布名称冲突：" + target)
+                raise FitSkeletonValidationError("FBX 影响关节发布名称冲突：" + target)
             node = c.createNode("joint", name=(":" if namespace_free else "")
                                 + name, parent=parent, skipSelect=True)
             node = (c.ls(node, long=True, type="joint") or [None])[0]
             if node != target:
-                raise RuntimeError("FBX 眼关节路径漂移：" + target)
+                raise RuntimeError("FBX 影响关节路径漂移：" + target)
             c.setAttr(node + ".rotateOrder",
                       int(self._cmds.getAttr(source + ".rotateOrder")))
             created.append((source, node))
@@ -1992,12 +2003,12 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         original_undo_name = str(
             self._cmds.undoInfo(query=True, undoName=True) or ""
         )
-        eye_influences = (self._face_eye_fbx_influences(skin_influence_map)
-                          if skin_influence_map else ())
-        full_influence_map = skin_influence_map + eye_influences
+        extra_influences = (self._extra_fbx_skin_influences(skin_influence_map)
+                            if skin_influence_map else ())
+        full_influence_map = skin_influence_map + extra_influences
         skin_sources = (self._capture_fbx_skin_sources(full_influence_map,
             {node.published_name for node in selection.published_nodes}
-            | {path.rsplit("|", 1)[-1] for _, path in eye_influences})
+            | {path.rsplit("|", 1)[-1] for _, path in extra_influences})
             if full_influence_map else ())
         pushed = False
         applied_profile: BodyFbxAppliedProfile | None = None
@@ -2066,11 +2077,11 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                             + node.published_name,
                             ignoreShape=True,
                         )
-                    published_eyes = self._bake_temporary_face_eye_joints(
-                        eye_influences, selection,
+                    published_extra = self._bake_temporary_skin_joints(
+                        extra_influences, selection,
                         namespace_free=namespace_free)
                     published_paths = (*selection.published_paths,
-                                       *published_eyes)
+                                       *published_extra)
                     copied_meshes = self._copy_fbx_skinned_meshes(
                         skin_sources, selection.start_frame,
                         namespace_free=namespace_free)

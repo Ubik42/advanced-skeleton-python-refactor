@@ -12,6 +12,7 @@ from .blender import BlenderAdapterStatus, BlenderRigHost
 from .maya import MayaAdapterStatus, MayaRigHost
 from .maya_body import MayaBodyBuildHost
 from .maya_face import MayaFaceHost
+from .maya_source_skeleton_fit import MayaSourceSkeletonFitHost
 from .maya_external_mesh import MayaExternalMeshHost
 from .maya_axial_part import MayaAxialPartHost
 from .maya_finger_mid import MayaFingerMidHost
@@ -44,6 +45,7 @@ __all__ = [
     "MayaAdapterStatus",
     "MayaBodyBuildHost",
     "MayaFaceHost",
+    "MayaSourceSkeletonFitHost",
     "MayaExternalMeshHost",
     "MayaAxialPartHost",
     "MayaFingerMidHost",

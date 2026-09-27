@@ -273,10 +273,23 @@ def create_panel(controller: MayaPanelController | None = None):
             self.fit_container = QtWidgets.QLineEdit("FitSkeleton")
             self.external_fit_export = QtWidgets.QCheckBox(
                 "兼容导出原版 Fit（缺失标签写入文档）")
+            self.fit_template_scale = QtWidgets.QDoubleSpinBox()
+            self.fit_template_scale.setRange(0.01, 1000.0)
+            self.fit_template_scale.setDecimals(2)
+            self.fit_template_scale.setValue(1.0)
             group, form = self._group("01 · Fit 数据", [
                 ("容器名称", self.fit_container), ("导出到", fit_out),
                 ("从文件导入", fit_in),
+                ("模板缩放", self.fit_template_scale),
                 ("导出模式", self.external_fit_export)])
+            template_row = QtWidgets.QHBoxLayout()
+            template_row.addWidget(self._button("创建基础身体示例 Fit",
+                lambda: self._create_fit_template(False)))
+            template_row.addWidget(self._button("创建五指身体示例 Fit",
+                lambda: self._create_fit_template(True)))
+            form.addRow(template_row)
+            form.addRow(self._button("从所选标准骨架创建 Fit",
+                                      self._fit_from_selected_skeleton))
             row = QtWidgets.QHBoxLayout()
             row.addWidget(self._button("导出当前 Fit", self._export_fit))
             row.addWidget(self._button("从文档导入", self._import_fit))
@@ -340,20 +353,34 @@ def create_panel(controller: MayaPanelController | None = None):
             self.build_meshes.setPlaceholderText(
                 "每行一个未绑定网格的完整路径；留空时可使用 Preparation / Skin")
             self.build_meshes.setMaximumHeight(76)
+            self.build_source_root = QtWidgets.QLineEdit()
+            self.build_source_root.setPlaceholderText(
+                "来源骨架根关节完整路径；请先将来源置于绑定姿态")
             self.build_use_preparation_skin = QtWidgets.QCheckBox(
                 "留空时使用 Preparation / Skin 记录")
             self.build_use_preparation_skin.setChecked(True)
             self.build_max_influences = QtWidgets.QSpinBox()
             self.build_max_influences.setRange(1, 256)
             self.build_max_influences.setValue(4)
+            self.build_segment_influences = QtWidgets.QCheckBox(
+                "构建四肢及可用的标准躯干、手指分段关节")
+            self.build_segment_influences.setChecked(True)
             group, form = self._group("03 · 完整角色", [
                 ("脊柱配置", self.spine_segments), ("附加控制", self.head_aim),
                 ("Fit 标签", self.infer_missing_fit_labels),
+                ("来源骨架", self.build_source_root),
                 ("待绑定网格", self.build_meshes),
                 ("准备输入", self.build_use_preparation_skin),
+                ("分段变形", self.build_segment_influences),
                 ("最大影响数", self.build_max_influences)])
+            form.addRow(self._button("使用当前选中的网格",
+                                      self._fill_selected_build_meshes))
+            form.addRow(self._button("记录当前选中的骨架根关节",
+                                      self._fill_selected_source_root))
             form.addRow(self._button("构建并登记角色", self._build_character,
                                       primary=True))
+            form.addRow(self._button("从来源骨架直接构建角色",
+                                      self._build_from_source))
             stack.addWidget(group)
 
             self.original_source_skin = QtWidgets.QLineEdit()
@@ -1120,6 +1147,18 @@ def create_panel(controller: MayaPanelController | None = None):
                 external_compatibility=self.external_fit_export.isChecked())
             return f"已导出 {count} 个关节"
 
+        def _create_fit_template(self, with_fingers):
+            count = self.controller.fit_create_template(
+                self._namespace(), self.fit_container.text().strip(),
+                with_fingers=with_fingers,
+                scale=self.fit_template_scale.value())
+            return f"已创建 {count} 个 Fit 关节；调整关节位置后可构建 Body"
+
+        def _fit_from_selected_skeleton(self):
+            count = self.controller.fit_from_selected_skeleton(
+                self._namespace(), self.fit_container.text().strip())
+            return f"已从来源骨架创建 {count} 个 Fit 关节"
+
         def _check_model(self):
             result = self.controller.model_check()
             lines = [f"模型：{result.mesh}", f"顶点：{result.vertex_count}"]
@@ -1328,6 +1367,22 @@ def create_panel(controller: MayaPanelController | None = None):
                     self._namespace(), "Skin")
             return meshes
 
+        def _fill_selected_build_meshes(self):
+            meshes = self.controller.selected_meshes()
+            if not meshes:
+                raise ValueError("请在 Maya 场景中选中至少一个网格对象")
+            self.build_meshes.setPlainText("\n".join(meshes))
+            return f"已填入 {len(meshes)} 件网格"
+
+        def _fill_selected_source_root(self):
+            from maya import cmds
+
+            selection = cmds.ls(selection=True, long=True, type="joint") or []
+            if len(selection) != 1:
+                raise ValueError("请只选中来源骨架的根关节")
+            self.build_source_root.setText(selection[0])
+            return "已记录来源骨架根关节"
+
         def _build_character(self):
             value = self.spine_segments.value()
             meshes = self._build_mesh_paths()
@@ -1337,9 +1392,23 @@ def create_panel(controller: MayaPanelController | None = None):
                 head_aim=self.head_aim.isChecked(),
                 infer_missing_labels=self.infer_missing_fit_labels.isChecked(),
                 meshes=meshes,
-                maximum_influences=self.build_max_influences.value())
+                maximum_influences=self.build_max_influences.value(),
+                segment_influences=self.build_segment_influences.isChecked())
             return (f"角色已登记：{result.joint_count} 个关节、"
+                    f"{result.segment_joint_count} 个分段变形关节、"
                     f"{result.channel_count} 个通道、{len(meshes)} 套 Skin")
+
+        def _build_from_source(self):
+            meshes = self._build_mesh_paths()
+            result = self.controller.body_build_from_source(
+                self._namespace(), self.build_source_root.text().strip(),
+                self.fit_container.text().strip(), meshes=meshes,
+                maximum_influences=self.build_max_influences.value(),
+                head_aim=self.head_aim.isChecked(),
+                segment_influences=self.build_segment_influences.isChecked())
+            return (f"已从来源骨架构建：{result.joint_count} 个 Body 关节、"
+                    f"{result.segment_joint_count} 个分段变形关节、"
+                    f"{len(meshes)} 套 Skin")
 
         def _migrate_original_skin(self):
             source_namespace = self._namespace()

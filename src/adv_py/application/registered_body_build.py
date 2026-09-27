@@ -7,8 +7,11 @@ from dataclasses import dataclass
 from adv_py.core.character_registry import CharacterRegistration
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
+from .axial_part_deform import BuildAxialPartDeform
 from .body_character_rig import BuildBodyCharacterRig, BodyCharacterRigBuildResult
 from .character_registry import RegisterBodyCharacter
+from .finger_mid_deform import BuildFingerMidDeform
+from .limb_part_deform import BuildLimbPartDeform
 from .oriented_body_skeleton import (BuildOrientedBodySkeleton,
     OrientedBodySkeletonBuildResult)
 
@@ -33,6 +36,7 @@ class RegisteredBodyBuildResult:
     skeleton: OrientedBodySkeletonBuildResult
     rig: BodyCharacterRigBuildResult
     registration: CharacterRegistration
+    segment_influences: tuple[str, ...] = ()
 
 
 class BuildRegisteredBodyCharacter:
@@ -44,6 +48,7 @@ class BuildRegisteredBodyCharacter:
     def apply(self, container_name: str = "FitSkeleton", *,
               axial_description=None, include_head_aim: bool = False,
               infer_missing_labels: bool = False,
+              include_segment_influences: bool = False,
               ) -> RegisteredBodyBuildResult:
         preview = BuildOrientedBodySkeleton(self._host).plan(
             container_name, infer_missing_labels=infer_missing_labels)
@@ -61,4 +66,29 @@ class BuildRegisteredBodyCharacter:
             registration = RegisterBodyCharacter(joined).apply(rig)
             if len(registration.body) != len(skeleton.snapshot.joints):
                 raise RuntimeError("登记骨架数量与本次构建结果不一致")
-        return RegisteredBodyBuildResult(skeleton, rig, registration)
+            segments: list[str] = []
+            if include_segment_influences:
+                # The five-finger and standard axial helpers are optional Body
+                # branches; the limb segments exist on every supported Body.
+                body_names = {item.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                              for item in registration.body}
+                axial = {"Root_M", "Spine1_M", "Chest_M", "Neck_M", "Head_M"}
+                if axial_description is None and axial <= body_names:
+                    segments.extend(spec.path for spec in
+                        BuildAxialPartDeform(joined).apply())
+                original_fingers = {f"{digit}Finger{index}_{side}"
+                                    for side in ("R", "L")
+                                    for digit in ("Thumb", "Index", "Middle", "Ring", "Pinky")
+                                    for index in (2, 3)}
+                canonical_fingers = {f"{digit}{index}_{side}"
+                                     for side in ("R", "L")
+                                     for digit in ("Thumb", "Index", "Middle", "Ring", "Pinky")
+                                     for index in (2, 3)}
+                if (original_fingers <= body_names
+                        or canonical_fingers <= body_names):
+                    segments.extend(spec.path for spec in
+                        BuildFingerMidDeform(joined).apply())
+                for spec in BuildLimbPartDeform(joined).apply():
+                    segments.extend((spec.part1, spec.part2))
+        return RegisteredBodyBuildResult(skeleton, rig, registration,
+                                         tuple(segments))

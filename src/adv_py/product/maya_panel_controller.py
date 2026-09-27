@@ -59,6 +59,7 @@ class PanelCharacter:
     joint_count: int = 0
     channel_count: int = 0
     issue: str = ""
+    segment_joint_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,6 +261,57 @@ class MayaPanelController:
             source, container)
         return len(result.joint_paths)
 
+    def fit_create_template(self, namespace: str,
+                            container: str = "FitSkeleton", *,
+                            with_fingers: bool = True,
+                            scale: float = 1.0) -> int:
+        from adv_py.application.body_hand_fit import (
+            BuildSyntheticBodyWithHandSourceFit)
+        from adv_py.application.fit_container import CreateFitSkeleton
+        from adv_py.application.registered_body_build import _JoinedTransactionHost
+        from adv_py.application.upper_body_fit import BuildSyntheticBodySourceFit
+
+        builder = (BuildSyntheticBodyWithHandSourceFit if with_fingers
+                   else BuildSyntheticBodySourceFit)
+        host = self._host(namespace)
+        if host.find_name_collisions(container):
+            result = builder(host).apply(container, scale=scale)
+        else:
+            with host.transaction("创建 Fit 容器和身体模板"):
+                joined = _JoinedTransactionHost(host)
+                CreateFitSkeleton(joined).apply(container)
+                result = builder(joined).apply(container, scale=scale)
+        return len(result.template.joint_paths)
+
+    def selected_meshes(self) -> tuple[str, ...]:
+        from maya import cmds
+
+        meshes = []
+        for node in cmds.ls(selection=True, long=True) or ():
+            kind = cmds.nodeType(node)
+            transform = ((cmds.listRelatives(node, parent=True,
+                fullPath=True) or [None])[0] if kind == "mesh" else node)
+            if (transform and cmds.nodeType(transform) == "transform"
+                    and cmds.listRelatives(transform, shapes=True,
+                        noIntermediate=True, type="mesh", fullPath=True)):
+                meshes.append(transform)
+        return tuple(dict.fromkeys(meshes))
+
+    def fit_from_selected_skeleton(self, namespace: str,
+                                   container: str = "FitSkeleton") -> int:
+        from maya import cmds
+        from adv_py.adapters.maya_source_skeleton_fit import (
+            MayaSourceSkeletonFitHost)
+        from adv_py.application.source_skeleton_fit import (
+            BuildFitFromSourceSkeleton)
+
+        selection = cmds.ls(selection=True, long=True, type="joint") or []
+        if len(selection) != 1:
+            raise ValueError("请只选中来源骨架的根关节")
+        host = MayaSourceSkeletonFitHost(
+            namespace=None if namespace == ":" else namespace)
+        return BuildFitFromSourceSkeleton(host).apply(selection[0], container)
+
     def fit_edit_positions(self, namespace: str,
                            edits: tuple[tuple[str, tuple[float, float, float]], ...],
                            container: str = "FitSkeleton") -> int:
@@ -291,7 +343,8 @@ class MayaPanelController:
                    head_aim: bool = False,
                    infer_missing_labels: bool = False,
                    meshes: tuple[str, ...] = (),
-                   maximum_influences: int = 4) -> PanelCharacter:
+                   maximum_influences: int = 4,
+                   segment_influences: bool = False) -> PanelCharacter:
         description = (variable_axial_description(spine_segments)
             if spine_segments is not None else None)
         host = self._host(namespace)
@@ -304,14 +357,52 @@ class MayaPanelController:
                 maximum_influences=maximum_influences,
                 axial_description=description,
                 include_head_aim=head_aim,
-                infer_missing_labels=infer_missing_labels).character
+                infer_missing_labels=infer_missing_labels,
+                include_segment_influences=segment_influences).character
         else:
             result = BuildRegisteredBodyCharacter(host).apply(
                 container, axial_description=description,
                 include_head_aim=head_aim,
-                infer_missing_labels=infer_missing_labels)
+                infer_missing_labels=infer_missing_labels,
+                include_segment_influences=segment_influences)
         return PanelCharacter(namespace, True, len(result.registration.body),
-                              len(result.registration.channels))
+                              len(result.registration.channels),
+                              segment_joint_count=len(result.segment_influences))
+
+    def body_build_from_source(self, namespace: str, source_root: str,
+                               container: str = "FitSkeleton", *,
+                               meshes: tuple[str, ...] = (),
+                               maximum_influences: int = 4,
+                               head_aim: bool = False,
+                               segment_influences: bool = True) -> PanelCharacter:
+        from adv_py.adapters.maya_source_skeleton_fit import (
+            MayaSourceSkeletonFitHost)
+        from adv_py.application.registered_body_build import _JoinedTransactionHost
+        from adv_py.application.source_skeleton_fit import BuildFitFromSourceSkeleton
+
+        if not source_root.strip():
+            raise ValueError("请填写来源骨架根关节路径")
+        host = MayaSourceSkeletonFitHost(
+            namespace=None if namespace == ":" else namespace)
+        identity = getattr(host._cmds, "identity", None)
+        local_meshes = tuple(identity.to_local(mesh) if identity else mesh
+                             for mesh in meshes)
+        with host.transaction("从标准骨架构建并蒙皮角色"):
+            joined = _JoinedTransactionHost(host)
+            BuildFitFromSourceSkeleton(joined).apply(source_root, container)
+            if local_meshes:
+                result = BuildRegisteredSkinnedBodyCharacter(joined).apply(
+                    local_meshes, container_name=container,
+                    maximum_influences=maximum_influences,
+                    include_head_aim=head_aim,
+                    include_segment_influences=segment_influences).character
+            else:
+                result = BuildRegisteredBodyCharacter(joined).apply(
+                    container, include_head_aim=head_aim,
+                    include_segment_influences=segment_influences)
+        return PanelCharacter(namespace, True, len(result.registration.body),
+                              len(result.registration.channels),
+                              segment_joint_count=len(result.segment_influences))
 
     def original_skin_migrate(self, namespace: str,
                               source_skin: str = ""):

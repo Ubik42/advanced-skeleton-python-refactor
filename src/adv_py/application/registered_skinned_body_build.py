@@ -28,6 +28,7 @@ class BuildRegisteredSkinnedBodyCharacter:
               axial_description=None,
               include_head_aim: bool = False,
               infer_missing_labels: bool = False,
+              include_segment_influences: bool = False,
               on_stage=None) -> RegisteredSkinnedBodyBuildResult:
         if (not meshes or len(set(meshes)) != len(meshes)
                 or not 1 <= maximum_influences <= 256):
@@ -45,11 +46,12 @@ class BuildRegisteredSkinnedBodyCharacter:
             character = BuildRegisteredBodyCharacter(joined).apply(
                 container_name, axial_description=axial_description,
                 include_head_aim=include_head_aim,
-                infer_missing_labels=infer_missing_labels)
+                infer_missing_labels=infer_missing_labels,
+                include_segment_influences=include_segment_influences)
             if on_stage:
                 on_stage("rig-built")
             influences = tuple(item.path for item in
-                               character.registration.body)
+                               character.registration.body) + character.segment_influences
             skins = tuple(BindSkin(joined).apply(mesh, influences,
                 skin_name=name, maximum_influences=maximum_influences)
                 for mesh, name in zip(meshes, skin_names))

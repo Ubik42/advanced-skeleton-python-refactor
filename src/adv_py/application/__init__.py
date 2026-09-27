@@ -512,6 +512,8 @@ __all__ = [
     "BuildBodyCharacterRig",
     "BuildRegisteredBodyCharacter",
     "RegisteredBodyBuildResult",
+    "BuildFitFromSourceSkeleton",
+    "SourceSkeletonJoint",
     "BuildRegisteredSkinnedBodyCharacter",
     "RegisteredSkinnedBodyBuildResult",
     "BuildBodyRootMotion",
@@ -712,6 +714,7 @@ from .registered_body_build import (BuildRegisteredBodyCharacter,
     RegisteredBodyBuildResult)
 from .registered_skinned_body_build import (BuildRegisteredSkinnedBodyCharacter,
     RegisteredSkinnedBodyBuildResult)
+from .source_skeleton_fit import BuildFitFromSourceSkeleton, SourceSkeletonJoint
 
 from .external_mesh_io import (ExportExternalMesh, ImportExternalMesh,
     ExternalMeshResult)
