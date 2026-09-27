@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from array import array
 import json
+from math import radians
 import re
 
 from adv_py.application.face_pre import EyeLidLayer, FacePreRole, FaceSide
@@ -137,6 +138,30 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
         if len(heads) != 1 or c.referenceQuery(heads[0], isNodeReferenced=True):
             raise FitSkeletonValidationError("Head 关节缺失、重名或属于引用")
         head = heads[0]
+        eye_group = (c.ls("AdvPy_FaceEyes", long=True,
+                          type="transform") or [None])[0]
+        if (eye_group is None or
+                c.listRelatives(eye_group, parent=True,
+                                fullPath=True) != [head]):
+            raise FitSkeletonValidationError(
+                "先从 Face / Pre 构建双眼控制与蒙皮，再建立眼睑")
+        eye_joints = {}
+        eye_radii = {}
+        for side in FaceSide:
+            suffix = "_R" if side is FaceSide.RIGHT else "_L"
+            joints = c.ls("AdvPy_Eye" + suffix, long=True, type="joint") or []
+            mesh_attr = ("advPyRightEyeMesh" if side is FaceSide.RIGHT
+                         else "advPyLeftEyeMesh")
+            eye_mesh = c.getAttr(eye_group + "." + mesh_attr)
+            if (len(joints) != 1 or not joints[0].startswith(eye_group + "|")
+                    or not c.objExists(eye_mesh)
+                    or c.getAttr(joints[0] + ".advPyAuxiliaryInfluenceKind")
+                    != "face-eye-v1"):
+                raise FitSkeletonValidationError("双眼控制与当前 Head 不匹配")
+            bounds = c.exactWorldBoundingBox(eye_mesh)
+            eye_joints[side] = joints[0]
+            eye_radii[side] = max(bounds[index + 3] - bounds[index]
+                                  for index in range(3)) / 2.
         shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
                                  fullPath=True, type="mesh") or []
         history = c.listHistory(shapes[0], pruneDagObjects=True) or []
@@ -169,13 +194,19 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
             names.extend(("ctrlEye" + suffix,
-                          "ctrlEye" + suffix + "_Offset"))
+                          "ctrlEye" + suffix + "_Offset",
+                          "ctrlEye" + suffix + "BlinkFraction",
+                          "ctrlEye" + suffix + "BlinkReverse"))
             for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
                 for arc in ("upper", "lower"):
                     label = "Upper" if arc == "upper" else "Lower"
                     control = "ctrl" + label + "EyeLid" + (
                         "Outer" if layer is EyeLidLayer.OUTER else "") + suffix
                     names.extend((control, control + "_Offset"))
+                    names.extend((control + "FleshyScale",
+                                  control + "FleshyAmount",
+                                  control + "FleshyBlink",
+                                  control + "MotionSum"))
                     curve_name = arc + "Lid" + layer.value + "WorkCurve" + suffix
                     names.append(curve_name)
                     for index in range(len(arcs[side][(layer, arc)])):
@@ -219,6 +250,13 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
                 eye_control = c.parent(eye_control, eye_offset, relative=True)[0]
                 c.addAttr(eye_control, longName="blink", attributeType="double",
                           minValue=0, maxValue=10, defaultValue=0, keyable=True)
+                fraction = c.createNode("multiplyDivide",
+                    name=eye_name + "BlinkFraction")
+                c.setAttr(fraction + ".input2X", .1)
+                c.connectAttr(eye_control + ".blink", fraction + ".input1X")
+                reverse = c.createNode("reverse",
+                    name=eye_name + "BlinkReverse")
+                c.connectAttr(fraction + ".outputX", reverse + ".inputX")
                 eye_control_names[side] = (
                     c.ls(eye_control, long=True, type="transform") or [eye_control])[0]
                 for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
@@ -239,6 +277,43 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
                             name=control_name + "_Offset", parent=motion)
                         c.xform(offset, worldSpace=True, translation=center)
                         control = c.parent(control, offset, relative=True)[0]
+                        fleshy_default = (7. if arc == "upper" else 3.)
+                        if layer is EyeLidLayer.OUTER:
+                            fleshy_default /= 5.
+                        c.addAttr(control, longName="fleshy",
+                            attributeType="double", minValue=0, maxValue=10,
+                            defaultValue=fleshy_default, keyable=True)
+                        conversion = c.createNode("multiplyDivide",
+                            name=control_name + "FleshyScale")
+                        c.setAttr(conversion + ".input2X",
+                                  eye_radii[side] * radians(1.) * .1)
+                        c.setAttr(conversion + ".input2Y",
+                                  -eye_radii[side] * radians(1.) * .1)
+                        c.connectAttr(eye_joints[side] + ".rotateY",
+                                      conversion + ".input1X")
+                        c.connectAttr(eye_joints[side] + ".rotateX",
+                                      conversion + ".input1Y")
+                        amount = c.createNode("multiplyDivide",
+                            name=control_name + "FleshyAmount")
+                        c.connectAttr(conversion + ".output",
+                                      amount + ".input1")
+                        c.connectAttr(control + ".fleshy",
+                                      amount + ".input2X")
+                        c.connectAttr(control + ".fleshy",
+                                      amount + ".input2Y")
+                        blink_fade = c.createNode("multiplyDivide",
+                            name=control_name + "FleshyBlink")
+                        c.connectAttr(amount + ".output",
+                                      blink_fade + ".input1")
+                        c.setAttr(blink_fade + ".input2X", 1.)
+                        c.connectAttr(reverse + ".outputX",
+                                      blink_fade + ".input2Y")
+                        motion_sum = c.createNode("plusMinusAverage",
+                            name=control_name + "MotionSum")
+                        c.connectAttr(control + ".translate",
+                                      motion_sum + ".input3D[0]")
+                        c.connectAttr(blink_fade + ".output",
+                                      motion_sum + ".input3D[1]")
                         control_names[(side, layer, arc)] = (
                             c.ls(control, long=True, type="transform") or [control])[0]
                         curve = pre.read_eye_lid_fit(layer, side)[
@@ -259,7 +334,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
                                 name=curve_name + str(index) + "Scale")
                             c.setAttr(scale + ".input2", tapered, tapered,
                                       tapered, type="double3")
-                            c.connectAttr(control + ".translate",
+                            c.connectAttr(motion_sum + ".output3D",
                                           scale + ".input1")
                             addition = c.createNode("plusMinusAverage",
                                 name=curve_name + str(index) + "Sum")

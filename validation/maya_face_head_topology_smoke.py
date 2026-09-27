@@ -186,7 +186,18 @@ def main() -> None:
         assert MayaFaceBuildHost().read_include() is FaceInclude.ALL
         cmds.redo()
         assert controller.face_build_inspect_inputs(":")["ready"]
-        source_skin = (cmds.ls(type="skinCluster") or [None])[0]
+        try:
+            MayaFaceEyeLidRigHost().build()
+        except FitSkeletonValidationError as error:
+            assert "双眼控制" in str(error)
+        else:
+            raise AssertionError("未建立双眼控制时眼睑构建应被拒绝")
+        eye_rig = controller.face_eye_build(":",
+            (cmds.ls(head_joint, long=True, type="joint") or [None])[0],
+            right_eye, left_eye)
+        assert len(eye_rig.skins) == 2
+        source_skin = next(item for item in cmds.listHistory(head)
+                           if cmds.nodeType(item) == "skinCluster")
         original_weights = MayaDenseSkinHost().capture_dense_skin(source_skin)
         fault_host = MayaFaceEyeLidRigHost()
         original_apply = fault_host.apply_dense_skin
@@ -323,10 +334,54 @@ def main() -> None:
             }
             cmds.setAttr(eye_control + ".blink", 0)
             assert abs(middle_gap(side, EyeLidLayer.MAIN)-before_gap) < 1e-5
+        right_curve = lid_rig["work_curves"][(FaceSide.RIGHT,
+                                               EyeLidLayer.MAIN, "upper")]
+        right_cvs = cmds.ls(right_curve + ".cv[*]", flatten=True)
+        follow_cv = right_cvs[len(right_cvs) // 2]
+        still_cv = cmds.pointPosition(follow_cv, world=True)
+        cmds.setAttr(eye_rig.right_control + ".translateY", .1)
+        eye_rotation = cmds.getAttr(eye_rig.right_joint + ".rotateX")
+        following_cv = cmds.pointPosition(follow_cv, world=True)
+        follow_y = following_cv[1] - still_cv[1]
+        assert abs(eye_rotation) > 1 and .001 < abs(follow_y) < .05
+        follow_mesh = mesh_points()
+        right_delta = max(abs(follow_mesh[index][1]-neutral[index][1])
+                          for index, point in enumerate(neutral) if point[0] < 0)
+        left_delta = max(abs(follow_mesh[index][1]-neutral[index][1])
+                         for index, point in enumerate(neutral) if point[0] >= 0)
+        assert right_delta > .001 and left_delta < 1e-5
+        cmds.setAttr(eye_rig.right_control + ".translateY", 0)
+        cmds.setAttr(eye_rig.right_control + ".translateX", .1)
+        horizontal_rotation = cmds.getAttr(
+            eye_rig.right_joint + ".rotateY")
+        horizontal_delta = (cmds.pointPosition(follow_cv, world=True)[0]
+                            - still_cv[0])
+        assert abs(horizontal_rotation) > 1
+        assert .001 < abs(horizontal_delta) < .05
+        cmds.setAttr(eye_rig.right_control + ".translateX", 0)
+        upper_control = lid_rig["controls"][(FaceSide.RIGHT,
+                                              EyeLidLayer.MAIN, "upper")]
+        cmds.setAttr(upper_control + ".fleshy", 0)
+        cmds.setAttr(eye_rig.right_control + ".translateY", .1)
+        assert abs(cmds.pointPosition(follow_cv, world=True)[1]
+                   - still_cv[1]) < 1e-5
+        cmds.setAttr(eye_rig.right_control + ".translateY", 0)
+        cmds.setAttr(upper_control + ".fleshy", 7)
+        cmds.setAttr(lid_rig["eye_controls"][FaceSide.RIGHT] + ".blink", 10)
+        closed_still = cmds.pointPosition(follow_cv, world=True)
+        cmds.setAttr(eye_rig.right_control + ".translateY", .1)
+        closed_following = cmds.pointPosition(follow_cv, world=True)
+        assert abs(closed_following[1] - closed_still[1]) < 1e-5
+        cmds.setAttr(eye_rig.right_control + ".translateY", 0)
+        cmds.setAttr(lid_rig["eye_controls"][FaceSide.RIGHT] + ".blink", 0)
         animated = lid_rig["controls"][(FaceSide.RIGHT,
                                         EyeLidLayer.MAIN, "upper")]
         cmds.setKeyframe(animated, attribute="translateY", time=1, value=0)
         cmds.setKeyframe(animated, attribute="translateY", time=5, value=-.05)
+        cmds.setKeyframe(eye_rig.right_control,
+                         attribute="translateY", time=1, value=0)
+        cmds.setKeyframe(eye_rig.right_control,
+                         attribute="translateY", time=5, value=.1)
         eye_animated = lid_rig["eye_controls"][FaceSide.LEFT]
         cmds.setKeyframe(eye_animated, attribute="blink", time=1, value=0)
         cmds.setKeyframe(eye_animated, attribute="blink", time=5, value=10)
@@ -354,6 +409,7 @@ def main() -> None:
                         for index in range(len(frame1))
                         if frame1[index][0] < 0)
         assert key_delta > .005
+        assert abs(cmds.getAttr(eye_rig.right_control + ".translateY")-.1) < 1e-6
         assert abs(cmds.getAttr("ctrlEye_L.blink")-10) < 1e-6
         result = {"head_vertex_count": int(cmds.polyEvaluate(head, vertex=True)),
                   "head_face_count": int(cmds.polyEvaluate(head, face=True)),
@@ -361,6 +417,11 @@ def main() -> None:
                   "face_build_readiness": readiness,
                   "eyelid_deformation_cm": displacement,
                   "blink": blink_results,
+                  "eye_follow": {"eye_rotate_x_deg": round(eye_rotation, 6),
+                                 "curve_delta_y_cm": round(follow_y, 6),
+                                 "eye_rotate_y_deg": round(horizontal_rotation, 6),
+                                 "curve_delta_x_cm": round(horizontal_delta, 6),
+                                 "mesh_delta_y_cm": round(right_delta, 6)},
                   "curve_joint_max_error_cm": round(curve_joint_error, 8),
                   "eyelid_joint_count": len(lid_rig["joints"]),
                   "weighted_vertices": changed_vertices,
