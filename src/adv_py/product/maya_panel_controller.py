@@ -162,11 +162,15 @@ class MayaPanelController:
             raise ValueError("请选择角色命名空间")
         return self._host_factory(namespace=None if namespace == ":" else namespace)
 
-    def model_check(self):
+    def model_check(self, *, interactive: bool = False,
+                    skip_symmetry: bool = False):
         from adv_py.adapters.maya_model_checker import MayaModelCheckHost
-        from adv_py.application.model_check import CheckModel
+        from adv_py.application.model_check import CheckModel, ReviewModelCheck
 
-        return CheckModel(MayaModelCheckHost()).execute()
+        host = MayaModelCheckHost()
+        if interactive:
+            return ReviewModelCheck(host).execute(skip_symmetry=skip_symmetry)
+        return CheckModel(host).execute(skip_symmetry=skip_symmetry)
 
     def preparation_new_scene(self) -> None:
         from adv_py.adapters.maya_preparation_reference import MayaPreparationReferenceHost

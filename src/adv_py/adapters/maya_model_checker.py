@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from adv_py.core.model_checker import (
-    ModelHistoryNode, ModelSymmetryIssue, ModelTransformState,
+    ModelCheckGate, ModelHistoryNode, ModelSymmetryIssue,
+    ModelTransformIssue, ModelTransformState,
 )
 
 
@@ -102,3 +103,41 @@ class MayaModelCheckHost:
         vertices = sorted({index for issue in issues
                            for index in (issue.vertex, issue.closest_vertex)})
         cmds.select([f"{mesh}.vtx[{index}]" for index in vertices], replace=True)
+
+    def confirm_model_check_gate(self, gate: ModelCheckGate) -> bool:
+        if gate.category == "transform":
+            title = "模型检查 · 变换"
+            details = [
+                f"{issue.attribute}: {issue.value:g}（默认 {issue.expected:g}）"
+                for issue in gate.issues
+                if isinstance(issue, ModelTransformIssue)
+            ]
+        elif gate.category == "history":
+            title = "模型检查 · 构建历史"
+            details = [
+                f"{issue.name} [{issue.node_type}]"
+                for issue in gate.issues
+                if isinstance(issue, ModelHistoryNode)
+            ]
+        elif gate.category == "symmetry":
+            title = "模型检查 · 左右对称"
+            details = [
+                f"顶点 {issue.vertex} → {issue.closest_vertex}: "
+                f"偏差 {issue.distance:.6g} cm"
+                for issue in gate.issues
+                if isinstance(issue, ModelSymmetryIssue)
+            ]
+        else:
+            raise ValueError("未知模型检查阶段：" + gate.category)
+        summary = "\n".join(details[:12])
+        if len(details) > 12:
+            summary += f"\n另有 {len(details) - 12} 项"
+        choice = self.cmds.confirmDialog(
+            title=title,
+            message=f"{gate.subject}\n\n{summary}\n\n继续检查？",
+            button=["继续", "取消"],
+            defaultButton="取消",
+            cancelButton="取消",
+            dismissString="取消",
+        )
+        return choice == "继续"

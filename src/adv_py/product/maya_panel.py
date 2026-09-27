@@ -265,6 +265,11 @@ def create_panel(controller: MayaPanelController | None = None):
             self.model_check_results.setMaximumHeight(180)
             group, form = self._group("00 · 模型检查", [
                 ("检查报告", self.model_check_results)])
+            self.model_check_interactive = QtWidgets.QCheckBox("逐项确认检查问题")
+            self.model_check_interactive.setChecked(True)
+            self.model_check_skip_symmetry = QtWidgets.QCheckBox("跳过左右对称检查")
+            form.addRow(self.model_check_interactive)
+            form.addRow(self.model_check_skip_symmetry)
             form.addRow(self._button("检查选中模型", self._check_model))
             stack.addWidget(group)
 
@@ -1371,8 +1376,12 @@ def create_panel(controller: MayaPanelController | None = None):
             return f"已从来源骨架创建 {count} 个 Fit 关节{destination}"
 
         def _check_model(self):
-            result = self.controller.model_check()
+            result = self.controller.model_check(
+                interactive=self.model_check_interactive.isChecked(),
+                skip_symmetry=self.model_check_skip_symmetry.isChecked())
             lines = [f"模型：{result.mesh}", f"顶点：{result.vertex_count}"]
+            if not result.symmetry_checked:
+                lines.append("左右对称性：未检查")
             if result.clean:
                 lines.append("通过：变换、历史和左右对称性均未发现问题")
             else:

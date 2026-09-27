@@ -7,7 +7,7 @@ from adv_py.core.model_checker import (
     MODEL_SYMMETRY_TOLERANCE, ModelCheckGate, ModelCheckResult,
     ModelHistoryNode, ModelSymmetryIssue, ModelTransformState,
     inspect_model_history, inspect_model_symmetry,
-    inspect_model_transforms, plan_model_check_gates,
+    inspect_model_transforms,
 )
 
 
@@ -62,23 +62,45 @@ class CheckModel:
 
 
 class ReviewModelCheck:
-    """Apply the original per-stage Continue/Cancel decisions after capture."""
+    """Inspect each stage only after the preceding Continue decision."""
 
     def __init__(self, host: ModelCheckReviewHost) -> None:
         self.host = host
 
     def execute(self, *, game_engine: bool = False,
                 skip_symmetry: bool = False) -> ModelCheckResult:
-        result = CheckModel(self.host).execute(
-            game_engine=game_engine, select_issues=False,
-            skip_symmetry=skip_symmetry)
-        order = tuple(state.path for state in
-                      self.host.transform_chain(result.mesh))
-        for gate in plan_model_check_gates(result, order):
-            if gate.category == "symmetry":
-                self.host.select_asymmetric_vertices(
-                    result.mesh, result.symmetry_issues)
-            if not self.host.confirm_model_check_gate(gate):
-                raise ModelCheckCancelled(
-                    "模型检查在 " + gate.category + " 阶段取消")
-        return result
+        if type(skip_symmetry) is not bool:
+            raise ValueError("跳过模型对称检查必须是布尔值")
+        mesh = self.host.selected_mesh()
+        states = self.host.transform_chain(mesh)
+        transforms = inspect_model_transforms(states)
+        for state in states:
+            issues = tuple(issue for issue in transforms
+                           if issue.path == state.path)
+            if issues and not self.host.confirm_model_check_gate(
+                    ModelCheckGate("transform", state.path, issues)):
+                raise ModelCheckCancelled("模型检查在 transform 阶段取消")
+
+        history = inspect_model_history(self.host.history(mesh),
+                                        game_engine=game_engine)
+        if history and not self.host.confirm_model_check_gate(
+                ModelCheckGate("history", mesh, history)):
+            raise ModelCheckCancelled("模型检查在 history 阶段取消")
+
+        if skip_symmetry:
+            vertex_count = self.host.vertex_count(mesh)
+            if vertex_count < 1:
+                raise ValueError("所选模型没有可检查的顶点")
+            symmetry = ()
+        else:
+            points, nearest = self.host.symmetry_samples(
+                mesh, MODEL_SYMMETRY_TOLERANCE)
+            vertex_count = len(points)
+            symmetry = inspect_model_symmetry(points, nearest)
+            if symmetry:
+                self.host.select_asymmetric_vertices(mesh, symmetry)
+                if not self.host.confirm_model_check_gate(
+                        ModelCheckGate("symmetry", mesh, symmetry)):
+                    raise ModelCheckCancelled("模型检查在 symmetry 阶段取消")
+        return ModelCheckResult(mesh, vertex_count, transforms, history,
+                                symmetry, not skip_symmetry)
