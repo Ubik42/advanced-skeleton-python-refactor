@@ -430,6 +430,21 @@ def main() -> None:
         assert len(lid_rig["eye_controls"]) == 2
         assert len(lid_rig["work_curves"]) == expected_control_count
         assert len(lid_rig["joints"]) >= 16
+        for side in FaceSide:
+            suffix = "_R" if side is FaceSide.RIGHT else "_L"
+            depth = cmds.getAttr("ctrlUpperEyeLid" + suffix
+                                 + ".blinkOffsetZ")
+            if side.value in lid_rig["stationary_aperture_sides"]:
+                assert depth > 0
+                roll = sorted((int(node.split("Main", 1)[1].split("_", 1)[0]),
+                               cmds.getAttr(node + ".input2X"))
+                              for node in cmds.ls(type="multiplyDivide") or []
+                              if node.startswith("upperLidMain") and
+                              node.endswith(suffix + "BlinkRoll"))
+                assert len(roll) >= 3
+                assert abs(roll[0][1]) < abs(roll[len(roll)//2][1]) * .1
+            else:
+                assert abs(depth) < 1e-9
         if scene_output is not None:
             scene_output.parent.mkdir(parents=True, exist_ok=True)
             cmds.file(rename=str(scene))

@@ -1,12 +1,10 @@
 """Build segmented Main/Outer eyelid joints from bilateral Face Fit bands."""
 from __future__ import annotations
 
-from math import isfinite
-
 from array import array
 from contextlib import nullcontext
 import json
-from math import radians
+from math import isfinite, pi, radians, sin
 import re
 
 from adv_py.application.face_pre import EyeLidLayer, FacePreRole, FaceSide
@@ -501,9 +499,14 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                             correction = c.createNode("multiplyDivide",
                                 name=control_name + "BlinkOffset")
                             for axis in "XYZ":
+                                default = (eye_radii[side] * .135
+                                    if (layer is EyeLidLayer.MAIN and
+                                        axis == "Z" and open_inners[side] and
+                                        not mobile_inners[side]) else 0.)
                                 c.addAttr(control,
                                     longName="blinkOffset" + axis,
-                                    attributeType="double", keyable=True)
+                                    attributeType="double", keyable=True,
+                                    defaultValue=default)
                                 c.connectAttr(control + ".blinkOffset" + axis,
                                               correction + ".input1" + axis)
                                 c.connectAttr(fraction + ".outputX",
@@ -579,6 +582,9 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                 _, angle = eye_lid_sphere_blink(
                                     positions[side][vertex],
                                     eye_centers[side], delta_y)
+                                if open_inners[side] and not mobile_inners[side]:
+                                    arc_fraction = index / (len(vertices) - 1)
+                                    angle *= sin(pi * arc_fraction) ** 4
                                 roll = c.createNode("multiplyDivide",
                                     name=name + "BlinkRoll")
                                 c.setAttr(roll + ".input2X", angle / 10.)
