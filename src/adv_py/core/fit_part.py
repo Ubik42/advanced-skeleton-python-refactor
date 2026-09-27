@@ -55,6 +55,7 @@ class FitPartReparentSpec:
     parent_part: str
     parent_part_name: str
     reason: str
+    segment_parts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,7 +256,8 @@ def audit_fit_part_hierarchy(
                 (spec.deform_profile.fat, spec.deform_profile.fat_front,
                  spec.deform_profile.fat_width))):
             issues.append("Part 体积参数不一致：" + spec.name)
-    for spec in reparents:
+    final_reparents = {spec.child_name: spec for spec in reparents}
+    for spec in final_reparents.values():
         state = children.get(spec.child_name)
         if state is not None and state.parent_name != spec.parent_part_name:
             issues.append("Part 下游关节父级不一致：" + spec.child_name)
@@ -345,14 +347,16 @@ def plan_fit_part_reparents(
                            for item in parts}
     source_by_joint = {item.joint: item for item in metadata}
     instance_by_path = {item.output_path: item for item in instances}
-    assignments: dict[str, FitPartReparentSpec] = {}
+    assignments: list[FitPartReparentSpec] = []
     for part in parts:
         if part.index != part.count:
             continue
         end = instance_by_path[part.end_body]
-        assignments[end.output_path] = FitPartReparentSpec(
+        assignments.append(FitPartReparentSpec(
             end.output_path, end.output_name, part.path, part.name,
-            "end_of_chain")
+            "end_of_chain",
+            tuple(part_by_start_index[(part.start_body, index)].name
+                  for index in range(1, part.count + 1))))
     for child in instances:
         source = source_by_joint.get(child.source_joint)
         if source is None:
@@ -367,10 +371,10 @@ def plan_fit_part_reparents(
         if parent is None:
             raise FitPartValidationError("ChildOfPart 指向不存在的父级 Part："
                                          + child.output_name)
-        assignments[child.output_path] = FitPartReparentSpec(
+        assignments.append(FitPartReparentSpec(
             child.output_path, child.output_name, parent.path, parent.name,
-            "child_of_part")
-    return tuple(assignments.values())
+            "child_of_part"))
+    return tuple(assignments)
 
 
 def _select_downstream(

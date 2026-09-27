@@ -11,11 +11,34 @@ from adv_py.core.body_skeleton import FitDeformProfile
 from adv_py.core.fit_part_twist import (
     FitPartTwistProjection, FitPartTwistStep,
 )
+from adv_py.core.fit_part_scale import FitPartScaleStep
 
 _FIT_PART_KIND = "fit-part-v1"
 
 
 class MayaFitPartMixin:
+    def preflight_fit_part_scale(self, step: FitPartScaleStep) -> None:
+        c = self._cmds
+        part = self._unique_fit_part_joint(step.part_name)
+        self._unique_fit_part_joint(step.start_body_name)
+        if (c.getAttr(part + ".segmentScaleCompensate") != 1
+                or not c.objExists(step.source_plug)
+                or any(not c.getAttr(part + ".scale" + axis, settable=True)
+                       for axis in "XYZ")):
+            raise ValueError("Fit Part 缩放来源或目标不可用：" + step.part_name)
+
+    def connect_fit_part_scale(self, step: FitPartScaleStep) -> None:
+        self._require_transaction()
+        self._cmds.connectAttr(step.source_plug, step.target_plug)
+        self._transaction_changed = True
+
+    def capture_fit_part_scale_source(
+        self, step: FitPartScaleStep
+    ) -> str | None:
+        source = self._cmds.connectionInfo(
+            step.target_plug, sourceFromDestination=True)
+        return source or None
+
     def _unique_fit_part_joint(self, name: str) -> str:
         matches = self._cmds.ls(name, long=True, type="joint") or []
         if len(matches) != 1:
@@ -40,6 +63,17 @@ class MayaFitPartMixin:
             if spec.parent_part_name not in planned_names:
                 raise ValueError("Fit Part 改挂父关节不在构建计划中："
                                  + spec.parent_part_name)
+            if spec.reason == "end_of_chain":
+                if (not spec.segment_parts
+                        or spec.segment_parts[-1] != spec.parent_part_name
+                        or len(set(spec.segment_parts)) != len(spec.segment_parts)
+                        or not set(spec.segment_parts) <= planned_names):
+                    raise ValueError("Fit Part 段长分配计划不完整："
+                                     + spec.child_name)
+                divider = ("AdvPy_" + spec.parent_part_name
+                           + "_SegmentDistance")
+                if c.objExists(divider):
+                    raise ValueError("Fit Part 段长节点名称冲突：" + divider)
             # A bound joint must not move beneath a new influence hierarchy.
             if c.listConnections(child, type="skinCluster"):
                 raise ValueError("Fit Part 改挂必须在 Skin 绑定前执行："
@@ -76,12 +110,35 @@ class MayaFitPartMixin:
         c = self._cmds
         child = self._unique_fit_part_joint(spec.child_name)
         parent = self._unique_fit_part_joint(spec.parent_part_name)
+        # The limb rig may already drive the full start-to-end distance.
+        # Detach that source while Maya preserves the bind pose during the
+        # parent operation, then distribute it over all chain intervals.
+        segment_sources = {}
+        if spec.reason == "end_of_chain":
+            for axis in "XYZ":
+                destination = child + ".translate" + axis
+                source = c.connectionInfo(destination,
+                                          sourceFromDestination=True)
+                if source:
+                    segment_sources[axis] = source
+                    c.disconnectAttr(source, destination)
         # Parenting preserves the child's world transform. Resolve names
         # again on each call because every reparent changes descendant paths.
         c.parent(child, world=True)
         child = self._unique_fit_part_joint(spec.child_name)
         parent = self._unique_fit_part_joint(spec.parent_part_name)
         c.parent(child, parent)
+        if segment_sources:
+            divider = c.createNode("multiplyDivide",
+                name="AdvPy_" + spec.parent_part_name + "_SegmentDistance")
+            factor = 1.0 / (len(spec.segment_parts) + 1)
+            c.setAttr(divider + ".input2", factor, factor, factor)
+            for axis, source in segment_sources.items():
+                c.connectAttr(source, divider + ".input1" + axis)
+                for name in (*spec.segment_parts, spec.child_name):
+                    joint = self._unique_fit_part_joint(name)
+                    c.connectAttr(divider + ".output" + axis,
+                                  joint + ".translate" + axis)
         self._transaction_changed = True
 
     def capture_fit_part_joints(
@@ -225,8 +282,7 @@ class MayaFitPartMixin:
             raise ValueError("Fit Part 扭转目标不可写：" + step.part_name)
         if step.use_offset_parent_matrix and any(
                 not c.getAttr(part + "." + attr, settable=True)
-                for attr in ("translateX", "translateY", "translateZ",
-                             "rotateX", "rotateY", "rotateZ")):
+                for attr in ("rotateX", "rotateY", "rotateZ")):
             raise ValueError("Fit Part OPM 需要可写的局部平移和旋转："
                              + step.part_name)
 
@@ -265,6 +321,14 @@ class MayaFitPartMixin:
             translation = c.getAttr(part + ".translate")[0]
             c.setAttr(matrix + ".inputTranslate", *translation,
                       type="float3")
+            for axis in "XYZ":
+                destination = part + ".translate" + axis
+                source = c.connectionInfo(destination,
+                                          sourceFromDestination=True)
+                if source:
+                    c.disconnectAttr(source, destination)
+                    c.connectAttr(source, matrix + ".inputTranslate" + axis,
+                                  force=True)
             c.connectAttr(difference + ".output1D",
                           matrix + ".inputRotateX")
             c.connectAttr(matrix + ".outputMatrix",

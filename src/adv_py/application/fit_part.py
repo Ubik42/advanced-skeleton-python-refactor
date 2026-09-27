@@ -108,8 +108,8 @@ class BuildFitPartHierarchy:
                 self._host.reparent_fit_part_child(spec)
             snapshot = FitPartHierarchySnapshot(
                 self._host.capture_fit_part_joints(names),
-                self._host.capture_fit_part_children(tuple(
-                    item.child_name for item in plan.fit_part_reparents)),
+                self._host.capture_fit_part_children(tuple(dict.fromkeys(
+                    item.child_name for item in plan.fit_part_reparents))),
                 self._host.capture_fit_part_body_paths(tuple(
                     spec.name for spec in plan.specs)),
             )

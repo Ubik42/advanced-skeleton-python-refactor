@@ -23,6 +23,7 @@ from .fit_part import BuildFitPartHierarchy, FitPartHierarchyResult
 from .fit_part_twist import (
     BuildFitPartTwistDrivers, PrepareFitPartTwistSources,
 )
+from .fit_part_scale import BuildFitPartScaleDrivers
 from .limb_part_deform import BuildLimbPartDeform
 from .oriented_body_skeleton import (BuildOrientedBodySkeleton,
     OrientedBodySkeletonBuildResult)
@@ -111,6 +112,8 @@ class BuildRegisteredBodyCharacter:
                 ) for source in twist_sources)
                 BuildFitPartTwistDrivers(joined).apply(
                     skeleton.plan.build.fit_parts, active_twist_sources)
+                BuildFitPartScaleDrivers(joined).apply(
+                    skeleton.plan.build.fit_parts)
                 driven_body = joined.capture_body_skeleton(
                     skeleton.snapshot.root)
                 if not body_bind_pose_matches(
