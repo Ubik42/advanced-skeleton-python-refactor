@@ -525,6 +525,7 @@ __all__ = [
     "SourceCharacterBuildResult",
     "BuildRegisteredSkinnedBodyCharacter",
     "RegisteredSkinnedBodyBuildResult",
+    "RegisteredSkinnedBodyBuildPlan",
     "BuildBodyRootMotion",
     "BakeBodyRootMotion",
     "BuildBodyExportSkeleton",
@@ -722,7 +723,7 @@ from .character_presets import InspectBodyCharacterPresets, CharacterPresetStatu
 from .registered_body_build import (BuildRegisteredBodyCharacter,
     RegisteredBodyBuildResult)
 from .registered_skinned_body_build import (BuildRegisteredSkinnedBodyCharacter,
-    RegisteredSkinnedBodyBuildResult)
+    RegisteredSkinnedBodyBuildResult, RegisteredSkinnedBodyBuildPlan)
 from .source_skeleton_fit import (BuildFitFromSourceSkeleton,
     SourceSkeletonJoint, SourceSkeletonFitPlan, SourceSkeletonFitResult,
     plan_source_skeleton_fit)
