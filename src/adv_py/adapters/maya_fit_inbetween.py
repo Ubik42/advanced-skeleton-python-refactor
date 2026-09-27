@@ -21,6 +21,9 @@ from adv_py.core.fit_inbetween_body_driver import (
 from adv_py.core.fit_inbetween_fk_body_driver import (
     InbetweenFkBodyDriverPlan, InbetweenFkBodyDriverSpec,
 )
+from adv_py.core.fit_inbetween_untwister import (
+    InbetweenUnTwisterPlan, InbetweenUnTwisterStep,
+)
 from adv_py.core.fit_inbetween_fk_rewire import InbetweenFkRewirePlan
 from adv_py.core.fit_inbetween_matrix import (
     InbetweenMatrixDestination, InbetweenMatrixPlan,
@@ -30,6 +33,103 @@ from adv_py.core.joint_labels import JointLabel
 
 
 class MayaFitInbetweenMixin:
+    def preflight_inbetween_untwister(
+        self, plan: InbetweenUnTwisterPlan,
+    ) -> None:
+        c = self._cmds
+        for path in (plan.end_fk_control_path, plan.end_fk_offset_path):
+            if (c.ls(path, long=True, type="transform") or []) != [path]:
+                raise ValueError("UnTwister 末端 FK 控制层不存在：" + path)
+        names = (plan.relative_matrix_name, plan.decompose_name,
+                 plan.quaternion_name) + tuple(
+                     step.amount_name for step in plan.steps)
+        if len(set(names)) != len(names) or any(
+                c.objExists(name) for name in names):
+            raise ValueError("Inbetween UnTwister 节点名称冲突")
+        for step in plan.steps:
+            constraints = c.ls(step.constraint_name,
+                               type="orientConstraint") or []
+            if len(constraints) != 1 or not c.getAttr(
+                    constraints[0] + ".offsetX", settable=True):
+                raise ValueError("UnTwister Part 约束不可写："
+                                 + step.part_name)
+
+    def create_inbetween_untwister_source(
+        self, plan: InbetweenUnTwisterPlan,
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        matrix = c.createNode("multMatrix",
+                              name=plan.relative_matrix_name)
+        decompose = c.createNode("decomposeMatrix",
+                                 name=plan.decompose_name)
+        quaternion = c.createNode("quatToEuler",
+                                  name=plan.quaternion_name)
+        self._transaction_changed = True
+        c.connectAttr(plan.end_fk_control_path + ".worldMatrix[0]",
+                      matrix + ".matrixIn[0]")
+        c.connectAttr(plan.end_fk_offset_path + ".worldInverseMatrix[0]",
+                      matrix + ".matrixIn[1]")
+        c.connectAttr(matrix + ".matrixSum",
+                      decompose + ".inputMatrix")
+        c.connectAttr(plan.end_fk_control_path + ".rotateOrder",
+                      decompose + ".inputRotateOrder")
+        c.connectAttr(decompose + ".outputQuatX",
+                      quaternion + ".inputQuatX")
+        c.connectAttr(decompose + ".outputQuatW",
+                      quaternion + ".inputQuatW")
+
+    def capture_inbetween_untwister_source(
+        self, plan: InbetweenUnTwisterPlan,
+    ) -> bool:
+        c = self._cmds
+        connections = (
+            (plan.relative_matrix_name + ".matrixIn[0]",
+             plan.end_fk_control_path + ".worldMatrix[0]"),
+            (plan.relative_matrix_name + ".matrixIn[1]",
+             plan.end_fk_offset_path + ".worldInverseMatrix[0]"),
+            (plan.decompose_name + ".inputMatrix",
+             plan.relative_matrix_name + ".matrixSum"),
+            (plan.decompose_name + ".inputRotateOrder",
+             plan.end_fk_control_path + ".rotateOrder"),
+            (plan.quaternion_name + ".inputQuatX",
+             plan.decompose_name + ".outputQuatX"),
+            (plan.quaternion_name + ".inputQuatW",
+             plan.decompose_name + ".outputQuatW"),
+        )
+        return all(c.connectionInfo(destination,
+                       sourceFromDestination=True) == source
+                   for destination, source in connections)
+
+    def create_inbetween_untwister_step(
+        self, plan: InbetweenUnTwisterPlan,
+        step: InbetweenUnTwisterStep,
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        amount = c.createNode("multDoubleLinear",
+                              name=step.amount_name)
+        self._transaction_changed = True
+        c.connectAttr(plan.twist_plug, amount + ".input1")
+        c.setAttr(amount + ".input2", step.fraction)
+        c.connectAttr(amount + ".output",
+                      step.constraint_name + ".offsetX")
+
+    def capture_inbetween_untwister_step(
+        self, plan: InbetweenUnTwisterPlan,
+        step: InbetweenUnTwisterStep,
+    ) -> bool:
+        c = self._cmds
+        return (
+            c.connectionInfo(step.amount_name + ".input1",
+                             sourceFromDestination=True) == plan.twist_plug
+            and abs(float(c.getAttr(step.amount_name + ".input2"))
+                    - step.fraction) < 1e-8
+            and c.connectionInfo(step.constraint_name + ".offsetX",
+                                 sourceFromDestination=True)
+            == step.amount_name + ".output"
+        )
+
     def preflight_inbetween_fk_body_drivers(
         self, plan: InbetweenFkBodyDriverPlan,
     ) -> None:

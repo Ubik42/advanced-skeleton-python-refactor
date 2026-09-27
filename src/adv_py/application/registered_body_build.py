@@ -8,6 +8,7 @@ from adv_py.core.character_registry import CharacterRegistration
 from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_part import rebase_plan_paths_after_parts
+from adv_py.core.fit_inbetween_untwister import InbetweenUnTwisterPlan
 from adv_py.core.fit_part_twist import (
     FitPartTwistSource, plan_fit_part_twist,
     plan_fit_part_twist_projections,
@@ -36,6 +37,7 @@ from .fit_inbetween_fk_segment import (
     BuildInbetweenFkSegment, InbetweenFkSegmentResult,
 )
 from .fit_inbetween_registration import RegisterInbetweenControls
+from .fit_inbetween_untwister import BuildInbetweenUnTwister
 from .limb_part_deform import BuildLimbPartDeform
 from .oriented_body_skeleton import (BuildOrientedBodySkeleton,
     OrientedBodySkeletonBuildResult)
@@ -65,6 +67,7 @@ class RegisteredBodyBuildResult:
     fit_part_hierarchy: FitPartHierarchyResult | None = None
     inbetween_segments: tuple[
         InbetweenLimbSegmentResult | InbetweenFkSegmentResult, ...] = ()
+    inbetween_untwisters: tuple[InbetweenUnTwisterPlan, ...] = ()
 
 
 class BuildRegisteredBodyCharacter:
@@ -90,10 +93,14 @@ class BuildRegisteredBodyCharacter:
             raise FitSkeletonValidationError(
                 "角色构建预检失败，场景未修改：" + "；".join(preview.blockers))
         rotation_inputs = ()
+        untwister_sources: frozenset[str] = frozenset()
         part_plan = preview.build
         if use_fit_part_hierarchy:
-            _, inbetween_plan = PrepareFitInbetween(self._host).plan(
+            fit_source, inbetween_plan = PrepareFitInbetween(self._host).plan(
                 container_name)
+            untwister_sources = frozenset(
+                item.joint for item in fit_source.metadata
+                if item.untwister and (item.inbetween_joints or 0) > 0)
             if inbetween_plan.guides:
                 part_plan = plan_combined_part_hierarchy(
                     preview.build, inbetween_plan)
@@ -117,6 +124,7 @@ class BuildRegisteredBodyCharacter:
                 include_head_aim=include_head_aim)
             fit_part_hierarchy = None
             inbetween_segments = ()
+            inbetween_untwisters = ()
             if use_fit_part_hierarchy:
                 twist_sources = (
                     PrepareFitPartTwistSources(joined).apply(rotation_inputs)
@@ -187,6 +195,21 @@ class BuildRegisteredBodyCharacter:
                                     binding.part_control_radius),
                             ))
                     inbetween_segments = tuple(built_segments)
+                    inbetween_untwisters = tuple(
+                        BuildInbetweenUnTwister(joined).apply(
+                            binding.parts,
+                            tuple(item.constraint_name
+                                  for item in segment.body.parts),
+                            end_fk_control_path=(
+                                binding.end_fk_control_path),
+                            end_fk_offset_path=(
+                                binding.downstream_fk_offset_path),
+                        )
+                        for binding, segment in zip(bindings,
+                                                    inbetween_segments)
+                        if binding.parts[0].source_joint
+                        in untwister_sources
+                    )
                 driven_body = joined.capture_body_skeleton(
                     skeleton.snapshot.root)
                 if not body_bind_pose_matches(
@@ -234,4 +257,5 @@ class BuildRegisteredBodyCharacter:
                     segments.extend((spec.part1, spec.part2))
         return RegisteredBodyBuildResult(
             skeleton, rig, registration, tuple(segments),
-            fit_part_hierarchy, inbetween_segments)
+            fit_part_hierarchy, inbetween_segments,
+            inbetween_untwisters)

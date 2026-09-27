@@ -29,6 +29,7 @@ class InbetweenLimbBinding:
     start_fk_driver_path: str
     start_fk_constraint_name: str
     downstream_fk_offset_path: str
+    end_fk_control_path: str
     start_ik_driver: str
     end_ik_driver: str
     fk_weight_plug: str
@@ -46,6 +47,7 @@ class InbetweenFkBinding:
     start_fk_driver_path: str
     start_fk_constraint_name: str
     downstream_fk_offset_path: str
+    end_fk_control_path: str
     rotate_order: int
     part_control_radius: float
 
@@ -96,6 +98,7 @@ def plan_inbetween_limb_bindings(
                 start_control.control_path, torso.controls.root_path,
                 start_path, start_control.constraint_name,
                 end_controls[0].offset_path,
+                end_controls[0].control_path,
                 first.rotation_order, start_control.radius * 0.2,
             ))
             continue
@@ -126,6 +129,7 @@ def plan_inbetween_limb_bindings(
                 start_control.control_path, torso.controls.root_path,
                 start_control.driven_joint,
                 start_control.constraint_name, end_control.offset_path,
+                end_control.control_path,
                 spine.joints[ik_index].path,
                 spine.joints[ik_index + 1].path,
                 "AdvPy_SpineReverse.outputX", spine.blend_plug,
@@ -167,6 +171,7 @@ def plan_inbetween_limb_bindings(
             start_control.driven_joint,
             start_control.constraint_name,
             end_controls[0].offset_path,
+            end_controls[0].control_path,
             ik[start_path], ik[first.end_body],
             blend.reverse_name + ".outputX",
             module.blend.settings_path + "." + blend.attribute,
