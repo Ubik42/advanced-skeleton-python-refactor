@@ -27,6 +27,15 @@ class FBXRigFitGuide:
 
 
 @dataclass(frozen=True, slots=True)
+class FBXRigFitGuideState:
+    name: str
+    parent: str | None
+    world_position: Vector3
+    end_control: bool
+    label: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class FBXRigMirrorPair:
     right_joint: str
     left_joint: str
@@ -72,6 +81,41 @@ class FBXRigImportPlan:
     names_requiring_underscore_removal: tuple[str, ...]
     collapsed_fit_source_joints: tuple[str, ...] = ()
     bind_pose_joints: tuple[FBXRigSourceJoint, ...] = ()
+
+
+def audit_fbx_fit_guides(
+    plan: FBXRigImportPlan,
+    actual: tuple[FBXRigFitGuideState, ...],
+    *,
+    tolerance: float = 1e-4,
+) -> tuple[str, ...]:
+    """Verify the generated arbitrary Fit tree before building its controls."""
+    if not isfinite(tolerance) or tolerance < 0:
+        raise ValueError("FBX rig Fit 位置容差无效")
+    expected = {guide.name: guide for guide in plan.fit_guides}
+    by_name = {guide.name: guide for guide in actual}
+    issues = []
+    if (len(by_name) != len(actual)
+            or len(expected) != len(plan.fit_guides)
+            or set(by_name) != set(expected)):
+        issues.append("FBX rig Fit 导向关节集合不一致")
+    labels = dict(plan.inferred_labels)
+    for name, guide in expected.items():
+        state = by_name.get(name)
+        if state is None:
+            continue
+        if state.parent != guide.parent:
+            issues.append("FBX rig Fit 导向父级不一致：" + name)
+        if (len(state.world_position) != 3
+                or any(not isfinite(value) or abs(value - target) > tolerance
+                       for value, target in zip(state.world_position,
+                                                guide.world_position))):
+            issues.append("FBX rig Fit 导向世界位置不一致：" + name)
+        if state.end_control != guide.end_control:
+            issues.append("FBX rig Fit 末端控制标记不一致：" + name)
+        if name in labels and state.label != labels[name]:
+            issues.append("FBX rig Fit 关节标签不一致：" + name)
+    return tuple(issues)
 
 
 def validate_fbx_source_namespace_paths(

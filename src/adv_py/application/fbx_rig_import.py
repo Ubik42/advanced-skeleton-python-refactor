@@ -7,8 +7,9 @@ from math import isfinite
 from typing import Mapping, Protocol
 
 from adv_py.core.fbx_rig_import import (
-    FBXRigControlTransferPlan, FBXRigImportPlan, FBXRigSourceJoint,
-    fbx_bind_pose_matches, plan_fbx_control_transfer, plan_fbx_rig_import,
+    FBXRigControlTransferPlan, FBXRigFitGuideState, FBXRigImportPlan,
+    FBXRigSourceJoint, audit_fbx_fit_guides, fbx_bind_pose_matches,
+    plan_fbx_control_transfer, plan_fbx_rig_import,
     validate_fbx_source_namespace_paths,
 )
 
@@ -80,6 +81,9 @@ class FBXRigHost(Protocol):
         self, plan: FBXRigImportPlan,
     ) -> Mapping[str, str]: ...
     def create_fbx_fit_guides(self, plan: FBXRigImportPlan) -> None: ...
+    def capture_fbx_fit_guides(
+        self, plan: FBXRigImportPlan,
+    ) -> tuple[FBXRigFitGuideState, ...]: ...
     def build_fbx_advanced_skeleton(self, plan: FBXRigImportPlan) -> None: ...
     def enlarge_small_fbx_fk_controls(self, plan: FBXRigImportPlan) -> None: ...
     def capture_fbx_generated_targets(
@@ -166,6 +170,11 @@ class BuildFBXRig:
                 source_paths = self._host.move_fbx_source_to_namespace(plan)
                 validate_fbx_source_namespace_paths(plan, source_paths)
                 self._host.create_fbx_fit_guides(plan)
+                fit_issues = audit_fbx_fit_guides(
+                    plan, self._host.capture_fbx_fit_guides(plan))
+                if fit_issues:
+                    raise RuntimeError("FBX rig Fit 创建复检失败："
+                                       + "；".join(fit_issues))
                 self._host.build_fbx_advanced_skeleton(plan)
                 self._host.enlarge_small_fbx_fk_controls(plan)
                 targets = self._host.capture_fbx_generated_targets(plan)
