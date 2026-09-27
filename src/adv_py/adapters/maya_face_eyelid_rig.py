@@ -26,6 +26,10 @@ _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
 _CLOSED_LOWER_UPWARD_FOLLOW = .6
 _YAW_DEPTH_FULL_ANGLE_DEG = 18.5
 _YAW_DEPTH_EYE_RADIUS_FRACTION = .14
+_YAW_EDGE_START_ANGLE_DEG = 18.5
+_YAW_EDGE_FULL_ANGLE_DEG = 26.5
+_YAW_EDGE_UPPER_RADIUS_FRACTION = .49
+_YAW_EDGE_LOWER_RADIUS_FRACTION = .35
 
 
 class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
@@ -480,6 +484,14 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                       control + "YawDepthScale",
                                       control + "YawDepthLimit",
                                       control + "YawDepthBlink"))
+                    if layer is EyeLidLayer.OUTER and mobile_inners[side]:
+                        if arc == "lower":
+                            names.extend((control + "YawNegative",
+                                          control + "YawMagnitude"))
+                        names.extend((control + "YawEdgeOffset",
+                                      control + "YawEdgeLimit",
+                                      control + "YawEdgeScale",
+                                      control + "YawEdgeBlink"))
                     if layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
                         names.extend((control + "BlinkFraction",
                                       control + "BlinkOffset"))
@@ -669,6 +681,53 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                           depth_blink + ".input2X")
                             c.connectAttr(depth_blink + ".outputX",
                                 motion_sum + ".input3D[3].input3Dz")
+                        if layer is EyeLidLayer.OUTER and mobile_inners[side]:
+                            if arc == "lower":
+                                negative = c.createNode("multDoubleLinear",
+                                    name=control_name + "YawNegative")
+                                c.setAttr(negative + ".input2", -1.)
+                                c.connectAttr(eye_joints[side] + ".rotateY",
+                                              negative + ".input1")
+                                magnitude = c.createNode("condition",
+                                    name=control_name + "YawMagnitude")
+                                c.setAttr(magnitude + ".operation", 2)
+                                c.connectAttr(eye_joints[side] + ".rotateY",
+                                              magnitude + ".firstTerm")
+                                c.connectAttr(eye_joints[side] + ".rotateY",
+                                              magnitude + ".colorIfTrueR")
+                                c.connectAttr(negative + ".output",
+                                              magnitude + ".colorIfFalseR")
+                            edge_offset = c.createNode("addDoubleLinear",
+                                name=control_name + "YawEdgeOffset")
+                            c.setAttr(edge_offset + ".input2",
+                                      -_YAW_EDGE_START_ANGLE_DEG)
+                            c.connectAttr(magnitude + ".outColorR",
+                                          edge_offset + ".input1")
+                            edge_limit = c.createNode("clamp",
+                                name=control_name + "YawEdgeLimit")
+                            c.setAttr(edge_limit + ".maxR",
+                                _YAW_EDGE_FULL_ANGLE_DEG -
+                                _YAW_EDGE_START_ANGLE_DEG)
+                            c.connectAttr(edge_offset + ".output",
+                                          edge_limit + ".inputR")
+                            edge_scale = c.createNode("multDoubleLinear",
+                                name=control_name + "YawEdgeScale")
+                            c.setAttr(edge_scale + ".input2",
+                                eye_radii[side] *
+                                (_YAW_EDGE_UPPER_RADIUS_FRACTION if arc == "upper"
+                                 else _YAW_EDGE_LOWER_RADIUS_FRACTION) /
+                                (_YAW_EDGE_FULL_ANGLE_DEG -
+                                 _YAW_EDGE_START_ANGLE_DEG))
+                            c.connectAttr(edge_limit + ".outputR",
+                                          edge_scale + ".input1")
+                            edge_blink = c.createNode("multiplyDivide",
+                                name=control_name + "YawEdgeBlink")
+                            c.connectAttr(edge_scale + ".output",
+                                          edge_blink + ".input1X")
+                            c.connectAttr(eye_fraction + ".outputX",
+                                          edge_blink + ".input2X")
+                            c.connectAttr(edge_blink + ".outputX",
+                                motion_sum + ".input3D[4].input3Dz")
                         if layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
                             fraction = c.createNode("multiplyDivide",
                                 name=control_name + "BlinkFraction")

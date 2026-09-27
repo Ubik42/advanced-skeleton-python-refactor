@@ -476,6 +476,9 @@ def main() -> None:
                     + "UpwardSum") == mobile_aperture
                 assert cmds.objExists("ctrlUpperEyeLid" + outer + suffix
                     + "YawDepthBlink") == mobile_aperture
+            for arc in ("Upper", "Lower"):
+                assert cmds.objExists("ctrl" + arc + "EyeLidOuter" + suffix
+                    + "YawEdgeBlink") == mobile_aperture
             depth = cmds.getAttr("ctrlUpperEyeLid" + suffix
                                  + ".blinkOffsetZ")
             if side.value in lid_rig["stationary_aperture_sides"]:
