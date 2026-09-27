@@ -23,24 +23,26 @@ def eyelid_skin_factors(adjacency: dict[int, set[int]],
                         area_vertices: set[int], boundary_vertices: set[int],
                         upper_vertices: tuple[int, ...],
                         lower_vertices: tuple[int, ...],
-                        maximum: float = .85,
+                        inner_vertices: set[int],
                         ) -> dict[int, tuple[float, float]]:
-    """Return upper/lower weights for the band between Main and its boundary."""
+    """Return Main influence fading through four mesh rows on either side."""
     upper, lower = set(upper_vertices), set(lower_vertices)
     main = upper | lower
-    if (not 0 < maximum <= 1 or len(upper_vertices) < 3
+    if (len(upper_vertices) < 3
             or len(lower_vertices) < 3 or not main <= area_vertices
             or not boundary_vertices <= area_vertices
+            or not inner_vertices <= area_vertices
             or (main & boundary_vertices) - {upper_vertices[0],
                                                upper_vertices[-1]}
             or not area_vertices <= positions.keys()):
         raise ValueError("眼睑区域、边界或主环无效")
     d_main = _distances(adjacency, main, area_vertices)
     d_boundary = _distances(adjacency, boundary_vertices, area_vertices)
+    d_inner = _distances(adjacency, inner_vertices, area_vertices)
     d_upper = _distances(adjacency, upper, area_vertices)
     d_lower = _distances(adjacency, lower, area_vertices)
     if any(len(result) != len(area_vertices) for result in
-           (d_main, d_boundary, d_upper, d_lower)):
+           (d_main, d_boundary, d_inner, d_upper, d_lower)):
         raise ValueError("眼睑区域存在不连通顶点")
     left_x = min(positions[index][0] for index in main)
     right_x = max(positions[index][0] for index in main)
@@ -49,15 +51,16 @@ def eyelid_skin_factors(adjacency: dict[int, set[int]],
         raise ValueError("眼睑内外眼角的横向距离无效")
     result = {}
     for vertex in area_vertices:
-        radial_denominator = d_main[vertex] + d_boundary[vertex]
-        radial = (d_boundary[vertex] / radial_denominator
-                  if radial_denominator else 0.)
-        x = (positions[vertex][0] - left_x) / width
-        taper = sin(pi * min(1., max(0., x)))
+        radial = max(0., 1. - d_main[vertex] / 4.)
+        radial *= min(1., d_inner[vertex] / 2.)
+        if vertex in main:
+            radial = 1.
+        if d_boundary[vertex] == 0:
+            radial = 0.
         arc_denominator = d_upper[vertex] + d_lower[vertex]
         upper_share = (d_lower[vertex] / arc_denominator
                        if arc_denominator else .5)
-        total = maximum * radial * taper
+        total = radial
         result[vertex] = (total * upper_share,
                           total * (1. - upper_share))
     return result
@@ -68,11 +71,15 @@ def outer_eyelid_skin_factors(adjacency: dict[int, set[int]],
                              inner_band_vertices: set[int],
                              upper_vertices: tuple[int, ...],
                              lower_vertices: tuple[int, ...],
+                             inner_vertices: set[int],
+                             main_factors: dict[int, tuple[float, float]],
                              maximum: float = .35,
                              rows: int = 2) -> dict[int, tuple[float, float]]:
-    """Add a short falloff outside the Outer ring without crossing the inner band."""
+    """Keep broad Outer influence inside the lid and fade outside its ring."""
     boundary = set(upper_vertices) | set(lower_vertices)
-    if (not boundary or not boundary <= positions.keys()
+    if (not boundary or not boundary <= inner_band_vertices
+            or not inner_vertices <= inner_band_vertices
+            or main_factors.keys() != inner_band_vertices
             or not 0 < maximum <= 1 or rows < 1):
         raise ValueError("眼睑 Outer 环或衰减设置无效")
     allowed = set(positions) - (inner_band_vertices - boundary)
@@ -87,9 +94,25 @@ def outer_eyelid_skin_factors(adjacency: dict[int, set[int]],
         return min(sum((point[axis] - positions[index][axis]) ** 2
                        for axis in range(3)) ** .5 for index in arc)
 
+    d_inner = _distances(adjacency, inner_vertices, inner_band_vertices)
+    d_upper = _distances(adjacency, set(upper_vertices),
+                         inner_band_vertices)
+    d_lower = _distances(adjacency, set(lower_vertices),
+                         inner_band_vertices)
+    if any(len(distance) != len(inner_band_vertices)
+           for distance in (d_inner, d_upper, d_lower)):
+        raise ValueError("眼睑区域与 Inner／Outer 环不连通")
     result = {}
+    for vertex in inner_band_vertices:
+        main_mass = sum(main_factors[vertex])
+        inner_fade = min(1., d_inner[vertex] / 3.) ** 2
+        total = ((1. - main_mass) * inner_fade
+                 if vertex not in boundary else 1.)
+        upper_share = 1. if d_upper[vertex] <= d_lower[vertex] else 0.
+        result[vertex] = (total * upper_share,
+                          total * (1. - upper_share))
     for vertex, depth in distance.items():
-        if depth > rows:
+        if depth > rows or vertex in inner_band_vertices:
             continue
         x = (positions[vertex][0] - left_x) / (right_x - left_x)
         taper = sin(pi * min(1., max(0., x)))

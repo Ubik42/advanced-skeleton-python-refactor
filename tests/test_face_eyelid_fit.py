@@ -4,6 +4,7 @@ import unittest
 
 from adv_py.core.face_eyelid_fit import (eye_lid_area_faces,
                                           eye_lid_blink_offsets,
+                                          eye_lid_sphere_blink,
                                           order_eye_lid_loop)
 
 
@@ -89,6 +90,21 @@ class EyeLidLoopTest(unittest.TestCase):
         self.assertAlmostEqual(points[3][1] + offsets["lower"][1], -.1)
         with self.assertRaisesRegex(ValueError, "交叉"):
             eye_lid_blink_offsets((0, 3, 2), (0, 1, 2), points)
+
+    def test_blink_tracks_front_of_eye_sphere_and_rolls_joint(self):
+        depth, roll = eye_lid_sphere_blink((0., .2, .3),
+                                            (0., 0., 0.), -.3)
+        self.assertAlmostEqual((-.1)**2 + (.3 + depth)**2,
+                               .2**2 + .3**2)
+        self.assertGreater(depth, 0.)
+        self.assertGreater(roll, 40.)
+        lower_depth, lower_roll = eye_lid_sphere_blink(
+            (0., -.2, .3), (0., 0., 0.), .1)
+        self.assertGreater(lower_depth, 0.)
+        self.assertLess(lower_roll, 0.)
+        with self.assertRaisesRegex(ValueError, "坐标无效"):
+            eye_lid_sphere_blink((0., float("inf"), .3),
+                                  (0., 0., 0.), -.3)
 
 
 if __name__ == "__main__":

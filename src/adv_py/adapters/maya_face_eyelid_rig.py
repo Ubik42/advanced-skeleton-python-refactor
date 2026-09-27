@@ -11,7 +11,7 @@ from adv_py.application.face_pre import EyeLidLayer, FacePreRole, FaceSide
 from adv_py.core.dense_skin_transfer import DenseSkinWeights
 from adv_py.core.face_build_requirements import FaceInclude
 from adv_py.core.face_eyelid_fit import (
-    eye_lid_blink_offsets, order_eye_lid_loop)
+    eye_lid_blink_offsets, eye_lid_sphere_blink, order_eye_lid_loop)
 from adv_py.core.face_eyelid_skin import (
     eyelid_skin_factors, inner_eyelid_skin_factors,
     outer_eyelid_skin_factors, split_arc_weight)
@@ -152,13 +152,14 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
         if (main_vertices & inner_vertices or
                 (main_vertices & boundary) - shared_corners):
             raise FitSkeletonValidationError("眼睑 Main 与 Outer／Inner 环重叠")
+        main_factors = eyelid_skin_factors(adjacency, positions,
+            area_vertices, boundary, main.upper_vertices,
+            main.lower_vertices, inner_vertices)
         factors = {
-            EyeLidLayer.MAIN: eyelid_skin_factors(adjacency, positions,
-                area_vertices, boundary, main.upper_vertices,
-                main.lower_vertices),
+            EyeLidLayer.MAIN: main_factors,
             EyeLidLayer.OUTER: outer_eyelid_skin_factors(adjacency,
                 positions, area_vertices, outer.upper_vertices,
-                outer.lower_vertices),
+                outer.lower_vertices, inner_vertices, main_factors),
         }
         if mobile_inner:
             inner = ordered[EyeLidLayer.INNER]
@@ -183,7 +184,8 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                 ordered[EyeLidLayer.INNER].lower_vertices)
         span = max(positions[index][0] for index in main.upper_vertices) \
              - min(positions[index][0] for index in main.upper_vertices)
-        return factors, arcs, positions, span, open_inner, mobile_inner
+        return (factors, arcs, positions, span, open_inner, mobile_inner,
+                boundary | main_vertices)
 
     def build(self) -> dict:
         c = self._cmds
@@ -249,6 +251,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                 "先从 Face / Pre 构建双眼控制与蒙皮，再建立眼睑")
         eye_joints = {}
         eye_radii = {}
+        eye_centers = {}
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
             joints = c.ls("AdvPy_Eye" + suffix, long=True, type="joint") or []
@@ -264,6 +267,8 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
             eye_joints[side] = joints[0]
             eye_radii[side] = max(bounds[index + 3] - bounds[index]
                                   for index in range(3)) / 2.
+            eye_centers[side] = tuple((bounds[index] + bounds[index + 3]) / 2.
+                                      for index in range(3))
         shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
                                  fullPath=True, type="mesh") or []
         history = c.listHistory(shapes[0], pruneDagObjects=True) or []
@@ -279,9 +284,11 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
         spans = {}
         open_inners = {}
         mobile_inners = {}
+        fit_ring_vertices = {}
         for side in FaceSide:
             (factors[side], arcs[side], positions[side], spans[side],
-             open_inners[side], mobile_inners[side]) = self._surface_factors(
+             open_inners[side], mobile_inners[side],
+             fit_ring_vertices[side]) = self._surface_factors(
                 pre, mesh, side)
         layers = {side: ((EyeLidLayer.MAIN, EyeLidLayer.OUTER,
                           EyeLidLayer.INNER) if mobile_inners[side] else
@@ -298,7 +305,12 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
             for layer in layers[side]:
                 blink_offsets[(side, layer)] = eye_lid_blink_offsets(
                     arcs[side][(layer, "upper")],
-                    arcs[side][(layer, "lower")], positions[side])
+                    arcs[side][(layer, "lower")], positions[side],
+                    upper_share=.825)
+                if layer is EyeLidLayer.OUTER:
+                    blink_offsets[(side, layer)] = {
+                        arc: tuple(0. for _ in values)
+                        for arc, values in blink_offsets[(side, layer)].items()}
         names = ["FaceJoint_M", "EyeLidJoints_M", "FaceMotionSystem"]
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
@@ -326,6 +338,8 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                     for index in range(1, len(arcs[side][(layer, arc)]) - 1):
                         name = arc + "Lid" + layer.value + str(index) + suffix
                         names.extend((name, name + "POCI", name + "Offset"))
+                        if layer is EyeLidLayer.MAIN:
+                            names.append(name + "BlinkRoll")
         if any(c.ls(name) for name in names):
             raise FitSkeletonValidationError("眼睑绑定节点名称已被占用")
         original = self.capture_dense_skin(skin)
@@ -464,6 +478,17 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                           blink + ".input1Y")
                             c.connectAttr(blink + ".outputY",
                                           addition + ".input3D[2].input3Dy")
+                            if layer is EyeLidLayer.MAIN:
+                                depth_offset, _ = eye_lid_sphere_blink(
+                                    positions[side][vertices[index]],
+                                    eye_centers[side],
+                                    blink_offsets[(side, layer)][arc][index])
+                                c.setAttr(blink + ".input2Z",
+                                          depth_offset / 10.)
+                                c.connectAttr(eye_control + ".blink",
+                                              blink + ".input1Z")
+                                c.connectAttr(blink + ".outputZ",
+                                              addition + ".input3D[2].input3Dz")
                             c.connectAttr(addition + ".output3D", point_plug)
                         for index, vertex in enumerate(vertices[1:-1], 1):
                             name = arc + "Lid" + layer.value + str(index) + suffix
@@ -481,6 +506,18 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                             joint = c.joint(name=name)
                             joint = c.parent(joint, joint_offset,
                                              relative=True)[0]
+                            if layer is EyeLidLayer.MAIN:
+                                delta_y = blink_offsets[(side, layer)][arc][index]
+                                _, angle = eye_lid_sphere_blink(
+                                    positions[side][vertex],
+                                    eye_centers[side], delta_y)
+                                roll = c.createNode("multiplyDivide",
+                                    name=name + "BlinkRoll")
+                                c.setAttr(roll + ".input2X", angle / 10.)
+                                c.connectAttr(eye_control + ".blink",
+                                              roll + ".input1X")
+                                c.connectAttr(roll + ".outputX",
+                                              joint + ".rotateX")
                             c.setAttr(joint + ".radius",
                                       max(spans[side] / 40., .001))
                             c.addAttr(joint,
@@ -531,6 +568,29 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                         lid_weights.get(key, 0.))
             self.apply_dense_skin(DenseSkinWeights(skin,
                 original.vertex_count, new_names, values.tobytes()))
+            for side in FaceSide:
+                area_vertices = set(factors[side][EyeLidLayer.MAIN])
+                smooth = area_vertices - fit_ring_vertices[side]
+                if smooth:
+                    c.select([f"{mesh}.vtx[{vertex}]"
+                              for vertex in sorted(smooth)], replace=True)
+                    c.skinCluster(skin, edit=True, smoothWeights=0,
+                                  smoothWeightsMaxIterations=5,
+                                  obeyMaxInfluences=False)
+            method = int(c.getAttr(skin + ".skinningMethod"))
+            if method == 0:
+                blend = array("d", [0.] * original.vertex_count)
+            elif method == 1:
+                blend = array("d", [1.] * original.vertex_count)
+            elif method == 2:
+                blend = self.capture_skin_blend_weights(skin)
+            else:
+                raise FitSkeletonValidationError("Face Skin 变形方式无效")
+            for side in FaceSide:
+                for vertex in factors[side][EyeLidLayer.MAIN]:
+                    blend[vertex] = 1.
+            self.apply_skin_blend_weights(skin, blend)
+            c.setAttr(skin + ".skinningMethod", 2)
             c.addAttr(motion, longName="advPyFaceMesh", dataType="string")
             c.setAttr(motion + ".advPyFaceMesh", mesh, type="string")
             c.select(selected, replace=True) if selected else c.select(clear=True)

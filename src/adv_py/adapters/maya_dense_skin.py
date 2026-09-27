@@ -64,3 +64,27 @@ class MayaDenseSkinHost(MayaBodyBuildHost):
             self._cmds.advPySetSkinWeights(
                 data.skin_name, dag.fullPathName(), str(path),
                 data.vertex_count, len(names))
+
+    def capture_skin_blend_weights(self, skin_name: str) -> array:
+        skin, dag, component, _, count = self._skin_api(skin_name)
+        values = array("d", skin.getBlendWeights(dag, component))
+        if len(values) != count:
+            raise RuntimeError("Skin 双四元数混合权重维度不符")
+        return values
+
+    def apply_skin_blend_weights(self, skin_name: str,
+                                 values: array) -> None:
+        self._require_transaction()
+        _, dag, _, _, count = self._skin_api(skin_name)
+        if (len(values) != count or any(not 0. <= value <= 1.
+                                        for value in values)):
+            raise ValueError("Skin 双四元数混合权重无效")
+        plugin = (Path(__file__).resolve().parents[1] / "maya_plugins"
+                  / "skin_bulk.py")
+        self._cmds.loadPlugin(str(plugin), quiet=True)
+        with tempfile.TemporaryDirectory(prefix="advpy-skin-blend-") as directory:
+            path = Path(directory) / "blend.bin"
+            path.write_bytes(values.tobytes())
+            self._transaction_changed = True
+            self._cmds.advPySetSkinBlendWeights(
+                skin_name, dag.fullPathName(), str(path), count)

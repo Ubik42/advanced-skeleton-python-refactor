@@ -21,19 +21,19 @@ class EyeLidSkinFactorsTests(unittest.TestCase):
                     if index // 5 in (0, 4) or index % 5 in (0, 4)}
         boundary.add(12)
         factors = eyelid_skin_factors(adjacency, positions, set(range(25)),
-                    boundary, (6, 7, 8), (16, 17, 18))
-        self.assertEqual(factors[7], (.85, 0.))
-        self.assertEqual(factors[17], (0., .85))
+                    boundary, (6, 7, 8), (16, 17, 18), {12})
+        self.assertEqual(factors[7], (1., 0.))
+        self.assertEqual(factors[17], (0., 1.))
         self.assertEqual(factors[12], (0., 0.))
         self.assertTrue(all(factors[index] == (0., 0.) for index in boundary))
         shared_corners = boundary | {6, 8}
         shared = eyelid_skin_factors(adjacency, positions, set(range(25)),
-                    shared_corners, (6, 7, 8), (16, 17, 18))
+                    shared_corners, (6, 7, 8), (16, 17, 18), {12})
         self.assertEqual(shared[6], (0., 0.))
         self.assertEqual(shared[8], (0., 0.))
         with self.assertRaisesRegex(ValueError, "主环无效"):
             eyelid_skin_factors(adjacency, positions, set(range(25)),
-                    shared_corners | {7}, (6, 7, 8), (16, 17, 18))
+                    shared_corners | {7}, (6, 7, 8), (16, 17, 18), {12})
 
     def test_outer_falloff_and_arc_segment_interpolation(self):
         adjacency = {index: set() for index in range(25)}
@@ -46,12 +46,14 @@ class EyeLidSkinFactorsTests(unittest.TestCase):
                         abs(neighbor // 5 - index // 5)
                         + abs(neighbor % 5 - index % 5) == 1):
                     adjacency[index].add(neighbor)
+        area = {6, 7, 8, 11, 12, 13, 16, 17, 18}
+        main = {index: (0., 0.) for index in area}
         outer = outer_eyelid_skin_factors(adjacency, positions,
-            {6, 7, 8, 11, 12, 13, 16, 17, 18},
-            (6, 7, 8), (16, 17, 18))
-        self.assertAlmostEqual(sum(outer[7]), .35)
+            area, (6, 7, 8), (16, 17, 18), {11, 12, 13}, main)
+        self.assertAlmostEqual(sum(outer[7]), 1.)
         self.assertAlmostEqual(sum(outer[2]), .35 * 2 / 3)
-        self.assertNotIn(12, outer)
+        self.assertEqual(outer[12], (0., 0.))
+        self.assertEqual(outer[7], (1., 0.))
         self.assertEqual(split_arc_weight(1.5, positions,
                          (6, 7, 8), .6), {6: .3, 7: .3})
 

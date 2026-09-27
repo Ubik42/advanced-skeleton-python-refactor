@@ -41,6 +41,11 @@ def main() -> None:
         poses[label] = {
             "head_points": [tuple(float(p[axis]) for axis in range(3))
                             for p in head.getPoints(om.MSpace.kWorld)],
+            "matrices": {name: [tuple(float(value) for value in
+                         cmds.xform(joint, query=True, worldSpace=True,
+                                    matrix=True))
+                         for _, joint in group]
+                        for name, group in groups.items()},
             "groups": {name: [tuple(float(value) for value in
                         cmds.xform(joint, query=True, worldSpace=True,
                                    translation=True))
@@ -56,6 +61,8 @@ def main() -> None:
                       "indices": [index for index, _ in group],
                       "open": points_open,
                       "closed": points_closed,
+                      "open_matrices": poses["open"]["matrices"][name],
+                      "closed_matrices": poses["closed"]["matrices"][name],
                       "deltas": deltas,
                       "middle_delta": deltas[len(deltas) // 2]}
     before = poses["open"]["head_points"]

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isfinite
+from math import atan2, degrees, hypot, isfinite, sqrt
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +74,26 @@ def eye_lid_blink_offsets(
             values.append(meeting_y - current_y)
         offsets[arc] = tuple(values)
     return offsets
+
+
+def eye_lid_sphere_blink(point: tuple[float, float, float],
+                         eye_center: tuple[float, float, float],
+                         vertical_offset: float) -> tuple[float, float]:
+    """Return forward movement and X roll for a lid point on the eye sphere."""
+    if not all(isfinite(value) for value in (*point, *eye_center,
+                                             vertical_offset)):
+        raise ValueError("眼睑或眼球中心坐标无效")
+    y = point[1] - eye_center[1]
+    z = point[2] - eye_center[2]
+    radius = hypot(y, z)
+    if radius <= 1e-6 or z <= 0:
+        return 0., 0.
+    closed_y = y + vertical_offset
+    if abs(closed_y) >= radius:
+        return 0., degrees(atan2(y, z) - atan2(closed_y, z))
+    closed_z = sqrt(radius * radius - closed_y * closed_y)
+    return (closed_z - z,
+            degrees(atan2(y, z) - atan2(closed_y, closed_z)))
 
 
 def eye_lid_area_faces(
