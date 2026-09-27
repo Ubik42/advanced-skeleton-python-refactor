@@ -76,4 +76,6 @@ class CreateFaceEyeLidFit:
                                                positions, edges, corners)
         if self.host.read_eye_lid_fit(layer) != created:
             raise RuntimeError("眼睑 Fit 写后读回不一致")
+        if layer is EyeLidLayer.INNER:
+            self.host.read_eye_lid_area()
         return created

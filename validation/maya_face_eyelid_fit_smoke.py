@@ -109,6 +109,20 @@ def main():
             cmds.select(edge_selection + [f"{mesh}.vtx[{index}]"
                 for index in selected_corners], replace=True)
             upper, lower = controller.face_fit_eye_lid(":", layer)
+            if layer == "Inner":
+                area, preview = MayaFacePreHost().read_eye_lid_area()
+                source_count = int(cmds.polyEvaluate(mesh, face=True))
+                area_count = int(cmds.polyEvaluate(area, face=True))
+                preview_count = int(cmds.polyEvaluate(preview, face=True))
+                source_faces = cmds.getAttr(area + ".selection").split()
+                assert 0 < area_count < source_count
+                assert len(source_faces) == area_count
+                assert preview_count > area_count
+                assert not cmds.getAttr(area + ".visibility")
+                assert cmds.getAttr(preview + ".visibility")
+                assert "AdvPyFaceFitRedSG" in (cmds.listConnections(
+                    cmds.listRelatives(preview, shapes=True)[0],
+                    type="shadingEngine") or [])
             for path in (upper, lower):
                 assert cmds.objExists(path)
             for prefix in ("upper", "lower"):
@@ -135,20 +149,33 @@ def main():
                 expected = cmds.pointPosition(
                     f"{mesh}.vtx[{selected_corners[-1]}]", world=True)
                 assert max(abs(a-b) for a, b in zip(start, expected)) < 1e-5
-            cmds.undoInfo(stateWithoutFlush=False)
-            assert controller.face_fit_eye_lid_reselect(":", layer) == len(edges)
-            assert {f"{mesh}.vtx[{index}]" for index in selected_corners} <= set(
-                cmds.ls(selection=True, flatten=True) or [])
-            cmds.undoInfo(stateWithoutFlush=True)
+            if layer != "Inner":
+                cmds.undoInfo(stateWithoutFlush=False)
+                assert controller.face_fit_eye_lid_reselect(":", layer) == len(edges)
+                assert {f"{mesh}.vtx[{index}]" for index in selected_corners} <= set(
+                    cmds.ls(selection=True, flatten=True) or [])
+                cmds.undoInfo(stateWithoutFlush=True)
         cmds.undo()
         assert not cmds.objExists("FaceFitEyeLidInner")
         cmds.redo()
         assert cmds.objExists("FaceFitEyeLidInner")
+        area, preview = MayaFacePreHost().read_eye_lid_area()
+        assert len(cmds.getAttr(area + ".selection").split()) == area_count
+        cmds.undoInfo(stateWithoutFlush=False)
+        assert controller.face_fit_eye_lid_reselect(":", "Inner") == len(rings[2])
+        cmds.undoInfo(stateWithoutFlush=True)
         cmds.file(rename=str(scene))
         cmds.file(save=True, type="mayaBinary", force=True)
         cmds.file(str(scene), open=True, force=True,
                   executeScriptNodes=False)
         host = MayaFacePreHost()
+        area, preview = host.read_eye_lid_area()
+        assert int(cmds.polyEvaluate(area, face=True)) == area_count
+        assert int(cmds.polyEvaluate(preview, face=True)) == preview_count
+        assert int(cmds.polyEvaluate(mesh, face=True)) == source_count
+        assert "AdvPyFaceFitRedSG" in (cmds.listConnections(
+            cmds.listRelatives(preview, shapes=True)[0],
+            type="shadingEngine") or [])
         for layer in EyeLidLayer:
             assert all(cmds.objExists(path)
                 for path in host.read_eye_lid_fit(layer))

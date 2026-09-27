@@ -12,6 +12,55 @@ class EyeLidLoop:
     lower_vertices: tuple[int, ...]
 
 
+def eye_lid_area_faces(
+    face_edges: tuple[tuple[int, ...], ...],
+    edge_faces: tuple[tuple[int, ...], ...],
+    *,
+    outer_edges: tuple[int, ...],
+    main_edges: tuple[int, ...],
+    inner_edges: tuple[int, ...],
+) -> tuple[int, ...]:
+    """Find the connected face band containing Main, bounded by Outer/Inner."""
+    outer, main, inner = map(set, (outer_edges, main_edges, inner_edges))
+    if (not outer or not main or not inner or outer & main or
+            outer & inner or main & inner):
+        raise ValueError("眼睑三层边环缺失或互相重叠")
+    all_edges = outer | main | inner
+    if any(type(index) is not int or index < 0 or index >= len(edge_faces)
+           for index in all_edges):
+        raise ValueError("眼睑边索引已超出 Face 网格")
+    if any(not edge_faces[index] or len(edge_faces[index]) > 2
+           for index in all_edges):
+        raise ValueError("眼睑区域边环包含非流形边")
+    seed_faces = edge_faces[min(main)]
+    if len(seed_faces) != 2:
+        raise ValueError("EyeLid Main 必须位于连续表面内部")
+    seen = set(seed_faces)
+    pending = list(seed_faces)
+    barrier = outer | inner
+    while pending:
+        face = pending.pop()
+        if face < 0 or face >= len(face_edges):
+            raise ValueError("眼睑区域面索引无效")
+        for edge in face_edges[face]:
+            if edge in barrier:
+                continue
+            for neighbor in edge_faces[edge]:
+                if neighbor not in seen:
+                    seen.add(neighbor)
+                    pending.append(neighbor)
+    if len(seen) == len(face_edges) or not seen:
+        raise ValueError("Outer／Inner 未封闭眼睑区域")
+    if any(sum(face in seen for face in edge_faces[edge]) != 1
+           for edge in barrier):
+        raise ValueError("Outer／Inner 未围住同一眼睑区域")
+    if any(len(edge_faces[edge]) != 2 or
+           any(face not in seen for face in edge_faces[edge])
+           for edge in main):
+        raise ValueError("Main 不在 Outer 与 Inner 围成的区域内")
+    return tuple(sorted(seen))
+
+
 def order_eye_lid_loop(
     edges: tuple[tuple[int, int, int], ...],
     positions: dict[int, tuple[float, float, float]],

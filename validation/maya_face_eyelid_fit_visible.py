@@ -115,6 +115,9 @@ def schedule(output_directory: str) -> None:
                 data[layer.lower() + "_reselected_corners"] = len([
                     item for item in (cmds.ls(selection=True, flatten=True) or [])
                     if ".vtx[" in item])
+            area, preview = MayaFacePreHost().read_eye_lid_area()
+            data["inner_area_faces"] = int(cmds.polyEvaluate(area, face=True))
+            data["inner_preview_faces"] = int(cmds.polyEvaluate(preview, face=True))
             detail.grab().save(str(output / "face-eyelid-fit-panel.png"))
             panel.grab().save(str(output / "face-eyelid-fit-accordion.png"))
             cmds.select("FaceFitEyeLidOuter", "FaceFitEyeLidMain",
@@ -147,11 +150,15 @@ def schedule(output_directory: str) -> None:
             data["reopen_curves"] = all(
                 all(cmds.objExists(path) for path in
                     host.read_eye_lid_fit(layer)) for layer in EyeLidLayer)
+            data["reopen_area"] = all(cmds.objExists(path)
+                for path in host.read_eye_lid_area())
             data["passed"] = (all("已建立 EyeLid" in
                 data[layer + "_status"] for layer in ("outer", "main", "inner"))
                 and [data[layer + "_reselected_corners"] for layer in
                      ("outer", "main", "inner")] == [0, 2, 1]
-                and data["reopen_curves"] and "modal_error" not in data)
+                and 0 < data["inner_area_faces"] < data["inner_preview_faces"]
+                and data["reopen_curves"] and data["reopen_area"]
+                and "modal_error" not in data)
         except BaseException:
             data["error"] = traceback.format_exc()
             data["passed"] = False

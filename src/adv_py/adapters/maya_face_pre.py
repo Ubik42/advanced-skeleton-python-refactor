@@ -5,7 +5,7 @@ import json
 import re
 
 from adv_py.application.face_pre import EyeLidLayer, FacePreRole
-from adv_py.core.face_eyelid_fit import EyeLidLoop
+from adv_py.core.face_eyelid_fit import EyeLidLoop, eye_lid_area_faces
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .maya_face import MayaFaceHost
@@ -375,12 +375,16 @@ class MayaFacePreHost(MayaFaceHost):
         elif layer is EyeLidLayer.INNER:
             self.read_eye_lid_fit(EyeLidLayer.OUTER)
             self.read_eye_lid_fit(EyeLidLayer.MAIN)
+        area_faces = (self._eye_lid_area_faces(mesh, loop.edge_ids)
+                      if layer is EyeLidLayer.INNER else ())
         part = layer.value
         holder_name = "FaceFitEyeLid" + part
         curve_names = ("upperEyeLid" + part + "Curve",
                        "lowerEyeLid" + part + "Curve")
         names = (holder_name, holder_name + "Geo",
                  holder_name + "Curve", holder_name + "Loc", *curve_names)
+        if layer is EyeLidLayer.INNER:
+            names += ("EyeLidInnerAreaMesh", "EyeLidInnerAreaMeshExtrude")
         if any(c.ls(name, long=True) for name in names):
             raise FitSkeletonValidationError("眼睑 Fit 节点名称已占用：" + part)
         if c.referenceQuery(fit, isNodeReferenced=True):
@@ -421,6 +425,8 @@ class MayaFacePreHost(MayaFaceHost):
                 tube = c.parent(tube, geo_holder, absolute=True)[0]
                 c.setAttr(tube + ".overrideEnabled", True)
                 c.setAttr(tube + ".overrideDisplayType", 2)
+            if layer is EyeLidLayer.INNER:
+                self._create_eye_lid_area(mesh, area_faces, geo_holder, fit)
             c.addAttr(holder, longName="selection", dataType="string")
             c.setAttr(holder + ".selection", " ".join(
                 [f"{mesh}.e[{index}]" for index in loop.edge_ids]
@@ -436,6 +442,114 @@ class MayaFacePreHost(MayaFaceHost):
                 separators=(",", ":")), type="string")
             c.select(selected, replace=True) if selected else c.select(clear=True)
         return tuple(paths)
+
+    def _eye_lid_area_faces(self, mesh: str,
+                            inner_edges: tuple[int, ...]) -> tuple[int, ...]:
+        from maya.api import OpenMaya as om
+
+        c = self._cmds
+        shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
+                                 fullPath=True, type="mesh") or []
+        if len(shapes) != 1:
+            raise FitSkeletonValidationError("Face 网格 Shape 缺失或不唯一")
+        selection = om.MSelectionList()
+        selection.add(self.scene_address(shapes[0]))
+        mesh_fn = om.MFnMesh(selection.getDagPath(0))
+
+        def stored_edges(layer: EyeLidLayer) -> tuple[int, ...]:
+            self.read_eye_lid_fit(layer)
+            holder = (c.ls("FaceFitEyeLid" + layer.value, long=True,
+                           type="transform") or [None])[0]
+            record = c.getAttr(holder + ".selection") or ""
+            components = [_EDGE_PATTERN.fullmatch(item) for item in record.split()
+                          if ".e[" in item]
+            if (not components or any(match is None or
+                    match.group("mesh") != mesh for match in components)
+                    or int(c.getAttr(holder + ".advPyFaceCount"))
+                       != mesh_fn.numPolygons):
+                raise FitSkeletonValidationError("眼睑 " + layer.value
+                                                + " 与当前 Face 拓扑不一致")
+            expected = json.loads(c.getAttr(holder + ".advPyEdgeVertices"))
+            indices = tuple(sorted(int(match.group("index"))
+                                   for match in components))
+            if (indices[-1] >= mesh_fn.numEdges or
+                    [(index, *sorted(mesh_fn.getEdgeVertices(index)))
+                     for index in indices] != [tuple(row) for row in expected]):
+                raise FitSkeletonValidationError("眼睑 " + layer.value
+                                                + " 边连接已改变")
+            return indices
+
+        outer = stored_edges(EyeLidLayer.OUTER)
+        main = stored_edges(EyeLidLayer.MAIN)
+        poly_it = om.MItMeshPolygon(selection.getDagPath(0))
+        face_edges = []
+        while not poly_it.isDone():
+            face_edges.append(tuple(poly_it.getEdges()))
+            poly_it.next()
+        edge_it = om.MItMeshEdge(selection.getDagPath(0))
+        edge_faces = []
+        while not edge_it.isDone():
+            edge_faces.append(tuple(edge_it.getConnectedFaces()))
+            edge_it.next()
+        return eye_lid_area_faces(face_edges, edge_faces,
+                                  outer_edges=outer, main_edges=main,
+                                  inner_edges=inner_edges)
+
+    def _create_eye_lid_area(self, mesh: str, faces: tuple[int, ...],
+                             geo_holder: str, fit: str) -> None:
+        c = self._cmds
+        area = c.duplicate(mesh, name="EyeLidInnerAreaMesh",
+                           returnRootsOnly=True)[0]
+        area = c.parent(area, geo_holder, absolute=True)[0]
+        outside = set(range(int(c.polyEvaluate(area, face=True)))) - set(faces)
+        if outside:
+            c.polyDelFacet([f"{area}.f[{index}]" for index in sorted(outside)],
+                           constructionHistory=True)
+        if int(c.polyEvaluate(area, face=True)) != len(faces):
+            raise FitSkeletonValidationError("EyeLid Inner 区域网格面数不一致")
+        c.addAttr(area, longName="selection", dataType="string")
+        c.setAttr(area + ".selection", " ".join(
+            f"{mesh}.f[{index}]" for index in faces), type="string")
+        preview = c.duplicate(area, name="EyeLidInnerAreaMeshExtrude",
+                              returnRootsOnly=True)[0]
+        if (c.listRelatives(preview, parent=True, fullPath=True) or [None])[0] \
+                != (c.ls(geo_holder, long=True) or [geo_holder])[0]:
+            preview = c.parent(preview, geo_holder, absolute=True)[0]
+        c.setAttr(area + ".visibility", False)
+        c.polyExtrudeFacet(preview + ".f[0:"
+                           + str(len(faces) - 1) + "]",
+                           localTranslateZ=float(c.getAttr(fit + ".faceScale"))
+                           / 500.0, keepFacesTogether=True,
+                           constructionHistory=True)
+        shader_name = "AdvPyFaceFitRed"
+        group_name = "AdvPyFaceFitRedSG"
+        if not c.objExists(shader_name):
+            shader = c.shadingNode("lambert", asShader=True, name=shader_name)
+            c.setAttr(shader + ".color", .65, .08, .08, type="double3")
+        elif c.nodeType(shader_name) != "lambert":
+            raise FitSkeletonValidationError("Face Fit 预览材质名称已被占用")
+        if not c.objExists(group_name):
+            group = c.sets(renderable=True, noSurfaceShader=True, empty=True,
+                           name=group_name)
+            c.connectAttr(shader_name + ".outColor", group + ".surfaceShader",
+                          force=True)
+        elif c.nodeType(group_name) != "shadingEngine":
+            raise FitSkeletonValidationError("Face Fit 预览材质组名称已被占用")
+        c.sets(preview, edit=True, forceElement=group_name)
+
+    def read_eye_lid_area(self) -> tuple[str, str]:
+        c = self._cmds
+        self.read_eye_lid_fit(EyeLidLayer.INNER)
+        holder = (c.ls("FaceFitEyeLidInner", long=True,
+                       type="transform") or [None])[0]
+        geo_holder = holder + "|FaceFitEyeLidInnerGeo"
+        paths = tuple(geo_holder + "|" + name for name in
+                      ("EyeLidInnerAreaMesh", "EyeLidInnerAreaMeshExtrude"))
+        if any((c.ls(path, long=True, type="transform") or []) != [path]
+               or not c.listRelatives(path, shapes=True, type="mesh")
+               for path in paths):
+            raise FitSkeletonValidationError("EyeLid Inner 区域网格缺失")
+        return paths
 
     def read_eye_lid_fit(self, layer: EyeLidLayer) -> tuple[str, str]:
         c = self._cmds

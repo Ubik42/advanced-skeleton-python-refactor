@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from adv_py.core.face_eyelid_fit import order_eye_lid_loop
+from adv_py.core.face_eyelid_fit import (eye_lid_area_faces,
+                                          order_eye_lid_loop)
 
 
 class EyeLidLoopTest(unittest.TestCase):
@@ -47,6 +48,16 @@ class EyeLidLoopTest(unittest.TestCase):
             order_eye_lid_loop(self.edges, self.positions,
                                 eye_center_y=0,
                                 corner_vertices=(1, 99))
+
+    def test_inner_area_is_the_band_containing_main(self):
+        faces = ((0, 1), (1, 2), (2, 3), (0,), (3,))
+        edges = ((0, 3), (0, 1), (1, 2), (2, 4))
+        area = eye_lid_area_faces(faces, edges, outer_edges=(0,),
+                                  main_edges=(2,), inner_edges=(3,))
+        self.assertEqual(area, (0, 1, 2))
+        with self.assertRaisesRegex(ValueError, "封闭|围住"):
+            eye_lid_area_faces(faces, edges, outer_edges=(0,),
+                               main_edges=(2,), inner_edges=(1,))
 
 
 if __name__ == "__main__":

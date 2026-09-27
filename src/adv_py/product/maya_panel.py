@@ -1569,7 +1569,8 @@ def create_panel(controller: MayaPanelController | None = None):
         def _face_fit_eye_lid(self, layer):
             upper, lower = self.controller.face_fit_eye_lid(
                 self._namespace(), layer)
-            return f"已建立 EyeLid {layer}：上、下两条曲线"
+            suffix = "及区域网格" if layer == "Inner" else ""
+            return f"已建立 EyeLid {layer}：上、下两条曲线{suffix}"
 
         def _face_fit_eye_lid_reselect(self, layer):
             count = self.controller.face_fit_eye_lid_reselect(
