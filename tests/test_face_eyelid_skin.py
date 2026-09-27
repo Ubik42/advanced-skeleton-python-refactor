@@ -26,6 +26,14 @@ class EyeLidSkinFactorsTests(unittest.TestCase):
         self.assertEqual(factors[17], (0., .85))
         self.assertEqual(factors[12], (0., 0.))
         self.assertTrue(all(factors[index] == (0., 0.) for index in boundary))
+        shared_corners = boundary | {6, 8}
+        shared = eyelid_skin_factors(adjacency, positions, set(range(25)),
+                    shared_corners, (6, 7, 8), (16, 17, 18))
+        self.assertEqual(shared[6], (0., 0.))
+        self.assertEqual(shared[8], (0., 0.))
+        with self.assertRaisesRegex(ValueError, "主环无效"):
+            eyelid_skin_factors(adjacency, positions, set(range(25)),
+                    shared_corners | {7}, (6, 7, 8), (16, 17, 18))
 
     def test_outer_falloff_and_arc_segment_interpolation(self):
         adjacency = {index: set() for index in range(25)}

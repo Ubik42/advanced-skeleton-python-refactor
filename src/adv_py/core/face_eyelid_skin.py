@@ -31,7 +31,9 @@ def eyelid_skin_factors(adjacency: dict[int, set[int]],
     if (not 0 < maximum <= 1 or len(upper_vertices) < 3
             or len(lower_vertices) < 3 or not main <= area_vertices
             or not boundary_vertices <= area_vertices
-            or main & boundary_vertices or not area_vertices <= positions.keys()):
+            or (main & boundary_vertices) - {upper_vertices[0],
+                                               upper_vertices[-1]}
+            or not area_vertices <= positions.keys()):
         raise ValueError("眼睑区域、边界或主环无效")
     d_main = _distances(adjacency, main, area_vertices)
     d_boundary = _distances(adjacency, boundary_vertices, area_vertices)

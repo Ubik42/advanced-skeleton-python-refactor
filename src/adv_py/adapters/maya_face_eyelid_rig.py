@@ -134,7 +134,13 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                 "眼睑区域与所选三层边环不一致："
                 f"Main 缺 {len(main_vertices - area_vertices)} 顶点，"
                 f"Outer／Inner 缺 {len(boundary - area_vertices)} 顶点")
-        if main_vertices & boundary:
+        shared_corners = {main.upper_vertices[0],
+                          main.upper_vertices[-1]}
+        inner_vertices = {vertex for _, first, second in
+                          rings[EyeLidLayer.INNER][0]
+                          for vertex in (first, second)}
+        if (main_vertices & inner_vertices or
+                (main_vertices & boundary) - shared_corners):
             raise FitSkeletonValidationError("眼睑 Main 与 Outer／Inner 环重叠")
         factors = {
             EyeLidLayer.MAIN: eyelid_skin_factors(adjacency, positions,

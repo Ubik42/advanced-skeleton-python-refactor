@@ -69,6 +69,16 @@ class EyeLidLoopTest(unittest.TestCase):
             eye_lid_area_faces(faces, edges, outer_edges=(0,),
                                main_edges=(2,), inner_edges=(1,))
 
+    def test_open_inner_boundary_can_connect_around_outer_loop(self):
+        faces = ((0, 1, 6), (1, 2), (2, 3), (3, 4, 6), (5,))
+        edges = ((0,), (0, 1), (1, 2), (2, 3), (3,), (4,), (0, 3))
+        area = eye_lid_area_faces(faces, edges, outer_edges=(1,),
+                                  main_edges=(2,), inner_edges=(4,))
+        self.assertEqual(area, (0, 1, 2, 3))
+        with self.assertRaisesRegex(ValueError, "围住"):
+            eye_lid_area_faces(faces, edges, outer_edges=(1,),
+                               main_edges=(2,), inner_edges=(5,))
+
     def test_blink_meets_at_common_height_and_keeps_corners(self):
         points = {0: (0., 0., 0.), 1: (1., 2., 0.),
                   2: (2., 0., 0.), 3: (1., -1., 0.)}

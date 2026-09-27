@@ -115,8 +115,15 @@ def eye_lid_area_faces(
                     pending.append(neighbor)
     if len(seen) == len(face_edges) or not seen:
         raise ValueError("Outer／Inner 未封闭眼睑区域")
-    if any(sum(face in seen for face in edge_faces[edge]) != 1
-           for edge in barrier):
+    inner_crossings = {sum(face in seen for face in edge_faces[edge])
+                       for edge in inner}
+    outer_crossings = {sum(face in seen for face in edge_faces[edge])
+                       for edge in outer}
+    # An open inner rim may connect around the outer loop elsewhere on the
+    # head. In that case both sides of Outer remain reachable from Main.
+    if inner_crossings != {1} or (outer_crossings != {1} and not (
+            outer_crossings == {2} and
+            all(len(edge_faces[edge]) == 1 for edge in inner))):
         raise ValueError("Outer／Inner 未围住同一眼睑区域")
     if any(len(edge_faces[edge]) != 2 or
            any(face not in seen for face in edge_faces[edge])
