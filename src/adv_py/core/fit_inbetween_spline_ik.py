@@ -49,7 +49,9 @@ def plan_inbetween_spline_ik(
     """
     if (not root_path.startswith("|") or not start_output_path.startswith("|")
             or not end_output_path.startswith("|")
-            or len({root_path, start_output_path, end_output_path}) != 3):
+            or len({root_path, start_output_path, end_output_path}) != 3
+            or not start_output_path.startswith(root_path + "|")
+            or not end_output_path.startswith(root_path + "|")):
         raise ValueError("Spline Inbetween 需要唯一的根和相邻 IK 输出")
     parts = plan_inbetween_ik_parts(
         body_parts, start_ik_driver=start_output_path,

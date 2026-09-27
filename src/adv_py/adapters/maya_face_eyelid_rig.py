@@ -16,6 +16,7 @@ from adv_py.core.face_eyelid_fit import (
 from adv_py.core.face_eyelid_skin import (
     eyelid_skin_factors, inner_eyelid_skin_factors,
     outer_eyelid_skin_factors, split_arc_weight)
+from adv_py.core.face_eyelid_motion import EyeLidMotionPlan
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .maya_dense_skin import MayaDenseSkinHost
@@ -25,20 +26,6 @@ from .maya_face_pre import MayaFacePreHost
 
 _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
 _CLOSED_LOWER_UPWARD_FOLLOW = .6
-_YAW_DEPTH_FULL_ANGLE_DEG = 18.5
-_YAW_DEPTH_EYE_RADIUS_FRACTION = .14
-_YAW_EDGE_START_ANGLE_DEG = 18.5
-_YAW_EDGE_FULL_ANGLE_DEG = 26.5
-_YAW_EDGE_UPPER_RADIUS_FRACTION = .49
-_YAW_EDGE_LOWER_RADIUS_FRACTION = .35
-_YAW_BLINK_EYE_BACK_RADIUS_FRACTION = .07
-_STATIONARY_OUTER_POSE_RADIUS_FRACTIONS = {
-    "upper": (.029, .077),
-    "lower": (.058, -.024),
-}
-_STATIONARY_LOWER_MAIN_SEAL_RADIUS_FRACTION = .0054
-_STATIONARY_MID_GAZE_DEPTH_RADIUS_FRACTION = .027
-_STATIONARY_MID_GAZE_FULL_ANGLE_DEG = 30.
 
 
 class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
@@ -535,6 +522,8 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
             eye_centers[side] = tuple(float(value) for value in c.xform(
                 pre.read_eye_ball_fit(side), query=True, worldSpace=True,
                 translation=True))
+        motion_plans = {side: EyeLidMotionPlan(eye_radii[side])
+                        for side in FaceSide}
         shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
                                  fullPath=True, type="mesh") or []
         history = c.listHistory(shapes[0], pruneDagObjects=True) or []
@@ -715,14 +704,13 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                   magnitude + ".colorIfFalseR")
                     limit = c.createNode("clamp", name=eye_name + "YawLimit")
                     c.setAttr(limit + ".maxR",
-                              _STATIONARY_MID_GAZE_FULL_ANGLE_DEG)
+                              motion_plans[side].stationary_mid_gaze_full_angle_deg)
                     c.connectAttr(magnitude + ".outColorR",
                                   limit + ".inputR")
                     yaw_scale = c.createNode("multDoubleLinear",
                         name=eye_name + "YawDepthScale")
-                    c.setAttr(yaw_scale + ".input2", eye_radii[side] *
-                        _STATIONARY_MID_GAZE_DEPTH_RADIUS_FRACTION /
-                        _STATIONARY_MID_GAZE_FULL_ANGLE_DEG)
+                    c.setAttr(yaw_scale + ".input2",
+                              motion_plans[side].stationary_mid_gaze_slope_cm_per_degree)
                     c.connectAttr(limit + ".outputR",
                                   yaw_scale + ".input1")
                     mid_blink = c.createNode("multDoubleLinear",
@@ -857,16 +845,13 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                             depth_scale = c.createNode("multDoubleLinear",
                                 name=control_name + "YawDepthScale")
                             c.setAttr(depth_scale + ".input2",
-                                eye_radii[side] *
-                                _YAW_DEPTH_EYE_RADIUS_FRACTION /
-                                _YAW_DEPTH_FULL_ANGLE_DEG)
+                                motion_plans[side].yaw_depth_slope_cm_per_degree)
                             c.connectAttr(magnitude + ".outColorR",
                                           depth_scale + ".input1")
                             depth_limit = c.createNode("clamp",
                                 name=control_name + "YawDepthLimit")
                             c.setAttr(depth_limit + ".maxR",
-                                eye_radii[side] *
-                                _YAW_DEPTH_EYE_RADIUS_FRACTION)
+                                motion_plans[side].yaw_depth_limit_cm)
                             c.connectAttr(depth_scale + ".output",
                                           depth_limit + ".inputR")
                             depth_blink = c.createNode("multiplyDivide",
@@ -896,24 +881,19 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                             edge_offset = c.createNode("addDoubleLinear",
                                 name=control_name + "YawEdgeOffset")
                             c.setAttr(edge_offset + ".input2",
-                                      -_YAW_EDGE_START_ANGLE_DEG)
+                                      -motion_plans[side].yaw_edge_start_angle_deg)
                             c.connectAttr(magnitude + ".outColorR",
                                           edge_offset + ".input1")
                             edge_limit = c.createNode("clamp",
                                 name=control_name + "YawEdgeLimit")
                             c.setAttr(edge_limit + ".maxR",
-                                _YAW_EDGE_FULL_ANGLE_DEG -
-                                _YAW_EDGE_START_ANGLE_DEG)
+                                motion_plans[side].yaw_edge_span_deg)
                             c.connectAttr(edge_offset + ".output",
                                           edge_limit + ".inputR")
                             edge_scale = c.createNode("multDoubleLinear",
                                 name=control_name + "YawEdgeScale")
                             c.setAttr(edge_scale + ".input2",
-                                eye_radii[side] *
-                                (_YAW_EDGE_UPPER_RADIUS_FRACTION if arc == "upper"
-                                 else _YAW_EDGE_LOWER_RADIUS_FRACTION) /
-                                (_YAW_EDGE_FULL_ANGLE_DEG -
-                                 _YAW_EDGE_START_ANGLE_DEG))
+                                motion_plans[side].yaw_edge_slope_cm_per_degree(arc))
                             c.connectAttr(edge_limit + ".outputR",
                                           edge_scale + ".input1")
                             edge_blink = c.createNode("multiplyDivide",
@@ -947,18 +927,17 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                       open_inners[side] and
                                       not mobile_inners[side]):
                                     horizontal, vertical = (
-                                        _STATIONARY_OUTER_POSE_RADIUS_FRACTIONS[arc])
+                                        motion_plans[side].stationary_outer_offset_cm(
+                                            arc, 1 if side is FaceSide.RIGHT else -1))
                                     if axis == "X":
-                                        default = (eye_radii[side] * horizontal *
-                                            (1 if side is FaceSide.RIGHT else -1))
+                                        default = horizontal
                                     elif axis == "Y":
-                                        default = eye_radii[side] * vertical
+                                        default = vertical
                                 elif (layer is EyeLidLayer.MAIN and
                                       arc == "lower" and axis == "Y" and
                                       open_inners[side] and
                                       not mobile_inners[side]):
-                                    default = (eye_radii[side] *
-                                        _STATIONARY_LOWER_MAIN_SEAL_RADIUS_FRACTION)
+                                    default = motion_plans[side].stationary_lower_main_seal_cm
                                 c.addAttr(control,
                                     longName="blinkOffset" + axis,
                                     attributeType="double", keyable=True,
@@ -1180,19 +1159,19 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                         "外眼睑转眼角度驱动缺失")
                 offset = c.createNode("addDoubleLinear",
                                       name=label + "Offset")
-                c.setAttr(offset + ".input2", -_YAW_EDGE_START_ANGLE_DEG)
+                c.setAttr(offset + ".input2",
+                          -motion_plans[side].yaw_edge_start_angle_deg)
                 c.connectAttr(yaw_magnitude[0] + ".outColorR",
                               offset + ".input1")
                 limit = c.createNode("clamp", name=label + "Limit")
-                angle_span = (_YAW_EDGE_FULL_ANGLE_DEG -
-                              _YAW_EDGE_START_ANGLE_DEG)
+                angle_span = motion_plans[side].yaw_edge_span_deg
                 c.setAttr(limit + ".maxR", angle_span)
                 c.connectAttr(offset + ".output", limit + ".inputR")
                 scale = c.createNode("multDoubleLinear",
                                      name=label + "Scale")
-                maximum = (eye_radii[side] *
-                           _YAW_BLINK_EYE_BACK_RADIUS_FRACTION)
-                c.setAttr(scale + ".input2", -maximum / angle_span)
+                maximum = motion_plans[side].yaw_blink_eye_back_limit_cm
+                c.setAttr(scale + ".input2",
+                          motion_plans[side].yaw_blink_eye_back_slope_cm_per_degree)
                 c.connectAttr(limit + ".outputR", scale + ".input1")
                 blink = c.createNode("multDoubleLinear",
                                      name=label + "Blink")

@@ -88,6 +88,11 @@ class BuildInbetweenLimbSegments:
         bindings: tuple[InbetweenLimbBinding, ...],
         rig: BodyCharacterRigBuildPlan,
     ) -> InbetweenLimbSegmentsResult:
+        if any(not binding.parts for binding in bindings):
+            raise ValueError("Inbetween 骨段缺少 Body Part")
+        part_keys = tuple(binding.parts[0].name for binding in bindings)
+        if len(set(part_keys)) != len(part_keys):
+            raise ValueError("Inbetween 骨段首个 Part 身份重复")
         mapping = plan_character_inbetween_ik_solvers(
             tuple(binding for binding in bindings
                   if binding.spline_root_path is None), rig)
@@ -96,6 +101,9 @@ class BuildInbetweenLimbSegments:
             for request in mapping.requests
             for segment in request.segments
         }
+        if len(ik_by_part) != sum(len(request.segments)
+                                   for request in mapping.requests):
+            raise ValueError("Inbetween IK 求解段 Part 身份重复")
         with self._host.transaction("构建 Inbetween 四肢与轴向求解链"):
             joined = _WithinTransaction(self._host)
             fk_rows = []
@@ -125,6 +133,8 @@ class BuildInbetweenLimbSegments:
                     pole_constraint_name=plan.pole_constraint_name)
             for binding in bindings:
                 if binding.spline_root_path is not None:
+                    if binding.parts[0].name in ik_by_part:
+                        raise ValueError("Spline Inbetween 与 IK 求解段身份冲突")
                     ik_by_part[binding.parts[0].name] = (
                         BuildInbetweenSplineIk(joined).apply(
                             binding.parts,
