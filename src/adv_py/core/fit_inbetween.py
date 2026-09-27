@@ -107,10 +107,15 @@ def plan_fit_inbetween(
     guides: list[FitInbetweenGuide] = []
     reparents: list[FitInbetweenReparent] = []
     for start in hierarchy.joints:
-        count = source[start.path].inbetween_joints or 0
-        if count < 0 or count > 10:
+        metadata_item = source[start.path]
+        if (metadata_item.inbetween_joints is not None
+                and metadata_item.twist_joints is not None):
             raise FitInbetweenValidationError(
-                "Fit inbetweenJoints 必须在 0 到 10 之间：" + start.path)
+                "Fit joint 不能同时设置 Twist 和 Inbetween：" + start.path)
+        count = metadata_item.inbetween_joints or 0
+        if count < 0:
+            raise FitInbetweenValidationError(
+                "Fit inbetweenJoints 不能小于 0：" + start.path)
         if count == 0:
             continue
         end = _rla_child(start, children.get(start.path, ()),
