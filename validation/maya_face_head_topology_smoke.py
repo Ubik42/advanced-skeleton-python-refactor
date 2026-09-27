@@ -296,6 +296,20 @@ def main() -> None:
             if side is FaceSide.LEFT:
                 controller.face_fit_switch_side(":", "Left")
             eye_fit = controller.face_fit_eye_ball(":", eye, head_joint)
+            reference_center = ((fit_manifest.get("eye_fit_centers_cm") or {})
+                                .get(side.value) if fit_manifest else None)
+            if (reference_center is None and fit_manifest and
+                    fit_manifest.get("symmetric") and side is FaceSide.LEFT):
+                right_center = (fit_manifest.get("eye_fit_centers_cm") or {}
+                                ).get("Right")
+                if right_center is not None:
+                    reference_center = [-right_center[0],
+                                        right_center[1], right_center[2]]
+            if reference_center is not None:
+                cmds.xform(eye_fit, worldSpace=True,
+                           translation=reference_center)
+            actual_center = cmds.xform(eye_fit, query=True, worldSpace=True,
+                                       translation=True)
             target, rings = (original_eye_rings(
                 head, eye, side, fit_manifest)
                 if fit_manifest is not None else
@@ -322,6 +336,8 @@ def main() -> None:
                 "side": side.value,
                 "eye_center_cm": [round(value, 5) for value in target],
                 "eye_fit": eye_fit.rsplit("|", 1)[-1],
+                "eye_fit_center_cm": [round(value, 5)
+                                      for value in actual_center],
                 "rings": [{"depth": depth, "edge_count": len(edges)}
                           for depth, edges in rings],
                 "area_faces": int(cmds.polyEvaluate(area, face=True)),
@@ -468,6 +484,11 @@ def main() -> None:
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
             alignment = lid_rig["eye_depth_alignment"][side.value]
+            fit_center = cmds.xform(MayaFacePreHost().read_eye_ball_fit(side),
+                                    query=True, worldSpace=True,
+                                    translation=True)
+            assert max(abs(a-b) for a, b in zip(
+                fit_center, lid_rig["eye_fit_centers_cm"][side.value])) < 1e-5
             assert alignment["applied_cm"] >= 0
             assert alignment["status"] != "not_attempted"
             assert abs(cmds.getAttr("FaceMotionSystem."
@@ -859,6 +880,7 @@ def main() -> None:
                   "stationary_aperture_sides": lid_rig[
                       "stationary_aperture_sides"],
                   "eye_depth_alignment": lid_rig["eye_depth_alignment"],
+                  "eye_fit_centers_cm": lid_rig["eye_fit_centers_cm"],
                   "yaw_blink_eye_back": lid_rig["yaw_blink_eye_back"],
                   "normal_repair": lid_rig["normal_repair"],
                   "aperture_rim": aperture_rim,

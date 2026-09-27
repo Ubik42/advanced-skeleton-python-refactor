@@ -532,8 +532,9 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
             eye_meshes[side] = eye_mesh
             eye_radii[side] = max(bounds[index + 3] - bounds[index]
                                   for index in range(3)) / 2.
-            eye_centers[side] = tuple((bounds[index] + bounds[index + 3]) / 2.
-                                      for index in range(3))
+            eye_centers[side] = tuple(float(value) for value in c.xform(
+                pre.read_eye_ball_fit(side), query=True, worldSpace=True,
+                translation=True))
         shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
                                  fullPath=True, type="mesh") or []
         history = c.listHistory(shapes[0], pruneDagObjects=True) or []
@@ -1222,6 +1223,9 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                     side.value for side in FaceSide
                     if open_inners[side] and not mobile_inners[side]),
                 "eye_controls": eye_control_names,
+                "eye_fit_centers_cm": {side.value: tuple(
+                    round(value, 6) for value in eye_centers[side])
+                    for side in FaceSide},
                 "eye_depth_alignment": eye_depth_alignment,
                 "yaw_blink_eye_back": yaw_blink_eye_back,
                 "normal_repair": normal_repair,

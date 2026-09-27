@@ -102,9 +102,26 @@ def main() -> None:
                           + [max(point[axis] for point in points)
                              for axis in range(3)]],
         }
+    eye_fit_centers = {}
+    for side, name in (("Right", "FitEyeBall"),
+                       ("Left", "FitEyeBallLeft")):
+        matches = cmds.ls(name, long=True, type="transform") or []
+        if len(matches) > 1:
+            raise RuntimeError("原版 EyeBall Fit 节点重名：" + name)
+        if matches:
+            eye_fit_centers[side] = [round(value, 7) for value in
+                cmds.xform(matches[0], query=True, worldSpace=True,
+                           translation=True)]
+    fit = cmds.ls("FitSkeleton", long=True, type="transform") or []
+    symmetric = (len(fit) == 1 and
+                 (not cmds.attributeQuery("NonSym", node=fit[0], exists=True)
+                  or not cmds.getAttr(fit[0] + ".NonSym")))
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps({"source_name": source.name,
-                                  "layers": rows}, ensure_ascii=False,
+                                  "layers": rows,
+                                  "symmetric": symmetric,
+                                  "eye_fit_centers_cm": eye_fit_centers},
+                                 ensure_ascii=False,
                                  indent=2) + "\n", encoding="utf-8")
     print("Original eyelid Fit:", rows, flush=True)
 
