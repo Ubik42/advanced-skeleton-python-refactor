@@ -110,6 +110,10 @@ class MayaFitPartMixin:
             if c.connectionInfo(body + ".offsetParentMatrix",
                     sourceFromDestination=True) != chain.scale_matrix_name + ".matrixSum":
                 return False
+            if c.connectionInfo(chain.scale_matrix_name + ".matrixIn[0]",
+                    sourceFromDestination=True) != (
+                    chain.scale_compose_name + ".outputMatrix"):
+                return False
             return all(c.connectionInfo(chain.scale_compose_name
                        + ".inputScale" + axis, sourceFromDestination=True)
                        == chain.blend_name + ".output" + color
