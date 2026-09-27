@@ -223,6 +223,8 @@ class BuildBodyLegRig:
             pole_distance_scale=pole_distance_scale,
             sub_controllers=BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).sub_controllers,
+            extra_controllers=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).extra_controllers,
         )
         visibility = plan_body_leg_visibility(fk_controls, ik, blend)
         stretch = plan_body_leg_stretch(mechanisms, ik)
@@ -264,6 +266,7 @@ class BuildBodyLegRig:
         for spec in ik.limbs:
             if spec.ankle_sub_name is not None:
                 names.append(spec.ankle_sub_name)
+            names.extend((spec.ankle_extra_name, spec.pole_extra_name))
             names.extend((
                 spec.ankle_offset_name,
                 spec.ankle_control_name,

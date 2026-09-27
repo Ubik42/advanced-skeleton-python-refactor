@@ -5,7 +5,10 @@ from math import isfinite
 from typing import Mapping
 
 from .body_leg_mechanisms import BodyLegMechanismPlan, BodyLegMechanismRole
-from .body_controller_layers import BodySubControllerState, audit_body_sub_controller
+from .body_controller_layers import (
+    BodyExtraControllerState, BodySubControllerState,
+    audit_body_extra_controller, audit_body_sub_controller,
+)
 from .body_limb_ik import BodyLimbIkValidationError, solve_limb_pole_position
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
@@ -40,6 +43,11 @@ class BodyLegIkSpec:
     solver_joint_list: tuple[str, ...] | None = None
     ankle_sub_path: str | None = None
     ankle_sub_name: str | None = None
+    ankle_extra_path: str | None = None
+    ankle_extra_name: str | None = None
+    pole_extra_path: str | None = None
+    pole_extra_name: str | None = None
+    ankle_extra_curve: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +81,8 @@ class BodyLegIkState:
     ankle_source: str | None
     ankle_driven_joint: str | None
     ankle_sub: BodySubControllerState | None = None
+    ankle_extra: BodyExtraControllerState | None = None
+    pole_extra: BodyExtraControllerState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,9 +105,10 @@ def plan_body_leg_ik(
     radius: float = 1.75,
     pole_distance_scale: float = 0.75,
     sub_controllers: bool = False,
+    extra_controllers: bool = False,
 ) -> BodyLegIkPlan:
-    if type(sub_controllers) is not bool:
-        raise BodyLegIkValidationError("Sub Controllers 开关必须是布尔值")
+    if type(sub_controllers) is not bool or type(extra_controllers) is not bool:
+        raise BodyLegIkValidationError("IK 控制器开关必须是布尔值")
     if any(
         isinstance(value, bool)
         or not isinstance(value, (int, float))
@@ -167,17 +178,21 @@ def plan_body_leg_ik(
         pole_control_name = f"AdvPy_LegPV_{suffix}"
         ankle_offset_path = f"{root_path}|{ankle_offset_name}"
         pole_offset_path = f"{root_path}|{pole_offset_name}"
+        ankle_extra_name = f"AdvPy_LegIKExtra_{suffix}"
+        pole_extra_name = f"AdvPy_LegPVExtra_{suffix}"
+        ankle_extra_path = f"{ankle_offset_path}|{ankle_extra_name}"
+        pole_extra_path = f"{pole_offset_path}|{pole_extra_name}"
         limbs.append(BodyLegIkSpec(
             side=side,
             chain=drivers,
             root_path=root_path,
             ankle_offset_path=ankle_offset_path,
             ankle_offset_name=ankle_offset_name,
-            ankle_control_path=f"{ankle_offset_path}|{ankle_control_name}",
+            ankle_control_path=f"{ankle_extra_path}|{ankle_control_name}",
             ankle_control_name=ankle_control_name,
             pole_offset_path=pole_offset_path,
             pole_offset_name=pole_offset_name,
-            pole_control_path=f"{pole_offset_path}|{pole_control_name}",
+            pole_control_path=f"{pole_extra_path}|{pole_control_name}",
             pole_control_name=pole_control_name,
             handle_name=f"AdvPy_LegIKHandle_{suffix}",
             pole_constraint_name=f"AdvPy_LegPVConstraint_{suffix}",
@@ -189,10 +204,15 @@ def plan_body_leg_ik(
             toe_driver_path=toe_driver,
             toe_end_driver_path=toe_end_driver,
             ankle_sub_path=(
-                f"{ankle_offset_path}|{ankle_control_name}|AdvPy_LegIKSub_{suffix}"
+                f"{ankle_extra_path}|{ankle_control_name}|AdvPy_LegIKSub_{suffix}"
                 if sub_controllers else None),
             ankle_sub_name=(f"AdvPy_LegIKSub_{suffix}"
                             if sub_controllers else None),
+            ankle_extra_path=ankle_extra_path,
+            ankle_extra_name=ankle_extra_name,
+            pole_extra_path=pole_extra_path,
+            pole_extra_name=pole_extra_name,
+            ankle_extra_curve=extra_controllers,
         ))
     return BodyLegIkPlan(root_path, root_name, tuple(limbs))
 
@@ -221,13 +241,13 @@ def audit_body_leg_ik(
         checks = (
             (
                 state.ankle_control_path == spec.ankle_control_path
-                and state.ankle_parent_path == spec.ankle_offset_path,
+                and state.ankle_parent_path == spec.ankle_extra_path,
                 "ik_ankle_hierarchy",
                 "Ankle IK 控制父链不一致",
             ),
             (
                 state.pole_control_path == spec.pole_control_path
-                and state.pole_parent_path == spec.pole_offset_path,
+                and state.pole_parent_path == spec.pole_extra_path,
                 "ik_pole_hierarchy",
                 "Pole Vector 控制父链不一致",
             ),
@@ -313,6 +333,20 @@ def audit_body_leg_ik(
                 state.ankle_sub, tolerance=tolerance):
             issues.append(BodyLegIkIssue(
                 "ik_sub_control_mismatch", message, spec.side.value))
+        if spec.ankle_extra_path is not None:
+            for message in audit_body_extra_controller(
+                    spec.ankle_offset_path, spec.ankle_control_path,
+                    spec.ankle_extra_path, state.ankle_extra,
+                    extra_curve=spec.ankle_extra_curve, tolerance=tolerance):
+                issues.append(BodyLegIkIssue(
+                    "ik_extra_control_mismatch", message, spec.side.value))
+        if spec.pole_extra_path is not None:
+            for message in audit_body_extra_controller(
+                    spec.pole_offset_path, spec.pole_control_path,
+                    spec.pole_extra_path, state.pole_extra,
+                    extra_curve=False, tolerance=tolerance):
+                issues.append(BodyLegIkIssue(
+                    "pole_extra_mismatch", message, spec.side.value))
     return tuple(issues)
 
 

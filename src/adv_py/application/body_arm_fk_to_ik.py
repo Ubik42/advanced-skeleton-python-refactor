@@ -68,7 +68,9 @@ class MatchBodyArmFkToIk:
         ik = plan_body_arm_ik(
             body, mechanisms, pole_distance_scale=pole_distance_scale,
             sub_controllers=BodyBuildOptions.from_fit_settings(
-                symmetry.settings).sub_controllers)
+                symmetry.settings).sub_controllers,
+            extra_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).extra_controllers)
         blend = plan_body_arm_blend(body, mechanisms)
         match = plan_body_arm_fk_to_ik(body, ik, blend, side, pole_distance_scale=pole_distance_scale)
         ik_snapshot = self._host.capture_body_arm_ik(ik)

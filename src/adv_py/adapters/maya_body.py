@@ -106,7 +106,9 @@ from adv_py.core.body_export_skeleton import (
     BodyExportSkeletonSnapshot,
     plan_body_export_skeleton,
 )
-from adv_py.core.body_controller_layers import BodySubControllerState
+from adv_py.core.body_controller_layers import (
+    BodyExtraControllerState, BodySubControllerState,
+)
 from adv_py.core.body_fbx_export import (
     BodyFbxAppliedProfile,
     BodyFbxCurvePolicy,
@@ -4633,6 +4635,93 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
         self._cmds.connectAttr(control + ".subControl",
                                shapes[0] + ".visibility", force=True)
 
+    def _create_body_ik_extra_layer(
+        self, offset: str, name: str, path: str,
+    ) -> str:
+        extra = self._cmds.createNode(
+            "transform", name=name, parent=offset, skipSelect=True)
+        extra = (self._cmds.ls(extra, long=True) or [extra])[0]
+        if extra != path:
+            raise RuntimeError("IK Extra 层路径漂移")
+        return extra
+
+    def _add_body_ik_extra_curve(
+        self, extra: str, control: str, radius: float,
+    ) -> None:
+        temp = self._cmds.circle(
+            name=extra.rsplit("|", 1)[-1] + "CurveTemp",
+            normal=(1.0, 0.0, 0.0), radius=radius * 1.1,
+            degree=3, sections=12, constructionHistory=False)[0]
+        shapes = self._cmds.listRelatives(
+            temp, shapes=True, noIntermediate=True, fullPath=True) or []
+        if len(shapes) != 1:
+            raise RuntimeError("IK Extra 来源曲线无效")
+        shape = self._cmds.parent(
+            shapes[0], extra, shape=True, relative=True)[0]
+        shape = self._cmds.rename(
+            shape, extra.rsplit("|", 1)[-1] + "Shape")
+        shape = (self._cmds.ls(shape, long=True) or [shape])[0]
+        if self._cmds.objExists(temp):
+            self._cmds.delete(temp)
+        self._cmds.setAttr(shape + ".overrideEnabled", True)
+        self._cmds.setAttr(shape + ".overrideColor", 29)
+        self._cmds.addAttr(control, longName="extraControl",
+                           attributeType="bool", defaultValue=False)
+        self._cmds.setAttr(control + ".extraControl",
+                           edit=True, channelBox=True)
+        self._cmds.connectAttr(control + ".extraControl",
+                               shape + ".visibility", force=True)
+
+    def _capture_body_ik_extra_layer(
+        self, extra_path: str | None, control: str,
+    ) -> BodyExtraControllerState | None:
+        if extra_path is None:
+            return None
+        nodes = self._cmds.ls(
+            extra_path, long=True, type="transform") or []
+        if len(nodes) != 1:
+            return None
+        extra = nodes[0]
+        parents = self._cmds.listRelatives(
+            extra, parent=True, fullPath=True) or []
+        shapes = self._cmds.listRelatives(
+            extra, shapes=True, noIntermediate=True,
+            fullPath=True) or []
+        main_shapes = self._cmds.listRelatives(
+            control, shapes=True, noIntermediate=True,
+            fullPath=True) or []
+        shape_type = (self._cmds.nodeType(shapes[0])
+                      if len(shapes) == 1 else "multiple" if shapes else None)
+        color = (int(self._cmds.getAttr(shapes[0] + ".overrideColor"))
+                 if len(shapes) == 1 else None)
+        source = None
+        scale = None
+        if len(shapes) == 1:
+            sources = self._cmds.listConnections(
+                shapes[0] + ".visibility", source=True,
+                destination=False, plugs=True) or []
+            if len(sources) == 1:
+                node, attr = sources[0].split(".", 1)
+                paths = self._cmds.ls(node, long=True) or []
+                if len(paths) == 1:
+                    source = paths[0] + "." + attr
+            if len(main_shapes) == 1:
+                main_cv = self._cmds.xform(
+                    main_shapes[0] + ".cv[0]", query=True,
+                    objectSpace=True, translation=True)
+                extra_cv = self._cmds.xform(
+                    shapes[0] + ".cv[0]", query=True,
+                    objectSpace=True, translation=True)
+                main_radius = sum(float(v) ** 2
+                                  for v in main_cv) ** 0.5
+                if main_radius > 0:
+                    scale = (sum(float(v) ** 2 for v in extra_cv) ** 0.5
+                             / main_radius)
+        return BodyExtraControllerState(
+            extra, parents[0] if len(parents) == 1 else None,
+            shapes[0] if len(shapes) == 1 else None,
+            shape_type, source, color, scale)
+
     def _capture_body_ik_sub_control(
         self, control: str, sub_path: str | None,
     ) -> BodySubControllerState | None:
@@ -4690,7 +4779,17 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
         self._require_transaction()
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
-            for name in (spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name, *((spec.wrist_sub_name,) if spec.wrist_sub_name else ())):
+            if (spec.wrist_extra_name is None or spec.wrist_extra_path is None
+                    or spec.pole_extra_name is None
+                    or spec.pole_extra_path is None):
+                raise FitSkeletonValidationError("Arm IK 缺少 Extra 层计划")
+            for name in (
+                    spec.wrist_offset_name, spec.wrist_control_name,
+                    spec.pole_offset_name, spec.pole_control_name,
+                    spec.handle_name, spec.pole_constraint_name,
+                    spec.wrist_constraint_name, spec.wrist_extra_name,
+                    spec.pole_extra_name,
+                    *((spec.wrist_sub_name,) if spec.wrist_sub_name else ())):
                 if self.find_name_collisions(name):
                     raise FitSkeletonValidationError(f"Arm IK 名称冲突：{name}")
             if any(not self._cmds.objExists(path) for path in spec.chain):
@@ -4701,17 +4800,28 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
             x_axis, y_axis, z_axis = spec.wrist_axes
             matrix = (*x_axis, 0.0, *y_axis, 0.0, *z_axis, 0.0, *spec.wrist_position, 1.0)
             self._cmds.xform(wrist_offset, worldSpace=True, matrix=matrix)
+            if spec.wrist_extra_name is None or spec.wrist_extra_path is None:
+                raise FitSkeletonValidationError("Arm IK 缺少 Extra 层计划")
+            wrist_extra = self._create_body_ik_extra_layer(
+                wrist_offset, spec.wrist_extra_name, spec.wrist_extra_path)
             wrist = self._cmds.circle(name=spec.wrist_control_name, normal=(1, 0, 0), radius=spec.radius, degree=3, sections=12, constructionHistory=False)[0]
-            wrist = self._cmds.parent(wrist, wrist_offset, relative=True)[0]
+            wrist = self._cmds.parent(wrist, wrist_extra, relative=True)[0]
             wrist = (self._cmds.ls(wrist, long=True) or [wrist])[0]
             pole_offset = self._cmds.createNode("transform", name=spec.pole_offset_name, parent=spec.root_path, skipSelect=True)
             pole_offset = (self._cmds.ls(pole_offset, long=True) or [pole_offset])[0]
             self._cmds.xform(pole_offset, worldSpace=True, translation=spec.pole_position)
+            if spec.pole_extra_name is None or spec.pole_extra_path is None:
+                raise FitSkeletonValidationError("Arm Pole 缺少 Extra 层计划")
+            pole_extra = self._create_body_ik_extra_layer(
+                pole_offset, spec.pole_extra_name, spec.pole_extra_path)
             pole = self._cmds.circle(name=spec.pole_control_name, normal=(0, 0, 1), radius=spec.radius * 0.65, degree=3, sections=8, constructionHistory=False)[0]
-            pole = self._cmds.parent(pole, pole_offset, relative=True)[0]
+            pole = self._cmds.parent(pole, pole_extra, relative=True)[0]
             pole = (self._cmds.ls(pole, long=True) or [pole])[0]
             if wrist != spec.wrist_control_path or pole != spec.pole_control_path:
                 raise RuntimeError("Arm IK 控制路径漂移")
+            if spec.wrist_extra_curve:
+                self._add_body_ik_extra_curve(
+                    wrist_extra, wrist, spec.radius)
             if spec.wrist_sub_path is not None:
                 if spec.wrist_sub_name is None:
                     raise FitSkeletonValidationError("Arm IK Sub 缺少名称")
@@ -4766,6 +4876,10 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 wrist_constraints[0], wrist_source, wrist_driven,
                 self._capture_body_ik_sub_control(
                     wrist, spec.wrist_sub_path),
+                self._capture_body_ik_extra_layer(
+                    spec.wrist_extra_path, wrist),
+                self._capture_body_ik_extra_layer(
+                    spec.pole_extra_path, pole),
             ))
         return BodyArmIkSnapshot(roots[0], tuple(states))
 
@@ -4773,6 +4887,10 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
         self._require_transaction()
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
+            if (spec.ankle_extra_name is None or spec.ankle_extra_path is None
+                    or spec.pole_extra_name is None
+                    or spec.pole_extra_path is None):
+                raise FitSkeletonValidationError("Leg IK 缺少 Extra 层计划")
             names = (
                 spec.ankle_offset_name,
                 spec.ankle_control_name,
@@ -4781,6 +4899,8 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 spec.handle_name,
                 spec.pole_constraint_name,
                 spec.ankle_constraint_name,
+                spec.ankle_extra_name,
+                spec.pole_extra_name,
                 *((spec.ankle_sub_name,) if spec.ankle_sub_name else ()),
             )
             if any(self.find_name_collisions(name) for name in names):
@@ -4811,6 +4931,11 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 1.0,
             )
             self._cmds.xform(ankle_offset, worldSpace=True, matrix=matrix)
+            if spec.ankle_extra_name is None or spec.ankle_extra_path is None:
+                raise FitSkeletonValidationError("Leg IK 缺少 Extra 层计划")
+            ankle_extra = self._create_body_ik_extra_layer(
+                ankle_offset, spec.ankle_extra_name,
+                spec.ankle_extra_path)
             ankle = self._cmds.circle(
                 name=spec.ankle_control_name,
                 normal=(1.0, 0.0, 0.0),
@@ -4819,7 +4944,7 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 sections=12,
                 constructionHistory=False,
             )[0]
-            ankle = self._cmds.parent(ankle, ankle_offset, relative=True)[0]
+            ankle = self._cmds.parent(ankle, ankle_extra, relative=True)[0]
             ankle = (self._cmds.ls(ankle, long=True) or [ankle])[0]
             pole_offset = self._cmds.createNode(
                 "transform",
@@ -4835,6 +4960,11 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 worldSpace=True,
                 translation=spec.pole_position,
             )
+            if spec.pole_extra_name is None or spec.pole_extra_path is None:
+                raise FitSkeletonValidationError("Leg Pole 缺少 Extra 层计划")
+            pole_extra = self._create_body_ik_extra_layer(
+                pole_offset, spec.pole_extra_name,
+                spec.pole_extra_path)
             pole = self._cmds.circle(
                 name=spec.pole_control_name,
                 normal=(0.0, 0.0, 1.0),
@@ -4843,13 +4973,16 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 sections=8,
                 constructionHistory=False,
             )[0]
-            pole = self._cmds.parent(pole, pole_offset, relative=True)[0]
+            pole = self._cmds.parent(pole, pole_extra, relative=True)[0]
             pole = (self._cmds.ls(pole, long=True) or [pole])[0]
             if (
                 ankle != spec.ankle_control_path
                 or pole != spec.pole_control_path
             ):
                 raise RuntimeError("Leg IK 控制路径漂移")
+            if spec.ankle_extra_curve:
+                self._add_body_ik_extra_curve(
+                    ankle_extra, ankle, spec.radius)
             if spec.ankle_sub_path is not None:
                 if spec.ankle_sub_name is None:
                     raise FitSkeletonValidationError("Leg IK Sub 缺少名称")
@@ -5032,6 +5165,10 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 ankle_driven_joint=ankle_driven,
                 ankle_sub=self._capture_body_ik_sub_control(
                     ankle, spec.ankle_sub_path),
+                ankle_extra=self._capture_body_ik_extra_layer(
+                    spec.ankle_extra_path, ankle),
+                pole_extra=self._capture_body_ik_extra_layer(
+                    spec.pole_extra_path, pole),
             ))
         return BodyLegIkSnapshot(roots[0], tuple(states))
 

@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from math import isfinite
 
 from .body_arm_mechanisms import BodyArmMechanismPlan, BodyArmMechanismRole
-from .body_controller_layers import BodySubControllerState, audit_body_sub_controller
+from .body_controller_layers import (
+    BodyExtraControllerState, BodySubControllerState,
+    audit_body_extra_controller, audit_body_sub_controller,
+)
 from .body_limb_ik import BodyLimbIkValidationError, solve_limb_pole_position
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
@@ -39,6 +42,11 @@ class BodyArmIkSpec:
     solver_joint_list: tuple[str, ...] | None = None
     wrist_sub_path: str | None = None
     wrist_sub_name: str | None = None
+    wrist_extra_path: str | None = None
+    wrist_extra_name: str | None = None
+    pole_extra_path: str | None = None
+    pole_extra_name: str | None = None
+    wrist_extra_curve: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +80,8 @@ class BodyArmIkState:
     wrist_source: str | None
     wrist_driven_joint: str | None
     wrist_sub: BodySubControllerState | None = None
+    wrist_extra: BodyExtraControllerState | None = None
+    pole_extra: BodyExtraControllerState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,9 +104,10 @@ def plan_body_arm_ik(
     radius: float = 1.5,
     pole_distance_scale: float = 0.75,
     sub_controllers: bool = False,
+    extra_controllers: bool = False,
 ) -> BodyArmIkPlan:
-    if type(sub_controllers) is not bool:
-        raise BodyArmIkValidationError("Sub Controllers 开关必须是布尔值")
+    if type(sub_controllers) is not bool or type(extra_controllers) is not bool:
+        raise BodyArmIkValidationError("IK 控制器开关必须是布尔值")
     if any(
         isinstance(value, bool)
         or not isinstance(value, (int, float))
@@ -132,20 +143,29 @@ def plan_body_arm_ik(
         pole_control_name = f"AdvPy_ArmPV_{side_name}"
         wrist_offset_path = f"{root_path}|{wrist_offset_name}"
         pole_offset_path = f"{root_path}|{pole_offset_name}"
+        wrist_extra_name = f"AdvPy_ArmIKExtra_{side_name}"
+        pole_extra_name = f"AdvPy_ArmPVExtra_{side_name}"
+        wrist_extra_path = f"{wrist_offset_path}|{wrist_extra_name}"
+        pole_extra_path = f"{pole_offset_path}|{pole_extra_name}"
         limbs.append(BodyArmIkSpec(
             side, drivers, root_path,
             wrist_offset_path, wrist_offset_name,
-            f"{wrist_offset_path}|{wrist_control_name}", wrist_control_name,
+            f"{wrist_extra_path}|{wrist_control_name}", wrist_control_name,
             pole_offset_path, pole_offset_name,
-            f"{pole_offset_path}|{pole_control_name}", pole_control_name,
+            f"{pole_extra_path}|{pole_control_name}", pole_control_name,
             f"AdvPy_ArmIKHandle_{side_name}", f"AdvPy_ArmPVConstraint_{side_name}",
             wrist, sources[2].world_axes, pole, float(radius),
             f"AdvPy_ArmIKWristOrient_{side_name}",
             wrist_sub_path=(
-                f"{wrist_offset_path}|{wrist_control_name}|AdvPy_ArmIKSub_{side_name}"
+                f"{wrist_extra_path}|{wrist_control_name}|AdvPy_ArmIKSub_{side_name}"
                 if sub_controllers else None),
             wrist_sub_name=(f"AdvPy_ArmIKSub_{side_name}"
                             if sub_controllers else None),
+            wrist_extra_path=wrist_extra_path,
+            wrist_extra_name=wrist_extra_name,
+            pole_extra_path=pole_extra_path,
+            pole_extra_name=pole_extra_name,
+            wrist_extra_curve=extra_controllers,
         ))
     return BodyArmIkPlan(root_path, root_name, tuple(limbs))
 
@@ -161,8 +181,8 @@ def audit_body_arm_ik(plan: BodyArmIkPlan, snapshot: BodyArmIkSnapshot, *, toler
             issues.append(BodyArmIkIssue("missing_ik_limb", "缺少 Arm IK 侧", spec.side.value))
             continue
         checks = (
-            (state.wrist_control_path == spec.wrist_control_path and state.wrist_parent_path == spec.wrist_offset_path, "ik_wrist_hierarchy", "Wrist IK 控制父链不一致"),
-            (state.pole_control_path == spec.pole_control_path and state.pole_parent_path == spec.pole_offset_path, "ik_pole_hierarchy", "Pole Vector 控制父链不一致"),
+            (state.wrist_control_path == spec.wrist_control_path and state.wrist_parent_path == spec.wrist_extra_path, "ik_wrist_hierarchy", "Wrist IK 控制父链不一致"),
+            (state.pole_control_path == spec.pole_control_path and state.pole_parent_path == spec.pole_extra_path, "ik_pole_hierarchy", "Pole Vector 控制父链不一致"),
             (state.handle_name == spec.handle_name and state.handle_parent_path == spec.wrist_control_path, "ik_handle_mismatch", "IK Handle 或父级不一致"),
             (state.pole_constraint_name == spec.pole_constraint_name, "ik_pole_constraint", "Pole Vector 约束名称不一致"),
             (state.wrist_constraint_name == spec.wrist_constraint_name and state.wrist_source == spec.wrist_control_path and state.wrist_driven_joint == spec.chain[2], "ik_wrist_orientation", "Wrist IK 朝向驱动不一致"),
@@ -183,6 +203,20 @@ def audit_body_arm_ik(plan: BodyArmIkPlan, snapshot: BodyArmIkSnapshot, *, toler
                 state.wrist_sub, tolerance=tolerance):
             issues.append(BodyArmIkIssue(
                 "ik_sub_control_mismatch", message, spec.side.value))
+        if spec.wrist_extra_path is not None:
+            for message in audit_body_extra_controller(
+                    spec.wrist_offset_path, spec.wrist_control_path,
+                    spec.wrist_extra_path, state.wrist_extra,
+                    extra_curve=spec.wrist_extra_curve, tolerance=tolerance):
+                issues.append(BodyArmIkIssue(
+                    "ik_extra_control_mismatch", message, spec.side.value))
+        if spec.pole_extra_path is not None:
+            for message in audit_body_extra_controller(
+                    spec.pole_offset_path, spec.pole_control_path,
+                    spec.pole_extra_path, state.pole_extra,
+                    extra_curve=False, tolerance=tolerance):
+                issues.append(BodyArmIkIssue(
+                    "pole_extra_mismatch", message, spec.side.value))
     return tuple(issues)
 
 

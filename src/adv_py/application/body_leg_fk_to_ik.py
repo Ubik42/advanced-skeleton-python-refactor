@@ -136,6 +136,8 @@ class MatchBodyLegFkToIk:
             body, mechanisms, pole_distance_scale=pole_distance_scale,
             sub_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).sub_controllers,
+            extra_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).extra_controllers,
         )
         blend = plan_body_leg_blend(body, mechanisms)
         foot = plan_body_leg_foot(body, ik)

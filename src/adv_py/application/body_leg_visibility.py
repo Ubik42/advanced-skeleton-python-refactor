@@ -110,6 +110,8 @@ class BuildBodyLegVisibility:
             pole_distance_scale=pole_distance_scale,
             sub_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).sub_controllers,
+            extra_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).extra_controllers,
         )
         blend = plan_body_leg_blend(body, mechanism_plan)
         visibility = plan_body_leg_visibility(fk, ik, blend)

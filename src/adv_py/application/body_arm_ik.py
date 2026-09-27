@@ -93,10 +93,13 @@ class BuildBodyArmIkControls:
             pole_distance_scale=pole_distance_scale,
             sub_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).sub_controllers,
+            extra_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).extra_controllers,
         )
         names = [ik.root_name]
         for spec in ik.limbs:
             names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name))
+            names.extend((spec.wrist_extra_name, spec.pole_extra_name))
             if spec.wrist_sub_name is not None:
                 names.append(spec.wrist_sub_name)
         collisions = tuple(

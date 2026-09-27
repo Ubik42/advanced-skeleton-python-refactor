@@ -55,6 +55,49 @@ class BodySubControllerState:
     shape_scale: float | None
 
 
+@dataclass(frozen=True, slots=True)
+class BodyExtraControllerState:
+    path: str
+    parent_path: str | None
+    shape_path: str | None
+    shape_type: str | None
+    visibility_source: str | None
+    color: int | None
+    shape_scale: float | None
+
+
+def audit_body_extra_controller(
+    offset_path: str,
+    control_path: str,
+    extra_path: str,
+    state: BodyExtraControllerState | None,
+    *,
+    extra_curve: bool,
+    tolerance: float = 1e-4,
+) -> tuple[str, ...]:
+    if state is None:
+        return ("缺少 Extra 层",)
+    issues: list[str] = []
+    if state.path != extra_path or state.parent_path != offset_path:
+        issues.append("Extra 层父链不一致")
+    if extra_curve:
+        if state.shape_path != extra_path + "|" + extra_path.rsplit(
+                "|", 1)[-1] + "Shape":
+            issues.append("Extra 曲线名称不一致")
+        if state.shape_type != "nurbsCurve":
+            issues.append("Extra 层缺少曲线")
+        if state.visibility_source != control_path + ".extraControl":
+            issues.append("Extra 曲线可见性连接不一致")
+        if state.color != 29:
+            issues.append("Extra 曲线颜色不一致")
+        if (state.shape_scale is None
+                or abs(state.shape_scale - 1.1) > tolerance):
+            issues.append("Extra 曲线尺寸不一致")
+    elif state.shape_path is not None or state.shape_type is not None:
+        issues.append("Extra 层存在计划外曲线")
+    return tuple(issues)
+
+
 def audit_body_sub_controller(
     control_path: str,
     sub_path: str | None,
