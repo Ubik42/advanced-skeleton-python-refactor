@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_arm_blend import BodyArmBlendIssue, BodyArmBlendPlan, BodyArmBlendSnapshot, audit_body_arm_blend, plan_body_arm_blend
 from adv_py.core.body_arm_ik import BodyArmIkIssue, BodyArmIkPlan, BodyArmIkSnapshot, audit_body_arm_ik, plan_body_arm_ik
 from adv_py.core.body_arm_match import BodyArmFkToIkPlan, BodyArmFkToIkSceneState, BodyArmMatchIssue, audit_body_arm_fk_to_ik_preflight, audit_body_arm_fk_to_ik_result, plan_body_arm_fk_to_ik
@@ -64,7 +65,10 @@ class MatchBodyArmFkToIk:
         body = self._host.capture_body_skeleton(body_root_name)
         provenance = audit_body_provenance(oriented_body_provenance(symmetry.source.hierarchy.container, len(symmetry.instances)), body.provenance)
         mechanisms = plan_body_arm_mechanisms(body)
-        ik = plan_body_arm_ik(body, mechanisms, pole_distance_scale=pole_distance_scale)
+        ik = plan_body_arm_ik(
+            body, mechanisms, pole_distance_scale=pole_distance_scale,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).sub_controllers)
         blend = plan_body_arm_blend(body, mechanisms)
         match = plan_body_arm_fk_to_ik(body, ik, blend, side, pole_distance_scale=pole_distance_scale)
         ik_snapshot = self._host.capture_body_arm_ik(ik)

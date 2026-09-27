@@ -114,7 +114,11 @@ class BuildBodyArmRig:
             sub_controllers=BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).sub_controllers)
         blend = plan_body_arm_blend(safety.body, mechanisms)
-        ik = plan_body_arm_ik(safety.body, mechanisms, radius=control_radius, pole_distance_scale=pole_distance_scale)
+        ik = plan_body_arm_ik(
+            safety.body, mechanisms, radius=control_radius,
+            pole_distance_scale=pole_distance_scale,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).sub_controllers)
         visibility = plan_body_arm_visibility(fk_controls, ik, blend)
         stretch = plan_body_arm_stretch(mechanisms, ik)
         twist = plan_body_arm_twist(safety.body, joints_per_segment=twist_joints_per_segment)
@@ -130,6 +134,8 @@ class BuildBodyArmRig:
             names.extend(j.constraint_name for j in side.joints)
             names.extend(j.translation_constraint_name for j in side.joints if j.translation_constraint_name)
         for spec in ik.limbs:
+            if spec.wrist_sub_name is not None:
+                names.append(spec.wrist_sub_name)
             names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name))
         for side in stretch.sides:
             names.extend((side.start_name, side.distance_name, side.ratio_name, side.rest_scale_name, side.clamp_name, side.blend_name, side.segment_name))

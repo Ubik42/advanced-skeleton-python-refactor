@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_leg_foot import (
     BodyLegFootInputState,
     BodyLegFootIssue,
@@ -90,6 +91,8 @@ class BuildBodyLegFoot:
             mechanisms,
             radius=control_radius,
             pole_distance_scale=pole_distance_scale,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).sub_controllers,
         )
         foot = plan_body_leg_foot(body, ik)
         provenance = audit_body_provenance(

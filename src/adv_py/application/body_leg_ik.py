@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_leg_ik import (
     BodyLegIkPlan,
     BodyLegIkSnapshot,
@@ -121,9 +122,13 @@ class BuildBodyLegIkControls:
             mechanism_plan,
             radius=control_radius,
             pole_distance_scale=pole_distance_scale,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).sub_controllers,
         )
         names = [ik.root_name]
         for spec in ik.limbs:
+            if spec.ankle_sub_name is not None:
+                names.append(spec.ankle_sub_name)
             names.extend((
                 spec.ankle_offset_name,
                 spec.ankle_control_name,

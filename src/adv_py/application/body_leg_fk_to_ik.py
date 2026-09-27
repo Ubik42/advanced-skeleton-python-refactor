@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_leg_blend import (
     BodyLegBlendIssue,
     BodyLegBlendPlan,
@@ -132,7 +133,9 @@ class MatchBodyLegFkToIk:
         )
         mechanisms = plan_body_leg_mechanisms(body)
         ik = plan_body_leg_ik(
-            body, mechanisms, pole_distance_scale=pole_distance_scale
+            body, mechanisms, pole_distance_scale=pole_distance_scale,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).sub_controllers,
         )
         blend = plan_body_leg_blend(body, mechanisms)
         foot = plan_body_leg_foot(body, ik)

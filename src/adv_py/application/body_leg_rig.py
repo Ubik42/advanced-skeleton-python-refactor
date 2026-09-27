@@ -221,6 +221,8 @@ class BuildBodyLegRig:
             mechanisms,
             radius=control_radius,
             pole_distance_scale=pole_distance_scale,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).sub_controllers,
         )
         visibility = plan_body_leg_visibility(fk_controls, ik, blend)
         stretch = plan_body_leg_stretch(mechanisms, ik)
@@ -260,6 +262,8 @@ class BuildBodyLegRig:
                 if joint.translation_constraint_name
             )
         for spec in ik.limbs:
+            if spec.ankle_sub_name is not None:
+                names.append(spec.ankle_sub_name)
             names.extend((
                 spec.ankle_offset_name,
                 spec.ankle_control_name,

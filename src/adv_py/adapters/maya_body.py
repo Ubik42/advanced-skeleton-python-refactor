@@ -106,6 +106,7 @@ from adv_py.core.body_export_skeleton import (
     BodyExportSkeletonSnapshot,
     plan_body_export_skeleton,
 )
+from adv_py.core.body_controller_layers import BodySubControllerState
 from adv_py.core.body_fbx_export import (
     BodyFbxAppliedProfile,
     BodyFbxCurvePolicy,
@@ -4607,11 +4608,89 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
+    def _create_body_ik_sub_control(
+        self, control: str, sub_name: str, sub_path: str,
+        radius: float,
+    ) -> None:
+        sub = self._cmds.circle(
+            name=sub_name, normal=(1.0, 0.0, 0.0),
+            radius=radius * 0.9, degree=3, sections=12,
+            constructionHistory=False)[0]
+        sub = self._cmds.parent(sub, control, relative=True)[0]
+        sub = (self._cmds.ls(sub, long=True) or [sub])[0]
+        if sub != sub_path:
+            raise RuntimeError("IK Sub 控制器路径漂移")
+        shapes = self._cmds.listRelatives(
+            sub, shapes=True, noIntermediate=True, fullPath=True) or []
+        if len(shapes) != 1:
+            raise RuntimeError("IK Sub 控制器曲线无效")
+        self._cmds.setAttr(shapes[0] + ".overrideEnabled", True)
+        self._cmds.setAttr(shapes[0] + ".overrideColor", 30)
+        self._cmds.addAttr(control, longName="subControl",
+                           attributeType="bool", defaultValue=False)
+        self._cmds.setAttr(control + ".subControl",
+                           edit=True, channelBox=True)
+        self._cmds.connectAttr(control + ".subControl",
+                               shapes[0] + ".visibility", force=True)
+
+    def _capture_body_ik_sub_control(
+        self, control: str, sub_path: str | None,
+    ) -> BodySubControllerState | None:
+        if sub_path is None:
+            children = self._cmds.listRelatives(
+                control, children=True, type="transform",
+                fullPath=True) or []
+            candidates = [path for path in children
+                          if "IKSub_" in path.rsplit("|", 1)[-1]]
+            if not candidates:
+                return None
+            sub_path = candidates[0]
+        nodes = self._cmds.ls(sub_path, long=True, type="transform") or []
+        if len(nodes) != 1:
+            return None
+        sub = nodes[0]
+        parents = self._cmds.listRelatives(
+            sub, parent=True, fullPath=True) or []
+        shapes = self._cmds.listRelatives(
+            sub, shapes=True, noIntermediate=True, fullPath=True) or []
+        control_shapes = self._cmds.listRelatives(
+            control, shapes=True, noIntermediate=True, fullPath=True) or []
+        shape_type = (self._cmds.nodeType(shapes[0])
+                      if len(shapes) == 1 else None)
+        color = (int(self._cmds.getAttr(shapes[0] + ".overrideColor"))
+                 if len(shapes) == 1 else None)
+        source = None
+        scale = None
+        if len(shapes) == 1:
+            sources = self._cmds.listConnections(
+                shapes[0] + ".visibility", source=True,
+                destination=False, plugs=True) or []
+            if len(sources) == 1:
+                node, attr = sources[0].split(".", 1)
+                paths = self._cmds.ls(node, long=True) or []
+                if len(paths) == 1:
+                    source = paths[0] + "." + attr
+            if len(control_shapes) == 1:
+                main_cv = self._cmds.xform(
+                    control_shapes[0] + ".cv[0]", query=True,
+                    objectSpace=True, translation=True)
+                sub_cv = self._cmds.xform(
+                    shapes[0] + ".cv[0]", query=True,
+                    objectSpace=True, translation=True)
+                main_radius = sum(float(v) ** 2
+                                  for v in main_cv) ** 0.5
+                if main_radius > 0:
+                    scale = (sum(float(v) ** 2 for v in sub_cv) ** 0.5
+                             / main_radius)
+        return BodySubControllerState(
+            sub, parents[0] if len(parents) == 1 else None,
+            shape_type, source, color, scale)
+
     def create_body_arm_ik(self, spec: BodyArmIkSpec) -> None:
         self._require_transaction()
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
-            for name in (spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name):
+            for name in (spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name, *((spec.wrist_sub_name,) if spec.wrist_sub_name else ())):
                 if self.find_name_collisions(name):
                     raise FitSkeletonValidationError(f"Arm IK 名称冲突：{name}")
             if any(not self._cmds.objExists(path) for path in spec.chain):
@@ -4633,6 +4712,12 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
             pole = (self._cmds.ls(pole, long=True) or [pole])[0]
             if wrist != spec.wrist_control_path or pole != spec.pole_control_path:
                 raise RuntimeError("Arm IK 控制路径漂移")
+            if spec.wrist_sub_path is not None:
+                if spec.wrist_sub_name is None:
+                    raise FitSkeletonValidationError("Arm IK Sub 缺少名称")
+                self._create_body_ik_sub_control(
+                    wrist, spec.wrist_sub_name, spec.wrist_sub_path,
+                    spec.radius)
             handle, _ = self._cmds.ikHandle(name=spec.handle_name, startJoint=spec.chain[0], endEffector=spec.chain[2], solver="ikRPsolver")
             self._cmds.parent(handle, wrist, absolute=True)
             self._cmds.poleVectorConstraint(pole, handle, name=spec.pole_constraint_name)
@@ -4679,6 +4764,8 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 tuple(float(v) for v in self._cmds.xform(pole, query=True, worldSpace=True, translation=True)),
                 shape_type(wrist), shape_type(pole), vector(wrist, "translate"), vector(wrist, "rotate"), vector(pole, "translate"), vector(pole, "rotate"),
                 wrist_constraints[0], wrist_source, wrist_driven,
+                self._capture_body_ik_sub_control(
+                    wrist, spec.wrist_sub_path),
             ))
         return BodyArmIkSnapshot(roots[0], tuple(states))
 
@@ -4694,6 +4781,7 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 spec.handle_name,
                 spec.pole_constraint_name,
                 spec.ankle_constraint_name,
+                *((spec.ankle_sub_name,) if spec.ankle_sub_name else ()),
             )
             if any(self.find_name_collisions(name) for name in names):
                 raise FitSkeletonValidationError("Leg IK 名称冲突")
@@ -4762,6 +4850,12 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 or pole != spec.pole_control_path
             ):
                 raise RuntimeError("Leg IK 控制路径漂移")
+            if spec.ankle_sub_path is not None:
+                if spec.ankle_sub_name is None:
+                    raise FitSkeletonValidationError("Leg IK Sub 缺少名称")
+                self._create_body_ik_sub_control(
+                    ankle, spec.ankle_sub_name, spec.ankle_sub_path,
+                    spec.radius)
             handle, _ = self._cmds.ikHandle(
                 name=spec.handle_name,
                 startJoint=spec.chain[0],
@@ -4936,6 +5030,8 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 ankle_constraint_name=ankle_constraints[0],
                 ankle_source=ankle_source,
                 ankle_driven_joint=ankle_driven,
+                ankle_sub=self._capture_body_ik_sub_control(
+                    ankle, spec.ankle_sub_path),
             ))
         return BodyLegIkSnapshot(roots[0], tuple(states))
 

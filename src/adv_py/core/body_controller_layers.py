@@ -45,6 +45,42 @@ class BodyControllerLayerSnapshot:
     extra_color: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class BodySubControllerState:
+    path: str
+    parent_path: str | None
+    shape_type: str | None
+    visibility_source: str | None
+    color: int | None
+    shape_scale: float | None
+
+
+def audit_body_sub_controller(
+    control_path: str,
+    sub_path: str | None,
+    state: BodySubControllerState | None,
+    *,
+    tolerance: float = 1e-4,
+) -> tuple[str, ...]:
+    if sub_path is None:
+        return ("存在计划外 Sub 控制器",) if state is not None else ()
+    if state is None:
+        return ("缺少 Sub 控制器",)
+    issues: list[str] = []
+    if state.path != sub_path or state.parent_path != control_path:
+        issues.append("Sub 控制器父链不一致")
+    if state.shape_type != "nurbsCurve":
+        issues.append("Sub 控制器缺少曲线")
+    if state.visibility_source != control_path + ".subControl":
+        issues.append("Sub 控制器可见性连接不一致")
+    if state.color != 30:
+        issues.append("Sub 控制器颜色不一致")
+    if (state.shape_scale is None
+            or abs(state.shape_scale - 0.9) > tolerance):
+        issues.append("Sub 控制器尺寸不一致")
+    return tuple(issues)
+
+
 def plan_body_controller_layers(
     kind: str,
     name: str,

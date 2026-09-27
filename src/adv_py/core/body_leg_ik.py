@@ -5,6 +5,7 @@ from math import isfinite
 from typing import Mapping
 
 from .body_leg_mechanisms import BodyLegMechanismPlan, BodyLegMechanismRole
+from .body_controller_layers import BodySubControllerState, audit_body_sub_controller
 from .body_limb_ik import BodyLimbIkValidationError, solve_limb_pole_position
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
@@ -37,6 +38,8 @@ class BodyLegIkSpec:
     toe_driver_path: str
     toe_end_driver_path: str = ""
     solver_joint_list: tuple[str, ...] | None = None
+    ankle_sub_path: str | None = None
+    ankle_sub_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +72,7 @@ class BodyLegIkState:
     ankle_constraint_name: str
     ankle_source: str | None
     ankle_driven_joint: str | None
+    ankle_sub: BodySubControllerState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,7 +94,10 @@ def plan_body_leg_ik(
     *,
     radius: float = 1.75,
     pole_distance_scale: float = 0.75,
+    sub_controllers: bool = False,
 ) -> BodyLegIkPlan:
+    if type(sub_controllers) is not bool:
+        raise BodyLegIkValidationError("Sub Controllers 开关必须是布尔值")
     if any(
         isinstance(value, bool)
         or not isinstance(value, (int, float))
@@ -181,6 +188,11 @@ def plan_body_leg_ik(
             ankle_constraint_name=f"AdvPy_LegIKAnkleOrient_{suffix}",
             toe_driver_path=toe_driver,
             toe_end_driver_path=toe_end_driver,
+            ankle_sub_path=(
+                f"{ankle_offset_path}|{ankle_control_name}|AdvPy_LegIKSub_{suffix}"
+                if sub_controllers else None),
+            ankle_sub_name=(f"AdvPy_LegIKSub_{suffix}"
+                            if sub_controllers else None),
         ))
     return BodyLegIkPlan(root_path, root_name, tuple(limbs))
 
@@ -296,6 +308,11 @@ def audit_body_leg_ik(
         for passed, code, message in checks:
             if not passed:
                 issues.append(BodyLegIkIssue(code, message, spec.side.value))
+        for message in audit_body_sub_controller(
+                spec.ankle_control_path, spec.ankle_sub_path,
+                state.ankle_sub, tolerance=tolerance):
+            issues.append(BodyLegIkIssue(
+                "ik_sub_control_mismatch", message, spec.side.value))
     return tuple(issues)
 
 

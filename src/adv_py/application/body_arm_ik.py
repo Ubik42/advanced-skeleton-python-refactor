@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_arm_ik import BodyArmIkPlan, BodyArmIkSnapshot, BodyArmIkSpec, audit_body_arm_ik, plan_body_arm_ik
 from adv_py.core.body_arm_mechanisms import BodyArmMechanismIssue, BodyArmMechanismPlan, BodyArmMechanismSnapshot, audit_body_arm_mechanisms, plan_body_arm_mechanisms
 from adv_py.core.body_skeleton import BodySkeletonIssue, BodySkeletonSnapshot, audit_body_provenance, oriented_body_provenance
@@ -90,10 +91,14 @@ class BuildBodyArmIkControls:
             mechanism_plan,
             radius=control_radius,
             pole_distance_scale=pole_distance_scale,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).sub_controllers,
         )
         names = [ik.root_name]
         for spec in ik.limbs:
             names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name))
+            if spec.wrist_sub_name is not None:
+                names.append(spec.wrist_sub_name)
         collisions = tuple(
             sorted(
                 {

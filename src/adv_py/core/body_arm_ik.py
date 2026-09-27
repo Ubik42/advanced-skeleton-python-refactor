@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from math import isfinite
 
 from .body_arm_mechanisms import BodyArmMechanismPlan, BodyArmMechanismRole
+from .body_controller_layers import BodySubControllerState, audit_body_sub_controller
 from .body_limb_ik import BodyLimbIkValidationError, solve_limb_pole_position
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
@@ -36,6 +37,8 @@ class BodyArmIkSpec:
     radius: float
     wrist_constraint_name: str
     solver_joint_list: tuple[str, ...] | None = None
+    wrist_sub_path: str | None = None
+    wrist_sub_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +71,7 @@ class BodyArmIkState:
     wrist_constraint_name: str
     wrist_source: str | None
     wrist_driven_joint: str | None
+    wrist_sub: BodySubControllerState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +93,10 @@ def plan_body_arm_ik(
     *,
     radius: float = 1.5,
     pole_distance_scale: float = 0.75,
+    sub_controllers: bool = False,
 ) -> BodyArmIkPlan:
+    if type(sub_controllers) is not bool:
+        raise BodyArmIkValidationError("Sub Controllers 开关必须是布尔值")
     if any(
         isinstance(value, bool)
         or not isinstance(value, (int, float))
@@ -134,6 +141,11 @@ def plan_body_arm_ik(
             f"AdvPy_ArmIKHandle_{side_name}", f"AdvPy_ArmPVConstraint_{side_name}",
             wrist, sources[2].world_axes, pole, float(radius),
             f"AdvPy_ArmIKWristOrient_{side_name}",
+            wrist_sub_path=(
+                f"{wrist_offset_path}|{wrist_control_name}|AdvPy_ArmIKSub_{side_name}"
+                if sub_controllers else None),
+            wrist_sub_name=(f"AdvPy_ArmIKSub_{side_name}"
+                            if sub_controllers else None),
         ))
     return BodyArmIkPlan(root_path, root_name, tuple(limbs))
 
@@ -166,6 +178,11 @@ def audit_body_arm_ik(plan: BodyArmIkPlan, snapshot: BodyArmIkSnapshot, *, toler
         for passed, code, message in checks:
             if not passed:
                 issues.append(BodyArmIkIssue(code, message, spec.side.value))
+        for message in audit_body_sub_controller(
+                spec.wrist_control_path, spec.wrist_sub_path,
+                state.wrist_sub, tolerance=tolerance):
+            issues.append(BodyArmIkIssue(
+                "ik_sub_control_mismatch", message, spec.side.value))
     return tuple(issues)
 
 
