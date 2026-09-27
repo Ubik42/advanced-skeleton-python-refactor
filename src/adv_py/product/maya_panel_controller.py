@@ -804,6 +804,22 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)
         return DeletePartialJoints(host).apply()
 
+    def unreal_joints_create(self, namespace: str):
+        from adv_py.adapters.maya_unreal_joints import MayaUnrealJointsHost
+        from adv_py.application.unreal_joints import CreateUnrealJoints
+
+        host = MayaUnrealJointsHost(
+            namespace=None if namespace == ":" else namespace)
+        return CreateUnrealJoints(host).apply()
+
+    def unreal_joints_delete(self, namespace: str) -> None:
+        from adv_py.adapters.maya_unreal_joints import MayaUnrealJointsHost
+        from adv_py.application.unreal_joints import DeleteUnrealJoints
+
+        host = MayaUnrealJointsHost(
+            namespace=None if namespace == ":" else namespace)
+        DeleteUnrealJoints(host).apply()
+
     def skin_bind(self, namespace: str, mesh: str,
                   influences: tuple[str, ...], skin: str, maximum: int, *,
                   maintain_maximum: bool = True) -> int:

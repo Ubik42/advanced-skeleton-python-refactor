@@ -643,12 +643,19 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("重新附着全部控制器", self._attach_control_orient_custom))
             stack.addWidget(group)
 
+            group, form = self._group("09 · Unreal Joints", [])
+            form.addRow(self._button("创建通用 Unreal IK 关节",
+                                     self._create_unreal_joints))
+            form.addRow(self._button("删除通用 Unreal IK 关节",
+                                     self._delete_unreal_joints))
+            stack.addWidget(group)
+
             self.partial_include_controller = QtWidgets.QCheckBox("包含控制器")
             self.partial_multi_count = QtWidgets.QSpinBox()
             self.partial_multi_count.setRange(2, 128)
             self.partial_multi_count.setValue(12)
             self.partial_multi_bind = QtWidgets.QCheckBox("自动加入现有蒙皮")
-            group, form = self._group("09 · Partial Joints", [
+            group, form = self._group("10 · Partial Joints", [
                 ("单段", self.partial_include_controller),
                 ("多段关节数", self.partial_multi_count),
                 ("多段蒙皮", self.partial_multi_bind)])
@@ -1743,6 +1750,14 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.control_orient_custom_attach(
                 self._namespace())
             return f"已重新附着 {count} 个控制器并保留手工方向"
+
+        def _create_unreal_joints(self):
+            plan = self.controller.unreal_joints_create(self._namespace())
+            return f"已创建 {len(plan.joints)} 个通用 Unreal IK 关节"
+
+        def _delete_unreal_joints(self):
+            self.controller.unreal_joints_delete(self._namespace())
+            return "已删除通用 Unreal IK 关节"
 
         def _create_partial_joints(self):
             specs = self.controller.partial_joints_create(
