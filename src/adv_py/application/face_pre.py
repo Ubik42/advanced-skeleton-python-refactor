@@ -17,6 +17,11 @@ class EyeLidLayer(str, Enum):
     INNER = "Inner"
 
 
+class FaceSide(str, Enum):
+    RIGHT = "Right"
+    LEFT = "Left"
+
+
 class RecordFacePreInput:
     def __init__(self, host) -> None:
         self.host = host
@@ -51,11 +56,12 @@ class CreateFaceEyeBallFit:
     def __init__(self, host) -> None:
         self.host = host
 
-    def execute(self, right_eye: str, head_joint: str) -> str:
-        if not right_eye or not head_joint:
-            raise ValueError("EyeBall Fit 需要右眼网格和 Head 关节")
+    def execute(self, eye_mesh: str, head_joint: str) -> str:
+        if not eye_mesh or not head_joint:
+            raise ValueError("EyeBall Fit 需要当前侧眼网格和 Head 关节")
         self.host.read_face_mask()
-        result = self.host.create_eye_ball_fit(right_eye, head_joint)
+        side = self.host.active_face_side()
+        result = self.host.create_eye_ball_fit(eye_mesh, head_joint, side)
         if self.host.read_eye_ball_fit() != result:
             raise RuntimeError("EyeBall Fit 写后读回不一致")
         return result
@@ -69,9 +75,10 @@ class CreateFaceEyeLidFit:
         if not isinstance(layer, EyeLidLayer):
             raise ValueError("眼睑 Fit 层级无效")
         mesh, edges, positions, corners = self.host.selected_eye_lid_edges()
+        side = self.host.active_face_side()
         ordered = order_eye_lid_loop(edges, positions,
             eye_center_y=self.host.eye_ball_fit_center_y(),
-            corner_vertices=corners)
+            corner_vertices=corners, side=side.value)
         created = self.host.create_eye_lid_fit(layer, mesh, ordered,
                                                positions, edges, corners)
         if self.host.read_eye_lid_fit(layer) != created:

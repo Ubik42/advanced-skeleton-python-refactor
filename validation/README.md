@@ -20,7 +20,7 @@ Preparation / Rig 的 Skin／All／左右眼对象记录：`maya_preparation_obj
 
 `maya_face_pre_inputs_smoke.py` 在 Maya 2024 验证 Mask 面选择、原版式四条引导曲线的上下层世界范围、Face／All Head 记录、单影响 Skin、EyeBall Fit 的位置／比例、错误输入、Undo／Redo 和保存重开。`maya_face_eye_rig_smoke.py` 在已登记 Body 的 Head_M 下，以两件独立引用眼球生成全局及单侧 Aim 控制、两个 Face 辅助眼关节和两套 Skin；检查右眼独立动作不影响左眼、全局动作驱动双眼、Body 登记保持、故障回滚、Undo／Redo、保存重开及含眼球 Skin 的 FBX 重导入。`maya_face_eye_rig_visible.py` 在图形窗口点击 Face / Pre 的 Mask、Face、All Head、左右眼记录、Face / Fit 的 EyeBall，以及双眼构建入口，保存状态和截图。
 
-`maya_face_eyelid_fit_smoke.py` 在自建 Face 网格上选择三个闭合右眼边环，Main 加选两个眼角顶点、Inner 加选一个眼角顶点，依次生成上下曲线与管面；Inner 从 Outer／Inner 边界间提取含 Main 的面片，生成隐藏区域网格与向外偏移的预览网格，保存来源面选择。用例检查断环及离环端点拒绝、面数与源网格不变、边与端点重选、Inner 单次 Undo／Redo，以及带 Skin 场景的保存重开。`maya_face_eyelid_fit_visible.py` 在图形窗口点击三层入口并保存面板、视口和重开状态。左侧非对称眼睑与更多生产头部拓扑尚未覆盖。
+`maya_face_eyelid_fit_smoke.py` 在自建 Face 网格上选择三个闭合右眼边环，Main 加选两个眼角顶点、Inner 加选一个眼角顶点，依次生成上下曲线与管面；Inner 从 Outer／Inner 边界间提取含 Main 的面片，生成隐藏区域网格与向外偏移的预览网格，保存来源面选择。用例检查断环及离环端点拒绝、面数与源网格不变、边与端点重选、Inner 单次 Undo／Redo，以及带 Skin 场景的保存重开。`maya_face_eyelid_left_smoke.py` 在同一 Face 网格的两片不等大眼圈上分别建立右侧 16 边、左侧 20 边三层 Fit；检查 `NonSym`／`NonSymSide`、左右节点隔离、左侧 Inner Undo／Redo、重开后切回右侧重选。`maya_face_eyelid_fit_visible.py` 在 Maya 图形窗口点击两侧 EyeBall、三层眼睑及非对称侧别入口，保存面板、视口和重开状态。完整头部生产拓扑尚未覆盖。
 
 ```powershell
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_preparation_objects_smoke.py

@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from adv_py.application.face_pre import EyeLidLayer, FacePreRole
+from adv_py.application.face_pre import EyeLidLayer, FacePreRole, FaceSide
 from adv_py.core.face_eyelid_fit import EyeLidLoop, eye_lid_area_faces
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
@@ -23,6 +23,36 @@ class MayaFacePreHost(MayaFaceHost):
         if len(matches) > 1 or (required and len(matches) != 1):
             raise FitSkeletonValidationError("FaceFitSkeleton 缺失或不唯一；先记录 Mask")
         return matches[0] if matches else None
+
+    def active_face_side(self) -> FaceSide:
+        fit = self._fit(required=True)
+        c = self._cmds
+        if (c.attributeQuery("NonSymSide", node=fit, exists=True)
+                and c.getAttr(fit + ".NonSymSide") == "Left"):
+            return FaceSide.LEFT
+        return FaceSide.RIGHT
+
+    def set_face_fit_side(self, side: FaceSide) -> FaceSide:
+        if not isinstance(side, FaceSide):
+            raise ValueError("Face Fit 编辑侧别无效")
+        c = self._cmds
+        fit = self._fit(required=True)
+        if c.referenceQuery(fit, isNodeReferenced=True):
+            raise FitSkeletonValidationError("不能切换引用中的 FaceFitSkeleton")
+        with self.transaction("切换 Face Fit 编辑侧"):
+            self._transaction_changed = True
+            if not c.attributeQuery("NonSym", node=fit, exists=True):
+                c.addAttr(fit, longName="NonSym", attributeType="bool")
+            if not c.attributeQuery("NonSymSide", node=fit, exists=True):
+                c.addAttr(fit, longName="NonSymSide", dataType="string")
+            c.setAttr(fit + ".NonSym", True)
+            c.setAttr(fit + ".NonSymSide", side.value, type="string")
+            for child in c.listRelatives(fit, children=True, type="transform",
+                                         fullPath=True) or []:
+                c.setAttr(child + ".visibility",
+                          child.rsplit("|", 1)[-1].endswith("Left")
+                          == (side is FaceSide.LEFT))
+        return self.active_face_side()
 
     def selected_mask(self):
         c = self._cmds
@@ -84,7 +114,8 @@ class MayaFacePreHost(MayaFaceHost):
             raise FitSkeletonValidationError("不能改写引用中的 FaceFitSkeleton")
         if fit and not c.attributeQuery("advPyMaskFaces", node=fit, exists=True):
             raise FitSkeletonValidationError("已有原版 FaceFitSkeleton，拒绝覆盖其引导曲线")
-        if c.ls("FitEyeBall", long=True, type="transform"):
+        if (c.ls("FitEyeBall", long=True, type="transform")
+                or c.ls("FitEyeBallLeft", long=True, type="transform")):
             raise FitSkeletonValidationError("眼球 Fit 已建立，不能重置 Mask")
         for name in ("FaceGroup", "FaceFitSkeleton"):
             matches = c.ls(name, long=True) or []
@@ -246,16 +277,18 @@ class MayaFacePreHost(MayaFaceHost):
                 c.setAttr(fit + ".HeadJoint",
                           heads[0].rsplit("|", 1)[-1], type="string")
 
-    def create_eye_ball_fit(self, right_eye: str, head_joint: str) -> str:
+    def create_eye_ball_fit(self, eye_mesh: str, head_joint: str,
+                            side: FaceSide = FaceSide.RIGHT) -> str:
         c = self._cmds
         fit = self._fit(required=True)
-        matches = c.ls(right_eye, long=True, type="transform") or []
-        if matches != [right_eye]:
-            raise FitSkeletonValidationError("右眼网格路径不存在或不唯一")
-        shape = c.listRelatives(right_eye, shapes=True, noIntermediate=True,
+        suffix = "Left" if side is FaceSide.LEFT else ""
+        matches = c.ls(eye_mesh, long=True, type="transform") or []
+        if matches != [eye_mesh]:
+            raise FitSkeletonValidationError("当前侧眼网格路径不存在或不唯一")
+        shape = c.listRelatives(eye_mesh, shapes=True, noIntermediate=True,
                                 fullPath=True, type="mesh") or []
         if len(shape) != 1:
-            raise FitSkeletonValidationError("右眼需要唯一可见多边形 Shape")
+            raise FitSkeletonValidationError("眼网格需要唯一可见多边形 Shape")
         heads = c.ls(head_joint, long=True, type="joint") or []
         if len(heads) != 1:
             raise FitSkeletonValidationError("EyeBall Fit 需要唯一的 Head 关节")
@@ -263,21 +296,23 @@ class MayaFacePreHost(MayaFaceHost):
                                                            type="joint"):
             raise FitSkeletonValidationError(
                 "已存在 Body 眼关节；当前 EyeBall Fit 不支持替换其 Skin 影响")
-        for name in ("FaceFitEyeBall", "FitEyeBall", "FitEyeSphere"):
+        for name in ("FaceFitEyeBall" + suffix, "FitEyeBall" + suffix,
+                     "FitEyeSphere" + suffix):
             if c.ls(name, long=True):
                 raise FitSkeletonValidationError("眼球 Fit 节点名称已占用：" + name)
-        bounds = tuple(float(value) for value in c.exactWorldBoundingBox(right_eye))
+        bounds = tuple(float(value) for value in c.exactWorldBoundingBox(eye_mesh))
         diameter = bounds[4] - bounds[1]
         if diameter <= 1e-6:
-            raise FitSkeletonValidationError("右眼网格高度无效")
+            raise FitSkeletonValidationError("眼网格高度无效")
         center = tuple((bounds[axis] + bounds[axis + 3]) / 2
                        for axis in range(3))
         if c.referenceQuery(fit, isNodeReferenced=True):
             raise FitSkeletonValidationError("不能在引用中的 FaceFitSkeleton 创建眼球 Fit")
         with self.transaction("建立 Face EyeBall Fit"):
             self._transaction_changed = True
-            holder = c.createNode("transform", name="FaceFitEyeBall", parent=fit)
-            locator = c.spaceLocator(name="FitEyeBall")[0]
+            holder = c.createNode("transform", name="FaceFitEyeBall" + suffix,
+                                  parent=fit)
+            locator = c.spaceLocator(name="FitEyeBall" + suffix)[0]
             locator = c.parent(locator, holder, absolute=True)[0]
             c.setAttr(locator + ".rotateOrder", 2)
             c.setAttr(locator + "Shape.localScale", 1.5, 1.5, 1.5,
@@ -285,7 +320,7 @@ class MayaFacePreHost(MayaFaceHost):
             c.xform(locator, worldSpace=True, translation=center)
             c.setAttr(locator + ".scale", diameter, diameter, diameter,
                       type="double3")
-            sphere = c.polySphere(name="FitEyeSphere", radius=.5,
+            sphere = c.polySphere(name="FitEyeSphere" + suffix, radius=.5,
                                   subdivisionsX=8, subdivisionsY=8,
                                   constructionHistory=False)[0]
             sphere = c.parent(sphere, locator, relative=True)[0]
@@ -294,9 +329,10 @@ class MayaFacePreHost(MayaFaceHost):
                                      fullPath=True) or [None])[0]
             c.setAttr(shape + ".overrideEnabled", True)
             c.setAttr(shape + ".overrideDisplayType", 2)
-            if not c.attributeQuery("RightEye", node=fit, exists=True):
-                c.addAttr(fit, longName="RightEye", dataType="string")
-            c.setAttr(fit + ".RightEye", right_eye.rsplit("|", 1)[-1],
+            attr = "LeftEye" if side is FaceSide.LEFT else "RightEye"
+            if not c.attributeQuery(attr, node=fit, exists=True):
+                c.addAttr(fit, longName=attr, dataType="string")
+            c.setAttr(fit + "." + attr, eye_mesh.rsplit("|", 1)[-1],
                       type="string")
             c.setAttr(locator + ".rotateZ", lock=True)
             for kind in ("translate", "rotate", "scale"):
@@ -304,14 +340,17 @@ class MayaFacePreHost(MayaFaceHost):
                     c.setAttr(fit + "." + kind + axis, lock=True)
         return (c.ls(locator, long=True, type="transform") or [locator])[0]
 
-    def read_eye_ball_fit(self) -> str:
+    def read_eye_ball_fit(self, side: FaceSide | None = None) -> str:
         c = self._cmds
         fit = self._fit(required=True)
-        matches = c.ls("FitEyeBall", long=True, type="transform") or []
+        side = side or self.active_face_side()
+        suffix = "Left" if side is FaceSide.LEFT else ""
+        matches = c.ls("FitEyeBall" + suffix, long=True,
+                       type="transform") or []
         if len(matches) != 1 or not matches[0].startswith(fit + "|"):
             raise FitSkeletonValidationError("EyeBall Fit 缺失或父级无效")
         locator = matches[0]
-        if not c.ls(locator + "|FitEyeSphere", long=True,
+        if not c.ls(locator + "|FitEyeSphere" + suffix, long=True,
                     type="transform"):
             raise FitSkeletonValidationError("EyeBall Fit 的球体预览缺失")
         return locator
@@ -367,6 +406,8 @@ class MayaFacePreHost(MayaFaceHost):
                            edges, selected_corners) -> tuple[str, str]:
         c = self._cmds
         fit = self._fit(required=True)
+        side = self.active_face_side()
+        suffix = "Left" if side is FaceSide.LEFT else ""
         self.read_eye_ball_fit()
         if self.read_face_objects(FacePreRole.FACE) != (mesh,):
             raise FitSkeletonValidationError("眼睑边与 Face 网格不一致")
@@ -375,16 +416,20 @@ class MayaFacePreHost(MayaFaceHost):
         elif layer is EyeLidLayer.INNER:
             self.read_eye_lid_fit(EyeLidLayer.OUTER)
             self.read_eye_lid_fit(EyeLidLayer.MAIN)
-        area_faces = (self._eye_lid_area_faces(mesh, loop.edge_ids)
+        area_faces = (self._eye_lid_area_faces(mesh, loop.edge_ids, side)
                       if layer is EyeLidLayer.INNER else ())
         part = layer.value
-        holder_name = "FaceFitEyeLid" + part
-        curve_names = ("upperEyeLid" + part + "Curve",
-                       "lowerEyeLid" + part + "Curve")
-        names = (holder_name, holder_name + "Geo",
-                 holder_name + "Curve", holder_name + "Loc", *curve_names)
+        holder_name = "FaceFitEyeLid" + part + suffix
+        geo_name = "FaceFitEyeLid" + part + "Geo" + suffix
+        curve_parent_name = "FaceFitEyeLid" + part + "Curve" + suffix
+        loc_name = "FaceFitEyeLid" + part + "Loc" + suffix
+        curve_names = ("upperEyeLid" + part + "Curve" + suffix,
+                       "lowerEyeLid" + part + "Curve" + suffix)
+        names = (holder_name, geo_name, curve_parent_name,
+                 loc_name, *curve_names)
         if layer is EyeLidLayer.INNER:
-            names += ("EyeLidInnerAreaMesh", "EyeLidInnerAreaMeshExtrude")
+            names += ("EyeLidInnerAreaMesh" + suffix,
+                      "EyeLidInnerAreaMeshExtrude" + suffix)
         if any(c.ls(name, long=True) for name in names):
             raise FitSkeletonValidationError("眼睑 Fit 节点名称已占用：" + part)
         if c.referenceQuery(fit, isNodeReferenced=True):
@@ -393,11 +438,11 @@ class MayaFacePreHost(MayaFaceHost):
         with self.transaction("建立 EyeLid " + part + " Fit"):
             self._transaction_changed = True
             holder = c.createNode("transform", name=holder_name, parent=fit)
-            geo_holder = c.createNode("transform", name=holder_name + "Geo",
+            geo_holder = c.createNode("transform", name=geo_name,
                                       parent=holder)
-            curve_holder = c.createNode("transform", name=holder_name + "Curve",
+            curve_holder = c.createNode("transform", name=curve_parent_name,
                                         parent=holder)
-            c.createNode("transform", name=holder_name + "Loc", parent=holder)
+            c.createNode("transform", name=loc_name, parent=holder)
             paths = []
             for name, vertices in zip(curve_names,
                                       (loop.upper_vertices, loop.lower_vertices)):
@@ -421,12 +466,13 @@ class MayaFacePreHost(MayaFaceHost):
                                  useComponentPivot=True,
                                  useProfileNormal=True)[0]
                 c.delete(profile)
-                tube = c.rename(tube, name + "EyeLidCylinder" + part)
+                tube = c.rename(tube, name + "EyeLidCylinder" + part + suffix)
                 tube = c.parent(tube, geo_holder, absolute=True)[0]
                 c.setAttr(tube + ".overrideEnabled", True)
                 c.setAttr(tube + ".overrideDisplayType", 2)
             if layer is EyeLidLayer.INNER:
-                self._create_eye_lid_area(mesh, area_faces, geo_holder, fit)
+                self._create_eye_lid_area(mesh, area_faces, geo_holder, fit,
+                                          side)
             c.addAttr(holder, longName="selection", dataType="string")
             c.setAttr(holder + ".selection", " ".join(
                 [f"{mesh}.e[{index}]" for index in loop.edge_ids]
@@ -443,8 +489,8 @@ class MayaFacePreHost(MayaFaceHost):
             c.select(selected, replace=True) if selected else c.select(clear=True)
         return tuple(paths)
 
-    def _eye_lid_area_faces(self, mesh: str,
-                            inner_edges: tuple[int, ...]) -> tuple[int, ...]:
+    def _eye_lid_area_faces(self, mesh: str, inner_edges: tuple[int, ...],
+                            side: FaceSide) -> tuple[int, ...]:
         from maya.api import OpenMaya as om
 
         c = self._cmds
@@ -457,8 +503,9 @@ class MayaFacePreHost(MayaFaceHost):
         mesh_fn = om.MFnMesh(selection.getDagPath(0))
 
         def stored_edges(layer: EyeLidLayer) -> tuple[int, ...]:
-            self.read_eye_lid_fit(layer)
-            holder = (c.ls("FaceFitEyeLid" + layer.value, long=True,
+            self.read_eye_lid_fit(layer, side)
+            suffix = "Left" if side is FaceSide.LEFT else ""
+            holder = (c.ls("FaceFitEyeLid" + layer.value + suffix, long=True,
                            type="transform") or [None])[0]
             record = c.getAttr(holder + ".selection") or ""
             components = [_EDGE_PATTERN.fullmatch(item) for item in record.split()
@@ -496,9 +543,11 @@ class MayaFacePreHost(MayaFaceHost):
                                   inner_edges=inner_edges)
 
     def _create_eye_lid_area(self, mesh: str, faces: tuple[int, ...],
-                             geo_holder: str, fit: str) -> None:
+                             geo_holder: str, fit: str,
+                             side: FaceSide) -> None:
         c = self._cmds
-        area = c.duplicate(mesh, name="EyeLidInnerAreaMesh",
+        suffix = "Left" if side is FaceSide.LEFT else ""
+        area = c.duplicate(mesh, name="EyeLidInnerAreaMesh" + suffix,
                            returnRootsOnly=True)[0]
         area = c.parent(area, geo_holder, absolute=True)[0]
         outside = set(range(int(c.polyEvaluate(area, face=True)))) - set(faces)
@@ -510,7 +559,7 @@ class MayaFacePreHost(MayaFaceHost):
         c.addAttr(area, longName="selection", dataType="string")
         c.setAttr(area + ".selection", " ".join(
             f"{mesh}.f[{index}]" for index in faces), type="string")
-        preview = c.duplicate(area, name="EyeLidInnerAreaMeshExtrude",
+        preview = c.duplicate(area, name="EyeLidInnerAreaMeshExtrude" + suffix,
                               returnRootsOnly=True)[0]
         if (c.listRelatives(preview, parent=True, fullPath=True) or [None])[0] \
                 != (c.ls(geo_holder, long=True) or [geo_holder])[0]:
@@ -537,30 +586,37 @@ class MayaFacePreHost(MayaFaceHost):
             raise FitSkeletonValidationError("Face Fit 预览材质组名称已被占用")
         c.sets(preview, edit=True, forceElement=group_name)
 
-    def read_eye_lid_area(self) -> tuple[str, str]:
+    def read_eye_lid_area(self, side: FaceSide | None = None) -> tuple[str, str]:
         c = self._cmds
-        self.read_eye_lid_fit(EyeLidLayer.INNER)
-        holder = (c.ls("FaceFitEyeLidInner", long=True,
+        side = side or self.active_face_side()
+        suffix = "Left" if side is FaceSide.LEFT else ""
+        self.read_eye_lid_fit(EyeLidLayer.INNER, side)
+        holder = (c.ls("FaceFitEyeLidInner" + suffix, long=True,
                        type="transform") or [None])[0]
-        geo_holder = holder + "|FaceFitEyeLidInnerGeo"
+        geo_holder = holder + "|FaceFitEyeLidInnerGeo" + suffix
         paths = tuple(geo_holder + "|" + name for name in
-                      ("EyeLidInnerAreaMesh", "EyeLidInnerAreaMeshExtrude"))
+                      ("EyeLidInnerAreaMesh" + suffix,
+                       "EyeLidInnerAreaMeshExtrude" + suffix))
         if any((c.ls(path, long=True, type="transform") or []) != [path]
                or not c.listRelatives(path, shapes=True, type="mesh")
                for path in paths):
             raise FitSkeletonValidationError("EyeLid Inner 区域网格缺失")
         return paths
 
-    def read_eye_lid_fit(self, layer: EyeLidLayer) -> tuple[str, str]:
+    def read_eye_lid_fit(self, layer: EyeLidLayer,
+                         side: FaceSide | None = None) -> tuple[str, str]:
         c = self._cmds
         fit = self._fit(required=True)
-        holder = c.ls("FaceFitEyeLid" + layer.value, long=True,
+        side = side or self.active_face_side()
+        suffix = "Left" if side is FaceSide.LEFT else ""
+        holder = c.ls("FaceFitEyeLid" + layer.value + suffix, long=True,
                       type="transform") or []
         if len(holder) != 1 or not holder[0].startswith(fit + "|"):
             raise FitSkeletonValidationError("眼睑 Fit 缺失或父级无效：" + layer.value)
-        curve_parent = holder[0] + "|FaceFitEyeLid" + layer.value + "Curve"
+        curve_parent = holder[0] + "|FaceFitEyeLid" + layer.value \
+                       + "Curve" + suffix
         paths = tuple(curve_parent + "|" + prefix + "EyeLid" + layer.value
-                      + "Curve" for prefix in ("upper", "lower"))
+                      + "Curve" + suffix for prefix in ("upper", "lower"))
         if any((c.ls(path, long=True, type="transform") or []) != [path]
                for path in paths):
             raise FitSkeletonValidationError("眼睑 Fit 曲线缺失：" + layer.value)
@@ -569,9 +625,11 @@ class MayaFacePreHost(MayaFaceHost):
     def select_eye_lid_fit(self, layer: EyeLidLayer) -> int:
         from maya.api import OpenMaya as om
 
-        self.read_eye_lid_fit(layer)
+        side = self.active_face_side()
+        suffix = "Left" if side is FaceSide.LEFT else ""
+        self.read_eye_lid_fit(layer, side)
         c = self._cmds
-        holder = (c.ls("FaceFitEyeLid" + layer.value, long=True,
+        holder = (c.ls("FaceFitEyeLid" + layer.value + suffix, long=True,
                        type="transform") or [None])[0]
         selected = tuple((c.getAttr(holder + ".selection") or "").split())
         edge_matches = [_EDGE_PATTERN.fullmatch(item) for item in selected]

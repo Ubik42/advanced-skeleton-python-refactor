@@ -66,7 +66,10 @@ def order_eye_lid_loop(
     positions: dict[int, tuple[float, float, float]],
     *, eye_center_y: float,
     corner_vertices: tuple[int, ...] = (),
+    side: str = "Right",
 ) -> EyeLidLoop:
+    if side not in ("Right", "Left"):
+        raise ValueError("眼睑侧别无效")
     if len(edges) < 6 or len({row[0] for row in edges}) != len(edges):
         raise ValueError("眼睑需要至少六条互不重复的闭合边")
     adjacency: dict[int, list[int]] = {}
@@ -94,24 +97,25 @@ def order_eye_lid_loop(
             or any(vertex not in adjacency for vertex in corner_vertices)):
         raise ValueError("手选眼角须是边环上的一至两个不同顶点")
 
-    # The original right-eye fitting starts at the vertex nearest the face
-    # center line and ends at the outermost vertex. Explicit corners may
-    # override that choice while retaining the right-eye X ordering.
+    # The inner corner is nearer the center line: greater X on the right,
+    # smaller X on the left. Explicit corners keep the same direction.
+    direction = 1 if side == "Right" else -1
     auto_inner = max(adjacency, key=lambda vertex: (
-        positions[vertex][0], -abs(positions[vertex][1] - eye_center_y),
-        -vertex))
+        direction * positions[vertex][0],
+        -abs(positions[vertex][1] - eye_center_y), -vertex))
     auto_outer = min(adjacency, key=lambda vertex: (
-        positions[vertex][0], abs(positions[vertex][1] - eye_center_y),
-        vertex))
+        direction * positions[vertex][0],
+        abs(positions[vertex][1] - eye_center_y), vertex))
     if len(corner_vertices) == 2:
         inner, outer = sorted(corner_vertices,
-                              key=lambda vertex: positions[vertex][0],
+                              key=lambda vertex: direction * positions[vertex][0],
                               reverse=True)
     elif corner_vertices:
         inner, outer = corner_vertices[0], auto_outer
     else:
         inner, outer = auto_inner, auto_outer
-    if inner == outer or positions[inner][0] - positions[outer][0] <= 1e-6:
+    if (inner == outer or direction *
+            (positions[inner][0] - positions[outer][0]) <= 1e-6):
         raise ValueError("眼睑边环没有可区分的内外眼角")
 
     def walk(first_neighbor: int) -> tuple[int, ...]:

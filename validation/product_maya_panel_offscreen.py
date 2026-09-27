@@ -22,6 +22,9 @@ class FakeController:
         self.built = False
         self.calls = []
 
+    def face_fit_current_side(self, namespace):
+        return "Right"
+
     def model_check(self):
         self.calls.append("model_check")
         return ModelCheckResult("|Model|Body", 8,

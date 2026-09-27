@@ -768,6 +768,12 @@ def create_panel(controller: MayaPanelController | None = None):
                 row.addWidget(self._button(label, record))
                 row.addWidget(self._button("重选 " + label, reselect))
                 form.addRow(row)
+            self.face_fit_side_status = QtWidgets.QLabel("Fit 编辑侧：右侧")
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("编辑右侧", lambda: self._face_fit_switch_side("Right")))
+            row.addWidget(self._button("编辑左侧", lambda: self._face_fit_switch_side("Left")))
+            form.addRow(self.face_fit_side_status)
+            form.addRow(row)
             stack.addWidget(group)
             self.face_eye_right = QtWidgets.QLineEdit()
             self.face_eye_right.setPlaceholderText("|model:RightEye")
@@ -785,9 +791,12 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
             self.face_fit_right_eye = QtWidgets.QLineEdit()
             self.face_fit_right_eye.setPlaceholderText("|model:RightEye")
+            self.face_fit_left_eye = QtWidgets.QLineEdit()
+            self.face_fit_left_eye.setPlaceholderText("|model:LeftEye")
             self.face_fit_head = QtWidgets.QLineEdit("Head_M")
             group, form = self._group("01 · EyeBall Fit", [
                 ("右眼网格", self.face_fit_right_eye),
+                ("左眼网格", self.face_fit_left_eye),
                 ("Head 关节", self.face_fit_head)])
             form.addRow(self._button("建立 EyeBall Fit",
                                      self._face_fit_eye_ball, primary=True))
@@ -1561,10 +1570,20 @@ def create_panel(controller: MayaPanelController | None = None):
                     "整体与独立眼球控制可用")
 
         def _face_fit_eye_ball(self):
+            side = self.controller.face_fit_current_side(self._namespace())
+            eye = (self.face_fit_left_eye if side == "Left"
+                   else self.face_fit_right_eye)
             path = self.controller.face_fit_eye_ball(self._namespace(),
-                self.face_fit_right_eye.text().strip(),
+                eye.text().strip(),
                 self.face_fit_head.text().strip())
-            return "已建立 EyeBall Fit：" + path
+            eye_label = "左眼" if side == "Left" else "右眼"
+            return f"已建立{eye_label} EyeBall Fit：" + path
+
+        def _face_fit_switch_side(self, side):
+            current = self.controller.face_fit_switch_side(self._namespace(), side)
+            self.face_fit_side_status.setText(
+                "Fit 编辑侧：" + ("左侧" if current == "Left" else "右侧"))
+            return "已切换 Face Fit 编辑侧：" + current
 
         def _face_fit_eye_lid(self, layer):
             upper, lower = self.controller.face_fit_eye_lid(
@@ -1682,6 +1701,13 @@ def create_panel(controller: MayaPanelController | None = None):
                 return
             detail = current.data(QtCore.Qt.UserRole + 1)
             self.current.setText("当前角色：" + detail)
+            if hasattr(self, "face_fit_side_status"):
+                try:
+                    side = self.controller.face_fit_current_side(self._namespace())
+                except ValueError:
+                    side = "Right"
+                self.face_fit_side_status.setText(
+                    "Fit 编辑侧：" + ("左侧" if side == "Left" else "右侧"))
             if hasattr(self, "preparation_object_fields"):
                 for role, field in self.preparation_object_fields.items():
                     try:

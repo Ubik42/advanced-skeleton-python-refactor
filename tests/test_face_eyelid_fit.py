@@ -49,6 +49,15 @@ class EyeLidLoopTest(unittest.TestCase):
                                 eye_center_y=0,
                                 corner_vertices=(1, 99))
 
+    def test_left_side_reverses_inner_outer_x_order(self):
+        mirrored = {index: (-point[0], point[1], point[2])
+                    for index, point in self.positions.items()}
+        ordered = order_eye_lid_loop(self.edges, mirrored,
+                                     eye_center_y=0, side="Left",
+                                     corner_vertices=(5, 1))
+        self.assertEqual(ordered.upper_vertices, (1, 2, 3, 4, 5))
+        self.assertEqual(ordered.lower_vertices, (1, 0, 7, 6, 5))
+
     def test_inner_area_is_the_band_containing_main(self):
         faces = ((0, 1), (1, 2), (2, 3), (0,), (3,))
         edges = ((0, 3), (0, 1), (1, 2), (2, 4))
