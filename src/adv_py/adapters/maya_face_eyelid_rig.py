@@ -106,6 +106,14 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                          for vertex in fn.getPolygonVertices(face)}
         main = ordered[EyeLidLayer.MAIN]
         outer = ordered[EyeLidLayer.OUTER]
+        main_vertices = set(main.upper_vertices) | set(main.lower_vertices)
+        if not main_vertices <= area_vertices or not boundary <= area_vertices:
+            raise FitSkeletonValidationError(
+                "眼睑区域与所选三层边环不一致："
+                f"Main 缺 {len(main_vertices - area_vertices)} 顶点，"
+                f"Outer／Inner 缺 {len(boundary - area_vertices)} 顶点")
+        if main_vertices & boundary:
+            raise FitSkeletonValidationError("眼睑 Main 与 Outer／Inner 环重叠")
         factors = {
             EyeLidLayer.MAIN: eyelid_skin_factors(adjacency, positions,
                 area_vertices, boundary, main.upper_vertices,

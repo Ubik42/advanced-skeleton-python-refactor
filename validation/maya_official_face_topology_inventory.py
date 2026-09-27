@@ -64,6 +64,11 @@ def main() -> None:
         cmds.loadPlugin("objExport", quiet=True)
         cmds.file(str(source), i=True, type="OBJ", options="mo=1",
                   ignoreVersion=True)
+    elif source.suffix.lower() == ".fbx":
+        cmds.file(new=True, force=True)
+        cmds.loadPlugin("fbxmaya", quiet=True)
+        cmds.file(str(source), i=True, type="FBX", ignoreVersion=True,
+                  mergeNamespacesOnClash=False, options="fbx")
     else:
         cmds.file(str(source), open=True, force=True,
                   executeScriptNodes=False)

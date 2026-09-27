@@ -50,6 +50,78 @@ def geodesic_eye_rings(mesh: str, eye: str, side: FaceSide):
     bounds = cmds.exactWorldBoundingBox(eye)
     target = tuple((bounds[index] + bounds[index + 3]) / 2
                    for index in range(3))
+    def closed_components(edge_ids):
+        edge_ids = tuple(edge_ids)
+        vertex_edges = {}
+        for edge in edge_ids:
+            for vertex in fn.getEdgeVertices(edge):
+                vertex_edges.setdefault(vertex, set()).add(edge)
+        remaining = set(edge_ids)
+        loops = []
+        while remaining:
+            pending = [next(iter(remaining))]
+            component = set()
+            while pending:
+                edge = pending.pop()
+                if edge not in remaining:
+                    continue
+                remaining.remove(edge)
+                component.add(edge)
+                for vertex in fn.getEdgeVertices(edge):
+                    pending.extend(vertex_edges[vertex] & remaining)
+            edges = tuple((index, *fn.getEdgeVertices(index))
+                          for index in sorted(component))
+            vertices = {vertex for _, first, second in edges
+                        for vertex in (first, second)}
+            positions = {index: tuple(fn.getPoint(index, om.MSpace.kWorld)[axis]
+                                      for axis in range(3)) for index in vertices}
+            try:
+                order_eye_lid_loop(edges, positions, eye_center_y=target[1],
+                                   side=side.value)
+            except ValueError:
+                continue
+            loops.append((tuple(sorted(component)), frozenset(vertices)))
+        return loops
+
+    def distance(loop):
+        points = [fn.getPoint(index, om.MSpace.kWorld)
+                  for index in loop[1]]
+        center = tuple(sum(point[axis] for point in points) / len(points)
+                       for axis in range(3))
+        return sum((center[axis] - target[axis]) ** 2
+                   for axis in range(3))
+    eye_width = bounds[3] - bounds[0]
+    apertures = [loop for loop in closed_components(
+        index for index, adjacent in enumerate(edge_faces)
+        if len(adjacent) == 1) if distance(loop) < eye_width ** 2]
+    if apertures:
+        inner = min(apertures, key=distance)
+        selected = {face for edge in inner[0] for face in edge_faces[edge]}
+        front = set(selected)
+        rings = []
+        for depth in range(1, 25):
+            border = (index for index, adjacent in enumerate(edge_faces)
+                      if len(adjacent) == 2
+                      and sum(face in selected for face in adjacent) == 1)
+            loops = closed_components(border)
+            if loops:
+                loop = min(loops, key=distance)
+                if not (loop[1] & inner[1]):
+                    rings.append((depth, *loop))
+            next_front = {face for face in front for edge in face_edges[face]
+                          for face in edge_faces[edge]} - selected
+            if not next_front:
+                break
+            selected.update(next_front)
+            front = next_front
+        options = [(outer, main) for outer in rings for main in rings
+                   if outer[0] > main[0] and not (outer[2] & main[2])]
+        if not options:
+            raise RuntimeError("眼眶开口向外找不到两圈不相交的眼睑边环")
+        outer, main = min(options, key=lambda rows: (
+            rows[0][0], rows[1][0]))
+        return target, ((outer[0], outer[1]), (main[0], main[1]),
+                        (0, inner[0]))
     centers = []
     for face in range(fn.numPolygons):
         vertices = fn.getPolygonVertices(face)
@@ -87,11 +159,27 @@ def geodesic_eye_rings(mesh: str, eye: str, side: FaceSide):
         except ValueError:
             continue
         if len(edges) >= 8:
-            candidates.append((depth, border))
+            candidates.append((depth, border, frozenset(vertices)))
     if len(candidates) < 3:
         raise RuntimeError("头部眼区找不到三圈可拆分的闭合边环")
     chosen = (candidates[-1], candidates[len(candidates)//2], candidates[0])
-    return target, chosen
+    if any(left[2] & right[2] for left, right in
+           ((chosen[0], chosen[1]), (chosen[1], chosen[2]),
+            (chosen[0], chosen[2]))):
+        options = [(outer, main, inner)
+                   for outer in candidates for main in candidates
+                   for inner in candidates
+                   if outer[0] > main[0] > inner[0]
+                   and not (outer[2] & main[2] or main[2] & inner[2]
+                            or outer[2] & inner[2])]
+        if not options:
+            raise RuntimeError("眼区找不到三条互不相交的闭合边环："
+                               + ", ".join(str(row[0]) for row in candidates))
+        chosen = max(options, key=lambda rows: (
+            rows[0][0] - rows[2][0],
+            min(rows[0][0] - rows[1][0],
+                rows[1][0] - rows[2][0])))
+    return target, tuple((depth, border) for depth, border, _ in chosen)
 
 
 def main() -> None:
@@ -108,14 +196,21 @@ def main() -> None:
         cmds.file(new=True, force=True)
         cmds.undoInfo(state=True)
         cmds.loadPlugin("objExport", quiet=True)
-        cmds.file(str(head_source), i=True, type="OBJ", options="mo=1",
-                  ignoreVersion=True)
-        cmds.file(str(eyes_source), i=True, type="OBJ", options="mo=1",
-                  ignoreVersion=True)
-        head = (cmds.ls("head", long=True, type="transform") or [None])[0]
-        eyes = (cmds.ls("eyeOutter", long=True, type="transform") or [None])[0]
-        if not head or not eyes:
-            raise RuntimeError("导入文件缺少 head 或 eyeOutter 网格")
+        def imported_mesh(source, name):
+            nodes = cmds.file(str(source), i=True, type="OBJ",
+                              options="mo=1", ignoreVersion=True,
+                              returnNewNodes=True)
+            shapes = cmds.ls(nodes, long=True, type="mesh",
+                             noIntermediate=True) or []
+            transforms = {path for shape in shapes for path in
+                          (cmds.listRelatives(shape, parent=True,
+                                              fullPath=True) or [])}
+            if len(transforms) != 1:
+                raise RuntimeError("OBJ 必须包含一件网格：" + source.name)
+            return (cmds.ls(cmds.rename(next(iter(transforms)), name),
+                            long=True, type="transform") or [None])[0]
+        head = imported_mesh(head_source, "head")
+        eyes = imported_mesh(eyes_source, "eyeOutter")
         split = cmds.polySeparate(eyes, constructionHistory=False)
         eye_meshes = sorted((cmds.ls(item, long=True, type="transform") or [item])[0]
                             for item in split if cmds.objExists(item)
@@ -391,7 +486,8 @@ def main() -> None:
         horizontal_delta = (cmds.pointPosition(follow_cv, world=True)[0]
                             - still_cv[0])
         assert abs(horizontal_rotation) > 1
-        assert .001 < abs(horizontal_delta) < .05
+        eye_bounds = cmds.exactWorldBoundingBox(right_eye)
+        assert .001 < abs(horizontal_delta) < eye_bounds[3] - eye_bounds[0]
         cmds.setAttr(eye_rig.right_control + ".translateX", 0)
         upper_control = lid_rig["controls"][(FaceSide.RIGHT,
                                               EyeLidLayer.MAIN, "upper")]
