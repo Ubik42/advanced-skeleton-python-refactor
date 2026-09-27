@@ -39,6 +39,19 @@ def schedule(source_directory: str, output_directory: str) -> None:
                     cmds.polySoftEdge(meshes[key], angle=180,
                                       constructionHistory=False)
                     cmds.setAttr(meshes[key] + ".visibility", label == "open")
+            for label, color in (("head", (.55, .55, .55)),
+                                 ("eye", (.8, .18, .12))):
+                shader = cmds.shadingNode("lambert", asShader=True,
+                                          name="AdvPySnapshot" + label.title())
+                cmds.setAttr(shader + ".color", *color, type="double3")
+                group = cmds.sets(renderable=True, noSurfaceShader=True,
+                                   empty=True, name=shader + "SG")
+                cmds.connectAttr(shader + ".outColor",
+                                 group + ".surfaceShader", force=True)
+                for key, mesh in meshes.items():
+                    if (key.endswith("head") if label == "head" else
+                            key.endswith("eye")):
+                        cmds.sets(mesh, edit=True, forceElement=group)
             cmds.select(clear=True)
             panel = (cmds.getPanel(type="modelPanel") or [None])[0]
             if panel is None:
