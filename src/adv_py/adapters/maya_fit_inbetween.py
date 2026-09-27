@@ -9,6 +9,9 @@ from adv_py.core.fit_inbetween import (
 from adv_py.core.fit_orientation import FitOrientationSnapshot
 from adv_py.core.fit_inbetween_bias import InbetweenBiasPlan
 from adv_py.core.fit_inbetween_fk_anchor import InbetweenFkAnchorPlan
+from adv_py.core.fit_inbetween_fk_parts import (
+    InbetweenFkPartSpec, InbetweenFkPartsPlan,
+)
 from adv_py.core.fit_inbetween_matrix import (
     InbetweenMatrixDestination, InbetweenMatrixPlan,
     InbetweenMatrixStep,
@@ -17,6 +20,162 @@ from adv_py.core.joint_labels import JointLabel
 
 
 class MayaFitInbetweenMixin:
+    def connect_inbetween_fk_visibility(
+        self, plan: InbetweenFkPartsPlan
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        plug = plan.start_fk_control_path + ".inbetweenVis"
+        if c.objExists(plug):
+            raise ValueError("Inbetween 显示控制已存在：" + plug)
+        c.addAttr(plan.start_fk_control_path, longName="inbetweenVis",
+                  attributeType="bool", defaultValue=False,
+                  keyable=False)
+        c.setAttr(plug, channelBox=True)
+        self._transaction_changed = True
+        for part in plan.parts:
+            shapes = c.listRelatives(part.control_name, shapes=True,
+                                     fullPath=True,
+                                     type="nurbsCurve") or []
+            if len(shapes) != 1:
+                raise ValueError("Inbetween FK 控制器曲线不唯一："
+                                 + part.control_name)
+            c.connectAttr(plug, shapes[0] + ".visibility")
+
+    def capture_inbetween_fk_visibility(
+        self, plan: InbetweenFkPartsPlan
+    ) -> bool:
+        c = self._cmds
+        plug = plan.start_fk_control_path + ".inbetweenVis"
+        if not c.objExists(plug):
+            return False
+        for part in plan.parts:
+            shapes = c.listRelatives(part.control_name, shapes=True,
+                                     fullPath=True,
+                                     type="nurbsCurve") or []
+            if (len(shapes) != 1 or c.connectionInfo(
+                    shapes[0] + ".visibility",
+                    sourceFromDestination=True) != plug):
+                return False
+        return True
+
+    def preflight_inbetween_fk_parts(
+        self, plan: InbetweenFkPartsPlan
+    ) -> None:
+        c = self._cmds
+        if len(c.ls(plan.fk_system_path, long=True,
+                    type="transform") or []) != 1:
+            raise ValueError("Inbetween FK 系统父级不存在："
+                             + plan.fk_system_path)
+        planned_names = []
+        for part in plan.parts:
+            if len(c.ls(part.part_name, long=True,
+                        type="joint") or []) != 1:
+                raise ValueError("Inbetween Part Body 关节不存在："
+                                 + part.part_name)
+            planned_names.extend((part.fkps_name, part.offset_name,
+                                  part.extra_name, part.control_name,
+                                  part.fkx_name, part.fk_matrix_name,
+                                  part.pick_matrix_name))
+        if len(set(planned_names)) != len(planned_names) or any(
+                c.objExists(name) for name in planned_names):
+            raise ValueError("Inbetween Part FK 节点名称冲突")
+        if not c.objExists(plan.parts[0].parent_fkx_name):
+            raise ValueError("Inbetween 起点 FKX 尚未创建")
+
+    def create_inbetween_fk_part(
+        self, plan: InbetweenFkPartsPlan,
+        part: InbetweenFkPartSpec,
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        if not c.objExists(part.parent_fkx_name):
+            raise ValueError("Inbetween 上一段 FKX 不存在："
+                             + part.parent_fkx_name)
+        fkps = c.createNode("transform", name=part.fkps_name,
+                            parent=part.parent_fkx_name, skipSelect=True)
+        self._transaction_changed = True
+        c.setAttr(fkps + ".rotateOrder", part.rotate_order)
+        c.xform(fkps, worldSpace=True,
+                translation=part.world_position)
+        offset = c.createNode("transform", name=part.offset_name,
+                              parent=plan.fk_system_path, skipSelect=True)
+        extra = c.createNode("transform", name=part.extra_name,
+                             parent=offset, skipSelect=True)
+        selection = c.ls(selection=True, long=True) or []
+        try:
+            control = c.circle(name=part.control_name,
+                               normal=(1.0, 0.0, 0.0),
+                               radius=part.radius, degree=3, sections=12,
+                               constructionHistory=False)[0]
+            control = c.parent(control, extra, relative=True)[0]
+        finally:
+            if selection:
+                c.select(selection, replace=True)
+            else:
+                c.select(clear=True)
+        fkx = c.createNode("joint", name=part.fkx_name,
+                           parent=control, skipSelect=True)
+        for node in (offset, extra, control, fkx):
+            c.setAttr(node + ".rotateOrder", part.rotate_order)
+        c.setAttr(fkx + ".drawStyle", 2)
+        c.setAttr(fkx + ".segmentScaleCompensate", 0)
+        matrix = c.createNode("multMatrix", name=part.fk_matrix_name)
+        pick = c.createNode("pickMatrix", name=part.pick_matrix_name)
+        c.connectAttr(part.fkps_name + ".worldMatrix[0]",
+                      matrix + ".matrixIn[1]")
+        c.connectAttr(plan.fk_system_path + ".worldInverseMatrix[0]",
+                      matrix + ".matrixIn[2]")
+        c.connectAttr(matrix + ".matrixSum", pick + ".inputMatrix")
+        c.connectAttr(pick + ".outputMatrix",
+                      part.offset_name + ".offsetParentMatrix")
+        # 6.925 的 Part FK 允许控制器覆盖默认缩放继承。
+        c.addAttr(part.control_name, longName="inheritScale",
+                  attributeType="bool",
+                  defaultValue=True, keyable=False)
+        c.connectAttr(part.control_name + ".inheritScale",
+                      pick + ".useScale")
+
+    def capture_inbetween_fk_part_receiver(
+        self, plan: InbetweenFkPartsPlan,
+        part: InbetweenFkPartSpec,
+    ) -> str | None:
+        c = self._cmds
+        hierarchy = (
+            (part.fkps_name, part.parent_fkx_name),
+            (part.offset_name,
+             plan.fk_system_path.rsplit("|", 1)[-1]),
+            (part.extra_name, part.offset_name),
+            (part.control_name, part.extra_name),
+            (part.fkx_name, part.control_name),
+        )
+        for name, parent_name in hierarchy:
+            nodes = c.ls(name, long=True) or []
+            if len(nodes) != 1:
+                return None
+            parent = c.listRelatives(nodes[0], parent=True,
+                                     fullPath=True) or []
+            if (len(parent) != 1
+                    or parent[0].rsplit("|", 1)[-1] != parent_name):
+                return None
+        expected = (
+            (part.fk_matrix_name + ".matrixIn[1]",
+             part.fkps_name + ".worldMatrix[0]"),
+            (part.fk_matrix_name + ".matrixIn[2]",
+             plan.fk_system_path + ".worldInverseMatrix[0]"),
+            (part.pick_matrix_name + ".inputMatrix",
+             part.fk_matrix_name + ".matrixSum"),
+            (part.offset_name + ".offsetParentMatrix",
+             part.pick_matrix_name + ".outputMatrix"),
+            (part.pick_matrix_name + ".useScale",
+             part.control_name + ".inheritScale"),
+        )
+        if any(c.connectionInfo(destination,
+                 sourceFromDestination=True) != source
+               for destination, source in expected):
+            return None
+        return part.receiver_plug
+
     def preflight_inbetween_fk_anchor(
         self, plan: InbetweenFkAnchorPlan
     ) -> None:
