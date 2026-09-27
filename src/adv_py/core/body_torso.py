@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Protocol
 
+from .body_build_options import BodyBuildOptions
 from .body_limb_controls import (
     BodyLimbFkControlPlan, BodyLimbFkControlSpec, BodyLimbFkControlSnapshot,
     audit_body_limb_fk_controls,
@@ -91,6 +92,12 @@ class BodyTorsoPlan:
             name for control in self.controls.controls
             for name in (control.offset_name, control.control_name,
                          control.control_name + "Shape", control.constraint_name,
+                         *((control.extra_name,) if control.extra_name else ()),
+                         *((control.extra_name + "Shape",)
+                           if control.extra_curve and control.extra_name else ()),
+                         *((control.sub_control_name,
+                            control.sub_control_name + "Shape")
+                           if control.sub_control_name else ()),
                          *((control.source_override_path.rsplit("|", 1)[-1],)
                            if control.source_override_path is not None else ()))
         ) + (self.leg_lock.path.rsplit("|", 1)[-1],
@@ -111,8 +118,10 @@ class BodyTorsoSnapshot:
 
 def plan_body_torso(
     body: BodySkeletonSnapshot, arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan,
-    *, radius: float = 2.0, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z,
+    *, radius: float = 2.0, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(),
 ) -> BodyTorsoPlan:
+    if not isinstance(build_options, BodyBuildOptions):
+        raise FitSkeletonValidationError("Torso 构建选项类型无效")
     if isinstance(radius, bool) or not isinstance(radius, (int, float)) or not isfinite(radius) or radius <= 0:
         raise FitSkeletonValidationError("Torso 控制半径必须是正有限数")
     description=BodyAxialDescription() if description is None else description
@@ -131,16 +140,29 @@ def plan_body_torso(
             raise FitSkeletonValidationError(f"Torso 父链不匹配：{name}")
         parent = by_joint[parent_name].control_path if parent_name else root_path
         offset_name = f"AdvPy_Torso{name}Offset"
+        extra_name = f"AdvPy_Torso{name}FKExtra"
         control_name = f"AdvPy_Torso{name}FK"
+        offset_path = f"{parent}|{offset_name}"
+        extra_path = f"{offset_path}|{extra_name}"
+        control_path = f"{extra_path}|{control_name}"
+        sub_name = (f"AdvPy_Torso{name}FKSub"
+                    if build_options.sub_controllers else None)
+        sub_path = (f"{control_path}|{sub_name}"
+                    if sub_name is not None else None)
         spec = BodyLimbFkControlSpec(
             side=joint.side, driven_joint=joint.path,
-            offset_path=f"{parent}|{offset_name}", offset_name=offset_name,
-            control_path=f"{parent}|{offset_name}|{control_name}", control_name=control_name,
+            offset_path=offset_path, offset_name=offset_name,
+            control_path=control_path, control_name=control_name,
             parent_path=parent, constraint_name=f"AdvPy_Torso{name}Orient",
             world_position=joint.world_position, world_axes=joint.world_axes, radius=float(radius),
             source_override_path=(
-                f"{parent}|{offset_name}|{control_name}|AdvPy_RootFKX"
+                f"{sub_path or control_path}|AdvPy_RootFKX"
                 if name == "Root_M" else None),
+            sub_control_path=sub_path,
+            sub_control_name=sub_name,
+            extra_path=extra_path,
+            extra_name=extra_name,
+            extra_curve=build_options.extra_controllers,
         )
         by_joint[name] = spec
         controls.append(spec)

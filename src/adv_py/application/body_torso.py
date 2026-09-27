@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_torso import BodyTorsoLimbPlan, BodyTorsoPlan, BodyTorsoSnapshot, audit_body_torso, plan_body_torso
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_container import FitUpAxis
@@ -43,7 +44,11 @@ class BuildBodyTorso:
         arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan, *, radius: float = 2.0, spine_ik: bool = False, description=None, head_aim=False,
     ) -> BodyTorsoBuildPlan:
         options={'up_axis':self._host.scene_up_axis()} if head_aim else {}
-        torso = plan_body_torso(safety.body, arm, leg, radius=radius, spine_ik=spine_ik,description=description,head_aim=head_aim,**options)
+        torso = plan_body_torso(
+            safety.body, arm, leg, radius=radius, spine_ik=spine_ik,
+            description=description, head_aim=head_aim,
+            build_options=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings), **options)
         collisions = tuple(sorted({path for name in torso.node_names for path in self._host.find_name_collisions(name)}))
         self._host.preflight_body_torso(torso)
         return BodyTorsoBuildPlan(safety, torso, collisions)

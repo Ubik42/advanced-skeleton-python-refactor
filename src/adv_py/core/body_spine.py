@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from math import atan2, degrees, isfinite, sqrt
 
-from .body_limb_controls import BodyLimbFkControlSpec
+from .body_limb_controls import (
+    BodyLimbFkControlSpec, reparent_body_fk_control,
+)
 from .body_limb_mechanisms import BodyLimbMechanismJointSpec, BodyLimbMechanismRole
 from .body_limb_ik import solve_limb_pole_position
 from .fit_settings import FitSkeletonValidationError
@@ -99,27 +101,33 @@ def with_spine_ik(body, torso):
             parent = specs[-1].path
     pelvis, waist, chest, *upper = torso.controls.controls
     base_offset = pelvis.control_path + "|AdvPy_SpineBaseFKOffset"
+    base_extra_name = "AdvPy_SpineBaseFKExtra"
+    base_extra = base_offset + "|" + base_extra_name
+    base_control = base_extra + "|AdvPy_SpineBaseFK"
+    base_sub_name = ("AdvPy_SpineBaseFKSub"
+                     if pelvis.sub_control_path is not None else None)
     base = BodyLimbFkControlSpec(
         side=source[0].side, driven_joint=specs[0].path,
         offset_path=base_offset, offset_name="AdvPy_SpineBaseFKOffset",
-        control_path=base_offset+"|AdvPy_SpineBaseFK", control_name="AdvPy_SpineBaseFK",
+        control_path=base_control, control_name="AdvPy_SpineBaseFK",
         parent_path=pelvis.control_path, constraint_name="AdvPy_SpineBaseFKOrient",
         world_position=source[0].world_position, world_axes=source[0].world_axes, radius=waist.radius,
+        extra_path=base_extra, extra_name=base_extra_name,
+        extra_curve=pelvis.extra_curve,
+        sub_control_path=(base_control + "|" + base_sub_name
+                          if base_sub_name else None),
+        sub_control_name=base_sub_name,
     )
-    waist_offset = base.control_path + "|" + waist.offset_name
-    waist = replace(waist, parent_path=base.control_path, offset_path=waist_offset,
-                    control_path=waist_offset+"|"+waist.control_name, driven_joint=specs[1].path)
-    chest_offset = waist.control_path + "|" + chest.offset_name
-    chest = replace(chest, parent_path=waist.control_path, offset_path=chest_offset,
-                    control_path=chest_offset+"|"+chest.control_name, driven_joint=specs[2].path)
+    waist = reparent_body_fk_control(
+        waist, base.control_path, driven_joint=specs[1].path)
+    chest = reparent_body_fk_control(
+        chest, waist.control_path, driven_joint=specs[2].path)
     space = torso.controls.root_path + "|AdvPy_SpineChestSpace"
     updated_upper = []
     old_to_new = {}
     for control in upper:
         parent = old_to_new.get(control.parent_path, space)
-        offset = parent + "|" + control.offset_name
-        updated = replace(control, parent_path=parent, offset_path=offset,
-                          control_path=offset+"|"+control.control_name)
+        updated = reparent_body_fk_control(control, parent)
         old_to_new[control.control_path] = updated.control_path
         updated_upper.append(updated)
     ik_offset = torso.controls.root_path + "|AdvPy_SpineIKOffset"

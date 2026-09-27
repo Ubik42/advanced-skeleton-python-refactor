@@ -39,9 +39,20 @@ def with_head_aim(torso,body,description,up_axis=FitUpAxis.Z):
     upward=(0.,0.,1.) if up_axis is FitUpAxis.Z else (0.,1.,0.)
     aim_axis=tuple(sum(a*b for a,b in zip(axis,forward)) for axis in head.world_axes)
     local_up=tuple(sum(a*b for a,b in zip(axis,upward)) for axis in head.world_axes)
-    pivot=control.offset_path+'|AdvPy_HeadAimBlend'
-    updated=replace(control,control_parent_path=pivot,control_path=pivot+'|'+control.control_name)
+    parent_layer=control.extra_path or control.offset_path
+    pivot=parent_layer+'|AdvPy_HeadAimBlend'
+    new_control=pivot+'|'+control.control_name
+    updated=replace(
+        control,control_parent_path=pivot,control_path=new_control,
+        sub_control_path=(
+            new_control+control.sub_control_path[len(control.control_path):]
+            if control.sub_control_path is not None else None),
+        source_override_path=(
+            new_control+control.source_override_path[len(control.control_path):]
+            if control.source_override_path is not None
+            and control.source_override_path.startswith(control.control_path+'|')
+            else control.source_override_path))
     target_offset=torso.controls.root_path+'|AdvPy_HeadAimOffset'
-    plan=HeadAimPlan(updated.control_path,control.offset_path,pivot,target_offset,target_offset+'|AdvPy_HeadAim',
+    plan=HeadAimPlan(updated.control_path,parent_layer,pivot,target_offset,target_offset+'|AdvPy_HeadAim',
         tuple(p+length*3*x for p,x in zip(head.world_position,forward)),head.world_axes,control.radius*.6,aim_axis,local_up)
     return replace(torso,controls=replace(torso.controls,controls=tuple(updated if c==control else c for c in torso.controls.controls)),head_aim=plan)

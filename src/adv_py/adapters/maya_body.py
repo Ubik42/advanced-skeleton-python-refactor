@@ -6355,9 +6355,6 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
             and spec.control_parent_path != spec.offset_path
             else None
         )
-        if spec.extra_path is not None and pose_name is not None:
-            raise FitSkeletonValidationError(
-                "FK Extra 与现有 Pose 层不能同时指定")
         for name in (
             spec.offset_name,
             *((pose_name,) if pose_name is not None else ()),
@@ -6398,11 +6395,18 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
             )
             self._cmds.xform(offset, worldSpace=True, matrix=matrix)
             control_parent = offset
+            if spec.extra_path is not None:
+                if spec.extra_name is None:
+                    raise FitSkeletonValidationError("FK Extra 层缺少名称")
+                control_parent = self._create_body_extra_layer(
+                    offset, spec.extra_name, spec.extra_path)
+                self._cmds.setAttr(
+                    control_parent + ".rotateOrder", spec.rotate_order)
             if pose_name is not None:
                 control_parent = self._cmds.createNode(
                     "transform",
                     name=pose_name,
-                    parent=offset,
+                    parent=control_parent,
                     skipSelect=True,
                 )
                 control_parent = (
@@ -6413,13 +6417,6 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                     raise RuntimeError(
                         f"{limb_label} FK Pose 层路径漂移：{pose_name}"
                     )
-            if spec.extra_path is not None:
-                if spec.extra_name is None:
-                    raise FitSkeletonValidationError("FK Extra 层缺少名称")
-                control_parent = self._create_body_extra_layer(
-                    offset, spec.extra_name, spec.extra_path)
-                self._cmds.setAttr(
-                    control_parent + ".rotateOrder", spec.rotate_order)
             control = self._cmds.circle(
                 name=spec.control_name,
                 normal=(1.0, 0.0, 0.0),
@@ -6473,16 +6470,18 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                                    edit=True, channelBox=True)
                 self._cmds.connectAttr(control + ".subControl",
                                        shape[0] + ".visibility", force=True)
-            orientation_source = control
+            orientation_source = (
+                spec.sub_control_path or control)
             if spec.source_override_path is not None:
                 if spec.source_override_path.startswith(control + "|"):
-                    if spec.source_override_path.rsplit("|", 1)[0] != control:
+                    source_parent = spec.source_override_path.rsplit("|", 1)[0]
+                    if source_parent not in (control, spec.sub_control_path):
                         raise FitSkeletonValidationError(
-                            "FK 约束来源只支持控制器的直接子接收层")
+                            "FK 约束接收层必须直接位于控制器或 Sub 下")
                     orientation_source = self._cmds.createNode(
                         "transform",
                         name=spec.source_override_path.rsplit("|", 1)[-1],
-                        parent=control,
+                        parent=source_parent,
                         skipSelect=True,
                     )
                     orientation_source = (

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 from typing import Mapping
 
@@ -82,6 +82,39 @@ class BodyLimbControlIssue:
     code: str
     message: str
     subject: str | None = None
+
+
+def reparent_body_fk_control(
+    spec: BodyLimbFkControlSpec,
+    parent_path: str,
+    *,
+    driven_joint: str | None = None,
+) -> BodyLimbFkControlSpec:
+    """Move an FK subtree without leaving Extra/Sub/FKX paths behind."""
+    if not parent_path.startswith("|") or parent_path.endswith("|"):
+        raise BodyLimbControlValidationError("FK 新父级必须是完整 DAG 路径")
+    old_offset = spec.offset_path
+    new_offset = parent_path + "|" + spec.offset_name
+
+    def moved(path: str | None) -> str | None:
+        if path is None:
+            return None
+        if path == old_offset:
+            return new_offset
+        if path.startswith(old_offset + "|"):
+            return new_offset + path[len(old_offset):]
+        return path
+
+    return replace(
+        spec, parent_path=parent_path, offset_path=new_offset,
+        extra_path=moved(spec.extra_path),
+        control_parent_path=moved(spec.control_parent_path),
+        control_path=moved(spec.control_path),
+        sub_control_path=moved(spec.sub_control_path),
+        source_override_path=moved(spec.source_override_path),
+        driven_joint=(spec.driven_joint if driven_joint is None
+                      else driven_joint),
+    )
 
 
 def plan_body_limb_fk_controls(
@@ -238,7 +271,7 @@ def audit_body_limb_fk_controls(
             state.offset_path != spec.offset_path
             or state.offset_parent_path != spec.parent_path
             or state.control_parent_path
-            != (spec.extra_path or spec.control_parent_path or spec.offset_path)
+            != (spec.control_parent_path or spec.extra_path or spec.offset_path)
         ):
             issues.append(BodyLimbControlIssue(
                 "control_hierarchy_mismatch", "FK 控制父链不一致", path
@@ -249,7 +282,8 @@ def audit_body_limb_fk_controls(
             ))
         if (
             state.source_control
-            != (spec.source_override_path or spec.control_path)
+            != (spec.source_override_path or spec.sub_control_path
+                or spec.control_path)
             or state.driven_joint != spec.driven_joint
         ):
             issues.append(BodyLimbControlIssue(
