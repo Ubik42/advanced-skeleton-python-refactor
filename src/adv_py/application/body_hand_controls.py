@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_hand_controls import (
     BodyHandControlIssue,
     BodyHandFkControlPlan,
@@ -123,6 +124,8 @@ class BuildBodyHandFkControls:
         controls = plan_body_hand_fk_controls(
             safety.body,
             radius=control_radius,
+            build_options=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings),
         )
         pose = plan_body_hand_pose_controls(controls)
         input_snapshot = self._host.capture_body_hand_fk_input(controls)

@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_hand_controls import (
     BodyHandFkControlPlan,
     BodyHandFkControlSnapshot,
@@ -35,12 +36,17 @@ from adv_py.core.body_skeleton import (
     audit_body_provenance,
     oriented_body_provenance,
 )
-from adv_py.core.fit_settings import FitSkeletonValidationError
+from adv_py.core.fit_settings import (
+    FitSkeletonSettings, FitSkeletonValidationError,
+)
 from adv_py.core.fit_symmetry import FitBuildSide
 
 
 class BodyHandPoseDocumentHost(Protocol):
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
+    def read_fit_skeleton_settings(
+        self, container_name: str,
+    ) -> FitSkeletonSettings: ...
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot: ...
     def capture_body_hand_fk_controls(
         self,
@@ -167,6 +173,8 @@ class InspectBodyHandPoseRig:
             body,
             radius=control_radius,
             namespace=namespace,
+            build_options=BodyBuildOptions.from_fit_settings(
+                self._host.read_fit_skeleton_settings(source_container)),
         )
         pose = plan_body_hand_pose_controls(hand)
         hand_snapshot = self._host.capture_body_hand_fk_controls(hand)

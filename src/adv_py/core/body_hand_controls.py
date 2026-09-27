@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 
+from .body_build_options import BodyBuildOptions
 from .body_hand_fit import (
     BODY_HAND_DIGITS, BODY_HAND_SEGMENTS, BodyHandDigit,
     advanced_skeleton_hand_source_joint_names, body_hand_source_joint_names,
@@ -67,6 +68,13 @@ class BodyHandFkControlPlan:
                 control.control_name,
                 control.constraint_name,
             ))
+            if control.extra_name is not None:
+                values.append(control.extra_name)
+                if control.extra_curve:
+                    values.append(control.extra_name + "Shape")
+            if control.sub_control_name is not None:
+                values.extend((control.sub_control_name,
+                               control.sub_control_name + "Shape"))
             if (
                 control.control_parent_path is not None
                 and control.control_parent_path != control.offset_path
@@ -210,7 +218,10 @@ def plan_body_hand_fk_controls(
     *,
     radius: float = 0.3,
     namespace: str | None = None,
+    build_options: BodyBuildOptions = BodyBuildOptions(),
 ) -> BodyHandFkControlPlan:
+    if not isinstance(build_options, BodyBuildOptions):
+        raise BodyHandControlValidationError("Hand 构建选项类型无效")
     if (
         isinstance(radius, bool)
         or not isinstance(radius, (int, float))
@@ -293,11 +304,17 @@ def plan_body_hand_fk_controls(
                     f"{prefix}AdvPy_{digit.value}{index}FK_{suffix}"
                 )
                 offset_path = f"{parent_path}|{offset_name}"
+                extra_name = (
+                    f"{prefix}AdvPy_{digit.value}{index}FKExtra_{suffix}")
+                extra_path = f"{offset_path}|{extra_name}"
                 pose_name = (
                     f"{prefix}AdvPy_{digit.value}{index}Pose_{suffix}"
                 )
-                pose_path = f"{offset_path}|{pose_name}"
+                pose_path = f"{extra_path}|{pose_name}"
                 control_path = f"{pose_path}|{control_name}"
+                sub_name = (
+                    f"{prefix}AdvPy_{digit.value}{index}FKSub_{suffix}"
+                    if build_options.sub_controllers else None)
                 controls.append(BodyHandFkControlSpec(
                     side=side,
                     driven_joint=state.path,
@@ -313,6 +330,12 @@ def plan_body_hand_fk_controls(
                     world_axes=state.world_axes,
                     radius=float(radius) * radius_factors[index - 1],
                     control_parent_path=pose_path,
+                    sub_control_path=(
+                        f"{control_path}|{sub_name}" if sub_name else None),
+                    sub_control_name=sub_name,
+                    extra_path=extra_path,
+                    extra_name=extra_name,
+                    extra_curve=build_options.extra_controllers,
                 ))
                 parent_path = control_path
     return BodyHandFkControlPlan(tuple(roots), tuple(controls))
@@ -400,7 +423,7 @@ def plan_body_hand_pose_controls(
                 layers.append(BodyHandPoseLayerSpec(
                     path=control.control_parent_path,
                     name=control.control_parent_path.rsplit("|", 1)[-1],
-                    parent_path=control.offset_path,
+                    parent_path=control.extra_path or control.offset_path,
                 ))
                 curls.append(BodyHandCurlSpec(
                     side=side,
