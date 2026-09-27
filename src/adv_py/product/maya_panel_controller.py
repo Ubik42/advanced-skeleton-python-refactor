@@ -741,6 +741,30 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)
         return ExtendSoftModController(host).apply(control, mesh)
 
+    def custom_cluster_paint(self, namespace: str, control: str):
+        from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
+        from adv_py.application.custom_controller import PaintClusterControlWeights
+
+        host = MayaCustomControllerHost(
+            namespace=None if namespace == ":" else namespace)
+        return PaintClusterControlWeights(host).apply(control)
+
+    def custom_cluster_mirror(self, namespace: str, control: str):
+        from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
+        from adv_py.application.custom_controller import MirrorClusterControlWeights
+
+        host = MayaCustomControllerHost(
+            namespace=None if namespace == ":" else namespace)
+        return MirrorClusterControlWeights(host).apply(control)
+
+    def custom_control_delete(self, namespace: str, control: str):
+        from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
+        from adv_py.application.custom_controller import DeleteCustomController
+
+        host = MayaCustomControllerHost(
+            namespace=None if namespace == ":" else namespace)
+        return DeleteCustomController(host).apply(control)
+
     def skin_bind(self, namespace: str, mesh: str,
                   influences: tuple[str, ...], skin: str, maximum: int, *,
                   maintain_maximum: bool = True) -> int:

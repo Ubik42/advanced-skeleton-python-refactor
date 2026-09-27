@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+import re
 
 from .custom_controller import WeightedVertex
 
@@ -38,3 +39,13 @@ def cluster_weights_from_probe(probe: SoftModProbe) -> ClusterWeightTransfer:
     if strongest.weight <= 0:
         raise ValueError("SoftMod 位移探测未产生 Cluster 权重")
     return ClusterWeightTransfer(tuple(weights), strongest.index)
+
+
+def paired_cluster_control_name(control_name: str) -> tuple[str, str]:
+    """Return the opposite control name and source side for an L/R control."""
+    match = re.fullmatch(r"(.+)_([LR])Control", control_name)
+    if not match:
+        raise ValueError("Cluster 镜像要求控制器名称以 _LControl 或 _RControl 结尾")
+    stem, side = match.groups()
+    opposite = "L" if side == "R" else "R"
+    return stem + "_" + opposite + "Control", side

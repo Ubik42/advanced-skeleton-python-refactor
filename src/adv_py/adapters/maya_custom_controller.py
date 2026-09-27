@@ -4,7 +4,9 @@ from __future__ import annotations
 from dataclasses import replace
 
 from adv_py.application.custom_controller import CustomControllerState
-from adv_py.core.character_registry import CharacterChannel
+from adv_py.core.character_registry import (
+    REGISTRY_NAME, CharacterChannel, encode_registration,
+)
 from adv_py.core.custom_controller import (
     CustomControlKind, CustomControllerPlan, DeformJointCandidate,
     SoftModRegion, WeightedVertex,
@@ -49,7 +51,9 @@ class MayaCustomControllerHost(MayaFaceHost):
         history = cmds.listHistory(mesh, pruneDagObjects=True) or []
         disabled = {}
         original_y = float(cmds.getAttr(handle + ".translateY"))
+        source_state = int(cmds.getAttr(source + ".nodeState"))
         try:
+            cmds.setAttr(source + ".nodeState", 0)
             for node in history:
                 if node == source or not cmds.objExists(node + ".nodeState"):
                     continue
@@ -64,6 +68,7 @@ class MayaCustomControllerHost(MayaFaceHost):
             return cluster_weights_from_probe(SoftModProbe(rest, moved))
         finally:
             cmds.setAttr(handle + ".translateY", original_y)
+            cmds.setAttr(source + ".nodeState", source_state)
             for node, state in disabled.items():
                 cmds.setAttr(node + ".nodeState", state)
 
@@ -473,6 +478,10 @@ class MayaCustomControllerHost(MayaFaceHost):
         cmds.setAttr(joint + ".segmentScaleCompensate", False)
         cmds.addAttr(joint, longName="skinControlJoint",
                      attributeType="bool", defaultValue=True)
+        cmds.addAttr(joint, longName="advPyAuxiliaryInfluenceKind",
+                     dataType="string")
+        cmds.setAttr(joint + ".advPyAuxiliaryInfluenceKind",
+                     "custom-skin-v1", type="string", lock=True)
         system = self._custom_system()
         attach = cmds.createNode("transform", name=self.scene_address(
             plan.control_name + "Attach"), parent=system)
@@ -760,3 +769,183 @@ class MayaCustomControllerHost(MayaFaceHost):
             cmds.softMod(deformer, edit=True, geometry=mesh)
         else:
             cmds.cluster(deformer, edit=True, geometry=mesh)
+
+    def open_cluster_weight_paint(self, deformer: str) -> None:
+        from maya import cmds, mel
+
+        cluster = self._unique(deformer, "cluster")
+        sets = cmds.listConnections(cluster + ".message",
+                                    source=False, destination=True,
+                                    type="objectSet") or []
+        if len(sets) != 1:
+            raise ValueError("Cluster 缺少唯一变形器集合")
+        cmds.select(sets[0], replace=True)
+        mel.eval('artAttrToolScript 4 "cluster";')
+        mel.eval('artSetToolAndSelectAttr("artAttrCtx", '
+                 '"cluster.%s.weights");' % cluster)
+        mel.eval("toolPropertyWindow;")
+
+    def resolve_mirror_cluster_control(self, name: str) -> str:
+        return self._unique(name, "transform")
+
+    def mirror_cluster_weights(self, source: str, target: str,
+                               mesh: str, side: str) -> None:
+        from maya import cmds
+
+        self._require_transaction()
+        source = self._unique(source, "cluster")
+        target = self._unique(target, "cluster")
+        mesh = self._mesh(mesh)
+        if (side not in ("L", "R") or source == target
+                or mesh not in self._cluster_meshes(source)
+                or mesh not in self._cluster_meshes(target)):
+            raise ValueError("Cluster 镜像源、目标或侧别无效")
+        shape = (cmds.listRelatives(mesh, shapes=True,
+                                    noIntermediate=True, fullPath=True,
+                                    type="mesh") or [None])[0]
+        count = int(cmds.polyEvaluate(mesh, vertex=True))
+        samples = []
+        for index in range(count):
+            vertex = "%s.vtx[%d]" % (mesh, index)
+            values = cmds.percent(source, vertex, query=True, value=True) or []
+            weight = float(values[0]) if values else 0.0
+            if weight <= 0:
+                continue
+            position = cmds.xform(vertex, query=True,
+                                  worldSpace=True, translation=True)
+            if ((side == "R" and position[0] > -0.001)
+                    or (side == "L" and position[0] < 0.001)):
+                continue
+            samples.append((weight, position))
+        if not samples:
+            raise ValueError("源侧 Cluster 没有可镜像的顶点权重")
+        sampler = cmds.createNode("closestPointOnMesh")
+        try:
+            cmds.connectAttr(shape + ".outMesh", sampler + ".inMesh")
+            cmds.connectAttr(shape + ".worldMatrix[0]",
+                             sampler + ".inputMatrix")
+            mapped = {}
+            for weight, position in samples:
+                cmds.setAttr(sampler + ".inPosition", -position[0],
+                             position[1], position[2], type="double3")
+                index = int(cmds.getAttr(sampler + ".closestVertexIndex"))
+                mapped[index] = max(weight, mapped.get(index, 0.0))
+            self._transaction_changed = True
+            cmds.percent(target, mesh, value=0.0)
+            for index, weight in mapped.items():
+                cmds.percent(target, "%s.vtx[%d]" % (mesh, index),
+                             value=weight)
+        finally:
+            cmds.delete(sampler)
+
+    def custom_control_exists(self, control: str) -> bool:
+        from maya import cmds
+
+        return bool(cmds.objExists(control))
+
+    def preflight_delete_custom_control(self,
+                                        state: CustomControllerState) -> None:
+        from maya import cmds
+
+        nodes = [state.control, state.offset, state.parent_joint]
+        if state.base_control:
+            nodes.append(state.base_control)
+        if state.joint:
+            nodes.append(state.joint)
+        if state.deformer:
+            nodes.append(state.deformer)
+        for node in nodes:
+            if not cmds.objExists(node) or cmds.referenceQuery(
+                    node, isNodeReferenced=True):
+                raise ValueError("自定义控制器包含缺失或引用节点：" + node)
+        if state.kind is CustomControlKind.SKIN:
+            for mesh in state.influenced_meshes:
+                if cmds.referenceQuery(mesh, isNodeReferenced=True):
+                    raise ValueError("Skin Control 影响网格须为本地可写节点")
+
+    def delete_custom_control(self, state: CustomControllerState) -> None:
+        from maya import cmds
+
+        self._require_transaction()
+        self.preflight_delete_custom_control(state)
+        self._transaction_changed = True
+        attach = (cmds.listRelatives(state.offset, parent=True,
+                                    fullPath=True) or [None])[0]
+        if not attach:
+            raise ValueError("自定义控制器缺少附着层")
+        before = self.read_character_registration()
+        local = (self._cmds.identity.to_local if self.namespace is not None
+                 else lambda path: path)
+        attach_local = local(attach)
+        removed = {node.path for node in before.nodes
+                   if node.path == attach_local
+                   or node.path.startswith(attach_local + "|")}
+        if state.joint:
+            removed.add(local(state.joint))
+        after = replace(before,
+                        nodes=tuple(node for node in before.nodes
+                                    if node.path not in removed),
+                        channels=tuple(channel for channel in before.channels
+                                       if channel.node not in removed))
+        if len(after.nodes) == len(before.nodes):
+            raise ValueError("自定义控制器不在角色登记中")
+        self._validate_character_registration(after)
+        registry = self.scene_address(REGISTRY_NAME)
+        document = registry + ".advPyRegistryDocument"
+        members = registry + ".members"
+        cmds.setAttr(document, lock=False)
+        cmds.setAttr(document, encode_registration(after), type="string")
+        cmds.setAttr(document, lock=True)
+        cmds.setAttr(members, lock=False)
+        for index in cmds.getAttr(members, multiIndices=True) or []:
+            destination = members + "[%d]" % index
+            for source in cmds.listConnections(
+                    destination, source=True, destination=False,
+                    plugs=True) or []:
+                cmds.disconnectAttr(source, destination)
+        for index, member in enumerate(after.nodes):
+            cmds.connectAttr(self.scene_address(member.path) + ".message",
+                             members + "[%d]" % index)
+        cmds.setAttr(members, lock=True)
+        if state.kind is CustomControlKind.SKIN:
+            joint = self._unique(state.joint, "joint")
+            for skin in cmds.ls(type="skinCluster") or []:
+                if not any(mesh in self._skin_meshes(skin)
+                           for mesh in state.influenced_meshes):
+                    continue
+                indices = cmds.getAttr(skin + ".matrix",
+                                       multiIndices=True) or []
+                linked = [item for index in indices for item in
+                          (cmds.listConnections(
+                              skin + ".matrix[%d]" % index,
+                              source=True, destination=False,
+                              type="joint") or [])]
+                if joint not in [path for item in linked
+                                 for path in (cmds.ls(item, long=True,
+                                                      type="joint") or [])]:
+                    continue
+                if len(indices) == 1:
+                    cmds.delete(skin)
+                else:
+                    cmds.skinCluster(skin, edit=True, removeInfluence=joint)
+            cmds.delete(joint)
+        else:
+            deformer = self._unique(state.deformer,
+                                    "softMod" if state.kind is
+                                    CustomControlKind.SOFT_MOD else "cluster")
+            cmds.delete(deformer)
+            if state.kind is CustomControlKind.CLUSTER:
+                handle = self.scene_address(
+                    state.control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                    + "Handle")
+                if cmds.objExists(handle):
+                    cmds.delete(handle)
+            else:
+                prefix = state.control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                for suffix in ("SoftModMultMatrix", "RadiusFactor",
+                               "RadiusScale"):
+                    helper = self.scene_address(prefix + suffix)
+                    if cmds.objExists(helper):
+                        cmds.delete(helper)
+        cmds.delete(attach)
+        self.read_character_registration()

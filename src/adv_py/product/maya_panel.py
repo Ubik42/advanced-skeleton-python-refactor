@@ -514,14 +514,24 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("指定父关节", self.custom_control_parent),
                 ("已有控制器", self.custom_control_existing),
                 ("新增网格", self.custom_control_mesh)])
-            form.addRow(self._button("创建 SoftMod Control",
-                                     self._create_custom_softmod))
-            form.addRow(self._button("创建 Cluster Control",
-                                     self._create_custom_cluster))
-            form.addRow(self._button("创建 Skin Control",
+            form.addRow(QtWidgets.QLabel("First create a SoftMod, then:"))
+            form.addRow(self._button("Create Skin Control",
                                      self._create_custom_skin))
+            form.addRow(self._button("Create Cluster Control",
+                                     self._create_custom_cluster))
+            form.addRow(self._button("Create SoftMod Control",
+                                     self._create_custom_softmod))
+            form.addRow(QtWidgets.QLabel("Edit Cluster Control:"))
+            form.addRow(self._button("Paint weights for selected Control",
+                                     self._paint_custom_cluster))
+            form.addRow(self._button("Mirror weights for selected Control",
+                                     self._mirror_custom_cluster))
+            form.addRow(QtWidgets.QLabel("Edit:"))
             form.addRow(self._button("Add influenced object",
                                      self._add_custom_softmod_mesh))
+            form.addRow(QtWidgets.QLabel("Delete:"))
+            form.addRow(self._button("Delete selected control",
+                                     self._delete_custom_control))
             stack.addWidget(group)
 
             self.control_curve_targets = QtWidgets.QPlainTextEdit()
@@ -1662,6 +1672,22 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(), self.custom_control_existing.text().strip(),
                 self.custom_control_mesh.text().strip())
             return f"当前影响 {len(state.influenced_meshes)} 件网格"
+
+        def _paint_custom_cluster(self):
+            state = self.controller.custom_cluster_paint(
+                self._namespace(), self.custom_control_existing.text().strip())
+            return f"已打开 Cluster 权重绘制：{state.control}"
+
+        def _mirror_custom_cluster(self):
+            state = self.controller.custom_cluster_mirror(
+                self._namespace(), self.custom_control_existing.text().strip())
+            return f"已镜像 Cluster 权重：{state.control}"
+
+        def _delete_custom_control(self):
+            state = self.controller.custom_control_delete(
+                self._namespace(), self.custom_control_existing.text().strip())
+            self.custom_control_existing.clear()
+            return f"已删除自定义控制器：{state.control}"
 
         def _bind_skin(self):
             influences = tuple(line.strip() for line in

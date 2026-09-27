@@ -9,6 +9,7 @@ from adv_py.core.custom_controller import (
     CustomControlKind, CustomControllerPlan, DeformJointCandidate,
     SoftModRegion, plan_custom_controller,
 )
+from adv_py.core.custom_control_weights import paired_cluster_control_name
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,4 +151,75 @@ class ExtendSoftModController:
                     or len(state.influenced_meshes) != len(plan.expected_meshes)
                     or set(state.influenced_meshes) != set(plan.expected_meshes)):
                 raise RuntimeError("自定义控制器影响对象写后复检失败")
+        return state
+
+
+class ClusterWeightToolHost(Protocol):
+    def capture_custom_control(self, control: str) -> CustomControllerState: ...
+    def open_cluster_weight_paint(self, deformer: str) -> None: ...
+
+
+class PaintClusterControlWeights:
+    def __init__(self, host: ClusterWeightToolHost):
+        self._host = host
+
+    def apply(self, control: str) -> CustomControllerState:
+        state = self._host.capture_custom_control(control)
+        if state.kind is not CustomControlKind.CLUSTER or not state.deformer:
+            raise ValueError("绘制权重要求选中 Cluster Control")
+        self._host.open_cluster_weight_paint(state.deformer)
+        return state
+
+
+class MirrorClusterWeightHost(Protocol):
+    def capture_custom_control(self, control: str) -> CustomControllerState: ...
+    def resolve_mirror_cluster_control(self, name: str) -> str: ...
+    def transaction(self, label: str) -> AbstractContextManager[None]: ...
+    def mirror_cluster_weights(self, source: str, target: str,
+                               mesh: str, side: str) -> None: ...
+
+
+class MirrorClusterControlWeights:
+    def __init__(self, host: MirrorClusterWeightHost):
+        self._host = host
+
+    def apply(self, control: str) -> CustomControllerState:
+        source = self._host.capture_custom_control(control)
+        if source.kind is not CustomControlKind.CLUSTER or not source.deformer:
+            raise ValueError("镜像权重要求选中 Cluster Control")
+        name = source.control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        opposite, side = paired_cluster_control_name(name)
+        target_path = self._host.resolve_mirror_cluster_control(opposite)
+        target = self._host.capture_custom_control(target_path)
+        if (target.kind is not CustomControlKind.CLUSTER or not target.deformer
+                or len(source.influenced_meshes) != 1
+                or source.influenced_meshes != target.influenced_meshes):
+            raise ValueError("镜像要求左右 Cluster Control 影响同一件网格")
+        with self._host.transaction("镜像 Cluster 控制权重"):
+            self._host.mirror_cluster_weights(
+                source.deformer, target.deformer,
+                source.influenced_meshes[0], side)
+        return self._host.capture_custom_control(target_path)
+
+
+class DeleteCustomControllerHost(Protocol):
+    def capture_custom_control(self, control: str) -> CustomControllerState: ...
+    def preflight_delete_custom_control(self,
+                                        state: CustomControllerState) -> None: ...
+    def transaction(self, label: str) -> AbstractContextManager[None]: ...
+    def delete_custom_control(self, state: CustomControllerState) -> None: ...
+    def custom_control_exists(self, control: str) -> bool: ...
+
+
+class DeleteCustomController:
+    def __init__(self, host: DeleteCustomControllerHost):
+        self._host = host
+
+    def apply(self, control: str) -> CustomControllerState:
+        state = self._host.capture_custom_control(control)
+        self._host.preflight_delete_custom_control(state)
+        with self._host.transaction("删除自定义控制器"):
+            self._host.delete_custom_control(state)
+            if self._host.custom_control_exists(state.control):
+                raise RuntimeError("自定义控制器删除后复检失败")
         return state

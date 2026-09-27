@@ -382,7 +382,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                 in {"axial-part-v1", "finger-mid-v1", "limb-part-v1",
                     "root-volume-v1", "chest-volume-v1", "sdk-volume-v1",
                     "volume-half-parent-v1", "original-local-angle-v1",
-                    "face-eye-v1"})]
+                    "face-eye-v1", "custom-skin-v1"})]
         states: list[BodyJointState] = []
         for path in paths:
             parents = self._cmds.listRelatives(path, parent=True, fullPath=True) or []
