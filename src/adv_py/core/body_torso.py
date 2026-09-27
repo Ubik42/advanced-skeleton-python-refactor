@@ -51,10 +51,28 @@ class BodySpaceAttachmentState:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyLegLockSpace:
+    path: str
+    matrix_name: str
+    decompose_name: str
+    root_fkx_path: str
+    compensation_source: str | None = None
+
+    @property
+    def compensation_input(self) -> str:
+        return self.matrix_name + ".matrixIn[0]"
+
+    @property
+    def source_input(self) -> str:
+        return self.matrix_name + ".matrixIn[1]"
+
+
+@dataclass(frozen=True, slots=True)
 class BodyTorsoPlan:
     controls: BodyLimbFkControlPlan
     pelvis_translation: BodySpaceAttachment
     attachments: tuple[BodySpaceAttachment, ...]
+    leg_lock: BodyLegLockSpace
     spine: BodySpinePlan | None = None
     head_aim: HeadAimPlan | None = None
     spline: BodySplinePlan | None = None
@@ -75,7 +93,8 @@ class BodyTorsoPlan:
                          control.control_name + "Shape", control.constraint_name,
                          *((control.source_override_path.rsplit("|", 1)[-1],)
                            if control.source_override_path is not None else ()))
-        ) + tuple(item.name for item in (self.pelvis_translation,) + self.attachments) + (self.spine.node_names if self.spine else ()) + (self.head_aim.node_names if self.head_aim else ()) + (self.spline.node_names if self.spline else ())
+        ) + (self.leg_lock.path.rsplit("|", 1)[-1],
+             self.leg_lock.matrix_name, self.leg_lock.decompose_name) + tuple(item.name for item in (self.pelvis_translation,) + self.attachments) + (self.spine.node_names if self.spine else ()) + (self.head_aim.node_names if self.head_aim else ()) + (self.spline.node_names if self.spline else ())
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +102,11 @@ class BodyTorsoSnapshot:
     controls: BodyLimbFkControlSnapshot
     attachments: tuple[BodySpaceAttachmentState, ...]
     root_fkx_parent_path: str | None = None
+    leg_lock_parent_path: str | None = None
+    leg_lock_source: str | None = None
+    leg_lock_compensation_source: str | None = None
+    leg_lock_decompose_source: str | None = None
+    leg_lock_channel_sources: tuple[str | None, ...] = ()
 
 
 def plan_body_torso(
@@ -121,12 +145,20 @@ def plan_body_torso(
         by_joint[name] = spec
         controls.append(spec)
     pelvis = BodySpaceAttachment("AdvPy_TorsoPelvisPoint", controls[0].control_path, body.root, "pointConstraint")
+    leg_lock = BodyLegLockSpace(
+        f"{root_path}|AdvPy_LegLockConstrained",
+        "AdvPy_LegLockMM", "AdvPy_LegLockDM",
+        controls[0].source_override_path,
+    )
     attachments = []
     for label, module, start, anchor in (("Arm", arm, "Shoulder", "Scapula"), ("Leg", leg, "Hip", "Root")):
         for index,suffix in enumerate(("R", "L")):
-            source = joints[description.scapulae[index]].path if anchor == "Scapula" else body.root
+            source = (joints[description.scapulae[index]].path
+                      if anchor == "Scapula" else leg_lock.path)
             start_joint = joints.get(f"{start}_{suffix}")
-            if start_joint is None or start_joint.parent_path != source:
+            expected_parent = (joints[description.scapulae[index]].path
+                               if anchor == "Scapula" else body.root)
+            if start_joint is None or start_joint.parent_path != expected_parent:
                 raise FitSkeletonValidationError(f"{label} 起点未连接到预期躯干关节")
             roots = tuple(spec for spec in module.mechanisms.joints if spec.source_joint == start_joint.path)
             offsets = tuple(spec for spec in module.fk_controls.controls if spec.driven_joint in {r.path for r in roots})
@@ -143,7 +175,7 @@ def plan_body_torso(
             attachments.append(BodySpaceAttachment(
                 f"AdvPy_Torso{label}StretchOrigin_{suffix}", source, stretches[0].start_path, "parentConstraint", True,
             ))
-    plan = BodyTorsoPlan(BodyLimbFkControlPlan(root_path, root_name, tuple(controls)), pelvis, tuple(attachments))
+    plan = BodyTorsoPlan(BodyLimbFkControlPlan(root_path, root_name, tuple(controls)), pelvis, tuple(attachments), leg_lock)
     if spine_ik:
         plan=with_spine_ik(body,plan) if description==BodyAxialDescription() else with_spline_ik(body,plan,description)
     return with_head_aim(plan,body,description,up_axis) if head_aim else plan
@@ -153,6 +185,16 @@ def audit_body_torso(plan: BodyTorsoPlan, snapshot: BodyTorsoSnapshot) -> tuple[
     issues = [item.message for item in audit_body_limb_fk_controls(plan.controls, snapshot.controls, limb_label="Torso")]
     if snapshot.root_fkx_parent_path != plan.root_fkx_path.rsplit("|", 1)[0]:
         issues.append("Root FKX 接收层父链不一致")
+    if (snapshot.leg_lock_parent_path != plan.controls.root_path
+            or snapshot.leg_lock_source != plan.leg_lock.root_fkx_path + ".worldMatrix[0]"
+            or snapshot.leg_lock_compensation_source
+            != plan.leg_lock.compensation_source
+            or snapshot.leg_lock_decompose_source
+            != plan.leg_lock.matrix_name + ".matrixSum"
+            or snapshot.leg_lock_channel_sources != tuple(
+                plan.leg_lock.decompose_name + ".output" + channel
+                for channel in ("Translate", "Rotate", "Scale", "Shear"))):
+        issues.append("腿部锁定空间矩阵接线不一致")
     specs = (plan.pelvis_translation,) + plan.attachments
     if tuple(item.name for item in snapshot.attachments) != tuple(spec.name for spec in specs):
         issues.append("Torso 空间连接集合不一致")

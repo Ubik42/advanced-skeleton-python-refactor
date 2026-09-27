@@ -53,6 +53,27 @@ class MayaBodyTorsoMixin:
                     locked += [f"translate{axis}" for axis in "XYZ"]
                 for attr in locked:
                     self._cmds.setAttr(f"{spec.control_path}.{attr}", lock=True, keyable=False)
+            lock = plan.leg_lock
+            lock_path = self._cmds.createNode(
+                "transform", name=lock.path.rsplit("|", 1)[-1],
+                parent=plan.controls.root_path, skipSelect=True)
+            lock_path = (self._cmds.ls(lock_path, long=True)
+                         or [lock_path])[0]
+            if lock_path != lock.path:
+                raise RuntimeError("腿部锁定空间路径漂移")
+            self._cmds.createNode("multMatrix", name=lock.matrix_name,
+                                  skipSelect=True)
+            self._cmds.createNode("decomposeMatrix", name=lock.decompose_name,
+                                  skipSelect=True)
+            self._cmds.connectAttr(
+                lock.root_fkx_path + ".worldMatrix[0]", lock.source_input)
+            self._cmds.connectAttr(
+                lock.matrix_name + ".matrixSum",
+                lock.decompose_name + ".inputMatrix")
+            for channel in ("Translate", "Rotate", "Scale", "Shear"):
+                self._cmds.connectAttr(
+                    lock.decompose_name + ".output" + channel,
+                    lock.path + "." + channel.lower())
             if plan.spine:
                 self.create_body_spine(plan.spine)
             if plan.spline:
@@ -105,8 +126,25 @@ class MayaBodyTorsoMixin:
             raise FitSkeletonValidationError("Root FKX 接收层缺失或不唯一")
         fkx_parent = self._cmds.listRelatives(
             fkx[0], parent=True, fullPath=True) or []
+        lock = plan.leg_lock
+        lock_nodes = self._cmds.ls(lock.path, long=True,
+                                   type="transform") or []
+        if lock_nodes != [lock.path]:
+            raise FitSkeletonValidationError("腿部锁定空间缺失或不唯一")
+        lock_parent = self._cmds.listRelatives(
+            lock.path, parent=True, fullPath=True) or []
+        def source(plug):
+            inputs = self._cmds.listConnections(
+                plug, source=True, destination=False, plugs=True) or []
+            return self._canonical_plug(inputs[0]) if len(inputs) == 1 else None
         return BodyTorsoSnapshot(
             self._capture_body_limb_fk_controls(plan.controls, "Torso"),
             tuple(states),
             fkx_parent[0] if fkx_parent else None,
+            lock_parent[0] if lock_parent else None,
+            source(lock.source_input),
+            source(lock.compensation_input),
+            source(lock.decompose_name + ".inputMatrix"),
+            tuple(source(lock.path + "." + channel)
+                  for channel in ("translate", "rotate", "scale", "shear")),
         )
