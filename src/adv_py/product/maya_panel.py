@@ -1029,9 +1029,9 @@ def create_panel(controller: MayaPanelController | None = None):
                 "01 · 导出迁移后的完整角色", [("输出文件", maya_output)])
             maya_form.addRow(self._button("导出独立 Maya 场景",
                                            self._publish_maya_scene, primary=True))
-            stack.addWidget(maya_group)
-            stack.addWidget(QtWidgets.QLabel(
+            maya_form.addRow(QtWidgets.QLabel(
                 "仅适用于从原版引用迁移的本地角色；导出网格、Skin、控制器与动画。"))
+            stack.addWidget(maya_group)
             output, self.fbx_output = self._file_field("发布 FBX", save=True,
                                                        filter_text="FBX 文件 (*.fbx)")
             frames = QtWidgets.QWidget()
@@ -1073,9 +1073,9 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("通道容差", self.fbx_value_tolerance),
                 ("矩阵容差", self.fbx_matrix_tolerance)])
             form.addRow(self._button("发布 FBX", self._publish_fbx, primary=True))
-            stack.addWidget(group)
-            stack.addWidget(QtWidgets.QLabel(
+            form.addRow(QtWidgets.QLabel(
                 "从当前角色构建 Root Motion 与独立导出骨架；目标文件已存在时拒绝覆盖。"))
+            stack.addWidget(group)
             stack.addStretch(1)
             return page
 
