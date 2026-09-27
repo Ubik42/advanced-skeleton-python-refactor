@@ -10,6 +10,7 @@ from adv_py.core.character_registry import (
     encode_registration,
 )
 from adv_py.core.fit_inbetween_hip_swing import HipSwingReversePlan
+from adv_py.core.fit_hip_swing_no_parts import HipSwingNoPartsPlan
 
 from .fit_inbetween_limb_segment import InbetweenLimbSegmentResult
 from .fit_inbetween_fk_segment import InbetweenFkSegmentResult
@@ -38,9 +39,9 @@ class RegisterInbetweenControls:
         self, before: CharacterRegistration,
         segments: tuple[
             InbetweenLimbSegmentResult | InbetweenFkSegmentResult, ...],
-        *, hip_swing: HipSwingReversePlan | None = None,
+        *, hip_swing: HipSwingReversePlan | HipSwingNoPartsPlan | None = None,
     ) -> CharacterRegistration:
-        if not segments:
+        if not segments and hip_swing is None:
             return before
         if self._host.read_character_registration() != before:
             raise ValueError("Inbetween 登记前角色文档已变化")
