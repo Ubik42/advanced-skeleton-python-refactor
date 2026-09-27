@@ -394,6 +394,8 @@ def main() -> None:
         source_skin = next(item for item in cmds.listHistory(head)
                            if cmds.nodeType(item) == "skinCluster")
         original_weights = MayaDenseSkinHost().capture_dense_skin(source_skin)
+        original_soft_edges = {item for item in cmds.listHistory(head)
+                               if cmds.nodeType(item) == "polySoftEdge"}
         extra_weights = (MayaDenseSkinHost().capture_dense_skin(extra_skin)
                          if complex_scene else None)
         fault_host = MayaFaceEyeLidRigHost()
@@ -441,6 +443,11 @@ def main() -> None:
                 assert abs(cmds.getAttr("AdvPy_Eye_" + side
                     + ".translateZ") - before_depth) < 1e-6
         lid_rig = controller.face_build_eye_lids(":")
+        repaired_normals = lid_rig["normal_repair"]["status"] == "repaired"
+        if repaired_normals:
+            assert len({item for item in cmds.listHistory(head)
+                        if cmds.nodeType(item) == "polySoftEdge"}
+                       - original_soft_edges) == 2
         if complex_scene:
             assert lid_rig["skin"] == source_skin
             assert MayaDenseSkinHost().capture_dense_skin(extra_skin) == extra_weights
@@ -565,6 +572,9 @@ def main() -> None:
                 assert aperture_rim[side.value]["weighted_count"] > 0
         cmds.undo()
         assert not cmds.objExists("FaceMotionSystem")
+        assert {item for item in cmds.listHistory(head)
+                if cmds.nodeType(item) == "polySoftEdge"} \
+            == original_soft_edges
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
             correction = lid_rig["eye_depth_alignment"][side.value][
@@ -581,6 +591,10 @@ def main() -> None:
                                     influence=True) or []) == old_width
         cmds.redo()
         assert cmds.objExists("FaceMotionSystem")
+        if repaired_normals:
+            assert len({item for item in cmds.listHistory(head)
+                        if cmds.nodeType(item) == "polySoftEdge"}
+                       - original_soft_edges) == 2
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
             assert abs(cmds.getAttr("AdvPy_Eye" + suffix + ".translateZ")
@@ -767,6 +781,10 @@ def main() -> None:
         cmds.file(save=True, type="mayaBinary", force=True)
         cmds.file(str(scene), open=True, force=True,
                   executeScriptNodes=False)
+        if repaired_normals:
+            assert len({item for item in cmds.listHistory(head)
+                        if cmds.nodeType(item) == "polySoftEdge"}
+                       - original_soft_edges) == 2
         if complex_scene:
             assert MayaDenseSkinHost().capture_dense_skin(extra_skin) == extra_weights
             assert cmds.isConnected(external_driver + ".outputX",
@@ -821,6 +839,7 @@ def main() -> None:
                   "stationary_aperture_sides": lid_rig[
                       "stationary_aperture_sides"],
                   "eye_depth_alignment": lid_rig["eye_depth_alignment"],
+                  "normal_repair": lid_rig["normal_repair"],
                   "aperture_rim": aperture_rim,
                   "reopened_animation_delta_cm": round(key_delta, 6),
                   "complex_skin": (complex_scene and {

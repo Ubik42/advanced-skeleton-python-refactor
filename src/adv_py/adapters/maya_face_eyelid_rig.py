@@ -41,6 +41,110 @@ _STATIONARY_MID_GAZE_FULL_ANGLE_DEG = 30.
 
 
 class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
+    def _repair_eye_lid_normals(self, mesh: str, pre: MayaFaceBuildHost,
+                                eye_radii: dict[FaceSide, float],
+                                mobile_inners: dict[FaceSide, bool],
+                                eye_controls: dict[FaceSide, str]) -> dict:
+        """Keep locked import normals from shading across a moving lid fold."""
+        from maya.api import OpenMaya as om
+
+        c = self._cmds
+        active = [side for side in FaceSide if mobile_inners[side]]
+        if not active:
+            return {"status": "stationary_aperture"}
+        shape = (c.listRelatives(mesh, shapes=True, noIntermediate=True,
+                                 fullPath=True, type="mesh") or [None])[0]
+        if shape is None:
+            raise FitSkeletonValidationError("Face 网格形状缺失")
+        selected = om.MSelectionList()
+        selected.add(shape)
+        dag = selected.getDagPath(0)
+        fn = om.MFnMesh(dag)
+        polygon_it = om.MItMeshPolygon(dag)
+        area_faces = set()
+        for side in active:
+            holder, _ = pre.read_eye_lid_area(side)
+            for item in (c.getAttr(holder + ".selection") or "").split():
+                match = _COMPONENT.search(item)
+                if match and match.group(1) == "f":
+                    area_faces.add(int(match.group(2)))
+        if not area_faces:
+            return {"status": "no_area"}
+        vertices, area_edges = set(), set()
+        for face in area_faces:
+            polygon_it.setIndex(face)
+            vertices.update(fn.getPolygonVertices(face))
+            area_edges.update(polygon_it.getEdges())
+        aims = {}
+        original = {}
+        for side in active:
+            suffix = "R" if side is FaceSide.RIGHT else "L"
+            matches = c.ls("AdvPy_EyeAim_" + suffix,
+                           long=True, type="transform") or []
+            if len(matches) != 1:
+                return {"status": "aim_unavailable"}
+            aims[side] = matches[0] + ".translateY"
+            original[side] = c.getAttr(aims[side])
+        blinks = {side: eye_controls[side] + ".blink" for side in active}
+        blink_values = {side: c.getAttr(plug) for side, plug in blinks.items()}
+        if any(not c.getAttr(plug, settable=True)
+               for plug in (*aims.values(), *blinks.values())):
+            return {"status": "animated_controls"}
+        edge_it = om.MItMeshEdge(dag)
+
+        def sample(offset: float) -> tuple[int, set[int]]:
+            for side in active:
+                c.setAttr(aims[side], original[side] +
+                          offset * eye_radii[side])
+                c.setAttr(blinks[side], 0.)
+            conflicts = 0
+            for face in area_faces:
+                normal = fn.getPolygonNormal(face, om.MSpace.kWorld)
+                if normal.z <= .05:
+                    continue
+                if any(fn.getFaceVertexNormal(face, vertex,
+                       om.MSpace.kWorld).z < -.05
+                       for vertex in fn.getPolygonVertices(face)):
+                    conflicts += 1
+            creases = set()
+            while not edge_it.isDone():
+                faces = edge_it.getConnectedFaces()
+                if (len(faces) == 2 and
+                        any(face in area_faces for face in faces)):
+                    first, second = (fn.getPolygonNormal(face,
+                                      om.MSpace.kWorld).z for face in faces)
+                    if first * second < 0.:
+                        creases.add(edge_it.index())
+                edge_it.next()
+            edge_it.reset()
+            return conflicts, creases
+
+        try:
+            neutral_count, neutral_edges = sample(0.)
+            down_count, down_edges = sample(-2.)
+        finally:
+            for side in active:
+                c.setAttr(aims[side], original[side])
+                c.setAttr(blinks[side], blink_values[side])
+        if down_count <= neutral_count + 2:
+            return {"status": "preserved", "neutral_conflicts": neutral_count,
+                    "down_conflicts": down_count}
+        c.polyNormalPerVertex([f"{mesh}.vtx[{vertex}]"
+                               for vertex in sorted(vertices)],
+                              unFreezeNormal=True)
+        c.polySoftEdge([f"{mesh}.e[{edge}]"
+                        for edge in sorted(area_edges)],
+                       angle=90, constructionHistory=True)
+        crease_edges = neutral_edges | down_edges
+        if crease_edges:
+            c.polySoftEdge([f"{mesh}.e[{edge}]"
+                            for edge in sorted(crease_edges)],
+                           angle=0, constructionHistory=True)
+        return {"status": "repaired", "neutral_conflicts": neutral_count,
+                "down_conflicts": down_count,
+                "unlocked_vertices": len(vertices),
+                "crease_edges": len(crease_edges)}
+
     def _calibrate_eye_depth(self, mesh: str, eye_mesh: str,
                              eye_joint: str, eye_control: str,
                              eye_radius: float) -> dict[str, float | int | str]:
@@ -1028,6 +1132,8 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                     defaultValue=eye_depth_alignment[side.value]["applied_cm"])
                 c.setAttr(motion + ".advPyEyeDepthCorrection" + suffix,
                           lock=True)
+            normal_repair = self._repair_eye_lid_normals(
+                mesh, pre, eye_radii, mobile_inners, eye_control_names)
             c.addAttr(motion, longName="advPyFaceMesh", dataType="string")
             c.setAttr(motion + ".advPyFaceMesh", mesh, type="string")
             c.select(selected, replace=True) if selected else c.select(clear=True)
@@ -1040,6 +1146,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                     if open_inners[side] and not mobile_inners[side]),
                 "eye_controls": eye_control_names,
                 "eye_depth_alignment": eye_depth_alignment,
+                "normal_repair": normal_repair,
                 "work_curves": work_curves,
                 "area_vertices": {side.value: len(weighted(side))
                                   for side in FaceSide},

@@ -41,3 +41,37 @@ class CharacterIdentityTests(unittest.TestCase):
         with self.assertRaises(CharacterRegistryError):commands.setAttr('partner:Control.rotateX',10.)
         self.assertEqual(len(raw.calls),before)
         self.assertEqual(commands.getAttr('partner:Control.label'),'partner:unchanged-data')
+
+    def test_normal_commands_respect_character_namespace(self):
+        from adv_py.adapters.maya_namespace import MayaCharacterCommands
+
+        class Commands:
+            def __init__(self):
+                self.current = ':'
+                self.calls = []
+            def namespace(self, **kwargs):
+                if kwargs.get('query'):
+                    return False
+                if kwargs.get('exists'):
+                    return True
+                self.current = kwargs['setNamespace']
+            def namespaceInfo(self, **kwargs):
+                return self.current
+            def polyNormalPerVertex(self, *args, **kwargs):
+                self.calls.append(('normal', self.current, args, kwargs))
+            def polySoftEdge(self, *args, **kwargs):
+                self.calls.append(('soft', self.current, args, kwargs))
+
+        raw = Commands()
+        commands = MayaCharacterCommands(raw, 'hero')
+        commands.polyNormalPerVertex(['mesh.vtx[1]'], unFreezeNormal=True)
+        commands.polySoftEdge(['mesh.e[2]'], angle=0,
+                              constructionHistory=True)
+        self.assertEqual(raw.calls[0][1:3],
+                         (':', ([':hero:mesh.vtx[1]'],)))
+        self.assertEqual(raw.calls[1][1:3],
+                         (':hero', ([':hero:mesh.e[2]'],)))
+        self.assertEqual(raw.current, ':')
+        with self.assertRaises(CharacterRegistryError):
+            commands.polyNormalPerVertex(['other:mesh.vtx[1]'],
+                                         unFreezeNormal=True)

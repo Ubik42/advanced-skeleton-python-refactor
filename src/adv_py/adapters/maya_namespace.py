@@ -27,6 +27,8 @@ _CREATE |= {'duplicate'}
 _NODE_ARGS |= {'duplicateCurve'}
 _NODE_RESULTS |= {'duplicateCurve'}
 _CREATE |= {'duplicateCurve'}
+_NODE_ARGS |= {'polyNormalPerVertex', 'polySoftEdge'}
+_CREATE |= {'polySoftEdge'}
 
 
 class MayaCharacterCommands:
