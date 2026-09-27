@@ -561,7 +561,10 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._delete_custom_control))
             stack.addWidget(group)
 
-            group, form = self._group("07 · Squash Controller", [])
+            self.squash_mirror = QtWidgets.QCheckBox("右侧创建时自动镜像左侧")
+            self.squash_mirror.setChecked(True)
+            group, form = self._group("07 · Squash Controller", [
+                ("镜像", self.squash_mirror)])
             form.addRow(QtWidgets.QLabel("选择要影响的网格顶点"))
             form.addRow(self._button("创建 Squash Controller",
                                      self._create_squash_controller))
@@ -1768,8 +1771,10 @@ def create_panel(controller: MayaPanelController | None = None):
             return "已删除通用 Unreal IK 关节"
 
         def _create_squash_controller(self):
-            plan = self.controller.squash_controller_create(self._namespace())
-            return f"已创建 Squash Controller：{plan.control}"
+            plans = self.controller.squash_controller_create(
+                self._namespace(), mirror=self.squash_mirror.isChecked())
+            return "已创建 Squash Controller：" + "、".join(
+                plan.control for plan in plans)
 
         def _delete_squash_controller(self):
             controls = self.controller.squash_controller_delete(

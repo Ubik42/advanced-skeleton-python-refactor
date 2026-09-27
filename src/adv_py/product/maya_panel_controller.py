@@ -820,13 +820,13 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)
         DeleteUnrealJoints(host).apply()
 
-    def squash_controller_create(self, namespace: str):
+    def squash_controller_create(self, namespace: str, *, mirror: bool = True):
         from adv_py.adapters.maya_squash_controller import MayaSquashControllerHost
         from adv_py.application.squash_controller import CreateSquashController
 
         host = MayaSquashControllerHost(
             namespace=None if namespace == ":" else namespace)
-        return CreateSquashController(host).apply()
+        return CreateSquashController(host).apply(mirror=mirror)
 
     def squash_controller_delete(self, namespace: str):
         from maya import cmds

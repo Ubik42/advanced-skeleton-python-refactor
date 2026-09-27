@@ -30,10 +30,16 @@ class SquashPlan:
     mesh: str
     vertices: tuple[str, ...]
     parent_joint: str
+    bounds: tuple[float, float, float, float, float, float]
     center: tuple[float, float, float]
     falloff_radius: float
     axis_sign: int
     one_joint_prop: bool
+
+    @property
+    def mirror_bounds(self) -> tuple[float, float, float, float, float, float]:
+        x_min, y_min, z_min, x_max, y_max, z_max = self.bounds
+        return (-x_max, y_min, z_min, -x_min, y_max, z_max)
 
     @property
     def control(self) -> str:
@@ -96,6 +102,39 @@ def plan_squash_controller(selection: SquashSelection,
     center = tuple((bounds[i] + bounds[i + 3]) / 2.0 for i in range(3))
     side_sign = -1 if selection.side == "_L" else 1
     return SquashPlan(base_name, selection.side, selection.mesh,
-                      selection.vertices, selection.parent_joint,
+                      selection.vertices, selection.parent_joint, bounds,
                       center, radius, side_sign,
                       selection.one_joint_prop)
+
+
+def plan_mirrored_squash_selection(
+        source: SquashPlan, target_mesh: str,
+        target_vertices: tuple[tuple[str, tuple[float, float, float]], ...],
+        target_parent_joint: str) -> SquashSelection:
+    """Match original R→L mirror by an expanded reflected bounding box."""
+    if source.side != "_R":
+        raise ValueError("Squash 自动镜像只从右侧控制器开始")
+    if not target_mesh or not target_parent_joint.endswith("_L"):
+        raise ValueError("Squash 镜像缺少左侧网格或父关节")
+    tolerance = source.falloff_radius / 10.0
+    selected = []
+    for vertex, point in target_vertices:
+        if (not vertex.startswith(target_mesh + ".vtx[")
+                or len(point) != 3 or not all(isfinite(value) for value in point)):
+            raise ValueError("Squash 镜像候选顶点无效")
+    # The source selected vertex positions are represented by its world bounds.
+    # Reflect X and expand all three axes by the original falloff tolerance.
+    bounds = source.mirror_bounds
+    for vertex, point in target_vertices:
+        if all(bounds[axis] - tolerance <= point[axis]
+               <= bounds[axis + 3] + tolerance for axis in range(3)):
+            selected.append((vertex, point))
+    if not selected:
+        raise ValueError("Squash 镜像范围内没有左侧顶点")
+    mirrored_bounds = tuple(
+        (min(point[axis] for _, point in selected) if edge == 0
+         else max(point[axis] for _, point in selected))
+        for edge in (0, 1) for axis in range(3))
+    return SquashSelection(tuple(vertex for vertex, _ in selected),
+                           target_mesh, mirrored_bounds, target_parent_joint,
+                           "_L", source.one_joint_prop, False)

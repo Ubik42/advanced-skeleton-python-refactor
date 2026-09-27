@@ -70,6 +70,46 @@ class MayaSquashControllerHost(MayaCustomControllerHost):
                 return name
         raise ValueError("Squash 自动名称已用尽")
 
+    def capture_squash_mirror_candidates(self, plan: SquashPlan
+            ) -> tuple[str, tuple[tuple[str, tuple[float, float, float]], ...], str]:
+        from maya.api import OpenMaya as om
+
+        c = self._cmds
+        parent_leaf = self._leaf(plan.parent_joint)
+        if not parent_leaf.endswith("_R"):
+            raise ValueError("Squash 右侧父关节名称无效")
+        mirror_parent = self._unique(parent_leaf[:-1] + "L", "joint")
+        center = (-plan.center[0], plan.center[1], plan.center[2])
+        meshes = []
+        for shape in c.ls(type="mesh", noIntermediate=True,
+                          long=True) or []:
+            mesh = (c.listRelatives(shape, parent=True,
+                                    fullPath=True) or [None])[0]
+            if mesh is None:
+                continue
+            if (self.namespace is not None
+                    and not shape.rsplit("|", 1)[-1].startswith(
+                        self.namespace.strip(":") + ":")):
+                continue
+            bounds = c.exactWorldBoundingBox(mesh)
+            distance = sum((center[axis] - min(max(center[axis], bounds[axis]),
+                                                bounds[axis + 3])) ** 2
+                           for axis in range(3))
+            meshes.append((distance, mesh, shape))
+        if not meshes:
+            raise ValueError("Squash 镜像侧没有可用网格")
+        meshes.sort(key=lambda item: (item[0],
+                                      item[1] != plan.mesh, item[1]))
+        _, mesh, shape = meshes[0]
+        selection = om.MSelectionList()
+        selection.add(shape)
+        fn = om.MFnMesh(selection.getDagPath(0))
+        vertices = tuple(("%s.vtx[%d]" % (mesh, index),
+                          (float(point.x), float(point.y), float(point.z)))
+                         for index, point in enumerate(
+                             fn.getPoints(om.MSpace.kWorld)))
+        return mesh, vertices, mirror_parent
+
     def find_name_collisions(self, name: str) -> tuple[str, ...]:
         return tuple(self._cmds.ls(self._node(name), long=True) or ())
 
