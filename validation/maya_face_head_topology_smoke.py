@@ -482,6 +482,13 @@ def main() -> None:
                 "AdvPy_Eye" + suffix + ".translateZ")
             mobile_aperture = (side.value in lid_rig["aperture_sides"]
                 and side.value not in lid_rig["stationary_aperture_sides"])
+            yaw_back = lid_rig["yaw_blink_eye_back"][side.value]
+            expected_yaw_back = mobile_aperture and alignment["status"] == "aligned"
+            assert (yaw_back["status"] == "driven") == expected_yaw_back
+            assert cmds.objExists("AdvPy_EyeYawBlinkBack" + suffix + "Sum") \
+                == expected_yaw_back
+            if expected_yaw_back:
+                assert yaw_back["maximum_cm"] > 0
             for outer in ("", "Outer"):
                 assert cmds.objExists("ctrlLowerEyeLid" + outer + suffix
                     + "UpwardSum") == mobile_aperture
@@ -839,6 +846,7 @@ def main() -> None:
                   "stationary_aperture_sides": lid_rig[
                       "stationary_aperture_sides"],
                   "eye_depth_alignment": lid_rig["eye_depth_alignment"],
+                  "yaw_blink_eye_back": lid_rig["yaw_blink_eye_back"],
                   "normal_repair": lid_rig["normal_repair"],
                   "aperture_rim": aperture_rim,
                   "reopened_animation_delta_cm": round(key_delta, 6),

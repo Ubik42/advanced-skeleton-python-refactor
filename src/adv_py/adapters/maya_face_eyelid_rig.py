@@ -31,6 +31,7 @@ _YAW_EDGE_START_ANGLE_DEG = 18.5
 _YAW_EDGE_FULL_ANGLE_DEG = 26.5
 _YAW_EDGE_UPPER_RADIUS_FRACTION = .49
 _YAW_EDGE_LOWER_RADIUS_FRACTION = .35
+_YAW_BLINK_EYE_BACK_RADIUS_FRACTION = .07
 _STATIONARY_OUTER_POSE_RADIUS_FRACTIONS = {
     "upper": (.029, .077),
     "lower": (.058, -.024),
@@ -595,6 +596,10 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                           "ctrlEye" + suffix + "_Offset",
                           "ctrlEye" + suffix + "BlinkFraction",
                           "ctrlEye" + suffix + "BlinkReverse"))
+            if mobile_inners[side]:
+                names.extend("AdvPy_EyeYawBlinkBack" + suffix + part
+                             for part in ("Offset", "Limit", "Scale",
+                                          "Blink", "Sum"))
             if open_inners[side] and not mobile_inners[side]:
                 names.extend("ctrlEye" + suffix + label for label in (
                     "YawNegative", "YawMagnitude", "YawLimit",
@@ -1117,6 +1122,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
             self.apply_skin_blend_weights(skin, blend)
             c.setAttr(skin + ".skinningMethod", 2)
             eye_depth_alignment = {}
+            yaw_blink_eye_back = {}
             for side in FaceSide:
                 suffix = "R" if side is FaceSide.RIGHT else "L"
                 if mobile_inners[side]:
@@ -1132,6 +1138,56 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                     defaultValue=eye_depth_alignment[side.value]["applied_cm"])
                 c.setAttr(motion + ".advPyEyeDepthCorrection" + suffix,
                           lock=True)
+                eye_joint = eye_joints[side]
+                if (not mobile_inners[side] or
+                        eye_depth_alignment[side.value]["status"] != "aligned"):
+                    yaw_blink_eye_back[side.value] = {
+                        "status": "not_needed", "maximum_cm": 0.}
+                    continue
+                depth_plug = eye_joint + ".translateZ"
+                if not c.getAttr(depth_plug, settable=True):
+                    yaw_blink_eye_back[side.value] = {
+                        "status": "eye_joint_unavailable", "maximum_cm": 0.}
+                    continue
+                label = "AdvPy_EyeYawBlinkBack_" + suffix
+                yaw_magnitude = c.ls(
+                    "ctrlUpperEyeLidOuter_" + suffix + "YawMagnitude",
+                    long=True, type="condition")
+                if len(yaw_magnitude) != 1:
+                    raise FitSkeletonValidationError(
+                        "外眼睑转眼角度驱动缺失")
+                offset = c.createNode("addDoubleLinear",
+                                      name=label + "Offset")
+                c.setAttr(offset + ".input2", -_YAW_EDGE_START_ANGLE_DEG)
+                c.connectAttr(yaw_magnitude[0] + ".outColorR",
+                              offset + ".input1")
+                limit = c.createNode("clamp", name=label + "Limit")
+                angle_span = (_YAW_EDGE_FULL_ANGLE_DEG -
+                              _YAW_EDGE_START_ANGLE_DEG)
+                c.setAttr(limit + ".maxR", angle_span)
+                c.connectAttr(offset + ".output", limit + ".inputR")
+                scale = c.createNode("multDoubleLinear",
+                                     name=label + "Scale")
+                maximum = (eye_radii[side] *
+                           _YAW_BLINK_EYE_BACK_RADIUS_FRACTION)
+                c.setAttr(scale + ".input2", -maximum / angle_span)
+                c.connectAttr(limit + ".outputR", scale + ".input1")
+                blink = c.createNode("multDoubleLinear",
+                                     name=label + "Blink")
+                c.connectAttr(scale + ".output", blink + ".input1")
+                fraction = c.ls("ctrlEye_" + suffix + "BlinkFraction",
+                                long=True, type="multiplyDivide")
+                if len(fraction) != 1:
+                    raise FitSkeletonValidationError("眨眼比例驱动缺失")
+                c.connectAttr(fraction[0] + ".outputX",
+                              blink + ".input2")
+                depth = c.createNode("addDoubleLinear",
+                                     name=label + "Sum")
+                c.setAttr(depth + ".input1", c.getAttr(depth_plug))
+                c.connectAttr(blink + ".output", depth + ".input2")
+                c.connectAttr(depth + ".output", depth_plug)
+                yaw_blink_eye_back[side.value] = {
+                    "status": "driven", "maximum_cm": round(maximum, 6)}
             normal_repair = self._repair_eye_lid_normals(
                 mesh, pre, eye_radii, mobile_inners, eye_control_names)
             c.addAttr(motion, longName="advPyFaceMesh", dataType="string")
@@ -1146,6 +1202,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                     if open_inners[side] and not mobile_inners[side]),
                 "eye_controls": eye_control_names,
                 "eye_depth_alignment": eye_depth_alignment,
+                "yaw_blink_eye_back": yaw_blink_eye_back,
                 "normal_repair": normal_repair,
                 "work_curves": work_curves,
                 "area_vertices": {side.value: len(weighted(side))
