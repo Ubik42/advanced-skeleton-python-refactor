@@ -184,12 +184,52 @@ def geodesic_eye_rings(mesh: str, eye: str, side: FaceSide):
     return target, tuple((depth, border) for depth, border, _ in chosen)
 
 
+def original_eye_rings(mesh: str, eye: str, side: FaceSide,
+                       manifest: dict):
+    """Map an original right-side Face Fit edge selection to static OBJ edges."""
+    fn, _, _ = mesh_topology(mesh)
+    positions = [tuple(fn.getPoint(index, om.MSpace.kWorld)[axis]
+                       for axis in range(3)) for index in range(fn.numVertices)]
+    edge_lookup = {frozenset(fn.getEdgeVertices(index)): index
+                   for index in range(fn.numEdges)}
+    rings = []
+    for layer in ("Outer", "Main", "Inner"):
+        selected = []
+        for first_point, second_point in manifest["layers"][layer][
+                "edge_points_cm"]:
+            points = (first_point, second_point)
+            candidates = []
+            for point in points:
+                x, y, z = point
+                if side is FaceSide.LEFT:
+                    x = -x
+                candidates.append({index for index, position in
+                    enumerate(positions) if sum((a - b) ** 2 for a, b in
+                    zip(position, (x, y, z))) < 1e-6})
+            matching = {edge_lookup[frozenset((a, b))]
+                        for a in candidates[0] for b in candidates[1]
+                        if frozenset((a, b)) in edge_lookup}
+            if len(matching) != 1:
+                raise RuntimeError("原版 " + layer
+                                   + " Fit 边无法映射到静态头部")
+            selected.append(next(iter(matching)))
+        if len(set(selected)) != len(selected):
+            raise RuntimeError("原版 " + layer + " Fit 映射后边重复")
+        rings.append((-1, tuple(selected)))
+    bounds = cmds.exactWorldBoundingBox(eye)
+    target = tuple((bounds[index] + bounds[index + 3]) / 2
+                   for index in range(3))
+    return target, tuple(rings)
+
+
 def main() -> None:
     head_source = Path(sys.argv[1]).resolve()
     eyes_source = Path(sys.argv[2]).resolve()
     output = Path(sys.argv[3]).resolve()
     mode = sys.argv[4] if len(sys.argv) > 4 else "independent"
     scene_output = Path(sys.argv[5]).resolve() if len(sys.argv) > 5 else None
+    fit_manifest = (json.loads(Path(sys.argv[6]).read_text(encoding="utf-8"))
+                    if len(sys.argv) > 6 else None)
     symmetric = mode in ("symmetric", "symmetric-auto")
     automatic_mirror = mode == "symmetric-auto"
     complex_scene = mode == "complex-skin"
@@ -253,7 +293,10 @@ def main() -> None:
             if side is FaceSide.LEFT:
                 controller.face_fit_switch_side(":", "Left")
             eye_fit = controller.face_fit_eye_ball(":", eye, head_joint)
-            target, rings = geodesic_eye_rings(head, eye, side)
+            target, rings = (original_eye_rings(
+                head, eye, side, fit_manifest)
+                if fit_manifest is not None else
+                geodesic_eye_rings(head, eye, side))
             for layer, (depth, edges) in zip(("Outer", "Main", "Inner"), rings):
                 cmds.select([f"{head}.e[{index}]" for index in edges],
                             replace=True)
