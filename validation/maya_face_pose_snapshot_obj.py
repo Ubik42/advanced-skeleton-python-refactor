@@ -1,4 +1,7 @@
-"""Export evaluated head and eye meshes at open and blink poses as OBJ."""
+"""Export evaluated head and eye meshes at open and blink poses as OBJ.
+
+Optional args: Eye Aim X/Y offsets and a diagnostic eyelid fleshy multiplier.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,6 +21,12 @@ def main() -> None:
               executeScriptNodes=False)
     aim_dx = float(sys.argv[3]) if len(sys.argv) > 3 else 0.
     aim_dy = float(sys.argv[4]) if len(sys.argv) > 4 else 0.
+    fleshy_scale = float(sys.argv[5]) if len(sys.argv) > 5 else 1.
+    if fleshy_scale != 1.:
+        for control in cmds.ls("ctrl*EyeLid*", type="transform") or ():
+            if cmds.attributeQuery("fleshy", node=control, exists=True):
+                plug = control + ".fleshy"
+                cmds.setAttr(plug, cmds.getAttr(plug) * fleshy_scale)
     cmds.currentTime(1, edit=True)
     aim_initial = {suffix + axis: cmds.getAttr(
         "AdvPy_EyeAim_" + suffix + ".translate" + axis)

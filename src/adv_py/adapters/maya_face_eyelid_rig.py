@@ -597,8 +597,10 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                             defaultValue=fleshy_default, keyable=True)
                         conversion = c.createNode("multiplyDivide",
                             name=control_name + "FleshyScale")
+                        # A fixed inner aperture tears if Main/Outer chase yaw.
                         c.setAttr(conversion + ".input2X",
-                                  eye_radii[side] * radians(1.) * .1)
+                                  eye_radii[side] * radians(1.) * .1
+                                  if mobile_inners[side] else 0.)
                         c.setAttr(conversion + ".input2Y",
                                   -eye_radii[side] * radians(1.) * .1)
                         c.connectAttr(eye_joints[side] + ".rotateY",

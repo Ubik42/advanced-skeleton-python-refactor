@@ -708,7 +708,10 @@ def main() -> None:
                             - still_cv[0])
         assert abs(horizontal_rotation) > 1
         eye_bounds = cmds.exactWorldBoundingBox(right_eye)
-        assert .001 < abs(horizontal_delta) < eye_bounds[3] - eye_bounds[0]
+        if FaceSide.RIGHT.value in lid_rig["stationary_aperture_sides"]:
+            assert abs(horizontal_delta) < 1e-5
+        else:
+            assert .001 < abs(horizontal_delta) < eye_bounds[3] - eye_bounds[0]
         cmds.setAttr(eye_rig.right_control + ".translateX", 0)
         upper_control = lid_rig["controls"][(FaceSide.RIGHT,
                                               EyeLidLayer.MAIN, "upper")]
