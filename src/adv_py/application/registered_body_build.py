@@ -17,9 +17,14 @@ from adv_py.core.fit_part_twist import (
     plan_fit_part_twist_projections,
     plan_standard_fit_part_rotation_inputs,
 )
+from adv_py.core.body_torso import audit_body_torso
+from adv_py.core.body_limb_controls import audit_body_limb_fk_controls
+from adv_py.core.body_hand_controls import audit_body_hand_fk_controls
 
 from .axial_part_deform import BuildAxialPartDeform
-from .body_character_rig import BuildBodyCharacterRig, BodyCharacterRigBuildResult
+from .body_character_rig import (BuildBodyCharacterRig,
+                                 BodyCharacterRigBuildPlan,
+                                 BodyCharacterRigBuildResult)
 from .body_rig_validation import body_bind_pose_matches
 from .character_registry import RegisterBodyCharacter
 from .finger_mid_deform import BuildFingerMidDeform
@@ -60,6 +65,54 @@ class _JoinedTransactionHost:
     def transaction(self, label):
         del label
         yield
+
+
+def _with_inbetween_fk_sources(
+    plan: BodyCharacterRigBuildPlan,
+    segments: tuple[InbetweenLimbSegmentResult | InbetweenFkSegmentResult, ...],
+) -> BodyCharacterRigBuildPlan:
+    """Keep the stored rig plan aligned with FK constraints moved to FKX."""
+    if not segments:
+        return plan
+    sources: dict[str, tuple[str, str]] = {}
+    for segment in segments:
+        rewire = segment.rewire
+        name = rewire.start_fk_constraint_name
+        if name in sources:
+            raise ValueError("Inbetween FK 约束被多条段重复改接：" + name)
+        anchor = segment.fk.anchor
+        sources[name] = (rewire.start_fk_control_path,
+                         anchor.fk_offset_path + "|" + anchor.fkx_name)
+    matched: set[str] = set()
+
+    def update(controls):
+        specs = []
+        for spec in controls.controls:
+            source = sources.get(spec.constraint_name)
+            if source is None:
+                specs.append(spec)
+                continue
+            if spec.control_path != source[0]:
+                raise ValueError("Inbetween FK 改接与控制计划不一致："
+                                 + spec.constraint_name)
+            specs.append(replace(spec, source_override_path=source[1]))
+            matched.add(spec.constraint_name)
+        return replace(controls, controls=tuple(specs))
+
+    arm = replace(plan.arm,
+                  fk_controls=update(plan.arm.fk_controls))
+    leg = replace(plan.leg,
+                  fk_controls=update(plan.leg.fk_controls))
+    hand = (replace(plan.hand, controls=update(plan.hand.controls))
+            if plan.hand is not None else None)
+    torso = (replace(plan.torso, torso=replace(
+        plan.torso.torso,
+        controls=update(plan.torso.torso.controls)))
+        if plan.torso is not None else None)
+    if matched != set(sources):
+        raise ValueError("Inbetween FK 改接缺少原控制计划："
+                         + "、".join(sorted(set(sources) - matched)))
+    return replace(plan, arm=arm, leg=leg, hand=hand, torso=torso)
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,10 +327,55 @@ class BuildRegisteredBodyCharacter:
                     raise RuntimeError("Fit Part 驱动改变了 Body 绑定姿态")
                 rig = replace(
                     rig,
-                    plan=rebase_plan_paths_after_parts(
-                        rig.plan, final_paths),
+                    plan=_with_inbetween_fk_sources(
+                        rebase_plan_paths_after_parts(rig.plan, final_paths),
+                        inbetween_segments),
                     body=driven_body,
                 )
+                if inbetween_segments:
+                    arm_fk = joined.capture_body_arm_fk_controls(
+                        rig.plan.arm.fk_controls)
+                    leg_fk = joined.capture_body_leg_fk_controls(
+                        rig.plan.leg.fk_controls)
+                    fk_issues = tuple(audit_body_limb_fk_controls(
+                        rig.plan.arm.fk_controls, arm_fk,
+                        limb_label="Arm")) + tuple(
+                        audit_body_limb_fk_controls(
+                            rig.plan.leg.fk_controls, leg_fk,
+                            limb_label="Leg"))
+                    if fk_issues:
+                        raise RuntimeError(
+                            "Inbetween 改接后四肢 FK 复检失败："
+                            + "；".join(issue.message
+                                       for issue in fk_issues))
+                    rig = replace(rig,
+                        arm=replace(rig.arm, plan=rig.plan.arm,
+                                    fk_controls=arm_fk, body=driven_body),
+                        leg=replace(rig.leg, plan=rig.plan.leg,
+                                    fk_controls=leg_fk, body=driven_body))
+                    if rig.plan.hand is not None and rig.hand is not None:
+                        hand_fk = joined.capture_body_hand_fk_controls(
+                            rig.plan.hand.controls)
+                        hand_issues = audit_body_hand_fk_controls(
+                            rig.plan.hand.controls, hand_fk)
+                        if hand_issues:
+                            raise RuntimeError(
+                                "Inbetween 改接后 Hand FK 复检失败："
+                                + "；".join(issue.message
+                                           for issue in hand_issues))
+                        rig = replace(rig, hand=replace(
+                            rig.hand, plan=rig.plan.hand,
+                            snapshot=hand_fk, body=driven_body))
+                    if rig.plan.torso is not None:
+                        torso_snapshot = joined.capture_body_torso(
+                            rig.plan.torso.torso)
+                        torso_issues = audit_body_torso(
+                            rig.plan.torso.torso, torso_snapshot)
+                        if torso_issues:
+                            raise RuntimeError(
+                                "Inbetween 改接后 Torso 复检失败："
+                                + "；".join(torso_issues))
+                        rig = replace(rig, torso=torso_snapshot)
             registration = RegisterBodyCharacter(joined).apply(rig)
             if inbetween_segments:
                 registration = RegisterInbetweenControls(joined).apply(

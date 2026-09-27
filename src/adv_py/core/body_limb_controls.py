@@ -30,6 +30,7 @@ class BodyLimbFkControlSpec:
     radius: float
     rotate_order: int = 0
     control_parent_path: str | None = None
+    source_override_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,7 +216,8 @@ def audit_body_limb_fk_controls(
                 "constraint_name_mismatch", "FK 约束名称不一致", path
             ))
         if (
-            state.source_control != spec.control_path
+            state.source_control
+            != (spec.source_override_path or spec.control_path)
             or state.driven_joint != spec.driven_joint
         ):
             issues.append(BodyLimbControlIssue(
