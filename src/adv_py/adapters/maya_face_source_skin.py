@@ -2,21 +2,14 @@
 from __future__ import annotations
 
 from array import array
-from math import dist
-import re
 
 from adv_py.core.dense_skin_transfer import DenseSkinWeights
+from adv_py.core.face_source_skin_mapping import (
+    face_influence_base, plan_face_source_skin_mapping,
+)
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .maya_face_eyelid_rig import MayaFaceEyeLidRigHost
-
-
-_LID = re.compile(r"^((?:upper|lower)Lid(?:Main|Outer))(\d+)(_[RL])$")
-_AUX = re.compile(r"^lowerLidOuterJoint_([RL])$")
-
-
-def _base(name: str) -> str:
-    return name.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
 
 
 def _mesh_skin(cmds, mesh_name: str):
@@ -100,48 +93,19 @@ class MayaFaceSourceSkinHost(MayaFaceEyeLidRigHost):
             raise FitSkeletonValidationError(
                 f"原版与目标头部当前形态不一致：{position_error:.6f} cm")
         before = self.capture_dense_skin(target_skin)
-        target_by_base = {_base(name): name for name in before.influence_names}
+        target_by_base = {face_influence_base(name): name
+                          for name in before.influence_names}
         if len(target_by_base) != len(before.influence_names) or "Head_M" not in target_by_base:
             raise FitSkeletonValidationError("目标影响关节名称不唯一或缺少 Head_M")
-        lid_targets = {name: target for name, target in target_by_base.items()
-                       if _LID.fullmatch(name)}
-        if not lid_targets:
-            raise FitSkeletonValidationError("目标 Skin 没有眼睑分段关节")
-        source_map = []
-        auxiliary = {}
-        approximated = 0
-        source_lid_names = set()
-        for index, joint in enumerate(source_joints):
-            name = _base(joint)
-            match = _LID.fullmatch(name)
-            if match:
-                if name in source_lid_names:
-                    raise FitSkeletonValidationError(
-                        "来源眼睑影响关节重名：" + name)
-                source_lid_names.add(name)
-                target = lid_targets.get(name)
-                if target is None:
-                    candidates = [(abs(int(_LID.fullmatch(other).group(2)) -
-                                       int(match.group(2))), other)
-                                  for other in lid_targets
-                                  if (other.startswith(match.group(1)) and
-                                      other.endswith(match.group(3)))]
-                    if not candidates:
-                        raise FitSkeletonValidationError(
-                            "目标缺少眼睑分段：" + name)
-                    target = lid_targets[min(candidates)[1]]
-                    approximated += 1
-                source_map.append((index, target))
-            elif _AUX.fullmatch(name):
-                side = _AUX.fullmatch(name).group(1)
-                if side in auxiliary:
-                    raise FitSkeletonValidationError("原版外围关节重名")
-                auxiliary[side] = (index, joint)
-        if not source_map:
-            raise FitSkeletonValidationError("来源不是已绑定的原版眼睑 Skin")
-        if simpler_eyelid and set(auxiliary) != {"R", "L"}:
-            raise FitSkeletonValidationError(
-                "简化眼睑来源需要双侧眼下外围影响关节")
+        try:
+            mapping = plan_face_source_skin_mapping(
+                source_joints, before.influence_names,
+                simpler_eyelid=simpler_eyelid)
+        except ValueError as error:
+            raise FitSkeletonValidationError(str(error)) from error
+        source_map = list(mapping.segment_targets)
+        auxiliary = {side: (index, source_joints[index])
+                     for side, index in mapping.auxiliary_sources}
         roots = c.ls("FaceJoint_M", long=True, type="joint") or []
         if len(roots) != 1:
             raise FitSkeletonValidationError("目标 FaceJoint_M 缺失或不唯一")
@@ -189,7 +153,8 @@ class MayaFaceSourceSkinHost(MayaFaceEyeLidRigHost):
             target = self.capture_dense_skin(target_skin)
             target_index = {name: i for i, name in
                             enumerate(target.influence_names)}
-            target_by_base = {_base(name): name for name in target.influence_names}
+            target_by_base = {face_influence_base(name): name
+                              for name in target.influence_names}
             source_map.extend((index, target_by_base[
                 "lowerLidOuterJoint_" + side])
                 for side, (index, _) in auxiliary.items())
@@ -239,7 +204,7 @@ class MayaFaceSourceSkinHost(MayaFaceEyeLidRigHost):
         return {"source_mesh": source_path, "target_mesh": target_mesh,
                 "vertex_count": before.vertex_count,
                 "mapped_segment_influences": len(source_map) - len(auxiliary),
-                "approximated_segments": approximated,
+                "approximated_segments": mapping.approximated_segments,
                 "auxiliary_joints": tuple("lowerLidOuterJoint_" + side
                                           for side in sorted(auxiliary)),
                 "maximum_rest_position_error_cm": round(position_error, 8)}
