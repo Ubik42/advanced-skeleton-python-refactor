@@ -204,6 +204,7 @@ def main() -> None:
         assert MayaDenseSkinHost().capture_dense_skin(source_skin) == original_weights
         lid_rig = controller.face_build_eye_lids(":")
         assert len(lid_rig["controls"]) == 8
+        assert len(lid_rig["work_curves"]) == 8
         assert len(lid_rig["joints"]) >= 16
         skinned = MayaDenseSkinHost().capture_dense_skin(source_skin)
         old_values = memoryview(original_weights.values).cast("d")
@@ -250,7 +251,13 @@ def main() -> None:
                 (FaceSide.LEFT, EyeLidLayer.MAIN, "lower", .05),
                 (FaceSide.RIGHT, EyeLidLayer.OUTER, "upper", .05)):
             control = lid_rig["controls"][(side, layer, arc)]
+            work_curve = lid_rig["work_curves"][(side, layer, arc)]
+            middle = len(cmds.ls(work_curve + ".cv[*]", flatten=True)) // 2
+            cv = work_curve + ".cv[" + str(middle) + "]"
+            neutral_cv = cmds.pointPosition(cv, world=True)
             cmds.setAttr(control + ".translateY", amount)
+            moved_cv = cmds.pointPosition(cv, world=True)
+            assert abs(moved_cv[1] - neutral_cv[1]) > .005
             moved = mesh_points()
             same_side = [index for index, point in enumerate(neutral)
                          if (point[0] < 0) == (side is FaceSide.RIGHT)]
@@ -263,6 +270,8 @@ def main() -> None:
             assert own_delta > .005 and other_delta < 1e-5
             displacement[side.value + layer.value + arc] = round(own_delta, 6)
             cmds.setAttr(control + ".translateY", 0)
+            assert abs(cmds.pointPosition(cv, world=True)[1]
+                       - neutral_cv[1]) < 1e-5
             reset = mesh_points()
             assert max(abs(reset[index][1]-neutral[index][1])
                        for index in range(len(reset))) < 1e-5

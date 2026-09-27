@@ -167,16 +167,21 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
                     control = "ctrl" + label + "EyeLid" + (
                         "Outer" if layer is EyeLidLayer.OUTER else "") + suffix
                     names.extend((control, control + "_Offset"))
+                    curve_name = arc + "Lid" + layer.value + "WorkCurve" + suffix
+                    names.append(curve_name)
+                    for index in range(len(arcs[side][(layer, arc)])):
+                        names.extend((curve_name + str(index) + "Scale",
+                                      curve_name + str(index) + "Sum"))
                     for index in range(1, len(arcs[side][(layer, arc)]) - 1):
                         name = arc + "Lid" + layer.value + str(index) + suffix
-                        names.extend((name, name + "POCI", name + "Offset",
-                                      name + "ControlScale"))
+                        names.extend((name, name + "POCI", name + "Offset"))
         if any(c.ls(name) for name in names):
             raise FitSkeletonValidationError("眼睑绑定节点名称已被占用")
         original = self.capture_dense_skin(skin)
         selected = c.ls(selection=True, long=True) or []
         joint_names = {}
         control_names = {}
+        work_curves = {}
         with self.transaction("建立双侧多关节眼睑与 Skin"):
             self._transaction_changed = True
             c.select(clear=True)
@@ -213,8 +218,31 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
                             c.ls(control, long=True, type="transform") or [control])[0]
                         curve = pre.read_eye_lid_fit(layer, side)[
                             0 if arc == "upper" else 1]
-                        curve_shape = (c.listRelatives(curve, shapes=True,
+                        curve_name = arc + "Lid" + layer.value + "WorkCurve" + suffix
+                        work_curve = c.duplicate(curve, name=curve_name,
+                                                 returnRootsOnly=True)[0]
+                        work_curve = c.parent(work_curve, motion, absolute=True)[0]
+                        work_curves[(side, layer, arc)] = work_curve
+                        curve_shape = (c.listRelatives(work_curve, shapes=True,
                                       fullPath=True, type="nurbsCurve") or [None])[0]
+                        for index in range(len(vertices)):
+                            point_plug = curve_shape + ".controlPoints[" + str(index) + "]"
+                            base = c.getAttr(point_plug)[0]
+                            tapered = index / (len(vertices) - 1)
+                            tapered = min(1., 2. * min(tapered, 1. - tapered))
+                            scale = c.createNode("multiplyDivide",
+                                name=curve_name + str(index) + "Scale")
+                            c.setAttr(scale + ".input2", tapered, tapered,
+                                      tapered, type="double3")
+                            c.connectAttr(control + ".translate",
+                                          scale + ".input1")
+                            addition = c.createNode("plusMinusAverage",
+                                name=curve_name + str(index) + "Sum")
+                            c.setAttr(addition + ".input3D[0]", *base,
+                                      type="double3")
+                            c.connectAttr(scale + ".output",
+                                          addition + ".input3D[1]")
+                            c.connectAttr(addition + ".output3D", point_plug)
                         for index, vertex in enumerate(vertices[1:-1], 1):
                             name = arc + "Lid" + layer.value + str(index) + suffix
                             point = c.createNode("pointOnCurveInfo",
@@ -239,16 +267,6 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
                             c.setAttr(joint + ".advPyAuxiliaryInfluenceKind",
                                 "face-eyelid-segment-v2", type="string",
                                 lock=True)
-                            tapered = (index / (len(vertices) - 1))
-                            tapered = min(1., 2. * min(tapered, 1. - tapered))
-                            scale = c.createNode("multiplyDivide",
-                                                 name=name + "ControlScale")
-                            c.setAttr(scale + ".input2", tapered, tapered,
-                                      tapered, type="double3")
-                            c.connectAttr(control + ".translate",
-                                          scale + ".input1")
-                            c.connectAttr(scale + ".output",
-                                          joint + ".translate")
                             c.skinCluster(skin, edit=True, addInfluence=joint,
                                           weight=0.0)
                             joint_names[(side, layer, arc, vertex)] = (
@@ -296,6 +314,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
             c.select(selected, replace=True) if selected else c.select(clear=True)
         return {"skin": skin, "mesh": mesh,
                 "controls": control_names, "joints": joint_names,
+                "work_curves": work_curves,
                 "area_vertices": {side.value: len(weighted(side))
                                   for side in FaceSide},
                 "main_vertices": {side.value: len(factors[side][
