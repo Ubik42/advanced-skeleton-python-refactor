@@ -572,6 +572,16 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._delete_squash_controller))
             stack.addWidget(group)
 
+            self.human_ik_definition_only = QtWidgets.QCheckBox(
+                "仅创建 HumanIK 定义")
+            group, form = self._group("08 · Motion System", [
+                ("创建选项", self.human_ik_definition_only)])
+            form.addRow(self._button("创建 HumanIK", self._create_human_ik))
+            form.addRow(self._button("删除 HumanIK", self._delete_human_ik))
+            form.addRow(self._button("烘焙 HumanIK 到控制器",
+                                     self._bake_human_ik))
+            stack.addWidget(group)
+
             self.control_curve_targets = QtWidgets.QPlainTextEdit()
             self.control_curve_targets.setPlaceholderText(
                 "每行一个控制器路径；留空时处理当前角色的全部已登记控制曲线")
@@ -592,7 +602,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_curve_custom_source = QtWidgets.QLineEdit()
             self.control_curve_custom_source.setPlaceholderText(
                 "自定义 NURBS 曲线 Transform 路径")
-            group, form = self._group("08 · Control Curves", [
+            group, form = self._group("09 · Control Curves", [
                 ("目标控制器", self.control_curve_targets),
                 ("缩放倍率", self.control_curve_factor),
                 ("颜色规则", self.control_curve_color_mode),
@@ -636,7 +646,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_orient_mirrored_behavior = QtWidgets.QCheckBox(
                 "左右同轴旋转产生对称动作")
             self.control_orient_mirrored_behavior.setChecked(True)
-            group, form = self._group("09 · Control Orient", [
+            group, form = self._group("10 · Control Orient", [
                 ("目标控制器", self.control_orient_targets),
                 ("Primary Axis", self.control_orient_primary),
                 ("Secondary Axis", self.control_orient_secondary),
@@ -654,7 +664,7 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("重新附着全部控制器", self._attach_control_orient_custom))
             stack.addWidget(group)
 
-            group, form = self._group("10 · Unreal Joints", [])
+            group, form = self._group("11 · Unreal Joints", [])
             form.addRow(self._button("创建通用 Unreal IK 关节",
                                      self._create_unreal_joints))
             form.addRow(self._button("删除通用 Unreal IK 关节",
@@ -666,7 +676,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.partial_multi_count.setRange(2, 128)
             self.partial_multi_count.setValue(12)
             self.partial_multi_bind = QtWidgets.QCheckBox("自动加入现有蒙皮")
-            group, form = self._group("11 · Partial Joints", [
+            group, form = self._group("12 · Partial Joints", [
                 ("单段", self.partial_include_controller),
                 ("多段关节数", self.partial_multi_count),
                 ("多段蒙皮", self.partial_multi_bind)])
@@ -1780,6 +1790,21 @@ def create_panel(controller: MayaPanelController | None = None):
             controls = self.controller.squash_controller_delete(
                 self._namespace())
             return f"已删除 {len(controls)} 个 Squash Controller"
+
+        def _create_human_ik(self):
+            plan = self.controller.human_ik_create(
+                self._namespace(), create_control_rig=(
+                    not self.human_ik_definition_only.isChecked()))
+            return f"已映射 {len(plan.assignments)} 个 HumanIK 关节槽位"
+
+        def _delete_human_ik(self):
+            self.controller.human_ik_delete(self._namespace())
+            return "已删除 HumanIK 并恢复 MotionSystem 显示"
+
+        def _bake_human_ik(self):
+            plan = self.controller.human_ik_bake(self._namespace())
+            return (f"已将 HumanIK 烘焙到 {len(plan.controls)} 个控制器；"
+                    f"帧范围 {plan.first_frame:g}～{plan.last_frame:g}")
 
         def _create_partial_joints(self):
             specs = self.controller.partial_joints_create(

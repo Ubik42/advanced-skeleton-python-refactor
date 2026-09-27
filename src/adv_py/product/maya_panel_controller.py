@@ -840,6 +840,31 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)
         return DeleteSquashController(host).apply(selected[0])
 
+    def human_ik_create(self, namespace: str, *,
+                        create_control_rig: bool = True):
+        from adv_py.adapters.maya_human_ik import MayaHumanIkHost
+        from adv_py.application.human_ik import CreateHumanIk
+
+        host = MayaHumanIkHost(
+            namespace=None if namespace == ":" else namespace)
+        return CreateHumanIk(host).apply(create_control_rig=create_control_rig)
+
+    def human_ik_delete(self, namespace: str) -> None:
+        from adv_py.adapters.maya_human_ik import MayaHumanIkHost
+        from adv_py.application.human_ik import DeleteHumanIk
+
+        host = MayaHumanIkHost(
+            namespace=None if namespace == ":" else namespace)
+        DeleteHumanIk(host).apply()
+
+    def human_ik_bake(self, namespace: str):
+        from adv_py.adapters.maya_human_ik import MayaHumanIkHost
+        from adv_py.application.human_ik import BakeHumanIk
+
+        host = MayaHumanIkHost(
+            namespace=None if namespace == ":" else namespace)
+        return BakeHumanIk(host).apply()
+
     def skin_bind(self, namespace: str, mesh: str,
                   influences: tuple[str, ...], skin: str, maximum: int, *,
                   maintain_maximum: bool = True) -> int:
