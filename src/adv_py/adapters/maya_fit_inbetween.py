@@ -7,10 +7,69 @@ from adv_py.core.fit_inbetween import (
     FitInbetweenReparent,
 )
 from adv_py.core.fit_orientation import FitOrientationSnapshot
+from adv_py.core.fit_inbetween_bias import InbetweenBiasPlan
 from adv_py.core.joint_labels import JointLabel
 
 
 class MayaFitInbetweenMixin:
+    def preflight_inbetween_bias(self, plan: InbetweenBiasPlan) -> None:
+        c = self._cmds
+        control, _, attribute = plan.control_plug.rpartition(".")
+        if not control or attribute != "bias" or not c.objExists(control):
+            raise ValueError("Inbetween FK Bias 控制目标无效："
+                             + plan.control_plug)
+        names = (plan.unit_name, plan.start_curve.name,
+                 plan.mid_curve.name, plan.end_curve.name)
+        if len(set(names)) != len(names) or any(c.objExists(name)
+                                                for name in names):
+            raise ValueError("Inbetween FK Bias 节点名称冲突："
+                             + plan.start_body_name)
+        if c.objExists(plan.control_plug) and not c.getAttr(
+                plan.control_plug, settable=True):
+            raise ValueError("Inbetween FK Bias 属性不可写："
+                             + plan.control_plug)
+
+    def create_inbetween_bias(self, plan: InbetweenBiasPlan) -> None:
+        self._require_transaction()
+        c = self._cmds
+        control, _, _ = plan.control_plug.rpartition(".")
+        if not c.objExists(plan.control_plug):
+            c.addAttr(control, longName="bias", attributeType="double",
+                      defaultValue=0.0, keyable=True)
+        unit = c.createNode("unitConversion", name=plan.unit_name)
+        c.setAttr(unit + ".conversionFactor", 0.1)
+        c.connectAttr(plan.control_plug, unit + ".input")
+        for curve in (plan.start_curve, plan.mid_curve,
+                      plan.end_curve):
+            remap = c.createNode("remapValue", name=curve.name)
+            c.setAttr(remap + ".inputMin", -1.0)
+            c.setAttr(remap + ".inputMax", 1.0)
+            c.connectAttr(unit + ".output", remap + ".inputValue")
+            for index, (input_value, output_value) in enumerate(curve.keys):
+                entry = remap + f".value[{index}]"
+                c.setAttr(entry + ".value_Position",
+                          (input_value + 1.0) * 0.5)
+                c.setAttr(entry + ".value_FloatValue", output_value)
+                c.setAttr(entry + ".value_Interp", 1)
+        self._transaction_changed = True
+
+    def capture_inbetween_bias_outputs(
+        self, plan: InbetweenBiasPlan
+    ) -> tuple[str | None, ...]:
+        c = self._cmds
+        if c.connectionInfo(plan.unit_name + ".input",
+                sourceFromDestination=True) != plan.control_plug:
+            return (None, None, None)
+        outputs = []
+        for curve in (plan.start_curve, plan.mid_curve,
+                      plan.end_curve):
+            if c.connectionInfo(curve.name + ".inputValue",
+                    sourceFromDestination=True) != plan.unit_name + ".output":
+                outputs.append(None)
+            else:
+                outputs.append(curve.name + ".outValue")
+        return tuple(outputs)
+
     def _one_inbetween_joint(self, name: str) -> str:
         matches = self._cmds.ls(name, long=True, type="joint") or []
         if len(matches) != 1:
