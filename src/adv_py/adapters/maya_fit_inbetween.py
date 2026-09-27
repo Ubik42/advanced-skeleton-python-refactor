@@ -628,6 +628,10 @@ class MayaFitInbetweenMixin:
         fkx = c.createNode("joint", name=plan.fkx_name,
                            parent=plan.fk_offset_path, skipSelect=True)
         self._transaction_changed = True
+        c.addAttr(fkx, longName="advPyInbetweenFkOwner",
+                  dataType="string")
+        c.setAttr(fkx + ".advPyInbetweenFkOwner",
+                  "adv_py.inbetween_fk.v1", type="string", lock=True)
         c.setAttr(fkx + ".drawStyle", 2)
         c.setAttr(fkx + ".segmentScaleCompensate", 0)
         c.setAttr(fkx + ".rotateOrder", plan.rotate_order)
@@ -643,6 +647,10 @@ class MayaFitInbetweenMixin:
         self, plan: InbetweenFkAnchorPlan
     ) -> tuple[str | None, ...]:
         c = self._cmds
+        if (not c.objExists(plan.fkx_name + ".advPyInbetweenFkOwner")
+                or c.getAttr(plan.fkx_name + ".advPyInbetweenFkOwner")
+                != "adv_py.inbetween_fk.v1"):
+            return (None, None, None, None)
         for name, parent_name, node_type in (
             (plan.base_name, plan.fk_offset_path, "transform"),
             (plan.target_name, plan.fk_control_path, "transform"),

@@ -153,8 +153,28 @@ class MayaBodySpineMixin:
             plan.fk_controls, plan.joints[:3],
         ):
             source = control
+            start = {"AdvPy_SpineBaseFKOrient": "Root_M",
+                     "AdvPy_TorsoSpine1_MOrient": "Spine1_M"}.get(name)
+            if start:
+                proxy_name = "AdvPy_" + start + "_InbetweenFKX"
+                marker = proxy_name + ".advPyInbetweenFkOwner"
+                if c.objExists(proxy_name):
+                    if (not c.objExists(marker)
+                            or c.getAttr(marker)
+                            != "adv_py.inbetween_fk.v1"):
+                        raise FitSkeletonValidationError(
+                            "脊柱 Inbetween FKX 归属无效：" + proxy_name)
+                    proxy = c.ls(proxy_name, long=True,
+                                 type="joint") or []
+                    if len(proxy) != 1:
+                        raise FitSkeletonValidationError(
+                            "脊柱 Inbetween FKX 不唯一：" + proxy_name)
+                    source = proxy[0]
             if name == "AdvPy_TorsoSpine1_MOrient" and c.objExists(
                     "AdvPy_AxialFKXSpine1_M.advPyAxialBodyOwner"):
+                if source != control:
+                    raise FitSkeletonValidationError(
+                        "脊柱存在两个轴向 FKX 来源")
                 marker = "AdvPy_AxialFKXSpine1_M.advPyAxialBodyOwner"
                 if c.getAttr(marker) != "adv_py.axial_body.v1":
                     raise FitSkeletonValidationError("轴向脊柱驱动归属无效")
