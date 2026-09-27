@@ -9,10 +9,12 @@ from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.fit_part import (
     FitPartChildState,
     FitPartHierarchySnapshot,
+    FitPartFinalPaths,
     FitPartJointSpec,
     FitPartJointState,
     FitPartReparentSpec,
     audit_fit_part_hierarchy,
+    plan_fit_part_final_paths,
 )
 from .body_skeleton import BodySkeletonBuildPlan
 
@@ -42,11 +44,16 @@ class FitPartHierarchyHost(Protocol):
         self, names: tuple[str, ...]
     ) -> tuple[FitPartChildState, ...]: ...
 
+    def capture_fit_part_body_paths(
+        self, names: tuple[str, ...]
+    ) -> tuple[tuple[str, str], ...]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class FitPartHierarchyResult:
     plan: BodySkeletonBuildPlan
     snapshot: FitPartHierarchySnapshot
+    final_paths: FitPartFinalPaths
 
 
 class BuildFitPartHierarchy:
@@ -65,6 +72,8 @@ class BuildFitPartHierarchy:
             raise ValueError("Fit Part 构建需要完整且无冲突的 Body 计划")
         if not plan.specs:
             raise ValueError("Fit Part 构建缺少 Body 关节")
+        final_paths = plan_fit_part_final_paths(
+            plan.specs, plan.fit_parts, plan.fit_part_reparents)
         body = self._host.capture_body_skeleton(plan.specs[0].name)
         actual = {state.path: state for state in body.joints}
         if set(actual) != {spec.path for spec in plan.specs}:
@@ -98,9 +107,12 @@ class BuildFitPartHierarchy:
                 self._host.capture_fit_part_joints(names),
                 self._host.capture_fit_part_children(tuple(
                     item.child_name for item in plan.fit_part_reparents)),
+                self._host.capture_fit_part_body_paths(tuple(
+                    spec.name for spec in plan.specs)),
             )
             issues = audit_fit_part_hierarchy(
-                plan.fit_parts, plan.fit_part_reparents, snapshot)
+                plan.fit_parts, plan.fit_part_reparents, snapshot,
+                final_paths=final_paths)
             if issues:
                 raise RuntimeError("Fit Part 写后复检失败：" + "；".join(issues))
-        return FitPartHierarchyResult(plan, snapshot)
+        return FitPartHierarchyResult(plan, snapshot, final_paths)

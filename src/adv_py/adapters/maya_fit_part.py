@@ -105,6 +105,7 @@ class MayaFitPartHost(MayaBodyBuildHost):
                 bool(c.getAttr(joint + ".advPySkinEnabled")),
                 int(c.getAttr(joint + ".rotateOrder")),
                 bool(c.getAttr(joint + ".segmentScaleCompensate")),
+                joint,
             ))
         return tuple(result)
 
@@ -117,8 +118,15 @@ class MayaFitPartHost(MayaBodyBuildHost):
             child = self._unique_fit_part_joint(name)
             parent = c.listRelatives(child, parent=True, fullPath=True) or []
             result.append(FitPartChildState(
-                name, parent[0].rsplit("|", 1)[-1] if parent else ""))
+                name, parent[0].rsplit("|", 1)[-1] if parent else "",
+                child))
         return tuple(result)
+
+    def capture_fit_part_body_paths(
+        self, names: tuple[str, ...]
+    ) -> tuple[tuple[str, str], ...]:
+        return tuple((name, self._unique_fit_part_joint(name))
+                     for name in names)
 
     def preflight_fit_part_twist_step(self, step: FitPartTwistStep) -> None:
         c = self._cmds

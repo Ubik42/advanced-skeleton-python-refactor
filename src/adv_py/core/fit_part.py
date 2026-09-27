@@ -63,18 +63,88 @@ class FitPartJointState:
     skin_enabled: bool = True
     rotation_order: int = 0
     segment_scale_compensate: bool = True
+    path: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class FitPartChildState:
     name: str
     parent_name: str
+    path: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class FitPartHierarchySnapshot:
     joints: tuple[FitPartJointState, ...]
     children: tuple[FitPartChildState, ...]
+    body_paths: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class FitPartFinalPaths:
+    body_paths: tuple[tuple[str, str], ...]
+    part_paths: tuple[tuple[str, str], ...]
+    body_rewrites: tuple[tuple[str, str], ...]
+
+    def remap_body_reference(self, reference: str) -> str:
+        """Rewrite a pre-Part Body DAG path or attribute plug by longest match."""
+        for before, after in sorted(self.body_rewrites,
+                                    key=lambda pair: len(pair[0]), reverse=True):
+            if reference == before or reference.startswith((before + "|",
+                                                           before + ".")):
+                return after + reference[len(before):]
+        return reference
+
+
+def plan_fit_part_final_paths(
+    body_specs: tuple[BodyJointSpec, ...],
+    parts: tuple[FitPartJointSpec, ...],
+    reparents: tuple[FitPartReparentSpec, ...],
+) -> FitPartFinalPaths:
+    """Resolve the DAG after every Part and ChildOfPart reparent operation."""
+    body_names = [spec.name for spec in body_specs]
+    part_names = [spec.name for spec in parts]
+    names = body_names + part_names
+    if len(set(names)) != len(names):
+        raise FitPartValidationError("Body／Part 名称必须全局唯一")
+    parents: dict[str, str | None] = {}
+    for spec in body_specs:
+        parents[spec.name] = (
+            spec.parent_path.rsplit("|", 1)[-1]
+            if spec.parent_path else None)
+    for spec in parts:
+        parents[spec.name] = spec.parent_name
+    for spec in reparents:
+        if spec.child_name not in body_names or spec.parent_part_name not in part_names:
+            raise FitPartValidationError("Part 改挂包含未知关节")
+        parents[spec.child_name] = spec.parent_part_name
+    if sum(parent is None for parent in parents.values()) != 1:
+        raise FitPartValidationError("Part 最终层级必须恰有一个根关节")
+
+    resolved: dict[str, str] = {}
+    visiting: set[str] = set()
+
+    def resolve(name: str) -> str:
+        if name in resolved:
+            return resolved[name]
+        if name in visiting:
+            raise FitPartValidationError("Part 改挂会产生层级循环：" + name)
+        visiting.add(name)
+        parent = parents[name]
+        if parent is not None and parent not in parents:
+            raise FitPartValidationError("Part 最终层级父关节不存在：" + name)
+        path = (resolve(parent) + "|" if parent else "|") + name
+        visiting.remove(name)
+        resolved[name] = path
+        return path
+
+    for name in names:
+        resolve(name)
+    return FitPartFinalPaths(
+        tuple((name, resolved[name]) for name in body_names),
+        tuple((name, resolved[name]) for name in part_names),
+        tuple((spec.path, resolved[spec.name]) for spec in body_specs),
+    )
 
 
 def audit_fit_part_hierarchy(
@@ -83,6 +153,7 @@ def audit_fit_part_hierarchy(
     snapshot: FitPartHierarchySnapshot,
     *,
     tolerance: float = 1e-4,
+    final_paths: FitPartFinalPaths | None = None,
 ) -> tuple[str, ...]:
     issues: list[str] = []
     states = {state.name: state for state in snapshot.joints}
@@ -93,12 +164,18 @@ def audit_fit_part_hierarchy(
         issues.append("Part 关节集合与构建计划不一致")
     if set(children) != {item.child_name for item in reparents}:
         issues.append("Part 下游关节集合与改挂计划不一致")
+    expected_part_paths = dict(final_paths.part_paths) if final_paths else {}
+    expected_body_paths = dict(final_paths.body_paths) if final_paths else {}
+    if final_paths and dict(snapshot.body_paths) != expected_body_paths:
+        issues.append("Body 关节最终路径与 Part 改挂计划不一致")
     for spec in parts:
         state = states.get(spec.name)
         if state is None:
             continue
         if state.parent_name != spec.parent_name:
             issues.append("Part 父级不一致：" + spec.name)
+        if final_paths and state.path != expected_part_paths[spec.name]:
+            issues.append("Part 最终路径不一致：" + spec.name)
         if state.skin_enabled != spec.skin_enabled:
             issues.append("Part Skin 影响开关不一致：" + spec.name)
         if state.rotation_order != spec.rotation_order:
@@ -118,6 +195,9 @@ def audit_fit_part_hierarchy(
         state = children.get(spec.child_name)
         if state is not None and state.parent_name != spec.parent_part_name:
             issues.append("Part 下游关节父级不一致：" + spec.child_name)
+        if (final_paths and state is not None
+                and state.path != expected_body_paths[spec.child_name]):
+            issues.append("Part 下游关节最终路径不一致：" + spec.child_name)
     return tuple(issues)
 
 
