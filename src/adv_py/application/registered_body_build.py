@@ -20,6 +20,11 @@ from adv_py.core.fit_part_twist import (
 from adv_py.core.body_torso import audit_body_torso
 from adv_py.core.body_limb_controls import audit_body_limb_fk_controls
 from adv_py.core.body_hand_controls import audit_body_hand_fk_controls
+from adv_py.core.body_arm_ik import audit_body_arm_ik
+from adv_py.core.body_leg_ik import audit_body_leg_ik
+from adv_py.core.body_arm_mechanisms import audit_body_arm_mechanisms
+from adv_py.core.body_leg_mechanisms import audit_body_leg_mechanisms
+from adv_py.core.fit_inbetween_ik_rebase import rebase_inbetween_ik_reference
 
 from .axial_part_deform import BuildAxialPartDeform
 from .body_character_rig import (BuildBodyCharacterRig,
@@ -36,10 +41,15 @@ from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
 from .fit_inbetween_body import plan_combined_part_hierarchy
 from .fit_inbetween_limb_mapping import (
-    InbetweenFkBinding, plan_inbetween_limb_bindings,
+    InbetweenFkBinding, InbetweenLimbBinding,
+    plan_inbetween_limb_bindings,
 )
 from .fit_inbetween_limb_segment import (
-    BuildInbetweenLimbSegment, InbetweenLimbSegmentResult,
+    BuildInbetweenLimbSegments, InbetweenLimbSegmentResult,
+)
+from .fit_inbetween_ik_solver_mapping import (
+    InbetweenIkSolverMapping,
+    rebase_character_rig_after_inbetween_ik,
 )
 from .fit_inbetween_fk_segment import (
     BuildInbetweenFkSegment, InbetweenFkSegmentResult,
@@ -129,6 +139,7 @@ class RegisteredBodyBuildResult:
         InbetweenLimbSegmentResult | InbetweenFkSegmentResult, ...] = ()
     inbetween_untwisters: tuple[InbetweenUnTwisterPlan, ...] = ()
     hip_swing_reverse: HipSwingReversePlan | None = None
+    ik_solver_mapping: InbetweenIkSolverMapping | None = None
 
 
 class BuildRegisteredBodyCharacter:
@@ -199,6 +210,7 @@ class BuildRegisteredBodyCharacter:
                 include_head_aim=include_head_aim)
             fit_part_hierarchy = None
             inbetween_segments = ()
+            solver_mapping = None
             inbetween_untwisters = ()
             hip_swing_reverse = None
             if use_fit_part_hierarchy:
@@ -228,6 +240,13 @@ class BuildRegisteredBodyCharacter:
                     bindings = plan_inbetween_limb_bindings(
                         inbetween_parts, rig.plan,
                         final_paths=final_paths)
+                    limb_bindings = tuple(
+                        binding for binding in bindings
+                        if isinstance(binding, InbetweenLimbBinding))
+                    bulk = BuildInbetweenLimbSegments(joined).apply(
+                        limb_bindings, rig.plan)
+                    solver_mapping = bulk.solver_mapping
+                    limb_results = iter(bulk.segments)
                     built_segments = []
                     for binding in bindings:
                         if isinstance(binding, InbetweenFkBinding):
@@ -251,26 +270,7 @@ class BuildRegisteredBodyCharacter:
                                         binding.part_control_radius),
                                 ))
                             continue
-                        built_segments.append(
-                            BuildInbetweenLimbSegment(joined).apply(
-                                binding.parts,
-                                fk_offset_path=binding.fk_offset_path,
-                                fk_control_path=binding.fk_control_path,
-                                fk_system_path=binding.fk_system_path,
-                                start_fk_driver_path=(
-                                    binding.start_fk_driver_path),
-                                start_fk_constraint_name=(
-                                    binding.start_fk_constraint_name),
-                                downstream_fk_offset_path=(
-                                    binding.downstream_fk_offset_path),
-                                start_ik_driver=binding.start_ik_driver,
-                                end_ik_driver=binding.end_ik_driver,
-                                fk_weight_plug=binding.fk_weight_plug,
-                                ik_weight_plug=binding.ik_weight_plug,
-                                rotate_order=binding.rotate_order,
-                                part_control_radius=(
-                                    binding.part_control_radius),
-                            ))
+                        built_segments.append(next(limb_results))
                     inbetween_segments = tuple(built_segments)
                     if any(binding.parts[0].source_joint
                            in untwister_sources
@@ -328,13 +328,13 @@ class BuildRegisteredBodyCharacter:
                 if not body_bind_pose_matches(
                         fit_part_hierarchy.body, driven_body):
                     raise RuntimeError("Fit Part 驱动改变了 Body 绑定姿态")
-                rig = replace(
-                    rig,
-                    plan=_with_inbetween_fk_sources(
-                        rebase_plan_paths_after_parts(rig.plan, final_paths),
-                        inbetween_segments),
-                    body=driven_body,
-                )
+                rebased_plan = _with_inbetween_fk_sources(
+                    rebase_plan_paths_after_parts(rig.plan, final_paths),
+                    inbetween_segments)
+                if solver_mapping is not None:
+                    rebased_plan = rebase_character_rig_after_inbetween_ik(
+                        rebased_plan, solver_mapping)
+                rig = replace(rig, plan=rebased_plan, body=driven_body)
                 if inbetween_segments:
                     arm_fk = joined.capture_body_arm_fk_controls(
                         rig.plan.arm.fk_controls)
@@ -351,6 +351,58 @@ class BuildRegisteredBodyCharacter:
                             "Inbetween 改接后四肢 FK 复检失败："
                             + "；".join(issue.message
                                        for issue in fk_issues))
+                    solvers = tuple(
+                        request.plan for request in
+                        solver_mapping.requests) if solver_mapping else ()
+                    if solvers:
+                        arm_mechanisms = joined.capture_body_arm_mechanisms(
+                            rig.plan.arm.mechanisms)
+                        leg_mechanisms = joined.capture_body_leg_mechanisms(
+                            rig.plan.leg.mechanisms)
+                        arm_ik = joined.capture_body_arm_ik(
+                            rig.plan.arm.ik)
+                        leg_ik = joined.capture_body_leg_ik(
+                            rig.plan.leg.ik)
+                        ik_issues = (
+                            *audit_body_arm_mechanisms(
+                                rig.plan.arm.mechanisms, arm_mechanisms,
+                                check_initial_pose=False),
+                            *audit_body_leg_mechanisms(
+                                rig.plan.leg.mechanisms, leg_mechanisms,
+                                check_initial_pose=False),
+                            *audit_body_arm_ik(
+                                rig.plan.arm.ik, arm_ik,
+                                check_initial_pose=False),
+                            *audit_body_leg_ik(
+                                rig.plan.leg.ik, leg_ik,
+                                check_initial_pose=False,
+                                expected_handle_parent_by_side={
+                                    side.side:
+                                    side.final_handle_parent_path
+                                    for side in rig.plan.leg.foot.sides},
+                                expected_ankle_source_by_side={
+                                    side.side:
+                                    side.ankle_orientation_source_path
+                                    for side in rig.plan.leg.foot.sides}),
+                        )
+                        if ik_issues:
+                            raise RuntimeError(
+                                "Inbetween 求解链复检失败："
+                                + "；".join(issue.message
+                                           for issue in ik_issues))
+                        rig = replace(
+                            rig,
+                            arm=replace(
+                                rebase_inbetween_ik_reference(
+                                    rig.arm, solvers),
+                                plan=rig.plan.arm,
+                                mechanisms=arm_mechanisms, ik=arm_ik),
+                            leg=replace(
+                                rebase_inbetween_ik_reference(
+                                    rig.leg, solvers),
+                                plan=rig.plan.leg,
+                                mechanisms=leg_mechanisms, ik=leg_ik),
+                        )
                     rig = replace(rig,
                         arm=replace(rig.arm, plan=rig.plan.arm,
                                     fk_controls=arm_fk, body=driven_body),
@@ -417,4 +469,5 @@ class BuildRegisteredBodyCharacter:
         return RegisteredBodyBuildResult(
             skeleton, rig, registration, tuple(segments),
             fit_part_hierarchy, inbetween_segments,
-            inbetween_untwisters, hip_swing_reverse)
+            inbetween_untwisters, hip_swing_reverse,
+            solver_mapping)

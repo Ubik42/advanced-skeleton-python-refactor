@@ -209,7 +209,13 @@ def decode_registration(text):
                       "root_path": spine.root_path, "pelvis_control": spine.pelvis_control,
                       "chest_space": spine.chest_space, "curve": spine.curve}
         else:
-            raw = exact(data["spine"], (f.name for f in fields(BodySpinePlan)))
+            raw = data["spine"]
+            if (isinstance(raw, dict)
+                    and "solver_joint_list" not in raw):
+                # Registrations written before expanded Inbetween IK chains
+                # used the implicit three-joint Spine solver list.
+                raw = {**raw, "solver_joint_list": None}
+            raw = exact(raw, (f.name for f in fields(BodySpinePlan)))
             joints = []
             for row in raw["joints"]:
                 exact(row,(f.name for f in fields(BodyLimbMechanismJointSpec)))
@@ -222,7 +228,17 @@ def decode_registration(text):
                 joints.append(BodyLimbMechanismJointSpec(BodyLimbMechanismRole(row["role"]),FitBuildSide(row["side"]),path(row["source_joint"]),node,row["name"],path(row["parent_path"]),vector(row["world_position"],3),axes))
             if len(joints) != 6 or tuple(j.role.value for j in joints) != ("fk",)*3+("ik",)*3:
                 raise CharacterRegistryError("Spine 机制链不完整")
-            values = {k:path(v) for k,v in raw.items() if k not in ("joints","fk_controls","body_joints","pole_position","lengths")}
+            values = {k:path(v) for k,v in raw.items() if k not in ("joints","fk_controls","body_joints","pole_position","lengths","solver_joint_list")}
+            solver_joints = raw["solver_joint_list"]
+            if solver_joints is not None:
+                if (not isinstance(solver_joints, list)
+                        or len(solver_joints) < 2):
+                    raise CharacterRegistryError("Spine IK 求解链字段无效")
+                solver_joints = tuple(path(node) for node in solver_joints)
+                if (len(set(solver_joints)) != len(solver_joints)
+                        or solver_joints[0] != joints[3].path):
+                    raise CharacterRegistryError("Spine IK 求解关节列表无效")
+            values["solver_joint_list"] = solver_joints
             for key in ("fk_controls","body_joints"):
                 values[key] = tuple(path(p) for p in raw[key])
                 if len(values[key]) != 3:

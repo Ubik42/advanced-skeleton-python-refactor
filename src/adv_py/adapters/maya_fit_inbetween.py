@@ -78,6 +78,19 @@ class MayaFitInbetweenMixin:
             raise ValueError("Inbetween IK pole vector 来源改变")
         if any(c.objExists(part.name) for part in plan.inserted_joints):
             raise ValueError("Inbetween IK 插入关节名称冲突")
+        divider_names = tuple(
+            ("AdvPy_" + part.source_body_part
+             + "_InbetweenIKDistance")
+            for part in plan.inserted_joints)
+        if any(c.objExists(name) for name in divider_names):
+            raise ValueError("Inbetween IK 段长分配节点名称冲突")
+        for before, _ in plan.path_rewrites:
+            sources = tuple(
+                c.connectionInfo(before + ".translate" + axis,
+                                 sourceFromDestination=True)
+                for axis in "XYZ")
+            if sum(bool(source) for source in sources) > 1:
+                raise ValueError("Inbetween IK 末端存在多轴伸缩输入")
 
     def remove_inbetween_ik_solver(
         self, plan: InbetweenIkSolverPlan,
@@ -94,6 +107,12 @@ class MayaFitInbetweenMixin:
         if not hasattr(self, "_inbetween_solver_visibility"):
             self._inbetween_solver_visibility = {}
         self._inbetween_solver_visibility[plan.handle_name] = visibility
+        if not hasattr(self, "_inbetween_solver_rest_pose"):
+            self._inbetween_solver_rest_pose = {}
+        self._inbetween_solver_rest_pose[plan.handle_name] = tuple(
+            tuple(c.xform(joint, query=True, worldSpace=True,
+                          matrix=True))
+            for joint in plan.original_chain)
         self._transaction_changed = True
         c.delete(plan.pole_constraint_name)
         c.delete(plan.handle_name)
@@ -113,7 +132,26 @@ class MayaFitInbetweenMixin:
             raise ValueError("Inbetween IK 待插入骨段已被修改")
         before = tuple(c.xform(end, query=True, worldSpace=True,
                                matrix=True))
+        stretch_inputs = tuple(
+            (axis, c.connectionInfo(
+                end + ".translate" + axis,
+                sourceFromDestination=True))
+            for axis in "XYZ")
+        active_inputs = tuple((axis, source) for axis, source
+                              in stretch_inputs if source)
+        if len(active_inputs) > 1:
+            raise ValueError("Inbetween IK 末端存在多轴伸缩输入")
+        stretch_axis, stretch_source = (
+            active_inputs[0] if active_inputs else (None, None))
+        original_length = (float(c.getAttr(
+            end + ".translate" + stretch_axis))
+            if stretch_axis else None)
         self._transaction_changed = True
+        if stretch_source:
+            c.disconnectAttr(stretch_source,
+                             end + ".translate" + stretch_axis)
+            c.setAttr(end + ".translate" + stretch_axis,
+                      original_length)
         for part in segment.parts:
             joint = c.createNode("joint", name=part.ikx_name,
                                  parent=parent, skipSelect=True)
@@ -124,6 +162,18 @@ class MayaFitInbetweenMixin:
                     translation=part.world_position)
             parent = joint
         moved_end = c.parent(end, parent, absolute=True)[0]
+        if stretch_source:
+            divider = c.createNode(
+                "multiplyDivide", name=segment.parts[0].distance_name)
+            c.setAttr(divider + ".input2X",
+                      segment.parts[0].interval_fraction)
+            c.connectAttr(stretch_source, divider + ".input1X")
+            for part in segment.parts:
+                c.connectAttr(divider + ".outputX",
+                              part.ikx_name + ".translate"
+                              + stretch_axis)
+            c.connectAttr(divider + ".outputX",
+                          moved_end + ".translate" + stretch_axis)
         after = tuple(c.xform(moved_end, query=True, worldSpace=True,
                               matrix=True))
         if max(abs(a - b) for a, b in zip(before, after)) > 1e-5:
@@ -172,13 +222,24 @@ class MayaFitInbetweenMixin:
             for node in (c.poleVectorConstraint(
                 poles[0], query=True, targetList=True) or [])
         ) if len(poles) == 1 else ()
+        pose = self._inbetween_solver_rest_pose.pop(
+            plan.handle_name, None)
+        rewrites = dict(plan.path_rewrites)
+        pose_matches = (pose is not None and all(
+            max(abs(a - b) for a, b in zip(
+                before,
+                c.xform(rewrites.get(original, original),
+                        query=True, worldSpace=True,
+                        matrix=True))) <= 1e-4
+            for original, before in zip(plan.original_chain, pose)))
         return (joint_list == plan.solved_joint_list
                 and c.ikHandle(handles[0], query=True, solver=True)
                 == plan.solver_name
                 and (c.listRelatives(handles[0], parent=True,
                                      fullPath=True) or [])
                 == [plan.handle_parent_path]
-                and pole_sources == (plan.pole_control_path,))
+                and pole_sources == (plan.pole_control_path,)
+                and pose_matches)
 
     def preflight_inbetween_untwister(
         self, plan: InbetweenUnTwisterPlan,

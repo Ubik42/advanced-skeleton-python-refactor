@@ -14,7 +14,7 @@ from .body_character_rig import BodyCharacterRigHost
 from .character_registry import CharacterRegistryHost
 from .finger_mid_deform import FingerMidHost
 from .fit_inbetween import FitInbetweenHost
-from .fit_inbetween_limb_segment import InbetweenLimbSegmentHost
+from .fit_inbetween_limb_segment import InbetweenLimbSegmentsHost
 from .fit_part import FitPartHierarchyHost
 from .limb_part_deform import LimbPartHost
 from .oriented_body_skeleton import OrientedBodySkeletonHost
@@ -30,7 +30,7 @@ class CharacterFromFitHost(OrientedBodySkeletonHost, BodyCharacterRigHost,
                            CharacterRegistryHost, SkinBindHost,
                            AxialPartHost, FingerMidHost, LimbPartHost,
                            FitInbetweenHost, FitPartHierarchyHost,
-                           InbetweenLimbSegmentHost,
+                           InbetweenLimbSegmentsHost,
                            Protocol):
     """Scene operations used by the complete Fit-to-skinned-Body chain."""
 
