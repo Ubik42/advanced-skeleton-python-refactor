@@ -500,19 +500,19 @@ def create_panel(controller: MayaPanelController | None = None):
             self.custom_softmod_source.setPlaceholderText("已绘制的 SoftMod 节点路径")
             self.custom_control_name = QtWidgets.QLineEdit()
             self.custom_control_name.setPlaceholderText("例如 Bicep；侧别由位置确定")
-            self.custom_control_mirror = QtWidgets.QCheckBox("mirror")
+            self.custom_control_mirror = QtWidgets.QCheckBox("启用")
             self.custom_control_mirror.setChecked(True)
-            self.custom_control_middle = QtWidgets.QCheckBox("middle")
+            self.custom_control_middle = QtWidgets.QCheckBox("启用")
             self.custom_control_mirror.toggled.connect(
                 lambda enabled: self.custom_control_middle.setChecked(False)
                 if enabled else None)
             self.custom_control_middle.toggled.connect(
                 lambda enabled: self.custom_control_mirror.setChecked(False)
                 if enabled else None)
-            self.custom_control_local = QtWidgets.QCheckBox("local")
+            self.custom_control_local = QtWidgets.QCheckBox("启用")
             self.custom_control_local.setChecked(True)
             self.custom_control_partial_parent = QtWidgets.QCheckBox(
-                "50% joint as parent（仅 Body Skin）")
+                "启用 50% 父关节（仅 Body Skin）")
             self.custom_skin_cluster = QtWidgets.QLineEdit()
             self.custom_skin_cluster.setPlaceholderText(
                 "留空使用唯一现有层；填节点名选现有层")
@@ -526,7 +526,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 "已有 SoftMod 控制器路径")
             self.custom_control_mesh = QtWidgets.QLineEdit()
             self.custom_control_mesh.setPlaceholderText("新增受影响网格路径")
-            group, form = self._group("06 · Custom Controllers", [
+            group, form = self._group("06 · 自定义控制器", [
                 ("SoftMod 区域", self.custom_softmod_source),
                 ("控制器名称", self.custom_control_name),
                 ("自动镜像", self.custom_control_mirror),
@@ -538,26 +538,26 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("指定父关节", self.custom_control_parent),
                 ("已有控制器", self.custom_control_existing),
                 ("新增网格", self.custom_control_mesh)])
-            form.addRow(QtWidgets.QLabel("First create a SoftMod:"))
-            form.addRow(self._button("SoftMod Tool",
+            form.addRow(QtWidgets.QLabel("先创建 SoftMod 区域："))
+            form.addRow(self._button("打开 SoftMod Tool",
                                      self._open_custom_softmod_tool))
-            form.addRow(QtWidgets.QLabel("Then:"))
-            form.addRow(self._button("Create Skin Control",
+            form.addRow(QtWidgets.QLabel("然后创建控制器："))
+            form.addRow(self._button("创建 Skin Control",
                                      self._create_custom_skin))
-            form.addRow(self._button("Create Cluster Control",
+            form.addRow(self._button("创建 Cluster Control",
                                      self._create_custom_cluster))
-            form.addRow(self._button("Create SoftMod Control",
+            form.addRow(self._button("创建 SoftMod Control",
                                      self._create_custom_softmod))
-            form.addRow(QtWidgets.QLabel("Edit Cluster Control:"))
-            form.addRow(self._button("Paint weights for selected Control",
+            form.addRow(QtWidgets.QLabel("编辑 Cluster Control："))
+            form.addRow(self._button("绘制所选控制器权重",
                                      self._paint_custom_cluster))
-            form.addRow(self._button("Mirror weights for selected Control",
+            form.addRow(self._button("镜像所选控制器权重",
                                      self._mirror_custom_cluster))
-            form.addRow(QtWidgets.QLabel("Edit:"))
-            form.addRow(self._button("Add influenced object",
+            form.addRow(QtWidgets.QLabel("编辑："))
+            form.addRow(self._button("添加受影响对象",
                                      self._add_custom_softmod_mesh))
-            form.addRow(QtWidgets.QLabel("Delete:"))
-            form.addRow(self._button("Delete selected control",
+            form.addRow(QtWidgets.QLabel("删除："))
+            form.addRow(self._button("删除所选控制器",
                                      self._delete_custom_control))
             stack.addWidget(group)
 
@@ -1096,9 +1096,9 @@ def create_panel(controller: MayaPanelController | None = None):
             face_custom["mesh"].setPlaceholderText("新增受影响网格路径")
             face_custom["skin_cluster"].setPlaceholderText(
                 "留空使用唯一现有层；填节点名选现有层")
-            for key, label in (("mirror", "mirror"), ("middle", "middle"),
-                               ("local", "local"),
-                               ("new_layer", "新建分层 SkinCluster")):
+            for key, label in (("mirror", "启用"), ("middle", "启用"),
+                               ("local", "启用"),
+                               ("new_layer", "启用")):
                 face_custom[key] = QtWidgets.QCheckBox(label)
             face_custom["mirror"].setChecked(True)
             face_custom["local"].setChecked(True)
@@ -1108,7 +1108,7 @@ def create_panel(controller: MayaPanelController | None = None):
             face_custom["middle"].toggled.connect(
                 lambda enabled: face_custom["mirror"].setChecked(False)
                 if enabled else None)
-            group, form = self._group("07 · Custom Controllers", [
+            group, form = self._group("07 · 自定义控制器", [
                 ("SoftMod 区域", face_custom["source"]),
                 ("控制器名称", face_custom["name"]),
                 ("自动镜像", face_custom["mirror"]),
@@ -1120,25 +1120,25 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("已有控制器", face_custom["existing"]),
                 ("新增网格", face_custom["mesh"])])
             form.addRow(QtWidgets.QLabel("先创建 SoftMod 区域："))
-            form.addRow(self._button("SoftMod Tool",
+            form.addRow(self._button("打开 SoftMod Tool",
                                      self._open_custom_softmod_tool))
             form.addRow(QtWidgets.QLabel("然后创建控制器："))
-            form.addRow(self._button("Create Skin Control",
+            form.addRow(self._button("创建 Skin Control",
                 lambda: self._create_custom_skin(face=True)))
-            form.addRow(self._button("Create Cluster Control",
+            form.addRow(self._button("创建 Cluster Control",
                 lambda: self._create_custom_cluster(face=True)))
-            form.addRow(self._button("Create SoftMod Control",
+            form.addRow(self._button("创建 SoftMod Control",
                 lambda: self._create_custom_softmod(face=True)))
             form.addRow(QtWidgets.QLabel("编辑 Cluster Control："))
-            form.addRow(self._button("Paint weights for selected Control",
+            form.addRow(self._button("绘制所选控制器权重",
                 lambda: self._paint_custom_cluster(face=True)))
-            form.addRow(self._button("Mirror weights for selected Control",
+            form.addRow(self._button("镜像所选控制器权重",
                 lambda: self._mirror_custom_cluster(face=True)))
             form.addRow(QtWidgets.QLabel("编辑："))
-            form.addRow(self._button("Add influenced object",
+            form.addRow(self._button("添加受影响对象",
                 lambda: self._add_custom_softmod_mesh(face=True)))
             form.addRow(QtWidgets.QLabel("删除："))
-            form.addRow(self._button("Delete selected control",
+            form.addRow(self._button("删除所选控制器",
                 lambda: self._delete_custom_control(face=True)))
             stack.addWidget(group)
             stack.addStretch(1)

@@ -756,7 +756,7 @@ class MayaCustomControllerHost(MayaFaceHost):
             fit = self._unique("FaceFitSkeleton", "transform")
             if cmds.objExists(fit + ".HeadJoint"):
                 head_name = cmds.getAttr(fit + ".HeadJoint")
-                if head_name and cmds.objExists(self.scene_address(head_name)):
+                if head_name:
                     path = self._unique(head_name, "joint")
                     if path not in {item.path for item in candidates}:
                         center = tuple(float(value) for value in cmds.xform(
@@ -793,6 +793,13 @@ class MayaCustomControllerHost(MayaFaceHost):
                 "FaceControlSet")) or not cmds.objExists(self.scene_address(
                     "faceBuildPose"))):
             raise ValueError("Face Custom Control 要求已构建 FaceControlSet 和 faceBuildPose")
+        game_engine = self.scene_address(
+            "FaceFitSkeleton.GameEngine" if self.face
+            else "FitSkeleton.gameEngine")
+        if (plan.kind is not CustomControlKind.SKIN
+                and cmds.objExists(game_engine)
+                and bool(cmds.getAttr(game_engine))):
+            raise ValueError("游戏引擎模式仅允许 Skin Control")
         if mesh not in self._softmod_meshes(source):
             raise ValueError("SoftMod 与区域网格不匹配")
         if (cmds.referenceQuery(source, isNodeReferenced=True)
