@@ -805,6 +805,21 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)).execute(
                 right_eye, head_joint or "Head_M")
 
+    def face_fit_eye_lid(self, namespace: str, layer: str):
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        from adv_py.application.face_pre import CreateFaceEyeLidFit, EyeLidLayer
+
+        return CreateFaceEyeLidFit(MayaFacePreHost(
+            namespace=None if namespace == ":" else namespace)).execute(
+                EyeLidLayer(layer))
+
+    def face_fit_eye_lid_reselect(self, namespace: str, layer: str) -> int:
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        from adv_py.application.face_pre import EyeLidLayer
+
+        return MayaFacePreHost(namespace=None if namespace == ":" else namespace
+            ).select_eye_lid_fit(EyeLidLayer(layer))
+
     def face_eye_build(self, namespace: str, head_joint: str,
                        right_eye: str, left_eye: str):
         from adv_py.adapters.maya_face_eye import MayaFaceEyeHost

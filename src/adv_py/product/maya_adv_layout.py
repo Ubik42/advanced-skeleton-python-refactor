@@ -82,7 +82,13 @@ ADV_OPERATIONS = {
         ("导出目标资产", 3, "02 · 可移植目标资产"),
         ("导入为目标网格", 3, "02 · 可移植目标资产")),
     ("Face", "Fit"): (
-        ("建立 EyeBall Fit", 3, "01 · EyeBall Fit"),),
+        ("建立 EyeBall Fit", 3, "01 · EyeBall Fit"),
+        ("EyeLid Outer", 3, "02 · EyeLid Fit"),
+        ("EyeLid Main", 3, "02 · EyeLid Fit"),
+        ("EyeLid Inner", 3, "02 · EyeLid Fit"),
+        ("重选 Outer", 3, "02 · EyeLid Fit"),
+        ("重选 Main", 3, "02 · EyeLid Fit"),
+        ("重选 Inner", 3, "02 · EyeLid Fit")),
     ("Face", "Build"): (
         ("构建面部控制", 3, "03 · 控制与变形器"),),
     ("Face", "BlendShapes"): (

@@ -4,13 +4,15 @@ from __future__ import annotations
 import json
 import re
 
-from adv_py.application.face_pre import FacePreRole
+from adv_py.application.face_pre import EyeLidLayer, FacePreRole
+from adv_py.core.face_eyelid_fit import EyeLidLoop
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .maya_face import MayaFaceHost
 
 
 _FACE_PATTERN = re.compile(r"^(?P<mesh>.+)\.f\[(?P<index>\d+)\]$")
+_EDGE_PATTERN = re.compile(r"^(?P<mesh>.+)\.e\[(?P<index>\d+)\]$")
 
 
 class MayaFacePreHost(MayaFaceHost):
@@ -312,3 +314,166 @@ class MayaFacePreHost(MayaFaceHost):
                     type="transform"):
             raise FitSkeletonValidationError("EyeBall Fit 的球体预览缺失")
         return locator
+
+    def eye_ball_fit_center_y(self) -> float:
+        return float(self._cmds.xform(self.read_eye_ball_fit(), query=True,
+                                      worldSpace=True, translation=True)[1])
+
+    def selected_eye_lid_edges(self):
+        from maya.api import OpenMaya as om
+
+        c = self._cmds
+        selected = c.ls(selection=True, flatten=True, long=True) or []
+        parsed = [_EDGE_PATTERN.fullmatch(item) for item in selected]
+        if not parsed or any(match is None for match in parsed):
+            raise FitSkeletonValidationError("EyeLid Fit 需要选择一圈多边形边")
+        meshes = {match.group("mesh") for match in parsed}
+        if len(meshes) != 1:
+            raise FitSkeletonValidationError("EyeLid Fit 只接受同一网格的边")
+        mesh = next(iter(meshes))
+        if self.read_face_objects(FacePreRole.FACE) != (mesh,):
+            raise FitSkeletonValidationError("眼睑边必须属于 Face 网格")
+        indices = tuple(sorted({int(match.group("index")) for match in parsed}))
+        shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
+                                 fullPath=True, type="mesh") or []
+        if len(shapes) != 1:
+            raise FitSkeletonValidationError("Face 网格 Shape 缺失或不唯一")
+        selection = om.MSelectionList()
+        selection.add(self.scene_address(shapes[0]))
+        mesh_fn = om.MFnMesh(selection.getDagPath(0))
+        if not indices or indices[-1] >= mesh_fn.numEdges:
+            raise FitSkeletonValidationError("眼睑边索引已超出网格拓扑")
+        edges = tuple((index, *mesh_fn.getEdgeVertices(index))
+                      for index in indices)
+        vertices = {vertex for _, first, second in edges
+                    for vertex in (first, second)}
+        positions = {vertex: (float(point.x), float(point.y), float(point.z))
+                     for vertex in vertices
+                     for point in (mesh_fn.getPoint(vertex, om.MSpace.kWorld),)}
+        return mesh, edges, positions
+
+    def create_eye_lid_fit(self, layer: EyeLidLayer, mesh: str,
+                           loop: EyeLidLoop, positions,
+                           edges) -> tuple[str, str]:
+        c = self._cmds
+        fit = self._fit(required=True)
+        self.read_eye_ball_fit()
+        if self.read_face_objects(FacePreRole.FACE) != (mesh,):
+            raise FitSkeletonValidationError("眼睑边与 Face 网格不一致")
+        if layer is EyeLidLayer.MAIN:
+            self.read_eye_lid_fit(EyeLidLayer.OUTER)
+        elif layer is EyeLidLayer.INNER:
+            self.read_eye_lid_fit(EyeLidLayer.OUTER)
+            self.read_eye_lid_fit(EyeLidLayer.MAIN)
+        part = layer.value
+        holder_name = "FaceFitEyeLid" + part
+        curve_names = ("upperEyeLid" + part + "Curve",
+                       "lowerEyeLid" + part + "Curve")
+        names = (holder_name, holder_name + "Geo",
+                 holder_name + "Curve", holder_name + "Loc", *curve_names)
+        if any(c.ls(name, long=True) for name in names):
+            raise FitSkeletonValidationError("眼睑 Fit 节点名称已占用：" + part)
+        if c.referenceQuery(fit, isNodeReferenced=True):
+            raise FitSkeletonValidationError("不能在引用的 FaceFitSkeleton 下建立眼睑")
+        selected = c.ls(selection=True, long=True) or []
+        with self.transaction("建立 EyeLid " + part + " Fit"):
+            self._transaction_changed = True
+            holder = c.createNode("transform", name=holder_name, parent=fit)
+            geo_holder = c.createNode("transform", name=holder_name + "Geo",
+                                      parent=holder)
+            curve_holder = c.createNode("transform", name=holder_name + "Curve",
+                                        parent=holder)
+            c.createNode("transform", name=holder_name + "Loc", parent=holder)
+            paths = []
+            for name, vertices in zip(curve_names,
+                                      (loop.upper_vertices, loop.lower_vertices)):
+                points = [positions[index] for index in vertices]
+                curve = c.curve(name=name, degree=1, point=points)
+                curve = c.parent(curve, curve_holder, absolute=True)[0]
+                shape = (c.listRelatives(curve, shapes=True,
+                                         fullPath=True) or [None])[0]
+                c.setAttr(shape + ".overrideEnabled", True)
+                c.setAttr(shape + ".overrideColor", {
+                    EyeLidLayer.OUTER: 14, EyeLidLayer.MAIN: 13,
+                    EyeLidLayer.INNER: 15}[layer])
+                paths.append((c.ls(curve, long=True,
+                                    type="transform") or [curve])[0])
+            radius = float(c.getAttr(fit + ".faceScale")) / 400.0
+            for name, curve in zip(("upper", "lower"), paths):
+                profile = c.circle(normal=(0, 1, 0), radius=radius,
+                                   constructionHistory=False)[0]
+                tube = c.extrude(profile, curve, constructionHistory=False,
+                                 extrudeType=2, fixedPath=True,
+                                 useComponentPivot=True,
+                                 useProfileNormal=True)[0]
+                c.delete(profile)
+                tube = c.rename(tube, name + "EyeLidCylinder" + part)
+                tube = c.parent(tube, geo_holder, absolute=True)[0]
+                c.setAttr(tube + ".overrideEnabled", True)
+                c.setAttr(tube + ".overrideDisplayType", 2)
+            c.addAttr(holder, longName="selection", dataType="string")
+            c.setAttr(holder + ".selection", " ".join(
+                f"{mesh}.e[{index}]" for index in loop.edge_ids),
+                type="string")
+            c.addAttr(holder, longName="advPyFaceCount", attributeType="long")
+            c.setAttr(holder + ".advPyFaceCount",
+                      int(c.polyEvaluate(mesh, face=True)))
+            c.addAttr(holder, longName="advPyEdgeVertices", dataType="string")
+            c.setAttr(holder + ".advPyEdgeVertices", json.dumps(
+                [(index, *sorted((first, second)))
+                 for index, first, second in sorted(edges)],
+                separators=(",", ":")), type="string")
+            c.select(selected, replace=True) if selected else c.select(clear=True)
+        return tuple(paths)
+
+    def read_eye_lid_fit(self, layer: EyeLidLayer) -> tuple[str, str]:
+        c = self._cmds
+        fit = self._fit(required=True)
+        holder = c.ls("FaceFitEyeLid" + layer.value, long=True,
+                      type="transform") or []
+        if len(holder) != 1 or not holder[0].startswith(fit + "|"):
+            raise FitSkeletonValidationError("眼睑 Fit 缺失或父级无效：" + layer.value)
+        curve_parent = holder[0] + "|FaceFitEyeLid" + layer.value + "Curve"
+        paths = tuple(curve_parent + "|" + prefix + "EyeLid" + layer.value
+                      + "Curve" for prefix in ("upper", "lower"))
+        if any((c.ls(path, long=True, type="transform") or []) != [path]
+               for path in paths):
+            raise FitSkeletonValidationError("眼睑 Fit 曲线缺失：" + layer.value)
+        return paths
+
+    def select_eye_lid_fit(self, layer: EyeLidLayer) -> int:
+        from maya.api import OpenMaya as om
+
+        self.read_eye_lid_fit(layer)
+        c = self._cmds
+        holder = (c.ls("FaceFitEyeLid" + layer.value, long=True,
+                       type="transform") or [None])[0]
+        selected = tuple((c.getAttr(holder + ".selection") or "").split())
+        if not selected or any(_EDGE_PATTERN.fullmatch(item) is None
+                               for item in selected):
+            raise FitSkeletonValidationError("眼睑边选择记录无效")
+        mesh = _EDGE_PATTERN.fullmatch(selected[0]).group("mesh")
+        if (not c.objExists(mesh)
+                or any(_EDGE_PATTERN.fullmatch(item).group("mesh") != mesh
+                for item in selected)
+                or int(c.polyEvaluate(mesh, face=True))
+                    != int(c.getAttr(holder + ".advPyFaceCount"))):
+            raise FitSkeletonValidationError("眼睑网格拓扑已改变")
+        shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
+                                 fullPath=True, type="mesh") or []
+        if len(shapes) != 1:
+            raise FitSkeletonValidationError("眼睑 Face 网格已缺失")
+        selection = om.MSelectionList()
+        selection.add(self.scene_address(shapes[0]))
+        mesh_fn = om.MFnMesh(selection.getDagPath(0))
+        expected = json.loads(c.getAttr(holder + ".advPyEdgeVertices"))
+        indices = sorted(int(_EDGE_PATTERN.fullmatch(item).group("index"))
+                         for item in selected)
+        if indices[-1] >= mesh_fn.numEdges:
+            raise FitSkeletonValidationError("眼睑边索引已超出网格拓扑")
+        observed = [(index, *sorted(mesh_fn.getEdgeVertices(index)))
+                    for index in indices]
+        if observed != [tuple(row) for row in expected]:
+            raise FitSkeletonValidationError("眼睑边连接已改变，不能使用旧 Fit 选择")
+        c.select(selected, replace=True)
+        return len(selected)

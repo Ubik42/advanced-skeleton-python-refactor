@@ -792,6 +792,17 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("建立 EyeBall Fit",
                                      self._face_fit_eye_ball, primary=True))
             stack.addWidget(group)
+            group, form = self._group("02 · EyeLid Fit", [])
+            form.addRow(QtWidgets.QLabel(
+                "选择 Face 网格上一圈闭合眼睑边；按 Outer → Main → Inner 建立。"))
+            for layer in ("Outer", "Main", "Inner"):
+                row = QtWidgets.QHBoxLayout()
+                row.addWidget(self._button("EyeLid " + layer,
+                    lambda layer=layer: self._face_fit_eye_lid(layer)))
+                row.addWidget(self._button("重选 " + layer,
+                    lambda layer=layer: self._face_fit_eye_lid_reselect(layer)))
+                form.addRow(row)
+            stack.addWidget(group)
             self.face_neutral = QtWidgets.QLineEdit()
             self.face_neutral.setPlaceholderText("|FaceNeutral")
             self.face_target = QtWidgets.QLineEdit()
@@ -1554,6 +1565,16 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.face_fit_right_eye.text().strip(),
                 self.face_fit_head.text().strip())
             return "已建立 EyeBall Fit：" + path
+
+        def _face_fit_eye_lid(self, layer):
+            upper, lower = self.controller.face_fit_eye_lid(
+                self._namespace(), layer)
+            return f"已建立 EyeLid {layer}：上、下两条曲线"
+
+        def _face_fit_eye_lid_reselect(self, layer):
+            count = self.controller.face_fit_eye_lid_reselect(
+                self._namespace(), layer)
+            return f"已重选 EyeLid {layer}：{count} 条边"
 
         def _face_performance_apply(self):
             frames = self.controller.face_performance_apply(self._namespace(),

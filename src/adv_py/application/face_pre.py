@@ -3,10 +3,18 @@ from __future__ import annotations
 
 from enum import Enum
 
+from adv_py.core.face_eyelid_fit import order_eye_lid_loop
+
 
 class FacePreRole(str, Enum):
     FACE = "Face"
     ALL_HEAD = "AllHead"
+
+
+class EyeLidLayer(str, Enum):
+    OUTER = "Outer"
+    MAIN = "Main"
+    INNER = "Inner"
 
 
 class RecordFacePreInput:
@@ -51,3 +59,20 @@ class CreateFaceEyeBallFit:
         if self.host.read_eye_ball_fit() != result:
             raise RuntimeError("EyeBall Fit 写后读回不一致")
         return result
+
+
+class CreateFaceEyeLidFit:
+    def __init__(self, host) -> None:
+        self.host = host
+
+    def execute(self, layer: EyeLidLayer) -> tuple[str, str]:
+        if not isinstance(layer, EyeLidLayer):
+            raise ValueError("眼睑 Fit 层级无效")
+        mesh, edges, positions = self.host.selected_eye_lid_edges()
+        ordered = order_eye_lid_loop(edges, positions,
+            eye_center_y=self.host.eye_ball_fit_center_y())
+        created = self.host.create_eye_lid_fit(layer, mesh, ordered,
+                                               positions, edges)
+        if self.host.read_eye_lid_fit(layer) != created:
+            raise RuntimeError("眼睑 Fit 写后读回不一致")
+        return created
