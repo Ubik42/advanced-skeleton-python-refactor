@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_arm_blend import BodyArmBlendIssue, BodyArmBlendPlan, BodyArmBlendSnapshot, audit_body_arm_blend, plan_body_arm_blend
 from adv_py.core.body_arm_match import BodyArmIkToFkPlan, BodyArmIkToFkSceneState, BodyArmMatchIssue, audit_body_arm_ik_to_fk_preflight, audit_body_arm_ik_to_fk_result, plan_body_arm_ik_to_fk
 from adv_py.core.body_arm_mechanisms import BodyArmMechanismRole, plan_body_arm_mechanisms
@@ -65,7 +66,10 @@ class MatchBodyArmIkToFk:
         provenance = audit_body_provenance(oriented_body_provenance(symmetry.source.hierarchy.container, len(symmetry.instances)), body.provenance)
         mechanisms = plan_body_arm_mechanisms(body)
         fk_drivers = {spec.source_joint: spec.path for spec in mechanisms.joints if spec.role is BodyArmMechanismRole.FK}
-        fk_controls = plan_body_arm_fk_controls(body, driven_joint_by_source=fk_drivers)
+        fk_controls = plan_body_arm_fk_controls(
+            body, driven_joint_by_source=fk_drivers,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).sub_controllers)
         blend = plan_body_arm_blend(body, mechanisms)
         match = plan_body_arm_ik_to_fk(body, fk_controls, blend, side)
         fk_snapshot = self._host.capture_body_arm_fk_controls(fk_controls)

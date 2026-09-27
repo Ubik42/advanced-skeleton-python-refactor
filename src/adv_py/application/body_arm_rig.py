@@ -11,6 +11,7 @@ from adv_py.core.body_arm_stretch import BodyArmStretchPlan, BodyArmStretchSnaps
 from adv_py.core.body_arm_twist import BodyArmTwistJointSpec, BodyArmTwistPlan, BodyArmTwistSegmentSpec, BodyArmTwistSnapshot, audit_body_arm_twist, plan_body_arm_twist
 from adv_py.core.body_arm_volume import BodyArmVolumePlan, BodyArmVolumeSnapshot, audit_body_arm_volume, plan_body_arm_volume
 from adv_py.core.body_arm_mechanisms import BodyArmMechanismJointSpec, BodyArmMechanismPlan, BodyArmMechanismRole, BodyArmMechanismSnapshot, audit_body_arm_mechanisms, plan_body_arm_mechanisms
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_controls import BodyArmFkControlPlan, BodyArmFkControlSnapshot, BodyArmFkControlSpec, audit_body_arm_fk_controls, plan_body_arm_fk_controls
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -107,7 +108,11 @@ class BuildBodyArmRig:
         """Plan this module from the character's shared immutable input."""
         mechanisms = plan_body_arm_mechanisms(safety.body)
         fk_drivers = {spec.source_joint: spec.path for spec in mechanisms.joints if spec.role is BodyArmMechanismRole.FK}
-        fk_controls = plan_body_arm_fk_controls(safety.body, radius=control_radius, driven_joint_by_source=fk_drivers)
+        fk_controls = plan_body_arm_fk_controls(
+            safety.body, radius=control_radius,
+            driven_joint_by_source=fk_drivers,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).sub_controllers)
         blend = plan_body_arm_blend(safety.body, mechanisms)
         ik = plan_body_arm_ik(safety.body, mechanisms, radius=control_radius, pole_distance_scale=pole_distance_scale)
         visibility = plan_body_arm_visibility(fk_controls, ik, blend)
@@ -118,6 +123,8 @@ class BuildBodyArmRig:
         names.extend(spec.name for spec in mechanisms.joints)
         for spec in fk_controls.controls:
             names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
+            if spec.sub_control_name is not None:
+                names.append(spec.sub_control_name)
         for side in blend.sides:
             names.append(side.reverse_name)
             names.extend(j.constraint_name for j in side.joints)

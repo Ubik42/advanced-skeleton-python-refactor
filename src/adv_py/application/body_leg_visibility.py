@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_leg_blend import audit_body_leg_blend, plan_body_leg_blend
 from adv_py.core.body_leg_controls import audit_body_leg_fk_controls, plan_body_leg_fk_controls
 from adv_py.core.body_leg_ik import audit_body_leg_ik, plan_body_leg_ik
@@ -98,7 +99,10 @@ class BuildBodyLegVisibility:
             for spec in mechanism_plan.joints
             if spec.role is BodyLegMechanismRole.FK
         }
-        fk = plan_body_leg_fk_controls(body, radius=control_radius, driven_joint_by_source=fk_drivers)
+        fk = plan_body_leg_fk_controls(
+            body, radius=control_radius, driven_joint_by_source=fk_drivers,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).sub_controllers)
         ik = plan_body_leg_ik(
             body,
             mechanism_plan,

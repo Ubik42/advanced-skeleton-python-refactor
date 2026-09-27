@@ -28,6 +28,7 @@ def plan_body_arm_fk_controls(
     *,
     radius: float = 1.5,
     driven_joint_by_source: Mapping[str, str] | None = None,
+    sub_controllers: bool = False,
 ) -> BodyArmFkControlPlan:
     return plan_body_limb_fk_controls(
         body,
@@ -35,6 +36,7 @@ def plan_body_arm_fk_controls(
         joint_names=("Shoulder", "Elbow", "Wrist"),
         radius=radius,
         driven_joint_by_source=driven_joint_by_source,
+        sub_controllers=sub_controllers,
     )
 
 

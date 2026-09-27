@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_leg_blend import (
     BodyLegBlendIssue,
     BodyLegBlendPlan,
@@ -122,7 +123,9 @@ class MatchBodyLegIkToFk:
             if spec.role is BodyLegMechanismRole.FK
         }
         fk_controls = plan_body_leg_fk_controls(
-            body, driven_joint_by_source=fk_drivers
+            body, driven_joint_by_source=fk_drivers,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).sub_controllers,
         )
         blend = plan_body_leg_blend(body, mechanisms)
         match = plan_body_leg_ik_to_fk(body, fk_controls, blend, side)

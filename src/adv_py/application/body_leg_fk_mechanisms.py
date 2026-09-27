@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_leg_controls import (
     BodyLegControlIssue,
     BodyLegFkControlPlan,
@@ -138,12 +139,16 @@ class BuildBodyLegFkMechanismControls:
             body,
             radius=control_radius,
             driven_joint_by_source=fk_drivers,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).sub_controllers,
         )
         names = [controls.root_name]
         for spec in controls.controls:
             names.extend(
                 (spec.offset_name, spec.control_name, spec.constraint_name)
             )
+            if spec.sub_control_name is not None:
+                names.append(spec.sub_control_name)
         collisions = tuple(
             sorted({
                 path

@@ -31,6 +31,8 @@ class BodyLimbFkControlSpec:
     rotate_order: int = 0
     control_parent_path: str | None = None
     source_override_path: str | None = None
+    sub_control_path: str | None = None
+    sub_control_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +56,12 @@ class BodyLimbFkControlState:
     local_translation: Vector3
     local_rotation: Vector3
     shape_type: str | None
+    sub_control_path: str | None = None
+    sub_parent_path: str | None = None
+    sub_shape_type: str | None = None
+    sub_visibility_source: str | None = None
+    sub_color: int | None = None
+    sub_shape_scale: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,7 +84,10 @@ def plan_body_limb_fk_controls(
     joint_names: tuple[str, ...],
     radius: float = 1.5,
     driven_joint_by_source: Mapping[str, str] | None = None,
+    sub_controllers: bool = False,
 ) -> BodyLimbFkControlPlan:
+    if type(sub_controllers) is not bool:
+        raise BodyLimbControlValidationError("Sub Controllers 开关必须是布尔值")
     if (
         not limb_label.isalpha()
         or len(joint_names) < 2
@@ -171,6 +182,14 @@ def plan_body_limb_fk_controls(
                 rotate_order={"Shoulder": 5, "Elbow": 5, "Wrist": 5,
                               "Hip": 2, "Knee": 2, "Ankle": 3,
                               "Toes": 5}.get(joint_name, 0),
+                sub_control_path=(
+                    control_path + "|AdvPy_" + joint_name + "FKSub_" + suffix
+                    if sub_controllers else None
+                ),
+                sub_control_name=(
+                    "AdvPy_" + joint_name + "FKSub_" + suffix
+                    if sub_controllers else None
+                ),
             ))
             parent_path = control_path
             previous_joint = state.path
@@ -227,6 +246,20 @@ def audit_body_limb_fk_controls(
             issues.append(BodyLimbControlIssue(
                 "control_shape_mismatch", "FK 控制缺少 NURBS 曲线", path
             ))
+        if spec.sub_control_path is None:
+            if state.sub_control_path is not None:
+                issues.append(BodyLimbControlIssue(
+                    "unexpected_sub_control", "存在计划外 FK Sub 控制器", path))
+        elif (state.sub_control_path != spec.sub_control_path
+              or state.sub_parent_path != spec.control_path
+              or state.sub_shape_type != "nurbsCurve"
+              or state.sub_visibility_source
+              != spec.control_path + ".subControl"
+              or state.sub_color != 30
+              or state.sub_shape_scale is None
+              or abs(state.sub_shape_scale - 0.9) > tolerance):
+            issues.append(BodyLimbControlIssue(
+                "sub_control_mismatch", "FK Sub 控制器与计划不一致", path))
         if check_initial_pose:
             if not _vector_matches(
                 state.world_position, spec.world_position, tolerance

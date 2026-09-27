@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_controls import (
     BodyArmFkControlPlan,
     BodyArmFkControlSnapshot,
@@ -91,12 +92,16 @@ class BuildBodyArmFkControls:
         controls = plan_body_arm_fk_controls(
             safety.body,
             radius=control_radius,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).sub_controllers,
         )
         names = [controls.root_name]
         for spec in controls.controls:
             names.extend(
                 (spec.offset_name, spec.control_name, spec.constraint_name)
             )
+            if spec.sub_control_name is not None:
+                names.append(spec.sub_control_name)
         collisions = tuple(
             sorted(
                 {

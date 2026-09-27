@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_leg_blend import (
     BodyLegBlendPlan,
     BodyLegBlendSnapshot,
@@ -211,6 +212,8 @@ class BuildBodyLegRig:
             safety.body,
             radius=control_radius,
             driven_joint_by_source=fk_drivers,
+            sub_controllers=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).sub_controllers,
         )
         blend = plan_body_leg_blend(safety.body, mechanisms)
         ik = plan_body_leg_ik(
@@ -245,6 +248,8 @@ class BuildBodyLegRig:
         ]
         names.extend(spec.name for spec in mechanisms.joints)
         for spec in fk_controls.controls:
+            if spec.sub_control_name is not None:
+                names.append(spec.sub_control_name)
             names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
         for side in blend.sides:
             names.append(side.reverse_name)

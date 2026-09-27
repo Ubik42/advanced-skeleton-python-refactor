@@ -6127,6 +6127,7 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
             *((pose_name,) if pose_name is not None else ()),
             spec.control_name,
             spec.constraint_name,
+            *((spec.sub_control_name,) if spec.sub_control_name is not None else ()),
         ):
             if self.find_name_collisions(name):
                 raise FitSkeletonValidationError(
@@ -6195,6 +6196,34 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 )
             self._cmds.setAttr(control + ".rotateOrder", spec.rotate_order)
             self._cmds.setAttr(driven[0] + ".rotateOrder", spec.rotate_order)
+            if spec.sub_control_path is not None:
+                if spec.sub_control_name is None:
+                    raise FitSkeletonValidationError("FK Sub 控制器缺少名称")
+                sub = self._cmds.circle(
+                    name=spec.sub_control_name,
+                    normal=(1.0, 0.0, 0.0),
+                    radius=spec.radius * 0.9,
+                    degree=3,
+                    sections=12,
+                    constructionHistory=False,
+                )[0]
+                sub = self._cmds.parent(sub, control, relative=True)[0]
+                sub = (self._cmds.ls(sub, long=True) or [sub])[0]
+                if sub != spec.sub_control_path:
+                    raise RuntimeError("FK Sub 控制器路径漂移")
+                shape = self._cmds.listRelatives(
+                    sub, shapes=True, noIntermediate=True, fullPath=True,
+                ) or []
+                if len(shape) != 1:
+                    raise RuntimeError("FK Sub 控制器曲线无效")
+                self._cmds.setAttr(shape[0] + ".overrideEnabled", True)
+                self._cmds.setAttr(shape[0] + ".overrideColor", 30)
+                self._cmds.addAttr(control, longName="subControl",
+                                   attributeType="bool", defaultValue=False)
+                self._cmds.setAttr(control + ".subControl",
+                                   edit=True, channelBox=True)
+                self._cmds.connectAttr(control + ".subControl",
+                                       shape[0] + ".visibility", force=True)
             orientation_source = control
             if spec.source_override_path is not None:
                 if spec.source_override_path.startswith(control + "|"):
@@ -6368,6 +6397,59 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                 noIntermediate=True,
                 fullPath=True,
             ) or []
+            sub_path = None
+            sub_parent = None
+            sub_shape_type = None
+            sub_visibility_source = None
+            sub_color = None
+            sub_shape_scale = None
+            if spec.sub_control_path is None:
+                children = self._cmds.listRelatives(
+                    control, children=True, type="transform",
+                    fullPath=True) or []
+                unexpected = [path for path in children if path.rsplit(
+                    "|", 1)[-1].startswith("AdvPy_") and "FKSub_" in path]
+                if unexpected:
+                    sub_path = unexpected[0]
+            else:
+                sub_nodes = self._cmds.ls(
+                    spec.sub_control_path, long=True, type="transform") or []
+                if len(sub_nodes) == 1:
+                    sub_path = sub_nodes[0]
+                    sub_parents = self._cmds.listRelatives(
+                        sub_path, parent=True, fullPath=True) or []
+                    sub_parent = sub_parents[0] if len(sub_parents) == 1 else None
+                    sub_shapes = self._cmds.listRelatives(
+                        sub_path, shapes=True, noIntermediate=True,
+                        fullPath=True) or []
+                    if len(sub_shapes) == 1:
+                        sub_shape_type = self._cmds.nodeType(sub_shapes[0])
+                        sub_color = int(self._cmds.getAttr(
+                            sub_shapes[0] + ".overrideColor"))
+                        sources = self._cmds.listConnections(
+                            sub_shapes[0] + ".visibility", source=True,
+                            destination=False, plugs=True) or []
+                        if len(sources) == 1:
+                            source_node, source_attribute = sources[0].split(
+                                ".", 1)
+                            source_paths = self._cmds.ls(
+                                source_node, long=True) or []
+                            if len(source_paths) == 1:
+                                sub_visibility_source = (
+                                    source_paths[0] + "." + source_attribute)
+                        if len(shapes) == 1:
+                            parent_cv = self._cmds.xform(
+                                shapes[0] + ".cv[0]", query=True,
+                                objectSpace=True, translation=True)
+                            sub_cv = self._cmds.xform(
+                                sub_shapes[0] + ".cv[0]", query=True,
+                                objectSpace=True, translation=True)
+                            parent_radius = sum(float(x) ** 2
+                                                for x in parent_cv) ** 0.5
+                            if parent_radius > 0:
+                                sub_shape_scale = (
+                                    sum(float(x) ** 2 for x in sub_cv) ** 0.5
+                                    / parent_radius)
             targets = self._cmds.orientConstraint(
                 constraint,
                 query=True,
@@ -6399,6 +6481,12 @@ class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, Maya
                     local_translation=tuple(float(value) for value in local_translation),
                     local_rotation=tuple(float(value) for value in local_rotation),
                     shape_type=(self._cmds.nodeType(shapes[0]) if len(shapes) == 1 else None),
+                    sub_control_path=sub_path,
+                    sub_parent_path=sub_parent,
+                    sub_shape_type=sub_shape_type,
+                    sub_visibility_source=sub_visibility_source,
+                    sub_color=sub_color,
+                    sub_shape_scale=sub_shape_scale,
                 )
             )
         return tuple(states)
