@@ -82,6 +82,7 @@ _FIT_ATTRIBUTES = {
     FitJointField.UNTWISTER: _MayaFitAttribute("unTwister", "bool"),
     FitJointField.NO_MIRROR: _MayaFitAttribute("noMirror", "bool"),
     FitJointField.NO_MIRROR_LEFT: _MayaFitAttribute("noMirrorLeft", "bool"),
+    FitJointField.NO_FLIP: _MayaFitAttribute("noFlip", "bool"),
     FitJointField.CHILD_OF_PART: _MayaFitAttribute("childOfPart", "long", 1, 10),
     FitJointField.GLOBAL_WEIGHT: _MayaFitAttribute("global", "double", 0, 10),
     FitJointField.GLOBAL_TRANSLATE: _MayaFitAttribute("globalTranslate", "bool"),
@@ -807,11 +808,14 @@ class MayaFitJointHost:
         self._cmds.addAttr(container, **options)
 
     def read_fit_joint_metadata(self, joint: str) -> FitJointMetadata:
-        present = frozenset(
+        present = {
             field
             for field, spec in _FIT_ATTRIBUTES.items()
             if self._attribute_exists(joint, spec.name)
-        )
+        }
+        no_flip_present, no_flip = self._inherited_fit_bool(joint, "noFlip")
+        if no_flip_present:
+            present.add(FitJointField.NO_FLIP)
         return FitJointMetadata(
             joint=joint,
             twist_joints=self._optional_number(joint, "twistJoints", int),
@@ -820,13 +824,14 @@ class MayaFitJointHost:
             untwister=self._optional_bool(joint, "unTwister"),
             no_mirror=self._optional_bool(joint, "noMirror"),
             no_mirror_left=self._optional_bool(joint, "noMirrorLeft"),
+            no_flip=no_flip,
             child_of_part=self._optional_number(joint, "childOfPart", int),
             global_weight=self._optional_number(joint, "global", float),
             global_translate=self._optional_bool(joint, "globalTranslate"),
             world_orient_up=self._optional_enum(joint, "worldOrientUp"),
             world_orient_forward=self._optional_enum(joint, "worldOrientForward"),
             ik_local_mode=self._optional_enum(joint, "ikLocal"),
-            present_fields=present,
+            present_fields=frozenset(present),
         )
 
     def apply_fit_joint_edit(self, joint: str, edit: FitJointFieldEdit) -> None:
@@ -993,6 +998,19 @@ class MayaFitJointHost:
         if not self._attribute_exists(joint, attribute):
             return False
         return bool(self._cmds.getAttr(f"{joint}.{attribute}"))
+
+    def _inherited_fit_bool(self, joint: str, attribute: str) -> tuple[bool, bool]:
+        present = False
+        enabled = False
+        node = joint
+        while node:
+            if self._attribute_exists(node, attribute):
+                present = True
+                enabled |= bool(self._cmds.getAttr(f"{node}.{attribute}"))
+            parents = self._cmds.listRelatives(
+                node, parent=True, fullPath=True) or []
+            node = parents[0] if parents else ""
+        return present, enabled
 
     def _optional_enum(self, joint: str, attribute: str) -> str | None:
         if not self._attribute_exists(joint, attribute):

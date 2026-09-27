@@ -15,6 +15,7 @@ class FitJointField(str, Enum):
     UNTWISTER = "untwister"
     NO_MIRROR = "no_mirror"
     NO_MIRROR_LEFT = "no_mirror_left"
+    NO_FLIP = "no_flip"
     CHILD_OF_PART = "child_of_part"
     GLOBAL_WEIGHT = "global_weight"
     GLOBAL_TRANSLATE = "global_translate"
@@ -70,6 +71,7 @@ class FitJointMetadata:
     untwister: bool = False
     no_mirror: bool = False
     no_mirror_left: bool = False
+    no_flip: bool = False
     child_of_part: int | None = None
     global_weight: float | None = None
     global_translate: bool = False
@@ -96,6 +98,7 @@ _BOOLEAN_FIELDS = {
     FitJointField.UNTWISTER,
     FitJointField.NO_MIRROR,
     FitJointField.NO_MIRROR_LEFT,
+    FitJointField.NO_FLIP,
     FitJointField.GLOBAL_TRANSLATE,
 }
 _ENUM_OPTIONS = {

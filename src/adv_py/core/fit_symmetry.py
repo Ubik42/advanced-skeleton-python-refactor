@@ -88,6 +88,7 @@ def expand_fit_symmetry(
     source_side: dict[str, FitBuildSide] = {}
     inherited_no_mirror: dict[str, bool] = {}
     inherited_left_only: dict[str, bool] = {}
+    inherited_no_flip: dict[str, bool] = {}
     output_paths: dict[tuple[str, FitBuildSide], str] = {}
     instances: list[FitSymmetryInstance] = []
 
@@ -108,6 +109,8 @@ def expand_fit_symmetry(
         left_only = inherited_left_only.get(parent, False) or item.no_mirror_left
         inherited_no_mirror[node.path] = no_mirror
         inherited_left_only[node.path] = left_only
+        no_flip = inherited_no_flip.get(parent, False) or item.no_flip
+        inherited_no_flip[node.path] = no_flip
 
         if side is FitBuildSide.LEFT and not no_mirror:
             raise FitSymmetryValidationError(
@@ -136,6 +139,8 @@ def expand_fit_symmetry(
             if mirrored:
                 position = (-position[0], position[1], position[2])
                 axes = mirror_behavior_axes_yz(axes)
+                if no_flip:
+                    axes = _half_turn_about_local_z(axes)
             parent_output = None
             if parent is not None:
                 parent_target_side = target_side
@@ -174,6 +179,14 @@ def mirror_behavior_axes_yz(axes: AxisFrame) -> AxisFrame:
     secondary = _normalize((source[1][0], -source[1][1], -source[1][2]))
     tertiary = _normalize(_cross(aim, secondary))
     return (aim, secondary, tertiary)
+
+
+def _half_turn_about_local_z(axes: AxisFrame) -> AxisFrame:
+    return (
+        tuple(-value for value in axes[0]),
+        tuple(-value for value in axes[1]),
+        axes[2],
+    )
 
 
 def _validated_frame(axes: AxisFrame, *, joint: str) -> AxisFrame:
