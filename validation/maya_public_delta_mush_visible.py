@@ -81,8 +81,20 @@ def schedule(scene: str, output_directory: str) -> None:
                 forceOverwrite=True)
             data["before_image"] = str(before)
             data["after_image"] = str(after)
+            harden_nav = panel.operation_buttons[(
+                "Body", "Deform DeltaMush", "硬化权重")]
+            data["harden_entry_visible"] = harden_nav.isVisible()
+            cmds.select(mesh, replace=True)
+            harden_action = next(widget for widget in detail.findChildren(
+                QtWidgets.QPushButton) if widget.text() == "硬化权重")
+            harden_action.click()
+            QtWidgets.QApplication.processEvents()
+            data["harden_status_text"] = detail.status.toPlainText()
+            detail.grab().save(str(output / "sam-delta-harden-panel.png"))
             data["passed"] = (data["entry_visible"]
                 and data["node_created"]
+                and data["harden_entry_visible"]
+                and "已硬化 1 个网格" in data["harden_status_text"]
                 and "已为 1 个网格应用 Delta Mush" in data["status_text"]
                 and bool(list(output.glob("sam-delta-before.*.png")))
                 and bool(list(output.glob("sam-delta-after.*.png"))))

@@ -32,6 +32,8 @@ def main(report: Path) -> int:
         skin = cmds.skinCluster(root, tip, mesh, name="BodySkin",
                                 toSelectedBones=True,
                                 maximumInfluences=2)[0]
+        cmds.createNode("transform", name="Main")
+        cmds.createNode("multiplyDivide", name="MainScaleMultiplyDivide")
         count = cmds.polyEvaluate(mesh, vertex=True)
         for index in range(count):
             vertex = f"{mesh}.vtx[{index}]"
@@ -85,6 +87,13 @@ def main(report: Path) -> int:
                             for a, b in zip(first, second))
         valid = (created == 1 and cmds.nodeType(deformer) == "deltaMush"
                  and history.index(deformer) < history.index(skin)
+                 and cmds.getAttr(deformer + ".smoothingIterations") == 10
+                 and abs(cmds.getAttr(deformer + ".smoothingStep") - .5) < 1e-8
+                 and cmds.getAttr(deformer + ".pinBorderVertices")
+                 and cmds.getAttr(deformer + ".envelope") == 1.
+                 and all(cmds.isConnected(
+                     "MainScaleMultiplyDivide.output" + axis,
+                     deformer + ".s" + axis.lower()) for axis in "XYZ")
                  and maximum_delta > 1e-5
                  and tuple(cmds.ls(selection=True, long=True) or ()) == selection)
 
@@ -117,6 +126,35 @@ def main(report: Path) -> int:
                 and max(abs(a - b) for first, second in zip(
                     after, positions()) for a, b in zip(first, second))
                 < 1e-5)
+            vertex = f"{mesh}.vtx[12]"
+            weights_before = tuple(cmds.skinPercent(
+                skin, vertex, query=True, value=True))
+            cmds.select((mesh, other), replace=True)
+            harden_invalid = False
+            try:
+                controller.delta_mush_harden_weights()
+            except ValueError as exc:
+                harden_invalid = "SkinCluster" in str(exc)
+            harden_preflight = (harden_invalid and tuple(cmds.skinPercent(
+                skin, vertex, query=True, value=True)) == weights_before)
+            cmds.select((mesh, second), replace=True)
+            hardened_count = controller.delta_mush_harden_weights()
+            weights_hardened = tuple(cmds.skinPercent(
+                skin, vertex, query=True, value=True))
+            harden_result = (hardened_count == 2 and
+                sum(value == 1. for value in weights_hardened) == 1 and
+                sum(value == 0. for value in weights_hardened) == len(weights_hardened) - 1)
+            cmds.undo()
+            harden_undone = tuple(cmds.skinPercent(
+                skin, vertex, query=True, value=True)) == weights_before
+            cmds.redo()
+            harden_redone = tuple(cmds.skinPercent(
+                skin, vertex, query=True, value=True)) == weights_hardened
+            cmds.file(save=True, type="mayaAscii", force=True)
+            cmds.file(new=True, force=True)
+            cmds.file(str(scene), open=True, force=True)
+            harden_reopened = tuple(cmds.skinPercent(
+                skin, vertex, query=True, value=True)) == weights_hardened
         checks = {
             "mixed_selection_rejected_before_write":
                 invalid_rejected and preflight_clean,
@@ -125,6 +163,10 @@ def main(report: Path) -> int:
             "single_undo_redo": undone and redone,
             "duplicate_rejected": duplicate_rejected,
             "save_reopen": reopened,
+            "harden_mixed_selection_preflight": harden_preflight,
+            "harden_two_meshes_single_undo_redo":
+                harden_result and harden_undone and harden_redone,
+            "harden_save_reopen": harden_reopened,
         }
         report.write_text(json.dumps({
             **checks, "maximum_delta_cm": maximum_delta,

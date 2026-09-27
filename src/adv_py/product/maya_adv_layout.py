@@ -59,6 +59,7 @@ ADV_OPERATIONS = {
         ("导出网格与权重", 1, "03 · 跨场景源资产"),
         ("引用模型改拓扑后重绑并转移", 1, "04 · 跨拓扑权重转移")),
     ("Body", "Deform DeltaMush"): (
+        ("硬化权重", 1, "05 · Delta Mush"),
         ("应用 Delta Mush", 1, "05 · Delta Mush"),),
     ("Body", "Control Curves"): (
         ("缩放控制曲线", 0, "06 · Control Curves"),

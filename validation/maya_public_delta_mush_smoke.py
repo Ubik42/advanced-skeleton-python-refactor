@@ -61,6 +61,10 @@ def main(scene: Path, report: Path) -> int:
         after = positions()
         deformers = cmds.ls(cmds.listHistory(mesh) or [],
                             type="deltaMush") or []
+        scale_connected = (len(deformers) == 1 and all(
+            cmds.isConnected("MainScaleMultiplyDivide.output" + axis,
+                             deformers[0] + ".s" + axis.lower())
+            for axis in "XYZ"))
         maximum_delta = max(abs(a - b) for a, b in zip(before, after))
         applied = (count == 1 and len(deformers) == 1
                    and maximum_delta > 1e-5
@@ -91,6 +95,7 @@ def main(scene: Path, report: Path) -> int:
                     after, positions())) < 1e-5)
         unchanged_source = hashlib.sha256(scene.read_bytes()).hexdigest() == source_hash
         checks = {"public_mesh_deforms": applied,
+                  "main_scale_connected": scale_connected,
                   "single_undo_redo": undone and redone,
                   "save_reopen": reopened,
                   "source_file_unchanged": unchanged_source}

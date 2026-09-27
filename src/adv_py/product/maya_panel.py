@@ -88,6 +88,7 @@ def create_panel(controller: MayaPanelController | None = None):
             rail_layout = QtWidgets.QVBoxLayout(rail)
             rail_layout.setContentsMargins(18, 24, 14, 18)
             title = QtWidgets.QLabel("角色工作台", objectName="Title")
+            title.setWordWrap(True)
             subtitle = QtWidgets.QLabel("Fit → 控制 → 蒙皮\n姿态 → 动画\n面部 · 动捕 · 发布", objectName="Subtitle")
             subtitle.setWordWrap(True)
             rail_layout.addWidget(title)
@@ -629,6 +630,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self._surface_mode_changed()
             group, form = self._group("05 · Delta Mush", [])
             form.addRow(QtWidgets.QLabel("选择已蒙皮的多边形网格。"))
+            form.addRow(self._button("硬化权重", self._harden_delta_mush_weights))
             form.addRow(self._button("应用 Delta Mush", self._apply_delta_mush))
             stack.addWidget(group)
             stack.addStretch(1)
@@ -1500,6 +1502,10 @@ def create_panel(controller: MayaPanelController | None = None):
         def _apply_delta_mush(self):
             count = self.controller.delta_mush_apply()
             return f"已为 {count} 个网格应用 Delta Mush"
+
+        def _harden_delta_mush_weights(self):
+            count = self.controller.delta_mush_harden_weights()
+            return f"已硬化 {count} 个网格的蒙皮权重"
 
         def _import_skin(self):
             mapping = self.mapping_document.text().strip()

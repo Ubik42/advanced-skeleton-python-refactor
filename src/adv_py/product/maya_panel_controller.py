@@ -614,6 +614,11 @@ class MayaPanelController:
 
         return len(apply_delta_mush_to_selected())
 
+    def delta_mush_harden_weights(self) -> int:
+        from adv_py.adapters.maya_delta_mush import harden_weights_on_selected
+
+        return len(harden_weights_on_selected())
+
     def skin_export(self, namespace: str, skin: str, mesh: str,
                     destination: Path) -> int:
         result = ExportSkinWeights(self._host(namespace)).apply(
