@@ -216,6 +216,14 @@ class BuildRegisteredBodyCharacter:
                 allow_missing_child=(axial_description is not None
                                      and axial_description
                                      != BodyAxialDescription()))
+        if (hip_selection is not None and hip_selection.enabled
+                and hip_selection.root_inbetween_count == 0
+                and axial_description is not None
+                and axial_description != BodyAxialDescription()
+                and axial_description.spine[1]
+                != hip_selection.child_name + "_M"):
+            raise FitSkeletonValidationError(
+                "无 Root Part 的自定义 HipSwinger 须标记脊柱首节")
         with self._host.transaction("构建并登记完整 Body 角色"):
             joined = _JoinedTransactionHost(self._host)
             skeleton = BuildOrientedBodySkeleton(joined).apply(
