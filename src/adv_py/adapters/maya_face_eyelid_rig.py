@@ -17,6 +17,9 @@ from adv_py.core.face_eyelid_skin import (
     eyelid_skin_factors, inner_eyelid_skin_factors,
     outer_eyelid_skin_factors, split_arc_weight)
 from adv_py.core.face_eyelid_motion import EyeLidMotionPlan
+from adv_py.core.face_eyelid_build_preparation import (
+    FaceEyeLidPreparationInput,
+)
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .maya_dense_skin import MayaDenseSkinHost
@@ -438,33 +441,39 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                 boundary | main_vertices)
 
     def build(self) -> dict:
+        from adv_py.application.face_eyelid_rig import BuildFaceEyeLids
+        return BuildFaceEyeLids(self).execute()
+
+    def capture_face_eye_lid_preparation(self) -> FaceEyeLidPreparationInput:
         c = self._cmds
         pre = MayaFaceBuildHost(namespace=self.namespace)
         fit = pre._fit(required=True)
         symmetric = not (c.attributeQuery("NonSym", node=fit, exists=True)
                          and c.getAttr(fit + ".NonSym"))
+        left_fit_complete = True
         if symmetric:
             try:
                 pre.read_eye_ball_fit(FaceSide.LEFT)
                 for layer in EyeLidLayer:
                     pre.read_eye_lid_fit(layer, FaceSide.LEFT)
             except FitSkeletonValidationError:
-                if pre.read_include() is not FaceInclude.EYES_ONLY:
-                    raise FitSkeletonValidationError(
-                        "当前眼睑构建阶段需要 Skip Above+Below Eyes")
+                left_fit_complete = False
+        left_eye_mesh = None
+        if symmetric and not left_fit_complete:
+            if pre.read_include() is FaceInclude.EYES_ONLY:
                 eye_groups = c.ls("AdvPy_FaceEyes", long=True,
                                   type="transform") or []
-                if len(eye_groups) != 1 or not c.attributeQuery(
-                        "advPyLeftEyeMesh", node=eye_groups[0], exists=True):
-                    raise FitSkeletonValidationError(
-                        "先从 Face / Pre 构建双眼控制与蒙皮，再建立眼睑")
-                left_eye = c.getAttr(eye_groups[0] + ".advPyLeftEyeMesh")
-                with self.transaction("镜像 Fit 并建立双侧眼睑与 Skin"):
-                    self._transaction_changed = True
-                    mirror = self.mirror_right_eye_fit_to_left(left_eye)
-                    result = self._build_prepared()
-                    result["symmetric_mirror"] = mirror
-                    return result
+                if (len(eye_groups) == 1 and c.attributeQuery(
+                        "advPyLeftEyeMesh", node=eye_groups[0],
+                        exists=True)):
+                    left_eye_mesh = c.getAttr(
+                        eye_groups[0] + ".advPyLeftEyeMesh")
+        return FaceEyeLidPreparationInput(
+            symmetric, left_fit_complete,
+            pre.read_include() is FaceInclude.EYES_ONLY,
+            left_eye_mesh)
+
+    def build_prepared_face_eye_lids(self) -> dict:
         return self._build_prepared()
 
     def _build_prepared(self) -> dict:
