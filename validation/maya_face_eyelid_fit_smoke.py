@@ -79,9 +79,35 @@ def main():
         else:
             raise AssertionError("An open eyelid ring must be rejected")
         assert not cmds.objExists("FaceFitEyeLidOuter")
+        mesh_selection = om.MSelectionList()
+        mesh_selection.add(mesh)
+        mesh_fn = om.MFnMesh(mesh_selection.getDagPath(0))
+        other_ring_vertex = mesh_fn.getEdgeVertices(rings[1][0])[0]
+        cmds.select([f"{mesh}.e[{index}]" for index in rings[0]]
+                    + [f"{mesh}.vtx[{other_ring_vertex}]"], replace=True)
+        try:
+            controller.face_fit_eye_lid(":", "Outer")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("A corner outside the selected ring must be rejected")
+        assert not cmds.objExists("FaceFitEyeLidOuter")
         for layer, edges in zip(("Outer", "Main", "Inner"), rings):
-            cmds.select([f"{mesh}.e[{index}]" for index in edges],
-                        replace=True)
+            edge_selection = [f"{mesh}.e[{index}]" for index in edges]
+            selected_corners = []
+            if layer != "Outer":
+                selection = om.MSelectionList()
+                selection.add(mesh)
+                fn = om.MFnMesh(selection.getDagPath(0))
+                vertices = {vertex for index in edges
+                            for vertex in fn.getEdgeVertices(index)}
+                by_x = sorted(vertices,
+                              key=lambda vertex: fn.getPoint(
+                                  vertex, om.MSpace.kWorld).x)
+                selected_corners = [by_x[-2]] if layer == "Inner" else [
+                    by_x[1], by_x[-2]]
+            cmds.select(edge_selection + [f"{mesh}.vtx[{index}]"
+                for index in selected_corners], replace=True)
             upper, lower = controller.face_fit_eye_lid(":", layer)
             for path in (upper, lower):
                 assert cmds.objExists(path)
@@ -104,8 +130,15 @@ def main():
                                 int(cmds.getAttr(lower + ".spans")))]
             assert sum(point[1] for point in upper_points) / len(upper_points) > (
                 sum(point[1] for point in lower_points) / len(lower_points))
+            if selected_corners:
+                start = cmds.pointPosition(upper + ".cv[0]", world=True)
+                expected = cmds.pointPosition(
+                    f"{mesh}.vtx[{selected_corners[-1]}]", world=True)
+                assert max(abs(a-b) for a, b in zip(start, expected)) < 1e-5
             cmds.undoInfo(stateWithoutFlush=False)
             assert controller.face_fit_eye_lid_reselect(":", layer) == len(edges)
+            assert {f"{mesh}.vtx[{index}]" for index in selected_corners} <= set(
+                cmds.ls(selection=True, flatten=True) or [])
             cmds.undoInfo(stateWithoutFlush=True)
         cmds.undo()
         assert not cmds.objExists("FaceFitEyeLidInner")

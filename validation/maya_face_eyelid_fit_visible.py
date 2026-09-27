@@ -87,7 +87,18 @@ def schedule(output_directory: str) -> None:
             detail = None
             for layer, edges in zip(("Outer", "Main", "Inner"),
                                     _rings("|FaceMesh")):
-                cmds.select([f"{face}.e[{index}]" for index in edges],
+                selection = om.MSelectionList()
+                selection.add("|FaceMesh")
+                fn = om.MFnMesh(selection.getDagPath(0))
+                vertices = {vertex for index in edges
+                            for vertex in fn.getEdgeVertices(index)}
+                by_x = sorted(vertices,
+                              key=lambda vertex: fn.getPoint(
+                                  vertex, om.MSpace.kWorld).x)
+                corners = [] if layer == "Outer" else (
+                    [by_x[-2]] if layer == "Inner" else [by_x[1], by_x[-2]])
+                cmds.select([f"{face}.e[{index}]" for index in edges]
+                            + [f"{face}.vtx[{index}]" for index in corners],
                             replace=True)
                 label = "EyeLid " + layer
                 panel.operation_buttons[("Face", "Fit", label)].click()
@@ -97,6 +108,13 @@ def schedule(output_directory: str) -> None:
                     if widget.text() == label)
                 button.click()
                 data[layer.lower() + "_status"] = detail.status.toPlainText()
+                reselect = next(widget for widget in
+                    detail.findChildren(QtWidgets.QPushButton)
+                    if widget.text() == "重选 " + layer)
+                reselect.click()
+                data[layer.lower() + "_reselected_corners"] = len([
+                    item for item in (cmds.ls(selection=True, flatten=True) or [])
+                    if ".vtx[" in item])
             detail.grab().save(str(output / "face-eyelid-fit-panel.png"))
             panel.grab().save(str(output / "face-eyelid-fit-accordion.png"))
             cmds.select("FaceFitEyeLidOuter", "FaceFitEyeLidMain",
@@ -131,6 +149,8 @@ def schedule(output_directory: str) -> None:
                     host.read_eye_lid_fit(layer)) for layer in EyeLidLayer)
             data["passed"] = (all("已建立 EyeLid" in
                 data[layer + "_status"] for layer in ("outer", "main", "inner"))
+                and [data[layer + "_reselected_corners"] for layer in
+                     ("outer", "main", "inner")] == [0, 2, 1]
                 and data["reopen_curves"] and "modal_error" not in data)
         except BaseException:
             data["error"] = traceback.format_exc()

@@ -794,7 +794,7 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
             group, form = self._group("02 · EyeLid Fit", [])
             form.addRow(QtWidgets.QLabel(
-                "选择 Face 网格上一圈闭合眼睑边；按 Outer → Main → Inner 建立。"))
+                "选择 Face 网格闭合眼睑边环，可加选一至两个眼角顶点；按 Outer → Main → Inner 建立。"))
             for layer in ("Outer", "Main", "Inner"):
                 row = QtWidgets.QHBoxLayout()
                 row.addWidget(self._button("EyeLid " + layer,

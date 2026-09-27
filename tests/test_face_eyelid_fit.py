@@ -32,6 +32,22 @@ class EyeLidLoopTest(unittest.TestCase):
             order_eye_lid_loop(branched, self.positions,
                                 eye_center_y=0)
 
+    def test_explicit_corners_override_extreme_vertices(self):
+        ordered = order_eye_lid_loop(self.edges, self.positions,
+                                     eye_center_y=0,
+                                     corner_vertices=(5, 1))
+        self.assertEqual(ordered.upper_vertices, (1, 2, 3, 4, 5))
+        self.assertEqual(ordered.lower_vertices, (1, 0, 7, 6, 5))
+        one_corner = order_eye_lid_loop(self.edges, self.positions,
+                                        eye_center_y=0,
+                                        corner_vertices=(1,))
+        self.assertEqual(one_corner.upper_vertices[0], 1)
+        self.assertEqual(one_corner.upper_vertices[-1], 4)
+        with self.assertRaisesRegex(ValueError, "边环"):
+            order_eye_lid_loop(self.edges, self.positions,
+                                eye_center_y=0,
+                                corner_vertices=(1, 99))
+
 
 if __name__ == "__main__":
     unittest.main()

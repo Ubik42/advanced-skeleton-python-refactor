@@ -13,6 +13,7 @@ from .maya_face import MayaFaceHost
 
 _FACE_PATTERN = re.compile(r"^(?P<mesh>.+)\.f\[(?P<index>\d+)\]$")
 _EDGE_PATTERN = re.compile(r"^(?P<mesh>.+)\.e\[(?P<index>\d+)\]$")
+_VERTEX_PATTERN = re.compile(r"^(?P<mesh>.+)\.vtx\[(?P<index>\d+)\]$")
 
 
 class MayaFacePreHost(MayaFaceHost):
@@ -324,16 +325,25 @@ class MayaFacePreHost(MayaFaceHost):
 
         c = self._cmds
         selected = c.ls(selection=True, flatten=True, long=True) or []
-        parsed = [_EDGE_PATTERN.fullmatch(item) for item in selected]
-        if not parsed or any(match is None for match in parsed):
-            raise FitSkeletonValidationError("EyeLid Fit 需要选择一圈多边形边")
-        meshes = {match.group("mesh") for match in parsed}
+        edge_matches = [_EDGE_PATTERN.fullmatch(item) for item in selected]
+        corner_matches = [_VERTEX_PATTERN.fullmatch(item) for item in selected]
+        if (not selected or not any(edge_matches)
+                or any(edge is None and corner is None
+                       for edge, corner in zip(edge_matches, corner_matches))):
+            raise FitSkeletonValidationError("EyeLid Fit 需要闭合边环，可加选一至两个眼角顶点")
+        meshes = {match.group("mesh") for match in edge_matches + corner_matches
+                  if match is not None}
         if len(meshes) != 1:
-            raise FitSkeletonValidationError("EyeLid Fit 只接受同一网格的边")
+            raise FitSkeletonValidationError("EyeLid Fit 只接受同一网格的边和顶点")
         mesh = next(iter(meshes))
         if self.read_face_objects(FacePreRole.FACE) != (mesh,):
             raise FitSkeletonValidationError("眼睑边必须属于 Face 网格")
-        indices = tuple(sorted({int(match.group("index")) for match in parsed}))
+        indices = tuple(sorted({int(match.group("index")) for match in edge_matches
+                                if match is not None}))
+        corners = tuple(int(match.group("index")) for match in corner_matches
+                        if match is not None)
+        if len(corners) > 2 or len(set(corners)) != len(corners):
+            raise FitSkeletonValidationError("EyeLid Fit 至多接受两个不同眼角顶点")
         shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
                                  fullPath=True, type="mesh") or []
         if len(shapes) != 1:
@@ -350,11 +360,11 @@ class MayaFacePreHost(MayaFaceHost):
         positions = {vertex: (float(point.x), float(point.y), float(point.z))
                      for vertex in vertices
                      for point in (mesh_fn.getPoint(vertex, om.MSpace.kWorld),)}
-        return mesh, edges, positions
+        return mesh, edges, positions, corners
 
     def create_eye_lid_fit(self, layer: EyeLidLayer, mesh: str,
                            loop: EyeLidLoop, positions,
-                           edges) -> tuple[str, str]:
+                           edges, selected_corners) -> tuple[str, str]:
         c = self._cmds
         fit = self._fit(required=True)
         self.read_eye_ball_fit()
@@ -413,7 +423,8 @@ class MayaFacePreHost(MayaFaceHost):
                 c.setAttr(tube + ".overrideDisplayType", 2)
             c.addAttr(holder, longName="selection", dataType="string")
             c.setAttr(holder + ".selection", " ".join(
-                f"{mesh}.e[{index}]" for index in loop.edge_ids),
+                [f"{mesh}.e[{index}]" for index in loop.edge_ids]
+                + [f"{mesh}.vtx[{index}]" for index in selected_corners]),
                 type="string")
             c.addAttr(holder, longName="advPyFaceCount", attributeType="long")
             c.setAttr(holder + ".advPyFaceCount",
@@ -449,13 +460,18 @@ class MayaFacePreHost(MayaFaceHost):
         holder = (c.ls("FaceFitEyeLid" + layer.value, long=True,
                        type="transform") or [None])[0]
         selected = tuple((c.getAttr(holder + ".selection") or "").split())
-        if not selected or any(_EDGE_PATTERN.fullmatch(item) is None
-                               for item in selected):
+        edge_matches = [_EDGE_PATTERN.fullmatch(item) for item in selected]
+        corner_matches = [_VERTEX_PATTERN.fullmatch(item) for item in selected]
+        if (not any(edge_matches)
+                or any(edge is None and corner is None
+                       for edge, corner in zip(edge_matches, corner_matches))):
             raise FitSkeletonValidationError("眼睑边选择记录无效")
-        mesh = _EDGE_PATTERN.fullmatch(selected[0]).group("mesh")
+        mesh = next(match.group("mesh") for match in edge_matches
+                    if match is not None)
         if (not c.objExists(mesh)
-                or any(_EDGE_PATTERN.fullmatch(item).group("mesh") != mesh
-                for item in selected)
+                or any(match.group("mesh") != mesh
+                       for match in edge_matches + corner_matches
+                       if match is not None)
                 or int(c.polyEvaluate(mesh, face=True))
                     != int(c.getAttr(holder + ".advPyFaceCount"))):
             raise FitSkeletonValidationError("眼睑网格拓扑已改变")
@@ -467,13 +483,19 @@ class MayaFacePreHost(MayaFaceHost):
         selection.add(self.scene_address(shapes[0]))
         mesh_fn = om.MFnMesh(selection.getDagPath(0))
         expected = json.loads(c.getAttr(holder + ".advPyEdgeVertices"))
-        indices = sorted(int(_EDGE_PATTERN.fullmatch(item).group("index"))
-                         for item in selected)
-        if indices[-1] >= mesh_fn.numEdges:
+        indices = sorted(int(match.group("index")) for match in edge_matches
+                         if match is not None)
+        corners = tuple(int(match.group("index")) for match in corner_matches
+                        if match is not None)
+        if indices[-1] >= mesh_fn.numEdges or any(
+                index >= mesh_fn.numVertices for index in corners):
             raise FitSkeletonValidationError("眼睑边索引已超出网格拓扑")
         observed = [(index, *sorted(mesh_fn.getEdgeVertices(index)))
                     for index in indices]
         if observed != [tuple(row) for row in expected]:
             raise FitSkeletonValidationError("眼睑边连接已改变，不能使用旧 Fit 选择")
+        if any(vertex not in {item for _, first, second in observed
+                              for item in (first, second)} for vertex in corners):
+            raise FitSkeletonValidationError("眼角顶点已不在旧 Fit 边环上")
         c.select(selected, replace=True)
-        return len(selected)
+        return len(indices)

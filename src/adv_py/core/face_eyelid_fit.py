@@ -16,6 +16,7 @@ def order_eye_lid_loop(
     edges: tuple[tuple[int, int, int], ...],
     positions: dict[int, tuple[float, float, float]],
     *, eye_center_y: float,
+    corner_vertices: tuple[int, ...] = (),
 ) -> EyeLidLoop:
     if len(edges) < 6 or len({row[0] for row in edges}) != len(edges):
         raise ValueError("眼睑需要至少六条互不重复的闭合边")
@@ -40,14 +41,27 @@ def order_eye_lid_loop(
                    for point in positions.values())):
         raise ValueError("眼睑边缺少有效的世界顶点坐标")
 
+    if (len(corner_vertices) > 2 or len(set(corner_vertices)) != len(corner_vertices)
+            or any(vertex not in adjacency for vertex in corner_vertices)):
+        raise ValueError("手选眼角须是边环上的一至两个不同顶点")
+
     # The original right-eye fitting starts at the vertex nearest the face
-    # center line and ends at the outermost vertex.
-    inner = max(adjacency, key=lambda vertex: (
+    # center line and ends at the outermost vertex. Explicit corners may
+    # override that choice while retaining the right-eye X ordering.
+    auto_inner = max(adjacency, key=lambda vertex: (
         positions[vertex][0], -abs(positions[vertex][1] - eye_center_y),
         -vertex))
-    outer = min(adjacency, key=lambda vertex: (
+    auto_outer = min(adjacency, key=lambda vertex: (
         positions[vertex][0], abs(positions[vertex][1] - eye_center_y),
         vertex))
+    if len(corner_vertices) == 2:
+        inner, outer = sorted(corner_vertices,
+                              key=lambda vertex: positions[vertex][0],
+                              reverse=True)
+    elif corner_vertices:
+        inner, outer = corner_vertices[0], auto_outer
+    else:
+        inner, outer = auto_inner, auto_outer
     if inner == outer or positions[inner][0] - positions[outer][0] <= 1e-6:
         raise ValueError("眼睑边环没有可区分的内外眼角")
 
