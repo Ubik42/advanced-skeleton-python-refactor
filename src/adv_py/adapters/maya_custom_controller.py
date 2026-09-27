@@ -58,6 +58,77 @@ class MayaCustomControllerHost(MayaFaceHost):
             cmds.delete(cmds.orientConstraint(parent, attach))
         cmds.parentConstraint(parent, attach, maintainOffset=True)
 
+    def _ensure_custom_partial_parent(self, parent: str) -> str:
+        """Create ADV's midpoint-orient sibling for eligible Body joints."""
+        from maya import cmds
+
+        parent = self._unique(parent, "joint")
+        ancestors = cmds.listRelatives(parent, parent=True,
+                                       fullPath=True, type="joint") or []
+        children = cmds.listRelatives(parent, children=True,
+                                      fullPath=True, type="joint") or []
+        leaf = parent.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if (not ancestors or not children or "Part" in leaf
+                or "_" not in leaf):
+            return parent
+        stem, side = leaf.rsplit("_", 1)
+        partial_name = stem + "Partial_" + side
+        if cmds.objExists(self.scene_address(partial_name)):
+            return self._unique(partial_name, "joint")
+        grandparent = ancestors[0]
+        motion = self._unique("MotionSystem", "transform")
+        system_name = self.scene_address("PartialJointsSystem")
+        system = (self._unique(system_name, "transform")
+                  if cmds.objExists(system_name)
+                  else cmds.createNode("transform", name=system_name,
+                                       parent=motion))
+        world = cmds.xform(parent, query=True, worldSpace=True, matrix=True)
+        partial = cmds.createNode("joint", name=self.scene_address(
+            partial_name), parent=grandparent)
+        cmds.xform(partial, worldSpace=True, matrix=world)
+        cmds.setAttr(partial + ".rotateOrder",
+                     cmds.getAttr(parent + ".rotateOrder"))
+        cmds.setAttr(partial + ".segmentScaleCompensate", False)
+        cmds.addAttr(partial, longName="partialJoint",
+                     attributeType="bool", defaultValue=True)
+        cmds.addAttr(partial, longName="advPyAuxiliaryInfluenceKind",
+                     dataType="string")
+        cmds.setAttr(partial + ".advPyAuxiliaryInfluenceKind",
+                     "custom-partial-parent-v1", type="string", lock=True)
+        zero_offset = cmds.createNode("transform", name=self.scene_address(
+            stem + "_" + side + "_00Offset"), parent=system)
+        cmds.xform(zero_offset, worldSpace=True, matrix=world)
+        zero = cmds.createNode("transform", name=self.scene_address(
+            stem + "_" + side + "_00"), parent=zero_offset)
+        cmds.parentConstraint(grandparent, zero_offset, maintainOffset=True)
+        orient = cmds.orientConstraint(zero, parent, partial,
+                                       maintainOffset=False)[0]
+        cmds.setAttr(orient + ".interpType", 2)
+        cmds.pointConstraint(parent, partial, maintainOffset=False)
+        cmds.scaleConstraint(parent, partial, maintainOffset=False)
+        cmds.addAttr(partial, longName="follow", attributeType="double",
+                     minValue=0.0, maxValue=10.0, defaultValue=5.0,
+                     keyable=True)
+        aliases = cmds.orientConstraint(orient, query=True,
+                                        weightAliasList=True) or []
+        if len(aliases) != 2:
+            raise RuntimeError("Partial Parent 缺少双目标朝向约束")
+        weight = cmds.createNode("setRange", name=self.scene_address(
+            "FK" + partial_name + "SR"))
+        cmds.setAttr(weight + ".maxX", 1.0)
+        cmds.setAttr(weight + ".minY", 1.0)
+        cmds.setAttr(weight + ".oldMaxX", 10.0)
+        cmds.setAttr(weight + ".oldMaxY", 10.0)
+        cmds.connectAttr(partial + ".follow", weight + ".valueX")
+        cmds.connectAttr(partial + ".follow", weight + ".valueY")
+        cmds.connectAttr(weight + ".outValueY",
+                         orient + "." + aliases[0])
+        cmds.connectAttr(weight + ".outValueX",
+                         orient + "." + aliases[1])
+        if cmds.objExists(self.scene_address("DeformSet")):
+            cmds.sets(partial, add=self.scene_address("DeformSet"))
+        return self._unique(partial, "joint")
+
     def _register_custom_nodes(self, paths: tuple[str, ...],
                                control: str, base: str | None = None) -> None:
         from maya import cmds
@@ -370,6 +441,8 @@ class MayaCustomControllerHost(MayaFaceHost):
         handle = self._unique(plan.region.source_handle, "transform")
         mesh = self._mesh(plan.region.mesh)
         parent = self._unique(plan.parent_joint, "joint")
+        if plan.partial_parent and self.face:
+            raise ValueError("Face Custom Control 不支持 50% Parent")
         if mesh not in self._softmod_meshes(source):
             raise ValueError("SoftMod 与区域网格不匹配")
         if (cmds.referenceQuery(source, isNodeReferenced=True)
@@ -518,7 +591,9 @@ class MayaCustomControllerHost(MayaFaceHost):
         mesh = self._mesh(plan.region.mesh)
         skin = self._skin_for_mesh(mesh)
         weights = self._soft_selection_weights(plan.region)
-        parent = self._unique(plan.parent_joint, "joint")
+        source_parent = self._unique(plan.parent_joint, "joint")
+        parent = (self._ensure_custom_partial_parent(source_parent)
+                  if plan.partial_parent else source_parent)
         joint = cmds.createNode("joint", name=self.scene_address(
             plan.joint_name), parent=parent)
         cmds.xform(joint, worldSpace=True, translation=plan.region.center)
@@ -595,7 +670,7 @@ class MayaCustomControllerHost(MayaFaceHost):
                          control + ".advPyCustomControlJoint")
         cmds.addAttr(control, longName="advPyCustomControlParent",
                      attributeType="message")
-        cmds.connectAttr(parent + ".message",
+        cmds.connectAttr(source_parent + ".message",
                          control + ".advPyCustomControlParent")
         cmds.delete(self._unique(plan.region.source_handle, "transform"))
         if cmds.objExists(plan.region.deformer):

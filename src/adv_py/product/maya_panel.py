@@ -503,6 +503,8 @@ def create_panel(controller: MayaPanelController | None = None):
             self.custom_control_middle = QtWidgets.QCheckBox("middle")
             self.custom_control_local = QtWidgets.QCheckBox("local")
             self.custom_control_local.setChecked(True)
+            self.custom_control_partial_parent = QtWidgets.QCheckBox(
+                "50% joint as parent（仅 Body Skin）")
             self.custom_control_parent = QtWidgets.QLineEdit()
             self.custom_control_parent.setPlaceholderText(
                 "可留空；默认选择最近的变形关节")
@@ -516,6 +518,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("控制器名称", self.custom_control_name),
                 ("中心控制", self.custom_control_middle),
                 ("局部朝向", self.custom_control_local),
+                ("父关节中间层", self.custom_control_partial_parent),
                 ("指定父关节", self.custom_control_parent),
                 ("已有控制器", self.custom_control_existing),
                 ("新增网格", self.custom_control_mesh)])
@@ -1681,7 +1684,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.custom_control_parent.text().strip(),
                 face=getattr(self, "custom_control_face", False),
                 middle=self.custom_control_middle.isChecked(),
-                local=self.custom_control_local.isChecked())
+                local=self.custom_control_local.isChecked(),
+                partial_parent=self.custom_control_partial_parent.isChecked())
             self.custom_control_existing.setText(state.control)
             return f"已创建 Skin 控制器：{state.control}"
 

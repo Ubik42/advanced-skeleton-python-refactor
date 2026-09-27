@@ -47,13 +47,15 @@ class BuildCustomController:
 
     def plan(self, deformer: str, kind: CustomControlKind,
              base_name: str, *, parent_joint: str | None = None,
-             middle: bool = False, local: bool = True
+             middle: bool = False, local: bool = True,
+             partial_parent: bool = False
              ) -> CustomControllerPlan:
         region = self._host.capture_softmod_region(deformer)
         joints = self._host.deform_joint_candidates(region.mesh)
         plan = plan_custom_controller(kind, region, joints, base_name,
                                       parent_joint=parent_joint,
-                                      middle=middle, local=local)
+                                      middle=middle, local=local,
+                                      partial_parent=partial_parent)
         for name in plan.created_names:
             if self._host.find_name_collisions(name):
                 raise ValueError("自定义控制节点名称已占用：" + name)
@@ -62,11 +64,13 @@ class BuildCustomController:
 
     def apply(self, deformer: str, kind: CustomControlKind,
               base_name: str, *, parent_joint: str | None = None,
-              middle: bool = False, local: bool = True
+              middle: bool = False, local: bool = True,
+              partial_parent: bool = False
               ) -> CustomControllerBuildResult:
         plan = self.plan(deformer, kind, base_name,
                          parent_joint=parent_joint,
-                         middle=middle, local=local)
+                         middle=middle, local=local,
+                         partial_parent=partial_parent)
         with self._host.transaction("创建自定义控制器"):
             self._host.create_custom_controller(plan)
             state = self._host.capture_custom_controller(plan)

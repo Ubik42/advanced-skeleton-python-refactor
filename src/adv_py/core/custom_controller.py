@@ -47,6 +47,7 @@ class CustomControllerPlan:
     side: str
     middle: bool
     local: bool
+    partial_parent: bool
     offset_name: str
     control_name: str
     base_control_name: str | None
@@ -101,6 +102,7 @@ def plan_custom_controller(
     parent_joint: str | None = None,
     middle: bool = False,
     local: bool = True,
+    partial_parent: bool = False,
 ) -> CustomControllerPlan:
     """Use the painted SoftMod region and an explicit or nearest deform joint."""
     if not isinstance(kind, CustomControlKind):
@@ -112,6 +114,10 @@ def plan_custom_controller(
         raise ValueError("Middle 选项须为布尔值")
     if not isinstance(local, bool):
         raise ValueError("Local 选项须为布尔值")
+    if not isinstance(partial_parent, bool):
+        raise ValueError("50% Parent 选项须为布尔值")
+    if partial_parent and kind is not CustomControlKind.SKIN:
+        raise ValueError("50% Parent 只适用于 Skin Control")
     if not region.deformer or not region.mesh:
         raise ValueError("SoftMod 区域须包含变形器和网格路径")
     _position(region.center, "SoftMod 中心")
@@ -164,7 +170,7 @@ def plan_custom_controller(
                      else "Cluster" + base_name + side
                      if kind is CustomControlKind.CLUSTER else None)
     return CustomControllerPlan(kind, region, parent, base_name, side,
-                                middle, local,
+                                middle, local, partial_parent,
                                 "Offset" + base_name + side,
                                 base_name + side,
                                 base_name + "Base" + side
