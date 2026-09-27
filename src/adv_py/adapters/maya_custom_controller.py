@@ -346,14 +346,23 @@ class MayaCustomControllerHost(MayaFaceHost):
             for node, state in disabled.items():
                 cmds.setAttr(node + ".nodeState", state)
 
-    def _skin_for_mesh(self, mesh: str) -> str:
+    def _skin_for_mesh(self, mesh: str,
+                       requested: str | None = None) -> str:
         from maya import cmds
 
         skins = tuple(dict.fromkeys(cmds.ls(
             cmds.listHistory(mesh, pruneDagObjects=True) or [],
             type="skinCluster") or []))
+        if requested == "*new":
+            return "*new"
+        if requested is not None:
+            chosen = self._unique(requested, "skinCluster")
+            if chosen not in {self._unique(item, "skinCluster")
+                              for item in skins}:
+                raise ValueError("指定 SkinCluster 不属于目标网格")
+            return chosen
         if len(skins) != 1:
-            raise ValueError("Skin Control 要求目标网格恰好有一个 SkinCluster")
+            raise ValueError("须指定 SkinCluster；新建分层时使用 *new")
         return self._unique(skins[0], "skinCluster")
 
     def _soft_selection_weights(self, region: SoftModRegion
@@ -613,8 +622,9 @@ class MayaCustomControllerHost(MayaFaceHost):
         if len(incoming) != 1 or self._unique(incoming[0], "transform") != handle:
             raise ValueError("SoftMod 源操作柄已变化")
         if plan.kind is CustomControlKind.SKIN:
-            skin = self._skin_for_mesh(mesh)
-            if cmds.referenceQuery(skin, isNodeReferenced=True):
+            skin = self._skin_for_mesh(mesh, plan.skin_cluster)
+            if (skin != "*new"
+                    and cmds.referenceQuery(skin, isNodeReferenced=True)):
                 raise ValueError("Skin Control 要求本地可写的 SkinCluster")
 
     def create_custom_controller(self, plan: CustomControllerPlan) -> None:
@@ -746,7 +756,40 @@ class MayaCustomControllerHost(MayaFaceHost):
 
         self._transaction_changed = True
         mesh = self._mesh(plan.region.mesh)
-        skin = self._skin_for_mesh(mesh)
+        skin = self._skin_for_mesh(mesh, plan.skin_cluster)
+        previous_skins = cmds.ls(cmds.listHistory(mesh,
+            pruneDagObjects=True) or [], type="skinCluster") or []
+        original_skin = (self._unique(previous_skins[0], "skinCluster")
+                         if previous_skins else None)
+        layered = skin == "*new" or (original_skin is not None
+                                      and skin != original_skin)
+        base_joint = None
+        if layered:
+            base_name = self.scene_address("ExtraSkinClustersBaseJoint_M")
+            if cmds.objExists(base_name):
+                base_joint = self._unique(base_name, "joint")
+            else:
+                root_name = ("FaceDeformationSystem" if self.face and
+                             cmds.objExists(self.scene_address(
+                                 "FaceDeformationSystem"))
+                             else "DeformationSystem")
+                root = self._unique(root_name, "transform")
+                base_joint = cmds.createNode("joint", name=base_name,
+                                             parent=root)
+                cmds.setAttr(base_joint + ".drawStyle", 2)
+                cmds.setAttr(base_joint + ".inheritsTransform", False,
+                             lock=True)
+                main = self.scene_address("Main")
+                if cmds.objExists(main + ".jointVis"):
+                    cmds.connectAttr(main + ".jointVis",
+                                     base_joint + ".visibility")
+        if skin == "*new":
+            created = cmds.skinCluster(base_joint, mesh, multi=True)
+            if len(created) != 1:
+                raise RuntimeError("新建分层 SkinCluster 未返回唯一节点")
+            skin = self._unique(created[0], "skinCluster")
+            if original_skin:
+                cmds.reorderDeformers(original_skin, skin, mesh)
         weights = self._soft_selection_weights(plan.region)
         source_parent = self._unique(plan.parent_joint, "joint")
         parent = (self._ensure_custom_partial_parent(source_parent)
@@ -778,9 +821,28 @@ class MayaCustomControllerHost(MayaFaceHost):
                              degree=1, point=[tuple(scale * axis for axis in p)
                                               for p in corners])
         control = cmds.parent(control, offset, relative=True)[0]
-        cmds.parentConstraint(control, joint, maintainOffset=False)
+        constraint = cmds.parentConstraint(control, joint,
+                                           maintainOffset=False)
         cmds.addAttr(control, longName="skinControl",
                      attributeType="bool", defaultValue=True)
+        cmds.addAttr(control, longName="advPyLayeredSkin",
+                     attributeType="bool", defaultValue=layered)
+        cmds.setAttr(control + ".advPyLayeredSkin", lock=True)
+        joint_offset = None
+        if layered:
+            cmds.delete(constraint)
+            joint_offset = cmds.createNode("transform", name=self.scene_address(
+                "JointOffset" + plan.name + plan.side), parent=joint)
+            joint_offset = cmds.parent(joint_offset, base_joint)[0]
+            joint = cmds.parent(joint, joint_offset)[0]
+            matrix = cmds.createNode("multMatrix", name=self.scene_address(
+                plan.name + "JointMM" + plan.side))
+            cmds.connectAttr(control + ".worldMatrix[0]",
+                             matrix + ".matrixIn[0]")
+            cmds.connectAttr(offset + ".worldInverseMatrix[0]",
+                             matrix + ".matrixIn[1]")
+            cmds.connectAttr(matrix + ".matrixSum",
+                             joint + ".offsetParentMatrix")
         cmds.skinCluster(skin, edit=True, addInfluence=joint,
                          weight=0.0, lockWeights=False)
         matrix_indices = cmds.getAttr(skin + ".matrix", multiIndices=True) or []
@@ -832,7 +894,9 @@ class MayaCustomControllerHost(MayaFaceHost):
         cmds.delete(self._unique(plan.region.source_handle, "transform"))
         if cmds.objExists(plan.region.deformer):
             cmds.delete(plan.region.deformer)
-        self._register_custom_nodes((attach, offset, control, joint), control)
+        paths = ((attach, offset, control, joint_offset, joint)
+                 if joint_offset else (attach, offset, control, joint))
+        self._register_custom_nodes(paths, control)
 
     def _create_cluster_controller(self, plan: CustomControllerPlan) -> None:
         from maya import cmds
@@ -1086,6 +1150,15 @@ class MayaCustomControllerHost(MayaFaceHost):
             joint = self._unique(joints[0], "joint")
             if has_registry and local(joint) not in registered:
                 raise ValueError("Skin Control 影响关节未登记到角色")
+            if cmds.objExists(path + ".advPyLayeredSkin") and cmds.getAttr(
+                    path + ".advPyLayeredSkin"):
+                joint_offset = (cmds.listRelatives(joint, parent=True,
+                    fullPath=True) or [None])[0]
+                offset_leaf = (joint_offset.rsplit("|", 1)[-1]
+                               .rsplit(":", 1)[-1] if joint_offset else "")
+                if (not offset_leaf.startswith("JointOffset")
+                        or has_registry and local(joint_offset) not in registered):
+                    raise ValueError("分层 Skin Control 缺少关节偏移层")
         return CustomControllerState(
             kind, offset, path, base, parent,
             self._softmod_meshes(deformer) if kind is CustomControlKind.SOFT_MOD
@@ -1290,6 +1363,12 @@ class MayaCustomControllerHost(MayaFaceHost):
                        or node.path.startswith(attach_local + "|")}
             if state.joint:
                 removed.add(local(state.joint))
+                if (cmds.objExists(state.control + ".advPyLayeredSkin")
+                        and cmds.getAttr(state.control + ".advPyLayeredSkin")):
+                    joint_offset = (cmds.listRelatives(
+                        state.joint, parent=True, fullPath=True) or [None])[0]
+                    if joint_offset:
+                        removed.add(local(joint_offset))
             after = replace(before,
                             nodes=tuple(node for node in before.nodes
                                         if node.path not in removed),
@@ -1317,6 +1396,11 @@ class MayaCustomControllerHost(MayaFaceHost):
             cmds.setAttr(members, lock=True)
         if state.kind is CustomControlKind.SKIN:
             joint = self._unique(state.joint, "joint")
+            layered = (cmds.objExists(state.control + ".advPyLayeredSkin")
+                       and bool(cmds.getAttr(state.control +
+                                             ".advPyLayeredSkin")))
+            joint_offset = ((cmds.listRelatives(joint, parent=True,
+                fullPath=True) or [None])[0] if layered else None)
             for skin in cmds.ls(type="skinCluster") or []:
                 if not any(mesh in self._skin_meshes(skin)
                            for mesh in state.influenced_meshes):
@@ -1337,6 +1421,14 @@ class MayaCustomControllerHost(MayaFaceHost):
                 else:
                     cmds.skinCluster(skin, edit=True, removeInfluence=joint)
             cmds.delete(joint)
+            if joint_offset and cmds.objExists(joint_offset):
+                cmds.delete(joint_offset)
+            if layered:
+                leaf = state.control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                stem, side = leaf.rsplit("_", 1)
+                matrix = self.scene_address(stem + "JointMM_" + side)
+                if cmds.objExists(matrix):
+                    cmds.delete(matrix)
         else:
             deformer = self._unique(state.deformer,
                                     "softMod" if state.kind is

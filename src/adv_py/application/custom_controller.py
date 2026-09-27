@@ -49,13 +49,15 @@ class BuildCustomController:
     def _plan_in_build_pose(self, deformer: str, kind: CustomControlKind,
                             base_name: str, *, parent_joint: str | None,
                             middle: bool, local: bool,
-                            partial_parent: bool) -> CustomControllerPlan:
+                            partial_parent: bool,
+                            skin_cluster: str | None) -> CustomControllerPlan:
         region = self._host.capture_softmod_region(deformer)
         joints = self._host.deform_joint_candidates(region.mesh)
         plan = plan_custom_controller(kind, region, joints, base_name,
                                       parent_joint=parent_joint,
                                       middle=middle, local=local,
-                                      partial_parent=partial_parent)
+                                      partial_parent=partial_parent,
+                                      skin_cluster=skin_cluster)
         for name in plan.created_names:
             if self._host.find_name_collisions(name):
                 raise ValueError("自定义控制节点名称已占用：" + name)
@@ -65,25 +67,29 @@ class BuildCustomController:
     def plan(self, deformer: str, kind: CustomControlKind,
              base_name: str, *, parent_joint: str | None = None,
              middle: bool = False, local: bool = True,
-             partial_parent: bool = False
+             partial_parent: bool = False,
+             skin_cluster: str | None = None
              ) -> CustomControllerPlan:
         with self._host.build_pose_session(deformer):
             return self._plan_in_build_pose(
                 deformer, kind, base_name, parent_joint=parent_joint,
                 middle=middle, local=local,
-                partial_parent=partial_parent)
+                partial_parent=partial_parent,
+                skin_cluster=skin_cluster)
 
     def apply(self, deformer: str, kind: CustomControlKind,
               base_name: str, *, parent_joint: str | None = None,
               middle: bool = False, local: bool = True,
-              partial_parent: bool = False
+              partial_parent: bool = False,
+              skin_cluster: str | None = None
               ) -> CustomControllerBuildResult:
         with self._host.transaction("创建自定义控制器"):
             with self._host.build_pose_session(deformer):
                 plan = self._plan_in_build_pose(
                     deformer, kind, base_name, parent_joint=parent_joint,
                     middle=middle, local=local,
-                    partial_parent=partial_parent)
+                    partial_parent=partial_parent,
+                    skin_cluster=skin_cluster)
                 self._host.create_custom_controller(plan)
                 state = self._host.capture_custom_controller(plan)
             if (state.kind is not plan.kind or state.parent_joint != plan.parent_joint

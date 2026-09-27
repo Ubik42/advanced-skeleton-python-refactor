@@ -505,6 +505,11 @@ def create_panel(controller: MayaPanelController | None = None):
             self.custom_control_local.setChecked(True)
             self.custom_control_partial_parent = QtWidgets.QCheckBox(
                 "50% joint as parent（仅 Body Skin）")
+            self.custom_skin_cluster = QtWidgets.QLineEdit()
+            self.custom_skin_cluster.setPlaceholderText(
+                "留空使用唯一现有层；填节点名选现有层")
+            self.custom_skin_new_layer = QtWidgets.QCheckBox(
+                "新建分层 SkinCluster")
             self.custom_control_parent = QtWidgets.QLineEdit()
             self.custom_control_parent.setPlaceholderText(
                 "可留空；默认选择最近的变形关节")
@@ -519,6 +524,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("中心控制", self.custom_control_middle),
                 ("局部朝向", self.custom_control_local),
                 ("父关节中间层", self.custom_control_partial_parent),
+                ("目标蒙皮层", self.custom_skin_cluster),
+                ("新建蒙皮层", self.custom_skin_new_layer),
                 ("指定父关节", self.custom_control_parent),
                 ("已有控制器", self.custom_control_existing),
                 ("新增网格", self.custom_control_mesh)])
@@ -1678,6 +1685,9 @@ def create_panel(controller: MayaPanelController | None = None):
             return f"已创建 Cluster 控制器：{state.control}"
 
         def _create_custom_skin(self):
+            chosen_skin = self.custom_skin_cluster.text().strip()
+            if self.custom_skin_new_layer.isChecked() and chosen_skin:
+                raise ValueError("新建蒙皮层时不应填写现有 SkinCluster")
             state = self.controller.custom_skin_create(
                 self._namespace(), self.custom_softmod_source.text().strip(),
                 self.custom_control_name.text().strip(),
@@ -1685,7 +1695,9 @@ def create_panel(controller: MayaPanelController | None = None):
                 face=getattr(self, "custom_control_face", False),
                 middle=self.custom_control_middle.isChecked(),
                 local=self.custom_control_local.isChecked(),
-                partial_parent=self.custom_control_partial_parent.isChecked())
+                partial_parent=self.custom_control_partial_parent.isChecked(),
+                skin_cluster=("*new" if self.custom_skin_new_layer.isChecked()
+                              else chosen_skin or None))
             self.custom_control_existing.setText(state.control)
             return f"已创建 Skin 控制器：{state.control}"
 

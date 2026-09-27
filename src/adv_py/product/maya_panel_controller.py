@@ -732,7 +732,8 @@ class MayaPanelController:
                            base_name: str, parent_joint: str = "",
                            *, face: bool = False, middle: bool = False,
                            local: bool = True,
-                           partial_parent: bool = False):
+                           partial_parent: bool = False,
+                           skin_cluster: str | None = None):
         from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
         from adv_py.application.custom_controller import BuildCustomController
         from adv_py.core.custom_controller import CustomControlKind
@@ -743,7 +744,8 @@ class MayaPanelController:
             deformer, CustomControlKind.SKIN, base_name,
             parent_joint=parent_joint or None,
             middle=middle, local=local,
-            partial_parent=partial_parent).state
+            partial_parent=partial_parent,
+            skin_cluster=skin_cluster).state
 
     def custom_softmod_add_mesh(self, namespace: str, control: str,
                                 mesh: str):

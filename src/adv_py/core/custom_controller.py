@@ -53,6 +53,7 @@ class CustomControllerPlan:
     base_control_name: str | None
     joint_name: str | None
     deformer_name: str | None
+    skin_cluster: str | None = None
 
     def auxiliary_name(self, role: str) -> str:
         stem = self.name
@@ -93,6 +94,9 @@ class CustomControllerPlan:
                 "translation_subtract", "translate_matrix",
                 "translate_decompose", "rotate_matrix", "rotate_decompose",
                 "edge_curve", "edge_source", "curve_point"))
+        if self.kind is CustomControlKind.SKIN and self.skin_cluster is not None:
+            names.extend(("JointOffset" + self.name + self.side,
+                          self.name + "JointMM" + self.side))
         if self.joint_name is not None:
             names.append(self.joint_name)
         if (self.deformer_name is not None
@@ -118,6 +122,7 @@ def plan_custom_controller(
     middle: bool = False,
     local: bool = True,
     partial_parent: bool = False,
+    skin_cluster: str | None = None,
 ) -> CustomControllerPlan:
     """Use the painted SoftMod region and an explicit or nearest deform joint."""
     if not isinstance(kind, CustomControlKind):
@@ -133,6 +138,10 @@ def plan_custom_controller(
         raise ValueError("50% Parent 选项须为布尔值")
     if partial_parent and kind is not CustomControlKind.SKIN:
         raise ValueError("50% Parent 只适用于 Skin Control")
+    if skin_cluster is not None and (kind is not CustomControlKind.SKIN
+                                     or not isinstance(skin_cluster, str)
+                                     or not skin_cluster.strip()):
+        raise ValueError("SkinCluster 目标只适用于 Skin Control")
     if not region.deformer or not region.mesh:
         raise ValueError("SoftMod 区域须包含变形器和网格路径")
     _position(region.center, "SoftMod 中心")
@@ -191,4 +200,4 @@ def plan_custom_controller(
                                 base_name + "Base" + side
                                 if kind is CustomControlKind.SOFT_MOD else None,
                                 joint_name,
-                                deformer_name)
+                                deformer_name, skin_cluster)
