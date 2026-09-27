@@ -49,6 +49,9 @@ def main() -> None:
             cmds.setAttr("ctrlEye_R.blink", blink)
             cmds.setAttr("ctrlEye_L.blink", blink)
             visible_count = 0
+            missing_front_surface = 0
+            behind_eye = 0
+            depth_deficits = []
             eye_hits = 0
             for x, y in points:
                 eye_z = front_depth(eye, x, y)
@@ -58,8 +61,19 @@ def main() -> None:
                 lid_z = front_depth(head, x, y)
                 if lid_z is None or eye_z > lid_z + .001:
                     visible_count += 1
+                    if lid_z is None or lid_z < bounds[2]:
+                        missing_front_surface += 1
+                    else:
+                        behind_eye += 1
+                    if lid_z is not None:
+                        depth_deficits.append(eye_z - lid_z)
             visible[label] = {"eye_hit_samples": eye_hits,
                               "visible_samples": visible_count,
+                              "missing_front_surface_samples":
+                                  missing_front_surface,
+                              "surface_behind_eye_samples": behind_eye,
+                              "largest_depth_deficit_cm": round(
+                                  max(depth_deficits, default=0.), 6),
                               "visible_fraction": round(
                                   visible_count / eye_hits, 6)
                               if eye_hits else None}

@@ -1,4 +1,4 @@
-"""Extract static Face and eye meshes from a local FBX for Maya smoke tests.
+"""Extract static Face and eye meshes from a local FBX or Maya scene.
 
 The source file is read only. Output is intended for ignored validation/results.
 """
@@ -43,17 +43,22 @@ def main() -> None:
     source = Path(sys.argv[1]).resolve()
     output = Path(sys.argv[2]).resolve()
     if len(sys.argv) not in (5, 6):
-        raise ValueError("用法：FBX 输出目录 头部网格 双眼网格，或头部网格 右眼网格 左眼网格")
+        raise ValueError("用法：源场景 输出目录 头部网格 双眼网格，或头部网格 右眼网格 左眼网格")
     head_name = sys.argv[3]
     eye_names = sys.argv[4:]
-    if not source.is_file() or source.suffix.lower() != ".fbx":
-        raise FileNotFoundError("需要存在的本地 FBX 文件")
+    if not source.is_file() or source.suffix.lower() not in (
+            ".fbx", ".ma", ".mb"):
+        raise FileNotFoundError("需要存在的本地 FBX 或 Maya 场景")
     output.mkdir(parents=True, exist_ok=True)
     cmds.file(new=True, force=True)
-    cmds.loadPlugin("fbxmaya", quiet=True)
     cmds.loadPlugin("objExport", quiet=True)
-    cmds.file(str(source), i=True, type="FBX", ignoreVersion=True,
-              mergeNamespacesOnClash=False, options="fbx")
+    if source.suffix.lower() == ".fbx":
+        cmds.loadPlugin("fbxmaya", quiet=True)
+        cmds.file(str(source), i=True, type="FBX", ignoreVersion=True,
+                  mergeNamespacesOnClash=False, options="fbx")
+    else:
+        cmds.file(str(source), open=True, force=True,
+                  executeScriptNodes=False)
     head = static_copy(one_mesh(head_name), "head")
     if len(eye_names) == 1:
         eyes = static_copy(one_mesh(eye_names[0]), "eyeOutter")

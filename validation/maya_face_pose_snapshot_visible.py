@@ -49,8 +49,16 @@ def schedule(source_directory: str, output_directory: str) -> None:
                              displayTextures=False, grid=False,
                              joints=False, nurbsCurves=False)
             camera = cmds.modelPanel(panel, query=True, camera=True)
-            cmds.setAttr(camera + ".orthographicWidth", 14)
-            cmds.setAttr(camera + ".translateY", 175.7)
+            eye_bounds = [cmds.exactWorldBoundingBox(meshes[
+                "open-" + mesh_label])
+                for mesh_label in ("right-eye", "left-eye")]
+            x_min = min(bounds[0] for bounds in eye_bounds)
+            x_max = max(bounds[3] for bounds in eye_bounds)
+            y_min = min(bounds[1] for bounds in eye_bounds)
+            y_max = max(bounds[4] for bounds in eye_bounds)
+            cmds.setAttr(camera + ".orthographicWidth",
+                         max((x_max - x_min) * 1.55, .5))
+            cmds.setAttr(camera + ".translateY", (y_min + y_max) / 2.)
             for label, frame in (("open", 1), ("blink", 10)):
                 for key, mesh in meshes.items():
                     cmds.setAttr(mesh + ".visibility",
