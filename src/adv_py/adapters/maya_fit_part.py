@@ -167,6 +167,7 @@ class MayaFitPartMixin:
             if spec.reason == "end_of_chain":
                 if (not spec.segment_parts
                         or spec.segment_parts[-1] != spec.parent_part_name
+                        or spec.segment_index != len(spec.segment_parts)
                         or len(set(spec.segment_parts)) != len(spec.segment_parts)
                         or not set(spec.segment_parts) <= planned_names):
                     raise ValueError("Fit Part 段长分配计划不完整："
@@ -175,6 +176,16 @@ class MayaFitPartMixin:
                            + "_SegmentDistance")
                 if c.objExists(divider):
                     raise ValueError("Fit Part 段长节点名称冲突：" + divider)
+            elif spec.reason == "child_of_part" and spec.segment_parts:
+                if (not 1 <= spec.segment_index <= len(spec.segment_parts)
+                        or spec.segment_parts[spec.segment_index - 1]
+                        != spec.parent_part_name):
+                    raise ValueError("ChildOfPart 段长计划与目标 Part 不一致："
+                                     + spec.child_name)
+                residual = "AdvPy_" + spec.child_name + "_ChildOfPartDistance"
+                if (spec.segment_index < len(spec.segment_parts)
+                        and c.objExists(residual)):
+                    raise ValueError("ChildOfPart 段长节点名称冲突：" + residual)
             # A bound joint must not move beneath a new influence hierarchy.
             if c.listConnections(child, type="skinCluster"):
                 raise ValueError("Fit Part 改挂必须在 Skin 绑定前执行："
@@ -223,13 +234,24 @@ class MayaFitPartMixin:
                 if source:
                     segment_sources[axis] = source
                     c.disconnectAttr(source, destination)
+        elif spec.reason == "child_of_part" and spec.segment_parts:
+            divider = ("AdvPy_" + spec.segment_parts[-1]
+                       + "_SegmentDistance")
+            for axis in "XYZ":
+                destination = child + ".translate" + axis
+                source = c.connectionInfo(destination,
+                                          sourceFromDestination=True)
+                if source and source.rsplit("|", 1)[-1] == (
+                        divider + ".output" + axis):
+                    segment_sources[axis] = source
+                    c.disconnectAttr(source, destination)
         # Parenting preserves the child's world transform. Resolve names
         # again on each call because every reparent changes descendant paths.
         c.parent(child, world=True)
         child = self._unique_fit_part_joint(spec.child_name)
         parent = self._unique_fit_part_joint(spec.parent_part_name)
         c.parent(child, parent)
-        if segment_sources:
+        if segment_sources and spec.reason == "end_of_chain":
             divider = c.createNode("multiplyDivide",
                 name="AdvPy_" + spec.parent_part_name + "_SegmentDistance")
             factor = 1.0 / (len(spec.segment_parts) + 1)
@@ -240,6 +262,21 @@ class MayaFitPartMixin:
                     joint = self._unique_fit_part_joint(name)
                     c.connectAttr(divider + ".output" + axis,
                                   joint + ".translate" + axis)
+        elif segment_sources and spec.reason == "child_of_part":
+            remaining = len(spec.segment_parts) + 1 - spec.segment_index
+            output_by_axis = segment_sources
+            if remaining > 1:
+                residual = c.createNode("multiplyDivide",
+                    name="AdvPy_" + spec.child_name
+                    + "_ChildOfPartDistance")
+                c.setAttr(residual + ".input2", remaining, remaining,
+                          remaining)
+                output_by_axis = {}
+                for axis, source in segment_sources.items():
+                    c.connectAttr(source, residual + ".input1" + axis)
+                    output_by_axis[axis] = residual + ".output" + axis
+            for axis, source in output_by_axis.items():
+                c.connectAttr(source, child + ".translate" + axis)
         self._transaction_changed = True
 
     def capture_fit_part_joints(

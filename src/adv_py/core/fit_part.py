@@ -56,6 +56,7 @@ class FitPartReparentSpec:
     parent_part_name: str
     reason: str
     segment_parts: tuple[str, ...] = ()
+    segment_index: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -348,15 +349,17 @@ def plan_fit_part_reparents(
     source_by_joint = {item.joint: item for item in metadata}
     instance_by_path = {item.output_path: item for item in instances}
     assignments: list[FitPartReparentSpec] = []
+    chain_by_end: dict[str, tuple[str, ...]] = {}
     for part in parts:
         if part.index != part.count:
             continue
         end = instance_by_path[part.end_body]
+        chain = tuple(part_by_start_index[(part.start_body, index)].name
+                      for index in range(1, part.count + 1))
+        chain_by_end[end.output_path] = chain
         assignments.append(FitPartReparentSpec(
             end.output_path, end.output_name, part.path, part.name,
-            "end_of_chain",
-            tuple(part_by_start_index[(part.start_body, index)].name
-                  for index in range(1, part.count + 1))))
+            "end_of_chain", chain, part.count))
     for child in instances:
         source = source_by_joint.get(child.source_joint)
         if source is None:
@@ -373,7 +376,8 @@ def plan_fit_part_reparents(
                                          + child.output_name)
         assignments.append(FitPartReparentSpec(
             child.output_path, child.output_name, parent.path, parent.name,
-            "child_of_part"))
+            "child_of_part", chain_by_end.get(child.output_path, ()),
+            index if child.output_path in chain_by_end else 0))
     return tuple(assignments)
 
 
