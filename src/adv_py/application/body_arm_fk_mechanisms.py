@@ -140,12 +140,16 @@ class BuildBodyArmFkMechanismControls:
             driven_joint_by_source=fk_drivers,
             sub_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).sub_controllers,
+            extra_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).extra_controllers,
         )
         names = [controls.root_name]
         for spec in controls.controls:
             names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
             if spec.sub_control_name is not None:
                 names.append(spec.sub_control_name)
+            if spec.extra_name is not None:
+                names.append(spec.extra_name)
         collisions = tuple(
             sorted(
                 {

@@ -102,7 +102,9 @@ class BuildBodyLegVisibility:
         fk = plan_body_leg_fk_controls(
             body, radius=control_radius, driven_joint_by_source=fk_drivers,
             sub_controllers=BodyBuildOptions.from_fit_settings(
-                symmetry.settings).sub_controllers)
+                symmetry.settings).sub_controllers,
+            extra_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).extra_controllers)
         ik = plan_body_leg_ik(
             body,
             mechanism_plan,

@@ -112,7 +112,9 @@ class BuildBodyArmRig:
             safety.body, radius=control_radius,
             driven_joint_by_source=fk_drivers,
             sub_controllers=BodyBuildOptions.from_fit_settings(
-                safety.symmetry.settings).sub_controllers)
+                safety.symmetry.settings).sub_controllers,
+            extra_controllers=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).extra_controllers)
         blend = plan_body_arm_blend(safety.body, mechanisms)
         ik = plan_body_arm_ik(
             safety.body, mechanisms, radius=control_radius,
@@ -131,6 +133,8 @@ class BuildBodyArmRig:
             names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
             if spec.sub_control_name is not None:
                 names.append(spec.sub_control_name)
+            if spec.extra_name is not None:
+                names.append(spec.extra_name)
         for side in blend.sides:
             names.append(side.reverse_name)
             names.extend(j.constraint_name for j in side.joints)

@@ -214,6 +214,8 @@ class BuildBodyLegRig:
             driven_joint_by_source=fk_drivers,
             sub_controllers=BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).sub_controllers,
+            extra_controllers=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).extra_controllers,
         )
         blend = plan_body_leg_blend(safety.body, mechanisms)
         ik = plan_body_leg_ik(
@@ -254,6 +256,8 @@ class BuildBodyLegRig:
         for spec in fk_controls.controls:
             if spec.sub_control_name is not None:
                 names.append(spec.sub_control_name)
+            if spec.extra_name is not None:
+                names.append(spec.extra_name)
             names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
         for side in blend.sides:
             names.append(side.reverse_name)

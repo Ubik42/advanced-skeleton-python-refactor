@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Mapping
 
+from .body_controller_layers import (
+    BodyExtraControllerState, audit_body_extra_controller,
+)
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
 
@@ -33,6 +36,9 @@ class BodyLimbFkControlSpec:
     source_override_path: str | None = None
     sub_control_path: str | None = None
     sub_control_name: str | None = None
+    extra_path: str | None = None
+    extra_name: str | None = None
+    extra_curve: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +68,7 @@ class BodyLimbFkControlState:
     sub_visibility_source: str | None = None
     sub_color: int | None = None
     sub_shape_scale: float | None = None
+    extra: BodyExtraControllerState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,9 +92,10 @@ def plan_body_limb_fk_controls(
     radius: float = 1.5,
     driven_joint_by_source: Mapping[str, str] | None = None,
     sub_controllers: bool = False,
+    extra_controllers: bool = False,
 ) -> BodyLimbFkControlPlan:
-    if type(sub_controllers) is not bool:
-        raise BodyLimbControlValidationError("Sub Controllers 开关必须是布尔值")
+    if type(sub_controllers) is not bool or type(extra_controllers) is not bool:
+        raise BodyLimbControlValidationError("FK 控制器开关必须是布尔值")
     if (
         not limb_label.isalpha()
         or len(joint_names) < 2
@@ -160,9 +168,11 @@ def plan_body_limb_fk_controls(
                     f"{state.name} 不在预期 {limb_label} FK 父链上"
                 )
             offset_name = f"AdvPy_{joint_name}FKOffset_{suffix}"
+            extra_name = f"AdvPy_{joint_name}FKExtra_{suffix}"
             control_name = f"AdvPy_{joint_name}FK_{suffix}"
             offset_path = f"{parent_path}|{offset_name}"
-            control_path = f"{offset_path}|{control_name}"
+            extra_path = f"{offset_path}|{extra_name}"
+            control_path = f"{extra_path}|{control_name}"
             controls.append(BodyLimbFkControlSpec(
                 side=side,
                 driven_joint=(
@@ -190,6 +200,9 @@ def plan_body_limb_fk_controls(
                     "AdvPy_" + joint_name + "FKSub_" + suffix
                     if sub_controllers else None
                 ),
+                extra_path=extra_path,
+                extra_name=extra_name,
+                extra_curve=extra_controllers,
             ))
             parent_path = control_path
             previous_joint = state.path
@@ -225,7 +238,7 @@ def audit_body_limb_fk_controls(
             state.offset_path != spec.offset_path
             or state.offset_parent_path != spec.parent_path
             or state.control_parent_path
-            != (spec.control_parent_path or spec.offset_path)
+            != (spec.extra_path or spec.control_parent_path or spec.offset_path)
         ):
             issues.append(BodyLimbControlIssue(
                 "control_hierarchy_mismatch", "FK 控制父链不一致", path
@@ -260,6 +273,13 @@ def audit_body_limb_fk_controls(
               or abs(state.sub_shape_scale - 0.9) > tolerance):
             issues.append(BodyLimbControlIssue(
                 "sub_control_mismatch", "FK Sub 控制器与计划不一致", path))
+        if spec.extra_path is not None:
+            for message in audit_body_extra_controller(
+                    spec.offset_path, spec.control_path, spec.extra_path,
+                    state.extra, extra_curve=spec.extra_curve,
+                    tolerance=tolerance):
+                issues.append(BodyLimbControlIssue(
+                    "extra_control_mismatch", message, path))
         if check_initial_pose:
             if not _vector_matches(
                 state.world_position, spec.world_position, tolerance

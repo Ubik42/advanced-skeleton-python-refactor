@@ -126,6 +126,8 @@ class MatchBodyLegIkToFk:
             body, driven_joint_by_source=fk_drivers,
             sub_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).sub_controllers,
+            extra_controllers=BodyBuildOptions.from_fit_settings(
+                symmetry.settings).extra_controllers,
         )
         blend = plan_body_leg_blend(body, mechanisms)
         match = plan_body_leg_ik_to_fk(body, fk_controls, blend, side)
