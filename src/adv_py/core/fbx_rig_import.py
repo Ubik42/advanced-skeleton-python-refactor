@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import dist, isfinite
+from typing import Mapping
 
 
 Vector3 = tuple[float, float, float]
@@ -71,6 +72,34 @@ class FBXRigImportPlan:
     names_requiring_underscore_removal: tuple[str, ...]
     collapsed_fit_source_joints: tuple[str, ...] = ()
     bind_pose_joints: tuple[FBXRigSourceJoint, ...] = ()
+
+
+def validate_fbx_source_namespace_paths(
+    plan: FBXRigImportPlan,
+    source_paths: Mapping[str, str],
+) -> None:
+    """Check the original joint hierarchy after its FBXRig namespace move."""
+    joints = {joint.path: joint for joint in plan.bind_pose_joints}
+    if (set(source_paths) != set(joints)
+            or any(not isinstance(value, str) for value in source_paths.values())
+            or len(set(source_paths.values())) != len(source_paths)):
+        raise ValueError("FBX rig 来源骨架迁入命名空间后路径不完整")
+    for path, joint in joints.items():
+        target = source_paths[path]
+        if not isinstance(target, str) or not target.startswith("|"):
+            raise ValueError("FBX rig 来源关节目标路径不是完整 DAG 路径：" + path)
+        source_name = joint.name.rsplit(":", 1)[-1]
+        clean_name = (source_name if path == plan.top_joint
+                      else source_name.replace("_", ""))
+        target_name = target.rsplit("|", 1)[-1]
+        expected = "FBXRig:" + clean_name
+        if target_name != expected and not (
+                path != plan.top_joint and clean_name.endswith("Fat")
+                and target_name == expected + "2"):
+            raise ValueError("FBX rig 来源关节改名结果不符：" + path)
+        if joint.parent is not None and not target.startswith(
+                source_paths[joint.parent] + "|"):
+            raise ValueError("FBX rig 来源关节父链在改名后断开：" + path)
 
 
 def plan_fbx_control_transfer(
@@ -142,6 +171,7 @@ def plan_fbx_rig_import(
         raise ValueError("FBX rig 需要唯一顶层关节")
     for joint in joints:
         if (not joint.path or not joint.name
+                or joint.path.rsplit("|", 1)[-1] != joint.name
                 or (joint.parent is not None and joint.parent not in by_path)
                 or len(joint.world_position) != 3
                 or any(isinstance(value, bool)
@@ -273,6 +303,6 @@ def plan_fbx_rig_import(
         top.path, root.path, game_root, scale, threshold,
         tuple(guides), tuple(pairs), tuple(control_links), tuple(labels),
         -1 if last_frame is not None else None, last_frame,
-        tuple(joint.path for joint in joints if "_" in joint.name),
+        tuple(joint.path for joint in descendants if "_" in joint.name),
         tuple(joint.path for joint in kept if joint.path in collapsed),
         joints)

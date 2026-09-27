@@ -9,6 +9,7 @@ from typing import Mapping, Protocol
 from adv_py.core.fbx_rig_import import (
     FBXRigControlTransferPlan, FBXRigImportPlan, FBXRigSourceJoint,
     fbx_bind_pose_matches, plan_fbx_control_transfer, plan_fbx_rig_import,
+    validate_fbx_source_namespace_paths,
 )
 
 
@@ -163,9 +164,7 @@ class BuildFBXRig:
                 if not fbx_bind_pose_matches(plan.bind_pose_joints, prepared):
                     raise RuntimeError("FBX rig 恢复后的来源绑定姿态与计划不一致")
                 source_paths = self._host.move_fbx_source_to_namespace(plan)
-                if (set(source_paths) != {joint.path for joint in source.joints}
-                        or len(set(source_paths.values())) != len(source_paths)):
-                    raise RuntimeError("FBX rig 来源骨架迁入命名空间后路径不完整")
+                validate_fbx_source_namespace_paths(plan, source_paths)
                 self._host.create_fbx_fit_guides(plan)
                 self._host.build_fbx_advanced_skeleton(plan)
                 self._host.enlarge_small_fbx_fk_controls(plan)
