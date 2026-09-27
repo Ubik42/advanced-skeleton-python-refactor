@@ -115,6 +115,27 @@ def plan_character_inbetween_ik_solvers(
             pole_control_path=None, pole_constraint_name=None)
         requests.append(InbetweenIkSolverRequest(
             toe_plan, (segment,)))
+    for foot in rig.leg.foot.sides:
+        original_edge = (foot.toe_driver_path,
+                         foot.toe_end_driver_path)
+        binding = pending.pop(original_edge, None)
+        if binding is None:
+            continue
+        active = rebase_inbetween_ik_reference(
+            foot, tuple(request.plan for request in requests))
+        chain = (active.toe_driver_path,
+                 active.toe_end_driver_path)
+        segment = plan_inbetween_ik_parts(
+            binding.parts, start_ik_driver=chain[0],
+            end_ik_driver=chain[1])
+        toe_end_plan = plan_inbetween_ik_solver(
+            chain, (segment,), handle_name=foot.toe_end_handle_name,
+            effector_name=foot.toe_end_effector_name,
+            solver_name="ikSCsolver",
+            handle_parent_path=foot.toe_control_path,
+            pole_control_path=None, pole_constraint_name=None)
+        requests.append(InbetweenIkSolverRequest(
+            toe_end_plan, (segment,)))
     if pending:
         raise ValueError("Inbetween IK 骨段没有对应求解器："
                          + str(next(iter(pending))))
@@ -149,10 +170,17 @@ def rebase_character_rig_after_inbetween_ik(
                   mechanisms=rebase_inbetween_ik_mechanisms(
                       rig.arm.mechanisms, solvers))
     foot_plan = replace(rebased.leg.foot, sides=tuple(
-        replace(spec, toe_solver_joint_list=(
-            by_handle[spec.toe_handle_name].solved_joint_list))
-        if spec.toe_handle_name in by_handle else spec
-        for spec in rebased.leg.foot.sides))
+        replace(
+            spec,
+            toe_solver_joint_list=(
+                by_handle[spec.toe_handle_name].solved_joint_list
+                if spec.toe_handle_name in by_handle
+                else spec.toe_solver_joint_list),
+            toe_end_solver_joint_list=(
+                by_handle[spec.toe_end_handle_name].solved_joint_list
+                if spec.toe_end_handle_name in by_handle
+                else spec.toe_end_solver_joint_list),
+        ) for spec in rebased.leg.foot.sides))
     leg = replace(rebased.leg, ik=leg_ik, foot=foot_plan,
                   mechanisms=rebase_inbetween_ik_mechanisms(
                       rig.leg.mechanisms, solvers))

@@ -34,7 +34,6 @@ from .fit_inbetween_spline_ik import (
     BuildInbetweenSplineIk, InbetweenSplineIkHost,
 )
 from .body_character_rig import BodyCharacterRigBuildPlan
-from adv_py.core.fit_inbetween_ik_rebase import rebase_inbetween_ik_reference
 
 
 class InbetweenLimbSegmentHost(
@@ -92,8 +91,8 @@ class BuildInbetweenLimbSegments:
         mapping = plan_character_inbetween_ik_solvers(
             tuple(binding for binding in bindings
                   if binding.spline_root_path is None), rig)
-        ik_by_edge = {
-            (segment.start_ik_driver, segment.end_ik_driver): segment
+        ik_by_part = {
+            segment.parts[0].body_part_name: segment
             for request in mapping.requests
             for segment in request.segments
         }
@@ -126,25 +125,15 @@ class BuildInbetweenLimbSegments:
                     pole_constraint_name=plan.pole_constraint_name)
             for binding in bindings:
                 if binding.spline_root_path is not None:
-                    ik_by_edge[(binding.start_ik_driver,
-                                binding.end_ik_driver)] = (
+                    ik_by_part[binding.parts[0].name] = (
                         BuildInbetweenSplineIk(joined).apply(
                             binding.parts,
                             root_path=binding.spline_root_path,
                             start_output_path=binding.start_ik_driver,
                             end_output_path=binding.end_ik_driver))
-            rp_solvers = tuple(
-                request.plan for request in mapping.requests
-                if request.plan.solver_name != "ikSCsolver")
             segments = []
             for binding, fk, rewire in fk_rows:
-                edge = (binding.start_ik_driver, binding.end_ik_driver)
-                ik = ik_by_edge.get(edge)
-                if ik is None:
-                    active = rebase_inbetween_ik_reference(
-                        binding, rp_solvers)
-                    ik = ik_by_edge.get((active.start_ik_driver,
-                                         active.end_ik_driver))
+                ik = ik_by_part.get(binding.parts[0].name)
                 if ik is None or fk.parts is None:
                     raise RuntimeError("Inbetween FK／IK 段规划不完整："
                                        + binding.parts[0].start_body_name)

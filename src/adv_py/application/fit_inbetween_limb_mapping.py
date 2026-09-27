@@ -16,6 +16,7 @@ _SUPPORTED_EDGES = {
     ("Hip", "Knee"): "leg",
     ("Knee", "Ankle"): "leg",
     ("Ankle", "Toes"): "leg",
+    ("Toes", "ToesEnd"): "leg",
 }
 _SPINE_EDGES = {("Root_M", "Spine1_M"),
                 ("Spine1_M", "Chest_M")}
@@ -42,8 +43,8 @@ class InbetweenLimbBinding:
     fk_system_path: str
     start_fk_driver_path: str
     start_fk_constraint_name: str
-    downstream_fk_offset_path: str
-    end_fk_control_path: str
+    downstream_fk_offset_path: str | None
+    end_fk_control_path: str | None
     start_ik_driver: str
     end_ik_driver: str
     fk_weight_plug: str
@@ -224,6 +225,7 @@ def plan_inbetween_limb_bindings(
         end_controls = [item for item in controls
                         if item.control_name
                         == f"AdvPy_{end_name}FK_{side}"]
+        terminal_toe = (start_name, end_name) == ("Toes", "ToesEnd")
         ik = {joint.source_joint: joint.path
               for joint in module.mechanisms.joints
               if joint.role is BodyLimbMechanismRole.IK}
@@ -232,7 +234,8 @@ def plan_inbetween_limb_bindings(
               if joint.role is BodyLimbMechanismRole.FK}
         blend_sides = [item for item in module.blend.sides
                        if item.side == first.side]
-        if (len(start_controls) != 1 or len(end_controls) != 1
+        if (len(start_controls) != 1
+                or len(end_controls) != (0 if terminal_toe else 1)
                 or start_path not in ik or first.end_body not in ik
                 or start_path not in fk or first.end_body not in fk
                 or len(blend_sides) != 1):
@@ -240,7 +243,8 @@ def plan_inbetween_limb_bindings(
                              + first.start_body_name)
         start_control = start_controls[0]
         if (start_control.driven_joint != fk[start_path]
-                or end_controls[0].driven_joint != fk[first.end_body]):
+                or (not terminal_toe and
+                    end_controls[0].driven_joint != fk[first.end_body])):
             raise ValueError("Inbetween FK 控制与机制关节映射不一致："
                              + first.start_body_name)
         blend = blend_sides[0]
@@ -250,8 +254,8 @@ def plan_inbetween_limb_bindings(
             module.fk_controls.root_path,
             start_control.driven_joint,
             start_control.constraint_name,
-            end_controls[0].offset_path,
-            end_controls[0].control_path,
+            end_controls[0].offset_path if end_controls else None,
+            end_controls[0].control_path if end_controls else None,
             ik[start_path], ik[first.end_body],
             blend.reverse_name + ".outputX",
             module.blend.settings_path + "." + blend.attribute,

@@ -81,6 +81,7 @@ class BodyLegFootSideSpec:
     toe_end_driver_path: str = ""
     toe_end_handle_name: str = ""
     toe_end_effector_name: str = ""
+    toe_end_solver_joint_list: tuple[str, ...] | None = None
 
     @property
     def toe_handle_parent_path(self) -> str:
@@ -431,7 +432,9 @@ def audit_body_leg_foot(
                 "foot_toe_ik_handle", "Toes 单链 IK 求解器结构不一致",
                 spec.side.value))
         if (state.toe_end_handle_parent_path != spec.toe_control_path
-                or state.toe_end_handle_joint_list != (spec.toe_driver_path,)
+                or state.toe_end_handle_joint_list != (
+                    spec.toe_end_solver_joint_list
+                    or (spec.toe_driver_path,))
                 or state.toe_end_handle_solver != "ikSCsolver"):
             issues.append(BodyLegFootIssue(
                 "foot_toe_end_ik_handle", "ToesEnd 单链 IK 求解器结构不一致",
