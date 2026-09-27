@@ -749,36 +749,39 @@ class MayaPanelController:
             skin_cluster=skin_cluster, mirror=mirror).state
 
     def custom_softmod_add_mesh(self, namespace: str, control: str,
-                                mesh: str):
+                                mesh: str, *, face: bool = False):
         from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
         from adv_py.application.custom_controller import ExtendSoftModController
 
         host = MayaCustomControllerHost(
-            namespace=None if namespace == ":" else namespace)
+            namespace=None if namespace == ":" else namespace, face=face)
         return ExtendSoftModController(host).apply(control, mesh)
 
-    def custom_cluster_paint(self, namespace: str, control: str):
+    def custom_cluster_paint(self, namespace: str, control: str,
+                             *, face: bool = False):
         from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
         from adv_py.application.custom_controller import PaintClusterControlWeights
 
         host = MayaCustomControllerHost(
-            namespace=None if namespace == ":" else namespace)
+            namespace=None if namespace == ":" else namespace, face=face)
         return PaintClusterControlWeights(host).apply(control)
 
-    def custom_cluster_mirror(self, namespace: str, control: str):
+    def custom_cluster_mirror(self, namespace: str, control: str,
+                              *, face: bool = False):
         from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
         from adv_py.application.custom_controller import MirrorClusterControlWeights
 
         host = MayaCustomControllerHost(
-            namespace=None if namespace == ":" else namespace)
+            namespace=None if namespace == ":" else namespace, face=face)
         return MirrorClusterControlWeights(host).apply(control)
 
-    def custom_control_delete(self, namespace: str, control: str):
+    def custom_control_delete(self, namespace: str, control: str,
+                              *, face: bool = False):
         from adv_py.adapters.maya_custom_controller import MayaCustomControllerHost
         from adv_py.application.custom_controller import DeleteCustomController
 
         host = MayaCustomControllerHost(
-            namespace=None if namespace == ":" else namespace)
+            namespace=None if namespace == ":" else namespace, face=face)
         return DeleteCustomController(host).apply(control)
 
     def skin_bind(self, namespace: str, mesh: str,

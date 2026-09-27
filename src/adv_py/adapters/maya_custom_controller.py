@@ -234,7 +234,7 @@ class MayaCustomControllerHost(MayaFaceHost):
         origins = {shape: tuple(cmds.getAttr(shape + ".origin")[0])
                    for shape in shapes if cmds.objExists(shape + ".origin")}
         channel_state = []
-        if cmds.objExists(self.scene_address(REGISTRY_NAME)):
+        if not self.face and cmds.objExists(self.scene_address(REGISTRY_NAME)):
             registration = self.read_character_registration()
             plugs = [self.scene_address(channel.node) + "." + channel.attribute
                      for channel in registration.channels]
@@ -406,12 +406,14 @@ class MayaCustomControllerHost(MayaFaceHost):
         self._update_custom_build_pose(control, base=base, add=True)
         control_set = self.scene_address("FaceControlSet" if self.face
                                          else "ControlSet")
+        if not cmds.objExists(control_set) and self.face:
+            raise ValueError("Face 自定义控制器缺少 FaceControlSet")
         if cmds.objExists(control_set):
             cmds.sets([node for node in (control, base) if node],
                       add=control_set)
+        if self.face:
+            return
         if not cmds.objExists(self.scene_address(REGISTRY_NAME)):
-            if self.face:
-                return
             raise ValueError("Body 自定义控制器缺少角色登记")
         previous = self.read_character_registration()
         local = (self._cmds.identity.to_local if self.namespace is not None
@@ -763,6 +765,21 @@ class MayaCustomControllerHost(MayaFaceHost):
                         candidates.insert(0, DeformJointCandidate(path, center))
         return tuple(candidates)
 
+    def preferred_custom_parent(self) -> str | None:
+        from maya import cmds
+
+        if not self.face:
+            return None
+        fit_name = self.scene_address("FaceFitSkeleton")
+        if cmds.objExists(fit_name + ".HeadJoint"):
+            head = cmds.getAttr(fit_name + ".HeadJoint")
+            if head:
+                return self._unique(head, "joint")
+        head_name = self.scene_address("Head_M")
+        if cmds.objExists(head_name):
+            return self._unique(head_name, "joint")
+        return None
+
     def preflight_custom_controller(self, plan: CustomControllerPlan) -> None:
         from maya import cmds
 
@@ -772,6 +789,10 @@ class MayaCustomControllerHost(MayaFaceHost):
         parent = self._unique(plan.parent_joint, "joint")
         if plan.partial_parent and self.face:
             raise ValueError("Face Custom Control 不支持 50% Parent")
+        if self.face and (not cmds.objExists(self.scene_address(
+                "FaceControlSet")) or not cmds.objExists(self.scene_address(
+                    "faceBuildPose"))):
+            raise ValueError("Face Custom Control 要求已构建 FaceControlSet 和 faceBuildPose")
         if mesh not in self._softmod_meshes(source):
             raise ValueError("SoftMod 与区域网格不匹配")
         if (cmds.referenceQuery(source, isNodeReferenced=True)
@@ -1314,7 +1335,8 @@ class MayaCustomControllerHost(MayaFaceHost):
         parent = self._unique(parents[0], "joint")
         local = (self._cmds.identity.to_local if self.namespace is not None
                  else lambda node: node)
-        has_registry = cmds.objExists(self.scene_address(REGISTRY_NAME))
+        has_registry = (not self.face and cmds.objExists(
+            self.scene_address(REGISTRY_NAME)))
         registered = ({node.path for node in
                        self.read_character_registration().nodes}
                       if has_registry else set())
@@ -1328,11 +1350,15 @@ class MayaCustomControllerHost(MayaFaceHost):
                     != "ClusterControlGrp" + path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]):
                 raise ValueError("Cluster Control 缺少控制组")
             expected.update((local(subtract), local(group)))
-        face_path = any(segment.rsplit(":", 1)[-1] == "FaceCustomSystem"
-                        for segment in path.split("|") if segment)
-        if (has_registry and not expected <= registered
-                or not has_registry and not face_path):
-            raise ValueError("自定义控制器未登记到角色")
+        if self.face:
+            face_path = any(segment.rsplit(":", 1)[-1] == "FaceCustomSystem"
+                            for segment in path.split("|") if segment)
+            face_set = self.scene_address("FaceControlSet")
+            if (not face_path or not cmds.objExists(face_set)
+                    or not cmds.sets(path, isMember=face_set)):
+                raise ValueError("自定义控制器未加入 FaceControlSet")
+        elif not has_registry or not expected <= registered:
+            raise ValueError("自定义控制器未登记到 Body 角色")
         joint = None
         if kind is CustomControlKind.SKIN:
             joints = cmds.listConnections(
@@ -1546,7 +1572,7 @@ class MayaCustomControllerHost(MayaFaceHost):
                                              fullPath=True) or [None])[0]
             if not delete_root:
                 raise ValueError("Cluster Control 缺少控制组")
-        if cmds.objExists(self.scene_address(REGISTRY_NAME)):
+        if not self.face and cmds.objExists(self.scene_address(REGISTRY_NAME)):
             before = self.read_character_registration()
             local = (self._cmds.identity.to_local if self.namespace is not None
                      else lambda path: path)
@@ -1645,5 +1671,5 @@ class MayaCustomControllerHost(MayaFaceHost):
                     if cmds.objExists(helper):
                         cmds.delete(helper)
         cmds.delete(delete_root)
-        if cmds.objExists(self.scene_address(REGISTRY_NAME)):
+        if not self.face and cmds.objExists(self.scene_address(REGISTRY_NAME)):
             self.read_character_registration()

@@ -1083,6 +1083,64 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("合并为", self.face_merge_release)])
             form.addRow(self._button("合并资产版本", self._face_library_merge))
             stack.addWidget(group)
+
+            face_custom = self.face_custom_controls = {}
+            for key in ("source", "name", "parent", "existing", "mesh",
+                        "skin_cluster"):
+                face_custom[key] = QtWidgets.QLineEdit()
+            face_custom["source"].setPlaceholderText("已绘制的 SoftMod 节点路径")
+            face_custom["name"].setPlaceholderText("例如 Cheek；侧别由位置确定")
+            face_custom["parent"].setPlaceholderText(
+                "可留空；默认使用 FaceFitSkeleton.HeadJoint")
+            face_custom["existing"].setPlaceholderText("已有面部控制器路径")
+            face_custom["mesh"].setPlaceholderText("新增受影响网格路径")
+            face_custom["skin_cluster"].setPlaceholderText(
+                "留空使用唯一现有层；填节点名选现有层")
+            for key, label in (("mirror", "mirror"), ("middle", "middle"),
+                               ("local", "local"),
+                               ("new_layer", "新建分层 SkinCluster")):
+                face_custom[key] = QtWidgets.QCheckBox(label)
+            face_custom["mirror"].setChecked(True)
+            face_custom["local"].setChecked(True)
+            face_custom["mirror"].toggled.connect(
+                lambda enabled: face_custom["middle"].setChecked(False)
+                if enabled else None)
+            face_custom["middle"].toggled.connect(
+                lambda enabled: face_custom["mirror"].setChecked(False)
+                if enabled else None)
+            group, form = self._group("07 · Custom Controllers", [
+                ("SoftMod 区域", face_custom["source"]),
+                ("控制器名称", face_custom["name"]),
+                ("自动镜像", face_custom["mirror"]),
+                ("中心控制", face_custom["middle"]),
+                ("局部朝向", face_custom["local"]),
+                ("目标蒙皮层", face_custom["skin_cluster"]),
+                ("新建蒙皮层", face_custom["new_layer"]),
+                ("指定父关节", face_custom["parent"]),
+                ("已有控制器", face_custom["existing"]),
+                ("新增网格", face_custom["mesh"])])
+            form.addRow(QtWidgets.QLabel("先创建 SoftMod 区域："))
+            form.addRow(self._button("SoftMod Tool",
+                                     self._open_custom_softmod_tool))
+            form.addRow(QtWidgets.QLabel("然后创建控制器："))
+            form.addRow(self._button("Create Skin Control",
+                lambda: self._create_custom_skin(face=True)))
+            form.addRow(self._button("Create Cluster Control",
+                lambda: self._create_custom_cluster(face=True)))
+            form.addRow(self._button("Create SoftMod Control",
+                lambda: self._create_custom_softmod(face=True)))
+            form.addRow(QtWidgets.QLabel("编辑 Cluster Control："))
+            form.addRow(self._button("Paint weights for selected Control",
+                lambda: self._paint_custom_cluster(face=True)))
+            form.addRow(self._button("Mirror weights for selected Control",
+                lambda: self._mirror_custom_cluster(face=True)))
+            form.addRow(QtWidgets.QLabel("编辑："))
+            form.addRow(self._button("Add influenced object",
+                lambda: self._add_custom_softmod_mesh(face=True)))
+            form.addRow(QtWidgets.QLabel("删除："))
+            form.addRow(self._button("Delete selected control",
+                lambda: self._delete_custom_control(face=True)))
+            stack.addWidget(group)
             stack.addStretch(1)
             return page
 
@@ -1667,17 +1725,34 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace())
             return f"已重新附着 {count} 个控制器并保留手工方向"
 
-        def _create_custom_softmod(self):
+        def _custom_fields(self, face=False):
+            if face:
+                return self.face_custom_controls
+            return {
+                "source": self.custom_softmod_source,
+                "name": self.custom_control_name,
+                "parent": self.custom_control_parent,
+                "existing": self.custom_control_existing,
+                "mesh": self.custom_control_mesh,
+                "mirror": self.custom_control_mirror,
+                "middle": self.custom_control_middle,
+                "local": self.custom_control_local,
+                "partial_parent": self.custom_control_partial_parent,
+                "skin_cluster": self.custom_skin_cluster,
+                "new_layer": self.custom_skin_new_layer,
+            }
+
+        def _create_custom_softmod(self, face=False):
+            fields = self._custom_fields(face)
             state = self.controller.custom_softmod_create(
-                self._namespace(), self.custom_softmod_source.text().strip(),
-                self.custom_control_name.text().strip(),
-                self.custom_control_parent.text().strip(),
-                face=getattr(self, "custom_control_face", False),
-                mirror=self.custom_control_mirror.isChecked(),
-                middle=self.custom_control_middle.isChecked(),
-                local=self.custom_control_local.isChecked())
-            self.custom_control_existing.setText(state.control)
-            paired = ("及对侧" if self.custom_control_mirror.isChecked()
+                self._namespace(), fields["source"].text().strip(),
+                fields["name"].text().strip(),
+                fields["parent"].text().strip(),
+                face=face, mirror=fields["mirror"].isChecked(),
+                middle=fields["middle"].isChecked(),
+                local=fields["local"].isChecked())
+            fields["existing"].setText(state.control)
+            paired = ("及对侧" if fields["mirror"].isChecked()
                       and state.control.endswith("_R") else "")
             return f"已创建 SoftMod 控制器{paired}：{state.control}"
 
@@ -1685,60 +1760,68 @@ def create_panel(controller: MayaPanelController | None = None):
             self.controller.custom_softmod_tool()
             return "已打开 SoftMod 工具"
 
-        def _create_custom_cluster(self):
+        def _create_custom_cluster(self, face=False):
+            fields = self._custom_fields(face)
             state = self.controller.custom_cluster_create(
-                self._namespace(), self.custom_softmod_source.text().strip(),
-                self.custom_control_name.text().strip(),
-                self.custom_control_parent.text().strip(),
-                face=getattr(self, "custom_control_face", False),
-                mirror=self.custom_control_mirror.isChecked(),
-                middle=self.custom_control_middle.isChecked(),
-                local=self.custom_control_local.isChecked())
-            self.custom_control_existing.setText(state.control)
-            paired = ("及对侧" if self.custom_control_mirror.isChecked()
+                self._namespace(), fields["source"].text().strip(),
+                fields["name"].text().strip(),
+                fields["parent"].text().strip(),
+                face=face, mirror=fields["mirror"].isChecked(),
+                middle=fields["middle"].isChecked(),
+                local=fields["local"].isChecked())
+            fields["existing"].setText(state.control)
+            paired = ("及对侧" if fields["mirror"].isChecked()
                       and state.control.endswith("_R") else "")
             return f"已创建 Cluster 控制器{paired}：{state.control}"
 
-        def _create_custom_skin(self):
-            chosen_skin = self.custom_skin_cluster.text().strip()
-            if self.custom_skin_new_layer.isChecked() and chosen_skin:
+        def _create_custom_skin(self, face=False):
+            fields = self._custom_fields(face)
+            chosen_skin = fields["skin_cluster"].text().strip()
+            if fields["new_layer"].isChecked() and chosen_skin:
                 raise ValueError("新建蒙皮层时不应填写现有 SkinCluster")
             state = self.controller.custom_skin_create(
-                self._namespace(), self.custom_softmod_source.text().strip(),
-                self.custom_control_name.text().strip(),
-                self.custom_control_parent.text().strip(),
-                face=getattr(self, "custom_control_face", False),
-                mirror=self.custom_control_mirror.isChecked(),
-                middle=self.custom_control_middle.isChecked(),
-                local=self.custom_control_local.isChecked(),
-                partial_parent=self.custom_control_partial_parent.isChecked(),
-                skin_cluster=("*new" if self.custom_skin_new_layer.isChecked()
+                self._namespace(), fields["source"].text().strip(),
+                fields["name"].text().strip(),
+                fields["parent"].text().strip(),
+                face=face, mirror=fields["mirror"].isChecked(),
+                middle=fields["middle"].isChecked(),
+                local=fields["local"].isChecked(),
+                partial_parent=(fields["partial_parent"].isChecked()
+                                if not face else False),
+                skin_cluster=("*new" if fields["new_layer"].isChecked()
                               else chosen_skin or None))
-            self.custom_control_existing.setText(state.control)
-            paired = ("及对侧" if self.custom_control_mirror.isChecked()
+            fields["existing"].setText(state.control)
+            paired = ("及对侧" if fields["mirror"].isChecked()
                       and state.control.endswith("_R") else "")
             return f"已创建 Skin 控制器{paired}：{state.control}"
 
-        def _add_custom_softmod_mesh(self):
+        def _add_custom_softmod_mesh(self, face=False):
+            fields = self._custom_fields(face)
             state = self.controller.custom_softmod_add_mesh(
-                self._namespace(), self.custom_control_existing.text().strip(),
-                self.custom_control_mesh.text().strip())
+                self._namespace(), fields["existing"].text().strip(),
+                fields["mesh"].text().strip(), face=face)
             return f"当前影响 {len(state.influenced_meshes)} 件网格"
 
-        def _paint_custom_cluster(self):
+        def _paint_custom_cluster(self, face=False):
+            fields = self._custom_fields(face)
             state = self.controller.custom_cluster_paint(
-                self._namespace(), self.custom_control_existing.text().strip())
+                self._namespace(), fields["existing"].text().strip(),
+                face=face)
             return f"已打开 Cluster 权重绘制：{state.control}"
 
-        def _mirror_custom_cluster(self):
+        def _mirror_custom_cluster(self, face=False):
+            fields = self._custom_fields(face)
             state = self.controller.custom_cluster_mirror(
-                self._namespace(), self.custom_control_existing.text().strip())
+                self._namespace(), fields["existing"].text().strip(),
+                face=face)
             return f"已镜像 Cluster 权重：{state.control}"
 
-        def _delete_custom_control(self):
+        def _delete_custom_control(self, face=False):
+            fields = self._custom_fields(face)
             state = self.controller.custom_control_delete(
-                self._namespace(), self.custom_control_existing.text().strip())
-            self.custom_control_existing.clear()
+                self._namespace(), fields["existing"].text().strip(),
+                face=face)
+            fields["existing"].clear()
             return f"已删除自定义控制器：{state.control}"
 
         def _bind_skin(self):
