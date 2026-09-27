@@ -745,6 +745,7 @@ def main(report: Path) -> int:
         scapula_ik_joint_errors = {}
         scapula_ik_driver_errors = {}
         scapula_ik_twist_sweep = []
+        scapula_ik_linear_twist = []
         scapula_ik_root_twist = {}
         try:
             scapula_count = controller.control_orient_axis(
@@ -809,16 +810,30 @@ def main(report: Path) -> int:
                     left_handle = "AdvPy_ArmIKHandle_L"
                     twist_plug = left_handle + ".twist"
                     original_twist = hero_host._cmds.getAttr(twist_plug)
-                    hero_host._cmds.setAttr(scapula_left + ".rotateZ", 10.)
                     try:
-                        for twist in range(-12, 13, 2):
-                            hero_host._cmds.setAttr(twist_plug,
-                                                    original_twist + twist)
+                        for angle in (-30., -20., -10., 10., 20., 30.):
+                            source = _sample_axis(
+                                hero_host, driver_probes,
+                                scapula_right, "Z", angle)
+                            hero_host._cmds.setAttr(
+                                scapula_left + ".rotateZ", angle)
+                            for twist in range(-12, 13, 2):
+                                hero_host._cmds.setAttr(
+                                    twist_plug, original_twist + twist)
+                                pose = _sample_probes(hero_host, driver_probes)
+                                error, movement = _reflection_error(
+                                    driver_neutral, source, pose)
+                                scapula_ik_twist_sweep.append(
+                                    (angle, twist, error, movement))
+                            hero_host._cmds.setAttr(
+                                twist_plug, original_twist - .34 * angle)
                             pose = _sample_probes(hero_host, driver_probes)
                             error, movement = _reflection_error(
-                                driver_neutral, driver_right, pose)
-                            scapula_ik_twist_sweep.append(
-                                (twist, error, movement))
+                                driver_neutral, source, pose)
+                            scapula_ik_linear_twist.append(
+                                (angle, error, movement))
+                            hero_host._cmds.setAttr(
+                                scapula_left + ".rotateZ", 0.)
                     finally:
                         hero_host._cmds.setAttr(twist_plug, original_twist)
                         hero_host._cmds.setAttr(scapula_left + ".rotateZ", 0.)
@@ -1128,6 +1143,7 @@ def main(report: Path) -> int:
             "scapula_ik_joint_error": scapula_ik_joint_errors,
             "scapula_ik_driver_error": scapula_ik_driver_errors,
             "scapula_ik_twist_sweep": scapula_ik_twist_sweep,
+            "scapula_ik_linear_twist": scapula_ik_linear_twist,
             "scapula_ik_root_twist": scapula_ik_root_twist,
             "arm_ik_from_fk_error": arm_ik_from_fk_error,
             "status": "passed" if all(checks.values()) else "failed",
