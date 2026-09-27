@@ -323,6 +323,9 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                   control + "FleshyAmount",
                                   control + "FleshyBlink",
                                   control + "MotionSum"))
+                    if layer is EyeLidLayer.OUTER:
+                        names.extend((control + "BlinkFraction",
+                                      control + "BlinkOffset"))
                     curve_name = arc + "Lid" + layer.value + "WorkCurve" + suffix
                     names.append(curve_name)
                     for index in range(len(arcs[side][(layer, arc)])):
@@ -436,6 +439,24 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                       motion_sum + ".input3D[0]")
                         c.connectAttr(blink_fade + ".output",
                                       motion_sum + ".input3D[1]")
+                        if layer is EyeLidLayer.OUTER:
+                            fraction = c.createNode("multiplyDivide",
+                                name=control_name + "BlinkFraction")
+                            c.setAttr(fraction + ".input2X", .1)
+                            c.connectAttr(eye_control + ".blink",
+                                          fraction + ".input1X")
+                            correction = c.createNode("multiplyDivide",
+                                name=control_name + "BlinkOffset")
+                            for axis in "XYZ":
+                                c.addAttr(control,
+                                    longName="blinkOffset" + axis,
+                                    attributeType="double", keyable=True)
+                                c.connectAttr(control + ".blinkOffset" + axis,
+                                              correction + ".input1" + axis)
+                                c.connectAttr(fraction + ".outputX",
+                                              correction + ".input2" + axis)
+                            c.connectAttr(correction + ".output",
+                                          motion_sum + ".input3D[2]")
                         control_names[(side, layer, arc)] = (
                             c.ls(control, long=True, type="transform") or [control])[0]
                         curve = pre.read_eye_lid_fit(layer, side)[
