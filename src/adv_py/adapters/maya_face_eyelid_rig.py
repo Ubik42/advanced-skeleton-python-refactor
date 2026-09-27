@@ -20,6 +20,7 @@ from adv_py.core.face_eyelid_motion import EyeLidMotionPlan
 from adv_py.core.face_eyelid_build_preparation import (
     FaceEyeLidPreparationInput,
 )
+from adv_py.core.face_eyelid_build_mode import FaceEyeLidBuildMode
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .maya_dense_skin import MayaDenseSkinHost
@@ -442,9 +443,10 @@ class MayaFaceEyeLidRigHost(MayaFaceLowerOuterAuxiliaryMixin,
         return (factors, arcs, positions, span, open_inner, mobile_inner,
                 boundary | main_vertices)
 
-    def build(self) -> dict:
+    def build(self, *, simpler_eyelid: bool = False) -> dict:
         from adv_py.application.face_eyelid_rig import BuildFaceEyeLids
-        return BuildFaceEyeLids(self).execute()
+        return BuildFaceEyeLids(self).execute(
+            simpler_eyelid=simpler_eyelid)
 
     def capture_face_eye_lid_preparation(self) -> FaceEyeLidPreparationInput:
         c = self._cmds
@@ -475,10 +477,12 @@ class MayaFaceEyeLidRigHost(MayaFaceLowerOuterAuxiliaryMixin,
             pre.read_include() is FaceInclude.EYES_ONLY,
             left_eye_mesh)
 
-    def build_prepared_face_eye_lids(self) -> dict:
-        return self._build_prepared()
+    def build_prepared_face_eye_lids(
+        self, mode: FaceEyeLidBuildMode,
+    ) -> dict:
+        return self._build_prepared(mode)
 
-    def _build_prepared(self) -> dict:
+    def _build_prepared(self, mode: FaceEyeLidBuildMode) -> dict:
         c = self._cmds
         pre = MayaFaceBuildHost(namespace=self.namespace)
         readiness = pre.inspect_build_inputs()
@@ -562,7 +566,9 @@ class MayaFaceEyeLidRigHost(MayaFaceLowerOuterAuxiliaryMixin,
         outer_pose_scales = {side: min(face_scale / 14.43,
                                        eye_radii[side] * .5)
                              for side in FaceSide}
-        layers = {side: (EyeLidLayer.MAIN, EyeLidLayer.OUTER)
+        active_layers = ((EyeLidLayer.MAIN, EyeLidLayer.OUTER)
+                         if mode.include_outer_segments else (EyeLidLayer.MAIN,))
+        layers = {side: active_layers
                   for side in FaceSide}
         def weighted(side):
             return {vertex for layer in layers[side]
@@ -597,7 +603,7 @@ class MayaFaceEyeLidRigHost(MayaFaceLowerOuterAuxiliaryMixin,
                           "ctrlEye" + suffix + "_Offset",
                           "ctrlEye" + suffix + "BlinkFraction",
                           "ctrlEye" + suffix + "BlinkReverse"))
-            if mobile_inners[side]:
+            if mobile_inners[side] and mode.include_outer_segments:
                 names.extend("AdvPy_EyeYawBlinkBack" + suffix + part
                              for part in ("Offset", "Limit", "Scale",
                                           "Blink", "Sum"))
@@ -675,6 +681,9 @@ class MayaFaceEyeLidRigHost(MayaFaceLowerOuterAuxiliaryMixin,
             c.setAttr(root + ".drawStyle", 2)
             motion = c.createNode("transform", name="FaceMotionSystem",
                                   parent=head)
+            c.addAttr(motion, longName="advPySimplerEyeLid",
+                      attributeType="bool", defaultValue=mode.simpler_eyelid)
+            c.setAttr(motion + ".advPySimplerEyeLid", lock=True)
             for side in FaceSide:
                 suffix = "_R" if side is FaceSide.RIGHT else "_L"
                 eye_name = "ctrlEye" + suffix
@@ -1151,7 +1160,8 @@ class MayaFaceEyeLidRigHost(MayaFaceLowerOuterAuxiliaryMixin,
                 c.setAttr(motion + ".advPyEyeDepthCorrection" + suffix,
                           lock=True)
                 eye_joint = eye_joints[side]
-                if (not mobile_inners[side] or
+                if (not mode.include_outer_segments or
+                        not mobile_inners[side] or
                         eye_depth_alignment[side.value]["status"] != "aligned"):
                     yaw_blink_eye_back[side.value] = {
                         "status": "not_needed", "maximum_cm": 0.}
@@ -1206,6 +1216,7 @@ class MayaFaceEyeLidRigHost(MayaFaceLowerOuterAuxiliaryMixin,
             c.setAttr(motion + ".advPyFaceMesh", mesh, type="string")
             c.select(selected, replace=True) if selected else c.select(clear=True)
         return {"skin": skin, "mesh": mesh,
+                "simpler_eyelid": mode.simpler_eyelid,
                 "controls": control_names, "joints": joint_names,
                 "aperture_sides": tuple(side.value for side in FaceSide
                                         if open_inners[side]),
@@ -1224,5 +1235,6 @@ class MayaFaceEyeLidRigHost(MayaFaceLowerOuterAuxiliaryMixin,
                                   for side in FaceSide},
                 "main_vertices": {side.value: len(factors[side][
                     EyeLidLayer.MAIN]) for side in FaceSide},
-                "outer_vertices": {side.value: len(factors[side][
-                    EyeLidLayer.OUTER]) for side in FaceSide}}
+                "outer_vertices": {side.value: (len(factors[side][
+                    EyeLidLayer.OUTER]) if mode.include_outer_segments else 0)
+                    for side in FaceSide}}
