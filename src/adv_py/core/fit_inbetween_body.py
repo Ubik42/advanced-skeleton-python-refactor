@@ -65,6 +65,6 @@ def plan_fit_inbetween_body(
                 parent_path + "|" + name, name, parent_path,
                 position, guide.deform_profile,
                 start_spec.skin_enabled, guide.rotation_order,
-                start_spec.segment_scale_compensate, "inbetween",
+                False, "inbetween",
             ))
     return FitInbetweenBodyPlan(tuple(parts))

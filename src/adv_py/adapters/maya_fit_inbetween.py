@@ -27,6 +27,9 @@ from adv_py.core.joint_labels import JointLabel
 
 
 class MayaFitInbetweenMixin:
+    def capture_inbetween_registration_node(self, path: str):
+        return self._registry_node(path)
+
     def preflight_inbetween_fk_rewire(
         self, plan: InbetweenFkRewirePlan
     ) -> None:

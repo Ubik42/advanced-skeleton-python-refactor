@@ -13,6 +13,9 @@ from .axial_part_deform import AxialPartHost
 from .body_character_rig import BodyCharacterRigHost
 from .character_registry import CharacterRegistryHost
 from .finger_mid_deform import FingerMidHost
+from .fit_inbetween import FitInbetweenHost
+from .fit_inbetween_limb_segment import InbetweenLimbSegmentHost
+from .fit_part import FitPartHierarchyHost
 from .limb_part_deform import LimbPartHost
 from .oriented_body_skeleton import OrientedBodySkeletonHost
 from .registered_body_build import (BuildRegisteredBodyCharacter,
@@ -26,6 +29,8 @@ from .skin_bind import SkinBindBuildResult
 class CharacterFromFitHost(OrientedBodySkeletonHost, BodyCharacterRigHost,
                            CharacterRegistryHost, SkinBindHost,
                            AxialPartHost, FingerMidHost, LimbPartHost,
+                           FitInbetweenHost, FitPartHierarchyHost,
+                           InbetweenLimbSegmentHost,
                            Protocol):
     """Scene operations used by the complete Fit-to-skinned-Body chain."""
 
@@ -44,6 +49,7 @@ class CharacterFromFitPlan:
     include_head_aim: bool
     infer_missing_labels: bool
     include_segment_influences: bool
+    use_fit_part_hierarchy: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +71,7 @@ class BuildCharacterFromFit:
              include_head_aim: bool = False,
              infer_missing_labels: bool = False,
              include_segment_influences: bool = False,
+             use_fit_part_hierarchy: bool = False,
              ) -> CharacterFromFitPlan:
         if not container.strip():
             raise ValueError("Fit 容器名称不能为空")
@@ -75,11 +82,13 @@ class BuildCharacterFromFit:
                 or not isinstance(maximum_influences, int)
                 or not 1 <= maximum_influences <= 256):
             raise ValueError("最大影响关节数须为 1..256 的整数")
+        if use_fit_part_hierarchy and not include_segment_influences:
+            raise ValueError("Fit Part／Inbetween 需要启用分段 Skin 影响")
         description = axial_description_from_fit(
             self._host.capture_fit_hierarchy(container), spine_segments)
         return CharacterFromFitPlan(container, meshes, description,
             maximum_influences, include_head_aim, infer_missing_labels,
-            include_segment_influences)
+            include_segment_influences, use_fit_part_hierarchy)
 
     def apply(self, container: str = "FitSkeleton", *,
               meshes: tuple[str, ...] = (),
@@ -88,19 +97,22 @@ class BuildCharacterFromFit:
               include_head_aim: bool = False,
               infer_missing_labels: bool = False,
               include_segment_influences: bool = False,
+              use_fit_part_hierarchy: bool = False,
               ) -> CharacterFromFitResult:
         plan = self.plan(container, meshes=meshes,
             spine_segments=spine_segments,
             maximum_influences=maximum_influences,
             include_head_aim=include_head_aim,
             infer_missing_labels=infer_missing_labels,
-            include_segment_influences=include_segment_influences)
+            include_segment_influences=include_segment_influences,
+            use_fit_part_hierarchy=use_fit_part_hierarchy)
         if not plan.meshes:
             character = BuildRegisteredBodyCharacter(self._host).apply(
                 plan.container, axial_description=plan.axial_description,
                 include_head_aim=plan.include_head_aim,
                 infer_missing_labels=plan.infer_missing_labels,
-                include_segment_influences=plan.include_segment_influences)
+                include_segment_influences=plan.include_segment_influences,
+                use_fit_part_hierarchy=plan.use_fit_part_hierarchy)
             return CharacterFromFitResult(character, ())
         with self._host.transaction("复制模型并构建蒙皮角色"):
             joined = _JoinedTransactionHost(self._host)
@@ -113,5 +125,6 @@ class BuildCharacterFromFit:
                 axial_description=plan.axial_description,
                 include_head_aim=plan.include_head_aim,
                 infer_missing_labels=plan.infer_missing_labels,
-                include_segment_influences=plan.include_segment_influences)
+                include_segment_influences=plan.include_segment_influences,
+                use_fit_part_hierarchy=plan.use_fit_part_hierarchy)
             return CharacterFromFitResult(built.character, built.skins)
