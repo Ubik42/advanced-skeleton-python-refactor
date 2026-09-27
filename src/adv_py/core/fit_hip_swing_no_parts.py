@@ -1,9 +1,4 @@
-"""The 6.925 HipSwinger branch used when Root has no Inbetween Part.
-
-This is a graph contract, not a substitute for the Part reverse chain. The
-host must provide the Root FKX receiver and both leg-lock compensation
-receivers before this branch can be added to a character build.
-"""
+"""The 6.925 HipSwinger branch used when Root has no Inbetween Part."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,31 +10,21 @@ from .fit_inbetween_hip_swing import HipSwingFitSelection
 
 @dataclass(frozen=True, slots=True)
 class HipSwingNoPartsTopology:
-    """Existing transforms and matrix inputs required by the MEL branch.
-
-    ``fk_root_matrix_input`` is the inverse-frame input of the Root FKX
-    constraint matrix. ``child_no_shear_input`` is the optional parent-frame
-    input of the chosen Root child's FK offset. A host whose child FK offset
-    already sits under ``fk_root_path`` can leave it absent and supply
-    ``child_fk_offset_path`` for parent-chain auditing instead. The leg-lock
-    destination receives
-    the inverse Root rotation; the child-inverter destination receives that
-    inverse composed with the current Root output matrix.
-    """
+    """Receivers in the active torso graph, with optional matrix branches."""
 
     fk_root_path: str
     fk_root_offset_path: str
     root_fkx_path: str
-    fk_root_matrix_input: str
-    child_no_shear_input: str | None
     child_fk_offset_path: str
-    leg_lock_weight: str
-    root_fk_weight: str
     leg_lock_matrix_input: str
-    root_body_matrix_source: str
-    root_child_inverter_matrix_target: str
     root_body_path: str
     child_body_path: str
+    fk_root_matrix_input: str | None = None
+    child_no_shear_input: str | None = None
+    leg_lock_weight: str | None = None
+    root_fk_weight: str | None = None
+    root_body_matrix_source: str | None = None
+    root_child_inverter_matrix_target: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +70,10 @@ class HipSwingNoPartsPlan:
         return self.reverse_root_path, self.topology.root_fkx_path
 
     @property
+    def root_fkx_constraint_name(self) -> str:
+        return "AdvPy_HipSwingRootFKXParent"
+
+    @property
     def control_position_sources(self) -> tuple[str, str]:
         """The visible offset uses the Root/Spine1 midpoint before X bias."""
         return (self.topology.root_body_path,
@@ -106,9 +95,9 @@ class HipSwingNoPartsPlan:
         inverse = self.remove_rotation_inverse_name
         fk_blend = self.fk_weight_blend_name
         child = self.root_child_matrix_name
-        return (
-            (self.control_path + ".rotate", self.reverse_name + ".rotate"),
-            (frame + ".worldInverseMatrix[0]", t.fk_root_matrix_input),
+        return ((self.control_path + ".rotate", self.reverse_name + ".rotate"),) + (
+            ((frame + ".worldInverseMatrix[0]", t.fk_root_matrix_input),)
+            if t.fk_root_matrix_input else ()
         ) + (
             ((frame + ".worldMatrix[0]", t.child_no_shear_input),)
             if t.child_no_shear_input else ()
@@ -117,17 +106,24 @@ class HipSwingNoPartsPlan:
             (t.fk_root_offset_path + ".worldInverseMatrix[0]",
              mm + ".matrixIn[1]"),
             (mm + ".matrixSum", bm + ".target[0].targetMatrix"),
-            (t.leg_lock_weight, bm + ".target[0].weight"),
+        ) + (
+            ((t.leg_lock_weight, bm + ".target[0].weight"),)
+            if t.leg_lock_weight else ()
+        ) + (
             (bm + ".outputMatrix", pick + ".inputMatrix"),
             (pick + ".outputMatrix", inverse + ".inputMatrix"),
             (inverse + ".outputMatrix",
              fk_blend + ".target[0].targetMatrix"),
-            (t.root_fk_weight, fk_blend + ".target[0].weight"),
+        ) + (
+            ((t.root_fk_weight, fk_blend + ".target[0].weight"),)
+            if t.root_fk_weight else ()
+        ) + (
             (fk_blend + ".outputMatrix", t.leg_lock_matrix_input),
+        ) + ((
             (inverse + ".outputMatrix", child + ".matrixIn[0]"),
             (t.root_body_matrix_source, child + ".matrixIn[1]"),
             (child + ".matrixSum", t.root_child_inverter_matrix_target),
-        )
+        ) if t.root_child_inverter_matrix_target else ())
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -138,7 +134,9 @@ class HipSwingNoPartsPlan:
                 self.remove_rotation_blend_name,
                 self.remove_rotation_pick_name,
                 self.remove_rotation_inverse_name, self.fk_weight_blend_name,
-                self.root_child_matrix_name)
+                self.root_fkx_constraint_name) + (
+                    (self.root_child_matrix_name,)
+                    if self.topology.root_child_inverter_matrix_target else ())
 
 
 def plan_hip_swing_no_parts(
@@ -148,14 +146,11 @@ def plan_hip_swing_no_parts(
     radius: float,
     root_profile: FitDeformProfile,
 ) -> HipSwingNoPartsPlan:
-    """Describe Root swing and the two inverse-rotation consumers.
+    """Describe the Root reverse pivot and every available receiver.
 
-    The source branch constrains Root FKX from a reverse frame centred on
-    Spine1. Its Root FK matrix uses a sibling frame's world inverse, while
-    Spine1 follows that sibling frame's world matrix. Leg lock then removes
-    the FK Root rotation through a weighted, rotation-only inverse matrix.
-    Both leg lock and other Root children need that correction; leaving
-    either unconnected would move those chains when the pelvis swings.
+    The standard Python torso uses a direct Root FKX parent constraint and
+    the existing Spine1 FK parent chain. Hosts with the original MEL matrix
+    inputs may additionally provide those ports and a Root-child inverter.
     """
     if (not selection.enabled or selection.root_inbetween_count != 0
             or selection.child_name != "Spine1"
@@ -169,18 +164,25 @@ def plan_hip_swing_no_parts(
     paths = (topology.fk_root_path, topology.fk_root_offset_path,
              topology.root_fkx_path, topology.root_body_path,
              topology.child_body_path, topology.child_fk_offset_path)
-    plugs = (topology.fk_root_matrix_input,
+    plugs = (topology.leg_lock_matrix_input,
+             *((topology.fk_root_matrix_input,)
+               if topology.fk_root_matrix_input else ()),
              *((topology.child_no_shear_input,)
                if topology.child_no_shear_input else ()),
-             topology.leg_lock_weight, topology.root_fk_weight,
-             topology.leg_lock_matrix_input,
-             topology.root_body_matrix_source,
-             topology.root_child_inverter_matrix_target)
+             *((topology.leg_lock_weight,)
+               if topology.leg_lock_weight else ()),
+             *((topology.root_fk_weight,)
+               if topology.root_fk_weight else ()),
+             *((topology.root_body_matrix_source,
+                topology.root_child_inverter_matrix_target)
+               if topology.root_child_inverter_matrix_target else ()))
     if (any(not path.startswith("|") for path in paths)
             or len(set(paths)) != len(paths)
             or any("." not in plug or not plug.split(".", 1)[0]
                    for plug in plugs)
             or len(set(plugs)) != len(plugs)
+            or (topology.root_child_inverter_matrix_target is not None
+                and topology.root_body_matrix_source is None)
             or (topology.child_no_shear_input is None
                 and not topology.child_fk_offset_path.startswith(
                     topology.fk_root_path + "|"))

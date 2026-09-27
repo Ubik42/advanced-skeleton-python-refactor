@@ -10,13 +10,43 @@ from adv_py.core.fit_hip_swing_no_parts import (
     plan_hip_swing_no_parts,
 )
 from adv_py.core.fit_inbetween_hip_swing import HipSwingFitSelection
+from .body_character_rig import BodyCharacterRigBuildPlan
+
+
+def character_hip_swing_no_parts_topology(
+    rig: BodyCharacterRigBuildPlan,
+) -> HipSwingNoPartsTopology:
+    """Resolve real Root, Spine1 and LegLock receivers from the rig plan."""
+    if rig.torso is None or rig.torso.torso.spine is None:
+        raise ValueError("无分段 HipSwinger 需要标准 Spine IK 的 Torso 计划")
+    torso = rig.torso.torso
+    root = next((control for control in torso.controls.controls
+                 if control.driven_joint == torso.pelvis_translation.target),
+                None)
+    spine1 = next((control for control in torso.controls.controls
+                   if control.driven_joint == torso.spine.joints[1].path),
+                  None)
+    if root is None or spine1 is None:
+        raise ValueError("无分段 HipSwinger 缺少 Root／Spine1 FK 控制")
+    if (root.source_override_path != torso.root_fkx_path
+            or torso.leg_lock.root_fkx_path != torso.root_fkx_path):
+        raise ValueError("无分段 HipSwinger 的 Root FKX／LegLock 来源不一致")
+    return HipSwingNoPartsTopology(
+        fk_root_path=root.control_path,
+        fk_root_offset_path=root.offset_path,
+        root_fkx_path=torso.root_fkx_path,
+        child_fk_offset_path=spine1.offset_path,
+        leg_lock_matrix_input=torso.leg_lock.compensation_input,
+        root_body_path=torso.pelvis_translation.target,
+        child_body_path=torso.spine.body_joints[1],
+    )
 
 
 class HipSwingNoPartsHost(Protocol):
     """Create aligned transforms, the Root FKX constraint and matrix links.
 
-    The host must keep the bind pose, disable translate/scale/shear on the
-    rotation-only pickMatrix, and verify both leg-lock consumers after write.
+    The host keeps the bind pose and disables translate, scale and shear on
+    the inverse-rotation pickMatrix before connecting LegLock.
     """
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
     def preflight_hip_swing_no_parts(

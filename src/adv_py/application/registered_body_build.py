@@ -12,6 +12,7 @@ from adv_py.core.fit_inbetween_untwister import InbetweenUnTwisterPlan
 from adv_py.core.fit_inbetween_hip_swing import (
     HipSwingReversePlan, plan_hip_swing_fit_selection,
 )
+from adv_py.core.fit_hip_swing_no_parts import HipSwingNoPartsPlan
 from adv_py.core.fit_part_twist import (
     FitPartTwistSource, plan_fit_part_twist,
     plan_fit_part_twist_projections,
@@ -58,6 +59,9 @@ from .fit_inbetween_fk_segment import (
 from .fit_inbetween_registration import RegisterInbetweenControls
 from .fit_inbetween_untwister import BuildInbetweenUnTwister
 from .fit_inbetween_hip_swing import BuildHipSwingReverse
+from .fit_hip_swing_no_parts import (
+    BuildHipSwingNoParts, character_hip_swing_no_parts_topology,
+)
 from .limb_part_deform import BuildLimbPartDeform
 from .oriented_body_skeleton import (BuildOrientedBodySkeleton,
     OrientedBodySkeletonBuildResult)
@@ -139,7 +143,7 @@ class RegisteredBodyBuildResult:
     inbetween_segments: tuple[
         InbetweenLimbSegmentResult | InbetweenFkSegmentResult, ...] = ()
     inbetween_untwisters: tuple[InbetweenUnTwisterPlan, ...] = ()
-    hip_swing_reverse: HipSwingReversePlan | None = None
+    hip_swing_reverse: HipSwingReversePlan | HipSwingNoPartsPlan | None = None
     ik_solver_mapping: InbetweenIkSolverMapping | None = None
 
 
@@ -201,6 +205,10 @@ class BuildRegisteredBodyCharacter:
             else:
                 preview_sources = fit_part_twist_sources
             plan_fit_part_twist(twist_parts, preview_sources)
+        elif (axial_description is None
+              or axial_description == BodyAxialDescription()):
+            hip_selection = plan_hip_swing_fit_selection(
+                self._host.capture_fit_orientation(container_name))
         with self._host.transaction("构建并登记完整 Body 角色"):
             joined = _JoinedTransactionHost(self._host)
             skeleton = BuildOrientedBodySkeleton(joined).apply(
@@ -324,13 +332,15 @@ class BuildRegisteredBodyCharacter:
                                 for spec in part_plan.specs
                                 if spec.name == "Root_M"),
                         )
+                active_part_rig_plan = rebase_plan_paths_after_parts(
+                    rig.plan, final_paths)
                 driven_body = joined.capture_body_skeleton(
                     skeleton.snapshot.root)
                 if not body_bind_pose_matches(
                         fit_part_hierarchy.body, driven_body):
                     raise RuntimeError("Fit Part 驱动改变了 Body 绑定姿态")
                 rebased_plan = _with_inbetween_fk_sources(
-                    rebase_plan_paths_after_parts(rig.plan, final_paths),
+                    active_part_rig_plan,
                     inbetween_segments)
                 if solver_mapping is not None:
                     rebased_plan = rebase_character_rig_after_inbetween_ik(
@@ -438,8 +448,37 @@ class BuildRegisteredBodyCharacter:
                                 "Inbetween 改接后 Torso 复检失败："
                                 + "；".join(torso_issues))
                         rig = replace(rig, torso=torso_snapshot)
+            if (hip_selection is not None and hip_selection.enabled
+                    and hip_selection.root_inbetween_count == 0):
+                topology = character_hip_swing_no_parts_topology(rig.plan)
+                torso_plan = rig.plan.torso.torso
+                root_control = next(
+                    control for control in torso_plan.controls.controls
+                    if control.control_path == topology.fk_root_path)
+                hip_swing_reverse = BuildHipSwingNoParts(joined).apply(
+                    hip_selection, topology, radius=root_control.radius,
+                    root_profile=next(
+                        spec.deform_profile for spec in part_plan.specs
+                        if spec.name == "Root_M"),
+                )
+                leg_lock = replace(
+                    torso_plan.leg_lock,
+                    compensation_source=(
+                        hip_swing_reverse.fk_weight_blend_name
+                        + ".outputMatrix"))
+                torso_plan = replace(torso_plan, leg_lock=leg_lock)
+                rig_plan = replace(
+                    rig.plan,
+                    torso=replace(rig.plan.torso, torso=torso_plan))
+                torso_snapshot = joined.capture_body_torso(torso_plan)
+                torso_issues = audit_body_torso(torso_plan, torso_snapshot)
+                if torso_issues:
+                    raise RuntimeError(
+                        "无分段 HipSwinger 接线后 Torso 复检失败："
+                        + "；".join(torso_issues))
+                rig = replace(rig, plan=rig_plan, torso=torso_snapshot)
             registration = RegisterBodyCharacter(joined).apply(rig)
-            if inbetween_segments:
+            if inbetween_segments or hip_swing_reverse is not None:
                 registration = RegisterInbetweenControls(joined).apply(
                     registration, inbetween_segments,
                     hip_swing=hip_swing_reverse)
