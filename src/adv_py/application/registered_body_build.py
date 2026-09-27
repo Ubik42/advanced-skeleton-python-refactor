@@ -9,6 +9,9 @@ from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_part import rebase_plan_paths_after_parts
 from adv_py.core.fit_inbetween_untwister import InbetweenUnTwisterPlan
+from adv_py.core.fit_inbetween_hip_swing import (
+    HipSwingReversePlan, plan_hip_swing_fit_selection,
+)
 from adv_py.core.fit_part_twist import (
     FitPartTwistSource, plan_fit_part_twist,
     plan_fit_part_twist_projections,
@@ -38,6 +41,7 @@ from .fit_inbetween_fk_segment import (
 )
 from .fit_inbetween_registration import RegisterInbetweenControls
 from .fit_inbetween_untwister import BuildInbetweenUnTwister
+from .fit_inbetween_hip_swing import BuildHipSwingReverse
 from .limb_part_deform import BuildLimbPartDeform
 from .oriented_body_skeleton import (BuildOrientedBodySkeleton,
     OrientedBodySkeletonBuildResult)
@@ -68,6 +72,7 @@ class RegisteredBodyBuildResult:
     inbetween_segments: tuple[
         InbetweenLimbSegmentResult | InbetweenFkSegmentResult, ...] = ()
     inbetween_untwisters: tuple[InbetweenUnTwisterPlan, ...] = ()
+    hip_swing_reverse: HipSwingReversePlan | None = None
 
 
 class BuildRegisteredBodyCharacter:
@@ -94,10 +99,12 @@ class BuildRegisteredBodyCharacter:
                 "角色构建预检失败，场景未修改：" + "；".join(preview.blockers))
         rotation_inputs = ()
         untwister_sources: frozenset[str] = frozenset()
+        hip_selection = None
         part_plan = preview.build
         if use_fit_part_hierarchy:
             fit_source, inbetween_plan = PrepareFitInbetween(self._host).plan(
                 container_name)
+            hip_selection = plan_hip_swing_fit_selection(fit_source)
             untwister_sources = frozenset(
                 item.joint for item in fit_source.metadata
                 if item.untwister and (item.inbetween_joints or 0) > 0)
@@ -125,6 +132,7 @@ class BuildRegisteredBodyCharacter:
             fit_part_hierarchy = None
             inbetween_segments = ()
             inbetween_untwisters = ()
+            hip_swing_reverse = None
             if use_fit_part_hierarchy:
                 twist_sources = (
                     PrepareFitPartTwistSources(joined).apply(rotation_inputs)
@@ -210,6 +218,31 @@ class BuildRegisteredBodyCharacter:
                         if binding.parts[0].source_joint
                         in untwister_sources
                     )
+                    if (hip_selection is not None
+                            and hip_selection.enabled
+                            and hip_selection.root_inbetween_count):
+                        root_bindings = [binding for binding in bindings
+                                         if binding.parts[0].start_body_name
+                                         == "Root_M"]
+                        if (len(root_bindings) != 1
+                                or hip_selection.child_name != "Spine1"
+                                or root_bindings[0].parts[-1].end_body_name
+                                != "Spine1_M"
+                                or len(root_bindings[0].parts)
+                                != hip_selection.root_inbetween_count):
+                            raise ValueError(
+                                "HipSwingReverse 需要 Root 至 Spine1 的完整 Part 链")
+                        root_binding = root_bindings[0]
+                        hip_swing_reverse = BuildHipSwingReverse(joined).apply(
+                            root_binding.parts,
+                            start_fk_offset_path=(
+                                root_binding.fk_offset_path),
+                            start_fk_control_path=(
+                                root_binding.fk_control_path),
+                            end_body_path=final_paths.remap_body_reference(
+                                root_binding.parts[-1].end_body),
+                            radius=root_binding.part_control_radius * 3.0,
+                        )
                 driven_body = joined.capture_body_skeleton(
                     skeleton.snapshot.root)
                 if not body_bind_pose_matches(
@@ -224,7 +257,8 @@ class BuildRegisteredBodyCharacter:
             registration = RegisterBodyCharacter(joined).apply(rig)
             if inbetween_segments:
                 registration = RegisterInbetweenControls(joined).apply(
-                    registration, inbetween_segments)
+                    registration, inbetween_segments,
+                    hip_swing=hip_swing_reverse)
             if len(registration.body) != len(skeleton.snapshot.joints):
                 raise RuntimeError("登记骨架数量与本次构建结果不一致")
             segments: list[str] = []
@@ -258,4 +292,4 @@ class BuildRegisteredBodyCharacter:
         return RegisteredBodyBuildResult(
             skeleton, rig, registration, tuple(segments),
             fit_part_hierarchy, inbetween_segments,
-            inbetween_untwisters)
+            inbetween_untwisters, hip_swing_reverse)

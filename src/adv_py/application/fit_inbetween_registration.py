@@ -9,6 +9,7 @@ from adv_py.core.character_registry import (
     CharacterChannel, CharacterNode, CharacterRegistration,
     encode_registration,
 )
+from adv_py.core.fit_inbetween_hip_swing import HipSwingReversePlan
 
 from .fit_inbetween_limb_segment import InbetweenLimbSegmentResult
 from .fit_inbetween_fk_segment import InbetweenFkSegmentResult
@@ -37,6 +38,7 @@ class RegisterInbetweenControls:
         self, before: CharacterRegistration,
         segments: tuple[
             InbetweenLimbSegmentResult | InbetweenFkSegmentResult, ...],
+        *, hip_swing: HipSwingReversePlan | None = None,
     ) -> CharacterRegistration:
         if not segments:
             return before
@@ -84,6 +86,10 @@ class RegisterInbetweenControls:
                 for axis in "XYZ":
                     add(f"inbetween.{part.part_name}.rotate{axis}",
                         path, "rotate" + axis)
+        if hip_swing is not None:
+            for axis in "XYZ":
+                add("torso.HipSwinger.rotate" + axis,
+                    hip_swing.control_path, "rotate" + axis)
         after = replace(before, channels=tuple(channels),
                         nodes=tuple(nodes))
         encode_registration(after)
