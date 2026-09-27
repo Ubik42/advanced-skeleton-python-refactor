@@ -22,7 +22,6 @@ class FBXRigFitGuide:
     parent: str | None
     source_joint: str
     world_position: Vector3
-    local_position: Vector3
     end_control: bool
 
 
@@ -132,8 +131,7 @@ def plan_fbx_rig_import(
     )
     names = {}
     guides = [FBXRigFitGuide("Root", None, root.path,
-                             root.world_position, root.world_position, False)]
-    guide_positions = {"Root": root.world_position}
+                             root.world_position, False)]
     for joint in kept:
         if joint.path in collapsed:
             continue
@@ -147,13 +145,9 @@ def plan_fbx_rig_import(
                 raise ValueError("FBX rig Fit 父级无法解析：" + name)
             parent = by_path[parent].parent
         parent_name = "Root" if parent == root.path else names[parent]
-        parent_position = guide_positions[parent_name]
         guides.append(FBXRigFitGuide(
             name, parent_name, joint.path, joint.world_position,
-            tuple(value - origin for value, origin in zip(
-                joint.world_position, parent_position)),
             not children[joint.path]))
-        guide_positions[name] = joint.world_position
     pairs = []
     if not left and any(joint.world_position[0] < -threshold for joint in kept):
         raise ValueError("FBX rig 右侧骨架缺少左侧镜像关节")
