@@ -28,14 +28,20 @@ def plan_unreal_rename(joints: Iterable[str], spine_between_root_and_chest:
     for side in ("R", "L"):
         suffix = "_" + side
         ue = "_" + side.lower()
+        last_knee = max((index for index in range(1, 10)
+                         if f"KneePart{index}{suffix}" in present), default=0)
+        last_elbow = max((index for index in range(1, 10)
+                          if f"ElbowPart{index}{suffix}" in present), default=0)
         for adv, target in side_map.items():
             mapping[adv + suffix] = target + ue
         for index in range(1, 10):
             for adv, target in (("Hip", "thigh"), ("Knee", "calf"),
                                 ("Shoulder", "upperarm"),
                                 ("Elbow", "lowerarm")):
+                numbered = (last_knee - index + 1 if adv == "Knee" else
+                            last_elbow - index + 1 if adv == "Elbow" else index)
                 mapping[f"{adv}Part{index}{suffix}"] = (
-                    f"{target}_twist_{index:02d}{ue}")
+                    f"{target}_twist_{numbered:02d}{ue}")
         for digit in ("Index", "Middle", "Ring", "Pinky", "Thumb"):
             mapping[f"{digit}Finger0{suffix}"] = (
                 f"{digit.lower()}_metacarpal{ue}")

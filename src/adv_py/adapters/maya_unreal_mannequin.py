@@ -10,6 +10,7 @@ from .maya_custom_controller import MayaCustomControllerHost
 class MayaMannequinHost(MayaCustomControllerHost):
     def __init__(self, *, namespace: str | None = None) -> None:
         super().__init__(namespace=namespace, face=False)
+        self._template_pose: dict[str, tuple[float, ...]] = {}
 
     def _node(self, name: str) -> str:
         return self.scene_address(name)
@@ -23,15 +24,22 @@ class MayaMannequinHost(MayaCustomControllerHost):
         if not Path(template_path).is_file() or Path(template_path).suffix.lower() != ".ma":
             raise FileNotFoundError("请选择 ADV 安装包中的 AdvancedSkeletonFiles/div/asUnreal.ma")
         self._unique("DeformSet", "objectSet")
+        self._unique("MainScaleMultiplyDivide", "multiplyDivide")
+        if plan.match_template_pose:
+            self._unique("ControlSet", "objectSet")
         for name in ("Root_M", "Hip_R", "Knee_R", "Ankle_R"):
             self._unique(name, "joint")
         if c.objExists("|root"):
             raise ValueError("场景根级已存在 root；先删除已有 Mannequin 骨架")
         if c.objExists(self._node("root")):
-            raise ValueError("角色已有 root motion 关节；先移除后再创建 Mannequin")
-        if not plan.scale_adv_to_template:
-            self._unique("DeformationSystem", "transform")
-        else:
+            root = self._unique("root", "joint")
+            parent = (c.listRelatives(root, parent=True,
+                                      fullPath=True) or [None])[0]
+            if parent != self._unique("DeformationSystem", "transform"):
+                raise ValueError("现有 root 关节不在 DeformationSystem 下")
+            if c.objExists(self._node("rootUserCreated")):
+                raise ValueError("rootUserCreated 名称已占用")
+        if plan.scale_adv_to_template:
             self._unique("Main", "transform")
 
     def import_template(self, plan: MannequinPlan, template_path: str) -> None:
@@ -39,6 +47,10 @@ class MayaMannequinHost(MayaCustomControllerHost):
         self._transaction_changed = True
         c = self._cmds
         before = set(c.ls(long=True) or [])
+        existing_root = self._node("root")
+        if c.objExists(existing_root):
+            c.rename(self._unique("root", "joint"),
+                     self._node("rootUserCreated"))
         c.file(str(Path(template_path).resolve()), i=True, type="mayaAscii",
                ignoreVersion=True, mergeNamespacesOnClash=False,
                namespace="__adv_mannequin_import__")
@@ -84,7 +96,7 @@ class MayaMannequinHost(MayaCustomControllerHost):
             node = c.createNode("multiplyDivide",
                                 name="unrealMannequinSkeletonScaleToMatch")
             c.setAttr(node + ".operation", 2)
-            c.connectAttr(self._node("DeformationSystem") + ".scale",
+            c.connectAttr(self._node("MainScaleMultiplyDivide") + ".output",
                           node + ".input1", force=True)
             c.setAttr(node + ".input2", ratio, ratio, ratio, type="double3")
             c.connectAttr(node + ".output", "root.scale", force=True)
@@ -93,7 +105,7 @@ class MayaMannequinHost(MayaCustomControllerHost):
                       type="double3")
             c.makeIdentity("root", apply=True, translate=False, rotate=False,
                            scale=True)
-            c.connectAttr(self._node("DeformationSystem") + ".scale",
+            c.connectAttr(self._node("MainScaleMultiplyDivide") + ".output",
                           "root.scale", force=True)
         for joint in ["root"] + (c.listRelatives("root", allDescendents=True,
                                                   type="joint") or []):
@@ -107,7 +119,14 @@ class MayaMannequinHost(MayaCustomControllerHost):
         if not spine:
             raise ValueError("Mannequin 模板中缺少 spine_01")
         chain = []
-        current = self._unique("Chest_M", "joint")
+        chest = self._node("Chest_M")
+        if not c.objExists(chest):
+            available = [self._node(f"Spine{i}_M") for i in range(1, 99)
+                         if c.objExists(self._node(f"Spine{i}_M"))]
+            if not available:
+                raise ValueError("ADV Body 缺少 Chest_M 或 SpineN_M")
+            chest = available[-1]
+        current = self._unique(chest, "joint")
         root = self._unique("Root_M", "joint")
         while current != root:
             chain.append(current)
@@ -128,11 +147,73 @@ class MayaMannequinHost(MayaCustomControllerHost):
                     c.xform(item, q=True, ws=True, t=True), target)))
             self.constrain_match(JointMatch(nearest, joint, (180.0, 0.0, 0.0)))
 
+    def capture_template_pose(self, plan: MannequinPlan) -> None:
+        self._require_transaction()
+        self._template_pose.clear()
+        if not plan.match_template_pose:
+            return
+        c = self._cmds
+        joints = ["|root"] + (c.listRelatives(
+            "|root", allDescendents=True, type="joint",
+            fullPath=True) or [])
+        for joint in joints:
+            leaf = joint.rsplit("|", 1)[-1]
+            self._template_pose[leaf] = tuple(c.xform(
+                joint, query=True, worldSpace=True, matrix=True))
+
+    def match_template_pose(self, plan: MannequinPlan) -> None:
+        self._require_transaction()
+        if not plan.match_template_pose:
+            return
+        c = self._cmds
+        controls = c.sets(self._node("ControlSet"), query=True) or []
+        for control in controls:
+            if c.attributeQuery("FKIKBlend", node=control, exists=True):
+                c.setAttr(control + ".FKIKBlend", 0)
+        swinger = self._node("HipSwinger_M")
+        if c.objExists(swinger) and c.attributeQuery(
+                "stabilize", node=swinger, exists=True):
+            c.setAttr(swinger + ".stabilize", 0)
+        joints = c.listRelatives("|root", allDescendents=True,
+                                 type="joint", fullPath=True) or []
+        joints.reverse()
+        for joint in joints:
+            leaf = joint.rsplit("|", 1)[-1]
+            if leaf not in self._template_pose or not c.attributeQuery(
+                    "matchJoint", node=joint, exists=True):
+                continue
+            source = c.getAttr(joint + ".matchJoint")
+            source_leaf = source.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            control = self._node("FK" + source_leaf)
+            if not c.objExists(control):
+                continue
+            base = c.createNode("transform")
+            child = c.createNode("transform", parent=base)
+            pose = c.createNode("transform")
+            try:
+                c.xform(base, worldSpace=True, matrix=c.xform(
+                    joint, query=True, worldSpace=True, matrix=True))
+                c.xform(child, worldSpace=True, rotation=c.xform(
+                    control, query=True, worldSpace=True, rotation=True))
+                c.xform(pose, worldSpace=True,
+                        matrix=self._template_pose[leaf])
+                c.orientConstraint(pose, base, maintainOffset=False)
+                constraint = c.orientConstraint(child, control,
+                                                maintainOffset=False)[0]
+                c.delete(constraint)
+            finally:
+                c.delete(base, pose)
+
     def constrain_match(self, match: JointMatch) -> None:
         self._require_transaction()
         c = self._cmds
         source = (match.source if match.source.startswith("|") else
                   self._optional(match.source))
+        if not source and match.source == "Chest_M":
+            available = [self._node(f"Spine{i}_M") for i in range(1, 99)
+                         if c.objExists(self._node(f"Spine{i}_M"))]
+            if available:
+                source = self._unique(available[-1], "joint")
         if not source and c.objExists(match.source):
             source = match.source
         target = match.target
@@ -329,6 +410,9 @@ class MayaMannequinHost(MayaCustomControllerHost):
         for node in ("|Geometry", "|root", "unrealMannequinSkeletonScaleToMatch"):
             if c.objExists(node):
                 c.delete(node)
+        user_root = self._node("rootUserCreated")
+        if c.objExists(user_root):
+            c.rename(self._unique(user_root, "joint"), self._node("root"))
         original = self._node("Geometry_original")
         if c.objExists(original):
             restored = c.rename(original, self._node("Geometry"))

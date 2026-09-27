@@ -821,7 +821,8 @@ class MayaPanelController:
         DeleteUnrealJoints(host).apply()
 
     def unreal_mannequin_create(self, namespace: str, template_path: str,
-                                template: str, scale_to_match: bool):
+                                template: str, scale_to_match: bool,
+                                match_pose: bool):
         from adv_py.adapters.maya_unreal_mannequin import MayaMannequinHost
         from adv_py.application.unreal_mannequin import CreateMannequin
 
@@ -829,7 +830,8 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)
         return CreateMannequin(host).apply(
             template_path, template=template,
-            scale_adv_to_template=scale_to_match)
+            scale_adv_to_template=scale_to_match,
+            match_template_pose=match_pose)
 
     def unreal_mannequin_transfer_skin(self, namespace: str) -> int:
         from adv_py.adapters.maya_unreal_mannequin import MayaMannequinHost

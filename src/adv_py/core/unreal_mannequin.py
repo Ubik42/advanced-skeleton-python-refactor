@@ -5,9 +5,9 @@ from dataclasses import dataclass
 
 
 TEMPLATES = {
-    "Mannequin (UE4)": ("Mannequin", "SK_Mannequin_Skeleton"),
-    "Manny (UE5)": ("Manny", "SK_Mannequin"),
-    "Quinn (UE5)": ("Quinn", "SK_Mannequin"),
+    "UE4": "UE4",
+    "UE5 (Simple)": "UE5Simple",
+    "UE5 (Full)": "UE5Full",
 }
 
 
@@ -23,20 +23,23 @@ class JointMatch:
 class MannequinPlan:
     template: str
     top_node: str
-    unreal_skeleton: str
     scale_adv_to_template: bool
+    match_template_pose: bool
     matches: tuple[JointMatch, ...]
 
 
-def plan_mannequin(template: str = "Manny (UE5)", *,
-                   scale_adv_to_template: bool = True) -> MannequinPlan:
+def plan_mannequin(template: str = "UE5 (Simple)", *,
+                   scale_adv_to_template: bool = True,
+                   match_template_pose: bool = True) -> MannequinPlan:
     if template not in TEMPLATES:
         raise ValueError("未知 Unreal Mannequin 模板：" + template)
-    if not isinstance(scale_adv_to_template, bool):
-        raise ValueError("缩放选项须为布尔值")
+    if (not isinstance(scale_adv_to_template, bool)
+            or not isinstance(match_template_pose, bool)):
+        raise ValueError("Mannequin 选项须为布尔值")
     flip = (180.0, 0.0, 0.0)
     finger = (90.0, 0.0, 180.0)
     pairs = [
+        JointMatch("rootUserCreated", "root"),
         JointMatch("Root_M", "pelvis", flip),
         JointMatch("Chest_M", "<last_spine>", flip),
         JointMatch("Neck_M", "neck_01", flip),
@@ -81,6 +84,7 @@ def plan_mannequin(template: str = "Manny (UE5)", *,
             JointMatch("hand_" + ue, "ik_hand_" + ue,
                        maintain_orientation=True),
         ))
-    top, skeleton = TEMPLATES[template]
-    return MannequinPlan(template, top, skeleton, scale_adv_to_template,
+    top = TEMPLATES[template]
+    return MannequinPlan(template, top, scale_adv_to_template,
+                         match_template_pose,
                          tuple(pairs))

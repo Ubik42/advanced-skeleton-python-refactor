@@ -73,8 +73,11 @@ class MayaUnrealRenameHost(MayaCustomControllerHost):
             self._unique(source, "joint")
             if c.objExists(self._node(target)):
                 raise ValueError("Unreal 目标名称已占用：" + target)
-        for name in ("root", "FKOffsetroot_M", "FKFollowroot_M",
-                     "FKExtraroot_M", "FKroot_M", "rootRange"):
+        if not c.objExists(self._node("buildPose")):
+            raise ValueError("缺少 buildPose，无法登记 Unreal Root Motion 控制")
+        for name in ("root", "FKOffsetroot", "FKFollowroot",
+                     "FKExtraroot", "FKroot", "rootRange",
+                     "root_parentConstraint1"):
             if c.objExists(self._node(name)):
                 raise ValueError("Root Motion 名称已占用：" + name)
         if not c.listRelatives(deformation, children=True, type="joint"):
@@ -103,20 +106,21 @@ class MayaUnrealRenameHost(MayaCustomControllerHost):
                                              type="joint", fullPath=True) or []
         root = c.createNode("joint", name=self._node("root"),
                             parent=deformation, skipSelect=True)
+        c.setAttr(root + ".segmentScaleCompensate", 0)
         for joint in original_children:
             c.parent(joint, root, absolute=True)
         control_parent = c.createNode("transform",
-            name=self._node("FKOffsetroot_M"),
+            name=self._node("FKOffsetroot"),
             parent=self._unique("RootSystem", "transform"))
-        follow = c.createNode("transform", name=self._node("FKFollowroot_M"),
+        follow = c.createNode("transform", name=self._node("FKFollowroot"),
                               parent=control_parent)
-        extra = c.createNode("transform", name=self._node("FKExtraroot_M"),
+        extra = c.createNode("transform", name=self._node("FKExtraroot"),
                              parent=follow)
         head = self._node("HeadEnd_M") if c.objExists(
             self._node("HeadEnd_M")) else self._node("Head_M")
         radius = max(abs(c.xform(head, query=True, worldSpace=True,
                                   translation=True)[1]) / 20.0, 0.01)
-        control = c.circle(name=self._node("FKroot_M"), normal=(0, 1, 0),
+        control = c.circle(name=self._node("FKroot"), normal=(0, 1, 0),
                            radius=radius, degree=3, sections=8,
                            constructionHistory=False)[0]
         c.parent(control, extra, absolute=True)
@@ -148,6 +152,7 @@ class MayaUnrealRenameHost(MayaCustomControllerHost):
         c.connectAttr(curve + ".outValueY",
                       follow_constraint + "." + aliases[1], force=True)
         c.setAttr(root + ".jointOrientX", -90)
+        c.setAttr(constraint + ".target[0].targetOffsetRotateX", -90)
         c.addAttr(root, longName="noRootMotionJointBeforeRename",
                   attributeType="bool", defaultValue=True)
         c.addAttr(root, longName="advPyUnrealRenamed", attributeType="bool",
@@ -155,6 +160,18 @@ class MayaUnrealRenameHost(MayaCustomControllerHost):
         c.parent(root, world=True, absolute=True)
         c.connectAttr(self._node("MainScaleMultiplyDivide") + ".output",
                       root + ".scale", force=True)
+        build_pose = self._node("buildPose")
+        if not c.attributeQuery("udExtraAttr", node=build_pose, exists=True):
+            c.addAttr(build_pose, longName="udExtraAttr", dataType="string")
+        old = c.getAttr(build_pose + ".udExtraAttr") or ""
+        c.setAttr(build_pose + ".udExtraAttr", old + self._root_build_pose_cmd(),
+                  type="string")
+
+    def _root_build_pose_cmd(self) -> str:
+        return ("xform -os -t 0 0 0 -ro 0 0 0 -s 1 1 1 "
+                + self._node("FKroot") + ";"
+                + "xform -os -t 0 0 0 -ro 0 0 0 -s 1 1 1 "
+                + self._node("FKExtraroot") + ";")
 
     def rename_joints(self, plan: UnrealRenamePlan) -> None:
         self._require_transaction()
@@ -173,17 +190,18 @@ class MayaUnrealRenameHost(MayaCustomControllerHost):
             c.rename(joint, self._node(target))
 
     def _remember_parent(self, joint: str, parent: str,
-                         *, reset_opm: bool = False) -> None:
+                         *, reconnect_source: str | None = None) -> None:
         c = self._cmds
         if not c.attributeQuery("asParent", node=joint, exists=True):
             c.addAttr(joint, longName="asParent", dataType="string")
         c.setAttr(joint + ".asParent", parent, type="string")
-        if reset_opm:
+        if reconnect_source:
             if not c.attributeQuery("asParentRestoreCmd", node=joint,
                                     exists=True):
                 c.addAttr(joint, longName="asParentRestoreCmd",
                           dataType="string")
-            c.setAttr(joint + ".asParentRestoreCmd", "resetOffsetParentMatrix",
+            c.setAttr(joint + ".asParentRestoreCmd",
+                      "reconnect:" + reconnect_source,
                       type="string")
 
     def flatten_twist_hierarchy(self, plan: UnrealRenamePlan) -> None:
@@ -191,8 +209,17 @@ class MayaUnrealRenameHost(MayaCustomControllerHost):
         c = self._cmds
         for family in plan.twist_families:
             for side in ("r", "l"):
-                above = None
-                for index in range(1, 10):
+                indices = [index for index in range(1, 10) if c.objExists(
+                    self._node(f"{family}_twist_{index:02d}_{side}"))]
+                if not indices:
+                    continue
+                first = max(indices) if family in ("calf", "lowerarm") else 1
+                first_name = f"{family}_twist_{first:02d}_{side}"
+                above = (c.listRelatives(self._unique(first_name, "joint"),
+                                          parent=True, fullPath=True) or [None])[0]
+                if not above:
+                    continue
+                for index in indices:
                     name = f"{family}_twist_{index:02d}_{side}"
                     if not c.objExists(self._node(name)):
                         continue
@@ -201,15 +228,22 @@ class MayaUnrealRenameHost(MayaCustomControllerHost):
                                               fullPath=True) or [None])[0]
                     if not parent:
                         continue
-                    if index == 1:
-                        above = parent
-                    elif above:
-                        local_matrix = c.getAttr(joint + ".matrix")
+                    if index != first:
+                        source = (c.listConnections(joint + ".translate",
+                             source=True, destination=False,
+                             plugs=True) or [None])[0]
                         self._remember_parent(joint, self._leaf(parent),
-                                              reset_opm=True)
+                                              reconnect_source=source)
                         c.parent(joint, above, absolute=True)
-                        c.setAttr(self._node(name) + ".offsetParentMatrix",
-                                  *local_matrix, type="matrix")
+                        if source:
+                            scaled = c.createNode("multiplyDivide",
+                                name=self._node(name + "_TempMPD"))
+                            c.connectAttr(source, scaled + ".input1")
+                            c.setAttr(scaled + ".input2", 2, 2, 2,
+                                      type="double3")
+                            c.connectAttr(scaled + ".output",
+                                          self._node(name) + ".translate",
+                                          force=True)
                     child = (c.listRelatives(self._node(name), children=True,
                                              type="joint", fullPath=True) or [None])[0]
                     if child and "_twist_" not in self._leaf(child) and above:
@@ -237,9 +271,15 @@ class MayaUnrealRenameHost(MayaCustomControllerHost):
             parent = c.getAttr(joint + ".asParent")
             if c.attributeQuery("asParentRestoreCmd", node=joint,
                                 exists=True):
-                c.setAttr(joint + ".offsetParentMatrix",
-                          1, 0, 0, 0, 0, 1, 0, 0,
-                          0, 0, 1, 0, 0, 0, 0, 1, type="matrix")
+                instruction = c.getAttr(joint + ".asParentRestoreCmd")
+                if instruction.startswith("reconnect:"):
+                    source = instruction[len("reconnect:"):]
+                    temp = self._node(self._leaf(joint) + "_TempMPD")
+                    if c.objExists(temp):
+                        c.delete(temp)
+                    if c.objExists(source):
+                        c.connectAttr(source, joint + ".translate",
+                                      force=True)
                 c.deleteAttr(joint, attribute="asParentRestoreCmd")
             moved = c.parent(joint, self._unique(parent, "joint"),
                              absolute=True)[0]
@@ -272,12 +312,19 @@ class MayaUnrealRenameHost(MayaCustomControllerHost):
         constraint = self._node("root_parentConstraint1")
         if c.objExists(constraint):
             c.delete(constraint)
-        control = self._node("FKOffsetroot_M")
+        control = self._node("FKOffsetroot")
         if c.objExists(control):
             c.delete(control)
         curve = self._node("rootRange")
         if c.objExists(curve):
             c.delete(curve)
+        build_pose = self._node("buildPose")
+        if c.objExists(build_pose) and c.attributeQuery(
+                "udExtraAttr", node=build_pose, exists=True):
+            old = c.getAttr(build_pose + ".udExtraAttr") or ""
+            c.setAttr(build_pose + ".udExtraAttr",
+                      old.replace(self._root_build_pose_cmd(), "", 1),
+                      type="string")
 
     def reparent_export_geometry(self) -> None:
         self._require_transaction()

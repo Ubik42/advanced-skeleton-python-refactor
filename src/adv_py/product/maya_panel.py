@@ -675,15 +675,18 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._delete_unreal_joints))
             self.mannequin_template = QtWidgets.QComboBox()
             self.mannequin_template.addItems(
-                ("Mannequin (UE4)", "Manny (UE5)", "Quinn (UE5)"))
-            self.mannequin_template.setCurrentText("Manny (UE5)")
+                ("UE4", "UE5 (Simple)", "UE5 (Full)"))
+            self.mannequin_template.setCurrentText("UE5 (Simple)")
             self.mannequin_scale = QtWidgets.QCheckBox("缩放 ADV 角色以匹配模板")
             self.mannequin_scale.setChecked(True)
+            self.mannequin_pose = QtWidgets.QCheckBox("匹配 Mannequin 姿态")
+            self.mannequin_pose.setChecked(True)
             mannequin_file_widget, self.mannequin_file = self._file_field(
                 "ADV asUnreal.ma", filter_text="Maya ASCII (*.ma)")
             form.addRow("Mannequin 模板", self.mannequin_template)
             form.addRow("模板文件", mannequin_file_widget)
             form.addRow(self.mannequin_scale)
+            form.addRow(self.mannequin_pose)
             form.addRow(self._button("创建 Mannequin 骨架",
                                      self._create_unreal_mannequin))
             form.addRow(self._button("转移蒙皮到 Mannequin",
@@ -1809,7 +1812,8 @@ def create_panel(controller: MayaPanelController | None = None):
             plan = self.controller.unreal_mannequin_create(
                 self._namespace(), self.mannequin_file.text().strip(),
                 self.mannequin_template.currentText(),
-                self.mannequin_scale.isChecked())
+                self.mannequin_scale.isChecked(),
+                self.mannequin_pose.isChecked())
             return "已创建 " + plan.template + " 骨架"
 
         def _transfer_unreal_mannequin_skin(self):
