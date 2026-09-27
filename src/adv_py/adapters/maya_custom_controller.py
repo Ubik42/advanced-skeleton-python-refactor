@@ -26,6 +26,13 @@ class MayaCustomControllerHost(MayaFaceHost):
         super().__init__(namespace=namespace)
         self.face = face
 
+    def softmod_target_mesh(self, deformer: str) -> str:
+        source = self._unique(deformer, "softMod")
+        meshes = self._softmod_meshes(source)
+        if len(meshes) != 1:
+            raise ValueError("镜像 SoftMod 须只影响一件网格")
+        return meshes[0]
+
     def softmod_pose_center(self, deformer: str) -> tuple[float, float, float]:
         from maya import cmds
 
@@ -849,9 +856,15 @@ class MayaCustomControllerHost(MayaFaceHost):
                          if previous_skins else None)
         layered = skin == "*new" or (original_skin is not None
                                       and skin != original_skin)
+        base_name = self.scene_address("ExtraSkinClustersBaseJoint_M")
+        if not layered and cmds.objExists(base_name):
+            base_path = self._unique(base_name, "joint")
+            influences = cmds.skinCluster(skin, query=True,
+                                          influence=True) or []
+            layered = any(self._unique(item, "joint") == base_path
+                          for item in influences)
         base_joint = None
         if layered:
-            base_name = self.scene_address("ExtraSkinClustersBaseJoint_M")
             if cmds.objExists(base_name):
                 base_joint = self._unique(base_name, "joint")
             else:

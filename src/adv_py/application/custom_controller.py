@@ -27,6 +27,7 @@ class CustomControllerState:
 
 class CustomControllerHost(Protocol):
     def softmod_pose_center(self, deformer: str) -> tuple[float, float, float]: ...
+    def softmod_target_mesh(self, deformer: str) -> str: ...
     def build_pose_session(self, deformer: str) -> AbstractContextManager[None]: ...
     def capture_softmod_region(self, deformer: str) -> SoftModRegion: ...
     def deform_joint_candidates(self, mesh: str) -> tuple[DeformJointCandidate, ...]: ...
@@ -112,8 +113,10 @@ class BuildCustomController:
                     plan, posed_center)
                 mirror_parent = self._host.mirrored_parent_joint(
                     plan.parent_joint)
-                mirror_skin = (state.deformer if skin_cluster == "*new"
-                               else skin_cluster)
+                mirror_mesh = self._host.softmod_target_mesh(mirror_source)
+                mirror_skin = skin_cluster
+                if skin_cluster == "*new" and mirror_mesh == plan.region.mesh:
+                    mirror_skin = state.deformer
                 with self._host.build_pose_session(mirror_source):
                     mirror_plan = self._plan_in_build_pose(
                         mirror_source, kind, base_name,
