@@ -899,6 +899,12 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._face_build_inspect_inputs))
             form.addRow(self._button("建立双侧眼睑关节与蒙皮",
                                      self._face_build_eye_lids))
+            self.face_original_head = QtWidgets.QLineEdit()
+            self.face_original_head.setPlaceholderText(
+                "当前场景中的原版头部网格，例如 Source:model:skin")
+            form.addRow("原版头部", self.face_original_head)
+            form.addRow(self._button("迁移同拓扑原版眼睑权重",
+                                     self._face_build_original_eye_lid_skin))
             self.face_outer_side = QtWidgets.QComboBox()
             self.face_outer_side.addItem("右眼", "Right")
             self.face_outer_side.addItem("左眼", "Left")
@@ -1720,6 +1726,15 @@ def create_panel(controller: MayaPanelController | None = None):
         def _face_build_eye_lids(self):
             result = self.controller.face_build_eye_lids(self._namespace())
             return format_face_eye_lid_build_result(result)
+
+        def _face_build_original_eye_lid_skin(self):
+            result = self.controller.face_build_original_eye_lid_skin(
+                self._namespace(), self.face_original_head.text())
+            return ("已迁移原版眼睑权重："
+                    f"{result['vertex_count']} 个顶点、"
+                    f"{result['mapped_segment_influences']} 个分段影响关节、"
+                    f"{len(result['auxiliary_joints'])} 个外围关节；"
+                    f"{result['approximated_segments']} 个分段作最近编号映射。")
 
         def _face_outer_blink_read(self):
             side = self.face_outer_side.currentData()

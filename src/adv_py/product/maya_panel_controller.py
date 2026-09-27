@@ -876,6 +876,16 @@ class MayaPanelController:
         return BuildFaceEyeLids(MayaFaceEyeLidRigHost(
             namespace=None if namespace == ":" else namespace)).execute()
 
+    def face_build_original_eye_lid_skin(self, namespace: str,
+                                         source_mesh: str) -> dict:
+        from adv_py.adapters.maya_face_source_skin import MayaFaceSourceSkinHost
+
+        if not source_mesh.strip():
+            raise ValueError("请填写当前场景中的原版头部网格")
+        return MayaFaceSourceSkinHost(
+            namespace=None if namespace == ":" else namespace
+            ).transfer_original_eye_lid_skin(source_mesh.strip())
+
     def face_lid_blink_read(self, namespace: str, side: str, layer: str,
                             arc: str) -> tuple[float, float, float]:
         from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
