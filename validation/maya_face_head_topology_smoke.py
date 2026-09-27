@@ -189,6 +189,7 @@ def main() -> None:
     mode = sys.argv[4] if len(sys.argv) > 4 else "independent"
     symmetric = mode in ("symmetric", "symmetric-auto")
     automatic_mirror = mode == "symmetric-auto"
+    complex_scene = mode == "complex-skin"
     if not head_source.is_file() or not eyes_source.is_file():
         raise FileNotFoundError("头部或双眼 OBJ 缺失")
     with TemporaryDirectory(prefix="advpy-head-face-") as folder:
@@ -278,6 +279,33 @@ def main() -> None:
                 "preview_faces": int(cmds.polyEvaluate(preview, face=True)),
             })
         mirror_result = None
+        extra_skin = None
+        external_driver = None
+        external_joint = None
+        if complex_scene:
+            face_skin = next(item for item in cmds.listHistory(head)
+                             if cmds.nodeType(item) == "skinCluster")
+            external_joint = cmds.createNode("joint", name="ExternalFaceJoint")
+            cmds.skinCluster(face_skin, edit=True,
+                             addInfluence=external_joint, weight=0)
+            cmds.skinPercent(face_skin, head + ".vtx[0]",
+                             transformValue=[(head_joint, .75),
+                                             (external_joint, .25)],
+                             normalize=True)
+            external_driver = cmds.createNode("multiplyDivide",
+                                               name="ExternalFaceDriver")
+            cmds.setAttr(external_driver + ".input1X", .2)
+            cmds.setAttr(external_driver + ".input2X", 2.)
+            cmds.connectAttr(external_driver + ".outputX",
+                             external_joint + ".translateY")
+            accessory = cmds.polyCube(name="UnrelatedAccessory", width=.2,
+                                      height=.2, depth=.2,
+                                      constructionHistory=False)[0]
+            cmds.setAttr(accessory + ".translateX", 30.)
+            accessory_joint = cmds.createNode("joint",
+                                               name="UnrelatedAccessoryJoint")
+            extra_skin = cmds.skinCluster(accessory_joint, accessory,
+                                           toSelectedBones=True)[0]
         if symmetric and not automatic_mirror:
             mirror_result = controller.face_fit_mirror_right_to_left(
                 ":", left_eye)
@@ -318,6 +346,8 @@ def main() -> None:
         source_skin = next(item for item in cmds.listHistory(head)
                            if cmds.nodeType(item) == "skinCluster")
         original_weights = MayaDenseSkinHost().capture_dense_skin(source_skin)
+        extra_weights = (MayaDenseSkinHost().capture_dense_skin(extra_skin)
+                         if complex_scene else None)
         fault_host = MayaFaceEyeLidRigHost()
         original_apply = fault_host.apply_dense_skin
         def injected_failure(data):
@@ -334,7 +364,16 @@ def main() -> None:
         if automatic_mirror:
             assert not cmds.objExists("FaceFitEyeLidInnerLeft")
         assert MayaDenseSkinHost().capture_dense_skin(source_skin) == original_weights
+        if complex_scene:
+            assert MayaDenseSkinHost().capture_dense_skin(extra_skin) == extra_weights
+            assert cmds.isConnected(external_driver + ".outputX",
+                                    external_joint + ".translateY")
         lid_rig = controller.face_build_eye_lids(":")
+        if complex_scene:
+            assert lid_rig["skin"] == source_skin
+            assert MayaDenseSkinHost().capture_dense_skin(extra_skin) == extra_weights
+            assert cmds.isConnected(external_driver + ".outputX",
+                                    external_joint + ".translateY")
         if automatic_mirror:
             mirror_result = lid_rig["symmetric_mirror"]
             assert mirror_result["mapped_vertices"] == 55
@@ -366,12 +405,18 @@ def main() -> None:
         assert 0 < changed_vertices <= sum(lid_rig["area_vertices"].values())
         cmds.undo()
         assert not cmds.objExists("FaceMotionSystem")
+        if complex_scene:
+            assert MayaDenseSkinHost().capture_dense_skin(extra_skin) == extra_weights
+            assert cmds.isConnected(external_driver + ".outputX",
+                                    external_joint + ".translateY")
         if automatic_mirror:
             assert not cmds.objExists("FaceFitEyeLidInnerLeft")
         assert len(cmds.skinCluster(lid_rig["skin"], query=True,
-                                    influence=True) or []) == 1
+                                    influence=True) or []) == old_width
         cmds.redo()
         assert cmds.objExists("FaceMotionSystem")
+        if complex_scene:
+            assert MayaDenseSkinHost().capture_dense_skin(extra_skin) == extra_weights
         if automatic_mirror:
             assert cmds.objExists("FaceFitEyeLidInnerLeft")
         def mesh_points():
@@ -519,6 +564,15 @@ def main() -> None:
         cmds.file(save=True, type="mayaBinary", force=True)
         cmds.file(str(scene), open=True, force=True,
                   executeScriptNodes=False)
+        if complex_scene:
+            assert MayaDenseSkinHost().capture_dense_skin(extra_skin) == extra_weights
+            assert cmds.isConnected(external_driver + ".outputX",
+                                    external_joint + ".translateY")
+            before_external = mesh_points()[0][1]
+            cmds.setAttr(external_driver + ".input1X", .3)
+            after_external = mesh_points()[0][1]
+            assert abs(after_external - before_external) > .01
+            cmds.setAttr(external_driver + ".input1X", .2)
         host = MayaFacePreHost()
         for side in FaceSide:
             for layer in EyeLidLayer:
@@ -531,7 +585,7 @@ def main() -> None:
             == (4 if symmetric else 8)
         assert cmds.objExists("FaceMotionSystem")
         assert len(cmds.skinCluster(lid_rig["skin"], query=True,
-                                    influence=True) or []) == 1 + len(lid_rig["joints"])
+                                    influence=True) or []) == old_width + len(lid_rig["joints"])
         cmds.currentTime(1, edit=True)
         frame1 = mesh_points()
         cmds.currentTime(5, edit=True)
@@ -558,6 +612,11 @@ def main() -> None:
                   "eyelid_joint_count": len(lid_rig["joints"]),
                   "weighted_vertices": changed_vertices,
                   "reopened_animation_delta_cm": round(key_delta, 6),
+                  "complex_skin": (complex_scene and {
+                      "extra_skin_preserved": True,
+                      "external_driver_preserved": True,
+                      "external_vertex_delta_cm": round(
+                          after_external - before_external, 6)}),
                   "passed": True}
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(result, ensure_ascii=False, indent=2)
