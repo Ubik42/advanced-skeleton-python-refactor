@@ -26,6 +26,89 @@ _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
 
 
 class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
+    def _calibrate_eye_depth(self, mesh: str, eye_mesh: str,
+                             eye_joint: str, eye_control: str,
+                             eye_radius: float) -> dict[str, float | int]:
+        """Seat a mobile-aperture eye behind its closed lid when geometry permits."""
+        from maya.api import OpenMaya as om
+
+        c = self._cmds
+        def mesh_fn(name):
+            selection = om.MSelectionList()
+            selection.add(name)
+            return om.MFnMesh(selection.getDagPath(0))
+
+        head_fn, eye_fn = mesh_fn(mesh), mesh_fn(eye_mesh)
+        bounds = c.exactWorldBoundingBox(eye_mesh)
+        cx, cy = ((bounds[axis] + bounds[axis + 3]) / 2.
+                  for axis in (0, 1))
+        rx, ry = ((bounds[axis + 3] - bounds[axis]) / 2.
+                  for axis in (0, 1))
+        samples = [(cx + rx * ix / 10., cy + ry * iy / 10.)
+                   for ix in range(-9, 10) for iy in range(-9, 10)]
+
+        def front_depth(fn, x, y):
+            hit = fn.closestIntersection(
+                om.MFloatPoint(x, y, 1000.), om.MFloatVector(0., 0., -1.),
+                om.MSpace.kWorld, 2000., False)
+            return float(hit[0].z) if hit else None
+
+        def measure(blink):
+            c.setAttr(eye_control + ".blink", blink)
+            eye_hits = visible = missing = 0
+            maximum = 0.
+            for x, y in samples:
+                eye_z = front_depth(eye_fn, x, y)
+                if eye_z is None:
+                    continue
+                eye_hits += 1
+                lid_z = front_depth(head_fn, x, y)
+                if lid_z is None:
+                    visible += 1
+                    missing += 1
+                elif eye_z > lid_z + .001:
+                    visible += 1
+                    maximum = max(maximum, eye_z - lid_z)
+            return eye_hits, visible, missing, maximum
+
+        try:
+            opened = measure(0)
+            closed = measure(10)
+            result = {"open_visible": opened[1],
+                      "initial_closed_visible": closed[1],
+                      "final_closed_visible": closed[1],
+                      "initial_depth_deficit_cm": round(closed[3], 6),
+                      "applied_cm": 0.}
+            if (opened[0] < 50 or opened[1] < 20 or closed[2]
+                    or closed[1] / max(1, closed[0]) <= .01):
+                return result
+            correction = closed[3] + eye_radius * .03
+            if correction > eye_radius * .15:
+                return result
+            plugs = tuple(eye_joint + ".translate" + axis
+                          for axis in "XYZ")
+            if (c.referenceQuery(eye_joint, isNodeReferenced=True)
+                    or any(c.getAttr(plug, lock=True)
+                           or c.connectionInfo(plug, isDestination=True)
+                           for plug in plugs)):
+                return result
+            position = c.xform(eye_joint, query=True, worldSpace=True,
+                               translation=True)
+            c.xform(eye_joint, worldSpace=True,
+                    translation=(position[0], position[1],
+                                 position[2] - correction))
+            revised = measure(10)
+            reopened = measure(0)
+            if (revised[1] / max(1, revised[0]) > .01 or revised[2]
+                    or reopened[1] < max(20, opened[1] * .8)):
+                c.xform(eye_joint, worldSpace=True, translation=position)
+                return result
+            result["final_closed_visible"] = revised[1]
+            result["applied_cm"] = round(correction, 6)
+            return result
+        finally:
+            c.setAttr(eye_control + ".blink", 0)
+
     def _blink_control(self, side: FaceSide, layer: EyeLidLayer,
                        arc: str) -> str:
         if (not isinstance(side, FaceSide) or
@@ -297,6 +380,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
             raise FitSkeletonValidationError(
                 "先从 Face / Pre 构建双眼控制与蒙皮，再建立眼睑")
         eye_joints = {}
+        eye_meshes = {}
         eye_radii = {}
         eye_centers = {}
         for side in FaceSide:
@@ -312,6 +396,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                 raise FitSkeletonValidationError("双眼控制与当前 Head 不匹配")
             bounds = c.exactWorldBoundingBox(eye_mesh)
             eye_joints[side] = joints[0]
+            eye_meshes[side] = eye_mesh
             eye_radii[side] = max(bounds[index + 3] - bounds[index]
                                   for index in range(3)) / 2.
             eye_centers[side] = tuple((bounds[index] + bounds[index + 3]) / 2.
@@ -648,7 +733,9 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                     lid_weights.get(key, 0.) + weight)
                 remaining = 1. - sum(lid_weights.values())
                 if remaining < -1e-6:
-                    raise FitSkeletonValidationError("眼睑区域权重之和超过 1")
+                    raise FitSkeletonValidationError(
+                        f"眼睑区域顶点 {vertex} 的权重之和为 "
+                        f"{1. - remaining:.6f}，超过 1")
                 for source_index, target_index in enumerate(old_indices):
                     values[vertex * new_width + target_index] = (
                         before[vertex * old_width + source_index] * remaining)
@@ -680,6 +767,21 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                     blend[vertex] = 1.
             self.apply_skin_blend_weights(skin, blend)
             c.setAttr(skin + ".skinningMethod", 2)
+            eye_depth_alignment = {}
+            for side in FaceSide:
+                suffix = "R" if side is FaceSide.RIGHT else "L"
+                if mobile_inners[side]:
+                    eye_depth_alignment[side.value] = self._calibrate_eye_depth(
+                        mesh, eye_meshes[side], eye_joints[side],
+                        eye_control_names[side], eye_radii[side])
+                else:
+                    eye_depth_alignment[side.value] = {"applied_cm": 0.}
+                c.addAttr(motion,
+                    longName="advPyEyeDepthCorrection" + suffix,
+                    attributeType="double",
+                    defaultValue=eye_depth_alignment[side.value]["applied_cm"])
+                c.setAttr(motion + ".advPyEyeDepthCorrection" + suffix,
+                          lock=True)
             c.addAttr(motion, longName="advPyFaceMesh", dataType="string")
             c.setAttr(motion + ".advPyFaceMesh", mesh, type="string")
             c.select(selected, replace=True) if selected else c.select(clear=True)
@@ -691,6 +793,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                     side.value for side in FaceSide
                     if open_inners[side] and not mobile_inners[side]),
                 "eye_controls": eye_control_names,
+                "eye_depth_alignment": eye_depth_alignment,
                 "work_curves": work_curves,
                 "area_vertices": {side.value: len(weighted(side))
                                   for side in FaceSide},

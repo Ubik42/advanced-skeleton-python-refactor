@@ -229,7 +229,9 @@ def main() -> None:
     mode = sys.argv[4] if len(sys.argv) > 4 else "independent"
     scene_output = Path(sys.argv[5]).resolve() if len(sys.argv) > 5 else None
     fit_manifest = (json.loads(Path(sys.argv[6]).read_text(encoding="utf-8"))
-                    if len(sys.argv) > 6 else None)
+                    if len(sys.argv) > 6 and sys.argv[6] != "-" else None)
+    post_calibration_fault = (len(sys.argv) > 7 and
+                              sys.argv[7] == "post-calibration-fault")
     symmetric = mode in ("symmetric", "symmetric-auto")
     automatic_mirror = mode == "symmetric-auto"
     complex_scene = mode == "complex-skin"
@@ -414,6 +416,30 @@ def main() -> None:
             assert MayaDenseSkinHost().capture_dense_skin(extra_skin) == extra_weights
             assert cmds.isConnected(external_driver + ".outputX",
                                     external_joint + ".translateY")
+        if post_calibration_fault:
+            depth_before = {side: cmds.getAttr(
+                "AdvPy_Eye_" + side + ".translateZ")
+                for side in ("R", "L")}
+            late_fault = MayaFaceEyeLidRigHost()
+            original_calibration = late_fault._calibrate_eye_depth
+            def injected_late_failure(*args):
+                result = original_calibration(*args)
+                if result["applied_cm"]:
+                    raise RuntimeError("眼球深度校准后故障注入")
+                return result
+            late_fault._calibrate_eye_depth = injected_late_failure
+            try:
+                late_fault.build()
+            except RuntimeError as error:
+                assert "深度校准后故障注入" in str(error)
+            else:
+                raise AssertionError("眼球深度校准故障未触发")
+            assert not cmds.objExists("FaceMotionSystem")
+            assert MayaDenseSkinHost().capture_dense_skin(source_skin) \
+                == original_weights
+            for side, before_depth in depth_before.items():
+                assert abs(cmds.getAttr("AdvPy_Eye_" + side
+                    + ".translateZ") - before_depth) < 1e-6
         lid_rig = controller.face_build_eye_lids(":")
         if complex_scene:
             assert lid_rig["skin"] == source_skin
@@ -430,8 +456,19 @@ def main() -> None:
         assert len(lid_rig["eye_controls"]) == 2
         assert len(lid_rig["work_curves"]) == expected_control_count
         assert len(lid_rig["joints"]) >= 16
+        eye_depth_after_build = {}
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
+            alignment = lid_rig["eye_depth_alignment"][side.value]
+            assert alignment["applied_cm"] >= 0
+            assert abs(cmds.getAttr("FaceMotionSystem."
+                + "advPyEyeDepthCorrection" + suffix[-1])
+                - alignment["applied_cm"]) < 1e-6
+            if alignment["applied_cm"]:
+                assert alignment["final_closed_visible"] <= \
+                    alignment["initial_closed_visible"]
+            eye_depth_after_build[side.value] = cmds.getAttr(
+                "AdvPy_Eye" + suffix + ".translateZ")
             depth = cmds.getAttr("ctrlUpperEyeLid" + suffix
                                  + ".blinkOffsetZ")
             if side.value in lid_rig["stationary_aperture_sides"]:
@@ -504,6 +541,12 @@ def main() -> None:
                 assert aperture_rim[side.value]["weighted_count"] > 0
         cmds.undo()
         assert not cmds.objExists("FaceMotionSystem")
+        for side in FaceSide:
+            suffix = "_R" if side is FaceSide.RIGHT else "_L"
+            correction = lid_rig["eye_depth_alignment"][side.value][
+                "applied_cm"]
+            assert abs(cmds.getAttr("AdvPy_Eye" + suffix + ".translateZ")
+                       - eye_depth_after_build[side.value] - correction) < 1e-5
         if complex_scene:
             assert MayaDenseSkinHost().capture_dense_skin(extra_skin) == extra_weights
             assert cmds.isConnected(external_driver + ".outputX",
@@ -514,6 +557,14 @@ def main() -> None:
                                     influence=True) or []) == old_width
         cmds.redo()
         assert cmds.objExists("FaceMotionSystem")
+        for side in FaceSide:
+            suffix = "_R" if side is FaceSide.RIGHT else "_L"
+            assert abs(cmds.getAttr("AdvPy_Eye" + suffix + ".translateZ")
+                       - eye_depth_after_build[side.value]) < 1e-5
+            assert abs(cmds.getAttr("FaceMotionSystem."
+                + "advPyEyeDepthCorrection" + suffix[-1])
+                - lid_rig["eye_depth_alignment"][side.value][
+                    "applied_cm"]) < 1e-6
         if complex_scene:
             assert MayaDenseSkinHost().capture_dense_skin(extra_skin) == extra_weights
         if automatic_mirror:
@@ -685,6 +736,10 @@ def main() -> None:
         assert readiness["ready"] and readiness["required_fit_count"] \
             == (4 if symmetric else 8)
         assert cmds.objExists("FaceMotionSystem")
+        for side in FaceSide:
+            suffix = "_R" if side is FaceSide.RIGHT else "_L"
+            assert abs(cmds.getAttr("AdvPy_Eye" + suffix + ".translateZ")
+                       - eye_depth_after_build[side.value]) < 1e-5
         assert len(cmds.skinCluster(lid_rig["skin"], query=True,
                                     influence=True) or []) == old_width + len(lid_rig["joints"])
         cmds.currentTime(1, edit=True)
@@ -714,6 +769,7 @@ def main() -> None:
                   "weighted_vertices": changed_vertices,
                   "stationary_aperture_sides": lid_rig[
                       "stationary_aperture_sides"],
+                  "eye_depth_alignment": lid_rig["eye_depth_alignment"],
                   "aperture_rim": aperture_rim,
                   "reopened_animation_delta_cm": round(key_delta, 6),
                   "complex_skin": (complex_scene and {

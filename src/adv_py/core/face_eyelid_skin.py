@@ -107,7 +107,7 @@ def outer_eyelid_skin_factors(adjacency: dict[int, set[int]],
         main_mass = sum(main_factors[vertex])
         inner_fade = min(1., d_inner[vertex] / 3.) ** 2
         total = ((1. - main_mass) * inner_fade
-                 if vertex not in boundary else 1.)
+                 if vertex not in boundary else 1. - main_mass)
         upper_share = 1. if d_upper[vertex] <= d_lower[vertex] else 0.
         result[vertex] = (total * upper_share,
                           total * (1. - upper_share))

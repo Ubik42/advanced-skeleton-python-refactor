@@ -54,6 +54,11 @@ class EyeLidSkinFactorsTests(unittest.TestCase):
         self.assertAlmostEqual(sum(outer[2]), .35 * 2 / 3)
         self.assertEqual(outer[12], (0., 0.))
         self.assertEqual(outer[7], (1., 0.))
+        main[7] = (1./3., 0.)
+        shared = outer_eyelid_skin_factors(adjacency, positions,
+            area, (6, 7, 8), (16, 17, 18), {11, 12, 13}, main)
+        self.assertAlmostEqual(sum(shared[7]), 2./3.)
+        self.assertAlmostEqual(sum(shared[7]) + sum(main[7]), 1.)
         self.assertEqual(split_arc_weight(1.5, positions,
                          (6, 7, 8), .6), {6: .3, 7: .3})
 
