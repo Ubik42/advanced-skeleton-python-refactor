@@ -137,33 +137,46 @@ def plan_body_parent_constraint(
                               + ".worldInverseMatrix[0]"))
 
     pick = source.include_pick_matrix or source.skip_scale
+    decompose = (not source.use_offset_parent_matrix
+                 or (source.use_decompose_matrix and not pick))
     outputs: list[tuple[str, str]] = []
     nodes = [] if source.existing_mult_matrix else [(mm, "multMatrix")]
     if pick:
         nodes.append((pm, "pickMatrix"))
-        outputs.extend(((mm + ".matrixSum", pm + ".inputMatrix"),
-                        (pm + ".outputMatrix",
-                         source.driven + ".offsetParentMatrix")))
-        mode = "pick_matrix"
-    elif source.use_decompose_matrix:
+        outputs.append((mm + ".matrixSum", pm + ".inputMatrix"))
+    if decompose:
         nodes.append((dm, "decomposeMatrix"))
-        upstream = (pm + ".outputMatrix" if source.existing_pick_matrix
+        upstream = (pm + ".outputMatrix" if pick or (
+            source.use_decompose_matrix and source.existing_pick_matrix)
                     else mm + ".matrixSum")
         outputs.append((upstream, dm + ".inputMatrix"))
-        outputs.extend((dm + ".output" + output,
-                        source.driven + "." + target)
-                       for output, target in (("Translate", "t"),
-                                              ("Rotate", "r"),
-                                              ("Scale", "s"),
-                                              ("Shear", "sh")))
-        mode = "decompose_matrix"
+        if not pick and source.use_decompose_matrix:
+            outputs.extend((dm + ".output" + output,
+                            source.driven + "." + target)
+                           for output, target in (("Translate", "t"),
+                                                  ("Rotate", "r"),
+                                                  ("Scale", "s"),
+                                                  ("Shear", "sh")))
+        else:
+            for upper, lower, shear in zip("XYZ", "xyz", ("xy", "xz", "yz")):
+                outputs.extend((
+                    (dm + ".outputTranslate" + upper,
+                     source.driven + ".t" + lower),
+                    (dm + ".outputRotate" + upper,
+                     source.driven + ".r" + lower),
+                    (dm + ".outputScale" + upper,
+                     source.driven + ".s" + lower),
+                    (dm + ".outputShear" + upper,
+                     source.driven + ".sh" + shear),
+                ))
+        mode = "pick_decompose" if pick else "decompose_matrix"
     else:
-        outputs.append((mm + ".matrixSum",
+        outputs.append(((pm + ".outputMatrix" if pick else mm + ".matrixSum"),
                         source.driven + ".offsetParentMatrix"))
-        mode = "mult_matrix"
+        mode = "pick_matrix" if pick else "mult_matrix"
     return BodyParentConstraintPlan(
         source, mode, mm, pm if pick or source.existing_pick_matrix else None,
-        dm if mode == "decompose_matrix" else None,
+        dm if decompose else None,
         tuple(matrix_inputs), tuple(outputs), tuple(nodes), True,
         source.driven_is_joint)
 
@@ -194,10 +207,10 @@ def audit_body_parent_constraint(
         issues.append("目标本地 TRS 未归零")
     if plan.reset_joint_orient and state.joint_orient != (0.0, 0.0, 0.0):
         issues.append("目标 jointOrient 未归零")
-    if plan.mode == "pick_matrix" and state.pick_use_scale != (
+    if plan.mode in ("pick_matrix", "pick_decompose") and state.pick_use_scale != (
             not plan.input.skip_scale):
         issues.append("PickMatrix 缩放开关不符")
-    if plan.mode == "decompose_matrix" and state.decompose_rotate_order != (
+    if plan.decompose_matrix is not None and state.decompose_rotate_order != (
             plan.input.rotate_order):
         issues.append("decomposeMatrix 旋转顺序不符")
     return tuple(issues)
