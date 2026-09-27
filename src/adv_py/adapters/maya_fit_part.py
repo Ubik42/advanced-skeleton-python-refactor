@@ -11,12 +11,70 @@ from adv_py.core.body_skeleton import FitDeformProfile
 from adv_py.core.fit_part_twist import (
     FitPartTwistProjection, FitPartTwistStep,
 )
-from adv_py.core.fit_part_scale import FitPartScaleStep
+from adv_py.core.fit_part_scale import (
+    FitPartLimbScaleChain, FitPartScaleStep,
+)
 
 _FIT_PART_KIND = "fit-part-v1"
 
 
 class MayaFitPartMixin:
+    def preflight_fit_part_limb_scale(
+        self, chain: FitPartLimbScaleChain
+    ) -> None:
+        c = self._cmds
+        required = (chain.fk_scale_plug, chain.volume_plug,
+                    chain.mode_plug, chain.fatness_control)
+        if any(not c.objExists(plug) for plug in required):
+            raise ValueError("Fit Part 四肢缩放缺少控制或体积输入："
+                             + chain.start_body_name)
+        if any(c.objExists(name) for name in
+               (chain.blend_name, chain.fatness_add_name)):
+            raise ValueError("Fit Part 四肢缩放节点名称冲突："
+                             + chain.start_body_name)
+        for name in chain.part_names:
+            part = self._unique_fit_part_joint(name)
+            if (not c.getAttr(part + ".segmentScaleCompensate")
+                    or any(not c.getAttr(part + ".scale" + axis,
+                                         settable=True) for axis in "XYZ")):
+                raise ValueError("Fit Part 四肢缩放目标不可写：" + name)
+
+    def connect_fit_part_limb_scale(
+        self, chain: FitPartLimbScaleChain
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        control_attr = chain.fatness_control + "." + chain.fatness_attribute
+        if not c.objExists(control_attr):
+            c.addAttr(chain.fatness_control,
+                      longName=chain.fatness_attribute,
+                      attributeType="double", defaultValue=0.0,
+                      keyable=True)
+        blend = c.createNode("blendColors", name=chain.blend_name)
+        fatness = c.createNode("plusMinusAverage",
+                               name=chain.fatness_add_name)
+        self._transaction_changed = True
+        c.setAttr(blend + ".color1", 1.0, 1.0, 1.0)
+        c.connectAttr(chain.volume_plug, blend + ".color1R")
+        c.connectAttr(chain.volume_plug, fatness + ".input1D[0]")
+        c.connectAttr(control_attr, fatness + ".input1D[1]")
+        for color in "GB":
+            c.connectAttr(fatness + ".output1D",
+                          blend + ".color1" + color)
+        c.connectAttr(chain.fk_scale_plug, blend + ".color2")
+        c.connectAttr(chain.mode_plug, blend + ".blender")
+        for name in chain.part_names:
+            part = self._unique_fit_part_joint(name)
+            c.connectAttr(blend + ".output", part + ".scale")
+
+    def capture_fit_part_limb_scale(
+        self, chain: FitPartLimbScaleChain
+    ) -> tuple[str | None, ...]:
+        c = self._cmds
+        return tuple(c.connectionInfo(self._unique_fit_part_joint(name)
+                     + ".scale", sourceFromDestination=True) or None
+                     for name in chain.part_names)
+
     def preflight_fit_part_scale(self, step: FitPartScaleStep) -> None:
         c = self._cmds
         part = self._unique_fit_part_joint(step.part_name)
