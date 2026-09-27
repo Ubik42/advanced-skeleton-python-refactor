@@ -11,6 +11,7 @@ from adv_py.core.character_registry import (
 )
 
 from .fit_inbetween_limb_segment import InbetweenLimbSegmentResult
+from .fit_inbetween_fk_segment import InbetweenFkSegmentResult
 
 
 class InbetweenRegistrationHost(Protocol):
@@ -34,7 +35,8 @@ class RegisterInbetweenControls:
 
     def apply(
         self, before: CharacterRegistration,
-        segments: tuple[InbetweenLimbSegmentResult, ...],
+        segments: tuple[
+            InbetweenLimbSegmentResult | InbetweenFkSegmentResult, ...],
     ) -> CharacterRegistration:
         if not segments:
             return before

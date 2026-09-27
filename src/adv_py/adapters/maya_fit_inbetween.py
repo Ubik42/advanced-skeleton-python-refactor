@@ -18,6 +18,9 @@ from adv_py.core.fit_inbetween_ik_parts import (
 from adv_py.core.fit_inbetween_body_driver import (
     InbetweenBodyDriverPlan, InbetweenBodyDriverSpec,
 )
+from adv_py.core.fit_inbetween_fk_body_driver import (
+    InbetweenFkBodyDriverPlan, InbetweenFkBodyDriverSpec,
+)
 from adv_py.core.fit_inbetween_fk_rewire import InbetweenFkRewirePlan
 from adv_py.core.fit_inbetween_matrix import (
     InbetweenMatrixDestination, InbetweenMatrixPlan,
@@ -27,6 +30,66 @@ from adv_py.core.joint_labels import JointLabel
 
 
 class MayaFitInbetweenMixin:
+    def preflight_inbetween_fk_body_drivers(
+        self, plan: InbetweenFkBodyDriverPlan,
+    ) -> None:
+        c = self._cmds
+        for part in plan.parts:
+            joints = c.ls(part.body_part_name, long=True,
+                          type="joint") or []
+            sources = c.ls(part.fkx_name, long=True,
+                           type="joint") or []
+            if len(joints) != 1 or len(sources) != 1:
+                raise ValueError("Inbetween FK Body 节点不唯一："
+                                 + part.body_part_name)
+            body = joints[0]
+            if (not c.objExists(body + ".advPyAuxiliaryInfluenceKind")
+                    or c.getAttr(body + ".advPyAuxiliaryInfluenceKind")
+                    != "fit-inbetween-v1"):
+                raise ValueError("Body 关节不是 Inbetween Part："
+                                 + part.body_part_name)
+            if (c.objExists(part.constraint_name)
+                    or any(not c.getAttr(body + ".rotate" + axis,
+                                         settable=True)
+                           for axis in "XYZ")):
+                raise ValueError("Inbetween FK Body 朝向目标已占用："
+                                 + part.body_part_name)
+
+    def create_inbetween_fk_body_driver(
+        self, plan: InbetweenFkBodyDriverPlan,
+        part: InbetweenFkBodyDriverSpec,
+    ) -> None:
+        del plan
+        self._require_transaction()
+        c = self._cmds
+        body = (c.ls(part.body_part_name, long=True,
+                     type="joint") or [])[0]
+        before = c.xform(body, query=True, worldSpace=True, matrix=True)
+        c.orientConstraint(part.fkx_name, body,
+                           maintainOffset=False,
+                           name=part.constraint_name)
+        self._transaction_changed = True
+        after = c.xform(body, query=True, worldSpace=True, matrix=True)
+        if max(abs(float(a) - float(b)) for a, b in zip(
+                before, after)) > 1e-4:
+            raise RuntimeError("Inbetween FK Body 改变绑定姿态："
+                               + part.body_part_name)
+
+    def capture_inbetween_fk_body_driver(
+        self, plan: InbetweenFkBodyDriverPlan,
+        part: InbetweenFkBodyDriverSpec,
+    ) -> bool:
+        del plan
+        c = self._cmds
+        constraints = c.ls(part.constraint_name,
+                           type="orientConstraint") or []
+        if len(constraints) != 1:
+            return False
+        targets = c.orientConstraint(constraints[0], query=True,
+                                     targetList=True) or []
+        return (len(targets) == 1
+                and targets[0].rsplit("|", 1)[-1] == part.fkx_name)
+
     def capture_inbetween_registration_node(self, path: str):
         return self._registry_node(path)
 

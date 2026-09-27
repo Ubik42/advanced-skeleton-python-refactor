@@ -26,9 +26,14 @@ from .fit_part_twist import (
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
 from .fit_inbetween_body import plan_combined_part_hierarchy
-from .fit_inbetween_limb_mapping import plan_inbetween_limb_bindings
+from .fit_inbetween_limb_mapping import (
+    InbetweenFkBinding, plan_inbetween_limb_bindings,
+)
 from .fit_inbetween_limb_segment import (
     BuildInbetweenLimbSegment, InbetweenLimbSegmentResult,
+)
+from .fit_inbetween_fk_segment import (
+    BuildInbetweenFkSegment, InbetweenFkSegmentResult,
 )
 from .fit_inbetween_registration import RegisterInbetweenControls
 from .limb_part_deform import BuildLimbPartDeform
@@ -58,7 +63,8 @@ class RegisteredBodyBuildResult:
     registration: CharacterRegistration
     segment_influences: tuple[str, ...] = ()
     fit_part_hierarchy: FitPartHierarchyResult | None = None
-    inbetween_segments: tuple[InbetweenLimbSegmentResult, ...] = ()
+    inbetween_segments: tuple[
+        InbetweenLimbSegmentResult | InbetweenFkSegmentResult, ...] = ()
 
 
 class BuildRegisteredBodyCharacter:
@@ -137,26 +143,50 @@ class BuildRegisteredBodyCharacter:
                 if inbetween_parts:
                     bindings = plan_inbetween_limb_bindings(
                         inbetween_parts, rig.plan)
-                    inbetween_segments = tuple(
-                        BuildInbetweenLimbSegment(joined).apply(
-                            binding.parts,
-                            fk_offset_path=binding.fk_offset_path,
-                            fk_control_path=binding.fk_control_path,
-                            fk_system_path=binding.fk_system_path,
-                            start_fk_driver_path=(
-                                binding.start_fk_driver_path),
-                            start_fk_constraint_name=(
-                                binding.start_fk_constraint_name),
-                            downstream_fk_offset_path=(
-                                binding.downstream_fk_offset_path),
-                            start_ik_driver=binding.start_ik_driver,
-                            end_ik_driver=binding.end_ik_driver,
-                            fk_weight_plug=binding.fk_weight_plug,
-                            ik_weight_plug=binding.ik_weight_plug,
-                            rotate_order=binding.rotate_order,
-                            part_control_radius=(
-                                binding.part_control_radius),
-                        ) for binding in bindings)
+                    built_segments = []
+                    for binding in bindings:
+                        if isinstance(binding, InbetweenFkBinding):
+                            # The Neck Body joint is reparented by the Part
+                            # hierarchy; limb FK mechanism paths stay fixed.
+                            neck_driver = final_paths.remap_body_reference(
+                                binding.start_fk_driver_path)
+                            built_segments.append(
+                                BuildInbetweenFkSegment(joined).apply(
+                                    binding.parts,
+                                    fk_offset_path=binding.fk_offset_path,
+                                    fk_control_path=binding.fk_control_path,
+                                    fk_system_path=binding.fk_system_path,
+                                    start_fk_driver_path=neck_driver,
+                                    start_fk_constraint_name=(
+                                        binding.start_fk_constraint_name),
+                                    downstream_fk_offset_path=(
+                                        binding.downstream_fk_offset_path),
+                                    rotate_order=binding.rotate_order,
+                                    part_control_radius=(
+                                        binding.part_control_radius),
+                                ))
+                            continue
+                        built_segments.append(
+                            BuildInbetweenLimbSegment(joined).apply(
+                                binding.parts,
+                                fk_offset_path=binding.fk_offset_path,
+                                fk_control_path=binding.fk_control_path,
+                                fk_system_path=binding.fk_system_path,
+                                start_fk_driver_path=(
+                                    binding.start_fk_driver_path),
+                                start_fk_constraint_name=(
+                                    binding.start_fk_constraint_name),
+                                downstream_fk_offset_path=(
+                                    binding.downstream_fk_offset_path),
+                                start_ik_driver=binding.start_ik_driver,
+                                end_ik_driver=binding.end_ik_driver,
+                                fk_weight_plug=binding.fk_weight_plug,
+                                ik_weight_plug=binding.ik_weight_plug,
+                                rotate_order=binding.rotate_order,
+                                part_control_radius=(
+                                    binding.part_control_radius),
+                            ))
+                    inbetween_segments = tuple(built_segments)
                 driven_body = joined.capture_body_skeleton(
                     skeleton.snapshot.root)
                 if not body_bind_pose_matches(
