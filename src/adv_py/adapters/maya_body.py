@@ -4967,6 +4967,7 @@ class MayaBodyBuildHost(MayaHipSwingReverseMixin, MayaFitInbetweenMixin, MayaFit
             )
             names.append(side.toe_constraint_name)
             names.extend((side.toe_offset_name, side.toe_control_name))
+            names.extend((side.toe_handle_name, side.toe_effector_name))
             names.extend(node.name for node in side.roll.nodes)
             collisions.extend(
                 name for name in names if self.find_name_collisions(name)
@@ -5172,6 +5173,17 @@ class MayaBodyBuildHost(MayaHipSwingReverseMixin, MayaFitInbetweenMixin, MayaFit
                 maintainOffset=False,
                 name=spec.toe_constraint_name,
             )
+            toe_handle, toe_effector = self._cmds.ikHandle(
+                name=spec.toe_handle_name,
+                startJoint=spec.ankle_driver_path,
+                endEffector=spec.toe_driver_path,
+                solver="ikSCsolver",
+            )
+            self._cmds.rename(toe_effector, spec.toe_effector_name)
+            self._cmds.parent(toe_handle, spec.toe_control_path,
+                              absolute=True)
+            self._cmds.setAttr(spec.toe_handle_name + ".visibility", False)
+            self._cmds.setAttr(spec.toe_effector_name + ".visibility", False)
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
@@ -5344,6 +5356,16 @@ class MayaBodyBuildHost(MayaHipSwingReverseMixin, MayaFitInbetweenMixin, MayaFit
                 float(self._cmds.getAttr(spec.roll.master_plug)),
                 tuple(roll_nodes),
             )
+            toe_handles = self._cmds.ls(
+                spec.toe_handle_name, long=True, type="ikHandle") or []
+            if len(toe_handles) != 1:
+                raise FitSkeletonValidationError("Toes IK Handle 节点集合无效")
+            toe_parents = self._cmds.listRelatives(
+                toe_handles[0], parent=True, fullPath=True) or []
+            toe_joint_list = tuple(
+                (self._cmds.ls(joint, long=True) or [joint])[0]
+                for joint in (self._cmds.ikHandle(
+                    toe_handles[0], query=True, jointList=True) or []))
 
             sides.append(BodyLegFootSideState(
                 spec.side,
@@ -5376,6 +5398,10 @@ class MayaBodyBuildHost(MayaHipSwingReverseMixin, MayaFitInbetweenMixin, MayaFit
                     if len(toe_shapes) == 1 else None
                 ),
                 roll_state,
+                toe_parents[0] if toe_parents else None,
+                toe_joint_list,
+                self._cmds.ikHandle(toe_handles[0], query=True,
+                                    solver=True),
             ))
         return BodyLegFootSnapshot(tuple(sides))
 

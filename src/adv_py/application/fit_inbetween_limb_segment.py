@@ -118,21 +118,18 @@ class BuildInbetweenLimbSegments:
                     handle_parent_path=plan.handle_parent_path,
                     pole_control_path=plan.pole_control_path,
                     pole_constraint_name=plan.pole_constraint_name)
-            solver_plans = tuple(request.plan
-                                 for request in mapping.requests)
-            for binding in mapping.without_solver:
-                active = rebase_inbetween_ik_reference(
-                    binding, solver_plans)
-                ik = BuildInbetweenIkParts(joined).apply(
-                    active.parts,
-                    start_ik_driver=active.start_ik_driver,
-                    end_ik_driver=active.end_ik_driver)
-                ik_by_edge[(binding.start_ik_driver,
-                            binding.end_ik_driver)] = ik
+            rp_solvers = tuple(
+                request.plan for request in mapping.requests
+                if request.plan.solver_name != "ikSCsolver")
             segments = []
             for binding, fk, rewire in fk_rows:
                 edge = (binding.start_ik_driver, binding.end_ik_driver)
                 ik = ik_by_edge.get(edge)
+                if ik is None:
+                    active = rebase_inbetween_ik_reference(
+                        binding, rp_solvers)
+                    ik = ik_by_edge.get((active.start_ik_driver,
+                                         active.end_ik_driver))
                 if ik is None or fk.parts is None:
                     raise RuntimeError("Inbetween FK／IK 段规划不完整："
                                        + binding.parts[0].start_body_name)

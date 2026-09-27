@@ -55,8 +55,8 @@ class BuildInbetweenIkSolver:
         effector_name: str,
         solver_name: str,
         handle_parent_path: str,
-        pole_control_path: str,
-        pole_constraint_name: str,
+        pole_control_path: str | None,
+        pole_constraint_name: str | None,
     ) -> InbetweenIkSolverPlan:
         plan = plan_inbetween_ik_solver(
             original_chain, segments, handle_name=handle_name,

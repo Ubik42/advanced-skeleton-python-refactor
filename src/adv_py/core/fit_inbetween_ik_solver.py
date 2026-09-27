@@ -1,6 +1,6 @@
 """Describe an IK chain with Inbetween joints inside the solver topology.
 
-The ordinary three-joint rig is built before Fit Parts are inserted.  A solver
+    The ordinary rig is built before Fit Parts are inserted.  A solver
 cannot be made equivalent to AdvancedSkeleton by placing follower joints beside
 that chain: its handle must be rebuilt against the expanded parent chain.
 This module describes that rewrite without invoking Maya.
@@ -28,8 +28,8 @@ class InbetweenIkSolverPlan:
     effector_name: str
     solver_name: str
     handle_parent_path: str
-    pole_control_path: str
-    pole_constraint_name: str
+    pole_control_path: str | None
+    pole_constraint_name: str | None
     original_chain: tuple[str, ...]
     expanded_chain: tuple[str, ...]
     inserted_joints: tuple[InbetweenIkSolverJoint, ...]
@@ -50,20 +50,25 @@ def plan_inbetween_ik_solver(
     effector_name: str,
     solver_name: str,
     handle_parent_path: str,
-    pole_control_path: str,
-    pole_constraint_name: str,
+    pole_control_path: str | None,
+    pole_constraint_name: str | None,
 ) -> InbetweenIkSolverPlan:
-    """Expand all segments of one RP handle as one topology rewrite.
+    """Expand all segments of one RP or single-chain handle as one rewrite.
 
     The caller supplies the complete original solver chain and every affected
     adjacent edge at once.  This avoids rebuilding the same handle twice and
     exposes the new DAG identities before any host operation occurs.
     """
-    if (len(original_chain) < 3 or len(set(original_chain)) != len(original_chain)
+    rp_solver = solver_name != "ikSCsolver"
+    if (len(original_chain) < (3 if rp_solver else 2)
+            or len(set(original_chain)) != len(original_chain)
             or any(not path.startswith("|") for path in original_chain)
             or any(not value for value in (
-                handle_name, effector_name, solver_name, handle_parent_path,
-                pole_control_path, pole_constraint_name))):
+                handle_name, effector_name, solver_name, handle_parent_path))
+            or (rp_solver and (not pole_control_path
+                               or not pole_constraint_name))
+            or (not rp_solver and (pole_control_path is not None
+                                   or pole_constraint_name is not None))):
         raise ValueError("Inbetween IK 求解器缺少完整原始骨链或节点身份")
     if any(child.rsplit("|", 1)[0] != parent
            for parent, child in zip(original_chain, original_chain[1:])):

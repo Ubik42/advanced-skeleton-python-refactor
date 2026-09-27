@@ -22,6 +22,7 @@ from adv_py.core.body_limb_controls import audit_body_limb_fk_controls
 from adv_py.core.body_hand_controls import audit_body_hand_fk_controls
 from adv_py.core.body_arm_ik import audit_body_arm_ik
 from adv_py.core.body_leg_ik import audit_body_leg_ik
+from adv_py.core.body_leg_foot import audit_body_leg_foot
 from adv_py.core.body_arm_mechanisms import audit_body_arm_mechanisms
 from adv_py.core.body_leg_mechanisms import audit_body_leg_mechanisms
 from adv_py.core.fit_inbetween_ik_rebase import rebase_inbetween_ik_reference
@@ -363,6 +364,8 @@ class BuildRegisteredBodyCharacter:
                             rig.plan.arm.ik)
                         leg_ik = joined.capture_body_leg_ik(
                             rig.plan.leg.ik)
+                        leg_foot = joined.capture_body_leg_foot(
+                            rig.plan.leg.foot)
                         ik_issues = (
                             *audit_body_arm_mechanisms(
                                 rig.plan.arm.mechanisms, arm_mechanisms,
@@ -384,6 +387,9 @@ class BuildRegisteredBodyCharacter:
                                     side.side:
                                     side.ankle_orientation_source_path
                                     for side in rig.plan.leg.foot.sides}),
+                            *audit_body_leg_foot(
+                                rig.plan.leg.foot, leg_foot,
+                                check_initial_pose=False),
                         )
                         if ik_issues:
                             raise RuntimeError(
@@ -401,7 +407,8 @@ class BuildRegisteredBodyCharacter:
                                 rebase_inbetween_ik_reference(
                                     rig.leg, solvers),
                                 plan=rig.plan.leg,
-                                mechanisms=leg_mechanisms, ik=leg_ik),
+                                mechanisms=leg_mechanisms, ik=leg_ik,
+                                foot=leg_foot),
                         )
                     rig = replace(rig,
                         arm=replace(rig.arm, plan=rig.plan.arm,

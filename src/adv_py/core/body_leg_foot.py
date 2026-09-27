@@ -76,6 +76,9 @@ class BodyLegFootSideSpec:
     toe_control_radius: float
     roll: BodyLegFootRollSpec
     pivots: tuple[BodyLegFootPivotSpec, ...]
+    toe_handle_name: str = ""
+    toe_effector_name: str = ""
+    toe_solver_joint_list: tuple[str, ...] | None = None
 
     @property
     def attributes(self) -> tuple[str, ...]:
@@ -159,6 +162,9 @@ class BodyLegFootSideState:
     toe_control_rotation: Vector3
     toe_control_shape: str | None
     roll: BodyLegFootRollState
+    toe_handle_parent_path: str | None = None
+    toe_handle_joint_list: tuple[str, ...] = ()
+    toe_handle_solver: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +334,8 @@ def plan_body_leg_foot(
                 roll_nodes,
             ),
             pivots=tuple(pivots),
+            toe_handle_name=f"AdvPy_LegIKToesHandle_{suffix}",
+            toe_effector_name=f"AdvPy_LegIKToesEffector_{suffix}",
         ))
     return BodyLegFootPlan(tuple(sides))
 
@@ -410,6 +418,14 @@ def audit_body_leg_foot(
                 issues.append(BodyLegFootIssue("foot_multiplier", "Foot 符号节点不一致", subject))
         if state.handle_parent_path != spec.final_handle_parent_path:
             issues.append(BodyLegFootIssue("foot_handle_parent", "Leg IK Handle 未挂到 Ball pivot", spec.side.value))
+        if (state.toe_handle_parent_path != spec.toe_control_path
+                or state.toe_handle_joint_list != (
+                    spec.toe_solver_joint_list
+                    or (spec.ankle_driver_path,))
+                or state.toe_handle_solver != "ikSCsolver"):
+            issues.append(BodyLegFootIssue(
+                "foot_toe_ik_handle", "Toes 单链 IK 求解器结构不一致",
+                spec.side.value))
         if (
             state.ankle_constraint_name != spec.ankle_constraint_name
             or state.ankle_orientation_source != spec.ankle_orientation_source_path

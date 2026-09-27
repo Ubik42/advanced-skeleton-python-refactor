@@ -67,15 +67,16 @@ class MayaFitInbetweenMixin:
                 and effectors[0].rsplit("|", 1)[-1]
                 != plan.effector_name):
             raise ValueError("Inbetween IK effector 名称冲突")
-        poles = c.ls(plan.pole_constraint_name,
-                     type="poleVectorConstraint") or []
-        pole_sources = tuple(
-            (c.ls(node, long=True) or [node])[0]
-            for node in (c.poleVectorConstraint(
-                poles[0], query=True, targetList=True) or [])
-        ) if len(poles) == 1 else ()
-        if pole_sources != (plan.pole_control_path,):
-            raise ValueError("Inbetween IK pole vector 来源改变")
+        if plan.pole_constraint_name is not None:
+            poles = c.ls(plan.pole_constraint_name,
+                         type="poleVectorConstraint") or []
+            pole_sources = tuple(
+                (c.ls(node, long=True) or [node])[0]
+                for node in (c.poleVectorConstraint(
+                    poles[0], query=True, targetList=True) or [])
+            ) if len(poles) == 1 else ()
+            if pole_sources != (plan.pole_control_path,):
+                raise ValueError("Inbetween IK pole vector 来源改变")
         if any(c.objExists(part.name) for part in plan.inserted_joints):
             raise ValueError("Inbetween IK 插入关节名称冲突")
         divider_names = tuple(
@@ -107,6 +108,10 @@ class MayaFitInbetweenMixin:
         if not hasattr(self, "_inbetween_solver_visibility"):
             self._inbetween_solver_visibility = {}
         self._inbetween_solver_visibility[plan.handle_name] = visibility
+        if not hasattr(self, "_inbetween_effector_visibility"):
+            self._inbetween_effector_visibility = {}
+        self._inbetween_effector_visibility[plan.handle_name] = bool(
+            c.getAttr(effector + ".visibility"))
         if not hasattr(self, "_inbetween_solver_rest_pose"):
             self._inbetween_solver_rest_pose = {}
         self._inbetween_solver_rest_pose[plan.handle_name] = tuple(
@@ -114,7 +119,8 @@ class MayaFitInbetweenMixin:
                           matrix=True))
             for joint in plan.original_chain)
         self._transaction_changed = True
-        c.delete(plan.pole_constraint_name)
+        if plan.pole_constraint_name is not None:
+            c.delete(plan.pole_constraint_name)
         c.delete(plan.handle_name)
         if c.objExists(effector):
             c.delete(effector)
@@ -189,13 +195,17 @@ class MayaFitInbetweenMixin:
             startJoint=plan.expanded_chain[0],
             endEffector=plan.expanded_chain[-1],
             solver=plan.solver_name)
-        c.rename(effector, plan.effector_name)
+        renamed_effector = c.rename(effector, plan.effector_name)
         c.parent(handle, plan.handle_parent_path, absolute=True)
         c.setAttr(handle + ".visibility",
                   self._inbetween_solver_visibility.pop(
                       plan.handle_name))
-        c.poleVectorConstraint(plan.pole_control_path, handle,
-                               name=plan.pole_constraint_name)
+        c.setAttr(renamed_effector + ".visibility",
+                  self._inbetween_effector_visibility.pop(
+                      plan.handle_name))
+        if plan.pole_constraint_name is not None:
+            c.poleVectorConstraint(plan.pole_control_path, handle,
+                                   name=plan.pole_constraint_name)
         self._transaction_changed = True
 
     def capture_inbetween_ik_solver(
@@ -215,13 +225,17 @@ class MayaFitInbetweenMixin:
         joint_list = tuple((c.ls(node, long=True) or [node])[0]
                            for node in (c.ikHandle(handles[0], query=True,
                                                    jointList=True) or []))
-        poles = c.ls(plan.pole_constraint_name,
-                     type="poleVectorConstraint") or []
-        pole_sources = tuple(
-            (c.ls(node, long=True) or [node])[0]
-            for node in (c.poleVectorConstraint(
-                poles[0], query=True, targetList=True) or [])
-        ) if len(poles) == 1 else ()
+        if plan.pole_constraint_name is None:
+            pole_matches = True
+        else:
+            poles = c.ls(plan.pole_constraint_name,
+                         type="poleVectorConstraint") or []
+            pole_sources = tuple(
+                (c.ls(node, long=True) or [node])[0]
+                for node in (c.poleVectorConstraint(
+                    poles[0], query=True, targetList=True) or [])
+            ) if len(poles) == 1 else ()
+            pole_matches = pole_sources == (plan.pole_control_path,)
         pose = self._inbetween_solver_rest_pose.pop(
             plan.handle_name, None)
         rewrites = dict(plan.path_rewrites)
@@ -238,7 +252,7 @@ class MayaFitInbetweenMixin:
                 and (c.listRelatives(handles[0], parent=True,
                                      fullPath=True) or [])
                 == [plan.handle_parent_path]
-                and pole_sources == (plan.pole_control_path,)
+                and pole_matches
                 and pose_matches)
 
     def preflight_inbetween_untwister(
