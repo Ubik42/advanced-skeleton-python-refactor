@@ -743,6 +743,9 @@ def main(report: Path) -> int:
         scapula_state = ()
         scapula_ik_errors = {}
         scapula_ik_joint_errors = {}
+        scapula_ik_driver_errors = {}
+        scapula_ik_twist_sweep = []
+        scapula_ik_root_twist = {}
         try:
             scapula_count = controller.control_orient_axis(
                 "hero", (scapula_right,), "X", "Y", False, True, True)
@@ -752,6 +755,27 @@ def main(report: Path) -> int:
                 hero_host._cmds.setAttr(
                     "AdvPy_ArmSettings.armIkFk_" + side, 1.)
             scapula_ik_probes = _paired_body_probes(hero_host)
+            driver_probes = []
+            for stem in ("Shoulder", "Elbow", "Wrist"):
+                nodes = tuple(hero_host._cmds.ls(
+                    "AdvPy_" + stem + "IKDriver_" + side,
+                    long=True) for side in ("R", "L"))
+                if any(len(found) != 1 for found in nodes):
+                    raise RuntimeError("Arm IK driver pair missing: " + stem)
+                locals_ = []
+                for found in nodes:
+                    frame = om.MMatrix(hero_host._cmds.xform(
+                        found[0], query=True, worldSpace=True, matrix=True))
+                    origin = tuple(frame[index] for index in range(12, 15))
+                    inverse = frame.inverse()
+                    locals_.append(tuple(
+                        om.MPoint(origin[0] + offset[0],
+                                  origin[1] + offset[1],
+                                  origin[2] + offset[2]) * inverse
+                        for offset in ((0., 0., 0.), (0., 1., 0.),
+                                       (0., 0., 1.))))
+                driver_probes.append((nodes[0][0], nodes[1][0],
+                                      locals_[0], locals_[1]))
             scapula_ik_neutral = _sample_probes(hero_host,
                                                 scapula_ik_probes)
             scapula_ik_errors = {}
@@ -770,6 +794,52 @@ def main(report: Path) -> int:
                         (right_pose[index],), (left_pose[index],)))
                     for index, pair in enumerate(scapula_ik_probes)),
                     key=lambda item: item[1], reverse=True)[:8]
+                driver_neutral = _sample_probes(hero_host, driver_probes)
+                driver_right = _sample_axis(
+                    hero_host, driver_probes, scapula_right, axis, 10.)
+                driver_left = _sample_axis(
+                    hero_host, driver_probes, scapula_left, axis, 10.)
+                scapula_ik_driver_errors[axis] = sorted((
+                    (pair[0].rsplit("|", 1)[-1], *_reflection_error(
+                        (driver_neutral[index],),
+                        (driver_right[index],), (driver_left[index],)))
+                    for index, pair in enumerate(driver_probes)),
+                    key=lambda item: item[1], reverse=True)
+                if axis == "Z":
+                    left_handle = "AdvPy_ArmIKHandle_L"
+                    twist_plug = left_handle + ".twist"
+                    original_twist = hero_host._cmds.getAttr(twist_plug)
+                    hero_host._cmds.setAttr(scapula_left + ".rotateZ", 10.)
+                    try:
+                        for twist in range(-12, 13, 2):
+                            hero_host._cmds.setAttr(twist_plug,
+                                                    original_twist + twist)
+                            pose = _sample_probes(hero_host, driver_probes)
+                            error, movement = _reflection_error(
+                                driver_neutral, driver_right, pose)
+                            scapula_ik_twist_sweep.append(
+                                (twist, error, movement))
+                    finally:
+                        hero_host._cmds.setAttr(twist_plug, original_twist)
+                        hero_host._cmds.setAttr(scapula_left + ".rotateZ", 0.)
+                    for side, control in (("R", scapula_right),
+                                          ("L", scapula_left)):
+                        plug = "AdvPy_ArmIKHandle_" + side + ".rootTwistMode"
+                        if not hero_host._cmds.objExists(plug):
+                            continue
+                        original = hero_host._cmds.getAttr(plug)
+                        hero_host._cmds.setAttr(plug, 1)
+                        try:
+                            scapula_ik_root_twist[side] = _sample_axis(
+                                hero_host, driver_probes, control, "Z", 10.)
+                        finally:
+                            hero_host._cmds.setAttr(plug, original)
+                    if len(scapula_ik_root_twist) == 2:
+                        scapula_ik_root_twist = {
+                            "error": _reflection_error(
+                                driver_neutral,
+                                scapula_ik_root_twist["R"],
+                                scapula_ik_root_twist["L"])}
             for side in ("R", "L"):
                 hero_host._cmds.setAttr(
                     "AdvPy_ArmSettings.armIkFk_" + side, 0.)
@@ -1056,6 +1126,9 @@ def main(report: Path) -> int:
             "control_type_probe": coverage,
             "scapula_ik_axis_error": scapula_ik_errors,
             "scapula_ik_joint_error": scapula_ik_joint_errors,
+            "scapula_ik_driver_error": scapula_ik_driver_errors,
+            "scapula_ik_twist_sweep": scapula_ik_twist_sweep,
+            "scapula_ik_root_twist": scapula_ik_root_twist,
             "arm_ik_from_fk_error": arm_ik_from_fk_error,
             "status": "passed" if all(checks.values()) else "failed",
         }
