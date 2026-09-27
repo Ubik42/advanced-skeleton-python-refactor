@@ -25,25 +25,31 @@ def main() -> None:
     rows = {}
     for side, suffix in (("Right", ""), ("Left", "Left")):
         holder = "FaceFitEyeLidInner" + suffix
-        edge_ids = [int(item.split(".e[")[1][:-1]) for item in
-                    (cmds.getAttr(holder + ".selection") or "").split()
+        recorded = (cmds.getAttr(holder + ".selection") or "").split()
+        edge_ids = [int(item.split(".e[")[1][:-1]) for item in recorded
                     if ".e[" in item]
+        corners = tuple(int(item.split(".vtx[")[1][:-1])
+                        for item in recorded if ".vtx[" in item)
         edges = tuple((index, *fn.getEdgeVertices(index))
                       for index in edge_ids)
         vertices = {vertex for _, first, second in edges
                     for vertex in (first, second)}
         cmds.currentTime(1, edit=True)
+        cmds.setAttr("ctrlEye_R.blink", 0)
+        cmds.setAttr("ctrlEye_L.blink", 0)
         neutral = {index: tuple(fn.getPoint(index, om.MSpace.kWorld)[axis]
                         for axis in range(3)) for index in vertices}
-        loop = order_eye_lid_loop(edges, neutral,
-            eye_center_y=sum(point[1] for point in neutral.values())
-                         / len(neutral), side=side)
+        eye_y = float(cmds.xform("FitEyeBall" + suffix, query=True,
+                                worldSpace=True, translation=True)[1])
+        loop = order_eye_lid_loop(edges, neutral, eye_center_y=eye_y,
+                                  corner_vertices=corners, side=side)
         x_min = max(min(neutral[index][0] for index in arc)
                     for arc in (loop.upper_vertices, loop.lower_vertices))
         x_max = min(max(neutral[index][0] for index in arc)
                     for arc in (loop.upper_vertices, loop.lower_vertices))
+        fractions = tuple(index / 100. for index in range(5, 96, 5))
         xs = [x_min + (x_max-x_min) * fraction
-              for fraction in (.2, .3, .4, .5, .6, .7, .8)]
+              for fraction in fractions]
 
         def gap(points, x):
             def height(arc):
@@ -57,6 +63,8 @@ def main() -> None:
             return height(loop.upper_vertices) - height(loop.lower_vertices)
 
         before = [gap(neutral, x) for x in xs]
+        if any(value <= 1e-6 for value in before):
+            raise RuntimeError(side + " 张眼孔沿间距无效")
         cmds.currentTime(10, edit=True)
         cmds.setAttr("ctrlEye_R.blink", 10)
         cmds.setAttr("ctrlEye_L.blink", 10)
@@ -64,8 +72,11 @@ def main() -> None:
                         for axis in range(3)) for index in vertices}
         after = [gap(closed, x) for x in xs]
         ratios = [value / original for value, original in zip(after, before)]
-        rows[side] = {"center_open_gap_cm": round(before[3], 6),
-                      "center_closed_gap_cm": round(after[3], 6),
+        rows[side] = {"center_open_gap_cm": round(before[9], 6),
+                      "center_closed_gap_cm": round(after[9], 6),
+                      "sample_fractions": fractions,
+                      "open_gaps_cm": [round(value, 6) for value in before],
+                      "closed_gaps_cm": [round(value, 6) for value in after],
                       "sample_ratios": [round(value, 6) for value in ratios],
                       "maximum_remaining_ratio": round(max(ratios), 6),
                       "minimum_remaining_ratio": round(min(ratios), 6)}

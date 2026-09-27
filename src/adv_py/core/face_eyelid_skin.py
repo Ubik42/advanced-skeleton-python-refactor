@@ -131,7 +131,9 @@ def inner_eyelid_skin_factors(adjacency: dict[int, set[int]],
             continue
         x = min(1., max(0., (positions[vertex][0] - left_x)
                          / (right_x - left_x)))
-        taper = min(1., 8. * min(x, 1. - x))
+        taper = min(1., 20. * min(x, 1. - x))
+        if vertex in upper or vertex in lower:
+            taper = 1.
         total = taper * (rows + 1 - distance) / (rows + 1)
         if vertex in upper:
             share = 1.

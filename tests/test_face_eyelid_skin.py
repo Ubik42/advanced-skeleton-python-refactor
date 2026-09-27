@@ -63,3 +63,20 @@ class EyeLidSkinFactorsTests(unittest.TestCase):
         self.assertEqual(factors[7], (0., 1.))
         self.assertAlmostEqual(sum(factors[12]), 2./3.)
         self.assertEqual(factors[6], (0., 0.))
+
+    def test_open_aperture_first_rim_vertices_keep_full_weight(self):
+        positions = {0: (0., 0., 0.), 1: (.02, .4, 0.),
+                     2: (.8, .4, 0.), 3: (1., 0., 0.),
+                     4: (.02, -.4, 0.), 5: (.8, -.4, 0.)}
+        adjacency = {index: set() for index in positions}
+        for first, second in ((0, 1), (1, 2), (2, 3),
+                              (3, 5), (5, 4), (4, 0)):
+            adjacency[first].add(second)
+            adjacency[second].add(first)
+        factors = inner_eyelid_skin_factors(
+            adjacency, positions, set(positions),
+            (0, 1, 2, 3), (0, 4, 5, 3))
+        self.assertEqual(factors[1], (1., 0.))
+        self.assertEqual(factors[4], (0., 1.))
+        self.assertEqual(factors[0], (0., 0.))
+        self.assertEqual(factors[3], (0., 0.))

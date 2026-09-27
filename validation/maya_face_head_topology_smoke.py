@@ -387,6 +387,11 @@ def main() -> None:
         assert len(lid_rig["eye_controls"]) == 2
         assert len(lid_rig["work_curves"]) == expected_control_count
         assert len(lid_rig["joints"]) >= 16
+        if scene_output is not None:
+            scene_output.parent.mkdir(parents=True, exist_ok=True)
+            cmds.file(rename=str(scene))
+            cmds.file(save=True, type="mayaBinary", force=True)
+            copyfile(scene, scene_output)
         skinned = MayaDenseSkinHost().capture_dense_skin(source_skin)
         old_values = memoryview(original_weights.values).cast("d")
         new_values = memoryview(skinned.values).cast("d")
@@ -587,9 +592,6 @@ def main() -> None:
         cmds.setKeyframe(eye_animated, attribute="blink", time=5, value=10)
         cmds.file(rename=str(scene))
         cmds.file(save=True, type="mayaBinary", force=True)
-        if scene_output is not None:
-            scene_output.parent.mkdir(parents=True, exist_ok=True)
-            copyfile(scene, scene_output)
         cmds.file(str(scene), open=True, force=True,
                   executeScriptNodes=False)
         if complex_scene:
