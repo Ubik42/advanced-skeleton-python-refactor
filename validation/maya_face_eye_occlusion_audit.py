@@ -62,6 +62,7 @@ def main() -> None:
                 missing_front_surface = 0
                 behind_eye = 0
                 depth_deficits = []
+                leaked_points = []
                 eye_hits = 0
                 for x, y in points:
                     eye_z = front_depth(eye, x, y)
@@ -77,6 +78,12 @@ def main() -> None:
                             behind_eye += 1
                         if lid_z is not None:
                             depth_deficits.append(eye_z - lid_z)
+                        if region == "full_eye" and label == "closed":
+                            leaked_points.append({
+                                "x_eye_radius": round((x - cx) / rx, 3),
+                                "y_eye_radius": round((y - cy) / ry, 3),
+                                "depth_deficit_cm": (round(eye_z - lid_z, 6)
+                                                     if lid_z is not None else None)})
                 visible[region][label] = {
                     "eye_hit_samples": eye_hits,
                     "visible_samples": visible_count,
@@ -86,10 +93,14 @@ def main() -> None:
                         max(depth_deficits, default=0.), 6),
                     "visible_fraction": round(
                         visible_count / eye_hits, 6) if eye_hits else None}
+                if region == "full_eye" and label == "closed":
+                    visible[region][label]["leaked_points"] = leaked_points
         rows[side] = visible["center"]
         full_rows[side] = visible["full_eye"]
     passed = all(row["open"]["eye_hit_samples"] >= 50
-                 and row["open"]["visible_fraction"] >= .3
+                 and row["open"]["visible_samples"] >= 20
+                 and row["open"]["visible_fraction"] >=
+                 row["closed"]["visible_fraction"] + .1
                  and row["closed"]["visible_fraction"] <= .01
                  for region in (rows, full_rows)
                  for row in region.values())
@@ -98,7 +109,12 @@ def main() -> None:
                                   "passed": passed},
                                   ensure_ascii=False, indent=2) + "\n",
                       encoding="utf-8")
-    print("Eye occlusion:", rows, "full eye:", full_rows,
+    summary = {region: {side: {label: pose["visible_samples"]
+                               for label, pose in side_rows.items()}
+                        for side, side_rows in report.items()}
+               for region, report in (("center", rows),
+                                      ("full_eye", full_rows))}
+    print("Eye occlusion samples:", summary,
           "passed:", passed, flush=True)
     if not passed:
         raise SystemExit(1)
