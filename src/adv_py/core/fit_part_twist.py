@@ -64,15 +64,16 @@ class FitPartTwistProjection:
 def plan_standard_fit_part_rotation_inputs(
     parts: tuple[FitPartJointSpec, ...],
 ) -> tuple[FitPartRotationInput, ...]:
-    """Resolve the established Arm/Leg rig channels for standard Fit chains."""
+    """Resolve established Arm/Leg channels for standard limb Fit chains."""
     starts = {part.start_body: part for part in parts}
     result = []
     for start, part in starts.items():
         stem = part.start_body_name.rsplit("_", 1)[0]
         side = part.side.value
-        if stem in ("Shoulder", "Elbow"):
-            up = (f"AdvPy_LowerArmTwistProject_{side}.outputRotateX"
-                  if stem == "Elbow" else None)
+        if stem in ("Shoulder", "Elbow", "Knee"):
+            up_label = {"Elbow": "LowerArm", "Knee": "LowerLeg"}.get(stem)
+            up = (f"AdvPy_{up_label}TwistProject_{side}.outputRotateX"
+                  if up_label else None)
             result.append(FitPartRotationInput(
                 start, start + ".rotate", start + ".rotateOrder", up))
         elif stem == "Hip":

@@ -365,6 +365,13 @@ def create_panel(controller: MayaPanelController | None = None):
             self.build_segment_influences = QtWidgets.QCheckBox(
                 "构建四肢及可用的标准躯干、手指分段关节")
             self.build_segment_influences.setChecked(True)
+            self.build_fit_parts = QtWidgets.QCheckBox(
+                "按 Fit 的 Twist / Inbetween 设置构建分段")
+            self.build_fit_parts.setChecked(False)
+            self.build_fit_parts.setEnabled(
+                self.build_segment_influences.isChecked())
+            self.build_segment_influences.toggled.connect(
+                self.build_fit_parts.setEnabled)
             group, form = self._group("03 · 完整角色", [
                 ("脊柱配置", self.spine_segments), ("附加控制", self.head_aim),
                 ("Fit 标签", self.infer_missing_fit_labels),
@@ -372,6 +379,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("待绑定网格", self.build_meshes),
                 ("准备输入", self.build_use_preparation_skin),
                 ("分段变形", self.build_segment_influences),
+                ("Fit 分段", self.build_fit_parts),
                 ("最大影响数", self.build_max_influences)])
             form.addRow(self._button("使用当前选中的网格",
                                       self._fill_selected_build_meshes))
@@ -1596,7 +1604,9 @@ def create_panel(controller: MayaPanelController | None = None):
                 infer_missing_labels=self.infer_missing_fit_labels.isChecked(),
                 meshes=meshes,
                 maximum_influences=self.build_max_influences.value(),
-                segment_influences=self.build_segment_influences.isChecked())
+                segment_influences=self.build_segment_influences.isChecked(),
+                fit_parts=(self.build_segment_influences.isChecked()
+                           and self.build_fit_parts.isChecked()))
             return (f"角色已登记：{result.joint_count} 个关节、"
                     f"{result.segment_joint_count} 个分段变形关节、"
                     f"{result.channel_count} 个通道、{len(meshes)} 套 Skin")

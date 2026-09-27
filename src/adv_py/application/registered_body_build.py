@@ -105,12 +105,24 @@ class BuildRegisteredBodyCharacter:
             fit_source, inbetween_plan = PrepareFitInbetween(self._host).plan(
                 container_name)
             hip_selection = plan_hip_swing_fit_selection(fit_source)
+            if (hip_selection.enabled
+                    and hip_selection.child_name != "Spine1"):
+                raise FitSkeletonValidationError(
+                    "HipSwinger 目前只支持 Spine1 子关节")
             untwister_sources = frozenset(
                 item.joint for item in fit_source.metadata
                 if item.untwister and (item.inbetween_joints or 0) > 0)
             if inbetween_plan.guides:
                 part_plan = plan_combined_part_hierarchy(
                     preview.build, inbetween_plan)
+            if (hip_selection.enabled
+                    and hip_selection.root_inbetween_count
+                    and not any(part.kind == "inbetween"
+                                and part.start_body_name == "Root_M"
+                                and part.end_body_name == "Spine1_M"
+                                for part in part_plan.fit_parts)):
+                raise FitSkeletonValidationError(
+                    "Root 分段 HipSwinger 缺少 Root 至 Spine1 的 Part 链")
             twist_parts = tuple(part for part in part_plan.fit_parts
                                 if part.kind == "twist")
             if fit_part_twist_sources is None:

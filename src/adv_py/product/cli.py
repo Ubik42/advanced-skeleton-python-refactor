@@ -208,6 +208,8 @@ def parser() -> argparse.ArgumentParser:
     body_build.add_argument("--spine-segments", type=int,
         help="可变脊柱段数；标准双段角色可省略")
     body_build.add_argument("--head-aim", action="store_true")
+    body_build.add_argument("--fit-parts", action="store_true",
+        help="按 Fit 的 Twist/Inbetween 元数据构建分段关节并登记为 Skin 影响")
     body_build.add_argument("--output", type=Path, required=True)
     fit_export = commands.add_parser("fit-export",
         help="导出现有 Fit 容器的完整文档")
@@ -487,7 +489,9 @@ def _run(args, gateway) -> dict:
         description = (variable_axial_description(args.spine_segments)
             if args.spine_segments is not None else None)
         built = BuildRegisteredBodyCharacter(host).apply(args.fit,
-            axial_description=description, include_head_aim=args.head_aim)
+            axial_description=description, include_head_aim=args.head_aim,
+            include_segment_influences=args.fit_parts,
+            use_fit_part_hierarchy=args.fit_parts)
         registration = built.registration
         _emit("character_registered", channels=len(registration.channels))
         saved = gateway.save_new(output)

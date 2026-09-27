@@ -63,8 +63,8 @@ def plan_fit_part_scale(
         if any(part.segment_scale_compensate
                != chain[0].segment_scale_compensate for part in chain):
             raise ValueError("Fit Part 链的缩放补偿模式不一致：" + start)
-        if stem in ("Shoulder", "Elbow", "Hip"):
-            module = "Arm" if stem != "Hip" else "Leg"
+        if stem in ("Shoulder", "Elbow", "Hip", "Knee"):
+            module = "Arm" if stem in ("Shoulder", "Elbow") else "Leg"
             prefix = f"AdvPy_{stem}_FitPart_{side}"
             limbs.append(FitPartLimbScaleChain(
                 start, tuple(part.name for part in chain),
@@ -72,7 +72,7 @@ def plan_fit_part_scale(
                 f"AdvPy_{module}VolumeBlend_{side}.outputR",
                 f"AdvPy_{module}Settings.{module.lower()}IkFk_{side}",
                 f"AdvPy_{module}IK_{side}",
-                "Fatness2" if stem == "Elbow" else "Fatness1",
+                "Fatness2" if stem in ("Elbow", "Knee") else "Fatness1",
                 prefix + "ScaleBlend", prefix + "FatnessAdd",
                 use_opm,
                 prefix + "ScaleCompose" if use_opm else None,

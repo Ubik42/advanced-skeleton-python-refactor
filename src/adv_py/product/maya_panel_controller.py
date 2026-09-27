@@ -373,7 +373,8 @@ class MayaPanelController:
                    infer_missing_labels: bool = False,
                    meshes: tuple[str, ...] = (),
                    maximum_influences: int = 4,
-                   segment_influences: bool = False) -> PanelCharacter:
+                   segment_influences: bool = False,
+                   fit_parts: bool = False) -> PanelCharacter:
         from adv_py.application.character_from_fit import BuildCharacterFromFit
 
         host = self._host(namespace)
@@ -382,7 +383,8 @@ class MayaPanelController:
             maximum_influences=maximum_influences,
             include_head_aim=head_aim,
             infer_missing_labels=infer_missing_labels,
-            include_segment_influences=segment_influences)
+            include_segment_influences=segment_influences,
+            use_fit_part_hierarchy=fit_parts)
         character = result.body
         return PanelCharacter(namespace, True, len(character.registration.body),
                               len(character.registration.channels),
