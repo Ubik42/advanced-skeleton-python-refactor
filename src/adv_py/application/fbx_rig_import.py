@@ -23,6 +23,7 @@ class FBXRigSourceCapture:
 class FBXRigBuildAudit:
     fit_guide_count: int
     paired_side_count: int
+    connected_control_names: tuple[str, ...]
     original_skeleton_constrained: bool
     control_animation_baked: bool
     game_root_motion_connected: bool
@@ -99,8 +100,14 @@ class BuildFBXRig:
             if plan.game_root_joint is not None:
                 self._host.connect_fbx_game_root_motion(plan, source_paths)
             audit = self._host.capture_fbx_rig_audit(plan)
+            candidates = {link.control_name
+                          for link in plan.candidate_control_links}
             if (audit.fit_guide_count != len(plan.fit_guides)
                     or audit.paired_side_count != len(plan.mirror_pairs)
+                    or len(set(audit.connected_control_names)) !=
+                        len(audit.connected_control_names)
+                    or not set(audit.connected_control_names) <= candidates
+                    or "FKRoot_M" not in audit.connected_control_names
                     or not audit.original_skeleton_constrained
                     or audit.control_animation_baked !=
                         (plan.last_bake_frame is not None)

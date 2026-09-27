@@ -33,6 +33,13 @@ class FBXRigMirrorPair:
 
 
 @dataclass(frozen=True, slots=True)
+class FBXRigControlLink:
+    control_name: str
+    source_joint: str
+    side: str
+
+
+@dataclass(frozen=True, slots=True)
 class FBXRigImportPlan:
     top_joint: str
     root_joint: str
@@ -41,6 +48,7 @@ class FBXRigImportPlan:
     side_threshold_cm: float
     fit_guides: tuple[FBXRigFitGuide, ...]
     mirror_pairs: tuple[FBXRigMirrorPair, ...]
+    candidate_control_links: tuple[FBXRigControlLink, ...]
     inferred_labels: tuple[tuple[str, str], ...]
     first_bake_frame: int | None
     last_bake_frame: int | None
@@ -144,6 +152,20 @@ def plan_fbx_rig_import(
         pairs.append(FBXRigMirrorPair(
             joint.path, partner.path,
             dist(mirror, partner.world_position)))
+    pair_by_right = {pair.right_joint: pair.left_joint for pair in pairs}
+    control_links = [FBXRigControlLink("FKRoot_M", root.path, "M")]
+    for joint in kept:
+        name = names[joint.path]
+        right_side = joint.world_position[0] < -threshold
+        side = "R" if right_side else "M"
+        control_links.append(FBXRigControlLink(
+            "FK" + name + "_" + side, joint.path, side))
+        if right_side:
+            left_path = pair_by_right.get(joint.path)
+            if left_path is None:
+                raise ValueError("FBX rig 右侧关节缺少镜像目标：" + name)
+            control_links.append(FBXRigControlLink(
+                "FK" + name + "_L", left_path, "L"))
     labels = []
     def unique_match(*tokens: str) -> str | None:
         matches = [name for name in names.values()
@@ -165,6 +187,6 @@ def plan_fbx_rig_import(
         raise ValueError("FBX rig 动画最后一帧早于绑定姿态帧 -1")
     return FBXRigImportPlan(
         top.path, root.path, game_root, scale, threshold,
-        tuple(guides), tuple(pairs), tuple(labels),
+        tuple(guides), tuple(pairs), tuple(control_links), tuple(labels),
         -1 if last_frame is not None else None, last_frame,
         tuple(joint.path for joint in joints if "_" in joint.name))
