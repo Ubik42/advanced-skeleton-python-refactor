@@ -516,6 +516,10 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("新增网格", self.custom_control_mesh)])
             form.addRow(self._button("创建 SoftMod Control",
                                      self._create_custom_softmod))
+            form.addRow(self._button("创建 Cluster Control",
+                                     self._create_custom_cluster))
+            form.addRow(self._button("创建 Skin Control",
+                                     self._create_custom_skin))
             form.addRow(self._button("Add influenced object",
                                      self._add_custom_softmod_mesh))
             stack.addWidget(group)
@@ -1630,15 +1634,34 @@ def create_panel(controller: MayaPanelController | None = None):
             state = self.controller.custom_softmod_create(
                 self._namespace(), self.custom_softmod_source.text().strip(),
                 self.custom_control_name.text().strip(),
-                self.custom_control_parent.text().strip())
+                self.custom_control_parent.text().strip(),
+                face=getattr(self, "custom_control_face", False))
             self.custom_control_existing.setText(state.control)
             return f"已创建 SoftMod 控制器：{state.control}"
+
+        def _create_custom_cluster(self):
+            state = self.controller.custom_cluster_create(
+                self._namespace(), self.custom_softmod_source.text().strip(),
+                self.custom_control_name.text().strip(),
+                self.custom_control_parent.text().strip(),
+                face=getattr(self, "custom_control_face", False))
+            self.custom_control_existing.setText(state.control)
+            return f"已创建 Cluster 控制器：{state.control}"
+
+        def _create_custom_skin(self):
+            state = self.controller.custom_skin_create(
+                self._namespace(), self.custom_softmod_source.text().strip(),
+                self.custom_control_name.text().strip(),
+                self.custom_control_parent.text().strip(),
+                face=getattr(self, "custom_control_face", False))
+            self.custom_control_existing.setText(state.control)
+            return f"已创建 Skin 控制器：{state.control}"
 
         def _add_custom_softmod_mesh(self):
             state = self.controller.custom_softmod_add_mesh(
                 self._namespace(), self.custom_control_existing.text().strip(),
                 self.custom_control_mesh.text().strip())
-            return f"SoftMod 当前影响 {len(state.influenced_meshes)} 件网格"
+            return f"当前影响 {len(state.influenced_meshes)} 件网格"
 
         def _bind_skin(self):
             influences = tuple(line.strip() for line in

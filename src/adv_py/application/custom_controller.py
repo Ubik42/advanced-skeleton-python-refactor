@@ -81,57 +81,73 @@ class BuildCustomController:
                         and (state.deformer is None or
                              state.deformer.rsplit("|", 1)[-1]
                              != plan.deformer_name))
-                    or state.weighted_vertex_count != sum(
-                        item.weight > 0.0 for item in plan.region.weights)):
+                    or (plan.kind is CustomControlKind.SOFT_MOD
+                        and state.weighted_vertex_count != sum(
+                            item.weight > 0.0 for item in plan.region.weights))
+                    or (plan.kind in (CustomControlKind.CLUSTER,
+                                     CustomControlKind.SKIN)
+                        and state.weighted_vertex_count < 1)):
                 raise RuntimeError("自定义控制器写后复检失败")
         return CustomControllerBuildResult(plan, state)
 
 
 @dataclass(frozen=True, slots=True)
 class SoftModExtensionPlan:
+    kind: CustomControlKind
     control: str
     deformer: str
+    joint: str | None
     mesh: str
     expected_meshes: tuple[str, ...]
 
 
 class SoftModExtensionHost(Protocol):
     def capture_custom_control(self, control: str) -> CustomControllerState: ...
-    def preflight_softmod_extension(self, deformer: str, mesh: str) -> None: ...
+    def resolve_custom_mesh(self, mesh: str) -> str: ...
+    def preflight_custom_extension(self, kind: CustomControlKind,
+                                   deformer: str, joint: str | None,
+                                   mesh: str) -> None: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
-    def add_softmod_influenced_mesh(self, deformer: str, mesh: str) -> None: ...
+    def add_custom_influenced_mesh(self, kind: CustomControlKind,
+                                   deformer: str, joint: str | None,
+                                   mesh: str) -> None: ...
 
 
 class ExtendSoftModController:
-    """Add one mesh to the affected set of an existing SoftMod control."""
+    """Add one mesh to an existing SoftMod or Cluster control."""
 
     def __init__(self, host: SoftModExtensionHost):
         self._host = host
 
     def plan(self, control: str, mesh: str) -> SoftModExtensionPlan:
         if not isinstance(control, str) or not control.strip():
-            raise ValueError("SoftMod 控制器路径不能为空")
+            raise ValueError("自定义控制器路径不能为空")
         if not isinstance(mesh, str) or not mesh.strip():
             raise ValueError("新增受影响网格路径不能为空")
+        mesh = self._host.resolve_custom_mesh(mesh)
         state = self._host.capture_custom_control(control)
-        if state.kind is not CustomControlKind.SOFT_MOD or not state.deformer:
-            raise ValueError("所选控制器不是 SoftMod 控制器")
+        if not state.deformer or (state.kind is CustomControlKind.SKIN
+                                 and not state.joint):
+            raise ValueError("所选节点不是完整的自定义控制器")
         if len(state.influenced_meshes) != len(set(state.influenced_meshes)):
-            raise ValueError("SoftMod 影响集合包含重复网格")
+            raise ValueError("变形器影响集合包含重复网格")
         if mesh in state.influenced_meshes:
-            raise ValueError("网格已经属于 SoftMod 影响集合")
-        self._host.preflight_softmod_extension(state.deformer, mesh)
+            raise ValueError("网格已经属于变形器影响集合")
+        self._host.preflight_custom_extension(
+            state.kind, state.deformer, state.joint, mesh)
         return SoftModExtensionPlan(
-            control, state.deformer, mesh, state.influenced_meshes + (mesh,))
+            state.kind, control, state.deformer, state.joint, mesh,
+            state.influenced_meshes + (mesh,))
 
     def apply(self, control: str, mesh: str) -> CustomControllerState:
         plan = self.plan(control, mesh)
-        with self._host.transaction("添加 SoftMod 受影响对象"):
-            self._host.add_softmod_influenced_mesh(plan.deformer, plan.mesh)
+        with self._host.transaction("添加自定义控制器受影响对象"):
+            self._host.add_custom_influenced_mesh(
+                plan.kind, plan.deformer, plan.joint, plan.mesh)
             state = self._host.capture_custom_control(plan.control)
-            if (state.kind is not CustomControlKind.SOFT_MOD
+            if (state.kind is not plan.kind
                     or state.deformer != plan.deformer
                     or len(state.influenced_meshes) != len(plan.expected_meshes)
                     or set(state.influenced_meshes) != set(plan.expected_meshes)):
-                raise RuntimeError("SoftMod 影响对象写后复检失败")
+                raise RuntimeError("自定义控制器影响对象写后复检失败")
         return state

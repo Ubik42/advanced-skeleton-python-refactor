@@ -26,6 +26,10 @@ class SoftModRegion:
     center: tuple[float, float, float]
     vertex_count: int
     weights: tuple[WeightedVertex, ...]
+    source_handle: str = ""
+    falloff_radius: float = 1.0
+    falloff_mode: int = 0
+    falloff_curve: tuple[tuple[float, float, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +54,15 @@ class CustomControllerPlan:
         names = [self.offset_name, self.control_name]
         if self.base_control_name is not None:
             names.append(self.base_control_name)
+            names.extend((self.control_name + "Attach",
+                          self.control_name + "BaseLocator",
+                          self.control_name + "SoftModMultMatrix",
+                          self.control_name + "RadiusFactor",
+                          self.control_name + "RadiusScale"))
+        else:
+            names.append(self.control_name + "Attach")
+            if self.kind is CustomControlKind.CLUSTER:
+                names.append(self.control_name + "Handle")
         if self.joint_name is not None:
             names.append(self.joint_name)
         if (self.deformer_name is not None
@@ -82,6 +95,14 @@ def plan_custom_controller(
     if not region.deformer or not region.mesh:
         raise ValueError("SoftMod 区域须包含变形器和网格路径")
     _position(region.center, "SoftMod 中心")
+    if (not isfinite(region.falloff_radius)
+            or region.falloff_radius <= 0
+            or region.falloff_mode not in (0, 1)):
+        raise ValueError("SoftMod 衰减参数无效")
+    for value, position, interpolation in region.falloff_curve:
+        if (not isfinite(value) or not isfinite(position)
+                or not 0 <= position <= 1 or interpolation < 0):
+            raise ValueError("SoftMod 衰减曲线无效")
     if (isinstance(region.vertex_count, bool)
             or not isinstance(region.vertex_count, int)
             or region.vertex_count < 1 or not region.weights):
@@ -114,7 +135,7 @@ def plan_custom_controller(
             sum((a - b) ** 2 for a, b in zip(joint.center, region.center)),
             joint.path)).path
     joint_name = base_name + "Joint" if kind is CustomControlKind.SKIN else None
-    deformer_name = (region.deformer if kind is CustomControlKind.SOFT_MOD
+    deformer_name = (base_name + "SoftMod" if kind is CustomControlKind.SOFT_MOD
                      else base_name + "Cluster"
                      if kind is CustomControlKind.CLUSTER else None)
     return CustomControllerPlan(kind, region, parent,

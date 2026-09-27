@@ -63,6 +63,8 @@ ADV_OPERATIONS = {
         ("应用 Delta Mush", 1, "05 · Delta Mush"),),
     ("Body", "Custom Controllers"): (
         ("创建 SoftMod Control", 0, "06 · Custom Controllers"),
+        ("创建 Cluster Control", 0, "06 · Custom Controllers"),
+        ("创建 Skin Control", 0, "06 · Custom Controllers"),
         ("Add influenced object", 0, "06 · Custom Controllers")),
     ("Body", "Control Curves"): (
         ("缩放控制曲线", 0, "07 · Control Curves"),
@@ -113,6 +115,8 @@ ADV_OPERATIONS = {
         ("合并资产版本", 3, "06 · 合并同一目标的三个版本")),
     ("Face", "Custom Controllers"): (
         ("创建 SoftMod Control", 0, "06 · Custom Controllers"),
+        ("创建 Cluster Control", 0, "06 · Custom Controllers"),
+        ("创建 Skin Control", 0, "06 · Custom Controllers"),
         ("Add influenced object", 0, "06 · Custom Controllers")),
     ("Pose", "Driving Systems"): (
         ("启用四肢动画", 2, "03 · 动画通道"),
@@ -264,6 +268,7 @@ def create_adv_panel(controller=None):
                     pass
                 self.detail.tabs.tabBar().hide()
             self.detail.tabs.setCurrentIndex(tab)
+            self.detail.custom_control_face = section == "Face"
             self.detail.setWindowTitle("AdvancedSkeleton Python / " + section +
                                        (" / " + subsection if subsection else ""))
             self.detail.findChild(QtWidgets.QLabel, "Title").setText(
