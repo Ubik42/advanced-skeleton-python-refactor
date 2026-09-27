@@ -15,8 +15,10 @@ from adv_py.core.fit_part import (
     FitPartReparentSpec,
     audit_fit_part_hierarchy,
     plan_fit_part_final_paths,
+    rebase_body_snapshot_after_parts,
 )
 from .body_skeleton import BodySkeletonBuildPlan
+from .body_rig_validation import body_bind_pose_matches
 
 
 class FitPartHierarchyHost(Protocol):
@@ -54,6 +56,7 @@ class FitPartHierarchyResult:
     plan: BodySkeletonBuildPlan
     snapshot: FitPartHierarchySnapshot
     final_paths: FitPartFinalPaths
+    body: BodySkeletonSnapshot
 
 
 class BuildFitPartHierarchy:
@@ -115,4 +118,9 @@ class BuildFitPartHierarchy:
                 final_paths=final_paths)
             if issues:
                 raise RuntimeError("Fit Part 写后复检失败：" + "；".join(issues))
-        return FitPartHierarchyResult(plan, snapshot, final_paths)
+            body_after = self._host.capture_body_skeleton(
+                plan.specs[0].name)
+            expected_body = rebase_body_snapshot_after_parts(body, final_paths)
+            if not body_bind_pose_matches(expected_body, body_after):
+                raise RuntimeError("Fit Part 改挂改变 Body 绑定姿态")
+        return FitPartHierarchyResult(plan, snapshot, final_paths, body_after)

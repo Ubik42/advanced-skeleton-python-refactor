@@ -1,9 +1,11 @@
 """Plan 6.925 Fit-driven Part joints before any DCC node is created."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from .body_skeleton import BodyJointSpec, FitDeformProfile
+from .body_skeleton import (
+    BodyJointSpec, BodySkeletonSnapshot, FitDeformProfile,
+)
 from .fit_metadata import FitJointMetadata
 from .fit_symmetry import FitBuildSide, FitSymmetryInstance
 
@@ -94,6 +96,25 @@ class FitPartFinalPaths:
                                                            before + ".")):
                 return after + reference[len(before):]
         return reference
+
+
+def rebase_body_snapshot_after_parts(
+    before: BodySkeletonSnapshot,
+    paths: FitPartFinalPaths,
+) -> BodySkeletonSnapshot:
+    """Express the same bind pose with its post-reparent DAG identities."""
+    rewrites = dict(paths.body_rewrites)
+    if len(rewrites) != len(paths.body_rewrites) or (
+            set(rewrites) != {joint.path for joint in before.joints}):
+        raise FitPartValidationError("Part 路径映射与原 Body 快照不一致")
+    joints = []
+    for joint in before.joints:
+        path = rewrites[joint.path]
+        parent = path.rsplit("|", 1)[0] or None
+        joints.append(replace(joint, path=path, parent_path=parent))
+    if before.root not in rewrites:
+        raise FitPartValidationError("Part 路径映射缺少 Body 根关节")
+    return replace(before, root=rewrites[before.root], joints=tuple(joints))
 
 
 def plan_fit_part_final_paths(
