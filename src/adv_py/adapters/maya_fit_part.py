@@ -10,13 +10,10 @@ from adv_py.core.fit_part import (
 from adv_py.core.body_skeleton import FitDeformProfile
 from adv_py.core.fit_part_twist import FitPartTwistStep
 
-from .maya_body import MayaBodyBuildHost
-
-
 _FIT_PART_KIND = "fit-part-v1"
 
 
-class MayaFitPartHost(MayaBodyBuildHost):
+class MayaFitPartMixin:
     def _unique_fit_part_joint(self, name: str) -> str:
         matches = self._cmds.ls(name, long=True, type="joint") or []
         if len(matches) != 1:

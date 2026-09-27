@@ -1,10 +1,11 @@
 """Plan 6.925 Fit-driven Part joints before any DCC node is created."""
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, is_dataclass, replace
 
 from .body_skeleton import (
     BodyJointSpec, BodySkeletonSnapshot, FitDeformProfile,
+    BodyJointState,
 )
 from .fit_metadata import FitJointMetadata
 from .fit_symmetry import FitBuildSide, FitSymmetryInstance
@@ -115,6 +116,48 @@ def rebase_body_snapshot_after_parts(
     if before.root not in rewrites:
         raise FitPartValidationError("Part 路径映射缺少 Body 根关节")
     return replace(before, root=rewrites[before.root], joints=tuple(joints))
+
+
+def rebase_plan_paths_after_parts(value: object,
+                                  paths: FitPartFinalPaths) -> object:
+    """Rebase immutable rig plans after the physical Body DAG changes.
+
+    Fit source paths are outside the Body rewrite map and remain untouched.
+    Body snapshots and symmetry instances need a new immediate parent, which
+    cannot be obtained by merely replacing the old parent path's prefix.
+    """
+    if isinstance(value, BodySkeletonSnapshot):
+        if {joint.path for joint in value.joints} == {
+                before for before, _ in paths.body_rewrites}:
+            return rebase_body_snapshot_after_parts(value, paths)
+    if isinstance(value, FitSymmetryInstance):
+        output = paths.remap_body_reference(value.output_path)
+        return replace(value, output_path=output,
+                       parent_output_path=output.rsplit("|", 1)[0] or None)
+    if isinstance(value, BodyJointSpec):
+        output = paths.remap_body_reference(value.path)
+        return replace(value, path=output,
+                       parent_path=output.rsplit("|", 1)[0] or None)
+    if isinstance(value, BodyJointState):
+        output = paths.remap_body_reference(value.path)
+        return replace(value, path=output,
+                       parent_path=output.rsplit("|", 1)[0] or None)
+    if isinstance(value, str):
+        return paths.remap_body_reference(value)
+    if isinstance(value, tuple):
+        return tuple(rebase_plan_paths_after_parts(item, paths)
+                     for item in value)
+    if isinstance(value, list):
+        return [rebase_plan_paths_after_parts(item, paths) for item in value]
+    if isinstance(value, dict):
+        return {rebase_plan_paths_after_parts(key, paths):
+                rebase_plan_paths_after_parts(item, paths)
+                for key, item in value.items()}
+    if is_dataclass(value) and not isinstance(value, type):
+        changes = {field.name: rebase_plan_paths_after_parts(
+            getattr(value, field.name), paths) for field in fields(value)}
+        return replace(value, **changes)
+    return value
 
 
 def plan_fit_part_final_paths(

@@ -813,9 +813,7 @@ class MayaFitJointHost:
             for field, spec in _FIT_ATTRIBUTES.items()
             if self._attribute_exists(joint, spec.name)
         }
-        no_flip_present, no_flip = self._inherited_fit_bool(joint, "noFlip")
-        if no_flip_present:
-            present.add(FitJointField.NO_FLIP)
+        _, no_flip = self._inherited_fit_bool(joint, "noFlip")
         return FitJointMetadata(
             joint=joint,
             twist_joints=self._optional_number(joint, "twistJoints", int),

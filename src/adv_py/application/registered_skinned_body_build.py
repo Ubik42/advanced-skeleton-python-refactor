@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from adv_py.core.fit_part_twist import FitPartTwistSource
 
 from .registered_body_build import (BuildRegisteredBodyCharacter,
                                     RegisteredBodyBuildResult,
@@ -59,6 +60,8 @@ class BuildRegisteredSkinnedBodyCharacter:
               include_head_aim: bool = False,
               infer_missing_labels: bool = False,
               include_segment_influences: bool = False,
+              use_fit_part_hierarchy: bool = False,
+              fit_part_twist_sources: tuple[FitPartTwistSource, ...] = (),
               on_stage=None) -> RegisteredSkinnedBodyBuildResult:
         plan = self.plan(meshes, skin_prefix=skin_prefix,
                          maximum_influences=maximum_influences)
@@ -68,7 +71,9 @@ class BuildRegisteredSkinnedBodyCharacter:
                 container_name, axial_description=axial_description,
                 include_head_aim=include_head_aim,
                 infer_missing_labels=infer_missing_labels,
-                include_segment_influences=include_segment_influences)
+                include_segment_influences=include_segment_influences,
+                use_fit_part_hierarchy=use_fit_part_hierarchy,
+                fit_part_twist_sources=fit_part_twist_sources)
             if on_stage:
                 on_stage("rig-built")
             influences = tuple(path for path in (
