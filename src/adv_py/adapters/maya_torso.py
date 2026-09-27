@@ -99,6 +99,14 @@ class MayaBodyTorsoMixin:
                     owner = spec.name if resolved == nodes[0] else resolved
                 inputs.append((plug, owner))
             states.append(BodySpaceAttachmentState(spec.name, kind, sources, tuple(inputs)))
+        fkx = self._cmds.ls(plan.root_fkx_path, long=True,
+                            type="transform") or []
+        if fkx != [plan.root_fkx_path]:
+            raise FitSkeletonValidationError("Root FKX 接收层缺失或不唯一")
+        fkx_parent = self._cmds.listRelatives(
+            fkx[0], parent=True, fullPath=True) or []
         return BodyTorsoSnapshot(
-            self._capture_body_limb_fk_controls(plan.controls, "Torso"), tuple(states),
+            self._capture_body_limb_fk_controls(plan.controls, "Torso"),
+            tuple(states),
+            fkx_parent[0] if fkx_parent else None,
         )

@@ -6193,8 +6193,34 @@ class MayaBodyBuildHost(MayaHipSwingReverseMixin, MayaFitInbetweenMixin, MayaFit
                 )
             self._cmds.setAttr(control + ".rotateOrder", spec.rotate_order)
             self._cmds.setAttr(driven[0] + ".rotateOrder", spec.rotate_order)
+            orientation_source = control
+            if spec.source_override_path is not None:
+                if spec.source_override_path.startswith(control + "|"):
+                    if spec.source_override_path.rsplit("|", 1)[0] != control:
+                        raise FitSkeletonValidationError(
+                            "FK 约束来源只支持控制器的直接子接收层")
+                    orientation_source = self._cmds.createNode(
+                        "transform",
+                        name=spec.source_override_path.rsplit("|", 1)[-1],
+                        parent=control,
+                        skipSelect=True,
+                    )
+                    orientation_source = (
+                        self._cmds.ls(orientation_source, long=True)
+                        or [orientation_source]
+                    )[0]
+                    if orientation_source != spec.source_override_path:
+                        raise RuntimeError("FK 约束接收层路径漂移")
+                else:
+                    matches = self._cmds.ls(
+                        spec.source_override_path, long=True,
+                        type="transform") or []
+                    if matches != [spec.source_override_path]:
+                        raise FitSkeletonValidationError(
+                            "FK 约束来源不存在：" + spec.source_override_path)
+                    orientation_source = matches[0]
             self._cmds.orientConstraint(
-                control,
+                orientation_source,
                 driven[0],
                 maintainOffset=False,
                 name=spec.constraint_name,

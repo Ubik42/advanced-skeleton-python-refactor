@@ -60,11 +60,21 @@ class BodyTorsoPlan:
     spline: BodySplinePlan | None = None
 
     @property
+    def root_fkx_path(self) -> str:
+        root = next(control for control in self.controls.controls
+                    if control.driven_joint == self.pelvis_translation.target)
+        if root.source_override_path is None:
+            raise FitSkeletonValidationError("Torso Root 缺少 FKX 接收层")
+        return root.source_override_path
+
+    @property
     def node_names(self) -> tuple[str, ...]:
         return (self.controls.root_name,) + tuple(
             name for control in self.controls.controls
             for name in (control.offset_name, control.control_name,
-                         control.control_name + "Shape", control.constraint_name)
+                         control.control_name + "Shape", control.constraint_name,
+                         *((control.source_override_path.rsplit("|", 1)[-1],)
+                           if control.source_override_path is not None else ()))
         ) + tuple(item.name for item in (self.pelvis_translation,) + self.attachments) + (self.spine.node_names if self.spine else ()) + (self.head_aim.node_names if self.head_aim else ()) + (self.spline.node_names if self.spline else ())
 
 
@@ -72,6 +82,7 @@ class BodyTorsoPlan:
 class BodyTorsoSnapshot:
     controls: BodyLimbFkControlSnapshot
     attachments: tuple[BodySpaceAttachmentState, ...]
+    root_fkx_parent_path: str | None = None
 
 
 def plan_body_torso(
@@ -103,6 +114,9 @@ def plan_body_torso(
             control_path=f"{parent}|{offset_name}|{control_name}", control_name=control_name,
             parent_path=parent, constraint_name=f"AdvPy_Torso{name}Orient",
             world_position=joint.world_position, world_axes=joint.world_axes, radius=float(radius),
+            source_override_path=(
+                f"{parent}|{offset_name}|{control_name}|AdvPy_RootFKX"
+                if name == "Root_M" else None),
         )
         by_joint[name] = spec
         controls.append(spec)
@@ -137,6 +151,8 @@ def plan_body_torso(
 
 def audit_body_torso(plan: BodyTorsoPlan, snapshot: BodyTorsoSnapshot) -> tuple[str, ...]:
     issues = [item.message for item in audit_body_limb_fk_controls(plan.controls, snapshot.controls, limb_label="Torso")]
+    if snapshot.root_fkx_parent_path != plan.root_fkx_path.rsplit("|", 1)[0]:
+        issues.append("Root FKX 接收层父链不一致")
     specs = (plan.pelvis_translation,) + plan.attachments
     if tuple(item.name for item in snapshot.attachments) != tuple(spec.name for spec in specs):
         issues.append("Torso 空间连接集合不一致")
