@@ -12,6 +12,70 @@ class EyeLidLoop:
     lower_vertices: tuple[int, ...]
 
 
+def eye_lid_blink_offsets(
+    upper: tuple[int, ...], lower: tuple[int, ...],
+    positions: dict[int, tuple[float, float, float]],
+    *, upper_share: float = .7,
+) -> dict[str, tuple[float, ...]]:
+    """Return vertical displacements that meet both arcs at one closure line."""
+    if not 0. < upper_share < 1. or min(len(upper), len(lower)) < 3:
+        raise ValueError("眼睑闭合弧或上眼睑闭合比例无效")
+    try:
+        rows = {
+            "upper": sorted((positions[index][0], positions[index][1])
+                            for index in upper),
+            "lower": sorted((positions[index][0], positions[index][1])
+                            for index in lower),
+        }
+    except KeyError as error:
+        raise ValueError("眼睑闭合弧缺少顶点坐标") from error
+    if any(not all(isfinite(value) for value in row)
+           for arc in rows.values() for row in arc):
+        raise ValueError("眼睑闭合弧坐标无效")
+    for name, arc in rows.items():
+        grouped = []
+        for x, y in arc:
+            if grouped and x - grouped[-1][0] <= 1e-9:
+                prior_x, total_y, count = grouped[-1]
+                grouped[-1] = (prior_x, total_y + y, count + 1)
+            else:
+                grouped.append((x, y, 1))
+        if len(grouped) < 2:
+            raise ValueError("眼睑闭合弧缺少水平跨度")
+        rows[name] = [(x, total_y / count)
+                      for x, total_y, count in grouped]
+
+    def sample(arc: str, x: float) -> float:
+        points = rows[arc]
+        if x <= points[0][0]:
+            return points[0][1]
+        if x >= points[-1][0]:
+            return points[-1][1]
+        for first, second in zip(points, points[1:]):
+            if x <= second[0]:
+                t = (x - first[0]) / (second[0] - first[0])
+                return first[1] + t * (second[1] - first[1])
+        raise AssertionError("眼睑闭合插值未找到区间")
+
+    offsets = {}
+    for arc, vertices in (("upper", upper), ("lower", lower)):
+        values = []
+        for index, vertex in enumerate(vertices):
+            if index in (0, len(vertices) - 1):
+                values.append(0.)
+                continue
+            x, current_y = positions[vertex][:2]
+            upper_y = sample("upper", x)
+            lower_y = sample("lower", x)
+            if upper_y + 1e-6 < lower_y:
+                raise ValueError("眼睑上下弧交叉，不能生成闭合线")
+            meeting_y = ((1. - upper_share) * upper_y
+                         + upper_share * lower_y)
+            values.append(meeting_y - current_y)
+        offsets[arc] = tuple(values)
+    return offsets
+
+
 def eye_lid_area_faces(
     face_edges: tuple[tuple[int, ...], ...],
     edge_faces: tuple[tuple[int, ...], ...],

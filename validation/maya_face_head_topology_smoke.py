@@ -204,6 +204,7 @@ def main() -> None:
         assert MayaDenseSkinHost().capture_dense_skin(source_skin) == original_weights
         lid_rig = controller.face_build_eye_lids(":")
         assert len(lid_rig["controls"]) == 8
+        assert len(lid_rig["eye_controls"]) == 2
         assert len(lid_rig["work_curves"]) == 8
         assert len(lid_rig["joints"]) >= 16
         skinned = MayaDenseSkinHost().capture_dense_skin(source_skin)
@@ -275,10 +276,60 @@ def main() -> None:
             reset = mesh_points()
             assert max(abs(reset[index][1]-neutral[index][1])
                        for index in range(len(reset))) < 1e-5
+        def middle_gap(side, layer):
+            def points(arc):
+                curve = lid_rig["work_curves"][(side, layer, arc)]
+                return sorted((cmds.pointPosition(cv, world=True)[0],
+                               cmds.pointPosition(cv, world=True)[1])
+                              for cv in cmds.ls(curve + ".cv[*]", flatten=True))
+            upper, lower = points("upper"), points("lower")
+            x = (max(upper[0][0], lower[0][0])
+                 + min(upper[-1][0], lower[-1][0])) / 2.
+            def height(rows):
+                for first, second in zip(rows, rows[1:]):
+                    if first[0] <= x <= second[0]:
+                        t = (x - first[0]) / (second[0] - first[0])
+                        return first[1] + t * (second[1] - first[1])
+                raise AssertionError("眨眼采样点不在曲线上")
+            return height(upper) - height(lower)
+        blink_results = {}
+        for side in FaceSide:
+            eye_control = lid_rig["eye_controls"][side]
+            before_gap = middle_gap(side, EyeLidLayer.MAIN)
+            before_outer = middle_gap(side, EyeLidLayer.OUTER)
+            assert before_gap > .005
+            assert before_outer > .005
+            cmds.setAttr(eye_control + ".blink", 10)
+            after_gap = middle_gap(side, EyeLidLayer.MAIN)
+            after_outer = middle_gap(side, EyeLidLayer.OUTER)
+            assert abs(after_gap) < before_gap * .1
+            assert abs(after_outer) < before_outer * .1
+            moved = mesh_points()
+            own = [index for index, point in enumerate(neutral)
+                   if (point[0] < 0) == (side is FaceSide.RIGHT)]
+            other = [index for index, point in enumerate(neutral)
+                     if (point[0] < 0) != (side is FaceSide.RIGHT)]
+            own_delta = max(abs(moved[index][1] - neutral[index][1])
+                            for index in own)
+            other_delta = max(abs(moved[index][1] - neutral[index][1])
+                              for index in other)
+            assert own_delta > .005 and other_delta < 1e-5
+            blink_results[side.value] = {
+                "open_gap_cm": round(before_gap, 6),
+                "closed_gap_cm": round(after_gap, 6),
+                "outer_open_gap_cm": round(before_outer, 6),
+                "outer_closed_gap_cm": round(after_outer, 6),
+                "mesh_delta_cm": round(own_delta, 6),
+            }
+            cmds.setAttr(eye_control + ".blink", 0)
+            assert abs(middle_gap(side, EyeLidLayer.MAIN)-before_gap) < 1e-5
         animated = lid_rig["controls"][(FaceSide.RIGHT,
                                         EyeLidLayer.MAIN, "upper")]
         cmds.setKeyframe(animated, attribute="translateY", time=1, value=0)
         cmds.setKeyframe(animated, attribute="translateY", time=5, value=-.05)
+        eye_animated = lid_rig["eye_controls"][FaceSide.LEFT]
+        cmds.setKeyframe(eye_animated, attribute="blink", time=1, value=0)
+        cmds.setKeyframe(eye_animated, attribute="blink", time=5, value=10)
         cmds.file(rename=str(scene))
         cmds.file(save=True, type="mayaBinary", force=True)
         cmds.file(str(scene), open=True, force=True,
@@ -303,11 +354,13 @@ def main() -> None:
                         for index in range(len(frame1))
                         if frame1[index][0] < 0)
         assert key_delta > .005
+        assert abs(cmds.getAttr("ctrlEye_L.blink")-10) < 1e-6
         result = {"head_vertex_count": int(cmds.polyEvaluate(head, vertex=True)),
                   "head_face_count": int(cmds.polyEvaluate(head, face=True)),
                   "mask_face_count": len(mask_faces), "sides": rows,
                   "face_build_readiness": readiness,
                   "eyelid_deformation_cm": displacement,
+                  "blink": blink_results,
                   "curve_joint_max_error_cm": round(curve_joint_error, 8),
                   "eyelid_joint_count": len(lid_rig["joints"]),
                   "weighted_vertices": changed_vertices,

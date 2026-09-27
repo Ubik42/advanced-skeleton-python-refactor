@@ -8,7 +8,8 @@ import re
 from adv_py.application.face_pre import EyeLidLayer, FacePreRole, FaceSide
 from adv_py.core.dense_skin_transfer import DenseSkinWeights
 from adv_py.core.face_build_requirements import FaceInclude
-from adv_py.core.face_eyelid_fit import order_eye_lid_loop
+from adv_py.core.face_eyelid_fit import (
+    eye_lid_blink_offsets, order_eye_lid_loop)
 from adv_py.core.face_eyelid_skin import (
     eyelid_skin_factors, outer_eyelid_skin_factors, split_arc_weight)
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -158,9 +159,17 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
                     if sum(pair) > 1e-9}
         if weighted(FaceSide.RIGHT) & weighted(FaceSide.LEFT):
             raise FitSkeletonValidationError("左右眼睑区域发生重叠")
+        blink_offsets = {}
+        for side in FaceSide:
+            for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
+                blink_offsets[(side, layer)] = eye_lid_blink_offsets(
+                    arcs[side][(layer, "upper")],
+                    arcs[side][(layer, "lower")], positions[side])
         names = ["FaceJoint_M", "EyeLidJoints_M", "FaceMotionSystem"]
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
+            names.extend(("ctrlEye" + suffix,
+                          "ctrlEye" + suffix + "_Offset"))
             for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
                 for arc in ("upper", "lower"):
                     label = "Upper" if arc == "upper" else "Lower"
@@ -171,7 +180,8 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
                     names.append(curve_name)
                     for index in range(len(arcs[side][(layer, arc)])):
                         names.extend((curve_name + str(index) + "Scale",
-                                      curve_name + str(index) + "Sum"))
+                                      curve_name + str(index) + "Sum",
+                                      curve_name + str(index) + "Blink"))
                     for index in range(1, len(arcs[side][(layer, arc)]) - 1):
                         name = arc + "Lid" + layer.value + str(index) + suffix
                         names.extend((name, name + "POCI", name + "Offset"))
@@ -181,6 +191,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
         selected = c.ls(selection=True, long=True) or []
         joint_names = {}
         control_names = {}
+        eye_control_names = {}
         work_curves = {}
         with self.transaction("建立双侧多关节眼睑与 Skin"):
             self._transaction_changed = True
@@ -196,6 +207,20 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
                                   parent=head)
             for side in FaceSide:
                 suffix = "_R" if side is FaceSide.RIGHT else "_L"
+                eye_name = "ctrlEye" + suffix
+                eye_control = c.circle(name=eye_name, normal=(0, 0, 1),
+                    radius=max(spans[side] / 5., .01),
+                    constructionHistory=False)[0]
+                eye_offset = c.createNode("transform",
+                    name=eye_name + "_Offset", parent=motion)
+                eye_center = c.xform(pre.read_eye_ball_fit(side), query=True,
+                                     worldSpace=True, translation=True)
+                c.xform(eye_offset, worldSpace=True, translation=eye_center)
+                eye_control = c.parent(eye_control, eye_offset, relative=True)[0]
+                c.addAttr(eye_control, longName="blink", attributeType="double",
+                          minValue=0, maxValue=10, defaultValue=0, keyable=True)
+                eye_control_names[side] = (
+                    c.ls(eye_control, long=True, type="transform") or [eye_control])[0]
                 for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
                     for arc in ("upper", "lower"):
                         vertices = arcs[side][(layer, arc)]
@@ -242,6 +267,14 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
                                       type="double3")
                             c.connectAttr(scale + ".output",
                                           addition + ".input3D[1]")
+                            blink = c.createNode("multiplyDivide",
+                                name=curve_name + str(index) + "Blink")
+                            c.setAttr(blink + ".input2Y",
+                                blink_offsets[(side, layer)][arc][index] / 10.)
+                            c.connectAttr(eye_control + ".blink",
+                                          blink + ".input1Y")
+                            c.connectAttr(blink + ".outputY",
+                                          addition + ".input3D[2].input3Dy")
                             c.connectAttr(addition + ".output3D", point_plug)
                         for index, vertex in enumerate(vertices[1:-1], 1):
                             name = arc + "Lid" + layer.value + str(index) + suffix
@@ -314,6 +347,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
             c.select(selected, replace=True) if selected else c.select(clear=True)
         return {"skin": skin, "mesh": mesh,
                 "controls": control_names, "joints": joint_names,
+                "eye_controls": eye_control_names,
                 "work_curves": work_curves,
                 "area_vertices": {side.value: len(weighted(side))
                                   for side in FaceSide},

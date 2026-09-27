@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from adv_py.core.face_eyelid_fit import (eye_lid_area_faces,
+                                          eye_lid_blink_offsets,
                                           order_eye_lid_loop)
 
 
@@ -67,6 +68,17 @@ class EyeLidLoopTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "封闭|围住"):
             eye_lid_area_faces(faces, edges, outer_edges=(0,),
                                main_edges=(2,), inner_edges=(1,))
+
+    def test_blink_meets_at_common_height_and_keeps_corners(self):
+        points = {0: (0., 0., 0.), 1: (1., 2., 0.),
+                  2: (2., 0., 0.), 3: (1., -1., 0.)}
+        offsets = eye_lid_blink_offsets((0, 1, 2), (0, 3, 2), points)
+        self.assertEqual(offsets["upper"][::2], (0., 0.))
+        self.assertEqual(offsets["lower"][::2], (0., 0.))
+        self.assertAlmostEqual(points[1][1] + offsets["upper"][1], -.1)
+        self.assertAlmostEqual(points[3][1] + offsets["lower"][1], -.1)
+        with self.assertRaisesRegex(ValueError, "交叉"):
+            eye_lid_blink_offsets((0, 3, 2), (0, 1, 2), points)
 
 
 if __name__ == "__main__":
