@@ -8,6 +8,7 @@ from adv_py.core.fit_inbetween import (
 )
 from adv_py.core.fit_orientation import FitOrientationSnapshot
 from adv_py.core.fit_inbetween_bias import InbetweenBiasPlan
+from adv_py.core.fit_inbetween_fk_anchor import InbetweenFkAnchorPlan
 from adv_py.core.fit_inbetween_matrix import (
     InbetweenMatrixDestination, InbetweenMatrixPlan,
     InbetweenMatrixStep,
@@ -16,6 +17,71 @@ from adv_py.core.joint_labels import JointLabel
 
 
 class MayaFitInbetweenMixin:
+    def preflight_inbetween_fk_anchor(
+        self, plan: InbetweenFkAnchorPlan
+    ) -> None:
+        c = self._cmds
+        offsets = c.ls(plan.fk_offset_path, long=True,
+                       type="transform") or []
+        controls = c.ls(plan.fk_control_path, long=True,
+                        type="transform") or []
+        if (offsets != [plan.fk_offset_path]
+                or controls != [plan.fk_control_path]):
+            raise ValueError("Inbetween FK 起点控制层不存在："
+                             + plan.start_body_name)
+        names = (plan.base_name, plan.target_name,
+                 plan.extra_name, plan.fkx_name)
+        if len(set(names)) != len(names) or any(
+                c.objExists(name) for name in names):
+            raise ValueError("Inbetween FK 起点层名称冲突："
+                             + plan.start_body_name)
+        if not c.objExists(plan.fk_offset_path + ".offsetParentMatrix"):
+            raise ValueError("Inbetween FK 起点不支持矩阵驱动："
+                             + plan.fk_offset_path)
+
+    def create_inbetween_fk_anchor(
+        self, plan: InbetweenFkAnchorPlan
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        base = c.createNode("transform", name=plan.base_name,
+                            parent=plan.fk_offset_path, skipSelect=True)
+        extra = c.createNode("transform", name=plan.extra_name,
+                             parent=plan.fk_offset_path, skipSelect=True)
+        target = c.createNode("transform", name=plan.target_name,
+                              parent=plan.fk_control_path, skipSelect=True)
+        fkx = c.createNode("joint", name=plan.fkx_name,
+                           parent=plan.fk_offset_path, skipSelect=True)
+        self._transaction_changed = True
+        c.setAttr(fkx + ".drawStyle", 2)
+        c.setAttr(fkx + ".segmentScaleCompensate", 0)
+        c.setAttr(fkx + ".rotateOrder", plan.rotate_order)
+        # All four nodes start with identity local transforms. FKX's OPM
+        # receives the world blend converted through Extra's parent inverse.
+        for node in (base, extra, target, fkx):
+            c.setAttr(node + ".translate", 0.0, 0.0, 0.0,
+                      type="double3")
+            c.setAttr(node + ".rotate", 0.0, 0.0, 0.0,
+                      type="double3")
+
+    def capture_inbetween_fk_anchor(
+        self, plan: InbetweenFkAnchorPlan
+    ) -> tuple[str | None, ...]:
+        c = self._cmds
+        for name, parent_name, node_type in (
+            (plan.base_name, plan.fk_offset_path, "transform"),
+            (plan.target_name, plan.fk_control_path, "transform"),
+            (plan.extra_name, plan.fk_offset_path, "transform"),
+            (plan.fkx_name, plan.fk_offset_path, "joint"),
+        ):
+            nodes = c.ls(name, long=True, type=node_type) or []
+            if len(nodes) != 1 or (c.listRelatives(
+                    nodes[0], parent=True, fullPath=True) or []) != [
+                    parent_name]:
+                return (None, None, None, None)
+        return (plan.base_world_plug, plan.target_world_plug,
+                plan.parent_inverse_plug, plan.start_fkx_opm_plug)
+
     def preflight_inbetween_matrix_destinations(
         self, destinations: tuple[InbetweenMatrixDestination, ...]
     ) -> None:
