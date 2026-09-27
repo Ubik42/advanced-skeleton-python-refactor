@@ -25,13 +25,15 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 from .maya_dense_skin import MayaDenseSkinHost
 from .maya_face_build import MayaFaceBuildHost
 from .maya_face_pre import MayaFacePreHost
+from .maya_face_lower_outer_auxiliary import MayaFaceLowerOuterAuxiliaryMixin
 
 
 _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
 _CLOSED_LOWER_UPWARD_FOLLOW = .6
 
 
-class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
+class MayaFaceEyeLidRigHost(MayaFaceLowerOuterAuxiliaryMixin,
+                            MayaDenseSkinHost, MayaFacePreHost):
     def _repair_eye_lid_normals(self, mesh: str, pre: MayaFaceBuildHost,
                                 eye_radii: dict[FaceSide, float],
                                 mobile_inners: dict[FaceSide, bool],
