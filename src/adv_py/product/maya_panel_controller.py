@@ -833,6 +833,13 @@ class MayaPanelController:
         return MayaFacePreHost(namespace=None if namespace == ":" else namespace
             ).select_eye_lid_fit(EyeLidLayer(layer))
 
+    def face_fit_mirror_right_to_left(self, namespace: str,
+                                      left_eye_mesh: str) -> dict:
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+
+        return MayaFacePreHost(namespace=None if namespace == ":" else namespace
+            ).mirror_right_eye_fit_to_left(left_eye_mesh)
+
     def face_build_set_include(self, namespace: str, include: str) -> str:
         from adv_py.adapters.maya_face_build import MayaFaceBuildHost
         from adv_py.core.face_build_requirements import FaceInclude

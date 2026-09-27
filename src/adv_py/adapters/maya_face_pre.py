@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 import re
 
 from adv_py.application.face_pre import EyeLidLayer, FacePreRole, FaceSide
-from adv_py.core.face_eyelid_fit import EyeLidLoop, eye_lid_area_faces
+from adv_py.core.face_eyelid_fit import (
+    EyeLidLoop, eye_lid_area_faces, order_eye_lid_loop)
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .maya_face import MayaFaceHost
@@ -308,7 +310,8 @@ class MayaFacePreHost(MayaFaceHost):
                        for axis in range(3))
         if c.referenceQuery(fit, isNodeReferenced=True):
             raise FitSkeletonValidationError("不能在引用中的 FaceFitSkeleton 创建眼球 Fit")
-        with self.transaction("建立 Face EyeBall Fit"):
+        with (nullcontext() if self._transaction_active else
+              self.transaction("建立 Face EyeBall Fit")):
             self._transaction_changed = True
             holder = c.createNode("transform", name="FaceFitEyeBall" + suffix,
                                   parent=fit)
@@ -435,7 +438,8 @@ class MayaFacePreHost(MayaFaceHost):
         if c.referenceQuery(fit, isNodeReferenced=True):
             raise FitSkeletonValidationError("不能在引用的 FaceFitSkeleton 下建立眼睑")
         selected = c.ls(selection=True, long=True) or []
-        with self.transaction("建立 EyeLid " + part + " Fit"):
+        with (nullcontext() if self._transaction_active else
+              self.transaction("建立 EyeLid " + part + " Fit")):
             self._transaction_changed = True
             holder = c.createNode("transform", name=holder_name, parent=fit)
             geo_holder = c.createNode("transform", name=geo_name,
@@ -488,6 +492,137 @@ class MayaFacePreHost(MayaFaceHost):
                 separators=(",", ":")), type="string")
             c.select(selected, replace=True) if selected else c.select(clear=True)
         return tuple(paths)
+
+    def mirror_right_eye_fit_to_left(self, left_eye_mesh: str) -> dict:
+        """Build left EyeBall and eyelid Fit on a symmetric Face mesh."""
+        from maya.api import OpenMaya as om
+
+        c = self._cmds
+        fit = self._fit(required=True)
+        if (c.attributeQuery("NonSym", node=fit, exists=True)
+                and c.getAttr(fit + ".NonSym")):
+            raise FitSkeletonValidationError("非对称 Face Fit 应单独编辑左侧")
+        if c.referenceQuery(fit, isNodeReferenced=True):
+            raise FitSkeletonValidationError("不能镜像引用中的 Face Fit")
+        mesh = self.read_face_objects(FacePreRole.FACE)[0]
+        self.read_eye_ball_fit(FaceSide.RIGHT)
+        if c.ls("FaceFitEyeBallLeft", long=True):
+            raise FitSkeletonValidationError("左侧 Face Fit 已存在")
+        eye_meshes = c.ls(left_eye_mesh, long=True, type="transform") or []
+        heads = c.ls(c.getAttr(fit + ".HeadJoint"), long=True,
+                     type="joint") or []
+        if len(eye_meshes) != 1 or len(heads) != 1:
+            raise FitSkeletonValidationError("镜像眼睑需要唯一左眼网格和 Head 关节")
+        shape = (c.listRelatives(mesh, shapes=True, noIntermediate=True,
+                                 fullPath=True, type="mesh") or [None])[0]
+        selection = om.MSelectionList()
+        selection.add(shape)
+        mesh_fn = om.MFnMesh(selection.getDagPath(0))
+        points = [tuple(float(mesh_fn.getPoint(index, om.MSpace.kWorld)[axis])
+                        for axis in range(3))
+                  for index in range(mesh_fn.numVertices)]
+        edge_lookup = {tuple(sorted(mesh_fn.getEdgeVertices(index))): index
+                       for index in range(mesh_fn.numEdges)}
+        right_rows = {}
+        vertices = set()
+        for layer in EyeLidLayer:
+            self.read_eye_lid_fit(layer, FaceSide.RIGHT)
+            holder = (c.ls("FaceFitEyeLid" + layer.value,
+                           long=True, type="transform") or [None])[0]
+            if int(c.getAttr(holder + ".advPyFaceCount")) != mesh_fn.numPolygons:
+                raise FitSkeletonValidationError("右侧眼睑 Fit 与 Face 面数不一致")
+            record = (c.getAttr(holder + ".selection") or "").split()
+            edges, corners = [], []
+            for item in record:
+                edge = _EDGE_PATTERN.fullmatch(item)
+                corner = _VERTEX_PATTERN.fullmatch(item)
+                if edge and edge.group("mesh") == mesh:
+                    index = int(edge.group("index"))
+                    if index >= mesh_fn.numEdges:
+                        raise FitSkeletonValidationError("右侧眼睑边索引无效")
+                    first, second = mesh_fn.getEdgeVertices(index)
+                    edges.append((index, first, second))
+                    vertices.update((first, second))
+                elif corner and corner.group("mesh") == mesh:
+                    index = int(corner.group("index"))
+                    if index >= mesh_fn.numVertices:
+                        raise FitSkeletonValidationError("右侧眼角顶点索引无效")
+                    corners.append(index)
+                    vertices.add(index)
+                else:
+                    raise FitSkeletonValidationError("右侧眼睑选择记录无效")
+            expected = [tuple(row) for row in json.loads(
+                c.getAttr(holder + ".advPyEdgeVertices"))]
+            observed = [(index, *sorted((first, second)))
+                        for index, first, second in sorted(edges)]
+            if not edges or observed != expected:
+                raise FitSkeletonValidationError("右侧眼睑边连接已改变")
+            right_rows[layer] = (tuple(edges), tuple(corners))
+        bounds = c.exactWorldBoundingBox(eye_meshes[0])
+        if (bounds[0] + bounds[3]) / 2. <= 1e-6:
+            raise FitSkeletonValidationError("所选左眼网格必须位于正 X 侧")
+        diameter = max(bounds[index + 3] - bounds[index]
+                       for index in range(3))
+        tolerance = max(diameter * .05, 1e-4)
+        candidates = [index for index, point in enumerate(points)
+                      if point[0] > 1e-6]
+        if not candidates:
+            raise FitSkeletonValidationError("Face 网格缺少左侧顶点")
+        mirrored = {}
+        maximum_distance = 0.
+        for vertex in sorted(vertices):
+            source = points[vertex]
+            if source[0] >= -1e-6:
+                raise FitSkeletonValidationError("右侧眼睑 Fit 跨越对称中线")
+            target = (-source[0], source[1], source[2])
+            counterpart = min(candidates, key=lambda index:
+                sum((points[index][axis] - target[axis]) ** 2
+                    for axis in range(3)))
+            distance_sq = sum((points[counterpart][axis] - target[axis]) ** 2
+                              for axis in range(3))
+            if distance_sq > tolerance * tolerance:
+                raise FitSkeletonValidationError(
+                    f"Face 网格左右眼睑顶点不对称：右顶点 {vertex} "
+                    f"镜像距离 {distance_sq ** .5:.6f} cm，"
+                    f"容差 {tolerance:.6f} cm")
+            maximum_distance = max(maximum_distance, distance_sq ** .5)
+            mirrored[vertex] = counterpart
+        if len(set(mirrored.values())) != len(mirrored):
+            raise FitSkeletonValidationError("镜像眼睑顶点映射不唯一")
+        eye_y = (bounds[1] + bounds[4]) / 2.
+        left_rows = {}
+        for layer, (edges, corners) in right_rows.items():
+            reflected = []
+            for _, first, second in edges:
+                left_first, left_second = mirrored[first], mirrored[second]
+                edge_id = edge_lookup.get(tuple(sorted((left_first,
+                                                        left_second))))
+                if edge_id is None:
+                    raise FitSkeletonValidationError("镜像侧缺少对应眼睑边")
+                reflected.append((edge_id, left_first, left_second))
+            left_corners = tuple(mirrored[index] for index in corners)
+            left_positions = {index: points[index] for _, first, second in
+                              reflected for index in (first, second)}
+            loop = order_eye_lid_loop(tuple(reflected), left_positions,
+                eye_center_y=eye_y, corner_vertices=left_corners,
+                side=FaceSide.LEFT.value)
+            left_rows[layer] = (loop, left_positions,
+                                tuple(reflected), left_corners)
+        selected = c.ls(selection=True, long=True) or []
+        with self.transaction("从右侧镜像生成左侧眼睑 Fit"):
+            self._transaction_changed = True
+            if not c.attributeQuery("NonSymSide", node=fit, exists=True):
+                c.addAttr(fit, longName="NonSymSide", dataType="string")
+            c.setAttr(fit + ".NonSymSide", "Left", type="string")
+            self.create_eye_ball_fit(eye_meshes[0], heads[0], FaceSide.LEFT)
+            for layer in EyeLidLayer:
+                self.create_eye_lid_fit(layer, mesh, *left_rows[layer])
+            c.setAttr(fit + ".NonSymSide", "Right", type="string")
+            c.select(selected, replace=True) if selected else c.select(clear=True)
+        return {"mapped_vertices": len(mirrored),
+                "layers": tuple(layer.value for layer in EyeLidLayer),
+                "maximum_distance_cm": maximum_distance,
+                "tolerance_cm": tolerance}
 
     def _eye_lid_area_faces(self, mesh: str, inner_edges: tuple[int, ...],
                             side: FaceSide) -> tuple[int, ...]:

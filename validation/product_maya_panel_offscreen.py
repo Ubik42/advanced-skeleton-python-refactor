@@ -45,6 +45,12 @@ class FakeController:
                 "controls": tuple(range(8)), "eye_controls": ("R", "L"),
                 "joints": tuple(range(82))}
 
+    def face_fit_mirror_right_to_left(self, namespace, left_eye_mesh):
+        self.calls.append(("face_fit_mirror_right_to_left", namespace,
+                           left_eye_mesh))
+        return {"mapped_vertices": 55,
+                "layers": ("Outer", "Main", "Inner")}
+
     def model_check(self):
         self.calls.append("model_check")
         return ModelCheckResult("|Model|Body", 8,
@@ -377,6 +383,8 @@ def main(report: Path) -> int:
                panel.findChildren(QtWidgets.QPushButton)}
     panel.roles.setCurrentRow(1)
     panel.face_include.setCurrentText("Skip Above+Below Eyes")
+    panel.face_fit_left_eye.setText("|hero:LeftEye")
+    buttons["对称角色：右侧 Fit 镜像到左侧"].click()
     buttons["检查 FaceSetup 输入"].click()
     buttons["建立双侧眼睑关节与蒙皮"].click()
     buttons["构建面部控制"].click()
@@ -507,6 +515,9 @@ def main(report: Path) -> int:
             ("face_build_inspect_inputs", "hero"))),
         "face_eye_lid_build_dispatches":
             ("face_build_eye_lids", "hero") in controller.calls,
+        "face_eye_lid_mirror_dispatches":
+            ("face_fit_mirror_right_to_left", "hero", "|hero:LeftEye")
+            in controller.calls,
         "fit_edit_actions_dispatch": all(call in controller.calls for call in (
             ("fit_edit_positions", "hero", (("Spine1", (0., 0., 8.)),),
              "FitSkeleton"),

@@ -818,6 +818,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 row.addWidget(self._button("重选 " + layer,
                     lambda layer=layer: self._face_fit_eye_lid_reselect(layer)))
                 form.addRow(row)
+            form.addRow(self._button("对称角色：右侧 Fit 镜像到左侧",
+                                     self._face_fit_mirror_right_to_left))
             stack.addWidget(group)
             self.face_neutral = QtWidgets.QLineEdit()
             self.face_neutral.setPlaceholderText("|FaceNeutral")
@@ -1589,6 +1591,13 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.face_fit_head.text().strip())
             eye_label = "左眼" if side == "Left" else "右眼"
             return f"已建立{eye_label} EyeBall Fit：" + path
+
+        def _face_fit_mirror_right_to_left(self):
+            result = self.controller.face_fit_mirror_right_to_left(
+                self._namespace(), self.face_fit_left_eye.text().strip())
+            return ("已镜像左右眼睑 Fit："
+                    + f"{result['mapped_vertices']} 个对应顶点、"
+                    + f"{len(result['layers'])} 层闭合边环")
 
         def _face_fit_switch_side(self, side):
             current = self.controller.face_fit_switch_side(self._namespace(), side)

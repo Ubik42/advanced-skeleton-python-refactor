@@ -127,10 +127,17 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost):
         if not readiness["ready"]:
             raise FitSkeletonValidationError("FaceSetup 输入缺失："
                                              + "、".join(readiness["missing"]))
-        if (pre.read_include() is not FaceInclude.EYES_ONLY
-                or not readiness["non_symmetrical"]):
+        if pre.read_include() is not FaceInclude.EYES_ONLY:
             raise FitSkeletonValidationError(
-                "当前眼睑构建阶段需要 Skip Above+Below Eyes 与左右独立 Fit")
+                "当前眼睑构建阶段需要 Skip Above+Below Eyes")
+        if not readiness["non_symmetrical"]:
+            try:
+                pre.read_eye_ball_fit(FaceSide.LEFT)
+                for layer in EyeLidLayer:
+                    pre.read_eye_lid_fit(layer, FaceSide.LEFT)
+            except FitSkeletonValidationError as error:
+                raise FitSkeletonValidationError(
+                    "对称角色先镜像右侧 Fit 到左侧") from error
         mesh = pre.read_face_objects(FacePreRole.FACE)[0]
         fit = pre._fit(required=True)
         head_name = c.getAttr(fit + ".HeadJoint")

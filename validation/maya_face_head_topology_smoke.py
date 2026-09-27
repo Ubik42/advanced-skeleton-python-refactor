@@ -98,6 +98,7 @@ def main() -> None:
     head_source = Path(sys.argv[1]).resolve()
     eyes_source = Path(sys.argv[2]).resolve()
     output = Path(sys.argv[3]).resolve()
+    symmetric = len(sys.argv) > 4 and sys.argv[4] == "symmetric"
     if not head_source.is_file() or not eyes_source.is_file():
         raise FileNotFoundError("头部或双眼 OBJ 缺失")
     with TemporaryDirectory(prefix="advpy-head-face-") as folder:
@@ -146,6 +147,8 @@ def main() -> None:
         rows = []
         for side, eye in ((FaceSide.RIGHT, right_eye),
                           (FaceSide.LEFT, left_eye)):
+            if symmetric and side is FaceSide.LEFT:
+                continue
             if side is FaceSide.LEFT:
                 controller.face_fit_switch_side(":", "Left")
             eye_fit = controller.face_fit_eye_ball(":", eye, head_joint)
@@ -177,6 +180,19 @@ def main() -> None:
                 "area_faces": int(cmds.polyEvaluate(area, face=True)),
                 "preview_faces": int(cmds.polyEvaluate(preview, face=True)),
             })
+        mirror_result = None
+        if symmetric:
+            mirror_result = controller.face_fit_mirror_right_to_left(
+                ":", left_eye)
+            assert mirror_result["mapped_vertices"] >= 20
+            assert len(mirror_result["layers"]) == 3
+            assert mirror_result["maximum_distance_cm"] \
+                <= mirror_result["tolerance_cm"]
+            cmds.undo()
+            assert not cmds.objExists("FaceFitEyeLidInnerLeft")
+            cmds.redo()
+            assert MayaFacePreHost().read_eye_lid_fit(
+                EyeLidLayer.INNER, FaceSide.LEFT)
         incomplete = controller.face_build_inspect_inputs(":")
         assert not incomplete["ready"] and "FaceFitJaw" in incomplete["missing"]
         assert controller.face_build_set_include(":", FaceInclude.EYES_ONLY.value) \
@@ -397,7 +413,8 @@ def main() -> None:
             assert all(cmds.objExists(path) for path in
                        host.read_eye_lid_area(side))
         readiness = controller.face_build_inspect_inputs(":")
-        assert readiness["ready"] and readiness["required_fit_count"] == 8
+        assert readiness["ready"] and readiness["required_fit_count"] \
+            == (4 if symmetric else 8)
         assert cmds.objExists("FaceMotionSystem")
         assert len(cmds.skinCluster(lid_rig["skin"], query=True,
                                     influence=True) or []) == 1 + len(lid_rig["joints"])
@@ -414,6 +431,7 @@ def main() -> None:
         result = {"head_vertex_count": int(cmds.polyEvaluate(head, vertex=True)),
                   "head_face_count": int(cmds.polyEvaluate(head, face=True)),
                   "mask_face_count": len(mask_faces), "sides": rows,
+                  "symmetric_mirror": mirror_result,
                   "face_build_readiness": readiness,
                   "eyelid_deformation_cm": displacement,
                   "blink": blink_results,
