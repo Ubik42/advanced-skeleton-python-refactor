@@ -1,4 +1,4 @@
-"""Exercise the Outer blink controls in Maya's offscreen Qt panel."""
+"""Exercise Main and Outer blink controls in Maya's offscreen Qt panel."""
 from __future__ import annotations
 
 import os
@@ -16,13 +16,14 @@ from product_maya_panel_offscreen import FakeController
 class OuterController(FakeController):
     def __init__(self):
         super().__init__()
-        self.outer_offsets = {("Right", "upper"): (.01, -.02, .03)}
+        self.outer_offsets = {("Right", "Outer", "upper"):
+                              (.01, -.02, .03)}
 
-    def face_outer_blink_read(self, namespace, side, arc):
-        return self.outer_offsets.get((side, arc), (0., 0., 0.))
+    def face_lid_blink_read(self, namespace, side, layer, arc):
+        return self.outer_offsets.get((side, layer, arc), (0., 0., 0.))
 
-    def face_outer_blink_apply(self, namespace, side, arc, offset):
-        self.outer_offsets[(side, arc)] = offset
+    def face_lid_blink_apply(self, namespace, side, layer, arc, offset):
+        self.outer_offsets[(side, layer, arc)] = offset
         return offset
 
 
@@ -37,7 +38,7 @@ def main() -> None:
         .01, -.02, .03)
     panel.face_outer_offsets[1].setValue(-.04)
     assert "右上" in panel._face_outer_blink_apply()
-    assert controller.outer_offsets[("Right", "upper")] == (
+    assert controller.outer_offsets[("Right", "Outer", "upper")] == (
         .01, -.04, .03)
     panel.face_outer_side.setCurrentIndex(1)
     try:
@@ -47,9 +48,17 @@ def main() -> None:
     else:
         raise AssertionError("Changing eyes retained the previous edit")
     assert "左上" in panel._face_outer_blink_read()
+    panel.face_lid_layer.setCurrentIndex(1)
+    try:
+        panel._face_outer_blink_apply()
+    except ValueError as error:
+        assert "先读取" in str(error)
+    else:
+        raise AssertionError("Changing layers retained the previous edit")
+    assert "Main" in panel._face_outer_blink_read()
     panel.close()
     app.processEvents()
-    print("Outer blink panel read/edit/selection: OK", flush=True)
+    print("Main/Outer blink panel read/edit/selection: OK", flush=True)
 
 
 if __name__ == "__main__":

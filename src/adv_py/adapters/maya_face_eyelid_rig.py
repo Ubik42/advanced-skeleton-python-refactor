@@ -28,31 +28,35 @@ _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
 
 
 class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
-    def _outer_blink_control(self, side: FaceSide, arc: str) -> str:
-        if not isinstance(side, FaceSide) or arc not in ("upper", "lower"):
-            raise ValueError("Outer 眨眼修形的侧别或上下眼睑无效")
+    def _blink_control(self, side: FaceSide, layer: EyeLidLayer,
+                       arc: str) -> str:
+        if (not isinstance(side, FaceSide) or
+                layer not in (EyeLidLayer.MAIN, EyeLidLayer.OUTER) or
+                arc not in ("upper", "lower")):
+            raise ValueError("眼睑修形的侧别、层级或上下眼睑无效")
         suffix = "_R" if side is FaceSide.RIGHT else "_L"
         name = ("ctrlUpper" if arc == "upper" else "ctrlLower") \
-               + "EyeLidOuter" + suffix
+               + "EyeLid" + ("Outer" if layer is EyeLidLayer.OUTER else "") \
+               + suffix
         controls = self._cmds.ls(name, long=True, type="transform") or []
         if len(controls) != 1 or any(not self._cmds.attributeQuery(
                 "blinkOffset" + axis, node=controls[0], exists=True)
                 for axis in "XYZ"):
-            raise FitSkeletonValidationError("Outer 眼睑修形控制缺失；先建立眼睑绑定")
+            raise FitSkeletonValidationError("眼睑修形控制缺失；先建立眼睑绑定")
         return controls[0]
 
-    def read_outer_blink_offset(self, side: FaceSide,
-                                arc: str) -> tuple[float, float, float]:
-        control = self._outer_blink_control(side, arc)
+    def read_blink_offset(self, side: FaceSide, layer: EyeLidLayer,
+                          arc: str) -> tuple[float, float, float]:
+        control = self._blink_control(side, layer, arc)
         return tuple(float(self._cmds.getAttr(control + ".blinkOffset" + axis))
                      for axis in "XYZ")
 
-    def set_outer_blink_offset(self, side: FaceSide, arc: str,
-                               offset: tuple[float, float, float]
-                               ) -> tuple[float, float, float]:
+    def set_blink_offset(self, side: FaceSide, layer: EyeLidLayer, arc: str,
+                         offset: tuple[float, float, float]
+                         ) -> tuple[float, float, float]:
         if len(offset) != 3 or any(not isfinite(value) for value in offset):
-            raise ValueError("Outer 眨眼修形需要三个有限的局部位移值")
-        control = self._outer_blink_control(side, arc)
+            raise ValueError("眼睑修形需要三个有限的局部位移值")
+        control = self._blink_control(side, layer, arc)
         c = self._cmds
         if c.referenceQuery(control, isNodeReferenced=True):
             raise FitSkeletonValidationError("不能修改引用中的眼睑修形控制")
@@ -60,11 +64,20 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
         if any(c.getAttr(plug, lock=True) or
                c.connectionInfo(plug, isDestination=True) for plug in plugs):
             raise FitSkeletonValidationError("眼睑修形通道已锁定或由其他节点驱动")
-        with self.transaction("调整 Outer 眨眼修形"):
+        with self.transaction("调整眼睑闭眼修形"):
             self._transaction_changed = True
             for plug, value in zip(plugs, offset):
                 c.setAttr(plug, float(value))
-        return self.read_outer_blink_offset(side, arc)
+        return self.read_blink_offset(side, layer, arc)
+
+    def read_outer_blink_offset(self, side: FaceSide,
+                                arc: str) -> tuple[float, float, float]:
+        return self.read_blink_offset(side, EyeLidLayer.OUTER, arc)
+
+    def set_outer_blink_offset(self, side: FaceSide, arc: str,
+                               offset: tuple[float, float, float]
+                               ) -> tuple[float, float, float]:
+        return self.set_blink_offset(side, EyeLidLayer.OUTER, arc, offset)
 
     def _ring(self, pre: MayaFaceBuildHost, mesh: str, mesh_fn, side: FaceSide,
               layer: EyeLidLayer):
@@ -363,7 +376,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                   control + "FleshyAmount",
                                   control + "FleshyBlink",
                                   control + "MotionSum"))
-                    if layer is EyeLidLayer.OUTER:
+                    if layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
                         names.extend((control + "BlinkFraction",
                                       control + "BlinkOffset"))
                     curve_name = arc + "Lid" + layer.value + "WorkCurve" + suffix
@@ -479,7 +492,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                       motion_sum + ".input3D[0]")
                         c.connectAttr(blink_fade + ".output",
                                       motion_sum + ".input3D[1]")
-                        if layer is EyeLidLayer.OUTER:
+                        if layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
                             fraction = c.createNode("multiplyDivide",
                                 name=control_name + "BlinkFraction")
                             c.setAttr(fraction + ".input2X", .1)

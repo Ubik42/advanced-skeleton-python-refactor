@@ -1,4 +1,4 @@
-"""Verify the panel controller edits a saved eyelid rig transactionally."""
+"""Verify Main/Outer panel edits on a saved eyelid rig."""
 from __future__ import annotations
 
 import math
@@ -36,6 +36,23 @@ def main() -> None:
     assert panel.face_outer_blink_read(":", side, arc) == old
     cmds.redo()
     assert panel.face_outer_blink_read(":", side, arc) == target
+    main_old = panel.face_lid_blink_read(":", side, "Main", arc)
+    main_joints = sorted(cmds.ls("upperLidMain*_R", type="joint") or [])
+    assert main_joints
+    main_joint = main_joints[len(main_joints) // 2]
+    main_before = cmds.xform(main_joint, query=True, worldSpace=True,
+                             translation=True)
+    main_target = (main_old[0] + .01, main_old[1] + .02,
+                   main_old[2] - .03)
+    assert panel.face_lid_blink_apply(":", side, "Main", arc,
+                                      main_target) == main_target
+    main_after = cmds.xform(main_joint, query=True, worldSpace=True,
+                            translation=True)
+    assert max(abs(a-b) for a, b in zip(main_before, main_after)) > 1e-6
+    cmds.undo()
+    assert panel.face_lid_blink_read(":", side, "Main", arc) == main_old
+    cmds.redo()
+    assert panel.face_lid_blink_read(":", side, "Main", arc) == main_target
     try:
         panel.face_outer_blink_apply(":", side, arc,
                                      (math.nan, 0., 0.))
@@ -58,7 +75,9 @@ def main() -> None:
     cmds.file(save=True, type="mayaBinary", force=True)
     cmds.file(str(output), open=True, force=True, executeScriptNodes=False)
     assert panel.face_outer_blink_read(":", side, arc) == target
-    print("Outer blink panel controller Undo/Redo/reopen: OK", flush=True)
+    assert panel.face_lid_blink_read(":", side, "Main", arc) == main_target
+    print("Main/Outer blink panel controller Undo/Redo/reopen: OK",
+          flush=True)
 
 
 if __name__ == "__main__":

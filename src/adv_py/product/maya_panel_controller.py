@@ -866,24 +866,34 @@ class MayaPanelController:
         return BuildFaceEyeLids(MayaFaceEyeLidRigHost(
             namespace=None if namespace == ":" else namespace)).execute()
 
-    def face_outer_blink_read(self, namespace: str, side: str,
-                              arc: str) -> tuple[float, float, float]:
+    def face_lid_blink_read(self, namespace: str, side: str, layer: str,
+                            arc: str) -> tuple[float, float, float]:
         from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
-        from adv_py.application.face_pre import FaceSide
+        from adv_py.application.face_pre import EyeLidLayer, FaceSide
 
         return MayaFaceEyeLidRigHost(
             namespace=None if namespace == ":" else namespace
-            ).read_outer_blink_offset(FaceSide(side), arc)
+            ).read_blink_offset(FaceSide(side), EyeLidLayer(layer), arc)
+
+    def face_lid_blink_apply(self, namespace: str, side: str, layer: str,
+                             arc: str, offset: tuple[float, float, float]
+                             ) -> tuple[float, float, float]:
+        from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
+        from adv_py.application.face_pre import EyeLidLayer, FaceSide
+
+        return MayaFaceEyeLidRigHost(
+            namespace=None if namespace == ":" else namespace
+            ).set_blink_offset(FaceSide(side), EyeLidLayer(layer), arc, offset)
+
+    def face_outer_blink_read(self, namespace: str, side: str,
+                              arc: str) -> tuple[float, float, float]:
+        return self.face_lid_blink_read(namespace, side, "Outer", arc)
 
     def face_outer_blink_apply(self, namespace: str, side: str, arc: str,
                                offset: tuple[float, float, float]
                                ) -> tuple[float, float, float]:
-        from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
-        from adv_py.application.face_pre import FaceSide
-
-        return MayaFaceEyeLidRigHost(
-            namespace=None if namespace == ":" else namespace
-            ).set_outer_blink_offset(FaceSide(side), arc, offset)
+        return self.face_lid_blink_apply(namespace, side, "Outer", arc,
+                                         offset)
 
     def face_eye_build(self, namespace: str, head_joint: str,
                        right_eye: str, left_eye: str):
