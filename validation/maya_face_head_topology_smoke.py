@@ -425,9 +425,7 @@ def main() -> None:
             assert mirror_result["mapped_vertices"] == 55
             assert cmds.objExists("FaceFitEyeLidInnerLeft")
         aperture_mode = bool(lid_rig["aperture_sides"])
-        expected_control_count = 8 + 2 * (
-            len(lid_rig["aperture_sides"]) -
-            len(lid_rig["stationary_aperture_sides"]))
+        expected_control_count = 8
         assert len(lid_rig["controls"]) == expected_control_count
         assert len(lid_rig["eye_controls"]) == 2
         assert len(lid_rig["work_curves"]) == expected_control_count

@@ -155,33 +155,29 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
         main_factors = eyelid_skin_factors(adjacency, positions,
             area_vertices, boundary, main.upper_vertices,
             main.lower_vertices, inner_vertices)
+        if mobile_inner:
+            inner = ordered[EyeLidLayer.INNER]
+            rim_factors = inner_eyelid_skin_factors(
+                adjacency, positions, area_vertices,
+                inner.upper_vertices, inner.lower_vertices)
+            for vertex, pair in rim_factors.items():
+                if sum(pair) > sum(main_factors[vertex]):
+                    main_factors[vertex] = pair
+            # A simple aperture follows Main, including both corner vertices.
+            for vertex in inner.upper_vertices:
+                main_factors[vertex] = (1., 0.)
+            for vertex in inner.lower_vertices[1:-1]:
+                main_factors[vertex] = (0., 1.)
         factors = {
             EyeLidLayer.MAIN: main_factors,
             EyeLidLayer.OUTER: outer_eyelid_skin_factors(adjacency,
                 positions, area_vertices, outer.upper_vertices,
                 outer.lower_vertices, inner_vertices, main_factors),
         }
-        if mobile_inner:
-            inner = ordered[EyeLidLayer.INNER]
-            factors[EyeLidLayer.INNER] = inner_eyelid_skin_factors(
-                adjacency, positions, area_vertices,
-                inner.upper_vertices, inner.lower_vertices)
-            for vertex, pair in factors[EyeLidLayer.INNER].items():
-                remaining = 1. - sum(pair)
-                for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER):
-                    old = factors[layer].get(vertex)
-                    if old is not None:
-                        factors[layer][vertex] = tuple(
-                            value * remaining for value in old)
         arcs = {(layer, "upper"): ordered[layer].upper_vertices
                 for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER)}
         arcs.update({(layer, "lower"): ordered[layer].lower_vertices
                      for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER)})
-        if mobile_inner:
-            arcs[(EyeLidLayer.INNER, "upper")] = (
-                ordered[EyeLidLayer.INNER].upper_vertices)
-            arcs[(EyeLidLayer.INNER, "lower")] = (
-                ordered[EyeLidLayer.INNER].lower_vertices)
         span = max(positions[index][0] for index in main.upper_vertices) \
              - min(positions[index][0] for index in main.upper_vertices)
         return (factors, arcs, positions, span, open_inner, mobile_inner,
@@ -290,9 +286,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
              open_inners[side], mobile_inners[side],
              fit_ring_vertices[side]) = self._surface_factors(
                 pre, mesh, side)
-        layers = {side: ((EyeLidLayer.MAIN, EyeLidLayer.OUTER,
-                          EyeLidLayer.INNER) if mobile_inners[side] else
-                         (EyeLidLayer.MAIN, EyeLidLayer.OUTER))
+        layers = {side: (EyeLidLayer.MAIN, EyeLidLayer.OUTER)
                   for side in FaceSide}
         def weighted(side):
             return {vertex for layer in layers[side]

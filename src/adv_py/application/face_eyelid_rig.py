@@ -8,10 +8,7 @@ class BuildFaceEyeLids:
 
     def execute(self) -> dict:
         result = self.host.build()
-        mobile_apertures = (set(result.get("aperture_sides", ())) -
-                            set(result.get("stationary_aperture_sides", ())))
-        expected_controls = 8 + 2 * len(mobile_apertures)
-        if (len(result["controls"]) != expected_controls
+        if (len(result["controls"]) != 8
                 or len(result["joints"]) < 16
                 or not all(result["area_vertices"].values())):
             raise RuntimeError("眼睑绑定写后读回不完整")
