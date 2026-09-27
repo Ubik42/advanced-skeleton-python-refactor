@@ -36,6 +36,8 @@ class BodySkeletonHost(Protocol):
 
     def read_fit_deform_profile(self, joint: str) -> FitDeformProfile: ...
 
+    def read_fit_skin_enabled(self, joint: str) -> bool: ...
+
     def find_name_collisions(self, name: str) -> tuple[str, ...]: ...
 
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
@@ -105,6 +107,10 @@ class BuildBodySkeleton:
             node.path: self._host.read_fit_deform_profile(node.path)
             for node in symmetry.source.hierarchy.joints
         }
+        skin_enabled = {
+            node.path: self._host.read_fit_skin_enabled(node.path)
+            for node in symmetry.source.hierarchy.joints
+        }
         missing_labels: list[str] = []
         inferred_labels: list[str] = []
         for node in symmetry.source.hierarchy.joints:
@@ -120,7 +126,8 @@ class BuildBodySkeleton:
         specs = tuple(
             BodyJointSpec.from_symmetry(
                 instance, labels[instance.source_joint],
-                profiles[instance.source_joint])
+                profiles[instance.source_joint],
+                skin_enabled[instance.source_joint])
             for instance in symmetry.instances
             if instance.source_joint in labels
         )

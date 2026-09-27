@@ -11,6 +11,7 @@ from .maya_spine_original_promotion import MayaOriginalSpinePromotionHost
 from .blender import BlenderAdapterStatus, BlenderRigHost
 from .maya import MayaAdapterStatus, MayaRigHost
 from .maya_body import MayaBodyBuildHost
+from .maya_fit_part import MayaFitPartHost
 from .maya_face import MayaFaceHost
 from .maya_source_skeleton_fit import MayaSourceSkeletonFitHost
 from .maya_custom_controller import MayaCustomControllerHost
@@ -45,6 +46,7 @@ __all__ = [
     "InMemoryRigHost",
     "MayaAdapterStatus",
     "MayaBodyBuildHost",
+    "MayaFitPartHost",
     "MayaFaceHost",
     "MayaSourceSkeletonFitHost",
     "MayaCustomControllerHost",

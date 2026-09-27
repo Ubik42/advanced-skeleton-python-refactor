@@ -71,8 +71,10 @@ class BuildRegisteredSkinnedBodyCharacter:
                 include_segment_influences=include_segment_influences)
             if on_stage:
                 on_stage("rig-built")
-            influences = tuple(item.path for item in
-                               character.registration.body) + character.segment_influences
+            influences = tuple(path for path in (
+                tuple(item.path for item in character.registration.body)
+                + character.segment_influences)
+                if joined.read_skin_influence_enabled(path))
             skins = tuple(BindSkin(joined).apply(mesh, influences,
                 skin_name=name, maximum_influences=plan.maximum_influences)
                 for mesh, name in zip(plan.meshes, plan.skin_names))

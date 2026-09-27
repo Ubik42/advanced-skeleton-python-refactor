@@ -290,6 +290,10 @@ class FakeBodySkeletonHost:
         del joint
         return FitDeformProfile()
 
+    def read_fit_skin_enabled(self, joint):
+        del joint
+        return True
+
     def find_name_collisions(self, name):
         existing_body = tuple(
             state.path for state in self.body if state.name == name
@@ -462,6 +466,7 @@ class FakeBodySkeletonHost:
                 (0.0, 0.0, 0.0),
                 (0.0, 0.0, 0.0),
                 deform_profile=spec.deform_profile,
+                skin_enabled=spec.skin_enabled,
             )
         )
         return spec.path

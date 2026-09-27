@@ -74,7 +74,8 @@ class BuildFitPartHierarchy:
             if (state.name != spec.name or state.parent_path != spec.parent_path
                     or any(abs(a - b) > 1e-4 for a, b in zip(
                         state.world_position, spec.world_position))
-                    or state.deform_profile != spec.deform_profile):
+                    or state.deform_profile != spec.deform_profile
+                    or state.skin_enabled != spec.skin_enabled):
                 raise ValueError("Fit Part 构建前 Body 数据已变化：" + spec.name)
         names = tuple(item.name for item in plan.fit_parts)
         if len(set(names)) != len(names):

@@ -336,6 +336,34 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
             read("fat"), read("fatFront", "fatY"),
             read("fatWidth", "fatZ"))
 
+    def read_fit_skin_enabled(self, joint: str) -> bool:
+        c = self._cmds
+        current = c.ls(joint, long=True, type="joint") or []
+        if len(current) != 1 or current[0] != joint:
+            raise FitSkeletonValidationError("Fit Skin 来源关节无效：" + joint)
+        node = current[0]
+        while node:
+            if (c.attributeQuery("noSkin", node=node, exists=True)
+                    and bool(c.getAttr(node + ".noSkin"))):
+                return False
+            parents = c.listRelatives(node, parent=True, fullPath=True) or []
+            node = parents[0] if parents else ""
+        return True
+
+    def read_skin_influence_enabled(self, joint: str) -> bool:
+        c = self._cmds
+        matches = c.ls(joint, long=True, type="joint") or []
+        if len(matches) != 1:
+            raise FitSkeletonValidationError("Skin 影响关节无效：" + joint)
+        node = matches[0]
+        while node:
+            if (c.attributeQuery("advPySkinEnabled", node=node, exists=True)
+                    and not bool(c.getAttr(node + ".advPySkinEnabled"))):
+                return False
+            parents = c.listRelatives(node, parent=True, fullPath=True) or []
+            node = parents[0] if parents else ""
+        return True
+
     def create_body_joint(self, spec: BodyJointSpec) -> str:
         self._require_transaction()
         if self.find_name_collisions(spec.name):
@@ -373,6 +401,8 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
         ):
             self._cmds.addAttr(path, longName=name, attributeType="double",
                                minValue=0.0, defaultValue=value, keyable=False)
+        self._cmds.addAttr(path, longName="advPySkinEnabled",
+                           attributeType="bool", defaultValue=spec.skin_enabled)
         return path
 
     def scene_linear_unit(self) -> BodyFbxLinearUnit:
@@ -404,6 +434,7 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                                       node=path, exists=True)
             and self._cmds.getAttr(path + ".advPyAuxiliaryInfluenceKind")
                 in {"axial-part-v1", "finger-mid-v1", "limb-part-v1",
+                    "fit-part-v1",
                     "root-volume-v1", "chest-volume-v1", "sdk-volume-v1",
                     "volume-half-parent-v1", "original-local-angle-v1",
                     "face-eye-v1", "custom-skin-v1",
@@ -465,6 +496,11 @@ class MayaBodyBuildHost(MayaControlCurveMixin, MayaCharacterPoseMixin, MayaChara
                         else 1.0
                         for name in ("fat", "fatFront", "fatWidth")
                     )),
+                    skin_enabled=(
+                        bool(self._cmds.getAttr(path + ".advPySkinEnabled"))
+                        if self._cmds.attributeQuery(
+                            "advPySkinEnabled", node=path, exists=True)
+                        else True),
                 )
             )
         return BodySkeletonSnapshot(

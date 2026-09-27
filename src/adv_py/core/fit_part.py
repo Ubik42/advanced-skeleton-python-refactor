@@ -28,6 +28,7 @@ class FitPartJointSpec:
     parent_path: str
     world_position: Vector3
     deform_profile: FitDeformProfile
+    skin_enabled: bool = True
 
     @property
     def start_body_name(self) -> str:
@@ -57,6 +58,7 @@ class FitPartJointState:
     parent_name: str
     world_position: Vector3
     deform_profile: FitDeformProfile
+    skin_enabled: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +95,8 @@ def audit_fit_part_hierarchy(
             continue
         if state.parent_name != spec.parent_name:
             issues.append("Part 父级不一致：" + spec.name)
+        if state.skin_enabled != spec.skin_enabled:
+            issues.append("Part Skin 影响开关不一致：" + spec.name)
         if any(abs(a - b) > tolerance for a, b in zip(
                 state.world_position, spec.world_position)):
             issues.append("Part 世界位置不一致：" + spec.name)
@@ -167,7 +171,8 @@ def plan_fit_part_joints(
                 start.source_joint, start.output_path, end.output_path,
                 start.side, index, count, path, name, parent, position,
                 start_body.deform_profile.interpolate(
-                    end_body.deform_profile, fraction)))
+                    end_body.deform_profile, fraction),
+                start_body.skin_enabled))
             parent = path
     return tuple(parts)
 

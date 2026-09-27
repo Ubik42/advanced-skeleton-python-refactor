@@ -57,6 +57,7 @@ class BodyJointSpec:
     world_position: Vector3
     label: JointLabel
     deform_profile: FitDeformProfile = FitDeformProfile()
+    skin_enabled: bool = True
 
     @classmethod
     def from_symmetry(
@@ -64,6 +65,7 @@ class BodyJointSpec:
         instance: FitSymmetryInstance,
         label: JointLabel,
         deform_profile: FitDeformProfile = FitDeformProfile(),
+        skin_enabled: bool = True,
     ) -> "BodyJointSpec":
         return cls(
             source_joint=instance.source_joint,
@@ -74,6 +76,7 @@ class BodyJointSpec:
             world_position=instance.world_position,
             label=label,
             deform_profile=deform_profile,
+            skin_enabled=skin_enabled,
         )
 
     def __post_init__(self) -> None:
@@ -88,6 +91,8 @@ class BodyJointSpec:
             isfinite(float(value)) for value in self.world_position
         ):
             raise BodySkeletonValidationError("构建关节世界位置必须是有限三维向量")
+        if not isinstance(self.skin_enabled, bool):
+            raise BodySkeletonValidationError("Skin 影响开关必须是布尔值")
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +109,7 @@ class BodyJointState:
     writable_joint_orient_axes: frozenset[str] = ALL_ORIENT_AXES
     world_scale: Vector3 = (1.0, 1.0, 1.0)
     deform_profile: FitDeformProfile = FitDeformProfile()
+    skin_enabled: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,9 +172,9 @@ def body_skeleton_unchanged(before: BodySkeletonSnapshot,
         return False
     for old, new in zip(before.joints, after.joints):
         if ((old.path, old.name, old.parent_path, old.side, old.label,
-             old.writable_joint_orient_axes) !=
+             old.writable_joint_orient_axes, old.skin_enabled) !=
             (new.path, new.name, new.parent_path, new.side, new.label,
-             new.writable_joint_orient_axes)):
+             new.writable_joint_orient_axes, new.skin_enabled)):
             return False
         numeric = ((old.world_position, new.world_position),
                    (old.joint_orient, new.joint_orient),
@@ -279,6 +285,9 @@ def audit_body_skeleton(
             issues.append(BodySkeletonIssue("side_mismatch", "关节侧向标签不一致", path))
         if state.label != spec.label:
             issues.append(BodySkeletonIssue("label_mismatch", "关节标签不一致", path))
+        if state.skin_enabled != spec.skin_enabled:
+            issues.append(BodySkeletonIssue(
+                "skin_policy_mismatch", "Skin 影响开关不一致", path))
         if any(abs(current - wanted) > tolerance for current, wanted in zip(
             (state.deform_profile.fat, state.deform_profile.fat_front,
              state.deform_profile.fat_width),
