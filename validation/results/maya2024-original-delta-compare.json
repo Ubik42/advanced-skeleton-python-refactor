@@ -1,0 +1,26 @@
+{
+  "vertex_count_matches": true,
+  "both_after_skin": true,
+  "parameters_match": true,
+  "scale_connections_match": true,
+  "vertices_match": true,
+  "source_file_unchanged": true,
+  "asset": "sam.mb",
+  "original_node": "deltaMush1",
+  "python_node": "model:AdvPy_DeltaMush_body",
+  "maximum_position_error_cm": 0.0,
+  "rms_position_error_cm": 0.0,
+  "original_parameters": [
+    10,
+    0.5,
+    true,
+    1.0
+  ],
+  "python_parameters": [
+    10,
+    0.5,
+    true,
+    1.0
+  ],
+  "status": "passed"
+}
