@@ -445,7 +445,7 @@ class MayaBodyBuildHost(MayaFitInbetweenMixin, MayaFitPartMixin, MayaControlCurv
                                       node=path, exists=True)
             and self._cmds.getAttr(path + ".advPyAuxiliaryInfluenceKind")
                 in {"axial-part-v1", "finger-mid-v1", "limb-part-v1",
-                    "fit-part-v1",
+                    "fit-part-v1", "fit-inbetween-v1",
                     "root-volume-v1", "chest-volume-v1", "sdk-volume-v1",
                     "volume-half-parent-v1", "original-local-angle-v1",
                     "face-eye-v1", "custom-skin-v1",

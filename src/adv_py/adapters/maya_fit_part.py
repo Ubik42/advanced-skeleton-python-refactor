@@ -16,6 +16,7 @@ from adv_py.core.fit_part_scale import (
 )
 
 _FIT_PART_KIND = "fit-part-v1"
+_FIT_INBETWEEN_KIND = "fit-inbetween-v1"
 
 
 class MayaFitPartMixin:
@@ -158,6 +159,8 @@ class MayaFitPartMixin:
         c = self._cmds
         planned_names = {item.name for item in joints}
         for spec in joints:
+            if spec.kind not in ("twist", "inbetween"):
+                raise ValueError("Fit Part 类型无效：" + spec.name)
             self._unique_fit_part_joint(spec.start_body_name)
             self._unique_fit_part_joint(spec.end_body_name)
             if (spec.parent_name not in planned_names
@@ -209,7 +212,9 @@ class MayaFitPartMixin:
         c.xform(joint, worldSpace=True, translation=spec.world_position)
         c.addAttr(joint, longName="advPyAuxiliaryInfluenceKind",
                   dataType="string")
-        c.setAttr(joint + ".advPyAuxiliaryInfluenceKind", _FIT_PART_KIND,
+        marker = (_FIT_INBETWEEN_KIND if spec.kind == "inbetween"
+                  else _FIT_PART_KIND)
+        c.setAttr(joint + ".advPyAuxiliaryInfluenceKind", marker,
                   type="string", lock=True)
         c.addAttr(joint, longName="advPySkinEnabled", attributeType="bool",
                   defaultValue=spec.skin_enabled)

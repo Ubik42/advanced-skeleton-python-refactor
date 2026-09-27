@@ -34,6 +34,7 @@ class FitPartJointSpec:
     skin_enabled: bool = True
     rotation_order: int = 0
     segment_scale_compensate: bool = True
+    kind: str = "twist"
 
     @property
     def start_body_name(self) -> str:
