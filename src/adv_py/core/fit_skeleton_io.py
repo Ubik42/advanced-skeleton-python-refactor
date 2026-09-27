@@ -190,6 +190,19 @@ def fit_skeleton_document_from_snapshot(
                     f"Fit joint 父级不在导出层级：{node.short_name}"
                 )
             parent = parent_node.short_name
+        # noFlip is enabled by any ancestor, including FitSkeleton. A portable
+        # document has only joint metadata, so anchor an inherited enabled value
+        # at the first joint where it becomes effective.
+        parent_no_flip = (
+            metadata[node.dag_parent].no_flip
+            if node.dag_parent in metadata
+            else False
+        )
+        anchor_inherited_no_flip = (
+            metadata[node.path].no_flip
+            and not parent_no_flip
+            and FitJointField.NO_FLIP not in metadata[node.path].present_fields
+        )
         values = tuple(
             FitSkeletonJointMetadataValue(
                 field,
@@ -197,6 +210,7 @@ def fit_skeleton_document_from_snapshot(
             )
             for field in FitJointField
             if field in metadata[node.path].present_fields
+            or (field is FitJointField.NO_FLIP and anchor_inherited_no_flip)
         )
         records.append(
             FitSkeletonJointDocument(
@@ -691,6 +705,7 @@ def _metadata_from_values(
     return FitJointMetadata(
         joint=joint,
         present_fields=frozenset(value.field for value in values),
+        local_no_flip=keywords.get("no_flip"),
         **keywords,
     )
 

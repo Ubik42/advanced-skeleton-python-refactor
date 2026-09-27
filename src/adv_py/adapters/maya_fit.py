@@ -814,7 +814,7 @@ class MayaFitJointHost:
             for field, spec in _FIT_ATTRIBUTES.items()
             if self._attribute_exists(joint, spec.name)
         }
-        _, no_flip = self._inherited_fit_bool(joint, "noFlip")
+        inherited_no_flip, no_flip = self._inherited_fit_bool(joint, "noFlip")
         return FitJointMetadata(
             joint=joint,
             twist_joints=self._optional_number(joint, "twistJoints", int),
@@ -827,6 +827,9 @@ class MayaFitJointHost:
             no_mirror=self._optional_bool(joint, "noMirror"),
             no_mirror_left=self._optional_bool(joint, "noMirrorLeft"),
             no_flip=no_flip,
+            inherited_no_flip=inherited_no_flip,
+            local_no_flip=(self._optional_bool(joint, "noFlip")
+                           if FitJointField.NO_FLIP in present else None),
             child_of_part=self._optional_number(joint, "childOfPart", int),
             global_weight=self._optional_number(joint, "global", float),
             global_translate=self._optional_bool(joint, "globalTranslate"),
@@ -1002,17 +1005,19 @@ class MayaFitJointHost:
         return bool(self._cmds.getAttr(f"{joint}.{attribute}"))
 
     def _inherited_fit_bool(self, joint: str, attribute: str) -> tuple[bool, bool]:
-        present = False
+        inherited = False
         enabled = False
         node = joint
         while node:
             if self._attribute_exists(node, attribute):
-                present = True
-                enabled |= bool(self._cmds.getAttr(f"{node}.{attribute}"))
+                value = bool(self._cmds.getAttr(f"{node}.{attribute}"))
+                enabled |= value
+                if node != joint:
+                    inherited |= value
             parents = self._cmds.listRelatives(
                 node, parent=True, fullPath=True) or []
             node = parents[0] if parents else ""
-        return present, enabled
+        return inherited, enabled
 
     def _optional_enum(self, joint: str, attribute: str) -> str | None:
         if not self._attribute_exists(joint, attribute):

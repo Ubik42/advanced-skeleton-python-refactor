@@ -74,6 +74,8 @@ class FitJointMetadata:
     no_mirror: bool = False
     no_mirror_left: bool = False
     no_flip: bool = False
+    inherited_no_flip: bool = False
+    local_no_flip: bool | None = None
     child_of_part: int | None = None
     global_weight: float | None = None
     global_translate: bool = False
@@ -156,6 +158,16 @@ def predict_fit_joint_metadata(
     values: dict[str, object] = {}
     present = set(metadata.present_fields)
     for edit in patch.edits:
+        if edit.field is FitJointField.NO_FLIP:
+            values["local_no_flip"] = edit.value
+            values["no_flip"] = (
+                metadata.inherited_no_flip or bool(edit.value)
+            )
+            if edit.value is None:
+                present.discard(edit.field)
+            else:
+                present.add(edit.field)
+            continue
         if edit.value is None:
             present.discard(edit.field)
             values[edit.field.value] = (

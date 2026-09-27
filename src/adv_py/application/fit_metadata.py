@@ -116,6 +116,8 @@ class EditFitJointMetadata:
                 if (
                     previous_present != desired_present
                     or previous_value != desired_value
+                    or (edit.field is FitJointField.NO_FLIP
+                        and previous.local_no_flip != desired.local_no_flip)
                 ):
                     changes.append(
                         FitJointChange(
@@ -173,4 +175,9 @@ class EditFitJointMetadata:
                 ) != fit_joint_value(found, edit.field):
                     raise RuntimeError(
                         f"Fit joint 构建后复检失败：{found.joint}.{edit.field.value}"
+                    )
+                if (edit.field is FitJointField.NO_FLIP
+                        and wanted.local_no_flip != found.local_no_flip):
+                    raise RuntimeError(
+                        f"Fit joint 构建后复检失败：{found.joint}.no_flip 本地值"
                     )
