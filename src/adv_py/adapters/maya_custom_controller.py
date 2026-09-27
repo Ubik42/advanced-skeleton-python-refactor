@@ -240,7 +240,7 @@ class MayaCustomControllerHost(MayaFaceHost):
                                control: str, base: str | None = None) -> None:
         from maya import cmds
 
-        self._update_custom_build_pose(control, add=True)
+        self._update_custom_build_pose(control, base=base, add=True)
         control_set = self.scene_address("FaceControlSet" if self.face
                                          else "ControlSet")
         if cmds.objExists(control_set):
@@ -267,7 +267,9 @@ class MayaCustomControllerHost(MayaFaceHost):
                           channels=previous.channels + channels)
         self.write_character_registration_extension(previous, updated)
 
-    def _update_custom_build_pose(self, control: str, *, add: bool) -> None:
+    def _update_custom_build_pose(self, control: str, *,
+                                  base: str | None = None,
+                                  add: bool) -> None:
         """Maintain the original buildPose custom-channel reset command."""
         from maya import cmds
 
@@ -280,12 +282,31 @@ class MayaCustomControllerHost(MayaFaceHost):
                 return
             cmds.addAttr(node, longName="udExtraAttr", dataType="string")
         script = cmds.getAttr(plug) or ""
-        command = ('xform -os -t 0 0 0 -ro 0 0 0 -s 1 1 1 '
-                   '"%s";' % control)
+        metadata = control + ".advPyBuildPoseCommand"
+        if add:
+            command = ('xform -os -t 0 0 0 -ro 0 0 0 -s 1 1 1 '
+                       '"%s";' % control)
+            for attribute in cmds.listAttr(control, userDefined=True,
+                                           keyable=True) or []:
+                value = cmds.getAttr(control + "." + attribute)
+                if isinstance(value, (int, float, bool)):
+                    command += ('setAttr "%s.%s" %s;' %
+                                (control, attribute, int(value) if
+                                 isinstance(value, bool) else value))
+            if base:
+                command += ('xform -os -t 0 0 0 -ro 0 0 0 -s 1 1 1 '
+                            '"%s";' % base)
+        else:
+            if not cmds.objExists(metadata):
+                return
+            command = cmds.getAttr(metadata) or ""
         if add:
             if command in script:
                 raise ValueError("控制器已经写入 buildPose 附加命令")
             script += command
+            cmds.addAttr(control, longName="advPyBuildPoseCommand",
+                         dataType="string")
+            cmds.setAttr(metadata, command, type="string", lock=True)
         else:
             script = script.replace(command, "", 1)
         cmds.setAttr(plug, script, type="string")
