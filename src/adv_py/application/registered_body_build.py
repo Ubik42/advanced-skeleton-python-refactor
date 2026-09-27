@@ -183,9 +183,12 @@ class BuildRegisteredBodyCharacter:
                                      != BodyAxialDescription()))
             if (hip_selection is not None and hip_selection.enabled
                     and hip_selection.root_inbetween_count
-                    and hip_selection.child_name != "Spine1"):
+                    and (axial_description.spine[1]
+                         if axial_description is not None
+                         else "Spine1_M")
+                    != hip_selection.child_name + "_M"):
                 raise FitSkeletonValidationError(
-                    "有 Root Part 的 HipSwinger 目前只支持 Spine1 子关节")
+                    "有 Root Part 的 HipSwinger 须标记脊柱首节")
             untwister_sources = frozenset(
                 item.joint for item in fit_source.metadata
                 if item.untwister and (item.inbetween_joints or 0) > 0)
@@ -196,10 +199,11 @@ class BuildRegisteredBodyCharacter:
                     and hip_selection.root_inbetween_count
                     and not any(part.kind == "inbetween"
                                 and part.start_body_name == "Root_M"
-                                and part.end_body_name == "Spine1_M"
+                                and part.end_body_name
+                                == hip_selection.child_name + "_M"
                                 for part in part_plan.fit_parts)):
                 raise FitSkeletonValidationError(
-                    "Root 分段 HipSwinger 缺少 Root 至 Spine1 的 Part 链")
+                    "Root 分段 HipSwinger 缺少 Root 至脊柱首节的 Part 链")
             twist_parts = tuple(part for part in part_plan.fit_parts
                                 if part.kind == "twist")
             if fit_part_twist_sources is None:
@@ -325,13 +329,12 @@ class BuildRegisteredBodyCharacter:
                                          if binding.parts[0].start_body_name
                                          == "Root_M"]
                         if (len(root_bindings) != 1
-                                or hip_selection.child_name != "Spine1"
                                 or root_bindings[0].parts[-1].end_body_name
-                                != "Spine1_M"
+                                != hip_selection.child_name + "_M"
                                 or len(root_bindings[0].parts)
                                 != hip_selection.root_inbetween_count):
                             raise ValueError(
-                                "HipSwingReverse 需要 Root 至 Spine1 的完整 Part 链")
+                                "HipSwingReverse 需要 Root 至脊柱首节的完整 Part 链")
                         root_binding = root_bindings[0]
                         hip_swing_reverse = BuildHipSwingReverse(joined).apply(
                             root_binding.parts,
