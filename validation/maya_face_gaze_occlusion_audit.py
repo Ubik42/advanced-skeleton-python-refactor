@@ -59,9 +59,21 @@ def measure(head: om.MFnMesh, eye: om.MFnMesh, eye_name: str,
 def main() -> None:
     scene, output = (Path(value).resolve() for value in sys.argv[1:3])
     delta = float(sys.argv[3]) if len(sys.argv) > 3 else .1
+    fleshy_scale = float(sys.argv[4]) if len(sys.argv) > 4 else 1.
+    vertical_scale = float(sys.argv[5]) if len(sys.argv) > 5 else 1.
     if delta <= 0:
         raise ValueError("Eye Aim 位移必须大于 0")
     cmds.file(str(scene), open=True, force=True, executeScriptNodes=False)
+    if fleshy_scale != 1.:
+        for control in cmds.ls("ctrl*EyeLid*", type="transform") or ():
+            if cmds.attributeQuery("fleshy", node=control, exists=True):
+                plug = control + ".fleshy"
+                cmds.setAttr(plug, cmds.getAttr(plug) * fleshy_scale)
+    if vertical_scale != 1.:
+        for node in cmds.ls("ctrl*EyeLid*FleshyScale",
+                            type="multiplyDivide") or ():
+            plug = node + ".input2Y"
+            cmds.setAttr(plug, cmds.getAttr(plug) * vertical_scale)
     head = mesh_fn("head")
     eyes = {side: (cmds.skinCluster("AdvPy_EyeSkin_" + suffix,
                                  query=True, geometry=True)[0])
@@ -105,6 +117,8 @@ def main() -> None:
         for pose in poses for side in eyes for region in ("center", "full_eye"))
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps({"aim_delta_cm": delta,
+                                  "fleshy_scale": fleshy_scale,
+                                  "vertical_scale": vertical_scale,
                                   "initial_aim_translate": initial,
                                   "poses": rows,
                                   "passed": passed}, ensure_ascii=False,

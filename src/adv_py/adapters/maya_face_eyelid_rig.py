@@ -11,7 +11,8 @@ from adv_py.application.face_pre import EyeLidLayer, FacePreRole, FaceSide
 from adv_py.core.dense_skin_transfer import DenseSkinWeights
 from adv_py.core.face_build_requirements import FaceInclude
 from adv_py.core.face_eyelid_fit import (
-    eye_lid_blink_offsets, eye_lid_sphere_blink, order_eye_lid_loop)
+    eye_lid_aperture_height, eye_lid_blink_offsets, eye_lid_sphere_blink,
+    order_eye_lid_loop)
 from adv_py.core.face_eyelid_skin import (
     eyelid_skin_factors, inner_eyelid_skin_factors,
     outer_eyelid_skin_factors, split_arc_weight)
@@ -474,6 +475,15 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                     blink_offsets[(side, layer)] = {
                         arc: tuple(0. for _ in values)
                         for arc, values in blink_offsets[(side, layer)].items()}
+        vertical_follow_radii = dict(eye_radii)
+        for side in FaceSide:
+            if not mobile_inners[side]:
+                continue
+            aperture_height = eye_lid_aperture_height(
+                arcs[side][(EyeLidLayer.MAIN, "upper")],
+                arcs[side][(EyeLidLayer.MAIN, "lower")], positions[side])
+            vertical_follow_radii[side] = min(eye_radii[side],
+                                               aperture_height)
         names = ["FaceJoint_M", "EyeLidJoints_M", "FaceMotionSystem"]
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
@@ -654,7 +664,8 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                                   eye_radii[side] * radians(1.) * .1
                                   if mobile_inners[side] else 0.)
                         c.setAttr(conversion + ".input2Y",
-                                  -eye_radii[side] * radians(1.) * .1)
+                                  -vertical_follow_radii[side] *
+                                  radians(1.) * .1)
                         c.connectAttr(eye_joints[side] + ".rotateY",
                                       conversion + ".input1X")
                         c.connectAttr(eye_joints[side] + ".rotateX",

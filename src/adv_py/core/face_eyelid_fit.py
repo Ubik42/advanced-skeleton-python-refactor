@@ -12,6 +12,42 @@ class EyeLidLoop:
     lower_vertices: tuple[int, ...]
 
 
+def eye_lid_aperture_height(
+    upper: tuple[int, ...], lower: tuple[int, ...],
+    positions: dict[int, tuple[float, float, float]],
+) -> float:
+    """Measure the vertical opening at the shared horizontal midpoint."""
+    if min(len(upper), len(lower)) < 3:
+        raise ValueError("眼睑上下弧缺少足够顶点")
+    rows = []
+    try:
+        for vertices in (upper, lower):
+            points = sorted((positions[index][0], positions[index][1])
+                            for index in vertices)
+            if any(not isfinite(value) for point in points for value in point):
+                raise ValueError("眼睑弧坐标无效")
+            rows.append(points)
+    except KeyError as error:
+        raise ValueError("眼睑弧缺少顶点坐标") from error
+    left = max(row[0][0] for row in rows)
+    right = min(row[-1][0] for row in rows)
+    if right - left <= 1e-9:
+        raise ValueError("眼睑上下弧没有共同水平跨度")
+    middle = (left + right) / 2.
+
+    def height(points: list[tuple[float, float]]) -> float:
+        for first, second in zip(points, points[1:]):
+            if first[0] <= middle <= second[0] and second[0] > first[0]:
+                t = (middle - first[0]) / (second[0] - first[0])
+                return first[1] + t * (second[1] - first[1])
+        raise ValueError("眼睑弧中点无法插值")
+
+    gap = height(rows[0]) - height(rows[1])
+    if gap <= 0:
+        raise ValueError("眼睑上下弧交叉，无法量取张眼高度")
+    return gap
+
+
 def eye_lid_blink_offsets(
     upper: tuple[int, ...], lower: tuple[int, ...],
     positions: dict[int, tuple[float, float, float]],

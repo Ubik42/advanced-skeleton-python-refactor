@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from adv_py.core.face_eyelid_fit import (eye_lid_area_faces,
+from adv_py.core.face_eyelid_fit import (eye_lid_aperture_height,
+                                          eye_lid_area_faces,
                                           eye_lid_blink_offsets,
                                           eye_lid_sphere_blink,
                                           order_eye_lid_loop)
@@ -90,6 +91,8 @@ class EyeLidLoopTest(unittest.TestCase):
         self.assertAlmostEqual(points[3][1] + offsets["lower"][1], -.1)
         with self.assertRaisesRegex(ValueError, "交叉"):
             eye_lid_blink_offsets((0, 3, 2), (0, 1, 2), points)
+        self.assertAlmostEqual(
+            eye_lid_aperture_height((0, 1, 2), (0, 3, 2), points), 3.)
 
     def test_blink_tracks_front_of_eye_sphere_and_rolls_joint(self):
         depth, roll = eye_lid_sphere_blink((0., .2, .3),
