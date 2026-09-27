@@ -167,6 +167,41 @@ class MayaCustomControllerHost(MayaFaceHost):
             raise ValueError("CustomSystem 已由其他节点驱动：" + destination)
         cmds.connectAttr(source, destination)
 
+    def _style_custom_control(self, control: str, color_index: int,
+                              *, shader_name: str | None = None,
+                              shader_color: tuple[float, float, float] | None = None,
+                              non_renderable: bool = False) -> None:
+        from maya import cmds
+
+        if shader_name is not None:
+            if shader_color is None:
+                raise ValueError("控制器材质缺少颜色")
+            shader = self.scene_address(shader_name)
+            shading_group = self.scene_address(shader_name + "SG")
+            if not cmds.objExists(shader):
+                shader = cmds.shadingNode("lambert", asShader=True,
+                                          name=shader)
+            if not cmds.objExists(shading_group):
+                shading_group = cmds.sets(renderable=True,
+                    noSurfaceShader=True, empty=True, name=shading_group)
+            if not cmds.isConnected(shader + ".outColor",
+                                    shading_group + ".surfaceShader"):
+                cmds.connectAttr(shader + ".outColor",
+                                 shading_group + ".surfaceShader", force=True)
+            cmds.setAttr(shader + ".color", *shader_color, type="float3")
+            cmds.sets(control, edit=True, forceElement=shading_group)
+        for shape in cmds.listRelatives(control, shapes=True,
+                                        fullPath=True) or []:
+            cmds.setAttr(shape + ".overrideEnabled", True)
+            cmds.setAttr(shape + ".overrideColor", color_index)
+            if non_renderable:
+                for attribute in (
+                        "castsShadows", "receiveShadows", "motionBlur",
+                        "primaryVisibility", "smoothShading",
+                        "visibleInReflections", "visibleInRefractions"):
+                    if cmds.objExists(shape + "." + attribute):
+                        cmds.setAttr(shape + "." + attribute, False)
+
     @contextmanager
     def build_pose_session(self, deformer: str):
         """Map the painted surface point to build pose, then restore the pose."""
@@ -779,7 +814,7 @@ class MayaCustomControllerHost(MayaFaceHost):
         self._attach_to_custom_parent(attach, parent, plan.local)
         offset = cmds.createNode("transform", name=self.scene_address(
             plan.offset_name), parent=attach)
-        radius = max(0.1, plan.region.falloff_radius * 0.25)
+        radius = plan.region.falloff_radius * 0.25
         base = cmds.curve(name=self.scene_address(plan.base_control_name),
                           degree=1,
                           point=[(0, radius * 2.5, 0),
@@ -790,6 +825,16 @@ class MayaCustomControllerHost(MayaFaceHost):
         control = cmds.sphere(name=self.scene_address(plan.control_name),
                               radius=radius, constructionHistory=False)[0]
         control = cmds.parent(control, base, relative=True)[0]
+        cmds.addAttr(base, longName="localOrient", attributeType="bool",
+                     defaultValue=plan.local)
+        cmds.addAttr(control, longName="localOrient", attributeType="bool",
+                     defaultValue=plan.local)
+        cmds.addAttr(control, longName="softModControl",
+                     attributeType="bool", defaultValue=True)
+        self._style_custom_control(base, 17)
+        self._style_custom_control(control, 14,
+            shader_name="asSoftModControlShader",
+            shader_color=(0.0, 1.0, 0.0), non_renderable=True)
         created = cmds.softMod(mesh, name=self.scene_address(
             plan.deformer_name))
         if len(created) != 2:
@@ -955,6 +1000,13 @@ class MayaCustomControllerHost(MayaFaceHost):
                              degree=1, point=[tuple(scale * axis for axis in p)
                                               for p in corners])
         control = cmds.parent(control, offset, relative=True)[0]
+        cmds.addAttr(control, longName="localOrient", attributeType="bool",
+                     defaultValue=plan.local)
+        self._style_custom_control(control, 17)
+        for shape in cmds.listRelatives(control, shapes=True,
+                                        fullPath=True) or []:
+            if cmds.objExists(shape + ".isHistoricallyInteresting"):
+                cmds.setAttr(shape + ".isHistoricallyInteresting", False)
         constraint = cmds.parentConstraint(control, joint,
                                            maintainOffset=False)
         cmds.addAttr(control, longName="skinControl",
@@ -1061,9 +1113,16 @@ class MayaCustomControllerHost(MayaFaceHost):
         subtract = cmds.createNode("transform", name=self.scene_address(
             plan.auxiliary_name("subtract")), parent=offset)
         control = cmds.sphere(name=self.scene_address(plan.control_name),
-                              radius=max(0.1, plan.region.falloff_radius / 4.0),
+                              radius=plan.region.falloff_radius / 4.0,
                               constructionHistory=False)[0]
         control = cmds.parent(control, subtract, relative=True)[0]
+        cmds.addAttr(control, longName="localOrient", attributeType="bool",
+                     defaultValue=plan.local)
+        cmds.addAttr(control, longName="clusterControl",
+                     attributeType="bool", defaultValue=True)
+        self._style_custom_control(control, 13,
+            shader_name="asClusterControlShader",
+            shader_color=(1.0, 0.0, 0.0), non_renderable=True)
         translate_subtract = cmds.createNode("plusMinusAverage",
             name=self.scene_address(plan.auxiliary_name("translation_subtract")))
         cmds.setAttr(translate_subtract + ".operation", 2)
