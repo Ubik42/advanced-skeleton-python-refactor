@@ -43,6 +43,8 @@ class FBXRigBuildAudit:
     control_animation_baked: bool
     game_root_motion_connected: bool
     bound_meshes_preserved: bool
+    temporary_bake_links_removed: bool = False
+    source_joint_animation_removed: bool = False
 
 
 class FBXRigHost(Protocol):
@@ -65,10 +67,16 @@ class FBXRigHost(Protocol):
     def create_fbx_fit_guides(self, plan: FBXRigImportPlan) -> None: ...
     def build_fbx_advanced_skeleton(self, plan: FBXRigImportPlan) -> None: ...
     def enlarge_small_fbx_fk_controls(self, plan: FBXRigImportPlan) -> None: ...
-    def connect_fbx_source_and_controls(
+    def connect_fbx_source_animation_to_controls(
         self, plan: FBXRigImportPlan, source_paths: Mapping[str, str],
     ) -> None: ...
     def bake_fbx_control_animation(
+        self, plan: FBXRigImportPlan, source_paths: Mapping[str, str],
+    ) -> None: ...
+    def remove_fbx_source_animation_and_bake_links(
+        self, plan: FBXRigImportPlan, source_paths: Mapping[str, str],
+    ) -> None: ...
+    def connect_fbx_controls_to_source(
         self, plan: FBXRigImportPlan, source_paths: Mapping[str, str],
     ) -> None: ...
     def connect_fbx_game_root_motion(
@@ -111,8 +119,8 @@ class BuildFBXRig:
             raise ValueError("FBX rig 入口选择无效")
         self._host.preflight_fbx_rig_import(plan, source)
         with self._host.transaction("从 FBX 骨架构建 ADV 控制"):
-            self._host.prepare_fbx_bind_pose(plan, source)
             try:
+                self._host.prepare_fbx_bind_pose(plan, source)
                 source_paths = self._host.move_fbx_source_to_namespace(plan)
                 if (set(source_paths) != {joint.path for joint in source.joints}
                         or len(set(source_paths.values())) != len(source_paths)):
@@ -120,11 +128,15 @@ class BuildFBXRig:
                 self._host.create_fbx_fit_guides(plan)
                 self._host.build_fbx_advanced_skeleton(plan)
                 self._host.enlarge_small_fbx_fk_controls(plan)
-                self._host.connect_fbx_source_and_controls(plan, source_paths)
                 if plan.last_bake_frame is not None:
+                    self._host.connect_fbx_source_animation_to_controls(
+                        plan, source_paths)
                     self._host.bake_fbx_control_animation(plan, source_paths)
+                    self._host.remove_fbx_source_animation_and_bake_links(
+                        plan, source_paths)
                 if plan.game_root_joint is not None:
                     self._host.connect_fbx_game_root_motion(plan, source_paths)
+                self._host.connect_fbx_controls_to_source(plan, source_paths)
                 audit = self._host.capture_fbx_rig_audit(plan)
                 candidates = {link.control_name
                               for link in plan.candidate_control_links}
@@ -138,6 +150,9 @@ class BuildFBXRig:
                         or not audit.bound_meshes_preserved
                         or audit.control_animation_baked !=
                             (plan.last_bake_frame is not None)
+                        or (plan.last_bake_frame is not None
+                            and (not audit.temporary_bake_links_removed
+                                 or not audit.source_joint_animation_removed))
                         or audit.game_root_motion_connected !=
                             (plan.game_root_joint is not None)):
                     raise RuntimeError("FBX rig 构建写后复检不完整")
