@@ -10,6 +10,8 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_part import rebase_plan_paths_after_parts
 from adv_py.core.fit_part_twist import (
     FitPartTwistSource, plan_fit_part_twist,
+    plan_fit_part_twist_projections,
+    plan_standard_fit_part_rotation_inputs,
 )
 
 from .axial_part_deform import BuildAxialPartDeform
@@ -18,7 +20,9 @@ from .body_rig_validation import body_bind_pose_matches
 from .character_registry import RegisterBodyCharacter
 from .finger_mid_deform import BuildFingerMidDeform
 from .fit_part import BuildFitPartHierarchy, FitPartHierarchyResult
-from .fit_part_twist import BuildFitPartTwistDrivers
+from .fit_part_twist import (
+    BuildFitPartTwistDrivers, PrepareFitPartTwistSources,
+)
 from .limb_part_deform import BuildLimbPartDeform
 from .oriented_body_skeleton import (BuildOrientedBodySkeleton,
     OrientedBodySkeletonBuildResult)
@@ -59,7 +63,7 @@ class BuildRegisteredBodyCharacter:
               infer_missing_labels: bool = False,
               include_segment_influences: bool = False,
               use_fit_part_hierarchy: bool = False,
-              fit_part_twist_sources: tuple[FitPartTwistSource, ...] = (),
+              fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
               ) -> RegisteredBodyBuildResult:
         if use_fit_part_hierarchy and not include_segment_influences:
             raise ValueError("通用 Fit Part 构建需要启用分段 Skin 影响")
@@ -70,9 +74,16 @@ class BuildRegisteredBodyCharacter:
         if not preview.ready:
             raise FitSkeletonValidationError(
                 "角色构建预检失败，场景未修改：" + "；".join(preview.blockers))
+        rotation_inputs = ()
         if use_fit_part_hierarchy:
-            plan_fit_part_twist(preview.build.fit_parts,
-                                fit_part_twist_sources)
+            if fit_part_twist_sources is None:
+                rotation_inputs = plan_standard_fit_part_rotation_inputs(
+                    preview.build.fit_parts)
+                projections = plan_fit_part_twist_projections(rotation_inputs)
+                preview_sources = tuple(item.source() for item in projections)
+            else:
+                preview_sources = fit_part_twist_sources
+            plan_fit_part_twist(preview.build.fit_parts, preview_sources)
         with self._host.transaction("构建并登记完整 Body 角色"):
             joined = _JoinedTransactionHost(self._host)
             skeleton = BuildOrientedBodySkeleton(joined).apply(
@@ -83,6 +94,11 @@ class BuildRegisteredBodyCharacter:
                 include_head_aim=include_head_aim)
             fit_part_hierarchy = None
             if use_fit_part_hierarchy:
+                twist_sources = (
+                    PrepareFitPartTwistSources(joined).apply(rotation_inputs)
+                    if fit_part_twist_sources is None
+                    else fit_part_twist_sources
+                )
                 fit_part_hierarchy = BuildFitPartHierarchy(joined).apply(
                     skeleton.plan.build)
                 final_paths = fit_part_hierarchy.final_paths
@@ -92,7 +108,7 @@ class BuildRegisteredBodyCharacter:
                         source.down_twist_plug),
                     up_twist_plug=(final_paths.remap_body_reference(
                         source.up_twist_plug) if source.up_twist_plug else None),
-                ) for source in fit_part_twist_sources)
+                ) for source in twist_sources)
                 BuildFitPartTwistDrivers(joined).apply(
                     skeleton.plan.build.fit_parts, active_twist_sources)
                 driven_body = joined.capture_body_skeleton(

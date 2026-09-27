@@ -8,7 +8,9 @@ from adv_py.core.fit_part import (
     FitPartReparentSpec,
 )
 from adv_py.core.body_skeleton import FitDeformProfile
-from adv_py.core.fit_part_twist import FitPartTwistStep
+from adv_py.core.fit_part_twist import (
+    FitPartTwistProjection, FitPartTwistStep,
+)
 
 _FIT_PART_KIND = "fit-part-v1"
 
@@ -124,6 +126,83 @@ class MayaFitPartMixin:
     ) -> tuple[tuple[str, str], ...]:
         return tuple((name, self._unique_fit_part_joint(name))
                      for name in names)
+
+    def preflight_fit_part_twist_projection(
+        self, projection: FitPartTwistProjection
+    ) -> None:
+        c = self._cmds
+        inputs = projection.input
+        plugs = (inputs.rotation_plug, inputs.rotate_order_plug,
+                 inputs.up_twist_plug, inputs.ik_rotation_plug,
+                 inputs.ik_rotate_order_plug, inputs.ik_fk_blend_plug)
+        for plug in plugs:
+            if plug and not c.objExists(plug):
+                raise ValueError("Fit Part 扭转投影来源不存在：" + plug)
+
+    def create_fit_part_twist_projection(
+        self, projection: FitPartTwistProjection
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        source = projection.input
+
+        def create(compose_name: str, decompose_name: str,
+                   project_name: str, rotation: str,
+                   order: str) -> str:
+            compose = c.createNode("composeMatrix", name=compose_name)
+            decompose = c.createNode("decomposeMatrix", name=decompose_name)
+            project = c.createNode("quatToEuler", name=project_name)
+            c.connectAttr(rotation, compose + ".inputRotate")
+            c.connectAttr(order, compose + ".inputRotateOrder")
+            c.connectAttr(compose + ".outputMatrix",
+                          decompose + ".inputMatrix")
+            c.connectAttr(decompose + ".outputQuatX",
+                          project + ".inputQuatX")
+            c.connectAttr(decompose + ".outputQuatW",
+                          project + ".inputQuatW")
+            return project + ".outputRotateX"
+
+        fk_output = create(
+            projection.compose_name, projection.decompose_name,
+            projection.project_name, source.rotation_plug,
+            source.rotate_order_plug)
+        self._transaction_changed = True
+        if projection.blend_name:
+            ik_output = create(
+                projection.ik_compose_name,
+                projection.ik_decompose_name,
+                projection.ik_project_name,
+                source.ik_rotation_plug,
+                source.ik_rotate_order_plug)
+            blend = c.createNode("blendTwoAttr", name=projection.blend_name)
+            c.connectAttr(fk_output, blend + ".input[0]")
+            c.connectAttr(ik_output, blend + ".input[1]")
+            c.connectAttr(source.ik_fk_blend_plug,
+                          blend + ".attributesBlender")
+
+    def capture_fit_part_projection_output(
+        self, projection: FitPartTwistProjection
+    ) -> str | None:
+        c = self._cmds
+        output = projection.output_plug
+        if not c.objExists(output):
+            return None
+        if projection.blend_name:
+            expected = (
+                projection.project_name + ".outputRotateX",
+                projection.ik_project_name + ".outputRotateX",
+                projection.input.ik_fk_blend_plug,
+            )
+            destinations = (
+                projection.blend_name + ".input[0]",
+                projection.blend_name + ".input[1]",
+                projection.blend_name + ".attributesBlender",
+            )
+            if any(c.connectionInfo(destination,
+                    sourceFromDestination=True) != source
+                   for destination, source in zip(destinations, expected)):
+                return None
+        return output
 
     def preflight_fit_part_twist_step(self, step: FitPartTwistStep) -> None:
         c = self._cmds

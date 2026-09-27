@@ -61,7 +61,7 @@ class BuildRegisteredSkinnedBodyCharacter:
               infer_missing_labels: bool = False,
               include_segment_influences: bool = False,
               use_fit_part_hierarchy: bool = False,
-              fit_part_twist_sources: tuple[FitPartTwistSource, ...] = (),
+              fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
               on_stage=None) -> RegisteredSkinnedBodyBuildResult:
         plan = self.plan(meshes, skin_prefix=skin_prefix,
                          maximum_influences=maximum_influences)

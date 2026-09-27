@@ -25,6 +25,109 @@ class FitPartTwistSource:
 
 
 @dataclass(frozen=True, slots=True)
+class FitPartRotationInput:
+    start_body: str
+    rotation_plug: str
+    rotate_order_plug: str
+    up_twist_plug: str | None = None
+    ik_rotation_plug: str | None = None
+    ik_rotate_order_plug: str | None = None
+    ik_fk_blend_plug: str | None = None
+    subtract_body_twist: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class FitPartTwistProjection:
+    input: FitPartRotationInput
+    compose_name: str
+    decompose_name: str
+    project_name: str
+    ik_compose_name: str | None = None
+    ik_decompose_name: str | None = None
+    ik_project_name: str | None = None
+    blend_name: str | None = None
+
+    @property
+    def output_plug(self) -> str:
+        if self.blend_name:
+            return self.blend_name + ".output"
+        return self.project_name + ".outputRotateX"
+
+    def source(self) -> FitPartTwistSource:
+        return FitPartTwistSource(
+            self.input.start_body, self.output_plug,
+            self.input.up_twist_plug,
+            self.input.subtract_body_twist,
+        )
+
+
+def plan_standard_fit_part_rotation_inputs(
+    parts: tuple[FitPartJointSpec, ...],
+) -> tuple[FitPartRotationInput, ...]:
+    """Resolve the established Arm/Leg rig channels for standard Fit chains."""
+    starts = {part.start_body: part for part in parts}
+    result = []
+    for start, part in starts.items():
+        stem = part.start_body_name.rsplit("_", 1)[0]
+        side = part.side.value
+        if stem in ("Shoulder", "Elbow"):
+            up = (f"AdvPy_LowerArmTwistProject_{side}.outputRotateX"
+                  if stem == "Elbow" else None)
+            result.append(FitPartRotationInput(
+                start, start + ".rotate", start + ".rotateOrder", up))
+        elif stem == "Hip":
+            fk = f"AdvPy_HipFKDriver_{side}"
+            ik = f"AdvPy_HipIKDriver_{side}"
+            result.append(FitPartRotationInput(
+                start, fk + ".rotate", fk + ".rotateOrder",
+                f"AdvPy_UpperLegTwistProject_{side}.outputRotateX",
+                ik + ".rotate", ik + ".rotateOrder",
+                f"AdvPy_LegSettings.legIkFk_{side}"))
+        else:
+            raise FitPartTwistValidationError(
+                "标准扭转来源未定义，需显式提供：" + part.start_body_name)
+    return tuple(result)
+
+
+def plan_fit_part_twist_projections(
+    inputs: tuple[FitPartRotationInput, ...],
+) -> tuple[FitPartTwistProjection, ...]:
+    if len({item.start_body for item in inputs}) != len(inputs):
+        raise FitPartTwistValidationError("Part 旋转来源不能重复")
+    projections = []
+    used_names: set[str] = set()
+    for item in inputs:
+        if not item.rotation_plug or not item.rotate_order_plug:
+            raise FitPartTwistValidationError("Part 旋转及旋转顺序来源不能为空")
+        has_ik = bool(item.ik_rotation_plug or item.ik_rotate_order_plug
+                      or item.ik_fk_blend_plug)
+        if has_ik and not all((item.ik_rotation_plug,
+                               item.ik_rotate_order_plug,
+                               item.ik_fk_blend_plug)):
+            raise FitPartTwistValidationError("Part IK/FK 投影来源不完整")
+        stem = item.start_body.rsplit("|", 1)[-1]
+        prefix = f"AdvPy_{stem}_FitPartTwist"
+        projection = FitPartTwistProjection(
+            item, prefix + "Compose", prefix + "Decompose",
+            prefix + "Project",
+            prefix + "IkCompose" if has_ik else None,
+            prefix + "IkDecompose" if has_ik else None,
+            prefix + "IkProject" if has_ik else None,
+            prefix + "Blend" if has_ik else None,
+        )
+        names = (projection.compose_name, projection.decompose_name,
+                 projection.project_name)
+        names += tuple(name for name in (
+            projection.ik_compose_name, projection.ik_decompose_name,
+            projection.ik_project_name, projection.blend_name) if name)
+        if any(name in used_names for name in names):
+            raise FitPartTwistValidationError("Part 投影节点名称重复")
+        used_names.update(names)
+        projections.append(projection)
+    return tuple(projections)
+
+
+@dataclass(frozen=True, slots=True)
 class FitPartTwistStep:
     part_name: str
     start_body: str
