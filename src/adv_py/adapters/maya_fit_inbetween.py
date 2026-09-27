@@ -12,6 +12,13 @@ from adv_py.core.fit_inbetween_fk_anchor import InbetweenFkAnchorPlan
 from adv_py.core.fit_inbetween_fk_parts import (
     InbetweenFkPartSpec, InbetweenFkPartsPlan,
 )
+from adv_py.core.fit_inbetween_ik_parts import (
+    InbetweenIkPartSpec, InbetweenIkPartsPlan,
+)
+from adv_py.core.fit_inbetween_body_driver import (
+    InbetweenBodyDriverPlan, InbetweenBodyDriverSpec,
+)
+from adv_py.core.fit_inbetween_fk_rewire import InbetweenFkRewirePlan
 from adv_py.core.fit_inbetween_matrix import (
     InbetweenMatrixDestination, InbetweenMatrixPlan,
     InbetweenMatrixStep,
@@ -20,6 +27,249 @@ from adv_py.core.joint_labels import JointLabel
 
 
 class MayaFitInbetweenMixin:
+    def preflight_inbetween_fk_rewire(
+        self, plan: InbetweenFkRewirePlan
+    ) -> None:
+        c = self._cmds
+        for name, node_type in (
+            (plan.start_fk_control_path, "transform"),
+            (plan.start_fk_driver_path, "joint"),
+            (plan.downstream_fk_offset_path, "transform"),
+            (plan.start_fkx_name, "joint"),
+            (plan.last_part_fkx_name, "joint"),
+        ):
+            if len(c.ls(name, long=True, type=node_type) or []) != 1:
+                raise ValueError("Inbetween FK 改接节点不唯一：" + name)
+        constraints = c.ls(plan.start_fk_constraint_name,
+                            type="orientConstraint") or []
+        if len(constraints) != 1:
+            raise ValueError("Inbetween 起点 FK 约束不唯一")
+        targets = c.orientConstraint(constraints[0], query=True,
+                                     targetList=True) or []
+        if (len(targets) != 1
+                or (c.ls(targets[0], long=True) or [])
+                != [plan.start_fk_control_path]):
+            raise ValueError("Inbetween 起点 FK 来源已变化")
+        driver = plan.start_fk_driver_path
+        for axis in "XYZ":
+            source = c.connectionInfo(driver + ".rotate" + axis,
+                                      sourceFromDestination=True)
+            if (not source or source.split(".", 1)[0].rsplit("|", 1)[-1]
+                    != plan.start_fk_constraint_name):
+                raise ValueError("Inbetween 起点 FK 机制输入已变化")
+        if c.objExists(plan.follow_constraint_name):
+            raise ValueError("Inbetween 下游 FK 跟随节点名称冲突")
+        offset = plan.downstream_fk_offset_path
+        if any(not c.getAttr(offset + "." + channel + axis,
+                             settable=True)
+               for channel in ("translate", "rotate") for axis in "XYZ"):
+            raise ValueError("Inbetween 下游 FK Offset 通道被占用")
+
+    def apply_inbetween_fk_rewire(
+        self, plan: InbetweenFkRewirePlan
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        before_driver = c.xform(plan.start_fk_driver_path,
+                                query=True, worldSpace=True, matrix=True)
+        before_offset = c.xform(plan.downstream_fk_offset_path,
+                                query=True, worldSpace=True, matrix=True)
+        self._transaction_changed = True
+        c.delete(plan.start_fk_constraint_name)
+        c.orientConstraint(plan.start_fkx_name,
+                           plan.start_fk_driver_path,
+                           maintainOffset=False,
+                           name=plan.start_fk_constraint_name)
+        c.parentConstraint(plan.last_part_fkx_name,
+                           plan.downstream_fk_offset_path,
+                           maintainOffset=True,
+                           name=plan.follow_constraint_name)
+        for node, before in (
+            (plan.start_fk_driver_path, before_driver),
+            (plan.downstream_fk_offset_path, before_offset),
+        ):
+            after = c.xform(node, query=True, worldSpace=True,
+                            matrix=True)
+            if max(abs(float(a) - float(b)) for a, b in zip(
+                    before, after)) > 1e-4:
+                raise RuntimeError("Inbetween FK 改接改变绑定姿态：" + node)
+
+    def capture_inbetween_fk_rewire(
+        self, plan: InbetweenFkRewirePlan
+    ) -> bool:
+        c = self._cmds
+        orient = c.ls(plan.start_fk_constraint_name,
+                      type="orientConstraint") or []
+        follow = c.ls(plan.follow_constraint_name,
+                      type="parentConstraint") or []
+        if len(orient) != 1 or len(follow) != 1:
+            return False
+        orient_targets = c.orientConstraint(
+            orient[0], query=True, targetList=True) or []
+        follow_targets = c.parentConstraint(
+            follow[0], query=True, targetList=True) or []
+        return (
+            len(orient_targets) == 1
+            and orient_targets[0].rsplit("|", 1)[-1]
+            == plan.start_fkx_name
+            and len(follow_targets) == 1
+            and follow_targets[0].rsplit("|", 1)[-1]
+            == plan.last_part_fkx_name
+        )
+
+    def preflight_inbetween_body_drivers(
+        self, plan: InbetweenBodyDriverPlan
+    ) -> None:
+        c = self._cmds
+        if (not c.objExists(plan.fk_weight_plug)
+                or not c.objExists(plan.ik_weight_plug)):
+            raise ValueError("Inbetween FK／IK 模式权重不存在")
+        for part in plan.parts:
+            joints = c.ls(part.body_part_name, long=True,
+                          type="joint") or []
+            if len(joints) != 1:
+                raise ValueError("Inbetween Body Part 不唯一："
+                                 + part.body_part_name)
+            body = joints[0]
+            if (not c.objExists(body + ".advPyAuxiliaryInfluenceKind")
+                    or c.getAttr(body + ".advPyAuxiliaryInfluenceKind")
+                    != "fit-inbetween-v1"):
+                raise ValueError("Body 关节不是 Inbetween Part："
+                                 + part.body_part_name)
+            for name in (part.fkx_name, part.ikx_name):
+                if len(c.ls(name, long=True, type="joint") or []) != 1:
+                    raise ValueError("Inbetween FK／IK 来源不唯一：" + name)
+            if (c.objExists(part.constraint_name)
+                    or any(not c.getAttr(body + ".rotate" + axis,
+                                         settable=True)
+                           for axis in "XYZ")):
+                raise ValueError("Inbetween Body 朝向目标已占用："
+                                 + part.body_part_name)
+
+    def create_inbetween_body_driver(
+        self, plan: InbetweenBodyDriverPlan,
+        part: InbetweenBodyDriverSpec,
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        body = (c.ls(part.body_part_name, long=True,
+                     type="joint") or [])[0]
+        before = c.xform(body, query=True, worldSpace=True, matrix=True)
+        constraint = c.orientConstraint(
+            part.fkx_name, part.ikx_name, body,
+            maintainOffset=False, name=part.constraint_name)[0]
+        self._transaction_changed = True
+        aliases = c.orientConstraint(constraint, query=True,
+                                     weightAliasList=True) or []
+        if len(aliases) != 2:
+            raise RuntimeError("Inbetween Body FK／IK 双源约束权重不完整："
+                               + part.body_part_name)
+        c.connectAttr(plan.fk_weight_plug,
+                      constraint + "." + aliases[0])
+        c.connectAttr(plan.ik_weight_plug,
+                      constraint + "." + aliases[1])
+        c.setAttr(constraint + ".interpType", 2)
+        after = c.xform(body, query=True, worldSpace=True, matrix=True)
+        if max(abs(float(a) - float(b)) for a, b in zip(
+                before, after)) > 1e-4:
+            raise RuntimeError("Inbetween Body FK／IK 改变绑定姿态："
+                               + part.body_part_name)
+
+    def capture_inbetween_body_driver(
+        self, plan: InbetweenBodyDriverPlan,
+        part: InbetweenBodyDriverSpec,
+    ) -> bool:
+        c = self._cmds
+        constraints = c.ls(part.constraint_name,
+                            type="orientConstraint") or []
+        if len(constraints) != 1:
+            return False
+        constraint = constraints[0]
+        targets = c.orientConstraint(constraint, query=True,
+                                     targetList=True) or []
+        aliases = c.orientConstraint(constraint, query=True,
+                                     weightAliasList=True) or []
+        if len(targets) != 2 or len(aliases) != 2:
+            return False
+        return (
+            tuple(name.rsplit("|", 1)[-1] for name in targets)
+            == (part.fkx_name, part.ikx_name)
+            and c.connectionInfo(constraint + "." + aliases[0],
+                                 sourceFromDestination=True)
+            == plan.fk_weight_plug
+            and c.connectionInfo(constraint + "." + aliases[1],
+                                 sourceFromDestination=True)
+            == plan.ik_weight_plug
+        )
+
+    def preflight_inbetween_ik_parts(
+        self, plan: InbetweenIkPartsPlan
+    ) -> None:
+        c = self._cmds
+        starts = c.ls(plan.start_ik_driver, long=True,
+                      type="joint") or []
+        ends = c.ls(plan.end_ik_driver, long=True,
+                    type="joint") or []
+        if len(starts) != 1 or len(ends) != 1:
+            raise ValueError("Inbetween IK 机制关节不存在")
+        parent = c.listRelatives(ends[0], parent=True,
+                                 fullPath=True) or []
+        if parent != starts:
+            raise ValueError("Inbetween IK 起止机制关节不是直接父子")
+        names = [name for part in plan.parts
+                 for name in (part.ikx_name, part.distance_name)]
+        if len(set(names)) != len(names) or any(
+                c.objExists(name) for name in names):
+            raise ValueError("Inbetween IK 分段节点名称冲突")
+
+    def create_inbetween_ik_part(
+        self, plan: InbetweenIkPartsPlan,
+        part: InbetweenIkPartSpec,
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        ikx = c.createNode("joint", name=part.ikx_name,
+                           parent=part.parent_ikx_name,
+                           skipSelect=True)
+        distance = c.createNode("multiplyDivide",
+                                name=part.distance_name)
+        self._transaction_changed = True
+        c.setAttr(ikx + ".drawStyle", 2)
+        c.setAttr(ikx + ".segmentScaleCompensate", 0)
+        c.setAttr(ikx + ".rotateOrder", part.rotate_order)
+        c.setAttr(distance + ".input2", *(part.interval_fraction,) * 3,
+                  type="double3")
+        c.connectAttr(plan.end_ik_driver + ".translate",
+                      distance + ".input1")
+        c.connectAttr(distance + ".output",
+                      part.ikx_name + ".translate")
+
+    def capture_inbetween_ik_part(
+        self, plan: InbetweenIkPartsPlan,
+        part: InbetweenIkPartSpec,
+    ) -> bool:
+        c = self._cmds
+        joints = c.ls(part.ikx_name, long=True, type="joint") or []
+        if len(joints) != 1:
+            return False
+        parent = c.listRelatives(joints[0], parent=True,
+                                 fullPath=True) or []
+        expected_parent = part.parent_ikx_name.rsplit("|", 1)[-1]
+        if (len(parent) != 1 or parent[0].rsplit("|", 1)[-1]
+                != expected_parent):
+            return False
+        distance = part.distance_name
+        return (
+            c.connectionInfo(distance + ".input1",
+                             sourceFromDestination=True)
+            == plan.end_ik_driver + ".translate"
+            and c.connectionInfo(part.ikx_name + ".translate",
+                                 sourceFromDestination=True)
+            == distance + ".output"
+            and all(abs(float(value) - part.interval_fraction) < 1e-8
+                    for value in c.getAttr(distance + ".input2")[0])
+        )
+
     def connect_inbetween_fk_visibility(
         self, plan: InbetweenFkPartsPlan
     ) -> None:
