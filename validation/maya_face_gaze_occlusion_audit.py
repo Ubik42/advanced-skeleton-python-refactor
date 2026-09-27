@@ -42,10 +42,11 @@ def measure(head: om.MFnMesh, eye: om.MFnMesh, eye_name: str,
                 continue
             hits += 1
             lid_z = front_depth(head, x, y)
-            if lid_z is None or eye_z > lid_z + .001:
+            if lid_z is None or lid_z < bounds[2] or eye_z > lid_z + .001:
                 visible += 1
-                missing += lid_z is None
-                if lid_z is not None:
+                absent_front = lid_z is None or lid_z < bounds[2]
+                missing += absent_front
+                if not absent_front:
                     deficit = max(deficit, eye_z - lid_z)
                 points.append([ix / 10., iy / 10.])
     return {"eye_hits": hits, "visible": visible,

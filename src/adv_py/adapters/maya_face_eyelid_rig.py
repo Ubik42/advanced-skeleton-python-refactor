@@ -63,7 +63,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                     continue
                 eye_hits += 1
                 lid_z = front_depth(head_fn, x, y)
-                if lid_z is None:
+                if lid_z is None or lid_z < bounds[2]:
                     visible += 1
                     missing += 1
                 elif eye_z > lid_z + .001:
@@ -77,6 +77,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
             result = {"open_visible": opened[1],
                       "initial_closed_visible": closed[1],
                       "final_closed_visible": closed[1],
+                      "initial_missing_front_surface": closed[2],
                       "initial_depth_deficit_cm": round(closed[3], 6),
                       "applied_cm": 0.}
             if (opened[0] < 50 or opened[1] < 20 or closed[2]
