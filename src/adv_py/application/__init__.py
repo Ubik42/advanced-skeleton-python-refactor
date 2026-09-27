@@ -522,6 +522,8 @@ __all__ = [
     "CharacterFromFitPlan",
     "BuildCustomController",
     "CustomControllerBuildResult",
+    "ExtendSoftModController",
+    "SoftModExtensionPlan",
     "BuildCharacterFromSourceSkeleton",
     "SourceCharacterBuildPlan",
     "SourceCharacterBuildResult",
@@ -734,7 +736,8 @@ from .character_from_fit import (BuildCharacterFromFit, CharacterFromFitPlan,
 from .character_from_source import (BuildCharacterFromSourceSkeleton,
     SourceCharacterBuildPlan, SourceCharacterBuildResult)
 from .custom_controller import (BuildCustomController,
-    CustomControllerBuildResult)
+    CustomControllerBuildResult, ExtendSoftModController,
+    SoftModExtensionPlan)
 
 from .external_mesh_io import (ExportExternalMesh, ImportExternalMesh,
     ExternalMeshResult)

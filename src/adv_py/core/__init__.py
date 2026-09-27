@@ -751,8 +751,18 @@ from .control_orientation import (
     plan_control_orientation_world_match,
     plan_custom_control_orientations,
 )
+from .custom_controller import (
+    CustomControlKind, CustomControllerPlan, DeformJointCandidate,
+    SoftModRegion, WeightedVertex, plan_custom_controller,
+)
 
 __all__ = [
+    "CustomControlKind",
+    "CustomControllerPlan",
+    "DeformJointCandidate",
+    "SoftModRegion",
+    "WeightedVertex",
+    "plan_custom_controller",
     "ControlAxis",
     "CustomOrientationPreview",
     "ControlOrientationChange",
