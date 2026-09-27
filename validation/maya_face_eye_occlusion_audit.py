@@ -27,14 +27,19 @@ def front_depth(mesh: om.MFnMesh, x: float, y: float) -> float | None:
 def main() -> None:
     scene = Path(sys.argv[1]).resolve()
     output = Path(sys.argv[2]).resolve()
+    original_meshes = sys.argv[3:6]
+    if original_meshes and len(original_meshes) != 3:
+        raise ValueError("原版对照需要头部、右眼和左眼三个网格名称")
     cmds.file(str(scene), open=True, force=True,
               executeScriptNodes=False)
-    head = mesh_fn("head")
+    head = mesh_fn(original_meshes[0] if original_meshes else "head")
     rows = {}
     full_rows = {}
     for side, suffix in (("Right", "R"), ("Left", "L")):
-        eye_name = cmds.skinCluster("AdvPy_EyeSkin_" + suffix,
-                                    query=True, geometry=True)[0]
+        eye_name = (original_meshes[1 if suffix == "R" else 2]
+                    if original_meshes else cmds.skinCluster(
+                        "AdvPy_EyeSkin_" + suffix,
+                        query=True, geometry=True)[0])
         eye = mesh_fn(eye_name)
         bounds = cmds.exactWorldBoundingBox(eye_name)
         cx = (bounds[0] + bounds[3]) / 2.
@@ -85,7 +90,7 @@ def main() -> None:
         full_rows[side] = visible["full_eye"]
     passed = all(row["open"]["eye_hit_samples"] >= 50
                  and row["open"]["visible_fraction"] >= .3
-                 and row["closed"]["visible_fraction"] <= .05
+                 and row["closed"]["visible_fraction"] <= .01
                  for region in (rows, full_rows)
                  for row in region.values())
     output.parent.mkdir(parents=True, exist_ok=True)

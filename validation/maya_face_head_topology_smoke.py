@@ -425,7 +425,9 @@ def main() -> None:
             assert mirror_result["mapped_vertices"] == 55
             assert cmds.objExists("FaceFitEyeLidInnerLeft")
         aperture_mode = bool(lid_rig["aperture_sides"])
-        expected_control_count = 8 + 2 * len(lid_rig["aperture_sides"])
+        expected_control_count = 8 + 2 * (
+            len(lid_rig["aperture_sides"]) -
+            len(lid_rig["stationary_aperture_sides"]))
         assert len(lid_rig["controls"]) == expected_control_count
         assert len(lid_rig["eye_controls"]) == 2
         assert len(lid_rig["work_curves"]) == expected_control_count
@@ -474,6 +476,10 @@ def main() -> None:
                 "minimum_weight": round(min(masses), 6),
                 "maximum_weight": round(max(masses), 6),
             }
+            if side.value in lid_rig["stationary_aperture_sides"]:
+                assert aperture_rim[side.value]["weighted_count"] == 0
+            elif side.value in lid_rig["aperture_sides"]:
+                assert aperture_rim[side.value]["weighted_count"] > 0
         cmds.undo()
         assert not cmds.objExists("FaceMotionSystem")
         if complex_scene:
@@ -684,6 +690,8 @@ def main() -> None:
                   "curve_joint_max_error_cm": round(curve_joint_error, 8),
                   "eyelid_joint_count": len(lid_rig["joints"]),
                   "weighted_vertices": changed_vertices,
+                  "stationary_aperture_sides": lid_rig[
+                      "stationary_aperture_sides"],
                   "aperture_rim": aperture_rim,
                   "reopened_animation_delta_cm": round(key_delta, 6),
                   "complex_skin": (complex_scene and {

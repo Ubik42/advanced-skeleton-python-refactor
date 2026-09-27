@@ -107,7 +107,20 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
         if selected_inner_edges & boundary_edges and not open_inner:
             raise FitSkeletonValidationError(
                 "EyeLid Inner 环混合了眼孔边界与表面内部边")
-        if open_inner:
+        inner_vertices = {vertex for _, first, second in
+                          rings[EyeLidLayer.INNER][0]
+                          for vertex in (first, second)}
+        boundary_degrees = {vertex: 0 for vertex in inner_vertices}
+        for edge in boundary_edges:
+            for vertex in fn.getEdgeVertices(edge):
+                if vertex in boundary_degrees:
+                    boundary_degrees[vertex] += 1
+        # A branched rim belongs to a larger open boundary. Original Max
+        # leaves that rim on Head_M; only a simple hole gets Inner joints.
+        mobile_inner = (open_inner and
+                        all(degree == 2 for degree in
+                            boundary_degrees.values()))
+        if mobile_inner:
             edges, corners = rings[EyeLidLayer.INNER]
             ordered[EyeLidLayer.INNER] = order_eye_lid_loop(
                 edges, {vertex: positions[vertex]
@@ -136,9 +149,6 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                 f"Outer／Inner 缺 {len(boundary - area_vertices)} 顶点")
         shared_corners = {main.upper_vertices[0],
                           main.upper_vertices[-1]}
-        inner_vertices = {vertex for _, first, second in
-                          rings[EyeLidLayer.INNER][0]
-                          for vertex in (first, second)}
         if (main_vertices & inner_vertices or
                 (main_vertices & boundary) - shared_corners):
             raise FitSkeletonValidationError("眼睑 Main 与 Outer／Inner 环重叠")
@@ -150,7 +160,7 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                 positions, area_vertices, outer.upper_vertices,
                 outer.lower_vertices),
         }
-        if open_inner:
+        if mobile_inner:
             inner = ordered[EyeLidLayer.INNER]
             factors[EyeLidLayer.INNER] = inner_eyelid_skin_factors(
                 adjacency, positions, area_vertices,
@@ -166,14 +176,14 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                 for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER)}
         arcs.update({(layer, "lower"): ordered[layer].lower_vertices
                      for layer in (EyeLidLayer.MAIN, EyeLidLayer.OUTER)})
-        if open_inner:
+        if mobile_inner:
             arcs[(EyeLidLayer.INNER, "upper")] = (
                 ordered[EyeLidLayer.INNER].upper_vertices)
             arcs[(EyeLidLayer.INNER, "lower")] = (
                 ordered[EyeLidLayer.INNER].lower_vertices)
         span = max(positions[index][0] for index in main.upper_vertices) \
              - min(positions[index][0] for index in main.upper_vertices)
-        return factors, arcs, positions, span, open_inner
+        return factors, arcs, positions, span, open_inner, mobile_inner
 
     def build(self) -> dict:
         c = self._cmds
@@ -268,12 +278,13 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
         positions = {}
         spans = {}
         open_inners = {}
+        mobile_inners = {}
         for side in FaceSide:
             (factors[side], arcs[side], positions[side], spans[side],
-             open_inners[side]) = self._surface_factors(
+             open_inners[side], mobile_inners[side]) = self._surface_factors(
                 pre, mesh, side)
         layers = {side: ((EyeLidLayer.MAIN, EyeLidLayer.OUTER,
-                          EyeLidLayer.INNER) if open_inners[side] else
+                          EyeLidLayer.INNER) if mobile_inners[side] else
                          (EyeLidLayer.MAIN, EyeLidLayer.OUTER))
                   for side in FaceSide}
         def weighted(side):
@@ -527,6 +538,9 @@ class MayaFaceEyeLidRigHost(MayaDenseSkinHost, MayaFacePreHost):
                 "controls": control_names, "joints": joint_names,
                 "aperture_sides": tuple(side.value for side in FaceSide
                                         if open_inners[side]),
+                "stationary_aperture_sides": tuple(
+                    side.value for side in FaceSide
+                    if open_inners[side] and not mobile_inners[side]),
                 "eye_controls": eye_control_names,
                 "work_curves": work_curves,
                 "area_vertices": {side.value: len(weighted(side))

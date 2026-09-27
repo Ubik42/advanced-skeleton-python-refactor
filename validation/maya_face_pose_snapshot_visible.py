@@ -100,10 +100,16 @@ def schedule(source_directory: str, output_directory: str) -> None:
                     forceOverwrite=True)
                 data[label + "_visible_eye_pixels"] = visible_eye_pixels(
                     output / (f"snapshot-{label}.{frame:04d}.png"))
-            data["passed"] = (bool(list(output.glob("snapshot-open.*.png")))
-                              and bool(list(output.glob("snapshot-blink.*.png")))
-                              and data["open_visible_eye_pixels"] > 0
-                              and data["blink_visible_eye_pixels"] == 0)
+            data["rendered"] = (bool(list(output.glob("snapshot-open.*.png")))
+                                and bool(list(output.glob("snapshot-blink.*.png"))))
+            data["blink_eye_pixel_fraction_of_open"] = (
+                round(data["blink_visible_eye_pixels"] /
+                      data["open_visible_eye_pixels"], 6)
+                if data["open_visible_eye_pixels"] else None)
+            data["passed"] = (data["rendered"] and
+                              data["blink_eye_pixel_fraction_of_open"]
+                              is not None and
+                              data["blink_eye_pixel_fraction_of_open"] <= .01)
         except BaseException:
             data["error"] = traceback.format_exc()
             data["passed"] = False

@@ -8,7 +8,9 @@ class BuildFaceEyeLids:
 
     def execute(self) -> dict:
         result = self.host.build()
-        expected_controls = 8 + 2 * len(result.get("aperture_sides", ()))
+        mobile_apertures = (set(result.get("aperture_sides", ())) -
+                            set(result.get("stationary_aperture_sides", ())))
+        expected_controls = 8 + 2 * len(mobile_apertures)
         if (len(result["controls"]) != expected_controls
                 or len(result["joints"]) < 16
                 or not all(result["area_vertices"].values())):
