@@ -20,7 +20,9 @@ class FitPartTwistHost(Protocol):
 
     def create_fit_part_twist_step(self, step: FitPartTwistStep) -> None: ...
 
-    def capture_fit_part_twist_output(self, part_name: str) -> str | None: ...
+    def capture_fit_part_twist_output(
+        self, step: FitPartTwistStep
+    ) -> str | None: ...
 
     def preflight_fit_part_twist_projection(
         self, projection: FitPartTwistProjection
@@ -81,6 +83,8 @@ class BuildFitPartTwistDrivers:
                      step.difference_node)
             if step.up_amount_node:
                 names += (step.up_amount_node,)
+            if step.matrix_name:
+                names += (step.matrix_name,)
             for name in names:
                 if self._host.find_name_collisions(name):
                     raise ValueError("Fit Part 扭转节点名称冲突：" + name)
@@ -89,7 +93,7 @@ class BuildFitPartTwistDrivers:
                 self._host.create_fit_part_twist_step(step)
             for step in steps:
                 if self._host.capture_fit_part_twist_output(
-                        step.part_name) != step.output_plug:
+                        step) != step.output_plug:
                     raise RuntimeError("Fit Part 扭转输出连接不一致："
                                        + step.part_name)
         return steps

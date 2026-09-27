@@ -141,6 +141,8 @@ class FitPartTwistStep:
     up_amount_node: str | None
     target_node: str
     difference_node: str
+    use_offset_parent_matrix: bool = False
+    matrix_name: str | None = None
 
     @property
     def target_plug(self) -> str:
@@ -197,8 +199,11 @@ def plan_fit_part_twist(
             up_amount_node = prefix + "UpAmount" if source.up_twist_plug else None
             target_node = prefix + "Target"
             difference_node = prefix + "Local"
+            use_opm = not part.segment_scale_compensate
+            matrix_name = prefix + "Matrix" if use_opm else None
             names = (amount_node, target_node, difference_node)
             names += (up_amount_node,) if up_amount_node else ()
+            names += (matrix_name,) if matrix_name else ()
             if any(name in used_nodes for name in names):
                 raise FitPartTwistValidationError("Part 扭转节点名称重复")
             used_nodes.update(names)
@@ -206,7 +211,8 @@ def plan_fit_part_twist(
                 part.name, start_body, part.index, count,
                 part.index / (count + 1), source.down_twist_plug,
                 source.up_twist_plug, previous_target, amount_node,
-                up_amount_node, target_node, difference_node)
+                up_amount_node, target_node, difference_node,
+                use_opm, matrix_name)
             steps.append(step)
             previous_target = step.target_plug
     return tuple(steps)

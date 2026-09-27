@@ -217,10 +217,18 @@ class MayaFitPartMixin:
         if step.up_twist_plug and not c.objExists(step.up_twist_plug):
             raise ValueError("Fit Part 上游扭转来源不存在："
                              + step.up_twist_plug)
+        target = ("offsetParentMatrix" if step.use_offset_parent_matrix
+                  else "rotateX")
         if (c.attributeQuery("twistAmount", node=part, exists=True)
                 or c.attributeQuery("twistAddition", node=part, exists=True)
-                or not c.getAttr(part + ".rotateX", settable=True)):
+                or not c.getAttr(part + "." + target, settable=True)):
             raise ValueError("Fit Part 扭转目标不可写：" + step.part_name)
+        if step.use_offset_parent_matrix and any(
+                not c.getAttr(part + "." + attr, settable=True)
+                for attr in ("translateX", "translateY", "translateZ",
+                             "rotateX", "rotateY", "rotateZ")):
+            raise ValueError("Fit Part OPM 需要可写的局部平移和旋转："
+                             + step.part_name)
 
     def create_fit_part_twist_step(self, step: FitPartTwistStep) -> None:
         self._require_transaction()
@@ -252,13 +260,35 @@ class MayaFitPartMixin:
                           difference + ".input1D[1]")
         else:
             c.setAttr(difference + ".input1D[1]", 0.0)
-        c.connectAttr(difference + ".output1D", part + ".rotateX")
+        if step.use_offset_parent_matrix:
+            matrix = c.createNode("composeMatrix", name=step.matrix_name)
+            translation = c.getAttr(part + ".translate")[0]
+            c.setAttr(matrix + ".inputTranslate", *translation,
+                      type="float3")
+            c.connectAttr(difference + ".output1D",
+                          matrix + ".inputRotateX")
+            c.connectAttr(matrix + ".outputMatrix",
+                          part + ".offsetParentMatrix")
+            c.setAttr(part + ".translate", 0.0, 0.0, 0.0,
+                      type="double3")
+            c.setAttr(part + ".rotate", 0.0, 0.0, 0.0,
+                      type="double3")
+        else:
+            c.connectAttr(difference + ".output1D", part + ".rotateX")
 
-    def capture_fit_part_twist_output(self, part_name: str) -> str | None:
-        part = self._unique_fit_part_joint(part_name)
-        sources = self._cmds.listConnections(
-            part + ".rotateX", source=True, destination=False,
-            plugs=True) or []
-        if len(sources) != 1:
-            return None
-        return str(sources[0])
+    def capture_fit_part_twist_output(
+        self, step: FitPartTwistStep
+    ) -> str | None:
+        c = self._cmds
+        part = self._unique_fit_part_joint(step.part_name)
+        if step.use_offset_parent_matrix:
+            matrix_source = c.connectionInfo(
+                part + ".offsetParentMatrix",
+                sourceFromDestination=True)
+            if matrix_source != step.matrix_name + ".outputMatrix":
+                return None
+            return c.connectionInfo(
+                step.matrix_name + ".inputRotateX",
+                sourceFromDestination=True) or None
+        return c.connectionInfo(
+            part + ".rotateX", sourceFromDestination=True) or None
