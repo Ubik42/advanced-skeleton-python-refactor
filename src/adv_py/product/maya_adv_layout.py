@@ -89,7 +89,14 @@ ADV_OPERATIONS = {
         ("重新附着全部控制器", 0, "10 · Control Orient")),
     ("Body", "Unreal Joints"): (
         ("创建通用 Unreal IK 关节", 0, "11 · Unreal Joints"),
-        ("删除通用 Unreal IK 关节", 0, "11 · Unreal Joints")),
+        ("删除通用 Unreal IK 关节", 0, "11 · Unreal Joints"),
+        ("Mannequin 模板", 0, "11 · Unreal Joints"),
+        ("模板文件", 0, "11 · Unreal Joints"),
+        ("创建 Mannequin 骨架", 0, "11 · Unreal Joints"),
+        ("转移蒙皮到 Mannequin", 0, "11 · Unreal Joints"),
+        ("删除 Mannequin 骨架", 0, "11 · Unreal Joints"),
+        ("启用 Unreal Twist 层级", 0, "11 · Unreal Joints"),
+        ("恢复默认 Twist 层级", 0, "11 · Unreal Joints")),
     ("Body", "Partial Joints"): (
         ("包含控制器", 0, "12 · Partial Joints"),
         ("创建 Partial Joints", 0, "12 · Partial Joints"),

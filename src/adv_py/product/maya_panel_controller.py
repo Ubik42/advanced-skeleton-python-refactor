@@ -820,6 +820,41 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)
         DeleteUnrealJoints(host).apply()
 
+    def unreal_mannequin_create(self, namespace: str, template_path: str,
+                                template: str, scale_to_match: bool):
+        from adv_py.adapters.maya_unreal_mannequin import MayaMannequinHost
+        from adv_py.application.unreal_mannequin import CreateMannequin
+
+        host = MayaMannequinHost(
+            namespace=None if namespace == ":" else namespace)
+        return CreateMannequin(host).apply(
+            template_path, template=template,
+            scale_adv_to_template=scale_to_match)
+
+    def unreal_mannequin_transfer_skin(self, namespace: str) -> int:
+        from adv_py.adapters.maya_unreal_mannequin import MayaMannequinHost
+        from adv_py.application.unreal_mannequin import TransferMannequinSkin
+
+        host = MayaMannequinHost(
+            namespace=None if namespace == ":" else namespace)
+        return TransferMannequinSkin(host).apply()
+
+    def unreal_mannequin_delete(self, namespace: str) -> None:
+        from adv_py.adapters.maya_unreal_mannequin import MayaMannequinHost
+        from adv_py.application.unreal_mannequin import DeleteMannequin
+
+        host = MayaMannequinHost(
+            namespace=None if namespace == ":" else namespace)
+        DeleteMannequin(host).apply()
+
+    def unreal_twist_hierarchy(self, namespace: str, enable: bool) -> int:
+        from adv_py.adapters.maya_unreal_twist import MayaUnrealTwistHost
+        from adv_py.application.unreal_twist import SetUnrealTwistHierarchy
+
+        host = MayaUnrealTwistHost(
+            namespace=None if namespace == ":" else namespace)
+        return SetUnrealTwistHierarchy(host).apply(enable)
+
     def squash_controller_create(self, namespace: str, *, mirror: bool = True):
         from adv_py.adapters.maya_squash_controller import MayaSquashControllerHost
         from adv_py.application.squash_controller import CreateSquashController

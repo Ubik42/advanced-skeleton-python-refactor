@@ -669,6 +669,27 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._create_unreal_joints))
             form.addRow(self._button("删除通用 Unreal IK 关节",
                                      self._delete_unreal_joints))
+            self.mannequin_template = QtWidgets.QComboBox()
+            self.mannequin_template.addItems(
+                ("Mannequin (UE4)", "Manny (UE5)", "Quinn (UE5)"))
+            self.mannequin_template.setCurrentText("Manny (UE5)")
+            self.mannequin_scale = QtWidgets.QCheckBox("缩放 ADV 角色以匹配模板")
+            self.mannequin_scale.setChecked(True)
+            mannequin_file_widget, self.mannequin_file = self._file_field(
+                "ADV asUnreal.ma", filter_text="Maya ASCII (*.ma)")
+            form.addRow("Mannequin 模板", self.mannequin_template)
+            form.addRow("模板文件", mannequin_file_widget)
+            form.addRow(self.mannequin_scale)
+            form.addRow(self._button("创建 Mannequin 骨架",
+                                     self._create_unreal_mannequin))
+            form.addRow(self._button("转移蒙皮到 Mannequin",
+                                     self._transfer_unreal_mannequin_skin))
+            form.addRow(self._button("删除 Mannequin 骨架",
+                                     self._delete_unreal_mannequin))
+            form.addRow(self._button("启用 Unreal Twist 层级",
+                                     self._create_unreal_twist_hierarchy))
+            form.addRow(self._button("恢复默认 Twist 层级",
+                                     self._delete_unreal_twist_hierarchy))
             stack.addWidget(group)
 
             self.partial_include_controller = QtWidgets.QCheckBox("包含控制器")
@@ -1779,6 +1800,30 @@ def create_panel(controller: MayaPanelController | None = None):
         def _delete_unreal_joints(self):
             self.controller.unreal_joints_delete(self._namespace())
             return "已删除通用 Unreal IK 关节"
+
+        def _create_unreal_mannequin(self):
+            plan = self.controller.unreal_mannequin_create(
+                self._namespace(), self.mannequin_file.text().strip(),
+                self.mannequin_template.currentText(),
+                self.mannequin_scale.isChecked())
+            return "已创建 " + plan.template + " 骨架"
+
+        def _transfer_unreal_mannequin_skin(self):
+            count = self.controller.unreal_mannequin_transfer_skin(
+                self._namespace())
+            return f"已转移 {count} 件网格的蒙皮"
+
+        def _delete_unreal_mannequin(self):
+            self.controller.unreal_mannequin_delete(self._namespace())
+            return "已删除 Mannequin 骨架并恢复原始 Geometry"
+
+        def _create_unreal_twist_hierarchy(self):
+            count = self.controller.unreal_twist_hierarchy(self._namespace(), True)
+            return f"已调整 {count} 个 Twist 层级关节"
+
+        def _delete_unreal_twist_hierarchy(self):
+            count = self.controller.unreal_twist_hierarchy(self._namespace(), False)
+            return f"已恢复 {count} 个 Twist 层级关节"
 
         def _create_squash_controller(self):
             plans = self.controller.squash_controller_create(
