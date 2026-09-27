@@ -13,6 +13,12 @@ from adv_py.core.body_skeleton import (
 from adv_py.core.fit_orientation import FitOrientationSnapshot
 from adv_py.core.fit_settings import FitSkeletonSettings, FitSkeletonValidationError
 from adv_py.core.joint_labels import JointLabel
+from adv_py.core.fit_part import (
+    FitPartJointSpec,
+    FitPartReparentSpec,
+    plan_fit_part_joints,
+    plan_fit_part_reparents,
+)
 
 from .fit_symmetry import FitSymmetryPlan, PlanFitSymmetry
 
@@ -46,6 +52,8 @@ class BodySkeletonBuildPlan:
     missing_labels: tuple[str, ...]
     name_collisions: tuple[str, ...]
     inferred_labels: tuple[str, ...] = ()
+    fit_parts: tuple[FitPartJointSpec, ...] = ()
+    fit_part_reparents: tuple[FitPartReparentSpec, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -121,12 +129,24 @@ class BuildBodySkeleton:
             for spec in specs
             for path in self._host.find_name_collisions(spec.name)
         )
+        fit_parts = (
+            plan_fit_part_joints(
+                symmetry.instances, symmetry.source.metadata, specs)
+            if not missing_labels else ()
+        )
+        fit_part_reparents = (
+            plan_fit_part_reparents(
+                symmetry.instances, symmetry.source.metadata, fit_parts)
+            if not missing_labels else ()
+        )
         return BodySkeletonBuildPlan(
             symmetry,
             specs,
             tuple(missing_labels),
             collisions,
             tuple(inferred_labels),
+            fit_parts,
+            fit_part_reparents,
         )
 
     def apply(
