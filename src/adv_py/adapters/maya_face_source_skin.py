@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from array import array
 
-from adv_py.core.face_source_skin_mapping import (
-    face_influence_base, plan_face_source_skin_mapping,
-    transfer_face_source_skin_weights,
+from adv_py.application.face_source_skin import (
+    FaceSourceSkinCapture, TransferOriginalEyeLidSkin,
 )
+from adv_py.core.face_source_skin_mapping import FaceSourceSkinMapping, face_influence_base
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .maya_face_eyelid_rig import MayaFaceEyeLidRigHost
@@ -53,7 +53,11 @@ def _mesh_skin(cmds, mesh_name: str):
 
 class MayaFaceSourceSkinHost(MayaFaceEyeLidRigHost):
     def transfer_original_eye_lid_skin(self, source_mesh: str) -> dict:
-        """Graft ADV eyelid influences from a visible equal-topology source."""
+        return TransferOriginalEyeLidSkin(self).execute(source_mesh)
+
+    def capture_face_source_skin(
+        self, source_mesh: str,
+    ) -> FaceSourceSkinCapture:
         from maya import cmds as raw
         from maya.api import OpenMaya as om
 
@@ -97,21 +101,25 @@ class MayaFaceSourceSkinHost(MayaFaceEyeLidRigHost):
                           for name in before.influence_names}
         if len(target_by_base) != len(before.influence_names) or "Head_M" not in target_by_base:
             raise FitSkeletonValidationError("目标影响关节名称不唯一或缺少 Head_M")
-        try:
-            mapping = plan_face_source_skin_mapping(
-                source_joints, before.influence_names,
-                simpler_eyelid=simpler_eyelid)
-        except ValueError as error:
-            raise FitSkeletonValidationError(str(error)) from error
-        source_map = list(mapping.segment_targets)
-        auxiliary = {side: (index, source_joints[index])
-                     for side, index in mapping.auxiliary_sources}
+        return FaceSourceSkinCapture(
+            source_path, target_mesh, target_skin, source_joints,
+            source_values, source_blend, source_method, before,
+            simpler_eyelid, position_error,
+            tuple(c.ls(selection=True, long=True) or ()))
+
+    def preflight_face_source_auxiliaries(
+        self, capture: FaceSourceSkinCapture,
+        mapping: FaceSourceSkinMapping,
+    ) -> None:
+        c = self._cmds
         roots = c.ls("FaceJoint_M", long=True, type="joint") or []
         if len(roots) != 1:
             raise FitSkeletonValidationError("目标 FaceJoint_M 缺失或不唯一")
-        for side in auxiliary:
+        target_by_base = {face_influence_base(name): name
+                          for name in capture.before.influence_names}
+        for side, _ in mapping.auxiliary_sources:
             joint_name = "lowerLidOuterJoint_" + side
-            if simpler_eyelid:
+            if capture.simpler_eyelid:
                 joint = c.ls(joint_name, long=True, type="joint") or []
                 if (len(joint) != 1
                         or joint_name not in target_by_base
@@ -129,52 +137,37 @@ class MayaFaceSourceSkinHost(MayaFaceEyeLidRigHost):
                 if not c.objExists(
                     "ctrlLowerEyeLidOuter_" + side + "MotionSum"):
                     raise FitSkeletonValidationError("目标下 Outer 驱动缺失")
-        selected = c.ls(selection=True, long=True) or []
-        with self.transaction("迁移原版眼睑 Skin"):
-            self._transaction_changed = True
-            for side, (_, source_joint) in auxiliary.items():
-                if simpler_eyelid:
-                    continue
-                name = "lowerLidOuterJoint_" + side
-                pivot = raw.xform(source_joint, query=True,
-                                  worldSpace=True, translation=True)
-                c.select(clear=True)
-                joint = c.joint(name=name)
-                joint = c.parent(joint, roots[0], absolute=True)[0]
-                c.xform(joint, worldSpace=True, translation=pivot)
-                addition = c.createNode("plusMinusAverage",
-                                        name=name + "MotionSum")
-                c.setAttr(addition + ".input3D[0]", *pivot, type="double3")
-                c.connectAttr("ctrlLowerEyeLidOuter_" + side +
-                              "MotionSum.output3D", addition + ".input3D[1]")
-                c.connectAttr(addition + ".output3D", joint + ".translate")
-                c.skinCluster(target_skin, edit=True,
-                              addInfluence=joint, weight=0.)
-            target = self.capture_dense_skin(target_skin)
-            target_by_base = {face_influence_base(name): name
-                              for name in target.influence_names}
-            source_map.extend((index, target_by_base[
-                "lowerLidOuterJoint_" + side])
-                for side, (index, _) in auxiliary.items())
-            try:
-                transferred = transfer_face_source_skin_weights(
-                    source_values, len(source_joints), before, target,
-                    tuple(source_map))
-            except ValueError as error:
-                raise FitSkeletonValidationError(str(error)) from error
-            self.apply_dense_skin(transferred)
-            blend = array("d", source_blend)
-            if source_method == 0:
-                blend = array("d", [0.] * before.vertex_count)
-            elif source_method == 1:
-                blend = array("d", [1.] * before.vertex_count)
-            self.apply_skin_blend_weights(target_skin, blend)
-            c.setAttr(target_skin + ".skinningMethod", 2)
-            c.select(selected, replace=True) if selected else c.select(clear=True)
-        return {"source_mesh": source_path, "target_mesh": target_mesh,
-                "vertex_count": before.vertex_count,
-                "mapped_segment_influences": len(source_map) - len(auxiliary),
-                "approximated_segments": mapping.approximated_segments,
-                "auxiliary_joints": tuple("lowerLidOuterJoint_" + side
-                                          for side in sorted(auxiliary)),
-                "maximum_rest_position_error_cm": round(position_error, 8)}
+
+    def create_face_source_auxiliary(
+        self, side: str, source_joint: str, target_skin: str,
+    ) -> None:
+        from maya import cmds as raw
+
+        self._require_transaction()
+        c = self._cmds
+        roots = c.ls("FaceJoint_M", long=True, type="joint") or []
+        if len(roots) != 1:
+            raise FitSkeletonValidationError("目标 FaceJoint_M 缺失或不唯一")
+        name = "lowerLidOuterJoint_" + side
+        pivot = raw.xform(source_joint, query=True,
+                          worldSpace=True, translation=True)
+        c.select(clear=True)
+        joint = c.joint(name=name)
+        joint = c.parent(joint, roots[0], absolute=True)[0]
+        c.xform(joint, worldSpace=True, translation=pivot)
+        addition = c.createNode("plusMinusAverage", name=name + "MotionSum")
+        c.setAttr(addition + ".input3D[0]", *pivot, type="double3")
+        c.connectAttr("ctrlLowerEyeLidOuter_" + side +
+                      "MotionSum.output3D", addition + ".input3D[1]")
+        c.connectAttr(addition + ".output3D", joint + ".translate")
+        c.skinCluster(target_skin, edit=True, addInfluence=joint, weight=0.)
+        self._transaction_changed = True
+
+    def set_face_source_skinning_method(self, skin_name: str) -> None:
+        self._require_transaction()
+        self._cmds.setAttr(skin_name + ".skinningMethod", 2)
+        self._transaction_changed = True
+
+    def restore_face_source_selection(self, selected: tuple[str, ...]) -> None:
+        c = self._cmds
+        c.select(selected, replace=True) if selected else c.select(clear=True)
