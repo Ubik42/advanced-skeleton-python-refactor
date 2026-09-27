@@ -51,6 +51,64 @@ class FitPartReparentSpec:
     reason: str
 
 
+@dataclass(frozen=True, slots=True)
+class FitPartJointState:
+    name: str
+    parent_name: str
+    world_position: Vector3
+    deform_profile: FitDeformProfile
+
+
+@dataclass(frozen=True, slots=True)
+class FitPartChildState:
+    name: str
+    parent_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class FitPartHierarchySnapshot:
+    joints: tuple[FitPartJointState, ...]
+    children: tuple[FitPartChildState, ...]
+
+
+def audit_fit_part_hierarchy(
+    parts: tuple[FitPartJointSpec, ...],
+    reparents: tuple[FitPartReparentSpec, ...],
+    snapshot: FitPartHierarchySnapshot,
+    *,
+    tolerance: float = 1e-4,
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    states = {state.name: state for state in snapshot.joints}
+    children = {state.name: state for state in snapshot.children}
+    if len(states) != len(snapshot.joints) or len(children) != len(snapshot.children):
+        issues.append("Part 快照存在重名关节")
+    if set(states) != {part.name for part in parts}:
+        issues.append("Part 关节集合与构建计划不一致")
+    if set(children) != {item.child_name for item in reparents}:
+        issues.append("Part 下游关节集合与改挂计划不一致")
+    for spec in parts:
+        state = states.get(spec.name)
+        if state is None:
+            continue
+        if state.parent_name != spec.parent_name:
+            issues.append("Part 父级不一致：" + spec.name)
+        if any(abs(a - b) > tolerance for a, b in zip(
+                state.world_position, spec.world_position)):
+            issues.append("Part 世界位置不一致：" + spec.name)
+        if any(abs(a - b) > tolerance for a, b in zip(
+                (state.deform_profile.fat, state.deform_profile.fat_front,
+                 state.deform_profile.fat_width),
+                (spec.deform_profile.fat, spec.deform_profile.fat_front,
+                 spec.deform_profile.fat_width))):
+            issues.append("Part 体积参数不一致：" + spec.name)
+    for spec in reparents:
+        state = children.get(spec.child_name)
+        if state is not None and state.parent_name != spec.parent_part_name:
+            issues.append("Part 下游关节父级不一致：" + spec.child_name)
+    return tuple(issues)
+
+
 def plan_fit_part_joints(
     instances: tuple[FitSymmetryInstance, ...],
     metadata: tuple[FitJointMetadata, ...],

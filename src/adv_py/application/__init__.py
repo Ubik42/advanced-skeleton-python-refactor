@@ -8,6 +8,8 @@ from .character_pose import CaptureBodyCharacterPose, ApplyBodyCharacterPose, sa
 from .character_registry import RegisterBodyCharacter, ResolveBodyCharacter
 """Host-independent application use cases."""
 
+from .fit_part import BuildFitPartHierarchy, FitPartHierarchyHost, FitPartHierarchyResult
+
 from .body_control_spaces import SwitchBodyControlSpace
 from .body_spine import MatchBodySpine
 from .body_torso import BuildBodyTorso, BodyTorsoBuildPlan, BodyTorsoHost
