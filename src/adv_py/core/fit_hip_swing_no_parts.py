@@ -18,8 +18,11 @@ class HipSwingNoPartsTopology:
     """Existing transforms and matrix inputs required by the MEL branch.
 
     ``fk_root_matrix_input`` is the inverse-frame input of the Root FKX
-    constraint matrix. ``child_no_shear_input`` is the parent-frame input
-    of the chosen Root child's FK offset. The leg-lock destination receives
+    constraint matrix. ``child_no_shear_input`` is the optional parent-frame
+    input of the chosen Root child's FK offset. A host whose child FK offset
+    already sits under ``fk_root_path`` can leave it absent and supply
+    ``child_fk_offset_path`` for parent-chain auditing instead. The leg-lock
+    destination receives
     the inverse Root rotation; the child-inverter destination receives that
     inverse composed with the current Root output matrix.
     """
@@ -28,7 +31,8 @@ class HipSwingNoPartsTopology:
     fk_root_offset_path: str
     root_fkx_path: str
     fk_root_matrix_input: str
-    child_no_shear_input: str
+    child_no_shear_input: str | None
+    child_fk_offset_path: str
     leg_lock_weight: str
     root_fk_weight: str
     leg_lock_matrix_input: str
@@ -105,7 +109,10 @@ class HipSwingNoPartsPlan:
         return (
             (self.control_path + ".rotate", self.reverse_name + ".rotate"),
             (frame + ".worldInverseMatrix[0]", t.fk_root_matrix_input),
-            (frame + ".worldMatrix[0]", t.child_no_shear_input),
+        ) + (
+            ((frame + ".worldMatrix[0]", t.child_no_shear_input),)
+            if t.child_no_shear_input else ()
+        ) + (
             (frame + ".worldMatrix[0]", mm + ".matrixIn[0]"),
             (t.fk_root_offset_path + ".worldInverseMatrix[0]",
              mm + ".matrixIn[1]"),
@@ -161,9 +168,10 @@ def plan_hip_swing_no_parts(
         raise ValueError("无分段 HipSwinger 缺少 Root／腿部空间拓扑")
     paths = (topology.fk_root_path, topology.fk_root_offset_path,
              topology.root_fkx_path, topology.root_body_path,
-             topology.child_body_path)
+             topology.child_body_path, topology.child_fk_offset_path)
     plugs = (topology.fk_root_matrix_input,
-             topology.child_no_shear_input,
+             *((topology.child_no_shear_input,)
+               if topology.child_no_shear_input else ()),
              topology.leg_lock_weight, topology.root_fk_weight,
              topology.leg_lock_matrix_input,
              topology.root_body_matrix_source,
@@ -173,6 +181,9 @@ def plan_hip_swing_no_parts(
             or any("." not in plug or not plug.split(".", 1)[0]
                    for plug in plugs)
             or len(set(plugs)) != len(plugs)
+            or (topology.child_no_shear_input is None
+                and not topology.child_fk_offset_path.startswith(
+                    topology.fk_root_path + "|"))
             or topology.child_body_path.rsplit("|", 1)[-1] != "Spine1_M"
             or topology.root_body_path.rsplit("|", 1)[-1] != "Root_M"):
         raise ValueError("无分段 HipSwinger 的宿主路径或矩阵端口不完整")
