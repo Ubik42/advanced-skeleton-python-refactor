@@ -726,7 +726,16 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("重新附着全部控制器", self._attach_control_orient_custom))
             stack.addWidget(group)
 
-            group, form = self._group("10A · Game Engine", [])
+            self.control_mesh_mirror = QtWidgets.QCheckBox("自动创建对侧 Control Mesh")
+            self.control_mesh_mirror.setChecked(True)
+            group, form = self._group("10A · Control Mesh", [
+                ("镜像", self.control_mesh_mirror)])
+            form.addRow(QtWidgets.QLabel("先选一件模型上的面，最后选择控制器"))
+            form.addRow(self._button("创建 Control Mesh",
+                                     self._create_control_mesh))
+            stack.addWidget(group)
+
+            group, form = self._group("10B · Game Engine", [])
             form.addRow(self._button("创建 Root Motion",
                                      self._create_game_engine_root_motion))
             form.addRow(self._button("删除 Root Motion",
@@ -1905,6 +1914,12 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.control_curves_copy_to_variant(
                 self._namespace(), controls, variant)
             return f"已复制 {count} 个主控曲线到 {variant} 控制层"
+
+        def _create_control_mesh(self):
+            count = self.controller.create_control_mesh(
+                self._namespace(),
+                mirror=self.control_mesh_mirror.isChecked())
+            return f"已创建 {count} 个 Control Mesh"
 
         def _set_control_orient_axis(self):
             if self.control_orient_world_orient.isChecked():
