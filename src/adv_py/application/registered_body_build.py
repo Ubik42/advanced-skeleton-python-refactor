@@ -87,6 +87,7 @@ def _independent_rig_twist_sources(
 ) -> tuple[
     dict[str, str], dict[str, str],
     dict[str, tuple[str, str, str, str]],
+    dict[str, str],
 ]:
     """Use direct Body FK controls outside the driven Part hierarchy."""
     controls = []
@@ -105,6 +106,9 @@ def _independent_rig_twist_sources(
     }
     constraints = {control.driven_joint: control.constraint_name
                    for control in controls}
+    scales = {control.driven_joint: control.control_path + ".scale"
+              for control in controls
+              if control.driven_joint.rsplit("|", 1)[-1] != "Root_M"}
     spine_blends: dict[str, tuple[str, str, str, str]] = {}
     spine = plan.torso.torso.spine if plan.torso is not None else None
     if spine is not None:
@@ -125,7 +129,7 @@ def _independent_rig_twist_sources(
                 spline.ik_outputs[index] + ".worldMatrix[0]",
                 spline.settings + ".spineIkFk",
                 f"AdvPy_SplineOrient{index}")
-    return matrices, constraints, spine_blends
+    return matrices, constraints, spine_blends, scales
 
 
 def _with_inbetween_fk_sources(
@@ -293,10 +297,10 @@ class BuildRegisteredBodyCharacter:
             inbetween_untwisters = ()
             hip_swing_reverse = None
             if use_fit_part_hierarchy:
+                (control_matrices, body_constraints,
+                 spine_blends, control_scales) = (
+                    _independent_rig_twist_sources(rig.plan))
                 if fit_part_twist_sources is None:
-                    (control_matrices, body_constraints,
-                     spine_blends) = (
-                        _independent_rig_twist_sources(rig.plan))
                     rotation_inputs = plan_standard_fit_part_rotation_inputs(
                         twist_parts,
                         independent_world_matrices=control_matrices,
@@ -326,7 +330,8 @@ class BuildRegisteredBodyCharacter:
                 BuildFitPartTwistDrivers(joined).apply(
                     twist_parts, active_twist_sources)
                 BuildFitPartScaleDrivers(joined).apply(
-                    part_plan.fit_parts)
+                    part_plan.fit_parts,
+                    body_scale_sources=control_scales)
                 inbetween_parts = tuple(
                     part for part in part_plan.fit_parts
                     if part.kind == "inbetween")

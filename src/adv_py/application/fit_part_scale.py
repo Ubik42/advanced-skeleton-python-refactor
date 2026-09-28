@@ -2,17 +2,27 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from typing import Protocol
+from typing import Mapping, Protocol
 
 from adv_py.core.fit_part import FitPartJointSpec
 from adv_py.core.fit_part_scale import (
-    FitPartLimbScaleChain, FitPartScalePlan, FitPartScaleStep,
+    FitPartBodyScaleChain, FitPartLimbScaleChain, FitPartScalePlan,
+    FitPartScaleStep,
     plan_fit_part_scale,
 )
 
 
 class FitPartScaleHost(Protocol):
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
+
+    def preflight_fit_part_body_scale(
+        self, chain: FitPartBodyScaleChain) -> None: ...
+
+    def connect_fit_part_body_scale(
+        self, chain: FitPartBodyScaleChain) -> None: ...
+
+    def capture_fit_part_body_scale(
+        self, chain: FitPartBodyScaleChain) -> bool: ...
 
     def preflight_fit_part_scale(self, step: FitPartScaleStep) -> None: ...
 
@@ -40,14 +50,20 @@ class BuildFitPartScaleDrivers:
         self._host = host
 
     def apply(
-        self, parts: tuple[FitPartJointSpec, ...]
+        self, parts: tuple[FitPartJointSpec, ...], *,
+        body_scale_sources: Mapping[str, str] | None = None,
     ) -> FitPartScalePlan:
-        plan = plan_fit_part_scale(parts)
+        plan = plan_fit_part_scale(
+            parts, body_scale_sources=body_scale_sources)
+        for chain in plan.bodies:
+            self._host.preflight_fit_part_body_scale(chain)
         for step in plan.direct:
             self._host.preflight_fit_part_scale(step)
         for chain in plan.limbs:
             self._host.preflight_fit_part_limb_scale(chain)
         with self._host.transaction("构建 Fit Part 缩放驱动"):
+            for chain in plan.bodies:
+                self._host.connect_fit_part_body_scale(chain)
             for step in plan.direct:
                 self._host.connect_fit_part_scale(step)
             for chain in plan.limbs:
@@ -58,5 +74,9 @@ class BuildFitPartScaleDrivers:
             for chain in plan.limbs:
                 if not self._host.capture_fit_part_limb_scale(chain):
                     raise RuntimeError("Fit Part 四肢缩放连接不一致："
+                                       + chain.start_body_name)
+            for chain in plan.bodies:
+                if not self._host.capture_fit_part_body_scale(chain):
+                    raise RuntimeError("Fit Part Body 缩放连接不一致："
                                        + chain.start_body_name)
         return plan

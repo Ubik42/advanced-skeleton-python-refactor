@@ -12,7 +12,7 @@ from adv_py.core.fit_part_twist import (
     FitPartTwistProjection, FitPartTwistStep,
 )
 from adv_py.core.fit_part_scale import (
-    FitPartLimbScaleChain, FitPartScaleStep,
+    FitPartBodyScaleChain, FitPartLimbScaleChain, FitPartScaleStep,
 )
 
 _FIT_PART_KIND = "fit-part-v1"
@@ -20,6 +20,66 @@ _FIT_INBETWEEN_KIND = "fit-inbetween-v1"
 
 
 class MayaFitPartMixin:
+    def preflight_fit_part_body_scale(
+        self, chain: FitPartBodyScaleChain
+    ) -> None:
+        c = self._cmds
+        body = self._unique_fit_part_joint(chain.start_body_name)
+        if not c.objExists(body + ".advPySourceJoint"):
+            raise ValueError("Fit Part 缩放需要本工程 Body："
+                             + chain.start_body_name)
+        for axis in "XYZ":
+            source = chain.source_plug + axis
+            destination = body + ".scale" + axis
+            if (not c.objExists(source)
+                    or not c.getAttr(destination, settable=True)
+                    or c.connectionInfo(destination,
+                        sourceFromDestination=True)):
+                raise ValueError("Fit Part Body 缩放来源或目标不可用："
+                                 + chain.start_body_name)
+        for name in chain.part_names:
+            part = self._unique_fit_part_joint(name)
+            if (bool(c.getAttr(part + ".segmentScaleCompensate"))
+                    == chain.use_offset_parent_matrix):
+                raise ValueError("Fit Part 缩放补偿模式不一致：" + name)
+            if chain.use_offset_parent_matrix and any(
+                    abs(float(c.getAttr(part + ".scale" + axis)) - 1.0)
+                    > 1e-8 or c.connectionInfo(
+                        part + ".scale" + axis,
+                        sourceFromDestination=True)
+                    for axis in "XYZ"):
+                raise ValueError("Fit Part OPM 缩放不能叠加局部缩放：" + name)
+
+    def connect_fit_part_body_scale(
+        self, chain: FitPartBodyScaleChain
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        body = self._unique_fit_part_joint(chain.start_body_name)
+        for axis in "XYZ":
+            c.connectAttr(chain.source_plug + axis,
+                          body + ".scale" + axis)
+        self._transaction_changed = True
+
+    def capture_fit_part_body_scale(
+        self, chain: FitPartBodyScaleChain
+    ) -> bool:
+        c = self._cmds
+        body = self._unique_fit_part_joint(chain.start_body_name)
+        if any(c.connectionInfo(body + ".scale" + axis,
+               sourceFromDestination=True) != chain.source_plug + axis
+               for axis in "XYZ"):
+            return False
+        if chain.use_offset_parent_matrix:
+            return all(
+                not c.getAttr(self._unique_fit_part_joint(name)
+                              + ".segmentScaleCompensate")
+                and all(abs(float(c.getAttr(
+                    self._unique_fit_part_joint(name) + ".scale" + axis))
+                    - 1.0) <= 1e-8 for axis in "XYZ")
+                for name in chain.part_names)
+        return True
+
     def preflight_fit_part_limb_scale(
         self, chain: FitPartLimbScaleChain
     ) -> None:
