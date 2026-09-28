@@ -133,7 +133,7 @@ class BodyTorsoSnapshot:
 
 def plan_body_torso(
     body: BodySkeletonSnapshot, arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan,
-    *, radius: float = 2.0, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(),
+    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(),
 ) -> BodyTorsoPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise FitSkeletonValidationError("Torso 构建选项类型无效")
@@ -172,7 +172,9 @@ def plan_body_torso(
             offset_path=offset_path, offset_name=offset_name,
             control_path=control_path, control_name=control_name,
             parent_path=parent, constraint_name=f"AdvPy_Torso{name}Orient",
-            world_position=joint.world_position, world_axes=joint.world_axes, radius=float(radius),
+            world_position=joint.world_position, world_axes=joint.world_axes,
+            radius=max(1e-4, float(radius) * joint.deform_profile.fat
+                       * joint.deform_profile.fat_front),
             source_override_path=(
                 f"{sub_path or control_path}|AdvPy_RootFKX"
                 if name == "Root_M" else None),

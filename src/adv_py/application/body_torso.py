@@ -41,7 +41,7 @@ class BuildBodyTorso:
 
     def plan_from_safety(
         self, safety: BodyRebuildSafetyAudit,
-        arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan, *, radius: float = 2.0, spine_ik: bool = False, description=None, head_aim=False,
+        arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan, *, radius: float = 1.5, spine_ik: bool = False, description=None, head_aim=False,
     ) -> BodyTorsoBuildPlan:
         options={'up_axis':self._host.scene_up_axis()} if head_aim else {}
         torso = plan_body_torso(

@@ -161,7 +161,7 @@ class BuildBodyCharacterRig:
         include_torso: bool = False,
         include_spine_ik: bool = False,
         include_control_spaces: bool = False,
-        torso_control_radius: float = 2.0,
+        torso_control_radius: float = 1.5,
         axial_description=None,
         include_head_aim: bool = False,
     ) -> BodyCharacterRigBuildPlan:
@@ -334,7 +334,7 @@ class BuildBodyCharacterRig:
         include_torso: bool = False,
         include_spine_ik: bool = False,
         include_control_spaces: bool = False,
-        torso_control_radius: float = 2.0,
+        torso_control_radius: float = 1.5,
         axial_description=None,
         include_head_aim: bool = False,
     ) -> BodyCharacterRigBuildResult:
