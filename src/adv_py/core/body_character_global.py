@@ -30,6 +30,7 @@ class BodyCharacterGlobalPlan:
     scale_node_name: str
     driven_roots: tuple[str, ...]
     scale_destinations: tuple[str, ...]
+    joint_visibility_path: str | None
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -130,6 +131,7 @@ class BodyCharacterGlobalSnapshot:
     scale_node_output: Vector3
     visibility_controls: tuple[tuple[str, bool, str | None], ...] = ()
     scale_system_sources: tuple[tuple[str, str | None], ...] = ()
+    joint_visibility: tuple[bool, str | None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,6 +226,9 @@ def plan_body_character_global(
         scale_node_name="MainScaleMultiplyDivide",
         driven_roots=driven_roots,
         scale_destinations=scale_destinations,
+        joint_visibility_path=(
+            body_root if body_root.startswith("|Group|DeformationSystem|")
+            else None),
     )
 
 
@@ -362,6 +367,16 @@ def audit_body_character_global(
             "system_scale_mismatch",
             "AimSystem 的总控比例接线不一致",
             plan.control_path,
+        ))
+    expected_joint_visibility = (
+        (True, f"{plan.control_path}.jointVis")
+        if plan.joint_visibility_path is not None else None
+    )
+    if snapshot.joint_visibility != expected_joint_visibility:
+        issues.append(BodyCharacterGlobalIssue(
+            "joint_visibility_mismatch",
+            "Body 根关节的总控可见性接线不一致",
+            plan.joint_visibility_path,
         ))
     return tuple(issues)
 

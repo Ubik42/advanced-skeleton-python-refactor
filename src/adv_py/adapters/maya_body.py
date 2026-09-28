@@ -924,6 +924,17 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     raise FitSkeletonValidationError(
                         f"角色总控比例补偿输入不可安全接线：{plug}"
                     )
+            if plan.joint_visibility_path is not None:
+                joint = plan.joint_visibility_path
+                visibility = joint + ".visibility"
+                if ((self._cmds.ls(joint, long=True, type="joint") or [])
+                        != [joint]
+                        or source(visibility) is not None
+                        or not bool(self._cmds.getAttr(
+                            visibility, settable=True))
+                        or not bool(self._cmds.getAttr(visibility))):
+                    raise FitSkeletonValidationError(
+                        "角色 Body 根关节不可安全连接 jointVis")
 
             self._transaction_changed = True
             existing_group = self._cmds.ls(
@@ -1055,6 +1066,15 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     self._cmds.connectAttr(
                         f"{plan.scale_node_name}.output{axis}",
                         f"{system_path}.scale{axis}")
+            if plan.joint_visibility_path is not None:
+                self._cmds.addAttr(
+                    control, longName="jointVis", attributeType="bool",
+                    defaultValue=True, keyable=False)
+                self._cmds.setAttr(
+                    control + ".jointVis", channelBox=True)
+                self._cmds.connectAttr(
+                    control + ".jointVis",
+                    plan.joint_visibility_path + ".visibility")
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
@@ -1216,6 +1236,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                  source(f"{system_path}.scale{axis}"))
                 for system_path in plan.scale_system_paths
                 for axis in "XYZ"
+            ),
+            joint_visibility=(
+                (bool(self._cmds.getAttr(control + ".jointVis")),
+                 source(plan.joint_visibility_path + ".visibility"))
+                if plan.joint_visibility_path is not None else None
             ),
         )
 
