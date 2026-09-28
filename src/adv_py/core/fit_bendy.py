@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from math import dist
+from math import dist, isfinite
 
 from .fit_metadata import FitJointMetadata
 from .fit_part import FitPartJointSpec
@@ -20,6 +20,8 @@ class FitBendyChainSpec:
     start_position: tuple[float, float, float]
     end_position: tuple[float, float, float]
     part_positions: tuple[tuple[float, float, float], ...]
+    rotation_order: int = 0
+    master_icon_scale: float = 1.5
     child_start_control: str | None = None
     child_start_influence: str | None = None
     parent_bendy: bool = False
@@ -27,6 +29,11 @@ class FitBendyChainSpec:
     child_source_proxy: str | None = None
 
     def __post_init__(self) -> None:
+        if (type(self.rotation_order) is not int
+                or not 0 <= self.rotation_order <= 5
+                or not isfinite(self.master_icon_scale)
+                or self.master_icon_scale <= 0):
+            raise ValueError("Bendy 控制器朝向或图标尺寸无效")
         if bool(self.child_start_control) != bool(self.child_start_influence):
             raise ValueError("Bendy 相邻段缺少起点控制或影响关节")
         if bool(self.child_junction_control) != bool(self.child_source_proxy):
@@ -357,7 +364,12 @@ def plan_fit_bendy_chains(
             first.side.value, tuple(part.name for part in chain), count,
             by_body[first.start_body].world_position,
             by_body[first.end_body].world_position,
-            tuple(part.world_position for part in chain)))
+            tuple(part.world_position for part in chain),
+            rotation_order=by_body[first.start_body].rotation_order,
+            master_icon_scale=max(
+                0.1,
+                1.5 * by_body[first.start_body].deform_profile.fat
+                * by_body[first.start_body].deform_profile.fat_front)))
     # An enabled Bendy joint without a same-side child cannot be constructed.
     planned_sources = {item.source_joint for item in result}
     missing = [item.joint for item in metadata

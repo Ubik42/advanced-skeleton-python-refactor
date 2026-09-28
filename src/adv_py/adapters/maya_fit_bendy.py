@@ -15,6 +15,28 @@ _SECONDARY_GROUPS = ("AdvPy_Bend2Curve", "AdvPy_Bend2Joints",
                      "AdvPy_Bend2MPX")
 _MICRO_GROUP = "AdvPy_MicroSystem"
 _OWNER = "adv_py.fit_bendy_guides.v1"
+# ADV 6.925 replaces the master Bend icon with this closed XZ curve.
+_MASTER_BEND_PROFILE_XZ = (
+    (-.04560501961, -.4902758548), (-.02387150518, -.4243238881),
+    (.0867648719, -.4160438261), (.1914883666, -.3794110646),
+    (.2377719073, -.4311782409), (.3278486135, -.3669356583),
+    (.4017890057, -.2846332024), (.3555394961, -.2328353326),
+    (.4036869496, -.132881309), (.4243238168, -.02387162653),
+    (.4922974722, -.009672600642), (.4817001901, .1004570578),
+    (.447394422, .2056424402), (.3794114127, .1914885915),
+    (.3169220717, .2831625695), (.2328354286, .3555395649),
+    (.2545254871, .4215060432), (.1538514984, .4673931203),
+    (.04560501961, .4902759141), (.02387149831, .4243239682),
+    (-.08676488394, .416043931), (-.1914883839, .3794111943),
+    (-.2377719246, .4311783832), (-.3278486135, .3669357177),
+    (-.4017890057, .2846332618), (-.355539503, .2328354127),
+    (-.4036869461, .1328813396), (-.4243238081, .02387163224),
+    (-.4922974593, .009672597803), (-.481700116, -.1004573535),
+    (-.4473939713, -.2056428819), (-.3794109995, -.1914885403),
+    (-.316922063, -.2831625638), (-.2328354251, -.3555395344),
+    (-.2545254785, -.4215060253), (-.1538514984, -.4673930609),
+    (-.04560501961, -.4902758548),
+)
 
 
 class MayaFitBendyMixin:
@@ -449,13 +471,25 @@ class MayaFitBendyMixin:
         for index, (name, position) in enumerate(zip(
                 spec.control_names, (spec.master_position,
                                      *spec.control_positions))):
-            control = c.circle(name=name, normal=(1, 0, 0),
-                               radius=0.25, constructionHistory=False)[0]
+            if index == 0:
+                control = c.curve(
+                    name=name, degree=1,
+                    point=tuple((x * spec.master_icon_scale, 0,
+                                 z * spec.master_icon_scale)
+                                for x, z in _MASTER_BEND_PROFILE_XZ))
+                shape = (c.listRelatives(control, shapes=True) or [])[0]
+                c.setAttr(shape + ".overrideEnabled", True)
+                c.setAttr(shape + ".overrideColor", 29)
+            else:
+                control = c.circle(name=name, normal=(1, 0, 0),
+                                   radius=0.25,
+                                   constructionHistory=False)[0]
             parent = (spec.control_names[0]
                       if index == 2 and spec.control_count == 1
                       else _GROUPS[0])
             control = c.parent(control, parent)[0]
             c.xform(control, worldSpace=True, translation=position)
+            c.setAttr(control + ".rotateOrder", spec.rotation_order)
             if index == 0:
                 c.addAttr(control, longName="parametric",
                           attributeType="bool", defaultValue=True,
@@ -466,6 +500,8 @@ class MayaFitBendyMixin:
             junction_offset = c.createNode(
                 "transform", name=spec.junction_offset_name,
                 parent=controls[1], skipSelect=True)
+            c.setAttr(junction_offset + ".rotateOrder",
+                      spec.rotation_order)
             c.xform(junction_offset, worldSpace=True,
                     translation=start)
             junction = c.circle(name=spec.junction_name,
@@ -473,6 +509,7 @@ class MayaFitBendyMixin:
                                 constructionHistory=False)[0]
             c.parent(junction, junction_offset, absolute=True)
             c.xform(junction, worldSpace=True, translation=start)
+            c.setAttr(junction + ".rotateOrder", spec.rotation_order)
             c.addAttr(junction, longName="circular",
                       attributeType="double", softMinValue=0.0,
                       softMaxValue=10.0, defaultValue=0.0,
@@ -573,6 +610,7 @@ class MayaFitBendyMixin:
             offset = c.createNode("transform", name=control + "Offset",
                                   parent=_GROUPS[0], skipSelect=True)
             c.xform(offset, worldSpace=True, translation=position)
+            c.setAttr(offset + ".rotateOrder", chain.rotation_order)
             c.parent(control, offset, absolute=True)
             targets = ((start_proxy, end_proxy) if index == 0
                        or index > 1 else (start_proxy,))
@@ -742,6 +780,8 @@ class MayaFitBendyMixin:
                       and spec.chain.child_junction_control else offset)
             if (not c.objExists(offset) or not c.objExists(follow)
                     or c.nodeType(follow) != "parentConstraint"
+                    or int(c.getAttr(offset + ".rotateOrder"))
+                    != spec.chain.rotation_order
                     or (c.listRelatives(control, parent=True) or [])
                     != [parent]):
                 return False
@@ -1092,6 +1132,26 @@ class MayaFitBendyMixin:
         for name in (*spec.control_names, spec.end_proxy_name):
             if not c.objExists(name) or c.nodeType(name) != "transform":
                 return False
+        master_shapes = c.listRelatives(spec.control_names[0],
+                                         shapes=True, fullPath=True) or []
+        if (len(master_shapes) != 1
+                or c.nodeType(master_shapes[0]) != "nurbsCurve"
+                or int(c.getAttr(master_shapes[0] + ".controlPoints",
+                                 size=True)) != len(_MASTER_BEND_PROFILE_XZ)
+                or not c.getAttr(master_shapes[0] + ".overrideEnabled")
+                or int(c.getAttr(master_shapes[0] + ".overrideColor")) != 29):
+            return False
+        first_x, first_z = _MASTER_BEND_PROFILE_XZ[0]
+        if (abs(float(c.getAttr(master_shapes[0]
+                                + ".controlPoints[0].xValue"))
+                - first_x * spec.master_icon_scale) > 1e-4
+                or abs(float(c.getAttr(master_shapes[0]
+                                       + ".controlPoints[0].zValue"))
+                       - first_z * spec.master_icon_scale) > 1e-4):
+            return False
+        if any(int(c.getAttr(name + ".rotateOrder"))
+               != spec.rotation_order for name in spec.control_names):
+            return False
         if not c.objExists(spec.control_names[0] + ".parametric"):
             return False
         if spec.parent_bendy and any(
@@ -1099,6 +1159,11 @@ class MayaFitBendyMixin:
                 for name in (spec.junction_offset_name,
                              spec.junction_name,
                              spec.junction_output_name)):
+            return False
+        if spec.parent_bendy and any(
+                int(c.getAttr(name + ".rotateOrder"))
+                != spec.rotation_order for name in (
+                    spec.junction_offset_name, spec.junction_name)):
             return False
         if (spec.parent_bendy
                 and not c.objExists(spec.junction_name + ".circular")):
