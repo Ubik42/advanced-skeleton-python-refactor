@@ -129,6 +129,11 @@ class FitBendyChainSpec:
         return tuple("AdvPy_BendyDeform" + name
                      for name in self.deform_names)
 
+    @property
+    def deform_scale_pick_names(self) -> tuple[str, ...]:
+        return tuple("AdvPy_BendyScale" + name
+                     for name in self.deform_names)
+
 
 def plan_fit_bendy_chains(
     parts: tuple[FitPartJointSpec, ...],

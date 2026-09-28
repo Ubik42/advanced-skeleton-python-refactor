@@ -18,9 +18,10 @@ _OWNER = "adv_py.fit_bendy_guides.v1"
 class MayaFitBendyMixin:
     def preflight_fit_bendy_deform(self, spec: FitBendyChainSpec) -> None:
         c = self._cmds
-        for index, (name, output, constraint) in enumerate(zip(
+        for index, (name, output, constraint, scale_pick) in enumerate(zip(
                 spec.deform_names, spec.micro_output_names,
-                spec.deform_constraint_names)):
+                spec.deform_constraint_names,
+                spec.deform_scale_pick_names)):
             joints = c.ls(name, long=True, type="joint") or []
             drivers = c.ls(output, long=True, type="transform") or []
             if len(joints) != 1 or len(drivers) != 1:
@@ -31,22 +32,19 @@ class MayaFitBendyMixin:
                 raise ValueError("Bendy 变形关节不属于当前角色：" + name)
             if index and c.getAttr(joints[0] + "." + marker) != "fit-part-v1":
                 raise ValueError("Bendy 需要 Twist Part 关节：" + name)
-            if c.objExists(constraint):
-                raise ValueError("Bendy 变形约束名称已占用：" + constraint)
+            if c.objExists(constraint) or c.objExists(scale_pick):
+                raise ValueError("Bendy 变形节点名称已占用：" + name)
             if c.listConnections(joints[0], type="skinCluster"):
                 raise ValueError("Bendy 接管必须在 Skin 绑定前执行：" + name)
 
     def connect_fit_bendy_deform(self, spec: FitBendyChainSpec) -> None:
         self._require_transaction()
         c = self._cmds
-        identity = (1.0, 0.0, 0.0, 0.0,
-                    0.0, 1.0, 0.0, 0.0,
-                    0.0, 0.0, 1.0, 0.0,
-                    0.0, 0.0, 0.0, 1.0)
         poses = {}
-        for name, output, constraint in zip(
+        for name, output, constraint, scale_pick in zip(
                 spec.deform_names, spec.micro_output_names,
-                spec.deform_constraint_names):
+                spec.deform_constraint_names,
+                spec.deform_scale_pick_names):
             joint = (c.ls(name, long=True, type="joint") or [])[0]
             poses[name] = tuple(float(value) for value in c.xform(
                 joint, query=True, worldSpace=True, matrix=True))
@@ -56,10 +54,24 @@ class MayaFitBendyMixin:
                 destination = joint + "." + attribute
                 source = c.connectionInfo(destination,
                                           sourceFromDestination=True)
+                old_matrix = (c.getAttr(destination)
+                              if attribute == "offsetParentMatrix" else None)
                 if source:
                     c.disconnectAttr(source, destination)
                 if attribute == "offsetParentMatrix":
-                    c.setAttr(destination, *identity, type="matrix")
+                    pick = c.createNode("pickMatrix", name=scale_pick)
+                    c.setAttr(pick + ".useTranslate", False)
+                    c.setAttr(pick + ".useRotate", False)
+                    c.setAttr(pick + ".useShear", False)
+                    if source:
+                        c.connectAttr(source, pick + ".inputMatrix")
+                    else:
+                        if old_matrix and isinstance(old_matrix[0],
+                                                     (tuple, list)):
+                            old_matrix = old_matrix[0]
+                        c.setAttr(pick + ".inputMatrix", *old_matrix,
+                                  type="matrix")
+                    c.connectAttr(pick + ".outputMatrix", destination)
                     continue
                 for axis in "XYZ":
                     destination = joint + "." + attribute + axis
@@ -79,14 +91,20 @@ class MayaFitBendyMixin:
 
     def capture_fit_bendy_deform(self, spec: FitBendyChainSpec) -> bool:
         c = self._cmds
-        for name, output, constraint in zip(
+        for name, output, constraint, scale_pick in zip(
                 spec.deform_names, spec.micro_output_names,
-                spec.deform_constraint_names):
+                spec.deform_constraint_names,
+                spec.deform_scale_pick_names):
             joints = c.ls(name, long=True, type="joint") or []
             drivers = c.ls(output, long=True, type="transform") or []
             if (len(joints) != 1 or len(drivers) != 1
                     or not c.objExists(constraint)
-                    or c.nodeType(constraint) != "parentConstraint"):
+                    or c.nodeType(constraint) != "parentConstraint"
+                    or not c.objExists(scale_pick)
+                    or c.nodeType(scale_pick) != "pickMatrix"
+                    or c.connectionInfo(joints[0] + ".offsetParentMatrix",
+                                        sourceFromDestination=True)
+                    != scale_pick + ".outputMatrix"):
                 return False
             targets = c.parentConstraint(constraint, query=True,
                                          targetList=True) or []
