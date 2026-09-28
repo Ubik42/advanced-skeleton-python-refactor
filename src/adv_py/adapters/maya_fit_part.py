@@ -391,11 +391,48 @@ class MayaFitPartMixin:
         output = projection.output_plug
         if not c.objExists(output):
             return None
+        def has_projection_graph(compose: str, decompose: str,
+                                 project: str, rotation: str,
+                                 order: str) -> bool:
+            if any(not c.objExists(name) or c.nodeType(name) != kind
+                   for name, kind in ((compose, "composeMatrix"),
+                                      (decompose, "decomposeMatrix"),
+                                      (project, "quatToEuler"))):
+                return False
+            expected = (
+                (rotation, compose + ".inputRotate"),
+                (order, compose + ".inputRotateOrder"),
+                (compose + ".outputMatrix",
+                 decompose + ".inputMatrix"),
+                (decompose + ".outputQuatX",
+                 project + ".inputQuatX"),
+                (decompose + ".outputQuatW",
+                 project + ".inputQuatW"),
+            )
+            return all(c.connectionInfo(target,
+                       sourceFromDestination=True) == source
+                       for source, target in expected)
+
+        source = projection.input
+        if not has_projection_graph(
+                projection.compose_name, projection.decompose_name,
+                projection.project_name, source.rotation_plug,
+                source.rotate_order_plug):
+            return None
         if projection.blend_name:
+            if (not c.objExists(projection.blend_name)
+                    or c.nodeType(projection.blend_name) != "blendTwoAttr"
+                    or not has_projection_graph(
+                        projection.ik_compose_name,
+                        projection.ik_decompose_name,
+                        projection.ik_project_name,
+                        source.ik_rotation_plug,
+                        source.ik_rotate_order_plug)):
+                return None
             expected = (
                 projection.project_name + ".outputRotateX",
                 projection.ik_project_name + ".outputRotateX",
-                projection.input.ik_fk_blend_plug,
+                source.ik_fk_blend_plug,
             )
             destinations = (
                 projection.blend_name + ".input[0]",
@@ -492,11 +529,57 @@ class MayaFitPartMixin:
     ) -> str | None:
         c = self._cmds
         part = self._unique_fit_part_joint(step.part_name)
+        nodes = ((step.amount_node, "multDoubleLinear"),
+                 (step.target_node, "plusMinusAverage"),
+                 (step.difference_node, "plusMinusAverage"))
+        if step.up_amount_node:
+            nodes += ((step.up_amount_node, "multDoubleLinear"),)
+        if step.matrix_name:
+            nodes += ((step.matrix_name, "composeMatrix"),)
+        if any(not c.objExists(name) or c.nodeType(name) != kind
+               for name, kind in nodes):
+            return None
+        expected = (
+            (step.down_twist_plug, step.amount_node + ".input1"),
+            (part + ".twistAmount", step.amount_node + ".input2"),
+            (step.amount_node + ".output",
+             step.target_node + ".input1D[0]"),
+            (part + ".twistAddition",
+             step.target_node + ".input1D[1]"),
+            (step.target_plug,
+             step.difference_node + ".input1D[0]"),
+        )
+        if step.up_amount_node and step.up_twist_plug:
+            expected += (
+                (step.up_twist_plug, step.up_amount_node + ".input1"),
+                (part + ".twistAmount",
+                 step.up_amount_node + ".input2"),
+                (step.up_amount_node + ".output",
+                 step.target_node + ".input1D[2]"),
+            )
+        if step.previous_target_plug:
+            expected += ((step.previous_target_plug,
+                          step.difference_node + ".input1D[1]"),)
+        elif (c.connectionInfo(step.difference_node + ".input1D[1]",
+                               isDestination=True)
+              or abs(c.getAttr(step.difference_node
+                               + ".input1D[1]")) > 1e-8):
+            return None
+        if (c.getAttr(step.difference_node + ".operation") != 2
+                or any(c.connectionInfo(target,
+                       sourceFromDestination=True) != source
+                       for source, target in expected)):
+            return None
         if step.use_offset_parent_matrix:
             matrix_source = c.connectionInfo(
                 part + ".offsetParentMatrix",
                 sourceFromDestination=True)
             if matrix_source != step.matrix_name + ".outputMatrix":
+                return None
+            if (any(abs(c.getAttr(part + "." + attribute)) > 1e-8
+                    for attribute in ("translateX", "translateY",
+                                      "translateZ", "rotateX", "rotateY",
+                                      "rotateZ"))):
                 return None
             return c.connectionInfo(
                 step.matrix_name + ".inputRotateX",
