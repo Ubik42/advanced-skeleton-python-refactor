@@ -56,6 +56,7 @@ class BodyLegIkPlan:
     root_path: str
     root_name: str
     limbs: tuple[BodyLegIkSpec, ...]
+    base_radius: float = 1.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,7 +219,7 @@ def plan_body_leg_ik(
             pole_extra_name=pole_extra_name,
             ankle_extra_curve=extra_controllers,
         ))
-    return BodyLegIkPlan(root_path, root_name, tuple(limbs))
+    return BodyLegIkPlan(root_path, root_name, tuple(limbs), float(radius))
 
 
 def audit_body_leg_ik(

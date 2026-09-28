@@ -5960,6 +5960,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 if pivot.multiplier_name
             )
             names.extend((side.toe_offset_name, side.toe_control_name))
+            if side.toe_extra_name:
+                names.append(side.toe_extra_name)
             names.extend((side.toe_handle_name, side.toe_effector_name))
             names.extend((side.toe_end_handle_name, side.toe_end_effector_name))
             names.extend(node.name for node in side.roll.nodes)
@@ -6126,11 +6128,24 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             self._cmds.xform(
                 toe_offset, worldSpace=True, matrix=toe_matrix
             )
+            toe_parent = toe_offset
+            if spec.source_toe_icon:
+                toe_parent = self._cmds.createNode(
+                    "transform", name=spec.toe_extra_name,
+                    parent=toe_offset, skipSelect=True)
+                toe_parent = (self._cmds.ls(toe_parent, long=True)
+                              or [toe_parent])[0]
+                if toe_parent != spec.toe_extra_path:
+                    raise RuntimeError("Toe IK Extra 路径漂移")
             toe_control = create_adv_icon(
                 self._cmds, name=spec.toe_control_name,
-                parent=toe_offset, template="IK_icon",
+                parent=toe_parent,
+                template="FK_icon" if spec.source_toe_icon else "IK_icon",
                 radius=spec.toe_control_radius,
                 fallback_normal=(0.0, 1.0, 0.0),
+                axis_offset=(original_fit_icon_axis_offset(
+                    self._cmds, ("Toes",)) if spec.source_toe_icon
+                    else (0.0, 0.0, 0.0)),
                 mirror_left=spec.side is FitBuildSide.LEFT)
             toe_control = (
                 self._cmds.ls(toe_control, long=True) or [toe_control]
@@ -6140,6 +6155,21 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 or toe_control != spec.toe_control_path
             ):
                 raise RuntimeError("Toe IK 控制路径漂移")
+            if spec.source_toe_icon:
+                self._cmds.setAttr(
+                    toe_control + ".rotateOrder",
+                    spec.toe_control_rotate_order)
+                for node in (toe_parent, toe_control):
+                    self._cmds.addAttr(
+                        node, longName="ikLocal", attributeType="bool",
+                        defaultValue=True)
+                shapes = self._cmds.listRelatives(
+                    toe_control, shapes=True, noIntermediate=True,
+                    fullPath=True, type="nurbsCurve") or []
+                if len(shapes) != 1:
+                    raise RuntimeError("Toe IK 图标曲线不唯一")
+                self._cmds.setAttr(shapes[0] + ".overrideEnabled", True)
+                self._cmds.setAttr(shapes[0] + ".overrideColor", 13)
             handles = self._cmds.ls(spec.handle_name, long=True, type="ikHandle") or []
             if len(handles) != 1:
                 raise FitSkeletonValidationError("Leg IK Handle 在执行前失效")
@@ -6186,6 +6216,22 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 self._cmds.select(selection, replace=True)
             else:
                 self._cmds.select(clear=True)
+
+    def body_leg_toe_extra_mode(self, ik: BodyLegIkPlan) -> bool:
+        found = []
+        for limb in ik.limbs:
+            suffix = limb.side.value
+            path = limb.ankle_control_path + "".join(
+                f"|AdvPy_Foot{role}Pivot_{suffix}"
+                for role in ("Heel", "Outer", "Inner", "Toe"))
+            path += (f"|AdvPy_ToeIKOffset_{suffix}"
+                     f"|AdvPy_ToeIKExtra_{suffix}")
+            matches = self._cmds.ls(path, long=True,
+                                    type="transform") or []
+            found.append(matches == [path])
+        if len(found) != 2 or found[0] != found[1]:
+            raise FitSkeletonValidationError("双侧 Toe IK 控制层版本不一致")
+        return found[0]
 
     def capture_body_leg_foot(
         self,
@@ -6296,6 +6342,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             toe_control_parent = self._cmds.listRelatives(
                 toe_controls[0], parent=True, fullPath=True
             ) or []
+            toe_extras = (self._cmds.ls(
+                spec.toe_extra_path, long=True, type="transform") or []
+                if spec.toe_extra_path else [])
+            toe_extra_parent = (self._cmds.listRelatives(
+                toe_extras[0], parent=True, fullPath=True) or []
+                if len(toe_extras) == 1 else [])
             toe_control_matrix = self._cmds.xform(
                 toe_controls[0], query=True, worldSpace=True, matrix=True
             )
@@ -6411,6 +6463,25 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 toe_end_joint_list,
                 self._cmds.ikHandle(toe_end_handles[0], query=True,
                                     solver=True),
+                toe_extra_path=(toe_extras[0]
+                                if len(toe_extras) == 1 else None),
+                toe_extra_parent_path=(toe_extra_parent[0]
+                                       if toe_extra_parent else None),
+                toe_control_rotate_order=int(self._cmds.getAttr(
+                    toe_controls[0] + ".rotateOrder")),
+                toe_control_color=(int(self._cmds.getAttr(
+                    toe_shapes[0] + ".overrideColor"))
+                    if len(toe_shapes) == 1 else None),
+                toe_ik_local=(bool(self._cmds.getAttr(
+                    toe_controls[0] + ".ikLocal"))
+                    if self._cmds.attributeQuery(
+                        "ikLocal", node=toe_controls[0], exists=True)
+                    else None),
+                toe_extra_ik_local=(bool(self._cmds.getAttr(
+                    toe_extras[0] + ".ikLocal"))
+                    if len(toe_extras) == 1 and self._cmds.attributeQuery(
+                        "ikLocal", node=toe_extras[0], exists=True)
+                    else None),
             ))
         return BodyLegFootSnapshot(tuple(sides))
 
