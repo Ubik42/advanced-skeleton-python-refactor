@@ -140,8 +140,10 @@ class MayaCustomControllerHost(MayaFaceHost):
             if cmds.objExists(source):
                 self._connect_custom_system(source, system + ".visibility")
         else:
-            main = self.scene_address("Main")
-            if cmds.objExists(main):
+            main = next((self.scene_address(name)
+                         for name in ("Main", "AdvPy_Global")
+                         if cmds.objExists(self.scene_address(name))), None)
+            if main is not None:
                 source = main + ".customVis"
                 if not cmds.objExists(source):
                     cmds.addAttr(main, longName="customVis",
@@ -1019,8 +1021,10 @@ class MayaCustomControllerHost(MayaFaceHost):
                 cmds.setAttr(base_joint + ".drawStyle", 2)
                 cmds.setAttr(base_joint + ".inheritsTransform", False,
                              lock=True)
-                main = self.scene_address("Main")
-                if cmds.objExists(main + ".jointVis"):
+                main = next((self.scene_address(name)
+                             for name in ("Main", "AdvPy_Global")
+                             if cmds.objExists(self.scene_address(name))), None)
+                if main is not None and cmds.objExists(main + ".jointVis"):
                     cmds.connectAttr(main + ".jointVis",
                                      base_joint + ".visibility")
         if skin == "*new":
