@@ -137,6 +137,8 @@ def plan_body_parent_constraint(
                               + ".worldInverseMatrix[0]"))
 
     pick = source.include_pick_matrix or source.skip_scale
+    # -FMM forces multMatrix creation, while asMatrixConnectAttr still uses
+    # decomposeMatrix when the character-wide OPM option is disabled.
     decompose = (not source.use_offset_parent_matrix
                  or (source.use_decompose_matrix and not pick))
     outputs: list[tuple[str, str]] = []

@@ -49,7 +49,7 @@ def character_hip_swing_no_parts_topology(
 
 
 class HipSwingNoPartsHost(Protocol):
-    """Create aligned transforms, the Root FKX constraint and matrix links.
+    """Create aligned transforms, the Root FKX matrix and LegLock links.
 
     The host keeps the bind pose and disables translate, scale and shear on
     the inverse-rotation pickMatrix before connecting LegLock.
@@ -73,10 +73,12 @@ class BuildHipSwingNoParts:
     def apply(self, selection: HipSwingFitSelection,
               topology: HipSwingNoPartsTopology, *,
               radius: float,
-              root_profile: FitDeformProfile) -> HipSwingNoPartsPlan:
+              root_profile: FitDeformProfile,
+              use_offset_parent_matrix: bool) -> HipSwingNoPartsPlan:
         plan = plan_hip_swing_no_parts(
             selection, topology, radius=radius,
-            root_profile=root_profile)
+            root_profile=root_profile,
+            use_offset_parent_matrix=use_offset_parent_matrix)
         self._host.preflight_hip_swing_no_parts(plan)
         with self._host.transaction("构建无分段 Root HipSwinger"):
             self._host.create_hip_swing_no_parts(plan)

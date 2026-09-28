@@ -30,6 +30,7 @@ class HipSwingNoPartsTopology:
 @dataclass(frozen=True, slots=True)
 class HipSwingNoPartsPlan:
     topology: HipSwingNoPartsTopology
+    use_offset_parent_matrix: bool
     radius: float
     control_local_x_bias: float
     frame_name: str
@@ -65,13 +66,41 @@ class HipSwingNoPartsPlan:
                 + "|" + self.reverse_root_name)
 
     @property
-    def root_fkx_constraint(self) -> tuple[str, str]:
-        """Source and driven Root FKX for the no-Part parent constraint."""
+    def root_fkx_matrix_driver(self) -> tuple[str, str]:
+        """Source and driven Root FKX for the forced matrix branch."""
         return self.reverse_root_path, self.topology.root_fkx_path
 
     @property
-    def root_fkx_constraint_name(self) -> str:
-        return "AdvPy_HipSwingRootFKXParent"
+    def root_fkx_matrix_name(self) -> str:
+        return "AdvPy_HipSwingRootFKXMM"
+
+    @property
+    def root_fkx_decompose_name(self) -> str:
+        return "AdvPy_HipSwingRootFKXDM"
+
+    @property
+    def root_fkx_matrix_links(self) -> tuple[tuple[str, str], ...]:
+        matrix = self.root_fkx_matrix_name
+        links = ((self.reverse_root_path + ".worldMatrix[0]",
+                  matrix + ".matrixIn[0]"),
+                 (self.frame_path + ".worldInverseMatrix[0]",
+                  matrix + ".matrixIn[1]"))
+        if self.use_offset_parent_matrix:
+            return links + ((matrix + ".matrixSum",
+                             self.topology.root_fkx_path
+                             + ".offsetParentMatrix"),)
+        decompose = self.root_fkx_decompose_name
+        return links + ((matrix + ".matrixSum",
+                         decompose + ".inputMatrix"),) + tuple(
+            (decompose + ".output" + channel + axis,
+             self.topology.root_fkx_path + "." + attribute + axis)
+            for channel, attribute in (("Translate", "translate"),
+                                       ("Rotate", "rotate"),
+                                       ("Scale", "scale"))
+            for axis in "XYZ") + tuple(
+                (decompose + ".outputShear" + axis,
+                 self.topology.root_fkx_path + ".shear" + pair)
+                for axis, pair in zip("XYZ", ("XY", "XZ", "YZ")))
 
     @property
     def control_position_sources(self) -> tuple[str, str]:
@@ -134,7 +163,9 @@ class HipSwingNoPartsPlan:
                 self.remove_rotation_blend_name,
                 self.remove_rotation_pick_name,
                 self.remove_rotation_inverse_name, self.fk_weight_blend_name,
-                self.root_fkx_constraint_name) + (
+                self.root_fkx_matrix_name) + (
+                    (self.root_fkx_decompose_name,)
+                    if not self.use_offset_parent_matrix else ()) + (
                     (self.root_child_matrix_name,)
                     if self.topology.root_child_inverter_matrix_target else ())
 
@@ -145,18 +176,20 @@ def plan_hip_swing_no_parts(
     *,
     radius: float,
     root_profile: FitDeformProfile,
+    use_offset_parent_matrix: bool,
 ) -> HipSwingNoPartsPlan:
     """Describe the Root reverse pivot and every available receiver.
 
-    The standard Python torso uses a direct Root FKX parent constraint and
-    the existing Spine1 FK parent chain. Hosts with the original MEL matrix
-    inputs may additionally provide those ports and a Root-child inverter.
+    Root FKX uses the forced multMatrix branch from 6.925. Its parent-inverse
+    input is borrowed from the HipSwinger root frame to avoid a graph cycle.
+    Hosts with additional original MEL matrix inputs may provide those ports.
     """
     if (not selection.enabled or selection.root_inbetween_count != 0
             or isinstance(radius, bool)
             or not isinstance(radius, (int, float))
             or not isfinite(radius) or radius <= 0
-            or not isinstance(root_profile, FitDeformProfile)):
+            or not isinstance(root_profile, FitDeformProfile)
+            or type(use_offset_parent_matrix) is not bool):
         raise ValueError("无分段 HipSwinger 需要 Root 下游 FK 子链和正半径")
     if not isinstance(topology, HipSwingNoPartsTopology):
         raise ValueError("无分段 HipSwinger 缺少 Root／腿部空间拓扑")
@@ -190,7 +223,7 @@ def plan_hip_swing_no_parts(
             or topology.root_body_path.rsplit("|", 1)[-1] != "Root_M"):
         raise ValueError("无分段 HipSwinger 的宿主路径或矩阵端口不完整")
     plan = HipSwingNoPartsPlan(
-        topology, float(radius),
+        topology, use_offset_parent_matrix, float(radius),
         -1.4 * root_profile.fat * root_profile.fat_width,
         "AdvPy_FKHSRoot",
         "AdvPy_HipSwingerOffset", "AdvPy_HipSwinger",

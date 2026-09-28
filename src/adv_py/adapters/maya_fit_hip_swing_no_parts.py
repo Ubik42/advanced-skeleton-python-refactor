@@ -34,6 +34,19 @@ class MayaHipSwingNoPartsMixin:
                 plug = plan.topology.root_fkx_path + "." + channel + axis
                 if not c.getAttr(plug, settable=True):
                     raise ValueError("Root FKX 通道不可编辑：" + plug)
+        for axis in "XYZ":
+            plug = plan.topology.root_fkx_path + ".scale" + axis
+            if not c.getAttr(plug, settable=True):
+                raise ValueError("Root FKX 通道不可编辑：" + plug)
+        if plan.use_offset_parent_matrix:
+            if c.connectionInfo(plan.topology.root_fkx_path
+                                + ".offsetParentMatrix", isDestination=True):
+                raise ValueError("Root FKX 矩阵输入已被占用")
+        else:
+            for pair in ("XY", "XZ", "YZ"):
+                plug = plan.topology.root_fkx_path + ".shear" + pair
+                if not c.getAttr(plug, settable=True):
+                    raise ValueError("Root FKX 通道不可编辑：" + plug)
 
     def create_hip_swing_no_parts(self, plan: HipSwingNoPartsPlan) -> None:
         self._require_transaction()
@@ -52,6 +65,7 @@ class MayaHipSwingNoPartsMixin:
                                  worldSpace=True, translation=True)
         selection = c.ls(selection=True, long=True) or []
         try:
+            self._transaction_changed = True
             frame = c.createNode("transform", name=plan.frame_name,
                                  parent=plan.topology.fk_root_path,
                                  skipSelect=True)
@@ -85,9 +99,24 @@ class MayaHipSwingNoPartsMixin:
                                         name=plan.reverse_root_name,
                                         parent=reverse, skipSelect=True)
             c.xform(reverse_root, worldSpace=True, matrix=root_matrix)
-            c.parentConstraint(reverse_root, plan.topology.root_fkx_path,
-                               maintainOffset=True,
-                               name=plan.root_fkx_constraint_name)
+            c.createNode("multMatrix", name=plan.root_fkx_matrix_name,
+                         skipSelect=True)
+            if not plan.use_offset_parent_matrix:
+                c.createNode("decomposeMatrix",
+                             name=plan.root_fkx_decompose_name,
+                             skipSelect=True)
+                c.setAttr(plan.root_fkx_decompose_name
+                          + ".inputRotateOrder",
+                          c.getAttr(plan.topology.root_fkx_path
+                                    + ".rotateOrder"))
+            for source, target in plan.root_fkx_matrix_links:
+                c.connectAttr(source, target)
+            if plan.use_offset_parent_matrix:
+                for channel, value in (("translate", 0), ("rotate", 0),
+                                       ("scale", 1)):
+                    for axis in "XYZ":
+                        c.setAttr(plan.topology.root_fkx_path + "."
+                                  + channel + axis, value)
             nodes = [
                 (plan.remove_rotation_matrix_name, "multMatrix"),
                 (plan.remove_rotation_blend_name, "blendMatrix"),
@@ -149,25 +178,28 @@ class MayaHipSwingNoPartsMixin:
                                      fullPath=True) or []
             if actual != [parent]:
                 return False
-        constraint = c.ls(plan.root_fkx_constraint_name,
-                          type="parentConstraint") or []
-        if len(constraint) != 1:
+        matrix = c.ls(plan.root_fkx_matrix_name,
+                      type="multMatrix") or []
+        if len(matrix) != 1:
             return False
-        targets = c.parentConstraint(constraint[0], query=True,
-                                     targetList=True) or []
-        if (len(targets) != 1
-                or self._resolve_connected_node(targets[0])
-                != plan.reverse_root_path):
-            return False
-        for channel in ("Translate", "Rotate"):
-            outputs = c.listConnections(
-                constraint[0] + ".constraint" + channel + "X",
-                source=False, destination=True, plugs=True) or []
-            if (len(outputs) != 1
-                    or self._canonical_plug(outputs[0])
-                    != plan.topology.root_fkx_path
-                    + "." + channel.lower() + "X"):
+        if not plan.use_offset_parent_matrix:
+            decomposes = c.ls(plan.root_fkx_decompose_name,
+                              type="decomposeMatrix") or []
+            if (len(decomposes) != 1 or c.getAttr(
+                    plan.root_fkx_decompose_name + ".inputRotateOrder")
+                    != c.getAttr(plan.topology.root_fkx_path
+                                 + ".rotateOrder")):
                 return False
+        if any(c.connectionInfo(target, sourceFromDestination=True) != source
+               for source, target in plan.root_fkx_matrix_links):
+            return False
+        if plan.use_offset_parent_matrix:
+            for channel, value in (("translate", 0), ("rotate", 0),
+                                   ("scale", 1)):
+                if any(abs(c.getAttr(plan.topology.root_fkx_path + "."
+                                     + channel + axis) - value) > 1e-8
+                       for axis in "XYZ"):
+                    return False
         if any(c.connectionInfo(target, sourceFromDestination=True) != source
                for source, target in plan.matrix_links):
             return False

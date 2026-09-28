@@ -490,6 +490,8 @@ class BuildRegisteredBodyCharacter:
                     root_profile=next(
                         spec.deform_profile for spec in part_plan.specs
                         if spec.name == "Root_M"),
+                    use_offset_parent_matrix=(
+                        torso_plan.use_offset_parent_matrix),
                 )
                 leg_lock = replace(
                     torso_plan.leg_lock,
