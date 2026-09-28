@@ -1,7 +1,12 @@
 """Maya construction boundary for 6.925 Bendy guide curves."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from adv_py.core.fit_bendy import FitBendyChainSpec
+
+if TYPE_CHECKING:
+    from adv_py.application.fit_bendy import FitBendyFollowSpec, FitBendyWorldSource
 
 
 _GROUPS = ("AdvPy_BendSystem", "AdvPy_BendCurve",
@@ -10,6 +15,15 @@ _OWNER = "adv_py.fit_bendy_guides.v1"
 
 
 class MayaFitBendyMixin:
+    def preflight_fit_bendy_follow(self, spec: "FitBendyFollowSpec") -> None:
+        c = self._cmds
+        if any(c.objExists(name) for name in spec.chain.follow_node_names):
+            raise ValueError("Bendy 跟随节点名称已占用：" + spec.chain.curve_name)
+        for source in (spec.start, spec.end):
+            for plug in (source.fk_matrix, source.ik_matrix, source.blend_plug):
+                if plug is not None and not c.objExists(plug):
+                    raise ValueError("Bendy 独立驱动插口不存在：" + plug)
+
     def preflight_fit_bendy_guides(
         self, spec: FitBendyChainSpec
     ) -> None:
@@ -120,6 +134,105 @@ class MayaFitBendyMixin:
             c.connectAttr(path + ".allCoordinates",
                           transform + ".translate")
         self._transaction_changed = True
+
+    def create_fit_bendy_follow(self, spec: "FitBendyFollowSpec") -> None:
+        """Keep animator channels free while the guide follows independent Rig."""
+        self._require_transaction()
+        c = self._cmds
+        chain = spec.chain
+        names = chain.follow_node_names
+        start_proxy, end_proxy = names[:2]
+
+        def source_proxy(name: str, world_name: str, blend_name: str,
+                         source: "FitBendyWorldSource") -> None:
+            proxy = c.createNode("transform", name=name,
+                                 parent=_GROUPS[0], skipSelect=True)
+            matrix = source.fk_matrix
+            if source.ik_matrix is not None:
+                blend = c.createNode("blendMatrix", name=blend_name,
+                                     skipSelect=True)
+                c.connectAttr(source.fk_matrix, blend + ".inputMatrix")
+                c.connectAttr(source.ik_matrix,
+                              blend + ".target[0].targetMatrix")
+                c.connectAttr(source.blend_plug,
+                              blend + ".target[0].weight")
+                matrix = blend + ".outputMatrix"
+            world = c.createNode("multMatrix", name=world_name,
+                                 skipSelect=True)
+            c.connectAttr(matrix, world + ".matrixIn[0]")
+            c.connectAttr(proxy + ".parentInverseMatrix[0]",
+                          world + ".matrixIn[1]")
+            c.connectAttr(world + ".matrixSum",
+                          proxy + ".offsetParentMatrix")
+
+        source_proxy(start_proxy, names[2], names[4], spec.start)
+        source_proxy(end_proxy, names[3], names[5], spec.end)
+        for index, control in enumerate(chain.control_names):
+            position = (chain.control_positions[1] if index == 0
+                        else chain.control_positions[index - 1])
+            offset = c.createNode("transform", name=control + "Offset",
+                                  parent=_GROUPS[0], skipSelect=True)
+            c.xform(offset, worldSpace=True, translation=position)
+            c.parent(control, offset, absolute=True)
+            targets = ((start_proxy, end_proxy) if index == 0
+                       or index > 1 else (start_proxy,))
+            constraint = c.parentConstraint(
+                *targets, offset, maintainOffset=True,
+                name=f"AdvPy_{control}Follow")[0]
+            if len(targets) == 2:
+                fraction = (0.5 if index == 0
+                            else (index - 1) / (chain.control_count + 1))
+                weights = c.parentConstraint(
+                    constraint, query=True, weightAliasList=True)
+                if len(weights) != 2:
+                    raise RuntimeError("Bendy 跟随约束权重数量不正确")
+                c.setAttr(constraint + "." + weights[0], 1.0 - fraction)
+                c.setAttr(constraint + "." + weights[1], fraction)
+        c.parentConstraint(end_proxy, chain.end_proxy_name,
+                           maintainOffset=True,
+                           name=f"AdvPy_{chain.end_proxy_name}Follow")
+        self._transaction_changed = True
+
+    def capture_fit_bendy_follow(self, spec: "FitBendyFollowSpec") -> bool:
+        c = self._cmds
+        names = spec.chain.follow_node_names
+        for proxy, world, source, blend in (
+                (names[0], names[2], spec.start, names[4]),
+                (names[1], names[3], spec.end, names[5])):
+            if (not c.objExists(proxy) or c.nodeType(proxy) != "transform"
+                    or not c.objExists(world)
+                    or c.nodeType(world) != "multMatrix"
+                    or c.connectionInfo(proxy + ".offsetParentMatrix",
+                                        sourceFromDestination=True)
+                    != world + ".matrixSum"):
+                return False
+            expected = source.fk_matrix
+            if source.ik_matrix is not None:
+                if (not c.objExists(blend) or c.nodeType(blend) != "blendMatrix"
+                        or c.connectionInfo(blend + ".inputMatrix",
+                                            sourceFromDestination=True)
+                        != source.fk_matrix
+                        or c.connectionInfo(blend + ".target[0].targetMatrix",
+                                            sourceFromDestination=True)
+                        != source.ik_matrix
+                        or c.connectionInfo(blend + ".target[0].weight",
+                                            sourceFromDestination=True)
+                        != source.blend_plug):
+                    return False
+                expected = blend + ".outputMatrix"
+            if c.connectionInfo(world + ".matrixIn[0]",
+                                sourceFromDestination=True) != expected:
+                return False
+        for control in spec.chain.control_names:
+            offset = control + "Offset"
+            follow = f"AdvPy_{control}Follow"
+            if (not c.objExists(offset) or not c.objExists(follow)
+                    or c.nodeType(follow) != "parentConstraint"
+                    or (c.listRelatives(control, parent=True) or [])
+                    != [offset]):
+                return False
+        return (c.objExists(names[-1])
+                and c.nodeType(names[-1]) == "parentConstraint")
 
     def capture_fit_bendy_guides(
         self, spec: FitBendyChainSpec

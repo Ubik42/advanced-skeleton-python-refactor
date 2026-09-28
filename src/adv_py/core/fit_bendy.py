@@ -59,6 +59,18 @@ class FitBendyChainSpec:
         return f"BendX{self.stem}{self.control_count + 1}_{self.side}"
 
     @property
+    def follow_node_names(self) -> tuple[str, ...]:
+        return (f"AdvPy_{self.prefix}StartSource_{self.side}",
+                f"AdvPy_{self.prefix}EndSource_{self.side}",
+                f"AdvPy_{self.prefix}StartWorld_{self.side}",
+                f"AdvPy_{self.prefix}EndWorld_{self.side}",
+                f"AdvPy_{self.prefix}StartBlend_{self.side}",
+                f"AdvPy_{self.prefix}EndBlend_{self.side}",
+                *(f"AdvPy_{name}Follow" for name in self.control_names),
+                *(name + "Offset" for name in self.control_names),
+                f"AdvPy_{self.end_proxy_name}Follow")
+
+    @property
     def skin_name(self) -> str:
         return f"{self.prefix}SC_{self.side}"
 
