@@ -46,6 +46,7 @@ class PartialJointSpec:
                 names.extend(("FKOffset" + self.stem + "Partial_" + self.side,
                               "FKExtra" + self.stem + "Partial_" + self.side,
                               "FK" + self.stem + "Partial_" + self.side,
+                              "FKX" + self.stem + "Partial_" + self.side,
                               target + "_parentConstraint1",
                               target + "_scaleConstraint1"))
                 target = "FKOffset" + target

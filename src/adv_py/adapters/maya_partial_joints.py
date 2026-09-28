@@ -175,10 +175,12 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
             extra = c.createNode("transform", name=self._node(
                 "FKExtra" + name), parent=control_offset, skipSelect=True)
             control = self._create_control_icon(name, extra)
+            fkx = c.createNode("transform", name=self._node(
+                "FKX" + name), parent=control, skipSelect=True)
             c.sets((control, extra), add=self._node("ControlSet"))
-            c.parentConstraint(control, joint, maintainOffset=False,
+            c.parentConstraint(fkx, joint, maintainOffset=False,
                                name=self._node(name + "_parentConstraint1"))
-            c.scaleConstraint(control, joint, maintainOffset=False,
+            c.scaleConstraint(fkx, joint, maintainOffset=False,
                               name=self._node(name + "_scaleConstraint1"))
             target, follow = control_offset, control
             main = self._node("Main")
@@ -196,6 +198,7 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
                                       follow, delta)
             if spec.include_controller:
                 self._update_custom_build_pose(control, base=extra, add=True)
+                self._verify_single_control_layer(name)
             return
         target_name = self._leaf(target)
         orient = c.orientConstraint(
@@ -226,6 +229,29 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
         c.connectAttr(weight + ".outValueX", orient + "." + aliases[1])
         if spec.include_controller:
             self._update_custom_build_pose(control, base=extra, add=True)
+            self._verify_single_control_layer(name)
+
+    def _verify_single_control_layer(self, name: str) -> None:
+        c = self._cmds
+        control = self._unique("FK" + name, "transform")
+        fkx = self._unique("FKX" + name, "transform")
+        if (c.listRelatives(fkx, parent=True, fullPath=True) or []) != [control]:
+            raise RuntimeError("Partial FKX 控制层父级不一致：" + name)
+        for attribute, expected in (("translate", (0., 0., 0.)),
+                                    ("rotate", (0., 0., 0.)),
+                                    ("scale", (1., 1., 1.))):
+            actual = c.getAttr(fkx + "." + attribute)[0]
+            if any(abs(float(value) - target) > 1e-6
+                   for value, target in zip(actual, expected)):
+                raise RuntimeError("Partial FKX 中性通道不一致：" + name)
+        for kind in ("parent", "scale"):
+            constraint = self._unique(name + "_" + kind + "Constraint1",
+                                      kind + "Constraint")
+            targets = getattr(c, kind + "Constraint")(
+                constraint, query=True, targetList=True) or []
+            resolved = [c.ls(target, long=True) or [] for target in targets]
+            if resolved != [[fkx]]:
+                raise RuntimeError("Partial FKX 约束来源不一致：" + name)
 
     def _connect_partial_opm(self, spec: PartialJointSpec, source: str,
                              parent: str, target: str, follow: str,
