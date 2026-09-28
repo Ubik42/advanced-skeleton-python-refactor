@@ -439,6 +439,10 @@ class MayaFitPartMixin:
                               and plug in planned_outputs)
                     and not c.objExists(plug)):
                 raise ValueError("Fit Part 扭转投影来源不存在：" + plug)
+        if (inputs.reference_inverse_plug
+                and not c.objExists(inputs.reference_inverse_plug)):
+            raise ValueError("Fit Part 参考逆矩阵不存在："
+                             + inputs.reference_inverse_plug)
         if projection.reference_name:
             matches = c.ls(inputs.start_body, long=True, type="joint") or []
             if matches != [inputs.start_body]:
@@ -503,7 +507,8 @@ class MayaFitPartMixin:
                                    name=projection.project_name)
             c.connectAttr(matrix_source,
                           matrix + ".matrixIn[0]")
-            c.connectAttr(reference + ".worldInverseMatrix[0]",
+            c.connectAttr(source.reference_inverse_plug or
+                          reference + ".worldInverseMatrix[0]",
                           matrix + ".matrixIn[1]")
             c.connectAttr(matrix + ".matrixSum",
                           decompose + ".inputMatrix")
@@ -574,7 +579,8 @@ class MayaFitPartMixin:
                              else source.world_matrix_plug)
             expected = (
                 (matrix_source, matrix + ".matrixIn[0]"),
-                (reference + ".worldInverseMatrix[0]",
+                (source.reference_inverse_plug or
+                 reference + ".worldInverseMatrix[0]",
                  matrix + ".matrixIn[1]"),
                 (matrix + ".matrixSum", decompose + ".inputMatrix"),
                 (source.rotate_order_plug,

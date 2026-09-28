@@ -48,6 +48,7 @@ class FitPartRotationInput:
     ik_world_matrix_plug: str | None = None
     compensate_start_body: bool = False
     body_constraint_name: str | None = None
+    reference_inverse_plug: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +92,7 @@ def plan_standard_fit_part_rotation_inputs(
     independent_body_constraints: Mapping[str, str] | None = None,
     blended_world_matrices: Mapping[
         str, tuple[str, str, str, str]] | None = None,
+    reference_inverse_matrices: Mapping[str, str] | None = None,
 ) -> tuple[FitPartRotationInput, ...]:
     """Resolve twist channels for every non-bendy Fit Part chain.
 
@@ -105,6 +107,7 @@ def plan_standard_fit_part_rotation_inputs(
     independent_world_matrices = independent_world_matrices or {}
     independent_body_constraints = independent_body_constraints or {}
     blended_world_matrices = blended_world_matrices or {}
+    reference_inverse_matrices = reference_inverse_matrices or {}
     if set(blended_world_matrices) & set(independent_world_matrices):
         raise FitPartTwistValidationError("Part 独立与混合矩阵来源不能重复")
     for body, blend in blended_world_matrices.items():
@@ -119,6 +122,13 @@ def plan_standard_fit_part_rotation_inputs(
                 or matrix == body + ".worldMatrix[0]"):
             raise FitPartTwistValidationError(
                 "Body 扭转补偿需要独立的控制矩阵与朝向约束：" + body)
+    for body, inverse in reference_inverse_matrices.items():
+        if (body not in starts or not isinstance(inverse, str)
+                or not inverse.endswith(".worldInverseMatrix[0]")
+                or starts[body].start_body_name.rsplit("_", 1)[0]
+                in ("Shoulder", "Elbow", "Hip", "Knee")):
+            raise FitPartTwistValidationError(
+                "Part 参考逆矩阵不属于有效的起点：" + body)
     result = []
     auxiliary = {}
     for start, part in starts.items():
@@ -175,7 +185,8 @@ def plan_standard_fit_part_rotation_inputs(
                 ik_fk_blend_plug=blend[2] if blend else None,
                 subtract_body_twist=not bool(constraint),
                 compensate_start_body=bool(constraint),
-                body_constraint_name=constraint))
+                body_constraint_name=constraint,
+                reference_inverse_plug=reference_inverse_matrices.get(start)))
     return tuple(result) + tuple(auxiliary.values())
 
 
@@ -211,6 +222,13 @@ def plan_fit_part_twist_projections(
                 "矩阵参照投影不能同时指定 IK/FK 旋转混合")
         if item.world_matrix_plug and item.ik_fk_blend_plug:
             raise FitPartTwistValidationError("单一矩阵来源不能指定 IK/FK 权重")
+        if item.reference_inverse_plug is not None and (
+                not isinstance(item.reference_inverse_plug, str)
+                or not item.reference_inverse_plug.endswith(
+                    ".worldInverseMatrix[0]")
+                or not (item.world_matrix_plug or blended_matrix)):
+            raise FitPartTwistValidationError(
+                "参考逆矩阵要求世界矩阵扭转来源")
         has_ik = bool(item.rotation_plug and (
             item.ik_rotation_plug or item.ik_rotate_order_plug
             or item.ik_fk_blend_plug))

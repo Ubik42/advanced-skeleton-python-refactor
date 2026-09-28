@@ -101,6 +101,7 @@ def _independent_rig_twist_sources(
 ) -> tuple[
     dict[str, str], dict[str, str],
     dict[str, tuple[str, str, str, str]],
+    dict[str, str],
 ]:
     """Read control or mechanism matrices outside the driven Part hierarchy."""
     controls = []
@@ -111,6 +112,12 @@ def _independent_rig_twist_sources(
     body_paths = {joint.path for joint in plan.arm.safety.body.joints}
     controls = [control for control in controls
                 if control.driven_joint in body_paths]
+    root_child_offsets = {
+        control.driven_joint: control.offset_path + ".worldInverseMatrix[0]"
+        for control in (plan.torso.torso.controls.controls
+                        if plan.torso is not None else ())
+        if control.driven_joint.rsplit("|", 1)[0].endswith("|Root_M")
+    }
     matrices = {
         control.driven_joint: (
             control.source_override_path or control.sub_control_path
@@ -158,7 +165,7 @@ def _independent_rig_twist_sources(
     for body in blended_matrices:
         matrices.pop(body, None)
         constraints.pop(body, None)
-    return matrices, constraints, blended_matrices
+    return matrices, constraints, blended_matrices, root_child_offsets
 
 
 def _with_inbetween_fk_sources(
@@ -378,14 +385,18 @@ class BuildRegisteredBodyCharacter:
             hip_swing_reverse = None
             if use_fit_part_hierarchy:
                 (control_matrices, body_constraints,
-                 blended_matrices) = (
+                 blended_matrices, root_child_offsets) = (
                     _independent_rig_twist_sources(rig.plan))
                 if fit_part_twist_sources is None:
                     rotation_inputs = plan_standard_fit_part_rotation_inputs(
                         ordinary_twist_parts,
                         independent_world_matrices=control_matrices,
                         independent_body_constraints=body_constraints,
-                        blended_world_matrices=blended_matrices)
+                        blended_world_matrices=blended_matrices,
+                        reference_inverse_matrices={
+                            part.start_body: root_child_offsets[part.start_body]
+                            for part in ordinary_twist_parts
+                            if part.start_body in root_child_offsets})
                     projections = plan_fit_part_twist_projections(
                         rotation_inputs)
                     plan_fit_part_twist(
