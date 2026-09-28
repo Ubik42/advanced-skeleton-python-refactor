@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from adv_py.core.fit_bendy import FitBendyChainSpec
-from .maya_adv_icons import create_adv_icon
+from .maya_adv_icons import create_adv_icon, original_fit_icon_axis_offset
 
 if TYPE_CHECKING:
     from adv_py.application.fit_bendy import FitBendyFollowSpec, FitBendyWorldSource
@@ -459,6 +459,8 @@ class MayaFitBendyMixin:
         self._require_transaction()
         c = self._cmds
         self._ensure_fit_bendy_groups()
+        axis_offset = original_fit_icon_axis_offset(
+            c, (spec.source_joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1],))
         start, end = spec.start_position, spec.end_position
         curve = c.curve(name=spec.curve_name, degree=1,
                         point=(start, end))
@@ -494,7 +496,8 @@ class MayaFitBendyMixin:
             else:
                 control = create_adv_icon(
                     c, name=name, parent=parent, template="Bend_icon",
-                    radius=0.25, fallback_normal=(1.0, 0.0, 0.0))
+                    radius=0.25, fallback_normal=(1.0, 0.0, 0.0),
+                    axis_offset=axis_offset)
                 if index == 1:
                     c.move(spec.start_icon_offset, 0, 0,
                            control + ".cv[0:99]", relative=True,
@@ -520,7 +523,8 @@ class MayaFitBendyMixin:
             junction = create_adv_icon(
                 c, name=spec.junction_name, parent=junction_offset,
                 template="BendMid_icon", radius=0.18,
-                fallback_normal=(1.0, 0.0, 0.0))
+                fallback_normal=(1.0, 0.0, 0.0),
+                axis_offset=axis_offset)
             c.xform(junction, worldSpace=True, translation=start)
             c.setAttr(junction + ".rotateOrder", spec.rotation_order)
             c.addAttr(junction, longName="circular",
