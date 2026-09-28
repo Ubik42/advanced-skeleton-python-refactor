@@ -796,6 +796,17 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     keyable=False,
                     channelBox=False,
                 )
+            scale_node = self._cmds.createNode(
+                "multiplyDivide", name=plan.scale_node_name,
+                skipSelect=True,
+            )
+            self._cmds.setAttr(f"{scale_node}.operation", 1)
+            for axis in "XYZ":
+                self._cmds.setAttr(f"{scale_node}.input2{axis}", 1.0)
+                self._cmds.connectAttr(
+                    f"{control}.scale{axis}",
+                    f"{scale_node}.input1{axis}",
+                )
             for path in plan.driven_roots:
                 for axis in "XYZ":
                     self._cmds.connectAttr(
@@ -860,6 +871,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         root = one_path(plan.root_path, "transform")
         offset = one_path(plan.offset_path, "transform")
         control = one_path(plan.control_path, "transform")
+        scale_nodes = self._cmds.ls(plan.scale_node_name,
+                                    type="multiplyDivide") or []
+        if len(scale_nodes) != 1:
+            raise FitSkeletonValidationError(
+                "角色总控 MainScaleMultiplyDivide 节点缺失或类型错误")
         shapes = self._cmds.listRelatives(
             control,
             shapes=True,
@@ -928,6 +944,22 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             scale_destination_sources=tuple(
                 (plug, source(plug))
                 for plug in plan.scale_destinations
+            ),
+            scale_node_input_sources=tuple(
+                source(f"{plan.scale_node_name}.input1{axis}")
+                for axis in "XYZ"
+            ),
+            scale_node_operation=int(self._cmds.getAttr(
+                f"{plan.scale_node_name}.operation")),
+            scale_node_input2=tuple(
+                float(self._cmds.getAttr(
+                    f"{plan.scale_node_name}.input2{axis}"))
+                for axis in "XYZ"
+            ),
+            scale_node_output=tuple(
+                float(self._cmds.getAttr(
+                    f"{plan.scale_node_name}.output{axis}"))
+                for axis in "XYZ"
             ),
         )
 

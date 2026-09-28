@@ -80,6 +80,11 @@ def make_snapshot(plan):
             (plug, plan.scale_source)
             for plug in plan.scale_destinations
         ),
+        scale_node_input_sources=tuple(
+            f"{plan.control_path}.scale{axis}" for axis in "XYZ"),
+        scale_node_operation=1,
+        scale_node_input2=(1.0, 1.0, 1.0),
+        scale_node_output=(1.0, 1.0, 1.0),
     )
 
 

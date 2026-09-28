@@ -27,16 +27,18 @@ class BodyCharacterGlobalPlan:
     scale_attribute: str
     scale_default: float
     scale_minimum: float
+    scale_node_name: str
     driven_roots: tuple[str, ...]
     scale_destinations: tuple[str, ...]
 
     @property
-    def node_names(self) -> tuple[str, str, str, str]:
+    def node_names(self) -> tuple[str, ...]:
         return (
             self.root_name,
             self.offset_name,
             self.control_name,
             self.shape_name,
+            self.scale_node_name,
         )
 
     @property
@@ -85,6 +87,10 @@ class BodyCharacterGlobalSnapshot:
     control_scale_sources: tuple[str | None, str | None, str | None]
     driven_roots: tuple[BodyCharacterDrivenRootState, ...]
     scale_destination_sources: tuple[tuple[str, str | None], ...]
+    scale_node_input_sources: tuple[str | None, str | None, str | None]
+    scale_node_operation: int
+    scale_node_input2: Vector3
+    scale_node_output: Vector3
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,7 +152,8 @@ def plan_body_character_global(
     offset_path = f"{root_path}|{offset_name}"
     control_name = "AdvPy_Global"
     control_path = f"{offset_path}|{control_name}"
-    names = {root_name, offset_name, control_name, f"{control_name}Shape"}
+    names = {root_name, offset_name, control_name,
+             f"{control_name}Shape", "MainScaleMultiplyDivide"}
     if any(path.rsplit("|", 1)[-1] in names for path in driven_roots):
         raise BodyCharacterGlobalValidationError(
             "角色总控名称与被驱动根节点冲突"
@@ -164,6 +171,7 @@ def plan_body_character_global(
         scale_attribute="globalScale",
         scale_default=1.0,
         scale_minimum=0.0001,
+        scale_node_name="MainScaleMultiplyDivide",
         driven_roots=driven_roots,
         scale_destinations=scale_destinations,
     )
@@ -259,6 +267,17 @@ def audit_body_character_global(
         issues.append(BodyCharacterGlobalIssue(
             "scale_destination_mismatch",
             "Arm/Leg 全局比例补偿接线不一致",
+        ))
+    expected_inputs = tuple(f"{plan.control_path}.scale{axis}"
+                            for axis in "XYZ")
+    if (snapshot.scale_node_input_sources != expected_inputs
+            or snapshot.scale_node_operation != 1
+            or not _close(snapshot.scale_node_input2, one, tolerance)
+            or not _close(snapshot.scale_node_output, one, tolerance)):
+        issues.append(BodyCharacterGlobalIssue(
+            "main_scale_node_mismatch",
+            "MainScaleMultiplyDivide 比例输出或来源不一致",
+            plan.scale_node_name,
         ))
     return tuple(issues)
 
