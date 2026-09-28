@@ -75,8 +75,18 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                 optional_profile(path),
                 int(cmds.getAttr(path + ".rotateOrder")),
                 additional_fit_edits(metadata),
-                metadata.no_flip))
+                metadata.no_flip,
+                self.read_fit_skin_enabled(path)))
         return tuple(joints)
+
+    def write_fit_no_skin(self, joint: str) -> None:
+        self._require_transaction()
+        if not self._cmds.attributeQuery("noSkin", node=joint, exists=True):
+            self._transaction_changed = True
+            self._cmds.addAttr(joint, longName="noSkin",
+                               attributeType="bool", keyable=True)
+        self._transaction_changed = True
+        self._cmds.setAttr(joint + ".noSkin", True)
 
     def write_fit_rotation_order(self, joint: str, order: int) -> None:
         self._require_transaction()

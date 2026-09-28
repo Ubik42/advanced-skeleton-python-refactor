@@ -37,6 +37,7 @@ class SourceSkeletonJoint:
     rotation_order: int | None = None
     additional_fit_edits: tuple[FitJointFieldEdit, ...] = ()
     effective_no_flip: bool | None = None
+    effective_skin_enabled: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +54,7 @@ class SourceSkeletonFitPlan:
     part_metadata: tuple[tuple[str, tuple[FitJointFieldEdit, ...]], ...] = ()
     deform_profiles: tuple[tuple[str, FitDeformProfile], ...] = ()
     rotation_orders: tuple[tuple[str, int], ...] = ()
+    skin_disabled: tuple[str, ...] = ()
 
 
 class SourceSkeletonFitHost(FitContainerHost, OrientedFitTemplateHost,
@@ -66,6 +68,8 @@ class SourceSkeletonFitHost(FitContainerHost, OrientedFitTemplateHost,
     def write_fit_deform_profile(self, joint: str,
                                  profile: FitDeformProfile) -> None: ...
     def write_fit_rotation_order(self, joint: str, order: int) -> None: ...
+    def write_fit_no_skin(self, joint: str) -> None: ...
+    def read_fit_skin_enabled(self, joint: str) -> bool: ...
 
 
 _FINGER = re.compile(r"^(Thumb|Index|Middle|Ring|Pinky)Finger([1-4])$")
@@ -290,9 +294,14 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     part_metadata = []
     deform_profiles = []
     rotation_orders = []
+    skin_disabled = []
     for reference_joint in reference.joints:
         joint = by_name[reference_joint.name]
         source_no_flip(reference_joint.name)
+        if (joint.effective_skin_enabled is not None
+                and type(joint.effective_skin_enabled) is not bool):
+            raise FitSkeletonValidationError(
+                "来源 noSkin 有效值无效：" + joint.name)
         if (joint.rotation_order is not None and (
                 type(joint.rotation_order) is not int
                 or not 0 <= joint.rotation_order <= 5)):
@@ -398,11 +407,17 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         if joint.rotation_order is not None:
             rotation_orders.append((reference_joint.name,
                                     joint.rotation_order))
+        if (joint.effective_skin_enabled is False
+                and (expected_parent is None
+                     or by_name[expected_parent].effective_skin_enabled
+                     is not False)):
+            skin_disabled.append(reference_joint.name)
     template = FitTemplateSpec("source_skeleton", tuple(specs))
     return SourceSkeletonFitPlan(template, request, len(axial_paths),
                                  tuple(part_metadata),
                                  tuple(deform_profiles),
-                                 tuple(rotation_orders))
+                                 tuple(rotation_orders),
+                                 tuple(skin_disabled))
 
 
 class BuildFitFromSourceSkeleton:
@@ -447,5 +462,9 @@ class BuildFitFromSourceSkeleton:
                 joined.write_fit_deform_profile(paths[name], profile)
             for name, order in plan.rotation_orders:
                 joined.write_fit_rotation_order(paths[name], order)
+            for name in plan.skin_disabled:
+                joined.write_fit_no_skin(paths[name])
+                if joined.read_fit_skin_enabled(paths[name]):
+                    raise RuntimeError("来源 noSkin 写后复检失败：" + name)
         return SourceSkeletonFitResult(len(result.template.joint_paths),
                                        plan.spine_segments)
