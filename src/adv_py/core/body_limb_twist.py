@@ -190,7 +190,10 @@ def plan_body_limb_twist(
     if len(by_name) != len(body.joints):
         raise BodyLimbTwistValidationError("Body joint 名称不唯一")
     root_name = f"AdvPy_{limb_label}TwistJoints"
-    root_path = f"|{root_name}"
+    root_parent_path = ("|Group|MotionSystem|TwistSystem"
+                        if body.root.startswith("|Group|DeformationSystem|")
+                        else "")
+    root_path = f"{root_parent_path}|{root_name}"
     segments = []
     joints = []
     for suffix, side in (("R", FitBuildSide.RIGHT), ("L", FitBuildSide.LEFT)):

@@ -438,9 +438,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         self._require_transaction()
         if any(self.find_name_collisions(name)
                for name in ("Group", "DeformationSystem", "Geometry",
-                            "MotionSystem", "FKSystem", "IKSystem")):
+                            "MotionSystem", "FKSystem", "IKSystem",
+                            "FKIKSystem", "TwistSystem")):
             raise FitSkeletonValidationError(
-                "Group、DeformationSystem 或 Geometry 已存在")
+                "角色系统层级名称已被占用")
         group = self._cmds.createNode(
             "transform", name="Group", skipSelect=True)
         deformation = self._cmds.createNode(
@@ -457,6 +458,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             skipSelect=True)
         self._cmds.createNode(
             "transform", name="IKSystem", parent=motion,
+            skipSelect=True)
+        self._cmds.createNode(
+            "transform", name="FKIKSystem", parent=motion,
+            skipSelect=True)
+        self._cmds.createNode(
+            "transform", name="TwistSystem", parent=motion,
             skipSelect=True)
         for kind in ("translate", "rotate", "scale"):
             for axis in "XYZ":
@@ -550,6 +557,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                  "|Group|DeformationSystem", "|Group|Geometry",
                  "|Group|MotionSystem", "|Group|MotionSystem|FKSystem",
                  "|Group|MotionSystem|IKSystem",
+                 "|Group|MotionSystem|FKIKSystem",
+                 "|Group|MotionSystem|TwistSystem",
                  body_root_path)
         rows = []
         for path in paths:
@@ -3694,7 +3703,13 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 f"{limb_label} twist 运行依赖在执行前失效"
             )
         self._transaction_changed = True
-        root = self._cmds.createNode("transform", name=name, skipSelect=True)
+        parent = "|Group|MotionSystem|TwistSystem"
+        if self._cmds.objExists(parent):
+            root = self._cmds.createNode(
+                "transform", name=name, parent=parent, skipSelect=True)
+        else:
+            root = self._cmds.createNode(
+                "transform", name=name, skipSelect=True)
         return (self._cmds.ls(root, long=True) or [root])[0]
 
     def create_body_arm_twist_segment(self, spec: BodyArmTwistSegmentSpec) -> None:
@@ -5887,11 +5902,13 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         if self.find_name_collisions(name):
             raise FitSkeletonValidationError(f"Arm 机制链根名称冲突：{name}")
         self._transaction_changed = True
-        created = self._cmds.createNode(
-            "transform",
-            name=name,
-            skipSelect=True,
-        )
+        parent = "|Group|MotionSystem|FKIKSystem"
+        if self._cmds.objExists(parent):
+            created = self._cmds.createNode(
+                "transform", name=name, parent=parent, skipSelect=True)
+        else:
+            created = self._cmds.createNode(
+                "transform", name=name, skipSelect=True)
         return (self._cmds.ls(created, long=True) or [created])[0]
 
     def create_body_arm_mechanism_joint(

@@ -85,7 +85,10 @@ def plan_body_limb_mechanisms(
         )
 
     root_name = f"AdvPy_{limb_label}Mechanisms"
-    root_path = f"|{root_name}"
+    root_parent_path = ("|Group|MotionSystem|FKIKSystem"
+                        if body.root.startswith("|Group|DeformationSystem|")
+                        else "")
+    root_path = f"{root_parent_path}|{root_name}"
     specs = []
     for suffix, side in (("R", FitBuildSide.RIGHT), ("L", FitBuildSide.LEFT)):
         for role in (BodyLimbMechanismRole.FK, BodyLimbMechanismRole.IK):

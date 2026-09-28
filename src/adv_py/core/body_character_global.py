@@ -147,7 +147,9 @@ def plan_body_character_global(
             or not path.startswith("|")
             or (path.count("|") != 1 and not (
                 path.startswith(("|Group|MotionSystem|FKSystem|",
-                                 "|Group|MotionSystem|IKSystem|"))
+                                 "|Group|MotionSystem|IKSystem|",
+                                 "|Group|MotionSystem|FKIKSystem|",
+                                 "|Group|MotionSystem|TwistSystem|"))
                 and path.count("|") == 4))
             for path in driven_roots
         )

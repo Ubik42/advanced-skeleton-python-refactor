@@ -223,7 +223,8 @@ class BuildRegisteredBodyCharacter:
         if not _hierarchy_prepared:
             hierarchy_collisions = tuple(
                 path for name in ("Group", "DeformationSystem", "Geometry",
-                                  "MotionSystem", "FKSystem", "IKSystem")
+                                  "MotionSystem", "FKSystem", "IKSystem",
+                                  "FKIKSystem", "TwistSystem")
                 for path in self._host.find_name_collisions(name))
             if hierarchy_collisions:
                 raise FitSkeletonValidationError(
@@ -672,6 +673,10 @@ class BuildRegisteredBodyCharacter:
                 ("|Group|MotionSystem|FKSystem",
                  "|Group|MotionSystem", "transform"),
                 ("|Group|MotionSystem|IKSystem",
+                 "|Group|MotionSystem", "transform"),
+                ("|Group|MotionSystem|FKIKSystem",
+                 "|Group|MotionSystem", "transform"),
+                ("|Group|MotionSystem|TwistSystem",
                  "|Group|MotionSystem", "transform"),
                 (skeleton.snapshot.root, _DEFORMATION_SYSTEM_PATH, "joint"),
             ):
