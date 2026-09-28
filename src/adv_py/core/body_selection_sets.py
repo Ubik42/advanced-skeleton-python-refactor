@@ -12,6 +12,7 @@ class BodySelectionSetsPlan:
     deform_set: str = "DeformSet"
     all_set: str = "AllSet"
     root_set: str = "Sets"
+    build_pose: str = "buildPose"
 
     def __post_init__(self) -> None:
         for label, members in (("ControlSet", self.controls),
@@ -23,7 +24,7 @@ class BodySelectionSetsPlan:
         if set(self.controls) & set(self.deform_joints):
             raise ValueError("控制器与变形关节不能共用选择集成员")
         if len({self.control_set, self.deform_set,
-                self.all_set, self.root_set}) != 4:
+                self.all_set, self.root_set, self.build_pose}) != 5:
             raise ValueError("角色选择集名称重复")
 
 

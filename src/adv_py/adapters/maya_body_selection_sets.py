@@ -10,6 +10,33 @@ class MayaBodySelectionSetsMixin:
         address = self.scene_address(name)
         return address if address.startswith((":", "|")) else ":" + address
 
+    def _body_build_pose_commands(self, controls: tuple[str, ...]) -> str:
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        commands = []
+        for path in controls:
+            node = self.scene_address(path)
+            options = []
+            for axis, flag in (("t", "translation"),
+                               ("r", "rotation"), ("s", "scale")):
+                if not c.getAttr(node + "." + axis + "x", keyable=True):
+                    continue
+                values = c.xform(node, query=True, objectSpace=True,
+                                 **{flag: True})
+                option = {"t": "-t", "r": "-ro", "s": "-s"}[axis]
+                options.extend((option, *(f"{float(value):.3f}"
+                                         for value in values)))
+            if options:
+                commands.append("xform -os " + " ".join(options)
+                                + f' "{node}";')
+            for attribute in c.listAttr(node, userDefined=True,
+                                        keyable=True, shortNames=True) or []:
+                value = c.getAttr(node + "." + attribute)
+                if isinstance(value, (int, float, bool)):
+                    commands.append(f'setAttr "{node}.{attribute}" '
+                                    + str(int(value) if isinstance(value, bool)
+                                          else value) + ";")
+        return "".join(commands)
+
     def resolve_body_selection_members(
         self, registration: CharacterRegistration,
         segments: tuple[str, ...], extras: tuple[str, ...],
@@ -70,7 +97,7 @@ class MayaBodySelectionSetsMixin:
     ) -> None:
         c = self._cmds
         for name in (plan.control_set, plan.deform_set,
-                     plan.all_set, plan.root_set):
+                     plan.all_set, plan.root_set, plan.build_pose):
             if c.objExists(name):
                 raise ValueError("角色选择集名称已占用：" + name)
 
@@ -92,6 +119,12 @@ class MayaBodySelectionSetsMixin:
         c.sets((self._body_selection_set_address(plan.control_set),
                 self._body_selection_set_address(plan.deform_set),
                 all_set), add=root_set)
+        pose = self._body_selection_set_address(plan.build_pose)
+        c.createNode("transform", name=pose, skipSelect=True)
+        for attribute, value in (("udAttr", self._body_build_pose_commands(
+                plan.controls)), ("udExtraAttr", "")):
+            c.addAttr(pose, longName=attribute, dataType="string")
+            c.setAttr(pose + "." + attribute, value, type="string")
         self._transaction_changed = True
 
     def capture_body_selection_sets(
@@ -127,5 +160,13 @@ class MayaBodySelectionSetsMixin:
                 for name in (plan.control_set, plan.deform_set,
                              plan.all_set)}:
             raise RuntimeError("角色选择集嵌套成员不一致")
+        pose = self._body_selection_set_address(plan.build_pose)
+        if (not c.objExists(pose) or c.nodeType(pose) != "transform"
+                or not c.objExists(pose + ".udAttr")
+                or not c.objExists(pose + ".udExtraAttr")
+                or (c.getAttr(pose + ".udAttr") or "")
+                != self._body_build_pose_commands(plan.controls)
+                or (c.getAttr(pose + ".udExtraAttr") or "") != ""):
+            raise RuntimeError("角色 buildPose 初始复位记录不一致")
         return BodySelectionSetsPlan(members(plan.control_set),
                                      members(plan.deform_set))
