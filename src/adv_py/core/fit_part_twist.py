@@ -91,21 +91,20 @@ def plan_standard_fit_part_rotation_inputs(
     independent_body_constraints: Mapping[str, str] | None = None,
     blended_world_matrices: Mapping[
         str, tuple[str, str, str, str]] | None = None,
-    limb_twist_outputs: Mapping[str, str] | None = None,
 ) -> tuple[FitPartRotationInput, ...]:
     """Resolve twist channels for every non-bendy Fit Part chain.
 
     Standard Arm/Leg chains blend their independent FK/IK driver matrices.
     Other joints use an independent FK source when the rig exposes one, or
     their Body world matrix. Both are measured against a bind-aligned
-    reference that follows the original parent. A dual-twist child must use
-    an independent source because its Body is reparented below the Part chain.
+    reference that follows the original parent. Only a dual-twist chain
+    includes its child's twist; that child must use an independent source
+    because its Body is reparented below the Part chain.
     """
     starts = {part.start_body: part for part in parts}
     independent_world_matrices = independent_world_matrices or {}
     independent_body_constraints = independent_body_constraints or {}
     blended_world_matrices = blended_world_matrices or {}
-    limb_twist_outputs = limb_twist_outputs or {}
     if set(blended_world_matrices) & set(independent_world_matrices):
         raise FitPartTwistValidationError("Part 独立与混合矩阵来源不能重复")
     for body, blend in blended_world_matrices.items():
@@ -125,13 +124,29 @@ def plan_standard_fit_part_rotation_inputs(
     for start, part in starts.items():
         stem = part.start_body_name.rsplit("_", 1)[0]
         side = part.side.value
+        up = None
+        if part.dual_twist_child:
+            child = part.end_body
+            child_name = child.rsplit("|", 1)[-1]
+            child_matrix = independent_world_matrices.get(child)
+            child_blend = blended_world_matrices.get(child)
+            if not (child_matrix or child_blend):
+                raise FitPartTwistValidationError(
+                    "双端 Twist 下游缺少独立控制来源：" + child_name)
+            up = (f"AdvPy_{child_name}_FitPartTwistProject"
+                  ".outputRotateX")
+            auxiliary[child] = FitPartRotationInput(
+                child, "", child + ".rotateOrder",
+                world_matrix_plug=child_matrix,
+                distribution_source=False,
+                fk_world_matrix_plug=(child_blend[0]
+                                      if child_blend else None),
+                ik_world_matrix_plug=(child_blend[1]
+                                      if child_blend else None),
+                ik_fk_blend_plug=(child_blend[2]
+                                  if child_blend else None))
         if stem in ("Shoulder", "Elbow", "Hip", "Knee"):
             limb = "Arm" if stem in ("Shoulder", "Elbow") else "Leg"
-            up_label = {"Elbow": "LowerArm", "Hip": "UpperLeg",
-                        "Knee": "LowerLeg"}.get(stem)
-            up = ((limb_twist_outputs.get(start) or
-                   f"AdvPy_{up_label}TwistProject_{side}.outputRotateX")
-                  if up_label else None)
             blend = blended_world_matrices.get(start)
             result.append(FitPartRotationInput(
                 start, "", start + ".rotateOrder", up,
@@ -146,27 +161,6 @@ def plan_standard_fit_part_rotation_inputs(
                 body_constraint_name=(blend[3] if blend else
                     f"AdvPy_{stem}IKFKBlend_{side}")))
         else:
-            up = None
-            if part.dual_twist_child:
-                child = part.end_body
-                child_name = child.rsplit("|", 1)[-1]
-                child_matrix = independent_world_matrices.get(child)
-                child_blend = blended_world_matrices.get(child)
-                if not (child_matrix or child_blend):
-                    raise FitPartTwistValidationError(
-                        "双端 Twist 下游缺少独立控制来源：" + child_name)
-                up = (f"AdvPy_{child_name}_FitPartTwistProject"
-                      ".outputRotateX")
-                auxiliary[child] = FitPartRotationInput(
-                    child, "", child + ".rotateOrder",
-                    world_matrix_plug=child_matrix,
-                    distribution_source=False,
-                    fk_world_matrix_plug=(child_blend[0]
-                                          if child_blend else None),
-                    ik_world_matrix_plug=(child_blend[1]
-                                          if child_blend else None),
-                    ik_fk_blend_plug=(child_blend[2]
-                                      if child_blend else None))
             blend = blended_world_matrices.get(start)
             constraint = (blend[3] if blend else
                           independent_body_constraints.get(start))
