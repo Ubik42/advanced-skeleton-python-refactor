@@ -13,6 +13,7 @@ class FitJointField(str, Enum):
     BENDY_CONTROLS = "bendy_controls"
     INBETWEEN_JOINTS = "inbetween_joints"
     UNTWISTER = "untwister"
+    CONTROL = "control"
     HIP_SWINGER = "hip_swinger"
     COG = "cog"
     FOOT_PIVOTS = "foot_pivots"
@@ -72,6 +73,7 @@ class FitJointMetadata:
     bendy_controls: int | None = None
     inbetween_joints: int | None = None
     untwister: bool = False
+    control: bool = False
     hip_swinger: bool | None = None
     no_mirror: bool = False
     no_mirror_left: bool = False
@@ -104,6 +106,7 @@ _INTEGER_FIELDS = {
 }
 _BOOLEAN_FIELDS = {
     FitJointField.UNTWISTER,
+    FitJointField.CONTROL,
     FitJointField.HIP_SWINGER,
     FitJointField.COG,
     FitJointField.FOOT_PIVOTS,
@@ -193,6 +196,9 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
     if type(metadata.cog) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_cog", "COG 开关必须是布尔值"))
+    if type(metadata.control) is not bool:
+        issues.append(FitJointIssue(
+            metadata.joint, "invalid_control", "Control 开关必须是布尔值"))
     if type(metadata.foot_pivots) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_foot_pivots", "Foot Pivots 开关必须是布尔值"))

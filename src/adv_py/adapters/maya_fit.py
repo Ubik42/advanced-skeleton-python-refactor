@@ -80,6 +80,7 @@ _FIT_ATTRIBUTES = {
     FitJointField.BENDY_CONTROLS: _MayaFitAttribute("bendyCtrls", "long", 0),
     FitJointField.INBETWEEN_JOINTS: _MayaFitAttribute("inbetweenJoints", "long", 0),
     FitJointField.UNTWISTER: _MayaFitAttribute("unTwister", "bool"),
+    FitJointField.CONTROL: _MayaFitAttribute("control", "bool"),
     FitJointField.HIP_SWINGER: _MayaFitAttribute("hipSwinger", "bool"),
     FitJointField.COG: _MayaFitAttribute("cog", "bool"),
     FitJointField.FOOT_PIVOTS: _MayaFitAttribute("footPivots", "bool"),
@@ -823,6 +824,7 @@ class MayaFitJointHost:
             bendy_controls=self._optional_number(joint, "bendyCtrls", int),
             inbetween_joints=self._optional_number(joint, "inbetweenJoints", int),
             untwister=self._optional_bool(joint, "unTwister"),
+            control=self._optional_bool(joint, "control"),
             hip_swinger=(self._optional_bool(joint, "hipSwinger")
                          if self._attribute_exists(joint, "hipSwinger")
                          else None),

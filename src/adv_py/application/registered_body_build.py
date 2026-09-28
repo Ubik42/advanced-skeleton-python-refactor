@@ -279,16 +279,21 @@ class BuildRegisteredBodyCharacter:
             if inbetween_plan.guides:
                 part_plan = plan_combined_part_hierarchy(
                     preview.build, inbetween_plan)
-            if any(
+            terminal_untwister = any(
                 part.kind == "inbetween"
                 and part.source_joint in untwister_sources
                 and part.start_body_name == f"Toes_{part.side.value}"
                 and part.end_body_name == f"ToesEnd_{part.side.value}"
                 for part in part_plan.fit_parts
-            ):
+            )
+            terminal_control = any(
+                item.control and item.joint.rsplit("|", 1)[-1]
+                .rsplit(":", 1)[-1] == "ToesEnd"
+                for item in fit_source.metadata)
+            if terminal_untwister and not terminal_control:
                 raise FitSkeletonValidationError(
-                    "Toes→ToesEnd UnTwister 需要末端 FKX／FKOffset；"
-                    "标准脚部尚无该末端 FK 控制层"
+                    "Toes→ToesEnd UnTwister 需要末端 Fit ToesEnd 的 "
+                    "control 属性，以创建 FK 控制器及 Offset"
                 )
             if (hip_selection is not None and hip_selection.enabled
                     and hip_selection.root_inbetween_count

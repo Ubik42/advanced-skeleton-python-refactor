@@ -401,34 +401,38 @@ def plan_body_leg_ik_to_fk(
         for spec in fk_controls.controls
         if spec.side is side
     }
+    terminal_control = f"AdvPy_ToesEndFK_{side.value}" in control_by_name
+    control_names = (
+        f"AdvPy_HipFK_{side.value}",
+        f"AdvPy_KneeFK_{side.value}",
+        f"AdvPy_AnkleFK_{side.value}",
+        f"AdvPy_ToesFK_{side.value}",
+    ) + ((f"AdvPy_ToesEndFK_{side.value}",)
+         if terminal_control else ())
     controls = tuple(
         control_by_name[name]
-        for name in (
-            f"AdvPy_HipFK_{side.value}",
-            f"AdvPy_KneeFK_{side.value}",
-            f"AdvPy_AnkleFK_{side.value}",
-            f"AdvPy_ToesFK_{side.value}",
-        )
+        for name in control_names
         if name in control_by_name
     )
     blend_sides = tuple(spec for spec in blend.sides if spec.side is side)
-    if len(controls) != 4 or len(blend_sides) != 1:
-        raise ValueError("Leg IK→FK 匹配要求唯一的四层 FK 控制链")
+    if len(controls) != len(control_names) or len(blend_sides) != 1:
+        raise ValueError("Leg IK→FK 匹配缺少目标侧 FK 控制链")
     by_path = {joint.path: joint for joint in body.joints}
     by_name = {joint.name: joint for joint in body.joints}
-    wanted_names = tuple(
-        f"{name}_{side.value}" for name in ("Hip", "Knee", "Ankle", "Toes")
-    )
+    joint_names = (("Hip", "Knee", "Ankle", "Toes", "ToesEnd")
+                   if terminal_control else
+                   ("Hip", "Knee", "Ankle", "Toes"))
+    wanted_names = tuple(f"{name}_{side.value}" for name in joint_names)
     paths = tuple(
         by_name[name].path for name in wanted_names if name in by_name
     )
     blended_paths = {joint.body_joint for joint in blend_sides[0].joints}
     if (
-        len(paths) != 4
+        len(paths) != len(joint_names)
         or any(path not in by_path for path in paths)
         or any(path not in blended_paths for path in paths)
     ):
-        raise ValueError("Leg IK→FK 匹配要求完整的 Hip/Knee/Ankle/Toes Body 链")
+        raise ValueError("Leg IK→FK 匹配要求完整的目标侧 Body 链")
     joints = tuple(by_path[path] for path in paths)
     control_paths = tuple(control.control_path for control in controls)
     driver_paths = tuple(control.driven_joint for control in controls)

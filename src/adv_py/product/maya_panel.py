@@ -341,6 +341,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ("Bendy 控制器数", "bendy_controls"),
                     ("Inbetween 关节数", "inbetween_joints"),
                     ("UnTwister", "untwister"),
+                    ("末端 Control", "control"),
                     ("COG", "cog"),
                     ("Foot Pivots", "foot_pivots"),
                     ("禁止镜像", "no_mirror"),

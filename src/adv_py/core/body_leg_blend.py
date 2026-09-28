@@ -29,12 +29,17 @@ BodyLegBlendValidationError = BodyLimbBlendValidationError
 def plan_body_leg_blend(
     body: BodySkeletonSnapshot,
     mechanisms: BodyLegMechanismPlan,
+    *, terminal_toes_end_control: bool = False,
 ) -> BodyLegBlendPlan:
+    if type(terminal_toes_end_control) is not bool:
+        raise BodyLegBlendValidationError("ToesEnd Control 开关无效")
     return plan_body_limb_blend(
         body,
         mechanisms,
         limb_label="Leg",
-        joint_names=("Hip", "Knee", "Ankle", "Toes"),
+        joint_names=(("Hip", "Knee", "Ankle", "Toes", "ToesEnd")
+                     if terminal_toes_end_control else
+                     ("Hip", "Knee", "Ankle", "Toes")),
         translated_joint_names=("Knee", "Ankle"),
     )
 

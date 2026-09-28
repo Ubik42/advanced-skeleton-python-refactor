@@ -30,11 +30,16 @@ def plan_body_leg_fk_controls(
     driven_joint_by_source: Mapping[str, str] | None = None,
     sub_controllers: bool = False,
     extra_controllers: bool = False,
+    terminal_toes_end_control: bool = False,
 ) -> BodyLegFkControlPlan:
+    if type(terminal_toes_end_control) is not bool:
+        raise BodyLegControlValidationError("ToesEnd Control 开关无效")
     return plan_body_limb_fk_controls(
         body,
         limb_label="Leg",
-        joint_names=("Hip", "Knee", "Ankle", "Toes"),
+        joint_names=(("Hip", "Knee", "Ankle", "Toes", "ToesEnd")
+                     if terminal_toes_end_control else
+                     ("Hip", "Knee", "Ankle", "Toes")),
         radius=radius,
         driven_joint_by_source=driven_joint_by_source,
         sub_controllers=sub_controllers,

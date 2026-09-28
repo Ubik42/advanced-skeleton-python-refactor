@@ -209,6 +209,10 @@ class BuildBodyLegRig:
             for spec in mechanisms.joints
             if spec.role is BodyLegMechanismRole.FK
         }
+        terminal_toes_end_control = any(
+            item.control and item.joint.rsplit("|", 1)[-1]
+            .rsplit(":", 1)[-1] == "ToesEnd"
+            for item in safety.symmetry.source.metadata)
         fk_controls = plan_body_leg_fk_controls(
             safety.body,
             radius=control_radius,
@@ -217,8 +221,11 @@ class BuildBodyLegRig:
                 safety.symmetry.settings).sub_controllers,
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).extra_controllers,
+            terminal_toes_end_control=terminal_toes_end_control,
         )
-        blend = plan_body_leg_blend(safety.body, mechanisms)
+        blend = plan_body_leg_blend(
+            safety.body, mechanisms,
+            terminal_toes_end_control=terminal_toes_end_control)
         ik = plan_body_leg_ik(
             safety.body,
             mechanisms,
