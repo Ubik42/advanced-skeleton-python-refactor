@@ -438,7 +438,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         self._require_transaction()
         if any(self.find_name_collisions(name)
                for name in ("Group", "DeformationSystem", "Geometry",
-                            "MotionSystem", "FKSystem")):
+                            "MotionSystem", "FKSystem", "IKSystem")):
             raise FitSkeletonValidationError(
                 "Group、DeformationSystem 或 Geometry 已存在")
         group = self._cmds.createNode(
@@ -454,6 +454,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             skipSelect=True)
         self._cmds.createNode(
             "transform", name="FKSystem", parent=motion,
+            skipSelect=True)
+        self._cmds.createNode(
+            "transform", name="IKSystem", parent=motion,
             skipSelect=True)
         for kind in ("translate", "rotate", "scale"):
             for axis in "XYZ":
@@ -546,6 +549,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         paths = ("|Group", fit_container_path,
                  "|Group|DeformationSystem", "|Group|Geometry",
                  "|Group|MotionSystem", "|Group|MotionSystem|FKSystem",
+                 "|Group|MotionSystem|IKSystem",
                  body_root_path)
         rows = []
         for path in paths:
@@ -796,6 +800,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                   if name in ("AdvPy_ArmFKControls", "AdvPy_LegFKControls")
                   and self._cmds.objExists("|Group|MotionSystem|FKSystem")
                   else None)
+        if (name in ("AdvPy_ArmIKControls", "AdvPy_LegIKControls")
+                and self._cmds.objExists("|Group|MotionSystem|IKSystem")):
+            parent = "|Group|MotionSystem|IKSystem"
         options = {"name": name, "skipSelect": True}
         if parent is not None:
             options["parent"] = parent

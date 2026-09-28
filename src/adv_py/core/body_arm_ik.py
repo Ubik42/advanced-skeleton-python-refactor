@@ -118,7 +118,10 @@ def plan_body_arm_ik(
         raise BodyArmIkValidationError("IK 控制尺寸参数必须是正有限数值")
     body_by_name = {joint.name: joint for joint in body.joints}
     root_name = "AdvPy_ArmIKControls"
-    root_path = f"|{root_name}"
+    root_parent = ("|Group|MotionSystem|IKSystem"
+                   if body.root.startswith("|Group|DeformationSystem|")
+                   else "")
+    root_path = root_parent + "|" + root_name
     limbs = []
     for side_name, side in (("R", FitBuildSide.RIGHT), ("L", FitBuildSide.LEFT)):
         sources = tuple(body_by_name[f"{name}_{side_name}"] for name in ("Shoulder", "Elbow", "Wrist"))

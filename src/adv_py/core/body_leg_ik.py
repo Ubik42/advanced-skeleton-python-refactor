@@ -135,7 +135,10 @@ def plan_body_leg_ik(
     }
 
     root_name = "AdvPy_LegIKControls"
-    root_path = f"|{root_name}"
+    root_parent = ("|Group|MotionSystem|IKSystem"
+                   if body.root.startswith("|Group|DeformationSystem|")
+                   else "")
+    root_path = root_parent + "|" + root_name
     limbs = []
     for suffix, side in (("R", FitBuildSide.RIGHT), ("L", FitBuildSide.LEFT)):
         sources = tuple(
