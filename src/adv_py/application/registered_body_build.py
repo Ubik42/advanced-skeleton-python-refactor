@@ -35,6 +35,7 @@ from .body_character_rig import (BuildBodyCharacterRig,
                                  BodyCharacterRigBuildResult)
 from .body_rig_validation import body_bind_pose_matches
 from .character_registry import RegisterBodyCharacter
+from .body_selection_sets import BuildBodySelectionSets
 from .finger_mid_deform import BuildFingerMidDeform
 from .fit_part import BuildFitPartHierarchy, FitPartHierarchyResult
 from .fit_bendy import (BuildFitBendyDeform, BuildFitBendyGuides,
@@ -624,6 +625,10 @@ class BuildRegisteredBodyCharacter:
                         BuildFingerMidDeform(joined).apply())
                 for spec in BuildLimbPartDeform(joined).apply():
                     segments.extend((spec.part1, spec.part2))
+            BuildBodySelectionSets(joined).apply(
+                registration, tuple(segments),
+                extras=tuple(extra for chain in bendy_chains
+                             for extra in chain.micro_extra_names))
         return RegisteredBodyBuildResult(
             skeleton, rig, registration, tuple(segments),
             fit_part_hierarchy, inbetween_segments,
