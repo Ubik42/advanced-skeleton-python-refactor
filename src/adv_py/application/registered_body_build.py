@@ -312,9 +312,6 @@ class BuildRegisteredBodyCharacter:
             ordinary_twist_parts = tuple(
                 part for part in twist_parts
                 if part.name not in bendy_part_names)
-            if bendy_chains and fit_part_twist_sources is not None:
-                raise FitSkeletonValidationError(
-                    "Bendy 曲线驱动与手工 Part 扭转来源不能混用")
             if fit_part_twist_sources is not None:
                 plan_fit_part_twist(ordinary_twist_parts,
                                     fit_part_twist_sources)
