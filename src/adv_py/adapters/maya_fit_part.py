@@ -582,11 +582,62 @@ class MayaFitPartMixin:
                 for attr in ("rotateX", "rotateY", "rotateZ")):
             raise ValueError("Fit Part OPM 需要可写的局部平移和旋转："
                              + step.part_name)
+        if step.compensate_start_body:
+            body_name = step.start_body.rsplit("|", 1)[-1]
+            bodies = c.ls(body_name, long=True, type="joint") or []
+            stem, _, side = body_name.rpartition("_")
+            constraint = f"AdvPy_{stem}IKFKBlend_{side}"
+            if (len(bodies) != 1
+                    or not c.objExists(bodies[0] + ".advPySourceJoint")
+                    or not c.objExists(constraint)
+                    or c.nodeType(constraint) != "orientConstraint"
+                    or not c.isConnected(
+                        constraint + ".constraintRotateX",
+                        bodies[0] + ".rotateX")
+                    or c.attributeQuery("twistAmount", node=bodies[0],
+                                        exists=True)
+                    or c.attributeQuery("twistAddition", node=bodies[0],
+                                        exists=True)
+                    or not c.getAttr(constraint + ".offsetX",
+                                     settable=True)
+                    or abs(float(c.getAttr(constraint + ".offsetX")))
+                    > 1e-8):
+                raise ValueError("Body 第零段扭转接收端无效：" + body_name)
 
     def create_fit_part_twist_step(self, step: FitPartTwistStep) -> None:
         self._require_transaction()
         c = self._cmds
         part = self._unique_fit_part_joint(step.part_name)
+        self._transaction_changed = True
+        if step.compensate_start_body:
+            body_name = step.start_body.rsplit("|", 1)[-1]
+            body = (c.ls(body_name, long=True, type="joint") or [])[0]
+            stem, _, side = body_name.rpartition("_")
+            constraint = f"AdvPy_{stem}IKFKBlend_{side}"
+            weight_name, amount_name, offset_name = (
+                step.body_compensation_nodes)
+            c.addAttr(body, longName="twistAmount",
+                      attributeType="double", minValue=0.0,
+                      maxValue=1.0, defaultValue=0.0, keyable=True)
+            c.addAttr(body, longName="twistAddition",
+                      attributeType="double", defaultValue=0.0,
+                      keyable=True)
+            c.createNode("plusMinusAverage", name=weight_name)
+            c.createNode("multDoubleLinear", name=amount_name)
+            c.createNode("plusMinusAverage", name=offset_name)
+            c.connectAttr(body + ".twistAmount",
+                          weight_name + ".input1D[0]")
+            c.setAttr(weight_name + ".input1D[1]", -1.0)
+            c.connectAttr(step.down_twist_plug,
+                          amount_name + ".input1")
+            c.connectAttr(weight_name + ".output1D",
+                          amount_name + ".input2")
+            c.connectAttr(amount_name + ".output",
+                          offset_name + ".input1D[0]")
+            c.connectAttr(body + ".twistAddition",
+                          offset_name + ".input1D[1]")
+            c.connectAttr(offset_name + ".output1D",
+                          constraint + ".offsetX")
         c.addAttr(part, longName="twistAmount", attributeType="double",
                   minValue=0.0, maxValue=1.0,
                   defaultValue=step.default_amount, keyable=True)
@@ -596,7 +647,6 @@ class MayaFitPartMixin:
         target = c.createNode("plusMinusAverage", name=step.target_node)
         difference = c.createNode("plusMinusAverage",
                                   name=step.difference_node)
-        self._transaction_changed = True
         c.connectAttr(step.down_twist_plug, amount + ".input1")
         c.connectAttr(part + ".twistAmount", amount + ".input2")
         c.connectAttr(amount + ".output", target + ".input1D[0]")
@@ -649,9 +699,55 @@ class MayaFitPartMixin:
             nodes += ((step.up_amount_node, "multDoubleLinear"),)
         if step.matrix_name:
             nodes += ((step.matrix_name, "composeMatrix"),)
+        if step.compensate_start_body:
+            weight_name, amount_name, offset_name = (
+                step.body_compensation_nodes)
+            nodes += ((weight_name, "plusMinusAverage"),
+                      (amount_name, "multDoubleLinear"),
+                      (offset_name, "plusMinusAverage"))
         if any(not c.objExists(name) or c.nodeType(name) != kind
                for name, kind in nodes):
             return None
+        if step.compensate_start_body:
+            body_name = step.start_body.rsplit("|", 1)[-1]
+            bodies = c.ls(body_name, long=True, type="joint") or []
+            if len(bodies) != 1:
+                return None
+            body = bodies[0]
+            stem, _, side = body_name.rpartition("_")
+            constraint = f"AdvPy_{stem}IKFKBlend_{side}"
+            weight_name, amount_name, offset_name = (
+                step.body_compensation_nodes)
+            body_links = (
+                (body + ".twistAmount",
+                 weight_name + ".input1D[0]"),
+                (step.down_twist_plug, amount_name + ".input1"),
+                (weight_name + ".output1D",
+                 amount_name + ".input2"),
+                (amount_name + ".output",
+                 offset_name + ".input1D[0]"),
+                (body + ".twistAddition",
+                 offset_name + ".input1D[1]"),
+                (offset_name + ".output1D",
+                 constraint + ".offsetX"),
+            )
+            if (not c.objExists(body + ".twistAmount")
+                    or not c.objExists(body + ".twistAddition")
+                    or not c.objExists(constraint)
+                    or c.nodeType(constraint) != "orientConstraint"
+                    or not c.isConnected(
+                        constraint + ".constraintRotateX",
+                        body + ".rotateX")
+                    or abs(float(c.getAttr(body + ".twistAmount"))) > 1e-8
+                    or abs(float(c.getAttr(body + ".twistAddition"))) > 1e-8
+                    or c.getAttr(weight_name + ".operation") != 1
+                    or c.getAttr(offset_name + ".operation") != 1
+                    or abs(float(c.getAttr(weight_name
+                                        + ".input1D[1]")) + 1.0) > 1e-8
+                    or any(c.connectionInfo(target,
+                           sourceFromDestination=True) != upstream
+                           for upstream, target in body_links)):
+                return None
         expected = (
             (step.down_twist_plug, step.amount_node + ".input1"),
             (part + ".twistAmount", step.amount_node + ".input2"),

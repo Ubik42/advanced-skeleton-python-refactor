@@ -92,6 +92,7 @@ class BuildFitPartTwistDrivers:
                 names += (step.up_amount_node,)
             if step.matrix_name:
                 names += (step.matrix_name,)
+            names += step.body_compensation_nodes
             for name in names:
                 if self._host.find_name_collisions(name):
                     raise ValueError("Fit Part 扭转节点名称冲突：" + name)

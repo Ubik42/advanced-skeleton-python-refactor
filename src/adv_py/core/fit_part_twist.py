@@ -16,11 +16,15 @@ class FitPartTwistSource:
     down_twist_plug: str
     up_twist_plug: str | None = None
     subtract_body_twist: bool = True
+    compensate_start_body: bool = False
 
     def __post_init__(self) -> None:
         if not self.start_body or not self.down_twist_plug:
             raise FitPartTwistValidationError("Part 扭转来源不能为空")
-        if not isinstance(self.subtract_body_twist, bool):
+        if (type(self.subtract_body_twist) is not bool
+                or type(self.compensate_start_body) is not bool
+                or (self.subtract_body_twist
+                    and self.compensate_start_body)):
             raise FitPartTwistValidationError("Body 扭转补偿开关必须是布尔值")
 
 
@@ -38,6 +42,7 @@ class FitPartRotationInput:
     distribution_source: bool = True
     fk_world_matrix_plug: str | None = None
     ik_world_matrix_plug: str | None = None
+    compensate_start_body: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +74,7 @@ class FitPartTwistProjection:
             self.input.start_body, self.output_plug,
             self.input.up_twist_plug,
             self.input.subtract_body_twist,
+            self.input.compensate_start_body,
         )
 
 
@@ -100,7 +106,9 @@ def plan_standard_fit_part_rotation_inputs(
                 fk_world_matrix_plug=(f"AdvPy_{stem}FKDriver_{side}"
                                       ".worldMatrix[0]"),
                 ik_world_matrix_plug=(f"AdvPy_{stem}IKDriver_{side}"
-                                      ".worldMatrix[0]")))
+                                      ".worldMatrix[0]"),
+                subtract_body_twist=False,
+                compensate_start_body=True))
         else:
             up = None
             if part.dual_twist_child:
@@ -136,6 +144,10 @@ def plan_fit_part_twist_projections(
             raise FitPartTwistValidationError("Part 旋转及旋转顺序来源不能为空")
         if type(item.distribution_source) is not bool:
             raise FitPartTwistValidationError("Part 扭转投影用途无效")
+        if (type(item.compensate_start_body) is not bool
+                or (item.compensate_start_body
+                    and item.subtract_body_twist)):
+            raise FitPartTwistValidationError("Body 扭转补偿配置冲突")
         if blended_matrix and not all((item.fk_world_matrix_plug,
                                        item.ik_world_matrix_plug,
                                        item.ik_fk_blend_plug)):
@@ -196,6 +208,16 @@ class FitPartTwistStep:
     difference_node: str
     use_offset_parent_matrix: bool = False
     matrix_name: str | None = None
+    compensate_start_body: bool = False
+
+    @property
+    def body_compensation_nodes(self) -> tuple[str, ...]:
+        if not self.compensate_start_body:
+            return ()
+        stem = self.start_body.rsplit("|", 1)[-1]
+        prefix = f"AdvPy_{stem}_FitTwistBody"
+        return (prefix + "Weight", prefix + "Amount",
+                prefix + "Offset")
 
     @property
     def target_plug(self) -> str:
@@ -254,18 +276,20 @@ def plan_fit_part_twist(
             difference_node = prefix + "Local"
             use_opm = not part.segment_scale_compensate
             matrix_name = prefix + "Matrix" if use_opm else None
-            names = (amount_node, target_node, difference_node)
-            names += (up_amount_node,) if up_amount_node else ()
-            names += (matrix_name,) if matrix_name else ()
-            if any(name in used_nodes for name in names):
-                raise FitPartTwistValidationError("Part 扭转节点名称重复")
-            used_nodes.update(names)
             step = FitPartTwistStep(
                 part.name, start_body, part.index, count,
                 part.index / (count + 1), source.down_twist_plug,
                 source.up_twist_plug, previous_target, amount_node,
                 up_amount_node, target_node, difference_node,
-                use_opm, matrix_name)
+                use_opm, matrix_name,
+                part.index == 1 and source.compensate_start_body)
+            names = (amount_node, target_node, difference_node)
+            names += (up_amount_node,) if up_amount_node else ()
+            names += (matrix_name,) if matrix_name else ()
+            names += step.body_compensation_nodes
+            if any(name in used_nodes for name in names):
+                raise FitPartTwistValidationError("Part 扭转节点名称重复")
+            used_nodes.update(names)
             steps.append(step)
             previous_target = step.target_plug
     return tuple(steps)
