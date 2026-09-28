@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
+from .body_skeleton import FitDeformProfile
 from .fit_metadata import FitJointMetadata
 from .fit_part import FitPartFinalPaths, FitPartJointSpec
 from .fit_symmetry import FitSymmetryInstance
@@ -19,6 +21,7 @@ class FitTweakerSpec:
     offset_matrix_name: str
     local_inverse_name: str
     final_matrix_name: str
+    radius: float
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -51,6 +54,7 @@ def plan_fit_tweakers(
     *,
     motion_system_path: str,
     global_control_path: str,
+    body_profiles: Mapping[str, FitDeformProfile],
     final_paths: FitPartFinalPaths | None = None,
 ) -> FitTweakerPlan:
     by_source = {item.joint: item for item in metadata}
@@ -64,11 +68,13 @@ def plan_fit_tweakers(
     prefix = ns[0] + ":" if len(ns) == 2 else ""
     system_path = motion_system_path + "|" + prefix + "TweakerSystem"
     part_paths = dict(final_paths.part_paths) if final_paths else {}
+    part_profiles = {part.name: part.deform_profile for part in parts}
     result: list[FitTweakerSpec] = []
     targets: set[str] = set()
     names: set[str] = set()
 
-    def add(source: str, target: str) -> None:
+    def add(source: str, target: str,
+            profile: FitDeformProfile) -> None:
         if target in targets:
             raise ValueError("Tweaker 目标关节重复：" + target)
         leaf = target.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
@@ -79,7 +85,8 @@ def plan_fit_tweakers(
         spec = FitTweakerSpec(
             source, target, offset, control, x_path,
             stem + "BaseWorld", stem + "OffsetMM",
-            stem + "LocalInverse", stem + "FinalMM")
+            stem + "LocalInverse", stem + "FinalMM",
+            max(0.01, 1.5 * profile.fat * profile.fat_front))
         if names.intersection(spec.node_names):
             raise ValueError("Tweaker 节点名称重复：" + leaf)
         names.update(spec.node_names)
@@ -95,7 +102,11 @@ def plan_fit_tweakers(
             continue
         body = (final_paths.remap_body_reference(instance.output_path)
                 if final_paths else instance.output_path)
-        add(instance.source_joint, body)
+        profile = body_profiles.get(instance.output_path)
+        if profile is None:
+            raise ValueError("Tweaker 缺少 Body 体积参数："
+                             + instance.output_path)
+        add(instance.source_joint, body, profile)
         for part in parts:
             if (part.source_joint == instance.source_joint
                     and part.side is instance.side
@@ -104,5 +115,5 @@ def plan_fit_tweakers(
                     raise ValueError("Tweaker Part 缺少最终路径："
                                      + part.name)
                 add(instance.source_joint,
-                    part_paths[part.name])
+                    part_paths[part.name], part_profiles[part.name])
     return FitTweakerPlan(system_path, global_control_path, tuple(result))

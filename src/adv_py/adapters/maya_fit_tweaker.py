@@ -127,9 +127,12 @@ class MayaFitTweakerMixin:
         try:
             control = create_adv_icon(
                 c, name=spec.control_path.rsplit("|", 1)[-1],
-                parent=offset, template="Tweaker_icon", radius=0.5,
+                parent=offset, template="Tweaker_icon",
+                radius=spec.radius,
                 fallback_normal=(1.0, 0.0, 0.0),
-                fallback_sections=12)
+                fallback_sections=12,
+                mirror_left=spec.target_path.rsplit("|", 1)[-1]
+                .endswith("_L"))
         finally:
             if selection:
                 c.select(selection, replace=True)

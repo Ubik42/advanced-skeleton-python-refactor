@@ -362,7 +362,9 @@ class BuildBodyCharacterRig:
                 safety.symmetry.source.metadata, (),
                 motion_system_path=(
                     global_control.root_path.rsplit("|", 2)[0]),
-                global_control_path=global_control.control_path)
+                global_control_path=global_control.control_path,
+                body_profiles={joint.path: joint.deform_profile
+                               for joint in safety.body.joints})
             if (not defer_fit_tweakers
                 and BodyBuildOptions.from_fit_settings(
                     safety.symmetry.settings).use_offset_parent_matrix

@@ -685,6 +685,8 @@ class BuildRegisteredBodyCharacter:
                     motion_system_path=(
                         rig.plan.global_control.root_path.rsplit("|", 2)[0]),
                     global_control_path=rig.plan.global_control.control_path,
+                    body_profiles={spec.path: spec.deform_profile
+                                   for spec in part_plan.specs},
                     final_paths=(fit_part_hierarchy.final_paths
                                  if fit_part_hierarchy is not None else None))
                 BuildFitTweakers(joined).apply(tweakers)
