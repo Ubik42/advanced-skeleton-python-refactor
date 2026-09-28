@@ -5951,6 +5951,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             ))
             if len(handles) == 1:
                 required.append(handles[0])
+                if side.pivots[0].roll_control_name:
+                    twist = handles[0] + ".twist"
+                    if self._cmds.listConnections(
+                            twist, source=True, destination=False,
+                            plugs=True) or []:
+                        occupied_rotations.append(twist)
             else:
                 required.append(side.handle_name)
             names = [pivot.name for pivot in side.pivots]
@@ -6222,6 +6228,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             if len(handles) != 1:
                 raise FitSkeletonValidationError("Leg IK Handle 在执行前失效")
             self._cmds.parent(handles[0], spec.final_handle_parent_path, absolute=True)
+            if spec.pivots[0].roll_control_name:
+                self._cmds.connectAttr(
+                    spec.ankle_control_path + ".swivel",
+                    spec.handle_name + ".twist")
             ankle_constraints = self._cmds.ls(
                 spec.ankle_constraint_name,
                 type="orientConstraint",
@@ -6419,6 +6429,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             handles = self._cmds.ls(spec.handle_name, long=True, type="ikHandle") or []
             if len(handles) != 1:
                 raise FitSkeletonValidationError("Foot IK Handle 节点集合无效")
+            swivel_inputs = self._cmds.listConnections(
+                handles[0] + ".twist", source=True,
+                destination=False, plugs=True,
+                skipConversionNodes=True) or []
+            swivel_source = (self._canonical_plug(swivel_inputs[0])
+                             if len(swivel_inputs) == 1 else None)
             parents = self._cmds.listRelatives(
                 handles[0], parent=True, fullPath=True
             ) or []
@@ -6602,6 +6618,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     if len(toe_extras) == 1 and self._cmds.attributeQuery(
                         "ikLocal", node=toe_extras[0], exists=True)
                     else None),
+                swivel_source=swivel_source,
             ))
         return BodyLegFootSnapshot(tuple(sides))
 

@@ -106,9 +106,11 @@ class BodyLegFootSideSpec:
 
     @property
     def attributes(self) -> tuple[str, ...]:
-        roll_attributes = (("rollStartAngle", "rollEndAngle")
-                           if self.pivots[0].roll_control_name else ())
-        return (self.roll.master_attribute,) + roll_attributes + tuple(
+        roll_attributes = (("swivel", self.roll.master_attribute,
+                            "rollStartAngle", "rollEndAngle")
+                           if self.pivots[0].roll_control_name
+                           else (self.roll.master_attribute,))
+        return roll_attributes + tuple(
             pivot.attribute for pivot in self.pivots
         )
 
@@ -208,6 +210,7 @@ class BodyLegFootSideState:
     toe_control_color: int | None = None
     toe_ik_local: bool | None = None
     toe_extra_ik_local: bool | None = None
+    swivel_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -629,6 +632,11 @@ def audit_body_leg_foot(
                 issues.append(BodyLegFootIssue("foot_multiplier", "Foot 符号节点不一致", subject))
         if state.handle_parent_path != spec.final_handle_parent_path:
             issues.append(BodyLegFootIssue("foot_handle_parent", "Leg IK Handle 未挂到 Ball pivot", spec.side.value))
+        if spec.pivots[0].roll_control_name and state.swivel_source != (
+                spec.ankle_control_path + ".swivel"):
+            issues.append(BodyLegFootIssue(
+                "foot_swivel", "Leg IK swivel 未驱动 Handle twist",
+                spec.side.value))
         if (state.toe_handle_parent_path != spec.toe_handle_parent_path
                 or state.toe_handle_joint_list != (
                     spec.toe_solver_joint_list
