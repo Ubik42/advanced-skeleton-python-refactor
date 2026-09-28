@@ -66,6 +66,17 @@ _ALIASES = {
     "Foot": "Ankle", "Toe": "Toes", "Ball": "Toes",
 }
 
+# Default part switches on the 6.925 biped Fit. Keep a source skeleton's
+# explicit switches authoritative, including an explicit zero count.
+_STANDARD_BIPED_PARTS = {
+    "Root": (FitJointField.INBETWEEN_JOINTS, 2),
+    "Spine1": (FitJointField.INBETWEEN_JOINTS, 2),
+    "Neck": (FitJointField.INBETWEEN_JOINTS, 2),
+    "Hip": (FitJointField.TWIST_JOINTS, 2),
+    "Shoulder": (FitJointField.TWIST_JOINTS, 2),
+    "Elbow": (FitJointField.TWIST_JOINTS, 2),
+}
+
 
 def _base_name(source_name: str) -> str | None:
     name = source_name.rsplit(":", 1)[-1]
@@ -248,6 +259,10 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
 
     source_by_path = {joint.path: joint for joint in source}
     reference_names = {spec.name for spec in reference.joints}
+    source_has_part_switches = any(
+        by_name[name].twist_joints is not None
+        or by_name[name].inbetween_joints is not None
+        for name in reference_names)
     specs = []
     part_metadata = []
     deform_profiles = []
@@ -297,6 +312,12 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                 (joint.untwister, FitJointField.UNTWISTER)):
             if value is not None:
                 edits.append(FitJointFieldEdit(field, value))
+        if not source_has_part_switches and reference_joint.name in (
+                _STANDARD_BIPED_PARTS):
+            field, value = _STANDARD_BIPED_PARTS[reference_joint.name]
+            edits.append(FitJointFieldEdit(field, value))
+            if reference_joint.name == "Neck":
+                edits.append(FitJointFieldEdit(FitJointField.UNTWISTER, True))
         if edits:
             part_metadata.append((reference_joint.name, tuple(edits)))
         if joint.deform_profile is not None:
