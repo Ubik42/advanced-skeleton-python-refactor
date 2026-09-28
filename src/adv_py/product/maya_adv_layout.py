@@ -40,6 +40,7 @@ ADV_OPERATIONS = {
         ("Right Eye", 0, "01 · 模型对象"),
         ("Left Eye", 0, "01 · 模型对象"),
         ("创建单关节道具绑定", 0, "02 · One Joint Prop"),
+        ("FBX rig", 0, "02B · FBX rig"),
         ("读取 Body 构建选项", 0, "02A · Body 构建选项"),
         ("保存 Body 构建选项", 0, "02A · Body 构建选项")),
     ("Body", "Fit"): (

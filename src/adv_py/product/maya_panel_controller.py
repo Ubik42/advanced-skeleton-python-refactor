@@ -274,6 +274,12 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)).apply(
             skins, all_meshes)
 
+    def preparation_fbx_rig(self):
+        from adv_py.adapters.maya_fbx_rig_source import MayaFBXRigPreparationHost
+        from adv_py.application.fbx_rig_import import BuildFBXRig
+
+        return BuildFBXRig(MayaFBXRigPreparationHost()).execute()
+
     def characters(self) -> tuple[PanelCharacter, ...]:
         from adv_py.adapters.maya_scene_gateway import MayaSceneGateway
 

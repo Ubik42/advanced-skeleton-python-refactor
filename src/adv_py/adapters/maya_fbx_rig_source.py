@@ -1,7 +1,8 @@
 """Read a bound FBX hierarchy and its bind pose without retaining scene edits."""
 from __future__ import annotations
 
-from adv_py.application.fbx_rig_import import (FBXRigGeneratedTargets,
+from adv_py.application.fbx_rig_import import (FBXRigBuildAudit,
+                                               FBXRigGeneratedTargets,
                                                FBXRigSourceCapture)
 from adv_py.application.fit_container import CreateFitSkeleton
 from adv_py.application.oriented_fit_template import BuildOrientedFitTemplate
@@ -9,14 +10,17 @@ from adv_py.application.oriented_body_skeleton import BuildOrientedBodySkeleton
 from adv_py.application.registered_body_build import _JoinedTransactionHost
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.fbx_rig_import import FBXRigImportPlan, FBXRigSourceJoint
-from adv_py.core.fbx_rig_import import FBXRigFitGuideState
+from adv_py.core.fbx_rig_import import (FBXRigControlTransferPlan,
+                                        FBXRigFitGuideState)
 from adv_py.core.fbx_rig_fk import plan_fbx_rig_fk_controls
+from adv_py.core.body_root_motion import plan_body_root_motion
 from adv_py.core.fit_orientation import (FitOrientationChildSelection,
                                          FitOrientationRequest)
 from adv_py.core.fit_template import FitJointSpec, FitTemplateSpec
 from adv_py.core.joint_labels import JointLabel
 
 from .maya_source_skeleton_fit import MayaSourceSkeletonFitHost
+from .maya_fbx_rig_transfer import MayaFBXRigTransferMixin
 
 
 class MayaFBXRigSourceReader:
@@ -73,18 +77,30 @@ class MayaFBXRigSourceReader:
                                        translation=True)[1])
                          for path in (*paths, *descendants)), default=0.0)
         meshes = []
+        skin_boundary = []
         for skin in c.ls(type="skinCluster") or ():
             influences = set(c.ls(c.skinCluster(skin, query=True,
                                                 influence=True) or (),
                                   long=True) or ())
             if not influences.intersection(paths):
                 continue
+            geometry_ids = []
             for geometry in c.skinCluster(skin, query=True,
                                            geometry=True) or ():
                 mesh = (c.listRelatives(geometry, parent=True,
                                         fullPath=True) or (None,))[0]
                 if mesh is not None and mesh not in meshes:
                     meshes.append(mesh)
+                if mesh is not None:
+                    geometry_ids.extend(c.ls(mesh, uuid=True) or ())
+            influence_ids = tuple(sorted(
+                item for path in influences
+                for item in (c.ls(path, uuid=True) or ())))
+            skin_boundary.append((
+                (c.ls(skin, uuid=True) or (None,))[0],
+                tuple(sorted(geometry_ids)), influence_ids))
+        if not getattr(self, "_transaction_active", False):
+            self._fbx_skin_boundary = tuple(sorted(skin_boundary))
         return FBXRigSourceCapture(
             joints, times, highest_y, None, tuple(meshes),
             float(c.currentTime(query=True)),
@@ -130,12 +146,27 @@ class MayaFBXRigSourceReader:
         return captured
 
 
-class MayaFBXRigPreparationHost(MayaSourceSkeletonFitHost,
+class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
+                                MayaSourceSkeletonFitHost,
                                 MayaFBXRigSourceReader):
     """Prepare the imported source in the same undo transaction as rig build."""
 
     def __init__(self) -> None:
         MayaSourceSkeletonFitHost.__init__(self)
+
+    def choose_fbx_rig_route(self,
+                             detected_application: str | None) -> str:
+        message = "为场景中的已蒙皮 FBX 骨架创建控制器？"
+        if detected_application:
+            message += "\n检测到 " + detected_application + "；请确认继续 FBX rig。"
+        choice = self._cmds.confirmDialog(
+            title="FBX rig", message=message,
+            button=("继续", "取消"), defaultButton="取消",
+            cancelButton="取消", dismissString="取消")
+        return "fbx_rig" if choice == "继续" else "cancel"
+
+    def route_to_fbx_name_matcher(self) -> None:
+        raise NotImplementedError("NameMatcher 构建宿主尚未实现")
 
     def preflight_fbx_rig_import(
         self, plan: FBXRigImportPlan, source: FBXRigSourceCapture,
@@ -375,3 +406,117 @@ class MayaFBXRigPreparationHost(MayaSourceSkeletonFitHost,
             if not shapes:
                 raise RuntimeError("FBX rig FK 控制器没有曲线："
                                    + link.control_name)
+
+    def connect_fbx_game_root_motion(
+        self, plan: FBXRigImportPlan, source_paths: dict[str, str],
+    ) -> None:
+        self._require_transaction()
+        if plan.game_root_joint is None:
+            raise ValueError("FBX rig 没有游戏根关节")
+        c = self._cmds
+        body_root = self._only_fbx_node("Root_M", "joint")
+        root_motion = plan_body_root_motion(
+            source_root_path=body_root,
+            up_axis=self.scene_up_axis(),
+            output_basename="RootMotion_M")
+        if any(c.objExists(name) for name in root_motion.node_names):
+            raise ValueError("FBX rig Root Motion 名称已被占用")
+        self.create_body_root_motion(root_motion)
+        source = self._only_fbx_node(
+            source_paths[plan.game_root_joint], "joint")
+        name = "AdvPy_FBX_GameRoot_Parent"
+        self._transaction_changed = True
+        c.parentConstraint(root_motion.output_path, source,
+                           maintainOffset=True, name=name)
+        self._fbx_game_root_constraint = name
+
+    def restore_fbx_scene_time(self, source: FBXRigSourceCapture) -> None:
+        c = self._cmds
+        c.autoKeyframe(state=False)
+        c.playbackOptions(minTime=source.playback_start,
+                          animationStartTime=source.playback_start,
+                          maxTime=source.playback_end,
+                          animationEndTime=source.playback_end)
+        c.currentTime(source.current_time)
+        c.autoKeyframe(state=source.auto_key_enabled)
+
+    def _current_fbx_skin_boundary(self) -> tuple:
+        c = self._cmds
+        expected_ids = {row[0] for row in getattr(
+            self, "_fbx_skin_boundary", ())}
+        result = []
+        for skin in c.ls(type="skinCluster") or ():
+            identifier = (c.ls(skin, uuid=True) or (None,))[0]
+            if identifier not in expected_ids:
+                continue
+            geometry_ids = []
+            for geometry in c.skinCluster(skin, query=True,
+                                           geometry=True) or ():
+                mesh = (c.listRelatives(geometry, parent=True,
+                                        fullPath=True) or (None,))[0]
+                if mesh is not None:
+                    geometry_ids.extend(c.ls(mesh, uuid=True) or ())
+            influence_ids = tuple(sorted(
+                item for path in (c.skinCluster(skin, query=True,
+                                                 influence=True) or ())
+                for item in (c.ls(path, uuid=True) or ())))
+            result.append((identifier, tuple(sorted(geometry_ids)),
+                           influence_ids))
+        return tuple(sorted(result))
+
+    def capture_fbx_rig_audit(
+        self, plan: FBXRigImportPlan,
+        transfer: FBXRigControlTransferPlan,
+        source_paths: dict[str, str],
+    ) -> FBXRigBuildAudit:
+        c = self._cmds
+        connected_controls = []
+        connected_sources = []
+        for link in transfer.links:
+            source = source_paths[link.source_joint]
+            constraint = "AdvPy_FBX_Source_" + link.control_name
+            if not c.objExists(constraint):
+                continue
+            targets = c.parentConstraint(constraint, query=True,
+                                         targetList=True) or ()
+            driver = (c.ls(link.deform_driver_name,
+                           long=True) or (None,))[0]
+            resolved = tuple((c.ls(target, long=True) or (None,))[0]
+                             for target in targets)
+            outputs = c.listConnections(source + ".translate",
+                source=True, destination=False,
+                type="parentConstraint") or ()
+            if resolved == (driver,) and constraint in outputs:
+                connected_controls.append(link.control_name)
+                connected_sources.append(source)
+        source_nodes = tuple(source_paths.values())
+        source_animation_removed = not any(
+            c.listConnections(path, source=True, destination=False,
+                              type="animCurve") for path in source_nodes)
+        baked = (plan.last_bake_frame is not None and all(
+            c.keyframe(link.control_name, query=True,
+                       timeChange=True)
+            for link in transfer.links))
+        game_connected = False
+        if plan.game_root_joint is not None:
+            name = getattr(self, "_fbx_game_root_constraint", "")
+            game_connected = bool(name and c.objExists(name))
+        return FBXRigBuildAudit(
+            fit_guide_count=len(self.capture_fbx_fit_guides(plan)),
+            paired_side_count=sum(
+                c.objExists(source_paths[pair.right_joint])
+                and c.objExists(source_paths[pair.left_joint])
+                for pair in plan.mirror_pairs),
+            connected_control_names=tuple(connected_controls),
+            original_skeleton_constrained=(
+                len(connected_sources) == len(transfer.links)),
+            control_animation_baked=bool(baked),
+            game_root_motion_connected=game_connected,
+            bound_meshes_preserved=(
+                self._current_fbx_skin_boundary()
+                == getattr(self, "_fbx_skin_boundary", None)),
+            temporary_bake_links_removed=not any(c.objExists(
+                "AdvPy_FBX_Temp_" + link.control_name)
+                for link in transfer.links),
+            source_joint_animation_removed=source_animation_removed,
+            connected_source_paths=tuple(connected_sources))

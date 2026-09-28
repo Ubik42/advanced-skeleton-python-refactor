@@ -261,6 +261,10 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._build_one_joint_prop, primary=True))
             stack.addWidget(group)
 
+            group, form = self._group("02B · FBX rig", [])
+            form.addRow(self._button("FBX rig", self._build_fbx_rig))
+            stack.addWidget(group)
+
             self.body_option_fields = {}
             group, form = self._group("02A · Body 构建选项", [])
             for key, label in (
@@ -1560,6 +1564,12 @@ def create_panel(controller: MayaPanelController | None = None):
             result = self.controller.preparation_one_joint_prop(self._namespace())
             return (f"单关节道具已构建：{len(result.meshes)} 件模型、"
                     f"{len(result.skins)} 套 Skin；控制器 Main")
+
+        def _build_fbx_rig(self):
+            result = self.controller.preparation_fbx_rig()
+            return (f"FBX rig FK 控制已建立："
+                    f"{len(result.connected_control_names)} 个控制器接回原骨架；"
+                    "原 Skin 已保留。")
 
         def _load_body_build_options(self):
             options = self.controller.body_build_options(
