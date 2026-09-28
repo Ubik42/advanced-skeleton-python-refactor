@@ -132,7 +132,8 @@ def audit_body_game_scaling(
             elif axis_plan.restore_source is not None:
                 wanted_scale = axis_plan.restore_source
             elif (not plan.enable and prior.scale_sources[index] is not None
-                  and prior.scale_sources[index].rsplit("|", 1)[-1].startswith(
+                  and prior.scale_sources[index].rsplit("|", 1)[-1]
+                  .rsplit(":", 1)[-1].startswith(
                       "GameEngineScalingSSCMPD")):
                 wanted_scale = None
             else:
@@ -233,7 +234,9 @@ def plan_body_game_scaling(
         target_ssc = False if enable and marker else (
             True if not enable and joint.has_marker
             else joint.segment_scale_compensate)
-        compensation = ("GameEngineScalingSSCMPD2" + joint.leaf
+        namespace, separator, _ = joint.path.rsplit("|", 1)[-1].rpartition(":")
+        node_prefix = namespace + ":" if separator else ""
+        compensation = (node_prefix + "GameEngineScalingSSCMPD2" + joint.leaf
                         if enable and marker and not joint.is_part
                         and (joint.stored_attributes[0]
                              or joint.scale_sources[0] is not None)
@@ -244,12 +247,13 @@ def plan_body_game_scaling(
                       if joint.stored_attributes[index]
                       else joint.scale_sources[index])
             if source is not None:
-                in_ik = source.rsplit("|", 1)[-1].startswith("ScaleBlend")
+                in_ik = source.rsplit("|", 1)[-1].rsplit(":", 1)[-1].startswith(
+                    "ScaleBlend")
         parent_is_part = (joint.parent in by_path
                           and by_path[joint.parent].is_part)
         ancestor = (_nearest_fk_ancestor(joint, by_path)
                     if compensation and (parent_is_part or in_ik) else None)
-        inverse = ("GameEngineScalingSSCMPD1" + joint.leaf
+        inverse = (node_prefix + "GameEngineScalingSSCMPD1" + joint.leaf
                    if ancestor is not None else None)
         axes = []
         fk_parent_disconnect = None
