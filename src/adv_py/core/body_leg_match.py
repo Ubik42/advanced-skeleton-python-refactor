@@ -150,11 +150,13 @@ def plan_body_leg_fk_to_ik(
     foot_plugs = tuple(
         f"{foot_side.ankle_control_path}.{attribute}"
         for attribute in foot_side.attributes
+        if attribute != "footPivotsVis"
     )
     foot_reset_values = tuple(
         (f"{foot_side.ankle_control_path}.{attribute}",
          foot_side.attribute_default(attribute))
         for attribute in foot_side.attributes
+        if attribute != "footPivotsVis"
     )
     roll_rotation_plugs = tuple(
         f"{pivot.roll_control_path}.rotate{axis}"
@@ -359,14 +361,10 @@ def audit_body_leg_fk_to_ik_foot_result(
         ),)
     expected = plan.foot_reset_values or tuple(
         (plug, 0.0) for plug in plan.foot_attribute_plugs)
-    if (
-        tuple(plug for plug, _ in state.attribute_values)
-        != tuple(plug for plug, _ in expected)
-        or any(
-            abs(actual - wanted) > tolerance
-            for (_, actual), (_, wanted) in zip(state.attribute_values, expected)
-        )
-    ):
+    actual_values = dict(state.attribute_values)
+    if (any(plug not in actual_values
+            or abs(actual_values[plug] - wanted) > tolerance
+            for plug, wanted in expected)):
         return (BodyLegMatchIssue(
             "foot_match_values",
             "Leg FK→IK 匹配后的 Foot 属性不一致",

@@ -6314,14 +6314,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     self._cmds.connectAttr(f"{multiplier}.output", pivot.target_plug)
                 elif pivot.source_plug:
                     self._cmds.connectAttr(pivot.source_plug, pivot.target_plug)
-            toe_pivot = next(
-                pivot.path for pivot in spec.pivots
-                if pivot.role is BodyLegFootPivotRole.TOE
-            )
             toe_offset = self._cmds.createNode(
                 "transform",
                 name=spec.toe_offset_name,
-                parent=toe_pivot,
+                parent=spec.toe_offset_path.rsplit("|", 1)[0],
                 skipSelect=True,
             )
             toe_offset = (
