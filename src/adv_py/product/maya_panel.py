@@ -342,6 +342,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ("Inbetween 关节数", "inbetween_joints"),
                     ("UnTwister", "untwister"),
                     ("COG", "cog"),
+                    ("Foot Pivots", "foot_pivots"),
                     ("禁止镜像", "no_mirror"),
                     ("左侧禁止镜像", "no_mirror_left"),
                     ("Child Of Part", "child_of_part"),

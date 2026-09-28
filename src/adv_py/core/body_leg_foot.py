@@ -97,6 +97,43 @@ class BodyLegFootRockSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyLegFootManualPivotSpec:
+    target_name: str
+    target_path: str
+    offset_name: str
+    offset_path: str
+    offset_parent_path: str
+    control_name: str
+    control_path: str
+    reverse_name: str
+    reverse_path: str
+    matrix_name: str
+    inverse_name: str
+    world_position: Vector3
+    world_rotation: Vector3
+    radius: float
+
+
+@dataclass(frozen=True, slots=True)
+class BodyLegFootHighHeelSpec:
+    offset1_name: str
+    offset1_path: str
+    offset2_name: str
+    offset2_path: str
+    drive1_name: str
+    drive1_path: str
+    drive2_name: str
+    drive2_path: str
+    drive3_name: str
+    drive3_path: str
+    negate_name: str
+    constraint_name: str
+    point_constraint_name: str
+    ankle_position: Vector3
+    toe_position: Vector3
+
+
+@dataclass(frozen=True, slots=True)
 class BodyLegFootSideSpec:
     side: FitBuildSide
     legacy_roll_controls: bool
@@ -117,6 +154,8 @@ class BodyLegFootSideSpec:
     roll: BodyLegFootRollSpec
     pivots: tuple[BodyLegFootPivotSpec, ...]
     rock: BodyLegFootRockSpec | None = None
+    manual_pivots: tuple[BodyLegFootManualPivotSpec, ...] = ()
+    high_heel: BodyLegFootHighHeelSpec | None = None
     toe_extra_name: str = ""
     toe_extra_path: str = ""
     source_toe_icon: bool = False
@@ -131,8 +170,10 @@ class BodyLegFootSideSpec:
 
     @property
     def toe_handle_parent_path(self) -> str:
-        return next(pivot.path for pivot in self.pivots
+        ball = next(pivot.path for pivot in self.pivots
                     if pivot.role is BodyLegFootPivotRole.BALL)
+        return next((manual.reverse_path for manual in self.manual_pivots
+                     if manual.target_path == ball), ball)
 
     @property
     def attributes(self) -> tuple[str, ...]:
@@ -140,16 +181,21 @@ class BodyLegFootSideSpec:
                            if self.legacy_roll_controls else
                            ("swivel", self.roll.master_attribute,
                             "rollStartAngle", "rollEndAngle"))
-        return roll_attributes + (("rock",) if self.rock else ()) + tuple(
+        return (roll_attributes + (("rock",) if self.rock else ())
+                + (("footPivotsVis", "footPivotsHighHeel")
+                   if self.manual_pivots else ())) + tuple(
             pivot.attribute for pivot in self.pivots if pivot.source_plug
         )
 
     def attribute_default(self, attribute: str) -> float:
         return {"rollStartAngle": 30.0,
-                "rollEndAngle": 60.0}.get(attribute, 0.0)
+                "rollEndAngle": 60.0,
+                "footPivotsVis": 1.0}.get(attribute, 0.0)
 
     @property
     def final_handle_parent_path(self) -> str:
+        if self.manual_pivots:
+            return self.manual_pivots[-1].reverse_path
         return self.pivots[-1].path
 
     @property
@@ -221,6 +267,35 @@ class BodyLegFootRockPivotState:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyLegFootManualPivotState:
+    target_name: str
+    offset_path: str | None
+    offset_parent_path: str | None
+    control_path: str | None
+    control_parent_path: str | None
+    reverse_path: str | None
+    reverse_parent_path: str | None
+    control_shape: str | None
+    control_color: int | None
+    visibility_source: str | None
+    world_position: Vector3 | None
+    world_rotation: Vector3 | None
+    local_translation: Vector3 | None
+    local_rotation: Vector3 | None
+    graph_connections: tuple[tuple[str, str | None], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BodyLegFootHighHeelState:
+    paths: tuple[tuple[str, str | None, str | None], ...]
+    graph_connections: tuple[tuple[str, str | None], ...]
+    negate_factor: float | None
+    orient_offset_y: float | None
+    orient_target: str | None
+    point_target: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class BodyLegFootSideState:
     side: FitBuildSide
     attribute_values: tuple[tuple[str, float], ...]
@@ -253,6 +328,8 @@ class BodyLegFootSideState:
     toe_extra_ik_local: bool | None = None
     swivel_source: str | None = None
     rock_pivots: tuple[BodyLegFootRockPivotState, ...] = ()
+    manual_pivots: tuple[BodyLegFootManualPivotState, ...] = ()
+    high_heel: BodyLegFootHighHeelState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,6 +350,7 @@ def plan_body_leg_foot(
     *, legacy_toe_controls: bool = False,
     legacy_roll_controls: bool = False,
     up_axis: FitUpAxis = FitUpAxis.Y,
+    foot_pivots_by_side: frozenset[FitBuildSide] = frozenset(),
 ) -> BodyLegFootPlan:
     if type(legacy_toe_controls) is not bool:
         raise BodyLegFootValidationError("Toe 控制器版本选项无效")
@@ -280,6 +358,15 @@ def plan_body_leg_foot(
         raise BodyLegFootValidationError("Roll 控制器版本选项无效")
     if not isinstance(up_axis, FitUpAxis):
         raise BodyLegFootValidationError("Foot 场景 Up Axis 无效")
+    if not isinstance(foot_pivots_by_side, frozenset) or any(
+            side not in (FitBuildSide.RIGHT, FitBuildSide.LEFT)
+            for side in foot_pivots_by_side):
+        raise BodyLegFootValidationError("Foot Pivots 侧别无效")
+    if foot_pivots_by_side and legacy_roll_controls:
+        raise BodyLegFootValidationError("旧版 Foot 控制层不能插入 Foot Pivots")
+    if foot_pivots_by_side and up_axis is not FitUpAxis.Y:
+        raise BodyLegFootValidationError(
+            "6.925 Foot Pivots 的 HighHeel 驱动需要 Y-up 场景")
     body_by_name = {joint.name: joint for joint in body.joints}
     if len(body_by_name) != len(body.joints):
         raise BodyLegFootValidationError("Body 关节名称必须唯一")
@@ -294,6 +381,9 @@ def plan_body_leg_foot(
     sides = []
     for limb in ik.limbs:
         suffix = limb.side.value
+        manual_enabled = limb.side in foot_pivots_by_side
+        manual_pivots: list[BodyLegFootManualPivotSpec] = []
+        high_heel = None
         master_attribute = "footRoll" if legacy_roll_controls else "roll"
         master_plug = f"{limb.ankle_control_path}.{master_attribute}"
         minimum, maximum, ball_break = -360.0, 360.0, 45.0
@@ -318,6 +408,12 @@ def plan_body_leg_foot(
             )
         marker_roles = tuple(row for row in all_marker_roles
                              if f"{row[1]}_{suffix}" in body_by_name)
+        if manual_enabled and (
+                f"Heel_{suffix}" not in body_by_name
+                or f"BigToe_{suffix}" not in body_by_name
+                or f"PinkyToe_{suffix}" not in body_by_name):
+            raise BodyLegFootValidationError(
+                f"{suffix} 侧 footPivots 需要 Heel、BigToe、PinkyToe Fit 标记")
         if legacy_roll_controls and len(marker_roles) != len(all_marker_roles):
             raise BodyLegFootValidationError(
                 "旧版 Foot 场景要求完整 Heel/FootSide 标记")
@@ -360,8 +456,46 @@ def plan_body_leg_foot(
                 return tuple(result)
             inner_name = f"AdvPy_FootRockInnerPivot_{suffix}"
             outer_name = f"AdvPy_FootRockOuterPivot_{suffix}"
-            inner_path = f"{control_parent_path}|{inner_name}"
-            outer_path = f"{inner_path}|{outer_name}"
+            inner_position = ground_position(big_toe.world_position)
+            outer_position = ground_position(pinky_toe.world_position)
+            inner_parent = control_parent_path
+            if manual_enabled:
+                inner_offset_name = f"AdvPy_PivotOffset{inner_name}"
+                inner_control_name = f"AdvPy_Pivot{inner_name}"
+                inner_reverse_name = f"AdvPy_PivotReverse{inner_name}"
+                inner_offset = f"{inner_parent}|{inner_offset_name}"
+                inner_control = f"{inner_offset}|{inner_control_name}"
+                inner_parent = inner_control
+            inner_path = f"{inner_parent}|{inner_name}"
+            outer_parent = inner_path
+            if manual_enabled:
+                inner_reverse = f"{inner_path}|{inner_reverse_name}"
+                manual_pivots.append(BodyLegFootManualPivotSpec(
+                    inner_name, inner_path, inner_offset_name, inner_offset,
+                    control_parent_path, inner_control_name, inner_control,
+                    inner_reverse_name, inner_reverse,
+                    f"AdvPy_PivotReverse{inner_name}MM",
+                    f"AdvPy_PivotReverse{inner_name}IM",
+                    inner_position, roll_world_rotation,
+                    ik.base_radius / 4.0))
+                outer_parent = inner_reverse
+                outer_offset_name = f"AdvPy_PivotOffset{outer_name}"
+                outer_control_name = f"AdvPy_Pivot{outer_name}"
+                outer_reverse_name = f"AdvPy_PivotReverse{outer_name}"
+                outer_offset = f"{outer_parent}|{outer_offset_name}"
+                outer_control = f"{outer_offset}|{outer_control_name}"
+                outer_parent = outer_control
+            outer_path = f"{outer_parent}|{outer_name}"
+            if manual_enabled:
+                outer_reverse = f"{outer_path}|{outer_reverse_name}"
+                manual_pivots.append(BodyLegFootManualPivotSpec(
+                    outer_name, outer_path, outer_offset_name, outer_offset,
+                    inner_reverse, outer_control_name, outer_control,
+                    outer_reverse_name, outer_reverse,
+                    f"AdvPy_PivotReverse{outer_name}MM",
+                    f"AdvPy_PivotReverse{outer_name}IM",
+                    outer_position, roll_world_rotation,
+                    ik.base_radius / 4.0))
             inner_clamp = f"AdvPy_FootRockInnerClamp_{suffix}"
             outer_clamp = f"AdvPy_FootRockOuterClamp_{suffix}"
             inner_source = f"{inner_clamp}.outputR"
@@ -371,23 +505,54 @@ def plan_body_leg_foot(
                 outer_source = f"AdvPy_FootRockOuterSign_{suffix}.output"
             rock = BodyLegFootRockSpec(
                 inner_name, inner_path,
-                ground_position(big_toe.world_position),
+                inner_position,
                 outer_name, outer_path,
-                ground_position(pinky_toe.world_position),
+                outer_position,
                 roll_world_rotation,
                 "Z" if up_axis is FitUpAxis.Y else "Y",
                 inner_source, outer_source)
 
-        parent = rock.outer_path if rock else control_parent_path
+        parent = (manual_pivots[-1].reverse_path if manual_pivots else
+                  rock.outer_path if rock else control_parent_path)
         pivots = []
         for role, marker, attribute, axis, multiplier in marker_roles:
             roll_offset_name = (f"AdvPy_RollOffset{marker}_{suffix}"
                                 if not legacy_roll_controls else "")
             roll_offset_path = (f"{parent}|{roll_offset_name}"
                                 if roll_offset_name else "")
+            roll_parent = roll_offset_path
+            if manual_enabled and role is BodyLegFootPivotRole.HEEL:
+                offset1_name = f"AdvPy_High{marker}Offset1_{suffix}"
+                offset2_name = f"AdvPy_High{marker}Offset2_{suffix}"
+                offset1_path = f"{roll_offset_path}|{offset1_name}"
+                offset2_path = f"{offset1_path}|{offset2_name}"
+                drive_parent = ik.root_path.rsplit("|", 1)[0] or ik.root_path
+                drive1_name = f"AdvPy_High{marker}Drive1_{suffix}"
+                drive2_name = f"AdvPy_High{marker}Drive2_{suffix}"
+                drive3_name = f"AdvPy_High{marker}Drive3_{suffix}"
+                drive1_path = f"{drive_parent}|{drive1_name}"
+                drive2_path = f"{drive1_path}|{drive2_name}"
+                high_heel = BodyLegFootHighHeelSpec(
+                    offset1_name, offset1_path, offset2_name, offset2_path,
+                    drive1_name, drive1_path, drive2_name, drive2_path,
+                    drive3_name, f"{drive2_path}|{drive3_name}",
+                    f"AdvPy_High{marker}OffsetNegate_{suffix}",
+                    f"AdvPy_High{marker}Drive2Orient_{suffix}",
+                    f"AdvPy_High{marker}Drive3Point_{suffix}",
+                    ankle_position, toes_position)
+                roll_parent = offset2_path
+            manual_offset_name = (f"AdvPy_PivotOffsetRoll{marker}_{suffix}"
+                                  if manual_enabled else "")
+            manual_offset_path = (f"{roll_parent}|{manual_offset_name}"
+                                  if manual_offset_name else "")
+            manual_control_name = (f"AdvPy_PivotRoll{marker}_{suffix}"
+                                   if manual_enabled else "")
+            manual_control_path = (f"{manual_offset_path}|{manual_control_name}"
+                                   if manual_control_name else "")
+            roll_parent = manual_control_path or roll_parent
             roll_extra_name = (f"AdvPy_RollExtra{marker}_{suffix}"
                                if roll_offset_name else "")
-            roll_extra_path = (f"{roll_offset_path}|{roll_extra_name}"
+            roll_extra_path = (f"{roll_parent}|{roll_extra_name}"
                                if roll_extra_name else "")
             roll_control_name = (f"AdvPy_Roll{marker}_{suffix}"
                                  if roll_extra_name else "")
@@ -398,7 +563,7 @@ def plan_body_leg_foot(
                                     BodyLegFootPivotRole.HEEL,
                                     BodyLegFootPivotRole.TOE,
                                     BodyLegFootPivotRole.BALL) else "")
-            roll_roller_path = (f"{roll_offset_path}|{roll_roller_name}"
+            roll_roller_path = (f"{roll_parent}|{roll_roller_name}"
                                 if roll_roller_name else "")
             if roll_roller_path:
                 roll_extra_path = f"{roll_roller_path}|{roll_extra_name}"
@@ -407,6 +572,23 @@ def plan_body_leg_foot(
                     if legacy_roll_controls else roll_control_name)
             path = (f"{parent}|{name}" if legacy_roll_controls
                     else roll_control_path)
+            if manual_enabled:
+                manual_reverse_name = f"AdvPy_PivotReverseRoll{marker}_{suffix}"
+                manual_reverse_path = f"{path}|{manual_reverse_name}"
+                manual_pivots.append(BodyLegFootManualPivotSpec(
+                    name, path, manual_offset_name, manual_offset_path,
+                    (high_heel.offset2_path if high_heel is not None
+                     and role is BodyLegFootPivotRole.HEEL
+                     else roll_offset_path),
+                    manual_control_name, manual_control_path,
+                    manual_reverse_name, manual_reverse_path,
+                    f"AdvPy_PivotReverseRoll{marker}MM_{suffix}",
+                    f"AdvPy_PivotReverseRoll{marker}IM_{suffix}",
+                    body_by_name[f"{marker}_{suffix}"].world_position,
+                    roll_world_rotation,
+                    body_fk_curve_radius(
+                        body, body_by_name[f"{marker}_{suffix}"],
+                        ik.base_radius) / 4.0))
             multiplier_name = (
                 f"AdvPy_FootInnerBankSign_{suffix}"
                 if legacy_roll_controls and multiplier != 1.0
@@ -456,13 +638,17 @@ def plan_body_leg_foot(
                 ) if roll_roller_name else "",
                 roll_world_rotation=roll_world_rotation,
             ))
-            parent = path
+            parent = manual_reverse_path if manual_enabled else path
         toe_pivot_path = next(
             pivot.path for pivot in pivots
             if pivot.role is BodyLegFootPivotRole.TOE
         )
         toe_offset_name = f"AdvPy_ToeIKOffset_{suffix}"
-        toe_offset_path = f"{toe_pivot_path}|{toe_offset_name}"
+        toe_parent_path = (next(manual.reverse_path
+                                for manual in manual_pivots
+                                if manual.target_path == toe_pivot_path)
+                           if manual_enabled else toe_pivot_path)
+        toe_offset_path = f"{toe_parent_path}|{toe_offset_name}"
         toe_extra_name = (f"AdvPy_ToeIKExtra_{suffix}"
                           if not legacy_toe_controls else "")
         toe_extra_path = (f"{toe_offset_path}|{toe_extra_name}"
@@ -624,6 +810,8 @@ def plan_body_leg_foot(
             ),
             pivots=tuple(pivots),
             rock=rock,
+            manual_pivots=tuple(manual_pivots),
+            high_heel=high_heel,
             toe_extra_name=toe_extra_name,
             toe_extra_path=toe_extra_path,
             source_toe_icon=not legacy_toe_controls,
@@ -691,11 +879,19 @@ def audit_body_leg_foot(
         ):
             issues.append(BodyLegFootIssue("foot_attributes", "Foot 属性或默认值不一致", spec.side.value))
         pivot_by_role = {pivot.role: pivot for pivot in state.pivots}
+        manual_by_target = {manual.target_name: manual
+                            for manual in spec.manual_pivots}
         if spec.rock:
             wanted_rock = (
-                (spec.rock.inner_path, spec.control_parent_path,
+                (spec.rock.inner_path,
+                 manual_by_target[spec.rock.inner_name].control_path
+                 if spec.rock.inner_name in manual_by_target
+                 else spec.control_parent_path,
                  spec.rock.inner_position, spec.rock.inner_source),
-                (spec.rock.outer_path, spec.rock.inner_path,
+                (spec.rock.outer_path,
+                 manual_by_target[spec.rock.outer_name].control_path
+                 if spec.rock.outer_name in manual_by_target
+                 else spec.rock.inner_path,
                  spec.rock.outer_position, spec.rock.outer_source),
             )
             if len(state.rock_pivots) != 2:
@@ -727,7 +923,102 @@ def audit_body_leg_foot(
             issues.append(BodyLegFootIssue(
                 "foot_rock_unexpected", "Foot Rock 不应存在",
                 spec.side.value))
+        if len(state.manual_pivots) != len(spec.manual_pivots):
+            issues.append(BodyLegFootIssue(
+                "foot_manual_count", "Foot Pivot 控制数量不一致",
+                spec.side.value))
+        for manual, found in zip(spec.manual_pivots, state.manual_pivots):
+            wanted_graph = (
+                (manual.matrix_name + ".matrixIn[0]",
+                 manual.control_path + ".worldMatrix[0]"),
+                (manual.matrix_name + ".matrixIn[1]",
+                 manual.offset_path + ".worldInverseMatrix[0]"),
+                (manual.inverse_name + ".inputMatrix",
+                 manual.matrix_name + ".matrixSum"),
+                (manual.reverse_path + ".offsetParentMatrix",
+                 manual.inverse_name + ".outputMatrix"),
+            )
+            if (found.target_name != manual.target_name
+                    or found.offset_path != manual.offset_path
+                    or found.offset_parent_path != manual.offset_parent_path
+                    or found.control_path != manual.control_path
+                    or found.control_parent_path != manual.offset_path
+                    or found.reverse_path != manual.reverse_path
+                    or found.reverse_parent_path != manual.target_path
+                    or found.control_shape != "nurbsCurve"
+                    or found.control_color != 24
+                    or found.visibility_source != (
+                        spec.ankle_control_path + ".footPivotsVis")
+                    or found.graph_connections != wanted_graph):
+                issues.append(BodyLegFootIssue(
+                    "foot_manual_graph", "Foot Pivot 层级或矩阵补偿不一致",
+                    manual.control_name))
+            if check_initial_pose and (
+                    found.world_position is None
+                    or found.world_rotation is None
+                    or found.local_translation is None
+                    or found.local_rotation is None
+                    or not _close(found.world_position,
+                                  manual.world_position, tolerance)
+                    or not _close_angles(found.world_rotation,
+                                         manual.world_rotation,
+                                         tolerance)
+                    or not _close(found.local_translation,
+                                  (0.0, 0.0, 0.0), tolerance)
+                    or not _close_angles(found.local_rotation,
+                                         (0.0, 0.0, 0.0), tolerance)):
+                issues.append(BodyLegFootIssue(
+                    "foot_manual_pose", "Foot Pivot 初始姿态不一致",
+                    manual.control_name))
+        if spec.high_heel is not None:
+            high = spec.high_heel
+            heel = next(p for p in spec.pivots
+                        if p.role is BodyLegFootPivotRole.HEEL)
+            wanted_paths = (
+                (high.offset1_path, high.offset1_path,
+                 heel.roll_offset_path),
+                (high.offset2_path, high.offset2_path,
+                 high.offset1_path),
+                (high.drive1_path, high.drive1_path,
+                 high.drive1_path.rsplit("|", 1)[0]),
+                (high.drive2_path, high.drive2_path,
+                 high.drive1_path),
+                (high.drive3_path, high.drive3_path,
+                 high.drive2_path),
+            )
+            source = spec.ankle_control_path + ".footPivotsHighHeel"
+            wanted_connections = (
+                (high.negate_name + ".input1X", source),
+                (high.offset1_path + ".rotateX", source),
+                (high.offset2_path + ".rotateX",
+                 high.negate_name + ".outputX"),
+                (high.drive1_path + ".rotateX", source),
+                (spec.final_handle_parent_path + "|" + spec.handle_name
+                 + ".translate", high.drive3_path + ".translate"),
+            )
+            if (state.high_heel is None
+                    or state.high_heel.paths != wanted_paths
+                    or state.high_heel.graph_connections
+                    != wanted_connections
+                    or state.high_heel.negate_factor != -1.0
+                    or state.high_heel.orient_offset_y is None
+                    or abs(state.high_heel.orient_offset_y
+                           - heel.roll_world_rotation[1]) > tolerance
+                    or state.high_heel.orient_target
+                    != high.drive1_path.rsplit("|", 1)[0]
+                    or state.high_heel.point_target
+                    != high.drive1_path):
+                issues.append(BodyLegFootIssue(
+                    "foot_high_heel", "HighHeel 层级或驱动不一致",
+                    spec.side.value))
+        elif state.high_heel is not None:
+            issues.append(BodyLegFootIssue(
+                "foot_high_heel_unexpected", "Foot 不应有 HighHeel 驱动",
+                spec.side.value))
         for pivot in spec.pivots:
+            manual = manual_by_target.get(pivot.name)
+            roll_parent = (manual.control_path if manual is not None
+                           else pivot.roll_offset_path)
             actual_pivot = pivot_by_role.get(pivot.role)
             subject = f"{spec.side.value}:{pivot.role.value}"
             if actual_pivot is None:
@@ -740,7 +1031,7 @@ def audit_body_leg_foot(
                 or actual_pivot.roll_offset_parent_path != pivot.roll_offset_path.rsplit("|", 1)[0]
                 or actual_pivot.roll_extra_path != pivot.roll_extra_path
                 or actual_pivot.roll_extra_parent_path != (
-                    pivot.roll_roller_path or pivot.roll_offset_path)
+                    pivot.roll_roller_path or roll_parent)
                 or actual_pivot.roll_control_path != pivot.roll_control_path
                 or actual_pivot.roll_control_parent_path != pivot.roll_extra_path
             ):
@@ -748,7 +1039,7 @@ def audit_body_leg_foot(
                     "foot_roll_control_hierarchy", "Roll 控制层级不一致", subject))
             if pivot.roll_roller_name and (
                 actual_pivot.roll_roller_path != pivot.roll_roller_path
-                or actual_pivot.roll_roller_parent_path != pivot.roll_offset_path
+                or actual_pivot.roll_roller_parent_path != roll_parent
                 or actual_pivot.roll_roller_rotation_source != pivot.roll_roller_source
             ):
                 issues.append(BodyLegFootIssue(
@@ -870,6 +1161,9 @@ def audit_body_leg_foot(
             pivot.path for pivot in spec.pivots
             if pivot.role is BodyLegFootPivotRole.TOE
         )
+        toe_pivot_path = next(
+            (manual.reverse_path for manual in spec.manual_pivots
+             if manual.target_path == toe_pivot_path), toe_pivot_path)
         if (
             state.toe_offset_path != spec.toe_offset_path
             or state.toe_offset_parent_path != toe_pivot_path

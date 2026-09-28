@@ -248,12 +248,9 @@ class BuildBodyLegRig:
         )
         requested_pivots = requested_foot_pivot_sides(
             safety.symmetry.instances, safety.symmetry.source.metadata)
-        if requested_pivots:
-            raise FitSkeletonValidationError(
-                "Foot Fit 已启用 footPivots，但独立 Pivot／HighHeel 构建层尚未接入："
-                + "、".join(side.value for side in requested_pivots))
         foot = plan_body_leg_foot(
-            safety.body, ik, up_axis=safety.symmetry.source.up_axis)
+            safety.body, ik, up_axis=safety.symmetry.source.up_axis,
+            foot_pivots_by_side=frozenset(requested_pivots))
         names = [
             mechanisms.root_name,
             fk_controls.root_name,
@@ -349,6 +346,17 @@ class BuildBodyLegRig:
                 side.toe_end_effector_name,
             ))
             names.extend(node.name for node in side.roll.nodes)
+            for manual in side.manual_pivots:
+                names.extend((manual.offset_name, manual.control_name,
+                              manual.reverse_name, manual.matrix_name,
+                              manual.inverse_name))
+            if side.high_heel is not None:
+                high = side.high_heel
+                names.extend((high.offset1_name, high.offset2_name,
+                              high.drive1_name, high.drive2_name,
+                              high.drive3_name, high.negate_name,
+                              high.constraint_name,
+                              high.point_constraint_name))
             names.extend(
                 pivot.multiplier_name
                 for pivot in side.pivots

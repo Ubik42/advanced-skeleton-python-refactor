@@ -99,12 +99,9 @@ class BuildBodyLegFoot:
         )
         requested_pivots = requested_foot_pivot_sides(
             symmetry.instances, symmetry.source.metadata)
-        if requested_pivots:
-            raise FitSkeletonValidationError(
-                "Foot Fit 已启用 footPivots，但独立 Pivot／HighHeel 构建层尚未接入："
-                + "、".join(side.value for side in requested_pivots))
         foot = plan_body_leg_foot(
-            body, ik, up_axis=symmetry.source.up_axis)
+            body, ik, up_axis=symmetry.source.up_axis,
+            foot_pivots_by_side=frozenset(requested_pivots))
         provenance = audit_body_provenance(
             oriented_body_provenance(
                 symmetry.source.hierarchy.container, len(symmetry.instances)

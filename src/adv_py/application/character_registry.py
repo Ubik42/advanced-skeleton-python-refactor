@@ -64,6 +64,9 @@ def character_channels(rig):
             if pivot.roll_control_path:
                 add("foot.roll."+pivot.role.value+"."+side.side.value,
                     pivot.roll_control_path,rotation)
+        for manual in side.manual_pivots:
+            add("foot.pivot."+manual.target_name+"."+side.side.value,
+                manual.control_path,translation+rotation)
         add("foot.toe."+side.side.value,side.toe_control_path,rotation)
     if p.hand:
         for control in p.hand.controls.controls:

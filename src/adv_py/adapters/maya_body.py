@@ -196,6 +196,8 @@ from adv_py.core.body_leg_foot import (
     BodyLegFootPlan,
     BodyLegFootPivotRole,
     BodyLegFootPivotState,
+    BodyLegFootManualPivotState,
+    BodyLegFootHighHeelState,
     BodyLegFootRockPivotState,
     BodyLegFootRollNodeState,
     BodyLegFootRollState,
@@ -5990,6 +5992,17 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             names.extend((side.toe_handle_name, side.toe_effector_name))
             names.extend((side.toe_end_handle_name, side.toe_end_effector_name))
             names.extend(node.name for node in side.roll.nodes)
+            for manual in side.manual_pivots:
+                names.extend((manual.offset_name, manual.control_name,
+                              manual.reverse_name, manual.matrix_name,
+                              manual.inverse_name))
+            if side.high_heel:
+                high = side.high_heel
+                names.extend((high.offset1_name, high.offset2_name,
+                              high.drive1_name, high.drive2_name,
+                              high.drive3_name, high.negate_name,
+                              high.constraint_name,
+                              high.point_constraint_name))
             collisions.extend(
                 name for name in names if self.find_name_collisions(name)
             )
@@ -6080,6 +6093,15 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         try:
             self._transaction_changed = True
             for attribute in spec.attributes:
+                if attribute == "footPivotsVis":
+                    self._cmds.addAttr(
+                        spec.ankle_control_path, longName=attribute,
+                        attributeType="bool", defaultValue=True,
+                        keyable=False)
+                    self._cmds.setAttr(
+                        spec.ankle_control_path + ".footPivotsVis",
+                        channelBox=True)
+                    continue
                 options = {}
                 if (attribute == spec.roll.master_attribute
                         and attribute == "footRoll"):
@@ -6105,6 +6127,66 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     self._cmds.setAttr(plug, value)
                 for source, target in node.input_connections:
                     self._cmds.connectAttr(source, target)
+            manual_by_target = {item.target_name: item
+                                for item in spec.manual_pivots}
+
+            def create_manual_control(manual):
+                offset = self._cmds.createNode(
+                    "transform", name=manual.offset_name,
+                    parent=manual.offset_parent_path, skipSelect=True)
+                offset = (self._cmds.ls(offset, long=True) or [offset])[0]
+                if offset != manual.offset_path:
+                    raise RuntimeError("Foot Pivot Offset 路径漂移")
+                self._cmds.xform(offset, worldSpace=True,
+                                translation=manual.world_position)
+                self._cmds.xform(offset, worldSpace=True,
+                                rotation=manual.world_rotation)
+                control = self._cmds.curve(
+                    name=manual.control_name, degree=1,
+                    point=((0, 0, 0), (1, -4, 0), (-1, -4, 0), (0, 0, 0)),
+                    knot=(0, 1, 2, 3))
+                self._cmds.parent(control, offset, relative=True)
+                control = (self._cmds.ls(control, long=True) or [control])[0]
+                if control != manual.control_path:
+                    raise RuntimeError("Foot Pivot 控制路径漂移")
+                self._cmds.scale(manual.radius, manual.radius,
+                                 manual.radius, control + ".cv[*]",
+                                 relative=True)
+                shapes = self._cmds.listRelatives(
+                    control, shapes=True, noIntermediate=True,
+                    fullPath=True, type="nurbsCurve") or []
+                if len(shapes) != 1:
+                    raise RuntimeError("Foot Pivot 曲线不唯一")
+                self._cmds.setAttr(shapes[0] + ".overrideEnabled", True)
+                self._cmds.setAttr(shapes[0] + ".overrideColor", 24)
+                self._cmds.connectAttr(
+                    spec.ankle_control_path + ".footPivotsVis",
+                    shapes[0] + ".visibility")
+                return control
+
+            def finish_manual_control(manual):
+                reverse = self._cmds.createNode(
+                    "transform", name=manual.reverse_name,
+                    parent=manual.target_path, skipSelect=True)
+                reverse = (self._cmds.ls(reverse, long=True) or [reverse])[0]
+                if reverse != manual.reverse_path:
+                    raise RuntimeError("Foot Pivot Reverse 路径漂移")
+                matrix = self._cmds.createNode(
+                    "multMatrix", name=manual.matrix_name)
+                inverse = self._cmds.createNode(
+                    "inverseMatrix", name=manual.inverse_name)
+                self._cmds.connectAttr(
+                    manual.control_path + ".worldMatrix[0]",
+                    matrix + ".matrixIn[0]")
+                self._cmds.connectAttr(
+                    manual.offset_path + ".worldInverseMatrix[0]",
+                    matrix + ".matrixIn[1]")
+                self._cmds.connectAttr(
+                    matrix + ".matrixSum", inverse + ".inputMatrix")
+                self._cmds.connectAttr(
+                    inverse + ".outputMatrix",
+                    reverse + ".offsetParentMatrix")
+
             if spec.rock:
                 for name, path, parent, position, source in (
                     (spec.rock.inner_name, spec.rock.inner_path,
@@ -6114,6 +6196,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                      spec.rock.inner_path, spec.rock.outer_position,
                      spec.rock.outer_source),
                 ):
+                    manual = manual_by_target.get(name)
+                    if manual is not None:
+                        create_manual_control(manual)
+                        parent = manual.control_path
                     created = self._cmds.createNode(
                         "transform", name=name, parent=parent,
                         skipSelect=True)
@@ -6130,6 +6216,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     self._cmds.connectAttr(
                         source, created + ".rotate"
                         + spec.rock.rotation_axis)
+                    if manual is not None:
+                        finish_manual_control(manual)
             for pivot in spec.pivots:
                 if pivot.roll_control_name:
                     roll_parent = pivot.roll_offset_path.rsplit("|", 1)[0]
@@ -6145,11 +6233,36 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     self._cmds.xform(
                         offset, worldSpace=True,
                         rotation=pivot.roll_world_rotation)
-                    extra_parent = offset
+                    if (spec.high_heel is not None
+                            and pivot.role is BodyLegFootPivotRole.HEEL):
+                        high = spec.high_heel
+                        offset1 = self._cmds.createNode(
+                            "transform", name=high.offset1_name,
+                            parent=offset, skipSelect=True)
+                        offset1 = (self._cmds.ls(offset1, long=True)
+                                   or [offset1])[0]
+                        if offset1 != high.offset1_path:
+                            raise RuntimeError("HighHeel Offset1 路径漂移")
+                        self._cmds.xform(offset1, worldSpace=True,
+                                        translation=high.ankle_position)
+                        offset2 = self._cmds.createNode(
+                            "transform", name=high.offset2_name,
+                            parent=offset1, skipSelect=True)
+                        offset2 = (self._cmds.ls(offset2, long=True)
+                                   or [offset2])[0]
+                        if offset2 != high.offset2_path:
+                            raise RuntimeError("HighHeel Offset2 路径漂移")
+                        self._cmds.xform(offset2, worldSpace=True,
+                                        translation=high.toe_position)
+                    manual = manual_by_target.get(pivot.name)
+                    if manual is not None:
+                        create_manual_control(manual)
+                    extra_parent = (manual.control_path if manual is not None
+                                    else offset)
                     if pivot.roll_roller_name:
                         extra_parent = self._cmds.createNode(
                             "transform", name=pivot.roll_roller_name,
-                            parent=offset, skipSelect=True)
+                            parent=extra_parent, skipSelect=True)
                         extra_parent = (self._cmds.ls(extra_parent, long=True)
                                         or [extra_parent])[0]
                         if extra_parent != pivot.roll_roller_path:
@@ -6173,6 +6286,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                                or [control])[0]
                     if control != pivot.roll_control_path:
                         raise RuntimeError("Foot Roll 控制路径漂移")
+                    if manual is not None:
+                        finish_manual_control(manual)
                 if not pivot.roll_control_name:
                     created = self._cmds.createNode(
                         "transform",
@@ -6268,6 +6383,64 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             if len(handles) != 1:
                 raise FitSkeletonValidationError("Leg IK Handle 在执行前失效")
             self._cmds.parent(handles[0], spec.final_handle_parent_path, absolute=True)
+            final_handles = self._cmds.ls(
+                spec.handle_name, long=True, type="ikHandle") or []
+            if (len(final_handles) != 1
+                    or final_handles[0].rsplit("|", 1)[0]
+                    != spec.final_handle_parent_path):
+                raise RuntimeError("Foot IK Handle 改挂路径漂移")
+            final_handle_path = final_handles[0]
+            if spec.high_heel is not None:
+                high = spec.high_heel
+                control_plug = (spec.ankle_control_path
+                                + ".footPivotsHighHeel")
+                negate = self._cmds.createNode(
+                    "multiplyDivide", name=high.negate_name)
+                self._cmds.setAttr(negate + ".input2X", -1.0)
+                self._cmds.connectAttr(control_plug, negate + ".input1X")
+                self._cmds.connectAttr(control_plug,
+                                       high.offset1_path + ".rotateX")
+                self._cmds.connectAttr(negate + ".outputX",
+                                       high.offset2_path + ".rotateX")
+                drive_parent = high.drive1_path.rsplit("|", 1)[0]
+                drive1 = self._cmds.createNode(
+                    "transform", name=high.drive1_name,
+                    parent=drive_parent, skipSelect=True)
+                drive1 = (self._cmds.ls(drive1, long=True) or [drive1])[0]
+                if drive1 != high.drive1_path:
+                    raise RuntimeError("HighHeel Drive1 路径漂移")
+                self._cmds.xform(drive1, worldSpace=True,
+                                translation=high.ankle_position)
+                drive2 = self._cmds.createNode(
+                    "transform", name=high.drive2_name,
+                    parent=drive1, skipSelect=True)
+                drive2 = (self._cmds.ls(drive2, long=True) or [drive2])[0]
+                if drive2 != high.drive2_path:
+                    raise RuntimeError("HighHeel Drive2 路径漂移")
+                self._cmds.xform(drive2, worldSpace=True,
+                                translation=high.toe_position)
+                drive3 = self._cmds.createNode(
+                    "transform", name=high.drive3_name,
+                    parent=drive2, skipSelect=True)
+                drive3 = (self._cmds.ls(drive3, long=True) or [drive3])[0]
+                if drive3 != high.drive3_path:
+                    raise RuntimeError("HighHeel Drive3 路径漂移")
+                self._cmds.xform(drive3, worldSpace=True,
+                                translation=high.ankle_position)
+                self._cmds.connectAttr(control_plug, drive1 + ".rotateX")
+                orient = self._cmds.orientConstraint(
+                    drive_parent, drive2, name=high.constraint_name)[0]
+                heel_pivot = next(p for p in spec.pivots
+                                  if p.role is BodyLegFootPivotRole.HEEL)
+                heading = heel_pivot.roll_world_rotation[1]
+                self._cmds.setAttr(
+                    orient + ".offsetY", heading)
+                self._cmds.pointConstraint(
+                    drive1, drive3, name=high.point_constraint_name)
+                self._cmds.connectAttr(
+                    drive3 + ".translate",
+                    final_handle_path + ".translate",
+                    force=True)
             if spec.pivots[0].roll_control_name:
                 self._cmds.connectAttr(
                     spec.ankle_control_path + ".swivel",
@@ -6346,6 +6519,17 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         if len(found) != 2 or found[0] != found[1]:
             raise FitSkeletonValidationError("双侧 Roll 控制层版本不一致")
         return found[0]
+
+    def body_leg_manual_pivot_sides(
+        self, ik: BodyLegIkPlan
+    ) -> frozenset[FitBuildSide]:
+        result = set()
+        for limb in ik.limbs:
+            control = limb.ankle_control_path
+            if self._cmds.attributeQuery(
+                    "footPivotsVis", node=control, exists=True):
+                result.add(limb.side)
+        return frozenset(result)
 
     def capture_body_leg_foot(
         self,
@@ -6636,6 +6820,100 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 for joint in (self._cmds.ikHandle(
                     toe_end_handles[0], query=True, jointList=True) or []))
 
+            def source_of(target):
+                connections = self._cmds.listConnections(
+                    target, source=True, destination=False, plugs=True,
+                    skipConversionNodes=True) or []
+                return (self._canonical_plug(connections[0])
+                        if len(connections) == 1 else None)
+
+            def transform_at(path):
+                matches = self._cmds.ls(
+                    path, long=True, type="transform") or []
+                if len(matches) != 1:
+                    return None, None
+                parents = self._cmds.listRelatives(
+                    matches[0], parent=True, fullPath=True) or []
+                return matches[0], parents[0] if parents else None
+
+            manual_states = []
+            for manual in spec.manual_pivots:
+                manual_offset, offset_parent = transform_at(
+                    manual.offset_path)
+                manual_control, control_parent = transform_at(
+                    manual.control_path)
+                manual_reverse, reverse_parent = transform_at(
+                    manual.reverse_path)
+                manual_shapes = (self._cmds.listRelatives(
+                    manual_control, shapes=True, noIntermediate=True,
+                    fullPath=True, type="nurbsCurve") or []
+                    if manual_control else [])
+                shape = manual_shapes[0] if len(manual_shapes) == 1 else None
+                connections = tuple((target, source_of(target)) for target in (
+                    manual.matrix_name + ".matrixIn[0]",
+                    manual.matrix_name + ".matrixIn[1]",
+                    manual.inverse_name + ".inputMatrix",
+                    manual.reverse_path + ".offsetParentMatrix"))
+                manual_states.append(BodyLegFootManualPivotState(
+                    manual.target_name, manual_offset, offset_parent,
+                    manual_control, control_parent,
+                    manual_reverse, reverse_parent,
+                    "nurbsCurve" if shape else None,
+                    int(self._cmds.getAttr(shape + ".overrideColor"))
+                    if shape else None,
+                    source_of(shape + ".visibility") if shape else None,
+                    tuple(float(value) for value in self._cmds.xform(
+                        manual_control, query=True, worldSpace=True,
+                        translation=True)) if manual_control else None,
+                    tuple(float(value) for value in self._cmds.xform(
+                        manual_offset, query=True, worldSpace=True,
+                        rotation=True)) if manual_offset else None,
+                    tuple(float(value) for value in self._cmds.getAttr(
+                        manual_control + ".translate")[0])
+                    if manual_control else None,
+                    tuple(float(value) for value in self._cmds.getAttr(
+                        manual_control + ".rotate")[0])
+                    if manual_control else None,
+                    connections))
+
+            high_state = None
+            if spec.high_heel is not None:
+                high = spec.high_heel
+                high_paths = tuple(
+                    (path, *transform_at(path)) for path in (
+                        high.offset1_path, high.offset2_path,
+                        high.drive1_path, high.drive2_path,
+                        high.drive3_path))
+                high_connections = tuple(
+                    (target, source_of(target)) for target in (
+                        high.negate_name + ".input1X",
+                        high.offset1_path + ".rotateX",
+                        high.offset2_path + ".rotateX",
+                        high.drive1_path + ".rotateX",
+                        handles[0] + ".translate"))
+                orient_targets = (self._cmds.orientConstraint(
+                    high.constraint_name, query=True, targetList=True) or []
+                    if self._cmds.objExists(high.constraint_name) else [])
+                point_targets = (self._cmds.pointConstraint(
+                    high.point_constraint_name, query=True,
+                    targetList=True) or []
+                    if self._cmds.objExists(high.point_constraint_name)
+                    else [])
+                high_state = BodyLegFootHighHeelState(
+                    high_paths, high_connections,
+                    float(self._cmds.getAttr(
+                        high.negate_name + ".input2X"))
+                    if self._cmds.objExists(high.negate_name) else None,
+                    float(self._cmds.getAttr(
+                        high.constraint_name + ".offsetY"))
+                    if self._cmds.objExists(high.constraint_name) else None,
+                    ((self._cmds.ls(orient_targets[0], long=True) or
+                      [orient_targets[0]])[0]
+                     if len(orient_targets) == 1 else None),
+                    ((self._cmds.ls(point_targets[0], long=True) or
+                      [point_targets[0]])[0]
+                     if len(point_targets) == 1 else None))
+
             sides.append(BodyLegFootSideState(
                 spec.side,
                 values,
@@ -6695,6 +6973,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     else None),
                 swivel_source=swivel_source,
                 rock_pivots=tuple(rock_pivots),
+                manual_pivots=tuple(manual_states),
+                high_heel=high_state,
             ))
         return BodyLegFootSnapshot(tuple(sides))
 

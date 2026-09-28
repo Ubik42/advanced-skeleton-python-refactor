@@ -160,6 +160,11 @@ def plan_body_leg_fk_to_ik(
         f"{pivot.roll_control_path}.rotate{axis}"
         for pivot in foot_side.pivots if pivot.roll_control_path
         for axis in "XYZ"
+    ) + tuple(
+        f"{manual.control_path}.{channel}{axis}"
+        for manual in foot_side.manual_pivots
+        for channel in ("translate", "rotate")
+        for axis in "XYZ"
     )
     writable = tuple(
         f"{path}.{channel}"
@@ -202,6 +207,7 @@ def plan_body_leg_fk_to_ik(
             foot_side.toe_control_path,
             *(pivot.roll_control_path for pivot in foot_side.pivots
               if pivot.roll_control_path),
+            *(manual.control_path for manual in foot_side.manual_pivots),
             *paths,
             toe.path,
             limb.chain[2],
@@ -370,6 +376,11 @@ def audit_body_leg_fk_to_ik_foot_result(
         component
         for pivot in state.pivots if pivot.roll_control_path
         for component in (pivot.roll_control_rotation or ())
+    ) + tuple(
+        component
+        for manual in state.manual_pivots
+        for component in (*(manual.local_translation or ()),
+                          *(manual.local_rotation or ()))
     )
     if (len(roll_rotations) != len(plan.roll_rotation_plugs)
             or any(abs(value) > tolerance for value in roll_rotations)):
