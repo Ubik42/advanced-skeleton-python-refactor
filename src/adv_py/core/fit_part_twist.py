@@ -129,17 +129,19 @@ def plan_standard_fit_part_rotation_inputs(
                         "Knee": "LowerLeg"}.get(stem)
             up = (f"AdvPy_{up_label}TwistProject_{side}.outputRotateX"
                   if up_label else None)
+            blend = blended_world_matrices.get(start)
             result.append(FitPartRotationInput(
                 start, "", start + ".rotateOrder", up,
-                ik_fk_blend_plug=(f"AdvPy_{limb}Settings."
-                                  f"{limb.lower()}IkFk_{side}"),
-                fk_world_matrix_plug=(f"AdvPy_{stem}FKDriver_{side}"
-                                      ".worldMatrix[0]"),
-                ik_world_matrix_plug=(f"AdvPy_{stem}IKDriver_{side}"
-                                      ".worldMatrix[0]"),
+                ik_fk_blend_plug=(blend[2] if blend else
+                    f"AdvPy_{limb}Settings.{limb.lower()}IkFk_{side}"),
+                fk_world_matrix_plug=(blend[0] if blend else
+                    f"AdvPy_{stem}FKDriver_{side}.worldMatrix[0]"),
+                ik_world_matrix_plug=(blend[1] if blend else
+                    f"AdvPy_{stem}IKDriver_{side}.worldMatrix[0]"),
                 subtract_body_twist=False,
                 compensate_start_body=True,
-                body_constraint_name=f"AdvPy_{stem}IKFKBlend_{side}"))
+                body_constraint_name=(blend[3] if blend else
+                    f"AdvPy_{stem}IKFKBlend_{side}")))
         else:
             up = None
             if part.dual_twist_child:

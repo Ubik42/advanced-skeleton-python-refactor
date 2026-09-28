@@ -139,10 +139,6 @@ def _independent_rig_twist_sources(
         for side in module.blend.sides:
             weight = module.blend.settings_path + "." + side.attribute
             for joint in side.joints:
-                leaf = joint.body_joint.rsplit("|", 1)[-1]
-                stem = leaf.rsplit("_", 1)[0]
-                if stem not in ("Wrist", "Ankle", "Toes", "ToesEnd"):
-                    continue
                 if joint.body_joint not in body_paths:
                     raise ValueError("Part Twist 机制来源不属于当前 Body："
                                      + joint.body_joint)
@@ -153,6 +149,11 @@ def _independent_rig_twist_sources(
                     joint.fk_driver + ".worldMatrix[0]",
                     joint.ik_driver + ".worldMatrix[0]",
                     weight, joint.constraint_name)
+    # Spine controls remain in the FK list, but their Body joints are also
+    # driven by spine IK. The mixed mechanism is the actual rotation source.
+    for body in blended_matrices:
+        matrices.pop(body, None)
+        constraints.pop(body, None)
     return matrices, constraints, blended_matrices
 
 
