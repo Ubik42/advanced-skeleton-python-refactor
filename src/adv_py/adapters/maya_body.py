@@ -1003,6 +1003,19 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     )
             for plug in plan.scale_destinations:
                 self._cmds.connectAttr(plan.scale_source, plug)
+            for attribute, system_path in plan.visibility_controls:
+                if (self._cmds.ls(system_path, long=True,
+                                  type="transform") or []) != [system_path]:
+                    raise FitSkeletonValidationError(
+                        f"角色总控显示层级缺失：{system_path}")
+                self._cmds.addAttr(
+                    control, longName=attribute, attributeType="bool",
+                    defaultValue=True, keyable=False)
+                self._cmds.setAttr(
+                    f"{control}.{attribute}", channelBox=True)
+                self._cmds.connectAttr(
+                    f"{control}.{attribute}",
+                    f"{system_path}.visibility")
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
@@ -1149,6 +1162,15 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 float(self._cmds.getAttr(
                     f"{plan.scale_node_name}.output{axis}"))
                 for axis in "XYZ"
+            ),
+            visibility_controls=tuple(
+                (
+                    attribute,
+                    bool(self._cmds.getAttr(
+                        f"{control}.{attribute}")),
+                    source(f"{system_path}.visibility"),
+                )
+                for attribute, system_path in plan.visibility_controls
             ),
         )
 

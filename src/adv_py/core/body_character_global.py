@@ -59,6 +59,17 @@ class BodyCharacterGlobalPlan:
         return f"{self.control_path}.{self.scale_attribute}"
 
     @property
+    def visibility_controls(self) -> tuple[tuple[str, str], ...]:
+        if not any(path.startswith("|Group|MotionSystem|FKIKSystem|")
+                   for path in self.driven_roots):
+            return ()
+        return (
+            ("fkVis", "|Group|MotionSystem|FKSystem"),
+            ("ikVis", "|Group|MotionSystem|IKSystem"),
+            ("fkIkVis", "|Group|MotionSystem|FKIKSystem"),
+        )
+
+    @property
     def circle_normal(self) -> Vector3:
         return (
             (0.0, 1.0, 0.0)
@@ -110,6 +121,7 @@ class BodyCharacterGlobalSnapshot:
     scale_node_operation: int
     scale_node_input2: Vector3
     scale_node_output: Vector3
+    visibility_controls: tuple[tuple[str, bool, str | None], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,6 +328,16 @@ def audit_body_character_global(
             "main_scale_node_mismatch",
             "MainScaleMultiplyDivide 比例输出或来源不一致",
             plan.scale_node_name,
+        ))
+    expected_visibility = tuple(
+        (name, True, f"{plan.control_path}.{name}")
+        for name, _ in plan.visibility_controls
+    )
+    if snapshot.visibility_controls != expected_visibility:
+        issues.append(BodyCharacterGlobalIssue(
+            "system_visibility_mismatch",
+            "FK、IK 或 FKIK 系统的总控可见性接线不一致",
+            plan.control_path,
         ))
     return tuple(issues)
 
