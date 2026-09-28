@@ -162,6 +162,30 @@ class MayaPanelController:
             raise ValueError("请选择角色命名空间")
         return self._host_factory(namespace=None if namespace == ":" else namespace)
 
+    def body_build_options(self, namespace: str,
+                           container: str = "FitSkeleton"):
+        from adv_py.core.body_build_options import BodyBuildOptions
+        from adv_py.core.fit_settings import FitSkeletonField
+
+        settings = self._host(namespace).read_fit_skeleton_settings(container)
+        return BodyBuildOptions(
+            game_engine=settings.value(FitSkeletonField.GAME_ENGINE) is True,
+            use_offset_parent_matrix=settings.value(
+                FitSkeletonField.USE_OFFSET_PARENT_MATRIX) is True,
+            sub_controllers=settings.value(
+                FitSkeletonField.SUB_CONTROLLERS) is True,
+            extra_controllers=settings.value(
+                FitSkeletonField.EXTRA_CONTROLLERS) is True,
+        )
+
+    def set_body_build_options(self, namespace: str, options,
+                               container: str = "FitSkeleton"):
+        from adv_py.application.body_build_options import SetBodyBuildOptions
+
+        result = SetBodyBuildOptions(self._host(namespace)).apply(
+            options, container)
+        return result.plan.desired
+
     def model_check(self, *, interactive: bool = False,
                     skip_symmetry: bool = False):
         from adv_py.adapters.maya_model_checker import MayaModelCheckHost

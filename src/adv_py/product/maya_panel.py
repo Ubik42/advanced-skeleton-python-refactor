@@ -260,6 +260,26 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._build_one_joint_prop, primary=True))
             stack.addWidget(group)
 
+            self.body_option_fields = {}
+            group, form = self._group("02A · Body 构建选项", [])
+            for key, label in (
+                    ("game_engine", "game engine"),
+                    ("use_offset_parent_matrix", "Offset Parent Matrix"),
+                    ("sub_controllers", "Sub Controllers"),
+                    ("extra_controllers", "Extra Controllers")):
+                field = QtWidgets.QCheckBox(label)
+                self.body_option_fields[key] = field
+                form.addRow(field)
+            self.body_option_status = QtWidgets.QLabel("选择已有 Fit 后读取选项")
+            form.addRow(self.body_option_status)
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("读取 Body 构建选项",
+                                       self._load_body_build_options))
+            row.addWidget(self._button("保存 Body 构建选项",
+                                       self._save_body_build_options))
+            form.addRow(row)
+            stack.addWidget(group)
+
             self.model_check_results = QtWidgets.QPlainTextEdit()
             self.model_check_results.setReadOnly(True)
             self.model_check_results.setPlaceholderText(
@@ -1534,6 +1554,26 @@ def create_panel(controller: MayaPanelController | None = None):
             return (f"单关节道具已构建：{len(result.meshes)} 件模型、"
                     f"{len(result.skins)} 套 Skin；控制器 Main")
 
+        def _load_body_build_options(self):
+            options = self.controller.body_build_options(
+                self._namespace(), self.fit_container.text().strip())
+            for key, field in self.body_option_fields.items():
+                field.setChecked(getattr(options, key))
+            self.body_option_status.setText("选项已从当前 Fit 读取")
+            return "已读取当前 Fit 的 Body 构建选项"
+
+        def _save_body_build_options(self):
+            from adv_py.core.body_build_options import BodyBuildOptions
+
+            options = BodyBuildOptions(**{
+                key: field.isChecked()
+                for key, field in self.body_option_fields.items()})
+            self.controller.set_body_build_options(
+                self._namespace(), options,
+                self.fit_container.text().strip())
+            self.body_option_status.setText("选项已保存到当前 Fit")
+            return "已保存四项 Body 构建选项；下次构建将从 Fit 读取"
+
         def _reselect_preparation_objects(self, role):
             objects = self.controller.preparation_reselect_objects(self._namespace(), role)
             self.preparation_object_fields[role].setText(" ".join(objects))
@@ -2452,9 +2492,20 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.face_outer_loaded_key = None
             if current is None:
                 self.current.setText("当前角色：未选择")
+                if hasattr(self, "body_option_fields"):
+                    for field in self.body_option_fields.values():
+                        field.setChecked(False)
+                    self.body_option_status.setText("选择已有 Fit 后读取选项")
                 return
             detail = current.data(QtCore.Qt.UserRole + 1)
             self.current.setText("当前角色：" + detail)
+            if hasattr(self, "body_option_fields"):
+                try:
+                    self._load_body_build_options()
+                except ValueError:
+                    for field in self.body_option_fields.values():
+                        field.setChecked(False)
+                    self.body_option_status.setText("当前角色尚无可读取的 Fit")
             if hasattr(self, "face_fit_side_status"):
                 try:
                     side = self.controller.face_fit_current_side(self._namespace())
