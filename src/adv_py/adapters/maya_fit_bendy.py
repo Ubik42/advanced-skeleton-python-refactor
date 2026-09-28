@@ -61,15 +61,48 @@ class MayaFitBendyMixin:
         positions = (spec.start_position, spec.master_position,
                      spec.end_position)
         influences = []
-        for name, position, driver in zip(
-                spec.secondary_influence_names, positions, drivers):
+        for index, (name, position, driver) in enumerate(zip(
+                spec.secondary_influence_names, positions, drivers)):
             joint = c.createNode("joint", name=name,
                                  parent=_SECONDARY_GROUPS[1],
                                  skipSelect=True)
             c.xform(joint, worldSpace=True, translation=position)
             c.setAttr(joint + ".drawStyle", 2)
-            c.parentConstraint(driver, joint, maintainOffset=False,
-                               name="AdvPy_Bend2Guide" + name)
+            if index == 2 and spec.child_start_control:
+                translate_name, rotate_name, world_name = (
+                    spec.secondary_end_matrix_names)
+                translation = c.createNode("pickMatrix",
+                                           name=translate_name)
+                rotation = c.createNode("pickMatrix", name=rotate_name)
+                world = c.createNode("multMatrix", name=world_name)
+                c.connectAttr(driver + ".worldMatrix[0]",
+                              translation + ".inputMatrix")
+                c.connectAttr(spec.follow_node_names[0]
+                              + ".worldMatrix[0]",
+                              rotation + ".inputMatrix")
+                for attribute in ("useRotate", "useScale", "useShear"):
+                    c.setAttr(translation + "." + attribute, False)
+                for attribute in ("useTranslate", "useScale", "useShear"):
+                    c.setAttr(rotation + "." + attribute, False)
+                c.connectAttr(rotation + ".outputMatrix",
+                              world + ".matrixIn[0]")
+                c.connectAttr(translation + ".outputMatrix",
+                              world + ".matrixIn[1]")
+                c.connectAttr(joint + ".parentInverseMatrix[0]",
+                              world + ".matrixIn[2]")
+                c.setAttr(joint + ".translate", 0, 0, 0)
+                c.setAttr(joint + ".rotate", 0, 0, 0)
+                c.connectAttr(world + ".matrixSum",
+                              joint + ".offsetParentMatrix")
+                actual = c.xform(joint, query=True, worldSpace=True,
+                                 translation=True)
+                if any(abs(float(a) - b) > 1e-4
+                       for a, b in zip(actual, position)):
+                    raise RuntimeError("Bendy 第二曲线末端绑定位置不一致："
+                                       + joint)
+            else:
+                c.parentConstraint(driver, joint, maintainOffset=False,
+                                   name="AdvPy_Bend2Guide" + name)
             influences.append(joint)
         skin = c.skinCluster(*(influences + [curve]),
                              name=spec.secondary_skin_name,
@@ -134,6 +167,43 @@ class MayaFitBendyMixin:
                                    influence=True) or []
         if {name.rsplit("|", 1)[-1] for name in influences} != set(
                 spec.secondary_influence_names):
+            return False
+        end = spec.secondary_influence_names[-1]
+        if spec.child_start_control:
+            translation, rotation, world = spec.secondary_end_matrix_names
+            if (not c.objExists(translation)
+                    or c.nodeType(translation) != "pickMatrix"
+                    or not c.objExists(rotation)
+                    or c.nodeType(rotation) != "pickMatrix"
+                    or not c.objExists(world)
+                    or c.nodeType(world) != "multMatrix"
+                    or c.connectionInfo(translation + ".inputMatrix",
+                                        sourceFromDestination=True)
+                    != spec.child_start_control + ".worldMatrix[0]"
+                    or c.connectionInfo(rotation + ".inputMatrix",
+                                        sourceFromDestination=True)
+                    != spec.follow_node_names[0] + ".worldMatrix[0]"
+                    or c.connectionInfo(world + ".matrixIn[0]",
+                                        sourceFromDestination=True)
+                    != rotation + ".outputMatrix"
+                    or c.connectionInfo(world + ".matrixIn[1]",
+                                        sourceFromDestination=True)
+                    != translation + ".outputMatrix"
+                    or c.connectionInfo(world + ".matrixIn[2]",
+                                        sourceFromDestination=True)
+                    != end + ".parentInverseMatrix[0]"
+                    or c.connectionInfo(end + ".offsetParentMatrix",
+                                        sourceFromDestination=True)
+                    != world + ".matrixSum"):
+                return False
+            for node, disabled in ((translation, ("useRotate", "useScale",
+                                                  "useShear")),
+                                   (rotation, ("useTranslate", "useScale",
+                                               "useShear"))):
+                if any(c.getAttr(node + "." + attribute)
+                       for attribute in disabled):
+                    return False
+        elif not c.objExists("AdvPy_Bend2Guide" + end):
             return False
         for index, (path, transform, control) in enumerate(zip(
                 spec.secondary_motion_path_names,

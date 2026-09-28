@@ -136,13 +136,24 @@ class FitBendyChainSpec:
                      for index in range(1, self.control_count + 1))
 
     @property
+    def secondary_end_matrix_names(self) -> tuple[str, str, str]:
+        prefix = f"AdvPy_Bend2{self.stem}End_{self.side}"
+        return (prefix + "Translate", prefix + "Rotate",
+                prefix + "World")
+
+    @property
     def secondary_node_names(self) -> tuple[str, ...]:
+        constrained = (self.secondary_influence_names[:2]
+                       if self.child_start_control
+                       else self.secondary_influence_names)
         return (self.secondary_curve_name,
                 self.secondary_curve_name + "Shape",
                 self.secondary_skin_name,
                 *self.secondary_influence_names,
                 *("AdvPy_Bend2Guide" + name
-                  for name in self.secondary_influence_names),
+                  for name in constrained),
+                *(self.secondary_end_matrix_names
+                  if self.child_start_control else ()),
                 *self.secondary_motion_path_names,
                 *self.secondary_motion_transform_names)
 
