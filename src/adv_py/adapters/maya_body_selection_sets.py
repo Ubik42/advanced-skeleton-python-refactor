@@ -120,7 +120,8 @@ class MayaBodySelectionSetsMixin:
     ) -> None:
         c = self._cmds
         for name in (plan.control_set, plan.deform_set,
-                     plan.all_set, plan.root_set, plan.build_pose):
+                     plan.all_set, plan.root_set, plan.build_pose,
+                     plan.motion_system):
             if c.objExists(name):
                 raise ValueError("角色选择集名称已占用：" + name)
 
@@ -142,8 +143,16 @@ class MayaBodySelectionSetsMixin:
         c.sets((self._body_selection_set_address(plan.control_set),
                 self._body_selection_set_address(plan.deform_set),
                 all_set), add=root_set)
+        motion = self._body_selection_set_address(plan.motion_system)
+        c.createNode("transform", name=motion, skipSelect=True)
         pose = self._body_selection_set_address(plan.build_pose)
-        c.createNode("transform", name=pose, skipSelect=True)
+        c.createNode("transform", name=pose, parent=motion,
+                     skipSelect=True)
+        for attribute in ("translateX", "translateY", "translateZ",
+                          "rotateX", "rotateY", "rotateZ",
+                          "scaleX", "scaleY", "scaleZ", "visibility"):
+            c.setAttr(pose + "." + attribute, lock=True, keyable=False,
+                      channelBox=False)
         for attribute, value in (("udAttr", self._body_build_pose_commands(
                 plan.controls)), ("udExtraAttr", "")):
             c.addAttr(pose, longName=attribute, dataType="string")
@@ -188,7 +197,19 @@ class MayaBodySelectionSetsMixin:
                              plan.all_set)}:
             raise RuntimeError("角色选择集嵌套成员不一致")
         pose = self._body_selection_set_address(plan.build_pose)
+        motion = self._body_selection_set_address(plan.motion_system)
+        motion_paths = c.ls(motion, long=True) or []
+        pose_paths = c.ls(pose, long=True) or []
         if (not c.objExists(pose) or c.nodeType(pose) != "transform"
+                or len(motion_paths) != 1
+                or len(pose_paths) != 1
+                or (c.listRelatives(pose_paths[0], parent=True,
+                                    fullPath=True) or []) != motion_paths
+                or any(not c.getAttr(pose + "." + attribute, lock=True)
+                       for attribute in (
+                           "translateX", "translateY", "translateZ",
+                           "rotateX", "rotateY", "rotateZ",
+                           "scaleX", "scaleY", "scaleZ", "visibility"))
                 or not c.objExists(pose + ".udAttr")
                 or not c.objExists(pose + ".udExtraAttr")
                 or not c.objExists(pose + ".advPyPoseData")

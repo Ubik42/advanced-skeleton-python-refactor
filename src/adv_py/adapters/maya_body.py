@@ -7,6 +7,7 @@ from .maya_spine import MayaBodySpineMixin
 from .maya_control_spaces import MayaBodyControlSpacesMixin
 
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 
@@ -6422,7 +6423,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     )
             control = create_adv_icon(
                 self._cmds, name=spec.control_name,
-                parent=control_parent, template="FK_icon",
+                parent=control_parent,
+                template=("Scapula_icon" if "Scapula" in spec.control_name
+                          else "Part_icon" if re.search(
+                              r"Part[0-9]", spec.control_name)
+                          else "FK_icon"),
                 radius=spec.radius,
                 fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12)
             control = (self._cmds.ls(control, long=True) or [control])[0]

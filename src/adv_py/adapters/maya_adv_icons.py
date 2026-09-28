@@ -10,6 +10,8 @@ import re
 
 _TRANSFORM = re.compile(r'createNode transform -n "([^"]+)";')
 _SHAPE = re.compile(r'createNode nurbsCurve -n "([^"]+)" -p "([^"]+)";')
+_OVERRIDE_ENABLED = re.compile(r'setAttr "\.ove" (yes|no);')
+_OVERRIDE_COLOR = re.compile(r'setAttr "\.ovc" ([0-9]+);')
 _LOCAL_SOURCE = Path.home() / ".adv_py" / "as_icons_path.txt"
 
 
@@ -31,6 +33,8 @@ def _templates(source: Path) -> dict[str, tuple[dict, ...]]:
     templates: dict[str, list[dict]] = {}
     transform = ""
     shape = ""
+    override_enabled = False
+    override_color = 0
     for index, line in enumerate(lines):
         found = _TRANSFORM.search(line)
         if found:
@@ -39,6 +43,14 @@ def _templates(source: Path) -> dict[str, tuple[dict, ...]]:
         found = _SHAPE.search(line)
         if found:
             shape, transform = found.groups()
+            override_enabled = False
+            override_color = 0
+        found = _OVERRIDE_ENABLED.search(line)
+        if found:
+            override_enabled = found.group(1) == "yes"
+        found = _OVERRIDE_COLOR.search(line)
+        if found:
+            override_color = int(found.group(1))
         if 'setAttr ".cc" -type "nurbsCurve"' not in line:
             continue
         if not transform or not shape:
@@ -63,6 +75,8 @@ def _templates(source: Path) -> dict[str, tuple[dict, ...]]:
         templates[transform].append({
             "degree": degree,
             "periodic": form == 2,
+            "override_enabled": override_enabled,
+            "override_color": override_color,
             "knots": knots,
             "points": tuple(tuple(float(v) for v in numbers[i:i + 3])
                             for i in range(0, len(numbers), 3)),
@@ -109,6 +123,15 @@ def create_adv_icon(commands, *, name: str, parent: str,
                 or int(commands.getAttr(actual[0] + ".form"))
                 != (2 if spec["periodic"] else 0)):
             raise RuntimeError("原版图标曲线参数读回不一致：" + name)
+        commands.setAttr(actual[0] + ".overrideEnabled",
+                         spec["override_enabled"])
+        commands.setAttr(actual[0] + ".overrideColor",
+                         spec["override_color"])
+        if (bool(commands.getAttr(actual[0] + ".overrideEnabled"))
+                != spec["override_enabled"]
+                or int(commands.getAttr(actual[0] + ".overrideColor"))
+                != spec["override_color"]):
+            raise RuntimeError("原版图标颜色读回不一致：" + name)
         commands.addAttr(control, longName="advPyIconTemplate",
                          dataType="string")
         commands.setAttr(control + ".advPyIconTemplate", template,
