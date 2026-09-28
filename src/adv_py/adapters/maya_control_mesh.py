@@ -102,6 +102,97 @@ class MayaControlMeshHost:
                                  faces, mesh.numPolygons,
                                  opposite, mirror_faces)
 
+    def _control_for_influence(self, joint: str,
+                               controls: dict[str, str]) -> str | None:
+        c = self.cmds
+        current = joint
+        for _ in range(100):
+            leaf = current.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            if "_" in leaf:
+                stem, side = leaf.rsplit("_", 1)
+                candidates = ("AdvPy_" + stem + "FK_" + side,
+                              "AdvPy_Torso" + leaf + "FK",
+                              "FK" + leaf, stem + "FK_" + side)
+            else:
+                candidates = ("FK" + leaf,)
+            candidates += (leaf.replace("Joint", ""),)
+            for candidate in candidates:
+                if candidate in controls:
+                    return controls[candidate]
+            parent = c.listRelatives(current, parent=True,
+                                     fullPath=True) or []
+            if not parent or c.nodeType(parent[0]) != "joint":
+                break
+            current = parent[0]
+        return None
+
+    def capture_control_mesh_batch_sources(
+        self, global_control: str, controls: tuple[str, ...],
+    ) -> tuple[ControlMeshSource, ...]:
+        from maya.api import OpenMayaAnim
+
+        c = self.cmds
+        selected = c.ls(selection=True, long=True) or []
+        if not selected or any("." in item or c.nodeType(item)
+                               != "transform" for item in selected):
+            raise ValueError("批量 Control Mesh 需要选择已蒙皮网格对象")
+        control_by_leaf = {}
+        for control in controls:
+            leaf = control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            if leaf in control_by_leaf and control_by_leaf[leaf] != control:
+                raise ValueError("已登记控制器短名称不唯一：" + leaf)
+            control_by_leaf[leaf] = control
+        sources = []
+        for transform in selected:
+            shapes = c.listRelatives(transform, shapes=True,
+                                     fullPath=True,
+                                     noIntermediate=True,
+                                     type="mesh") or []
+            if len(shapes) != 1:
+                raise ValueError("所选对象缺少唯一多边形网格：" + transform)
+            shape = shapes[0]
+            mesh, dag = self._mesh(shape)
+            clusters = tuple(dict.fromkeys(node for node in
+                (c.listHistory(shape, pruneDagObjects=True) or [])
+                if c.nodeType(node) == "skinCluster"))
+            if len(clusters) != 1:
+                raise ValueError("所选网格需要唯一 SkinCluster：" + transform)
+            skin_node = self.om.MSelectionList().add(
+                clusters[0]).getDependNode(0)
+            skin = OpenMayaAnim.MFnSkinCluster(skin_node)
+            influences = tuple(path.fullPathName()
+                               for path in skin.influenceObjects())
+            if not influences:
+                raise ValueError("SkinCluster 没有影响关节：" + clusters[0])
+            component = self.om.MFnSingleIndexedComponent().create(
+                self.om.MFn.kMeshVertComponent)
+            component_fn = self.om.MFnSingleIndexedComponent(component)
+            component_fn.addElements(list(range(mesh.numVertices)))
+            weights, influence_count = skin.getWeights(dag, component)
+            if influence_count != len(influences):
+                raise RuntimeError("SkinCluster 影响列表与权重数据不一致")
+            groups: dict[str, list[int]] = {}
+            for face in range(mesh.numPolygons):
+                vertices = mesh.getPolygonVertices(face)
+                sums = [sum(float(weights[vertex * influence_count + index])
+                            for vertex in vertices
+                            if weights[vertex * influence_count + index]
+                            > 0.001)
+                        for index in range(influence_count)]
+                strongest = max(range(influence_count),
+                                key=lambda index: sums[index])
+                if sums[strongest] <= 0.0:
+                    continue
+                control = self._control_for_influence(
+                    influences[strongest], control_by_leaf)
+                if control:
+                    groups.setdefault(control, []).append(face)
+            for control, faces in groups.items():
+                sources.append(ControlMeshSource(
+                    shape, control, global_control,
+                    tuple(faces), mesh.numPolygons))
+        return tuple(sources)
+
     def existing_control_mesh_names(self) -> frozenset[str]:
         return frozenset(self.cmds.ls(long=False) or [])
 

@@ -677,6 +677,34 @@ class MayaPanelController:
             globals_.pop(), mirror=mirror)
         return len(items)
 
+    def create_control_meshes(self, namespace: str) -> int:
+        from adv_py.adapters.maya_control_mesh import MayaControlMeshHost
+        from adv_py.application.control_mesh import CreateControlMeshes
+
+        host = self._host(namespace)
+        resolver = ResolveBodyCharacter(host)
+        names = resolver.discover()
+        if len(names) != 1:
+            raise ValueError("当前命名空间必须恰好包含一个已登记角色")
+        registration = resolver.execute(names[0])
+        global_controls = {channel.node for channel in registration.channels
+                           if channel.key.startswith("global.")}
+        if len(global_controls) != 1:
+            raise ValueError("角色总控登记无效")
+        pose = host.read_body_build_pose()
+        current = host.capture_current_body_build_pose(pose)
+        observed = {(item.node, item.attribute): item.value
+                    for item in current.values}
+        if any(abs(observed.get((item.node, item.attribute),
+                                float("inf")) - item.value) > 1e-3
+               for item in pose.values):
+            raise ValueError("批量 Control Mesh 须先返回 Body 构建姿态")
+        controls = tuple(dict.fromkeys(channel.node
+                          for channel in registration.channels))
+        items = CreateControlMeshes(MayaControlMeshHost()).execute(
+            global_controls.pop(), controls)
+        return len(items)
+
     def control_curves_copy_to_variant(
             self, namespace: str, controls: tuple[str, ...],
             variant: str) -> int:
