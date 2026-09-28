@@ -10,7 +10,8 @@ from typing import Protocol
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_metadata import (
     FitJointField, FitJointFieldEdit, FitJointMetadata, FitJointPatch,
-    FitJointValidationError, audit_fit_joint, predict_fit_joint_metadata)
+    FitJointValidationError, audit_fit_joint, fit_joint_value,
+    predict_fit_joint_metadata)
 from adv_py.core.body_skeleton import FitDeformProfile
 from adv_py.core.fit_template import FitJointSpec, FitTemplateSpec
 from adv_py.core.fit_container import FitUpAxis
@@ -60,6 +61,7 @@ class SourceSkeletonFitHost(FitContainerHost, OrientedFitTemplateHost,
     def find_name_collisions(self, name: str) -> tuple[str, ...]: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
     def apply_fit_joint_edit(self, joint: str, edit: FitJointFieldEdit) -> None: ...
+    def read_fit_joint_metadata(self, joint: str) -> FitJointMetadata: ...
     def write_fit_deform_profile(self, joint: str,
                                  profile: FitDeformProfile) -> None: ...
     def write_fit_rotation_order(self, joint: str, order: int) -> None: ...
@@ -400,6 +402,16 @@ class BuildFitFromSourceSkeleton:
             for name, edits in plan.part_metadata:
                 for edit in edits:
                     joined.apply_fit_joint_edit(paths[name], edit)
+                actual = joined.read_fit_joint_metadata(paths[name])
+                for edit in edits:
+                    value = (actual.local_no_flip
+                             if edit.field is FitJointField.NO_FLIP
+                             else fit_joint_value(actual, edit.field))
+                    if (edit.field not in actual.present_fields
+                            or value != edit.value):
+                        raise RuntimeError(
+                            "来源 Fit 元数据写后复检失败：" + name
+                            + "." + edit.field.value)
             for name, profile in plan.deform_profiles:
                 joined.write_fit_deform_profile(paths[name], profile)
             for name, order in plan.rotation_orders:
