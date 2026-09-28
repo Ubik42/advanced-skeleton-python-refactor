@@ -340,7 +340,9 @@ class MayaFitPartMixin:
         plugs = (inputs.rotation_plug, inputs.rotate_order_plug,
                  inputs.up_twist_plug, inputs.ik_rotation_plug,
                  inputs.ik_rotate_order_plug, inputs.ik_fk_blend_plug,
-                 inputs.world_matrix_plug)
+                 inputs.world_matrix_plug,
+                 inputs.fk_world_matrix_plug,
+                 inputs.ik_world_matrix_plug)
         for plug in plugs:
             if (plug and not (plug == inputs.up_twist_plug
                               and plug in planned_outputs)
@@ -379,6 +381,17 @@ class MayaFitPartMixin:
             return project + ".outputRotateX"
 
         if projection.reference_name:
+            matrix_source = source.world_matrix_plug
+            if projection.matrix_blend_name:
+                world_blend = c.createNode(
+                    "blendMatrix", name=projection.matrix_blend_name)
+                c.connectAttr(source.fk_world_matrix_plug,
+                              world_blend + ".inputMatrix")
+                c.connectAttr(source.ik_world_matrix_plug,
+                              world_blend + ".target[0].targetMatrix")
+                c.connectAttr(source.ik_fk_blend_plug,
+                              world_blend + ".target[0].weight")
+                matrix_source = world_blend + ".outputMatrix"
             options = ({"parent": projection.reference_parent_path}
                        if projection.reference_parent_path else {})
             reference = c.createNode(
@@ -397,7 +410,7 @@ class MayaFitPartMixin:
                                      name=projection.decompose_name)
             project = c.createNode("quatToEuler",
                                    name=projection.project_name)
-            c.connectAttr(source.world_matrix_plug,
+            c.connectAttr(matrix_source,
                           matrix + ".matrixIn[0]")
             c.connectAttr(reference + ".worldInverseMatrix[0]",
                           matrix + ".matrixIn[1]")
@@ -465,8 +478,11 @@ class MayaFitPartMixin:
             project = projection.project_name
             parent = c.listRelatives(reference, parent=True,
                                      fullPath=True) or []
+            matrix_source = (projection.matrix_blend_name + ".outputMatrix"
+                             if projection.matrix_blend_name
+                             else source.world_matrix_plug)
             expected = (
-                (source.world_matrix_plug, matrix + ".matrixIn[0]"),
+                (matrix_source, matrix + ".matrixIn[0]"),
                 (reference + ".worldInverseMatrix[0]",
                  matrix + ".matrixIn[1]"),
                 (matrix + ".matrixSum", decompose + ".inputMatrix"),
@@ -497,6 +513,20 @@ class MayaFitPartMixin:
                            sourceFromDestination=True) != upstream
                            for upstream, target in expected)):
                 return None
+            if projection.matrix_blend_name:
+                blend = projection.matrix_blend_name
+                if (not c.objExists(blend)
+                        or c.nodeType(blend) != "blendMatrix"
+                        or any(c.connectionInfo(target,
+                               sourceFromDestination=True) != upstream
+                               for upstream, target in (
+                                   (source.fk_world_matrix_plug,
+                                    blend + ".inputMatrix"),
+                                   (source.ik_world_matrix_plug,
+                                    blend + ".target[0].targetMatrix"),
+                                   (source.ik_fk_blend_plug,
+                                    blend + ".target[0].weight")))):
+                    return None
         elif not has_projection_graph(
                 projection.compose_name, projection.decompose_name,
                 projection.project_name, source.rotation_plug,

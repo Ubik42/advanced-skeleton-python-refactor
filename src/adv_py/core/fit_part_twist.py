@@ -36,6 +36,8 @@ class FitPartRotationInput:
     subtract_body_twist: bool = True
     world_matrix_plug: str | None = None
     distribution_source: bool = True
+    fk_world_matrix_plug: str | None = None
+    ik_world_matrix_plug: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +51,7 @@ class FitPartTwistProjection:
     ik_project_name: str | None = None
     blend_name: str | None = None
     reference_name: str | None = None
+    matrix_blend_name: str | None = None
 
     @property
     def reference_parent_path(self) -> str | None:
@@ -74,9 +77,9 @@ def plan_standard_fit_part_rotation_inputs(
 ) -> tuple[FitPartRotationInput, ...]:
     """Resolve twist channels for every non-bendy Fit Part chain.
 
-    The named Arm/Leg mechanisms retain their dedicated inputs. Other Fit
-    joints use a world matrix relative to a bind-aligned parent-following
-    reference, then project that relative rotation onto local X.
+    Standard Arm/Leg chains blend their independent FK/IK driver matrices.
+    Other joints use their Body world matrix. Both are measured against a
+    bind-aligned reference that follows the original parent.
     """
     starts = {part.start_body: part for part in parts}
     result = []
@@ -84,20 +87,20 @@ def plan_standard_fit_part_rotation_inputs(
     for start, part in starts.items():
         stem = part.start_body_name.rsplit("_", 1)[0]
         side = part.side.value
-        if stem in ("Shoulder", "Elbow", "Knee"):
-            up_label = {"Elbow": "LowerArm", "Knee": "LowerLeg"}.get(stem)
+        if stem in ("Shoulder", "Elbow", "Hip", "Knee"):
+            limb = "Arm" if stem in ("Shoulder", "Elbow") else "Leg"
+            up_label = {"Elbow": "LowerArm", "Hip": "UpperLeg",
+                        "Knee": "LowerLeg"}.get(stem)
             up = (f"AdvPy_{up_label}TwistProject_{side}.outputRotateX"
                   if up_label else None)
             result.append(FitPartRotationInput(
-                start, start + ".rotate", start + ".rotateOrder", up))
-        elif stem == "Hip":
-            fk = f"AdvPy_HipFKDriver_{side}"
-            ik = f"AdvPy_HipIKDriver_{side}"
-            result.append(FitPartRotationInput(
-                start, fk + ".rotate", fk + ".rotateOrder",
-                f"AdvPy_UpperLegTwistProject_{side}.outputRotateX",
-                ik + ".rotate", ik + ".rotateOrder",
-                f"AdvPy_LegSettings.legIkFk_{side}"))
+                start, "", start + ".rotateOrder", up,
+                ik_fk_blend_plug=(f"AdvPy_{limb}Settings."
+                                  f"{limb.lower()}IkFk_{side}"),
+                fk_world_matrix_plug=(f"AdvPy_{stem}FKDriver_{side}"
+                                      ".worldMatrix[0]"),
+                ik_world_matrix_plug=(f"AdvPy_{stem}IKDriver_{side}"
+                                      ".worldMatrix[0]")))
         else:
             up = None
             if part.dual_twist_child:
@@ -124,18 +127,28 @@ def plan_fit_part_twist_projections(
     projections = []
     used_names: set[str] = set()
     for item in inputs:
+        blended_matrix = bool(item.fk_world_matrix_plug
+                              or item.ik_world_matrix_plug)
         if (not item.rotate_order_plug
-                or bool(item.rotation_plug) == bool(item.world_matrix_plug)):
+                or sum(bool(mode) for mode in (
+                    item.rotation_plug, item.world_matrix_plug,
+                    blended_matrix)) != 1):
             raise FitPartTwistValidationError("Part 旋转及旋转顺序来源不能为空")
         if type(item.distribution_source) is not bool:
             raise FitPartTwistValidationError("Part 扭转投影用途无效")
-        if item.world_matrix_plug and any((item.ik_rotation_plug,
-                                           item.ik_rotate_order_plug,
-                                           item.ik_fk_blend_plug)):
+        if blended_matrix and not all((item.fk_world_matrix_plug,
+                                       item.ik_world_matrix_plug,
+                                       item.ik_fk_blend_plug)):
+            raise FitPartTwistValidationError("Part FK／IK 矩阵来源不完整")
+        if (item.world_matrix_plug or blended_matrix) and any((
+                item.ik_rotation_plug, item.ik_rotate_order_plug)):
             raise FitPartTwistValidationError(
                 "矩阵参照投影不能同时指定 IK/FK 旋转混合")
-        has_ik = bool(item.ik_rotation_plug or item.ik_rotate_order_plug
-                      or item.ik_fk_blend_plug)
+        if item.world_matrix_plug and item.ik_fk_blend_plug:
+            raise FitPartTwistValidationError("单一矩阵来源不能指定 IK/FK 权重")
+        has_ik = bool(item.rotation_plug and (
+            item.ik_rotation_plug or item.ik_rotate_order_plug
+            or item.ik_fk_blend_plug))
         if has_ik and not all((item.ik_rotation_plug,
                                item.ik_rotate_order_plug,
                                item.ik_fk_blend_plug)):
@@ -149,14 +162,17 @@ def plan_fit_part_twist_projections(
             prefix + "IkDecompose" if has_ik else None,
             prefix + "IkProject" if has_ik else None,
             prefix + "Blend" if has_ik else None,
-            prefix + "Reference" if item.world_matrix_plug else None,
+            prefix + "Reference" if (item.world_matrix_plug
+                                      or blended_matrix) else None,
+            prefix + "WorldBlend" if blended_matrix else None,
         )
         names = (projection.compose_name, projection.decompose_name,
                  projection.project_name)
         names += tuple(name for name in (
             projection.ik_compose_name, projection.ik_decompose_name,
                  projection.ik_project_name, projection.blend_name,
-                 projection.reference_name) if name)
+                 projection.reference_name,
+                 projection.matrix_blend_name) if name)
         if any(name in used_names for name in names):
             raise FitPartTwistValidationError("Part 投影节点名称重复")
         used_names.update(names)

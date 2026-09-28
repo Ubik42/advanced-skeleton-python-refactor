@@ -57,7 +57,8 @@ class PrepareFitPartTwistSources:
                 projection.ik_decompose_name,
                 projection.ik_project_name,
                 projection.blend_name,
-                projection.reference_name) if name)
+                projection.reference_name,
+                projection.matrix_blend_name) if name)
             for name in names:
                 if self._host.find_name_collisions(name):
                     raise ValueError("Fit Part 投影节点名称冲突：" + name)
