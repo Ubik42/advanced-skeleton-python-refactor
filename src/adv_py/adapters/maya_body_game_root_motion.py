@@ -169,10 +169,36 @@ class MayaBodyGameRootMotionMixin:
                         != "advanced-skeleton-python-refactor"):
                     raise ValueError("Root Motion 节点不属于当前实现：" + path)
             children = c.listRelatives(
-                plan.joint_path, children=True, fullPath=True,
-                type="joint") or []
-            if children != [plan.source.body_root]:
+                plan.joint_path, children=True,
+                fullPath=True) or []
+            if set(children) != {plan.source.body_root}:
                 raise ValueError("Root Motion 关节有未知子级，不能删除")
+            follow_constraint = c.ls(
+                plan.follow_constraint_name, long=True,
+                type="parentConstraint") or []
+            if len(follow_constraint) != 1:
+                raise ValueError("Root Motion 跟随约束缺失或歧义")
+            expected_children = (
+                (plan.offset_path, {plan.follow_path}),
+                (plan.follow_path,
+                 {plan.extra_path, follow_constraint[0]}),
+                (plan.extra_path, {plan.control_path}),
+            )
+            for path, expected in expected_children:
+                actual = set(c.listRelatives(
+                    path, children=True, fullPath=True) or [])
+                if actual != expected:
+                    raise ValueError("Root Motion 控制层含未知子节点：" + path)
+            shapes = c.listRelatives(
+                plan.control_path, children=True,
+                fullPath=True) or []
+            if (len(shapes) != 1 or
+                    c.nodeType(shapes[0]) != "nurbsCurve"):
+                raise ValueError("Root Motion 控制器含未知子节点")
+            for path in (plan.offset_path, plan.follow_path):
+                if (c.keyframe(path, query=True,
+                               keyframeCount=True) or 0) > 0:
+                    raise ValueError("Root Motion 控制父层已有动画：" + path)
             for path in (plan.control_path, plan.extra_path):
                 if (c.keyframe(path, query=True, keyframeCount=True) or 0) > 0:
                     raise ValueError("Root Motion 控制器已有动画，不能删除：" + path)
