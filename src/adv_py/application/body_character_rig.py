@@ -194,6 +194,12 @@ class BuildBodyCharacterRig:
         safety = self._inspector.execute(
             container_name, root_name=body_root_name, center_tolerance=center_tolerance,
         )
+        if (BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).use_offset_parent_matrix
+                and any(item.tweaker_control
+                        for item in safety.symmetry.source.metadata)):
+            raise FitSkeletonValidationError(
+                "Fit tweakerControl 的 OPM 关节驱动尚未接入 Body 主构建")
         fit_height = fit_character_height(tuple(
             node.world_position for node in
             safety.symmetry.source.hierarchy.joints))

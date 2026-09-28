@@ -254,6 +254,11 @@ class BuildRegisteredBodyCharacter:
         if not preview.ready:
             raise FitSkeletonValidationError(
                 "角色构建预检失败，场景未修改：" + "；".join(preview.blockers))
+        if (preview.build.build_options.use_offset_parent_matrix
+                and any(item.tweaker_control
+                        for item in preview.build.symmetry.source.metadata)):
+            raise FitSkeletonValidationError(
+                "Fit tweakerControl 的 OPM 关节驱动尚未接入 Body 主构建")
         rotation_inputs = ()
         bendy_chains = ()
         untwister_sources: frozenset[str] = frozenset()

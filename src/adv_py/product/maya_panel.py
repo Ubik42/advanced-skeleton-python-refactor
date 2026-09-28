@@ -349,6 +349,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ("Inbetween 关节数", "inbetween_joints"),
                     ("UnTwister", "untwister"),
                     ("末端 Control", "control"),
+                    ("Tweaker Control（需 OPM）", "tweaker_control"),
                     ("隐藏 FK 控制", "no_control"),
                     ("COG", "cog"),
                     ("Foot Pivots", "foot_pivots"),

@@ -118,6 +118,7 @@ _FIT_INTEGER_FIELDS = frozenset({
 _FIT_BOOLEAN_FIELDS = frozenset({
     FitJointField.UNTWISTER,
     FitJointField.CONTROL,
+    FitJointField.TWEAKER_CONTROL,
     FitJointField.NO_CONTROL,
     FitJointField.COG,
     FitJointField.FOOT_PIVOTS,

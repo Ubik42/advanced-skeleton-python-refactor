@@ -14,6 +14,7 @@ class FitJointField(str, Enum):
     INBETWEEN_JOINTS = "inbetween_joints"
     UNTWISTER = "untwister"
     CONTROL = "control"
+    TWEAKER_CONTROL = "tweaker_control"
     NO_CONTROL = "no_control"
     HIP_SWINGER = "hip_swinger"
     COG = "cog"
@@ -75,6 +76,7 @@ class FitJointMetadata:
     inbetween_joints: int | None = None
     untwister: bool = False
     control: bool = False
+    tweaker_control: bool = False
     no_control: bool = False
     hip_swinger: bool | None = None
     no_mirror: bool = False
@@ -109,6 +111,7 @@ _INTEGER_FIELDS = {
 _BOOLEAN_FIELDS = {
     FitJointField.UNTWISTER,
     FitJointField.CONTROL,
+    FitJointField.TWEAKER_CONTROL,
     FitJointField.NO_CONTROL,
     FitJointField.HIP_SWINGER,
     FitJointField.COG,
@@ -202,6 +205,10 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
     if type(metadata.control) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_control", "Control 开关必须是布尔值"))
+    if type(metadata.tweaker_control) is not bool:
+        issues.append(FitJointIssue(
+            metadata.joint, "invalid_tweaker_control",
+            "Tweaker Control 开关必须是布尔值"))
     if type(metadata.no_control) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_no_control", "No Control 开关必须是布尔值"))

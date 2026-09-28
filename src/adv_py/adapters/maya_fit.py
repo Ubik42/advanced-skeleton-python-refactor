@@ -81,6 +81,7 @@ _FIT_ATTRIBUTES = {
     FitJointField.INBETWEEN_JOINTS: _MayaFitAttribute("inbetweenJoints", "long", 0),
     FitJointField.UNTWISTER: _MayaFitAttribute("unTwister", "bool"),
     FitJointField.CONTROL: _MayaFitAttribute("control", "bool"),
+    FitJointField.TWEAKER_CONTROL: _MayaFitAttribute("tweakerControl", "bool"),
     FitJointField.NO_CONTROL: _MayaFitAttribute("noControl", "bool"),
     FitJointField.HIP_SWINGER: _MayaFitAttribute("hipSwinger", "bool"),
     FitJointField.COG: _MayaFitAttribute("cog", "bool"),
@@ -835,6 +836,7 @@ class MayaFitJointHost:
             inbetween_joints=self._optional_number(joint, "inbetweenJoints", int),
             untwister=self._optional_bool(joint, "unTwister"),
             control=self._optional_bool(joint, "control"),
+            tweaker_control=self._optional_bool(joint, "tweakerControl"),
             no_control=self._optional_bool(joint, "noControl"),
             hip_swinger=(self._optional_bool(joint, "hipSwinger")
                          if self._attribute_exists(joint, "hipSwinger")
