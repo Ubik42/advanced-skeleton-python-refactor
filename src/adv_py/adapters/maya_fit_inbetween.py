@@ -31,7 +31,7 @@ from adv_py.core.fit_inbetween_matrix import (
     InbetweenMatrixStep,
 )
 from adv_py.core.joint_labels import JointLabel
-from .maya_adv_icons import create_adv_icon
+from .maya_adv_icons import create_adv_icon, original_fit_icon_axis_offset
 
 
 class MayaFitInbetweenMixin:
@@ -762,7 +762,10 @@ class MayaFitInbetweenMixin:
                 c, name=part.control_name, parent=extra,
                 template="Part_icon", radius=part.radius,
                 fallback_normal=(1.0, 0.0, 0.0),
-                fallback_sections=12)
+                fallback_sections=12,
+                axis_offset=original_fit_icon_axis_offset(
+                    c, (part.source_fit_joint.rsplit("|", 1)[-1]
+                        .rsplit(":", 1)[-1],)))
         finally:
             if selection:
                 c.select(selection, replace=True)

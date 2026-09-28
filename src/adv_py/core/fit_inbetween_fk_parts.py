@@ -23,6 +23,7 @@ class InbetweenFkPartSpec:
     fk_matrix_name: str
     pick_matrix_name: str
     radius: float
+    source_fit_joint: str
 
     @property
     def receiver_plug(self) -> str:
@@ -60,6 +61,7 @@ def plan_inbetween_fk_parts(
         raise ValueError("Inbetween Part FK 需要系统父级和正半径")
     ordered = tuple(sorted(body_parts, key=lambda part: part.index))
     if (any(part.kind != "inbetween"
+            or not part.source_joint.startswith("|")
             or part.start_body_name != anchor.start_body_name
             or part.count != len(ordered)
             or part.index != index
@@ -77,7 +79,7 @@ def plan_inbetween_fk_parts(
             prefix + "FKPS", prefix + "FKOffset",
             prefix + "FKExtra", prefix + "FK",
             prefix + "FKX", prefix + "FKMM",
-            prefix + "PM", float(radius))
+            prefix + "PM", float(radius), part.source_joint)
         result.append(spec)
         previous_fkx = spec.fkx_name
     return InbetweenFkPartsPlan(
