@@ -10,6 +10,8 @@ class BodySelectionSetsPlan:
     deform_joints: tuple[str, ...]
     control_set: str = "ControlSet"
     deform_set: str = "DeformSet"
+    all_set: str = "AllSet"
+    root_set: str = "Sets"
 
     def __post_init__(self) -> None:
         for label, members in (("ControlSet", self.controls),
@@ -20,6 +22,9 @@ class BodySelectionSetsPlan:
                 raise ValueError(label + " 成员为空或重复")
         if set(self.controls) & set(self.deform_joints):
             raise ValueError("控制器与变形关节不能共用选择集成员")
+        if len({self.control_set, self.deform_set,
+                self.all_set, self.root_set}) != 4:
+            raise ValueError("角色选择集名称重复")
 
 
 def plan_body_selection_sets(

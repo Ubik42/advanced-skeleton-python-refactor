@@ -16,6 +16,22 @@ class MayaBodySelectionSetsMixin:
     ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         c = self._cmds
         controls = []
+
+        def selection_layer(control: str) -> str:
+            leaf = control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            extra_names = {leaf[:index] + "Extra" + leaf[index:]
+                           for index in range(1, len(leaf) + 1)}
+            current = control
+            while True:
+                parent = c.listRelatives(current, parent=True,
+                                         fullPath=True) or []
+                if not parent:
+                    return control
+                current = parent[0]
+                parent_leaf = current.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                if parent_leaf in extra_names:
+                    return current
+
         for path in dict.fromkeys(channel.node
                                   for channel in registration.channels):
             matches = c.ls(path, long=True) or []
@@ -27,7 +43,7 @@ class MayaBodySelectionSetsMixin:
             shapes = c.listRelatives(node, shapes=True,
                                      type="nurbsCurve") or []
             if shapes:
-                controls.append(node)
+                controls.append(selection_layer(node))
         for path in extras:
             matches = c.ls(path, long=True, type="transform") or []
             if len(matches) != 1:
@@ -53,7 +69,8 @@ class MayaBodySelectionSetsMixin:
         self, plan: BodySelectionSetsPlan,
     ) -> None:
         c = self._cmds
-        for name in (plan.control_set, plan.deform_set):
+        for name in (plan.control_set, plan.deform_set,
+                     plan.all_set, plan.root_set):
             if c.objExists(name):
                 raise ValueError("角色选择集名称已占用：" + name)
 
@@ -62,12 +79,19 @@ class MayaBodySelectionSetsMixin:
     ) -> None:
         self._require_transaction()
         c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        all_set = self._body_selection_set_address(plan.all_set)
+        root_set = self._body_selection_set_address(plan.root_set)
         for name, members in ((plan.control_set, plan.controls),
                               (plan.deform_set, plan.deform_joints)):
             scene_set = self._body_selection_set_address(name)
             c.sets(empty=True, name=scene_set)
             c.sets(tuple(self.scene_address(path) for path in members),
                    add=scene_set)
+        c.sets(empty=True, name=all_set)
+        c.sets(empty=True, name=root_set)
+        c.sets((self._body_selection_set_address(plan.control_set),
+                self._body_selection_set_address(plan.deform_set),
+                all_set), add=root_set)
         self._transaction_changed = True
 
     def capture_body_selection_sets(
@@ -90,5 +114,18 @@ class MayaBodySelectionSetsMixin:
                              else found[0])
             return tuple(paths)
 
+        all_set = self._body_selection_set_address(plan.all_set)
+        root_set = self._body_selection_set_address(plan.root_set)
+        if (not c.objExists(all_set) or c.nodeType(all_set) != "objectSet"
+                or c.sets(all_set, query=True)
+                or not c.objExists(root_set)
+                or c.nodeType(root_set) != "objectSet"):
+            raise RuntimeError("角色选择集根层不完整")
+        children = c.sets(root_set, query=True) or []
+        if {item.lstrip(":") for item in children} != {
+                self._body_selection_set_address(name).lstrip(":")
+                for name in (plan.control_set, plan.deform_set,
+                             plan.all_set)}:
+            raise RuntimeError("角色选择集嵌套成员不一致")
         return BodySelectionSetsPlan(members(plan.control_set),
                                      members(plan.deform_set))
