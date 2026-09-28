@@ -209,22 +209,7 @@ def synthetic_body_source_fit_template(
             FitJointSpec("Knee", "Hip", vertical(-4.0), label("Knee")),
             FitJointSpec("Ankle", "Knee", vertical(-4.0), label("Foot")),
             FitJointSpec(
-                "Heel", "Ankle", foot_offset(-1.0, -0.5), label("Foot")
-            ),
-            FitJointSpec(
                 "Toes", "Ankle", foot_offset(2.0, -0.5), label("Toe")
-            ),
-            FitJointSpec(
-                "FootSideInner",
-                "Toes",
-                (0.6 * unit, 0.0, 0.0),
-                label("Other"),
-            ),
-            FitJointSpec(
-                "FootSideOuter",
-                "Toes",
-                (-0.6 * unit, 0.0, 0.0),
-                label("Other"),
             ),
             FitJointSpec("ToesEnd", "Toes", foot_offset(2.0), label("Toe")),
         ),

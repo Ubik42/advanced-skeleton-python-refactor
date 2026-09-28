@@ -236,7 +236,7 @@ def plan_body_leg_foot(
     if len(body_by_name) != len(body.joints):
         raise BodyLegFootValidationError("Body 关节名称必须唯一")
 
-    marker_roles = (
+    all_marker_roles = (
         (BodyLegFootPivotRole.HEEL, "Heel", "heelRoll", "Y", 1.0),
         (BodyLegFootPivotRole.OUTER, "FootSideOuter", "outerBank", "X", 1.0),
         (BodyLegFootPivotRole.INNER, "FootSideInner", "innerBank", "X", -1.0),
@@ -263,12 +263,18 @@ def plan_body_leg_foot(
             BodyLegFootPivotRole.TOE: f"{toe_clamp}.outputR",
             BodyLegFootPivotRole.BALL: f"{ball_clamp}.outputR",
         }
-        required = tuple(f"{marker}_{suffix}" for _, marker, *_ in marker_roles)
+        required = (f"ToesEnd_{suffix}", f"Toes_{suffix}")
         if any(name not in body_by_name for name in required):
             raise BodyLegFootValidationError(
-                f"Body 缺少 {suffix} 侧唯一的 Heel/FootSide/Toes 标记"
+                f"Body 缺少 {suffix} 侧唯一的 Toes/ToesEnd 标记"
             )
-        if any(body_by_name[name].side is not limb.side for name in required):
+        marker_roles = tuple(row for row in all_marker_roles
+                             if f"{row[1]}_{suffix}" in body_by_name)
+        if legacy_roll_controls and len(marker_roles) != len(all_marker_roles):
+            raise BodyLegFootValidationError(
+                "旧版 Foot 场景要求完整 Heel/FootSide 标记")
+        if any(body_by_name[f"{marker}_{suffix}"].side is not limb.side
+               for _, marker, *_ in marker_roles):
             raise BodyLegFootValidationError(f"Foot 标记侧向与名称不一致：{suffix}")
 
         ankle_position = limb.ankle_position
@@ -397,7 +403,7 @@ def plan_body_leg_foot(
                     "plusMinusAverage",
                     (
                         (
-                            f"{limb.ankle_control_path}.{next(p.attribute for p in pivots if p.role is role)}",
+                            f"{limb.ankle_control_path}.{next(attribute for pivot_role, _, attribute, *_ in all_marker_roles if pivot_role is role)}",
                             f"{sum_names[role]}.input1D[0]",
                         ),
                         (
@@ -424,10 +430,13 @@ def plan_body_leg_foot(
             toes_multiply2 = f"AdvPy_RollToesMultiply2_{suffix}"
             end_range = f"AdvPy_RollToesEndRange_{suffix}"
             end_multiply = f"AdvPy_RollToesEndMultiply_{suffix}"
+            heel_nodes = ((BodyLegFootRollNodeSpec(
+                heel, "clamp", ((master_plug, f"{heel}.inputR"),
+                                (master_plug, f"{heel}.minR"))),)
+                if any(p.role is BodyLegFootPivotRole.HEEL for p in pivots)
+                else ())
             roll_nodes = (
-                BodyLegFootRollNodeSpec(
-                    heel, "clamp", ((master_plug, f"{heel}.inputR"),
-                                    (master_plug, f"{heel}.minR"))),
+                *heel_nodes,
                 BodyLegFootRollNodeSpec(
                     toes_pma, "plusMinusAverage",
                     ((f"{toes_range2}.outValueX",

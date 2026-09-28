@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from math import isfinite, sqrt
+from math import isfinite
 import re
 from typing import Protocol
 
@@ -14,6 +14,7 @@ from adv_py.core.fit_metadata import (
     predict_fit_joint_metadata)
 from adv_py.core.body_skeleton import FitDeformProfile
 from adv_py.core.fit_template import FitJointSpec, FitTemplateSpec
+from adv_py.core.joint_labels import JointLabel
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_orientation import FitOrientationRequest
 
@@ -138,8 +139,7 @@ def _axial_source_paths(source: tuple[SourceSkeletonJoint, ...],
     return tuple(reversed(paths))
 
 
-def _add_optional_end_markers(by_name: dict[str, SourceSkeletonJoint],
-                              up_axis: str) -> None:
+def _add_optional_end_markers(by_name: dict[str, SourceSkeletonJoint]) -> None:
     """Fill Fit-only end and foot guides absent from many export skeletons."""
     def add(name: str, parent: str, position: tuple[float, float, float]):
         if name not in by_name and parent in by_name:
@@ -158,25 +158,12 @@ def _add_optional_end_markers(by_name: dict[str, SourceSkeletonJoint],
             p3 = by_name[third].world_position
             add(digit + "End", third, tuple(b + (b - a) * 0.5
                                              for a, b in zip(p2, p3)))
-    if not {"Root", "Hip", "Ankle", "Toes"} <= by_name.keys():
+    if not {"Ankle", "Toes"} <= by_name.keys():
         return
-    root = by_name["Root"].world_position
-    hip = by_name["Hip"].world_position
     ankle = by_name["Ankle"].world_position
     toes = by_name["Toes"].world_position
     foot = tuple(t - a for t, a in zip(toes, ankle))
-    add("Heel", "Ankle", tuple(a - f * 0.5 for a, f in zip(ankle, foot)))
     add("ToesEnd", "Toes", tuple(t + f * 0.5 for t, f in zip(toes, foot)))
-    side = [h - r for h, r in zip(hip, root)]
-    side[1 if up_axis == "y" else 2] = 0.0
-    side_length = sqrt(sum(value * value for value in side))
-    if side_length < 1e-5:
-        side = [-1.0, 0.0, 0.0]
-        side_length = 1.0
-    width = max(0.25, sqrt(sum(value * value for value in foot)) * 0.2)
-    offset = tuple(value * width / side_length for value in side)
-    add("FootSideInner", "Toes", tuple(t - d for t, d in zip(toes, offset)))
-    add("FootSideOuter", "Toes", tuple(t + d for t, d in zip(toes, offset)))
 
 
 def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
@@ -247,7 +234,7 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
             continue
         by_name[name] = joint
 
-    _add_optional_end_markers(by_name, axis.value)
+    _add_optional_end_markers(by_name)
     body, body_request = variable_body_source_inputs(
         axis, len(axial_paths), 1.0, False)
     hand, hand_request = variable_body_source_inputs(
@@ -269,6 +256,16 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                    if spec.name not in by_name]
         raise FitSkeletonValidationError(
             "来源骨架缺少标准身体关节：" + "、".join(missing))
+
+    optional_foot = (("Heel", "Ankle", "Foot"),
+                     ("FootSideInner", "Toes", "Other"),
+                     ("FootSideOuter", "Toes", "Other"))
+    present_foot = tuple(FitJointSpec(
+        name, parent, (0.0, 0.0, 0.0), JointLabel.parse(label))
+        for name, parent, label in optional_foot if name in by_name)
+    if present_foot:
+        reference = FitTemplateSpec(
+            reference.name, reference.joints + present_foot)
 
     source_by_path = {joint.path: joint for joint in source}
     reference_names = {spec.name for spec in reference.joints}
