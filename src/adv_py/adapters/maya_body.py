@@ -5968,7 +5968,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         occupied_rotations.append(twist)
             else:
                 required.append(side.handle_name)
-            names = [pivot.name for pivot in side.pivots]
+            names = [pivot.name for pivot in side.pivots
+                     if not pivot.roll_control_name]
             names.extend(
                 name for pivot in side.pivots
                 for name in (pivot.roll_offset_name, pivot.roll_extra_name,
@@ -6142,20 +6143,20 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                                or [control])[0]
                     if control != pivot.roll_control_path:
                         raise RuntimeError("Foot Roll 控制路径漂移")
-                created = self._cmds.createNode(
-                    "transform",
-                    name=pivot.name,
-                    parent=pivot.parent_path,
-                    skipSelect=True,
-                )
-                created = (self._cmds.ls(created, long=True) or [created])[0]
-                if created != pivot.path:
-                    raise RuntimeError("Foot pivot 路径漂移")
-                self._cmds.xform(
-                    created,
-                    worldSpace=True,
-                    translation=pivot.world_position,
-                )
+                if not pivot.roll_control_name:
+                    created = self._cmds.createNode(
+                        "transform",
+                        name=pivot.name,
+                        parent=pivot.parent_path,
+                        skipSelect=True,
+                    )
+                    created = (self._cmds.ls(created, long=True)
+                               or [created])[0]
+                    if created != pivot.path:
+                        raise RuntimeError("Foot pivot 路径漂移")
+                    self._cmds.xform(
+                        created, worldSpace=True,
+                        translation=pivot.world_position)
                 if pivot.multiplier_name:
                     attribute_plug = f"{spec.ankle_control_path}.{pivot.attribute}"
                     multiplier = self._cmds.createNode(
@@ -6302,13 +6303,16 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         found = []
         for limb in ik.limbs:
             suffix = limb.side.value
-            path = (f"{limb.ankle_control_path}"
-                    f"|AdvPy_RollOffsetHeel_{suffix}"
-                    f"|AdvPy_RollRollerHeel_{suffix}"
-                    f"|AdvPy_RollExtraHeel_{suffix}"
-                    f"|AdvPy_RollHeel_{suffix}")
-            found.append((self._cmds.ls(
-                path, long=True, type="transform") or []) == [path])
+            suffix_path = (f"|AdvPy_RollOffsetToesEnd_{suffix}"
+                           f"|AdvPy_RollRollerToesEnd_{suffix}"
+                           f"|AdvPy_RollExtraToesEnd_{suffix}"
+                           f"|AdvPy_RollToesEnd_{suffix}")
+            matches = self._cmds.ls(
+                f"AdvPy_RollToesEnd_{suffix}", long=True,
+                type="transform") or []
+            found.append(sum(path.startswith(
+                limb.ankle_control_path + "|")
+                and path.endswith(suffix_path) for path in matches) == 1)
         if len(found) != 2 or found[0] != found[1]:
             raise FitSkeletonValidationError("双侧 Roll 控制层版本不一致")
         return found[0]

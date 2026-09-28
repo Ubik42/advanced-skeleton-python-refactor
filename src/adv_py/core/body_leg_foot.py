@@ -326,8 +326,10 @@ def plan_body_leg_foot(
             if roll_roller_path:
                 roll_extra_path = f"{roll_roller_path}|{roll_extra_name}"
                 roll_control_path = f"{roll_extra_path}|{roll_control_name}"
-            name = f"AdvPy_Foot{role.value.title()}Pivot_{suffix}"
-            path = f"{roll_control_path or parent}|{name}"
+            name = (f"AdvPy_Foot{role.value.title()}Pivot_{suffix}"
+                    if legacy_roll_controls else roll_control_name)
+            path = (f"{parent}|{name}" if legacy_roll_controls
+                    else roll_control_path)
             multiplier_name = (
                 f"AdvPy_FootInnerBankSign_{suffix}"
                 if legacy_roll_controls and multiplier != 1.0
@@ -347,7 +349,8 @@ def plan_body_leg_foot(
                 role=role,
                 name=name,
                 path=path,
-                parent_path=roll_control_path or parent,
+                parent_path=(parent if legacy_roll_controls
+                             else roll_extra_path),
                 world_position=body_by_name[f"{marker}_{suffix}"].world_position,
                 attribute=attribute,
                 rotation_axis=axis,
@@ -631,7 +634,7 @@ def audit_body_leg_foot(
                 actual_pivot.world_position, pivot.world_position, tolerance
             ):
                 issues.append(BodyLegFootIssue("foot_pivot_position", "Foot pivot 位置不一致", subject))
-            if actual_pivot.rotation_source != (pivot.source_plug or None):
+            if pivot.source_plug and actual_pivot.rotation_source != pivot.source_plug:
                 issues.append(BodyLegFootIssue("foot_pivot_wiring", "Foot pivot 驱动不一致", subject))
             expected_input = (
                 f"{spec.ankle_control_path}.{pivot.attribute}"
