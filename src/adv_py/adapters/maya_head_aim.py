@@ -1,6 +1,7 @@
 """Native aim and quaternion orientation blend; no expressions or callbacks."""
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.character_registry import safe_json,canonical,vector,CharacterRegistryError
+from .maya_adv_icons import create_adv_icon
 
 
 def audit_registered(host,registration):
@@ -20,8 +21,9 @@ def create(host,plan):
     c.createNode('transform',name='AdvPy_HeadAimOffset',parent=plan.target_offset.rsplit('|',1)[0],skipSelect=True)
     matrix=tuple(v for axis in plan.axes for v in (*axis,0.))+(*plan.position,1.)
     c.xform(plan.target_offset,ws=True,matrix=matrix)
-    node=c.circle(name='AdvPy_HeadAim',normal=(1.,0.,0.),radius=plan.radius,constructionHistory=False)[0]
-    c.parent(node,plan.target_offset,relative=True)
+    create_adv_icon(c,name='AdvPy_HeadAim',parent=plan.target_offset,
+                    template='Aim_icon',radius=plan.radius,
+                    fallback_normal=(1.,0.,0.))
     for axis in 'XYZ':c.setAttr(plan.target+'.scale'+axis,lock=True,keyable=False)
     c.addAttr(plan.head_control,longName='headAim',niceName='瞄准权重',attributeType='double',defaultValue=0.,minValue=0.,maxValue=1.,keyable=True)
     c.aimConstraint(plan.target,plan.solved,name='AdvPy_HeadAimConstraint',aimVector=plan.aim_axis,upVector=plan.up_axis,

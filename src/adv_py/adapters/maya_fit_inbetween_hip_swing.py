@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from adv_py.core.fit_inbetween_hip_swing import HipSwingReversePlan
+from .maya_adv_icons import create_adv_icon
 
 
 class MayaHipSwingReverseMixin:
@@ -94,12 +95,11 @@ class MayaHipSwingReverseMixin:
         c.setAttr(offset + ".translateX", plan.control_local_x_bias)
         selection = c.ls(selection=True, long=True) or []
         try:
-            control = c.circle(name=plan.control_name,
-                               normal=(1.0, 0.0, 0.0),
-                               radius=plan.radius, degree=3,
-                               sections=16,
-                               constructionHistory=False)[0]
-            control = c.parent(control, offset, relative=True)[0]
+            control = create_adv_icon(
+                c, name=plan.control_name, parent=offset,
+                template="HipSwinger_icon", radius=plan.radius,
+                fallback_normal=(1.0, 0.0, 0.0),
+                fallback_sections=16)
         finally:
             if selection:
                 c.select(selection, replace=True)

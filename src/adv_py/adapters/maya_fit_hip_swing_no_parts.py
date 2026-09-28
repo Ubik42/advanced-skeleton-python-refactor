@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from adv_py.core.fit_hip_swing_no_parts import HipSwingNoPartsPlan
+from .maya_adv_icons import create_adv_icon
 
 
 class MayaHipSwingNoPartsMixin:
@@ -78,10 +79,11 @@ class MayaHipSwingNoPartsMixin:
             c.xform(offset, worldSpace=True, translation=tuple(
                 (a + b) * 0.5 for a, b in zip(root_position, child_position)))
             c.setAttr(offset + ".translateX", plan.control_local_x_bias)
-            control = c.circle(name=plan.control_name, normal=(1, 0, 0),
-                               radius=plan.radius, degree=3, sections=16,
-                               constructionHistory=False)[0]
-            control = c.parent(control, offset, relative=True)[0]
+            control = create_adv_icon(
+                c, name=plan.control_name, parent=offset,
+                template="HipSwinger_icon", radius=plan.radius,
+                fallback_normal=(1.0, 0.0, 0.0),
+                fallback_sections=16)
             c.addAttr(control, longName="advPyHipSwingOwner",
                       dataType="string")
             c.setAttr(control + ".advPyHipSwingOwner",

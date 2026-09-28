@@ -108,7 +108,7 @@ show_panel()
 
 将示例路径改为本机仓库的 `src` 目录。
 
-如本机已安装 AdvancedSkeleton 6.925，可将环境变量 `ADV_6925_ICONS_FILE` 指向安装目录的 `AdvancedSkeletonFiles/div/asIcons.ma`，或把该文件的绝对路径写入用户目录 `~/.adv_py/as_icons_path.txt`。Body 主构建会从本机文件读取 Main、FK、IK、Pole 控制曲线；未配置时沿用工程原有曲线。原版图标文件不随仓库分发。
+如本机已安装 AdvancedSkeleton 6.925，可将环境变量 `ADV_6925_ICONS_FILE` 指向安装目录的 `AdvancedSkeletonFiles/div/asIcons.ma`，或把该文件的绝对路径写入用户目录 `~/.adv_py/as_icons_path.txt`。Body 主构建及 Fit 分段会从本机文件读取 Main、FK、IK、Pole、Aim、Part、Bend、Micro 等控制曲线；未配置时沿用工程原有曲线。原版图标文件不随仓库分发。
 
 ### 3. 构建第一套角色
 

@@ -5,6 +5,7 @@ from math import sqrt, isfinite
 from adv_py.core.body_spine import spine_roll_degrees, spine_ik_goal_position
 from adv_py.core.body_limb_ik import solve_limb_pole_position
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from .maya_adv_icons import create_adv_icon
 
 
 class MayaBodySpineMixin:
@@ -60,8 +61,11 @@ class MayaBodySpineMixin:
             (plan.pole_offset, plan.pole_control, plan.pole_position),
         ):
             self._spine_frame(offset.rsplit("|", 1)[-1], offset.rsplit("|", 1)[0], pos, plan.joints[2].world_axes)
-            ctrl = c.circle(name=control.rsplit("|", 1)[-1], normal=(1, 0, 0), radius=1.5, constructionHistory=False)[0]
-            c.parent(ctrl, offset, relative=True)
+            create_adv_icon(
+                c, name=control.rsplit("|", 1)[-1], parent=offset,
+                template=("IK_icon" if control == plan.ik_control
+                          else "Pole_icon"), radius=1.5,
+                fallback_normal=(1.0, 0.0, 0.0))
             for axis in "XYZ":
                 c.setAttr(control + ".scale" + axis, lock=True, keyable=False)
         c.addAttr(plan.ik_control, longName="spineIkFk", attributeType="double", minValue=0, maxValue=1, defaultValue=0, keyable=True)

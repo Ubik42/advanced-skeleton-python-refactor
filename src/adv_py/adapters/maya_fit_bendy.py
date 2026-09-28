@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from adv_py.core.fit_bendy import FitBendyChainSpec
+from .maya_adv_icons import create_adv_icon
 
 if TYPE_CHECKING:
     from adv_py.application.fit_bendy import FitBendyFollowSpec, FitBendyWorldSource
@@ -471,6 +472,9 @@ class MayaFitBendyMixin:
         for index, (name, position) in enumerate(zip(
                 spec.control_names, (spec.master_position,
                                      *spec.control_positions))):
+            parent = (spec.control_names[0]
+                      if index == 2 and spec.control_count == 1
+                      else _GROUPS[0])
             if index == 0:
                 control = c.curve(
                     name=name, degree=1,
@@ -481,17 +485,15 @@ class MayaFitBendyMixin:
                 c.setAttr(shape + ".overrideEnabled", True)
                 c.setAttr(shape + ".overrideColor", 29)
             else:
-                control = c.circle(name=name, normal=(1, 0, 0),
-                                   radius=0.25,
-                                   constructionHistory=False)[0]
+                control = create_adv_icon(
+                    c, name=name, parent=parent, template="Bend_icon",
+                    radius=0.25, fallback_normal=(1.0, 0.0, 0.0))
                 if index == 1:
                     c.move(spec.start_icon_offset, 0, 0,
                            control + ".cv[0:99]", relative=True,
                            objectSpace=True, worldSpaceDistance=True)
-            parent = (spec.control_names[0]
-                      if index == 2 and spec.control_count == 1
-                      else _GROUPS[0])
-            control = c.parent(control, parent)[0]
+            if index == 0:
+                control = c.parent(control, parent)[0]
             c.xform(control, worldSpace=True, translation=position)
             c.setAttr(control + ".rotateOrder", spec.rotation_order)
             if index == 0:
@@ -508,10 +510,10 @@ class MayaFitBendyMixin:
                       spec.rotation_order)
             c.xform(junction_offset, worldSpace=True,
                     translation=start)
-            junction = c.circle(name=spec.junction_name,
-                                normal=(1, 0, 0), radius=0.18,
-                                constructionHistory=False)[0]
-            c.parent(junction, junction_offset, absolute=True)
+            junction = create_adv_icon(
+                c, name=spec.junction_name, parent=junction_offset,
+                template="BendMid_icon", radius=0.18,
+                fallback_normal=(1.0, 0.0, 0.0))
             c.xform(junction, worldSpace=True, translation=start)
             c.setAttr(junction + ".rotateOrder", spec.rotation_order)
             c.addAttr(junction, longName="circular",
@@ -885,10 +887,10 @@ class MayaFitBendyMixin:
             c.xform(offset, worldSpace=True, translation=position)
             extra = c.createNode("transform", name=extra_name,
                                  parent=offset, skipSelect=True)
-            control = c.circle(name=control_name, normal=(1, 0, 0),
-                               radius=0.15,
-                               constructionHistory=False)[0]
-            c.parent(control, extra, absolute=True)
+            control = create_adv_icon(
+                c, name=control_name, parent=extra,
+                template="Micro_icon", radius=0.15,
+                fallback_normal=(1.0, 0.0, 0.0))
             c.xform(control, worldSpace=True, translation=position)
             c.createNode("transform", name=output_name,
                          parent=control, skipSelect=True)

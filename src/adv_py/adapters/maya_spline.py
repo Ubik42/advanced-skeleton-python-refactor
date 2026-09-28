@@ -1,5 +1,6 @@
 """Native cubic spline IK, local curve length stretch and volume scaling."""
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from .maya_adv_icons import create_adv_icon
 
 
 def prepare(host,plan):
@@ -19,8 +20,9 @@ def create(host,plan):
     for i,(target,position) in enumerate(zip(plan.targets,plan.positions)):
         offset=target.rsplit('|',1)[0]
         host._spine_frame(f'AdvPy_SplineIK{i}Offset',plan.pelvis_control,position,plan.axes)
-        control=c.circle(name=f'AdvPy_SplineIK{i}',normal=(1.,0.,0.),radius=1.5,constructionHistory=False)[0]
-        c.parent(control,offset,relative=True)
+        create_adv_icon(c,name=f'AdvPy_SplineIK{i}',parent=offset,
+                        template='IK_icon',radius=1.5,
+                        fallback_normal=(1.,0.,0.))
         locked=['scale'+a for a in 'XYZ']+(['translate'+a for a in 'XYZ'] if i==0 else [])+(['rotate'+a for a in 'XYZ'] if 0<i<len(plan.targets)-1 else [])
         for attr in locked:c.setAttr(target+'.'+attr,lock=True,keyable=False)
     for attribute,default,label in (('spineIkFk',0.,'脊柱 IK 权重'),('stretch',1.,'脊柱伸展'),('volume',1.,'体积保持')):

@@ -4,6 +4,7 @@ from __future__ import annotations
 from adv_py.core.partial_joints import (
     PartialDeleteSpec, PartialJointCandidate, PartialJointSpec,
 )
+from .maya_adv_icons import create_adv_icon
 from .maya_custom_controller import MayaCustomControllerHost
 
 
@@ -270,11 +271,12 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
         if c.objExists(icon):
             control = c.duplicate(icon, name=self._node("FK" + name),
                                   returnRootsOnly=True)[0]
+            control = c.parent(control, parent, relative=True)[0]
         else:
-            control = c.circle(name=self._node("FK" + name), normal=(1, 0, 0),
-                               radius=self._height() / 20.0,
-                               sections=8, constructionHistory=False)[0]
-        c.parent(control, parent)
+            control = create_adv_icon(
+                c, name=self._node("FK" + name), parent=parent,
+                template="FaceA_icon", radius=self._height() / 20.0,
+                fallback_normal=(1.0, 0.0, 0.0))
         for shape in c.listRelatives(control, shapes=True, fullPath=True) or []:
             c.setAttr(shape + ".overrideEnabled", True)
             c.setAttr(shape + ".overrideColor", 16)
