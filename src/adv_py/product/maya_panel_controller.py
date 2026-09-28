@@ -738,6 +738,25 @@ class MayaPanelController:
             globals_.pop())
         return len(items)
 
+    def delete_control_meshes(self, namespace: str, *,
+                              selected_only: bool) -> int:
+        from adv_py.adapters.maya_control_mesh import MayaControlMeshHost
+        from adv_py.application.control_mesh_delete import DeleteControlMeshes
+
+        host = self._host(namespace)
+        resolver = ResolveBodyCharacter(host)
+        names = resolver.discover()
+        if len(names) != 1:
+            raise ValueError("当前命名空间必须恰好包含一个已登记角色")
+        registration = resolver.execute(names[0])
+        globals_ = {channel.node for channel in registration.channels
+                    if channel.key.startswith("global.")}
+        if len(globals_) != 1:
+            raise ValueError("角色总控登记无效")
+        items = DeleteControlMeshes(MayaControlMeshHost()).execute(
+            globals_.pop(), selected_only=selected_only)
+        return sum(len(item.shapes) for item in items)
+
     def control_curves_copy_to_variant(
             self, namespace: str, controls: tuple[str, ...],
             variant: str) -> int:

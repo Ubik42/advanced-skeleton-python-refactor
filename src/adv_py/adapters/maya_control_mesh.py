@@ -9,6 +9,9 @@ from adv_py.core.control_mesh_color import (
     ControlMeshColorItem, ControlMeshColorSource, SHADER_COLORS,
 )
 from adv_py.core.ik_control_mesh import IKControlCurve, IKControlMeshItem
+from adv_py.core.control_mesh_delete import (
+    ControlMeshDeleteItem, ControlMeshDeleteSource,
+)
 
 
 class MayaControlMeshHost:
@@ -645,3 +648,122 @@ class MayaControlMeshHost:
                                           "motionBlur", "primaryVisibility",
                                           "smoothShading", "visibleInReflections",
                                           "visibleInRefractions")))
+
+    def capture_control_mesh_delete_sources(
+        self, global_control: str, selected_only: bool,
+    ) -> tuple[ControlMeshDeleteSource, ...]:
+        c = self.cmds
+        leaf = global_control.rsplit("|", 1)[-1]
+        prefix = leaf.rsplit(":", 1)[0] + ":" if ":" in leaf else ""
+        control_sets = c.ls(prefix + "ControlSet", type="objectSet") or []
+        if len(control_sets) != 1:
+            raise ValueError("Control Mesh 删除需要唯一 ControlSet")
+        members = c.sets(control_sets[0], query=True) or []
+        controls = []
+        for member in members:
+            matches = c.ls(member, long=True, type="transform") or []
+            if len(matches) != 1:
+                raise ValueError("ControlSet 控制器不唯一：" + member)
+            controls.append(matches[0])
+        if selected_only:
+            selection = c.ls(selection=True, long=True, objectsOnly=True) or []
+            if not selection:
+                raise ValueError("请先选择要删除 Control Mesh 的控制器")
+            foreign = set(selection) - set(controls)
+            if foreign:
+                raise ValueError("所选对象不属于当前角色 ControlSet")
+            controls = [control for control in controls if control in selection]
+        sources = []
+        for control in controls:
+            control_leaf = control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            shapes = tuple(shape for shape in (
+                c.listRelatives(control, shapes=True, fullPath=True,
+                                noIntermediate=True, type="mesh") or [])
+                if re.fullmatch(re.escape(control_leaf) + r"MeshCtrl\d*",
+                                shape.rsplit("|", 1)[-1].rsplit(":", 1)[-1]))
+            if not shapes:
+                continue
+            helpers = set()
+            for shape in shapes:
+                name = shape.rsplit("|", 1)[-1]
+                for suffix in ("CurveMPD", "MeshMPD"):
+                    candidate = name + suffix
+                    if c.objExists(candidate):
+                        if c.nodeType(candidate) != "multiplyDivide":
+                            raise ValueError("Control Mesh 辅助节点类型冲突：" + candidate)
+                        helpers.add(candidate)
+                upstream = c.connectionInfo(
+                    shape + ".inMesh", sourceFromDestination=True)
+                if upstream:
+                    node = upstream.split(".", 1)[0]
+                    expected = control.rsplit("|", 1)[-1] + "MCTransformGeometry"
+                    if (c.nodeType(node) == "transformGeometry"
+                            and node.rsplit(":", 1)[-1].startswith(
+                                expected.rsplit(":", 1)[-1])):
+                        helpers.add(node)
+            visibility = []
+            for curve in c.listRelatives(
+                    control, shapes=True, fullPath=True,
+                    noIntermediate=True, type="nurbsCurve") or []:
+                source = c.connectionInfo(
+                    curve + ".visibility", sourceFromDestination=True)
+                if not source:
+                    continue
+                initial = source
+                visited = set()
+                while source and source.split(".", 1)[0] in helpers:
+                    node = source.split(".", 1)[0]
+                    if node in visited or not node.endswith("CurveMPD"):
+                        raise ValueError("Control Mesh 曲线显隐连接存在循环或冲突")
+                    visited.add(node)
+                    source = c.connectionInfo(
+                        node + ".input1X", sourceFromDestination=True)
+                if visited:
+                    visibility.append((curve, source or None))
+                elif initial == global_control + ".ctrlCurveVis":
+                    visibility.append((curve, None))
+            sources.append(ControlMeshDeleteSource(
+                control, shapes, tuple(sorted(helpers)), tuple(visibility)))
+        return tuple(sources)
+
+    def preflight_control_mesh_deletion(
+        self, item: ControlMeshDeleteItem,
+    ) -> None:
+        c = self.cmds
+        for node in (item.control,) + item.shapes + item.helpers:
+            if (not c.objExists(node)
+                    or c.referenceQuery(node, isNodeReferenced=True)):
+                raise ValueError("Control Mesh 删除目标不存在或处于引用中：" + node)
+        for curve, source in item.curve_visibility:
+            if (not c.objExists(curve)
+                    or c.getAttr(curve + ".visibility", lock=True)
+                    or (source is not None and not c.objExists(
+                        source.split(".", 1)[0]))):
+                raise ValueError("Control Mesh 曲线显隐无法恢复：" + curve)
+
+    def delete_control_meshes(self, item: ControlMeshDeleteItem) -> None:
+        if not self._in_transaction:
+            raise RuntimeError("Control Mesh 删除必须位于事务内")
+        c = self.cmds
+        for curve, source in item.curve_visibility:
+            plug = curve + ".visibility"
+            if source:
+                c.connectAttr(source, plug, force=True)
+            else:
+                incoming = c.connectionInfo(plug, sourceFromDestination=True)
+                if incoming:
+                    c.disconnectAttr(incoming, plug)
+                c.setAttr(plug, True)
+        c.delete(list(item.shapes))
+        if item.helpers:
+            c.delete(list(item.helpers))
+
+    def capture_control_mesh_deletion(
+        self, item: ControlMeshDeleteItem,
+    ) -> bool:
+        c = self.cmds
+        if any(c.objExists(node) for node in item.shapes + item.helpers):
+            return False
+        return all((c.connectionInfo(
+            curve + ".visibility", sourceFromDestination=True) or None)
+                   == source for curve, source in item.curve_visibility)
