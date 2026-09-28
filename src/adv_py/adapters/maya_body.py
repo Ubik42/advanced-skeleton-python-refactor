@@ -448,6 +448,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         geometry = self._cmds.createNode(
             "transform", name="Geometry", parent=group,
             skipSelect=True)
+        for kind in ("translate", "rotate", "scale"):
+            for axis in "XYZ":
+                self._cmds.setAttr(
+                    f"{group}.{kind}{axis}", lock=True, keyable=False)
+        self._cmds.setAttr(group + ".visibility", lock=False, keyable=True)
         self._cmds.setAttr(geometry + ".inheritsTransform", False)
         self._cmds.setAttr(geometry + ".inheritsTransform", lock=True)
         self._transaction_changed = True
@@ -516,6 +521,16 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         if bool(self._cmds.getAttr("|Group|Geometry.inheritsTransform")):
             raise FitSkeletonValidationError(
                 "角色 Geometry 不得继承 Group 变换")
+        if any(
+            not bool(self._cmds.getAttr(
+                f"|Group.{kind}{axis}", lock=True))
+            or bool(self._cmds.getAttr(
+                f"|Group.{kind}{axis}", keyable=True))
+            for kind in ("translate", "rotate", "scale")
+            for axis in "XYZ"
+        ):
+            raise FitSkeletonValidationError(
+                "角色 Group 变换通道必须锁定并隐藏")
         fit_visibility = fit_container_path + ".visibility"
         if (bool(self._cmds.getAttr(fit_visibility))
                 or not bool(self._cmds.getAttr(fit_visibility, lock=True))):
