@@ -720,6 +720,10 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
 
             group, form = self._group("10A · Game Engine", [])
+            form.addRow(self._button("创建 Root Motion",
+                                     self._create_game_engine_root_motion))
+            form.addRow(self._button("删除 Root Motion",
+                                     self._delete_game_engine_root_motion))
             form.addRow(self._button("启用 Game Engine Scaling",
                                      self._enable_game_engine_scaling))
             form.addRow(self._button("恢复 Maya Scaling",
@@ -2011,6 +2015,14 @@ def create_panel(controller: MayaPanelController | None = None):
         def _enable_game_engine_scaling(self):
             count = self.controller.game_engine_scaling(self._namespace(), True)
             return f"已切换 {count} 个 Body 关节的 Game Engine Scaling"
+
+        def _create_game_engine_root_motion(self):
+            self.controller.game_engine_root_motion(self._namespace(), True)
+            return "已创建 Game Engine Root Motion"
+
+        def _delete_game_engine_root_motion(self):
+            self.controller.game_engine_root_motion(self._namespace(), False)
+            return "已删除 Game Engine Root Motion"
 
         def _disable_game_engine_scaling(self):
             count = self.controller.game_engine_scaling(self._namespace(), False)
