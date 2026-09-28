@@ -50,8 +50,7 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
             FitJointField.UNTWISTER,
         ))
 
-        def additional_fit_edits(path: str) -> tuple[FitJointFieldEdit, ...]:
-            metadata = self.read_fit_joint_metadata(path)
+        def additional_fit_edits(metadata) -> tuple[FitJointFieldEdit, ...]:
             return tuple(FitJointFieldEdit(
                 field,
                 metadata.local_no_flip if field is FitJointField.NO_FLIP
@@ -67,6 +66,7 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                                             fullPath=True) or [None])[0]
             position = tuple(float(value) for value in cmds.xform(
                 path, query=True, worldSpace=True, translation=True))
+            metadata = self.read_fit_joint_metadata(path)
             joints.append(SourceSkeletonJoint(path,
                 path.rsplit("|", 1)[-1], parent, position,
                 optional_int(path, "twistJoints"),
@@ -74,7 +74,8 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                 optional_bool(path, "unTwister"),
                 optional_profile(path),
                 int(cmds.getAttr(path + ".rotateOrder")),
-                additional_fit_edits(path)))
+                additional_fit_edits(metadata),
+                metadata.no_flip))
         return tuple(joints)
 
     def write_fit_rotation_order(self, joint: str, order: int) -> None:

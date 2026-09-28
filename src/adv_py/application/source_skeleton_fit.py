@@ -36,6 +36,7 @@ class SourceSkeletonJoint:
     deform_profile: FitDeformProfile | None = None
     rotation_order: int | None = None
     additional_fit_edits: tuple[FitJointFieldEdit, ...] = ()
+    effective_no_flip: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,12 +268,31 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
 
     source_by_path = {joint.path: joint for joint in source}
     reference_names = {spec.name for spec in reference.joints}
+    reference_parents = {spec.name: spec.parent for spec in reference.joints}
+
+    def source_no_flip(name: str | None) -> bool:
+        if name is None:
+            return False
+        candidate = by_name[name]
+        if candidate.effective_no_flip is not None:
+            if type(candidate.effective_no_flip) is not bool:
+                raise FitSkeletonValidationError(
+                    "来源 noFlip 有效值无效：" + candidate.name)
+            return candidate.effective_no_flip
+        local = (isinstance(candidate.additional_fit_edits, tuple)
+                 and any(isinstance(edit, FitJointFieldEdit)
+                         and edit.field is FitJointField.NO_FLIP
+                         and edit.value is True
+                         for edit in candidate.additional_fit_edits))
+        return local or source_no_flip(reference_parents[name])
+
     specs = []
     part_metadata = []
     deform_profiles = []
     rotation_orders = []
     for reference_joint in reference.joints:
         joint = by_name[reference_joint.name]
+        source_no_flip(reference_joint.name)
         if (joint.rotation_order is not None and (
                 type(joint.rotation_order) is not int
                 or not 0 <= joint.rotation_order <= 5)):
@@ -349,6 +369,15 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                     and joint.untwister is None):
                 edits.append(FitJointFieldEdit(FitJointField.UNTWISTER, True))
         edits.extend(joint.additional_fit_edits)
+        inherited_no_flip = source_no_flip(expected_parent)
+        local_no_flip = next((edit.value for edit in edits
+                              if edit.field is FitJointField.NO_FLIP), None)
+        if (joint.effective_no_flip and not inherited_no_flip
+                and local_no_flip is not True):
+            edits = [edit for edit in edits
+                     if edit.field is not FitJointField.NO_FLIP]
+            edits.append(FitJointFieldEdit(FitJointField.NO_FLIP, True))
+            local_no_flip = True
         if edits:
             try:
                 patch = FitJointPatch(tuple(edits))
