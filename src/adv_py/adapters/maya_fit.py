@@ -83,6 +83,7 @@ _FIT_ATTRIBUTES = {
     FitJointField.CONTROL: _MayaFitAttribute("control", "bool"),
     FitJointField.TWEAKER_CONTROL: _MayaFitAttribute("tweakerControl", "bool"),
     FitJointField.NO_CONTROL: _MayaFitAttribute("noControl", "bool"),
+    FitJointField.NO_SKIN: _MayaFitAttribute("noSkin", "bool"),
     FitJointField.HIP_SWINGER: _MayaFitAttribute("hipSwinger", "bool"),
     FitJointField.COG: _MayaFitAttribute("cog", "bool"),
     FitJointField.FOOT_PIVOTS: _MayaFitAttribute("footPivots", "bool"),
@@ -838,6 +839,7 @@ class MayaFitJointHost:
             control=self._optional_bool(joint, "control"),
             tweaker_control=self._optional_bool(joint, "tweakerControl"),
             no_control=self._optional_bool(joint, "noControl"),
+            no_skin=self._optional_bool(joint, "noSkin"),
             hip_swinger=(self._optional_bool(joint, "hipSwinger")
                          if self._attribute_exists(joint, "hipSwinger")
                          else None),

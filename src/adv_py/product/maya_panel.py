@@ -351,6 +351,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ("末端 Control", "control"),
                     ("Tweaker Control（需 OPM）", "tweaker_control"),
                     ("隐藏 FK 控制", "no_control"),
+                    ("不参与 Skin", "no_skin"),
                     ("COG", "cog"),
                     ("Foot Pivots", "foot_pivots"),
                     ("禁止镜像", "no_mirror"),

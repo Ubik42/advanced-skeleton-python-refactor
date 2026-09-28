@@ -377,6 +377,13 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                     and joint.untwister is None):
                 edits.append(FitJointFieldEdit(FitJointField.UNTWISTER, True))
         edits.extend(joint.additional_fit_edits)
+        explicit_no_skin = next((edit.value for edit in edits
+                                 if edit.field is FitJointField.NO_SKIN), None)
+        if (explicit_no_skin is not None
+                and joint.effective_skin_enabled is not None
+                and explicit_no_skin == joint.effective_skin_enabled):
+            raise FitSkeletonValidationError(
+                "来源 Skin 状态与 Fit noSkin 属性冲突：" + joint.name)
         inherited_no_flip = source_no_flip(expected_parent)
         local_no_flip = next((edit.value for edit in edits
                               if edit.field is FitJointField.NO_FLIP), None)
