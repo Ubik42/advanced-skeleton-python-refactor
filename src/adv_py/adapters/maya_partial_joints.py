@@ -183,11 +183,7 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
             c.scaleConstraint(fkx, joint, maintainOffset=False,
                               name=self._node(name + "_scaleConstraint1"))
             target, follow = control_offset, control
-            main = self._node("Main")
-            if c.objExists(main) and not c.attributeQuery("partialVis", node=main,
-                                                          exists=True):
-                c.addAttr(main, longName="partialVis", attributeType="bool",
-                          defaultValue=True, keyable=True)
+            self._connect_partial_visibility(system)
         side_factor = -1 if spec.side == "L" else 1
         delta = side_factor * self._height() / 5000.0
         c.addAttr(follow, longName="follow", attributeType="double",
@@ -252,6 +248,29 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
             resolved = [c.ls(target, long=True) or [] for target in targets]
             if resolved != [[fkx]]:
                 raise RuntimeError("Partial FKX 约束来源不一致：" + name)
+
+    def _connect_partial_visibility(self, system: str) -> None:
+        c = self._cmds
+        main = next((self._node(name) for name in ("Main", "AdvPy_Global")
+                     if c.objExists(self._node(name))), None)
+        if main is None:
+            raise ValueError("Partial Joints 缺少角色总控")
+        plug = main + ".partialVis"
+        if not c.objExists(plug):
+            c.addAttr(main, longName="partialVis", attributeType="bool",
+                      defaultValue=True, keyable=False)
+            c.setAttr(plug, channelBox=True)
+        elif c.getAttr(plug, type=True) != "bool":
+            raise ValueError("角色总控 partialVis 属性类型不匹配")
+        target = system + ".visibility"
+        inputs = c.listConnections(target, source=True,
+                                   destination=False, plugs=True) or []
+        if inputs and not c.isConnected(plug, target):
+            raise ValueError("PartialJointsSystem 可见性已有其他来源")
+        if not inputs:
+            c.connectAttr(plug, target)
+        if not c.isConnected(plug, target):
+            raise RuntimeError("Partial Joints 可见性连接读回不一致")
 
     def _connect_partial_opm(self, spec: PartialJointSpec, source: str,
                              parent: str, target: str, follow: str,
