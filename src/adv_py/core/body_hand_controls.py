@@ -680,7 +680,7 @@ def audit_body_hand_fk_controls(
         expected_constraint_targets = (
             (spec.wrist_joint,) if spec.follow_constraint_name else ())
         expected_constraint_channels = (
-            tuple(f"{spec.follow_constraint_name}.constraint{kind}{axis}"
+            tuple(f"{spec.path}|{spec.follow_constraint_name}.constraint{kind}{axis}"
                   for kind in ("Translate", "Rotate") for axis in "XYZ")
             if spec.follow_constraint_name else ())
         if (state.follow_constraint_targets != expected_constraint_targets

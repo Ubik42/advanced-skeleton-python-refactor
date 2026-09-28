@@ -945,6 +945,22 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         or not bool(self._cmds.getAttr(visibility))):
                     raise FitSkeletonValidationError(
                         f"手指 FK 根不可安全连接 fingerVis：{path}")
+            aim_fk_shape = None
+            if plan.aim_fk_control_path is not None:
+                head = plan.aim_fk_control_path
+                controls = self._cmds.ls(
+                    head, long=True, type="transform") or []
+                shapes = (self._cmds.listRelatives(
+                    head, shapes=True, fullPath=True,
+                    type="nurbsCurve") or []) if controls == [head] else []
+                wanted = plan.aim_fk_shape_path
+                if (shapes != [wanted]
+                        or source(wanted + ".visibility") is not None
+                        or not bool(self._cmds.getAttr(
+                            wanted + ".visibility", settable=True))):
+                    raise FitSkeletonValidationError(
+                        "头部 FK 控制曲线不可安全连接 aimFKVis")
+                aim_fk_shape = wanted
 
             self._transaction_changed = True
             existing_group = self._cmds.ls(
@@ -1094,6 +1110,15 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 for path in plan.finger_visibility_paths:
                     self._cmds.connectAttr(
                         control + ".fingerVis", path + ".visibility")
+            self._cmds.addAttr(
+                control, longName="aimFKVis", attributeType="bool",
+                defaultValue=True, keyable=False)
+            self._cmds.setAttr(
+                control + ".aimFKVis", channelBox=True)
+            if aim_fk_shape is not None:
+                self._cmds.connectAttr(
+                    control + ".aimFKVis",
+                    aim_fk_shape + ".visibility")
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
@@ -1269,6 +1294,14 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 bool(self._cmds.getAttr(control + ".fingerVis"))
                 if plan.has_finger_visibility else None
             ),
+            aim_fk_visibility=(
+                (plan.aim_fk_shape_path,
+                 bool(self._cmds.getAttr(control + ".aimFKVis")),
+                 source(plan.aim_fk_shape_path + ".visibility"))
+                if plan.aim_fk_shape_path is not None else None
+            ),
+            aim_fk_visibility_value=bool(
+                self._cmds.getAttr(control + ".aimFKVis")),
         )
 
     def create_body_root_motion(self, plan: BodyRootMotionPlan) -> None:
@@ -6255,6 +6288,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         or constraints[0].rsplit("|", 1)[-1]
                         != spec.follow_constraint_name):
                     raise RuntimeError("Hand FK Wrist 约束名称漂移")
+                constraint_path = root + "|" + spec.follow_constraint_name
+                if (self._cmds.ls(constraints[0], long=True,
+                                  type="parentConstraint") or []) != [
+                                      constraint_path]:
+                    raise RuntimeError("Hand FK Wrist 约束父级路径漂移")
             return root
         finally:
             if selection:

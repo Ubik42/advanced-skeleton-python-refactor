@@ -249,6 +249,10 @@ class BuildBodyCharacterRig:
             finger_visibility_paths=(
                 tuple(root.path for root in hand.controls.roots)
                 if hand is not None else ()),
+            aim_fk_control_path=(
+                torso.torso.head_aim.head_control
+                if torso is not None and torso.torso.head_aim is not None
+                else None),
         )
         spaces = plan_body_control_spaces(safety.body, torso.torso, arm, leg, global_control) if include_control_spaces else None
         direct_controls = (

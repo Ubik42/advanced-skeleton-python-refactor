@@ -32,6 +32,7 @@ class BodyCharacterGlobalPlan:
     scale_destinations: tuple[str, ...]
     joint_visibility_path: str | None
     finger_visibility_paths: tuple[str, ...]
+    aim_fk_control_path: str | None
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -82,6 +83,13 @@ class BodyCharacterGlobalPlan:
     def has_finger_visibility(self) -> bool:
         return (self.joint_visibility_path is not None
                 or bool(self.finger_visibility_paths))
+
+    @property
+    def aim_fk_shape_path(self) -> str | None:
+        if self.aim_fk_control_path is None:
+            return None
+        return (self.aim_fk_control_path + "|"
+                + self.aim_fk_control_path.rsplit("|", 1)[-1] + "Shape")
 
     @property
     def circle_normal(self) -> Vector3:
@@ -140,6 +148,8 @@ class BodyCharacterGlobalSnapshot:
     joint_visibility: tuple[bool, str | None] | None = None
     finger_visibility: tuple[tuple[str, str | None], ...] = ()
     finger_visibility_value: bool | None = None
+    aim_fk_visibility: tuple[str, bool, str | None] | None = None
+    aim_fk_visibility_value: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +168,7 @@ def plan_body_character_global(
     radius: float = 12.0,
     body_root_via_controls: bool = False,
     finger_visibility_paths: tuple[str, ...] = (),
+    aim_fk_control_path: str | None = None,
 ) -> BodyCharacterGlobalPlan:
     if (
         not isinstance(up_axis, FitUpAxis)
@@ -171,6 +182,9 @@ def plan_body_character_global(
         or len(set(finger_visibility_paths)) != len(finger_visibility_paths)
         or any(not isinstance(path, str) or not path.startswith("|")
                for path in finger_visibility_paths)
+        or (aim_fk_control_path is not None
+            and (not isinstance(aim_fk_control_path, str)
+                 or not aim_fk_control_path.startswith("|")))
         or (not body_root_via_controls and body_root not in driven_roots)
         or (body_root_via_controls and (
             body_root in driven_roots
@@ -243,6 +257,7 @@ def plan_body_character_global(
             body_root if body_root.startswith("|Group|DeformationSystem|")
             else None),
         finger_visibility_paths=finger_visibility_paths,
+        aim_fk_control_path=aim_fk_control_path,
     )
 
 
@@ -407,6 +422,23 @@ def audit_body_character_global(
         issues.append(BodyCharacterGlobalIssue(
             "finger_visibility_attribute_mismatch",
             "总控 fingerVis 属性缺失或默认值不一致",
+            plan.control_path,
+        ))
+    expected_aim_fk = (
+        (plan.aim_fk_shape_path, True,
+         f"{plan.control_path}.aimFKVis")
+        if plan.aim_fk_shape_path is not None else None
+    )
+    if snapshot.aim_fk_visibility != expected_aim_fk:
+        issues.append(BodyCharacterGlobalIssue(
+            "aim_fk_visibility_mismatch",
+            "头部 Aim 的 FK 控制曲线显示连接不一致",
+            plan.aim_fk_control_path,
+        ))
+    if snapshot.aim_fk_visibility_value is not True:
+        issues.append(BodyCharacterGlobalIssue(
+            "aim_fk_visibility_attribute_mismatch",
+            "总控 aimFKVis 属性缺失或默认值不一致",
             plan.control_path,
         ))
     return tuple(issues)
