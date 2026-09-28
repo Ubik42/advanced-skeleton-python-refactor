@@ -8,11 +8,13 @@ from adv_py.core.fit_part import (
     FitPartReparentSpec,
 )
 from adv_py.core.body_skeleton import FitDeformProfile
+from adv_py.core.body_direct_fk_scale import BodyDirectFkScaleSpec
 from adv_py.core.fit_part_twist import (
     FitPartTwistProjection, FitPartTwistStep,
 )
 from adv_py.core.fit_part_scale import (
-    FitPartBodyScaleChain, FitPartLimbScaleChain, FitPartScaleStep,
+    FitPartInheritedScaleChain, FitPartLimbScaleChain,
+    FitPartScaleStep,
 )
 
 _FIT_PART_KIND = "fit-part-v1"
@@ -20,65 +22,68 @@ _FIT_INBETWEEN_KIND = "fit-inbetween-v1"
 
 
 class MayaFitPartMixin:
-    def preflight_fit_part_body_scale(
-        self, chain: FitPartBodyScaleChain
+    def inspect_fit_part_inherited_scale(
+        self, chain: FitPartInheritedScaleChain
+    ) -> bool:
+        c = self._cmds
+        allowed_parents = {chain.start_body_name, *chain.part_names}
+        self._unique_fit_part_joint(chain.start_body_name)
+        for name in chain.part_names:
+            part = self._unique_fit_part_joint(name)
+            parent = c.listRelatives(part, parent=True,
+                                     fullPath=True) or []
+            if (len(parent) != 1
+                    or parent[0].rsplit("|", 1)[-1]
+                    not in allowed_parents - {name}
+                    or c.getAttr(part + ".segmentScaleCompensate")):
+                return False
+            for axis in "XYZ":
+                scale = part + ".scale" + axis
+                if (abs(float(c.getAttr(scale)) - 1.0) > 1e-8
+                        or c.connectionInfo(scale,
+                            sourceFromDestination=True)):
+                    return False
+        return True
+
+    def preflight_body_direct_fk_scale(
+        self, spec: BodyDirectFkScaleSpec
     ) -> None:
         c = self._cmds
-        body = self._unique_fit_part_joint(chain.start_body_name)
+        body = self._unique_fit_part_joint(
+            spec.body_joint.rsplit("|", 1)[-1])
         if not c.objExists(body + ".advPySourceJoint"):
-            raise ValueError("Fit Part 缩放需要本工程 Body："
-                             + chain.start_body_name)
+            raise ValueError("FK 缩放需要本工程 Body：" + spec.body_joint)
         for axis in "XYZ":
-            source = chain.source_plug + axis
+            source = spec.source_scale + axis
             destination = body + ".scale" + axis
             if (not c.objExists(source)
                     or not c.getAttr(destination, settable=True)
                     or c.connectionInfo(destination,
                         sourceFromDestination=True)):
-                raise ValueError("Fit Part Body 缩放来源或目标不可用："
-                                 + chain.start_body_name)
-        for name in chain.part_names:
-            part = self._unique_fit_part_joint(name)
-            if (bool(c.getAttr(part + ".segmentScaleCompensate"))
-                    == chain.use_offset_parent_matrix):
-                raise ValueError("Fit Part 缩放补偿模式不一致：" + name)
-            if chain.use_offset_parent_matrix and any(
-                    abs(float(c.getAttr(part + ".scale" + axis)) - 1.0)
-                    > 1e-8 or c.connectionInfo(
-                        part + ".scale" + axis,
-                        sourceFromDestination=True)
-                    for axis in "XYZ"):
-                raise ValueError("Fit Part OPM 缩放不能叠加局部缩放：" + name)
+                raise ValueError("Body FK 缩放来源或目标不可用："
+                                 + spec.body_joint)
 
-    def connect_fit_part_body_scale(
-        self, chain: FitPartBodyScaleChain
+    def connect_body_direct_fk_scale(
+        self, spec: BodyDirectFkScaleSpec
     ) -> None:
         self._require_transaction()
         c = self._cmds
-        body = self._unique_fit_part_joint(chain.start_body_name)
+        body = self._unique_fit_part_joint(
+            spec.body_joint.rsplit("|", 1)[-1])
         for axis in "XYZ":
-            c.connectAttr(chain.source_plug + axis,
+            c.connectAttr(spec.source_scale + axis,
                           body + ".scale" + axis)
         self._transaction_changed = True
 
-    def capture_fit_part_body_scale(
-        self, chain: FitPartBodyScaleChain
+    def capture_body_direct_fk_scale(
+        self, spec: BodyDirectFkScaleSpec
     ) -> bool:
         c = self._cmds
-        body = self._unique_fit_part_joint(chain.start_body_name)
-        if any(c.connectionInfo(body + ".scale" + axis,
-               sourceFromDestination=True) != chain.source_plug + axis
-               for axis in "XYZ"):
-            return False
-        if chain.use_offset_parent_matrix:
-            return all(
-                not c.getAttr(self._unique_fit_part_joint(name)
-                              + ".segmentScaleCompensate")
-                and all(abs(float(c.getAttr(
-                    self._unique_fit_part_joint(name) + ".scale" + axis))
-                    - 1.0) <= 1e-8 for axis in "XYZ")
-                for name in chain.part_names)
-        return True
+        body = self._unique_fit_part_joint(
+            spec.body_joint.rsplit("|", 1)[-1])
+        return all(c.connectionInfo(body + ".scale" + axis,
+                   sourceFromDestination=True) == spec.source_scale + axis
+                   for axis in "XYZ")
 
     def preflight_fit_part_limb_scale(
         self, chain: FitPartLimbScaleChain

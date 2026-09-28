@@ -14,6 +14,9 @@ from adv_py.core.body_hand_fit import (
     advanced_skeleton_hand_source_joint_names, body_hand_source_joint_names,
 )
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
+from adv_py.core.body_direct_fk_scale import (
+    BodyDirectFkScaleSpec, plan_body_direct_fk_scales,
+)
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
@@ -58,6 +61,15 @@ class BodyCharacterRigHost(
         plan: BodyCharacterGlobalPlan,
     ) -> BodyCharacterGlobalSnapshot: ...
 
+    def preflight_body_direct_fk_scale(
+        self, spec: BodyDirectFkScaleSpec) -> None: ...
+
+    def connect_body_direct_fk_scale(
+        self, spec: BodyDirectFkScaleSpec) -> None: ...
+
+    def capture_body_direct_fk_scale(
+        self, spec: BodyDirectFkScaleSpec) -> bool: ...
+
 
 @dataclass(frozen=True, slots=True)
 class BodyCharacterRigBuildPlan:
@@ -70,6 +82,7 @@ class BodyCharacterRigBuildPlan:
     shared_input_stable: bool
     torso: BodyTorsoBuildPlan | None = None
     control_spaces: BodyControlSpacesPlan | None = None
+    direct_fk_scales: tuple[BodyDirectFkScaleSpec, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -235,6 +248,11 @@ class BuildBodyCharacterRig:
             body_root_via_controls=include_torso,
         )
         spaces = plan_body_control_spaces(safety.body, torso.torso, arm, leg, global_control) if include_control_spaces else None
+        direct_controls = (
+            (torso.torso.controls.controls if torso else ())
+            + (hand.controls.controls if hand else ()))
+        direct_fk_scales = plan_body_direct_fk_scales(
+            safety.body, direct_controls)
         collisions = tuple(sorted({
             path
             for name in global_control.node_names + (spaces.node_names if spaces else ())
@@ -249,6 +267,7 @@ class BuildBodyCharacterRig:
             global_name_collisions=collisions,
             torso=torso,
             control_spaces=spaces,
+            direct_fk_scales=direct_fk_scales,
             shared_input_stable=(
                 arm.safety == leg.safety
                 and (hand is None or hand.safety == arm.safety)
@@ -317,6 +336,13 @@ class BuildBodyCharacterRig:
             )
             torso = self._torso.build_in_transaction(plan.torso) if plan.torso else None
             self._host.create_body_character_global(plan.global_control)
+            for spec in plan.direct_fk_scales:
+                self._host.preflight_body_direct_fk_scale(spec)
+            for spec in plan.direct_fk_scales:
+                self._host.connect_body_direct_fk_scale(spec)
+            if any(not self._host.capture_body_direct_fk_scale(spec)
+                   for spec in plan.direct_fk_scales):
+                raise RuntimeError("Body FK 缩放连接不一致")
             global_control = self._host.capture_body_character_global(
                 plan.global_control
             )

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
 
 from .fit_part import FitPartJointSpec
 
@@ -16,11 +15,9 @@ class FitPartScaleStep:
 
 
 @dataclass(frozen=True, slots=True)
-class FitPartBodyScaleChain:
+class FitPartInheritedScaleChain:
     start_body_name: str
     part_names: tuple[str, ...]
-    source_plug: str
-    use_offset_parent_matrix: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,13 +44,11 @@ class FitPartLimbScaleChain:
 class FitPartScalePlan:
     direct: tuple[FitPartScaleStep, ...]
     limbs: tuple[FitPartLimbScaleChain, ...]
-    bodies: tuple[FitPartBodyScaleChain, ...] = ()
+    inherited: tuple[FitPartInheritedScaleChain, ...] = ()
 
 
 def plan_fit_part_scale(
     parts: tuple[FitPartJointSpec, ...],
-    *,
-    body_scale_sources: Mapping[str, str] | None = None,
 ) -> FitPartScalePlan:
     """Use explicit FK/IK volume for limbs and Body scale for other chains.
 
@@ -64,12 +59,11 @@ def plan_fit_part_scale(
     if len({part.name for part in parts}) != len(parts):
         raise ValueError("Fit Part 缩放计划存在重名关节")
     grouped: dict[str, list[FitPartJointSpec]] = {}
-    body_scale_sources = body_scale_sources or {}
     for part in parts:
         grouped.setdefault(part.start_body_name, []).append(part)
     direct = []
     limbs = []
-    bodies = []
+    inherited = []
     for start, chain in grouped.items():
         chain.sort(key=lambda part: part.index)
         stem, side = start.rsplit("_", 1)
@@ -92,15 +86,11 @@ def plan_fit_part_scale(
                 prefix + "ScaleCompose" if use_opm else None,
                 prefix + "ScaleMatrix" if use_opm else None,
             ))
+        elif not use_opm:
+            direct.extend(FitPartScaleStep(
+                part.name, start, start + ".scale", part.name + ".scale",
+            ) for part in chain)
         else:
-            source = body_scale_sources.get(chain[0].start_body)
-            if source:
-                bodies.append(FitPartBodyScaleChain(
-                    start, tuple(part.name for part in chain),
-                    source, use_opm))
-            if not use_opm:
-                direct.extend(FitPartScaleStep(
-                    part.name, start, start + ".scale",
-                    part.name + ".scale",
-                ) for part in chain)
-    return FitPartScalePlan(tuple(direct), tuple(limbs), tuple(bodies))
+            inherited.append(FitPartInheritedScaleChain(
+                start, tuple(part.name for part in chain)))
+    return FitPartScalePlan(tuple(direct), tuple(limbs), tuple(inherited))
