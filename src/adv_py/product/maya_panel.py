@@ -151,6 +151,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.tabs.addTab(self._face_page(), "面部")
             self.tabs.addTab(self._mocap_page(), "动捕")
             self.tabs.addTab(self._publish_page(), "发布")
+            self.tabs.addTab(self._display_page(), "显示")
             layout.addWidget(self.tabs, 1)
             layout.addWidget(QtWidgets.QLabel("最近操作"))
             self.status = QtWidgets.QPlainTextEdit()
@@ -1312,6 +1313,37 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
             stack.addStretch(1)
             return page
+
+        def _display_page(self):
+            page, stack = self._page()
+            group, form = self._group("00 · Display", [])
+            for label, operation in (("MotionSystem", "motion"),
+                                     ("Joints", "joints"),
+                                     ("Joint axis", "axes")):
+                row = QtWidgets.QHBoxLayout()
+                row.addWidget(self._button(
+                    "隐藏", lambda op=operation: self._set_rig_display(op, False)))
+                row.addWidget(self._button(
+                    "显示", lambda op=operation: self._set_rig_display(op, True)))
+                form.addRow(label, row)
+            self.display_joint_size = QtWidgets.QDoubleSpinBox()
+            self.display_joint_size.setRange(0.01, 10.0)
+            self.display_joint_size.setDecimals(2)
+            self.display_joint_size.setSingleStep(0.1)
+            self.display_joint_size.setValue(1.0)
+            form.addRow("Joint Size", self.display_joint_size)
+            form.addRow(self._button("设置关节尺寸", lambda:
+                self._set_rig_display("joint_size",
+                                      self.display_joint_size.value())))
+            stack.addWidget(group)
+            stack.addStretch(1)
+            return page
+
+        def _set_rig_display(self, operation, value):
+            state = self.controller.rig_display(
+                self._namespace(), operation, value)
+            return ("已设置 " + operation + "；当前关节尺寸 "
+                    + f"{state.joint_size:.2f}")
 
         def _mocap_page(self):
             page, stack = self._page()

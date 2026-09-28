@@ -874,6 +874,15 @@ class MayaPanelController:
         plan = SwitchBodyGameScaling(host).apply(enable=enable)
         return len(plan.joints)
 
+    def rig_display(self, namespace: str, operation: str,
+                    value: bool | float):
+        from adv_py.adapters.maya_rig_display import MayaRigDisplayHost
+        from adv_py.application.rig_display import SetRigDisplay
+
+        host = MayaRigDisplayHost(
+            namespace=None if namespace == ":" else namespace)
+        return SetRigDisplay(host).apply(operation, value)
+
     def unreal_rename(self, namespace: str):
         from adv_py.adapters.maya_unreal_rename import MayaUnrealRenameHost
         from adv_py.application.unreal_rename import RenameToUnreal
