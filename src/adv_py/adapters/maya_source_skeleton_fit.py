@@ -56,8 +56,19 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                 optional_int(path, "twistJoints"),
                 optional_int(path, "inbetweenJoints"),
                 optional_bool(path, "unTwister"),
-                optional_profile(path)))
+                optional_profile(path),
+                int(cmds.getAttr(path + ".rotateOrder"))))
         return tuple(joints)
+
+    def write_fit_rotation_order(self, joint: str, order: int) -> None:
+        self._require_transaction()
+        if type(order) is not int or not 0 <= order <= 5:
+            raise ValueError("Fit 旋转顺序无效")
+        orders = ("xyz", "yzx", "zxy", "xzy", "yxz", "zyx")
+        self._transaction_changed = True
+        self._cmds.xform(joint, preserve=True, rotateOrder=orders[order])
+        if int(self._cmds.getAttr(joint + ".rotateOrder")) != order:
+            raise RuntimeError("Fit 旋转顺序写入失败：" + joint)
 
     def write_fit_deform_profile(self, joint: str,
                                  profile: FitDeformProfile) -> None:
