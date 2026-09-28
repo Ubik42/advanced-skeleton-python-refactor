@@ -1098,6 +1098,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             ):
                 raise RuntimeError("角色总控层级路径漂移")
 
+            if plan.fit_height is not None:
+                self._cmds.addAttr(control, longName="height",
+                                   attributeType="double")
+                self._cmds.setAttr(control + ".height", plan.fit_height,
+                                   lock=True)
+
             self._cmds.addAttr(
                 control,
                 longName=plan.scale_attribute,
@@ -1517,6 +1523,13 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             control_translation=vector(control, "translate"),
             control_rotation=vector(control, "rotate"),
             control_scale=vector(control, "scale"),
+            fit_height=(float(self._cmds.getAttr(control + ".height"))
+                        if self._cmds.attributeQuery("height", node=control,
+                                                     exists=True) else None),
+            fit_height_locked=(bool(self._cmds.getAttr(
+                control + ".height", lock=True))
+                if self._cmds.attributeQuery("height", node=control,
+                                             exists=True) else False),
             scale_attribute_plug=scale_plug,
             scale_attribute_value=float(self._cmds.getAttr(scale_plug)),
             scale_attribute_minimum=(

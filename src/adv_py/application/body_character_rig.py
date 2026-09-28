@@ -10,6 +10,7 @@ from adv_py.core.body_character_global import (
     BodyPoleArrowSpec,
     BodyHeadAimFollowSpec,
     audit_body_character_global,
+    fit_character_height,
     plan_body_character_global,
 )
 from adv_py.core.body_hand_fit import (
@@ -247,6 +248,9 @@ class BuildBodyCharacterRig:
         )
         global_control = plan_body_character_global(
             up_axis=self._host.scene_up_axis(),
+            fit_height=fit_character_height(tuple(
+                node.world_position for node in
+                safety.symmetry.source.hierarchy.joints)),
             body_root=arm.safety.body.root,
             driven_roots=driven_roots,
             scale_destinations=(

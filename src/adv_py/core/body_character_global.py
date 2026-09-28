@@ -112,6 +112,7 @@ class BodyCharacterGlobalPlan:
     head_aim_follow: BodyHeadAimFollowSpec | None
     root_follow_main_path: str | None = None
     root_follow_use_opm: bool = False
+    fit_height: float | None = None
 
     @property
     def root_follow_constraint_name(self) -> str | None:
@@ -277,6 +278,8 @@ class BodyCharacterGlobalSnapshot:
                                   str | None, str | None] | None = None
     root_follow_matrix_state: tuple[str, str, str | None, str | None,
                                     str | None, bool] | None = None
+    fit_height: float | None = None
+    fit_height_locked: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -286,12 +289,27 @@ class BodyCharacterGlobalIssue:
     subject: str | None = None
 
 
+def fit_character_height(positions: tuple[Vector3, ...]) -> float:
+    """Main.height: world-Y extent of Fit joints, ground-based for one joint."""
+    if (not positions or any(len(point) != 3 or
+            any(not isinstance(value, (int, float)) or
+                not isfinite(float(value)) for value in point)
+            for point in positions)):
+        raise BodyCharacterGlobalValidationError("Fit 关节世界坐标无效")
+    ys = [float(point[1]) for point in positions]
+    height = (max(ys) - min(ys) if len(ys) > 1 else max(0.0, ys[0]))
+    if height <= 0.0:
+        raise BodyCharacterGlobalValidationError("Fit 骨架世界 Y 高度须大于零")
+    return height
+
+
 def plan_body_character_global(
     *,
     up_axis: FitUpAxis,
     body_root: str,
     driven_roots: tuple[str, ...],
     scale_destinations: tuple[str, ...],
+    fit_height: float | None = None,
     radius: float = 12.0,
     body_root_via_controls: bool = False,
     finger_visibility_paths: tuple[str, ...] = (),
@@ -378,6 +396,11 @@ def plan_body_character_global(
         or not isinstance(radius, (int, float))
         or not isfinite(float(radius))
         or float(radius) <= 0.0
+        or (fit_height is not None and (
+            isinstance(fit_height, bool)
+            or not isinstance(fit_height, (int, float))
+            or not isfinite(float(fit_height))
+            or float(fit_height) <= 0.0))
     ):
         raise BodyCharacterGlobalValidationError(
             "角色总控的宿主轴、根节点、缩放目标或半径无效"
@@ -406,6 +429,7 @@ def plan_body_character_global(
         shape_name=f"{control_name}Shape",
         up_axis=up_axis,
         radius=float(radius),
+        fit_height=float(fit_height) if fit_height is not None else None,
         scale_attribute="globalScale",
         scale_default=1.0,
         scale_minimum=0.0001,
@@ -487,6 +511,15 @@ def audit_body_character_global(
         issues.append(BodyCharacterGlobalIssue(
             "control_mismatch",
             "角色总控曲线、通道或 uniform scale 属性不一致",
+            plan.control_path,
+        ))
+    if (plan.fit_height is not None and
+            (snapshot.fit_height is None
+            or abs(snapshot.fit_height - plan.fit_height) > tolerance
+            or not snapshot.fit_height_locked)):
+        issues.append(BodyCharacterGlobalIssue(
+            "fit_height_mismatch",
+            "角色总控 height 与 Fit 骨架高度不一致",
             plan.control_path,
         ))
 
