@@ -73,6 +73,11 @@ def character_channels(rig):
             add("hand.fk."+control.control_name.removeprefix("AdvPy_"),control.control_path,rotation)
         for attr in p.hand.pose.attributes:
             add("hand."+attr.side.value,attr.root_path,(attr.name,))
+    for spec in p.fk_globals:
+        add("fk.global." + spec.control.rsplit("|", 1)[-1],
+            spec.control,
+            ("Global", "GlobalTranslate") if spec.translate
+            else ("Global",))
     return tuple(rows)
 
 

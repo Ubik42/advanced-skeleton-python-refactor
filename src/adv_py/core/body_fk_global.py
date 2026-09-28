@@ -71,8 +71,13 @@ class BodyFkGlobalSpec:
 class BodyFkGlobalState:
     control: str
     extra: str
+    extra_parent: str | None
     weight: float | None
     translate_weight: float | None
+    weight_range: tuple[float, float] | None
+    translate_weight_range: tuple[float, float] | None
+    weight_keyable: bool
+    translate_weight_keyable: bool | None
     nodes: tuple[tuple[str, str], ...]
     sources: tuple[tuple[str, str | None], ...]
     rotate_pick_flags: tuple[bool, bool, bool, bool] | None
@@ -127,10 +132,18 @@ def audit_body_fk_global(
 ) -> tuple[str, ...]:
     errors: list[str] = []
     if (state.control != spec.control or state.extra != spec.extra
+            or state.extra_parent != spec.offset
             or state.weight != spec.default_weight
             or state.translate_weight != (
                 spec.default_weight if spec.translate else None)):
         errors.append("Global 控制属性不一致")
+    if (state.weight_range != (0.0, 10.0)
+            or state.translate_weight_range != (
+                (0.0, 10.0) if spec.translate else None)
+            or not state.weight_keyable
+            or state.translate_weight_keyable != (
+                True if spec.translate else None)):
+        errors.append("Global 权重通道范围或动画状态不一致")
     expected_types = (
         (spec.matrix_name, "multMatrix"),
         (spec.rotate_pick_name, "pickMatrix"),

@@ -341,6 +341,9 @@ class BuildBodyCharacterRig:
             arm.fk_controls.controls + leg.fk_controls.controls
             + (hand.controls.controls if hand else ())
             + (torso.torso.controls.controls if torso else ()))
+        if fk_globals and global_follow_path is None:
+            raise FitSkeletonValidationError(
+                "Fit Global 控制需要标准 Body 的 GlobalSystem 层级")
         collisions = tuple(sorted({
             path
             for name in (global_control.node_names

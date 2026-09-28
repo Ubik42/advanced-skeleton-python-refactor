@@ -8098,6 +8098,21 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             return tuple(bool(c.getAttr(node + ".use" + name))
                          for name in ("Translate", "Rotate", "Scale", "Shear"))
 
+        def channel_range(name: str) -> tuple[float, float] | None:
+            if not (c.attributeQuery(name, node=spec.control,
+                                     exists=True)
+                    and c.attributeQuery(name, node=spec.control,
+                                         minExists=True)
+                    and c.attributeQuery(name, node=spec.control,
+                                         maxExists=True)):
+                return None
+            minimum = c.attributeQuery(name, node=spec.control,
+                                       minimum=True) or []
+            maximum = c.attributeQuery(name, node=spec.control,
+                                       maximum=True) or []
+            return ((float(minimum[0]), float(maximum[0]))
+                    if len(minimum) == len(maximum) == 1 else None)
+
         bind_matrix = None
         if c.objExists(spec.matrix_name):
             values = c.getAttr(spec.matrix_name + ".matrixIn[0]")
@@ -8110,6 +8125,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         return BodyFkGlobalState(
             control=spec.control,
             extra=spec.extra,
+            extra_parent=((c.listRelatives(spec.extra, parent=True,
+                                           fullPath=True) or [None])[0]
+                          if c.objExists(spec.extra) else None),
             weight=(float(c.getAttr(spec.control + ".Global"))
                     if c.attributeQuery("Global", node=spec.control,
                                         exists=True) else None),
@@ -8117,6 +8135,19 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 float(c.getAttr(spec.control + ".GlobalTranslate"))
                 if c.attributeQuery("GlobalTranslate", node=spec.control,
                                     exists=True) else None),
+            weight_range=channel_range("Global"),
+            translate_weight_range=(channel_range("GlobalTranslate")
+                                    if spec.translate else None),
+            weight_keyable=(bool(c.getAttr(spec.control + ".Global",
+                                           keyable=True))
+                            if c.attributeQuery("Global", node=spec.control,
+                                                exists=True) else False),
+            translate_weight_keyable=(
+                bool(c.getAttr(spec.control + ".GlobalTranslate",
+                               keyable=True))
+                if spec.translate and c.attributeQuery(
+                    "GlobalTranslate", node=spec.control, exists=True)
+                else (False if spec.translate else None)),
             nodes=tuple((name, c.nodeType(name) if c.objExists(name) else "")
                         for name in spec.node_names),
             sources=tuple((plug, source(plug)) for plug, _ in
