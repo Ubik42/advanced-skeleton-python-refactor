@@ -26,6 +26,19 @@ class MayaCharacterRegistryMixin:
         from adv_py.core.character_preservation import validate_rebuild_layout
         generated = replacement
         by_key = {channel.key:channel for channel in replacement.channels}
+        old_keys = {channel.key for channel in original.channels}
+        follow_key = 'head.aim.target.follow'
+        if (follow_key in by_key and follow_key not in old_keys
+                and set(by_key) - old_keys == {follow_key}):
+            # Older registered rigs used the AimSystem/Main frame only.
+            # Keep that motion when rebuilding their existing animation.
+            with stage.transaction('Preserve legacy Head Aim follow mode'):
+                stage._transaction_changed=True
+                stage._cmds.setAttr(by_key[follow_key].node + '.follow', 0.0)
+            replacement=replace(replacement,channels=tuple(
+                channel for channel in replacement.channels
+                if channel.key != follow_key))
+            by_key = {channel.key:channel for channel in replacement.channels}
         if set(by_key)=={channel.key for channel in original.channels}:
             replacement=replace(replacement,channels=tuple(by_key[channel.key] for channel in original.channels))
         validate_rebuild_layout(original,replacement)
