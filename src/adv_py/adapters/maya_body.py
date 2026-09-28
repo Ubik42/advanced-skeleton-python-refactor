@@ -250,6 +250,7 @@ from .maya_fit_inbetween import MayaFitInbetweenMixin
 from .maya_fit_inbetween_spline_ik import MayaInbetweenSplineIkMixin
 from .maya_fit_inbetween_hip_swing import MayaHipSwingReverseMixin
 from .maya_fit_hip_swing_no_parts import MayaHipSwingNoPartsMixin
+from .maya_body_parent_constraint import MayaBodyParentConstraintMixin
 
 
 _MAYA_SIDE_FROM_CORE = {
@@ -282,7 +283,7 @@ _BODY_EXPORT_BAKE_ATTRIBUTES = {
 }
 
 
-class MayaBodyBuildHost(MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
+class MayaBodyBuildHost(MayaBodyParentConstraintMixin, MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
     """Maya scene adapter for the first materialized Body skeleton stage."""
 
     def copy_external_mesh_for_character(self, mesh_path: str) -> str:
