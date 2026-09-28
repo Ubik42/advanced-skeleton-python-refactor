@@ -881,7 +881,10 @@ def create_panel(controller: MayaPanelController | None = None):
             row.addWidget(self._button("捕获姿态", self._capture_pose))
             row.addWidget(self._button("应用姿态", self._apply_pose))
             form.addRow(row)
-            form.addRow(self._button("返回构建姿态", self._go_to_build_pose))
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("返回构建姿态", self._go_to_build_pose))
+            row.addWidget(self._button("设置构建姿态", self._set_build_pose))
+            form.addRow(row)
             stack.addWidget(group)
 
             clip_out, self.animation_export_document = self._file_field(
@@ -1593,6 +1596,10 @@ def create_panel(controller: MayaPanelController | None = None):
         def _go_to_build_pose(self):
             count = self.controller.pose_to_build(self._namespace())
             return f"已复位 {count} 个构建姿态通道"
+
+        def _set_build_pose(self):
+            count = self.controller.pose_set_build(self._namespace())
+            return f"已保存 {count} 个构建姿态覆盖通道"
 
         def _apply_animation(self):
             count = self.controller.animation_apply(self._namespace(),
