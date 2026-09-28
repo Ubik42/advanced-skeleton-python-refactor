@@ -36,7 +36,8 @@ class MayaBodyParentConstraintMixin:
         if drivers[0] != driver or drivens[0] != driven or driver == driven:
             raise ValueError("Body Parent Constraint 需要不同的完整 DAG 路径")
         if self.namespace is not None and not all(
-                self._cmds.identity.owns(node) for node in (driver, driven)):
+                self._cmds.identity.owns(self.scene_address(node))
+                for node in (driver, driven)):
             raise ValueError("约束来源和目标必须属于当前角色")
         if driver.startswith(driven + "|"):
             raise ValueError("不能用目标的后代驱动目标")
