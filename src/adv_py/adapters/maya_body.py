@@ -437,7 +437,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         """Reserve the original rig's Group and DeformationSystem before Body."""
         self._require_transaction()
         if any(self.find_name_collisions(name)
-               for name in ("Group", "DeformationSystem", "Geometry")):
+               for name in ("Group", "DeformationSystem", "Geometry",
+                            "MotionSystem", "FKSystem")):
             raise FitSkeletonValidationError(
                 "Group、DeformationSystem 或 Geometry 已存在")
         group = self._cmds.createNode(
@@ -447,6 +448,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             skipSelect=True)
         geometry = self._cmds.createNode(
             "transform", name="Geometry", parent=group,
+            skipSelect=True)
+        motion = self._cmds.createNode(
+            "transform", name="MotionSystem", parent=group,
+            skipSelect=True)
+        self._cmds.createNode(
+            "transform", name="FKSystem", parent=motion,
             skipSelect=True)
         for kind in ("translate", "rotate", "scale"):
             for axis in "XYZ":
@@ -538,6 +545,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 "构建完成的 Fit 容器可见性必须关闭并锁定")
         paths = ("|Group", fit_container_path,
                  "|Group|DeformationSystem", "|Group|Geometry",
+                 "|Group|MotionSystem", "|Group|MotionSystem|FKSystem",
                  body_root_path)
         rows = []
         for path in paths:
@@ -784,11 +792,14 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         if self.find_name_collisions(name):
             raise FitSkeletonValidationError(f"Body 控制根名称冲突：{name}")
         self._transaction_changed = True
-        created = self._cmds.createNode(
-            "transform",
-            name=name,
-            skipSelect=True,
-        )
+        parent = ("|Group|MotionSystem|FKSystem"
+                  if name in ("AdvPy_ArmFKControls", "AdvPy_LegFKControls")
+                  and self._cmds.objExists("|Group|MotionSystem|FKSystem")
+                  else None)
+        options = {"name": name, "skipSelect": True}
+        if parent is not None:
+            options["parent"] = parent
+        created = self._cmds.createNode("transform", **options)
         return (self._cmds.ls(created, long=True) or [created])[0]
 
     def create_body_character_global(
@@ -816,7 +827,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             if any(
                 self.find_name_collisions(name)
                 for name in plan.node_names
-                if not (name == "Group" and self._cmds.objExists(
+                if not (name in ("Group", "MotionSystem") and self._cmds.objExists(
                     "|Group|DeformationSystem"))
             ):
                 raise FitSkeletonValidationError(
@@ -842,7 +853,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     len(matches) != 1
                     or matches[0] != path
                     or self._cmds.nodeType(path) not in ("transform", "joint")
-                    or parent
+                    or (parent[0] if parent else None)
+                    != (path.rsplit("|", 1)[0] or None)
                     or any(source(plug) is not None for plug in channels)
                     or any(
                         not bool(self._cmds.getAttr(plug, settable=True))
@@ -875,18 +887,22 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         or not self._cmds.objExists(
                             "|Group|DeformationSystem")
                         or self._cmds.nodeType(
-                            "|Group|DeformationSystem") != "transform"):
+                            "|Group|DeformationSystem") != "transform"
+                        or (self._cmds.ls(
+                            plan.motion_system_path, long=True,
+                            type="transform") or [])
+                        != [plan.motion_system_path]):
                     raise FitSkeletonValidationError(
-                        "角色总控发现不完整的 Group／DeformationSystem")
+                        "角色总控发现不完整的 Group／MotionSystem")
                 group = existing_group[0]
             else:
                 group = self._cmds.createNode(
                     "transform", name="Group", skipSelect=True,
                 )
-            motion = self._cmds.createNode(
-                "transform", name="MotionSystem", parent=group,
-                skipSelect=True,
-            )
+            motion = (plan.motion_system_path if existing_group else
+                      self._cmds.createNode(
+                          "transform", name="MotionSystem", parent=group,
+                          skipSelect=True))
             main_system = self._cmds.createNode(
                 "transform", name="MainSystem", parent=motion,
                 skipSelect=True,

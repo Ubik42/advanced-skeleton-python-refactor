@@ -222,7 +222,8 @@ class BuildRegisteredBodyCharacter:
             raise ValueError("扭转来源只能随通用 Fit Part 构建提供")
         if not _hierarchy_prepared:
             hierarchy_collisions = tuple(
-                path for name in ("Group", "DeformationSystem", "Geometry")
+                path for name in ("Group", "DeformationSystem", "Geometry",
+                                  "MotionSystem", "FKSystem")
                 for path in self._host.find_name_collisions(name))
             if hierarchy_collisions:
                 raise FitSkeletonValidationError(
@@ -667,6 +668,9 @@ class BuildRegisteredBodyCharacter:
                 (container_name, "|Group", "transform"),
                 (_DEFORMATION_SYSTEM_PATH, "|Group", "transform"),
                 ("|Group|Geometry", "|Group", "transform"),
+                ("|Group|MotionSystem", "|Group", "transform"),
+                ("|Group|MotionSystem|FKSystem",
+                 "|Group|MotionSystem", "transform"),
                 (skeleton.snapshot.root, _DEFORMATION_SYSTEM_PATH, "joint"),
             ):
                 raise RuntimeError("角色主构建结束时 Body 变形系统层级不一致")

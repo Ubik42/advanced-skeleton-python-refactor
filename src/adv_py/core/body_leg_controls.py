@@ -39,6 +39,9 @@ def plan_body_leg_fk_controls(
         driven_joint_by_source=driven_joint_by_source,
         sub_controllers=sub_controllers,
         extra_controllers=extra_controllers,
+        root_parent_path=("|Group|MotionSystem|FKSystem"
+                          if body.root.startswith("|Group|DeformationSystem|")
+                          else None),
     )
 
 

@@ -145,7 +145,9 @@ def plan_body_character_global(
         or any(
             not isinstance(path, str)
             or not path.startswith("|")
-            or path.count("|") != 1
+            or (path.count("|") != 1 and not (
+                path.startswith("|Group|MotionSystem|FKSystem|")
+                and path.count("|") == 4))
             for path in driven_roots
         )
         or not isinstance(scale_destinations, tuple)
@@ -281,7 +283,7 @@ def audit_body_character_global(
         if state is None:
             continue
         if not (
-            state.parent_path is None
+            state.parent_path == (path.rsplit("|", 1)[0] or None)
             and state.translation_sources == expected_translate
             and state.rotation_sources == expected_rotate
             and state.scale_sources == expected_scale

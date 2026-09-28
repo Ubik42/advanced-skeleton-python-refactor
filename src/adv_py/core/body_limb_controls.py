@@ -126,6 +126,7 @@ def plan_body_limb_fk_controls(
     driven_joint_by_source: Mapping[str, str] | None = None,
     sub_controllers: bool = False,
     extra_controllers: bool = False,
+    root_parent_path: str | None = None,
 ) -> BodyLimbFkControlPlan:
     if type(sub_controllers) is not bool or type(extra_controllers) is not bool:
         raise BodyLimbControlValidationError("FK 控制器开关必须是布尔值")
@@ -185,7 +186,11 @@ def plan_body_limb_fk_controls(
             )
 
     root_name = f"AdvPy_{limb_label}FKControls"
-    root_path = f"|{root_name}"
+    if root_parent_path is not None and (
+            not root_parent_path.startswith("|")
+            or any(not part for part in root_parent_path[1:].split("|"))):
+        raise BodyLimbControlValidationError("FK 控制系统父级路径无效")
+    root_path = (root_parent_path or "") + "|" + root_name
     controls: list[BodyLimbFkControlSpec] = []
     for suffix, side in (("R", FitBuildSide.RIGHT), ("L", FitBuildSide.LEFT)):
         parent_path = root_path
