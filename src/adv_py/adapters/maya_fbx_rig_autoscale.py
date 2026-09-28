@@ -44,10 +44,12 @@ def _best_bound_mesh(cmds, meshes: tuple[str, ...]) -> str:
 def _project_curve(cmds, control: str, shape: str, mesh: str) -> int:
     """Use the MEL orbital ray and nearest positive projected curve hit."""
     origin = _world_position(cmds, control)
-    aim = cmds.createNode("transform", name="AdvPy_FBX_ProjectAim#")
-    target = cmds.createNode("transform", name="AdvPy_FBX_ProjectTarget#")
+    aim = cmds.createNode("transform", name="AdvPy_FBX_ProjectAim#",
+                          skipSelect=True)
+    target = cmds.createNode("transform", name="AdvPy_FBX_ProjectTarget#",
+                             skipSelect=True)
     probe = cmds.createNode("transform", name="AdvPy_FBX_ProjectProbe#",
-                            parent=aim)
+                            parent=aim, skipSelect=True)
     cmds.xform(aim, worldSpace=True, translation=origin)
     constraint = cmds.aimConstraint(
         target, aim, aimVector=(0, 0, 1), upVector=(1, 0, 0),
@@ -74,10 +76,12 @@ def _project_curve(cmds, control: str, shape: str, mesh: str) -> int:
                              name="AdvPy_FBX_ProjectRay#")
             projected = ()
             try:
-                projected = tuple(cmds.polyProjectCurve(
+                result = cmds.polyProjectCurve(
                     ray, mesh, constructionHistory=True, direction=direction,
                     pointsOnEdges=False, curveSamples=3,
-                    automatic=False) or ())
+                    automatic=False)
+                projected = ((result,) if isinstance(result, str)
+                             else tuple(result or ()))
                 if not projected:
                     continue
                 candidates = cmds.listRelatives(projected[0], children=True,
@@ -103,7 +107,7 @@ def _project_curve(cmds, control: str, shape: str, mesh: str) -> int:
                 changed += 1
             finally:
                 if projected:
-                    cmds.delete(projected[0])
+                    cmds.delete(*projected)
                 cmds.delete(ray)
     finally:
         cmds.delete(target, aim)
@@ -121,23 +125,30 @@ def project_fbx_fk_controls(
     if not eligible:
         return 0
     mesh = _best_bound_mesh(cmds, bound_meshes)
-    changed = sum(_project_curve(cmds, name, shapes[name], mesh)
-                  for name in eligible)
-    for right in eligible:
-        if not right.endswith("_R"):
-            continue
-        left = right[:-2] + "_L"
-        if left not in shapes:
-            continue
-        right_cvs = _cvs(cmds, shapes[right])
-        left_cvs = _cvs(cmds, shapes[left])
-        if len(right_cvs) != len(left_cvs):
-            raise RuntimeError("FBX rig 左右控制曲线 CV 数量不同：" + right)
-        for source, destination in zip(right_cvs, left_cvs):
-            x, y, z = _world_position(cmds, source)
-            expected = (-x, y, z)
-            cmds.xform(destination, worldSpace=True, translation=expected)
-            if any(abs(actual - wanted) > 1e-4 for actual, wanted
-                   in zip(_world_position(cmds, destination), expected)):
-                raise RuntimeError("FBX rig 左侧控制曲线镜像失败：" + left)
-    return changed
+    selection = tuple(cmds.ls(selection=True, long=True) or ())
+    try:
+        changed = sum(_project_curve(cmds, name, shapes[name], mesh)
+                      for name in eligible)
+        for right in eligible:
+            if not right.endswith("_R"):
+                continue
+            left = right[:-2] + "_L"
+            if left not in shapes:
+                continue
+            right_cvs = _cvs(cmds, shapes[right])
+            left_cvs = _cvs(cmds, shapes[left])
+            if len(right_cvs) != len(left_cvs):
+                raise RuntimeError("FBX rig 左右控制曲线 CV 数量不同：" + right)
+            for source, destination in zip(right_cvs, left_cvs):
+                x, y, z = _world_position(cmds, source)
+                expected = (-x, y, z)
+                cmds.xform(destination, worldSpace=True, translation=expected)
+                if any(abs(actual - wanted) > 1e-4 for actual, wanted
+                       in zip(_world_position(cmds, destination), expected)):
+                    raise RuntimeError("FBX rig 左侧控制曲线镜像失败：" + left)
+        return changed
+    finally:
+        if selection:
+            cmds.select(selection, replace=True)
+        else:
+            cmds.select(clear=True)
