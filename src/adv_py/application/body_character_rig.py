@@ -205,7 +205,10 @@ class BuildBodyCharacterRig:
         torso_control_radius: float = 1.5,
         axial_description=None,
         include_head_aim: bool = False,
+        defer_fit_tweakers: bool = False,
     ) -> BodyCharacterRigBuildPlan:
+        if type(defer_fit_tweakers) is not bool:
+            raise FitSkeletonValidationError("Tweaker 延后构建选项必须是布尔值")
         if not isinstance(include_head_aim,bool) or (include_head_aim and not include_torso):
             raise FitSkeletonValidationError('头部瞄准需要显式启用 Torso')
         if axial_description is not None and not include_torso:
@@ -219,7 +222,7 @@ class BuildBodyCharacterRig:
         safety = self._inspector.execute(
             container_name, root_name=body_root_name, center_tolerance=center_tolerance,
         )
-        if (BodyBuildOptions.from_fit_settings(
+        if (not defer_fit_tweakers and BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).use_offset_parent_matrix
                 and any(item.tweaker_control
                         for item in safety.symmetry.source.metadata)):
@@ -443,6 +446,7 @@ class BuildBodyCharacterRig:
         torso_control_radius: float = 1.5,
         axial_description=None,
         include_head_aim: bool = False,
+        defer_fit_tweakers: bool = False,
     ) -> BodyCharacterRigBuildResult:
         plan = self.plan(
             container_name,
@@ -457,6 +461,7 @@ class BuildBodyCharacterRig:
             torso_control_radius=torso_control_radius,
             axial_description=axial_description,
             include_head_aim=include_head_aim,
+            defer_fit_tweakers=defer_fit_tweakers,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
             center_tolerance=center_tolerance,

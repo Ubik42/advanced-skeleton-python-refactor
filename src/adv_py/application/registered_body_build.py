@@ -8,6 +8,7 @@ from adv_py.core.character_registry import CharacterRegistration
 from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_part import rebase_plan_paths_after_parts
+from adv_py.core.fit_tweaker import plan_fit_tweakers
 from adv_py.core.fit_bendy import plan_fit_bendy_chains
 from adv_py.core.fit_inbetween_untwister import InbetweenUnTwisterPlan
 from adv_py.core.fit_inbetween_hip_swing import (
@@ -47,6 +48,8 @@ from .fit_part_twist import (
     BuildFitPartTwistDrivers, PrepareFitPartTwistSources,
 )
 from .fit_part_registration import RegisterFitPartChannels
+from .fit_tweaker import BuildFitTweakers
+from .fit_tweaker_registration import RegisterFitTweakers
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
 from .fit_inbetween_body import plan_combined_part_hierarchy
@@ -274,11 +277,6 @@ class BuildRegisteredBodyCharacter:
         if not preview.ready:
             raise FitSkeletonValidationError(
                 "角色构建预检失败，场景未修改：" + "；".join(preview.blockers))
-        if (preview.build.build_options.use_offset_parent_matrix
-                and any(item.tweaker_control
-                        for item in preview.build.symmetry.source.metadata)):
-            raise FitSkeletonValidationError(
-                "Fit tweakerControl 的 OPM 关节驱动尚未接入 Body 主构建")
         rotation_inputs = ()
         bendy_chains = ()
         untwister_sources: frozenset[str] = frozenset()
@@ -363,7 +361,8 @@ class BuildRegisteredBodyCharacter:
             rig = BuildBodyCharacterRig(joined).apply(container_name,
                 include_torso=True, include_spine_ik=True,
                 include_control_spaces=True, axial_description=axial_description,
-                include_head_aim=include_head_aim)
+                include_head_aim=include_head_aim,
+                defer_fit_tweakers=True)
             if bendy_chains:
                 follows = plan_fit_bendy_follow(bendy_chains, rig.plan)
                 BuildFitBendyGuides(joined).apply(bendy_chains,
@@ -675,7 +674,22 @@ class BuildRegisteredBodyCharacter:
                         "无分段 HipSwinger 接线后 Torso 复检失败："
                         + "；".join(torso_issues))
                 rig = replace(rig, plan=rig_plan, torso=torso_snapshot)
+            tweakers = None
+            if preview.build.build_options.use_offset_parent_matrix:
+                tweakers = plan_fit_tweakers(
+                    part_plan.symmetry.instances,
+                    part_plan.symmetry.source.metadata,
+                    part_plan.fit_parts if fit_part_hierarchy is not None else (),
+                    motion_system_path=(
+                        rig.plan.arm.fk_controls.root_path.rsplit("|", 2)[0]),
+                    global_control_path=rig.plan.global_control.control_path,
+                    final_paths=(fit_part_hierarchy.final_paths
+                                 if fit_part_hierarchy is not None else None))
+                BuildFitTweakers(joined).apply(tweakers)
             registration = RegisterBodyCharacter(joined).apply(rig)
+            if tweakers is not None:
+                registration = RegisterFitTweakers(joined).apply(
+                    registration, tweakers)
             if (fit_part_hierarchy is not None
                     and (twist_steps or (scale_plan is not None
                                          and scale_plan.limbs))):
