@@ -85,7 +85,9 @@ class FBXRigHost(Protocol):
         self, plan: FBXRigImportPlan,
     ) -> tuple[FBXRigFitGuideState, ...]: ...
     def build_fbx_advanced_skeleton(self, plan: FBXRigImportPlan) -> None: ...
-    def enlarge_small_fbx_fk_controls(self, plan: FBXRigImportPlan) -> None: ...
+    def enlarge_small_fbx_fk_controls(
+        self, plan: FBXRigImportPlan, bound_meshes: tuple[str, ...],
+    ) -> None: ...
     def capture_fbx_generated_targets(
         self, plan: FBXRigImportPlan,
     ) -> FBXRigGeneratedTargets: ...
@@ -176,7 +178,8 @@ class BuildFBXRig:
                     raise RuntimeError("FBX rig Fit 创建复检失败："
                                        + "；".join(fit_issues))
                 self._host.build_fbx_advanced_skeleton(plan)
-                self._host.enlarge_small_fbx_fk_controls(plan)
+                self._host.enlarge_small_fbx_fk_controls(
+                    plan, source.bound_meshes)
                 targets = self._host.capture_fbx_generated_targets(plan)
                 transfer = plan_fbx_control_transfer(
                     plan, targets.control_names, targets.deform_joint_names)

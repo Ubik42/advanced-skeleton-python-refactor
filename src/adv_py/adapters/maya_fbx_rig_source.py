@@ -22,6 +22,7 @@ from adv_py.core.joint_labels import JointLabel
 from .maya_source_skeleton_fit import MayaSourceSkeletonFitHost
 from .maya_fbx_rig_transfer import MayaFBXRigTransferMixin
 from .maya_adv_icons import create_adv_icon
+from .maya_fbx_rig_autoscale import project_fbx_fk_controls
 
 
 class MayaFBXRigSourceReader:
@@ -398,21 +399,22 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         deform_names = tuple(path.rsplit("|", 1)[-1] for path in joints)
         return FBXRigGeneratedTargets(controls, deform_names)
 
-    def enlarge_small_fbx_fk_controls(self, plan: FBXRigImportPlan) -> None:
-        """The generic FK plan creates final-size curves; verify each shape."""
+    def enlarge_small_fbx_fk_controls(
+        self, plan: FBXRigImportPlan, bound_meshes: tuple[str, ...],
+    ) -> None:
+        """Fit FK shapes to the bound mesh when the user accepts the prompt."""
         self._require_transaction()
         c = self._cmds
-        for link in plan.candidate_control_links:
-            controls = c.ls(link.control_name, long=True,
-                            type="transform") or ()
-            if len(controls) != 1:
-                raise RuntimeError("FBX rig FK 控制器缺失：" + link.control_name)
-            shapes = c.listRelatives(controls[0], shapes=True,
-                                     noIntermediate=True, fullPath=True,
-                                     type="nurbsCurve") or ()
-            if not shapes:
-                raise RuntimeError("FBX rig FK 控制器没有曲线："
-                                   + link.control_name)
+        answer = c.confirmDialog(
+            title="自动缩放控制器？", message="将 FK 控制曲线贴合角色模型？",
+            button=("是", "否"), defaultButton="是",
+            cancelButton="否", dismissString="否")
+        if answer != "是":
+            return
+        project_fbx_fk_controls(
+            c, tuple(link.control_name for link in plan.candidate_control_links),
+            bound_meshes)
+        self._transaction_changed = True
 
     def connect_fbx_game_root_motion(
         self, plan: FBXRigImportPlan, source_paths: dict[str, str],
