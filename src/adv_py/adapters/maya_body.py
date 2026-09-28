@@ -1119,6 +1119,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 self._cmds.connectAttr(
                     control + ".aimFKVis",
                     aim_fk_shape + ".visibility")
+            for name in plan.reserved_visibility_attributes:
+                self._cmds.addAttr(
+                    control, longName=name, attributeType="bool",
+                    defaultValue=True, keyable=False)
+                self._cmds.setAttr(control + "." + name, channelBox=True)
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
@@ -1302,6 +1307,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             ),
             aim_fk_visibility_value=bool(
                 self._cmds.getAttr(control + ".aimFKVis")),
+            reserved_visibility_values=tuple(
+                (name, bool(self._cmds.getAttr(control + "." + name)))
+                for name in plan.reserved_visibility_attributes),
         )
 
     def create_body_root_motion(self, plan: BodyRootMotionPlan) -> None:

@@ -92,6 +92,11 @@ class BodyCharacterGlobalPlan:
                 + self.aim_fk_control_path.rsplit("|", 1)[-1] + "Shape")
 
     @property
+    def reserved_visibility_attributes(self) -> tuple[str, ...]:
+        # Main declares these even when the corresponding optional rig is absent.
+        return ("aimLRVis", "arrowVis", "drvSysVis")
+
+    @property
     def circle_normal(self) -> Vector3:
         return (
             (0.0, 1.0, 0.0)
@@ -150,6 +155,7 @@ class BodyCharacterGlobalSnapshot:
     finger_visibility_value: bool | None = None
     aim_fk_visibility: tuple[str, bool, str | None] | None = None
     aim_fk_visibility_value: bool | None = None
+    reserved_visibility_values: tuple[tuple[str, bool], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -439,6 +445,13 @@ def audit_body_character_global(
         issues.append(BodyCharacterGlobalIssue(
             "aim_fk_visibility_attribute_mismatch",
             "总控 aimFKVis 属性缺失或默认值不一致",
+            plan.control_path,
+        ))
+    if snapshot.reserved_visibility_values != tuple(
+            (name, True) for name in plan.reserved_visibility_attributes):
+        issues.append(BodyCharacterGlobalIssue(
+            "reserved_visibility_attributes_mismatch",
+            "总控预留显示属性缺失或默认值不一致",
             plan.control_path,
         ))
     return tuple(issues)
