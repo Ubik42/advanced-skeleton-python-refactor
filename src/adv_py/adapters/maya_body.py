@@ -245,6 +245,7 @@ from adv_py.core.fit_symmetry import FitBuildSide
 
 from .maya_fit import MayaFitJointHost
 from .maya_control_curves import MayaControlCurveMixin
+from .maya_adv_icons import create_adv_icon
 from .maya_fit_part import MayaFitPartMixin
 from .maya_fit_bendy import MayaFitBendyMixin
 from .maya_body_selection_sets import MayaBodySelectionSetsMixin
@@ -753,13 +754,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 parent=root,
                 skipSelect=True,
             )
-            control = self._cmds.circle(
-                name=plan.control_name,
-                normal=plan.circle_normal,
-                radius=plan.radius,
-                constructionHistory=False,
-            )[0]
-            control = self._cmds.parent(control, offset)[0]
+            control = create_adv_icon(
+                self._cmds, name=plan.control_name, parent=offset,
+                template="Main_icon", radius=plan.radius,
+                fallback_normal=plan.circle_normal)
             root = (self._cmds.ls(root, long=True) or [root])[0]
             offset = (self._cmds.ls(offset, long=True) or [offset])[0]
             control = (self._cmds.ls(control, long=True) or [control])[0]
@@ -4821,8 +4819,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 raise FitSkeletonValidationError("Arm IK 缺少 Extra 层计划")
             wrist_extra = self._create_body_extra_layer(
                 wrist_offset, spec.wrist_extra_name, spec.wrist_extra_path)
-            wrist = self._cmds.circle(name=spec.wrist_control_name, normal=(1, 0, 0), radius=spec.radius, degree=3, sections=12, constructionHistory=False)[0]
-            wrist = self._cmds.parent(wrist, wrist_extra, relative=True)[0]
+            wrist = create_adv_icon(
+                self._cmds, name=spec.wrist_control_name,
+                parent=wrist_extra, template="IK_icon", radius=spec.radius,
+                fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12)
             wrist = (self._cmds.ls(wrist, long=True) or [wrist])[0]
             pole_offset = self._cmds.createNode("transform", name=spec.pole_offset_name, parent=spec.root_path, skipSelect=True)
             pole_offset = (self._cmds.ls(pole_offset, long=True) or [pole_offset])[0]
@@ -4831,8 +4831,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 raise FitSkeletonValidationError("Arm Pole 缺少 Extra 层计划")
             pole_extra = self._create_body_extra_layer(
                 pole_offset, spec.pole_extra_name, spec.pole_extra_path)
-            pole = self._cmds.circle(name=spec.pole_control_name, normal=(0, 0, 1), radius=spec.radius * 0.65, degree=3, sections=8, constructionHistory=False)[0]
-            pole = self._cmds.parent(pole, pole_extra, relative=True)[0]
+            pole = create_adv_icon(
+                self._cmds, name=spec.pole_control_name,
+                parent=pole_extra, template="Pole_icon",
+                radius=spec.radius * 0.65,
+                fallback_normal=(0.0, 0.0, 1.0))
             pole = (self._cmds.ls(pole, long=True) or [pole])[0]
             if wrist != spec.wrist_control_path or pole != spec.pole_control_path:
                 raise RuntimeError("Arm IK 控制路径漂移")
@@ -4952,15 +4955,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             ankle_extra = self._create_body_extra_layer(
                 ankle_offset, spec.ankle_extra_name,
                 spec.ankle_extra_path)
-            ankle = self._cmds.circle(
-                name=spec.ankle_control_name,
-                normal=(1.0, 0.0, 0.0),
-                radius=spec.radius,
-                degree=3,
-                sections=12,
-                constructionHistory=False,
-            )[0]
-            ankle = self._cmds.parent(ankle, ankle_extra, relative=True)[0]
+            ankle = create_adv_icon(
+                self._cmds, name=spec.ankle_control_name,
+                parent=ankle_extra, template="IK_icon", radius=spec.radius,
+                fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12)
             ankle = (self._cmds.ls(ankle, long=True) or [ankle])[0]
             pole_offset = self._cmds.createNode(
                 "transform",
@@ -4981,15 +4979,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             pole_extra = self._create_body_extra_layer(
                 pole_offset, spec.pole_extra_name,
                 spec.pole_extra_path)
-            pole = self._cmds.circle(
-                name=spec.pole_control_name,
-                normal=(0.0, 0.0, 1.0),
+            pole = create_adv_icon(
+                self._cmds, name=spec.pole_control_name,
+                parent=pole_extra, template="Pole_icon",
                 radius=spec.radius * 0.65,
-                degree=3,
-                sections=8,
-                constructionHistory=False,
-            )[0]
-            pole = self._cmds.parent(pole, pole_extra, relative=True)[0]
+                fallback_normal=(0.0, 0.0, 1.0))
             pole = (self._cmds.ls(pole, long=True) or [pole])[0]
             if (
                 ankle != spec.ankle_control_path
@@ -5383,17 +5377,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             self._cmds.xform(
                 toe_offset, worldSpace=True, matrix=toe_matrix
             )
-            toe_control = self._cmds.circle(
-                name=spec.toe_control_name,
-                normal=(0.0, 1.0, 0.0),
+            toe_control = create_adv_icon(
+                self._cmds, name=spec.toe_control_name,
+                parent=toe_offset, template="IK_icon",
                 radius=spec.toe_control_radius,
-                degree=3,
-                sections=8,
-                constructionHistory=False,
-            )[0]
-            toe_control = self._cmds.parent(
-                toe_control, toe_offset, relative=True
-            )[0]
+                fallback_normal=(0.0, 1.0, 0.0))
             toe_control = (
                 self._cmds.ls(toe_control, long=True) or [toe_control]
             )[0]
@@ -6432,19 +6420,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     raise RuntimeError(
                         f"{limb_label} FK Pose 层路径漂移：{pose_name}"
                     )
-            control = self._cmds.circle(
-                name=spec.control_name,
-                normal=(1.0, 0.0, 0.0),
+            control = create_adv_icon(
+                self._cmds, name=spec.control_name,
+                parent=control_parent, template="FK_icon",
                 radius=spec.radius,
-                degree=3,
-                sections=12,
-                constructionHistory=False,
-            )[0]
-            control = self._cmds.parent(
-                control,
-                control_parent,
-                relative=True,
-            )[0]
+                fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12)
             control = (self._cmds.ls(control, long=True) or [control])[0]
             if offset != spec.offset_path or control != spec.control_path:
                 raise RuntimeError(

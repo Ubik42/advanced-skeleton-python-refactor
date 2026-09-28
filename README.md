@@ -108,6 +108,8 @@ show_panel()
 
 将示例路径改为本机仓库的 `src` 目录。
 
+如本机已安装 AdvancedSkeleton 6.925，可将环境变量 `ADV_6925_ICONS_FILE` 指向安装目录的 `AdvancedSkeletonFiles/div/asIcons.ma`，或把该文件的绝对路径写入用户目录 `~/.adv_py/as_icons_path.txt`。Body 主构建会从本机文件读取 Main、FK、IK、Pole 控制曲线；未配置时沿用工程原有曲线。原版图标文件不随仓库分发。
+
 ### 3. 构建第一套角色
 
 在 `Body / Fit` 创建示例 Fit，或选中已有标准骨架根关节后从骨架生成 Fit。调整 Fit 后，在 `Body / Build` 选中未绑定网格并填入，执行“构建并登记角色”；也可记录来源骨架根关节与网格，直接执行“从来源骨架直接构建角色”。随后在 `Body / Pose` 写入控制器关键帧，在 `Publish / FBX` 导出动画。
