@@ -116,6 +116,15 @@ def _independent_rig_twist_sources(
             spine.joints[2].path + ".worldMatrix[0]",
             spine.joints[5].path + ".worldMatrix[0]",
             spine.blend_plug, "AdvPy_SpineChestOrient")
+    spline = plan.torso.torso.spline if plan.torso is not None else None
+    if spline is not None:
+        count = len(spline.body_joints)
+        for index in range(1, count):
+            spine_blends[spline.body_joints[index]] = (
+                spline.joints[index].path + ".worldMatrix[0]",
+                spline.ik_outputs[index] + ".worldMatrix[0]",
+                spline.settings + ".spineIkFk",
+                f"AdvPy_SplineOrient{index}")
     return matrices, constraints, spine_blends
 
 
