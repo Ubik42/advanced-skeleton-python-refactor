@@ -9,6 +9,7 @@ from typing import Protocol
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_metadata import FitJointField, FitJointFieldEdit
+from adv_py.core.body_skeleton import FitDeformProfile
 from adv_py.core.fit_template import FitJointSpec, FitTemplateSpec
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_orientation import FitOrientationRequest
@@ -29,6 +30,7 @@ class SourceSkeletonJoint:
     twist_joints: int | None = None
     inbetween_joints: int | None = None
     untwister: bool | None = None
+    deform_profile: FitDeformProfile | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +45,7 @@ class SourceSkeletonFitPlan:
     orientation: FitOrientationRequest
     spine_segments: int
     part_metadata: tuple[tuple[str, tuple[FitJointFieldEdit, ...]], ...] = ()
+    deform_profiles: tuple[tuple[str, FitDeformProfile], ...] = ()
 
 
 class SourceSkeletonFitHost(FitContainerHost, OrientedFitTemplateHost,
@@ -52,6 +55,8 @@ class SourceSkeletonFitHost(FitContainerHost, OrientedFitTemplateHost,
     def find_name_collisions(self, name: str) -> tuple[str, ...]: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
     def apply_fit_joint_edit(self, joint: str, edit: FitJointFieldEdit) -> None: ...
+    def write_fit_deform_profile(self, joint: str,
+                                 profile: FitDeformProfile) -> None: ...
 
 
 _FINGER = re.compile(r"^(Thumb|Index|Middle|Ring|Pinky)Finger([1-4])$")
@@ -245,8 +250,13 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     reference_names = {spec.name for spec in reference.joints}
     specs = []
     part_metadata = []
+    deform_profiles = []
     for reference_joint in reference.joints:
         joint = by_name[reference_joint.name]
+        if (joint.deform_profile is not None
+                and not isinstance(joint.deform_profile, FitDeformProfile)):
+            raise FitSkeletonValidationError(
+                "来源骨架体积参数无效：" + joint.name)
         if any(value is not None and (type(value) is not int
                 or not 0 <= value <= 10) for value in (
                 joint.twist_joints, joint.inbetween_joints)):
@@ -289,9 +299,13 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                 edits.append(FitJointFieldEdit(field, value))
         if edits:
             part_metadata.append((reference_joint.name, tuple(edits)))
+        if joint.deform_profile is not None:
+            deform_profiles.append((reference_joint.name,
+                                    joint.deform_profile))
     template = FitTemplateSpec("source_skeleton", tuple(specs))
     return SourceSkeletonFitPlan(template, request, len(axial_paths),
-                                 tuple(part_metadata))
+                                 tuple(part_metadata),
+                                 tuple(deform_profiles))
 
 
 class BuildFitFromSourceSkeleton:
@@ -322,5 +336,7 @@ class BuildFitFromSourceSkeleton:
             for name, edits in plan.part_metadata:
                 for edit in edits:
                     joined.apply_fit_joint_edit(paths[name], edit)
+            for name, profile in plan.deform_profiles:
+                joined.write_fit_deform_profile(paths[name], profile)
         return SourceSkeletonFitResult(len(result.template.joint_paths),
                                        plan.spine_segments)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from adv_py.application.source_skeleton_fit import SourceSkeletonJoint
+from adv_py.core.body_skeleton import FitDeformProfile
 
 from .maya_face import MayaFaceHost
 
@@ -29,6 +30,19 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                     if cmds.attributeQuery(attribute, node=path, exists=True)
                     else None)
 
+        def optional_profile(path: str) -> FitDeformProfile | None:
+            def read(*names: str) -> float:
+                for name in names:
+                    if cmds.attributeQuery(name, node=path, exists=True):
+                        return float(cmds.getAttr(path + "." + name))
+                return 1.0
+            if not any(cmds.attributeQuery(name, node=path, exists=True)
+                       for name in ("fat", "fatFront", "fatY",
+                                    "fatWidth", "fatZ")):
+                return None
+            return FitDeformProfile(read("fat"), read("fatFront", "fatY"),
+                                    read("fatWidth", "fatZ"))
+
         for path in paths:
             parent = (cmds.listRelatives(path, parent=True,
                                         fullPath=True) or [None])[0]
@@ -41,5 +55,21 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                 path.rsplit("|", 1)[-1], parent, position,
                 optional_int(path, "twistJoints"),
                 optional_int(path, "inbetweenJoints"),
-                optional_bool(path, "unTwister")))
+                optional_bool(path, "unTwister"),
+                optional_profile(path)))
         return tuple(joints)
+
+    def write_fit_deform_profile(self, joint: str,
+                                 profile: FitDeformProfile) -> None:
+        self._require_transaction()
+        if not isinstance(profile, FitDeformProfile):
+            raise ValueError("Fit 体积参数无效")
+        for name, value in (("fat", profile.fat),
+                            ("fatFront", profile.fat_front),
+                            ("fatWidth", profile.fat_width)):
+            if not self._cmds.attributeQuery(name, node=joint, exists=True):
+                self._cmds.addAttr(joint, longName=name,
+                                   attributeType="double", minValue=0,
+                                   keyable=True)
+            self._cmds.setAttr(joint + "." + name, value)
+        self._transaction_changed = True
