@@ -19,6 +19,7 @@ def promote(host,staged):
     old_paths={_by_uuid(c,uuid) for uuid in old_ids}
     fit=staged.original.registration.container
     old_fit=host.scene_address(fit)
+    replacement_by_role={role:new for role,_,new,_ in rows}
     shared={host.scene_address(name).lstrip(':') for name in SHARED_NODES}
     # After handoff, no preserved data may still depend on a deletion candidate.
     for node in old_paths:
@@ -51,12 +52,37 @@ def promote(host,staged):
         node,separator,component=item.partition('.')
         uuid=c.ls(node,uuid=True)[0]
         selection.append((replacement_by_old.get(uuid,uuid),separator+component))
+    retained_paths={fit,*[row.path for row in staged.original.extensions],*(
+        shape.rsplit('|',1)[0]
+        for skin in staged.original.skins for shape,_,_ in skin.meshes)}
+    retained=[]
+    for logical in sorted(retained_paths,key=lambda path:(path.count('|'),path)):
+        node=host.scene_address(logical)
+        matches=c.ls(node,long=True) or []
+        if len(matches)!=1:
+            raise CharacterRegistryError('保留的 DAG 节点缺失：'+logical)
+        parent=(c.listRelatives(matches[0],parent=True,fullPath=True) or [None])[0]
+        if parent not in old_paths:
+            continue
+        role=host._cmds.identity.to_local(parent)
+        if role not in replacement_by_role:
+            raise CharacterRegistryError('保留节点的旧父级没有替换节点：'+logical)
+        if c.nodeType(matches[0]) not in ('transform','joint'):
+            raise CharacterRegistryError('保留的非变换 DAG 子节点需要专门迁移：'+logical)
+        retained.append((c.ls(matches[0],uuid=True)[0],role,logical))
     host._transaction_changed=True
+    c.delete(target.scene_address(fit))
+    for uuid,_,_ in retained:
+        c.parent(_by_uuid(c,uuid),world=True)
     c.delete(sorted(old_paths,key=lambda node:node.count('|'),reverse=True))
     # Maya may rename child shapes with their transform. Explicit UUID-based
     # renaming with ignoreShape keeps every shape role under our control.
     for uuid,name in rename:
         c.rename(_by_uuid(c,uuid),':'+name.lstrip(':'),ignoreShape=True)
+    for uuid,role,logical in retained:
+        c.parent(_by_uuid(c,uuid),_by_uuid(c,replacement_by_role[role]))
+        if host._cmds.identity.to_local(_by_uuid(c,uuid))!=logical:
+            raise CharacterRegistryError('保留 DAG 节点挂回后路径漂移：'+logical)
     original_fit={n.path:n for n in staged.original.registration.nodes
                   if n.path==fit or n.path.startswith(fit+'|')}
     def redirect(plug):
@@ -77,7 +103,6 @@ def promote(host,staged):
     c.setAttr(registry+'.advPyRegistryDocument',lock=False)
     c.setAttr(registry+'.advPyRegistryDocument',encode_registration(registration),type='string')
     c.setAttr(registry+'.advPyRegistryDocument',lock=True)
-    c.delete(target.scene_address(fit))
     remaining=c.namespaceInfo(staged.namespace,listOnlyDependencyNodes=True,recurse=True) or []
     if remaining:raise CharacterRegistryError('暂存命名空间仍有未归属节点：'+repr(remaining[:5]))
     c.namespace(removeNamespace=staged.namespace)

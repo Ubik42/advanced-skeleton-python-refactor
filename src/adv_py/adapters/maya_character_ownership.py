@@ -67,6 +67,9 @@ def audit(host,staged):
     rows=[];shapes=[]
     original=staged.original
     extensions={row.path for row in original.extensions}
+    retained_children = {fit, *extensions, *(
+        shape.rsplit('|', 1)[0]
+        for skin in original.skins for shape, _, _ in skin.meshes)}
     properties={row.path:{a[0] for a in row.attributes} for row in original.properties}
     for role in sorted(old_nodes):
         old,new=old_nodes[role],new_nodes[role]
@@ -101,7 +104,7 @@ def audit(host,staged):
             shapes.append((role,() if driven else tuple(shape_a),tuple(settings),_curve_topology(host,old)))
         if 'dagNode' in (a.nodeType(old,inherited=True) or []):
             children=set(a.listRelatives(old,children=True,fullPath=True) or [])
-            if children-set(old_nodes.values())-extensions:
+            if children-set(old_nodes.values())-retained_children:
                 raise CharacterRegistryError('旧 Rig 存在未声明保留的子节点：'+old)
         rows.append((role,a.ls(old,uuid=True)[0],b.ls(new,uuid=True)[0],kind))
     permitted={pair for row in (*original.skins,*original.extensions,*staged.custom_properties) for pair in row.connections}
