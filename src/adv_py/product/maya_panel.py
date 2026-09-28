@@ -1100,6 +1100,8 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._face_build_eye_lids))
             form.addRow(self._button("返回 Face 构建姿态",
                                      self._face_go_to_build_pose))
+            form.addRow(self._button("设置 Face 构建姿态",
+                                     self._face_set_build_pose))
             self.face_original_head = QtWidgets.QLineEdit()
             self.face_original_head.setPlaceholderText(
                 "当前场景中的原版头部网格，例如 Source:model:skin")
@@ -2247,6 +2249,10 @@ def create_panel(controller: MayaPanelController | None = None):
         def _face_go_to_build_pose(self):
             count = self.controller.face_go_to_build_pose(self._namespace())
             return f"已复位 {count} 个 Face 构建姿态通道"
+
+        def _face_set_build_pose(self):
+            count = self.controller.face_set_build_pose(self._namespace())
+            return f"已保存 {count} 个 Face 构建姿态覆盖通道"
 
         def _face_build_original_eye_lid_skin(self):
             result = self.controller.face_build_original_eye_lid_skin(

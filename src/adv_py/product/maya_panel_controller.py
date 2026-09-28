@@ -1242,6 +1242,13 @@ class MayaPanelController:
         return GoToFaceBuildPose(MayaFaceEyeLidRigHost(
             namespace=None if namespace == ":" else namespace)).apply()
 
+    def face_set_build_pose(self, namespace: str) -> int:
+        from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
+        from adv_py.application.face_build_pose import SetFaceBuildPose
+
+        return SetFaceBuildPose(MayaFaceEyeLidRigHost(
+            namespace=None if namespace == ":" else namespace)).apply()
+
     def face_build_original_eye_lid_skin(self, namespace: str,
                                          source_mesh: str) -> dict:
         from adv_py.adapters.maya_face_source_skin import MayaFaceSourceSkinHost
