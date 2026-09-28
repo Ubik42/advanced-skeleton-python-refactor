@@ -80,6 +80,7 @@ from adv_py.core.body_character_global import (
     BodyCharacterDrivenRootState,
     BodyCharacterGlobalPlan,
     BodyCharacterGlobalSnapshot,
+    fit_character_height,
 )
 from adv_py.core.body_root_motion import (
     BodyRootMotionBakePlan,
@@ -739,10 +740,22 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                             exists=True) else False),
                 )
             )
+        provenance = self._capture_body_provenance(root)
+        fit_height = None
+        if provenance is not None and provenance.source_container:
+            containers = self._cmds.ls(provenance.source_container,
+                                       long=True, type="transform") or []
+            if len(containers) == 1:
+                fit_joints = self._cmds.listRelatives(
+                    containers[0], allDescendents=True,
+                    fullPath=True, type="joint") or []
+                if fit_joints:
+                    fit_height = fit_character_height(tuple(
+                        tuple(float(value) for value in self._cmds.xform(
+                            joint, query=True, worldSpace=True,
+                            translation=True)) for joint in fit_joints))
         return BodySkeletonSnapshot(
-            root,
-            tuple(states),
-            self._capture_body_provenance(root),
+            root, tuple(states), provenance, fit_height,
         )
 
     def write_body_provenance(

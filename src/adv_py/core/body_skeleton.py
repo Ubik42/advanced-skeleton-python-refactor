@@ -179,6 +179,7 @@ class BodySkeletonSnapshot:
     root: str
     joints: tuple[BodyJointState, ...]
     provenance: BodySkeletonProvenanceState | None = None
+    fit_height: float | None = None
 
 
 def body_skeleton_unchanged(before: BodySkeletonSnapshot,

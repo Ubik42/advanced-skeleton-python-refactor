@@ -179,6 +179,13 @@ class BuildBodyCharacterRig:
         safety = self._inspector.execute(
             container_name, root_name=body_root_name, center_tolerance=center_tolerance,
         )
+        fit_height = fit_character_height(tuple(
+            node.world_position for node in
+            safety.symmetry.source.hierarchy.joints))
+        if (safety.body.fit_height is not None and
+                abs(safety.body.fit_height - fit_height) > 1e-5):
+            raise FitSkeletonValidationError(
+                "Body 来源 Fit 高度与当前 Fit 输入不一致")
         arm = self._arm.plan_from_safety(
             safety,
             control_radius=arm_control_radius,
@@ -248,9 +255,7 @@ class BuildBodyCharacterRig:
         )
         global_control = plan_body_character_global(
             up_axis=self._host.scene_up_axis(),
-            fit_height=fit_character_height(tuple(
-                node.world_position for node in
-                safety.symmetry.source.hierarchy.joints)),
+            fit_height=fit_height,
             body_root=arm.safety.body.root,
             driven_roots=driven_roots,
             scale_destinations=(

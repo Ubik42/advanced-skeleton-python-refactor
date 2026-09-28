@@ -143,7 +143,8 @@ def body_fk_curve_radius(
         ys = tuple(item.world_position[1] for item in body.joints)
         if not ys:
             raise ValueError("FK 控制曲线缺少 Body 高度")
-        height = max(ys) - min(ys)
+        height = (body.fit_height if body.fit_height is not None
+                  else max(ys) - min(ys))
         if not isfinite(height) or height <= 0:
             raise ValueError("FK 控制曲线角色高度无效")
         child = preferred_child
