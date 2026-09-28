@@ -1635,7 +1635,9 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.fit_container.text().strip(), meshes=meshes,
                 maximum_influences=self.build_max_influences.value(),
                 head_aim=self.head_aim.isChecked(),
-                segment_influences=self.build_segment_influences.isChecked())
+                segment_influences=self.build_segment_influences.isChecked(),
+                fit_parts=(self.build_segment_influences.isChecked()
+                           and self.build_fit_parts.isChecked()))
             if result.namespace != selected_namespace:
                 self._next_role = result.namespace
             destination = (f"；新角色 {result.namespace}"

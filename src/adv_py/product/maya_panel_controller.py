@@ -399,7 +399,8 @@ class MayaPanelController:
                                meshes: tuple[str, ...] = (),
                                maximum_influences: int = 4,
                                head_aim: bool = False,
-                               segment_influences: bool = True) -> PanelCharacter:
+                               segment_influences: bool = True,
+                               fit_parts: bool = False) -> PanelCharacter:
         from adv_py.adapters.maya_source_skeleton_fit import (
             MayaSourceSkeletonFitHost)
         from adv_py.application.character_from_source import (
@@ -417,7 +418,8 @@ class MayaPanelController:
                 source_root, container, meshes=meshes,
                 maximum_influences=maximum_influences,
                 include_head_aim=head_aim,
-                include_segment_influences=segment_influences)
+                include_segment_influences=segment_influences,
+                use_fit_part_hierarchy=fit_parts)
         except Exception:
             _remove_empty_source_target(cmds, created_namespace)
             raise

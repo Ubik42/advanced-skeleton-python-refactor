@@ -8,6 +8,7 @@ import re
 from typing import Protocol
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from adv_py.core.fit_metadata import FitJointField, FitJointFieldEdit
 from adv_py.core.fit_template import FitJointSpec, FitTemplateSpec
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_orientation import FitOrientationRequest
@@ -25,6 +26,9 @@ class SourceSkeletonJoint:
     name: str
     parent: str | None
     world_position: tuple[float, float, float]
+    twist_joints: int | None = None
+    inbetween_joints: int | None = None
+    untwister: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +42,7 @@ class SourceSkeletonFitPlan:
     template: FitTemplateSpec
     orientation: FitOrientationRequest
     spine_segments: int
+    part_metadata: tuple[tuple[str, tuple[FitJointFieldEdit, ...]], ...] = ()
 
 
 class SourceSkeletonFitHost(FitContainerHost, OrientedFitTemplateHost,
@@ -46,6 +51,7 @@ class SourceSkeletonFitHost(FitContainerHost, OrientedFitTemplateHost,
     def scene_up_axis(self) -> FitUpAxis: ...
     def find_name_collisions(self, name: str) -> tuple[str, ...]: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
+    def apply_fit_joint_edit(self, joint: str, edit: FitJointFieldEdit) -> None: ...
 
 
 _FINGER = re.compile(r"^(Thumb|Index|Middle|Ring|Pinky)Finger([1-4])$")
@@ -238,8 +244,23 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     source_by_path = {joint.path: joint for joint in source}
     reference_names = {spec.name for spec in reference.joints}
     specs = []
+    part_metadata = []
     for reference_joint in reference.joints:
         joint = by_name[reference_joint.name]
+        if any(value is not None and (type(value) is not int
+                or not 0 <= value <= 10) for value in (
+                joint.twist_joints, joint.inbetween_joints)):
+            raise FitSkeletonValidationError(
+                "来源骨架分段关节数须为 0..10：" + joint.name)
+        if (joint.twist_joints is not None
+                and joint.inbetween_joints is not None):
+            raise FitSkeletonValidationError(
+                "来源关节不能同时使用 Twist 和 Inbetween：" + joint.name)
+        if joint.untwister is not None and type(joint.untwister) is not bool:
+            raise FitSkeletonValidationError("来源 UnTwister 标记无效：" + joint.name)
+        if joint.untwister and not joint.inbetween_joints:
+            raise FitSkeletonValidationError(
+                "来源 UnTwister 需要 Inbetween 分段：" + joint.name)
         expected_parent = reference_joint.parent
         parent_path = joint.parent
         while parent_path and parent_path in source_by_path:
@@ -259,8 +280,18 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
             joint.world_position, parent_position))
         specs.append(FitJointSpec(reference_joint.name, expected_parent,
                                   position, reference_joint.label))
+        edits = []
+        for value, field in (
+                (joint.twist_joints, FitJointField.TWIST_JOINTS),
+                (joint.inbetween_joints, FitJointField.INBETWEEN_JOINTS),
+                (joint.untwister, FitJointField.UNTWISTER)):
+            if value is not None:
+                edits.append(FitJointFieldEdit(field, value))
+        if edits:
+            part_metadata.append((reference_joint.name, tuple(edits)))
     template = FitTemplateSpec("source_skeleton", tuple(specs))
-    return SourceSkeletonFitPlan(template, request, len(axial_paths))
+    return SourceSkeletonFitPlan(template, request, len(axial_paths),
+                                 tuple(part_metadata))
 
 
 class BuildFitFromSourceSkeleton:
@@ -286,5 +317,10 @@ class BuildFitFromSourceSkeleton:
                 plan.template, plan.orientation, container,
                 transaction_label="从标准骨架创建并朝向 Fit",
                 error_context="标准骨架 Fit")
+            paths = dict(zip((item.name for item in plan.template.joints),
+                             result.template.joint_paths))
+            for name, edits in plan.part_metadata:
+                for edit in edits:
+                    joined.apply_fit_joint_edit(paths[name], edit)
         return SourceSkeletonFitResult(len(result.template.joint_paths),
                                        plan.spine_segments)

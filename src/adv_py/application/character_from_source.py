@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from adv_py.core.fit_metadata import FitJointField
+
 from .character_from_fit import (BuildCharacterFromFit,
                                  CharacterFromFitHost,
                                  CharacterFromFitResult)
@@ -33,6 +35,7 @@ class SourceCharacterBuildPlan:
     maximum_influences: int
     include_head_aim: bool
     include_segment_influences: bool
+    use_fit_part_hierarchy: bool
     fit: SourceSkeletonFitPlan
 
 
@@ -47,6 +50,7 @@ class BuildCharacterFromSourceSkeleton:
              maximum_influences: int = 4,
              include_head_aim: bool = False,
              include_segment_influences: bool = True,
+             use_fit_part_hierarchy: bool = False,
              ) -> SourceCharacterBuildPlan:
         if not source_root.strip() or not container.strip():
             raise ValueError("来源根关节与 Fit 容器名称不能为空")
@@ -57,21 +61,31 @@ class BuildCharacterFromSourceSkeleton:
                 or not isinstance(maximum_influences, int)
                 or not 1 <= maximum_influences <= 256):
             raise ValueError("最大影响关节数须为 1..256 的整数")
+        if use_fit_part_hierarchy and not include_segment_influences:
+            raise ValueError("Fit Part／Inbetween 需要启用分段 Skin 影响")
         fit = BuildFitFromSourceSkeleton(self._host).plan(source_root)
+        if use_fit_part_hierarchy and not any(
+                edit.value > 0 for _, edits in fit.part_metadata
+                for edit in edits if edit.field in (
+                    FitJointField.TWIST_JOINTS,
+                    FitJointField.INBETWEEN_JOINTS)):
+            raise ValueError("来源骨架没有可构建的 Twist／Inbetween 标记")
         return SourceCharacterBuildPlan(source_root, container, meshes,
             maximum_influences, include_head_aim,
-            include_segment_influences, fit)
+            include_segment_influences, use_fit_part_hierarchy, fit)
 
     def apply(self, source_root: str, container: str = "FitSkeleton", *,
               meshes: tuple[str, ...] = (),
               maximum_influences: int = 4,
               include_head_aim: bool = False,
               include_segment_influences: bool = True,
+              use_fit_part_hierarchy: bool = False,
               ) -> SourceCharacterBuildResult:
         plan = self.plan(source_root, container, meshes=meshes,
             maximum_influences=maximum_influences,
             include_head_aim=include_head_aim,
-            include_segment_influences=include_segment_influences)
+            include_segment_influences=include_segment_influences,
+            use_fit_part_hierarchy=use_fit_part_hierarchy)
         with self._host.transaction("从标准骨架构建并蒙皮角色"):
             joined = _JoinedTransactionHost(self._host)
             fit = BuildFitFromSourceSkeleton(joined).apply_plan(
@@ -81,5 +95,6 @@ class BuildCharacterFromSourceSkeleton:
                 spine_segments=fit.spine_segments,
                 maximum_influences=plan.maximum_influences,
                 include_head_aim=plan.include_head_aim,
-                include_segment_influences=plan.include_segment_influences)
+                include_segment_influences=plan.include_segment_influences,
+                use_fit_part_hierarchy=plan.use_fit_part_hierarchy)
         return SourceCharacterBuildResult(fit, character)
