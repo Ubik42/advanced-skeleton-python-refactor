@@ -110,7 +110,9 @@ class BuildBodyLegVisibility:
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).extra_controllers,
             terminal_toes_end_control=terminal_toes_end_control_enabled(
-                symmetry.source.metadata),
+                symmetry.source.metadata,
+                use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
+                    symmetry.settings).use_offset_parent_matrix),
             allow_part_parents=True)
         ik = plan_body_leg_ik(
             body,
@@ -125,7 +127,9 @@ class BuildBodyLegVisibility:
         blend = plan_body_leg_blend(
             body, mechanism_plan,
             terminal_toes_end_control=terminal_toes_end_control_enabled(
-                symmetry.source.metadata))
+                symmetry.source.metadata,
+                use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
+                    symmetry.settings).use_offset_parent_matrix))
         visibility = plan_body_leg_visibility(fk, ik, blend)
         blockers = []
         expected_provenance = oriented_body_provenance(

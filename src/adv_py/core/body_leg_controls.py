@@ -26,8 +26,12 @@ BodyLegControlValidationError = BodyLimbControlValidationError
 
 def terminal_toes_end_control_enabled(
     metadata: tuple[FitJointMetadata, ...],
+    *,
+    use_offset_parent_matrix: bool = False,
 ) -> bool:
-    """Read the optional 6.925 end-joint Control switch from the source Fit."""
+    """Read the end-joint Control switch, including Tweaker's implicit Control."""
+    if type(use_offset_parent_matrix) is not bool:
+        raise BodyLegControlValidationError("ToesEnd OPM 开关无效")
     if not isinstance(metadata, tuple) or any(
             not isinstance(item, FitJointMetadata) for item in metadata):
         raise BodyLegControlValidationError("Fit 末端控制元数据无效")
@@ -36,7 +40,9 @@ def terminal_toes_end_control_enabled(
                      .rsplit(":", 1)[-1] == "ToesEnd")
     if len(terminal) > 1:
         raise BodyLegControlValidationError("Fit ToesEnd 元数据重复")
-    return bool(terminal and terminal[0].control)
+    return bool(terminal and (terminal[0].control
+                              or (use_offset_parent_matrix
+                                  and terminal[0].tweaker_control)))
 
 
 def plan_body_leg_fk_controls(

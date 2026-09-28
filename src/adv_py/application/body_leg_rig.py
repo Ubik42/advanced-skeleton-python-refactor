@@ -211,7 +211,9 @@ class BuildBodyLegRig:
             if spec.role is BodyLegMechanismRole.FK
         }
         terminal_toes_end_control = terminal_toes_end_control_enabled(
-            safety.symmetry.source.metadata)
+            safety.symmetry.source.metadata,
+            use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).use_offset_parent_matrix)
         fk_controls = plan_body_leg_fk_controls(
             safety.body,
             radius=control_radius,

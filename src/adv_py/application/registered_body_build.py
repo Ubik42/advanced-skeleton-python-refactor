@@ -312,7 +312,9 @@ class BuildRegisteredBodyCharacter:
                 for part in part_plan.fit_parts
             )
             terminal_control = terminal_toes_end_control_enabled(
-                fit_source.metadata)
+                fit_source.metadata,
+                use_offset_parent_matrix=(
+                    preview.build.build_options.use_offset_parent_matrix))
             if terminal_untwister and not terminal_control:
                 raise FitSkeletonValidationError(
                     "Toes→ToesEnd UnTwister 需要末端 Fit ToesEnd 的 "

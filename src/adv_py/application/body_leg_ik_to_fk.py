@@ -133,13 +133,17 @@ class MatchBodyLegIkToFk:
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).extra_controllers,
             terminal_toes_end_control=terminal_toes_end_control_enabled(
-                symmetry.source.metadata),
+                symmetry.source.metadata,
+                use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
+                    symmetry.settings).use_offset_parent_matrix),
             allow_part_parents=True,
         )
         blend = plan_body_leg_blend(
             body, mechanisms,
             terminal_toes_end_control=terminal_toes_end_control_enabled(
-                symmetry.source.metadata))
+                symmetry.source.metadata,
+                use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
+                    symmetry.settings).use_offset_parent_matrix))
         match = plan_body_leg_ik_to_fk(body, fk_controls, blend, side)
         fk_snapshot = self._host.capture_body_leg_fk_controls(fk_controls)
         blend_snapshot = self._host.capture_body_leg_blend(blend)

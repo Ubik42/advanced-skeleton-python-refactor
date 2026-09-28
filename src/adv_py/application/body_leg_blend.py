@@ -13,6 +13,7 @@ from adv_py.core.body_leg_blend import (
     plan_body_leg_blend,
 )
 from adv_py.core.body_leg_controls import terminal_toes_end_control_enabled
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_leg_mechanisms import (
     BodyLegMechanismIssue,
     BodyLegMechanismPlan,
@@ -119,7 +120,9 @@ class BuildBodyLegBlend:
         blend = plan_body_leg_blend(
             body, mechanism_plan,
             terminal_toes_end_control=terminal_toes_end_control_enabled(
-                symmetry.source.metadata))
+                symmetry.source.metadata,
+                use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
+                    symmetry.settings).use_offset_parent_matrix))
         names = [blend.settings_name]
         for side in blend.sides:
             names.append(side.reverse_name)

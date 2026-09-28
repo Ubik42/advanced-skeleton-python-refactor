@@ -146,7 +146,9 @@ class BuildBodyLegFkMechanismControls:
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).extra_controllers,
             terminal_toes_end_control=terminal_toes_end_control_enabled(
-                symmetry.source.metadata),
+                symmetry.source.metadata,
+                use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
+                    symmetry.settings).use_offset_parent_matrix),
             allow_part_parents=True,
         )
         names = [controls.root_name]

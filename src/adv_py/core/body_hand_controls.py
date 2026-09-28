@@ -344,7 +344,9 @@ def plan_body_hand_fk_controls(
                              else f"{digit.value}End")
             terminal_metadata = metadata_by_name.get(terminal_name)
             count = (4 if terminal_metadata is not None
-                     and terminal_metadata.control else 3)
+                     and (terminal_metadata.control
+                          or (build_options.use_offset_parent_matrix
+                              and terminal_metadata.tweaker_control)) else 3)
             for index, state in enumerate(states[:count], start=1):
                 offset_name = (
                     f"{prefix}AdvPy_{digit.value}{index}FKOffset_{suffix}"
