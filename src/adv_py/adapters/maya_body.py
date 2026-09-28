@@ -6208,7 +6208,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             if (self.find_name_collisions(spec.name)
                     or (spec.follow_matrix_name is not None
                         and self.find_name_collisions(
-                            spec.follow_matrix_name))):
+                            spec.follow_matrix_name))
+                    or (spec.follow_constraint_name is not None
+                        and self.find_name_collisions(
+                            spec.follow_constraint_name))):
                 raise FitSkeletonValidationError(
                     f"Hand FK 根节点名称冲突：{spec.name}"
                 )
@@ -6244,6 +6247,14 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     follow + ".matrixIn[1]")
                 self._cmds.connectAttr(
                     follow + ".matrixSum", root + ".offsetParentMatrix")
+            if spec.follow_constraint_name is not None:
+                constraints = self._cmds.parentConstraint(
+                    spec.wrist_joint, root, maintainOffset=False,
+                    name=spec.follow_constraint_name)
+                if (len(constraints) != 1
+                        or constraints[0].rsplit("|", 1)[-1]
+                        != spec.follow_constraint_name):
+                    raise RuntimeError("Hand FK Wrist 约束名称漂移")
             return root
         finally:
             if selection:
@@ -6924,7 +6935,21 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         spec.follow_matrix_name + ".matrixIn[0]",
                         spec.follow_matrix_name + ".matrixIn[1]",
                         path + ".offsetParentMatrix"))
-                    if spec.follow_matrix_name else (None, None, None)
+                    if spec.follow_matrix_name else
+                    (None, None, input_source(path + ".offsetParentMatrix"))
+                ),
+                follow_constraint_targets=(
+                    tuple(self._resolve_connected_node(node) for node in
+                          (self._cmds.parentConstraint(
+                              spec.follow_constraint_name, query=True,
+                              targetList=True) or []))
+                    if spec.follow_constraint_name else ()
+                ),
+                follow_constraint_channels=(
+                    tuple(input_source(f"{path}.{kind}{axis}")
+                          for kind in ("translate", "rotate")
+                          for axis in "XYZ")
+                    if spec.follow_constraint_name else ()
                 ),
             ))
         controls = self._capture_body_limb_fk_control_states(

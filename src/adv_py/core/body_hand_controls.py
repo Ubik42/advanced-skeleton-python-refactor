@@ -52,12 +52,19 @@ class BodyHandFkRootSpec:
     parent_path: str
     world_position: Vector3
     world_axes: AxisFrame
+    use_offset_parent_matrix: bool = True
 
     @property
     def follow_matrix_name(self) -> str | None:
-        if self.parent_path == self.wrist_joint:
+        if self.parent_path == self.wrist_joint or not self.use_offset_parent_matrix:
             return None
         return f"AdvPy_HandFKRootFollow_{self.side.value}"
+
+    @property
+    def follow_constraint_name(self) -> str | None:
+        if self.parent_path == self.wrist_joint or self.use_offset_parent_matrix:
+            return None
+        return f"AdvPy_HandFKRootConstraint_{self.side.value}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +76,9 @@ class BodyHandFkControlPlan:
     def node_names(self) -> tuple[str, ...]:
         values = [name for root in self.roots
                   for name in (root.name, *((root.follow_matrix_name,)
-                                           if root.follow_matrix_name else ()))]
+                                           if root.follow_matrix_name else ()),
+                               *((root.follow_constraint_name,)
+                                if root.follow_constraint_name else ()))]
         for control in self.controls:
             values.extend((
                 control.offset_name,
@@ -103,6 +112,8 @@ class BodyHandFkRootState:
     local_rotation: Vector3
     local_scale: Vector3
     follow_matrix_sources: tuple[str | None, str | None, str | None] = (None, None, None)
+    follow_constraint_targets: tuple[str, ...] = ()
+    follow_constraint_channels: tuple[str | None, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,6 +291,7 @@ def plan_body_hand_fk_controls(
             parent_path=root_parent,
             world_position=wrist.world_position,
             world_axes=wrist.world_axes,
+            use_offset_parent_matrix=build_options.use_offset_parent_matrix,
         ))
 
         for digit in BODY_HAND_DIGITS:
@@ -665,14 +677,29 @@ def audit_body_hand_fk_controls(
                 "Hand FK 根节点的 Wrist 跟随矩阵不一致",
                 path,
             ))
+        expected_constraint_targets = (
+            (spec.wrist_joint,) if spec.follow_constraint_name else ())
+        expected_constraint_channels = (
+            tuple(f"{spec.follow_constraint_name}.constraint{kind}{axis}"
+                  for kind in ("Translate", "Rotate") for axis in "XYZ")
+            if spec.follow_constraint_name else ())
+        if (state.follow_constraint_targets != expected_constraint_targets
+                or state.follow_constraint_channels
+                != expected_constraint_channels):
+            issues.append(BodyHandControlIssue(
+                "hand_root_constraint_mismatch",
+                "Hand FK 根节点的 Wrist 约束不一致",
+                path,
+            ))
         if not (
-            _vector_matches(state.local_translation, (0.0, 0.0, 0.0), tolerance)
-            and _vector_matches(state.local_rotation, (0.0, 0.0, 0.0), tolerance)
+            (spec.follow_constraint_name is not None or
+             (_vector_matches(state.local_translation, (0.0, 0.0, 0.0), tolerance)
+              and _vector_matches(state.local_rotation, (0.0, 0.0, 0.0), tolerance)))
             and _vector_matches(state.local_scale, (1.0, 1.0, 1.0), tolerance)
         ):
             issues.append(BodyHandControlIssue(
                 "hand_root_channels_mismatch",
-                "Hand FK 根节点本地通道不中性",
+                "Hand FK 根节点的本地通道不符合跟随方式",
                 path,
             ))
         if check_initial_pose and not (
