@@ -27,6 +27,9 @@ def character_channels(rig):
     if p.torso.torso.root_x is not None:
         add("root.x", p.torso.torso.root_x.control_path,
             translation + rotation + tuple("scale" + axis for axis in "XYZ"))
+    for cog in p.torso.torso.cogs:
+        add("root.cog." + cog.control_name, cog.control_path,
+            translation + rotation + tuple("scale" + axis for axis in "XYZ"))
     for control in p.torso.torso.controls.controls:
         add("torso."+control.control_name.removeprefix("AdvPy_"),control.control_path,
             (translation if control.control_path==p.torso.torso.pelvis_translation.source else ())+rotation)

@@ -77,7 +77,7 @@ class BodyLegLockSpace:
 
 
 @dataclass(frozen=True, slots=True)
-class BodyRootXSpec:
+class BodyRootControlSpec:
     offset_path: str
     extra_path: str
     control_path: str
@@ -98,7 +98,7 @@ class BodyRootXSpec:
 
 
 @dataclass(frozen=True, slots=True)
-class BodyRootXState:
+class BodyRootControlState:
     offset_parent: str | None
     extra_parent: str | None
     control_parent: str | None
@@ -117,7 +117,8 @@ class BodyTorsoPlan:
     head_aim: HeadAimPlan | None = None
     spline: BodySplinePlan | None = None
     use_offset_parent_matrix: bool = False
-    root_x: BodyRootXSpec | None = None
+    root_x: BodyRootControlSpec | None = None
+    cogs: tuple[BodyRootControlSpec, ...] = ()
 
     @property
     def root_fkx_path(self) -> str:
@@ -139,7 +140,10 @@ class BodyTorsoPlan:
                          self.root_x.control_name,
                          self.root_x.control_name + "Shape")
                         if self.root_x is not None else ())
-        return root_x_names + (self.controls.root_name,) + tuple(
+        cog_names = tuple(name for cog in self.cogs for name in (
+            cog.offset_name, cog.extra_name, cog.control_name,
+            cog.control_name + "Shape"))
+        return cog_names + root_x_names + (self.controls.root_name,) + tuple(
             name for control in self.controls.controls
             for name in (control.offset_name, control.control_name,
                          control.control_name + "Shape", control.constraint_name,
@@ -165,12 +169,13 @@ class BodyTorsoSnapshot:
     leg_lock_compensation_source: str | None = None
     leg_lock_decompose_source: str | None = None
     leg_lock_channel_sources: tuple[str | None, ...] = ()
-    root_x: BodyRootXState | None = None
+    root_x: BodyRootControlState | None = None
+    cogs: tuple[BodyRootControlState, ...] = ()
 
 
 def plan_body_torso(
     body: BodySkeletonSnapshot, arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan,
-    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(),
+    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (),
 ) -> BodyTorsoPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise FitSkeletonValidationError("Torso 构建选项类型无效")
@@ -186,16 +191,31 @@ def plan_body_torso(
     root_parent_path = ("|Group|MotionSystem|RootSystem|RootFollowMain"
                         if nested else "")
     from .body_controller_appearance import body_fk_curve_radius
+    if (len(set(cog_names)) != len(cog_names)
+            or any(name not in {joint.name for joint in body.joints}
+                   for name in cog_names)
+            or (cog_names and not nested)):
+        raise FitSkeletonValidationError("COG 来源关节不在当前 Body 构建中")
+    cogs = []
+    for name in reversed(cog_names):
+        joint = next(item for item in body.joints if item.name == name)
+        offset = root_parent_path + "|AdvPy_COGOffset" + name
+        extra = offset + "|AdvPy_COGExtra" + name
+        control = extra + "|AdvPy_COG" + name
+        cogs.append(BodyRootControlSpec(
+            offset, extra, control, joint.world_position,
+            body_fk_curve_radius(body, joint, radius)))
+        root_parent_path = control
     root_x = None
     if nested:
         root_joint = joints["Root_M"]
         root_child = next((joints[child_name]
                            for child_name, parent in parents.items()
                            if parent == "Root_M"), None)
-        root_x_offset = root_parent_path + "|AdvPy_RootXOffset"
-        root_x_extra = root_x_offset + "|AdvPy_RootXExtra"
-        root_x_control = root_x_extra + "|AdvPy_RootX"
-        root_x = BodyRootXSpec(
+        root_x_offset = root_parent_path + "|AdvPy_RootOffsetX_M"
+        root_x_extra = root_x_offset + "|AdvPy_RootExtraX_M"
+        root_x_control = root_x_extra + "|AdvPy_RootX_M"
+        root_x = BodyRootControlSpec(
             root_x_offset, root_x_extra, root_x_control,
             root_joint.world_position,
             body_fk_curve_radius(body, root_joint, radius,
@@ -278,7 +298,7 @@ def plan_body_torso(
             ))
     plan = BodyTorsoPlan(BodyLimbFkControlPlan(root_path, root_name, tuple(controls)), pelvis, tuple(attachments), leg_lock,
                          use_offset_parent_matrix=build_options.use_offset_parent_matrix,
-                         root_x=root_x)
+                         root_x=root_x, cogs=tuple(cogs))
     if spine_ik:
         plan=with_spine_ik(body,plan) if description==BodyAxialDescription() else with_spline_ik(body,plan,description)
     return with_head_aim(plan,body,description,up_axis) if head_aim else plan
@@ -302,6 +322,18 @@ def audit_body_torso(plan: BodyTorsoPlan, snapshot: BodyTorsoSnapshot) -> tuple[
                 or state.control_rotate_order != 3
                 or state.shape_type != "nurbsCurve"):
             issues.append("RootX 控制器层级或绑定姿态不一致")
+    if len(snapshot.cogs) != len(plan.cogs):
+        issues.append("COG 控制器数量不一致")
+    for spec, state in zip(plan.cogs, snapshot.cogs):
+        if (state.offset_parent != spec.offset_path.rsplit("|", 1)[0]
+                or state.extra_parent != spec.offset_path
+                or state.control_parent != spec.extra_path
+                or any(abs(a - b) > 1e-4 for a, b in zip(
+                    state.world_position, spec.world_position))
+                or state.control_rotate_order != 0
+                or state.shape_type != "nurbsCurve"):
+            issues.append("COG 控制器层级或绑定姿态不一致："
+                          + spec.control_name)
     if snapshot.root_fkx_parent_path != plan.root_fkx_path.rsplit("|", 1)[0]:
         issues.append("Root FKX 接收层父链不一致")
     if (snapshot.leg_lock_parent_path

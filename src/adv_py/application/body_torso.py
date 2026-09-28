@@ -44,11 +44,16 @@ class BuildBodyTorso:
         arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan, *, radius: float = 1.5, spine_ik: bool = False, description=None, head_aim=False,
     ) -> BodyTorsoBuildPlan:
         options={'up_axis':self._host.scene_up_axis()} if head_aim else {}
+        metadata = {item.joint: item
+                    for item in safety.symmetry.source.metadata}
+        cog_names = tuple(item.output_name
+                          for item in safety.symmetry.instances
+                          if metadata[item.source_joint].cog)
         torso = plan_body_torso(
             safety.body, arm, leg, radius=radius, spine_ik=spine_ik,
             description=description, head_aim=head_aim,
             build_options=BodyBuildOptions.from_fit_settings(
-                safety.symmetry.settings), **options)
+                safety.symmetry.settings), cog_names=cog_names, **options)
         collisions = tuple(sorted({path for name in torso.node_names for path in self._host.find_name_collisions(name)}))
         self._host.preflight_body_torso(torso)
         return BodyTorsoBuildPlan(safety, torso, collisions)

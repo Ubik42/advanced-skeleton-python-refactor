@@ -26,10 +26,11 @@ class MayaBodyTorsoMixin:
     def preflight_body_torso(self, plan):
         if type(plan.use_offset_parent_matrix) is not bool:
             raise FitSkeletonValidationError("Torso OPM 开关无效")
-        if plan.root_x is not None:
-            parent = plan.root_x.offset_path.rsplit("|", 1)[0]
+        outer = plan.cogs[0] if plan.cogs else plan.root_x
+        if outer is not None:
+            parent = outer.offset_path.rsplit("|", 1)[0]
             if self._cmds.ls(parent, long=True, type="transform") != [parent]:
-                raise FitSkeletonValidationError("RootX 缺少 RootFollowMain 父级")
+                raise FitSkeletonValidationError("根控制层缺少 RootFollowMain 父级")
         if plan.use_offset_parent_matrix:
             for spec in plan.attachments:
                 if spec.kind == "parentConstraint" and not spec.translation_only:
@@ -60,8 +61,9 @@ class MayaBodyTorsoMixin:
             raise FitSkeletonValidationError("Torso 名称在执行前发生冲突")
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
-            if plan.root_x is not None:
-                spec = plan.root_x
+            for spec in (*plan.cogs,
+                         *((plan.root_x,) if plan.root_x is not None else ())):
+                root_x = spec is plan.root_x
                 self._transaction_changed = True
                 offset = self._cmds.createNode(
                     "transform", name=spec.offset_name,
@@ -69,7 +71,7 @@ class MayaBodyTorsoMixin:
                     skipSelect=True)
                 offset = (self._cmds.ls(offset, long=True) or [offset])[0]
                 if offset != spec.offset_path:
-                    raise RuntimeError("RootX Offset 路径漂移")
+                    raise RuntimeError("根控制 Offset 路径漂移")
                 self._cmds.xform(offset, worldSpace=True,
                                  translation=spec.world_position)
                 extra = self._cmds.createNode(
@@ -77,14 +79,16 @@ class MayaBodyTorsoMixin:
                     skipSelect=True)
                 extra = (self._cmds.ls(extra, long=True) or [extra])[0]
                 if extra != spec.extra_path:
-                    raise RuntimeError("RootX Extra 路径漂移")
+                    raise RuntimeError("根控制 Extra 路径漂移")
                 control = create_adv_icon(
                     self._cmds, name=spec.control_name, parent=extra,
-                    template="Root_icon", radius=spec.radius,
+                    template="Root_icon" if root_x else "COG_icon",
+                    radius=spec.radius,
                     fallback_normal=(0.0, 1.0, 0.0))
                 if control != spec.control_path:
-                    raise RuntimeError("RootX 控制路径漂移")
-                self._cmds.setAttr(control + ".rotateOrder", 3)
+                    raise RuntimeError("根控制路径漂移")
+                if root_x:
+                    self._cmds.setAttr(control + ".rotateOrder", 3)
             created_root = self.create_body_control_root(
                 plan.controls.root_name,
                 parent_path=plan.controls.root_path.rsplit("|", 1)[0]
@@ -243,24 +247,26 @@ class MayaBodyTorsoMixin:
             source(lock.decompose_name + ".inputMatrix"),
             tuple(source(lock.path + "." + channel)
                   for channel in ("translate", "rotate", "scale", "shear")),
-            (self._capture_body_root_x(plan.root_x)
+            (self._capture_body_root_control(plan.root_x)
              if plan.root_x is not None else None),
+            tuple(self._capture_body_root_control(spec)
+                  for spec in plan.cogs),
         )
 
-    def _capture_body_root_x(self, spec):
-        from adv_py.core.body_torso import BodyRootXState
+    def _capture_body_root_control(self, spec):
+        from adv_py.core.body_torso import BodyRootControlState
         c = self._cmds
         for path in (spec.offset_path, spec.extra_path,
                      spec.control_path):
             if c.ls(path, long=True, type="transform") != [path]:
-                raise FitSkeletonValidationError("RootX 控制层缺失：" + path)
+                raise FitSkeletonValidationError("根控制层缺失：" + path)
         def parent(path):
             values = c.listRelatives(path, parent=True,
                                      fullPath=True) or []
             return values[0] if len(values) == 1 else None
         shapes = c.listRelatives(spec.control_path, shapes=True,
                                  noIntermediate=True, fullPath=True) or []
-        return BodyRootXState(
+        return BodyRootControlState(
             parent(spec.offset_path), parent(spec.extra_path),
             parent(spec.control_path),
             tuple(float(value) for value in c.xform(
