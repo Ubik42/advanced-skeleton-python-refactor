@@ -400,7 +400,7 @@ class MayaPanelController:
                                maximum_influences: int = 4,
                                head_aim: bool = False,
                                segment_influences: bool = True,
-                               fit_parts: bool = False) -> PanelCharacter:
+                               fit_parts: bool = True) -> PanelCharacter:
         from adv_py.adapters.maya_source_skeleton_fit import (
             MayaSourceSkeletonFitHost)
         from adv_py.application.character_from_source import (

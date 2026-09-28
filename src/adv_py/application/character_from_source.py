@@ -50,7 +50,7 @@ class BuildCharacterFromSourceSkeleton:
              maximum_influences: int = 4,
              include_head_aim: bool = False,
              include_segment_influences: bool = True,
-             use_fit_part_hierarchy: bool = False,
+             use_fit_part_hierarchy: bool = True,
              ) -> SourceCharacterBuildPlan:
         if not source_root.strip() or not container.strip():
             raise ValueError("来源根关节与 Fit 容器名称不能为空")
@@ -79,7 +79,7 @@ class BuildCharacterFromSourceSkeleton:
               maximum_influences: int = 4,
               include_head_aim: bool = False,
               include_segment_influences: bool = True,
-              use_fit_part_hierarchy: bool = False,
+              use_fit_part_hierarchy: bool = True,
               ) -> SourceCharacterBuildResult:
         plan = self.plan(source_root, container, meshes=meshes,
             maximum_influences=maximum_influences,
