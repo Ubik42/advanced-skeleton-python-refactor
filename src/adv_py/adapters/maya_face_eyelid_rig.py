@@ -37,6 +37,19 @@ _CLOSED_LOWER_UPWARD_FOLLOW = .6
 class MayaFaceEyeLidRigHost(MayaFaceBuildPoseMixin,
                             MayaFaceLowerOuterAuxiliaryMixin,
                             MayaDenseSkinHost, MayaFacePreHost):
+    def read_built_eye_lid_mode(self) -> bool | None:
+        matches = self._cmds.ls("FaceMotionSystem", long=True,
+                                type="transform") or []
+        if not matches:
+            return None
+        if len(matches) != 1:
+            raise FitSkeletonValidationError("FaceMotionSystem 不唯一")
+        motion = matches[0]
+        if not self._cmds.attributeQuery("advPySimplerEyeLid",
+                                         node=motion, exists=True):
+            return None
+        return bool(self._cmds.getAttr(motion + ".advPySimplerEyeLid"))
+
     def _repair_eye_lid_normals(self, mesh: str, pre: MayaFaceBuildHost,
                                 eye_radii: dict[FaceSide, float],
                                 mobile_inners: dict[FaceSide, bool],

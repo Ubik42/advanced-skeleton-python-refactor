@@ -10,6 +10,7 @@ _OPEN_PANELS = []
 
 
 def format_face_eye_lid_build_result(result: dict) -> str:
+    mode = "简化眼睑；" if result.get("simpler_eyelid") else ""
     mirrored = ("；已从右侧 Fit 自动镜像左侧"
                 if result.get("symmetric_mirror") else "")
     depth_changes = [f"{label} {result['eye_depth_alignment'][side]['applied_cm']:.3f} cm"
@@ -36,7 +37,7 @@ def format_face_eye_lid_build_result(result: dict) -> str:
         for label, detail in failed)
         + "；需修正眼区模型或 Fit 后重新验收"
         if failed else "")
-    return (f"双侧眼睑控制已建立：{len(result['controls'])} 个控制器、"
+    return (f"双侧眼睑控制已建立：{mode}{len(result['controls'])} 个控制器、"
             f"{len(result['eye_controls'])} 个眨眼主控、"
             f"{len(result['joints'])} 个分段关节；"
             + f"右侧区域 {result['area_vertices']['Right']} 顶点，"
@@ -1047,6 +1048,8 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow("Include", self.face_include)
             self.face_include.currentIndexChanged.connect(
                 lambda _: self._run("设置 Face Include", self._face_save_include))
+            self.face_simpler_eye_lid = QtWidgets.QCheckBox("simpler eyeLid")
+            form.addRow(self.face_simpler_eye_lid)
             stack.addWidget(group)
             self.face_eye_right = QtWidgets.QLineEdit()
             self.face_eye_right.setPlaceholderText("|model:RightEye")
@@ -2350,7 +2353,9 @@ def create_panel(controller: MayaPanelController | None = None):
                     + " 项：" + "、".join(report["missing"]))
 
         def _face_build_eye_lids(self):
-            result = self.controller.face_build_eye_lids(self._namespace())
+            result = self.controller.face_build_eye_lids(
+                self._namespace(),
+                simpler_eyelid=self.face_simpler_eye_lid.isChecked())
             return format_face_eye_lid_build_result(result)
 
         def _face_go_to_build_pose(self):
@@ -2534,6 +2539,18 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.face_include.blockSignals(True)
                 self.face_include.setCurrentText(include)
                 self.face_include.blockSignals(False)
+            if hasattr(self, "face_simpler_eye_lid"):
+                namespace = self._namespace()
+                try:
+                    built_mode = self.controller.face_built_eye_lid_mode(
+                        namespace)
+                except ValueError:
+                    built_mode = None
+                if built_mode is not None:
+                    self.face_simpler_eye_lid.setChecked(built_mode)
+                elif getattr(self, "_face_mode_namespace", None) != namespace:
+                    self.face_simpler_eye_lid.setChecked(False)
+                self._face_mode_namespace = namespace
             if hasattr(self, "preparation_object_fields"):
                 for role, field in self.preparation_object_fields.items():
                     try:

@@ -1305,12 +1305,21 @@ class MayaPanelController:
         return MayaFaceBuildHost(namespace=None if namespace == ":" else namespace
             ).inspect_build_inputs()
 
-    def face_build_eye_lids(self, namespace: str) -> dict:
+    def face_build_eye_lids(self, namespace: str, *,
+                            simpler_eyelid: bool = False) -> dict:
         from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
         from adv_py.application.face_eyelid_rig import BuildFaceEyeLids
 
         return BuildFaceEyeLids(MayaFaceEyeLidRigHost(
-            namespace=None if namespace == ":" else namespace)).execute()
+            namespace=None if namespace == ":" else namespace)).execute(
+                simpler_eyelid=simpler_eyelid)
+
+    def face_built_eye_lid_mode(self, namespace: str) -> bool | None:
+        from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
+
+        return MayaFaceEyeLidRigHost(
+            namespace=None if namespace == ":" else namespace
+        ).read_built_eye_lid_mode()
 
     def face_go_to_build_pose(self, namespace: str) -> int:
         from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
