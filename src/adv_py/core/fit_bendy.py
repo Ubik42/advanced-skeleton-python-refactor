@@ -1,7 +1,8 @@
 """Source-shaped chain descriptions for AdvancedSkeleton 6.925 Bendy."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from math import dist
 
 from .fit_metadata import FitJointMetadata
 from .fit_part import FitPartJointSpec
@@ -19,6 +20,7 @@ class FitBendyChainSpec:
     start_position: tuple[float, float, float]
     end_position: tuple[float, float, float]
     part_positions: tuple[tuple[float, float, float], ...]
+    child_start_control: str | None = None
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -122,7 +124,17 @@ class FitBendyChainSpec:
                 *(name + "Shape" for name in self.micro_control_names),
                 *self.micro_output_names,
                 *(name + "Aim" for name in self.motion_transform_names),
-                *(name + "MicroFollow" for name in self.motion_transform_names))
+                *(name + "MicroFollow" for name in self.motion_transform_names),
+                *(node for row in self.micro_orientation_names
+                  for node in row),
+                *(node for add, mults in self.micro_twist_names
+                  for node in (add, *mults)),
+                *(node for add, deltas, weights in self.micro_scale_names
+                  for node in (add, *deltas, *weights)),
+                *(self.micro_end_twist_names if self.child_start_control
+                  else ()),
+                *((node for row in self.micro_end_scale_names
+                   for node in row) if self.child_start_control else ()))
 
     @property
     def deform_constraint_names(self) -> tuple[str, ...]:
@@ -132,6 +144,72 @@ class FitBendyChainSpec:
     @property
     def deform_scale_pick_names(self) -> tuple[str, ...]:
         return tuple("AdvPy_BendyScale" + name
+                     for name in self.deform_names)
+
+    @property
+    def deform_scale_mult_names(self) -> tuple[str, ...]:
+        return tuple("AdvPy_BendyDeformScale" + name
+                     for name in self.deform_names)
+
+    def control_weights(self, sample_index: int) -> tuple[float, ...]:
+        """MEL's start, master and interior distance falloffs at a bind sample."""
+        if not 0 <= sample_index <= len(self.part_names):
+            raise ValueError("Bendy 采样编号超出 Body／Part 链")
+        total = dist(self.start_position, self.end_position)
+        if total <= 1e-8:
+            raise ValueError("Bendy 起止关节不能重合")
+        point = (self.start_position if sample_index == 0
+                 else self.part_positions[sample_index - 1])
+        master = max(0.0, 1.0 - dist(point, self.master_position)
+                     / (total * 0.5))
+        start = 1.0 - dist(point, self.start_position) / total
+        interior_interval = total / (self.control_count + 1)
+        interior = tuple(max(0.0, 1.0 - dist(point, position)
+                             / interior_interval)
+                         for position in self.control_positions[1:])
+        return (master, start, *interior)
+
+    def twist_weights(self, sample_index: int) -> tuple[float, ...]:
+        scale_weights = self.control_weights(sample_index)
+        return (scale_weights[0],
+                1.0 - sample_index / len(self.part_names),
+                *scale_weights[2:])
+
+    @property
+    def micro_orientation_names(self) -> tuple[tuple[str, str, str], ...]:
+        return tuple(("AdvPy_" + name + "UpBlend",
+                      "AdvPy_" + name + "UpDecompose",
+                      "AdvPy_" + name + "Up")
+                     for name in self.deform_names)
+
+    @property
+    def micro_twist_names(self) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        return tuple(("AdvPy_" + name + "BendTwistAdd",
+                      tuple("AdvPy_" + name + "BendTwist" + str(index)
+                            for index in range(len(self.control_names))))
+                     for name in self.deform_names)
+
+    @property
+    def micro_scale_names(self) -> tuple[
+        tuple[str, tuple[str, ...], tuple[str, ...]], ...
+    ]:
+        return tuple((
+            "AdvPy_" + name + "BendScaleAdd",
+            tuple("AdvPy_" + name + "BendScaleDelta" + str(index)
+                  for index in range(len(self.control_names))),
+            tuple("AdvPy_" + name + "BendScaleWeight" + str(index)
+                  for index in range(len(self.control_names))),
+        ) for name in self.deform_names)
+
+    @property
+    def micro_end_twist_names(self) -> tuple[str, ...]:
+        return tuple("AdvPy_" + name + "BendTwistEnd"
+                     for name in self.deform_names)
+
+    @property
+    def micro_end_scale_names(self) -> tuple[tuple[str, str], ...]:
+        return tuple(("AdvPy_" + name + "BendScaleEndDelta",
+                      "AdvPy_" + name + "BendScaleEndWeight")
                      for name in self.deform_names)
 
 
@@ -187,4 +265,10 @@ def plan_fit_bendy_chains(
     if missing:
         raise ValueError("Fit Bendy 缺少可用 Twist 骨段："
                          + "、".join(missing))
-    return tuple(result)
+    by_bendy_start = {item.start_body: item for item in result}
+    if len(by_bendy_start) != len(result):
+        raise ValueError("Fit Bendy 起点重复")
+    return tuple(replace(item,
+        child_start_control=by_bendy_start[item.end_body].control_names[1]
+        if item.end_body in by_bendy_start else None)
+        for item in result)

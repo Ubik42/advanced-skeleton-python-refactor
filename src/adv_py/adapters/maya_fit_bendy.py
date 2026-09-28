@@ -18,10 +18,12 @@ _OWNER = "adv_py.fit_bendy_guides.v1"
 class MayaFitBendyMixin:
     def preflight_fit_bendy_deform(self, spec: FitBendyChainSpec) -> None:
         c = self._cmds
-        for index, (name, output, constraint, scale_pick) in enumerate(zip(
+        for index, (name, output, constraint, scale_pick,
+                    scale_mult) in enumerate(zip(
                 spec.deform_names, spec.micro_output_names,
                 spec.deform_constraint_names,
-                spec.deform_scale_pick_names)):
+                spec.deform_scale_pick_names,
+                spec.deform_scale_mult_names)):
             joints = c.ls(name, long=True, type="joint") or []
             drivers = c.ls(output, long=True, type="transform") or []
             if len(joints) != 1 or len(drivers) != 1:
@@ -32,7 +34,8 @@ class MayaFitBendyMixin:
                 raise ValueError("Bendy 变形关节不属于当前角色：" + name)
             if index and c.getAttr(joints[0] + "." + marker) != "fit-part-v1":
                 raise ValueError("Bendy 需要 Twist Part 关节：" + name)
-            if c.objExists(constraint) or c.objExists(scale_pick):
+            if (c.objExists(constraint) or c.objExists(scale_pick)
+                    or c.objExists(scale_mult)):
                 raise ValueError("Bendy 变形节点名称已占用：" + name)
             if c.listConnections(joints[0], type="skinCluster"):
                 raise ValueError("Bendy 接管必须在 Skin 绑定前执行：" + name)
@@ -41,15 +44,39 @@ class MayaFitBendyMixin:
         self._require_transaction()
         c = self._cmds
         poses = {}
-        for name, output, constraint, scale_pick in zip(
+        for (name, output, offset, constraint, scale_pick,
+             scale_mult_name) in zip(
                 spec.deform_names, spec.micro_output_names,
+                spec.micro_offset_names,
                 spec.deform_constraint_names,
-                spec.deform_scale_pick_names):
+                spec.deform_scale_pick_names,
+                spec.deform_scale_mult_names):
             joint = (c.ls(name, long=True, type="joint") or [])[0]
             poses[name] = tuple(float(value) for value in c.xform(
                 joint, query=True, worldSpace=True, matrix=True))
-            # Keep the existing scale graph. The curve frame takes over only
-            # position and orientation, as in the MEL MicroX branch.
+            scale_value = c.getAttr(joint + ".scale")[0]
+            scale_source = c.connectionInfo(joint + ".scale",
+                                            sourceFromDestination=True)
+            if scale_source:
+                c.disconnectAttr(scale_source, joint + ".scale")
+            scale_mult = c.createNode("multiplyDivide",
+                                      name=scale_mult_name)
+            if scale_source:
+                c.connectAttr(scale_source, scale_mult + ".input1")
+            else:
+                for axis, value in zip("XYZ", scale_value):
+                    destination = joint + ".scale" + axis
+                    source = c.connectionInfo(destination,
+                                              sourceFromDestination=True)
+                    if source:
+                        c.disconnectAttr(source, destination)
+                        c.connectAttr(source,
+                                      scale_mult + ".input1" + axis)
+                    else:
+                        c.setAttr(scale_mult + ".input1" + axis,
+                                  float(value))
+            c.connectAttr(offset + ".scale", scale_mult + ".input2")
+            c.connectAttr(scale_mult + ".output", joint + ".scale")
             for attribute in ("translate", "rotate", "offsetParentMatrix"):
                 destination = joint + "." + attribute
                 source = c.connectionInfo(destination,
@@ -91,10 +118,13 @@ class MayaFitBendyMixin:
 
     def capture_fit_bendy_deform(self, spec: FitBendyChainSpec) -> bool:
         c = self._cmds
-        for name, output, constraint, scale_pick in zip(
+        for (name, output, offset, constraint, scale_pick,
+             scale_mult) in zip(
                 spec.deform_names, spec.micro_output_names,
+                spec.micro_offset_names,
                 spec.deform_constraint_names,
-                spec.deform_scale_pick_names):
+                spec.deform_scale_pick_names,
+                spec.deform_scale_mult_names):
             joints = c.ls(name, long=True, type="joint") or []
             drivers = c.ls(output, long=True, type="transform") or []
             if (len(joints) != 1 or len(drivers) != 1
@@ -104,7 +134,15 @@ class MayaFitBendyMixin:
                     or c.nodeType(scale_pick) != "pickMatrix"
                     or c.connectionInfo(joints[0] + ".offsetParentMatrix",
                                         sourceFromDestination=True)
-                    != scale_pick + ".outputMatrix"):
+                    != scale_pick + ".outputMatrix"
+                    or not c.objExists(scale_mult)
+                    or c.nodeType(scale_mult) != "multiplyDivide"
+                    or c.connectionInfo(joints[0] + ".scale",
+                                        sourceFromDestination=True)
+                    != scale_mult + ".output"
+                    or c.connectionInfo(scale_mult + ".input2",
+                                        sourceFromDestination=True)
+                    != offset + ".scale"):
                 return False
             targets = c.parentConstraint(constraint, query=True,
                                          targetList=True) or []
@@ -391,14 +429,106 @@ class MayaFitBendyMixin:
             target = (spec.motion_transform_names[index + 1]
                       if index + 1 < len(spec.motion_transform_names)
                       else spec.end_proxy_name)
+            blend_name, decompose_name, up_name = (
+                spec.micro_orientation_names[index])
+            blend = c.createNode("blendMatrix", name=blend_name,
+                                 skipSelect=True)
+            decompose = c.createNode("decomposeMatrix",
+                                     name=decompose_name,
+                                     skipSelect=True)
+            up = c.createNode("transform", name=up_name,
+                              parent=_GROUPS[0], skipSelect=True)
+            c.connectAttr(spec.follow_node_names[0] + ".worldMatrix[0]",
+                          blend + ".inputMatrix")
+            c.connectAttr(spec.follow_node_names[1] + ".worldMatrix[0]",
+                          blend + ".target[0].targetMatrix")
+            c.setAttr(blend + ".target[0].weight",
+                      index / (len(spec.part_names) + 1))
+            c.connectAttr(blend + ".outputMatrix",
+                          decompose + ".inputMatrix")
+            c.connectAttr(decompose + ".outputRotate",
+                          up + ".rotate")
             c.aimConstraint(target, guide_name,
                             aimVector=((-1 if spec.side == "L" else 1),
                                        0, 0), upVector=(0, 0, 1),
                             worldUpType="objectrotation",
-                            worldUpObject=spec.follow_node_names[0],
+                            worldUpObject=up,
                             name=guide_name + "Aim")
             c.parentConstraint(guide_name, offset, maintainOffset=True,
                                name=guide_name + "MicroFollow")
+            twist_add_name, twist_mult_names = spec.micro_twist_names[index]
+            twist_add = c.createNode("plusMinusAverage",
+                                     name=twist_add_name,
+                                     skipSelect=True)
+            for control_index, (bend_control, mult_name, weight) in enumerate(
+                    zip(spec.control_names, twist_mult_names,
+                        spec.twist_weights(index))):
+                mult = c.createNode("multDoubleLinear", name=mult_name,
+                                    skipSelect=True)
+                c.connectAttr(bend_control + ".rotateX",
+                              mult + ".input1")
+                c.setAttr(mult + ".input2", weight)
+                c.connectAttr(mult + ".output",
+                              twist_add + f".input1D[{control_index}]")
+            if spec.child_start_control:
+                end_twist = c.createNode(
+                    "multDoubleLinear",
+                    name=spec.micro_end_twist_names[index],
+                    skipSelect=True)
+                c.connectAttr(spec.child_start_control + ".rotateX",
+                              end_twist + ".input1")
+                c.setAttr(end_twist + ".input2",
+                          index / len(spec.part_names))
+                c.connectAttr(end_twist + ".output",
+                              twist_add + f".input1D[{len(spec.control_names)}]")
+            c.connectAttr(twist_add + ".output1D",
+                          output_name + ".rotateX")
+            scale_add_name, delta_names, weight_names = (
+                spec.micro_scale_names[index])
+            scale_add = c.createNode("plusMinusAverage",
+                                     name=scale_add_name,
+                                     skipSelect=True)
+            c.setAttr(scale_add + ".input3D[0]", 1.0, 1.0, 1.0,
+                      type="float3")
+            for control_index, (bend_control, delta_name,
+                                weight_name, weight) in enumerate(zip(
+                                    spec.control_names, delta_names,
+                                    weight_names,
+                                    spec.control_weights(index)), start=1):
+                delta = c.createNode("plusMinusAverage",
+                                     name=delta_name, skipSelect=True)
+                c.setAttr(delta + ".operation", 2)
+                c.connectAttr(bend_control + ".scale",
+                              delta + ".input3D[0]")
+                c.setAttr(delta + ".input3D[1]", 1.0, 1.0, 1.0,
+                          type="float3")
+                mult = c.createNode("multiplyDivide", name=weight_name,
+                                    skipSelect=True)
+                c.connectAttr(delta + ".output3D", mult + ".input1")
+                c.setAttr(mult + ".input2", weight, weight, weight)
+                c.connectAttr(mult + ".output",
+                              scale_add + f".input3D[{control_index}]")
+            if spec.child_start_control:
+                delta_name, weight_name = (
+                    spec.micro_end_scale_names[index])
+                delta = c.createNode("plusMinusAverage",
+                                     name=delta_name, skipSelect=True)
+                c.setAttr(delta + ".operation", 2)
+                c.connectAttr(spec.child_start_control + ".scale",
+                              delta + ".input3D[0]")
+                c.setAttr(delta + ".input3D[1]", 1.0, 1.0, 1.0,
+                          type="float3")
+                weight = c.createNode("multiplyDivide",
+                                      name=weight_name, skipSelect=True)
+                c.connectAttr(delta + ".output3D",
+                              weight + ".input1")
+                end_weight = 1.0 - spec.control_weights(index)[1]
+                c.setAttr(weight + ".input2", end_weight,
+                          end_weight, end_weight)
+                c.connectAttr(weight + ".output",
+                              scale_add + f".input3D[{len(spec.control_names) + 1}]")
+            c.connectAttr(scale_add + ".output3D",
+                          offset + ".scale")
         self._transaction_changed = True
 
     def capture_fit_bendy_micro(self, spec: FitBendyChainSpec) -> bool:
@@ -407,11 +537,30 @@ class MayaFitBendyMixin:
         if (not c.objExists(_MICRO_GROUP)
                 or not c.objExists(master + ".microVis")):
             return False
-        for offset, control, output, guide in zip(
+        for index, (offset, control, output, guide) in enumerate(zip(
                 spec.micro_offset_names, spec.micro_control_names,
-                spec.micro_output_names, spec.motion_transform_names):
+                spec.micro_output_names, spec.motion_transform_names)):
+            blend, decompose, up = spec.micro_orientation_names[index]
+            twist_add, twist_mults = spec.micro_twist_names[index]
+            scale_add, delta_names, weight_names = (
+                spec.micro_scale_names[index])
             if (not c.objExists(offset) or not c.objExists(control)
                     or not c.objExists(output)
+                    or not c.objExists(blend)
+                    or c.nodeType(blend) != "blendMatrix"
+                    or not c.objExists(decompose)
+                    or c.nodeType(decompose) != "decomposeMatrix"
+                    or not c.objExists(up)
+                    or not c.objExists(twist_add)
+                    or c.nodeType(twist_add) != "plusMinusAverage"
+                    or c.connectionInfo(output + ".rotateX",
+                                        sourceFromDestination=True)
+                    != twist_add + ".output1D"
+                    or not c.objExists(scale_add)
+                    or c.nodeType(scale_add) != "plusMinusAverage"
+                    or c.connectionInfo(offset + ".scale",
+                                        sourceFromDestination=True)
+                    != scale_add + ".output3D"
                     or not c.objExists(guide + "Aim")
                     or c.nodeType(guide + "Aim") != "aimConstraint"
                     or not c.objExists(guide + "MicroFollow")
@@ -421,6 +570,50 @@ class MayaFitBendyMixin:
                                         sourceFromDestination=True)
                     != master + ".microVis"):
                 return False
+            for bend_control, mult_name, weight in zip(
+                    spec.control_names, twist_mults,
+                    spec.twist_weights(index)):
+                if (not c.objExists(mult_name)
+                        or c.nodeType(mult_name) != "multDoubleLinear"
+                        or c.connectionInfo(mult_name + ".input1",
+                                            sourceFromDestination=True)
+                        != bend_control + ".rotateX"
+                        or abs(float(c.getAttr(mult_name + ".input2"))
+                               - weight) > 1e-8):
+                    return False
+            for bend_control, delta_name, weight_name, weight in zip(
+                    spec.control_names, delta_names, weight_names,
+                    spec.control_weights(index)):
+                if (not c.objExists(delta_name)
+                        or c.nodeType(delta_name) != "plusMinusAverage"
+                        or c.connectionInfo(delta_name + ".input3D[0]",
+                                            sourceFromDestination=True)
+                        != bend_control + ".scale"
+                        or not c.objExists(weight_name)
+                        or c.nodeType(weight_name) != "multiplyDivide"
+                        or c.connectionInfo(weight_name + ".input1",
+                                            sourceFromDestination=True)
+                        != delta_name + ".output3D"
+                        or abs(float(c.getAttr(weight_name + ".input2X"))
+                               - weight) > 1e-8):
+                    return False
+            if spec.child_start_control:
+                twist_end = spec.micro_end_twist_names[index]
+                scale_delta, scale_weight = (
+                    spec.micro_end_scale_names[index])
+                if (not c.objExists(twist_end)
+                        or c.nodeType(twist_end) != "multDoubleLinear"
+                        or c.connectionInfo(twist_end + ".input1",
+                                            sourceFromDestination=True)
+                        != spec.child_start_control + ".rotateX"
+                        or abs(float(c.getAttr(twist_end + ".input2"))
+                               - index / len(spec.part_names)) > 1e-8
+                        or not c.objExists(scale_delta)
+                        or not c.objExists(scale_weight)
+                        or c.connectionInfo(scale_delta + ".input3D[0]",
+                                            sourceFromDestination=True)
+                        != spec.child_start_control + ".scale"):
+                    return False
         return True
 
     def capture_fit_bendy_guides(
