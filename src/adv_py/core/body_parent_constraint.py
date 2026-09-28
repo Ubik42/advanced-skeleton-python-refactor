@@ -144,7 +144,8 @@ def plan_body_parent_constraint(
     outputs: list[tuple[str, str]] = []
     nodes = [] if source.existing_mult_matrix else [(mm, "multMatrix")]
     if pick:
-        nodes.append((pm, "pickMatrix"))
+        if not source.existing_pick_matrix:
+            nodes.append((pm, "pickMatrix"))
         outputs.append((mm + ".matrixSum", pm + ".inputMatrix"))
     if decompose:
         nodes.append((dm, "decomposeMatrix"))

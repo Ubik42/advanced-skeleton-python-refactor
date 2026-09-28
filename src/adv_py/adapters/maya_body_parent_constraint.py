@@ -72,7 +72,9 @@ class MayaBodyParentConstraintMixin:
             if c.objExists(name):
                 raise ValueError(f"{kind} 节点名称已被占用：{name}")
         if plan.mode == "constraint":
-            for kind in ("parentConstraint", "scaleConstraint"):
+            kinds = (("parentConstraint",) if plan.input.skip_scale else
+                     ("parentConstraint", "scaleConstraint"))
+            for kind in kinds:
                 if c.listConnections(plan.input.driven, source=True,
                                      destination=False, type=kind):
                     raise ValueError("目标已有约束：" + kind)
@@ -148,18 +150,27 @@ class MayaBodyParentConstraintMixin:
                                   else _matrix(c.getAttr(target))))
         connections = []
         if plan.mode == "constraint":
-            actual = set(c.listConnections(source.driven, source=True,
-                                           destination=False,
-                                           type="parentConstraint") or [])
-            if actual:
-                connections.append((source.driver,
-                                    source.driven + ".parentConstraint"))
-            actual = set(c.listConnections(source.driven, source=True,
-                                           destination=False,
-                                           type="scaleConstraint") or [])
-            if actual and not source.skip_scale:
-                connections.append((source.driver,
-                                    source.driven + ".scaleConstraint"))
+            for kind, label in (("parentConstraint", "parentConstraint"),
+                                ("scaleConstraint", "scaleConstraint")):
+                if kind == "scaleConstraint" and source.skip_scale:
+                    continue
+                constraints = c.listConnections(
+                    source.driven, source=True, destination=False,
+                    type=kind) or []
+                if len(set(constraints)) != 1:
+                    continue
+                constraint = constraints[0]
+                targets = (c.parentConstraint(constraint, query=True,
+                                               targetList=True)
+                           if kind == "parentConstraint" else
+                           c.scaleConstraint(constraint, query=True,
+                                             targetList=True)) or []
+                if len(targets) != 1:
+                    continue
+                resolved = c.ls(targets[0], long=True) or []
+                if resolved == [source.driver]:
+                    connections.append((source.driver,
+                                        source.driven + "." + label))
         else:
             connections = [(c.connectionInfo(target,
                            sourceFromDestination=True), target)
