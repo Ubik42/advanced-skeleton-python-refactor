@@ -949,12 +949,10 @@ class MayaPanelController:
         return len(plan.joints)
 
     def game_engine_root_motion(self, namespace: str, create: bool):
-        from adv_py.adapters.maya_body_game_root_motion import (
-            MayaBodyGameRootMotionHost,
-        )
+        from adv_py.adapters.maya_body import MayaBodyBuildHost
         from adv_py.application.body_game_root_motion import SwitchGameRootMotion
 
-        host = MayaBodyGameRootMotionHost(
+        host = MayaBodyBuildHost(
             namespace=None if namespace == ":" else namespace)
         return SwitchGameRootMotion(host).apply(create=create)
 

@@ -12,10 +12,7 @@ from adv_py.core.character_registry import (
     CharacterRegistration, encode_registration,
 )
 
-from .maya_body import MayaBodyBuildHost
-
-
-class MayaBodyGameRootMotionHost(MayaBodyBuildHost):
+class MayaBodyGameRootMotionMixin:
     def _root_motion_cmds(self):
         return self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
 

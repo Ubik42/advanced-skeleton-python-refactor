@@ -109,6 +109,10 @@ class StageBodyCharacterRebuild:
                 if any(key.startswith('spine.fkMatch.') for key in keys):
                     from .character_spline_animation import EnableBodyCharacterSplineAnimation
                     registration=EnableBodyCharacterSplineAnimation(stage).apply()
+                if any(key.startswith('game.rootMotion.') for key in keys):
+                    from .body_game_root_motion import SwitchGameRootMotion
+                    SwitchGameRootMotion(stage).apply(create=True)
+                    registration=stage.read_character_registration()
                 host.match_character_rebuild_solver(stage,registration)
                 registration=host.preserve_character_rebuild_binding(stage,original.registration,registration)
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
