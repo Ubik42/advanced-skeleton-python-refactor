@@ -4,8 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from adv_py.core.fit_metadata import FitJointField
-
 from .character_from_fit import (BuildCharacterFromFit,
                                  CharacterFromFitHost,
                                  CharacterFromFitResult)
@@ -64,12 +62,6 @@ class BuildCharacterFromSourceSkeleton:
         if use_fit_part_hierarchy and not include_segment_influences:
             raise ValueError("Fit Part／Inbetween 需要启用分段 Skin 影响")
         fit = BuildFitFromSourceSkeleton(self._host).plan(source_root)
-        if use_fit_part_hierarchy and not any(
-                edit.value > 0 for _, edits in fit.part_metadata
-                for edit in edits if edit.field in (
-                    FitJointField.TWIST_JOINTS,
-                    FitJointField.INBETWEEN_JOINTS)):
-            raise ValueError("来源骨架没有可构建的 Twist／Inbetween 标记")
         return SourceCharacterBuildPlan(source_root, container, meshes,
             maximum_influences, include_head_aim,
             include_segment_influences, use_fit_part_hierarchy, fit)
