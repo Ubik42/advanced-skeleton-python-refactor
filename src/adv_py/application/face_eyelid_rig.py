@@ -20,6 +20,7 @@ class FaceEyeLidRigHost(FaceLowerOuterAuxiliaryHost, Protocol):
     def capture_face_eye_lid_preparation(self) -> FaceEyeLidPreparationInput: ...
     def mirror_right_eye_fit_to_left(self, mesh: str) -> dict: ...
     def build_prepared_face_eye_lids(self, mode: FaceEyeLidBuildMode) -> dict: ...
+    def record_face_build_pose(self, controls: tuple[str, ...]) -> int: ...
 
 
 class BuildFaceEyeLids:
@@ -41,6 +42,7 @@ class BuildFaceEyeLids:
             if mode.simpler_eyelid:
                 auxiliary = BuildFaceLowerOuterAuxiliary(self.host)
                 built = []
+                built_controls = []
                 for side in ("R", "L"):
                     auxiliary_plan = auxiliary.plan(
                         side, simpler_eyelid=True)
@@ -48,7 +50,16 @@ class BuildFaceEyeLids:
                         raise RuntimeError("简化眼睑缺少眼下外围辅助计划")
                     auxiliary.apply_in_transaction(auxiliary_plan)
                     built.append(auxiliary_plan.joint_name)
+                    built_controls.append(auxiliary_plan.control_name)
                 result["lower_outer_auxiliaries"] = tuple(built)
+                result["lower_outer_controls"] = tuple(built_controls)
+            controls = tuple(dict.fromkeys((
+                *result["controls"].values(),
+                *result["eye_controls"].values(),
+                *result.get("lower_outer_controls", ()),
+            )))
+            result["build_pose_channels"] = self.host.record_face_build_pose(
+                controls)
             if mirror is not None:
                 result["symmetric_mirror"] = mirror
             if (len(result["controls"]) != mode.expected_arc_controls

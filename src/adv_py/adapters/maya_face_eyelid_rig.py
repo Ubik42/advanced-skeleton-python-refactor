@@ -27,13 +27,15 @@ from .maya_dense_skin import MayaDenseSkinHost
 from .maya_face_build import MayaFaceBuildHost
 from .maya_face_pre import MayaFacePreHost
 from .maya_face_lower_outer_auxiliary import MayaFaceLowerOuterAuxiliaryMixin
+from .maya_face_build_pose import MayaFaceBuildPoseMixin
 
 
 _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
 _CLOSED_LOWER_UPWARD_FOLLOW = .6
 
 
-class MayaFaceEyeLidRigHost(MayaFaceLowerOuterAuxiliaryMixin,
+class MayaFaceEyeLidRigHost(MayaFaceBuildPoseMixin,
+                            MayaFaceLowerOuterAuxiliaryMixin,
                             MayaDenseSkinHost, MayaFacePreHost):
     def _repair_eye_lid_normals(self, mesh: str, pre: MayaFaceBuildHost,
                                 eye_radii: dict[FaceSide, float],
@@ -596,7 +598,8 @@ class MayaFaceEyeLidRigHost(MayaFaceLowerOuterAuxiliaryMixin,
                 arcs[side][(EyeLidLayer.MAIN, "lower")], positions[side])
             vertical_follow_radii[side] = min(eye_radii[side],
                                                aperture_height)
-        names = ["FaceJoint_M", "EyeLidJoints_M", "FaceMotionSystem"]
+        names = ["FaceJoint_M", "EyeLidJoints_M", "FaceMotionSystem",
+                 "FaceControlSet", "faceBuildPose"]
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
             names.extend(("ctrlEye" + suffix,
