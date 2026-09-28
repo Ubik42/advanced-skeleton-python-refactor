@@ -77,8 +77,10 @@ def _node_stem(driven: str) -> tuple[str, str]:
     if not leaf:
         raise ValueError("约束目标名称无效")
     stem, separator, side = leaf.rpartition("_")
-    if not separator or not stem or not side:
-        raise ValueError("约束目标缺少名称与侧别后缀")
+    if not separator or side not in ("R", "L", "M"):
+        return leaf, ""
+    if not stem or not side:
+        raise ValueError("约束目标侧别后缀无效")
     return stem, "_" + side
 
 

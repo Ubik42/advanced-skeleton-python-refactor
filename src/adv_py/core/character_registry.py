@@ -234,7 +234,11 @@ def decode_registration(text):
                 # Registrations written before expanded Inbetween IK chains
                 # used the implicit three-joint Spine solver list.
                 raw = {**raw, "solver_joint_list": None}
+            if isinstance(raw, dict) and "use_offset_parent_matrix" not in raw:
+                raw = {**raw, "use_offset_parent_matrix": False}
             raw = exact(raw, (f.name for f in fields(BodySpinePlan)))
+            if type(raw["use_offset_parent_matrix"]) is not bool:
+                raise CharacterRegistryError("Spine OPM 开关无效")
             joints = []
             for row in raw["joints"]:
                 exact(row,(f.name for f in fields(BodyLimbMechanismJointSpec)))
@@ -247,7 +251,8 @@ def decode_registration(text):
                 joints.append(BodyLimbMechanismJointSpec(BodyLimbMechanismRole(row["role"]),FitBuildSide(row["side"]),path(row["source_joint"]),node,row["name"],path(row["parent_path"]),vector(row["world_position"],3),axes))
             if len(joints) != 6 or tuple(j.role.value for j in joints) != ("fk",)*3+("ik",)*3:
                 raise CharacterRegistryError("Spine 机制链不完整")
-            values = {k:path(v) for k,v in raw.items() if k not in ("joints","fk_controls","body_joints","pole_position","lengths","solver_joint_list")}
+            values = {k:path(v) for k,v in raw.items() if k not in ("joints","fk_controls","body_joints","pole_position","lengths","solver_joint_list","use_offset_parent_matrix")}
+            values["use_offset_parent_matrix"] = raw["use_offset_parent_matrix"]
             solver_joints = raw["solver_joint_list"]
             if solver_joints is not None:
                 if (not isinstance(solver_joints, list)

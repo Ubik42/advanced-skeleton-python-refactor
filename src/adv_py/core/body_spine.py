@@ -38,6 +38,7 @@ class BodySpinePlan:
     chest_space: str
     lengths: tuple[float, float]
     solver_joint_list: tuple[str, ...] | None = None
+    use_offset_parent_matrix: bool = False
 
     @property
     def blend_plug(self) -> str:
@@ -57,8 +58,10 @@ class BodySpinePlan:
             "AdvPy_SpineIKHandle", "AdvPy_SpineIKEffector", "AdvPy_SpinePoleConstraint",
             "AdvPy_SpineFKRootPoint", "AdvPy_SpineIKRootPoint", "AdvPy_SpineIKChestOrient",
             "AdvPy_SpineReverse", "AdvPy_SpineWaistPoint", "AdvPy_SpineWaistOrient",
-            "AdvPy_SpineChestPoint", "AdvPy_SpineChestOrient", "AdvPy_SpineChestSpaceParent",
-        )
+            "AdvPy_SpineChestPoint", "AdvPy_SpineChestOrient",
+        ) + (("AdvPy_SpineChestSpaceMM", "AdvPy_SpineChestSpacePM")
+             if self.use_offset_parent_matrix else
+             ("AdvPy_SpineChestSpaceParent",))
 
 
 def with_spine_ik(body, torso):
@@ -141,6 +144,7 @@ def with_spine_ik(body, torso):
         solve_limb_pole_position(*(j.world_position for j in source), source[0].world_axes[1],
                                 limb_label="Spine", distance_scale=0.75),
         specs[4].path+"|AdvPy_SpineWaistOutput", space, tuple(lengths),
+        use_offset_parent_matrix=torso.use_offset_parent_matrix,
     )
     return replace(torso, controls=replace(torso.controls, controls=(pelvis, base, waist, chest, *updated_upper)), spine=plan)
 

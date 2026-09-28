@@ -6,6 +6,7 @@ from adv_py.core.body_spine import spine_roll_degrees, spine_ik_goal_position
 from adv_py.core.body_limb_ik import solve_limb_pole_position
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from .maya_adv_icons import create_adv_icon
+from . import maya_chest_space
 
 
 class MayaBodySpineMixin:
@@ -96,7 +97,10 @@ class MayaBodySpineMixin:
                 c.connectAttr(plan.blend_plug, node + "." + weights[1])
                 if suffix == "Orient":
                     c.setAttr(node + ".interpType", 2)
-        c.parentConstraint(plan.body_joints[2], plan.chest_space, maintainOffset=False, name="AdvPy_SpineChestSpaceParent")
+        maya_chest_space.create(
+            self, plan.body_joints[2], plan.chest_space,
+            "AdvPy_SpineChestSpaceParent",
+            plan.use_offset_parent_matrix)
         c.setAttr(plan.root_path + ".visibility", False)
         self.validate_body_spine(plan)
 
@@ -143,7 +147,10 @@ class MayaBodySpineMixin:
                 for axis in "XYZ":
                     if not c.isConnected(f"{name}.constraint{kind.title()}{axis}", f"{body}.{kind}{axis}"):
                         raise FitSkeletonValidationError("Spine Body 输出接线变化")
-        targets("AdvPy_SpineChestSpaceParent", c.parentConstraint, (plan.body_joints[2],))
+        maya_chest_space.audit(
+            self, plan.body_joints[2], plan.chest_space,
+            "AdvPy_SpineChestSpaceParent",
+            plan.use_offset_parent_matrix)
         targets("AdvPy_SpinePoleConstraint", c.poleVectorConstraint, (plan.pole_control,))
         targets("AdvPy_SpineIKChestOrient", c.orientConstraint, (plan.ik_control,))
         for role, index in (("FK", 0), ("IK", 3)):

@@ -21,6 +21,7 @@ class BodySplinePlan:
     positions: tuple
     axes: tuple
     lengths: tuple[float,...]
+    use_offset_parent_matrix: bool = False
 
     @property
     def settings(self):return self.targets[-1]
@@ -47,12 +48,15 @@ class BodySplinePlan:
     def node_names(self):
         fixed=('AdvPy_SplineMechanisms','AdvPy_SplineChestSpace','AdvPy_SplineCurve','AdvPy_SplineCurveShape',
             'AdvPy_SplineIKHandle','AdvPy_SplineIKEffector','AdvPy_SplineFKRootPoint','AdvPy_SplineIKRootPoint',
-            'AdvPy_SplineChestOrient','AdvPy_SplineChestSpaceParent','AdvPy_SplineReverse','AdvPy_SplineArc',
+            'AdvPy_SplineChestOrient','AdvPy_SplineReverse','AdvPy_SplineArc',
             'AdvPy_SplineRatio','AdvPy_SplineStretchBlend','AdvPy_SplineClamp','AdvPy_SplineVolumeExponent','AdvPy_SplineVolume')
         targets=tuple(f'AdvPy_SplineIK{i}{suffix}' for i in range(len(self.targets)) for suffix in ('Offset','','Shape','Matrix','Position'))
         outputs=tuple(f'AdvPy_Spline{kind}{i}' for i in range(1,len(self.body_joints)) for kind in ('Point','Orient','Scale','Length','FKWorldScale','IKWorldScale'))
         rests=tuple(f'AdvPy_SplineIKRest{i}' for i in range(1,len(self.body_joints))) if self.curved else ()
-        return fixed+tuple(j.name for j in self.joints)+targets+outputs+rests
+        chest = (('AdvPy_SplineChestSpaceMM', 'AdvPy_SplineChestSpacePM')
+                 if self.use_offset_parent_matrix else
+                 ('AdvPy_SplineChestSpaceParent',))
+        return fixed+chest+tuple(j.name for j in self.joints)+targets+outputs+rests
 
 
 def _basis(count, parameter):
@@ -184,5 +188,5 @@ def with_spline_ik(body,torso,description):
     positions=(fit_spline_controls(tuple(j.world_position for j in source)) if curved else
                tuple(tuple(a+(b-a)*i/3 for a,b in zip(source[0].world_position,source[-1].world_position)) for i in range(4)))
     targets=tuple(pelvis.control_path+f'|AdvPy_SplineIK{i}Offset|AdvPy_SplineIK{i}' for i in range(len(positions)))
-    plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths))
+    plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths),torso.use_offset_parent_matrix)
     return replace(torso,controls=replace(torso.controls,controls=tuple(updated)),spline=plan)

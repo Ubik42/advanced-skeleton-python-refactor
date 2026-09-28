@@ -1,6 +1,7 @@
 """Native cubic spline IK, local curve length stretch and volume scaling."""
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from .maya_adv_icons import create_adv_icon
+from . import maya_chest_space
 
 
 def prepare(host,plan):
@@ -113,13 +114,18 @@ def create(host,plan):
                     c.setAttr(target_parent,1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,type='matrix',lock=True)
                     weight='AdvPy_SplineReverse.outputX' if target_index==0 else plan.settings+'.spineIkFk'
                     c.connectAttr(weight,node+f'.target[{target_index}].targetWeight',force=True)
-    c.parentConstraint(plan.body_joints[-1],plan.chest_space,maintainOffset=False,name='AdvPy_SplineChestSpaceParent')
+    maya_chest_space.create(host, plan.body_joints[-1], plan.chest_space,
+                           'AdvPy_SplineChestSpaceParent',
+                           plan.use_offset_parent_matrix)
     c.setAttr(plan.root_path+'.visibility',False)
     audit(host,plan)
 
 
 def audit(host,plan):
     c=host._cmds;n=len(plan.body_joints)
+    maya_chest_space.audit(host, plan.body_joints[-1], plan.chest_space,
+                          'AdvPy_SplineChestSpaceParent',
+                          plan.use_offset_parent_matrix)
     owner=c.getAttr(plan.root_path+'.advPySplineOwner')
     if owner not in ('adv_py.spline.v1','adv_py.spline.v2','adv_py.spline.v3'):raise FitSkeletonValidationError('Spline 所有权标记无效')
     if (owner=='adv_py.spline.v3')!=plan.curved:raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
