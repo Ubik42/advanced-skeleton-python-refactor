@@ -456,7 +456,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                for name in ("Group", "DeformationSystem", "Geometry",
                             "MotionSystem", "FKSystem", "IKSystem",
                             "FKIKSystem", "TwistSystem", "BendSystem",
-                            "RootSystem", "RootFollowMain", "AimSystem",
+                            "RootSystem", "RootFollowMain", "GlobalSystem",
+                            "GlobalFollowMain", "AimSystem",
                             "ConstraintSystem", "DrivingSystem")):
             raise FitSkeletonValidationError(
                 "角色系统层级名称已被占用")
@@ -493,6 +494,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             skipSelect=True)
         self._cmds.createNode(
             "transform", name="RootFollowMain", parent=root_system,
+            skipSelect=True)
+        global_system = self._cmds.createNode(
+            "transform", name="GlobalSystem", parent=motion,
+            skipSelect=True)
+        self._cmds.createNode(
+            "transform", name="GlobalFollowMain", parent=global_system,
             skipSelect=True)
         self._cmds.createNode(
             "transform", name="AimSystem", parent=motion,
@@ -616,6 +623,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                  "|Group|MotionSystem|BendSystem",
                  "|Group|MotionSystem|RootSystem",
                  "|Group|MotionSystem|RootSystem|RootFollowMain",
+                 "|Group|MotionSystem|GlobalSystem",
+                 "|Group|MotionSystem|GlobalSystem|GlobalFollowMain",
                  "|Group|MotionSystem|AimSystem",
                  "|Group|MotionSystem|ConstraintSystem",
                  "|Group|MotionSystem|DrivingSystem",
@@ -1191,6 +1200,37 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         name=plan.root_follow_scale_constraint_name)
                     if len(scale_constraint) != 1:
                         raise RuntimeError("RootFollowMain 缩放约束创建失败")
+            if plan.global_follow_main_path is not None:
+                follow_path = plan.global_follow_main_path
+                if (self._cmds.ls(follow_path, long=True,
+                                   type="transform") or []) != [follow_path]:
+                    raise FitSkeletonValidationError(
+                        "GlobalFollowMain 层级在总控创建前缺失")
+                if plan.global_follow_use_opm:
+                    matrix = self._cmds.createNode(
+                        "multMatrix", name=plan.global_follow_matrix_name,
+                        skipSelect=True)
+                    self._cmds.connectAttr(
+                        control + ".worldMatrix[0]",
+                        matrix + ".matrixIn[0]")
+                    self._cmds.connectAttr(
+                        "|Group|MotionSystem|GlobalSystem"
+                        + ".worldInverseMatrix[0]",
+                        matrix + ".matrixIn[1]")
+                    self._cmds.connectAttr(
+                        matrix + ".matrixSum",
+                        follow_path + ".offsetParentMatrix")
+                else:
+                    constraint = self._cmds.parentConstraint(
+                        control, follow_path, maintainOffset=False,
+                        name=plan.global_follow_constraint_name)
+                    if len(constraint) != 1:
+                        raise RuntimeError("GlobalFollowMain 跟随约束创建失败")
+                    scale_constraint = self._cmds.scaleConstraint(
+                        control, follow_path, maintainOffset=False,
+                        name=plan.global_follow_scale_constraint_name)
+                    if len(scale_constraint) != 1:
+                        raise RuntimeError("GlobalFollowMain 缩放约束创建失败")
             for plug in plan.scale_destinations:
                 self._cmds.connectAttr(plan.scale_source, plug)
             for attribute, system_path in plan.visibility_controls:
@@ -1513,6 +1553,57 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     scale_resolved[0]
                     if len(scale_resolved) == 1 else None,
                 )
+        global_follow_state = None
+        global_matrix_state = None
+        if (plan.global_follow_main_path is not None
+                and plan.global_follow_use_opm):
+            nodes = self._cmds.ls(plan.global_follow_matrix_name,
+                                  type="multMatrix") or []
+            if len(nodes) == 1:
+                follow = plan.global_follow_main_path
+                neutral = (
+                    all(abs(value) <= 1e-6 for value in
+                        (*vector(follow, "translate"),
+                         *vector(follow, "rotate")))
+                    and all(abs(value - 1.0) <= 1e-6 for value in
+                            vector(follow, "scale")))
+                global_matrix_state = (
+                    one_path(follow, "transform"), nodes[0],
+                    source(nodes[0] + ".matrixIn[0]"),
+                    source(nodes[0] + ".matrixIn[1]"),
+                    source(follow + ".offsetParentMatrix"), neutral,
+                )
+        elif plan.global_follow_main_path is not None:
+            parent_constraints = self._cmds.ls(
+                plan.global_follow_constraint_name, long=True,
+                type="parentConstraint") or []
+            scale_constraints = self._cmds.ls(
+                plan.global_follow_scale_constraint_name, long=True,
+                type="scaleConstraint") or []
+            if len(parent_constraints) == len(scale_constraints) == 1:
+                parent_targets = self._cmds.parentConstraint(
+                    parent_constraints[0], query=True,
+                    targetList=True) or []
+                scale_targets = self._cmds.scaleConstraint(
+                    scale_constraints[0], query=True,
+                    targetList=True) or []
+                parent_resolved = (self._cmds.ls(parent_targets[0],
+                                   long=True) or []
+                                   if len(parent_targets) == 1 else [])
+                scale_resolved = (self._cmds.ls(scale_targets[0],
+                                  long=True) or []
+                                  if len(scale_targets) == 1 else [])
+                global_follow_state = (
+                    parent(parent_constraints[0]),
+                    parent_constraints[0].rsplit("|", 1)[-1],
+                    scale_constraints[0].rsplit("|", 1)[-1]
+                    if parent(scale_constraints[0])
+                    == plan.global_follow_main_path else None,
+                    parent_resolved[0]
+                    if len(parent_resolved) == 1 else None,
+                    scale_resolved[0]
+                    if len(scale_resolved) == 1 else None,
+                )
         return BodyCharacterGlobalSnapshot(
             group_path=group,
             group_parent_path=parent(group),
@@ -1553,6 +1644,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             ),
             root_follow_main_state=follow_state,
             root_follow_matrix_state=follow_matrix_state,
+            global_follow_main_state=global_follow_state,
+            global_follow_matrix_state=global_matrix_state,
             driven_roots=tuple(driven),
             scale_destination_sources=tuple(
                 (plug, source(plug))

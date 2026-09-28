@@ -112,6 +112,8 @@ class BodyCharacterGlobalPlan:
     head_aim_follow: BodyHeadAimFollowSpec | None
     root_follow_main_path: str | None = None
     root_follow_use_opm: bool = False
+    global_follow_main_path: str | None = None
+    global_follow_use_opm: bool = False
     fit_height: float | None = None
 
     @property
@@ -133,6 +135,24 @@ class BodyCharacterGlobalPlan:
                 and self.root_follow_use_opm else None)
 
     @property
+    def global_follow_constraint_name(self) -> str | None:
+        return ("GlobalFollowMain_parentConstraint1"
+                if self.global_follow_main_path is not None
+                and not self.global_follow_use_opm else None)
+
+    @property
+    def global_follow_scale_constraint_name(self) -> str | None:
+        return ("GlobalFollowMain_scaleConstraint1"
+                if self.global_follow_main_path is not None
+                and not self.global_follow_use_opm else None)
+
+    @property
+    def global_follow_matrix_name(self) -> str | None:
+        return ("GlobalFollowMainMM"
+                if self.global_follow_main_path is not None
+                and self.global_follow_use_opm else None)
+
+    @property
     def node_names(self) -> tuple[str, ...]:
         return (
             "Group", "MotionSystem", "MainSystem",
@@ -147,6 +167,12 @@ class BodyCharacterGlobalPlan:
               if self.root_follow_scale_constraint_name is not None else ()),
             *((self.root_follow_matrix_name,)
               if self.root_follow_matrix_name is not None else ()),
+            *((self.global_follow_constraint_name,)
+              if self.global_follow_constraint_name is not None else ()),
+            *((self.global_follow_scale_constraint_name,)
+              if self.global_follow_scale_constraint_name is not None else ()),
+            *((self.global_follow_matrix_name,)
+              if self.global_follow_matrix_name is not None else ()),
             *(name for arrow in self.pole_arrows for name in arrow.node_names),
             *((self.head_aim_follow.static_matrix_name,
                self.head_aim_follow.parent_matrix_name,
@@ -278,6 +304,10 @@ class BodyCharacterGlobalSnapshot:
                                   str | None, str | None] | None = None
     root_follow_matrix_state: tuple[str, str, str | None, str | None,
                                     str | None, bool] | None = None
+    global_follow_main_state: tuple[str, str | None, str | None,
+                                    str | None, str | None] | None = None
+    global_follow_matrix_state: tuple[str, str, str | None, str | None,
+                                      str | None, bool] | None = None
     fit_height: float | None = None
     fit_height_locked: bool = False
 
@@ -318,6 +348,8 @@ def plan_body_character_global(
     head_aim_follow: BodyHeadAimFollowSpec | None = None,
     root_follow_main_path: str | None = None,
     root_follow_use_opm: bool = False,
+    global_follow_main_path: str | None = None,
+    global_follow_use_opm: bool = False,
 ) -> BodyCharacterGlobalPlan:
     if (
         not isinstance(up_axis, FitUpAxis)
@@ -328,6 +360,7 @@ def plan_body_character_global(
         or not isinstance(scale_destinations, tuple)
         or not isinstance(body_root_via_controls, bool)
         or type(root_follow_use_opm) is not bool
+        or type(global_follow_use_opm) is not bool
         or not isinstance(finger_visibility_paths, tuple)
         or len(set(finger_visibility_paths)) != len(finger_visibility_paths)
         or any(not isinstance(path, str) or not path.startswith("|")
@@ -362,6 +395,13 @@ def plan_body_character_global(
             or any(path.startswith(root_follow_main_path + "|")
                    for path in driven_roots)))
         or (root_follow_main_path is None and root_follow_use_opm)
+        or (global_follow_main_path is not None and (
+            not body_root_via_controls
+            or global_follow_main_path !=
+            "|Group|MotionSystem|GlobalSystem|GlobalFollowMain"
+            or any(path.startswith(global_follow_main_path + "|")
+                   for path in driven_roots)))
+        or (global_follow_main_path is None and global_follow_use_opm)
         or (not body_root_via_controls and body_root not in driven_roots)
         or (body_root_via_controls and (
             body_root in driven_roots
@@ -445,6 +485,8 @@ def plan_body_character_global(
         head_aim_follow=head_aim_follow,
         root_follow_main_path=root_follow_main_path,
         root_follow_use_opm=root_follow_use_opm,
+        global_follow_main_path=global_follow_main_path,
+        global_follow_use_opm=global_follow_use_opm,
     )
 
 
@@ -548,6 +590,33 @@ def audit_body_character_global(
             "root_follow_main_matrix_mismatch",
             "RootFollowMain 的 OPM 矩阵跟随不一致",
             plan.root_follow_main_path,
+        ))
+
+    expected_global_follow = (
+        (plan.global_follow_main_path,
+         plan.global_follow_constraint_name,
+         plan.global_follow_scale_constraint_name,
+         plan.control_path, plan.control_path)
+        if plan.global_follow_main_path is not None
+        and not plan.global_follow_use_opm else None)
+    if snapshot.global_follow_main_state != expected_global_follow:
+        issues.append(BodyCharacterGlobalIssue(
+            "global_follow_main_mismatch",
+            "GlobalFollowMain 的 Main 跟随约束不一致",
+            plan.global_follow_main_path,
+        ))
+    expected_global_matrix = (
+        (plan.global_follow_main_path, plan.global_follow_matrix_name,
+         plan.control_path + ".worldMatrix[0]",
+         "|Group|MotionSystem|GlobalSystem.worldInverseMatrix[0]",
+         plan.global_follow_matrix_name + ".matrixSum", True)
+        if plan.global_follow_main_path is not None
+        and plan.global_follow_use_opm else None)
+    if snapshot.global_follow_matrix_state != expected_global_matrix:
+        issues.append(BodyCharacterGlobalIssue(
+            "global_follow_main_matrix_mismatch",
+            "GlobalFollowMain 的 OPM 矩阵跟随不一致",
+            plan.global_follow_main_path,
         ))
 
     actual_roots = {state.path: state for state in snapshot.driven_roots}

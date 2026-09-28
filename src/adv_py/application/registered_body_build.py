@@ -227,7 +227,8 @@ class BuildRegisteredBodyCharacter:
                                   "MotionSystem", "FKSystem", "IKSystem",
                                   "FKIKSystem", "TwistSystem",
                                   "BendSystem", "RootSystem",
-                                  "RootFollowMain", "AimSystem",
+                                  "RootFollowMain", "GlobalSystem",
+                                  "GlobalFollowMain", "AimSystem",
                                   "ConstraintSystem", "DrivingSystem")
                 for path in self._host.find_name_collisions(name))
             if hierarchy_collisions:
@@ -714,6 +715,10 @@ class BuildRegisteredBodyCharacter:
                  "|Group|MotionSystem", "transform"),
                 ("|Group|MotionSystem|RootSystem|RootFollowMain",
                  "|Group|MotionSystem|RootSystem", "transform"),
+                ("|Group|MotionSystem|GlobalSystem",
+                 "|Group|MotionSystem", "transform"),
+                ("|Group|MotionSystem|GlobalSystem|GlobalFollowMain",
+                 "|Group|MotionSystem|GlobalSystem", "transform"),
                 ("|Group|MotionSystem|AimSystem",
                  "|Group|MotionSystem", "transform"),
                 ("|Group|MotionSystem|ConstraintSystem",
