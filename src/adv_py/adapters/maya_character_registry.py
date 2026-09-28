@@ -307,7 +307,7 @@ class MayaCharacterRegistryMixin:
             paths.update((*spine.targets, spine.curve, *spine.ik_outputs[1:]))
         else:
             paths.update((spine.ik_offset,spine.ik_control,spine.pole_offset,spine.pole_control,spine.waist_output))
-        paths.update(p for spec in spaces.spaces for p in (*spec.targets,spec.body_source,spec.global_source))
+        paths.update(p for spec in spaces.spaces for p in (*spec.targets,*spec.sources))
         if rig.plan.torso.torso.head_aim:
             aim=rig.plan.torso.torso.head_aim
             paths.update((aim.rest,aim.solved,aim.pivot,aim.target,aim.target_offset))

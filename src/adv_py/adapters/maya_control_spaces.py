@@ -21,9 +21,9 @@ class MayaBodyControlSpacesMixin:
         if min(scales) < 1e-5 or max(scales)-min(scales) > 1e-4 or abs(determinant-1) > 1e-4:
             raise FitSkeletonValidationError("控制空间只支持正等比缩放")
 
-    def _create_control_space_constraint(self, spec, target, name, mode):
+    def _create_control_space_constraint(self, spec, target, name, mode, index):
         c = self._cmds
-        created = self._space_command(spec)(spec.source(mode), target, maintainOffset=True, name=name)
+        created = self._space_command(spec)(spec.source(mode, index), target, maintainOffset=True, name=name)
         if len(created) != 1 or created[0].rsplit("|", 1)[-1] != name:
             raise RuntimeError("控制空间约束名称漂移")
         c.addAttr(created[0], longName="advPySpaceOwner", dataType="string")
@@ -33,7 +33,7 @@ class MayaBodyControlSpacesMixin:
         self._require_transaction()
         c = self._cmds
         for spec in plan.spaces:
-            for path in (spec.body_source, spec.global_source, *spec.targets):
+            for path in (*spec.sources, *spec.targets):
                 self._space_editable(path)
                 self._space_scale(path)
             for target in spec.targets:
@@ -45,8 +45,8 @@ class MayaBodyControlSpacesMixin:
         try:
             self._transaction_changed = True
             for spec in plan.spaces:
-                for target, name in zip(spec.targets, spec.constraint_names):
-                    self._create_control_space_constraint(spec, target, name, spec.initial_mode)
+                for index, (target, name) in enumerate(zip(spec.targets, spec.constraint_names)):
+                    self._create_control_space_constraint(spec, target, name, spec.initial_mode, index)
                 self.capture_control_space_mode(spec)
             from adv_py.core.body_control_spaces import control_space_pose_error, SPACE_TOLERANCE
             if control_space_pose_error(before, self.capture_control_space_pose(plan)) > SPACE_TOLERANCE:
@@ -62,7 +62,7 @@ class MayaBodyControlSpacesMixin:
         modes = []
         command = self._space_command(spec)
         expected_type = "orientConstraint" if spec.rotation_only else "parentConstraint"
-        for target, name in zip(spec.targets, spec.constraint_names):
+        for index, (target, name) in enumerate(zip(spec.targets, spec.constraint_names)):
             nodes = c.ls(name, long=True) or []
             if (len(nodes) != 1 or c.nodeType(nodes[0]) != expected_type
                     or not c.objExists(name + ".advPySpaceOwner")
@@ -73,9 +73,9 @@ class MayaBodyControlSpacesMixin:
             if c.listRelatives(node, children=True):
                 raise FitSkeletonValidationError("控制空间约束包含外部子节点")
             sources = tuple(self._resolve_connected_node(n) for n in (command(node, query=True, targetList=True) or []))
-            if sources == (spec.body_source,):
+            if sources == (spec.source('body', index),):
                 modes.append("body")
-            elif sources == (spec.global_source,):
+            elif sources == (spec.source('global', index),):
                 modes.append("global")
             else:
                 raise FitSkeletonValidationError("控制空间约束来源已变化")
@@ -106,7 +106,7 @@ class MayaBodyControlSpacesMixin:
         mode = self.capture_control_space_mode(spec)
         if c.ls(type="animLayer") or c.currentUnit(query=True, angle=True) != "deg":
             raise FitSkeletonValidationError("当前空间切换要求 degree 单位且无动画层")
-        for path in (spec.body_source, spec.global_source, *spec.targets):
+        for path in (*spec.sources, *spec.targets):
             self._space_editable(path)
             self._space_scale(path)
         for target in spec.targets:
@@ -130,10 +130,10 @@ class MayaBodyControlSpacesMixin:
         try:
             self._transaction_changed = True
             c.delete(spec.constraint_names)
-            for target, name, matrix in zip(spec.targets, spec.constraint_names, frames):
+            for index, (target, name, matrix) in enumerate(zip(spec.targets, spec.constraint_names, frames)):
                 if not spec.rotation_only:
                     c.xform(target, worldSpace=True, translation=matrix[12:15])
                 self._spine_set_world_rotation(target, matrix)
-                self._create_control_space_constraint(spec, target, name, mode)
+                self._create_control_space_constraint(spec, target, name, mode, index)
         finally:
             c.select(selection, replace=True) if selection else c.select(clear=True)

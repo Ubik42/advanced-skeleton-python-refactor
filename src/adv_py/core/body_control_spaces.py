@@ -14,6 +14,7 @@ class BodyControlSpaceSpec:
     global_source: str
     rotation_only: bool
     initial_mode: str
+    body_target_sources: tuple[str, ...] = ()
 
     @property
     def constraint_names(self):
@@ -23,10 +24,23 @@ class BodyControlSpaceSpec:
     def attributes(self):
         return tuple(kind + axis for kind in (("rotate",) if self.rotation_only else ("translate", "rotate")) for axis in "XYZ")
 
-    def source(self, mode: str) -> str:
+    def source(self, mode: str, index: int | None = None) -> str:
         if mode not in ("body", "global"):
             raise FitSkeletonValidationError("控制空间必须是 body 或 global")
-        return self.body_source if mode == "body" else self.global_source
+        if index is not None and not 0 <= index < len(self.targets):
+            raise FitSkeletonValidationError("控制空间目标索引无效")
+        if self.body_target_sources and len(self.body_target_sources) != len(self.targets):
+            raise FitSkeletonValidationError("控制空间目标来源数量不一致")
+        if mode == "global":
+            return self.global_source
+        if index is not None and self.body_target_sources:
+            return self.body_target_sources[index]
+        return self.body_source
+
+    @property
+    def sources(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys((self.global_source, self.body_source,
+                                    *self.body_target_sources)))
 
 
 @dataclass(frozen=True, slots=True)

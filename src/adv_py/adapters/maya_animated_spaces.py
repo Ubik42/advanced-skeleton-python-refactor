@@ -65,7 +65,7 @@ def _install(host, registration):
             proxies = []
             for source in ('body','global'):
                 path = space_proxy_path(spec,index,source)
-                c.createNode('transform', name=path.rsplit('|',1)[-1], parent=spec.source(source), skipSelect=True)
+                c.createNode('transform', name=path.rsplit('|',1)[-1], parent=spec.source(source,index), skipSelect=True)
                 _owner(c,path)
                 if not spec.rotation_only:
                     c.xform(path,ws=True,translation=matrix[12:15])
@@ -131,7 +131,7 @@ def audit_mode(host, spec):
         if incoming-allowed:
             raise CharacterRegistryError('动画空间约束含外部输入')
         for proxy,mode in zip(proxies,('body','global')):
-            if c.nodeType(proxy)!='transform' or (c.listRelatives(proxy,parent=True,fullPath=True) or [])!=[spec.source(mode)]:
+            if c.nodeType(proxy)!='transform' or (c.listRelatives(proxy,parent=True,fullPath=True) or [])!=[spec.source(mode,index)]:
                 raise CharacterRegistryError('动画空间代理父级变化')
             if c.listRelatives(proxy,children=True):
                 raise CharacterRegistryError('动画空间代理存在外部子节点')

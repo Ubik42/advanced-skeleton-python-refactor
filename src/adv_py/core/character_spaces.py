@@ -8,7 +8,7 @@ def space_mode_channel(spec):
 
 
 def space_proxy_path(spec, index, mode):
-    return spec.source(mode) + f'|AdvPy_SpaceProxy_{spec.key}_{index}_{mode}'
+    return spec.source(mode, index) + f'|AdvPy_SpaceProxy_{spec.key}_{index}_{mode}'
 
 
 def space_channels(spec):
