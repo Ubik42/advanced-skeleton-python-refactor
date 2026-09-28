@@ -2,7 +2,15 @@
 from __future__ import annotations
 
 from adv_py.application.fbx_rig_import import FBXRigSourceCapture
+from adv_py.application.fit_container import CreateFitSkeleton
+from adv_py.application.oriented_fit_template import BuildOrientedFitTemplate
+from adv_py.application.registered_body_build import _JoinedTransactionHost
 from adv_py.core.fbx_rig_import import FBXRigImportPlan, FBXRigSourceJoint
+from adv_py.core.fbx_rig_import import FBXRigFitGuideState
+from adv_py.core.fit_orientation import (FitOrientationChildSelection,
+                                         FitOrientationRequest)
+from adv_py.core.fit_template import FitJointSpec, FitTemplateSpec
+from adv_py.core.joint_labels import JointLabel
 
 from .maya_source_skeleton_fit import MayaSourceSkeletonFitHost
 
@@ -203,3 +211,66 @@ class MayaFBXRigPreparationHost(MayaSourceSkeletonFitHost,
                 if mapped.startswith(current + "|"):
                     paths[original] = resolved[0] + mapped[len(current):]
         return paths
+
+    def create_fbx_fit_guides(self, plan: FBXRigImportPlan) -> None:
+        self._require_transaction()
+        c = self._cmds
+        by_name = {guide.name: guide for guide in plan.fit_guides}
+        labels = dict(plan.inferred_labels)
+        specs = []
+        children: dict[str, list[str]] = {}
+        for guide in plan.fit_guides:
+            parent_position = ((0.0, 0.0, 0.0) if guide.parent is None
+                               else by_name[guide.parent].world_position)
+            local = tuple(value - parent for value, parent in zip(
+                guide.world_position, parent_position))
+            specs.append(FitJointSpec(guide.name, guide.parent, local,
+                JointLabel.parse(labels.get(guide.name, guide.name))))
+            if guide.parent is not None:
+                children.setdefault(guide.parent, []).append(guide.name)
+        template = FitTemplateSpec("fbx_rig", tuple(specs))
+        selections = tuple(FitOrientationChildSelection(name, names[0])
+                           for name, names in children.items()
+                           if len(names) > 1)
+        request = FitOrientationRequest(tuple(children), selections)
+        joined = _JoinedTransactionHost(self)
+        CreateFitSkeleton(joined).apply("FitSkeleton")
+        c.setAttr("FitSkeleton.lockCenterJoints", False)
+        BuildOrientedFitTemplate(joined).apply(template, request,
+            "FitSkeleton", transaction_label="建立 FBX rig Fit 导向",
+            error_context="FBX rig Fit 导向")
+        for guide in plan.fit_guides:
+            if not guide.end_control:
+                continue
+            path = self._fbx_fit_guide_path(guide.name, by_name)
+            c.addAttr(path, longName="control", attributeType="bool",
+                      defaultValue=True, keyable=True)
+        self._transaction_changed = True
+
+    @staticmethod
+    def _fbx_fit_guide_path(name: str, by_name: dict) -> str:
+        parts = [name]
+        while (parent := by_name[parts[-1]].parent) is not None:
+            parts.append(parent)
+        return "|FitSkeleton|" + "|".join(reversed(parts))
+
+    def capture_fbx_fit_guides(
+        self, plan: FBXRigImportPlan,
+    ) -> tuple[FBXRigFitGuideState, ...]:
+        c = self._cmds
+        by_name = {guide.name: guide for guide in plan.fit_guides}
+        result = []
+        for guide in plan.fit_guides:
+            path = self._fbx_fit_guide_path(guide.name, by_name)
+            matches = c.ls(path, long=True, type="joint") or ()
+            if len(matches) != 1:
+                raise RuntimeError("FBX rig Fit 导向缺失：" + guide.name)
+            position = tuple(float(value) for value in c.xform(
+                path, query=True, worldSpace=True, translation=True))
+            label = self.read_joint_label(path)
+            result.append(FBXRigFitGuideState(
+                guide.name, guide.parent, position,
+                bool(c.attributeQuery("control", node=path, exists=True)
+                     and c.getAttr(path + ".control")),
+                label.text if label is not None else None))
+        return tuple(result)
