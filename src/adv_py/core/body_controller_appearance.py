@@ -6,6 +6,7 @@ from math import isfinite
 import re
 
 from .body_controller_layers import BodyControllerLayerSpec
+from .body_skeleton import BodyJointState, BodySkeletonSnapshot
 
 
 _ORIENTED_ORDER_TYPES = frozenset((
@@ -120,6 +121,36 @@ def plan_body_controller_appearance(
         orient_icon_from_fit_axis=oriented,
         fit_joint=source.fit_joint,
     )
+
+
+def body_fk_curve_radius(
+    body: BodySkeletonSnapshot, joint: BodyJointState,
+    base_radius: float, *, preferred_child: BodyJointState | None = None,
+) -> float:
+    """Use explicit Fit volume, or MEL's height/first-child fallback."""
+    if (type(base_radius) not in (int, float)
+            or not isfinite(base_radius) or base_radius <= 0):
+        raise ValueError("FK 控制曲线基础尺寸无效")
+    if joint.fit_has_deform_profile:
+        factor = joint.deform_profile.fat * joint.deform_profile.fat_front
+    else:
+        ys = tuple(item.world_position[1] for item in body.joints)
+        if not ys:
+            raise ValueError("FK 控制曲线缺少 Body 高度")
+        height = max(ys) - min(ys)
+        if not isfinite(height) or height <= 0:
+            raise ValueError("FK 控制曲线角色高度无效")
+        child = preferred_child
+        if child is None:
+            child = next((item for item in body.joints
+                          if item.parent_path == joint.path), None)
+        factor = height / 30.0
+        if child is not None:
+            distance = sum((a - b) ** 2 for a, b in zip(
+                joint.world_position, child.world_position)) ** 0.5
+            factor *= (distance / 2.0 if distance > 1.0
+                       else (1.0 + distance) / 2.0)
+    return max(1e-4, base_radius * factor)
 
 
 def audit_body_controller_appearance(

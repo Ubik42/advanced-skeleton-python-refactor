@@ -8,6 +8,7 @@ from .body_controller_layers import (
     BodyExtraControllerState, audit_body_extra_controller,
 )
 from .body_skeleton import BodySkeletonSnapshot
+from .body_controller_appearance import body_fk_curve_radius
 from .fit_symmetry import AxisFrame, FitBuildSide
 
 
@@ -228,9 +229,7 @@ def plan_body_limb_fk_controls(
                 constraint_name=f"AdvPy_{joint_name}FKOrient_{suffix}",
                 world_position=state.world_position,
                 world_axes=state.world_axes,
-                radius=max(1e-4, float(radius)
-                           * state.deform_profile.fat
-                           * state.deform_profile.fat_front),
+                radius=body_fk_curve_radius(body, state, radius),
                 rotate_order=state.rotation_order,
                 sub_control_path=(
                     control_path + "|AdvPy_" + joint_name + "FKSub_" + suffix
