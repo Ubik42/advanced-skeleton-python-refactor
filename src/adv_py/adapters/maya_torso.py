@@ -71,7 +71,7 @@ class MayaBodyTorsoMixin:
             lock = plan.leg_lock
             lock_path = self._cmds.createNode(
                 "transform", name=lock.path.rsplit("|", 1)[-1],
-                parent=plan.controls.root_path, skipSelect=True)
+                parent=lock.path.rsplit("|", 1)[0], skipSelect=True)
             lock_path = (self._cmds.ls(lock_path, long=True)
                          or [lock_path])[0]
             if lock_path != lock.path:

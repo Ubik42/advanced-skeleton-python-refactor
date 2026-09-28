@@ -159,11 +159,16 @@ def plan_body_character_global(
             not isinstance(path, str)
             or not path.startswith("|")
             or (path.count("|") != 1 and not (
-                path.startswith(("|Group|MotionSystem|FKSystem|",
+                (path == body_root
+                 and path.startswith("|Group|DeformationSystem|")
+                 and path.count("|") == 3)
+                or (path.startswith("|Group|MotionSystem|RootSystem|RootFollowMain|")
+                 and path.count("|") == 5)
+                or (path.startswith(("|Group|MotionSystem|FKSystem|",
                                  "|Group|MotionSystem|IKSystem|",
                                  "|Group|MotionSystem|FKIKSystem|",
                                  "|Group|MotionSystem|TwistSystem|"))
-                and path.count("|") == 4))
+                and path.count("|") == 4)))
             for path in driven_roots
         )
         or not isinstance(scale_destinations, tuple)

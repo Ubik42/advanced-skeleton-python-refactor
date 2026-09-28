@@ -90,6 +90,10 @@ class StageBodyCharacterRebuild:
                      '|Group|MotionSystem', 'transform'),
                     ('|Group|MotionSystem|BendSystem',
                      '|Group|MotionSystem', 'transform'),
+                    ('|Group|MotionSystem|RootSystem',
+                     '|Group|MotionSystem', 'transform'),
+                    ('|Group|MotionSystem|RootSystem|RootFollowMain',
+                     '|Group|MotionSystem|RootSystem', 'transform'),
                     (skeleton.snapshot.root, '|Group|DeformationSystem', 'joint'),
                 ):
                     raise RuntimeError('重建暂存角色的 Body 系统层级不一致')

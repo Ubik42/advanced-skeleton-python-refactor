@@ -145,7 +145,10 @@ def plan_body_torso(
     parents=dict(description.parents)
     joints=description.validate(body)
     root_name = "AdvPy_TorsoControls"
-    root_path = f"|{root_name}"
+    nested = body.root.startswith("|Group|DeformationSystem|")
+    root_parent_path = ("|Group|MotionSystem|RootSystem|RootFollowMain"
+                        if nested else "")
+    root_path = f"{root_parent_path}|{root_name}"
     controls = []
     by_joint = {}
     for name, parent_name in parents.items():
@@ -183,7 +186,8 @@ def plan_body_torso(
         controls.append(spec)
     pelvis = BodySpaceAttachment("AdvPy_TorsoPelvisPoint", controls[0].control_path, body.root, "pointConstraint")
     leg_lock = BodyLegLockSpace(
-        f"{root_path}|AdvPy_LegLockConstrained",
+        (("|Group|MotionSystem|RootSystem" if nested else root_path)
+         + "|AdvPy_LegLockConstrained"),
         "AdvPy_LegLockMM", "AdvPy_LegLockDM",
         controls[0].source_override_path,
     )
@@ -223,7 +227,8 @@ def audit_body_torso(plan: BodyTorsoPlan, snapshot: BodyTorsoSnapshot) -> tuple[
     issues = [item.message for item in audit_body_limb_fk_controls(plan.controls, snapshot.controls, limb_label="Torso")]
     if snapshot.root_fkx_parent_path != plan.root_fkx_path.rsplit("|", 1)[0]:
         issues.append("Root FKX 接收层父链不一致")
-    if (snapshot.leg_lock_parent_path != plan.controls.root_path
+    if (snapshot.leg_lock_parent_path
+            != plan.leg_lock.path.rsplit("|", 1)[0]
             or snapshot.leg_lock_source != plan.leg_lock.root_fkx_path + ".worldMatrix[0]"
             or snapshot.leg_lock_compensation_source
             != plan.leg_lock.compensation_source

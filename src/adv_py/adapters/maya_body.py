@@ -439,7 +439,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         if any(self.find_name_collisions(name)
                for name in ("Group", "DeformationSystem", "Geometry",
                             "MotionSystem", "FKSystem", "IKSystem",
-                            "FKIKSystem", "TwistSystem", "BendSystem")):
+                            "FKIKSystem", "TwistSystem", "BendSystem",
+                            "RootSystem", "RootFollowMain")):
             raise FitSkeletonValidationError(
                 "角色系统层级名称已被占用")
         group = self._cmds.createNode(
@@ -470,6 +471,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             skipSelect=True)
         self._cmds.setAttr(f"{bend}.inheritsTransform", False)
         self._cmds.setAttr(f"{bend}.inheritsTransform", lock=True)
+        root_system = self._cmds.createNode(
+            "transform", name="RootSystem", parent=motion,
+            skipSelect=True)
+        self._cmds.createNode(
+            "transform", name="RootFollowMain", parent=root_system,
+            skipSelect=True)
         for kind in ("translate", "rotate", "scale"):
             for axis in "XYZ":
                 self._cmds.setAttr(
@@ -572,6 +579,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                  "|Group|MotionSystem|FKIKSystem",
                  "|Group|MotionSystem|TwistSystem",
                  "|Group|MotionSystem|BendSystem",
+                 "|Group|MotionSystem|RootSystem",
+                 "|Group|MotionSystem|RootSystem|RootFollowMain",
                  body_root_path)
         rows = []
         for path in paths:
@@ -825,6 +834,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         if (name in ("AdvPy_ArmIKControls", "AdvPy_LegIKControls")
                 and self._cmds.objExists("|Group|MotionSystem|IKSystem")):
             parent = "|Group|MotionSystem|IKSystem"
+        if (name == "AdvPy_TorsoControls"
+                and self._cmds.objExists(
+                    "|Group|MotionSystem|RootSystem|RootFollowMain")):
+            parent = "|Group|MotionSystem|RootSystem|RootFollowMain"
         options = {"name": name, "skipSelect": True}
         if parent is not None:
             options["parent"] = parent
@@ -6826,7 +6839,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         limb_label: str,
     ) -> BodyArmFkControlSnapshot:
         roots = self._cmds.ls(plan.root_path, long=True, type="transform") or []
-        if len(roots) != 1:
+        parents = (self._cmds.listRelatives(
+            roots[0], parent=True, fullPath=True) or []) if len(roots) == 1 else []
+        expected_parent = plan.root_path.rsplit("|", 1)[0]
+        if (roots != [plan.root_path]
+                or parents != ([expected_parent] if expected_parent else [])):
             raise FitSkeletonValidationError(
                 f"{limb_label} FK 控制根节点无效"
             )
