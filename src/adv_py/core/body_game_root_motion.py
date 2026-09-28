@@ -63,6 +63,7 @@ class GameRootMotionState:
     in_control_set: bool
     in_build_pose: bool
     residual_nodes: tuple[str, ...] = ()
+    locked_control_channels: bool = False
 
 
 def plan_game_root_motion(source: GameRootMotionInput, *,
@@ -130,4 +131,6 @@ def audit_game_root_motion(plan: GameRootMotionPlan,
             issues.append("Root Motion " + label + "不一致")
     if not state.in_control_set or not state.in_build_pose:
         issues.append("Root Motion 控制器未进入角色选择集或构建姿态")
+    if not state.locked_control_channels:
+        issues.append("Root Motion 控制器缩放或可见性未锁定")
     return tuple(issues)

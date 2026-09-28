@@ -68,12 +68,12 @@ class MayaBodyGameRootMotionMixin:
             channels += tuple(CharacterChannel(
                 "game.rootMotion." + kind + axis, control,
                 kind + axis)
-                for kind in ("translate", "rotate", "scale")
+                for kind in ("translate", "rotate")
                 for axis in "XYZ")
             channels += tuple(CharacterChannel(
                 "game.rootMotion.extra." + kind + axis, extra,
                 kind + axis)
-                for kind in ("translate", "rotate", "scale")
+                for kind in ("translate", "rotate")
                 for axis in "XYZ")
             channels += (CharacterChannel(
                 "game.rootMotion.followMain", control, "followMain",
@@ -303,6 +303,10 @@ class MayaBodyGameRootMotionMixin:
             raise RuntimeError("Root Motion 控制曲线缺失")
         c.setAttr(shapes[0] + ".overrideEnabled", True)
         c.setAttr(shapes[0] + ".overrideColor", 17)
+        for path in (extra, control):
+            for attribute in ("scaleX", "scaleY", "scaleZ", "visibility"):
+                c.setAttr(path + "." + attribute,
+                          keyable=False, lock=True)
         c.sets((control, extra), add=plan.source.control_set)
         if plan.source.use_offset_parent_matrix:
             matrix = c.createNode("multMatrix", name=plan.matrix_name)
@@ -365,6 +369,14 @@ class MayaBodyGameRootMotionMixin:
         pose_rows = json.loads(c.getAttr(
             plan.source.build_pose + ".advPyPoseData"))
         in_pose = any(row[0] == plan.control_path for row in pose_rows)
+        locked_controls = all(
+            c.getAttr(path + "." + attribute, lock=True)
+            and not c.getAttr(path + "." + attribute, keyable=True)
+            for path in (plan.control_path, plan.extra_path)
+            if c.objExists(path)
+            for attribute in ("scaleX", "scaleY", "scaleZ", "visibility"))
+        locked_controls = locked_controls and bool(
+            control and c.objExists(plan.extra_path))
         follow_constraints = (c.ls(plan.follow_constraint_name,
                                    type="parentConstraint") or [])
         aliases = (c.parentConstraint(
@@ -420,4 +432,5 @@ class MayaBodyGameRootMotionMixin:
             body_driver, control in member_paths if control else False,
             in_pose,
             tuple(name for name in plan.node_names
-                  if c.objExists(name)) if not plan.create else ())
+                  if c.objExists(name)) if not plan.create else (),
+            locked_controls)
