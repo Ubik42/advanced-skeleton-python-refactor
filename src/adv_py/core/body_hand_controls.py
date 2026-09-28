@@ -19,6 +19,7 @@ from .body_limb_controls import (
 )
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_hierarchy import TRANSLATION_AXES
+from .fit_metadata import FitJointMetadata
 from .fit_symmetry import AxisFrame, FitBuildSide
 
 
@@ -243,11 +244,16 @@ def plan_body_hand_fk_controls(
     namespace: str | None = None,
     build_options: BodyBuildOptions = BodyBuildOptions(),
     source_icon_size: bool = True,
+    fit_metadata: tuple[FitJointMetadata, ...] = (),
 ) -> BodyHandFkControlPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise BodyHandControlValidationError("Hand 构建选项类型无效")
     if type(source_icon_size) is not bool:
         raise BodyHandControlValidationError("Hand FK 曲线尺寸规则无效")
+    if (not isinstance(fit_metadata, tuple)
+            or any(not isinstance(item, FitJointMetadata)
+                   for item in fit_metadata)):
+        raise BodyHandControlValidationError("Hand Fit control 元数据无效")
     if (
         isinstance(radius, bool)
         or not isinstance(radius, (int, float))
@@ -267,6 +273,13 @@ def plan_body_hand_fk_controls(
                 for name in advanced_skeleton_hand_source_joint_names()
                 for side in ("R", "L")}
     available = set(by_name)
+    metadata_by_name: dict[str, FitJointMetadata] = {}
+    for item in fit_metadata:
+        leaf = item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if leaf in metadata_by_name:
+            raise BodyHandControlValidationError(
+                "Hand Fit 关节短名重复：" + leaf)
+        metadata_by_name[leaf] = item
     if canonical <= available and not original & available:
         original_names = False
     elif original <= available and not canonical & available:
@@ -327,7 +340,12 @@ def plan_body_hand_fk_controls(
                 previous_path = state.path
 
             parent_path = root_path
-            for index, state in enumerate(states[:-1], start=1):
+            terminal_name = (f"{digit.value}Finger4" if original_names
+                             else f"{digit.value}End")
+            terminal_metadata = metadata_by_name.get(terminal_name)
+            count = (4 if terminal_metadata is not None
+                     and terminal_metadata.control else 3)
+            for index, state in enumerate(states[:count], start=1):
                 offset_name = (
                     f"{prefix}AdvPy_{digit.value}{index}FKOffset_{suffix}"
                 )
@@ -360,9 +378,13 @@ def plan_body_hand_fk_controls(
                     world_position=state.world_position,
                     world_axes=state.world_axes,
                     radius=(body_fk_curve_radius(
-                        body, state, float(radius), preferred_child=states[index])
+                        body, state, float(radius),
+                        preferred_child=(states[index]
+                                         if index < len(states) else None))
                         if source_icon_size else
-                        float(radius) * legacy_radius_factors[index - 1]),
+                        float(radius) * (legacy_radius_factors[index - 1]
+                                         if index <= 3 else
+                                         legacy_radius_factors[-1])),
                     rotate_order=state.rotation_order,
                     control_parent_path=pose_path,
                     sub_control_path=(
@@ -371,7 +393,8 @@ def plan_body_hand_fk_controls(
                     extra_path=extra_path,
                     extra_name=extra_name,
                     extra_curve=build_options.extra_controllers,
-                    fit_joint_names=(f"{digit.value}{index}",
+                    fit_joint_names=(f"{digit.value}{index}" if index <= 3
+                                     else f"{digit.value}End",
                                      f"{digit.value}Finger{index}"),
                 ))
                 parent_path = control_path

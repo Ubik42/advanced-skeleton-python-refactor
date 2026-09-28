@@ -40,6 +40,7 @@ from adv_py.core.body_skeleton import (
 from adv_py.core.fit_settings import (
     FitSkeletonSettings, FitSkeletonValidationError,
 )
+from adv_py.core.fit_orientation import FitOrientationSnapshot
 from adv_py.core.fit_symmetry import FitBuildSide
 
 
@@ -48,6 +49,9 @@ class BodyHandPoseDocumentHost(Protocol):
     def read_fit_skeleton_settings(
         self, container_name: str,
     ) -> FitSkeletonSettings: ...
+    def capture_fit_orientation(
+        self, container_name: str,
+    ) -> FitOrientationSnapshot: ...
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot: ...
     def capture_body_hand_fk_controls(
         self,
@@ -173,11 +177,14 @@ class InspectBodyHandPoseRig:
         namespace = _body_namespace(body)
         build_options = BodyBuildOptions.from_fit_settings(
             self._host.read_fit_skeleton_settings(source_container))
+        fit_metadata = self._host.capture_fit_orientation(
+            source_container).metadata
         hand = plan_body_hand_fk_controls(
             body,
             radius=1.5 if control_radius is None else control_radius,
             namespace=namespace,
             build_options=build_options,
+            fit_metadata=fit_metadata,
         )
         hand_snapshot = self._host.capture_body_hand_fk_controls(hand)
         if hand_snapshot.roots and all(
@@ -189,6 +196,7 @@ class InspectBodyHandPoseRig:
                 namespace=namespace,
                 build_options=build_options,
                 source_icon_size=False,
+                fit_metadata=fit_metadata,
             )
         pose = plan_body_hand_pose_controls(hand)
         hand_issues = audit_body_hand_fk_controls(

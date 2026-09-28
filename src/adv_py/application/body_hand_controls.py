@@ -126,6 +126,7 @@ class BuildBodyHandFkControls:
             radius=control_radius,
             build_options=BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings),
+            fit_metadata=safety.symmetry.source.metadata,
         )
         pose = plan_body_hand_pose_controls(controls)
         input_snapshot = self._host.capture_body_hand_fk_input(controls)

@@ -117,7 +117,9 @@ def plan_inbetween_limb_bindings(
                      if item.side == first.side]
             terminal = (start_name.endswith("Finger3")
                         or start_name.endswith("3"))
-            if (len(starts) != 1 or len(ends) != (0 if terminal else 1)
+            if (len(starts) != 1
+                    or (len(ends) not in (0, 1) if terminal
+                        else len(ends) != 1)
                     or len(roots) != 1):
                 raise ValueError("手指 Inbetween FK 控制映射不完整："
                                  + first.start_body_name)
