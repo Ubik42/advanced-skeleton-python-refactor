@@ -13,6 +13,9 @@ from .fit_symmetry import FitSymmetryInstance
 class BodyFkScaleCompensationSpec:
     offset_path: str
     parent_control_path: str
+    scale_source_path: str
+    control_path: str
+    inherit_scale: bool
     world_position: tuple[float, float, float]
     world_axes: tuple[tuple[float, float, float], ...]
     world_matrix_name: str
@@ -36,13 +39,14 @@ def plan_body_fk_scale_compensation(
     if (len(source_by_output) != len(instances)
             or len(metadata_by_source) != len(metadata)):
         raise ValueError("FK 缩放补偿需要唯一的 Fit 来源")
-    control_paths = {item.control_path for item in controls}
-    if len(control_paths) != len(controls):
+    controls_by_path = {item.control_path: item for item in controls}
+    if len(controls_by_path) != len(controls):
         raise ValueError("FK 缩放补偿控制器路径重复")
     result = []
     names = set()
     for control in controls:
-        if control.parent_path not in control_paths:
+        parent_control = controls_by_path.get(control.parent_path)
+        if parent_control is None:
             continue
         source = source_by_output.get(control.driven_joint)
         fit = metadata_by_source.get(source)
@@ -58,11 +62,11 @@ def plan_body_fk_scale_compensation(
                                  ("Finger", "Cup", "Toes"))
                              or "Head" in parent_stem
                              or re.search(r"Part[0-9]", stem) is not None))
-        if not enabled:
-            continue
         prefix = "AdvPy_" + leaf + "_FkScaleComp"
         spec = BodyFkScaleCompensationSpec(
             control.offset_path, control.parent_path,
+            parent_control.sub_control_path or parent_control.control_path,
+            control.control_path, not enabled,
             control.world_position, control.world_axes,
             prefix + "World", prefix + "Pick",
             prefix + "Relative")

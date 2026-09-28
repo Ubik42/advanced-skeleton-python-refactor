@@ -31,6 +31,16 @@ class MayaBodyFkScaleCompensationMixin:
                for name in spec.node_names):
             raise ValueError("FK 缩放补偿节点名称冲突："
                              + spec.offset_path)
+        if (c.ls(spec.control_path, long=True, type="transform") or []) != [
+                spec.control_path]:
+            raise ValueError("FK 缩放补偿控制器无效：" + spec.control_path)
+        if (c.ls(spec.scale_source_path, long=True,
+                 type="transform") or []) != [spec.scale_source_path]:
+            raise ValueError("FK 缩放来源无效：" + spec.scale_source_path)
+        if c.attributeQuery("inheritScale", node=spec.control_path,
+                            exists=True):
+            raise ValueError("FK 控制器已有 inheritScale 属性："
+                             + spec.control_path)
         if c.connectionInfo(spec.offset_path + ".offsetParentMatrix",
                             isDestination=True):
             raise ValueError("FK Offset 已有矩阵驱动：" + spec.offset_path)
@@ -69,11 +79,16 @@ class MayaBodyFkScaleCompensationMixin:
         relative = c.createNode("multMatrix",
                                 name=spec.relative_matrix_name)
         c.setAttr(world + ".matrixIn[0]", *local, type="matrix")
-        c.connectAttr(parent + ".worldMatrix[0]",
+        c.connectAttr(spec.scale_source_path + ".worldMatrix[0]",
                       world + ".matrixIn[1]")
         c.connectAttr(world + ".matrixSum", pick + ".inputMatrix")
-        c.setAttr(pick + ".useScale", False)
-        c.setAttr(pick + ".useShear", False)
+        c.addAttr(spec.control_path, longName="inheritScale",
+                  attributeType="bool", defaultValue=spec.inherit_scale,
+                  keyable=False)
+        c.connectAttr(spec.control_path + ".inheritScale",
+                      pick + ".useScale")
+        c.connectAttr(spec.control_path + ".inheritScale",
+                      pick + ".useShear")
         c.connectAttr(pick + ".outputMatrix",
                       relative + ".matrixIn[0]")
         c.connectAttr(parent + ".worldInverseMatrix[0]",
@@ -95,17 +110,21 @@ class MayaBodyFkScaleCompensationMixin:
                                   (relative, "multMatrix"))):
             return False
         links = (
-            (spec.parent_control_path + ".worldMatrix[0]",
+            (spec.scale_source_path + ".worldMatrix[0]",
              world + ".matrixIn[1]"),
             (world + ".matrixSum", pick + ".inputMatrix"),
+            (spec.control_path + ".inheritScale", pick + ".useScale"),
+            (spec.control_path + ".inheritScale", pick + ".useShear"),
             (pick + ".outputMatrix", relative + ".matrixIn[0]"),
             (spec.parent_control_path + ".worldInverseMatrix[0]",
              relative + ".matrixIn[1]"),
             (relative + ".matrixSum",
              spec.offset_path + ".offsetParentMatrix"),
         )
-        if (c.getAttr(pick + ".useScale")
-                or c.getAttr(pick + ".useShear")
+        if (not c.attributeQuery("inheritScale", node=spec.control_path,
+                                 exists=True)
+                or bool(c.getAttr(spec.control_path + ".inheritScale"))
+                != spec.inherit_scale
                 or any(c.connectionInfo(target,
                        sourceFromDestination=True) != source
                        for source, target in links)):
