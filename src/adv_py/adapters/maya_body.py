@@ -9,6 +9,7 @@ from .maya_body_fk_scale_compensation import (
 from .maya_torso import MayaBodyTorsoMixin
 from .maya_spine import MayaBodySpineMixin
 from .maya_control_spaces import MayaBodyControlSpacesMixin
+from .maya_body_pole_aim import MayaBodyPoleAimMixin
 
 import json
 from dataclasses import replace
@@ -305,7 +306,7 @@ _BODY_EXPORT_BAKE_ATTRIBUTES = {
 }
 
 
-class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, MayaBodyFkScaleCompensationMixin, MayaFitTweakerMixin, MayaBodyParentConstraintMixin, MayaBodyGameRootMotionMixin, MayaBodyGameScalingMixin, MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitBendyMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
+class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, MayaBodyFkScaleCompensationMixin, MayaFitTweakerMixin, MayaBodyParentConstraintMixin, MayaBodyGameRootMotionMixin, MayaBodyGameScalingMixin, MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitBendyMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyPoleAimMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
     """Maya scene adapter for the first materialized Body skeleton stage."""
 
     def copy_external_mesh_for_character(self, mesh_path: str) -> str:
@@ -6815,6 +6816,15 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 skipConversionNodes=True) or []
             swivel_source = (self._canonical_plug(swivel_inputs[0])
                              if len(swivel_inputs) == 1 else None)
+            pole_aim_swivel = (
+                f"AdvPy_PoleAimSwivelCM_{spec.side.value}")
+            if self._cmds.objExists(pole_aim_swivel):
+                swivel_inputs = self._cmds.listConnections(
+                    pole_aim_swivel + ".inputRotateX", source=True,
+                    destination=False, plugs=True,
+                    skipConversionNodes=True) or []
+                swivel_source = (self._canonical_plug(swivel_inputs[0])
+                                 if len(swivel_inputs) == 1 else None)
             parents = self._cmds.listRelatives(
                 handles[0], parent=True, fullPath=True
             ) or []

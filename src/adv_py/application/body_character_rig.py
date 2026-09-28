@@ -61,6 +61,9 @@ from .fit_tweaker import BuildFitTweakers
 from .body_torso import BodyTorsoHost, BodyTorsoBuildPlan, BuildBodyTorso
 from adv_py.core.body_torso import BodyTorsoSnapshot
 from adv_py.core.body_control_spaces import BodyControlSpacesPlan, plan_body_control_spaces
+from adv_py.core.body_leg_pole_aim import (
+    BodyLegPoleAimSpec, plan_body_leg_pole_aim,
+)
 
 
 class BodyCharacterRigHost(
@@ -71,6 +74,8 @@ class BodyCharacterRigHost(
     Protocol,
 ):
     def create_body_control_spaces(self, plan: BodyControlSpacesPlan) -> None: ...
+    def create_body_leg_pole_aim(self, spec: BodyLegPoleAimSpec) -> None: ...
+    def capture_body_leg_pole_aim(self, spec: BodyLegPoleAimSpec) -> bool: ...
     def scene_up_axis(self) -> FitUpAxis: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
     def create_body_character_global(self, plan: BodyCharacterGlobalPlan) -> None: ...
@@ -123,6 +128,7 @@ class BodyCharacterRigBuildPlan:
     shared_input_stable: bool
     torso: BodyTorsoBuildPlan | None = None
     control_spaces: BodyControlSpacesPlan | None = None
+    pole_aim: tuple[BodyLegPoleAimSpec, ...] = ()
     fit_tweakers: FitTweakerPlan | None = None
     direct_fk_scales: tuple[BodyDirectFkScaleSpec, ...] = ()
     fk_scale_compensations: tuple[BodyFkScaleCompensationSpec, ...] = ()
@@ -371,7 +377,15 @@ class BuildBodyCharacterRig:
                 and any(item.tweaker_control
                         for item in safety.symmetry.source.metadata))
             else None)
-        spaces = plan_body_control_spaces(safety.body, torso.torso, arm, leg, global_control) if include_control_spaces else None
+        pole_aim = (
+            plan_body_leg_pole_aim(leg, torso.torso)
+            if include_control_spaces and torso is not None
+            and BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).use_offset_parent_matrix
+            else ())
+        spaces = (plan_body_control_spaces(
+            safety.body, torso.torso, arm, leg, global_control,
+            pole_aim=pole_aim) if include_control_spaces else None)
         direct_controls = (
             (torso.torso.controls.controls if torso else ())
             + (hand.controls.controls if hand else ()))
@@ -414,6 +428,8 @@ class BuildBodyCharacterRig:
             path
             for name in (global_control.node_names
                          + (spaces.node_names if spaces else ())
+                         + tuple(name for spec in pole_aim
+                                 for name in spec.node_names)
                          + ((fit_tweakers.system_path.rsplit("|", 1)[-1],)
                             + tuple(name for spec in fit_tweakers.controls
                                     for name in spec.node_names)
@@ -433,6 +449,7 @@ class BuildBodyCharacterRig:
             global_name_collisions=collisions,
             torso=torso,
             control_spaces=spaces,
+            pole_aim=pole_aim,
             fit_tweakers=fit_tweakers,
             direct_fk_scales=direct_fk_scales,
             fk_scale_compensations=fk_scale_compensations,
@@ -544,6 +561,11 @@ class BuildBodyCharacterRig:
                     "角色总控阶段复检失败："
                     + "；".join(issue.message for issue in issues)
                 )
+            for spec in plan.pole_aim:
+                self._host.create_body_leg_pole_aim(spec)
+            if any(not self._host.capture_body_leg_pole_aim(spec)
+                   for spec in plan.pole_aim):
+                raise RuntimeError("Leg PoleAim 构建后复检失败")
             if plan.control_spaces:
                 self._host.create_body_control_spaces(plan.control_spaces)
             for spec in plan.fk_channel_locks:

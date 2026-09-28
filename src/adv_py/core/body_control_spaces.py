@@ -59,7 +59,8 @@ class BodyControlSpacesPlan:
         return found[0]
 
 
-def plan_body_control_spaces(body, torso, arm, leg, global_control):
+def plan_body_control_spaces(body, torso, arm, leg, global_control,
+                             pole_aim=()):
     joints = {j.name: j.path for j in body.joints}
     heads = tuple(spec for spec in torso.controls.controls if spec.driven_joint == joints.get("Head_M"))
     if len(heads) != 1 or "Neck_M" not in joints:
@@ -71,12 +72,20 @@ def plan_body_control_spaces(body, torso, arm, leg, global_control):
     spaces = [BodyControlSpaceSpec("head", (heads[0].offset_path,),
         neck_controls[0].control_path, global_control.control_path,
         True, "body")]
+    pole_aim_by_side = {spec.side: spec.target_path for spec in pole_aim}
+    if pole_aim and (len(pole_aim_by_side) != len(pole_aim)
+                     or set(pole_aim_by_side) != {limb.side for limb in leg.ik.limbs}):
+        raise FitSkeletonValidationError("Leg PoleAim 必须覆盖每一侧且不可重复")
     for module, label, source in ((arm, "hand", joints["Chest_M"]), (leg, "foot", body.root)):
         for limb in module.ik.limbs:
             goal = limb.wrist_offset_path if label == "hand" else limb.ankle_offset_path
+            pole_source = (pole_aim_by_side.get(limb.side, source)
+                           if label == "foot" else source)
             spaces.append(BodyControlSpaceSpec(
                 f"{label}_{limb.side.value}", (goal, limb.pole_offset_path), source,
-                global_control.control_path, False, "global",
+                global_control.control_path, False,
+                "body" if label == "foot" and pole_aim else "global",
+                (source, pole_source),
             ))
     targets = [target for spec in spaces for target in spec.targets]
     if len(set(targets)) != len(targets):

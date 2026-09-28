@@ -1083,7 +1083,7 @@ def audit_body_leg_foot(
         if spec.pivots[0].roll_control_name and state.swivel_source != (
                 spec.ankle_control_path + ".swivel"):
             issues.append(BodyLegFootIssue(
-                "foot_swivel", "Leg IK swivel 未驱动 Handle twist",
+                "foot_swivel", "Leg IK swivel 驱动来源不一致",
                 spec.side.value))
         if (state.toe_handle_parent_path != spec.toe_handle_parent_path
                 or state.toe_handle_joint_list != (

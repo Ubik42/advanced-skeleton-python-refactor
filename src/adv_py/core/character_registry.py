@@ -274,14 +274,19 @@ def decode_registration(text):
         raw_spaces = exact(data["spaces"],("body_root","spaces"))
         spaces = []
         for row in raw_spaces["spaces"]:
-            exact(row,(f.name for f in fields(BodyControlSpaceSpec)))
+            names = {f.name for f in fields(BodyControlSpaceSpec)}
+            if not isinstance(row, dict) or set(row) not in (names, names - {"body_target_sources"}):
+                raise CharacterRegistryError("控制空间登记字段无效")
             key = row["key"]
             if key not in ("head","hand_R","hand_L","foot_R","foot_L") or type(row["rotation_only"]) is not bool or row["rotation_only"] != (key=="head") or row["initial_mode"] not in ("body","global"):
                 raise CharacterRegistryError("控制空间描述无效")
             targets = tuple(path(p) for p in row["targets"])
             if len(targets) != (1 if key=="head" else 2):
                 raise CharacterRegistryError("控制空间目标不完整")
-            spaces.append(BodyControlSpaceSpec(key,targets,path(row["body_source"]),path(row["global_source"]),row["rotation_only"],row["initial_mode"]))
+            target_sources = tuple(path(p) for p in row.get("body_target_sources", ()))
+            if target_sources and len(target_sources) != len(targets):
+                raise CharacterRegistryError("控制空间目标来源数量不一致")
+            spaces.append(BodyControlSpaceSpec(key,targets,path(row["body_source"]),path(row["global_source"]),row["rotation_only"],row["initial_mode"],target_sources))
         if len(spaces)!=5 or len({s.key for s in spaces})!=5 or raw_spaces["body_root"] != root or spine.body_joints[0] != root:
             raise CharacterRegistryError("空间或脊柱角色根不一致")
         required = {root,container,*(c.node for c in channels),*paths,*values["fk_controls"],*values["body_joints"],*(j.path for j in joints)}
@@ -289,7 +294,7 @@ def decode_registration(text):
         if spline_document:
             required.update(spine.targets)
             required.update(spine.ik_outputs[1:])
-        required.update(p for s in spaces for p in (*s.targets,s.body_source,s.global_source))
+        required.update(p for s in spaces for p in (*s.targets,*s.sources))
         if not required.issubset({n.path for n in nodes}):
             raise CharacterRegistryError("登记缺少操作节点身份")
         return CharacterRegistration(root,container,tuple(channels),tuple(body),tuple(nodes),spine,BodyControlSpacesPlan(root,tuple(spaces)))
