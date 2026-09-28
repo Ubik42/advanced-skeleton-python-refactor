@@ -5957,7 +5957,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             names.extend(
                 name for pivot in side.pivots
                 for name in (pivot.roll_offset_name, pivot.roll_extra_name,
-                             pivot.roll_control_name) if name)
+                             pivot.roll_control_name,
+                             pivot.roll_roller_name) if name)
             names.extend(
                 pivot.multiplier_name
                 for pivot in side.pivots
@@ -6059,7 +6060,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             self._transaction_changed = True
             for attribute in spec.attributes:
                 options = {}
-                if attribute == spec.roll.master_attribute:
+                if (attribute == spec.roll.master_attribute
+                        and attribute == "footRoll"):
                     options = {
                         "minValue": spec.roll.minimum,
                         "maxValue": spec.roll.maximum,
@@ -6068,7 +6070,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     spec.ankle_control_path,
                     longName=attribute,
                     attributeType="double",
-                    defaultValue=0.0,
+                    defaultValue=spec.attribute_default(attribute),
                     keyable=True,
                     **options,
                 )
@@ -6094,9 +6096,24 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     self._cmds.xform(
                         offset, worldSpace=True,
                         translation=pivot.world_position)
+                    self._cmds.xform(
+                        offset, worldSpace=True,
+                        rotation=(0.0, pivot.roll_heading, 0.0))
+                    extra_parent = offset
+                    if pivot.roll_roller_name:
+                        extra_parent = self._cmds.createNode(
+                            "transform", name=pivot.roll_roller_name,
+                            parent=offset, skipSelect=True)
+                        extra_parent = (self._cmds.ls(extra_parent, long=True)
+                                        or [extra_parent])[0]
+                        if extra_parent != pivot.roll_roller_path:
+                            raise RuntimeError("Foot Roll Roller 路径漂移")
+                        self._cmds.connectAttr(
+                            pivot.roll_roller_source,
+                            extra_parent + ".rotateX")
                     extra = self._cmds.createNode(
                         "transform", name=pivot.roll_extra_name,
-                        parent=offset, skipSelect=True)
+                        parent=extra_parent, skipSelect=True)
                     extra = (self._cmds.ls(extra, long=True) or [extra])[0]
                     if extra != pivot.roll_extra_path:
                         raise RuntimeError("Foot Roll Extra 路径漂移")
@@ -6268,6 +6285,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             suffix = limb.side.value
             path = (f"{limb.ankle_control_path}"
                     f"|AdvPy_RollOffsetHeel_{suffix}"
+                    f"|AdvPy_RollRollerHeel_{suffix}"
                     f"|AdvPy_RollExtraHeel_{suffix}"
                     f"|AdvPy_RollHeel_{suffix}")
             found.append((self._cmds.ls(
@@ -6297,6 +6315,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                               pivot.roll_control_path)
                 roll_nodes = []
                 roll_parents = []
+                roller_node = None
+                roller_parent = None
+                roller_source = None
                 if pivot.roll_control_name:
                     for roll_path in roll_paths:
                         matches = self._cmds.ls(
@@ -6308,6 +6329,25 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         parents = self._cmds.listRelatives(
                             matches[0], parent=True, fullPath=True) or []
                         roll_parents.append(parents[0] if parents else None)
+                    if pivot.roll_roller_name:
+                        rollers = self._cmds.ls(
+                            pivot.roll_roller_path, long=True,
+                            type="transform") or []
+                        if len(rollers) != 1:
+                            raise FitSkeletonValidationError(
+                                "Foot Roll Roller 节点集合无效")
+                        roller_node = rollers[0]
+                        roller_parents = self._cmds.listRelatives(
+                            roller_node, parent=True, fullPath=True) or []
+                        roller_parent = (roller_parents[0]
+                                         if roller_parents else None)
+                        roller_sources = self._cmds.listConnections(
+                            roller_node + ".rotateX", source=True,
+                            destination=False, plugs=True,
+                            skipConversionNodes=True) or []
+                        roller_source = (self._canonical_plug(
+                            roller_sources[0])
+                            if len(roller_sources) == 1 else None)
                 nodes = self._cmds.ls(pivot.path, long=True, type="transform") or []
                 if len(nodes) != 1:
                     raise FitSkeletonValidationError("Foot pivot 节点集合无效")
@@ -6368,6 +6408,13 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                             roll_nodes[2], shapes=True, noIntermediate=True,
                             fullPath=True, type="nurbsCurve") or []) == 1
                         else None) if roll_nodes else None,
+                    roll_roller_path=roller_node,
+                    roll_roller_parent_path=roller_parent,
+                    roll_roller_rotation_source=roller_source,
+                    roll_offset_world_rotation=(tuple(float(value) for value in
+                        self._cmds.xform(roll_nodes[0], query=True,
+                                         worldSpace=True, rotation=True))
+                        if roll_nodes else None),
                 ))
             handles = self._cmds.ls(spec.handle_name, long=True, type="ikHandle") or []
             if len(handles) != 1:

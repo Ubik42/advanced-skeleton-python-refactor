@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from math import isfinite
+from math import atan2, degrees, isfinite
 
 from .body_leg_ik import BodyLegIkPlan
 from .body_controller_appearance import body_fk_curve_radius
@@ -45,6 +45,10 @@ class BodyLegFootPivotSpec:
     roll_control_name: str = ""
     roll_control_path: str = ""
     roll_radius: float = 0.0
+    roll_roller_name: str = ""
+    roll_roller_path: str = ""
+    roll_roller_source: str = ""
+    roll_heading: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,9 +106,15 @@ class BodyLegFootSideSpec:
 
     @property
     def attributes(self) -> tuple[str, ...]:
-        return (self.roll.master_attribute,) + tuple(
+        roll_attributes = (("rollStartAngle", "rollEndAngle")
+                           if self.pivots[0].roll_control_name else ())
+        return (self.roll.master_attribute,) + roll_attributes + tuple(
             pivot.attribute for pivot in self.pivots
         )
+
+    def attribute_default(self, attribute: str) -> float:
+        return {"rollStartAngle": 30.0,
+                "rollEndAngle": 60.0}.get(attribute, 0.0)
 
     @property
     def final_handle_parent_path(self) -> str:
@@ -146,6 +156,10 @@ class BodyLegFootPivotState:
     roll_control_parent_path: str | None = None
     roll_control_position: Vector3 | None = None
     roll_control_shape: str | None = None
+    roll_roller_path: str | None = None
+    roll_roller_parent_path: str | None = None
+    roll_roller_rotation_source: str | None = None
+    roll_offset_world_rotation: Vector3 | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,7 +246,7 @@ def plan_body_leg_foot(
     sides = []
     for limb in ik.limbs:
         suffix = limb.side.value
-        master_attribute = "footRoll"
+        master_attribute = "footRoll" if legacy_roll_controls else "roll"
         master_plug = f"{limb.ankle_control_path}.{master_attribute}"
         minimum, maximum, ball_break = -360.0, 360.0, 45.0
         heel_clamp = f"AdvPy_FootRollHeelClamp_{suffix}"
@@ -257,6 +271,15 @@ def plan_body_leg_foot(
         if any(body_by_name[name].side is not limb.side for name in required):
             raise BodyLegFootValidationError(f"Foot 标记侧向与名称不一致：{suffix}")
 
+        ankle_position = limb.ankle_position
+        toes_position = body_by_name[f"Toes_{suffix}"].world_position
+        heading_vector = (toes_position[0] - ankle_position[0],
+                          toes_position[2] - ankle_position[2])
+        if not legacy_roll_controls and sum(v * v for v in heading_vector) <= 1e-12:
+            raise BodyLegFootValidationError(
+                f"Foot Roll 朝向需要非零的 Ankle→Toes 水平距离：{suffix}")
+        roll_heading = degrees(atan2(*heading_vector)) if not legacy_roll_controls else 0.0
+
         parent = limb.ankle_control_path
         pivots = []
         for role, marker, attribute, axis, multiplier in marker_roles:
@@ -272,6 +295,16 @@ def plan_body_leg_foot(
                                  if roll_extra_name else "")
             roll_control_path = (f"{roll_extra_path}|{roll_control_name}"
                                  if roll_control_name else "")
+            roll_roller_name = (f"AdvPy_RollRoller{marker}_{suffix}"
+                                if roll_control_name and role in (
+                                    BodyLegFootPivotRole.HEEL,
+                                    BodyLegFootPivotRole.TOE,
+                                    BodyLegFootPivotRole.BALL) else "")
+            roll_roller_path = (f"{roll_offset_path}|{roll_roller_name}"
+                                if roll_roller_name else "")
+            if roll_roller_path:
+                roll_extra_path = f"{roll_roller_path}|{roll_extra_name}"
+                roll_control_path = f"{roll_extra_path}|{roll_control_name}"
             name = f"AdvPy_Foot{role.value.title()}Pivot_{suffix}"
             path = f"{roll_control_path or parent}|{name}"
             multiplier_name = (
@@ -282,7 +315,7 @@ def plan_body_leg_foot(
             manual_source = f"{limb.ankle_control_path}.{attribute}"
             source = (
                 f"{sum_names[role]}.output1D"
-                if role in sum_names
+                if legacy_roll_controls and role in sum_names
                 else (
                     f"{multiplier_name}.output"
                     if multiplier_name else manual_source
@@ -309,6 +342,17 @@ def plan_body_leg_foot(
                 roll_radius=(body_fk_curve_radius(
                     body, body_by_name[f"{marker}_{suffix}"], ik.base_radius)
                     if roll_control_name else 0.0),
+                roll_roller_name=roll_roller_name,
+                roll_roller_path=roll_roller_path,
+                roll_roller_source=(
+                    f"AdvPy_RollHeelClamp_{suffix}.outputR"
+                    if role is BodyLegFootPivotRole.HEEL else
+                    f"AdvPy_RollToesEndMultiply_{suffix}.outputX"
+                    if role is BodyLegFootPivotRole.TOE else
+                    f"AdvPy_RollToesMultiply2_{suffix}.outputX"
+                    if role is BodyLegFootPivotRole.BALL else ""
+                ) if roll_roller_name else "",
+                roll_heading=roll_heading,
             ))
             parent = path
         toe_pivot_path = next(
@@ -369,6 +413,60 @@ def plan_body_leg_foot(
                 )
             ),
         )
+        if not legacy_roll_controls:
+            start = f"{limb.ankle_control_path}.rollStartAngle"
+            end = f"{limb.ankle_control_path}.rollEndAngle"
+            heel = f"AdvPy_RollHeelClamp_{suffix}"
+            toes_pma = f"AdvPy_RollToesSubtract_{suffix}"
+            toes_range2 = f"AdvPy_RollToesRange2_{suffix}"
+            toes_range1 = f"AdvPy_RollToesRange1_{suffix}"
+            toes_multiply1 = f"AdvPy_RollToesMultiply1_{suffix}"
+            toes_multiply2 = f"AdvPy_RollToesMultiply2_{suffix}"
+            end_range = f"AdvPy_RollToesEndRange_{suffix}"
+            end_multiply = f"AdvPy_RollToesEndMultiply_{suffix}"
+            roll_nodes = (
+                BodyLegFootRollNodeSpec(
+                    heel, "clamp", ((master_plug, f"{heel}.inputR"),
+                                    (master_plug, f"{heel}.minR"))),
+                BodyLegFootRollNodeSpec(
+                    toes_pma, "plusMinusAverage",
+                    ((f"{toes_range2}.outValueX",
+                      f"{toes_pma}.input1D[1]"),),
+                    ((f"{toes_pma}.operation", 2.0),
+                     (f"{toes_pma}.input1D[0]", 1.0))),
+                BodyLegFootRollNodeSpec(
+                    toes_range2, "setRange",
+                    ((master_plug, f"{toes_range2}.valueX"),
+                     (start, f"{toes_range2}.oldMinX"),
+                     (end, f"{toes_range2}.oldMaxX")),
+                    ((f"{toes_range2}.maxX", 1.0),)),
+                BodyLegFootRollNodeSpec(
+                    toes_range1, "setRange",
+                    ((master_plug, f"{toes_range1}.valueX"),
+                     (start, f"{toes_range1}.oldMaxX")),
+                    ((f"{toes_range1}.maxX", 1.0),)),
+                BodyLegFootRollNodeSpec(
+                    toes_multiply1, "multiplyDivide",
+                    ((f"{toes_pma}.output1D", f"{toes_multiply1}.input1X"),
+                     (f"{toes_range1}.outValueX",
+                      f"{toes_multiply1}.input2X"))),
+                BodyLegFootRollNodeSpec(
+                    toes_multiply2, "multiplyDivide",
+                    ((f"{toes_multiply1}.outputX",
+                      f"{toes_multiply2}.input1X"),
+                     (master_plug, f"{toes_multiply2}.input2X"))),
+                BodyLegFootRollNodeSpec(
+                    end_range, "setRange",
+                    ((master_plug, f"{end_range}.valueX"),
+                     (start, f"{end_range}.oldMinX"),
+                     (end, f"{end_range}.oldMaxX")),
+                    ((f"{end_range}.maxX", 1.0),)),
+                BodyLegFootRollNodeSpec(
+                    end_multiply, "multiplyDivide",
+                    ((f"{end_range}.outValueX",
+                      f"{end_multiply}.input1X"),
+                     (master_plug, f"{end_multiply}.input2X"))),
+            )
         sides.append(BodyLegFootSideSpec(
             side=limb.side,
             ankle_control_path=limb.ankle_control_path,
@@ -453,8 +551,10 @@ def audit_body_leg_foot(
             or (
                 expected_attribute_value is not None
                 and any(
-                    abs(value - expected_attribute_value) > tolerance
-                    for _, value in state.attribute_values
+                    abs(value - (spec.attribute_default(plug.rsplit(".", 1)[-1])
+                                 if expected_attribute_value == 0.0
+                                 else expected_attribute_value)) > tolerance
+                    for plug, value in state.attribute_values
                 )
             )
         ):
@@ -472,12 +572,20 @@ def audit_body_leg_foot(
                 actual_pivot.roll_offset_path != pivot.roll_offset_path
                 or actual_pivot.roll_offset_parent_path != pivot.roll_offset_path.rsplit("|", 1)[0]
                 or actual_pivot.roll_extra_path != pivot.roll_extra_path
-                or actual_pivot.roll_extra_parent_path != pivot.roll_offset_path
+                or actual_pivot.roll_extra_parent_path != (
+                    pivot.roll_roller_path or pivot.roll_offset_path)
                 or actual_pivot.roll_control_path != pivot.roll_control_path
                 or actual_pivot.roll_control_parent_path != pivot.roll_extra_path
             ):
                 issues.append(BodyLegFootIssue(
                     "foot_roll_control_hierarchy", "Roll 控制层级不一致", subject))
+            if pivot.roll_roller_name and (
+                actual_pivot.roll_roller_path != pivot.roll_roller_path
+                or actual_pivot.roll_roller_parent_path != pivot.roll_offset_path
+                or actual_pivot.roll_roller_rotation_source != pivot.roll_roller_source
+            ):
+                issues.append(BodyLegFootIssue(
+                    "foot_roll_roller", "Roll 自动滚动层结构或驱动不一致", subject))
             if pivot.roll_control_name and actual_pivot.roll_control_shape != "nurbsCurve":
                 issues.append(BodyLegFootIssue(
                     "foot_roll_control_shape", "Roll 控制缺少 NURBS 曲线", subject))
@@ -487,6 +595,13 @@ def audit_body_leg_foot(
                                        pivot.world_position, tolerance))):
                 issues.append(BodyLegFootIssue(
                     "foot_roll_control_position", "Roll 控制初始位置不一致", subject))
+            if (pivot.roll_control_name and check_initial_pose
+                    and (actual_pivot.roll_offset_world_rotation is None
+                         or not _close_angles(
+                             actual_pivot.roll_offset_world_rotation,
+                             (0.0, pivot.roll_heading, 0.0), tolerance))):
+                issues.append(BodyLegFootIssue(
+                    "foot_roll_heading", "Roll 控制朝向不一致", subject))
             if check_initial_pose and not _close(
                 actual_pivot.world_position, pivot.world_position, tolerance
             ):
@@ -644,6 +759,11 @@ def audit_body_leg_foot(
 
 def _close(left: Vector3, right: Vector3, tolerance: float) -> bool:
     return all(abs(a - b) <= tolerance for a, b in zip(left, right))
+
+
+def _close_angles(left: Vector3, right: Vector3, tolerance: float) -> bool:
+    return all(abs((a - b + 180.0) % 360.0 - 180.0) <= tolerance
+               for a, b in zip(left, right))
 
 
 def segmented_foot_roll(
