@@ -33,6 +33,9 @@ class ModelCleanNode:
     attribute_content_sha256: str = ""
     referenced: bool = False
     instanced: bool = False
+    double_sided: bool = True
+    # smoothLevel/lock, dispResolution/lock, displaySmoothMesh/lock.
+    shape_display: tuple[int, bool, int, bool, int, bool] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +64,8 @@ class ModelCleanItem:
     uv_content_sha256: str
     material_assignment_sha256: str
     attribute_content_sha256: str
+    double_sided: bool = True
+    shape_display: tuple[int, bool, int, bool, int, bool] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +95,8 @@ class ModelCleanArchiveItem:
     uv_content_sha256: str
     material_assignment_sha256: str
     attribute_content_sha256: str
+    double_sided: bool = True
+    shape_display: tuple[int, bool, int, bool, int, bool] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +153,18 @@ def plan_model_clean(scene: ModelCleanScene) -> ModelCleanPlan:
                     *node.uv_sets, *node.material_slots,
                     *node.user_attributes))):
             raise ValueError("Model Clean UV、材质或用户属性记录无效")
+        if type(node.double_sided) is not bool or (
+                node.kind == "group" and not node.double_sided):
+            raise ValueError("Model Clean 网格双面显示状态无效")
+        if node.shape_display is not None:
+            display = node.shape_display
+            if (node.kind != "mesh" or not isinstance(display, tuple)
+                    or len(display) != 6
+                    or any(type(display[index]) is not int
+                           or display[index] < 0 for index in (0, 2, 4))
+                    or any(type(display[index]) is not bool
+                           for index in (1, 3, 5))):
+                raise ValueError("Model Clean 网格平滑显示状态无效")
         content_digests = (
             node.surface_sha256, node.uv_content_sha256,
             node.material_assignment_sha256,
@@ -175,7 +194,7 @@ def plan_model_clean(scene: ModelCleanScene) -> ModelCleanPlan:
             node.shape_name.rsplit(":", 1)[-1] if node.shape_name else None,
             node.vertex_count, node.face_count, node.uv_sets,
             node.material_slots, node.user_attributes,
-            *content_digests))
+            *content_digests, node.double_sided, node.shape_display))
     if not any(item.kind == "mesh" for item in items):
         raise ValueError("Model Clean 的 |geo 下没有多边形网格")
     return ModelCleanPlan(scene.scene_name, scene.geo_root, tuple(items),
@@ -213,7 +232,9 @@ def validate_model_clean_archive(
                 or item.material_assignment_sha256 !=
                     original.material_assignment_sha256
                 or item.attribute_content_sha256 !=
-                    original.attribute_content_sha256):
+                    original.attribute_content_sha256
+                or item.double_sided != original.double_sided
+                or item.shape_display != original.shape_display):
             raise ValueError("Model Clean 归档未保留网格结构、UV、材质或属性："
                              + original.source_path)
 
@@ -243,5 +264,7 @@ def validate_model_clean_result(
                 or node.material_assignment_sha256 !=
                     item.material_assignment_sha256
                 or node.attribute_content_sha256 !=
-                    item.attribute_content_sha256):
+                    item.attribute_content_sha256
+                or node.double_sided != item.double_sided
+                or node.shape_display != item.shape_display):
             raise ValueError("Model Clean 重建后网格或属性不完整：" + path)

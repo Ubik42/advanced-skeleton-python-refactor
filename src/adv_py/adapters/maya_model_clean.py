@@ -100,6 +100,16 @@ class MayaModelCleanHost:
             rows.append((engine, source, tuple(nodes)))
         return model_clean_content_sha256(rows)
 
+    def _shape_display(self, shape: str):
+        c = self.cmds
+        return (int(c.getAttr(shape + ".smoothLevel")),
+                bool(c.getAttr(shape + ".smoothLevel", lock=True)),
+                int(c.getAttr(shape + ".dispResolution")),
+                bool(c.getAttr(shape + ".dispResolution", lock=True)),
+                int(c.getAttr(shape + ".displaySmoothMesh")),
+                bool(c.getAttr(shape + ".displaySmoothMesh",
+                               lock=True)))
+
     def _mesh_data(self, shape: str):
         om = self.om
         dag = om.MSelectionList().add(shape).getDagPath(0)
@@ -175,7 +185,10 @@ class MayaModelCleanHost:
                 model_clean_content_sha256(attributes)
                 if attributes else "",
                 bool(c.referenceQuery(path, isNodeReferenced=True)),
-                len(parents) > 1 or len(shape_parents) > 1))
+                len(parents) > 1 or len(shape_parents) > 1,
+                bool(c.getAttr(shape + ".doubleSided"))
+                if shape else True,
+                self._shape_display(shape) if shape else None))
             descendants = c.listRelatives(path, children=True,
                                           fullPath=True) or []
             unexpected = [child for child in descendants
@@ -252,7 +265,8 @@ class MayaModelCleanHost:
                     item.material_slots, item.user_attributes,
                     item.surface_sha256, item.uv_content_sha256,
                     item.material_assignment_sha256,
-                    item.attribute_content_sha256))
+                    item.attribute_content_sha256,
+                    item.double_sided, item.shape_display))
                 c.delete(duplicate)
         except Exception:
             c.undoInfo(closeChunk=True)

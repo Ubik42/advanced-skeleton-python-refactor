@@ -70,6 +70,22 @@ def _restore_points(host, source_shape: str, target_shape: str) -> None:
     target.setPoints(source.getPoints(om.MSpace.kWorld), om.MSpace.kWorld)
 
 
+def _restore_shape_display(host, shape: str, display) -> None:
+    if display is None:
+        return
+    c = host.cmds
+    smooth, smooth_lock, resolution, resolution_lock, mode, mode_lock = display
+    for attribute, value, locked in (
+        ("smoothLevel", smooth, smooth_lock),
+        ("dispResolution", resolution, resolution_lock),
+        ("displaySmoothMesh", mode, mode_lock),
+    ):
+        plug = shape + "." + attribute
+        c.setAttr(plug, lock=False)
+        c.setAttr(plug, value)
+        c.setAttr(plug, lock=locked)
+
+
 def _copy_materials(host, source_shape: str, target_shape: str) -> None:
     c, om = host.cmds, host.om
     source_path = om.MSelectionList().add(source_shape).getDagPath(0)
@@ -133,6 +149,9 @@ def build_model_clean_stage(host, plan: ModelCleanPlan,
                 _restore_points(host, source_shape, target_shape)
                 _copy_uvs(host, source_shape, target_shape)
                 _copy_materials(host, source_shape, target_shape)
+                c.setAttr(target_shape + ".doubleSided", item.double_sided)
+                _restore_shape_display(host, target_shape,
+                                       item.shape_display)
                 _copy_attributes(host, item.source_path, node)
                 _copy_attributes(host, source_shape, target_shape)
                 (vertices, faces, surface, uv_sets, uv_digest,
