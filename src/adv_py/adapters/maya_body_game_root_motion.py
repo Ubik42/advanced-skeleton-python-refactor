@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import json
+from dataclasses import fields, is_dataclass, replace
 
 from adv_py.core.body_game_root_motion import (
     GameRootMotionInput, GameRootMotionPlan, GameRootMotionState,
 )
-from adv_py.core.character_registry import REGISTRY_NAME
+from adv_py.core.character_registry import (
+    REGISTRY_NAME, CharacterBindJoint, CharacterChannel,
+    CharacterRegistration, encode_registration,
+)
 
 from .maya_body import MayaBodyBuildHost
 
@@ -22,6 +26,93 @@ class MayaBodyGameRootMotionHost(MayaBodyBuildHost):
         if len(matches) != 1:
             raise ValueError("Root Motion 缺少唯一角色节点：" + name)
         return matches[0]
+
+    def _root_motion_local(self, path: str) -> str:
+        return (self._cmds.identity.to_local(path)
+                if self.namespace else path)
+
+    def _update_root_motion_registration(
+        self, before: CharacterRegistration,
+        plan: GameRootMotionPlan,
+    ) -> None:
+        """Rebase owned Body identities after the root joint changes parent."""
+        old_root = before.body_root
+        new_root = self._root_motion_local(plan.body_path)
+
+        def rewrite(value):
+            if isinstance(value, str):
+                if (value == old_root or value.startswith(old_root + "|")
+                        or value.startswith(old_root + ".")):
+                    return new_root + value[len(old_root):]
+                return value
+            if isinstance(value, tuple):
+                return tuple(rewrite(item) for item in value)
+            if isinstance(value, list):
+                return [rewrite(item) for item in value]
+            if isinstance(value, dict):
+                return {rewrite(key): rewrite(item)
+                        for key, item in value.items()}
+            if is_dataclass(value) and not isinstance(value, type):
+                return replace(value, **{
+                    field.name: rewrite(getattr(value, field.name))
+                    for field in fields(value) if field.init})
+            return value
+
+        body = tuple(replace(
+            joint, path=rewrite(joint.path),
+            parent=(new_root.rsplit("|", 1)[0]
+                    if joint.path == old_root else rewrite(joint.parent)))
+            for joint in before.body)
+        channels = tuple(rewrite(channel) for channel in before.channels)
+        control = self._root_motion_local(plan.control_path)
+        extra = self._root_motion_local(plan.extra_path)
+        owned_controls = {control, extra}
+        if plan.create:
+            channels += tuple(CharacterChannel(
+                "game.rootMotion." + kind + axis, control,
+                kind + axis)
+                for kind in ("translate", "rotate", "scale")
+                for axis in "XYZ")
+            channels += tuple(CharacterChannel(
+                "game.rootMotion.extra." + kind + axis, extra,
+                kind + axis)
+                for kind in ("translate", "rotate", "scale")
+                for axis in "XYZ")
+            channels += (CharacterChannel(
+                "game.rootMotion.followMain", control, "followMain",
+                0.0, 10.0),)
+        else:
+            channels = tuple(channel for channel in channels
+                             if channel.node not in owned_controls)
+        paths = {rewrite(node.path) for node in before.nodes}
+        new_nodes = {self._root_motion_local(path) for path in (
+            plan.joint_path, plan.offset_path, plan.follow_path,
+            plan.extra_path, plan.control_path)}
+        if plan.create:
+            paths.update(new_nodes)
+        else:
+            paths.difference_update(new_nodes)
+        nodes = tuple(self._registry_node(path) for path in sorted(paths))
+        updated = CharacterRegistration(
+            new_root, before.container, channels, body, nodes,
+            rewrite(before.spine), rewrite(before.spaces))
+        document = encode_registration(updated)
+        c = self._cmds
+        member_plug = REGISTRY_NAME + ".members"
+        c.setAttr(member_plug, lock=False)
+        for index in c.getAttr(member_plug, multiIndices=True) or []:
+            target = member_plug + f"[{index}]"
+            source = c.connectionInfo(target, sourceFromDestination=True)
+            if source:
+                c.disconnectAttr(source, target)
+        for index, node in enumerate(nodes):
+            c.connectAttr(node.path + ".message",
+                          member_plug + f"[{index}]")
+        c.setAttr(member_plug, lock=True)
+        document_plug = REGISTRY_NAME + ".advPyRegistryDocument"
+        c.setAttr(document_plug, lock=False)
+        c.setAttr(document_plug, document, type="string", lock=True)
+        self.read_character_registration()
 
     def capture_game_root_motion_input(self) -> GameRootMotionInput:
         c = self._root_motion_cmds()
@@ -143,6 +234,10 @@ class MayaBodyGameRootMotionHost(MayaBodyBuildHost):
     def apply_game_root_motion(self, plan: GameRootMotionPlan) -> None:
         self._require_transaction()
         c = self._root_motion_cmds()
+        registration = self.read_character_registration()
+        before_world = tuple(c.xform(
+            plan.source.body_root, query=True, worldSpace=True,
+            matrix=True))
         self._transaction_changed = True
         if not plan.create:
             body = c.parent(plan.source.body_root, plan.source.deformation,
@@ -157,6 +252,13 @@ class MayaBodyGameRootMotionHost(MayaBodyBuildHost):
             for name in (plan.range_name, plan.matrix_name):
                 if c.objExists(name):
                     c.delete(name)
+            after_world = tuple(c.xform(
+                plan.body_path, query=True, worldSpace=True,
+                matrix=True))
+            if max(abs(a - b) for a, b in zip(
+                    before_world, after_world)) > 1e-5:
+                raise RuntimeError("Root Motion 删除改变了 Body 世界姿态")
+            self._update_root_motion_registration(registration, plan)
             return
         joint = c.createNode("joint", name=plan.node_names[0],
                              parent=plan.source.deformation,
@@ -171,6 +273,11 @@ class MayaBodyGameRootMotionHost(MayaBodyBuildHost):
         if ((c.ls(joint, long=True, type="joint") or []) != [plan.joint_path]
                 or (c.ls(body, long=True, type="joint") or []) != [plan.body_path]):
             raise RuntimeError("Root Motion Body 关节改挂失败")
+        after_world = tuple(c.xform(
+            body, query=True, worldSpace=True, matrix=True))
+        if max(abs(a - b) for a, b in zip(
+                before_world, after_world)) > 1e-5:
+            raise RuntimeError("Root Motion 创建改变了 Body 世界姿态")
         offset = c.createNode("transform", name=plan.node_names[1],
                               parent=plan.source.root_system,
                               skipSelect=True)
@@ -239,6 +346,7 @@ class MayaBodyGameRootMotionHost(MayaBodyBuildHost):
         c.connectAttr(value_range + ".outValueY",
                       follow_constraint[0] + "." + aliases[1])
         self._root_motion_pose_rows(plan, create=True)
+        self._update_root_motion_registration(registration, plan)
 
     def capture_game_root_motion(self, plan: GameRootMotionPlan
                                  ) -> GameRootMotionState:
