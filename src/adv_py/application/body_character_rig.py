@@ -257,6 +257,14 @@ class BuildBodyCharacterRig:
             BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).use_offset_parent_matrix
             if root_follow_main_path is not None else False)
+        global_follow_path = (
+            "|Group|MotionSystem|GlobalSystem|GlobalFollowMain"
+            if safety.body.root.startswith("|Group|DeformationSystem|")
+            else None)
+        global_follow_use_opm = (
+            BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).use_offset_parent_matrix
+            if global_follow_path is not None else False)
         primary_driven = (
             arm.safety.body.root if torso is None else
             torso.torso.controls.root_path
@@ -288,10 +296,8 @@ class BuildBodyCharacterRig:
             body_root_via_controls=include_torso,
             root_follow_main_path=root_follow_main_path,
             root_follow_use_opm=follow_use_opm,
-            global_follow_main_path=(
-                "|Group|MotionSystem|GlobalSystem|GlobalFollowMain"
-                if root_follow_main_path is not None else None),
-            global_follow_use_opm=follow_use_opm,
+            global_follow_main_path=global_follow_path,
+            global_follow_use_opm=global_follow_use_opm,
             finger_visibility_paths=(
                 tuple(root.path for root in hand.controls.roots)
                 if hand is not None else ()),

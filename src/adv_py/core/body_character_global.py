@@ -396,7 +396,7 @@ def plan_body_character_global(
                    for path in driven_roots)))
         or (root_follow_main_path is None and root_follow_use_opm)
         or (global_follow_main_path is not None and (
-            not body_root_via_controls
+            not body_root.startswith("|Group|DeformationSystem|")
             or global_follow_main_path !=
             "|Group|MotionSystem|GlobalSystem|GlobalFollowMain"
             or any(path.startswith(global_follow_main_path + "|")
