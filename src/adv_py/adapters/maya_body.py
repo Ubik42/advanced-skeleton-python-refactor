@@ -196,6 +196,7 @@ from adv_py.core.body_leg_foot import (
     BodyLegFootPlan,
     BodyLegFootPivotRole,
     BodyLegFootPivotState,
+    BodyLegFootRockPivotState,
     BodyLegFootRollNodeState,
     BodyLegFootRollState,
     BodyLegFootSideSpec,
@@ -5975,6 +5976,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 for name in (pivot.roll_offset_name, pivot.roll_extra_name,
                              pivot.roll_control_name,
                              pivot.roll_roller_name) if name)
+            if side.rock:
+                names.extend((side.rock.inner_name, side.rock.outer_name))
             names.extend(
                 pivot.multiplier_name
                 for pivot in side.pivots
@@ -6100,6 +6103,31 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     self._cmds.setAttr(plug, value)
                 for source, target in node.input_connections:
                     self._cmds.connectAttr(source, target)
+            if spec.rock:
+                for name, path, parent, position, source in (
+                    (spec.rock.inner_name, spec.rock.inner_path,
+                     spec.ankle_control_path, spec.rock.inner_position,
+                     spec.rock.inner_source),
+                    (spec.rock.outer_name, spec.rock.outer_path,
+                     spec.rock.inner_path, spec.rock.outer_position,
+                     spec.rock.outer_source),
+                ):
+                    created = self._cmds.createNode(
+                        "transform", name=name, parent=parent,
+                        skipSelect=True)
+                    created = (self._cmds.ls(created, long=True)
+                               or [created])[0]
+                    if created != path:
+                        raise RuntimeError("Foot Rock 路径漂移")
+                    self._cmds.setAttr(created + ".rotateOrder", 5)
+                    self._cmds.xform(
+                        created, worldSpace=True, translation=position)
+                    self._cmds.xform(
+                        created, worldSpace=True,
+                        rotation=spec.rock.world_rotation)
+                    self._cmds.connectAttr(
+                        source, created + ".rotate"
+                        + spec.rock.rotation_axis)
             for pivot in spec.pivots:
                 if pivot.roll_control_name:
                     roll_parent = pivot.roll_offset_path.rsplit("|", 1)[0]
@@ -6556,6 +6584,35 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 float(self._cmds.getAttr(spec.roll.master_plug)),
                 tuple(roll_nodes),
             )
+            rock_pivots = []
+            if spec.rock:
+                for path in (spec.rock.inner_path,
+                             spec.rock.outer_path):
+                    matches = self._cmds.ls(
+                        path, long=True, type="transform") or []
+                    if len(matches) != 1:
+                        raise FitSkeletonValidationError(
+                            "Foot Rock 节点集合无效")
+                    node = matches[0]
+                    rock_parents = self._cmds.listRelatives(
+                        node, parent=True, fullPath=True) or []
+                    rock_sources = self._cmds.listConnections(
+                        node + ".rotate" + spec.rock.rotation_axis,
+                        source=True, destination=False, plugs=True,
+                        skipConversionNodes=True) or []
+                    rock_pivots.append(BodyLegFootRockPivotState(
+                        node,
+                        rock_parents[0] if rock_parents else None,
+                        tuple(float(value) for value in self._cmds.xform(
+                            node, query=True, worldSpace=True,
+                            translation=True)),
+                        tuple(float(value) for value in self._cmds.xform(
+                            node, query=True, worldSpace=True,
+                            rotation=True)),
+                        self._canonical_plug(rock_sources[0])
+                        if len(rock_sources) == 1 else None,
+                        int(self._cmds.getAttr(
+                            node + ".rotateOrder"))))
             toe_handles = self._cmds.ls(
                 spec.toe_handle_name, long=True, type="ikHandle") or []
             if len(toe_handles) != 1:
@@ -6635,6 +6692,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         "ikLocal", node=toe_extras[0], exists=True)
                     else None),
                 swivel_source=swivel_source,
+                rock_pivots=tuple(rock_pivots),
             ))
         return BodyLegFootSnapshot(tuple(sides))
 

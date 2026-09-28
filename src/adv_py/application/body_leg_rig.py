@@ -323,6 +323,9 @@ class BuildBodyLegRig:
             ))
         for side in foot.sides:
             names.extend(pivot.name for pivot in side.pivots)
+            if side.rock:
+                names.extend((side.rock.inner_name,
+                              side.rock.outer_name))
             names.extend(
                 name for pivot in side.pivots
                 for name in (pivot.roll_offset_name,

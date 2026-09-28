@@ -72,6 +72,8 @@ from .body_leg_foot import (
     BodyLegFootRollNodeState,
     BodyLegFootRollSpec,
     BodyLegFootRollState,
+    BodyLegFootRockSpec,
+    BodyLegFootRockPivotState,
     BodyLegFootPlan,
     BodyLegFootSideSpec,
     BodyLegFootSideState,

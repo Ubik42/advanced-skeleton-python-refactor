@@ -71,6 +71,20 @@ class BodyLegFootRollSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyLegFootRockSpec:
+    inner_name: str
+    inner_path: str
+    inner_position: Vector3
+    outer_name: str
+    outer_path: str
+    outer_position: Vector3
+    world_rotation: Vector3
+    rotation_axis: str
+    inner_source: str
+    outer_source: str
+
+
+@dataclass(frozen=True, slots=True)
 class BodyLegFootSideSpec:
     side: FitBuildSide
     ankle_control_path: str
@@ -88,6 +102,7 @@ class BodyLegFootSideSpec:
     toe_control_radius: float
     roll: BodyLegFootRollSpec
     pivots: tuple[BodyLegFootPivotSpec, ...]
+    rock: BodyLegFootRockSpec | None = None
     toe_extra_name: str = ""
     toe_extra_path: str = ""
     source_toe_icon: bool = False
@@ -111,7 +126,7 @@ class BodyLegFootSideSpec:
                             "rollStartAngle", "rollEndAngle")
                            if self.pivots[0].roll_control_name
                            else (self.roll.master_attribute,))
-        return roll_attributes + tuple(
+        return roll_attributes + (("rock",) if self.rock else ()) + tuple(
             pivot.attribute for pivot in self.pivots if pivot.source_plug
         )
 
@@ -182,6 +197,16 @@ class BodyLegFootRollState:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyLegFootRockPivotState:
+    path: str | None
+    parent_path: str | None
+    world_position: Vector3 | None
+    world_rotation: Vector3 | None
+    rotation_source: str | None
+    rotate_order: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class BodyLegFootSideState:
     side: FitBuildSide
     attribute_values: tuple[tuple[str, float], ...]
@@ -213,6 +238,7 @@ class BodyLegFootSideState:
     toe_ik_local: bool | None = None
     toe_extra_ik_local: bool | None = None
     swivel_source: str | None = None
+    rock_pivots: tuple[BodyLegFootRockPivotState, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -301,7 +327,41 @@ def plan_body_leg_foot(
                                if up_axis is FitUpAxis.Y else
                                (0.0, 0.0, heading))
 
-        parent = limb.ankle_control_path
+        rock = None
+        if (not legacy_roll_controls
+                and f"BigToe_{suffix}" in body_by_name
+                and f"PinkyToe_{suffix}" in body_by_name):
+            big_toe = body_by_name[f"BigToe_{suffix}"]
+            pinky_toe = body_by_name[f"PinkyToe_{suffix}"]
+            if big_toe.side is not limb.side or pinky_toe.side is not limb.side:
+                raise BodyLegFootValidationError(
+                    f"Foot Rock 脚趾标记侧向不一致：{suffix}")
+            ground_axis = 1 if up_axis is FitUpAxis.Y else 2
+            def ground_position(position: Vector3) -> Vector3:
+                result = list(position)
+                result[ground_axis] = 0.0
+                return tuple(result)
+            inner_name = f"AdvPy_FootRockInnerPivot_{suffix}"
+            outer_name = f"AdvPy_FootRockOuterPivot_{suffix}"
+            inner_path = f"{limb.ankle_control_path}|{inner_name}"
+            outer_path = f"{inner_path}|{outer_name}"
+            inner_clamp = f"AdvPy_FootRockInnerClamp_{suffix}"
+            outer_clamp = f"AdvPy_FootRockOuterClamp_{suffix}"
+            inner_source = f"{inner_clamp}.outputR"
+            outer_source = f"{outer_clamp}.outputR"
+            if limb.side is FitBuildSide.LEFT:
+                inner_source = f"AdvPy_FootRockInnerSign_{suffix}.output"
+                outer_source = f"AdvPy_FootRockOuterSign_{suffix}.output"
+            rock = BodyLegFootRockSpec(
+                inner_name, inner_path,
+                ground_position(big_toe.world_position),
+                outer_name, outer_path,
+                ground_position(pinky_toe.world_position),
+                roll_world_rotation,
+                "Z" if up_axis is FitUpAxis.Y else "Y",
+                inner_source, outer_source)
+
+        parent = rock.outer_path if rock else limb.ankle_control_path
         pivots = []
         for role, marker, attribute, axis, multiplier in marker_roles:
             roll_offset_name = (f"AdvPy_RollOffset{marker}_{suffix}"
@@ -495,6 +555,29 @@ def plan_body_leg_foot(
                       f"{end_multiply}.input1X"),
                      (master_plug, f"{end_multiply}.input2X"))),
             )
+        if rock:
+            rock_plug = f"{limb.ankle_control_path}.rock"
+            inner_clamp = f"AdvPy_FootRockInnerClamp_{suffix}"
+            outer_clamp = f"AdvPy_FootRockOuterClamp_{suffix}"
+            rock_nodes = (
+                BodyLegFootRollNodeSpec(
+                    inner_clamp, "clamp",
+                    ((rock_plug, f"{inner_clamp}.inputR"),),
+                    ((f"{inner_clamp}.minR", -200.0),)),
+                BodyLegFootRollNodeSpec(
+                    outer_clamp, "clamp",
+                    ((rock_plug, f"{outer_clamp}.inputR"),),
+                    ((f"{outer_clamp}.maxR", 200.0),)),
+            )
+            if limb.side is FitBuildSide.LEFT:
+                rock_nodes += tuple(BodyLegFootRollNodeSpec(
+                    f"AdvPy_FootRock{role}Sign_{suffix}",
+                    "multDoubleLinear",
+                    ((f"AdvPy_FootRock{role}Clamp_{suffix}.outputR",
+                      f"AdvPy_FootRock{role}Sign_{suffix}.input1"),),
+                    ((f"AdvPy_FootRock{role}Sign_{suffix}.input2", -1.0),))
+                    for role in ("Inner", "Outer"))
+            roll_nodes += rock_nodes
         sides.append(BodyLegFootSideSpec(
             side=limb.side,
             ankle_control_path=limb.ankle_control_path,
@@ -521,6 +604,7 @@ def plan_body_leg_foot(
                 roll_nodes,
             ),
             pivots=tuple(pivots),
+            rock=rock,
             toe_extra_name=toe_extra_name,
             toe_extra_path=toe_extra_path,
             source_toe_icon=not legacy_toe_controls,
@@ -588,6 +672,42 @@ def audit_body_leg_foot(
         ):
             issues.append(BodyLegFootIssue("foot_attributes", "Foot 属性或默认值不一致", spec.side.value))
         pivot_by_role = {pivot.role: pivot for pivot in state.pivots}
+        if spec.rock:
+            wanted_rock = (
+                (spec.rock.inner_path, spec.ankle_control_path,
+                 spec.rock.inner_position, spec.rock.inner_source),
+                (spec.rock.outer_path, spec.rock.inner_path,
+                 spec.rock.outer_position, spec.rock.outer_source),
+            )
+            if len(state.rock_pivots) != 2:
+                issues.append(BodyLegFootIssue(
+                    "foot_rock_missing", "Foot Rock 双枢轴缺失",
+                    spec.side.value))
+            else:
+                for actual_rock, (path, parent, position, source) in zip(
+                        state.rock_pivots, wanted_rock):
+                    if (actual_rock.path != path
+                            or actual_rock.parent_path != parent
+                            or actual_rock.rotation_source != source
+                            or actual_rock.rotate_order != 5):
+                        issues.append(BodyLegFootIssue(
+                            "foot_rock_hierarchy", "Foot Rock 层级或驱动不一致",
+                            path))
+                    if check_initial_pose and (
+                            actual_rock.world_position is None
+                            or actual_rock.world_rotation is None
+                            or not _close(actual_rock.world_position,
+                                          position, tolerance)
+                            or not _close_angles(actual_rock.world_rotation,
+                                                 spec.rock.world_rotation,
+                                                 tolerance)):
+                        issues.append(BodyLegFootIssue(
+                            "foot_rock_pose", "Foot Rock 初始位置或朝向不一致",
+                            path))
+        elif state.rock_pivots:
+            issues.append(BodyLegFootIssue(
+                "foot_rock_unexpected", "Foot Rock 不应存在",
+                spec.side.value))
         for pivot in spec.pivots:
             actual_pivot = pivot_by_role.get(pivot.role)
             subject = f"{spec.side.value}:{pivot.role.value}"

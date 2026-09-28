@@ -259,7 +259,9 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
 
     optional_foot = (("Heel", "Ankle", "Foot"),
                      ("FootSideInner", "Toes", "Other"),
-                     ("FootSideOuter", "Toes", "Other"))
+                     ("FootSideOuter", "Toes", "Other"),
+                     ("BigToe", "Toes", "BigToe"),
+                     ("PinkyToe", "Toes", "PinkyToe"))
     present_foot = tuple(FitJointSpec(
         name, parent, (0.0, 0.0, 0.0), JointLabel.parse(label))
         for name, parent, label in optional_foot if name in by_name)
