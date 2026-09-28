@@ -84,7 +84,10 @@ class _JoinedTransactionHost:
 
 def _independent_rig_twist_sources(
     plan: BodyCharacterRigBuildPlan,
-) -> tuple[dict[str, str], dict[str, str]]:
+) -> tuple[
+    dict[str, str], dict[str, str],
+    dict[str, tuple[str, str, str, str]],
+]:
     """Use direct Body FK controls outside the driven Part hierarchy."""
     controls = []
     if plan.torso is not None:
@@ -98,11 +101,22 @@ def _independent_rig_twist_sources(
         control.driven_joint: (
             control.source_override_path or control.sub_control_path
             or control.control_path) + ".worldMatrix[0]"
-        for control in plan.hand.controls.controls
+        for control in controls
     }
     constraints = {control.driven_joint: control.constraint_name
-                   for control in plan.hand.controls.controls}
-    return matrices, constraints
+                   for control in controls}
+    spine_blends: dict[str, tuple[str, str, str, str]] = {}
+    spine = plan.torso.torso.spine if plan.torso is not None else None
+    if spine is not None:
+        spine_blends[spine.body_joints[1]] = (
+            spine.joints[1].path + ".worldMatrix[0]",
+            spine.waist_output + ".worldMatrix[0]",
+            spine.blend_plug, "AdvPy_SpineWaistOrient")
+        spine_blends[spine.body_joints[2]] = (
+            spine.joints[2].path + ".worldMatrix[0]",
+            spine.joints[5].path + ".worldMatrix[0]",
+            spine.blend_plug, "AdvPy_SpineChestOrient")
+    return matrices, constraints, spine_blends
 
 
 def _with_inbetween_fk_sources(
@@ -271,12 +285,14 @@ class BuildRegisteredBodyCharacter:
             hip_swing_reverse = None
             if use_fit_part_hierarchy:
                 if fit_part_twist_sources is None:
-                    control_matrices, body_constraints = (
+                    (control_matrices, body_constraints,
+                     spine_blends) = (
                         _independent_rig_twist_sources(rig.plan))
                     rotation_inputs = plan_standard_fit_part_rotation_inputs(
                         twist_parts,
                         independent_world_matrices=control_matrices,
-                        independent_body_constraints=body_constraints)
+                        independent_body_constraints=body_constraints,
+                        blended_world_matrices=spine_blends)
                     projections = plan_fit_part_twist_projections(
                         rotation_inputs)
                     plan_fit_part_twist(
