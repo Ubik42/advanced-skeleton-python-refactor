@@ -285,6 +285,11 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(row)
             stack.addWidget(group)
 
+            group, form = self._group("00 · Model Clean", [])
+            form.addRow(self._button("创建 geo 模型组",
+                                     self._create_model_geo_group))
+            stack.addWidget(group)
+
             self.model_check_results = QtWidgets.QPlainTextEdit()
             self.model_check_results.setReadOnly(True)
             self.model_check_results.setPlaceholderText(
@@ -1515,6 +1520,10 @@ def create_panel(controller: MayaPanelController | None = None):
             return (f"模型检查完成：{len(result.transform_issues)} 项变换、"
                     f"{len(result.history_issues)} 项历史、"
                     f"{len(result.symmetry_issues)} 处对称偏差")
+
+        def _create_model_geo_group(self):
+            moved = self.controller.model_create_geo_group()
+            return f"geo 模型组已建立；归入 {len(moved)} 个顶层对象"
 
         def _new_preparation_scene(self):
             if self.controller.preparation_scene_modified():

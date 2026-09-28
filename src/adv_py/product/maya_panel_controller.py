@@ -200,6 +200,12 @@ class MayaPanelController:
             return ReviewModelCheck(host).execute(skip_symmetry=skip_symmetry)
         return CheckModel(host).execute(skip_symmetry=skip_symmetry)
 
+    def model_create_geo_group(self) -> tuple[str, ...]:
+        from adv_py.adapters.maya_model_geo_group import MayaModelGeoGroupHost
+        from adv_py.application.model_geo_group import CreateModelGeoGroup
+
+        return CreateModelGeoGroup(MayaModelGeoGroupHost()).execute()
+
     def preparation_new_scene(self) -> None:
         from adv_py.adapters.maya_preparation_reference import MayaPreparationReferenceHost
 
