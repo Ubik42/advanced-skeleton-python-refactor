@@ -21,11 +21,14 @@ class FitBendyChainSpec:
     end_position: tuple[float, float, float]
     part_positions: tuple[tuple[float, float, float], ...]
     child_start_control: str | None = None
+    child_start_influence: str | None = None
     parent_bendy: bool = False
     child_junction_control: str | None = None
     child_source_proxy: str | None = None
 
     def __post_init__(self) -> None:
+        if bool(self.child_start_control) != bool(self.child_start_influence):
+            raise ValueError("Bendy 相邻段缺少起点控制或影响关节")
         if bool(self.child_junction_control) != bool(self.child_source_proxy):
             raise ValueError("Bendy Circular 缺少相邻段控制或驱动来源")
 
@@ -94,13 +97,20 @@ class FitBendyChainSpec:
                 f"AdvPy_{self.prefix}EndBlend_{self.side}",
                 *(f"AdvPy_{name}Follow" for name in self.control_names),
                 *(name + "Offset" for name in self.control_names),
-                f"AdvPy_{self.end_proxy_name}Follow",
+                *(self.end_follow_matrix_names if self.child_start_influence
+                  else (f"AdvPy_{self.end_proxy_name}Follow",)),
                 *((self.circular_name, *self.circular_graph_names)
                   if self.child_junction_control else ()))
 
     @property
     def circular_name(self) -> str:
         return f"BendCircular{self.stem}_{self.side}"
+
+    @property
+    def end_follow_matrix_names(self) -> tuple[str, str, str]:
+        prefix = f"AdvPy_{self.end_proxy_name}"
+        return (prefix + "TranslateScale", prefix + "Rotate",
+                prefix + "World")
 
     @property
     def circular_graph_names(self) -> tuple[str, str, str, str]:
@@ -367,6 +377,8 @@ def plan_fit_bendy_chains(
     return tuple(replace(
         item,
         child_start_control=by_bendy_start[item.end_body].control_names[1]
+        if item.end_body in by_bendy_start else None,
+        child_start_influence=by_bendy_start[item.end_body].influence_names[0]
         if item.end_body in by_bendy_start else None,
         parent_bendy=item.start_body in by_bendy_end,
         child_junction_control=by_bendy_start[item.end_body].junction_name

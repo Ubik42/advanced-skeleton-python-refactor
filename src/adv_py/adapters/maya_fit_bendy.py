@@ -130,7 +130,8 @@ class MayaFitBendyMixin:
             transform = c.createNode("transform", name=transform_name,
                                      parent=_SECONDARY_GROUPS[2],
                                      skipSelect=True)
-            c.setAttr(path + ".fractionMode", True)
+            c.connectAttr(spec.control_names[0] + ".parametric",
+                          path + ".fractionMode")
             c.setAttr(path + ".follow", True)
             c.setAttr(path + ".worldUpType", 2)
             c.setAttr(path + ".frontAxis", 0)
@@ -221,6 +222,9 @@ class MayaFitBendyMixin:
                     or c.connectionInfo(transform + ".rotate",
                                         sourceFromDestination=True)
                     != path + ".rotate"
+                    or c.connectionInfo(path + ".fractionMode",
+                                        sourceFromDestination=True)
+                    != spec.control_names[0] + ".parametric"
                     or not c.objExists(follow)
                     or c.nodeType(follow) != "parentConstraint"
                     or abs(float(c.getAttr(path + ".uValue"))
@@ -452,6 +456,11 @@ class MayaFitBendyMixin:
                       else _GROUPS[0])
             control = c.parent(control, parent)[0]
             c.xform(control, worldSpace=True, translation=position)
+            if index == 0:
+                c.addAttr(control, longName="parametric",
+                          attributeType="bool", defaultValue=True,
+                          keyable=False)
+                c.setAttr(control + ".parametric", channelBox=True)
             controls.append((c.ls(control, long=True) or [control])[0])
         if spec.parent_bendy:
             junction_offset = c.createNode(
@@ -516,7 +525,8 @@ class MayaFitBendyMixin:
                                 skipSelect=True)
             transform = c.createNode("transform", name=transform_name,
                                      parent=_GROUPS[3], skipSelect=True)
-            c.setAttr(path + ".fractionMode", True)
+            c.connectAttr(spec.control_names[0] + ".parametric",
+                          path + ".fractionMode")
             c.setAttr(path + ".uValue",
                       index / (len(spec.part_names) + 1))
             c.connectAttr(shapes[0] + ".worldSpace[0]",
@@ -578,9 +588,41 @@ class MayaFitBendyMixin:
                     raise RuntimeError("Bendy 跟随约束权重数量不正确")
                 c.setAttr(constraint + "." + weights[0], 1.0 - fraction)
                 c.setAttr(constraint + "." + weights[1], fraction)
-        c.parentConstraint(end_proxy, chain.end_proxy_name,
-                           maintainOffset=True,
-                           name=f"AdvPy_{chain.end_proxy_name}Follow")
+        if chain.child_start_influence:
+            translate_name, rotate_name, world_name = (
+                chain.end_follow_matrix_names)
+            translation = c.createNode("pickMatrix",
+                                       name=translate_name)
+            rotation = c.createNode("pickMatrix", name=rotate_name)
+            world = c.createNode("multMatrix", name=world_name)
+            c.connectAttr(chain.child_start_influence + ".worldMatrix[0]",
+                          translation + ".inputMatrix")
+            c.connectAttr(start_proxy + ".worldMatrix[0]",
+                          rotation + ".inputMatrix")
+            for attribute in ("useRotate", "useShear"):
+                c.setAttr(translation + "." + attribute, False)
+            for attribute in ("useTranslate", "useScale", "useShear"):
+                c.setAttr(rotation + "." + attribute, False)
+            c.connectAttr(rotation + ".outputMatrix",
+                          world + ".matrixIn[0]")
+            c.connectAttr(translation + ".outputMatrix",
+                          world + ".matrixIn[1]")
+            c.connectAttr(chain.end_proxy_name + ".parentInverseMatrix[0]",
+                          world + ".matrixIn[2]")
+            c.setAttr(chain.end_proxy_name + ".translate", 0, 0, 0)
+            c.setAttr(chain.end_proxy_name + ".rotate", 0, 0, 0)
+            c.connectAttr(world + ".matrixSum",
+                          chain.end_proxy_name + ".offsetParentMatrix")
+            actual = c.xform(chain.end_proxy_name, query=True,
+                             worldSpace=True, translation=True)
+            if any(abs(float(a) - b) > 1e-4 for a, b in zip(
+                    actual, chain.end_position)):
+                raise RuntimeError("Bendy 主曲线末端绑定位置不一致："
+                                   + chain.end_proxy_name)
+        else:
+            c.parentConstraint(end_proxy, chain.end_proxy_name,
+                               maintainOffset=True,
+                               name=f"AdvPy_{chain.end_proxy_name}Follow")
         self._transaction_changed = True
 
     def create_fit_bendy_circular(self,
@@ -703,7 +745,43 @@ class MayaFitBendyMixin:
                     or (c.listRelatives(control, parent=True) or [])
                     != [parent]):
                 return False
-        end_follow = f"AdvPy_{spec.chain.end_proxy_name}Follow"
+        chain = spec.chain
+        if chain.child_start_influence:
+            translation, rotation, world = chain.end_follow_matrix_names
+            end = chain.end_proxy_name
+            if (not c.objExists(translation)
+                    or c.nodeType(translation) != "pickMatrix"
+                    or not c.objExists(rotation)
+                    or c.nodeType(rotation) != "pickMatrix"
+                    or not c.objExists(world)
+                    or c.nodeType(world) != "multMatrix"
+                    or c.connectionInfo(translation + ".inputMatrix",
+                                        sourceFromDestination=True)
+                    != chain.child_start_influence + ".worldMatrix[0]"
+                    or c.connectionInfo(rotation + ".inputMatrix",
+                                        sourceFromDestination=True)
+                    != names[0] + ".worldMatrix[0]"
+                    or c.connectionInfo(world + ".matrixIn[0]",
+                                        sourceFromDestination=True)
+                    != rotation + ".outputMatrix"
+                    or c.connectionInfo(world + ".matrixIn[1]",
+                                        sourceFromDestination=True)
+                    != translation + ".outputMatrix"
+                    or c.connectionInfo(world + ".matrixIn[2]",
+                                        sourceFromDestination=True)
+                    != end + ".parentInverseMatrix[0]"
+                    or c.connectionInfo(end + ".offsetParentMatrix",
+                                        sourceFromDestination=True)
+                    != world + ".matrixSum"):
+                return False
+            for node, disabled in ((translation, ("useRotate", "useShear")),
+                                   (rotation, ("useTranslate", "useScale",
+                                               "useShear"))):
+                if any(c.getAttr(node + "." + attribute)
+                       for attribute in disabled):
+                    return False
+            return True
+        end_follow = f"AdvPy_{chain.end_proxy_name}Follow"
         return (c.objExists(end_follow)
                 and c.nodeType(end_follow) == "parentConstraint")
 
@@ -1014,6 +1092,8 @@ class MayaFitBendyMixin:
         for name in (*spec.control_names, spec.end_proxy_name):
             if not c.objExists(name) or c.nodeType(name) != "transform":
                 return False
+        if not c.objExists(spec.control_names[0] + ".parametric"):
+            return False
         if spec.parent_bendy and any(
                 not c.objExists(name) or c.nodeType(name) != "transform"
                 for name in (spec.junction_offset_name,
@@ -1033,7 +1113,9 @@ class MayaFitBendyMixin:
                     or c.connectionInfo(transform + ".translate",
                         sourceFromDestination=True)
                     != path + ".allCoordinates"
-                    or not c.getAttr(path + ".fractionMode")
+                    or c.connectionInfo(path + ".fractionMode",
+                                        sourceFromDestination=True)
+                    != spec.control_names[0] + ".parametric"
                     or abs(float(c.getAttr(path + ".uValue"))
                            - index / (len(spec.part_names) + 1)) > 1e-8):
                 return False
