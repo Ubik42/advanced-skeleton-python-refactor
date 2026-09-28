@@ -288,6 +288,8 @@ def create_panel(controller: MayaPanelController | None = None):
             group, form = self._group("00 · Model Clean", [])
             form.addRow(self._button("创建 geo 模型组",
                                      self._create_model_geo_group))
+            form.addRow(self._button("清理模型（OBJ 重建）",
+                                     self._clean_model))
             stack.addWidget(group)
 
             self.model_check_results = QtWidgets.QPlainTextEdit()
@@ -1524,6 +1526,10 @@ def create_panel(controller: MayaPanelController | None = None):
         def _create_model_geo_group(self):
             moved = self.controller.model_create_geo_group()
             return f"geo 模型组已建立；归入 {len(moved)} 个顶层对象"
+
+        def _clean_model(self):
+            result = self.controller.model_clean()
+            return f"模型清理完成：重建 {len(result.plan.meshes)} 个网格"
 
         def _new_preparation_scene(self):
             if self.controller.preparation_scene_modified():

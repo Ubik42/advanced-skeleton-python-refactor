@@ -225,6 +225,7 @@ def validate_model_clean_result(
     actual = {node.path: node for node in scene.nodes}
     if (scene.geo_root != "|geo"
             or scene.material_network_sha256 != plan.material_network_sha256
+            or scene.other_scene_nodes or scene.reference_files
             or len(actual) != len(scene.nodes)
             or set(actual) != set(expected)):
         raise ValueError("Model Clean 重建后的 geo 层级与计划不一致")

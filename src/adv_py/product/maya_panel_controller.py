@@ -206,6 +206,12 @@ class MayaPanelController:
 
         return CreateModelGeoGroup(MayaModelGeoGroupHost()).execute()
 
+    def model_clean(self):
+        from adv_py.adapters.maya_model_clean import MayaModelCleanHost
+        from adv_py.application.model_clean import CleanModel
+
+        return CleanModel(MayaModelCleanHost()).execute()
+
     def preparation_new_scene(self) -> None:
         from adv_py.adapters.maya_preparation_reference import MayaPreparationReferenceHost
 

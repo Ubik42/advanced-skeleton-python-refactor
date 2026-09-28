@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from contextlib import contextmanager
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -31,15 +32,22 @@ class MayaModelCleanHost:
         self.cmds = cmds
         self.om = OpenMaya
         self._archive_dir: Path | None = None
+        self._retain_archive = False
 
     def _user_attributes(self, path: str):
         c = self.cmds
         rows = []
+        supported = {"bool", "byte", "short", "long", "float",
+                     "double", "doubleAngle", "doubleLinear", "enum",
+                     "string"}
         for name in sorted(c.listAttr(path, userDefined=True) or []):
             plug = path + "." + name
             kind = c.getAttr(plug, type=True)
             if kind == "message":
                 continue
+            if kind not in supported:
+                raise ValueError("Model Clean 不支持归档属性类型：" + plug
+                                 + " [" + kind + "]")
             try:
                 value = _json_value(c.getAttr(plug))
             except (RuntimeError, ValueError) as exc:
@@ -47,7 +55,23 @@ class MayaModelCleanHost:
             rows.append((name, kind, value,
                          bool(c.getAttr(plug, lock=True)),
                          bool(c.getAttr(plug, keyable=True)),
-                         bool(c.getAttr(plug, channelBox=True))))
+                         bool(c.getAttr(plug, channelBox=True)),
+                         c.attributeQuery(name, node=path,
+                                          shortName=True),
+                         tuple(c.attributeQuery(name, node=path,
+                                                listEnum=True) or ())
+                         if kind == "enum" else (),
+                         tuple(c.attributeQuery(name, node=path,
+                                                minimum=True) or ())
+                         if c.attributeQuery(name, node=path,
+                                             minExists=True) else (),
+                         tuple(c.attributeQuery(name, node=path,
+                                                maximum=True) or ())
+                         if c.attributeQuery(name, node=path,
+                                             maxExists=True) else (),
+                         tuple(c.attributeQuery(name, node=path,
+                                                listDefault=True) or ())
+                         if kind != "string" else ()))
         return tuple(rows)
 
     def _material_network(self, engines: set[str]):
@@ -297,9 +321,86 @@ class MayaModelCleanHost:
                 raise ValueError("Model Clean OBJ 拓扑数量不一致：" + item.obj_key)
         return archive
 
+    @contextmanager
+    def recoverable_scene_replacement(
+        self, plan: ModelCleanPlan, archive: ModelCleanArchive,
+    ):
+        """Keep an independent Maya scene copy until final validation passes."""
+        c = self.cmds
+        directory = Path(archive.location)
+        if self._archive_dir != directory:
+            raise ValueError("Model Clean 临时归档归属不符")
+        if plan_model_clean(self.capture_model_clean_scene()) != plan:
+            raise RuntimeError("Model Clean 替换前来源场景已变化")
+        original_name = str(c.file(query=True, sceneName=True) or "")
+        original_modified = bool(c.file(query=True, modified=True))
+        selection = c.ls(selection=True, long=True) or []
+        backup = directory / "source-backup.ma"
+        c.file(str(backup), exportAll=True, force=True,
+               type="mayaAscii", preserveReferences=True)
+        if not backup.is_file() or not backup.stat().st_size:
+            raise RuntimeError("Model Clean 场景回滚副本未写入")
+        try:
+            yield
+        except BaseException:
+            try:
+                c.file(str(backup), open=True, force=True,
+                       executeScriptNodes=False)
+                if original_name:
+                    c.file(rename=original_name)
+                else:
+                    # An unnamed source now points at the temporary backup.
+                    # Keep that file until the artist explicitly saves it.
+                    self._retain_archive = True
+                c.file(modified=original_modified)
+                surviving = [node for node in selection if c.objExists(node)]
+                if surviving:
+                    c.select(surviving, replace=True)
+                else:
+                    c.select(clear=True)
+            except BaseException as restore_error:
+                self._retain_archive = True
+                raise RuntimeError(
+                    "Model Clean 自动回滚失败；场景副本保留在 "
+                    + str(backup)) from restore_error
+            raise
+
+    def replace_scene_from_model_clean_archive(
+        self, plan: ModelCleanPlan, archive: ModelCleanArchive,
+    ) -> None:
+        """Verify an OBJ-built stage, then replace the scene with its MA export."""
+        from adv_py.adapters.maya_model_clean_replace import build_model_clean_stage
+
+        c = self.cmds
+        directory = Path(archive.location)
+        if self._archive_dir != directory:
+            raise ValueError("Model Clean 临时归档归属不符")
+        original_name = str(c.file(query=True, sceneName=True) or "")
+        stage = build_model_clean_stage(self, plan, archive)
+        staged_file = directory / "cleaned-stage.ma"
+        c.select(stage, replace=True)
+        c.file(str(staged_file), exportSelected=True, force=True,
+               type="mayaAscii", preserveReferences=False)
+        if not staged_file.is_file() or not staged_file.stat().st_size:
+            raise RuntimeError("Model Clean 重建场景未写入")
+        c.file(new=True, force=True)
+        c.file(str(staged_file), i=True, type="mayaAscii",
+               ignoreVersion=True, executeScriptNodes=False,
+               preserveReferences=False)
+        stage_leaf = stage.rsplit("|", 1)[-1]
+        roots = c.ls("|" + stage_leaf, long=True,
+                     type="transform") or []
+        if len(roots) != 1:
+            raise RuntimeError("Model Clean 重建场景缺少 geo 暂存根组")
+        c.rename(roots[0], "geo")
+        if original_name:
+            c.file(rename=original_name)
+        c.file(modified=True)
+
     def release_model_clean_archive(self, archive: ModelCleanArchive) -> None:
         directory = Path(archive.location)
         if self._archive_dir != directory:
             raise ValueError("Model Clean 临时归档归属不符")
         self._archive_dir = None
-        shutil.rmtree(directory)
+        if not self._retain_archive:
+            shutil.rmtree(directory)
