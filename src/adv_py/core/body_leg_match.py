@@ -35,6 +35,8 @@ class BodyLegFkToIkPlan:
     foot_attribute_plugs: tuple[str, ...]
     required_paths: tuple[str, ...]
     required_writable_plugs: tuple[str, ...]
+    foot_reset_values: tuple[tuple[str, float], ...] = ()
+    roll_rotation_plugs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +48,7 @@ class BodyLegFkToIkSceneState:
     ankle_axes: tuple[Vector3, ...]
     toe_body_axes: tuple[Vector3, ...]
     foot_attribute_values: tuple[tuple[str, float], ...]
+    roll_rotation_values: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +151,16 @@ def plan_body_leg_fk_to_ik(
         f"{foot_side.ankle_control_path}.{attribute}"
         for attribute in foot_side.attributes
     )
+    foot_reset_values = tuple(
+        (f"{foot_side.ankle_control_path}.{attribute}",
+         foot_side.attribute_default(attribute))
+        for attribute in foot_side.attributes
+    )
+    roll_rotation_plugs = tuple(
+        f"{pivot.roll_control_path}.rotate{axis}"
+        for pivot in foot_side.pivots if pivot.roll_control_path
+        for axis in "XYZ"
+    )
     writable = tuple(
         f"{path}.{channel}"
         for path, channels in (
@@ -163,7 +176,7 @@ def plan_body_leg_fk_to_ik(
         for channel in channels
     ) + tuple(
         f"{foot_side.toe_control_path}.rotate{axis}" for axis in "XYZ"
-    ) + foot_plugs + (blend_plug,)
+    ) + foot_plugs + roll_rotation_plugs + (blend_plug,)
     return BodyLegFkToIkPlan(
         side=side,
         blend_plug=blend_plug,
@@ -181,10 +194,14 @@ def plan_body_leg_fk_to_ik(
         toe_body_axes=toe.world_axes,
         toe_control_path=foot_side.toe_control_path,
         foot_attribute_plugs=foot_plugs,
+        foot_reset_values=foot_reset_values,
+        roll_rotation_plugs=roll_rotation_plugs,
         required_paths=(
             limb.ankle_control_path,
             limb.pole_control_path,
             foot_side.toe_control_path,
+            *(pivot.roll_control_path for pivot in foot_side.pivots
+              if pivot.roll_control_path),
             *paths,
             toe.path,
             limb.chain[2],
@@ -226,6 +243,12 @@ def audit_body_leg_fk_to_ik_preflight(
             "Leg FK→IK 匹配缺少完整 Foot 属性状态",
             plan.side.value,
         ))
+    if tuple(plug for plug, _ in state.roll_rotation_values) != (
+            plan.roll_rotation_plugs):
+        issues.append(BodyLegMatchIssue(
+            "roll_state_incomplete",
+            "Leg FK→IK 匹配缺少 Roll 控制旋转状态",
+            plan.side.value))
     if (
         len(state.body_joint_positions) != len(plan.body_joint_positions)
         or any(
@@ -328,10 +351,8 @@ def audit_body_leg_fk_to_ik_foot_result(
             "Leg FK→IK 匹配后缺少目标侧 Foot 状态",
             plan.side.value,
         ),)
-    expected = tuple(
-        (plug, 0.0)
-        for plug in plan.foot_attribute_plugs
-    )
+    expected = plan.foot_reset_values or tuple(
+        (plug, 0.0) for plug in plan.foot_attribute_plugs)
     if (
         tuple(plug for plug, _ in state.attribute_values)
         != tuple(plug for plug, _ in expected)
@@ -345,6 +366,16 @@ def audit_body_leg_fk_to_ik_foot_result(
             "Leg FK→IK 匹配后的 Foot 属性不一致",
             plan.side.value,
         ),)
+    roll_rotations = tuple(
+        component
+        for pivot in state.pivots if pivot.roll_control_path
+        for component in (pivot.roll_control_rotation or ())
+    )
+    if (len(roll_rotations) != len(plan.roll_rotation_plugs)
+            or any(abs(value) > tolerance for value in roll_rotations)):
+        return (BodyLegMatchIssue(
+            "foot_roll_controls", "Leg FK→IK 匹配后 Roll 控制未归零",
+            plan.side.value),)
     return ()
 
 

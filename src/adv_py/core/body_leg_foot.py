@@ -112,7 +112,7 @@ class BodyLegFootSideSpec:
                            if self.pivots[0].roll_control_name
                            else (self.roll.master_attribute,))
         return roll_attributes + tuple(
-            pivot.attribute for pivot in self.pivots
+            pivot.attribute for pivot in self.pivots if pivot.source_plug
         )
 
     def attribute_default(self, attribute: str) -> float:
@@ -163,6 +163,7 @@ class BodyLegFootPivotState:
     roll_roller_parent_path: str | None = None
     roll_roller_rotation_source: str | None = None
     roll_offset_world_rotation: Vector3 | None = None
+    roll_control_rotation: Vector3 | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,7 +330,7 @@ def plan_body_leg_foot(
             path = f"{roll_control_path or parent}|{name}"
             multiplier_name = (
                 f"AdvPy_FootInnerBankSign_{suffix}"
-                if multiplier != 1.0
+                if legacy_roll_controls and multiplier != 1.0
                 else None
             )
             manual_source = f"{limb.ankle_control_path}.{attribute}"
@@ -339,6 +340,7 @@ def plan_body_leg_foot(
                 else (
                     f"{multiplier_name}.output"
                     if multiplier_name else manual_source
+                    if legacy_roll_controls else ""
                 )
             )
             pivots.append(BodyLegFootPivotSpec(
@@ -629,7 +631,7 @@ def audit_body_leg_foot(
                 actual_pivot.world_position, pivot.world_position, tolerance
             ):
                 issues.append(BodyLegFootIssue("foot_pivot_position", "Foot pivot 位置不一致", subject))
-            if actual_pivot.rotation_source != pivot.source_plug:
+            if actual_pivot.rotation_source != (pivot.source_plug or None):
                 issues.append(BodyLegFootIssue("foot_pivot_wiring", "Foot pivot 驱动不一致", subject))
             expected_input = (
                 f"{spec.ankle_control_path}.{pivot.attribute}"

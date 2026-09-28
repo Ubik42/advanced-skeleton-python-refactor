@@ -5148,6 +5148,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             for plug in plan.foot_attribute_plugs
             if self._cmds.objExists(plug)
         )
+        roll_values = tuple(
+            (plug, float(self._cmds.getAttr(plug)))
+            for plug in plan.roll_rotation_plugs
+            if self._cmds.objExists(plug)
+        )
         return BodyLegFkToIkSceneState(
             existing,
             writable,
@@ -5156,6 +5161,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             ankle_axes,
             toe_body_axes,
             foot_values,
+            roll_values,
         )
 
     def apply_body_leg_fk_to_ik(self, plan: BodyLegFkToIkPlan) -> None:
@@ -5170,7 +5176,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             shape_state=begin_optional_match(self,"leg",plan.side.value,"ik")
             from .maya_limb_orientation import begin_orientation_match, finish_orientation_match
             orientation_state=begin_orientation_match(self,"leg",plan.side.value)
-            for plug in plan.foot_attribute_plugs:
+            for plug, value in plan.foot_reset_values or tuple(
+                    (plug, 0.0) for plug in plan.foot_attribute_plugs):
+                self._cmds.setAttr(plug, value)
+            for plug in plan.roll_rotation_plugs:
                 self._cmds.setAttr(plug, 0.0)
             self._cmds.xform(
                 plan.pole_control_path,
@@ -6147,8 +6156,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     worldSpace=True,
                     translation=pivot.world_position,
                 )
-                attribute_plug = f"{spec.ankle_control_path}.{pivot.attribute}"
                 if pivot.multiplier_name:
+                    attribute_plug = f"{spec.ankle_control_path}.{pivot.attribute}"
                     multiplier = self._cmds.createNode(
                         "multDoubleLinear",
                         name=pivot.multiplier_name,
@@ -6157,7 +6166,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     self._cmds.connectAttr(attribute_plug, f"{multiplier}.input1")
                     self._cmds.setAttr(f"{multiplier}.input2", pivot.multiplier)
                     self._cmds.connectAttr(f"{multiplier}.output", pivot.target_plug)
-                else:
+                elif pivot.source_plug:
                     self._cmds.connectAttr(pivot.source_plug, pivot.target_plug)
             toe_pivot = next(
                 pivot.path for pivot in spec.pivots
@@ -6424,6 +6433,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     roll_offset_world_rotation=(tuple(float(value) for value in
                         self._cmds.xform(roll_nodes[0], query=True,
                                          worldSpace=True, rotation=True))
+                        if roll_nodes else None),
+                    roll_control_rotation=(tuple(float(value) for value in
+                        self._cmds.getAttr(roll_nodes[2] + ".rotate")[0])
                         if roll_nodes else None),
                 ))
             handles = self._cmds.ls(spec.handle_name, long=True, type="ikHandle") or []
