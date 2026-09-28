@@ -453,6 +453,14 @@ def plan_body_leg_foot(
                       if joint.side is limb.side
                       and joint.path.startswith(ankle_joint.path + "|")
                       and "QToes" in joint.label.text)
+        if len(qtoes) > 1:
+            raise BodyLegFootValidationError(
+                f"{suffix} 侧存在多个 QToes 标记，无法确定脚趾主链")
+        if qtoes and qtoes[0].path.rsplit("|", 1)[0] != ankle_joint.path:
+            raise BodyLegFootValidationError(
+                f"{suffix} 侧 QToes 与 Ankle 之间有中间关节；"
+                "原版需要 IKHybrid Roll／Sampler 和逐段 IK Handle，"
+                "当前 Foot 主链尚未实现")
         if qtoes and up_axis is not FitUpAxis.Y:
             raise BodyLegFootValidationError(
                 "原版 QToes Roll 局部朝向要求 Y-up 场景")
