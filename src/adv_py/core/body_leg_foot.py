@@ -818,9 +818,11 @@ def plan_body_leg_foot(
             toe_control_rotate_order=body_by_name[f"Toes_{suffix}"].rotation_order,
             toe_handle_name=f"AdvPy_LegIKToesHandle_{suffix}",
             toe_effector_name=f"AdvPy_LegIKToesEffector_{suffix}",
+            toe_solver_joint_list=limb.toe_solver_joint_list,
             toe_end_driver_path=limb.toe_end_driver_path,
             toe_end_handle_name=f"AdvPy_LegIKToesEndHandle_{suffix}",
             toe_end_effector_name=f"AdvPy_LegIKToesEndEffector_{suffix}",
+            toe_end_solver_joint_list=limb.toe_end_solver_joint_list,
         ))
     return BodyLegFootPlan(tuple(sides))
 

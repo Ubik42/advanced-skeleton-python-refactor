@@ -73,7 +73,12 @@ def rebase_inbetween_ik_mechanisms(
         else spec
         for spec in rebased.joints
     )
-    return replace(rebased, joints=joints)
+    auxiliary = tuple(
+        inserted.path for solver in solvers
+        for inserted in solver.inserted_joints
+        if inserted.path.startswith(plan.root_path + "|"))
+    return replace(rebased, joints=joints,
+                   auxiliary_joint_paths=auxiliary)
 
 
 def rebase_inbetween_spine_mechanisms(

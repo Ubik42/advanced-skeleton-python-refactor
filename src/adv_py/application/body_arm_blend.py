@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from .body_mechanism_recovery import plan_existing_body_arm_mechanisms
+
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
 from adv_py.core.body_arm_blend import BodyArmBlendPlan, BodyArmBlendSnapshot, audit_body_arm_blend, plan_body_arm_blend
-from adv_py.core.body_arm_mechanisms import BodyArmMechanismIssue, BodyArmMechanismPlan, BodyArmMechanismSnapshot, audit_body_arm_mechanisms, plan_body_arm_mechanisms
+from adv_py.core.body_arm_mechanisms import BodyArmMechanismIssue, BodyArmMechanismPlan, BodyArmMechanismSnapshot, audit_body_arm_mechanisms
 from adv_py.core.body_skeleton import BodySkeletonIssue, BodySkeletonSnapshot, audit_body_provenance, oriented_body_provenance
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from .fit_symmetry import FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry
@@ -57,8 +59,7 @@ class BuildBodyArmBlend:
         symmetry = self._symmetry.execute(container_name, center_tolerance=center_tolerance)
         body = self._host.capture_body_skeleton(body_root_name)
         provenance_issues = audit_body_provenance(oriented_body_provenance(symmetry.source.hierarchy.container, len(symmetry.instances)), body.provenance)
-        mechanism_plan = plan_body_arm_mechanisms(
-            body, allow_part_parents=True)
+        mechanism_plan = plan_existing_body_arm_mechanisms(self._host, body)
         mechanisms = self._host.capture_body_arm_mechanisms(mechanism_plan)
         mechanism_issues = audit_body_arm_mechanisms(mechanism_plan, mechanisms)
         blend = plan_body_arm_blend(body, mechanism_plan)

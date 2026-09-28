@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 from .body_skeleton import BodySkeletonSnapshot
@@ -56,6 +56,7 @@ class BodyLimbMechanismPlan:
     root_path: str
     root_name: str
     joints: tuple[BodyLimbMechanismJointSpec, ...]
+    auxiliary_joint_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,10 +159,23 @@ def audit_body_limb_mechanisms(
         issues.append(BodyLimbMechanismIssue("mechanism_root_mismatch", f"{plan.limb_label} 机制链根路径不一致"))
     expected = {spec.path: spec for spec in plan.joints}
     actual = {state.path: state for state in snapshot.joints}
+    auxiliary = set(plan.auxiliary_joint_paths)
+    if len(auxiliary) != len(plan.auxiliary_joint_paths) or auxiliary & set(expected):
+        issues.append(BodyLimbMechanismIssue(
+            "invalid_auxiliary_plan", f"{plan.limb_label} IKX 辅助关节计划重复或冲突"))
     for path in sorted(set(expected) - set(actual)):
         issues.append(BodyLimbMechanismIssue("missing_driver", f"缺少 {plan.limb_label} 驱动关节", path))
-    for path in sorted(set(actual) - set(expected)):
+    for path in sorted(auxiliary - set(actual)):
+        issues.append(BodyLimbMechanismIssue(
+            "missing_ikx", f"缺少 {plan.limb_label} IKX 辅助关节", path))
+    for path in sorted(set(actual) - set(expected) - auxiliary):
         issues.append(BodyLimbMechanismIssue("unexpected_driver", f"存在计划外 {plan.limb_label} 驱动关节", path))
+    for path in sorted(auxiliary & set(actual)):
+        state = actual[path]
+        if (state.parent_path != path.rsplit("|", 1)[0]
+                or state.source_joint is not None):
+            issues.append(BodyLimbMechanismIssue(
+                "ikx_structure_mismatch", f"{plan.limb_label} IKX 辅助关节层级或来源不一致", path))
     for path in sorted(set(expected) & set(actual)):
         spec, state = expected[path], actual[path]
         checks = (
@@ -179,6 +193,119 @@ def audit_body_limb_mechanisms(
             if not passed:
                 issues.append(BodyLimbMechanismIssue(code, message, path))
     return tuple(issues)
+
+
+def recover_body_limb_mechanisms(
+    plan: BodyLimbMechanismPlan,
+    body: BodySkeletonSnapshot,
+    snapshot: BodyLimbMechanismSnapshot,
+) -> BodyLimbMechanismPlan:
+    """Recover a built limb's IK DAG paths from its owned mechanism joints.
+
+    IKX nodes may only occupy the same ordered Body Part interval that was
+    inserted between two adjacent source Body joints. FK drivers stay on the
+    original chain. Unknown or detached descendants are rejected.
+    """
+    if snapshot.root_path != plan.root_path:
+        raise BodyLimbMechanismValidationError("机制链根路径与计划不一致")
+    actual = {state.path: state for state in snapshot.joints}
+    if len(actual) != len(snapshot.joints):
+        raise BodyLimbMechanismValidationError("机制关节路径重复")
+    by_name = {}
+    for state in snapshot.joints:
+        name = state.path.rsplit("|", 1)[-1]
+        if name in by_name:
+            raise BodyLimbMechanismValidationError("机制关节名称重复：" + name)
+        by_name[name] = state
+    body_by_path = {state.path: state for state in body.joints}
+    recovered = []
+    auxiliary = []
+    previous_by_chain = {}
+    for spec in plan.joints:
+        state = by_name.get(spec.name)
+        if (state is None or state.side is not spec.side
+                or state.source_joint != spec.source_joint
+                or state.parent_path is None
+                or state.path != state.parent_path + "|" + spec.name):
+            raise BodyLimbMechanismValidationError(
+                "机制关节身份或来源不一致：" + spec.name)
+        key = (spec.role, spec.side)
+        previous = previous_by_chain.get(key)
+        expected_parent = previous.path if previous else plan.root_path
+        if spec.role is BodyLimbMechanismRole.FK:
+            if state.path != spec.path or state.parent_path != expected_parent:
+                raise BodyLimbMechanismValidationError(
+                    "FK 机制父链不一致：" + spec.name)
+        else:
+            parent = state.parent_path
+            if parent == expected_parent:
+                markers = ()
+            elif parent.startswith(expected_parent + "|"):
+                markers = tuple(parent[len(expected_parent) + 1:].split("|"))
+            else:
+                raise BodyLimbMechanismValidationError(
+                    "IK 机制父链不一致：" + spec.name)
+            if previous is None and markers:
+                raise BodyLimbMechanismValidationError(
+                    "IK 根关节前存在计划外节点：" + spec.name)
+            if previous is not None:
+                source = body_by_path.get(spec.source_joint)
+                if (source is None or source.parent_path is None
+                        or not source.parent_path.startswith(
+                            previous.source_joint + "|")):
+                    allowed = ()
+                else:
+                    allowed = tuple(
+                        "AdvPy_" + name.rsplit(":", 1)[-1]
+                        + "_InbetweenIKX"
+                        for name in source.parent_path[
+                            len(previous.source_joint) + 1:].split("|"))
+                positions = [allowed.index(name) for name in markers
+                             if name in allowed]
+                if (len(positions) != len(markers)
+                        or positions != sorted(set(positions))):
+                    raise BodyLimbMechanismValidationError(
+                        "IKX 不属于有序 Body Part 父链：" + spec.name)
+            marker_parent = expected_parent
+            for name in markers:
+                marker_path = marker_parent + "|" + name
+                marker = actual.get(marker_path)
+                if (marker is None or marker.parent_path != marker_parent
+                        or marker.source_joint is not None):
+                    raise BodyLimbMechanismValidationError(
+                        "IKX 辅助关节状态不一致：" + marker_path)
+                auxiliary.append(marker_path)
+                marker_parent = marker_path
+        recovered.append(replace(spec, path=state.path,
+                                 parent_path=state.parent_path))
+        previous_by_chain[key] = recovered[-1]
+    if set(actual) != {spec.path for spec in recovered} | set(auxiliary):
+        raise BodyLimbMechanismValidationError("机制链含有计划外关节")
+    return replace(plan, joints=tuple(recovered),
+                   auxiliary_joint_paths=tuple(auxiliary))
+
+
+def expanded_ik_solver_chain(
+    plan: BodyLimbMechanismPlan,
+    drivers: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Include owned IKX joints between ordinary driver joints."""
+    if not drivers:
+        raise BodyLimbMechanismValidationError("IK 求解链为空")
+    auxiliary = set(plan.auxiliary_joint_paths)
+    expanded = [drivers[0]]
+    for start, end in zip(drivers, drivers[1:]):
+        if not end.startswith(start + "|"):
+            raise BodyLimbMechanismValidationError("IK 求解关节父链不连续")
+        parent = start
+        for name in end[len(start) + 1:].split("|")[:-1]:
+            parent += "|" + name
+            if parent not in auxiliary:
+                raise BodyLimbMechanismValidationError(
+                    "IK 求解链包含未登记的 IKX 关节：" + parent)
+            expanded.append(parent)
+        expanded.append(end)
+    return tuple(expanded)
 
 
 def _vector_matches(left: Vector3, right: Vector3, tolerance: float) -> bool:

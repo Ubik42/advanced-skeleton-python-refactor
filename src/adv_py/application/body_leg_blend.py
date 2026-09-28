@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .body_mechanism_recovery import plan_existing_body_leg_mechanisms
+
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
@@ -16,7 +18,6 @@ from adv_py.core.body_leg_mechanisms import (
     BodyLegMechanismPlan,
     BodyLegMechanismSnapshot,
     audit_body_leg_mechanisms,
-    plan_body_leg_mechanisms,
 )
 from adv_py.core.body_skeleton import (
     BodySkeletonIssue,
@@ -109,8 +110,7 @@ class BuildBodyLegBlend:
             ),
             body.provenance,
         )
-        mechanism_plan = plan_body_leg_mechanisms(
-            body, allow_part_parents=True)
+        mechanism_plan = plan_existing_body_leg_mechanisms(self._host, body)
         mechanisms = self._host.capture_body_leg_mechanisms(mechanism_plan)
         mechanism_issues = audit_body_leg_mechanisms(
             mechanism_plan,

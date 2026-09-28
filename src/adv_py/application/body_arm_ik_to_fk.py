@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from .body_mechanism_recovery import (
+    BodyArmMechanismRecoveryHost, plan_existing_body_arm_mechanisms,
+)
+
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
@@ -7,7 +11,7 @@ from typing import Protocol
 from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_arm_blend import BodyArmBlendIssue, BodyArmBlendPlan, BodyArmBlendSnapshot, audit_body_arm_blend, plan_body_arm_blend
 from adv_py.core.body_arm_match import BodyArmIkToFkPlan, BodyArmIkToFkSceneState, BodyArmMatchIssue, audit_body_arm_ik_to_fk_preflight, audit_body_arm_ik_to_fk_result, plan_body_arm_ik_to_fk
-from adv_py.core.body_arm_mechanisms import BodyArmMechanismRole, plan_body_arm_mechanisms
+from adv_py.core.body_arm_mechanisms import BodyArmMechanismRole
 from adv_py.core.body_controls import BodyArmFkControlPlan, BodyArmFkControlSnapshot, BodyControlIssue, audit_body_arm_fk_controls, plan_body_arm_fk_controls
 from adv_py.core.body_skeleton import BodySkeletonIssue, BodySkeletonSnapshot, audit_body_provenance, oriented_body_provenance
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -16,7 +20,7 @@ from adv_py.core.fit_symmetry import FitBuildSide
 from .fit_symmetry import FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry
 
 
-class BodyArmIkToFkHost(FitSymmetryHost, Protocol):
+class BodyArmIkToFkHost(FitSymmetryHost, BodyArmMechanismRecoveryHost, Protocol):
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot: ...
     def capture_body_arm_fk_controls(self, plan: BodyArmFkControlPlan) -> BodyArmFkControlSnapshot: ...
     def capture_body_arm_blend(self, plan: BodyArmBlendPlan) -> BodyArmBlendSnapshot: ...
@@ -64,8 +68,7 @@ class MatchBodyArmIkToFk:
         symmetry = self._symmetry.execute(container_name, center_tolerance=center_tolerance)
         body = self._host.capture_body_skeleton(body_root_name)
         provenance = audit_body_provenance(oriented_body_provenance(symmetry.source.hierarchy.container, len(symmetry.instances)), body.provenance)
-        mechanisms = plan_body_arm_mechanisms(
-            body, allow_part_parents=True)
+        mechanisms = plan_existing_body_arm_mechanisms(self._host, body)
         fk_drivers = {spec.source_joint: spec.path for spec in mechanisms.joints if spec.role is BodyArmMechanismRole.FK}
         fk_controls = plan_body_arm_fk_controls(
             body, driven_joint_by_source=fk_drivers,

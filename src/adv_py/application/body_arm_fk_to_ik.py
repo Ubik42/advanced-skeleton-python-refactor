@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from .body_mechanism_recovery import (
+    BodyArmMechanismRecoveryHost, plan_existing_body_arm_mechanisms,
+)
+
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
@@ -8,7 +12,6 @@ from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_arm_blend import BodyArmBlendIssue, BodyArmBlendPlan, BodyArmBlendSnapshot, audit_body_arm_blend, plan_body_arm_blend
 from adv_py.core.body_arm_ik import BodyArmIkIssue, BodyArmIkPlan, BodyArmIkSnapshot, audit_body_arm_ik, plan_body_arm_ik
 from adv_py.core.body_arm_match import BodyArmFkToIkPlan, BodyArmFkToIkSceneState, BodyArmMatchIssue, audit_body_arm_fk_to_ik_preflight, audit_body_arm_fk_to_ik_result, plan_body_arm_fk_to_ik
-from adv_py.core.body_arm_mechanisms import plan_body_arm_mechanisms
 from adv_py.core.body_skeleton import BodySkeletonIssue, BodySkeletonSnapshot, audit_body_provenance, oriented_body_provenance
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_symmetry import FitBuildSide
@@ -16,7 +19,7 @@ from adv_py.core.fit_symmetry import FitBuildSide
 from .fit_symmetry import FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry
 
 
-class BodyArmFkToIkHost(FitSymmetryHost, Protocol):
+class BodyArmFkToIkHost(FitSymmetryHost, BodyArmMechanismRecoveryHost, Protocol):
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot: ...
     def capture_body_arm_ik(self, plan: BodyArmIkPlan) -> BodyArmIkSnapshot: ...
     def capture_body_arm_blend(self, plan: BodyArmBlendPlan) -> BodyArmBlendSnapshot: ...
@@ -64,8 +67,7 @@ class MatchBodyArmFkToIk:
         symmetry = self._symmetry.execute(container_name, center_tolerance=center_tolerance)
         body = self._host.capture_body_skeleton(body_root_name)
         provenance = audit_body_provenance(oriented_body_provenance(symmetry.source.hierarchy.container, len(symmetry.instances)), body.provenance)
-        mechanisms = plan_body_arm_mechanisms(
-            body, allow_part_parents=True)
+        mechanisms = plan_existing_body_arm_mechanisms(self._host, body)
         ik = plan_body_arm_ik(
             body, mechanisms, pole_distance_scale=pole_distance_scale,
             sub_controllers=BodyBuildOptions.from_fit_settings(

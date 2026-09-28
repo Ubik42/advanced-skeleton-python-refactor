@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .body_mechanism_recovery import plan_existing_body_leg_mechanisms
+
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
@@ -16,7 +18,6 @@ from adv_py.core.body_leg_mechanisms import (
     BodyLegMechanismRole,
     BodyLegMechanismSnapshot,
     audit_body_leg_mechanisms,
-    plan_body_leg_mechanisms,
 )
 from adv_py.core.body_leg_visibility import (
     BodyLegVisibilityInputState,
@@ -95,8 +96,7 @@ class BuildBodyLegVisibility:
     ) -> BodyLegVisibilityBuildPlan:
         symmetry = self._symmetry.execute(container_name, center_tolerance=center_tolerance)
         body = self._host.capture_body_skeleton(body_root_name)
-        mechanism_plan = plan_body_leg_mechanisms(
-            body, allow_part_parents=True)
+        mechanism_plan = plan_existing_body_leg_mechanisms(self._host, body)
         mechanisms = self._host.capture_body_leg_mechanisms(mechanism_plan)
         fk_drivers = {
             spec.source_joint: spec.path

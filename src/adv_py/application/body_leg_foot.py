@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from .body_mechanism_recovery import (
+    BodyLegMechanismRecoveryHost, plan_existing_body_leg_mechanisms,
+)
+
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
@@ -17,7 +21,6 @@ from adv_py.core.body_leg_foot import (
     requested_foot_pivot_sides,
 )
 from adv_py.core.body_leg_ik import BodyLegIkIssue, audit_body_leg_ik, plan_body_leg_ik
-from adv_py.core.body_leg_mechanisms import plan_body_leg_mechanisms
 from adv_py.core.body_skeleton import (
     BodySkeletonIssue,
     BodySkeletonSnapshot,
@@ -29,7 +32,7 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 from .fit_symmetry import FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry
 
 
-class BodyLegFootHost(FitSymmetryHost, Protocol):
+class BodyLegFootHost(FitSymmetryHost, BodyLegMechanismRecoveryHost, Protocol):
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot: ...
     def capture_body_leg_ik(self, plan): ...
     def capture_body_leg_foot_input(self, plan: BodyLegFootPlan) -> BodyLegFootInputState: ...
@@ -86,8 +89,7 @@ class BuildBodyLegFoot:
             container_name, center_tolerance=center_tolerance
         )
         body = self._host.capture_body_skeleton(body_root_name)
-        mechanisms = plan_body_leg_mechanisms(
-            body, allow_part_parents=True)
+        mechanisms = plan_existing_body_leg_mechanisms(self._host, body)
         ik = plan_body_leg_ik(
             body,
             mechanisms,

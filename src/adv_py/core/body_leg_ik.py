@@ -11,6 +11,7 @@ from .body_controller_layers import (
 )
 from .body_controller_appearance import body_fk_curve_radius
 from .body_limb_ik import BodyLimbIkValidationError, solve_limb_pole_position
+from .body_limb_mechanisms import expanded_ik_solver_chain
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
 
@@ -42,6 +43,8 @@ class BodyLegIkSpec:
     toe_driver_path: str
     toe_end_driver_path: str = ""
     solver_joint_list: tuple[str, ...] | None = None
+    toe_solver_joint_list: tuple[str, ...] | None = None
+    toe_end_solver_joint_list: tuple[str, ...] | None = None
     ankle_sub_path: str | None = None
     ankle_sub_name: str | None = None
     ankle_extra_path: str | None = None
@@ -163,6 +166,11 @@ def plan_body_leg_ik(
             raise BodyLegIkValidationError(
                 "Leg IK mechanism 必须为每侧提供完整 Hip/Knee/Ankle/Toes/ToesEnd 链"
             )
+        solver_chain = expanded_ik_solver_chain(mechanisms, drivers)
+        toe_chain = expanded_ik_solver_chain(
+            mechanisms, (drivers[2], toe_driver))
+        toe_end_chain = expanded_ik_solver_chain(
+            mechanisms, (toe_driver, toe_end_driver))
         hip, knee, ankle = (joint.world_position for joint in sources)
         fallback_axis = _least_parallel_axis(
             hip,
@@ -208,6 +216,12 @@ def plan_body_leg_ik(
             ankle_constraint_name=f"AdvPy_LegIKAnkleOrient_{suffix}",
             toe_driver_path=toe_driver,
             toe_end_driver_path=toe_end_driver,
+            solver_joint_list=(solver_chain[:-1]
+                               if len(solver_chain) > len(drivers) else None),
+            toe_solver_joint_list=(toe_chain[:-1]
+                                   if len(toe_chain) > 2 else None),
+            toe_end_solver_joint_list=(toe_end_chain[:-1]
+                                       if len(toe_end_chain) > 2 else None),
             ankle_sub_path=(
                 f"{ankle_extra_path}|{ankle_control_name}|AdvPy_LegIKSub_{suffix}"
                 if sub_controllers else None),

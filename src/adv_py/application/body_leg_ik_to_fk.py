@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from .body_mechanism_recovery import (
+    BodyLegMechanismRecoveryHost, plan_existing_body_leg_mechanisms,
+)
+
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
@@ -30,7 +34,6 @@ from adv_py.core.body_leg_match import (
 )
 from adv_py.core.body_leg_mechanisms import (
     BodyLegMechanismRole,
-    plan_body_leg_mechanisms,
 )
 from adv_py.core.body_skeleton import (
     BodySkeletonIssue,
@@ -44,7 +47,7 @@ from adv_py.core.fit_symmetry import FitBuildSide
 from .fit_symmetry import FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry
 
 
-class BodyLegIkToFkHost(FitSymmetryHost, Protocol):
+class BodyLegIkToFkHost(FitSymmetryHost, BodyLegMechanismRecoveryHost, Protocol):
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot: ...
     def capture_body_leg_fk_controls(self, plan: BodyLegFkControlPlan) -> BodyLegFkControlSnapshot: ...
     def capture_body_leg_blend(self, plan: BodyLegBlendPlan) -> BodyLegBlendSnapshot: ...
@@ -117,8 +120,7 @@ class MatchBodyLegIkToFk:
             ),
             body.provenance,
         )
-        mechanisms = plan_body_leg_mechanisms(
-            body, allow_part_parents=True)
+        mechanisms = plan_existing_body_leg_mechanisms(self._host, body)
         fk_drivers = {
             spec.source_joint: spec.path
             for spec in mechanisms.joints

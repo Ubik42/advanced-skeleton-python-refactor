@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .body_mechanism_recovery import plan_existing_body_arm_mechanisms
+
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
@@ -11,7 +13,6 @@ from adv_py.core.body_arm_mechanisms import (
     BodyArmMechanismRole,
     BodyArmMechanismSnapshot,
     audit_body_arm_mechanisms,
-    plan_body_arm_mechanisms,
 )
 from adv_py.core.body_controls import (
     BodyArmFkControlPlan,
@@ -123,8 +124,7 @@ class BuildBodyArmFkMechanismControls:
             expected_provenance,
             body.provenance,
         )
-        mechanism_plan = plan_body_arm_mechanisms(
-            body, allow_part_parents=True)
+        mechanism_plan = plan_existing_body_arm_mechanisms(self._host, body)
         mechanisms = self._host.capture_body_arm_mechanisms(mechanism_plan)
         mechanism_issues = audit_body_arm_mechanisms(
             mechanism_plan,
@@ -206,8 +206,8 @@ class BuildBodyArmFkMechanismControls:
                 )
             if self._host.capture_body_skeleton(body_root_name) != plan.body:
                 raise RuntimeError("Arm FK 机制控制构建后复检失败：Body 发生变化")
-            expected_mechanisms = plan_body_arm_mechanisms(
-                plan.body, allow_part_parents=True)
+            expected_mechanisms = plan_existing_body_arm_mechanisms(
+                self._host, plan.body)
             if self._host.capture_body_arm_mechanisms(expected_mechanisms) != plan.mechanisms:
                 raise RuntimeError("Arm FK 机制控制构建后复检失败：机制链基准状态变化")
             container = plan.symmetry.source.hierarchy.container

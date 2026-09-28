@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from .body_mechanism_recovery import plan_existing_body_arm_mechanisms
+
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
 from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_arm_ik import BodyArmIkPlan, BodyArmIkSnapshot, BodyArmIkSpec, audit_body_arm_ik, plan_body_arm_ik
-from adv_py.core.body_arm_mechanisms import BodyArmMechanismIssue, BodyArmMechanismPlan, BodyArmMechanismSnapshot, audit_body_arm_mechanisms, plan_body_arm_mechanisms
+from adv_py.core.body_arm_mechanisms import BodyArmMechanismIssue, BodyArmMechanismPlan, BodyArmMechanismSnapshot, audit_body_arm_mechanisms
 from adv_py.core.body_skeleton import BodySkeletonIssue, BodySkeletonSnapshot, audit_body_provenance, oriented_body_provenance
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from .fit_symmetry import FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry
@@ -83,8 +85,7 @@ class BuildBodyArmIkControls:
             ),
             body.provenance,
         )
-        mechanism_plan = plan_body_arm_mechanisms(
-            body, allow_part_parents=True)
+        mechanism_plan = plan_existing_body_arm_mechanisms(self._host, body)
         mechanisms = self._host.capture_body_arm_mechanisms(mechanism_plan)
         mechanism_issues = audit_body_arm_mechanisms(mechanism_plan, mechanisms)
         ik = plan_body_arm_ik(
@@ -155,8 +156,7 @@ class BuildBodyArmIkControls:
             if self._host.capture_body_skeleton(body_root_name) != plan.body:
                 raise RuntimeError("Arm IK 构建后 Body 发生变化")
             current_mechanisms = self._host.capture_body_arm_mechanisms(
-                plan_body_arm_mechanisms(
-                    plan.body, allow_part_parents=True)
+                plan_existing_body_arm_mechanisms(self._host, plan.body)
             )
             before_by_path = {state.path: state for state in plan.mechanisms.joints}
             after_by_path = {state.path: state for state in current_mechanisms.joints}

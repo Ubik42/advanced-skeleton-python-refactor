@@ -10,6 +10,7 @@ from .body_controller_layers import (
 )
 from .body_controller_appearance import body_fk_curve_radius
 from .body_limb_ik import BodyLimbIkValidationError, solve_limb_pole_position
+from .body_limb_mechanisms import expanded_ik_solver_chain
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
 
@@ -133,6 +134,7 @@ def plan_body_arm_ik(
         )
         if len(drivers) != 3:
             raise BodyArmIkValidationError("IK mechanism 必须为每侧提供三关节链")
+        solver_chain = expanded_ik_solver_chain(mechanisms, drivers)
         shoulder, elbow, wrist = (joint.world_position for joint in sources)
         pole = solve_arm_pole_position(
             shoulder,
@@ -161,6 +163,8 @@ def plan_body_arm_ik(
             wrist, sources[2].world_axes, pole,
             body_fk_curve_radius(body, sources[2], float(radius)),
             f"AdvPy_ArmIKWristOrient_{side_name}",
+            solver_joint_list=(solver_chain[:-1]
+                               if len(solver_chain) > len(drivers) else None),
             wrist_sub_path=(
                 f"{wrist_extra_path}|{wrist_control_name}|AdvPy_ArmIKSub_{side_name}"
                 if sub_controllers else None),
