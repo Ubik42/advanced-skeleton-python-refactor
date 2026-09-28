@@ -8,6 +8,7 @@ from adv_py.core.control_mesh import ControlMeshItem, ControlMeshSource
 from adv_py.core.control_mesh_color import (
     ControlMeshColorItem, ControlMeshColorSource, SHADER_COLORS,
 )
+from adv_py.core.ik_control_mesh import IKControlCurve, IKControlMeshItem
 
 
 class MayaControlMeshHost:
@@ -471,3 +472,176 @@ class MayaControlMeshHost:
                 and all(0 <= int(slot) < len(materials)
                         and materials[int(slot)] == item.shader
                         for slot in assignments))
+
+    def capture_ik_control_curves(
+        self, global_control: str,
+    ) -> tuple[tuple[IKControlCurve, ...], float]:
+        c = self.cmds
+        if not c.objExists(global_control) or c.nodeType(global_control) != "transform":
+            raise ValueError("IK Control Mesh 缺少角色总控")
+        leaf = global_control.rsplit("|", 1)[-1]
+        prefix = leaf.rsplit(":", 1)[0] + ":" if ":" in leaf else ""
+        sets = c.ls(prefix + "ControlSet", type="objectSet") or []
+        if len(sets) != 1:
+            raise ValueError("IK Control Mesh 需要唯一 ControlSet")
+        members = c.sets(sets[0], query=True) or []
+        sources = []
+        for member in members:
+            matches = c.ls(member, long=True, type="transform") or []
+            if len(matches) != 1:
+                raise ValueError("ControlSet 控制器不存在或名称不唯一：" + member)
+            control = matches[0]
+            name = control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            if ((name.startswith("FK") and not name.startswith("FKIK"))
+                    or ("FK_" in name and "FKIK" not in name)
+                    or name.endswith("FK")):
+                continue
+            for curve in c.listRelatives(
+                    control, shapes=True, fullPath=True,
+                    noIntermediate=True, type="nurbsCurve") or []:
+                form = int(c.getAttr(curve + ".form"))
+                spans = int(c.getAttr(curve + ".spans"))
+                cv_count = (spans if form == 2 else
+                            int(c.getAttr(curve + ".controlPoints", size=True)))
+                if cv_count < 2:
+                    continue
+                points = tuple(tuple(float(value) for value in
+                                     c.pointPosition(f"{curve}.cv[{index}]",
+                                                     world=True))
+                               for index in range(cv_count))
+                plug = curve + ".visibility"
+                previous = c.connectionInfo(
+                    plug, sourceFromDestination=True) or None
+                sources.append(IKControlCurve(
+                    control, curve, global_control, points,
+                    form == 2, int(c.getAttr(curve + ".overrideColor")),
+                    previous))
+        fit = c.ls(prefix + "FitSkeleton", type="transform") or []
+        scale = 1.0
+        if len(fit) > 1:
+            raise ValueError("IK Control Mesh 的 FitSkeleton 名称不唯一")
+        if fit:
+            joints = c.listRelatives(fit[0], allDescendents=True,
+                                     fullPath=True, type="joint") or []
+            max_y = max((float(c.xform(joint, query=True,
+                                        worldSpace=True, translation=True)[1])
+                         for joint in joints), default=0.0)
+            if max_y > 0.0:
+                scale = max(max_y / 17.176163, 0.01)
+        return tuple(sources), scale
+
+    def preflight_ik_control_mesh(self, item: IKControlMeshItem) -> None:
+        c = self.cmds
+        if (not c.objExists(item.control)
+                or not c.objExists(item.curve)
+                or not c.objExists(item.global_control)
+                or c.objExists(item.shape_name)
+                or (item.visibility_source and
+                    (c.objExists(item.shape_name + "CurveMPD") or
+                     c.objExists(item.shape_name + "MeshMPD")))
+                or c.referenceQuery(item.control, isNodeReferenced=True)
+                or c.getAttr(item.curve + ".visibility", lock=True)):
+            raise ValueError("IK Control Mesh 控制器、曲线或目标名称不可用")
+        parents = c.listRelatives(item.curve, allParents=True,
+                                  fullPath=True) or []
+        if parents != [item.control]:
+            raise ValueError("IK Control Mesh 曲线必须直属目标控制器且不能实例化")
+        for name in ("ctrlCurveVis", "ctrlMeshVis"):
+            if c.attributeQuery(name, node=item.global_control, exists=True):
+                if c.getAttr(item.global_control + "." + name, type=True) != "bool":
+                    raise ValueError("角色总控可见性属性类型错误：" + name)
+
+    def create_ik_control_mesh(self, item: IKControlMeshItem) -> None:
+        if not self._in_transaction:
+            raise RuntimeError("IK Control Mesh 创建必须位于事务内")
+        c = self.cmds
+        om = self.om
+        for name in ("ctrlCurveVis", "ctrlMeshVis"):
+            if not c.attributeQuery(name, node=item.global_control, exists=True):
+                c.addAttr(item.global_control, longName=name,
+                          attributeType="bool", defaultValue=True,
+                          keyable=True)
+                c.setAttr(item.global_control + "." + name,
+                          keyable=False, channelBox=True)
+        matrix_values = c.getAttr(item.control + ".worldInverseMatrix[0]")[0]
+        inverse = om.MMatrix(matrix_values)
+        points = [om.MPoint(*vertex) * inverse for vertex in item.vertices]
+        counts = [len(face) for face in item.faces]
+        indices = [index for face in item.faces for index in face]
+        parent = om.MSelectionList().add(item.control).getDependNode(0)
+        mesh_object = om.MFnMesh().create(points, counts, indices,
+                                          parent=parent)
+        shape = om.MFnDagNode(mesh_object).fullPathName()
+        shape = c.rename(shape, item.shape_name)
+        for attribute in ("castsShadows", "receiveShadows", "motionBlur",
+                          "primaryVisibility", "smoothShading",
+                          "visibleInReflections", "visibleInRefractions"):
+            c.setAttr(shape + "." + attribute, False)
+        c.sets(shape, edit=True,
+               forceElement=item.shader or "initialShadingGroup")
+        if item.visibility_source:
+            curve_mpd = c.createNode("multiplyDivide",
+                                     name=item.shape_name + "CurveMPD")
+            mesh_mpd = c.createNode("multiplyDivide",
+                                    name=item.shape_name + "MeshMPD")
+            c.connectAttr(item.visibility_source,
+                          curve_mpd + ".input1X")
+            c.connectAttr(item.visibility_source,
+                          mesh_mpd + ".input1X")
+            c.connectAttr(item.global_control + ".ctrlCurveVis",
+                          curve_mpd + ".input2X")
+            c.connectAttr(item.global_control + ".ctrlMeshVis",
+                          mesh_mpd + ".input2X")
+            c.connectAttr(curve_mpd + ".outputX",
+                          item.curve + ".visibility", force=True)
+            c.connectAttr(mesh_mpd + ".outputX",
+                          shape + ".visibility", force=True)
+        else:
+            c.connectAttr(item.global_control + ".ctrlCurveVis",
+                          item.curve + ".visibility", force=True)
+            c.connectAttr(item.global_control + ".ctrlMeshVis",
+                          shape + ".visibility", force=True)
+
+    def capture_ik_control_mesh(self, item: IKControlMeshItem) -> bool:
+        c = self.cmds
+        matches = c.ls(item.shape_name, long=True, type="mesh") or []
+        if len(matches) != 1:
+            return False
+        shape = matches[0]
+        if ((c.listRelatives(shape, parent=True, fullPath=True) or [])
+                != [item.control]
+                or int(c.polyEvaluate(shape, face=True)) != len(item.faces)):
+            return False
+        curve_vis = (item.shape_name + "CurveMPD.outputX"
+                     if item.visibility_source else
+                     item.global_control + ".ctrlCurveVis")
+        mesh_vis = (item.shape_name + "MeshMPD.outputX"
+                    if item.visibility_source else
+                    item.global_control + ".ctrlMeshVis")
+        if (c.connectionInfo(item.curve + ".visibility",
+                             sourceFromDestination=True) != curve_vis
+                or c.connectionInfo(shape + ".visibility",
+                                    sourceFromDestination=True) != mesh_vis):
+            return False
+        if item.visibility_source:
+            for suffix in ("Curve", "Mesh"):
+                node = item.shape_name + suffix + "MPD"
+                if (not c.objExists(node)
+                        or c.nodeType(node) != "multiplyDivide"
+                        or c.connectionInfo(node + ".input1X",
+                            sourceFromDestination=True)
+                        != item.visibility_source):
+                    return False
+        mesh, dag = self._mesh(shape)
+        shaders, assignments = mesh.getConnectedShaders(dag.instanceNumber())
+        expected_shader = item.shader or "initialShadingGroup"
+        materials = tuple(self.om.MFnDependencyNode(shader).name()
+                          for shader in shaders)
+        return (all(0 <= int(slot) < len(materials)
+                    and materials[int(slot)] == expected_shader
+                    for slot in assignments)
+                and all(not bool(c.getAttr(shape + "." + attribute))
+                        for attribute in ("castsShadows", "receiveShadows",
+                                          "motionBlur", "primaryVisibility",
+                                          "smoothShading", "visibleInReflections",
+                                          "visibleInRefractions")))

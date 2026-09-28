@@ -738,6 +738,8 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._create_control_meshes))
             form.addRow(self._button("着色并扩展 Control Meshes",
                                      self._colorize_control_meshes))
+            form.addRow(self._button("创建 IK Control Meshes",
+                                     self._create_ik_control_meshes))
             stack.addWidget(group)
 
             group, form = self._group("10B · Game Engine", [])
@@ -1933,6 +1935,10 @@ def create_panel(controller: MayaPanelController | None = None):
         def _colorize_control_meshes(self):
             count = self.controller.colorize_control_meshes(self._namespace())
             return f"已着色 {count} 个 Control Mesh"
+
+        def _create_ik_control_meshes(self):
+            count = self.controller.create_ik_control_meshes(self._namespace())
+            return f"已创建 {count} 个 IK Control Mesh"
 
         def _set_control_orient_axis(self):
             if self.control_orient_world_orient.isChecked():
