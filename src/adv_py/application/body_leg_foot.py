@@ -14,6 +14,7 @@ from adv_py.core.body_leg_foot import (
     audit_body_leg_foot,
     audit_body_leg_foot_input,
     plan_body_leg_foot,
+    requested_foot_pivot_sides,
 )
 from adv_py.core.body_leg_ik import BodyLegIkIssue, audit_body_leg_ik, plan_body_leg_ik
 from adv_py.core.body_leg_mechanisms import plan_body_leg_mechanisms
@@ -96,6 +97,12 @@ class BuildBodyLegFoot:
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).extra_controllers,
         )
+        requested_pivots = requested_foot_pivot_sides(
+            symmetry.instances, symmetry.source.metadata)
+        if requested_pivots:
+            raise FitSkeletonValidationError(
+                "Foot Fit 已启用 footPivots，但独立 Pivot／HighHeel 构建层尚未接入："
+                + "、".join(side.value for side in requested_pivots))
         foot = plan_body_leg_foot(
             body, ik, up_axis=symmetry.source.up_axis)
         provenance = audit_body_provenance(

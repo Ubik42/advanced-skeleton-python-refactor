@@ -8,7 +8,8 @@ from .body_leg_ik import BodyLegIkPlan
 from .body_controller_appearance import body_fk_curve_radius
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_container import FitUpAxis
-from .fit_symmetry import AxisFrame, FitBuildSide
+from .fit_metadata import FitJointMetadata
+from .fit_symmetry import AxisFrame, FitBuildSide, FitSymmetryInstance
 
 
 Vector3 = tuple[float, float, float]
@@ -16,6 +17,17 @@ Vector3 = tuple[float, float, float]
 
 class BodyLegFootValidationError(ValueError):
     pass
+
+
+def requested_foot_pivot_sides(
+    instances: tuple[FitSymmetryInstance, ...],
+    metadata: tuple[FitJointMetadata, ...],
+) -> tuple[FitBuildSide, ...]:
+    """Find Foot Fit switches after source joints expand to both build sides."""
+    source = {item.joint: item for item in metadata}
+    return tuple(instance.side for instance in instances
+                 if instance.output_name == f"Ankle_{instance.side.value}"
+                 and source[instance.source_joint].foot_pivots)
 
 
 class BodyLegFootPivotRole(str, Enum):

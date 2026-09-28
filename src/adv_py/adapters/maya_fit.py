@@ -82,6 +82,7 @@ _FIT_ATTRIBUTES = {
     FitJointField.UNTWISTER: _MayaFitAttribute("unTwister", "bool"),
     FitJointField.HIP_SWINGER: _MayaFitAttribute("hipSwinger", "bool"),
     FitJointField.COG: _MayaFitAttribute("cog", "bool"),
+    FitJointField.FOOT_PIVOTS: _MayaFitAttribute("footPivots", "bool"),
     FitJointField.NO_MIRROR: _MayaFitAttribute("noMirror", "bool"),
     FitJointField.NO_MIRROR_LEFT: _MayaFitAttribute("noMirrorLeft", "bool"),
     FitJointField.NO_FLIP: _MayaFitAttribute("noFlip", "bool"),
@@ -826,6 +827,7 @@ class MayaFitJointHost:
                          if self._attribute_exists(joint, "hipSwinger")
                          else None),
             cog=self._optional_bool(joint, "cog"),
+            foot_pivots=self._optional_bool(joint, "footPivots"),
             no_mirror=self._optional_bool(joint, "noMirror"),
             no_mirror_left=self._optional_bool(joint, "noMirrorLeft"),
             no_flip=no_flip,

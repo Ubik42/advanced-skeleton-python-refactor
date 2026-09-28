@@ -31,6 +31,7 @@ from adv_py.core.body_leg_foot import (
     BodyLegFootSnapshot,
     audit_body_leg_foot,
     plan_body_leg_foot,
+    requested_foot_pivot_sides,
 )
 from adv_py.core.body_leg_mechanisms import (
     BodyLegMechanismJointSpec,
@@ -245,6 +246,12 @@ class BuildBodyLegRig:
                 for spec in knee_pin.sides
             },
         )
+        requested_pivots = requested_foot_pivot_sides(
+            safety.symmetry.instances, safety.symmetry.source.metadata)
+        if requested_pivots:
+            raise FitSkeletonValidationError(
+                "Foot Fit 已启用 footPivots，但独立 Pivot／HighHeel 构建层尚未接入："
+                + "、".join(side.value for side in requested_pivots))
         foot = plan_body_leg_foot(
             safety.body, ik, up_axis=safety.symmetry.source.up_axis)
         names = [
