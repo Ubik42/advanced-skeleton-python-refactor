@@ -1,4 +1,10 @@
-from adv_py.core.body_torso import BodySpaceAttachmentState, BodyTorsoSnapshot
+from dataclasses import replace
+
+from adv_py.core.body_parent_constraint import (
+    audit_body_parent_constraint, plan_body_parent_constraint)
+from adv_py.core.body_torso import (
+    BodySpaceAttachmentState, BodyTorsoSnapshot,
+    torso_opm_attachment_nodes)
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 
@@ -17,6 +23,15 @@ class MayaBodyTorsoMixin:
                 raise FitSkeletonValidationError(f"Torso 通道已有输入或锁定：{plug}")
 
     def preflight_body_torso(self, plan):
+        if type(plan.use_offset_parent_matrix) is not bool:
+            raise FitSkeletonValidationError("Torso OPM 开关无效")
+        if plan.use_offset_parent_matrix:
+            for spec in plan.attachments:
+                if spec.kind == "parentConstraint" and not spec.translation_only:
+                    for name in torso_opm_attachment_nodes(spec):
+                        if self.find_name_collisions(name):
+                            raise FitSkeletonValidationError(
+                                "Torso OPM 节点名称冲突：" + name)
         planned_joints = {j.path for j in plan.spine.joints} if plan.spine else set()
         if plan.spline:
             planned_joints.update(j.path for j in plan.spline.joints)
@@ -84,6 +99,25 @@ class MayaBodyTorsoMixin:
                 create(self,plan.head_aim)
             for spec in (plan.pelvis_translation,) + plan.attachments:
                 self._preflight_torso_channels(spec.target, spec.attributes)
+                if (plan.use_offset_parent_matrix
+                        and spec.kind == "parentConstraint"
+                        and not spec.translation_only):
+                    source = replace(
+                        self.capture_parent_constraint_input(
+                            spec.source, spec.target, True),
+                        use_offset_parent_matrix=True,
+                        skip_scale=True,
+                        include_pick_matrix=True)
+                    matrix_plan = plan_body_parent_constraint(source)
+                    self.preflight_parent_constraint(matrix_plan)
+                    self.create_parent_constraint(matrix_plan)
+                    issues = audit_body_parent_constraint(
+                        matrix_plan,
+                        self.capture_parent_constraint_state(matrix_plan))
+                    if issues:
+                        raise RuntimeError("Torso OPM 写后复检失败："
+                                           + "；".join(issues))
+                    continue
                 command = self._cmds.parentConstraint if spec.kind == "parentConstraint" else self._cmds.pointConstraint
                 self._transaction_changed = True
                 options = {"skipRotate": ("x", "y", "z")} if spec.translation_only else {}
@@ -102,6 +136,33 @@ class MayaBodyTorsoMixin:
             audit(self,plan.head_aim.head_control,plan.head_aim.target)
         states = []
         for spec in (plan.pelvis_translation,) + plan.attachments:
+            if (plan.use_offset_parent_matrix
+                    and spec.kind == "parentConstraint"
+                    and not spec.translation_only):
+                mm, pm = torso_opm_attachment_nodes(spec)
+                c = self._cmds
+                parents = c.listRelatives(spec.target, parent=True,
+                                          fullPath=True) or []
+                expected_parent = (parents[0] + ".worldInverseMatrix[0]"
+                                   if parents else "")
+                if (c.nodeType(mm) != "multMatrix"
+                        or c.nodeType(pm) != "pickMatrix"
+                        or c.connectionInfo(mm + ".matrixIn[1]",
+                            sourceFromDestination=True)
+                        != spec.source + ".worldMatrix[0]"
+                        or c.connectionInfo(mm + ".matrixIn[2]",
+                            sourceFromDestination=True) != expected_parent
+                        or c.connectionInfo(pm + ".inputMatrix",
+                            sourceFromDestination=True) != mm + ".matrixSum"
+                        or c.connectionInfo(spec.target + ".offsetParentMatrix",
+                            sourceFromDestination=True) != pm + ".outputMatrix"
+                        or bool(c.getAttr(pm + ".useScale"))):
+                    raise RuntimeError("Torso OPM 空间连接读回失败："
+                                       + spec.name)
+                states.append(BodySpaceAttachmentState(
+                    spec.name, "pickMatrix", (spec.source,),
+                    ((spec.target + ".offsetParentMatrix", spec.name),)))
+                continue
             nodes = self._cmds.ls(spec.name, long=True) or []
             if len(nodes) != 1:
                 raise RuntimeError(f"Torso 约束缺失或不唯一：{spec.name}")

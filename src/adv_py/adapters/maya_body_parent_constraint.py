@@ -25,7 +25,7 @@ class MayaBodyParentConstraintMixin:
     def capture_parent_constraint_input(
         self, driver: str, driven: str, maintain_offset: bool,
     ) -> BodyParentConstraintInput:
-        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        c = self._cmds
         drivers = c.ls(driver, long=True) or []
         drivens = c.ls(driven, long=True) or []
         if len(drivers) != 1 or len(drivens) != 1:
@@ -66,7 +66,7 @@ class MayaBodyParentConstraintMixin:
     def preflight_parent_constraint(
         self, plan: BodyParentConstraintPlan,
     ) -> None:
-        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        c = self._cmds
         for name, kind in plan.create_nodes:
             if c.objExists(name):
                 raise ValueError(f"{kind} 节点名称已被占用：{name}")
@@ -98,7 +98,7 @@ class MayaBodyParentConstraintMixin:
 
     def create_parent_constraint(self, plan: BodyParentConstraintPlan) -> None:
         self._require_transaction()
-        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        c = self._cmds
         source = plan.input
         self._transaction_changed = True
         if plan.mode == "constraint":
@@ -134,7 +134,7 @@ class MayaBodyParentConstraintMixin:
     def capture_parent_constraint_state(
         self, plan: BodyParentConstraintPlan,
     ) -> BodyParentConstraintState:
-        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        c = self._cmds
         source = plan.input
         node_names = (plan.mult_matrix, plan.pick_matrix, plan.decompose_matrix)
         nodes = tuple((name, c.nodeType(name)) for name in node_names

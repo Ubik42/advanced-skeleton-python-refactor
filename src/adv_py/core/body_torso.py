@@ -43,6 +43,14 @@ class BodySpaceAttachment:
         return tuple(f"{kind}{axis}" for kind in kinds for axis in "XYZ")
 
 
+def torso_opm_attachment_nodes(attachment: BodySpaceAttachment
+                               ) -> tuple[str, str]:
+    stem, separator, side = attachment.target.rsplit("|", 1)[-1].rpartition("_")
+    if not separator or not stem or not side:
+        raise FitSkeletonValidationError("Torso OPM 目标缺少侧别后缀")
+    return stem + "MM_" + side, stem + "PM_" + side
+
+
 @dataclass(frozen=True, slots=True)
 class BodySpaceAttachmentState:
     name: str
@@ -77,6 +85,7 @@ class BodyTorsoPlan:
     spine: BodySpinePlan | None = None
     head_aim: HeadAimPlan | None = None
     spline: BodySplinePlan | None = None
+    use_offset_parent_matrix: bool = False
 
     @property
     def root_fkx_path(self) -> str:
@@ -88,6 +97,12 @@ class BodyTorsoPlan:
 
     @property
     def node_names(self) -> tuple[str, ...]:
+        attachment_names = tuple(
+            name for item in (self.pelvis_translation,) + self.attachments
+            for name in (torso_opm_attachment_nodes(item)
+                         if self.use_offset_parent_matrix
+                         and item.kind == "parentConstraint"
+                         and not item.translation_only else (item.name,)))
         return (self.controls.root_name,) + tuple(
             name for control in self.controls.controls
             for name in (control.offset_name, control.control_name,
@@ -101,7 +116,7 @@ class BodyTorsoPlan:
                          *((control.source_override_path.rsplit("|", 1)[-1],)
                            if control.source_override_path is not None else ()))
         ) + (self.leg_lock.path.rsplit("|", 1)[-1],
-             self.leg_lock.matrix_name, self.leg_lock.decompose_name) + tuple(item.name for item in (self.pelvis_translation,) + self.attachments) + (self.spine.node_names if self.spine else ()) + (self.head_aim.node_names if self.head_aim else ()) + (self.spline.node_names if self.spline else ())
+             self.leg_lock.matrix_name, self.leg_lock.decompose_name) + attachment_names + (self.spine.node_names if self.spine else ()) + (self.head_aim.node_names if self.head_aim else ()) + (self.spline.node_names if self.spline else ())
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,7 +212,8 @@ def plan_body_torso(
             attachments.append(BodySpaceAttachment(
                 f"AdvPy_Torso{label}StretchOrigin_{suffix}", source, stretches[0].start_path, "parentConstraint", True,
             ))
-    plan = BodyTorsoPlan(BodyLimbFkControlPlan(root_path, root_name, tuple(controls)), pelvis, tuple(attachments), leg_lock)
+    plan = BodyTorsoPlan(BodyLimbFkControlPlan(root_path, root_name, tuple(controls)), pelvis, tuple(attachments), leg_lock,
+                         use_offset_parent_matrix=build_options.use_offset_parent_matrix)
     if spine_ik:
         plan=with_spine_ik(body,plan) if description==BodyAxialDescription() else with_spline_ik(body,plan,description)
     return with_head_aim(plan,body,description,up_axis) if head_aim else plan
@@ -221,7 +237,15 @@ def audit_body_torso(plan: BodyTorsoPlan, snapshot: BodyTorsoSnapshot) -> tuple[
     if tuple(item.name for item in snapshot.attachments) != tuple(spec.name for spec in specs):
         issues.append("Torso 空间连接集合不一致")
     for spec, state in zip(specs, snapshot.attachments):
-        if (state.kind != spec.kind or state.sources != (spec.source,)
-                or state.target_inputs != tuple((f"{spec.target}.{attr}", spec.name) for attr in spec.attributes)):
+        expected_kind = ("pickMatrix" if plan.use_offset_parent_matrix
+                         and spec.kind == "parentConstraint"
+                         and not spec.translation_only else spec.kind)
+        expected_inputs = (
+            ((spec.target + ".offsetParentMatrix", spec.name),)
+            if expected_kind == "pickMatrix" else
+            tuple((f"{spec.target}.{attr}", spec.name)
+                  for attr in spec.attributes))
+        if (state.kind != expected_kind or state.sources != (spec.source,)
+                or state.target_inputs != expected_inputs):
             issues.append(f"Torso 空间连接读回失败：{spec.name}")
     return tuple(issues)
