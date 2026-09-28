@@ -7,6 +7,7 @@ from typing import Protocol
 from adv_py.core.body_character_global import (
     BodyCharacterGlobalPlan,
     BodyCharacterGlobalSnapshot,
+    BodyPoleArrowSpec,
     audit_body_character_global,
     plan_body_character_global,
 )
@@ -253,6 +254,13 @@ class BuildBodyCharacterRig:
                 torso.torso.head_aim.head_control
                 if torso is not None and torso.torso.head_aim is not None
                 else None),
+            pole_arrows=tuple(
+                BodyPoleArrowSpec("Arm", spec.side.value,
+                                  spec.chain[1], spec.pole_control_path)
+                for spec in arm.ik.limbs) + tuple(
+                BodyPoleArrowSpec("Leg", spec.side.value,
+                                  spec.chain[1], spec.pole_control_path)
+                for spec in leg.ik.limbs),
         )
         spaces = plan_body_control_spaces(safety.body, torso.torso, arm, leg, global_control) if include_control_spaces else None
         direct_controls = (

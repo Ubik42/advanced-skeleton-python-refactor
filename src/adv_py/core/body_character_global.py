@@ -14,6 +14,43 @@ class BodyCharacterGlobalValidationError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class BodyPoleArrowSpec:
+    limb: str
+    side: str
+    middle_joint: str
+    pole_control: str
+
+    @property
+    def locator_name(self) -> str:
+        return f"AdvPy_PoleLoc{self.limb}_{self.side}"
+
+    @property
+    def annotation_name(self) -> str:
+        return f"AdvPy_PoleAnnotation{self.limb}_{self.side}"
+
+    @property
+    def locator_path(self) -> str:
+        return self.pole_control + "|" + self.locator_name
+
+    @property
+    def locator_shape_path(self) -> str:
+        return self.locator_path + "|" + self.locator_name + "Shape"
+
+    @property
+    def annotation_path(self) -> str:
+        return self.middle_joint + "|" + self.annotation_name
+
+    @property
+    def annotation_shape_path(self) -> str:
+        return self.annotation_path + "|" + self.annotation_name + "Shape"
+
+    @property
+    def node_names(self) -> tuple[str, ...]:
+        return (self.locator_name, self.locator_name + "Shape",
+                self.annotation_name, self.annotation_name + "Shape")
+
+
+@dataclass(frozen=True, slots=True)
 class BodyCharacterGlobalPlan:
     root_name: str
     root_path: str
@@ -33,6 +70,7 @@ class BodyCharacterGlobalPlan:
     joint_visibility_path: str | None
     finger_visibility_paths: tuple[str, ...]
     aim_fk_control_path: str | None
+    pole_arrows: tuple[BodyPoleArrowSpec, ...]
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -43,6 +81,7 @@ class BodyCharacterGlobalPlan:
             self.control_name,
             self.shape_name,
             self.scale_node_name,
+            *(name for arrow in self.pole_arrows for name in arrow.node_names),
         )
 
     @property
@@ -156,6 +195,8 @@ class BodyCharacterGlobalSnapshot:
     aim_fk_visibility: tuple[str, bool, str | None] | None = None
     aim_fk_visibility_value: bool | None = None
     reserved_visibility_values: tuple[tuple[str, bool], ...] = ()
+    pole_arrow_states: tuple[tuple[str, str, str | None, str | None,
+                                   bool, bool], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +216,7 @@ def plan_body_character_global(
     body_root_via_controls: bool = False,
     finger_visibility_paths: tuple[str, ...] = (),
     aim_fk_control_path: str | None = None,
+    pole_arrows: tuple[BodyPoleArrowSpec, ...] = (),
 ) -> BodyCharacterGlobalPlan:
     if (
         not isinstance(up_axis, FitUpAxis)
@@ -191,6 +233,15 @@ def plan_body_character_global(
         or (aim_fk_control_path is not None
             and (not isinstance(aim_fk_control_path, str)
                  or not aim_fk_control_path.startswith("|")))
+        or not isinstance(pole_arrows, tuple)
+        or any(not isinstance(arrow, BodyPoleArrowSpec)
+               or arrow.limb not in ("Arm", "Leg")
+               or arrow.side not in ("L", "R")
+               or not arrow.middle_joint.startswith("|")
+               or not arrow.pole_control.startswith("|")
+               for arrow in pole_arrows)
+        or len({name for arrow in pole_arrows for name in arrow.node_names})
+           != 4 * len(pole_arrows)
         or (not body_root_via_controls and body_root not in driven_roots)
         or (body_root_via_controls and (
             body_root in driven_roots
@@ -264,6 +315,7 @@ def plan_body_character_global(
             else None),
         finger_visibility_paths=finger_visibility_paths,
         aim_fk_control_path=aim_fk_control_path,
+        pole_arrows=pole_arrows,
     )
 
 
@@ -452,6 +504,17 @@ def audit_body_character_global(
         issues.append(BodyCharacterGlobalIssue(
             "reserved_visibility_attributes_mismatch",
             "总控预留显示属性缺失或默认值不一致",
+            plan.control_path,
+        ))
+    expected_arrows = tuple(
+        (arrow.locator_path, arrow.annotation_path,
+         arrow.locator_shape_path + ".worldMatrix[0]",
+         f"{plan.control_path}.arrowVis", True, True)
+        for arrow in plan.pole_arrows)
+    if snapshot.pole_arrow_states != expected_arrows:
+        issues.append(BodyCharacterGlobalIssue(
+            "pole_arrow_mismatch",
+            "Pole Vector 注释箭头层级或总控接线不一致",
             plan.control_path,
         ))
     return tuple(issues)

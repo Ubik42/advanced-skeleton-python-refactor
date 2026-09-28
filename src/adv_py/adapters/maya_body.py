@@ -961,6 +961,15 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     raise FitSkeletonValidationError(
                         "头部 FK 控制曲线不可安全连接 aimFKVis")
                 aim_fk_shape = wanted
+            for arrow in plan.pole_arrows:
+                if ((self._cmds.ls(
+                        arrow.middle_joint, long=True, type="joint") or [])
+                        != [arrow.middle_joint]
+                        or (self._cmds.ls(
+                            arrow.pole_control, long=True,
+                            type="transform") or []) != [arrow.pole_control]):
+                    raise FitSkeletonValidationError(
+                        "Pole Vector 箭头的中段关节或控制器失效")
 
             self._transaction_changed = True
             existing_group = self._cmds.ls(
@@ -1124,6 +1133,31 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     control, longName=name, attributeType="bool",
                     defaultValue=True, keyable=False)
                 self._cmds.setAttr(control + "." + name, channelBox=True)
+            for arrow in plan.pole_arrows:
+                locator = self._cmds.createNode(
+                    "transform", name=arrow.locator_name,
+                    parent=arrow.pole_control, skipSelect=True)
+                self._cmds.createNode(
+                    "locator", name=arrow.locator_name + "Shape",
+                    parent=locator, skipSelect=True)
+                self._cmds.setAttr(locator + ".visibility", False)
+                annotation = self._cmds.createNode(
+                    "transform", name=arrow.annotation_name,
+                    parent=arrow.middle_joint, skipSelect=True)
+                annotation_shape = self._cmds.createNode(
+                    "annotationShape",
+                    name=arrow.annotation_name + "Shape",
+                    parent=annotation, skipSelect=True)
+                self._cmds.setAttr(
+                    annotation_shape + ".overrideEnabled", True)
+                self._cmds.setAttr(
+                    annotation_shape + ".overrideDisplayType", 2)
+                self._cmds.connectAttr(
+                    arrow.locator_shape_path + ".worldMatrix[0]",
+                    arrow.annotation_shape_path + ".dagObjectMatrix[0]")
+                self._cmds.connectAttr(
+                    control + ".arrowVis",
+                    arrow.annotation_path + ".visibility")
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
@@ -1310,6 +1344,26 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             reserved_visibility_values=tuple(
                 (name, bool(self._cmds.getAttr(control + "." + name)))
                 for name in plan.reserved_visibility_attributes),
+            pole_arrow_states=tuple(
+                (one_path(arrow.locator_path, "transform"),
+                 one_path(arrow.annotation_path, "transform"),
+                 source(arrow.annotation_shape_path + ".dagObjectMatrix[0]"),
+                 source(arrow.annotation_path + ".visibility"),
+                 not bool(self._cmds.getAttr(
+                     arrow.locator_path + ".visibility")),
+                 (one_path(arrow.locator_shape_path, "locator")
+                  == arrow.locator_shape_path
+                  and one_path(arrow.annotation_shape_path,
+                               "annotationShape")
+                  == arrow.annotation_shape_path
+                  and parent(arrow.locator_path) == arrow.pole_control
+                  and parent(arrow.annotation_path) == arrow.middle_joint
+                  and bool(self._cmds.getAttr(
+                      arrow.annotation_shape_path + ".overrideEnabled"))
+                  and int(self._cmds.getAttr(
+                      arrow.annotation_shape_path + ".overrideDisplayType"))
+                  == 2))
+                for arrow in plan.pole_arrows),
         )
 
     def create_body_root_motion(self, plan: BodyRootMotionPlan) -> None:
