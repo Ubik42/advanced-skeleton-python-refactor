@@ -364,14 +364,20 @@ class BuildBodyCharacterRig:
             safety.body, direct_controls)
         fk_scale_compensations = plan_body_fk_scale_compensation(
             arm.fk_controls.controls + leg.fk_controls.controls
-            + (hand.controls.controls if hand else ()),
+            + (hand.controls.controls if hand else ())
+            + (torso.torso.controls.controls if torso else ()),
             safety.symmetry.instances,
             safety.symmetry.source.metadata,
             use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).use_offset_parent_matrix,
             finger_control_paths=frozenset(
                 control.control_path for control in hand.controls.controls)
-            if hand else frozenset())
+            if hand else frozenset(),
+            generated_joint_sources=tuple(
+                (joint.path, joint.source_joint)
+                for joint in torso.torso.spline.joints[
+                    :len(torso.torso.spline.body_joints)])
+            if torso and torso.torso.spline else ())
         fk_controls = (
             arm.fk_controls.controls + leg.fk_controls.controls
             + (hand.controls.controls if hand else ())

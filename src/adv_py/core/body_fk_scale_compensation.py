@@ -39,14 +39,21 @@ def plan_body_fk_scale_compensation(
     *,
     use_offset_parent_matrix: bool,
     finger_control_paths: frozenset[str] = frozenset(),
+    generated_joint_sources: tuple[tuple[str, str], ...] = (),
 ) -> tuple[BodyFkScaleCompensationSpec, ...]:
     if type(use_offset_parent_matrix) is not bool:
         raise ValueError("FK 缩放补偿需要明确的 OPM 构建选项")
     source_by_output = {item.output_path: item.source_joint
                         for item in instances}
+    generated_source_by_output = dict(generated_joint_sources)
     metadata_by_source = {item.joint: item for item in metadata}
     if (len(source_by_output) != len(instances)
-            or len(metadata_by_source) != len(metadata)):
+            or len(metadata_by_source) != len(metadata)
+            or len(generated_source_by_output) != len(generated_joint_sources)
+            or any(source not in source_by_output
+                   for source in generated_source_by_output.values())
+            or any(output in source_by_output
+                   for output in generated_source_by_output)):
         raise ValueError("FK 缩放补偿需要唯一的 Fit 来源")
     controls_by_path = {item.control_path: item for item in controls}
     if len(controls_by_path) != len(controls):
@@ -59,7 +66,9 @@ def plan_body_fk_scale_compensation(
         parent_control = controls_by_path.get(control.parent_path)
         if parent_control is None:
             continue
-        source = source_by_output.get(control.driven_joint)
+        source = source_by_output.get(
+            generated_source_by_output.get(control.driven_joint,
+                                           control.driven_joint))
         fit = metadata_by_source.get(source)
         if fit is None:
             raise ValueError("FK 缩放补偿缺少 Fit 元数据："
