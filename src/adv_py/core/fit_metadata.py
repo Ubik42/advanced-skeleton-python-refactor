@@ -17,6 +17,7 @@ class FitJointField(str, Enum):
     TWEAKER_CONTROL = "tweaker_control"
     NO_CONTROL = "no_control"
     NO_SKIN = "no_skin"
+    SEG_SCALE_COMP = "seg_scale_comp"
     HIP_SWINGER = "hip_swinger"
     COG = "cog"
     FOOT_PIVOTS = "foot_pivots"
@@ -80,6 +81,7 @@ class FitJointMetadata:
     tweaker_control: bool = False
     no_control: bool = False
     no_skin: bool = False
+    seg_scale_comp: bool | None = None
     hip_swinger: bool | None = None
     no_mirror: bool = False
     no_mirror_left: bool = False
@@ -116,6 +118,7 @@ _BOOLEAN_FIELDS = {
     FitJointField.TWEAKER_CONTROL,
     FitJointField.NO_CONTROL,
     FitJointField.NO_SKIN,
+    FitJointField.SEG_SCALE_COMP,
     FitJointField.HIP_SWINGER,
     FitJointField.COG,
     FitJointField.FOOT_PIVOTS,
@@ -190,7 +193,9 @@ def predict_fit_joint_metadata(
             present.discard(edit.field)
             values[edit.field.value] = (
                 False if (edit.field in _BOOLEAN_FIELDS
-                          and edit.field is not FitJointField.HIP_SWINGER)
+                          and edit.field not in (
+                              FitJointField.HIP_SWINGER,
+                              FitJointField.SEG_SCALE_COMP))
                 else None
             )
         else:
@@ -218,6 +223,11 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
     if type(metadata.no_skin) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_no_skin", "No Skin 开关必须是布尔值"))
+    if (metadata.seg_scale_comp is not None
+            and type(metadata.seg_scale_comp) is not bool):
+        issues.append(FitJointIssue(
+            metadata.joint, "invalid_seg_scale_comp",
+            "Segment Scale Compensate 必须是布尔值"))
     if type(metadata.foot_pivots) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_foot_pivots", "Foot Pivots 开关必须是布尔值"))

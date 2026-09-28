@@ -21,6 +21,9 @@ from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.body_direct_fk_scale import (
     BodyDirectFkScaleSpec, plan_body_direct_fk_scales,
 )
+from adv_py.core.body_fk_scale_compensation import (
+    BodyFkScaleCompensationSpec, plan_body_fk_scale_compensation,
+)
 from adv_py.core.body_no_control import plan_body_no_control
 from adv_py.core.body_fk_global import (
     BodyFkGlobalSpec, BodyFkGlobalState, audit_body_fk_global,
@@ -52,6 +55,7 @@ from .body_hand_controls import (
 )
 from .body_rebuild import InspectBodyRebuildSafety
 from .body_rig_validation import body_bind_pose_matches
+from .body_fk_scale_compensation import BuildBodyFkScaleCompensation
 from .body_torso import BodyTorsoHost, BodyTorsoBuildPlan, BuildBodyTorso
 from adv_py.core.body_torso import BodyTorsoSnapshot
 from adv_py.core.body_control_spaces import BodyControlSpacesPlan, plan_body_control_spaces
@@ -82,6 +86,15 @@ class BodyCharacterRigHost(
     def capture_body_direct_fk_scale(
         self, spec: BodyDirectFkScaleSpec) -> bool: ...
 
+    def preflight_body_fk_scale_compensation(
+        self, spec: BodyFkScaleCompensationSpec) -> None: ...
+
+    def connect_body_fk_scale_compensation(
+        self, spec: BodyFkScaleCompensationSpec) -> None: ...
+
+    def capture_body_fk_scale_compensation(
+        self, spec: BodyFkScaleCompensationSpec) -> bool: ...
+
     def hide_body_fk_control(self, control: str) -> None: ...
     def capture_hidden_body_fk_control(self, control: str) -> bool: ...
     def create_body_fk_global(self, spec: BodyFkGlobalSpec) -> None: ...
@@ -109,6 +122,7 @@ class BodyCharacterRigBuildPlan:
     torso: BodyTorsoBuildPlan | None = None
     control_spaces: BodyControlSpacesPlan | None = None
     direct_fk_scales: tuple[BodyDirectFkScaleSpec, ...] = ()
+    fk_scale_compensations: tuple[BodyFkScaleCompensationSpec, ...] = ()
     no_control_paths: tuple[str, ...] = ()
     fk_globals: tuple[BodyFkGlobalSpec, ...] = ()
     fk_channel_locks: tuple[BodyFkChannelLockSpec, ...] = ()
@@ -348,6 +362,10 @@ class BuildBodyCharacterRig:
             + (hand.controls.controls if hand else ()))
         direct_fk_scales = plan_body_direct_fk_scales(
             safety.body, direct_controls)
+        fk_scale_compensations = plan_body_fk_scale_compensation(
+            arm.fk_controls.controls + leg.fk_controls.controls,
+            safety.symmetry.instances,
+            safety.symmetry.source.metadata)
         fk_controls = (
             arm.fk_controls.controls + leg.fk_controls.controls
             + (hand.controls.controls if hand else ())
@@ -385,6 +403,7 @@ class BuildBodyCharacterRig:
             torso=torso,
             control_spaces=spaces,
             direct_fk_scales=direct_fk_scales,
+            fk_scale_compensations=fk_scale_compensations,
             no_control_paths=no_control_paths,
             fk_globals=fk_globals,
             fk_channel_locks=fk_channel_locks,
@@ -455,6 +474,8 @@ class BuildBodyCharacterRig:
                 if plan.hand is not None else None
             )
             torso = self._torso.build_in_transaction(plan.torso) if plan.torso else None
+            BuildBodyFkScaleCompensation(self._host).apply(
+                plan.fk_scale_compensations)
             for control in plan.no_control_paths:
                 self._host.hide_body_fk_control(control)
             if any(not self._host.capture_hidden_body_fk_control(control)
