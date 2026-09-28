@@ -19,6 +19,42 @@ _PROJECT_SOURCE = (Path(__file__).resolve().parents[3]
                    / "local" / "adv_6_925" / "asIcons.ma")
 
 
+@lru_cache(maxsize=8)
+def _installed_icon_source(script_path: str, maya_app_dir: str) -> Path | None:
+    """Find the installed icon scene in Maya's script search directories."""
+    roots = [Path(value) for value in script_path.split(os.pathsep) if value]
+    app_root = (Path(maya_app_dir).expanduser() if maya_app_dir
+                else Path.home() / "Documents" / "maya")
+    roots.append(app_root / "scripts")
+    try:
+        roots.extend(path / "scripts" for path in app_root.iterdir()
+                     if path.is_dir() and path.name[:1].isdigit())
+    except OSError:
+        pass
+    visited: set[Path] = set()
+    for root in roots:
+        root = root.expanduser()
+        if root in visited:
+            continue
+        visited.add(root)
+        # ADV distributions place asIcons.ma in the script folder or a
+        # nearby AdvancedSkeletonFiles folder. Limit traversal to two levels.
+        pending = [(root, 0)]
+        while pending:
+            folder, depth = pending.pop(0)
+            candidate = folder / "asIcons.ma"
+            if candidate.is_file():
+                return candidate
+            if depth == 2:
+                continue
+            try:
+                pending.extend((child, depth + 1)
+                               for child in folder.iterdir() if child.is_dir())
+            except OSError:
+                continue
+    return None
+
+
 def _icon_source() -> Path | None:
     configured = os.environ.get("ADV_6925_ICONS_FILE", "").strip()
     if configured:
@@ -30,12 +66,14 @@ def _icon_source() -> Path | None:
         return _PROJECT_SOURCE
     if _LOCAL_SOURCE.is_file():
         configured = _LOCAL_SOURCE.read_text(encoding="utf-8").strip()
-    if not configured:
-        return None
-    path = Path(configured).expanduser()
-    if not path.is_file():
-        raise ValueError("原版控制器图标文件不存在：" + str(path))
-    return path
+        if configured:
+            path = Path(configured).expanduser()
+            if not path.is_file():
+                raise ValueError("原版控制器图标文件不存在：" + str(path))
+            return path
+    return _installed_icon_source(
+        os.environ.get("MAYA_SCRIPT_PATH", ""),
+        os.environ.get("MAYA_APP_DIR", ""))
 
 
 @lru_cache(maxsize=4)
