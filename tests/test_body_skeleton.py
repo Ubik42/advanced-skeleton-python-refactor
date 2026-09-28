@@ -294,6 +294,10 @@ class FakeBodySkeletonHost:
         del joint
         return True
 
+    def read_fit_fk_lock_channels(self, joint):
+        del joint
+        return ()
+
     def read_fit_rotation_order(self, joint):
         del joint
         return 0

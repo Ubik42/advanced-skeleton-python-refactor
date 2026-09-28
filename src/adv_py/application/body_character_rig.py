@@ -26,6 +26,9 @@ from adv_py.core.body_fk_global import (
     BodyFkGlobalSpec, BodyFkGlobalState, audit_body_fk_global,
     plan_body_fk_global,
 )
+from adv_py.core.body_fk_channel_locks import (
+    BodyFkChannelLockSpec, plan_body_fk_channel_locks,
+)
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
@@ -85,6 +88,13 @@ class BodyCharacterRigHost(
     def capture_body_fk_global(
         self, spec: BodyFkGlobalSpec,
     ) -> BodyFkGlobalState: ...
+    def read_fit_fk_lock_channels(self, joint: str) -> tuple[str, ...]: ...
+    def apply_body_fk_channel_locks(
+        self, spec: BodyFkChannelLockSpec,
+    ) -> None: ...
+    def capture_body_fk_channel_locks(
+        self, spec: BodyFkChannelLockSpec,
+    ) -> bool: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +111,7 @@ class BodyCharacterRigBuildPlan:
     direct_fk_scales: tuple[BodyDirectFkScaleSpec, ...] = ()
     no_control_paths: tuple[str, ...] = ()
     fk_globals: tuple[BodyFkGlobalSpec, ...] = ()
+    fk_channel_locks: tuple[BodyFkChannelLockSpec, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -337,16 +348,20 @@ class BuildBodyCharacterRig:
             + (hand.controls.controls if hand else ()))
         direct_fk_scales = plan_body_direct_fk_scales(
             safety.body, direct_controls)
+        fk_controls = (
+            arm.fk_controls.controls + leg.fk_controls.controls
+            + (hand.controls.controls if hand else ())
+            + (torso.torso.controls.controls if torso else ()))
         no_control_paths = plan_body_no_control(
             safety.symmetry.source.metadata,
-            arm.fk_controls.controls + leg.fk_controls.controls
-            + (hand.controls.controls if hand else ())
-            + (torso.torso.controls.controls if torso else ()))
+            fk_controls)
         fk_globals = plan_body_fk_global(
-            safety.symmetry.source.metadata,
-            arm.fk_controls.controls + leg.fk_controls.controls
-            + (hand.controls.controls if hand else ())
-            + (torso.torso.controls.controls if torso else ()))
+            safety.symmetry.source.metadata, fk_controls)
+        fk_channel_locks = plan_body_fk_channel_locks(
+            safety.symmetry.source.hierarchy, fk_controls,
+            tuple((joint.path, self._host.read_fit_fk_lock_channels(
+                joint.path)) for joint in
+                safety.symmetry.source.hierarchy.joints))
         if fk_globals and global_follow_path is None:
             raise FitSkeletonValidationError(
                 "Fit Global 控制需要标准 Body 的 GlobalSystem 层级")
@@ -372,6 +387,7 @@ class BuildBodyCharacterRig:
             direct_fk_scales=direct_fk_scales,
             no_control_paths=no_control_paths,
             fk_globals=fk_globals,
+            fk_channel_locks=fk_channel_locks,
             shared_input_stable=(
                 arm.safety == leg.safety
                 and (hand is None or hand.safety == arm.safety)
@@ -475,6 +491,11 @@ class BuildBodyCharacterRig:
                 )
             if plan.control_spaces:
                 self._host.create_body_control_spaces(plan.control_spaces)
+            for spec in plan.fk_channel_locks:
+                self._host.apply_body_fk_channel_locks(spec)
+            if any(not self._host.capture_body_fk_channel_locks(spec)
+                   for spec in plan.fk_channel_locks):
+                raise RuntimeError("Fit FK 控制通道锁定状态不一致")
             body = self._host.capture_body_skeleton(body_root_name)
             if not body_bind_pose_matches(plan.arm.safety.body, body):
                 raise RuntimeError("角色总控中性状态改变了 Body 绑定姿态")

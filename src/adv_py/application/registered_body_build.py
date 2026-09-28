@@ -691,10 +691,25 @@ class BuildRegisteredBodyCharacter:
                         BuildFingerMidDeform(joined).apply())
                 for spec in BuildLimbPartDeform(joined).apply():
                     segments.extend((spec.part1, spec.part2))
+            registered_controls = {channel.node
+                                   for channel in registration.channels}
+            fk_control_specs = (
+                rig.plan.arm.fk_controls.controls
+                + rig.plan.leg.fk_controls.controls
+                + (rig.plan.hand.controls.controls
+                   if rig.plan.hand is not None else ())
+                + (rig.plan.torso.torso.controls.controls
+                   if rig.plan.torso is not None else ()))
+            locked_selection_extras = tuple(
+                spec.extra_path or spec.control_path
+                for spec in fk_control_specs
+                if spec.control_path not in registered_controls
+                and spec.control_path not in rig.plan.no_control_paths)
             BuildBodySelectionSets(joined).apply(
                 registration, tuple(segments),
                 extras=tuple(extra for chain in bendy_chains
-                             for extra in chain.micro_extra_names))
+                             for extra in chain.micro_extra_names)
+                + locked_selection_extras)
             if joined.has_body_build_pose_overrides():
                 GoToBodyBuildPose(joined).apply()
             joined.finalize_fit_skeleton_visibility(container_name)

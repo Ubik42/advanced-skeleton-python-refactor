@@ -86,6 +86,9 @@ from adv_py.core.body_fk_global import (
     BodyFkGlobalSpec, BodyFkGlobalState, GLOBAL_FOLLOW,
     body_fk_global_sources,
 )
+from adv_py.core.body_fk_channel_locks import (
+    BodyFkChannelLockSpec, FK_LOCK_ATTRIBUTES,
+)
 from adv_py.core.body_root_motion import (
     BodyRootMotionBakePlan,
     BodyRootMotionBakedChannelState,
@@ -8164,6 +8167,52 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                              (spec.rotate_conversion_name,))),
             bind_world_matrix=bind_matrix,
         )
+
+    def read_fit_fk_lock_channels(self, joint: str) -> tuple[str, ...]:
+        c = self._cmds
+        if (c.ls(joint, long=True, type="joint") or []) != [joint]:
+            raise FitSkeletonValidationError(
+                "FK 锁定来源 Fit 关节缺失：" + joint)
+        return tuple(attribute for attribute in (
+            kind + axis for kind in ("translate", "rotate", "scale")
+            for axis in "XYZ")
+            if c.getAttr(joint + "." + attribute, lock=True))
+
+    def apply_body_fk_channel_locks(
+        self, spec: BodyFkChannelLockSpec,
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        if ((c.ls(spec.control, long=True, type="transform") or [])
+                != [spec.control]
+                or not set(spec.attributes) <= FK_LOCK_ATTRIBUTES):
+            raise FitSkeletonValidationError(
+                "FK 锁定目标或通道无效：" + spec.control)
+        for attribute in spec.attributes:
+            plug = spec.control + "." + attribute
+            if (not c.objExists(plug)
+                    or c.listConnections(plug, source=True,
+                                         destination=False)):
+                raise FitSkeletonValidationError(
+                    "FK 锁定通道不可写：" + plug)
+        self._transaction_changed = True
+        for attribute in spec.attributes:
+            plug = spec.control + "." + attribute
+            if not (c.getAttr(plug, lock=True)
+                    and not c.getAttr(plug, keyable=True)):
+                c.setAttr(plug, lock=True, keyable=False)
+
+    def capture_body_fk_channel_locks(
+        self, spec: BodyFkChannelLockSpec,
+    ) -> bool:
+        c = self._cmds
+        return ((c.ls(spec.control, long=True, type="transform") or [])
+                == [spec.control]
+                and all(c.getAttr(spec.control + "." + attribute,
+                                  lock=True)
+                        and not c.getAttr(spec.control + "." + attribute,
+                                          keyable=True)
+                        for attribute in spec.attributes))
 
     def hide_body_fk_control(self, control: str) -> None:
         self._require_transaction()

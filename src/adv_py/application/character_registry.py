@@ -19,8 +19,12 @@ def character_channels(rig):
     if not p.torso or not (p.torso.torso.spine or p.torso.torso.spline) or not p.control_spaces:
         raise ValueError("角色登记要求完整 Torso、Spine IK 和控制空间")
     rows = []
+    locked = {spec.control: frozenset(spec.attributes)
+              for spec in getattr(p, "fk_channel_locks", ())}
     def add(key,node,attributes):
-        rows.extend(CharacterChannel(key+"."+attr,node,attr) for attr in attributes)
+        rows.extend(CharacterChannel(key+"."+attr,node,attr)
+                    for attr in attributes
+                    if attr not in locked.get(node, ()))
     translation = tuple("translate"+axis for axis in "XYZ")
     rotation = tuple("rotate"+axis for axis in "XYZ")
     add("global",p.global_control.control_path,translation+rotation+(p.global_control.scale_attribute,))
