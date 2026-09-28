@@ -34,6 +34,7 @@ class FitPartRotationInput:
     ik_rotate_order_plug: str | None = None
     ik_fk_blend_plug: str | None = None
     subtract_body_twist: bool = True
+    world_matrix_plug: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +47,12 @@ class FitPartTwistProjection:
     ik_decompose_name: str | None = None
     ik_project_name: str | None = None
     blend_name: str | None = None
+    reference_name: str | None = None
+
+    @property
+    def reference_parent_path(self) -> str | None:
+        parent = self.input.start_body.rsplit("|", 1)[0]
+        return parent or None
 
     @property
     def output_plug(self) -> str:
@@ -67,8 +74,8 @@ def plan_standard_fit_part_rotation_inputs(
     """Resolve twist channels for every non-bendy Fit Part chain.
 
     The named Arm/Leg mechanisms retain their dedicated inputs. Other Fit
-    joints use their driven Body rotation, which the existing twist projection
-    converts to a local X angle before Part distribution.
+    joints use a world matrix relative to a bind-aligned parent-following
+    reference, then project that relative rotation onto local X.
     """
     starts = {part.start_body: part for part in parts}
     result = []
@@ -91,7 +98,8 @@ def plan_standard_fit_part_rotation_inputs(
                 f"AdvPy_LegSettings.legIkFk_{side}"))
         else:
             result.append(FitPartRotationInput(
-                start, start + ".rotate", start + ".rotateOrder"))
+                start, "", start + ".rotateOrder",
+                world_matrix_plug=start + ".worldMatrix[0]"))
     return tuple(result)
 
 
@@ -103,8 +111,14 @@ def plan_fit_part_twist_projections(
     projections = []
     used_names: set[str] = set()
     for item in inputs:
-        if not item.rotation_plug or not item.rotate_order_plug:
+        if (not item.rotate_order_plug
+                or bool(item.rotation_plug) == bool(item.world_matrix_plug)):
             raise FitPartTwistValidationError("Part 旋转及旋转顺序来源不能为空")
+        if item.world_matrix_plug and any((item.ik_rotation_plug,
+                                           item.ik_rotate_order_plug,
+                                           item.ik_fk_blend_plug)):
+            raise FitPartTwistValidationError(
+                "矩阵参照投影不能同时指定 IK/FK 旋转混合")
         has_ik = bool(item.ik_rotation_plug or item.ik_rotate_order_plug
                       or item.ik_fk_blend_plug)
         if has_ik and not all((item.ik_rotation_plug,
@@ -120,12 +134,14 @@ def plan_fit_part_twist_projections(
             prefix + "IkDecompose" if has_ik else None,
             prefix + "IkProject" if has_ik else None,
             prefix + "Blend" if has_ik else None,
+            prefix + "Reference" if item.world_matrix_plug else None,
         )
         names = (projection.compose_name, projection.decompose_name,
                  projection.project_name)
         names += tuple(name for name in (
             projection.ik_compose_name, projection.ik_decompose_name,
-            projection.ik_project_name, projection.blend_name) if name)
+                 projection.ik_project_name, projection.blend_name,
+                 projection.reference_name) if name)
         if any(name in used_names for name in names):
             raise FitPartTwistValidationError("Part 投影节点名称重复")
         used_names.update(names)

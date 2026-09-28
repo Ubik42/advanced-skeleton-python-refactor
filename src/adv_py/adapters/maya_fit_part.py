@@ -338,10 +338,18 @@ class MayaFitPartMixin:
         inputs = projection.input
         plugs = (inputs.rotation_plug, inputs.rotate_order_plug,
                  inputs.up_twist_plug, inputs.ik_rotation_plug,
-                 inputs.ik_rotate_order_plug, inputs.ik_fk_blend_plug)
+                 inputs.ik_rotate_order_plug, inputs.ik_fk_blend_plug,
+                 inputs.world_matrix_plug)
         for plug in plugs:
             if plug and not c.objExists(plug):
                 raise ValueError("Fit Part 扭转投影来源不存在：" + plug)
+        if projection.reference_name:
+            matches = c.ls(inputs.start_body, long=True, type="joint") or []
+            if matches != [inputs.start_body]:
+                raise ValueError("Fit Part 矩阵投影起点关节无效")
+            parent = projection.reference_parent_path
+            if parent and (c.ls(parent, long=True) or []) != [parent]:
+                raise ValueError("Fit Part 矩阵参照父级无效")
 
     def create_fit_part_twist_projection(
         self, projection: FitPartTwistProjection
@@ -349,6 +357,7 @@ class MayaFitPartMixin:
         self._require_transaction()
         c = self._cmds
         source = projection.input
+        self._transaction_changed = True
 
         def create(compose_name: str, decompose_name: str,
                    project_name: str, rotation: str,
@@ -366,11 +375,43 @@ class MayaFitPartMixin:
                           project + ".inputQuatW")
             return project + ".outputRotateX"
 
-        fk_output = create(
-            projection.compose_name, projection.decompose_name,
-            projection.project_name, source.rotation_plug,
-            source.rotate_order_plug)
-        self._transaction_changed = True
+        if projection.reference_name:
+            options = ({"parent": projection.reference_parent_path}
+                       if projection.reference_parent_path else {})
+            reference = c.createNode(
+                "transform", name=projection.reference_name,
+                skipSelect=True, **options)
+            c.xform(reference, worldSpace=True, matrix=c.xform(
+                source.start_body, query=True, worldSpace=True,
+                matrix=True))
+            c.addAttr(reference, longName="advPyTwistReferenceOwner",
+                      dataType="string")
+            c.setAttr(reference + ".advPyTwistReferenceOwner",
+                      "adv_py.fit_part_twist.v1", type="string", lock=True)
+            c.setAttr(reference + ".visibility", False)
+            matrix = c.createNode("multMatrix", name=projection.compose_name)
+            decompose = c.createNode("decomposeMatrix",
+                                     name=projection.decompose_name)
+            project = c.createNode("quatToEuler",
+                                   name=projection.project_name)
+            c.connectAttr(source.world_matrix_plug,
+                          matrix + ".matrixIn[0]")
+            c.connectAttr(reference + ".worldInverseMatrix[0]",
+                          matrix + ".matrixIn[1]")
+            c.connectAttr(matrix + ".matrixSum",
+                          decompose + ".inputMatrix")
+            c.connectAttr(source.rotate_order_plug,
+                          decompose + ".inputRotateOrder")
+            c.connectAttr(decompose + ".outputQuatX",
+                          project + ".inputQuatX")
+            c.connectAttr(decompose + ".outputQuatW",
+                          project + ".inputQuatW")
+            fk_output = project + ".outputRotateX"
+        else:
+            fk_output = create(
+                projection.compose_name, projection.decompose_name,
+                projection.project_name, source.rotation_plug,
+                source.rotate_order_plug)
         if projection.blend_name:
             ik_output = create(
                 projection.ik_compose_name,
@@ -414,7 +455,46 @@ class MayaFitPartMixin:
                        for source, target in expected)
 
         source = projection.input
-        if not has_projection_graph(
+        if projection.reference_name:
+            reference = projection.reference_name
+            matrix = projection.compose_name
+            decompose = projection.decompose_name
+            project = projection.project_name
+            parent = c.listRelatives(reference, parent=True,
+                                     fullPath=True) or []
+            expected = (
+                (source.world_matrix_plug, matrix + ".matrixIn[0]"),
+                (reference + ".worldInverseMatrix[0]",
+                 matrix + ".matrixIn[1]"),
+                (matrix + ".matrixSum", decompose + ".inputMatrix"),
+                (source.rotate_order_plug,
+                 decompose + ".inputRotateOrder"),
+                (decompose + ".outputQuatX", project + ".inputQuatX"),
+                (decompose + ".outputQuatW", project + ".inputQuatW"),
+            )
+            if (any(not c.objExists(name) or c.nodeType(name) != kind
+                    for name, kind in (
+                        (reference, "transform"),
+                        (matrix, "multMatrix"),
+                        (decompose, "decomposeMatrix"),
+                        (project, "quatToEuler")))
+                    or parent != ([projection.reference_parent_path]
+                                  if projection.reference_parent_path else [])
+                    or not c.objExists(
+                        reference + ".advPyTwistReferenceOwner")
+                    or c.getAttr(reference + ".advPyTwistReferenceOwner")
+                    != "adv_py.fit_part_twist.v1"
+                    or c.getAttr(reference + ".visibility")
+                    or max(abs(float(a) - float(b)) for a, b in zip(
+                        c.xform(reference, query=True, worldSpace=True,
+                                matrix=True),
+                        c.xform(source.start_body, query=True,
+                                worldSpace=True, matrix=True))) > 1e-4
+                    or any(c.connectionInfo(target,
+                           sourceFromDestination=True) != upstream
+                           for upstream, target in expected)):
+                return None
+        elif not has_projection_graph(
                 projection.compose_name, projection.decompose_name,
                 projection.project_name, source.rotation_plug,
                 source.rotate_order_plug):
