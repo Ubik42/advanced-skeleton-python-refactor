@@ -91,6 +91,7 @@ def plan_standard_fit_part_rotation_inputs(
     independent_body_constraints: Mapping[str, str] | None = None,
     blended_world_matrices: Mapping[
         str, tuple[str, str, str, str]] | None = None,
+    limb_twist_outputs: Mapping[str, str] | None = None,
 ) -> tuple[FitPartRotationInput, ...]:
     """Resolve twist channels for every non-bendy Fit Part chain.
 
@@ -104,6 +105,7 @@ def plan_standard_fit_part_rotation_inputs(
     independent_world_matrices = independent_world_matrices or {}
     independent_body_constraints = independent_body_constraints or {}
     blended_world_matrices = blended_world_matrices or {}
+    limb_twist_outputs = limb_twist_outputs or {}
     if set(blended_world_matrices) & set(independent_world_matrices):
         raise FitPartTwistValidationError("Part 独立与混合矩阵来源不能重复")
     for body, blend in blended_world_matrices.items():
@@ -127,7 +129,8 @@ def plan_standard_fit_part_rotation_inputs(
             limb = "Arm" if stem in ("Shoulder", "Elbow") else "Leg"
             up_label = {"Elbow": "LowerArm", "Hip": "UpperLeg",
                         "Knee": "LowerLeg"}.get(stem)
-            up = (f"AdvPy_{up_label}TwistProject_{side}.outputRotateX"
+            up = ((limb_twist_outputs.get(start) or
+                   f"AdvPy_{up_label}TwistProject_{side}.outputRotateX")
                   if up_label else None)
             blend = blended_world_matrices.get(start)
             result.append(FitPartRotationInput(

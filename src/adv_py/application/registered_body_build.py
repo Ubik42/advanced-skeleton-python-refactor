@@ -377,11 +377,35 @@ class BuildRegisteredBodyCharacter:
                  blended_matrices) = (
                     _independent_rig_twist_sources(rig.plan))
                 if fit_part_twist_sources is None:
+                    required_twist_starts = {
+                        part.start_body for part in ordinary_twist_parts
+                        if part.start_body_name.rsplit("_", 1)[0]
+                        in ("Elbow", "Hip", "Knee")}
+                    limb_twist_outputs = {}
+                    for module in (rig.plan.arm, rig.plan.leg):
+                        for segment in module.twist.segments:
+                            if segment.start_joint not in required_twist_starts:
+                                continue
+                            if segment.axis != "X":
+                                raise FitSkeletonValidationError(
+                                    "标准 Fit Part 扭转要求四肢机制沿局部 X 轴："
+                                    + segment.start_joint)
+                            if segment.start_joint in limb_twist_outputs:
+                                raise ValueError("四肢扭转机制来源重复："
+                                                 + segment.start_joint)
+                            limb_twist_outputs[segment.start_joint] = (
+                                segment.quaternion_name + ".outputRotateX")
+                    if set(limb_twist_outputs) != required_twist_starts:
+                        raise FitSkeletonValidationError(
+                            "标准 Fit Part 缺少四肢扭转机制来源："
+                            + "、".join(sorted(required_twist_starts
+                                              - set(limb_twist_outputs))))
                     rotation_inputs = plan_standard_fit_part_rotation_inputs(
                         ordinary_twist_parts,
                         independent_world_matrices=control_matrices,
                         independent_body_constraints=body_constraints,
-                        blended_world_matrices=blended_matrices)
+                        blended_world_matrices=blended_matrices,
+                        limb_twist_outputs=limb_twist_outputs)
                     projections = plan_fit_part_twist_projections(
                         rotation_inputs)
                     plan_fit_part_twist(
