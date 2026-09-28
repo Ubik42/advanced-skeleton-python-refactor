@@ -12,6 +12,7 @@ from adv_py.core.body_leg_blend import (
     audit_body_leg_blend,
     plan_body_leg_blend,
 )
+from adv_py.core.body_leg_controls import terminal_toes_end_control_enabled
 from adv_py.core.body_leg_ik import (
     BodyLegIkIssue,
     BodyLegIkPlan,
@@ -144,7 +145,10 @@ class MatchBodyLegFkToIk:
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).extra_controllers,
         )
-        blend = plan_body_leg_blend(body, mechanisms)
+        blend = plan_body_leg_blend(
+            body, mechanisms,
+            terminal_toes_end_control=terminal_toes_end_control_enabled(
+                symmetry.source.metadata))
         foot = plan_body_leg_foot(
             body, ik,
             legacy_toe_controls=not self._host.body_leg_toe_extra_mode(ik),

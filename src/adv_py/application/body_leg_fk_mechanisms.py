@@ -12,6 +12,7 @@ from adv_py.core.body_leg_controls import (
     BodyLegFkControlSpec,
     audit_body_leg_fk_controls,
     plan_body_leg_fk_controls,
+    terminal_toes_end_control_enabled,
 )
 from adv_py.core.body_leg_mechanisms import (
     BodyLegMechanismIssue,
@@ -143,6 +144,8 @@ class BuildBodyLegFkMechanismControls:
                 symmetry.settings).sub_controllers,
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).extra_controllers,
+            terminal_toes_end_control=terminal_toes_end_control_enabled(
+                symmetry.source.metadata),
         )
         names = [controls.root_name]
         for spec in controls.controls:

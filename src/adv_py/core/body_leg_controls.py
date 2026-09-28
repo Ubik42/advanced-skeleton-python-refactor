@@ -13,6 +13,7 @@ from .body_limb_controls import (
     plan_body_limb_fk_controls,
 )
 from .body_skeleton import BodySkeletonSnapshot
+from .fit_metadata import FitJointMetadata
 
 
 BodyLegFkControlPlan = BodyLimbFkControlPlan
@@ -21,6 +22,21 @@ BodyLegFkControlSpec = BodyLimbFkControlSpec
 BodyLegFkControlState = BodyLimbFkControlState
 BodyLegControlIssue = BodyLimbControlIssue
 BodyLegControlValidationError = BodyLimbControlValidationError
+
+
+def terminal_toes_end_control_enabled(
+    metadata: tuple[FitJointMetadata, ...],
+) -> bool:
+    """Read the optional 6.925 end-joint Control switch from the source Fit."""
+    if not isinstance(metadata, tuple) or any(
+            not isinstance(item, FitJointMetadata) for item in metadata):
+        raise BodyLegControlValidationError("Fit 末端控制元数据无效")
+    terminal = tuple(item for item in metadata
+                     if item.joint.rsplit("|", 1)[-1]
+                     .rsplit(":", 1)[-1] == "ToesEnd")
+    if len(terminal) > 1:
+        raise BodyLegControlValidationError("Fit ToesEnd 元数据重复")
+    return bool(terminal and terminal[0].control)
 
 
 def plan_body_leg_fk_controls(

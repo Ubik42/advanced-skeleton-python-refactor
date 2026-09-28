@@ -18,6 +18,7 @@ from adv_py.core.body_leg_controls import (
     BodyLegFkControlSnapshot,
     audit_body_leg_fk_controls,
     plan_body_leg_fk_controls,
+    terminal_toes_end_control_enabled,
 )
 from adv_py.core.body_leg_match import (
     BodyLegIkToFkPlan,
@@ -128,8 +129,13 @@ class MatchBodyLegIkToFk:
                 symmetry.settings).sub_controllers,
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).extra_controllers,
+            terminal_toes_end_control=terminal_toes_end_control_enabled(
+                symmetry.source.metadata),
         )
-        blend = plan_body_leg_blend(body, mechanisms)
+        blend = plan_body_leg_blend(
+            body, mechanisms,
+            terminal_toes_end_control=terminal_toes_end_control_enabled(
+                symmetry.source.metadata))
         match = plan_body_leg_ik_to_fk(body, fk_controls, blend, side)
         fk_snapshot = self._host.capture_body_leg_fk_controls(fk_controls)
         blend_snapshot = self._host.capture_body_leg_blend(blend)

@@ -6,7 +6,10 @@ from typing import Protocol
 
 from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_leg_blend import audit_body_leg_blend, plan_body_leg_blend
-from adv_py.core.body_leg_controls import audit_body_leg_fk_controls, plan_body_leg_fk_controls
+from adv_py.core.body_leg_controls import (
+    audit_body_leg_fk_controls, plan_body_leg_fk_controls,
+    terminal_toes_end_control_enabled,
+)
 from adv_py.core.body_leg_ik import audit_body_leg_ik, plan_body_leg_ik
 from adv_py.core.body_leg_mechanisms import (
     BodyLegMechanismPlan,
@@ -104,7 +107,9 @@ class BuildBodyLegVisibility:
             sub_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).sub_controllers,
             extra_controllers=BodyBuildOptions.from_fit_settings(
-                symmetry.settings).extra_controllers)
+                symmetry.settings).extra_controllers,
+            terminal_toes_end_control=terminal_toes_end_control_enabled(
+                symmetry.source.metadata))
         ik = plan_body_leg_ik(
             body,
             mechanism_plan,
@@ -115,7 +120,10 @@ class BuildBodyLegVisibility:
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).extra_controllers,
         )
-        blend = plan_body_leg_blend(body, mechanism_plan)
+        blend = plan_body_leg_blend(
+            body, mechanism_plan,
+            terminal_toes_end_control=terminal_toes_end_control_enabled(
+                symmetry.source.metadata))
         visibility = plan_body_leg_visibility(fk, ik, blend)
         blockers = []
         expected_provenance = oriented_body_provenance(

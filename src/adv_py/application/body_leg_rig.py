@@ -17,6 +17,7 @@ from adv_py.core.body_leg_controls import (
     BodyLegFkControlSpec,
     audit_body_leg_fk_controls,
     plan_body_leg_fk_controls,
+    terminal_toes_end_control_enabled,
 )
 from adv_py.core.body_leg_ik import (
     BodyLegIkPlan,
@@ -209,10 +210,8 @@ class BuildBodyLegRig:
             for spec in mechanisms.joints
             if spec.role is BodyLegMechanismRole.FK
         }
-        terminal_toes_end_control = any(
-            item.control and item.joint.rsplit("|", 1)[-1]
-            .rsplit(":", 1)[-1] == "ToesEnd"
-            for item in safety.symmetry.source.metadata)
+        terminal_toes_end_control = terminal_toes_end_control_enabled(
+            safety.symmetry.source.metadata)
         fk_controls = plan_body_leg_fk_controls(
             safety.body,
             radius=control_radius,

@@ -21,6 +21,7 @@ from adv_py.core.fit_part_twist import (
 )
 from adv_py.core.body_torso import audit_body_torso
 from adv_py.core.body_limb_controls import audit_body_limb_fk_controls
+from adv_py.core.body_leg_controls import terminal_toes_end_control_enabled
 from adv_py.core.body_hand_controls import audit_body_hand_fk_controls
 from adv_py.core.body_arm_ik import audit_body_arm_ik
 from adv_py.core.body_leg_ik import audit_body_leg_ik
@@ -286,10 +287,8 @@ class BuildRegisteredBodyCharacter:
                 and part.end_body_name == f"ToesEnd_{part.side.value}"
                 for part in part_plan.fit_parts
             )
-            terminal_control = any(
-                item.control and item.joint.rsplit("|", 1)[-1]
-                .rsplit(":", 1)[-1] == "ToesEnd"
-                for item in fit_source.metadata)
+            terminal_control = terminal_toes_end_control_enabled(
+                fit_source.metadata)
             if terminal_untwister and not terminal_control:
                 raise FitSkeletonValidationError(
                     "Toes→ToesEnd UnTwister 需要末端 Fit ToesEnd 的 "

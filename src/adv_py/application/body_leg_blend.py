@@ -10,6 +10,7 @@ from adv_py.core.body_leg_blend import (
     audit_body_leg_blend,
     plan_body_leg_blend,
 )
+from adv_py.core.body_leg_controls import terminal_toes_end_control_enabled
 from adv_py.core.body_leg_mechanisms import (
     BodyLegMechanismIssue,
     BodyLegMechanismPlan,
@@ -114,7 +115,10 @@ class BuildBodyLegBlend:
             mechanism_plan,
             mechanisms,
         )
-        blend = plan_body_leg_blend(body, mechanism_plan)
+        blend = plan_body_leg_blend(
+            body, mechanism_plan,
+            terminal_toes_end_control=terminal_toes_end_control_enabled(
+                symmetry.source.metadata))
         names = [blend.settings_name]
         for side in blend.sides:
             names.append(side.reverse_name)
