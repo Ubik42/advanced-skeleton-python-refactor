@@ -38,6 +38,7 @@ def plan_body_fk_scale_compensation(
     metadata: tuple[FitJointMetadata, ...],
     *,
     use_offset_parent_matrix: bool,
+    finger_control_paths: frozenset[str] = frozenset(),
 ) -> tuple[BodyFkScaleCompensationSpec, ...]:
     if type(use_offset_parent_matrix) is not bool:
         raise ValueError("FK 缩放补偿需要明确的 OPM 构建选项")
@@ -50,6 +51,8 @@ def plan_body_fk_scale_compensation(
     controls_by_path = {item.control_path: item for item in controls}
     if len(controls_by_path) != len(controls):
         raise ValueError("FK 缩放补偿控制器路径重复")
+    if not finger_control_paths <= controls_by_path.keys():
+        raise ValueError("FK 缩放补偿手指控制器不在当前构建计划中")
     result = []
     names = set()
     for control in controls:
@@ -66,7 +69,8 @@ def plan_body_fk_scale_compensation(
         parent_leaf = control.parent_path.rsplit("|", 1)[-1]
         parent_stem = parent_leaf.rsplit("_", 1)[0]
         enabled = (fit.seg_scale_comp if fit.seg_scale_comp is not None
-                   else not (any(token in stem for token in
+                   else not (control.control_path in finger_control_paths
+                             or any(token in stem for token in
                                  ("Finger", "Cup", "Toes"))
                              or "Head" in parent_stem
                              or re.search(r"Part[0-9]", stem) is not None))
