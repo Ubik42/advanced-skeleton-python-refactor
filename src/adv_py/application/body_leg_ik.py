@@ -95,7 +95,7 @@ class BuildBodyLegIkControls:
         container_name: str = "FitSkeleton",
         *,
         body_root_name: str = "Root_M",
-        control_radius: float = 1.75,
+        control_radius: float = 1.5,
         pole_distance_scale: float = 0.75,
         center_tolerance: float = 0.01,
     ) -> BodyLegIkBuildPlan:
@@ -161,7 +161,7 @@ class BuildBodyLegIkControls:
         container_name: str = "FitSkeleton",
         *,
         body_root_name: str = "Root_M",
-        control_radius: float = 1.75,
+        control_radius: float = 1.5,
         pole_distance_scale: float = 0.75,
         center_tolerance: float = 0.01,
     ) -> BodyLegIkBuildResult:

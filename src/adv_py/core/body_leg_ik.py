@@ -9,6 +9,7 @@ from .body_controller_layers import (
     BodyExtraControllerState, BodySubControllerState,
     audit_body_extra_controller, audit_body_sub_controller,
 )
+from .body_controller_appearance import body_fk_curve_radius
 from .body_limb_ik import BodyLimbIkValidationError, solve_limb_pole_position
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
@@ -102,7 +103,7 @@ def plan_body_leg_ik(
     body: BodySkeletonSnapshot,
     mechanisms: BodyLegMechanismPlan,
     *,
-    radius: float = 1.75,
+    radius: float = 1.5,
     pole_distance_scale: float = 0.75,
     sub_controllers: bool = False,
     extra_controllers: bool = False,
@@ -202,9 +203,7 @@ def plan_body_leg_ik(
             ankle_position=ankle,
             ankle_axes=sources[2].world_axes,
             pole_position=pole,
-            radius=max(1e-4, float(radius)
-                       * sources[2].deform_profile.fat
-                       * sources[2].deform_profile.fat_front),
+            radius=body_fk_curve_radius(body, sources[2], float(radius)),
             ankle_constraint_name=f"AdvPy_LegIKAnkleOrient_{suffix}",
             toe_driver_path=toe_driver,
             toe_end_driver_path=toe_end_driver,

@@ -108,7 +108,7 @@ class BuildBodyLegFkMechanismControls:
         container_name: str = "FitSkeleton",
         *,
         body_root_name: str = "Root_M",
-        control_radius: float = 1.75,
+        control_radius: float = 1.5,
         center_tolerance: float = 0.01,
     ) -> BodyLegFkMechanismBuildPlan:
         symmetry = self._symmetry.execute(
@@ -175,7 +175,7 @@ class BuildBodyLegFkMechanismControls:
         container_name: str = "FitSkeleton",
         *,
         body_root_name: str = "Root_M",
-        control_radius: float = 1.75,
+        control_radius: float = 1.5,
         center_tolerance: float = 0.01,
     ) -> BodyLegFkMechanismBuildResult:
         plan = self.plan(

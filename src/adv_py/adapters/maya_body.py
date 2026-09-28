@@ -5578,7 +5578,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             pole = create_adv_icon(
                 self._cmds, name=spec.pole_control_name,
                 parent=pole_extra, template="Pole_icon",
-                radius=spec.radius * 0.65,
+                radius=spec.radius,
                 fallback_normal=(0.0, 0.0, 1.0),
                 mirror_left=spec.side is FitBuildSide.LEFT)
             pole = (self._cmds.ls(pole, long=True) or [pole])[0]
@@ -5728,7 +5728,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             pole = create_adv_icon(
                 self._cmds, name=spec.pole_control_name,
                 parent=pole_extra, template="Pole_icon",
-                radius=spec.radius * 0.65,
+                radius=spec.radius,
                 fallback_normal=(0.0, 0.0, 1.0),
                 mirror_left=spec.side is FitBuildSide.LEFT)
             pole = (self._cmds.ls(pole, long=True) or [pole])[0]

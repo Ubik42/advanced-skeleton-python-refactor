@@ -26,7 +26,7 @@ BodyLegControlValidationError = BodyLimbControlValidationError
 def plan_body_leg_fk_controls(
     body: BodySkeletonSnapshot,
     *,
-    radius: float = 1.75,
+    radius: float = 1.5,
     driven_joint_by_source: Mapping[str, str] | None = None,
     sub_controllers: bool = False,
     extra_controllers: bool = False,

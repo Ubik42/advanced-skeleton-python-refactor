@@ -181,7 +181,7 @@ class BuildBodyLegRig:
         container_name: str = "FitSkeleton",
         *,
         body_root_name: str = "Root_M",
-        control_radius: float = 1.75,
+        control_radius: float = 1.5,
         pole_distance_scale: float = 0.75,
         twist_joints_per_segment: int = 2,
         center_tolerance: float = 0.01,
@@ -198,7 +198,7 @@ class BuildBodyLegRig:
         )
 
     def plan_from_safety(
-        self, safety: BodyRebuildSafetyAudit, *, control_radius: float = 1.75,
+        self, safety: BodyRebuildSafetyAudit, *, control_radius: float = 1.5,
         pole_distance_scale: float = 0.75, twist_joints_per_segment: int = 2,
     ) -> BodyLegRigBuildPlan:
         """Plan this module from the character's shared immutable input."""
@@ -362,7 +362,7 @@ class BuildBodyLegRig:
         container_name: str = "FitSkeleton",
         *,
         body_root_name: str = "Root_M",
-        control_radius: float = 1.75,
+        control_radius: float = 1.5,
         pole_distance_scale: float = 0.75,
         twist_joints_per_segment: int = 2,
         center_tolerance: float = 0.01,
