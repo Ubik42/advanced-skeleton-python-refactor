@@ -64,7 +64,12 @@ class FitPartTwistProjection:
 def plan_standard_fit_part_rotation_inputs(
     parts: tuple[FitPartJointSpec, ...],
 ) -> tuple[FitPartRotationInput, ...]:
-    """Resolve established Arm/Leg channels for standard limb Fit chains."""
+    """Resolve twist channels for every non-bendy Fit Part chain.
+
+    The named Arm/Leg mechanisms retain their dedicated inputs. Other Fit
+    joints use their driven Body rotation, which the existing twist projection
+    converts to a local X angle before Part distribution.
+    """
     starts = {part.start_body: part for part in parts}
     result = []
     for start, part in starts.items():
@@ -85,8 +90,8 @@ def plan_standard_fit_part_rotation_inputs(
                 ik + ".rotate", ik + ".rotateOrder",
                 f"AdvPy_LegSettings.legIkFk_{side}"))
         else:
-            raise FitPartTwistValidationError(
-                "标准扭转来源未定义，需显式提供：" + part.start_body_name)
+            result.append(FitPartRotationInput(
+                start, start + ".rotate", start + ".rotateOrder"))
     return tuple(result)
 
 
