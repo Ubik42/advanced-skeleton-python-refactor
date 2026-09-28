@@ -365,7 +365,9 @@ class BuildBodyCharacterRig:
         fk_scale_compensations = plan_body_fk_scale_compensation(
             arm.fk_controls.controls + leg.fk_controls.controls,
             safety.symmetry.instances,
-            safety.symmetry.source.metadata)
+            safety.symmetry.source.metadata,
+            use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).use_offset_parent_matrix)
         fk_controls = (
             arm.fk_controls.controls + leg.fk_controls.controls
             + (hand.controls.controls if hand else ())

@@ -59,7 +59,8 @@ class MayaBodyFkScaleCompensationMixin:
                              settable=True)
                for attr in ("translateX", "translateY", "translateZ",
                             "rotateX", "rotateY", "rotateZ",
-                            "scaleX", "scaleY", "scaleZ")):
+                            "scaleX", "scaleY", "scaleZ",
+                            "shearXY", "shearXZ", "shearYZ")):
             raise ValueError("FK Offset 本地通道不可写："
                              + spec.offset_path)
 
@@ -96,18 +97,38 @@ class MayaBodyFkScaleCompensationMixin:
         c.setAttr(offset + ".translate", 0, 0, 0)
         c.setAttr(offset + ".rotate", 0, 0, 0)
         c.setAttr(offset + ".scale", 1, 1, 1)
-        c.connectAttr(relative + ".matrixSum",
-                      offset + ".offsetParentMatrix")
+        c.setAttr(offset + ".shear", 0, 0, 0)
+        if spec.use_offset_parent_matrix:
+            c.connectAttr(relative + ".matrixSum",
+                          offset + ".offsetParentMatrix")
+        else:
+            decompose = c.createNode("decomposeMatrix",
+                                     name=spec.decompose_matrix_name)
+            c.setAttr(decompose + ".inputRotateOrder",
+                      c.getAttr(offset + ".rotateOrder"))
+            c.connectAttr(relative + ".matrixSum",
+                          decompose + ".inputMatrix")
+            for source, destination in (
+                    ("outputTranslate", "translate"),
+                    ("outputRotate", "rotate"),
+                    ("outputScale", "scale"),
+                    ("outputShear", "shear")):
+                c.connectAttr(decompose + "." + source,
+                              offset + "." + destination)
 
     def capture_body_fk_scale_compensation(
         self, spec: BodyFkScaleCompensationSpec,
     ) -> bool:
         c = self._cmds
-        world, pick, relative = spec.node_names
+        world = spec.world_matrix_name
+        pick = spec.pick_matrix_name
+        relative = spec.relative_matrix_name
         if any(not c.objExists(name) or c.nodeType(name) != kind
                for name, kind in ((world, "multMatrix"),
                                   (pick, "pickMatrix"),
-                                  (relative, "multMatrix"))):
+                                  (relative, "multMatrix"))
+               + (((spec.decompose_matrix_name, "decomposeMatrix"),)
+                  if not spec.use_offset_parent_matrix else ())):
             return False
         links = (
             (spec.scale_source_path + ".worldMatrix[0]",
@@ -118,24 +139,42 @@ class MayaBodyFkScaleCompensationMixin:
             (pick + ".outputMatrix", relative + ".matrixIn[0]"),
             (spec.parent_control_path + ".worldInverseMatrix[0]",
              relative + ".matrixIn[1]"),
-            (relative + ".matrixSum",
-             spec.offset_path + ".offsetParentMatrix"),
         )
+        if spec.use_offset_parent_matrix:
+            links += ((relative + ".matrixSum",
+                       spec.offset_path + ".offsetParentMatrix"),)
+        else:
+            decompose = spec.decompose_matrix_name
+            links += ((relative + ".matrixSum",
+                       decompose + ".inputMatrix"),)
+            links += tuple((decompose + "." + source,
+                            spec.offset_path + "." + destination)
+                           for source, destination in (
+                               ("outputTranslate", "translate"),
+                               ("outputRotate", "rotate"),
+                               ("outputScale", "scale"),
+                               ("outputShear", "shear")))
         if (not c.attributeQuery("inheritScale", node=spec.control_path,
                                  exists=True)
                 or bool(c.getAttr(spec.control_path + ".inheritScale"))
                 != spec.inherit_scale
+                or (not spec.use_offset_parent_matrix
+                    and c.getAttr(spec.decompose_matrix_name
+                                  + ".inputRotateOrder")
+                    != c.getAttr(spec.offset_path + ".rotateOrder"))
                 or any(c.connectionInfo(target,
                        sourceFromDestination=True) != source
                        for source, target in links)):
             return False
-        for attr, expected in (("translate", (0.0, 0.0, 0.0)),
-                               ("rotate", (0.0, 0.0, 0.0)),
-                               ("scale", (1.0, 1.0, 1.0))):
-            current = c.getAttr(spec.offset_path + "." + attr)[0]
-            if any(abs(float(a) - b) > 1e-5
-                   for a, b in zip(current, expected)):
-                return False
+        if spec.use_offset_parent_matrix:
+            for attr, expected in (("translate", (0.0, 0.0, 0.0)),
+                                   ("rotate", (0.0, 0.0, 0.0)),
+                                   ("scale", (1.0, 1.0, 1.0)),
+                                   ("shear", (0.0, 0.0, 0.0))):
+                current = c.getAttr(spec.offset_path + "." + attr)[0]
+                if any(abs(float(a) - b) > 1e-5
+                       for a, b in zip(current, expected)):
+                    return False
         actual = _matrix(c.xform(spec.offset_path, query=True,
                                  worldSpace=True, matrix=True))
         expected = tuple(value for axis in spec.world_axes

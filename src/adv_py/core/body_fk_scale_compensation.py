@@ -16,23 +16,31 @@ class BodyFkScaleCompensationSpec:
     scale_source_path: str
     control_path: str
     inherit_scale: bool
+    use_offset_parent_matrix: bool
     world_position: tuple[float, float, float]
     world_axes: tuple[tuple[float, float, float], ...]
     world_matrix_name: str
     pick_matrix_name: str
     relative_matrix_name: str
+    decompose_matrix_name: str
 
     @property
-    def node_names(self) -> tuple[str, str, str]:
-        return (self.world_matrix_name, self.pick_matrix_name,
-                self.relative_matrix_name)
+    def node_names(self) -> tuple[str, ...]:
+        names = (self.world_matrix_name, self.pick_matrix_name,
+                 self.relative_matrix_name)
+        return (names if self.use_offset_parent_matrix
+                else names + (self.decompose_matrix_name,))
 
 
 def plan_body_fk_scale_compensation(
     controls: tuple[BodyLimbFkControlSpec, ...],
     instances: tuple[FitSymmetryInstance, ...],
     metadata: tuple[FitJointMetadata, ...],
+    *,
+    use_offset_parent_matrix: bool,
 ) -> tuple[BodyFkScaleCompensationSpec, ...]:
+    if type(use_offset_parent_matrix) is not bool:
+        raise ValueError("FK 缩放补偿需要明确的 OPM 构建选项")
     source_by_output = {item.output_path: item.source_joint
                         for item in instances}
     metadata_by_source = {item.joint: item for item in metadata}
@@ -66,10 +74,10 @@ def plan_body_fk_scale_compensation(
         spec = BodyFkScaleCompensationSpec(
             control.offset_path, control.parent_path,
             parent_control.sub_control_path or parent_control.control_path,
-            control.control_path, not enabled,
+            control.control_path, not enabled, use_offset_parent_matrix,
             control.world_position, control.world_axes,
             prefix + "World", prefix + "Pick",
-            prefix + "Relative")
+            prefix + "Relative", prefix + "Decompose")
         if any(name in names for name in spec.node_names):
             raise ValueError("FK 缩放补偿节点名称重复：" + leaf)
         names.update(spec.node_names)
