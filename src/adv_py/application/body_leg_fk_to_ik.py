@@ -145,7 +145,8 @@ class MatchBodyLegFkToIk:
         foot = plan_body_leg_foot(
             body, ik,
             legacy_toe_controls=not self._host.body_leg_toe_extra_mode(ik),
-            legacy_roll_controls=not self._host.body_leg_roll_control_mode(ik))
+            legacy_roll_controls=not self._host.body_leg_roll_control_mode(ik),
+            up_axis=symmetry.source.up_axis)
         match = plan_body_leg_fk_to_ik(
             body,
             ik,

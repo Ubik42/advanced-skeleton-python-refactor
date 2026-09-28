@@ -96,7 +96,8 @@ class BuildBodyLegFoot:
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).extra_controllers,
         )
-        foot = plan_body_leg_foot(body, ik)
+        foot = plan_body_leg_foot(
+            body, ik, up_axis=symmetry.source.up_axis)
         provenance = audit_body_provenance(
             oriented_body_provenance(
                 symmetry.source.hierarchy.container, len(symmetry.instances)

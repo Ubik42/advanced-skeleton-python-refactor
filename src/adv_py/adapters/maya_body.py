@@ -6104,7 +6104,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         translation=pivot.world_position)
                     self._cmds.xform(
                         offset, worldSpace=True,
-                        rotation=(0.0, pivot.roll_heading, 0.0))
+                        rotation=pivot.roll_world_rotation)
                     extra_parent = offset
                     if pivot.roll_roller_name:
                         extra_parent = self._cmds.createNode(

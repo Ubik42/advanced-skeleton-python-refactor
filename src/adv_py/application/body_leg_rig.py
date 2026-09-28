@@ -245,7 +245,8 @@ class BuildBodyLegRig:
                 for spec in knee_pin.sides
             },
         )
-        foot = plan_body_leg_foot(safety.body, ik)
+        foot = plan_body_leg_foot(
+            safety.body, ik, up_axis=safety.symmetry.source.up_axis)
         names = [
             mechanisms.root_name,
             fk_controls.root_name,

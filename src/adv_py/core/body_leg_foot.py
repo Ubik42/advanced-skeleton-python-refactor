@@ -7,6 +7,7 @@ from math import atan2, degrees, isfinite
 from .body_leg_ik import BodyLegIkPlan
 from .body_controller_appearance import body_fk_curve_radius
 from .body_skeleton import BodySkeletonSnapshot
+from .fit_container import FitUpAxis
 from .fit_symmetry import AxisFrame, FitBuildSide
 
 
@@ -48,7 +49,7 @@ class BodyLegFootPivotSpec:
     roll_roller_name: str = ""
     roll_roller_path: str = ""
     roll_roller_source: str = ""
-    roll_heading: float = 0.0
+    roll_world_rotation: Vector3 = (0.0, 0.0, 0.0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,11 +231,14 @@ def plan_body_leg_foot(
     ik: BodyLegIkPlan,
     *, legacy_toe_controls: bool = False,
     legacy_roll_controls: bool = False,
+    up_axis: FitUpAxis = FitUpAxis.Y,
 ) -> BodyLegFootPlan:
     if type(legacy_toe_controls) is not bool:
         raise BodyLegFootValidationError("Toe 控制器版本选项无效")
     if type(legacy_roll_controls) is not bool:
         raise BodyLegFootValidationError("Roll 控制器版本选项无效")
+    if not isinstance(up_axis, FitUpAxis):
+        raise BodyLegFootValidationError("Foot 场景 Up Axis 无效")
     body_by_name = {joint.name: joint for joint in body.joints}
     if len(body_by_name) != len(body.joints):
         raise BodyLegFootValidationError("Body 关节名称必须唯一")
@@ -282,12 +286,19 @@ def plan_body_leg_foot(
 
         ankle_position = limb.ankle_position
         toes_position = body_by_name[f"Toes_{suffix}"].world_position
-        heading_vector = (toes_position[0] - ankle_position[0],
-                          toes_position[2] - ankle_position[2])
+        dx = toes_position[0] - ankle_position[0]
+        forward = (toes_position[2] - ankle_position[2]
+                   if up_axis is FitUpAxis.Y
+                   else toes_position[1] - ankle_position[1])
+        heading_vector = (dx, forward)
         if not legacy_roll_controls and sum(v * v for v in heading_vector) <= 1e-12:
             raise BodyLegFootValidationError(
                 f"Foot Roll 朝向需要非零的 Ankle→Toes 水平距离：{suffix}")
-        roll_heading = degrees(atan2(*heading_vector)) if not legacy_roll_controls else 0.0
+        heading = degrees(atan2(dx if up_axis is FitUpAxis.Y else -dx,
+                                forward)) if not legacy_roll_controls else 0.0
+        roll_world_rotation = ((0.0, heading, 0.0)
+                               if up_axis is FitUpAxis.Y else
+                               (0.0, 0.0, heading))
 
         parent = limb.ankle_control_path
         pivots = []
@@ -361,7 +372,7 @@ def plan_body_leg_foot(
                     f"AdvPy_RollToesMultiply2_{suffix}.outputX"
                     if role is BodyLegFootPivotRole.BALL else ""
                 ) if roll_roller_name else "",
-                roll_heading=roll_heading,
+                roll_world_rotation=roll_world_rotation,
             ))
             parent = path
         toe_pivot_path = next(
@@ -611,7 +622,7 @@ def audit_body_leg_foot(
                     and (actual_pivot.roll_offset_world_rotation is None
                          or not _close_angles(
                              actual_pivot.roll_offset_world_rotation,
-                             (0.0, pivot.roll_heading, 0.0), tolerance))):
+                             pivot.roll_world_rotation, tolerance))):
                 issues.append(BodyLegFootIssue(
                     "foot_roll_heading", "Roll 控制朝向不一致", subject))
             if check_initial_pose and not _close(
