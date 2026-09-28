@@ -87,6 +87,7 @@ class BodyLegFootRockSpec:
 @dataclass(frozen=True, slots=True)
 class BodyLegFootSideSpec:
     side: FitBuildSide
+    legacy_roll_controls: bool
     ankle_control_path: str
     control_parent_path: str
     handle_name: str
@@ -123,10 +124,10 @@ class BodyLegFootSideSpec:
 
     @property
     def attributes(self) -> tuple[str, ...]:
-        roll_attributes = (("swivel", self.roll.master_attribute,
-                            "rollStartAngle", "rollEndAngle")
-                           if self.pivots[0].roll_control_name
-                           else (self.roll.master_attribute,))
+        roll_attributes = ((self.roll.master_attribute,)
+                           if self.legacy_roll_controls else
+                           ("swivel", self.roll.master_attribute,
+                            "rollStartAngle", "rollEndAngle"))
         return roll_attributes + (("rock",) if self.rock else ()) + tuple(
             pivot.attribute for pivot in self.pivots if pivot.source_plug
         )
@@ -501,7 +502,7 @@ def plan_body_leg_foot(
                     BodyLegFootPivotRole.BALL,
                 )
             ),
-        )
+        ) if legacy_roll_controls else ()
         if not legacy_roll_controls:
             start = f"{limb.ankle_control_path}.rollStartAngle"
             end = f"{limb.ankle_control_path}.rollEndAngle"
@@ -584,6 +585,7 @@ def plan_body_leg_foot(
             roll_nodes += rock_nodes
         sides.append(BodyLegFootSideSpec(
             side=limb.side,
+            legacy_roll_controls=legacy_roll_controls,
             ankle_control_path=limb.ankle_control_path,
             control_parent_path=control_parent_path,
             handle_name=limb.handle_name,
