@@ -83,6 +83,49 @@ class FBXRigImportPlan:
     bind_pose_joints: tuple[FBXRigSourceJoint, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class FBXRigGameRootMotionPlan:
+    joint_path: str
+    body_root_path: str
+    offset_path: str
+    follow_path: str
+    extra_path: str
+    control_path: str
+    follow_constraint: str
+    body_constraint: str
+    source_constraint: str
+    range_node: str
+    radius: float
+
+    @property
+    def node_names(self) -> tuple[str, ...]:
+        return (self.joint_path.rsplit("|", 1)[-1],
+                self.offset_path.rsplit("|", 1)[-1],
+                self.follow_path.rsplit("|", 1)[-1],
+                self.extra_path.rsplit("|", 1)[-1],
+                self.control_path.rsplit("|", 1)[-1],
+                self.follow_constraint, self.body_constraint,
+                self.source_constraint, self.range_node)
+
+
+def plan_fbx_game_root_motion(
+    plan: FBXRigImportPlan,
+) -> FBXRigGameRootMotionPlan:
+    if plan.game_root_joint is None or not isfinite(plan.scale) or plan.scale <= 0:
+        raise ValueError("FBX rig 游戏根关节或角色比例无效")
+    deformation = "|Group|DeformationSystem"
+    system = "|Group|MotionSystem|RootSystem"
+    joint = deformation + "|RootMotion_M"
+    offset = system + "|FKOffsetRootMotion_M"
+    follow = offset + "|FKFollowRootMotion_M"
+    extra = follow + "|FKExtraRootMotion_M"
+    return FBXRigGameRootMotionPlan(
+        joint, joint + "|Root_M", offset, follow, extra,
+        extra + "|FKRootMotion_M", "FKFollowRootMotion_M_parentConstraint1",
+        "RootMotion_M_parentConstraint1", "AdvPy_FBX_GameRoot_Parent",
+        "RootMotion_MRange", max(plan.scale * 17.176163 / 20.0, .01))
+
+
 def audit_fbx_fit_guides(
     plan: FBXRigImportPlan,
     actual: tuple[FBXRigFitGuideState, ...],

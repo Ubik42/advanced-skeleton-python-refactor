@@ -9,11 +9,11 @@ from adv_py.application.oriented_fit_template import BuildOrientedFitTemplate
 from adv_py.application.oriented_body_skeleton import BuildOrientedBodySkeleton
 from adv_py.application.registered_body_build import _JoinedTransactionHost
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
-from adv_py.core.fbx_rig_import import FBXRigImportPlan, FBXRigSourceJoint
+from adv_py.core.fbx_rig_import import (FBXRigImportPlan, FBXRigSourceJoint,
+                                        plan_fbx_game_root_motion)
 from adv_py.core.fbx_rig_import import (FBXRigControlTransferPlan,
                                         FBXRigFitGuideState)
 from adv_py.core.fbx_rig_fk import plan_fbx_rig_fk_controls
-from adv_py.core.body_root_motion import plan_body_root_motion
 from adv_py.core.fit_orientation import (FitOrientationChildSelection,
                                          FitOrientationRequest)
 from adv_py.core.fit_template import FitJointSpec, FitTemplateSpec
@@ -417,24 +417,85 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         self, plan: FBXRigImportPlan, source_paths: dict[str, str],
     ) -> None:
         self._require_transaction()
-        if plan.game_root_joint is None:
-            raise ValueError("FBX rig 没有游戏根关节")
+        motion = plan_fbx_game_root_motion(plan)
         c = self._cmds
         body_root = self._only_fbx_node("Root_M", "joint")
-        root_motion = plan_body_root_motion(
-            source_root_path=body_root,
-            up_axis=self.scene_up_axis(),
-            output_basename="RootMotion_M")
-        if any(c.objExists(name) for name in root_motion.node_names):
+        if body_root != "|Group|DeformationSystem|Root_M":
+            raise ValueError("FBX rig Root Body 已被改挂")
+        if any(c.objExists(name) for name in motion.node_names):
             raise ValueError("FBX rig Root Motion 名称已被占用")
-        self.create_body_root_motion(root_motion)
+        if any((c.ls(path, long=True, type="transform") or []) != [path]
+               for path in ("|Group|DeformationSystem",
+                            "|Group|MotionSystem|RootSystem",
+                            "|Group|MotionSystem|MainSystem",
+                            "|Group|MotionSystem|MainSystem|Main")):
+            raise ValueError("FBX rig Root Motion 缺少主控系统")
+        self._transaction_changed = True
+        root_motion = c.createNode("joint", name="RootMotion_M",
+            parent="|Group|DeformationSystem", skipSelect=True)
+        c.setAttr(root_motion + ".segmentScaleCompensate", False)
+        moved = c.parent(body_root, root_motion, absolute=True)[0]
+        if (c.ls(root_motion, long=True, type="joint") or ()) != [motion.joint_path]:
+            raise RuntimeError("FBX rig Root Motion 关节路径漂移")
+        if (c.ls(moved, long=True, type="joint") or ()) != [motion.body_root_path]:
+            raise RuntimeError("FBX rig Root Body 改挂失败")
+        offset = c.createNode("transform", name="FKOffsetRootMotion_M",
+            parent="|Group|MotionSystem|RootSystem", skipSelect=True)
+        follow = c.createNode("transform", name="FKFollowRootMotion_M",
+            parent=offset, skipSelect=True)
+        extra = c.createNode("transform", name="FKExtraRootMotion_M",
+            parent=follow, skipSelect=True)
+        control = c.circle(name="FKRootMotion_M", normal=(0, 1, 0),
+            radius=motion.radius, constructionHistory=False)[0]
+        control = c.parent(control, extra, relative=True)[0]
+        for node, expected in ((offset, motion.offset_path),
+                               (follow, motion.follow_path),
+                               (extra, motion.extra_path),
+                               (control, motion.control_path)):
+            if (c.ls(node, long=True, type="transform") or ()) != [expected]:
+                raise RuntimeError("FBX rig Root Motion 控制层路径漂移")
+        shapes = c.listRelatives(control, shapes=True,
+            noIntermediate=True, fullPath=True, type="nurbsCurve") or ()
+        if len(shapes) != 1:
+            raise RuntimeError("FBX rig Root Motion 控制曲线缺失")
+        c.setAttr(shapes[0] + ".overrideEnabled", True)
+        c.setAttr(shapes[0] + ".overrideColor", 17)
+        c.sets((control, extra), add="ControlSet")
+        driven = c.parentConstraint(control, root_motion,
+            maintainOffset=False, name=motion.body_constraint)
+        if len(driven) != 1:
+            raise RuntimeError("FBX rig Root Motion 控制约束创建失败")
+        main = "|Group|MotionSystem|MainSystem|Main"
+        main_system = "|Group|MotionSystem|MainSystem"
+        follow_constraint = c.parentConstraint(main, main_system, follow,
+            maintainOffset=False, name=motion.follow_constraint)
+        if len(follow_constraint) != 1:
+            raise RuntimeError("FBX rig Root Motion 跟随约束创建失败")
+        aliases = c.parentConstraint(follow_constraint[0], query=True,
+                                      weightAliasList=True) or ()
+        if len(aliases) != 2:
+            raise RuntimeError("FBX rig Root Motion 跟随权重不完整")
+        c.addAttr(control, longName="followMain", attributeType="double",
+                  minValue=0, maxValue=10, defaultValue=0, keyable=True)
+        value_range = c.createNode("setRange", name=motion.range_node,
+                                    skipSelect=True)
+        for attr, value in (("maxX", 1), ("minY", 1),
+                            ("oldMaxX", 10), ("oldMaxY", 10)):
+            c.setAttr(value_range + "." + attr, value)
+        for axis in "XY":
+            c.connectAttr(control + ".followMain",
+                          value_range + ".value" + axis)
+        c.connectAttr(value_range + ".outValueX",
+                      follow_constraint[0] + "." + aliases[0])
+        c.connectAttr(value_range + ".outValueY",
+                      follow_constraint[0] + "." + aliases[1])
         source = self._only_fbx_node(
             source_paths[plan.game_root_joint], "joint")
-        name = "AdvPy_FBX_GameRoot_Parent"
-        self._transaction_changed = True
-        c.parentConstraint(root_motion.output_path, source,
-                           maintainOffset=True, name=name)
-        self._fbx_game_root_constraint = name
+        source_constraint = c.parentConstraint(root_motion, source,
+            maintainOffset=True, name=motion.source_constraint)
+        if len(source_constraint) != 1:
+            raise RuntimeError("FBX rig 游戏根关节约束创建失败")
+        self._fbx_game_root_constraint = motion.source_constraint
 
     def restore_fbx_scene_time(self, source: FBXRigSourceCapture) -> None:
         c = self._cmds
@@ -509,8 +570,58 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             for link in transfer.links))
         game_connected = False
         if plan.game_root_joint is not None:
-            name = getattr(self, "_fbx_game_root_constraint", "")
-            game_connected = bool(name and c.objExists(name))
+            motion = plan_fbx_game_root_motion(plan)
+            paths = ((motion.joint_path, "joint"),
+                     (motion.body_root_path, "joint"),
+                     (motion.offset_path, "transform"),
+                     (motion.follow_path, "transform"),
+                     (motion.extra_path, "transform"),
+                     (motion.control_path, "transform"))
+            present = all((c.ls(path, long=True, type=kind) or []) == [path]
+                          for path, kind in paths)
+            constraints = (motion.follow_constraint,
+                           motion.body_constraint,
+                           motion.source_constraint)
+            if (present and all(c.objExists(name) for name in constraints)
+                    and c.objExists(motion.range_node)):
+                follow_targets = c.parentConstraint(
+                    motion.follow_constraint, query=True,
+                    targetList=True) or ()
+                aliases = c.parentConstraint(
+                    motion.follow_constraint, query=True,
+                    weightAliasList=True) or ()
+                source_targets = c.parentConstraint(
+                    motion.source_constraint, query=True,
+                    targetList=True) or ()
+                driver_targets = c.parentConstraint(
+                    motion.body_constraint, query=True,
+                    targetList=True) or ()
+                main = "|Group|MotionSystem|MainSystem|Main"
+                system = "|Group|MotionSystem|MainSystem"
+                game_source = source_paths[plan.game_root_joint]
+                resolved = lambda names: tuple((c.ls(name, long=True)
+                    or (None,))[0] for name in names)
+                game_connected = (
+                    resolved(follow_targets) == (main, system)
+                    and resolved(source_targets) == (motion.joint_path,)
+                    and resolved(driver_targets) == (motion.control_path,)
+                    and (c.listRelatives(motion.source_constraint,
+                        parent=True, fullPath=True) or []) == [game_source]
+                    and (c.listRelatives(motion.body_constraint,
+                        parent=True, fullPath=True) or []) == [motion.joint_path]
+                    and (c.listRelatives(motion.follow_constraint,
+                        parent=True, fullPath=True) or []) == [motion.follow_path]
+                    and len(aliases) == 2
+                    and all(c.isConnected(
+                        motion.control_path + ".followMain",
+                        motion.range_node + ".value" + axis)
+                        for axis in "XY")
+                    and all(c.isConnected(
+                        motion.range_node + ".outValue" + axis,
+                        motion.follow_constraint + "." + alias)
+                        for axis, alias in zip("XY", aliases))
+                    and not bool(c.getAttr(motion.joint_path
+                                           + ".segmentScaleCompensate")))
         return FBXRigBuildAudit(
             fit_guide_count=len(self.capture_fbx_fit_guides(plan)),
             paired_side_count=sum(
