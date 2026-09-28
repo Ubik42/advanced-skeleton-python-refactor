@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from adv_py.core.body_build_options import BodyBuildOptions
+from adv_py.core.body_hand_fit import body_hand_source_joint_names
 from adv_py.core.body_skeleton import (
     BodyJointSpec,
     FitDeformProfile,
@@ -12,6 +13,7 @@ from adv_py.core.body_skeleton import (
     audit_body_skeleton,
 )
 from adv_py.core.fit_orientation import FitOrientationSnapshot
+from adv_py.core.fit_scale_compensation import fit_segment_scale_compensate
 from adv_py.core.fit_settings import (
     FitSkeletonSettings, FitSkeletonValidationError,
 )
@@ -128,7 +130,11 @@ class BuildBodySkeleton:
             for node in symmetry.source.hierarchy.joints
         }
         build_options = BodyBuildOptions.from_fit_settings(symmetry.settings)
-        segment_scale_compensate = not build_options.use_offset_parent_matrix
+        canonical_fingers = frozenset(body_hand_source_joint_names())
+        metadata_by_joint = {
+            item.joint: item for item in symmetry.source.metadata}
+        if len(metadata_by_joint) != len(symmetry.source.metadata):
+            raise FitSkeletonValidationError("Fit 元数据关节路径重复")
         missing_labels: list[str] = []
         inferred_labels: list[str] = []
         for node in symmetry.source.hierarchy.joints:
@@ -147,7 +153,15 @@ class BuildBodySkeleton:
                 profiles[instance.source_joint],
                 skin_enabled[instance.source_joint],
                 rotation_orders[instance.source_joint],
-                segment_scale_compensate,
+                (not build_options.use_offset_parent_matrix
+                 and fit_segment_scale_compensate(
+                     metadata_by_joint[instance.source_joint],
+                     instance.output_name,
+                     (instance.parent_output_path.rsplit("|", 1)[-1]
+                      if instance.parent_output_path else ""),
+                     use_offset_parent_matrix=False,
+                     is_finger=(instance.output_name.rsplit("_", 1)[0]
+                                in canonical_fingers))),
                 profile_presence[instance.source_joint])
             for instance in symmetry.instances
             if instance.source_joint in labels

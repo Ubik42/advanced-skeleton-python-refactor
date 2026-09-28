@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 
 from .body_limb_controls import BodyLimbFkControlSpec
 from .fit_metadata import FitJointMetadata
+from .fit_scale_compensation import fit_segment_scale_compensate
 from .fit_symmetry import FitSymmetryInstance
 
 
@@ -74,15 +74,14 @@ def plan_body_fk_scale_compensation(
             raise ValueError("FK 缩放补偿缺少 Fit 元数据："
                              + control.driven_joint)
         leaf = control.driven_joint.rsplit("|", 1)[-1]
-        stem = leaf.rsplit("_", 1)[0]
-        parent_leaf = control.parent_path.rsplit("|", 1)[-1]
-        parent_stem = parent_leaf.rsplit("_", 1)[0]
-        enabled = (fit.seg_scale_comp if fit.seg_scale_comp is not None
-                   else not (control.control_path in finger_control_paths
-                             or any(token in stem for token in
-                                 ("Finger", "Cup", "Toes"))
-                             or "Head" in parent_stem
-                             or re.search(r"Part[0-9]", stem) is not None))
+        parent_source = source_by_output.get(
+            generated_source_by_output.get(parent_control.driven_joint,
+                                           parent_control.driven_joint))
+        enabled = fit_segment_scale_compensate(
+            fit, source.rsplit("|", 1)[-1],
+            parent_source.rsplit("|", 1)[-1] if parent_source else "",
+            use_offset_parent_matrix=use_offset_parent_matrix,
+            is_finger=control.control_path in finger_control_paths)
         prefix = "AdvPy_" + leaf + "_FkScaleComp"
         spec = BodyFkScaleCompensationSpec(
             control.offset_path, control.parent_path,
