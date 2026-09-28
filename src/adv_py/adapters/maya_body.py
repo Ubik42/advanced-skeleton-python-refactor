@@ -6385,9 +6385,16 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     self._cmds.xform(
                         offset, worldSpace=True,
                         translation=pivot.world_position)
-                    self._cmds.xform(
-                        offset, worldSpace=True,
-                        rotation=pivot.roll_world_rotation)
+                    if pivot.roll_world_axes is None:
+                        self._cmds.xform(
+                            offset, worldSpace=True,
+                            rotation=pivot.roll_world_rotation)
+                    else:
+                        x_axis, y_axis, z_axis = pivot.roll_world_axes
+                        self._cmds.xform(
+                            offset, worldSpace=True,
+                            matrix=(*x_axis, 0.0, *y_axis, 0.0,
+                                    *z_axis, 0.0, *pivot.world_position, 1.0))
                     if (spec.high_heel is not None
                             and pivot.role is BodyLegFootPivotRole.HEEL):
                         high = spec.high_heel
@@ -6803,6 +6810,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         self._cmds.xform(roll_nodes[0], query=True,
                                          worldSpace=True, rotation=True))
                         if roll_nodes else None),
+                    roll_offset_world_axes=(
+                        self._spine_world_frame(roll_nodes[0])[1]
+                        if roll_nodes and pivot.roll_world_axes is not None
+                        else None),
                     roll_control_rotation=(tuple(float(value) for value in
                         self._cmds.getAttr(roll_nodes[2] + ".rotate")[0])
                         if roll_nodes else None),

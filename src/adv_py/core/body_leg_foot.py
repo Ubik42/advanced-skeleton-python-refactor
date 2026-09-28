@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from math import atan2, degrees, isfinite
+from math import atan2, degrees, isfinite, sqrt
 
 from .body_leg_ik import BodyLegIkPlan
 from .body_controller_appearance import body_fk_curve_radius
@@ -17,6 +17,30 @@ Vector3 = tuple[float, float, float]
 
 class BodyLegFootValidationError(ValueError):
     pass
+
+
+def _qtoes_roll_axes(position: Vector3, hip, side: FitBuildSide) -> AxisFrame:
+    """MEL's QToes-upstream aim: local Y toward Hip, local Z from Hip Y."""
+    def unit(vector):
+        length = sqrt(sum(value * value for value in vector))
+        if length <= 1e-8:
+            raise BodyLegFootValidationError(
+                "QToes Roll 朝向缺少非退化的腿根方向或上方向")
+        return tuple(value / length for value in vector)
+
+    def cross(left, right):
+        return (left[1] * right[2] - left[2] * right[1],
+                left[2] * right[0] - left[0] * right[2],
+                left[0] * right[1] - left[1] * right[0])
+
+    y_axis = unit(tuple(a - b for a, b in zip(hip.world_position, position)))
+    world_up = hip.world_axes[1]
+    projection = sum(a * b for a, b in zip(world_up, y_axis))
+    sign = -1.0 if side is FitBuildSide.LEFT else 1.0
+    z_axis = unit(tuple(sign * (a - projection * b)
+                        for a, b in zip(world_up, y_axis)))
+    x_axis = unit(cross(y_axis, z_axis))
+    return (x_axis, y_axis, unit(cross(x_axis, y_axis)))
 
 
 def requested_foot_pivot_sides(
@@ -62,6 +86,7 @@ class BodyLegFootPivotSpec:
     roll_roller_path: str = ""
     roll_roller_source: str = ""
     roll_world_rotation: Vector3 = (0.0, 0.0, 0.0)
+    roll_world_axes: AxisFrame | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +264,7 @@ class BodyLegFootPivotState:
     roll_roller_rotation_source: str | None = None
     roll_offset_world_rotation: Vector3 | None = None
     roll_control_rotation: Vector3 | None = None
+    roll_offset_world_axes: AxisFrame | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -420,6 +446,14 @@ def plan_body_leg_foot(
         if any(body_by_name[f"{marker}_{suffix}"].side is not limb.side
                for _, marker, *_ in marker_roles):
             raise BodyLegFootValidationError(f"Foot 标记侧向与名称不一致：{suffix}")
+        ankle_joint = body_by_name[f"Ankle_{suffix}"]
+        qtoes = tuple(joint for joint in body.joints
+                      if joint.side is limb.side
+                      and joint.path.startswith(ankle_joint.path + "|")
+                      and "QToes" in joint.label.text)
+        if qtoes and up_axis is not FitUpAxis.Y:
+            raise BodyLegFootValidationError(
+                "原版 QToes Roll 局部朝向要求 Y-up 场景")
 
         ankle_position = limb.ankle_position
         toes_position = body_by_name[f"Toes_{suffix}"].world_position
@@ -516,6 +550,16 @@ def plan_body_leg_foot(
                   rock.outer_path if rock else control_parent_path)
         pivots = []
         for role, marker, attribute, axis, multiplier in marker_roles:
+            marker_joint = body_by_name[f"{marker}_{suffix}"]
+            above_qtoes = bool(qtoes) and any(
+                joint.path.startswith(marker_joint.path + "|")
+                and "Toes" in joint.label.text
+                and "ToesEnd" not in joint.label.text
+                for joint in body.joints)
+            roll_world_axes = (
+                _qtoes_roll_axes(marker_joint.world_position,
+                                 body_by_name[f"Hip_{suffix}"], limb.side)
+                if above_qtoes and not legacy_roll_controls else None)
             roll_offset_name = (f"AdvPy_RollOffset{marker}_{suffix}"
                                 if not legacy_roll_controls else "")
             roll_offset_path = (f"{parent}|{roll_offset_name}"
@@ -637,6 +681,7 @@ def plan_body_leg_foot(
                     if role is BodyLegFootPivotRole.BALL else ""
                 ) if roll_roller_name else "",
                 roll_world_rotation=roll_world_rotation,
+                roll_world_axes=roll_world_axes,
             ))
             parent = manual_reverse_path if manual_enabled else path
         toe_pivot_path = next(
@@ -1055,11 +1100,21 @@ def audit_body_leg_foot(
                                        pivot.world_position, tolerance))):
                 issues.append(BodyLegFootIssue(
                     "foot_roll_control_position", "Roll 控制初始位置不一致", subject))
-            if (pivot.roll_control_name and check_initial_pose
-                    and (actual_pivot.roll_offset_world_rotation is None
-                         or not _close_angles(
-                             actual_pivot.roll_offset_world_rotation,
-                             pivot.roll_world_rotation, tolerance))):
+            if pivot.roll_world_axes is not None:
+                heading_matches = (
+                    actual_pivot.roll_offset_world_axes is not None
+                    and len(actual_pivot.roll_offset_world_axes) == 3
+                    and all(_close(actual, expected, tolerance)
+                            for actual, expected in zip(
+                                actual_pivot.roll_offset_world_axes,
+                                pivot.roll_world_axes)))
+            else:
+                heading_matches = (
+                    actual_pivot.roll_offset_world_rotation is not None
+                    and _close_angles(
+                        actual_pivot.roll_offset_world_rotation,
+                        pivot.roll_world_rotation, tolerance))
+            if pivot.roll_control_name and check_initial_pose and not heading_matches:
                 issues.append(BodyLegFootIssue(
                     "foot_roll_heading", "Roll 控制朝向不一致", subject))
             if check_initial_pose and not _close(
