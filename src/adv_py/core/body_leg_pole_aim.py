@@ -48,13 +48,18 @@ class BodyLegPoleAimSpec:
                     (self.follow_name,) if self.follow_name else ())
 
 
-def plan_body_leg_pole_aim(ik, torso=None, *, parent_source=None,
-                           attach_pole=False):
+def plan_body_leg_pole_aim(ik, torso=None, *, foot=None,
+                           parent_source=None, attach_pole=False):
     if (torso is None) == (parent_source is None):
         raise ValueError('PoleAim 需要唯一的父级来源')
     source = torso.leg_lock.path if torso is not None else parent_source
+    eligible = ({side.side for side in foot.sides
+                 if 'swivel' in side.attributes}
+                if foot is not None else {limb.side for limb in ik.limbs})
     result = []
     for limb in ik.limbs:
+        if limb.side not in eligible:
+            continue
         suffix = limb.side.value
         result.append(BodyLegPoleAimSpec(
             side=limb.side,

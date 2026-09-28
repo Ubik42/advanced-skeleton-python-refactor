@@ -148,7 +148,7 @@ def audit_registered_pole_aim(host, registration):
                      if ':' in short_name else '')
         expected_name = namespace + f'AdvPy_PoleAimTarget_{suffix}'
         if target.rsplit('|', 1)[-1] != expected_name:
-            if space.body_target_sources:
+            if space.body_target_sources and target != space.body_source:
                 raise FitSkeletonValidationError('Leg PoleAim 登记来源名称不一致')
             continue
         channel = channels.get(f'foot.{suffix}.swivel')

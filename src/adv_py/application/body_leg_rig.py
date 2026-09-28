@@ -268,7 +268,7 @@ class BuildBodyLegRig:
             foot_pivots_by_side=frozenset(requested_pivots))
         pole_aim = (
             plan_body_leg_pole_aim(
-                ik,
+                ik, foot=foot,
                 parent_source=safety.body.root, attach_pole=True)
             if (not defer_pole_aim and BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).use_offset_parent_matrix)

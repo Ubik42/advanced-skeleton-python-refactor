@@ -73,19 +73,19 @@ def plan_body_control_spaces(body, torso, arm, leg, global_control,
         neck_controls[0].control_path, global_control.control_path,
         True, "body")]
     pole_aim_by_side = {spec.side: spec.target_path for spec in pole_aim}
-    if pole_aim and (len(pole_aim_by_side) != len(pole_aim)
-                     or set(pole_aim_by_side) != {limb.side for limb in leg.ik.limbs}):
-        raise FitSkeletonValidationError("Leg PoleAim 必须覆盖每一侧且不可重复")
+    if len(pole_aim_by_side) != len(pole_aim) or not set(pole_aim_by_side).issubset(
+            {limb.side for limb in leg.ik.limbs}):
+        raise FitSkeletonValidationError("Leg PoleAim 侧别无效或重复")
     for module, label, source in ((arm, "hand", joints["Chest_M"]), (leg, "foot", body.root)):
         for limb in module.ik.limbs:
             goal = limb.wrist_offset_path if label == "hand" else limb.ankle_offset_path
-            pole_source = (pole_aim_by_side.get(limb.side, source)
-                           if label == "foot" else source)
+            pole_source = (pole_aim_by_side.get(limb.side)
+                           if label == "foot" else None)
             spaces.append(BodyControlSpaceSpec(
                 f"{label}_{limb.side.value}", (goal, limb.pole_offset_path), source,
                 global_control.control_path, False,
-                "body" if label == "foot" and pole_aim else "global",
-                (source, pole_source),
+                "body" if pole_source else "global",
+                (source, pole_source) if pole_source else (),
             ))
     targets = [target for spec in spaces for target in spec.targets]
     if len(set(targets)) != len(targets):

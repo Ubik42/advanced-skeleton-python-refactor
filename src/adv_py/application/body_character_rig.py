@@ -379,7 +379,7 @@ class BuildBodyCharacterRig:
                         for item in safety.symmetry.source.metadata))
             else None)
         pole_aim = (
-            plan_body_leg_pole_aim(leg.ik, torso.torso)
+            plan_body_leg_pole_aim(leg.ik, torso.torso, foot=leg.foot)
             if include_control_spaces and torso is not None
             and BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).use_offset_parent_matrix
