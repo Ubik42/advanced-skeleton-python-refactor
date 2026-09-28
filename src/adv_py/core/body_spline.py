@@ -166,7 +166,8 @@ def with_spline_ik(body,torso,description):
         extra_path=extra,extra_name=extra_name,
         extra_curve=pelvis.extra_curve,
         sub_control_path=(base_control+'|'+sub_name if sub_name else None),
-        sub_control_name=sub_name)
+        sub_control_name=sub_name,
+        fit_joint_names=(source[0].name.rsplit("_", 1)[0],))
     updated=[pelvis,base];parent=base.control_path;fk=[parent]
     by_joint={c.driven_joint:c for c in torso.controls.controls}
     for index,joint in enumerate(source[1:],1):

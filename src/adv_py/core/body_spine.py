@@ -117,6 +117,7 @@ def with_spine_ik(body, torso):
         sub_control_path=(base_control + "|" + base_sub_name
                           if base_sub_name else None),
         sub_control_name=base_sub_name,
+        fit_joint_names=(source[0].name.rsplit("_", 1)[0],),
     )
     waist = reparent_body_fk_control(
         waist, base.control_path, driven_joint=specs[1].path)

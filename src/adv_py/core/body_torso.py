@@ -181,6 +181,7 @@ def plan_body_torso(
             extra_path=extra_path,
             extra_name=extra_name,
             extra_curve=build_options.extra_controllers,
+            fit_joint_names=(name.rsplit("_", 1)[0],),
         )
         by_joint[name] = spec
         controls.append(spec)

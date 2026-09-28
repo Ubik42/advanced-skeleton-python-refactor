@@ -39,6 +39,7 @@ class BodyLimbFkControlSpec:
     extra_path: str | None = None
     extra_name: str | None = None
     extra_curve: bool = False
+    fit_joint_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +243,7 @@ def plan_body_limb_fk_controls(
                 extra_path=extra_path,
                 extra_name=extra_name,
                 extra_curve=extra_controllers,
+                fit_joint_names=(joint_name,),
             ))
             parent_path = control_path
             previous_joint = state.path

@@ -361,6 +361,8 @@ def plan_body_hand_fk_controls(
                     extra_path=extra_path,
                     extra_name=extra_name,
                     extra_curve=build_options.extra_controllers,
+                    fit_joint_names=(f"{digit.value}{index}",
+                                     f"{digit.value}Finger{index}"),
                 ))
                 parent_path = control_path
     return BodyHandFkControlPlan(tuple(roots), tuple(controls))

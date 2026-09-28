@@ -163,7 +163,7 @@ def create_adv_icon(commands, *, name: str, parent: str,
     return control
 
 
-def original_fit_icon_axis_offset(commands, control_name: str
+def original_fit_icon_axis_offset(commands, fit_joint_names: tuple[str, ...]
                                   ) -> tuple[float, float, float]:
     """Resolve asGetAxis(..., Main, 0) for a standard FK control."""
     fit = commands.ls("|Group|FitSkeleton", long=True,
@@ -175,27 +175,22 @@ def original_fit_icon_axis_offset(commands, control_name: str
                   and bool(commands.getAttr(fit[0] + ".worldmatch")))
     primary, secondary = "X", "Y"
     if worldmatch:
-        match = re.fullmatch(r"AdvPy_(.+)FK_[RL]",
-                             control_name.rsplit(":", 1)[-1])
-        if match is None:
-            raise ValueError("FK 控制器名称不能解析 Fit 关节：" + control_name)
-        source_name = re.sub(r"Part[0-9]+$", "", match.group(1))
-        candidates = (source_name,)
-        finger = re.fullmatch(r"(Thumb|Index|Middle|Ring|Pinky)([1-4])",
-                              source_name)
-        if finger:
-            candidates += (finger.group(1) + "Finger" + finger.group(2),)
+        if (not fit_joint_names
+                or any(not isinstance(name, str) or not name
+                       for name in fit_joint_names)):
+            raise ValueError("FK 控制器缺少明确的 Fit 关节名称")
         joints = commands.listRelatives(fit[0], allDescendents=True,
                                         fullPath=True, type="joint") or ()
         source = []
-        for candidate in candidates:
+        for candidate in fit_joint_names:
             source = [joint for joint in joints
                       if joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
                       == candidate]
             if source:
                 break
         if len(source) != 1:
-            raise ValueError("控制器图标找不到唯一 Fit 关节：" + source_name)
+            raise ValueError("控制器图标找不到唯一 Fit 关节："
+                             + "／".join(fit_joint_names))
         def axis(attribute: str, default: str) -> str:
             if not commands.attributeQuery(attribute, node=source[0],
                                            exists=True):

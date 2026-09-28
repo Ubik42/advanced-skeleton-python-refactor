@@ -7081,7 +7081,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 radius=spec.radius,
                 fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12,
                 axis_offset=original_fit_icon_axis_offset(
-                    self._cmds, spec.control_name))
+                    self._cmds, spec.fit_joint_names))
             control = (self._cmds.ls(control, long=True) or [control])[0]
             if offset != spec.offset_path or control != spec.control_path:
                 raise RuntimeError(

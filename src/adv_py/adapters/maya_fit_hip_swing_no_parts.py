@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from adv_py.core.fit_hip_swing_no_parts import HipSwingNoPartsPlan
-from .maya_adv_icons import create_adv_icon
+from .maya_adv_icons import create_adv_icon, original_fit_icon_axis_offset
 
 
 class MayaHipSwingNoPartsMixin:
@@ -83,7 +83,8 @@ class MayaHipSwingNoPartsMixin:
                 c, name=plan.control_name, parent=offset,
                 template="HipSwinger_icon", radius=plan.radius,
                 fallback_normal=(1.0, 0.0, 0.0),
-                fallback_sections=16)
+                fallback_sections=16,
+                axis_offset=original_fit_icon_axis_offset(c, ("Root",)))
             c.addAttr(control, longName="advPyHipSwingOwner",
                       dataType="string")
             c.setAttr(control + ".advPyHipSwingOwner",
