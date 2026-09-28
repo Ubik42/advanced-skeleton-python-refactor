@@ -8,6 +8,7 @@ from adv_py.core.character_preservation import CharacterPreservation,RebuildOwne
 from .character_preservation import CaptureBodyCharacterPreservation
 from .fit_skeleton_io import ExportFitSkeleton,CreateAndImportFitSkeleton
 from .oriented_body_skeleton import BuildOrientedBodySkeleton
+from .registered_body_build import _JoinedTransactionHost
 from .body_character_rig import BuildBodyCharacterRig
 from .character_registry import RegisterBodyCharacter
 from .character_limb_animation import EnableBodyCharacterLimbAnimation
@@ -40,7 +41,13 @@ class StageBodyCharacterRebuild:
                     raise RuntimeError('重建暂存前原角色发生变化')
                 stage=host.create_character_rebuild_host(namespace)
                 CreateAndImportFitSkeleton(stage).apply(fit)
-                BuildOrientedBodySkeleton(stage).apply()
+                with stage.transaction('Stage Body system hierarchy'):
+                    joined = _JoinedTransactionHost(stage)
+                    deformation = joined.create_body_system_hierarchy()
+                    if deformation != '|Group|DeformationSystem':
+                        raise RuntimeError('重建暂存 DeformationSystem 路径漂移')
+                    skeleton = BuildOrientedBodySkeleton(joined).apply(
+                        root_parent_path=deformation)
                 keys={channel.key for channel in original.registration.channels}
                 from adv_py.core.body_spline import BodySplinePlan
                 from adv_py.core.body_description import BodyAxialDescription
@@ -63,6 +70,13 @@ class StageBodyCharacterRebuild:
                 rig=BuildBodyCharacterRig(stage).apply(include_torso=True,include_spine_ik=True,include_control_spaces=True,
                     include_head_aim='head.aim.headAim' in keys,axial_description=description)
                 registration=RegisterBodyCharacter(stage).apply(rig)
+                if stage.capture_body_system_hierarchy(skeleton.snapshot.root) != (
+                    ('|Group', None, 'transform'),
+                    ('|Group|DeformationSystem', '|Group', 'transform'),
+                    ('|Group|Geometry', '|Group', 'transform'),
+                    (skeleton.snapshot.root, '|Group|DeformationSystem', 'joint'),
+                ):
+                    raise RuntimeError('重建暂存角色的 Body 系统层级不一致')
                 if any('.ikOrientation.' in key for key in keys):registration=EnableBodyCharacterLimbAnimation(stage).apply()
                 if any('.ikLengthWeight.' in key for key in keys):registration=EnableBodyCharacterStretchMatching(stage).apply()
                 if any(key.startswith('space.') for key in keys):registration=EnableBodyCharacterSpaceAnimation(stage).apply()
