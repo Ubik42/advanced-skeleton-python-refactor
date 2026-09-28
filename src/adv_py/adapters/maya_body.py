@@ -476,14 +476,36 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         self.preflight_body_mesh(path)
         return path
 
+    def parent_fit_skeleton_under_group(self, container_name: str) -> str:
+        self._require_transaction()
+        matches = self._cmds.ls(
+            container_name, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise FitSkeletonValidationError("FitSkeleton 容器不存在或不唯一")
+        fit_path = matches[0]
+        leaf = fit_path.rsplit("|", 1)[-1]
+        parents = self._cmds.listRelatives(
+            fit_path, parent=True, fullPath=True) or []
+        if parents:
+            raise FitSkeletonValidationError(
+                "FitSkeleton 必须从场景根层移入 Group")
+        self._transaction_changed = True
+        moved = self._cmds.parent(fit_path, "|Group")[0]
+        path = (self._cmds.ls(moved, long=True) or [moved])[0]
+        if path != "|Group|" + leaf:
+            raise RuntimeError("FitSkeleton 移入 Group 后路径漂移")
+        return path
+
     def capture_body_system_hierarchy(
         self, body_root_path: str,
+        fit_container_path: str = "|Group|FitSkeleton",
     ) -> tuple[tuple[str, str | None, str], ...]:
         if bool(self._cmds.getAttr("|Group|Geometry.inheritsTransform")):
             raise FitSkeletonValidationError(
                 "角色 Geometry 不得继承 Group 变换")
-        paths = ("|Group", "|Group|DeformationSystem",
-                 "|Group|Geometry", body_root_path)
+        paths = ("|Group", fit_container_path,
+                 "|Group|DeformationSystem", "|Group|Geometry",
+                 body_root_path)
         rows = []
         for path in paths:
             matches = self._cmds.ls(path, long=True) or []

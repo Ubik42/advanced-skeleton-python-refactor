@@ -46,7 +46,10 @@ class StageBodyCharacterRebuild:
                     deformation = joined.create_body_system_hierarchy()
                     if deformation != '|Group|DeformationSystem':
                         raise RuntimeError('重建暂存 DeformationSystem 路径漂移')
+                    fit_path = joined.parent_fit_skeleton_under_group(
+                        'FitSkeleton')
                     skeleton = BuildOrientedBodySkeleton(joined).apply(
+                        fit_path,
                         root_parent_path=deformation)
                 keys={channel.key for channel in original.registration.channels}
                 from adv_py.core.body_spline import BodySplinePlan
@@ -72,6 +75,7 @@ class StageBodyCharacterRebuild:
                 registration=RegisterBodyCharacter(stage).apply(rig)
                 if stage.capture_body_system_hierarchy(skeleton.snapshot.root) != (
                     ('|Group', None, 'transform'),
+                    ('|Group|FitSkeleton', '|Group', 'transform'),
                     ('|Group|DeformationSystem', '|Group', 'transform'),
                     ('|Group|Geometry', '|Group', 'transform'),
                     (skeleton.snapshot.root, '|Group|DeformationSystem', 'joint'),

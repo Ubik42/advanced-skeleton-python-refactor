@@ -214,24 +214,39 @@ class BuildRegisteredBodyCharacter:
               include_segment_influences: bool = False,
               use_fit_part_hierarchy: bool = False,
               fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
+              _hierarchy_prepared: bool = False,
               ) -> RegisteredBodyBuildResult:
         if use_fit_part_hierarchy and not include_segment_influences:
             raise ValueError("通用 Fit Part 构建需要启用分段 Skin 影响")
         if not use_fit_part_hierarchy and fit_part_twist_sources:
             raise ValueError("扭转来源只能随通用 Fit Part 构建提供")
+        if not _hierarchy_prepared:
+            hierarchy_collisions = tuple(
+                path for name in ("Group", "DeformationSystem", "Geometry")
+                for path in self._host.find_name_collisions(name))
+            if hierarchy_collisions:
+                raise FitSkeletonValidationError(
+                    "角色系统层级名称已被占用："
+                    + "、".join(hierarchy_collisions))
+            with self._host.transaction("构建并登记完整 Body 角色"):
+                joined = _JoinedTransactionHost(self._host)
+                if joined.create_body_system_hierarchy() != _DEFORMATION_SYSTEM_PATH:
+                    raise RuntimeError("Body 变形系统层级创建路径漂移")
+                fit_path = joined.parent_fit_skeleton_under_group(container_name)
+                return BuildRegisteredBodyCharacter(joined).apply(
+                    fit_path, axial_description=axial_description,
+                    include_head_aim=include_head_aim,
+                    infer_missing_labels=infer_missing_labels,
+                    include_segment_influences=include_segment_influences,
+                    use_fit_part_hierarchy=use_fit_part_hierarchy,
+                    fit_part_twist_sources=fit_part_twist_sources,
+                    _hierarchy_prepared=True)
         preview = BuildOrientedBodySkeleton(self._host).plan(
             container_name, infer_missing_labels=infer_missing_labels,
             root_parent_path=_DEFORMATION_SYSTEM_PATH)
         if not preview.ready:
             raise FitSkeletonValidationError(
                 "角色构建预检失败，场景未修改：" + "；".join(preview.blockers))
-        hierarchy_collisions = tuple(
-            path for name in ("Group", "DeformationSystem", "Geometry")
-            for path in self._host.find_name_collisions(name))
-        if hierarchy_collisions:
-            raise FitSkeletonValidationError(
-                "角色系统层级名称已被占用："
-                + "、".join(hierarchy_collisions))
         rotation_inputs = ()
         bendy_chains = ()
         untwister_sources: frozenset[str] = frozenset()
@@ -310,8 +325,6 @@ class BuildRegisteredBodyCharacter:
                 "无 Root Part 的自定义 HipSwinger 须标记脊柱首节")
         with self._host.transaction("构建并登记完整 Body 角色"):
             joined = _JoinedTransactionHost(self._host)
-            if joined.create_body_system_hierarchy() != _DEFORMATION_SYSTEM_PATH:
-                raise RuntimeError("Body 变形系统层级创建路径漂移")
             skeleton = BuildOrientedBodySkeleton(joined).apply(
                 container_name, infer_missing_labels=infer_missing_labels,
                 root_parent_path=_DEFORMATION_SYSTEM_PATH)
@@ -647,9 +660,10 @@ class BuildRegisteredBodyCharacter:
             if joined.has_body_build_pose_overrides():
                 GoToBodyBuildPose(joined).apply()
             hierarchy = joined.capture_body_system_hierarchy(
-                skeleton.snapshot.root)
+                skeleton.snapshot.root, container_name)
             if hierarchy != (
                 ("|Group", None, "transform"),
+                (container_name, "|Group", "transform"),
                 (_DEFORMATION_SYSTEM_PATH, "|Group", "transform"),
                 ("|Group|Geometry", "|Group", "transform"),
                 (skeleton.snapshot.root, _DEFORMATION_SYSTEM_PATH, "joint"),
