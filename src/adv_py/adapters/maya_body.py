@@ -439,7 +439,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         if any(self.find_name_collisions(name)
                for name in ("Group", "DeformationSystem", "Geometry",
                             "MotionSystem", "FKSystem", "IKSystem",
-                            "FKIKSystem", "TwistSystem")):
+                            "FKIKSystem", "TwistSystem", "BendSystem")):
             raise FitSkeletonValidationError(
                 "角色系统层级名称已被占用")
         group = self._cmds.createNode(
@@ -465,6 +465,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         self._cmds.createNode(
             "transform", name="TwistSystem", parent=motion,
             skipSelect=True)
+        bend = self._cmds.createNode(
+            "transform", name="BendSystem", parent=motion,
+            skipSelect=True)
+        self._cmds.setAttr(f"{bend}.inheritsTransform", False)
+        self._cmds.setAttr(f"{bend}.inheritsTransform", lock=True)
         for kind in ("translate", "rotate", "scale"):
             for axis in "XYZ":
                 self._cmds.setAttr(
@@ -538,6 +543,13 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         if bool(self._cmds.getAttr("|Group|Geometry.inheritsTransform")):
             raise FitSkeletonValidationError(
                 "角色 Geometry 不得继承 Group 变换")
+        if (bool(self._cmds.getAttr(
+                "|Group|MotionSystem|BendSystem.inheritsTransform"))
+                or not bool(self._cmds.getAttr(
+                    "|Group|MotionSystem|BendSystem.inheritsTransform",
+                    lock=True))):
+            raise FitSkeletonValidationError(
+                "角色 BendSystem 不得继承 MotionSystem 变换")
         if any(
             not bool(self._cmds.getAttr(
                 f"|Group.{kind}{axis}", lock=True))
@@ -559,6 +571,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                  "|Group|MotionSystem|IKSystem",
                  "|Group|MotionSystem|FKIKSystem",
                  "|Group|MotionSystem|TwistSystem",
+                 "|Group|MotionSystem|BendSystem",
                  body_root_path)
         rows = []
         for path in paths:

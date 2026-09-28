@@ -67,6 +67,7 @@ class BodyCharacterGlobalPlan:
             ("fkVis", "|Group|MotionSystem|FKSystem"),
             ("ikVis", "|Group|MotionSystem|IKSystem"),
             ("fkIkVis", "|Group|MotionSystem|FKIKSystem"),
+            ("bendVis", "|Group|MotionSystem|BendSystem"),
         )
 
     @property

@@ -436,7 +436,10 @@ class MayaFitBendyMixin:
         for index, group in enumerate(_GROUPS):
             if c.objExists(group):
                 continue
-            parent = _GROUPS[0] if index else None
+            parent = (_GROUPS[0] if index else
+                      "|Group|MotionSystem|BendSystem"
+                      if c.objExists("|Group|MotionSystem|BendSystem")
+                      else None)
             options = {"parent": parent} if parent else {}
             node = c.createNode("transform", name=group,
                                 skipSelect=True, **options)
@@ -444,6 +447,10 @@ class MayaFitBendyMixin:
                       dataType="string")
             c.setAttr(node + ".advPyBendyGuideOwner", _OWNER,
                       type="string", lock=True)
+            if index == 2 and c.objExists(
+                    "MainScaleMultiplyDivide.output"):
+                c.connectAttr("MainScaleMultiplyDivide.output",
+                              node + ".scale")
             self._transaction_changed = True
 
     def create_fit_bendy_guides(
@@ -865,12 +872,17 @@ class MayaFitBendyMixin:
         self._require_transaction()
         c = self._cmds
         if not c.objExists(_MICRO_GROUP):
+            parent = "|Group|MotionSystem"
+            options = ({"parent": parent} if c.objExists(parent) else {})
             group = c.createNode("transform", name=_MICRO_GROUP,
-                                 skipSelect=True)
+                                 skipSelect=True, **options)
             c.addAttr(group, longName="advPyBendyGuideOwner",
                       dataType="string")
             c.setAttr(group + ".advPyBendyGuideOwner", _OWNER,
                       type="string", lock=True)
+            if c.objExists("MainScaleMultiplyDivide.output"):
+                c.connectAttr("MainScaleMultiplyDivide.output",
+                              group + ".scale")
         master = spec.control_names[0]
         c.addAttr(master, longName="microVis", attributeType="bool",
                   defaultValue=False, keyable=False)
@@ -1010,6 +1022,15 @@ class MayaFitBendyMixin:
         if (not c.objExists(_MICRO_GROUP)
                 or not c.objExists(master + ".microVis")):
             return False
+        if c.objExists("|Group|MotionSystem"):
+            if ((c.listRelatives(_MICRO_GROUP, parent=True,
+                                 fullPath=True) or [])
+                    != ["|Group|MotionSystem"]
+                    or c.connectionInfo(
+                        _MICRO_GROUP + ".scale",
+                        sourceFromDestination=True)
+                    != "MainScaleMultiplyDivide.output"):
+                return False
         for control, (output, matrix, decompose, project) in zip(
                 spec.control_names, spec.twist_projection_names):
             if (not c.objExists(output)
@@ -1123,6 +1144,15 @@ class MayaFitBendyMixin:
         self, spec: FitBendyChainSpec
     ) -> bool:
         c = self._cmds
+        bend_path = "|Group|MotionSystem|BendSystem"
+        if c.objExists(bend_path):
+            if (c.listRelatives(_GROUPS[0], parent=True,
+                                fullPath=True) or []) != [bend_path]:
+                return False
+            if (c.connectionInfo(_GROUPS[2] + ".scale",
+                                 sourceFromDestination=True)
+                    != "MainScaleMultiplyDivide.output"):
+                return False
         curve = c.ls(spec.curve_name, long=True,
                      type="transform") or []
         if len(curve) != 1:
