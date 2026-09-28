@@ -132,10 +132,10 @@ def plan_body_root_motion(
     if (
         not isinstance(source_root_path, str)
         or not source_root_path.startswith("|")
-        or source_root_path.count("|") != 1
+        or any(not segment for segment in source_root_path[1:].split("|"))
     ):
         raise BodyRootMotionValidationError(
-            "Root Motion 来源必须是场景根层的完整 DAG 路径"
+            "Root Motion 来源必须是完整 DAG 路径"
         )
     if not isinstance(up_axis, FitUpAxis):
         raise BodyRootMotionValidationError("Root Motion Up Axis 无效")
@@ -148,7 +148,7 @@ def plan_body_root_motion(
     ):
         raise BodyRootMotionValidationError("Root Motion 输出基名无效")
 
-    source_name = source_root_path[1:]
+    source_name = source_root_path.rsplit("|", 1)[-1]
     namespace = source_name.rsplit(":", 1)[0] + ":" if ":" in source_name else ""
     output_name = f"{namespace}{output_basename}"
     planar_axes = (

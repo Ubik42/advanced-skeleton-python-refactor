@@ -176,17 +176,26 @@ def plan_fit_part_final_paths(
     if len(set(names)) != len(names):
         raise FitPartValidationError("Body／Part 名称必须全局唯一")
     parents: dict[str, str | None] = {}
+    external_root: dict[str, str] = {}
     for spec in body_specs:
-        parents[spec.name] = (
-            spec.parent_path.rsplit("|", 1)[-1]
-            if spec.parent_path else None)
+        parent_name = (spec.parent_path.rsplit("|", 1)[-1]
+                       if spec.parent_path else None)
+        if parent_name is not None and parent_name not in body_names:
+            if (not spec.parent_path.startswith("|")
+                    or spec.parent_path == spec.path
+                    or spec.path != spec.parent_path + "|" + spec.name):
+                raise FitPartValidationError("Body 外部根父级路径无效")
+            external_root[spec.name] = spec.parent_path
+            parent_name = None
+        parents[spec.name] = parent_name
     for spec in parts:
         parents[spec.name] = spec.parent_name
     for spec in reparents:
         if spec.child_name not in body_names or spec.parent_part_name not in part_names:
             raise FitPartValidationError("Part 改挂包含未知关节")
         parents[spec.child_name] = spec.parent_part_name
-    if sum(parent is None for parent in parents.values()) != 1:
+    if (sum(parent is None for parent in parents.values()) != 1
+            or len(external_root) > 1):
         raise FitPartValidationError("Part 最终层级必须恰有一个根关节")
 
     resolved: dict[str, str] = {}
@@ -201,7 +210,8 @@ def plan_fit_part_final_paths(
         parent = parents[name]
         if parent is not None and parent not in parents:
             raise FitPartValidationError("Part 最终层级父关节不存在：" + name)
-        path = (resolve(parent) + "|" if parent else "|") + name
+        prefix = (resolve(parent) if parent else external_root.get(name, ""))
+        path = prefix + "|" + name
         visiting.remove(name)
         resolved[name] = path
         return path

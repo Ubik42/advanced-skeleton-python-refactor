@@ -48,7 +48,7 @@ class BodyExportJointSpec:
 
     @property
     def is_root(self) -> bool:
-        return self.source_parent_path is None
+        return self.root_constraint_name is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,7 +202,8 @@ def plan_body_export_skeleton(
             "Export Skeleton 输出前缀无效"
         )
     states = sorted(body.joints, key=lambda item: (item.path.count("|"), item.path))
-    if states[0].path != body.root or states[0].parent_path is not None:
+    if (states[0].path != body.root
+            or states[0].parent_path != (body.root.rsplit("|", 1)[0] or None)):
         raise BodyExportSkeletonValidationError("Body root 拓扑无效")
     if len({state.path for state in states}) != len(states):
         raise BodyExportSkeletonValidationError("Body joint 路径重复")
@@ -211,12 +212,12 @@ def plan_body_export_skeleton(
             "Export Skeleton 当前要求 Body joint 短名唯一"
         )
 
-    source_name = body.root[1:]
+    source_name = body.root.rsplit("|", 1)[-1]
     namespace = source_name.rsplit(":", 1)[0] + ":" if ":" in source_name else ""
     output_paths: dict[str, str] = {}
     specs = []
     for state in states:
-        if state.parent_path is None:
+        if state.path == body.root:
             output_parent = root_motion.output_path
         else:
             try:
@@ -241,7 +242,7 @@ def plan_body_export_skeleton(
             world_axes=state.world_axes,
             root_constraint_name=(
                 f"{output_name}_ParentConstraint"
-                if state.parent_path is None
+                if state.path == body.root
                 else None
             ),
         ))

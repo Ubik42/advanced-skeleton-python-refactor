@@ -181,10 +181,18 @@ def decode_registration(text):
         for row in data["body"]:
             exact(row,("path","parent","matrix"))
             body.append(CharacterBindJoint(path(row["path"]),path(row["parent"]) if row["parent"] else None,vector(row["matrix"],16)))
-        if not 2 <= len(body) <= 256 or len({j.path for j in body}) != len(body) or {j.path for j in body if j.parent is None} != {root}:
+        if not 2 <= len(body) <= 256 or len({j.path for j in body}) != len(body):
             raise CharacterRegistryError("登记身体数量或根节点无效")
         paths = {j.path for j in body}
-        if any(j.parent and (j.parent not in paths or j.path.rsplit("|",1)[0] != j.parent) for j in body):
+        roots = [joint for joint in body if joint.path == root]
+        if len(roots) != 1:
+            raise CharacterRegistryError("登记 Body 根关节无效")
+        external_parent = root.rsplit("|", 1)[0] or None
+        if roots[0].parent != external_parent or any(
+                joint.path != root and (
+                    joint.parent not in paths
+                    or joint.path.rsplit("|", 1)[0] != joint.parent)
+                for joint in body):
             raise CharacterRegistryError("Body 父链无效")
         nodes = []
         for row in data["nodes"]:
@@ -201,6 +209,10 @@ def decode_registration(text):
             nodes.append(CharacterNode(path(row["path"]),row["uuid"],row["node_type"],path(row["parent"]) if row["parent"] else None,tuple(inputs)))
         if len({n.path for n in nodes}) != len(nodes) or len({n.uuid for n in nodes}) != len(nodes):
             raise CharacterRegistryError("登记节点身份重复")
+        if external_parent is not None and not any(
+                node.path == external_parent and node.node_type == "transform"
+                for node in nodes):
+            raise CharacterRegistryError("Body 根关节外部父级未登记")
         if spline_document:
             from .spline_registration import decode_spline
             spine = decode_spline(data["spine"], tuple(body))
