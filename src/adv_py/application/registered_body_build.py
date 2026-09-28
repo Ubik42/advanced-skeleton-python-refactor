@@ -659,6 +659,7 @@ class BuildRegisteredBodyCharacter:
                              for extra in chain.micro_extra_names))
             if joined.has_body_build_pose_overrides():
                 GoToBodyBuildPose(joined).apply()
+            joined.finalize_fit_skeleton_visibility(container_name)
             hierarchy = joined.capture_body_system_hierarchy(
                 skeleton.snapshot.root, container_name)
             if hierarchy != (

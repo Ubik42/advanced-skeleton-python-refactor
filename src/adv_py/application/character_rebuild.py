@@ -51,6 +51,7 @@ class StageBodyCharacterRebuild:
                     skeleton = BuildOrientedBodySkeleton(joined).apply(
                         fit_path,
                         root_parent_path=deformation)
+                    joined.finalize_fit_skeleton_visibility(fit_path)
                 keys={channel.key for channel in original.registration.channels}
                 from adv_py.core.body_spline import BodySplinePlan
                 from adv_py.core.body_description import BodyAxialDescription

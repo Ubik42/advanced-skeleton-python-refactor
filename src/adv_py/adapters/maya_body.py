@@ -496,6 +496,19 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             raise RuntimeError("FitSkeleton 移入 Group 后路径漂移")
         return path
 
+    def finalize_fit_skeleton_visibility(self, container_path: str) -> None:
+        self._require_transaction()
+        matches = self._cmds.ls(
+            container_path, long=True, type="transform") or []
+        if matches != [container_path] or not container_path.startswith(
+                "|Group|") or container_path.count("|") != 2:
+            raise FitSkeletonValidationError("待隐藏 Fit 容器层级无效")
+        plug = container_path + ".visibility"
+        self._transaction_changed = True
+        self._cmds.setAttr(plug, lock=False)
+        self._cmds.setAttr(plug, False)
+        self._cmds.setAttr(plug, lock=True)
+
     def capture_body_system_hierarchy(
         self, body_root_path: str,
         fit_container_path: str = "|Group|FitSkeleton",
@@ -503,6 +516,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         if bool(self._cmds.getAttr("|Group|Geometry.inheritsTransform")):
             raise FitSkeletonValidationError(
                 "角色 Geometry 不得继承 Group 变换")
+        fit_visibility = fit_container_path + ".visibility"
+        if (bool(self._cmds.getAttr(fit_visibility))
+                or not bool(self._cmds.getAttr(fit_visibility, lock=True))):
+            raise FitSkeletonValidationError(
+                "构建完成的 Fit 容器可见性必须关闭并锁定")
         paths = ("|Group", fit_container_path,
                  "|Group|DeformationSystem", "|Group|Geometry",
                  body_root_path)
