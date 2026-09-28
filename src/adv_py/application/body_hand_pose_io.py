@@ -34,6 +34,7 @@ from adv_py.core.body_hand_pose_io import (
 from adv_py.core.body_skeleton import (
     BodySkeletonSnapshot,
     audit_body_provenance,
+    body_source_container,
     oriented_body_provenance,
 )
 from adv_py.core.fit_settings import (
@@ -152,13 +153,14 @@ class InspectBodyHandPoseRig:
         self,
         *,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         expected_joint_count: int = 70,
         control_radius: float = 0.3,
         access_mode: BodyHandPoseAccessMode = BodyHandPoseAccessMode.READ_ONLY,
         target_side: FitBuildSide | None = None,
     ) -> BodyHandPoseRigInspection:
         body = self._host.capture_body_skeleton(body_root_name)
+        source_container = body_source_container(body, source_container)
         provenance_issues = audit_body_provenance(
             oriented_body_provenance(source_container, expected_joint_count),
             body.provenance,

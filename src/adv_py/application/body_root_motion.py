@@ -20,7 +20,7 @@ from adv_py.core.body_skeleton import (
     BodySkeletonSnapshot,
     audit_body_provenance,
     body_skeleton_unchanged,
-    oriented_body_provenance,
+    expected_body_provenance,
 )
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -110,11 +110,11 @@ class BuildBodyRootMotion:
         self,
         *,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         output_basename: str = "AdvPy_GameRootMotion",
     ) -> BodyRootMotionBuildPlan:
         body = self._host.capture_body_skeleton(body_root_name)
-        expected = oriented_body_provenance(source_container, len(body.joints))
+        expected = expected_body_provenance(body, source_container)
         provenance_issues = audit_body_provenance(expected, body.provenance)
         root_motion = plan_body_root_motion(
             source_root_path=body.root,
@@ -137,7 +137,7 @@ class BuildBodyRootMotion:
         self,
         *,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         output_basename: str = "AdvPy_GameRootMotion",
     ) -> BodyRootMotionBuildResult:
         plan = self.plan(
@@ -187,11 +187,11 @@ class BakeBodyRootMotion:
         end_frame: int,
         sample_by: int = 1,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         output_basename: str = "AdvPy_GameRootMotion",
     ) -> BodyRootMotionBakeBuildPlan:
         body = self._host.capture_body_skeleton(body_root_name)
-        expected = oriented_body_provenance(source_container, len(body.joints))
+        expected = expected_body_provenance(body, source_container)
         provenance_issues = audit_body_provenance(expected, body.provenance)
         root_motion = plan_body_root_motion(
             source_root_path=body.root,
@@ -222,7 +222,7 @@ class BakeBodyRootMotion:
         end_frame: int,
         sample_by: int = 1,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         output_basename: str = "AdvPy_GameRootMotion",
     ) -> BodyRootMotionBakeResult:
         plan = self.plan(

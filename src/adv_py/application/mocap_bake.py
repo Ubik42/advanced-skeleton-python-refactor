@@ -28,7 +28,7 @@ class BakeMocapBody:
     def plan(
         self, source_root_name: str, mappings: Sequence[MocapJointMapping], *,
         start_frame: int, end_frame: int, sample_by: int = 1,
-        body_root_name: str = "Root_M", source_container: str = "|FitSkeleton",
+        body_root_name: str = "Root_M", source_container: str | None = None,
         expected_body_joint_count: int = 30,
     ) -> MocapBodyBakePlan:
         mapping = InspectMocapBodyMapping(self._host).execute(

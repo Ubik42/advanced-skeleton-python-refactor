@@ -26,7 +26,7 @@ from adv_py.core.body_skeleton import (
     BodySkeletonSnapshot,
     audit_body_provenance,
     body_skeleton_unchanged,
-    oriented_body_provenance,
+    expected_body_provenance,
 )
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -123,12 +123,12 @@ class BuildBodyExportSkeleton:
         self,
         *,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         root_motion_basename: str = "AdvPy_GameRootMotion",
         output_prefix: str = "AdvPy_EXP_",
     ) -> BodyExportSkeletonBuildPlan:
         body = self._host.capture_body_skeleton(body_root_name)
-        expected = oriented_body_provenance(source_container, len(body.joints))
+        expected = expected_body_provenance(body, source_container)
         provenance_issues = audit_body_provenance(expected, body.provenance)
         root_motion = plan_body_root_motion(
             source_root_path=body.root,
@@ -166,7 +166,7 @@ class BuildBodyExportSkeleton:
         self,
         *,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         root_motion_basename: str = "AdvPy_GameRootMotion",
         output_prefix: str = "AdvPy_EXP_",
     ) -> BodyExportSkeletonBuildResult:
@@ -237,12 +237,12 @@ class BakeBodyExportSkeleton:
         end_frame: int,
         sample_by: int = 1,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         root_motion_basename: str = "AdvPy_GameRootMotion",
         output_prefix: str = "AdvPy_EXP_",
     ) -> BodyExportSkeletonBakeBuildPlan:
         body = self._host.capture_body_skeleton(body_root_name)
-        expected = oriented_body_provenance(source_container, len(body.joints))
+        expected = expected_body_provenance(body, source_container)
         provenance_issues = audit_body_provenance(expected, body.provenance)
         root_motion = plan_body_root_motion(
             source_root_path=body.root,
@@ -288,7 +288,7 @@ class BakeBodyExportSkeleton:
         end_frame: int,
         sample_by: int = 1,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         root_motion_basename: str = "AdvPy_GameRootMotion",
         output_prefix: str = "AdvPy_EXP_",
     ) -> BodyExportSkeletonBakeResult:

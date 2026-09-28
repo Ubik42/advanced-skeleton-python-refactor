@@ -33,7 +33,7 @@ from adv_py.core.body_skeleton import (
     BodySkeletonSnapshot,
     audit_body_provenance,
     body_skeleton_unchanged,
-    oriented_body_provenance,
+    expected_body_provenance,
 )
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -101,7 +101,7 @@ class ExportBodyFbx:
         end_frame: int,
         sample_by: int = 1,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         root_motion_basename: str = "AdvPy_GameRootMotion",
         output_prefix: str = "AdvPy_EXP_",
         published_root_name: str = "RootMotion",
@@ -131,7 +131,7 @@ class ExportBodyFbx:
             encoding=BodyFbxEncoding.BINARY,
         )
         body = self._host.capture_body_skeleton(body_root_name)
-        provenance = oriented_body_provenance(source_container, len(body.joints))
+        provenance = expected_body_provenance(body, source_container)
         root_motion = plan_body_root_motion(
             source_root_path=body.root,
             up_axis=up_axis,

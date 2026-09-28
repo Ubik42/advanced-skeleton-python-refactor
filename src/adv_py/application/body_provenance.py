@@ -8,6 +8,7 @@ from adv_py.core.body_skeleton import (
     BodySkeletonProvenance,
     BodySkeletonSnapshot,
     audit_body_provenance,
+    body_source_container,
     oriented_body_provenance,
 )
 
@@ -37,14 +38,14 @@ class InspectBodySkeletonProvenance:
         self,
         *,
         root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         expected_joint_count: int = 30,
     ) -> BodyProvenanceAudit:
+        snapshot = self._host.capture_body_skeleton(root_name)
         expected = oriented_body_provenance(
-            source_container,
+            body_source_container(snapshot, source_container),
             expected_joint_count,
         )
-        snapshot = self._host.capture_body_skeleton(root_name)
         return BodyProvenanceAudit(
             expected,
             snapshot,

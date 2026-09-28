@@ -6,6 +6,7 @@ from typing import Protocol, Sequence
 from adv_py.core.body_skeleton import (
     BodySkeletonProvenance,
     BodySkeletonSnapshot,
+    body_source_container,
     oriented_body_provenance,
 )
 from adv_py.core.mocap_mapping import (
@@ -62,7 +63,7 @@ class InspectMocapBodyMapping:
         mappings: Sequence[MocapJointMapping],
         *,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         expected_body_joint_count: int = 30,
     ) -> MocapBodyMappingInspection:
         if not isinstance(source_root_name, str) or not source_root_name.strip():
@@ -72,12 +73,12 @@ class InspectMocapBodyMapping:
         resolved_mappings = tuple(mappings)
         if any(not isinstance(item, MocapJointMapping) for item in resolved_mappings):
             raise MocapMappingValidationError("MoCap→Body 映射项类型无效")
-        expected = oriented_body_provenance(
-            source_container,
-            expected_body_joint_count,
-        )
         source = self._host.capture_mocap_source(source_root_name)
         body = self._host.capture_body_skeleton(body_root_name)
+        expected = oriented_body_provenance(
+            body_source_container(body, source_container),
+            expected_body_joint_count,
+        )
         return MocapBodyMappingInspection(
             source=source,
             body=body,

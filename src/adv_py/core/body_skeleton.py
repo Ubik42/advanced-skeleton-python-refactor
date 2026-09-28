@@ -234,6 +234,27 @@ def oriented_body_provenance(
     )
 
 
+def body_source_container(
+    body: BodySkeletonSnapshot,
+    source_container: str | None = None,
+) -> str:
+    """Resolve the Fit source recorded on an owned Body skeleton."""
+    if source_container is None:
+        source_container = (
+            body.provenance.source_container if body.provenance else None)
+        source_container = source_container or "|FitSkeleton"
+    return source_container
+
+
+def expected_body_provenance(
+    body: BodySkeletonSnapshot,
+    source_container: str | None = None,
+) -> BodySkeletonProvenance:
+    """Check ownership against the recorded Fit source unless overridden."""
+    return oriented_body_provenance(
+        body_source_container(body, source_container), len(body.joints))
+
+
 def audit_body_provenance(
     expected: BodySkeletonProvenance,
     actual: BodySkeletonProvenanceState | None,

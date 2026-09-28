@@ -45,7 +45,7 @@ class ConnectMocapBody:
         mappings: Sequence[MocapJointMapping],
         *,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         expected_body_joint_count: int = 30,
     ) -> MocapBodyConnectionResult:
         mapping_args = dict(
@@ -93,7 +93,7 @@ class DisconnectMocapBody:
         mappings: Sequence[MocapJointMapping],
         *,
         body_root_name: str = "Root_M",
-        source_container: str = "|FitSkeleton",
+        source_container: str | None = None,
         expected_body_joint_count: int = 30,
     ) -> MocapBodyConnectionPlan:
         mapping = InspectMocapBodyMapping(self._host).execute(
