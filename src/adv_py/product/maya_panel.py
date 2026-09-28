@@ -881,6 +881,7 @@ def create_panel(controller: MayaPanelController | None = None):
             row.addWidget(self._button("捕获姿态", self._capture_pose))
             row.addWidget(self._button("应用姿态", self._apply_pose))
             form.addRow(row)
+            form.addRow(self._button("返回构建姿态", self._go_to_build_pose))
             stack.addWidget(group)
 
             clip_out, self.animation_export_document = self._file_field(
@@ -1588,6 +1589,10 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.pose_apply(self._namespace(),
                 self._path(self.pose_import_document))
             return f"已应用 {count} 个控制通道"
+
+        def _go_to_build_pose(self):
+            count = self.controller.pose_to_build(self._namespace())
+            return f"已复位 {count} 个构建姿态通道"
 
         def _apply_animation(self):
             count = self.controller.animation_apply(self._namespace(),

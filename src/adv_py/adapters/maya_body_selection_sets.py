@@ -1,6 +1,8 @@
 """Maya selection sets shared by Body skinning and custom controls."""
 from __future__ import annotations
 
+import json
+
 from adv_py.core.body_selection_sets import BodySelectionSetsPlan
 from adv_py.core.character_registry import CharacterRegistration
 
@@ -36,6 +38,27 @@ class MayaBodySelectionSetsMixin:
                                     + str(int(value) if isinstance(value, bool)
                                           else value) + ";")
         return "".join(commands)
+
+    def _body_build_pose_values(self, controls: tuple[str, ...]
+                                ) -> tuple[tuple[str, str, float], ...]:
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        rows = []
+        standard = tuple(f"{kind}{axis}" for kind in (
+            "translate", "rotate", "scale") for axis in "XYZ")
+        for path in controls:
+            node = self.scene_address(path)
+            extras = c.listAttr(node, userDefined=True,
+                                keyable=True) or []
+            for attribute in (*standard, *extras):
+                plug = node + "." + attribute
+                if (not c.objExists(plug)
+                        or not c.getAttr(plug, keyable=True)
+                        or not c.getAttr(plug, settable=True)):
+                    continue
+                value = c.getAttr(plug)
+                if isinstance(value, (int, float, bool)):
+                    rows.append((path, attribute, float(value)))
+        return tuple(rows)
 
     def resolve_body_selection_members(
         self, registration: CharacterRegistration,
@@ -125,6 +148,10 @@ class MayaBodySelectionSetsMixin:
                 plan.controls)), ("udExtraAttr", "")):
             c.addAttr(pose, longName=attribute, dataType="string")
             c.setAttr(pose + "." + attribute, value, type="string")
+        c.addAttr(pose, longName="advPyPoseData", dataType="string")
+        c.setAttr(pose + ".advPyPoseData", json.dumps(
+            self._body_build_pose_values(plan.controls),
+            separators=(",", ":")), type="string")
         self._transaction_changed = True
 
     def capture_body_selection_sets(
@@ -164,9 +191,13 @@ class MayaBodySelectionSetsMixin:
         if (not c.objExists(pose) or c.nodeType(pose) != "transform"
                 or not c.objExists(pose + ".udAttr")
                 or not c.objExists(pose + ".udExtraAttr")
+                or not c.objExists(pose + ".advPyPoseData")
                 or (c.getAttr(pose + ".udAttr") or "")
                 != self._body_build_pose_commands(plan.controls)
-                or (c.getAttr(pose + ".udExtraAttr") or "") != ""):
+                or (c.getAttr(pose + ".udExtraAttr") or "") != ""
+                or json.loads(c.getAttr(pose + ".advPyPoseData"))
+                != [list(row) for row in self._body_build_pose_values(
+                    plan.controls)]):
             raise RuntimeError("角色 buildPose 初始复位记录不一致")
         return BodySelectionSetsPlan(members(plan.control_set),
                                      members(plan.deform_set))

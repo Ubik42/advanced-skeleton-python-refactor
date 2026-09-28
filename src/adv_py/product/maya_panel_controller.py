@@ -1056,6 +1056,11 @@ class MayaPanelController:
         ApplyBodyCharacterPose(self._host(namespace)).apply(pose)
         return len(pose.channels)
 
+    def pose_to_build(self, namespace: str) -> int:
+        from adv_py.application.body_build_pose import GoToBodyBuildPose
+
+        return GoToBodyBuildPose(self._host(namespace)).apply()
+
     def animation_capture(self, namespace: str, destination: Path,
                           start: int, end: int, step: int = 1) -> int:
         animation = CaptureBodyCharacterAnimation(self._host(namespace)).execute(

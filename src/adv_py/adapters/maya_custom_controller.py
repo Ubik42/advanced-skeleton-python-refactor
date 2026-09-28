@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import replace
+import json
 
 from adv_py.application.custom_controller import CustomControllerState
 from adv_py.core.character_registry import (
@@ -472,6 +473,26 @@ class MayaCustomControllerHost(MayaFaceHost):
             cmds.addAttr(control, longName="advPyBuildPoseCommand",
                          dataType="string")
             cmds.setAttr(metadata, command, type="string", lock=True)
+            values = []
+            for node in (control, *((base,) if base else ())):
+                for kind, neutral in (("translate", 0.0),
+                                      ("rotate", 0.0), ("scale", 1.0)):
+                    for axis in "XYZ":
+                        attribute = kind + axis
+                        plug = node + "." + attribute
+                        if cmds.getAttr(plug, settable=True):
+                            values.append((node, attribute, neutral))
+                if node == control:
+                    for attribute in cmds.listAttr(
+                            node, userDefined=True, keyable=True) or []:
+                        value = cmds.getAttr(node + "." + attribute)
+                        if isinstance(value, (int, float, bool)):
+                            values.append((node, attribute, float(value)))
+            cmds.addAttr(control, longName="advPyBuildPoseValues",
+                         dataType="string")
+            cmds.setAttr(control + ".advPyBuildPoseValues",
+                         json.dumps(values, separators=(",", ":")),
+                         type="string", lock=True)
         else:
             script = script.replace(command, "", 1)
         cmds.setAttr(plug, script, type="string")
