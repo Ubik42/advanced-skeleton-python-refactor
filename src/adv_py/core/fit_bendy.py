@@ -29,6 +29,11 @@ class FitBendyChainSpec:
             for index in range(1, self.control_count + 1)))
 
     @property
+    def master_position(self) -> tuple[float, float, float]:
+        return tuple((a + b) * 0.5 for a, b in zip(
+            self.start_position, self.end_position))
+
+    @property
     def stem(self) -> str:
         return self.start_body.rsplit("|", 1)[-1].rsplit("_", 1)[0]
 
@@ -118,6 +123,11 @@ class FitBendyChainSpec:
                 *self.micro_output_names,
                 *(name + "Aim" for name in self.motion_transform_names),
                 *(name + "MicroFollow" for name in self.motion_transform_names))
+
+    @property
+    def deform_constraint_names(self) -> tuple[str, ...]:
+        return tuple("AdvPy_BendyDeform" + name
+                     for name in self.deform_names)
 
 
 def plan_fit_bendy_chains(

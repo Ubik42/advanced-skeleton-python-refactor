@@ -16,6 +16,91 @@ _OWNER = "adv_py.fit_bendy_guides.v1"
 
 
 class MayaFitBendyMixin:
+    def preflight_fit_bendy_deform(self, spec: FitBendyChainSpec) -> None:
+        c = self._cmds
+        for index, (name, output, constraint) in enumerate(zip(
+                spec.deform_names, spec.micro_output_names,
+                spec.deform_constraint_names)):
+            joints = c.ls(name, long=True, type="joint") or []
+            drivers = c.ls(output, long=True, type="transform") or []
+            if len(joints) != 1 or len(drivers) != 1:
+                raise ValueError("Bendy 变形关节或 Micro 输出不唯一：" + name)
+            marker = ("advPySourceJoint" if index == 0
+                      else "advPyAuxiliaryInfluenceKind")
+            if not c.objExists(joints[0] + "." + marker):
+                raise ValueError("Bendy 变形关节不属于当前角色：" + name)
+            if index and c.getAttr(joints[0] + "." + marker) != "fit-part-v1":
+                raise ValueError("Bendy 需要 Twist Part 关节：" + name)
+            if c.objExists(constraint):
+                raise ValueError("Bendy 变形约束名称已占用：" + constraint)
+            if c.listConnections(joints[0], type="skinCluster"):
+                raise ValueError("Bendy 接管必须在 Skin 绑定前执行：" + name)
+
+    def connect_fit_bendy_deform(self, spec: FitBendyChainSpec) -> None:
+        self._require_transaction()
+        c = self._cmds
+        identity = (1.0, 0.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0, 0.0,
+                    0.0, 0.0, 1.0, 0.0,
+                    0.0, 0.0, 0.0, 1.0)
+        poses = {}
+        for name, output, constraint in zip(
+                spec.deform_names, spec.micro_output_names,
+                spec.deform_constraint_names):
+            joint = (c.ls(name, long=True, type="joint") or [])[0]
+            poses[name] = tuple(float(value) for value in c.xform(
+                joint, query=True, worldSpace=True, matrix=True))
+            # Keep the existing scale graph. The curve frame takes over only
+            # position and orientation, as in the MEL MicroX branch.
+            for attribute in ("translate", "rotate", "offsetParentMatrix"):
+                destination = joint + "." + attribute
+                source = c.connectionInfo(destination,
+                                          sourceFromDestination=True)
+                if source:
+                    c.disconnectAttr(source, destination)
+                if attribute == "offsetParentMatrix":
+                    c.setAttr(destination, *identity, type="matrix")
+                    continue
+                for axis in "XYZ":
+                    destination = joint + "." + attribute + axis
+                    source = c.connectionInfo(destination,
+                                              sourceFromDestination=True)
+                    if source:
+                        c.disconnectAttr(source, destination)
+            c.xform(joint, worldSpace=True, matrix=poses[name])
+            driver = (c.ls(output, long=True, type="transform") or [])[0]
+            c.parentConstraint(driver, joint, maintainOffset=True,
+                               name=constraint)
+            after = c.xform(joint, query=True, worldSpace=True, matrix=True)
+            if any(abs(a - float(b)) > 1e-3
+                   for a, b in zip(poses[name], after)):
+                raise RuntimeError("Bendy 接管改变绑定姿态：" + name)
+        self._transaction_changed = True
+
+    def capture_fit_bendy_deform(self, spec: FitBendyChainSpec) -> bool:
+        c = self._cmds
+        for name, output, constraint in zip(
+                spec.deform_names, spec.micro_output_names,
+                spec.deform_constraint_names):
+            joints = c.ls(name, long=True, type="joint") or []
+            drivers = c.ls(output, long=True, type="transform") or []
+            if (len(joints) != 1 or len(drivers) != 1
+                    or not c.objExists(constraint)
+                    or c.nodeType(constraint) != "parentConstraint"):
+                return False
+            targets = c.parentConstraint(constraint, query=True,
+                                         targetList=True) or []
+            if len(targets) != 1 or targets[0].rsplit("|", 1)[-1] != output:
+                return False
+            for attribute in ("translate", "rotate"):
+                for axis in "XYZ":
+                    destination = joints[0] + "." + attribute + axis
+                    source = c.connectionInfo(destination,
+                                              sourceFromDestination=True)
+                    if not source or source.rsplit("|", 1)[-1].split(".")[0] != constraint:
+                        return False
+        return True
+
     def preflight_fit_bendy_micro(self, spec: FitBendyChainSpec) -> None:
         c = self._cmds
         if any(c.objExists(name) for name in spec.micro_node_names):
@@ -90,7 +175,7 @@ class MayaFitBendyMixin:
         positions = (start, *spec.control_positions[1:], end)
         controls = []
         for index, (name, position) in enumerate(zip(
-                spec.control_names, (spec.control_positions[1],
+                spec.control_names, (spec.master_position,
                                      *spec.control_positions))):
             control = c.circle(name=name, normal=(1, 0, 0),
                                radius=0.25, constructionHistory=False)[0]
@@ -187,7 +272,7 @@ class MayaFitBendyMixin:
         source_proxy(start_proxy, names[2], names[4], spec.start)
         source_proxy(end_proxy, names[3], names[5], spec.end)
         for index, control in enumerate(chain.control_names):
-            position = (chain.control_positions[1] if index == 0
+            position = (chain.master_position if index == 0
                         else chain.control_positions[index - 1])
             offset = c.createNode("transform", name=control + "Offset",
                                   parent=_GROUPS[0], skipSelect=True)

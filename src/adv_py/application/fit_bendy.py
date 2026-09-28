@@ -128,3 +128,41 @@ class BuildFitBendyGuides:
                     raise RuntimeError("Bendy 微控制接线不一致："
                                        + follow.chain.curve_name)
         return chains
+
+
+class FitBendyDeformHost(Protocol):
+    def transaction(self, label: str) -> AbstractContextManager[None]: ...
+    def preflight_fit_bendy_deform(
+        self, spec: FitBendyChainSpec) -> None: ...
+    def connect_fit_bendy_deform(
+        self, spec: FitBendyChainSpec) -> None: ...
+    def capture_fit_bendy_deform(
+        self, spec: FitBendyChainSpec) -> bool: ...
+
+
+class BuildFitBendyDeform:
+    """Replace ordinary Body/Part TR drivers with Bendy micro outputs."""
+
+    def __init__(self, host: FitBendyDeformHost) -> None:
+        self._host = host
+
+    def apply(self, chains: tuple[FitBendyChainSpec, ...]
+              ) -> tuple[FitBendyChainSpec, ...]:
+        deformers = [name for chain in chains
+                     for name in chain.deform_names]
+        if len(set(deformers)) != len(deformers):
+            raise ValueError("Bendy 变形关节被多条曲线重复接管")
+        constraints = [name for chain in chains
+                       for name in chain.deform_constraint_names]
+        if len(set(constraints)) != len(constraints):
+            raise ValueError("Bendy 变形约束名称重复")
+        for chain in chains:
+            self._host.preflight_fit_bendy_deform(chain)
+        with self._host.transaction("Bendy Micro 接管 Body／Part"):
+            for chain in chains:
+                self._host.connect_fit_bendy_deform(chain)
+            for chain in chains:
+                if not self._host.capture_fit_bendy_deform(chain):
+                    raise RuntimeError("Bendy 变形关节未由 Micro 驱动："
+                                       + chain.curve_name)
+        return chains

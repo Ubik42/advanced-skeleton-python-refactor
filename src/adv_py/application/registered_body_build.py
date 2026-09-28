@@ -37,6 +37,9 @@ from .body_rig_validation import body_bind_pose_matches
 from .character_registry import RegisterBodyCharacter
 from .finger_mid_deform import BuildFingerMidDeform
 from .fit_part import BuildFitPartHierarchy, FitPartHierarchyResult
+from .fit_bendy import (BuildFitBendyDeform, BuildFitBendyGuides,
+                        plan_fit_bendy_follow)
+from .fit_bendy_registration import RegisterBendyControls
 from .fit_part_twist import (
     BuildFitPartTwistDrivers, PrepareFitPartTwistSources,
 )
@@ -217,6 +220,7 @@ class BuildRegisteredBodyCharacter:
             raise FitSkeletonValidationError(
                 "角色构建预检失败，场景未修改：" + "；".join(preview.blockers))
         rotation_inputs = ()
+        bendy_chains = ()
         untwister_sources: frozenset[str] = frozenset()
         hip_selection = None
         part_plan = preview.build
@@ -266,14 +270,17 @@ class BuildRegisteredBodyCharacter:
                                 if part.kind == "twist")
             bendy_chains = plan_fit_bendy_chains(
                 twist_parts, fit_source.metadata, part_plan.specs)
-            if bendy_chains:
+            bendy_part_names = {name for chain in bendy_chains
+                                for name in chain.part_names}
+            ordinary_twist_parts = tuple(
+                part for part in twist_parts
+                if part.name not in bendy_part_names)
+            if bendy_chains and fit_part_twist_sources is not None:
                 raise FitSkeletonValidationError(
-                    "Fit Bendy 已识别，但曲线、微控制与 Body／Part 接管"
-                    "尚未接入 Python 主构建；拒绝将其构建为普通 Twist："
-                    + "、".join(chain.start_body.rsplit("|", 1)[-1]
-                             for chain in bendy_chains))
+                    "Bendy 曲线驱动与手工 Part 扭转来源不能混用")
             if fit_part_twist_sources is not None:
-                plan_fit_part_twist(twist_parts, fit_part_twist_sources)
+                plan_fit_part_twist(ordinary_twist_parts,
+                                    fit_part_twist_sources)
         else:
             hip_selection = plan_hip_swing_fit_selection(
                 self._host.capture_fit_orientation(container_name),
@@ -296,6 +303,10 @@ class BuildRegisteredBodyCharacter:
                 include_torso=True, include_spine_ik=True,
                 include_control_spaces=True, axial_description=axial_description,
                 include_head_aim=include_head_aim)
+            if bendy_chains:
+                follows = plan_fit_bendy_follow(bendy_chains, rig.plan)
+                BuildFitBendyGuides(joined).apply(bendy_chains,
+                                                  follows=follows)
             fit_part_hierarchy = None
             inbetween_segments = ()
             solver_mapping = None
@@ -307,14 +318,14 @@ class BuildRegisteredBodyCharacter:
                     _independent_rig_twist_sources(rig.plan))
                 if fit_part_twist_sources is None:
                     rotation_inputs = plan_standard_fit_part_rotation_inputs(
-                        twist_parts,
+                        ordinary_twist_parts,
                         independent_world_matrices=control_matrices,
                         independent_body_constraints=body_constraints,
                         blended_world_matrices=spine_blends)
                     projections = plan_fit_part_twist_projections(
                         rotation_inputs)
                     plan_fit_part_twist(
-                        twist_parts,
+                        ordinary_twist_parts,
                         tuple(item.source() for item in projections
                               if item.input.distribution_source))
                 twist_sources = (
@@ -333,9 +344,11 @@ class BuildRegisteredBodyCharacter:
                         source.up_twist_plug) if source.up_twist_plug else None),
                 ) for source in twist_sources)
                 BuildFitPartTwistDrivers(joined).apply(
-                    twist_parts, active_twist_sources)
+                    ordinary_twist_parts, active_twist_sources)
                 BuildFitPartScaleDrivers(joined).apply(
                     part_plan.fit_parts)
+                if bendy_chains:
+                    BuildFitBendyDeform(joined).apply(bendy_chains)
                 inbetween_parts = tuple(
                     part for part in part_plan.fit_parts
                     if part.kind == "inbetween")
@@ -578,6 +591,9 @@ class BuildRegisteredBodyCharacter:
                 registration = RegisterInbetweenControls(joined).apply(
                     registration, inbetween_segments,
                     hip_swing=hip_swing_reverse)
+            if bendy_chains:
+                registration = RegisterBendyControls(joined).apply(
+                    registration, bendy_chains)
             if len(registration.body) != len(skeleton.snapshot.joints):
                 raise RuntimeError("登记骨架数量与本次构建结果不一致")
             segments: list[str] = []
