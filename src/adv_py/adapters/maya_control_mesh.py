@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import re
 
 from adv_py.core.control_mesh import ControlMeshItem, ControlMeshSource
+from adv_py.core.control_mesh_color import (
+    ControlMeshColorItem, ControlMeshColorSource, SHADER_COLORS,
+)
 
 
 class MayaControlMeshHost:
@@ -334,3 +338,136 @@ class MayaControlMeshHost:
                                      "motionBlur", "primaryVisibility",
                                      "smoothShading", "visibleInReflections",
                                      "visibleInRefractions"))
+
+    def capture_control_mesh_color_sources(
+        self, controls: tuple[str, ...],
+    ) -> tuple[tuple[ControlMeshColorSource, ...], float]:
+        c = self.cmds
+        roots = [path for path in (c.ls(type="transform", long=True) or [])
+                 if path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                 == "DeformationSystem"]
+        namespaces = {control.rsplit("|", 1)[-1].rsplit(":", 1)[0]
+                      if ":" in control.rsplit("|", 1)[-1] else ""
+                      for control in controls}
+        if len(namespaces) != 1:
+            raise ValueError("Control Mesh 控制器跨越多个命名空间")
+        namespace = namespaces.pop()
+        roots = [path for path in roots
+                 if ((path.rsplit("|", 1)[-1].rsplit(":", 1)[0]
+                      if ":" in path.rsplit("|", 1)[-1] else "")
+                     == namespace)]
+        if len(roots) != 1:
+            raise ValueError("Control Mesh 着色需要唯一 DeformationSystem")
+        joints = c.listRelatives(roots[0], allDescendents=True,
+                                 fullPath=True, type="joint") or []
+        if not joints:
+            raise ValueError("DeformationSystem 缺少变形关节")
+        control_by_leaf = {}
+        for control in controls:
+            leaf = control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            if leaf in control_by_leaf and control_by_leaf[leaf] != control:
+                raise ValueError("控制器短名称不唯一：" + leaf)
+            control_by_leaf[leaf] = control
+        sources = []
+        for joint in joints:
+            control = self._control_for_influence(joint, control_by_leaf)
+            if control is None:
+                continue
+            leaf = control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            shapes = c.listRelatives(control, shapes=True,
+                                     fullPath=True,
+                                     noIntermediate=True,
+                                     type="mesh") or []
+            for shape in shapes:
+                shape_leaf = shape.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                if not re.fullmatch(re.escape(leaf) + r"MeshCtrl\d*",
+                                    shape_leaf):
+                    continue
+                marker = shape + ".ControlMeshesExpanded"
+                sources.append(ControlMeshColorSource(
+                    joint, shape,
+                    bool(c.getAttr(marker)) if c.objExists(marker)
+                    else False))
+        axis = 1 if c.upAxis(query=True, axis=True) == "y" else 2
+        positions = [float(c.xform(joint, query=True, worldSpace=True,
+                                   translation=True)[axis])
+                     for joint in joints]
+        height = max(positions) - min(positions)
+        return tuple(sources), height
+
+    def preflight_control_mesh_color(
+        self, item: ControlMeshColorItem,
+    ) -> None:
+        c = self.cmds
+        if (not c.objExists(item.mesh_shape)
+                or c.nodeType(item.mesh_shape) != "mesh"
+                or c.referenceQuery(item.mesh_shape,
+                                    isNodeReferenced=True)):
+            raise ValueError("Control Mesh 着色目标不存在或不可写")
+        shader = item.shader.removesuffix("SG")
+        if (c.objExists(shader)
+                and c.nodeType(shader) != ("surfaceShader"
+                    if shader == "asRedSS" else "lambert")):
+            raise ValueError("原版颜色 Shader 名称被其他节点占用：" + shader)
+        if c.objExists(item.shader) and c.nodeType(item.shader) != "shadingEngine":
+            raise ValueError("原版颜色 ShadingGroup 名称被占用：" + item.shader)
+
+    def ensure_control_mesh_shaders(self) -> None:
+        if not self._in_transaction:
+            raise RuntimeError("Control Mesh 着色必须位于事务内")
+        c = self.cmds
+        for group, rgb in SHADER_COLORS.items():
+            shader = group.removesuffix("SG")
+            if c.objExists(shader) and c.objExists(group):
+                if (c.nodeType(shader) != ("surfaceShader"
+                        if shader == "asRedSS" else "lambert")
+                        or c.nodeType(group) != "shadingEngine"):
+                    raise ValueError("原版颜色节点类型冲突：" + group)
+                continue
+            if c.objExists(shader) or c.objExists(group):
+                raise ValueError("原版颜色节点仅创建了一半：" + group)
+            kind = "surfaceShader" if shader == "asRedSS" else "lambert"
+            c.shadingNode(kind, asShader=True, name=shader)
+            c.sets(renderable=True, noSurfaceShader=True,
+                   empty=True, name=group)
+            c.connectAttr(shader + ".outColor",
+                          group + ".surfaceShader", force=True)
+            color_plug = (".outColor" if shader == "asRedSS"
+                          else ".color")
+            c.setAttr(shader + color_plug, *rgb, type="float3")
+
+    def colorize_control_mesh(self, item: ControlMeshColorItem) -> None:
+        if not self._in_transaction:
+            raise RuntimeError("Control Mesh 着色必须位于事务内")
+        c = self.cmds
+        c.sets(item.mesh_shape, edit=True, forceElement=item.shader)
+        if not item.already_expanded:
+            mesh, _ = self._mesh(item.mesh_shape)
+            if mesh.numVertices < 1:
+                raise ValueError("Control Mesh 没有可扩展的顶点")
+            c.moveVertexAlongDirection(
+                f"{item.mesh_shape}.vtx[0:{mesh.numVertices - 1}]",
+                normalDirection=item.expand_distance)
+            c.addAttr(item.mesh_shape, longName="ControlMeshesExpanded",
+                      attributeType="bool", defaultValue=True,
+                      keyable=False)
+
+    def capture_control_mesh_color(
+        self, item: ControlMeshColorItem,
+    ) -> bool:
+        c = self.cmds
+        if not (c.objExists(item.mesh_shape)
+                and c.objExists(item.mesh_shape
+                                + ".ControlMeshesExpanded")
+                and bool(c.getAttr(item.mesh_shape
+                                   + ".ControlMeshesExpanded"))):
+            return False
+        mesh, dag = self._mesh(item.mesh_shape)
+        shaders, assignments = mesh.getConnectedShaders(
+            dag.instanceNumber())
+        materials = tuple(self.om.MFnDependencyNode(shader).name()
+                          for shader in shaders)
+        return (mesh.numPolygons > 0
+                and all(0 <= int(slot) < len(materials)
+                        and materials[int(slot)] == item.shader
+                        for slot in assignments))

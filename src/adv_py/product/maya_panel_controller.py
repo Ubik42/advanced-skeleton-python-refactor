@@ -705,6 +705,21 @@ class MayaPanelController:
             global_controls.pop(), controls)
         return len(items)
 
+    def colorize_control_meshes(self, namespace: str) -> int:
+        from adv_py.adapters.maya_control_mesh import MayaControlMeshHost
+        from adv_py.application.control_mesh_color import ColorizeControlMeshes
+
+        host = self._host(namespace)
+        resolver = ResolveBodyCharacter(host)
+        names = resolver.discover()
+        if len(names) != 1:
+            raise ValueError("当前命名空间必须恰好包含一个已登记角色")
+        registration = resolver.execute(names[0])
+        controls = tuple(dict.fromkeys(channel.node
+                          for channel in registration.channels))
+        items = ColorizeControlMeshes(MayaControlMeshHost()).execute(controls)
+        return len(items)
+
     def control_curves_copy_to_variant(
             self, namespace: str, controls: tuple[str, ...],
             variant: str) -> int:
