@@ -120,10 +120,23 @@ class MayaBodySelectionSetsMixin:
     ) -> None:
         c = self._cmds
         for name in (plan.control_set, plan.deform_set,
-                     plan.all_set, plan.root_set, plan.build_pose,
-                     plan.motion_system, plan.character_group):
+                     plan.all_set, plan.root_set, plan.build_pose):
             if c.objExists(name):
                 raise ValueError("角色选择集名称已占用：" + name)
+        group = c.ls(plan.character_group, long=True,
+                     type="transform") or []
+        motion = c.ls(plan.motion_system, long=True,
+                      type="transform") or []
+        main = c.ls(plan.main_system, long=True,
+                    type="transform") or []
+        if (len(group) != 1 or len(motion) != 1 or len(main) != 1
+                or c.listRelatives(group[0], parent=True,
+                                   fullPath=True)
+                or (c.listRelatives(motion[0], parent=True,
+                                    fullPath=True) or []) != group
+                or (c.listRelatives(main[0], parent=True,
+                                    fullPath=True) or []) != motion):
+            raise ValueError("角色 Group、MotionSystem、MainSystem 层级无效")
 
     def create_body_selection_sets(
         self, plan: BodySelectionSetsPlan,
@@ -143,11 +156,7 @@ class MayaBodySelectionSetsMixin:
         c.sets((self._body_selection_set_address(plan.control_set),
                 self._body_selection_set_address(plan.deform_set),
                 all_set), add=root_set)
-        group = self._body_selection_set_address(plan.character_group)
-        c.createNode("transform", name=group, skipSelect=True)
         motion = self._body_selection_set_address(plan.motion_system)
-        c.createNode("transform", name=motion, parent=group,
-                     skipSelect=True)
         pose = self._body_selection_set_address(plan.build_pose)
         c.createNode("transform", name=pose, parent=motion,
                      skipSelect=True)
@@ -202,17 +211,22 @@ class MayaBodySelectionSetsMixin:
         pose = self._body_selection_set_address(plan.build_pose)
         motion = self._body_selection_set_address(plan.motion_system)
         group = self._body_selection_set_address(plan.character_group)
+        main = self._body_selection_set_address(plan.main_system)
         group_paths = c.ls(group, long=True) or []
         motion_paths = c.ls(motion, long=True) or []
+        main_paths = c.ls(main, long=True) or []
         pose_paths = c.ls(pose, long=True) or []
         if (not c.objExists(pose) or c.nodeType(pose) != "transform"
                 or len(group_paths) != 1
                 or len(motion_paths) != 1
+                or len(main_paths) != 1
                 or len(pose_paths) != 1
                 or c.listRelatives(group_paths[0], parent=True,
                                    fullPath=True)
                 or (c.listRelatives(motion_paths[0], parent=True,
                                     fullPath=True) or []) != group_paths
+                or (c.listRelatives(main_paths[0], parent=True,
+                                    fullPath=True) or []) != motion_paths
                 or (c.listRelatives(pose_paths[0], parent=True,
                                     fullPath=True) or []) != motion_paths
                 or any(not c.getAttr(pose + "." + attribute, lock=True)

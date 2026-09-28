@@ -563,8 +563,14 @@ class FakeBodySkeletonHost:
         )
         scale_sources = (plan.scale_source,) * 3
         self.character_global_snapshot = BodyCharacterGlobalSnapshot(
+            group_path=plan.group_path,
+            group_parent_path=None,
+            motion_system_path=plan.motion_system_path,
+            motion_system_parent_path=plan.group_path,
+            main_system_path=plan.main_system_path,
+            main_system_parent_path=plan.motion_system_path,
             root_path=plan.root_path,
-            root_parent_path=None,
+            root_parent_path=plan.main_system_path,
             root_translation=(0.0, 0.0, 0.0),
             root_rotation=(0.0, 0.0, 0.0),
             root_scale=(1.0, 1.0, 1.0),

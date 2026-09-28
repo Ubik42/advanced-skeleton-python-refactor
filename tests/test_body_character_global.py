@@ -46,8 +46,14 @@ def make_snapshot(plan):
     )
     scale = (plan.scale_source,) * 3
     return BodyCharacterGlobalSnapshot(
+        group_path=plan.group_path,
+        group_parent_path=None,
+        motion_system_path=plan.motion_system_path,
+        motion_system_parent_path=plan.group_path,
+        main_system_path=plan.main_system_path,
+        main_system_parent_path=plan.motion_system_path,
         root_path=plan.root_path,
-        root_parent_path=None,
+        root_parent_path=plan.main_system_path,
         root_translation=(0.0, 0.0, 0.0),
         root_rotation=(0.0, 0.0, 0.0),
         root_scale=(1.0, 1.0, 1.0),
@@ -94,7 +100,8 @@ class BodyCharacterGlobalTests(unittest.TestCase):
 
         self.assertEqual(plan.circle_normal, (0.0, 0.0, 1.0))
         self.assertEqual(plan.control_path, (
-            "|AdvPy_CharacterControls|AdvPy_GlobalOffset|AdvPy_Global"
+            "|Group|MotionSystem|MainSystem|AdvPy_CharacterControls"
+            "|AdvPy_GlobalOffset|AdvPy_Global"
         ))
         self.assertEqual(plan.driven_roots, DRIVEN_ROOTS)
         self.assertEqual(plan.scale_destinations, SCALE_DESTINATIONS)

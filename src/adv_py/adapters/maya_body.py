@@ -744,9 +744,21 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     )
 
             self._transaction_changed = True
+            group = self._cmds.createNode(
+                "transform", name="Group", skipSelect=True,
+            )
+            motion = self._cmds.createNode(
+                "transform", name="MotionSystem", parent=group,
+                skipSelect=True,
+            )
+            main_system = self._cmds.createNode(
+                "transform", name="MainSystem", parent=motion,
+                skipSelect=True,
+            )
             root = self._cmds.createNode(
                 "transform",
                 name=plan.root_name,
+                parent=main_system,
                 skipSelect=True,
             )
             offset = self._cmds.createNode(
@@ -868,6 +880,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 for axis in "XYZ"
             )
 
+        group = one_path(plan.group_path, "transform")
+        motion = one_path(plan.motion_system_path, "transform")
+        main_system = one_path(plan.main_system_path, "transform")
         root = one_path(plan.root_path, "transform")
         offset = one_path(plan.offset_path, "transform")
         control = one_path(plan.control_path, "transform")
@@ -916,6 +931,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 ),
             ))
         return BodyCharacterGlobalSnapshot(
+            group_path=group,
+            group_parent_path=parent(group),
+            motion_system_path=motion,
+            motion_system_parent_path=parent(motion),
+            main_system_path=main_system,
+            main_system_parent_path=parent(main_system),
             root_path=root,
             root_parent_path=parent(root),
             root_translation=vector(root, "translate"),

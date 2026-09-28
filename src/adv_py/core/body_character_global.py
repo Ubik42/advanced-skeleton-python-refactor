@@ -34,12 +34,25 @@ class BodyCharacterGlobalPlan:
     @property
     def node_names(self) -> tuple[str, ...]:
         return (
+            "Group", "MotionSystem", "MainSystem",
             self.root_name,
             self.offset_name,
             self.control_name,
             self.shape_name,
             self.scale_node_name,
         )
+
+    @property
+    def group_path(self) -> str:
+        return "|Group"
+
+    @property
+    def motion_system_path(self) -> str:
+        return self.group_path + "|MotionSystem"
+
+    @property
+    def main_system_path(self) -> str:
+        return self.motion_system_path + "|MainSystem"
 
     @property
     def scale_source(self) -> str:
@@ -65,6 +78,12 @@ class BodyCharacterDrivenRootState:
 
 @dataclass(frozen=True, slots=True)
 class BodyCharacterGlobalSnapshot:
+    group_path: str
+    group_parent_path: str | None
+    motion_system_path: str
+    motion_system_parent_path: str | None
+    main_system_path: str
+    main_system_parent_path: str | None
     root_path: str
     root_parent_path: str | None
     root_translation: Vector3
@@ -147,13 +166,14 @@ def plan_body_character_global(
         )
 
     root_name = "AdvPy_CharacterControls"
-    root_path = f"|{root_name}"
+    root_path = f"|Group|MotionSystem|MainSystem|{root_name}"
     offset_name = "AdvPy_GlobalOffset"
     offset_path = f"{root_path}|{offset_name}"
     control_name = "AdvPy_Global"
     control_path = f"{offset_path}|{control_name}"
-    names = {root_name, offset_name, control_name,
-             f"{control_name}Shape", "MainScaleMultiplyDivide"}
+    names = {"Group", "MotionSystem", "MainSystem", root_name,
+             offset_name, control_name, f"{control_name}Shape",
+             "MainScaleMultiplyDivide"}
     if any(path.rsplit("|", 1)[-1] in names for path in driven_roots):
         raise BodyCharacterGlobalValidationError(
             "角色总控名称与被驱动根节点冲突"
@@ -187,8 +207,21 @@ def audit_body_character_global(
     neutral = (0.0, 0.0, 0.0)
     one = (1.0, 1.0, 1.0)
     if not (
+        snapshot.group_path == plan.group_path
+        and snapshot.group_parent_path is None
+        and snapshot.motion_system_path == plan.motion_system_path
+        and snapshot.motion_system_parent_path == plan.group_path
+        and snapshot.main_system_path == plan.main_system_path
+        and snapshot.main_system_parent_path == plan.motion_system_path
+    ):
+        issues.append(BodyCharacterGlobalIssue(
+            "system_hierarchy_mismatch",
+            "Group、MotionSystem、MainSystem 层级不一致",
+            plan.group_path,
+        ))
+    if not (
         snapshot.root_path == plan.root_path
-        and snapshot.root_parent_path is None
+        and snapshot.root_parent_path == plan.main_system_path
         and _close(snapshot.root_translation, neutral, tolerance)
         and _close(snapshot.root_rotation, neutral, tolerance)
         and _close(snapshot.root_scale, one, tolerance)
