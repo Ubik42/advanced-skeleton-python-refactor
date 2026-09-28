@@ -7,7 +7,6 @@ from .maya_spine import MayaBodySpineMixin
 from .maya_control_spaces import MayaBodyControlSpacesMixin
 
 import json
-import re
 from dataclasses import replace
 from pathlib import Path
 
@@ -250,6 +249,7 @@ from adv_py.core.fit_symmetry import FitBuildSide
 from .maya_fit import MayaFitJointHost
 from .maya_control_curves import MayaControlCurveMixin
 from .maya_adv_icons import create_adv_icon, original_fit_icon_axis_offset
+from adv_py.core.body_controller_appearance import body_controller_icon_template
 from .maya_fit_part import MayaFitPartMixin
 from .maya_fit_bendy import MayaFitBendyMixin
 from .maya_body_selection_sets import MayaBodySelectionSetsMixin
@@ -7811,10 +7811,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             control = create_adv_icon(
                 self._cmds, name=spec.control_name,
                 parent=control_parent,
-                template=("Scapula_icon" if "Scapula" in spec.control_name
-                          else "Part_icon" if re.search(
-                              r"Part[0-9]", spec.control_name)
-                          else "FK_icon"),
+                template=body_controller_icon_template(
+                    "FK", spec.control_name),
                 radius=spec.radius,
                 fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12,
                 axis_offset=original_fit_icon_axis_offset(
@@ -8134,6 +8132,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     local_translation=tuple(float(value) for value in local_translation),
                     local_rotation=tuple(float(value) for value in local_rotation),
                     shape_type=(self._cmds.nodeType(shapes[0]) if len(shapes) == 1 else None),
+                    icon_template=(self._cmds.getAttr(
+                        control + ".advPyIconTemplate") if
+                        self._cmds.attributeQuery(
+                            "advPyIconTemplate", node=control,
+                            exists=True) else None),
                     sub_control_path=sub_path,
                     sub_parent_path=sub_parent,
                     sub_shape_type=sub_shape_type,

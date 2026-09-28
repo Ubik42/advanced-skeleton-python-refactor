@@ -164,10 +164,11 @@ def create_adv_icon(commands, *, name: str, parent: str,
                 or int(commands.getAttr(actual[0] + ".overrideColor"))
                 != spec["override_color"]):
             raise RuntimeError("原版图标颜色读回不一致：" + name)
-        commands.addAttr(control, longName="advPyIconTemplate",
-                         dataType="string")
-        commands.setAttr(control + ".advPyIconTemplate", template,
-                         type="string", lock=True)
+    commands.addAttr(control, longName="advPyIconTemplate",
+                     dataType="string")
+    commands.setAttr(control + ".advPyIconTemplate",
+                     template if source is not None else "fallback:" + template,
+                     type="string", lock=True)
     return control
 
 

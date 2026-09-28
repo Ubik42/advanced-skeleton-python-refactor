@@ -15,6 +15,17 @@ _ORIENTED_SHAPE_TYPES = _ORIENTED_ORDER_TYPES | {"HipSwinger"}
 _OFFSET_ROTATION_TYPES = frozenset(("FK", "Bend", "BendMid"))
 
 
+def body_controller_icon_template(kind: str, name: str) -> str:
+    """Resolve the 6.925 asCreateController icon for a named control."""
+    if not kind or not name:
+        raise ValueError("控制器图标类型与名称不能为空")
+    if "Scapula" in name:
+        return "Scapula_icon"
+    if kind == "FK" and re.search(r"Part[0-9]", name):
+        return "Part_icon"
+    return kind + "_icon"
+
+
 @dataclass(frozen=True, slots=True)
 class BodyControllerAppearanceInput:
     layers: BodyControllerLayerSpec
@@ -87,12 +98,7 @@ def plan_body_controller_appearance(
                    for fat in (source.fit_fat, source.body_fat))):
         raise ValueError("Body 控制器外观数据无效")
 
-    if "Scapula" in layers.name:
-        icon = "Scapula_icon"
-    elif layers.kind == "FK" and re.search(r"Part[0-9]", layers.name):
-        icon = "Part_icon"
-    else:
-        icon = layers.kind + "_icon"
+    icon = body_controller_icon_template(layers.kind, layers.name)
 
     default_size = source.main_height / 30.0
     if source.first_child_distance is not None:

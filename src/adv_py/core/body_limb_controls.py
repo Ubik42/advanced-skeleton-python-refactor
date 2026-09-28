@@ -8,7 +8,9 @@ from .body_controller_layers import (
     BodyExtraControllerState, audit_body_extra_controller,
 )
 from .body_skeleton import BodySkeletonSnapshot
-from .body_controller_appearance import body_fk_curve_radius
+from .body_controller_appearance import (
+    body_controller_icon_template, body_fk_curve_radius,
+)
 from .body_limb_mechanisms import body_limb_parent_matches
 from .fit_symmetry import AxisFrame, FitBuildSide
 
@@ -73,6 +75,7 @@ class BodyLimbFkControlState:
     sub_shape_scale: float | None = None
     extra: BodyExtraControllerState | None = None
     rotate_orders: tuple[tuple[str, int], ...] = ()
+    icon_template: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,6 +308,13 @@ def audit_body_limb_fk_controls(
         if state.shape_type != "nurbsCurve":
             issues.append(BodyLimbControlIssue(
                 "control_shape_mismatch", "FK 控制缺少 NURBS 曲线", path
+            ))
+        expected_icon = body_controller_icon_template(
+            "FK", spec.control_name)
+        if state.icon_template not in (expected_icon,
+                                      "fallback:" + expected_icon):
+            issues.append(BodyLimbControlIssue(
+                "control_icon_mismatch", "FK 控制图标模板不一致", path
             ))
         if state.rotate_orders:
             expected_orders = {
