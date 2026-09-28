@@ -209,9 +209,16 @@ def decode_registration(text):
             nodes.append(CharacterNode(path(row["path"]),row["uuid"],row["node_type"],path(row["parent"]) if row["parent"] else None,tuple(inputs)))
         if len({n.path for n in nodes}) != len(nodes) or len({n.uuid for n in nodes}) != len(nodes):
             raise CharacterRegistryError("登记节点身份重复")
-        if external_parent is not None and not any(
-                node.path == external_parent and node.node_type == "transform"
-                for node in nodes):
+        external_parent_node = next(
+            (node for node in nodes if node.path == external_parent), None)
+        if external_parent is not None and (
+                external_parent_node is None or
+                (external_parent_node.node_type != "transform" and not (
+                    external_parent_node.node_type == "joint" and
+                    external_parent.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                    == "RootMotion_M" and
+                    external_parent_node.parent ==
+                    external_parent.rsplit("|", 1)[0]))):
             raise CharacterRegistryError("Body 根关节外部父级未登记")
         if spline_document:
             from .spline_registration import decode_spline
