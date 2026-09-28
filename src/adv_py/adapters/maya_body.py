@@ -5954,6 +5954,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             handles = self._cmds.ls(side.handle_name, long=True, type="ikHandle") or []
             required.extend((
                 side.ankle_control_path,
+                side.control_parent_path,
                 side.ankle_driver_path,
                 side.toe_driver_path,
                 side.toe_end_driver_path,
@@ -5994,6 +5995,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             )
             for path in (
                 side.ankle_control_path,
+                side.control_parent_path,
                 side.ankle_driver_path,
                 side.toe_driver_path,
                 side.toe_end_driver_path,
@@ -6106,7 +6108,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             if spec.rock:
                 for name, path, parent, position, source in (
                     (spec.rock.inner_name, spec.rock.inner_path,
-                     spec.ankle_control_path, spec.rock.inner_position,
+                     spec.control_parent_path, spec.rock.inner_position,
                      spec.rock.inner_source),
                     (spec.rock.outer_name, spec.rock.outer_path,
                      spec.rock.inner_path, spec.rock.outer_position,

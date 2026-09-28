@@ -88,6 +88,7 @@ class BodyLegFootRockSpec:
 class BodyLegFootSideSpec:
     side: FitBuildSide
     ankle_control_path: str
+    control_parent_path: str
     handle_name: str
     initial_handle_parent_path: str
     ankle_driver_path: str
@@ -327,6 +328,9 @@ def plan_body_leg_foot(
                                if up_axis is FitUpAxis.Y else
                                (0.0, 0.0, heading))
 
+        control_parent_path = (limb.ankle_control_path
+                               if legacy_roll_controls else
+                               limb.ankle_sub_path or limb.ankle_control_path)
         rock = None
         if (not legacy_roll_controls
                 and f"BigToe_{suffix}" in body_by_name
@@ -343,7 +347,7 @@ def plan_body_leg_foot(
                 return tuple(result)
             inner_name = f"AdvPy_FootRockInnerPivot_{suffix}"
             outer_name = f"AdvPy_FootRockOuterPivot_{suffix}"
-            inner_path = f"{limb.ankle_control_path}|{inner_name}"
+            inner_path = f"{control_parent_path}|{inner_name}"
             outer_path = f"{inner_path}|{outer_name}"
             inner_clamp = f"AdvPy_FootRockInnerClamp_{suffix}"
             outer_clamp = f"AdvPy_FootRockOuterClamp_{suffix}"
@@ -361,7 +365,7 @@ def plan_body_leg_foot(
                 "Z" if up_axis is FitUpAxis.Y else "Y",
                 inner_source, outer_source)
 
-        parent = rock.outer_path if rock else limb.ankle_control_path
+        parent = rock.outer_path if rock else control_parent_path
         pivots = []
         for role, marker, attribute, axis, multiplier in marker_roles:
             roll_offset_name = (f"AdvPy_RollOffset{marker}_{suffix}"
@@ -581,6 +585,7 @@ def plan_body_leg_foot(
         sides.append(BodyLegFootSideSpec(
             side=limb.side,
             ankle_control_path=limb.ankle_control_path,
+            control_parent_path=control_parent_path,
             handle_name=limb.handle_name,
             initial_handle_parent_path=limb.ankle_control_path,
             ankle_driver_path=limb.chain[2],
@@ -674,7 +679,7 @@ def audit_body_leg_foot(
         pivot_by_role = {pivot.role: pivot for pivot in state.pivots}
         if spec.rock:
             wanted_rock = (
-                (spec.rock.inner_path, spec.ankle_control_path,
+                (spec.rock.inner_path, spec.control_parent_path,
                  spec.rock.inner_position, spec.rock.inner_source),
                 (spec.rock.outer_path, spec.rock.inner_path,
                  spec.rock.outer_position, spec.rock.outer_source),
