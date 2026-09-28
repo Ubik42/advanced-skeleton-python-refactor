@@ -7125,7 +7125,23 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     rotation=tuple(float(value) for value in rotation),
                 )
             )
-        return BodyArmMechanismSnapshot(roots[0], tuple(states))
+        source_ancestors: set[str] = set()
+        for spec in plan.joints:
+            ancestor = spec.source_joint.rsplit("|", 1)[0]
+            while ancestor:
+                source_ancestors.add(ancestor)
+                ancestor = ancestor.rsplit("|", 1)[0]
+        inbetween_parts = tuple(sorted(
+            ancestor for ancestor in source_ancestors
+            if (self._cmds.objExists(ancestor)
+                and self._cmds.attributeQuery(
+                    "advPyAuxiliaryInfluenceKind", node=ancestor,
+                    exists=True)
+                and self._cmds.getAttr(
+                    ancestor + ".advPyAuxiliaryInfluenceKind")
+                == "fit-inbetween-v1")))
+        return BodyArmMechanismSnapshot(
+            roots[0], tuple(states), inbetween_parts)
 
     def create_body_leg_mechanism_root(self, name: str) -> str:
         return self.create_body_arm_mechanism_root(name)

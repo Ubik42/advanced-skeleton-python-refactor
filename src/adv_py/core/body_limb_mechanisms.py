@@ -74,6 +74,7 @@ class BodyLimbMechanismJointState:
 class BodyLimbMechanismSnapshot:
     root_path: str
     joints: tuple[BodyLimbMechanismJointState, ...]
+    inbetween_source_parts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,9 +212,13 @@ def recover_body_limb_mechanisms(
     actual = {state.path: state for state in snapshot.joints}
     if len(actual) != len(snapshot.joints):
         raise BodyLimbMechanismValidationError("机制关节路径重复")
+    inbetween_parts = set(snapshot.inbetween_source_parts)
+    if (len(inbetween_parts) != len(snapshot.inbetween_source_parts)
+            or any(not path.startswith("|") for path in inbetween_parts)):
+        raise BodyLimbMechanismValidationError("Inbetween 来源 Part 标记无效")
     by_name = {}
     for state in snapshot.joints:
-        name = state.path.rsplit("|", 1)[-1]
+        name = state.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
         if name in by_name:
             raise BodyLimbMechanismValidationError("机制关节名称重复：" + name)
         by_name[name] = state
@@ -222,11 +227,13 @@ def recover_body_limb_mechanisms(
     auxiliary = []
     previous_by_chain = {}
     for spec in plan.joints:
-        state = by_name.get(spec.name)
+        state = by_name.get(spec.name.rsplit(":", 1)[-1])
         if (state is None or state.side is not spec.side
                 or state.source_joint != spec.source_joint
                 or state.parent_path is None
-                or state.path != state.parent_path + "|" + spec.name):
+                or state.path.rsplit("|", 1)[0] != state.parent_path
+                or state.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                != spec.name.rsplit(":", 1)[-1]):
             raise BodyLimbMechanismValidationError(
                 "机制关节身份或来源不一致：" + spec.name)
         key = (spec.role, spec.side)
@@ -253,19 +260,33 @@ def recover_body_limb_mechanisms(
                 if (source is None or source.parent_path is None
                         or not source.parent_path.startswith(
                             previous.source_joint + "|")):
-                    allowed = ()
+                    part_paths = ()
                 else:
-                    allowed = tuple(
-                        "AdvPy_" + name.rsplit(":", 1)[-1]
-                        + "_InbetweenIKX"
-                        for name in source.parent_path[
-                            len(previous.source_joint) + 1:].split("|"))
-                positions = [allowed.index(name) for name in markers
+                    parent_path = previous.source_joint
+                    parts = []
+                    for name in source.parent_path[
+                            len(parent_path) + 1:].split("|"):
+                        parent_path += "|" + name
+                        parts.append(parent_path)
+                    part_paths = tuple(parts)
+                allowed = tuple(
+                    "AdvPy_" + path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                    + "_InbetweenIKX" for path in part_paths)
+                normalized_markers = tuple(
+                    name.rsplit(":", 1)[-1] for name in markers)
+                positions = [allowed.index(name) for name in normalized_markers
                              if name in allowed]
                 if (len(positions) != len(markers)
                         or positions != sorted(set(positions))):
                     raise BodyLimbMechanismValidationError(
                         "IKX 不属于有序 Body Part 父链：" + spec.name)
+                required = tuple(
+                    name for path, name in zip(part_paths, allowed)
+                    if path in inbetween_parts)
+                if normalized_markers != required:
+                    raise BodyLimbMechanismValidationError(
+                        "Inbetween IKX 数量或顺序与 Body Part 标记不一致："
+                        + spec.name)
             marker_parent = expected_parent
             for name in markers:
                 marker_path = marker_parent + "|" + name
