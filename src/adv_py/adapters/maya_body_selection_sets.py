@@ -121,7 +121,7 @@ class MayaBodySelectionSetsMixin:
         c = self._cmds
         for name in (plan.control_set, plan.deform_set,
                      plan.all_set, plan.root_set, plan.build_pose,
-                     plan.motion_system):
+                     plan.motion_system, plan.character_group):
             if c.objExists(name):
                 raise ValueError("角色选择集名称已占用：" + name)
 
@@ -143,8 +143,11 @@ class MayaBodySelectionSetsMixin:
         c.sets((self._body_selection_set_address(plan.control_set),
                 self._body_selection_set_address(plan.deform_set),
                 all_set), add=root_set)
+        group = self._body_selection_set_address(plan.character_group)
+        c.createNode("transform", name=group, skipSelect=True)
         motion = self._body_selection_set_address(plan.motion_system)
-        c.createNode("transform", name=motion, skipSelect=True)
+        c.createNode("transform", name=motion, parent=group,
+                     skipSelect=True)
         pose = self._body_selection_set_address(plan.build_pose)
         c.createNode("transform", name=pose, parent=motion,
                      skipSelect=True)
@@ -198,11 +201,18 @@ class MayaBodySelectionSetsMixin:
             raise RuntimeError("角色选择集嵌套成员不一致")
         pose = self._body_selection_set_address(plan.build_pose)
         motion = self._body_selection_set_address(plan.motion_system)
+        group = self._body_selection_set_address(plan.character_group)
+        group_paths = c.ls(group, long=True) or []
         motion_paths = c.ls(motion, long=True) or []
         pose_paths = c.ls(pose, long=True) or []
         if (not c.objExists(pose) or c.nodeType(pose) != "transform"
+                or len(group_paths) != 1
                 or len(motion_paths) != 1
                 or len(pose_paths) != 1
+                or c.listRelatives(group_paths[0], parent=True,
+                                   fullPath=True)
+                or (c.listRelatives(motion_paths[0], parent=True,
+                                    fullPath=True) or []) != group_paths
                 or (c.listRelatives(pose_paths[0], parent=True,
                                     fullPath=True) or []) != motion_paths
                 or any(not c.getAttr(pose + "." + attribute, lock=True)
