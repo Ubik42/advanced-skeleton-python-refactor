@@ -21,6 +21,7 @@ from adv_py.core.joint_labels import JointLabel
 
 from .maya_source_skeleton_fit import MayaSourceSkeletonFitHost
 from .maya_fbx_rig_transfer import MayaFBXRigTransferMixin
+from .maya_adv_icons import create_adv_icon
 
 
 class MayaFBXRigSourceReader:
@@ -341,10 +342,9 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         controls = plan_fbx_rig_fk_controls(body, plan)
         main_system = c.createNode("transform", name="MainSystem",
                                    parent="|Group|MotionSystem")
-        main = c.circle(name="Main", normal=(0, 1, 0),
-                        radius=max(plan.scale * 2.5, .01),
-                        constructionHistory=False)[0]
-        main = c.parent(main, main_system, relative=True)[0]
+        main = create_adv_icon(c, name="Main", parent=main_system,
+            template="Main_icon", radius=max(plan.scale * 2.5, .01),
+            fallback_normal=(0, 1, 0))
         c.setAttr(main + ".overrideEnabled", True)
         c.setAttr(main + ".overrideColor", 17)
         control_paths: dict[str, str] = {}
@@ -357,10 +357,9 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             matrix = c.xform(spec.body_joint_path, query=True,
                              worldSpace=True, matrix=True)
             c.xform(offset, worldSpace=True, matrix=matrix)
-            control = c.circle(name=spec.control_name, normal=(1, 0, 0),
-                               radius=spec.radius,
-                               constructionHistory=False)[0]
-            control = c.parent(control, offset, relative=True)[0]
+            control = create_adv_icon(c, name=spec.control_name,
+                parent=offset, template="FK_icon", radius=spec.radius,
+                fallback_normal=(1, 0, 0), fallback_sections=12)
             control_paths[spec.control_name] = (
                 c.ls(control, long=True, type="transform") or [control])[0]
             c.setAttr(control + ".overrideEnabled", True)
