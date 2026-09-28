@@ -31,6 +31,7 @@ class BodyCharacterGlobalPlan:
     driven_roots: tuple[str, ...]
     scale_destinations: tuple[str, ...]
     joint_visibility_path: str | None
+    finger_visibility_paths: tuple[str, ...]
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -76,6 +77,11 @@ class BodyCharacterGlobalPlan:
     def scale_system_paths(self) -> tuple[str, ...]:
         return (("|Group|MotionSystem|AimSystem",)
                 if self.visibility_controls else ())
+
+    @property
+    def has_finger_visibility(self) -> bool:
+        return (self.joint_visibility_path is not None
+                or bool(self.finger_visibility_paths))
 
     @property
     def circle_normal(self) -> Vector3:
@@ -132,6 +138,8 @@ class BodyCharacterGlobalSnapshot:
     visibility_controls: tuple[tuple[str, bool, str | None], ...] = ()
     scale_system_sources: tuple[tuple[str, str | None], ...] = ()
     joint_visibility: tuple[bool, str | None] | None = None
+    finger_visibility: tuple[tuple[str, str | None], ...] = ()
+    finger_visibility_value: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +157,7 @@ def plan_body_character_global(
     scale_destinations: tuple[str, ...],
     radius: float = 12.0,
     body_root_via_controls: bool = False,
+    finger_visibility_paths: tuple[str, ...] = (),
 ) -> BodyCharacterGlobalPlan:
     if (
         not isinstance(up_axis, FitUpAxis)
@@ -158,6 +167,10 @@ def plan_body_character_global(
         or not driven_roots
         or not isinstance(scale_destinations, tuple)
         or not isinstance(body_root_via_controls, bool)
+        or not isinstance(finger_visibility_paths, tuple)
+        or len(set(finger_visibility_paths)) != len(finger_visibility_paths)
+        or any(not isinstance(path, str) or not path.startswith("|")
+               for path in finger_visibility_paths)
         or (not body_root_via_controls and body_root not in driven_roots)
         or (body_root_via_controls and (
             body_root in driven_roots
@@ -229,6 +242,7 @@ def plan_body_character_global(
         joint_visibility_path=(
             body_root if body_root.startswith("|Group|DeformationSystem|")
             else None),
+        finger_visibility_paths=finger_visibility_paths,
     )
 
 
@@ -377,6 +391,23 @@ def audit_body_character_global(
             "joint_visibility_mismatch",
             "Body 根关节的总控可见性接线不一致",
             plan.joint_visibility_path,
+        ))
+    expected_finger_visibility = tuple(
+        (path + ".visibility", f"{plan.control_path}.fingerVis")
+        for path in plan.finger_visibility_paths
+    )
+    if snapshot.finger_visibility != expected_finger_visibility:
+        issues.append(BodyCharacterGlobalIssue(
+            "finger_visibility_mismatch",
+            "手指 FK 根的总控可见性接线不一致",
+            plan.control_path,
+        ))
+    if snapshot.finger_visibility_value != (
+            True if plan.has_finger_visibility else None):
+        issues.append(BodyCharacterGlobalIssue(
+            "finger_visibility_attribute_mismatch",
+            "总控 fingerVis 属性缺失或默认值不一致",
+            plan.control_path,
         ))
     return tuple(issues)
 

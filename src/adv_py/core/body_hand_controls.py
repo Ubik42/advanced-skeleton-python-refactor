@@ -53,6 +53,12 @@ class BodyHandFkRootSpec:
     world_position: Vector3
     world_axes: AxisFrame
 
+    @property
+    def follow_matrix_name(self) -> str | None:
+        if self.parent_path == self.wrist_joint:
+            return None
+        return f"AdvPy_HandFKRootFollow_{self.side.value}"
+
 
 @dataclass(frozen=True, slots=True)
 class BodyHandFkControlPlan:
@@ -61,7 +67,9 @@ class BodyHandFkControlPlan:
 
     @property
     def node_names(self) -> tuple[str, ...]:
-        values = [root.name for root in self.roots]
+        values = [name for root in self.roots
+                  for name in (root.name, *((root.follow_matrix_name,)
+                                           if root.follow_matrix_name else ()))]
         for control in self.controls:
             values.extend((
                 control.offset_name,
@@ -94,6 +102,7 @@ class BodyHandFkRootState:
     local_translation: Vector3
     local_rotation: Vector3
     local_scale: Vector3
+    follow_matrix_sources: tuple[str | None, str | None, str | None] = (None, None, None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,13 +268,16 @@ def plan_body_hand_fk_controls(
                 f"Body 缺少唯一的 Wrist_{suffix}"
             )
         root_name = f"{prefix}AdvPy_HandFKControls_{suffix}"
-        root_path = f"{wrist.path}|{root_name}"
+        root_parent = ("|Group|MotionSystem|FKSystem"
+                       if body.root.startswith("|Group|DeformationSystem|")
+                       else wrist.path)
+        root_path = f"{root_parent}|{root_name}"
         roots.append(BodyHandFkRootSpec(
             side=side,
             wrist_joint=wrist.path,
             path=root_path,
             name=root_name,
-            parent_path=wrist.path,
+            parent_path=root_parent,
             world_position=wrist.world_position,
             world_axes=wrist.world_axes,
         ))
@@ -638,7 +650,19 @@ def audit_body_hand_fk_controls(
         if state.parent_path != spec.parent_path:
             issues.append(BodyHandControlIssue(
                 "hand_root_parent_mismatch",
-                "Hand FK 根节点未挂在对应 Wrist 下",
+                "Hand FK 根节点父级不一致",
+                path,
+            ))
+        expected_follow = (
+            (spec.wrist_joint + ".worldMatrix[0]",
+             spec.path + ".parentInverseMatrix[0]",
+             spec.follow_matrix_name + ".matrixSum")
+            if spec.follow_matrix_name else (None, None, None)
+        )
+        if state.follow_matrix_sources != expected_follow:
+            issues.append(BodyHandControlIssue(
+                "hand_root_follow_mismatch",
+                "Hand FK 根节点的 Wrist 跟随矩阵不一致",
                 path,
             ))
         if not (

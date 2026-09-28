@@ -246,6 +246,9 @@ class BuildBodyCharacterRig:
             ),
             radius=global_control_radius,
             body_root_via_controls=include_torso,
+            finger_visibility_paths=(
+                tuple(root.path for root in hand.controls.roots)
+                if hand is not None else ()),
         )
         spaces = plan_body_control_spaces(safety.body, torso.torso, arm, leg, global_control) if include_control_spaces else None
         direct_controls = (

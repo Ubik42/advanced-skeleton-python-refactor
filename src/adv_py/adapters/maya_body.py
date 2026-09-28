@@ -935,6 +935,16 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         or not bool(self._cmds.getAttr(visibility))):
                     raise FitSkeletonValidationError(
                         "角色 Body 根关节不可安全连接 jointVis")
+            for path in plan.finger_visibility_paths:
+                visibility = path + ".visibility"
+                if ((self._cmds.ls(path, long=True, type="transform") or [])
+                        != [path]
+                        or source(visibility) is not None
+                        or not bool(self._cmds.getAttr(
+                            visibility, settable=True))
+                        or not bool(self._cmds.getAttr(visibility))):
+                    raise FitSkeletonValidationError(
+                        f"手指 FK 根不可安全连接 fingerVis：{path}")
 
             self._transaction_changed = True
             existing_group = self._cmds.ls(
@@ -1075,6 +1085,15 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 self._cmds.connectAttr(
                     control + ".jointVis",
                     plan.joint_visibility_path + ".visibility")
+            if plan.has_finger_visibility:
+                self._cmds.addAttr(
+                    control, longName="fingerVis", attributeType="bool",
+                    defaultValue=True, keyable=False)
+                self._cmds.setAttr(
+                    control + ".fingerVis", channelBox=True)
+                for path in plan.finger_visibility_paths:
+                    self._cmds.connectAttr(
+                        control + ".fingerVis", path + ".visibility")
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
@@ -1241,6 +1260,14 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 (bool(self._cmds.getAttr(control + ".jointVis")),
                  source(plan.joint_visibility_path + ".visibility"))
                 if plan.joint_visibility_path is not None else None
+            ),
+            finger_visibility=tuple(
+                (path + ".visibility", source(path + ".visibility"))
+                for path in plan.finger_visibility_paths
+            ),
+            finger_visibility_value=(
+                bool(self._cmds.getAttr(control + ".fingerVis"))
+                if plan.has_finger_visibility else None
             ),
         )
 
@@ -6178,18 +6205,22 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         self._require_transaction()
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
-            if self.find_name_collisions(spec.name):
+            if (self.find_name_collisions(spec.name)
+                    or (spec.follow_matrix_name is not None
+                        and self.find_name_collisions(
+                            spec.follow_matrix_name))):
                 raise FitSkeletonValidationError(
                     f"Hand FK 根节点名称冲突：{spec.name}"
                 )
-            parents = self._cmds.ls(
-                spec.parent_path,
-                long=True,
-                type="joint",
-            ) or []
-            if len(parents) != 1 or parents[0] != spec.parent_path:
+            wrists = self._cmds.ls(
+                spec.wrist_joint, long=True, type="joint") or []
+            parents = self._cmds.ls(spec.parent_path, long=True) or []
+            if (wrists != [spec.wrist_joint]
+                    or parents != [spec.parent_path]
+                    or self._cmds.nodeType(parents[0]) not in
+                    ("joint", "transform")):
                 raise FitSkeletonValidationError(
-                    f"Hand FK Wrist 父级失效：{spec.parent_path}"
+                    f"Hand FK Wrist 或控制父级失效：{spec.parent_path}"
                 )
             self._transaction_changed = True
             root = self._cmds.createNode(
@@ -6201,6 +6232,18 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             root = (self._cmds.ls(root, long=True) or [root])[0]
             if root != spec.path:
                 raise RuntimeError(f"Hand FK 根节点路径漂移：{spec.name}")
+            if spec.follow_matrix_name is not None:
+                follow = self._cmds.createNode(
+                    "multMatrix", name=spec.follow_matrix_name,
+                    skipSelect=True)
+                self._cmds.connectAttr(
+                    spec.wrist_joint + ".worldMatrix[0]",
+                    follow + ".matrixIn[0]")
+                self._cmds.connectAttr(
+                    root + ".parentInverseMatrix[0]",
+                    follow + ".matrixIn[1]")
+                self._cmds.connectAttr(
+                    follow + ".matrixSum", root + ".offsetParentMatrix")
             return root
         finally:
             if selection:
@@ -6825,6 +6868,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         self,
         plan: BodyHandFkControlPlan,
     ) -> BodyHandFkControlSnapshot:
+        def input_source(plug: str) -> str | None:
+            values = self._cmds.listConnections(
+                plug, source=True, destination=False, plugs=True) or []
+            return (self._canonical_plug(values[0])
+                    if len(values) == 1 else None)
+
         roots = []
         for spec in plan.roots:
             matches = self._cmds.ls(
@@ -6869,6 +6918,13 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 local_scale=tuple(
                     float(value)
                     for value in self._cmds.getAttr(f"{path}.scale")[0]
+                ),
+                follow_matrix_sources=(
+                    tuple(input_source(plug) for plug in (
+                        spec.follow_matrix_name + ".matrixIn[0]",
+                        spec.follow_matrix_name + ".matrixIn[1]",
+                        path + ".offsetParentMatrix"))
+                    if spec.follow_matrix_name else (None, None, None)
                 ),
             ))
         controls = self._capture_body_limb_fk_control_states(
