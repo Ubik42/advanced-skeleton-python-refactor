@@ -267,10 +267,6 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
 
     source_by_path = {joint.path: joint for joint in source}
     reference_names = {spec.name for spec in reference.joints}
-    source_has_part_switches = any(
-        by_name[name].twist_joints is not None
-        or by_name[name].inbetween_joints is not None
-        for name in reference_names)
     specs = []
     part_metadata = []
     deform_profiles = []
@@ -297,7 +293,13 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                 "来源关节不能同时使用 Twist 和 Inbetween：" + joint.name)
         if joint.untwister is not None and type(joint.untwister) is not bool:
             raise FitSkeletonValidationError("来源 UnTwister 标记无效：" + joint.name)
-        if joint.untwister and not joint.inbetween_joints:
+        default_part = _STANDARD_BIPED_PARTS.get(reference_joint.name)
+        use_default_part = (default_part is not None
+                            and joint.twist_joints is None
+                            and joint.inbetween_joints is None)
+        if (joint.untwister and not joint.inbetween_joints
+                and not (use_default_part
+                         and default_part[0] is FitJointField.INBETWEEN_JOINTS)):
             raise FitSkeletonValidationError(
                 "来源 UnTwister 需要 Inbetween 分段：" + joint.name)
         if (not isinstance(joint.additional_fit_edits, tuple)
@@ -340,11 +342,11 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                 (joint.untwister, FitJointField.UNTWISTER)):
             if value is not None:
                 edits.append(FitJointFieldEdit(field, value))
-        if not source_has_part_switches and reference_joint.name in (
-                _STANDARD_BIPED_PARTS):
-            field, value = _STANDARD_BIPED_PARTS[reference_joint.name]
+        if use_default_part:
+            field, value = default_part
             edits.append(FitJointFieldEdit(field, value))
-            if reference_joint.name == "Neck":
+            if (reference_joint.name == "Neck"
+                    and joint.untwister is None):
                 edits.append(FitJointFieldEdit(FitJointField.UNTWISTER, True))
         edits.extend(joint.additional_fit_edits)
         if edits:
