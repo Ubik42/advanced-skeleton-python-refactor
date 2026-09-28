@@ -13,11 +13,20 @@ _SHAPE = re.compile(r'createNode nurbsCurve -n "([^"]+)" -p "([^"]+)";')
 _OVERRIDE_ENABLED = re.compile(r'setAttr "\.ove" (yes|no);')
 _OVERRIDE_COLOR = re.compile(r'setAttr "\.ovc" ([0-9]+);')
 _LOCAL_SOURCE = Path.home() / ".adv_py" / "as_icons_path.txt"
+_PROJECT_SOURCE = (Path(__file__).resolve().parents[3]
+                   / "local" / "adv_6_925" / "asIcons.ma")
 
 
 def _icon_source() -> Path | None:
     configured = os.environ.get("ADV_6925_ICONS_FILE", "").strip()
-    if not configured and _LOCAL_SOURCE.is_file():
+    if configured:
+        path = Path(configured).expanduser()
+        if not path.is_file():
+            raise ValueError("原版控制器图标文件不存在：" + str(path))
+        return path
+    if _PROJECT_SOURCE.is_file():
+        return _PROJECT_SOURCE
+    if _LOCAL_SOURCE.is_file():
         configured = _LOCAL_SOURCE.read_text(encoding="utf-8").strip()
     if not configured:
         return None
