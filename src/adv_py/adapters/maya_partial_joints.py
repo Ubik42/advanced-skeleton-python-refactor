@@ -271,11 +271,13 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
         if c.objExists(icon):
             control = c.duplicate(icon, name=self._node("FK" + name),
                                   returnRootsOnly=True)[0]
+            c.scale(0.834, 0.834, 0.834, control + ".cv[*]",
+                    relative=True)
             control = c.parent(control, parent, relative=True)[0]
         else:
             control = create_adv_icon(
                 c, name=self._node("FK" + name), parent=parent,
-                template="FaceA_icon", radius=self._height() / 20.0,
+                template="FaceA_icon", radius=0.834,
                 fallback_normal=(1.0, 0.0, 0.0))
         for shape in c.listRelatives(control, shapes=True, fullPath=True) or []:
             c.setAttr(shape + ".overrideEnabled", True)
