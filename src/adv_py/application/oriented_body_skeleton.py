@@ -76,11 +76,13 @@ class BuildOrientedBodySkeleton:
         *,
         center_tolerance: float = 0.01,
         infer_missing_labels: bool = False,
+        root_parent_path: str | None = None,
     ) -> OrientedBodySkeletonBuildPlan:
         build = self._builder.plan(
             container_name,
             center_tolerance=center_tolerance,
             infer_missing_labels=infer_missing_labels,
+            root_parent_path=root_parent_path,
         )
         return OrientedBodySkeletonBuildPlan(
             build,
@@ -96,11 +98,13 @@ class BuildOrientedBodySkeleton:
         *,
         center_tolerance: float = 0.01,
         infer_missing_labels: bool = False,
+        root_parent_path: str | None = None,
     ) -> OrientedBodySkeletonBuildResult:
         plan = self.plan(
             container_name,
             center_tolerance=center_tolerance,
             infer_missing_labels=infer_missing_labels,
+            root_parent_path=root_parent_path,
         )
         if not plan.ready:
             raise FitSkeletonValidationError(

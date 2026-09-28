@@ -23,7 +23,7 @@ from adv_py.core.fit_part import (
     plan_fit_part_reparents,
 )
 
-from .fit_symmetry import FitSymmetryPlan, PlanFitSymmetry
+from .fit_symmetry import FitSymmetryPlan, PlanFitSymmetry, anchor_fit_symmetry
 
 
 class BodySkeletonHost(Protocol):
@@ -101,13 +101,14 @@ class BuildBodySkeleton:
         *,
         center_tolerance: float = 0.01,
         infer_missing_labels: bool = False,
+        root_parent_path: str | None = None,
     ) -> BodySkeletonBuildPlan:
         if not isinstance(infer_missing_labels, bool):
             raise FitSkeletonValidationError("推断缺失关节标签必须是布尔值")
-        symmetry = self._symmetry.execute(
+        symmetry = anchor_fit_symmetry(self._symmetry.execute(
             container_name,
             center_tolerance=center_tolerance,
-        )
+        ), root_parent_path)
         labels: dict[str, JointLabel] = {}
         profiles = {
             node.path: self._host.read_fit_deform_profile(node.path)
@@ -177,11 +178,13 @@ class BuildBodySkeleton:
         *,
         center_tolerance: float = 0.01,
         infer_missing_labels: bool = False,
+        root_parent_path: str | None = None,
     ) -> BodySkeletonBuildResult:
         plan = self.plan(
             container_name,
             center_tolerance=center_tolerance,
             infer_missing_labels=infer_missing_labels,
+            root_parent_path=root_parent_path,
         )
         if not plan.ready:
             raise FitSkeletonValidationError(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from adv_py.core.fit_orientation import FitOrientationSnapshot
@@ -27,6 +27,25 @@ class FitSymmetryPlan:
     source: FitOrientationSnapshot
     settings: FitSkeletonSettings
     instances: tuple[FitSymmetryInstance, ...]
+
+
+def anchor_fit_symmetry(plan: FitSymmetryPlan, parent_path: str | None
+                        ) -> FitSymmetryPlan:
+    """Place the generated Body tree under an existing transform path."""
+    if parent_path is None:
+        return plan
+    if (not isinstance(parent_path, str) or not parent_path.startswith("|")
+            or any(not part for part in parent_path[1:].split("|"))):
+        raise FitSkeletonValidationError("Body 根父级必须是完整 DAG 路径")
+    roots = [item for item in plan.instances if item.parent_output_path is None]
+    if len(roots) != 1 or not roots[0].output_path.startswith("|"):
+        raise FitSkeletonValidationError("Fit 镜像展开必须恰有一个 Body 根关节")
+    return replace(plan, instances=tuple(replace(
+        item,
+        output_path=parent_path + item.output_path,
+        parent_output_path=(parent_path + item.parent_output_path
+                            if item.parent_output_path else parent_path),
+    ) for item in plan.instances))
 
 
 class PlanFitSymmetry:

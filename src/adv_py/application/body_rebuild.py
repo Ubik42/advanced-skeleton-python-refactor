@@ -12,7 +12,8 @@ from adv_py.core.body_rebuild import (
 from adv_py.core.body_skeleton import BodySkeletonSnapshot, oriented_body_provenance
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
-from .fit_symmetry import FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry
+from .fit_symmetry import (FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry,
+                           anchor_fit_symmetry)
 from .oriented_body_skeleton import (
     BuildOrientedBodySkeleton,
     OrientedBodySkeletonBuildPlan,
@@ -57,11 +58,13 @@ class InspectBodyRebuildSafety:
         root_name: str = "Root_M",
         center_tolerance: float = 0.01,
     ) -> BodyRebuildSafetyAudit:
-        symmetry = self._symmetry.execute(
+        raw_symmetry = self._symmetry.execute(
             container_name,
             center_tolerance=center_tolerance,
         )
         body = self._host.capture_body_skeleton(root_name)
+        symmetry = anchor_fit_symmetry(
+            raw_symmetry, body.root.rsplit("|", 1)[0] or None)
         scene = self._host.capture_body_rebuild_state(root_name)
         provenance = oriented_body_provenance(
             symmetry.source.hierarchy.container,
@@ -149,6 +152,7 @@ class ReplaceOwnedBodySkeleton:
         raw_build = self._builder.plan(
             container_name,
             center_tolerance=center_tolerance,
+            root_parent_path=(safety.body.root.rsplit("|", 1)[0] or None),
         )
         owned_paths = {state.path for state in safety.body.joints}
         owned_collisions = tuple(

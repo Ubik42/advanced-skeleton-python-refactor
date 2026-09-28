@@ -393,10 +393,14 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             )
         parent = None
         if spec.parent_path is not None:
-            matches = self._cmds.ls(spec.parent_path, long=True, type="joint") or []
+            matches = self._cmds.ls(spec.parent_path, long=True) or []
             if len(matches) != 1:
                 raise FitSkeletonValidationError(
                     f"构建关节父级在执行前失效：{spec.parent_path}"
+                )
+            if self._cmds.nodeType(matches[0]) not in ("joint", "transform"):
+                raise FitSkeletonValidationError(
+                    f"构建关节父级类型无效：{spec.parent_path}"
                 )
             parent = matches[0]
         options = {
@@ -428,6 +432,25 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         self._cmds.addAttr(path, longName="advPySkinEnabled",
                            attributeType="bool", defaultValue=spec.skin_enabled)
         return path
+
+    def create_body_system_hierarchy(self) -> str:
+        """Reserve the original rig's Group and DeformationSystem before Body."""
+        self._require_transaction()
+        if any(self.find_name_collisions(name)
+               for name in ("Group", "DeformationSystem")):
+            raise FitSkeletonValidationError("Group 或 DeformationSystem 已存在")
+        group = self._cmds.createNode(
+            "transform", name="Group", skipSelect=True)
+        deformation = self._cmds.createNode(
+            "transform", name="DeformationSystem", parent=group,
+            skipSelect=True)
+        self._transaction_changed = True
+        group_path = (self._cmds.ls(group, long=True) or [group])[0]
+        deformation_path = (self._cmds.ls(deformation, long=True)
+                            or [deformation])[0]
+        if group_path != "|Group" or deformation_path != "|Group|DeformationSystem":
+            raise RuntimeError("Body 系统层级路径漂移")
+        return deformation_path
 
     def scene_linear_unit(self) -> BodyFbxLinearUnit:
         value = str(self._cmds.currentUnit(query=True, linear=True))
@@ -694,6 +717,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             if any(
                 self.find_name_collisions(name)
                 for name in plan.node_names
+                if not (name == "Group" and self._cmds.objExists(
+                    "|Group|DeformationSystem"))
             ):
                 raise FitSkeletonValidationError(
                     "角色总控名称在执行前发生冲突"
@@ -744,9 +769,21 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     )
 
             self._transaction_changed = True
-            group = self._cmds.createNode(
-                "transform", name="Group", skipSelect=True,
-            )
+            existing_group = self._cmds.ls(
+                plan.group_path, long=True, type="transform") or []
+            if existing_group:
+                if (existing_group != [plan.group_path]
+                        or not self._cmds.objExists(
+                            "|Group|DeformationSystem")
+                        or self._cmds.nodeType(
+                            "|Group|DeformationSystem") != "transform"):
+                    raise FitSkeletonValidationError(
+                        "角色总控发现不完整的 Group／DeformationSystem")
+                group = existing_group[0]
+            else:
+                group = self._cmds.createNode(
+                    "transform", name="Group", skipSelect=True,
+                )
             motion = self._cmds.createNode(
                 "transform", name="MotionSystem", parent=group,
                 skipSelect=True,

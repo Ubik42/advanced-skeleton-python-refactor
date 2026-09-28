@@ -73,6 +73,9 @@ from .oriented_body_skeleton import (BuildOrientedBodySkeleton,
     OrientedBodySkeletonBuildResult)
 
 
+_DEFORMATION_SYSTEM_PATH = "|Group|DeformationSystem"
+
+
 class _JoinedTransactionHost:
     """Forward host operations while the outer build owns the undo chunk."""
 
@@ -217,10 +220,18 @@ class BuildRegisteredBodyCharacter:
         if not use_fit_part_hierarchy and fit_part_twist_sources:
             raise ValueError("扭转来源只能随通用 Fit Part 构建提供")
         preview = BuildOrientedBodySkeleton(self._host).plan(
-            container_name, infer_missing_labels=infer_missing_labels)
+            container_name, infer_missing_labels=infer_missing_labels,
+            root_parent_path=_DEFORMATION_SYSTEM_PATH)
         if not preview.ready:
             raise FitSkeletonValidationError(
                 "角色构建预检失败，场景未修改：" + "；".join(preview.blockers))
+        hierarchy_collisions = tuple(
+            path for name in ("Group", "DeformationSystem")
+            for path in self._host.find_name_collisions(name))
+        if hierarchy_collisions:
+            raise FitSkeletonValidationError(
+                "角色系统层级名称已被占用："
+                + "、".join(hierarchy_collisions))
         rotation_inputs = ()
         bendy_chains = ()
         untwister_sources: frozenset[str] = frozenset()
@@ -299,8 +310,11 @@ class BuildRegisteredBodyCharacter:
                 "无 Root Part 的自定义 HipSwinger 须标记脊柱首节")
         with self._host.transaction("构建并登记完整 Body 角色"):
             joined = _JoinedTransactionHost(self._host)
+            if joined.create_body_system_hierarchy() != _DEFORMATION_SYSTEM_PATH:
+                raise RuntimeError("Body 变形系统层级创建路径漂移")
             skeleton = BuildOrientedBodySkeleton(joined).apply(
-                container_name, infer_missing_labels=infer_missing_labels)
+                container_name, infer_missing_labels=infer_missing_labels,
+                root_parent_path=_DEFORMATION_SYSTEM_PATH)
             rig = BuildBodyCharacterRig(joined).apply(container_name,
                 include_torso=True, include_spine_ik=True,
                 include_control_spaces=True, axial_description=axial_description,

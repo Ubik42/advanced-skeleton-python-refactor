@@ -256,6 +256,8 @@ class BuildBodyCharacterRig:
         collisions = tuple(sorted({
             path
             for name in global_control.node_names + (spaces.node_names if spaces else ())
+            if not (name == "Group" and safety.body.root.startswith(
+                "|Group|DeformationSystem|"))
             for path in self._host.find_name_collisions(name)
         }))
         return BodyCharacterRigBuildPlan(
