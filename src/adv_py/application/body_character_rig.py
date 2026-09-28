@@ -22,6 +22,10 @@ from adv_py.core.body_direct_fk_scale import (
     BodyDirectFkScaleSpec, plan_body_direct_fk_scales,
 )
 from adv_py.core.body_no_control import plan_body_no_control
+from adv_py.core.body_fk_global import (
+    BodyFkGlobalSpec, BodyFkGlobalState, audit_body_fk_global,
+    plan_body_fk_global,
+)
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
@@ -77,6 +81,10 @@ class BodyCharacterRigHost(
 
     def hide_body_fk_control(self, control: str) -> None: ...
     def capture_hidden_body_fk_control(self, control: str) -> bool: ...
+    def create_body_fk_global(self, spec: BodyFkGlobalSpec) -> None: ...
+    def capture_body_fk_global(
+        self, spec: BodyFkGlobalSpec,
+    ) -> BodyFkGlobalState: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +100,7 @@ class BodyCharacterRigBuildPlan:
     control_spaces: BodyControlSpacesPlan | None = None
     direct_fk_scales: tuple[BodyDirectFkScaleSpec, ...] = ()
     no_control_paths: tuple[str, ...] = ()
+    fk_globals: tuple[BodyFkGlobalSpec, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -139,6 +148,7 @@ class BodyCharacterRigBuildResult:
     global_control: BodyCharacterGlobalSnapshot
     body: BodySkeletonSnapshot
     torso: BodyTorsoSnapshot | None = None
+    fk_globals: tuple[BodyFkGlobalState, ...] = ()
 
 
 class BuildBodyCharacterRig:
@@ -320,9 +330,17 @@ class BuildBodyCharacterRig:
             arm.fk_controls.controls + leg.fk_controls.controls
             + (hand.controls.controls if hand else ())
             + (torso.torso.controls.controls if torso else ()))
+        fk_globals = plan_body_fk_global(
+            safety.symmetry.source.metadata,
+            arm.fk_controls.controls + leg.fk_controls.controls
+            + (hand.controls.controls if hand else ())
+            + (torso.torso.controls.controls if torso else ()))
         collisions = tuple(sorted({
             path
-            for name in global_control.node_names + (spaces.node_names if spaces else ())
+            for name in (global_control.node_names
+                         + (spaces.node_names if spaces else ())
+                         + tuple(name for spec in fk_globals
+                                 for name in spec.node_names))
             if not (name in ("Group", "MotionSystem") and safety.body.root.startswith(
                 "|Group|DeformationSystem|"))
             for path in self._host.find_name_collisions(name)
@@ -338,6 +356,7 @@ class BuildBodyCharacterRig:
             control_spaces=spaces,
             direct_fk_scales=direct_fk_scales,
             no_control_paths=no_control_paths,
+            fk_globals=fk_globals,
             shared_input_stable=(
                 arm.safety == leg.safety
                 and (hand is None or hand.safety == arm.safety)
@@ -411,6 +430,15 @@ class BuildBodyCharacterRig:
                    for control in plan.no_control_paths):
                 raise RuntimeError("Fit noControl 曲线隐藏状态不一致")
             self._host.create_body_character_global(plan.global_control)
+            for spec in plan.fk_globals:
+                self._host.create_body_fk_global(spec)
+            fk_global_states = tuple(
+                self._host.capture_body_fk_global(spec)
+                for spec in plan.fk_globals)
+            if any(audit_body_fk_global(spec, state)
+                   for spec, state in zip(plan.fk_globals,
+                                          fk_global_states)):
+                raise RuntimeError("FK Global 矩阵层构建后复检失败")
             for spec in plan.direct_fk_scales:
                 self._host.preflight_body_direct_fk_scale(spec)
             for spec in plan.direct_fk_scales:
@@ -451,4 +479,5 @@ class BuildBodyCharacterRig:
             global_control=global_control,
             body=body,
             torso=torso,
+            fk_globals=fk_global_states,
         )

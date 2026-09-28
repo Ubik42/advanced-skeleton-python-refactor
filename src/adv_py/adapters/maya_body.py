@@ -82,6 +82,10 @@ from adv_py.core.body_character_global import (
     BodyCharacterGlobalSnapshot,
     fit_character_height,
 )
+from adv_py.core.body_fk_global import (
+    BodyFkGlobalSpec, BodyFkGlobalState, GLOBAL_FOLLOW,
+    body_fk_global_sources,
+)
 from adv_py.core.body_root_motion import (
     BodyRootMotionBakePlan,
     BodyRootMotionBakedChannelState,
@@ -7994,6 +7998,141 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 self._cmds.select(selection, replace=True)
             else:
                 self._cmds.select(clear=True)
+
+    def create_body_fk_global(self, spec: BodyFkGlobalSpec) -> None:
+        self._require_transaction()
+        c = self._cmds
+        for path in (spec.control, spec.offset, spec.extra, GLOBAL_FOLLOW):
+            if (c.ls(path, long=True, type="transform") or []) != [path]:
+                raise FitSkeletonValidationError("Global FK 层缺失：" + path)
+        if (c.listConnections(spec.extra + ".offsetParentMatrix",
+                              source=True, destination=False) or []):
+            raise FitSkeletonValidationError(
+                "Global FK Extra 已有 OPM 输入：" + spec.extra)
+        if any(self.find_name_collisions(name) for name in spec.node_names):
+            raise FitSkeletonValidationError(
+                "Global FK 矩阵节点名称冲突：" + spec.control)
+        if c.attributeQuery("Global", node=spec.control, exists=True):
+            raise FitSkeletonValidationError(
+                "Global FK 控制属性已存在：" + spec.control)
+        self._transaction_changed = True
+        bind_matrix = tuple(float(value) for value in c.xform(
+            spec.offset, query=True, worldSpace=True, matrix=True))
+        if len(bind_matrix) != 16:
+            raise RuntimeError("Global FK 绑定矩阵无效")
+        c.addAttr(spec.control, longName="Global", attributeType="double",
+                  minValue=0, maxValue=10,
+                  defaultValue=spec.default_weight, keyable=True)
+        if spec.translate:
+            c.addAttr(spec.control, longName="GlobalTranslate",
+                      attributeType="double", minValue=0, maxValue=10,
+                      defaultValue=spec.default_weight, keyable=True)
+        mm = c.createNode("multMatrix", name=spec.matrix_name,
+                          skipSelect=True)
+        c.setAttr(mm + ".matrixIn[0]", *bind_matrix, type="matrix")
+        c.connectAttr(GLOBAL_FOLLOW + ".worldMatrix[0]",
+                      mm + ".matrixIn[1]")
+        c.connectAttr(spec.offset + ".worldInverseMatrix[0]",
+                      mm + ".matrixIn[2]")
+        rot_pick = c.createNode("pickMatrix", name=spec.rotate_pick_name,
+                                skipSelect=True)
+        c.setAttr(rot_pick + ".useTranslate", False)
+        c.setAttr(rot_pick + ".useScale", False)
+        c.setAttr(rot_pick + ".useShear", False)
+        c.connectAttr(mm + ".matrixSum", rot_pick + ".inputMatrix")
+        rot_blend = c.createNode("blendMatrix", name=spec.rotate_blend_name,
+                                 skipSelect=True)
+        c.connectAttr(rot_pick + ".outputMatrix",
+                      rot_blend + ".target[0].targetMatrix")
+        rot_uc = c.createNode("unitConversion",
+                              name=spec.rotate_conversion_name,
+                              skipSelect=True)
+        c.setAttr(rot_uc + ".conversionFactor", 0.1)
+        c.connectAttr(spec.control + ".Global", rot_uc + ".input")
+        c.connectAttr(rot_uc + ".output",
+                      rot_blend + ".target[0].weight")
+        output = rot_blend + ".outputMatrix"
+        if spec.translate:
+            pos_pick = c.createNode("pickMatrix",
+                                    name=spec.position_pick_name,
+                                    skipSelect=True)
+            c.setAttr(pos_pick + ".useRotate", False)
+            c.setAttr(pos_pick + ".useScale", False)
+            c.setAttr(pos_pick + ".useShear", False)
+            c.connectAttr(mm + ".matrixSum", pos_pick + ".inputMatrix")
+            pos_blend = c.createNode("blendMatrix",
+                                     name=spec.position_blend_name,
+                                     skipSelect=True)
+            c.connectAttr(pos_pick + ".outputMatrix",
+                          pos_blend + ".target[0].targetMatrix")
+            pos_uc = c.createNode("unitConversion",
+                                  name=spec.position_conversion_name,
+                                  skipSelect=True)
+            c.setAttr(pos_uc + ".conversionFactor", 0.1)
+            c.connectAttr(spec.control + ".GlobalTranslate",
+                          pos_uc + ".input")
+            c.connectAttr(pos_uc + ".output",
+                          pos_blend + ".target[0].weight")
+            compose = c.createNode("multMatrix", name=spec.compose_name,
+                                   skipSelect=True)
+            c.connectAttr(rot_blend + ".outputMatrix",
+                          compose + ".matrixIn[0]")
+            c.connectAttr(pos_blend + ".outputMatrix",
+                          compose + ".matrixIn[1]")
+            output = compose + ".matrixSum"
+        c.connectAttr(output, spec.extra + ".offsetParentMatrix")
+
+    def capture_body_fk_global(
+        self, spec: BodyFkGlobalSpec,
+    ) -> BodyFkGlobalState:
+        c = self._cmds
+
+        def source(plug: str) -> str | None:
+            values = c.listConnections(plug, source=True,
+                                       destination=False, plugs=True) or []
+            return values[0] if len(values) == 1 else None
+
+        def flags(node: str) -> tuple[bool, bool, bool, bool] | None:
+            if not c.objExists(node):
+                return None
+            return tuple(bool(c.getAttr(node + ".use" + name))
+                         for name in ("Translate", "Rotate", "Scale", "Shear"))
+
+        bind_matrix = None
+        if c.objExists(spec.matrix_name):
+            values = c.getAttr(spec.matrix_name + ".matrixIn[0]")
+            if (isinstance(values, (list, tuple)) and len(values) == 1
+                    and isinstance(values[0], (list, tuple))):
+                values = values[0]
+            if isinstance(values, (list, tuple)):
+                bind_matrix = tuple(float(value) for value in values)
+
+        return BodyFkGlobalState(
+            control=spec.control,
+            extra=spec.extra,
+            weight=(float(c.getAttr(spec.control + ".Global"))
+                    if c.attributeQuery("Global", node=spec.control,
+                                        exists=True) else None),
+            translate_weight=(
+                float(c.getAttr(spec.control + ".GlobalTranslate"))
+                if c.attributeQuery("GlobalTranslate", node=spec.control,
+                                    exists=True) else None),
+            nodes=tuple((name, c.nodeType(name) if c.objExists(name) else "")
+                        for name in spec.node_names),
+            sources=tuple((plug, source(plug)) for plug, _ in
+                          body_fk_global_sources(spec)),
+            rotate_pick_flags=flags(spec.rotate_pick_name),
+            position_pick_flags=(flags(spec.position_pick_name)
+                                 if spec.translate else None),
+            conversion_factors=tuple(
+                float(c.getAttr(name + ".conversionFactor"))
+                if c.objExists(name) else float("nan")
+                for name in ((spec.rotate_conversion_name,
+                              spec.position_conversion_name)
+                             if spec.translate else
+                             (spec.rotate_conversion_name,))),
+            bind_world_matrix=bind_matrix,
+        )
 
     def hide_body_fk_control(self, control: str) -> None:
         self._require_transaction()
