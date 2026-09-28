@@ -259,6 +259,10 @@ class BuildBodyCharacterRig:
             radius=global_control_radius,
             body_root_via_controls=include_torso,
             root_follow_main_path=root_follow_main_path,
+            root_follow_use_opm=(
+                BodyBuildOptions.from_fit_settings(
+                    safety.symmetry.settings).use_offset_parent_matrix
+                if root_follow_main_path is not None else False),
             finger_visibility_paths=(
                 tuple(root.path for root in hand.controls.roots)
                 if hand is not None else ()),

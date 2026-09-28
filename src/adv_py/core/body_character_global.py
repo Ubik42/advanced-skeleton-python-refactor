@@ -111,16 +111,25 @@ class BodyCharacterGlobalPlan:
     pole_arrows: tuple[BodyPoleArrowSpec, ...]
     head_aim_follow: BodyHeadAimFollowSpec | None
     root_follow_main_path: str | None = None
+    root_follow_use_opm: bool = False
 
     @property
     def root_follow_constraint_name(self) -> str | None:
         return ("RootFollowMain_parentConstraint1"
-                if self.root_follow_main_path is not None else None)
+                if self.root_follow_main_path is not None
+                and not self.root_follow_use_opm else None)
 
     @property
     def root_follow_scale_constraint_name(self) -> str | None:
         return ("RootFollowMain_scaleConstraint1"
-                if self.root_follow_main_path is not None else None)
+                if self.root_follow_main_path is not None
+                and not self.root_follow_use_opm else None)
+
+    @property
+    def root_follow_matrix_name(self) -> str | None:
+        return ("RootFollowMainMM_RootFollowMain"
+                if self.root_follow_main_path is not None
+                and self.root_follow_use_opm else None)
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -135,6 +144,8 @@ class BodyCharacterGlobalPlan:
               if self.root_follow_constraint_name is not None else ()),
             *((self.root_follow_scale_constraint_name,)
               if self.root_follow_scale_constraint_name is not None else ()),
+            *((self.root_follow_matrix_name,)
+              if self.root_follow_matrix_name is not None else ()),
             *(name for arrow in self.pole_arrows for name in arrow.node_names),
             *((self.head_aim_follow.static_matrix_name,
                self.head_aim_follow.parent_matrix_name,
@@ -264,6 +275,8 @@ class BodyCharacterGlobalSnapshot:
     head_aim_follow_state: tuple | None = None
     root_follow_main_state: tuple[str, str | None, str | None,
                                   str | None, str | None] | None = None
+    root_follow_matrix_state: tuple[str, str, str | None, str | None,
+                                    str | None, bool] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -286,6 +299,7 @@ def plan_body_character_global(
     pole_arrows: tuple[BodyPoleArrowSpec, ...] = (),
     head_aim_follow: BodyHeadAimFollowSpec | None = None,
     root_follow_main_path: str | None = None,
+    root_follow_use_opm: bool = False,
 ) -> BodyCharacterGlobalPlan:
     if (
         not isinstance(up_axis, FitUpAxis)
@@ -295,6 +309,7 @@ def plan_body_character_global(
         or not driven_roots
         or not isinstance(scale_destinations, tuple)
         or not isinstance(body_root_via_controls, bool)
+        or type(root_follow_use_opm) is not bool
         or not isinstance(finger_visibility_paths, tuple)
         or len(set(finger_visibility_paths)) != len(finger_visibility_paths)
         or any(not isinstance(path, str) or not path.startswith("|")
@@ -328,6 +343,7 @@ def plan_body_character_global(
             "|Group|MotionSystem|RootSystem|RootFollowMain"
             or any(path.startswith(root_follow_main_path + "|")
                    for path in driven_roots)))
+        or (root_follow_main_path is None and root_follow_use_opm)
         or (not body_root_via_controls and body_root not in driven_roots)
         or (body_root_via_controls and (
             body_root in driven_roots
@@ -404,6 +420,7 @@ def plan_body_character_global(
         pole_arrows=pole_arrows,
         head_aim_follow=head_aim_follow,
         root_follow_main_path=root_follow_main_path,
+        root_follow_use_opm=root_follow_use_opm,
     )
 
 
@@ -478,11 +495,25 @@ def audit_body_character_global(
          plan.root_follow_constraint_name,
          plan.root_follow_scale_constraint_name,
          plan.control_path, plan.control_path)
-        if plan.root_follow_main_path is not None else None)
+        if plan.root_follow_main_path is not None
+        and not plan.root_follow_use_opm else None)
     if snapshot.root_follow_main_state != expected_root_follow:
         issues.append(BodyCharacterGlobalIssue(
             "root_follow_main_mismatch",
             "RootFollowMain 的 Main 跟随约束不一致",
+            plan.root_follow_main_path,
+        ))
+    expected_root_matrix = (
+        (plan.root_follow_main_path, plan.root_follow_matrix_name,
+         plan.control_path + ".worldMatrix[0]",
+         "|Group|MotionSystem|RootSystem.worldInverseMatrix[0]",
+         plan.root_follow_matrix_name + ".matrixSum", True)
+        if plan.root_follow_main_path is not None
+        and plan.root_follow_use_opm else None)
+    if snapshot.root_follow_matrix_state != expected_root_matrix:
+        issues.append(BodyCharacterGlobalIssue(
+            "root_follow_main_matrix_mismatch",
+            "RootFollowMain 的 OPM 矩阵跟随不一致",
             plan.root_follow_main_path,
         ))
 

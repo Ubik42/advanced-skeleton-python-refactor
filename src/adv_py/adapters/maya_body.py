@@ -1124,16 +1124,31 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                                    type="transform") or []) != [follow_path]:
                     raise FitSkeletonValidationError(
                         "RootFollowMain 层级在总控创建前缺失")
-                constraint = self._cmds.parentConstraint(
-                    control, follow_path, maintainOffset=False,
-                    name=plan.root_follow_constraint_name)
-                if len(constraint) != 1:
-                    raise RuntimeError("RootFollowMain 跟随约束创建失败")
-                scale_constraint = self._cmds.scaleConstraint(
-                    control, follow_path, maintainOffset=False,
-                    name=plan.root_follow_scale_constraint_name)
-                if len(scale_constraint) != 1:
-                    raise RuntimeError("RootFollowMain 缩放约束创建失败")
+                if plan.root_follow_use_opm:
+                    matrix = self._cmds.createNode(
+                        "multMatrix", name=plan.root_follow_matrix_name,
+                        skipSelect=True)
+                    self._cmds.connectAttr(
+                        control + ".worldMatrix[0]",
+                        matrix + ".matrixIn[0]")
+                    self._cmds.connectAttr(
+                        "|Group|MotionSystem|RootSystem"
+                        + ".worldInverseMatrix[0]",
+                        matrix + ".matrixIn[1]")
+                    self._cmds.connectAttr(
+                        matrix + ".matrixSum",
+                        follow_path + ".offsetParentMatrix")
+                else:
+                    constraint = self._cmds.parentConstraint(
+                        control, follow_path, maintainOffset=False,
+                        name=plan.root_follow_constraint_name)
+                    if len(constraint) != 1:
+                        raise RuntimeError("RootFollowMain 跟随约束创建失败")
+                    scale_constraint = self._cmds.scaleConstraint(
+                        control, follow_path, maintainOffset=False,
+                        name=plan.root_follow_scale_constraint_name)
+                    if len(scale_constraint) != 1:
+                        raise RuntimeError("RootFollowMain 缩放约束创建失败")
             for plug in plan.scale_destinations:
                 self._cmds.connectAttr(plan.scale_source, plug)
             for attribute, system_path in plan.visibility_controls:
@@ -1405,7 +1420,27 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 ),
             ))
         follow_state = None
-        if plan.root_follow_main_path is not None:
+        follow_matrix_state = None
+        if (plan.root_follow_main_path is not None
+                and plan.root_follow_use_opm):
+            matrix_nodes = self._cmds.ls(plan.root_follow_matrix_name,
+                type="multMatrix") or []
+            if len(matrix_nodes) == 1:
+                follow = plan.root_follow_main_path
+                neutral = (
+                    all(abs(value) <= 1e-6 for value in
+                        (*vector(follow, "translate"),
+                         *vector(follow, "rotate")))
+                    and all(abs(value - 1.0) <= 1e-6 for value in
+                            vector(follow, "scale")))
+                follow_matrix_state = (
+                    one_path(follow, "transform"), matrix_nodes[0],
+                    source(matrix_nodes[0] + ".matrixIn[0]"),
+                    source(matrix_nodes[0] + ".matrixIn[1]"),
+                    source(follow + ".offsetParentMatrix"),
+                    neutral,
+                )
+        elif plan.root_follow_main_path is not None:
             parent_constraints = self._cmds.ls(
                 plan.root_follow_constraint_name, long=True,
                 type="parentConstraint") or []
@@ -1468,6 +1503,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 source(f"{control}.scale{axis}") for axis in "XYZ"
             ),
             root_follow_main_state=follow_state,
+            root_follow_matrix_state=follow_matrix_state,
             driven_roots=tuple(driven),
             scale_destination_sources=tuple(
                 (plug, source(plug))
