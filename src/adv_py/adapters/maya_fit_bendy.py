@@ -484,6 +484,10 @@ class MayaFitBendyMixin:
                 control = c.circle(name=name, normal=(1, 0, 0),
                                    radius=0.25,
                                    constructionHistory=False)[0]
+                if index == 1:
+                    c.move(spec.start_icon_offset, 0, 0,
+                           control + ".cv[0:99]", relative=True,
+                           objectSpace=True, worldSpaceDistance=True)
             parent = (spec.control_names[0]
                       if index == 2 and spec.control_count == 1
                       else _GROUPS[0])
@@ -870,18 +874,21 @@ class MayaFitBendyMixin:
                   defaultValue=False, keyable=False)
         c.setAttr(master + ".microVis", channelBox=True)
         positions = (spec.start_position, *spec.part_positions)
-        for index, (offset_name, control_name, output_name,
+        for index, (offset_name, extra_name, control_name, output_name,
                     guide_name, position) in enumerate(zip(
-                        spec.micro_offset_names, spec.micro_control_names,
+                        spec.micro_offset_names, spec.micro_extra_names,
+                        spec.micro_control_names,
                         spec.micro_output_names,
                         spec.motion_transform_names, positions)):
             offset = c.createNode("transform", name=offset_name,
                                   parent=_MICRO_GROUP, skipSelect=True)
             c.xform(offset, worldSpace=True, translation=position)
+            extra = c.createNode("transform", name=extra_name,
+                                 parent=offset, skipSelect=True)
             control = c.circle(name=control_name, normal=(1, 0, 0),
                                radius=0.15,
                                constructionHistory=False)[0]
-            c.parent(control, offset, absolute=True)
+            c.parent(control, extra, absolute=True)
             c.xform(control, worldSpace=True, translation=position)
             c.createNode("transform", name=output_name,
                          parent=control, skipSelect=True)
@@ -1024,15 +1031,21 @@ class MayaFitBendyMixin:
                                         sourceFromDestination=True)
                     != decompose + ".outputQuatW"):
                 return False
-        for index, (offset, control, output, guide) in enumerate(zip(
-                spec.micro_offset_names, spec.micro_control_names,
+        for index, (offset, extra, control, output, guide) in enumerate(zip(
+                spec.micro_offset_names, spec.micro_extra_names,
+                spec.micro_control_names,
                 spec.micro_output_names, spec.motion_transform_names)):
             blend, decompose, up = spec.micro_orientation_names[index]
             twist_add, twist_mults = spec.micro_twist_names[index]
             scale_add, delta_names, weight_names = (
                 spec.micro_scale_names[index])
-            if (not c.objExists(offset) or not c.objExists(control)
+            if (not c.objExists(offset) or not c.objExists(extra)
+                    or c.nodeType(extra) != "transform"
+                    or (c.listRelatives(extra, parent=True) or []) != [offset]
+                    or not c.objExists(control)
+                    or (c.listRelatives(control, parent=True) or []) != [extra]
                     or not c.objExists(output)
+                    or (c.listRelatives(output, parent=True) or []) != [control]
                     or not c.objExists(blend)
                     or c.nodeType(blend) != "blendMatrix"
                     or not c.objExists(decompose)
@@ -1151,6 +1164,20 @@ class MayaFitBendyMixin:
             return False
         if any(int(c.getAttr(name + ".rotateOrder"))
                != spec.rotation_order for name in spec.control_names):
+            return False
+        start_shapes = c.listRelatives(spec.control_names[1],
+                                       shapes=True, fullPath=True) or []
+        if (len(start_shapes) != 1
+                or c.nodeType(start_shapes[0]) != "nurbsCurve"):
+            return False
+        count = int(c.getAttr(start_shapes[0] + ".controlPoints",
+                              size=True))
+        if count < 4:
+            return False
+        center_x = sum(float(c.getAttr(
+            start_shapes[0] + f".controlPoints[{index}].xValue"))
+            for index in range(count)) / count
+        if abs(center_x - spec.start_icon_offset) > 1e-4:
             return False
         if not c.objExists(spec.control_names[0] + ".parametric"):
             return False

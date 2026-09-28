@@ -53,6 +53,12 @@ class FitBendyChainSpec:
             self.start_position, self.end_position))
 
     @property
+    def start_icon_offset(self) -> float:
+        """ADV moves only Bend0's CVs by one fifth of the segment length."""
+        return (dist(self.start_position, self.end_position) / 5.0
+                * (-1 if self.side == "L" else 1))
+
+    @property
     def stem(self) -> str:
         return self.start_body.rsplit("|", 1)[-1].rsplit("_", 1)[0]
 
@@ -211,12 +217,17 @@ class FitBendyChainSpec:
         return tuple("Micro" + name for name in self.deform_names)
 
     @property
+    def micro_extra_names(self) -> tuple[str, ...]:
+        return tuple("MicroExtra" + name for name in self.deform_names)
+
+    @property
     def micro_output_names(self) -> tuple[str, ...]:
         return tuple("MicroX" + name for name in self.deform_names)
 
     @property
     def micro_node_names(self) -> tuple[str, ...]:
-        return (*self.micro_offset_names, *self.micro_control_names,
+        return (*self.micro_offset_names, *self.micro_extra_names,
+                *self.micro_control_names,
                 *(name + "Shape" for name in self.micro_control_names),
                 *self.micro_output_names,
                 *(name + "Aim" for name in self.motion_transform_names),
