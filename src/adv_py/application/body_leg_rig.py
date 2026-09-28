@@ -34,6 +34,9 @@ from adv_py.core.body_leg_foot import (
     plan_body_leg_foot,
     requested_foot_pivot_sides,
 )
+from adv_py.core.body_leg_pole_aim import (
+    BodyLegPoleAimSpec, plan_body_leg_pole_aim,
+)
 from adv_py.core.body_leg_mechanisms import (
     BodyLegMechanismJointSpec,
     BodyLegMechanismPlan,
@@ -122,6 +125,8 @@ class BodyLegRigHost(BodyRebuildInspectionHost, Protocol):
     def capture_body_leg_volume(self, plan: BodyLegVolumePlan) -> BodyLegVolumeSnapshot: ...
     def create_body_leg_foot_side(self, spec: BodyLegFootSideSpec) -> None: ...
     def capture_body_leg_foot(self, plan: BodyLegFootPlan) -> BodyLegFootSnapshot: ...
+    def create_body_leg_pole_aim(self, spec: BodyLegPoleAimSpec) -> None: ...
+    def capture_body_leg_pole_aim(self, spec: BodyLegPoleAimSpec) -> bool: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +143,7 @@ class BodyLegRigBuildPlan:
     twist: BodyLegTwistPlan
     volume: BodyLegVolumePlan
     foot: BodyLegFootPlan
+    pole_aim: tuple[BodyLegPoleAimSpec, ...]
     name_collisions: tuple[str, ...]
 
     @property
@@ -202,6 +208,7 @@ class BuildBodyLegRig:
     def plan_from_safety(
         self, safety: BodyRebuildSafetyAudit, *, control_radius: float = 1.5,
         pole_distance_scale: float = 0.75, twist_joints_per_segment: int = 2,
+        defer_pole_aim: bool = False,
     ) -> BodyLegRigBuildPlan:
         """Plan this module from the character's shared immutable input."""
         mechanisms = plan_body_leg_mechanisms(safety.body)
@@ -259,6 +266,13 @@ class BuildBodyLegRig:
         foot = plan_body_leg_foot(
             safety.body, ik, up_axis=safety.symmetry.source.up_axis,
             foot_pivots_by_side=frozenset(requested_pivots))
+        pole_aim = (
+            plan_body_leg_pole_aim(
+                ik,
+                parent_source=safety.body.root, attach_pole=True)
+            if (not defer_pole_aim and BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).use_offset_parent_matrix)
+            else ())
         names = [
             mechanisms.root_name,
             fk_controls.root_name,
@@ -370,6 +384,7 @@ class BuildBodyLegRig:
                 for pivot in side.pivots
                 if pivot.multiplier_name
             )
+        names.extend(name for spec in pole_aim for name in spec.node_names)
         collisions = tuple(sorted({
             path
             for name in names
@@ -388,6 +403,7 @@ class BuildBodyLegRig:
             twist,
             volume,
             foot,
+            pole_aim,
             collisions,
         )
 
@@ -590,6 +606,15 @@ class BuildBodyLegRig:
         foot = self._host.capture_body_leg_foot(plan.foot)
         if audit_body_leg_foot(plan.foot, foot):
             raise RuntimeError("Leg Foot 阶段复检失败")
+        for spec in plan.pole_aim:
+            self._host.create_body_leg_pole_aim(spec)
+        if any(not self._host.capture_body_leg_pole_aim(spec)
+               for spec in plan.pole_aim):
+            raise RuntimeError("Leg PoleAim 阶段复检失败")
+        if plan.pole_aim:
+            foot = self._host.capture_body_leg_foot(plan.foot)
+            if audit_body_leg_foot(plan.foot, foot):
+                raise RuntimeError("Leg PoleAim 后 Foot 复检失败")
         ik = self._host.capture_body_leg_ik(plan.ik)
         if audit_body_leg_ik(
             plan.ik,

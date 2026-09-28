@@ -249,6 +249,7 @@ class BuildBodyCharacterRig:
             control_radius=leg_control_radius,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
+            defer_pole_aim=include_control_spaces,
         )
         expected_hand_names = {
             f"{source_name}_{suffix}"
@@ -378,7 +379,7 @@ class BuildBodyCharacterRig:
                         for item in safety.symmetry.source.metadata))
             else None)
         pole_aim = (
-            plan_body_leg_pole_aim(leg, torso.torso)
+            plan_body_leg_pole_aim(leg.ik, torso.torso)
             if include_control_spaces and torso is not None
             and BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).use_offset_parent_matrix

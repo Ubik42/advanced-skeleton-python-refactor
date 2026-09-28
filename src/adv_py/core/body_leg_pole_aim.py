@@ -22,6 +22,7 @@ class BodyLegPoleAimSpec:
     matrix_name: str
     swivel_name: str
     local_name: str
+    follow_name: str | None = None
 
     @property
     def frame_path(self):
@@ -43,17 +44,22 @@ class BodyLegPoleAimSpec:
     def node_names(self):
         return (self.frame_name, self.aligned_name, self.aim_name,
                 self.target_name, self.matrix_name, self.swivel_name,
-                self.local_name, self.frame_name + 'Constraint')
+                self.local_name, self.frame_name + 'Constraint') + (
+                    (self.follow_name,) if self.follow_name else ())
 
 
-def plan_body_leg_pole_aim(leg, torso):
+def plan_body_leg_pole_aim(ik, torso=None, *, parent_source=None,
+                           attach_pole=False):
+    if (torso is None) == (parent_source is None):
+        raise ValueError('PoleAim 需要唯一的父级来源')
+    source = torso.leg_lock.path if torso is not None else parent_source
     result = []
-    for limb in leg.ik.limbs:
+    for limb in ik.limbs:
         suffix = limb.side.value
         result.append(BodyLegPoleAimSpec(
             side=limb.side,
-            parent_source=torso.leg_lock.path,
-            ik_root=leg.ik.root_path,
+            parent_source=source,
+            ik_root=ik.root_path,
             ankle_control=limb.ankle_control_path,
             ankle_frame_parent=limb.ankle_sub_path or limb.ankle_control_path,
             pole_offset=limb.pole_offset_path,
@@ -67,5 +73,7 @@ def plan_body_leg_pole_aim(leg, torso):
             matrix_name=f'AdvPy_PoleAimAM_{suffix}',
             swivel_name=f'AdvPy_PoleAimSwivelCM_{suffix}',
             local_name=f'AdvPy_PoleAimLocalMM_{suffix}',
+            follow_name=(f'AdvPy_PoleAimFollow_{suffix}'
+                         if attach_pole else None),
         ))
     return tuple(result)

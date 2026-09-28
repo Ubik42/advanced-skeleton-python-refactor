@@ -6,10 +6,12 @@ class MayaBodyPoleAimMixin:
     def create_body_leg_pole_aim(self, spec):
         self._require_transaction()
         c = self._cmds
-        for path in (spec.parent_source, spec.ik_root, spec.ankle_control,
+        for path in (spec.ik_root, spec.ankle_control,
                      spec.ankle_frame_parent, spec.pole_offset):
             if (c.ls(path, long=True, type='transform') or []) != [path]:
                 raise FitSkeletonValidationError('PoleAim 输入路径无效：' + path)
+        if (c.ls(spec.parent_source, long=True) or []) != [spec.parent_source] or c.nodeType(spec.parent_source) not in ('joint', 'transform'):
+            raise FitSkeletonValidationError('PoleAim 父级来源无效')
         if not c.isConnected(spec.swivel_plug, spec.handle_twist):
             raise FitSkeletonValidationError('PoleAim 接管前 swivel 输入已变化')
         if any(self.find_name_collisions(name) for name in spec.node_names):
@@ -57,6 +59,9 @@ class MayaBodyPoleAimMixin:
                                     worldSpace=True, translation=True))
         c.disconnectAttr(spec.swivel_plug, spec.handle_twist)
         c.connectAttr(spec.swivel_plug, swivel + '.inputRotateX')
+        if spec.follow_name:
+            c.parentConstraint(target, spec.pole_offset,
+                               maintainOffset=True, name=spec.follow_name)
         self.capture_body_leg_pole_aim(spec)
 
     def capture_body_leg_pole_aim(self, spec, *, check_initial_pose=True):
@@ -79,6 +84,15 @@ class MayaBodyPoleAimMixin:
         if tuple(self._resolve_connected_node(node)
                  for node in sources) != (spec.parent_source,):
             raise FitSkeletonValidationError('PoleAim 父级参考框架变化')
+        if spec.follow_name:
+            if (not c.objExists(spec.follow_name)
+                    or c.nodeType(spec.follow_name) != 'parentConstraint'):
+                raise FitSkeletonValidationError('PoleAim Pole 跟随约束缺失')
+            follow_sources = c.parentConstraint(
+                spec.follow_name, query=True, targetList=True) or []
+            if tuple(self._resolve_connected_node(node)
+                     for node in follow_sources) != (spec.target_path,):
+                raise FitSkeletonValidationError('PoleAim Pole 跟随来源变化')
         edges = (
             (spec.frame_path + '.worldMatrix[0]',
              spec.matrix_name + '.inputMatrix'),
