@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from adv_py.application.source_skeleton_fit import SourceSkeletonJoint
 from adv_py.core.body_skeleton import FitDeformProfile
+from adv_py.core.fit_metadata import FitJointField, FitJointFieldEdit
 
 from .maya_face import MayaFaceHost
 
@@ -43,6 +44,21 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
             return FitDeformProfile(read("fat"), read("fatFront", "fatY"),
                                     read("fatWidth", "fatZ"))
 
+        primary_fields = frozenset((
+            FitJointField.TWIST_JOINTS,
+            FitJointField.INBETWEEN_JOINTS,
+            FitJointField.UNTWISTER,
+        ))
+
+        def additional_fit_edits(path: str) -> tuple[FitJointFieldEdit, ...]:
+            metadata = self.read_fit_joint_metadata(path)
+            return tuple(FitJointFieldEdit(
+                field,
+                metadata.local_no_flip if field is FitJointField.NO_FLIP
+                else getattr(metadata, field.value))
+                for field in FitJointField
+                if field in metadata.present_fields and field not in primary_fields)
+
         for path in paths:
             parent = (cmds.listRelatives(path, parent=True,
                                         fullPath=True) or [None])[0]
@@ -57,7 +73,8 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                 optional_int(path, "inbetweenJoints"),
                 optional_bool(path, "unTwister"),
                 optional_profile(path),
-                int(cmds.getAttr(path + ".rotateOrder"))))
+                int(cmds.getAttr(path + ".rotateOrder")),
+                additional_fit_edits(path)))
         return tuple(joints)
 
     def write_fit_rotation_order(self, joint: str, order: int) -> None:

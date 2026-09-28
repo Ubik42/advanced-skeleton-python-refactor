@@ -8,7 +8,9 @@ import re
 from typing import Protocol
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
-from adv_py.core.fit_metadata import FitJointField, FitJointFieldEdit
+from adv_py.core.fit_metadata import (
+    FitJointField, FitJointFieldEdit, FitJointMetadata, FitJointPatch,
+    FitJointValidationError, audit_fit_joint, predict_fit_joint_metadata)
 from adv_py.core.body_skeleton import FitDeformProfile
 from adv_py.core.fit_template import FitJointSpec, FitTemplateSpec
 from adv_py.core.fit_container import FitUpAxis
@@ -32,6 +34,7 @@ class SourceSkeletonJoint:
     untwister: bool | None = None
     deform_profile: FitDeformProfile | None = None
     rotation_order: int | None = None
+    additional_fit_edits: tuple[FitJointFieldEdit, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,6 +298,20 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         if joint.untwister and not joint.inbetween_joints:
             raise FitSkeletonValidationError(
                 "来源 UnTwister 需要 Inbetween 分段：" + joint.name)
+        if (not isinstance(joint.additional_fit_edits, tuple)
+                or any(not isinstance(edit, FitJointFieldEdit)
+                       for edit in joint.additional_fit_edits)):
+            raise FitSkeletonValidationError(
+                "来源 Fit 元数据格式无效：" + joint.name)
+        primary_fields = {
+            FitJointField.TWIST_JOINTS,
+            FitJointField.INBETWEEN_JOINTS,
+            FitJointField.UNTWISTER,
+        }
+        if any(edit.field in primary_fields
+               for edit in joint.additional_fit_edits):
+            raise FitSkeletonValidationError(
+                "来源 Fit 元数据与分段设置重复：" + joint.name)
         expected_parent = reference_joint.parent
         parent_path = joint.parent
         while parent_path and parent_path in source_by_path:
@@ -327,7 +344,20 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
             edits.append(FitJointFieldEdit(field, value))
             if reference_joint.name == "Neck":
                 edits.append(FitJointFieldEdit(FitJointField.UNTWISTER, True))
+        edits.extend(joint.additional_fit_edits)
         if edits:
+            try:
+                patch = FitJointPatch(tuple(edits))
+                metadata = predict_fit_joint_metadata(
+                    FitJointMetadata(reference_joint.name), patch)
+            except FitJointValidationError as error:
+                raise FitSkeletonValidationError(
+                    "来源 Fit 元数据无效：" + joint.name + "；" + str(error)) from error
+            issues = audit_fit_joint(metadata)
+            if issues:
+                raise FitSkeletonValidationError(
+                    "来源 Fit 元数据冲突：" + joint.name + "；"
+                    + "；".join(issue.message for issue in issues))
             part_metadata.append((reference_joint.name, tuple(edits)))
         if joint.deform_profile is not None:
             deform_profiles.append((reference_joint.name,
