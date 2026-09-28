@@ -98,7 +98,7 @@ def _independent_rig_twist_sources(
     dict[str, str], dict[str, str],
     dict[str, tuple[str, str, str, str]],
 ]:
-    """Use direct Body FK controls outside the driven Part hierarchy."""
+    """Read control or mechanism matrices outside the driven Part hierarchy."""
     controls = []
     if plan.torso is not None:
         controls.extend(plan.torso.torso.controls.controls)
@@ -115,14 +115,14 @@ def _independent_rig_twist_sources(
     }
     constraints = {control.driven_joint: control.constraint_name
                    for control in controls}
-    spine_blends: dict[str, tuple[str, str, str, str]] = {}
+    blended_matrices: dict[str, tuple[str, str, str, str]] = {}
     spine = plan.torso.torso.spine if plan.torso is not None else None
     if spine is not None:
-        spine_blends[spine.body_joints[1]] = (
+        blended_matrices[spine.body_joints[1]] = (
             spine.joints[1].path + ".worldMatrix[0]",
             spine.waist_output + ".worldMatrix[0]",
             spine.blend_plug, "AdvPy_SpineWaistOrient")
-        spine_blends[spine.body_joints[2]] = (
+        blended_matrices[spine.body_joints[2]] = (
             spine.joints[2].path + ".worldMatrix[0]",
             spine.joints[5].path + ".worldMatrix[0]",
             spine.blend_plug, "AdvPy_SpineChestOrient")
@@ -130,12 +130,30 @@ def _independent_rig_twist_sources(
     if spline is not None:
         count = len(spline.body_joints)
         for index in range(1, count):
-            spine_blends[spline.body_joints[index]] = (
+            blended_matrices[spline.body_joints[index]] = (
                 spline.joints[index].path + ".worldMatrix[0]",
                 spline.ik_outputs[index] + ".worldMatrix[0]",
                 spline.settings + ".spineIkFk",
                 f"AdvPy_SplineOrient{index}")
-    return matrices, constraints, spine_blends
+    for module in (plan.arm, plan.leg):
+        for side in module.blend.sides:
+            weight = module.blend.settings_path + "." + side.attribute
+            for joint in side.joints:
+                leaf = joint.body_joint.rsplit("|", 1)[-1]
+                stem = leaf.rsplit("_", 1)[0]
+                if stem not in ("Wrist", "Ankle", "Toes", "ToesEnd"):
+                    continue
+                if joint.body_joint not in body_paths:
+                    raise ValueError("Part Twist 机制来源不属于当前 Body："
+                                     + joint.body_joint)
+                if joint.body_joint in matrices or joint.body_joint in blended_matrices:
+                    raise ValueError("Part Twist 混合来源重复："
+                                     + joint.body_joint)
+                blended_matrices[joint.body_joint] = (
+                    joint.fk_driver + ".worldMatrix[0]",
+                    joint.ik_driver + ".worldMatrix[0]",
+                    weight, joint.constraint_name)
+    return matrices, constraints, blended_matrices
 
 
 def _with_inbetween_fk_sources(
@@ -355,14 +373,14 @@ class BuildRegisteredBodyCharacter:
             hip_swing_reverse = None
             if use_fit_part_hierarchy:
                 (control_matrices, body_constraints,
-                 spine_blends) = (
+                 blended_matrices) = (
                     _independent_rig_twist_sources(rig.plan))
                 if fit_part_twist_sources is None:
                     rotation_inputs = plan_standard_fit_part_rotation_inputs(
                         ordinary_twist_parts,
                         independent_world_matrices=control_matrices,
                         independent_body_constraints=body_constraints,
-                        blended_world_matrices=spine_blends)
+                        blended_world_matrices=blended_matrices)
                     projections = plan_fit_part_twist_projections(
                         rotation_inputs)
                     plan_fit_part_twist(
