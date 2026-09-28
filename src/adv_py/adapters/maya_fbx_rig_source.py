@@ -1,12 +1,16 @@
 """Read a bound FBX hierarchy and its bind pose without retaining scene edits."""
 from __future__ import annotations
 
-from adv_py.application.fbx_rig_import import FBXRigSourceCapture
+from adv_py.application.fbx_rig_import import (FBXRigGeneratedTargets,
+                                               FBXRigSourceCapture)
 from adv_py.application.fit_container import CreateFitSkeleton
 from adv_py.application.oriented_fit_template import BuildOrientedFitTemplate
+from adv_py.application.oriented_body_skeleton import BuildOrientedBodySkeleton
 from adv_py.application.registered_body_build import _JoinedTransactionHost
+from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.fbx_rig_import import FBXRigImportPlan, FBXRigSourceJoint
 from adv_py.core.fbx_rig_import import FBXRigFitGuideState
+from adv_py.core.fbx_rig_fk import plan_fbx_rig_fk_controls
 from adv_py.core.fit_orientation import (FitOrientationChildSelection,
                                          FitOrientationRequest)
 from adv_py.core.fit_template import FitJointSpec, FitTemplateSpec
@@ -274,3 +278,100 @@ class MayaFBXRigPreparationHost(MayaSourceSkeletonFitHost,
                      and c.getAttr(path + ".control")),
                 label.text if label is not None else None))
         return tuple(result)
+
+    def build_fbx_body_skeleton(
+        self, plan: FBXRigImportPlan,
+    ) -> BodySkeletonSnapshot:
+        """Build the mirrored deformation hierarchy without moving old Skin."""
+        self._require_transaction()
+        deformation = self.create_body_system_hierarchy()
+        built = BuildOrientedBodySkeleton(
+            _JoinedTransactionHost(self)).apply(
+                "FitSkeleton",
+                center_tolerance=plan.side_threshold_cm,
+                infer_missing_labels=False,
+                root_parent_path=deformation)
+        names = {joint.name for joint in built.snapshot.joints}
+        if "Root_M" not in names or len(names) != len(built.snapshot.joints):
+            raise RuntimeError("FBX rig Body 骨架创建后名称不完整")
+        return built.snapshot
+
+    def build_fbx_advanced_skeleton(self, plan: FBXRigImportPlan) -> None:
+        """Establish the generic Body/FK branch; IK labels are a later stage."""
+        self._require_transaction()
+        c = self._cmds
+        if any(c.objExists(name) for name in (
+                "MainSystem", "Main", "ControlSet", "DeformSet", "AllSet")):
+            raise ValueError("FBX rig 主控或选择集名称已被占用")
+        body = self.build_fbx_body_skeleton(plan)
+        controls = plan_fbx_rig_fk_controls(body, plan)
+        main_system = c.createNode("transform", name="MainSystem",
+                                   parent="|Group|MotionSystem")
+        main = c.circle(name="Main", normal=(0, 1, 0),
+                        radius=max(plan.scale * 2.5, .01),
+                        constructionHistory=False)[0]
+        main = c.parent(main, main_system, relative=True)[0]
+        c.setAttr(main + ".overrideEnabled", True)
+        c.setAttr(main + ".overrideColor", 17)
+        control_paths: dict[str, str] = {}
+        for spec in controls:
+            parent = (control_paths[spec.parent_control_name]
+                      if spec.parent_control_name is not None else main)
+            offset = c.createNode("transform",
+                                  name=spec.control_name + "Offset",
+                                  parent=parent)
+            matrix = c.xform(spec.body_joint_path, query=True,
+                             worldSpace=True, matrix=True)
+            c.xform(offset, worldSpace=True, matrix=matrix)
+            control = c.circle(name=spec.control_name, normal=(1, 0, 0),
+                               radius=spec.radius,
+                               constructionHistory=False)[0]
+            control = c.parent(control, offset, relative=True)[0]
+            control_paths[spec.control_name] = (
+                c.ls(control, long=True, type="transform") or [control])[0]
+            c.setAttr(control + ".overrideEnabled", True)
+            c.setAttr(control + ".overrideColor",
+                      13 if spec.control_name.endswith("_R") else
+                      6 if spec.control_name.endswith("_L") else 17)
+            constraint = c.parentConstraint(control, spec.body_joint_path,
+                maintainOffset=False,
+                name="AdvPy_FBX_" + spec.control_name + "_Parent")
+            if len(constraint) != 1:
+                raise RuntimeError("FBX rig FK 控制约束创建失败："
+                                   + spec.control_name)
+        c.sets(tuple(control_paths.values()) + (main,), name="ControlSet")
+        c.sets(tuple(joint.path for joint in body.joints), name="DeformSet")
+        c.sets("ControlSet", "DeformSet", name="AllSet")
+        if set(control_paths) != {spec.control_name for spec in controls}:
+            raise RuntimeError("FBX rig FK 控制器写后数量不符")
+        self._transaction_changed = True
+
+    def capture_fbx_generated_targets(
+        self, plan: FBXRigImportPlan,
+    ) -> FBXRigGeneratedTargets:
+        c = self._cmds
+        candidates = tuple(link.control_name
+                           for link in plan.candidate_control_links)
+        controls = tuple(name for name in candidates
+                         if len(c.ls(name, long=True, type="transform") or ()) == 1)
+        deformation = "|Group|DeformationSystem"
+        joints = c.listRelatives(deformation, allDescendents=True,
+                                 type="joint", fullPath=True) or ()
+        deform_names = tuple(path.rsplit("|", 1)[-1] for path in joints)
+        return FBXRigGeneratedTargets(controls, deform_names)
+
+    def enlarge_small_fbx_fk_controls(self, plan: FBXRigImportPlan) -> None:
+        """The generic FK plan creates final-size curves; verify each shape."""
+        self._require_transaction()
+        c = self._cmds
+        for link in plan.candidate_control_links:
+            controls = c.ls(link.control_name, long=True,
+                            type="transform") or ()
+            if len(controls) != 1:
+                raise RuntimeError("FBX rig FK 控制器缺失：" + link.control_name)
+            shapes = c.listRelatives(controls[0], shapes=True,
+                                     noIntermediate=True, fullPath=True,
+                                     type="nurbsCurve") or ()
+            if not shapes:
+                raise RuntimeError("FBX rig FK 控制器没有曲线："
+                                   + link.control_name)
