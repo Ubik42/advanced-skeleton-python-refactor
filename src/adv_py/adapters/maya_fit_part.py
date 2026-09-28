@@ -171,6 +171,32 @@ class MayaFitPartMixin:
         self, chain: FitPartLimbScaleChain
     ) -> bool:
         c = self._cmds
+        control = chain.fatness_control + "." + chain.fatness_attribute
+        if (not c.objExists(control)
+                or not c.getAttr(control, keyable=True)
+                or not c.getAttr(control, settable=True)
+                or abs(float(c.getAttr(control))) > 1e-8
+                or not c.objExists(chain.fatness_add_name)
+                or c.nodeType(chain.fatness_add_name)
+                != "plusMinusAverage"
+                or not c.objExists(chain.blend_name)
+                or c.nodeType(chain.blend_name) != "blendColors"):
+            return False
+        links = (
+            (chain.volume_plug, chain.blend_name + ".color1R"),
+            (chain.volume_plug,
+             chain.fatness_add_name + ".input1D[0]"),
+            (control, chain.fatness_add_name + ".input1D[1]"),
+            (chain.fatness_add_name + ".output1D",
+             chain.blend_name + ".color1G"),
+            (chain.fatness_add_name + ".output1D",
+             chain.blend_name + ".color1B"),
+            (chain.fk_scale_plug, chain.blend_name + ".color2"),
+            (chain.mode_plug, chain.blend_name + ".blender"),
+        )
+        if any(c.connectionInfo(target, sourceFromDestination=True)
+               != source for source, target in links):
+            return False
         if chain.use_offset_parent_matrix:
             body = self._unique_fit_part_joint(chain.start_body_name)
             if c.connectionInfo(body + ".offsetParentMatrix",
@@ -802,6 +828,8 @@ class MayaFitPartMixin:
                         body + ".rotateX")
                     or abs(float(c.getAttr(body + ".twistAmount"))) > 1e-8
                     or abs(float(c.getAttr(body + ".twistAddition"))) > 1e-8
+                    or not c.getAttr(body + ".twistAmount", keyable=True)
+                    or not c.getAttr(body + ".twistAddition", keyable=True)
                     or c.getAttr(weight_name + ".operation") != 1
                     or c.getAttr(offset_name + ".operation") != 1
                     or abs(float(c.getAttr(weight_name
@@ -810,6 +838,14 @@ class MayaFitPartMixin:
                            sourceFromDestination=True) != upstream
                            for upstream, target in body_links)):
                 return None
+        if (not c.objExists(part + ".twistAmount")
+                or not c.objExists(part + ".twistAddition")
+                or not c.getAttr(part + ".twistAmount", keyable=True)
+                or not c.getAttr(part + ".twistAddition", keyable=True)
+                or abs(float(c.getAttr(part + ".twistAmount"))
+                       - step.default_amount) > 1e-8
+                or abs(float(c.getAttr(part + ".twistAddition"))) > 1e-8):
+            return None
         expected = (
             (step.down_twist_plug, step.amount_node + ".input1"),
             (part + ".twistAmount", step.amount_node + ".input2"),
