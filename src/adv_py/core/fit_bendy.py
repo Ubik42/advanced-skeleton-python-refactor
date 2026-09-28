@@ -21,6 +21,7 @@ class FitBendyChainSpec:
     end_position: tuple[float, float, float]
     part_positions: tuple[tuple[float, float, float], ...]
     child_start_control: str | None = None
+    parent_bendy: bool = False
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -66,6 +67,18 @@ class FitBendyChainSpec:
         return f"BendX{self.stem}{self.control_count + 1}_{self.side}"
 
     @property
+    def junction_name(self) -> str:
+        return f"BendMid{self.stem}_{self.side}"
+
+    @property
+    def junction_offset_name(self) -> str:
+        return f"BendMidOffset{self.stem}_{self.side}"
+
+    @property
+    def junction_output_name(self) -> str:
+        return f"BendMidX{self.stem}_{self.side}"
+
+    @property
     def follow_node_names(self) -> tuple[str, ...]:
         return (f"AdvPy_{self.prefix}StartSource_{self.side}",
                 f"AdvPy_{self.prefix}EndSource_{self.side}",
@@ -82,6 +95,40 @@ class FitBendyChainSpec:
         return f"{self.prefix}SC_{self.side}"
 
     @property
+    def secondary_curve_name(self) -> str:
+        return f"Bend2{self.stem}Curve_{self.side}"
+
+    @property
+    def secondary_skin_name(self) -> str:
+        return f"Bend2{self.stem}SC_{self.side}"
+
+    @property
+    def secondary_influence_names(self) -> tuple[str, str, str]:
+        return tuple(f"Bend2{self.stem}{label}_{self.side}"
+                     for label in ("Start", "Mid", "End"))
+
+    @property
+    def secondary_motion_path_names(self) -> tuple[str, ...]:
+        return tuple(f"Bendy2MP{self.stem}{index}_{self.side}"
+                     for index in range(1, self.control_count + 1))
+
+    @property
+    def secondary_motion_transform_names(self) -> tuple[str, ...]:
+        return tuple(f"Bend2MPX{self.stem}{index}_{self.side}"
+                     for index in range(1, self.control_count + 1))
+
+    @property
+    def secondary_node_names(self) -> tuple[str, ...]:
+        return (self.secondary_curve_name,
+                self.secondary_curve_name + "Shape",
+                self.secondary_skin_name,
+                *self.secondary_influence_names,
+                *("AdvPy_Bend2Guide" + name
+                  for name in self.secondary_influence_names),
+                *self.secondary_motion_path_names,
+                *self.secondary_motion_transform_names)
+
+    @property
     def guide_node_names(self) -> tuple[str, ...]:
         return (self.curve_name, self.curve_name + "Shape",
                 self.skin_name, *self.influence_names,
@@ -90,7 +137,10 @@ class FitBendyChainSpec:
                 *("AdvPy_BendGuide" + name
                   for name in self.influence_names),
                 self.end_proxy_name, *self.motion_path_names,
-                *self.motion_transform_names)
+                *self.motion_transform_names,
+                *((self.junction_name, self.junction_name + "Shape",
+                   self.junction_offset_name, self.junction_output_name)
+                  if self.parent_bendy else ()))
 
     @property
     def motion_path_names(self) -> tuple[str, ...]:
@@ -131,6 +181,8 @@ class FitBendyChainSpec:
                   for node in (add, *mults)),
                 *(node for add, deltas, weights in self.micro_scale_names
                   for node in (add, *deltas, *weights)),
+                *(node for row in self.twist_projection_names
+                  for node in row),
                 *(self.micro_end_twist_names if self.child_start_control
                   else ()),
                 *((node for row in self.micro_end_scale_names
@@ -188,6 +240,16 @@ class FitBendyChainSpec:
                       tuple("AdvPy_" + name + "BendTwist" + str(index)
                             for index in range(len(self.control_names))))
                      for name in self.deform_names)
+
+    @property
+    def twist_projection_names(self) -> tuple[
+        tuple[str, str, str, str], ...
+    ]:
+        return tuple(("AdvPy_" + name + "TwistX",
+                      "AdvPy_" + name + "TwistMatrix",
+                      "AdvPy_" + name + "TwistDecompose",
+                      "AdvPy_" + name + "TwistQTE")
+                     for name in self.control_names)
 
     @property
     def micro_scale_names(self) -> tuple[
@@ -268,7 +330,14 @@ def plan_fit_bendy_chains(
     by_bendy_start = {item.start_body: item for item in result}
     if len(by_bendy_start) != len(result):
         raise ValueError("Fit Bendy 起点重复")
-    return tuple(replace(item,
+    by_bendy_end: dict[str, list[FitBendyChainSpec]] = {}
+    for item in result:
+        by_bendy_end.setdefault(item.end_body, []).append(item)
+    if any(len(parents) > 1 for parents in by_bendy_end.values()):
+        raise ValueError("Fit Bendy 交界关节有多条上游曲线")
+    return tuple(replace(
+        item,
         child_start_control=by_bendy_start[item.end_body].control_names[1]
-        if item.end_body in by_bendy_start else None)
-        for item in result)
+        if item.end_body in by_bendy_start else None,
+        parent_bendy=item.start_body in by_bendy_end,
+    ) for item in result)

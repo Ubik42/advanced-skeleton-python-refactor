@@ -11,11 +11,153 @@ if TYPE_CHECKING:
 
 _GROUPS = ("AdvPy_BendSystem", "AdvPy_BendCurve",
            "AdvPy_BendJoints", "AdvPy_BendMPX")
+_SECONDARY_GROUPS = ("AdvPy_Bend2Curve", "AdvPy_Bend2Joints",
+                     "AdvPy_Bend2MPX")
 _MICRO_GROUP = "AdvPy_MicroSystem"
 _OWNER = "adv_py.fit_bendy_guides.v1"
 
 
 class MayaFitBendyMixin:
+    def preflight_fit_bendy_secondary(self,
+                                      spec: FitBendyChainSpec) -> None:
+        c = self._cmds
+        if any(c.objExists(name) for name in spec.secondary_node_names):
+            raise ValueError("Bendy 第二曲线节点名称已占用："
+                             + spec.secondary_curve_name)
+        for group in _SECONDARY_GROUPS:
+            if c.objExists(group):
+                marker = group + ".advPyBendyGuideOwner"
+                if (not c.objExists(marker)
+                        or c.getAttr(marker) != _OWNER):
+                    raise ValueError("Bendy 第二曲线组不属于当前构建："
+                                     + group)
+
+    def create_fit_bendy_secondary(self,
+                                   spec: FitBendyChainSpec) -> None:
+        """A three-influence follow curve positions interior Bend controls."""
+        self._require_transaction()
+        c = self._cmds
+        for group in _SECONDARY_GROUPS:
+            if c.objExists(group):
+                continue
+            node = c.createNode("transform", name=group,
+                                parent=_GROUPS[0], skipSelect=True)
+            c.addAttr(node, longName="advPyBendyGuideOwner",
+                      dataType="string")
+            c.setAttr(node + ".advPyBendyGuideOwner", _OWNER,
+                      type="string", lock=True)
+        curve = c.curve(name=spec.secondary_curve_name, degree=1,
+                        point=(spec.start_position, spec.end_position))
+        c.rebuildCurve(curve, ch=False, rpo=True, rt=0, end=1,
+                       kr=0, kcp=False, kep=False, kt=False,
+                       s=2, d=3, tol=0.01)
+        curve = c.parent(curve, _SECONDARY_GROUPS[0])[0]
+        shapes = c.listRelatives(curve, shapes=True,
+                                 fullPath=True) or []
+        if len(shapes) != 1:
+            raise RuntimeError("Bendy 第二曲线形状数量不正确")
+        drivers = (spec.control_names[1], spec.control_names[0],
+                   spec.child_start_control or spec.end_proxy_name)
+        positions = (spec.start_position, spec.master_position,
+                     spec.end_position)
+        influences = []
+        for name, position, driver in zip(
+                spec.secondary_influence_names, positions, drivers):
+            joint = c.createNode("joint", name=name,
+                                 parent=_SECONDARY_GROUPS[1],
+                                 skipSelect=True)
+            c.xform(joint, worldSpace=True, translation=position)
+            c.setAttr(joint + ".drawStyle", 2)
+            c.parentConstraint(driver, joint, maintainOffset=False,
+                               name="AdvPy_Bend2Guide" + name)
+            influences.append(joint)
+        skin = c.skinCluster(*(influences + [curve]),
+                             name=spec.secondary_skin_name,
+                             maximumInfluences=2,
+                             normalizeWeights=1,
+                             toSelectedBones=True)[0]
+        if int(c.getAttr(shapes[0] + ".controlPoints", size=True)) != 5:
+            raise RuntimeError("Bendy 第二曲线 CV 数量不正确")
+        for index in range(5):
+            joint = (influences[0] if index <= 1
+                     else influences[1] if index == 2
+                     else influences[2])
+            c.skinPercent(skin, curve + f".cv[{index}]",
+                          transformValue=[(joint, 1.0)])
+        for index in (1, 3):
+            c.skinPercent(skin, curve + f".cv[{index}]",
+                          transformValue=[(influences[1], 0.4)])
+        c.setAttr(shapes[0] + ".visibility", False)
+        for index, (path_name, transform_name, control) in enumerate(zip(
+                spec.secondary_motion_path_names,
+                spec.secondary_motion_transform_names,
+                spec.control_names[2:]), start=1):
+            path = c.createNode("motionPath", name=path_name,
+                                skipSelect=True)
+            transform = c.createNode("transform", name=transform_name,
+                                     parent=_SECONDARY_GROUPS[2],
+                                     skipSelect=True)
+            c.setAttr(path + ".fractionMode", True)
+            c.setAttr(path + ".follow", True)
+            c.setAttr(path + ".worldUpType", 2)
+            c.setAttr(path + ".frontAxis", 0)
+            c.setAttr(path + ".upAxis", 1)
+            c.setAttr(path + ".uValue",
+                      index / (spec.control_count + 1))
+            c.connectAttr(spec.control_names[0] + ".worldMatrix[0]",
+                          path + ".worldUpMatrix")
+            c.connectAttr(shapes[0] + ".worldSpace[0]",
+                          path + ".geometryPath")
+            c.connectAttr(path + ".allCoordinates",
+                          transform + ".translate")
+            c.connectAttr(path + ".rotate", transform + ".rotate")
+            follow = f"AdvPy_{control}Follow"
+            c.delete(follow)
+            c.parentConstraint(transform, control + "Offset",
+                               maintainOffset=True, name=follow)
+        self._transaction_changed = True
+
+    def capture_fit_bendy_secondary(self,
+                                     spec: FitBendyChainSpec) -> bool:
+        c = self._cmds
+        curves = c.ls(spec.secondary_curve_name, long=True,
+                      type="transform") or []
+        if len(curves) != 1:
+            return False
+        shapes = c.listRelatives(curves[0], shapes=True,
+                                 fullPath=True) or []
+        if (len(shapes) != 1 or c.nodeType(shapes[0]) != "nurbsCurve"
+                or not c.objExists(spec.secondary_skin_name)
+                or c.nodeType(spec.secondary_skin_name) != "skinCluster"):
+            return False
+        influences = c.skinCluster(spec.secondary_skin_name, query=True,
+                                   influence=True) or []
+        if {name.rsplit("|", 1)[-1] for name in influences} != set(
+                spec.secondary_influence_names):
+            return False
+        for index, (path, transform, control) in enumerate(zip(
+                spec.secondary_motion_path_names,
+                spec.secondary_motion_transform_names,
+                spec.control_names[2:]), start=1):
+            follow = f"AdvPy_{control}Follow"
+            if (not c.objExists(path) or c.nodeType(path) != "motionPath"
+                    or not c.objExists(transform)
+                    or c.connectionInfo(path + ".geometryPath",
+                                        sourceFromDestination=True)
+                    != shapes[0] + ".worldSpace[0]"
+                    or c.connectionInfo(transform + ".translate",
+                                        sourceFromDestination=True)
+                    != path + ".allCoordinates"
+                    or c.connectionInfo(transform + ".rotate",
+                                        sourceFromDestination=True)
+                    != path + ".rotate"
+                    or not c.objExists(follow)
+                    or c.nodeType(follow) != "parentConstraint"
+                    or abs(float(c.getAttr(path + ".uValue"))
+                           - index / (spec.control_count + 1)) > 1e-8):
+                return False
+        return True
+
     def preflight_fit_bendy_deform(self, spec: FitBendyChainSpec) -> None:
         c = self._cmds
         for index, (name, output, constraint, scale_pick,
@@ -241,10 +383,24 @@ class MayaFitBendyMixin:
             control = c.parent(control, parent)[0]
             c.xform(control, worldSpace=True, translation=position)
             controls.append((c.ls(control, long=True) or [control])[0])
+        if spec.parent_bendy:
+            junction_offset = c.createNode(
+                "transform", name=spec.junction_offset_name,
+                parent=controls[1], skipSelect=True)
+            c.xform(junction_offset, worldSpace=True,
+                    translation=start)
+            junction = c.circle(name=spec.junction_name,
+                                normal=(1, 0, 0), radius=0.18,
+                                constructionHistory=False)[0]
+            c.parent(junction, junction_offset, absolute=True)
+            c.xform(junction, worldSpace=True, translation=start)
+            c.createNode("transform", name=spec.junction_output_name,
+                         parent=junction, skipSelect=True)
         end_proxy = c.createNode("transform", name=spec.end_proxy_name,
                                  parent=_GROUPS[0], skipSelect=True)
         c.xform(end_proxy, worldSpace=True, translation=end)
-        drivers = (controls[1], *controls[2:], end_proxy)
+        drivers = ((spec.junction_output_name if spec.parent_bendy
+                    else controls[1]), *controls[2:], end_proxy)
         influences = []
         for name, position, driver in zip(
                 spec.influence_names, positions, drivers):
@@ -394,6 +550,35 @@ class MayaFitBendyMixin:
         return (c.objExists(names[-1])
                 and c.nodeType(names[-1]) == "parentConstraint")
 
+    def create_fit_bendy_twist_projections(
+            self, spec: FitBendyChainSpec) -> None:
+        self._require_transaction()
+        c = self._cmds
+        for control, (output, matrix_name, decompose_name,
+                      project_name) in zip(spec.control_names,
+                                           spec.twist_projection_names):
+            offset = control + "Offset"
+            child = c.createNode("transform", name=output,
+                                 parent=control, skipSelect=True)
+            matrix = c.createNode("multMatrix", name=matrix_name,
+                                  skipSelect=True)
+            decompose = c.createNode("decomposeMatrix",
+                                     name=decompose_name,
+                                     skipSelect=True)
+            project = c.createNode("quatToEuler", name=project_name,
+                                   skipSelect=True)
+            c.connectAttr(child + ".worldMatrix[0]",
+                          matrix + ".matrixIn[0]")
+            c.connectAttr(offset + ".worldInverseMatrix[0]",
+                          matrix + ".matrixIn[1]")
+            c.connectAttr(matrix + ".matrixSum",
+                          decompose + ".inputMatrix")
+            c.connectAttr(decompose + ".outputQuatX",
+                          project + ".inputQuatX")
+            c.connectAttr(decompose + ".outputQuatW",
+                          project + ".inputQuatW")
+        self._transaction_changed = True
+
     def create_fit_bendy_micro(self, spec: FitBendyChainSpec) -> None:
         """Place animator micro controls on the curve's sampled frames."""
         self._require_transaction()
@@ -465,7 +650,9 @@ class MayaFitBendyMixin:
                         spec.twist_weights(index))):
                 mult = c.createNode("multDoubleLinear", name=mult_name,
                                     skipSelect=True)
-                c.connectAttr(bend_control + ".rotateX",
+                projection = spec.twist_projection_names[
+                    control_index][3] + ".outputRotateX"
+                c.connectAttr(projection,
                               mult + ".input1")
                 c.setAttr(mult + ".input2", weight)
                 c.connectAttr(mult + ".output",
@@ -475,7 +662,9 @@ class MayaFitBendyMixin:
                     "multDoubleLinear",
                     name=spec.micro_end_twist_names[index],
                     skipSelect=True)
-                c.connectAttr(spec.child_start_control + ".rotateX",
+                child_projection = ("AdvPy_" + spec.child_start_control
+                                    + "TwistQTE.outputRotateX")
+                c.connectAttr(child_projection,
                               end_twist + ".input1")
                 c.setAttr(end_twist + ".input2",
                           index / len(spec.part_names))
@@ -537,6 +726,29 @@ class MayaFitBendyMixin:
         if (not c.objExists(_MICRO_GROUP)
                 or not c.objExists(master + ".microVis")):
             return False
+        for control, (output, matrix, decompose, project) in zip(
+                spec.control_names, spec.twist_projection_names):
+            if (not c.objExists(output)
+                    or c.nodeType(output) != "transform"
+                    or not c.objExists(matrix)
+                    or c.nodeType(matrix) != "multMatrix"
+                    or not c.objExists(decompose)
+                    or c.nodeType(decompose) != "decomposeMatrix"
+                    or not c.objExists(project)
+                    or c.nodeType(project) != "quatToEuler"
+                    or c.connectionInfo(matrix + ".matrixIn[0]",
+                                        sourceFromDestination=True)
+                    != output + ".worldMatrix[0]"
+                    or c.connectionInfo(matrix + ".matrixIn[1]",
+                                        sourceFromDestination=True)
+                    != control + "Offset.worldInverseMatrix[0]"
+                    or c.connectionInfo(project + ".inputQuatX",
+                                        sourceFromDestination=True)
+                    != decompose + ".outputQuatX"
+                    or c.connectionInfo(project + ".inputQuatW",
+                                        sourceFromDestination=True)
+                    != decompose + ".outputQuatW"):
+                return False
         for index, (offset, control, output, guide) in enumerate(zip(
                 spec.micro_offset_names, spec.micro_control_names,
                 spec.micro_output_names, spec.motion_transform_names)):
@@ -570,14 +782,14 @@ class MayaFitBendyMixin:
                                         sourceFromDestination=True)
                     != master + ".microVis"):
                 return False
-            for bend_control, mult_name, weight in zip(
-                    spec.control_names, twist_mults,
+            for projection, mult_name, weight in zip(
+                    spec.twist_projection_names, twist_mults,
                     spec.twist_weights(index)):
                 if (not c.objExists(mult_name)
                         or c.nodeType(mult_name) != "multDoubleLinear"
                         or c.connectionInfo(mult_name + ".input1",
                                             sourceFromDestination=True)
-                        != bend_control + ".rotateX"
+                        != projection[3] + ".outputRotateX"
                         or abs(float(c.getAttr(mult_name + ".input2"))
                                - weight) > 1e-8):
                     return False
@@ -605,7 +817,8 @@ class MayaFitBendyMixin:
                         or c.nodeType(twist_end) != "multDoubleLinear"
                         or c.connectionInfo(twist_end + ".input1",
                                             sourceFromDestination=True)
-                        != spec.child_start_control + ".rotateX"
+                        != ("AdvPy_" + spec.child_start_control
+                            + "TwistQTE.outputRotateX")
                         or abs(float(c.getAttr(twist_end + ".input2"))
                                - index / len(spec.part_names)) > 1e-8
                         or not c.objExists(scale_delta)
@@ -644,6 +857,12 @@ class MayaFitBendyMixin:
         for name in (*spec.control_names, spec.end_proxy_name):
             if not c.objExists(name) or c.nodeType(name) != "transform":
                 return False
+        if spec.parent_bendy and any(
+                not c.objExists(name) or c.nodeType(name) != "transform"
+                for name in (spec.junction_offset_name,
+                             spec.junction_name,
+                             spec.junction_output_name)):
+            return False
         for index, (path, transform) in enumerate(zip(
                 spec.motion_path_names, spec.motion_transform_names)):
             if (not c.objExists(path) or c.nodeType(path) != "motionPath"

@@ -52,6 +52,14 @@ class RegisterBendyControls:
             add("bendy." + chain.control_names[0] + ".microVis",
                 "|AdvPy_BendSystem|" + chain.control_names[0]
                 + "Offset|" + chain.control_names[0], "microVis")
+            if chain.parent_bendy:
+                start_control = chain.control_names[1]
+                path = ("|AdvPy_BendSystem|" + start_control + "Offset|"
+                        + start_control + "|" + chain.junction_offset_name
+                        + "|" + chain.junction_name)
+                for attr in attrs:
+                    add("bendy." + chain.junction_name + "." + attr,
+                        path, attr)
             for offset, control in zip(chain.micro_offset_names,
                                        chain.micro_control_names):
                 path = "|AdvPy_MicroSystem|" + offset + "|" + control
