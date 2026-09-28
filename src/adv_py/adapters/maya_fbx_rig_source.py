@@ -359,7 +359,8 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             c.xform(offset, worldSpace=True, matrix=matrix)
             control = create_adv_icon(c, name=spec.control_name,
                 parent=offset, template="FK_icon", radius=spec.radius,
-                fallback_normal=(1, 0, 0), fallback_sections=12)
+                fallback_normal=(1, 0, 0), fallback_sections=12,
+                mirror_left=spec.control_name.endswith("_L"))
             control_paths[spec.control_name] = (
                 c.ls(control, long=True, type="transform") or [control])[0]
             c.setAttr(control + ".overrideEnabled", True)

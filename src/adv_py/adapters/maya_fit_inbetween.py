@@ -765,7 +765,8 @@ class MayaFitInbetweenMixin:
                 fallback_sections=12,
                 axis_offset=original_fit_icon_axis_offset(
                     c, (part.source_fit_joint.rsplit("|", 1)[-1]
-                        .rsplit(":", 1)[-1],)))
+                        .rsplit(":", 1)[-1],)),
+                mirror_left=part.part_name.endswith("_L"))
         finally:
             if selection:
                 c.select(selection, replace=True)

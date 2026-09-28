@@ -497,7 +497,7 @@ class MayaFitBendyMixin:
                 control = create_adv_icon(
                     c, name=name, parent=parent, template="Bend_icon",
                     radius=0.25, fallback_normal=(1.0, 0.0, 0.0),
-                    axis_offset=axis_offset)
+                    axis_offset=axis_offset, mirror_left=spec.side == "L")
                 if index == 1:
                     c.move(spec.start_icon_offset, 0, 0,
                            control + ".cv[0:99]", relative=True,
@@ -524,7 +524,7 @@ class MayaFitBendyMixin:
                 c, name=spec.junction_name, parent=junction_offset,
                 template="BendMid_icon", radius=0.18,
                 fallback_normal=(1.0, 0.0, 0.0),
-                axis_offset=axis_offset)
+                axis_offset=axis_offset, mirror_left=spec.side == "L")
             c.xform(junction, worldSpace=True, translation=start)
             c.setAttr(junction + ".rotateOrder", spec.rotation_order)
             c.addAttr(junction, longName="circular",
@@ -906,7 +906,8 @@ class MayaFitBendyMixin:
             control = create_adv_icon(
                 c, name=control_name, parent=extra,
                 template="Micro_icon", radius=0.15,
-                fallback_normal=(1.0, 0.0, 0.0))
+                fallback_normal=(1.0, 0.0, 0.0),
+                mirror_left=spec.side == "L")
             c.xform(control, worldSpace=True, translation=position)
             c.createNode("transform", name=output_name,
                          parent=control, skipSelect=True)

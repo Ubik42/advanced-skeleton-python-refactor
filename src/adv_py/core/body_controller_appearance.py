@@ -34,6 +34,7 @@ class BodyControllerAppearancePlan:
     icon_template: str
     icon_curve_scale: float
     control_local_scale: tuple[float, float, float]
+    mirror_icon: bool
     rotate_order: int | None
     world_position: tuple[float, float, float]
     offset_world_rotation: tuple[float, float, float] | None
@@ -47,6 +48,7 @@ class BodyControllerAppearanceState:
     icon_template: str
     icon_curve_scale: float
     control_local_scale: tuple[float, float, float]
+    mirror_icon: bool
     rotate_orders: tuple[tuple[str, int], ...]
     offset_world_position: tuple[float, float, float]
     offset_world_rotation: tuple[float, float, float]
@@ -108,9 +110,8 @@ def plan_body_controller_appearance(
                 or source.fit_ik_local_type2)
     return BodyControllerAppearancePlan(
         layers=layers, icon_template=icon, icon_curve_scale=radius,
-        control_local_scale=((-1.0, -1.0, -1.0)
-                             if layers.side == "_L"
-                             else (1.0, 1.0, 1.0)),
+        control_local_scale=(1.0, 1.0, 1.0),
+        mirror_icon=layers.side == "_L",
         rotate_order=source.fit_rotate_order if ordered else None,
         world_position=source.body_world_position,
         offset_world_rotation=(source.body_world_rotation
@@ -138,7 +139,9 @@ def audit_body_controller_appearance(
         issues.append("图标模板或曲线尺寸不符")
     if any(abs(a - b) > tolerance for a, b in zip(
             state.control_local_scale, plan.control_local_scale)):
-        issues.append("控制器镜像缩放不符")
+        issues.append("控制器冻结后的局部缩放不符")
+    if state.mirror_icon != plan.mirror_icon:
+        issues.append("控制器曲线镜像不符")
     if plan.rotate_order is not None:
         wanted = {path: plan.rotate_order for path in (
             plan.layers.offset_path, plan.layers.extra_path,

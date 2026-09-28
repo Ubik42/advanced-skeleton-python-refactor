@@ -5463,7 +5463,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             wrist = create_adv_icon(
                 self._cmds, name=spec.wrist_control_name,
                 parent=wrist_extra, template="IK_icon", radius=spec.radius,
-                fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12)
+                fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12,
+                mirror_left=spec.side is FitBuildSide.LEFT)
             wrist = (self._cmds.ls(wrist, long=True) or [wrist])[0]
             pole_offset = self._cmds.createNode("transform", name=spec.pole_offset_name, parent=spec.root_path, skipSelect=True)
             pole_offset = (self._cmds.ls(pole_offset, long=True) or [pole_offset])[0]
@@ -5476,7 +5477,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 self._cmds, name=spec.pole_control_name,
                 parent=pole_extra, template="Pole_icon",
                 radius=spec.radius * 0.65,
-                fallback_normal=(0.0, 0.0, 1.0))
+                fallback_normal=(0.0, 0.0, 1.0),
+                mirror_left=spec.side is FitBuildSide.LEFT)
             pole = (self._cmds.ls(pole, long=True) or [pole])[0]
             if wrist != spec.wrist_control_path or pole != spec.pole_control_path:
                 raise RuntimeError("Arm IK 控制路径漂移")
@@ -5599,7 +5601,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             ankle = create_adv_icon(
                 self._cmds, name=spec.ankle_control_name,
                 parent=ankle_extra, template="IK_icon", radius=spec.radius,
-                fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12)
+                fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12,
+                mirror_left=spec.side is FitBuildSide.LEFT)
             ankle = (self._cmds.ls(ankle, long=True) or [ankle])[0]
             pole_offset = self._cmds.createNode(
                 "transform",
@@ -5624,7 +5627,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 self._cmds, name=spec.pole_control_name,
                 parent=pole_extra, template="Pole_icon",
                 radius=spec.radius * 0.65,
-                fallback_normal=(0.0, 0.0, 1.0))
+                fallback_normal=(0.0, 0.0, 1.0),
+                mirror_left=spec.side is FitBuildSide.LEFT)
             pole = (self._cmds.ls(pole, long=True) or [pole])[0]
             if (
                 ankle != spec.ankle_control_path
@@ -6022,7 +6026,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 self._cmds, name=spec.toe_control_name,
                 parent=toe_offset, template="IK_icon",
                 radius=spec.toe_control_radius,
-                fallback_normal=(0.0, 1.0, 0.0))
+                fallback_normal=(0.0, 1.0, 0.0),
+                mirror_left=spec.side is FitBuildSide.LEFT)
             toe_control = (
                 self._cmds.ls(toe_control, long=True) or [toe_control]
             )[0]
@@ -7106,7 +7111,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 radius=spec.radius,
                 fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12,
                 axis_offset=original_fit_icon_axis_offset(
-                    self._cmds, spec.fit_joint_names))
+                    self._cmds, spec.fit_joint_names),
+                mirror_left=spec.side is FitBuildSide.LEFT)
             control = (self._cmds.ls(control, long=True) or [control])[0]
             if offset != spec.offset_path or control != spec.control_path:
                 raise RuntimeError(

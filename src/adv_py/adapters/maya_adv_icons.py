@@ -100,12 +100,14 @@ def create_adv_icon(commands, *, name: str, parent: str,
                     template: str, radius: float,
                     fallback_normal: tuple[float, float, float],
                     fallback_sections: int = 8,
-                    axis_offset: tuple[float, float, float] = (0, 0, 0)) -> str:
+                    axis_offset: tuple[float, float, float] = (0, 0, 0),
+                    mirror_left: bool = False) -> str:
     """Make an original icon when installed, or preserve the prior circle."""
     if (not isinstance(name, str) or not name
             or not isinstance(parent, str) or not parent
             or not isinstance(radius, (int, float))
             or not isfinite(radius) or radius <= 0
+            or type(mirror_left) is not bool
             or len(axis_offset) != 3
             or any(not isinstance(value, (int, float))
                    or not isfinite(value) for value in axis_offset)):
@@ -123,7 +125,8 @@ def create_adv_icon(commands, *, name: str, parent: str,
         if not shapes or len(shapes) != 1:
             raise ValueError("原版控制器图标模板缺失：" + template)
         spec = shapes[0]
-        points = [tuple(float(value) * radius for value in
+        direction = -1.0 if mirror_left else 1.0
+        points = [tuple(float(value) * radius * direction for value in
                         rotate_icon_point(point, axis_offset))
                   for point in spec["points"]]
         curve = commands.curve(
@@ -135,6 +138,11 @@ def create_adv_icon(commands, *, name: str, parent: str,
                                     type="nurbsCurve") or []
     if len(actual) != 1:
         raise RuntimeError("控制器曲线形态读回不一致：" + name)
+    if source is None and mirror_left:
+        # The circle fallback is symmetric, but mirror its CVs at the control
+        # origin to keep the same local shape convention as the real icon.
+        commands.scale(-1, -1, -1, control + ".cv[*]",
+                       relative=True, objectSpace=True, pivot=(0, 0, 0))
     if source is not None:
         if (int(commands.getAttr(actual[0] + ".degree"))
                 != spec["degree"]
