@@ -43,6 +43,12 @@ def create(host,plan):
 def audit(host,head_control,target):
     c=host._cmds
     pivot=head_control.rsplit('|',1)[0];offset=pivot.rsplit('|',1)[0]
+    target_offset=target.rsplit('|',1)[0]
+    if target.startswith('|Group|MotionSystem|AimSystem|'):
+        if ((c.ls(target_offset,long=True,type='transform') or [])!=[target_offset]
+                or (c.listRelatives(target_offset,parent=True,fullPath=True) or [])
+                !=['|Group|MotionSystem|AimSystem']):
+            raise FitSkeletonValidationError('头部 Aim 目标不在 AimSystem 下')
     rest=offset+'|AdvPy_HeadAimRest';solved=offset+'|AdvPy_HeadAimSolved'
     for name,kind in (('AdvPy_HeadAimConstraint','aimConstraint'),('AdvPy_HeadAimOrient','orientConstraint'),('AdvPy_HeadAimReverse','reverse')):
         if not c.objExists(name) or c.nodeType(name)!=kind:raise FitSkeletonValidationError('头部瞄准节点缺失或类型错误：'+name)

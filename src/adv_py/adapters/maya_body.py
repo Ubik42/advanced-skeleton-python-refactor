@@ -440,7 +440,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                for name in ("Group", "DeformationSystem", "Geometry",
                             "MotionSystem", "FKSystem", "IKSystem",
                             "FKIKSystem", "TwistSystem", "BendSystem",
-                            "RootSystem", "RootFollowMain")):
+                            "RootSystem", "RootFollowMain", "AimSystem")):
             raise FitSkeletonValidationError(
                 "角色系统层级名称已被占用")
         group = self._cmds.createNode(
@@ -476,6 +476,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             skipSelect=True)
         self._cmds.createNode(
             "transform", name="RootFollowMain", parent=root_system,
+            skipSelect=True)
+        self._cmds.createNode(
+            "transform", name="AimSystem", parent=motion,
             skipSelect=True)
         for kind in ("translate", "rotate", "scale"):
             for axis in "XYZ":
@@ -581,6 +584,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                  "|Group|MotionSystem|BendSystem",
                  "|Group|MotionSystem|RootSystem",
                  "|Group|MotionSystem|RootSystem|RootFollowMain",
+                 "|Group|MotionSystem|AimSystem",
                  body_root_path)
         rows = []
         for path in paths:
@@ -1042,6 +1046,15 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 self._cmds.connectAttr(
                     f"{control}.{attribute}",
                     f"{system_path}.visibility")
+            for system_path in plan.scale_system_paths:
+                if (self._cmds.ls(system_path, long=True,
+                                  type="transform") or []) != [system_path]:
+                    raise FitSkeletonValidationError(
+                        f"角色总控缩放层级缺失：{system_path}")
+                for axis in "XYZ":
+                    self._cmds.connectAttr(
+                        f"{plan.scale_node_name}.output{axis}",
+                        f"{system_path}.scale{axis}")
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
@@ -1197,6 +1210,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     source(f"{system_path}.visibility"),
                 )
                 for attribute, system_path in plan.visibility_controls
+            ),
+            scale_system_sources=tuple(
+                (f"{system_path}.scale{axis}",
+                 source(f"{system_path}.scale{axis}"))
+                for system_path in plan.scale_system_paths
+                for axis in "XYZ"
             ),
         )
 

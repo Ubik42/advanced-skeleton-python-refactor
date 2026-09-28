@@ -52,7 +52,10 @@ def with_head_aim(torso,body,description,up_axis=FitUpAxis.Z):
             if control.source_override_path is not None
             and control.source_override_path.startswith(control.control_path+'|')
             else control.source_override_path))
-    target_offset=torso.controls.root_path+'|AdvPy_HeadAimOffset'
+    target_parent = ("|Group|MotionSystem|AimSystem"
+                     if body.root.startswith("|Group|DeformationSystem|")
+                     else torso.controls.root_path)
+    target_offset=target_parent+'|AdvPy_HeadAimOffset'
     plan=HeadAimPlan(updated.control_path,parent_layer,pivot,target_offset,target_offset+'|AdvPy_HeadAim',
         tuple(p+length*3*x for p,x in zip(head.world_position,forward)),head.world_axes,control.radius*.6,aim_axis,local_up)
     return replace(torso,controls=replace(torso.controls,controls=tuple(updated if c==control else c for c in torso.controls.controls)),head_aim=plan)

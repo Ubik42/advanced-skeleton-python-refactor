@@ -226,7 +226,7 @@ class BuildRegisteredBodyCharacter:
                                   "MotionSystem", "FKSystem", "IKSystem",
                                   "FKIKSystem", "TwistSystem",
                                   "BendSystem", "RootSystem",
-                                  "RootFollowMain")
+                                  "RootFollowMain", "AimSystem")
                 for path in self._host.find_name_collisions(name))
             if hierarchy_collisions:
                 raise FitSkeletonValidationError(
@@ -686,6 +686,8 @@ class BuildRegisteredBodyCharacter:
                  "|Group|MotionSystem", "transform"),
                 ("|Group|MotionSystem|RootSystem|RootFollowMain",
                  "|Group|MotionSystem|RootSystem", "transform"),
+                ("|Group|MotionSystem|AimSystem",
+                 "|Group|MotionSystem", "transform"),
                 (skeleton.snapshot.root, _DEFORMATION_SYSTEM_PATH, "joint"),
             ):
                 raise RuntimeError("角色主构建结束时 Body 变形系统层级不一致")
