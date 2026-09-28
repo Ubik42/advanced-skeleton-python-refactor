@@ -84,7 +84,9 @@ ADV_OPERATIONS = {
         ("按 Skin 自动缩放", 0, "09 · Control Curves"),
         ("设置控制曲线颜色", 0, "09 · Control Curves"),
         ("镜像控制曲线形状", 0, "09 · Control Curves"),
-        ("替换控制器图标", 0, "09 · Control Curves")),
+        ("替换控制器图标", 0, "09 · Control Curves"),
+        ("Copy to SubControls", 0, "09 · Control Curves"),
+        ("Copy to ExtraControls", 0, "09 · Control Curves")),
     ("Body", "Control Orient"): (
         ("设置控制器局部轴", 0, "10 · Control Orient"),
         ("分离全部控制器", 0, "10 · Control Orient"),

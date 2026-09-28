@@ -9,6 +9,7 @@ from adv_py.core.control_curves import (
     ControlCurveShapeColorState, ControlCurveShapeState, ControlCurveState,
     ControlCurveValidationError,
 )
+from adv_py.core.control_curve_variants import ControlCurveVariantState
 from adv_py.core.control_orientation import (
     ControlAxis, ControlOrientationState, ControlOrientationValidationError,
     CustomOrientationPreview,
@@ -21,6 +22,82 @@ _CUSTOM_GROUP = "AdvPy_ControlOrientDetached"
 
 
 class MayaControlCurveMixin:
+    def capture_control_curve_variants(self, controls, variant):
+        if variant not in ("Sub", "Extra"):
+            raise ControlCurveValidationError("目标控制层只能是 Sub 或 Extra")
+        c = self._cmds
+        rows = []
+        for requested in controls:
+            control, shapes = self._control_curve_shapes(
+                requested, strict=False)
+            if not control or not shapes:
+                continue
+            leaf = control.rsplit("|", 1)[-1]
+            if "Sub" in leaf or "Extra" in leaf:
+                continue
+            if variant == "Extra":
+                candidates = c.listRelatives(
+                    control, parent=True, fullPath=True,
+                    type="transform") or []
+            else:
+                candidates = c.listRelatives(
+                    control, children=True, fullPath=True,
+                    type="transform") or []
+            candidates = [path for path in candidates
+                          if variant in path.rsplit("|", 1)[-1]]
+            if not candidates:
+                continue
+            if len(candidates) != 1 or len(shapes) != 1:
+                raise ControlCurveValidationError(
+                    "控制器曲线或目标层不唯一：" + control)
+            target, target_shapes = self._control_curve_shapes(
+                candidates[0], strict=False)
+            if not target_shapes:
+                continue
+            if len(target_shapes) != 1:
+                raise ControlCurveValidationError(
+                    "目标层曲线不唯一：" + target)
+
+            def points(shape):
+                values = c.xform(shape + ".cv[*]", query=True,
+                                 worldSpace=True, translation=True) or []
+                if len(values) % 3:
+                    raise ControlCurveValidationError(
+                        "控制曲线 CV 读取不完整：" + shape)
+                return tuple(tuple(float(values[index + axis])
+                                   for axis in range(3))
+                             for index in range(0, len(values), 3))
+
+            source_shape, target_shape = shapes[0], target_shapes[0]
+            rows.append(ControlCurveVariantState(
+                control, target, source_shape, target_shape,
+                int(c.getAttr(source_shape + ".degree")),
+                int(c.getAttr(target_shape + ".degree")),
+                int(c.getAttr(source_shape + ".form")),
+                int(c.getAttr(target_shape + ".form")),
+                tuple(float(value) for value in c.xform(
+                    control, query=True, worldSpace=True,
+                    translation=True)),
+                points(source_shape), points(target_shape),
+            ))
+        return tuple(rows)
+
+    def set_control_curve_world_points(self, shape, points):
+        self._require_transaction()
+        c = self._cmds
+        if not c.objExists(shape) or c.nodeType(shape) != "nurbsCurve":
+            raise ControlCurveValidationError(
+                "目标控制曲线已失效：" + shape)
+        current = c.xform(shape + ".cv[*]", query=True,
+                          worldSpace=True, translation=True) or []
+        if len(current) != len(points) * 3:
+            raise ControlCurveValidationError(
+                "目标曲线 CV 数量在执行前变化：" + shape)
+        self._transaction_changed = True
+        for index, point in enumerate(points):
+            c.xform(f"{shape}.cv[{index}]", worldSpace=True,
+                    translation=point)
+
     def detach_custom_control_orientations(self, states):
         self._require_transaction()
         c = self._cmds

@@ -624,6 +624,34 @@ class MayaPanelController:
             source.strip(), tuple(dict.fromkeys(resolved)))
         return len(result.verified)
 
+    def control_curves_copy_to_variant(
+            self, namespace: str, controls: tuple[str, ...],
+            variant: str) -> int:
+        from adv_py.application.control_curve_variants import (
+            CopyControlCurvesToVariants)
+
+        host = self._host(namespace)
+        resolver = ResolveBodyCharacter(host)
+        names = resolver.discover()
+        if len(names) != 1:
+            raise ValueError("当前命名空间必须恰好包含一个已登记角色")
+        registration = resolver.execute(names[0])
+        registered = tuple(dict.fromkeys(
+            channel.node for channel in registration.channels))
+        if controls:
+            resolved = []
+            for requested in controls:
+                matches = [path for path in registered if (
+                    path == requested
+                    or path.rsplit("|", 1)[-1] == requested)]
+                if len(matches) != 1:
+                    raise ValueError("控制器未登记或名称不唯一：" + requested)
+                resolved.append(matches[0])
+            controls = tuple(dict.fromkeys(resolved))
+        else:
+            controls = registered
+        return CopyControlCurvesToVariants(host).apply(controls, variant)
+
     def control_orient_axis(self, namespace: str, controls: tuple[str, ...],
                             primary: str, secondary: str,
                             curve_unaffected: bool = False,

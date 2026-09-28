@@ -657,6 +657,10 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("设置控制曲线颜色", self._color_control_curves))
             form.addRow(self._button("镜像控制曲线形状", self._mirror_control_curves))
             form.addRow(self._button("替换控制器图标", self._swap_control_curves))
+            form.addRow(self._button("Copy to SubControls",
+                                     lambda: self._copy_control_curves("Sub")))
+            form.addRow(self._button("Copy to ExtraControls",
+                                     lambda: self._copy_control_curves("Extra")))
             stack.addWidget(group)
 
             self.control_orient_targets = QtWidgets.QPlainTextEdit()
@@ -1858,6 +1862,14 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(), targets,
                 self.control_curve_custom_source.text())
             return f"已替换 {count} 个控制器图标"
+
+        def _copy_control_curves(self, variant):
+            controls = tuple(line.strip() for line in
+                self.control_curve_targets.toPlainText().splitlines()
+                if line.strip())
+            count = self.controller.control_curves_copy_to_variant(
+                self._namespace(), controls, variant)
+            return f"已复制 {count} 个主控曲线到 {variant} 控制层"
 
         def _set_control_orient_axis(self):
             if self.control_orient_world_orient.isChecked():
