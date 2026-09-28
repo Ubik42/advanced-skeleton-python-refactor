@@ -8,6 +8,7 @@ from adv_py.core.character_registry import CharacterRegistration
 from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_part import rebase_plan_paths_after_parts
+from adv_py.core.fit_bendy import plan_fit_bendy_chains
 from adv_py.core.fit_inbetween_untwister import InbetweenUnTwisterPlan
 from adv_py.core.fit_inbetween_hip_swing import (
     HipSwingReversePlan, plan_hip_swing_fit_selection,
@@ -263,6 +264,14 @@ class BuildRegisteredBodyCharacter:
                     "Root 分段 HipSwinger 缺少 Root 至脊柱首节的 Part 链")
             twist_parts = tuple(part for part in part_plan.fit_parts
                                 if part.kind == "twist")
+            bendy_chains = plan_fit_bendy_chains(
+                twist_parts, fit_source.metadata, part_plan.specs)
+            if bendy_chains:
+                raise FitSkeletonValidationError(
+                    "Fit Bendy 已识别，但曲线、微控制与 Body／Part 接管"
+                    "尚未接入 Python 主构建；拒绝将其构建为普通 Twist："
+                    + "、".join(chain.start_body.rsplit("|", 1)[-1]
+                             for chain in bendy_chains))
             if fit_part_twist_sources is not None:
                 plan_fit_part_twist(twist_parts, fit_part_twist_sources)
         else:
