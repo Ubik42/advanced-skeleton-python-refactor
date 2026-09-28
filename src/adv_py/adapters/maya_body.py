@@ -7035,6 +7035,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 skipSelect=True,
             )
             offset = (self._cmds.ls(offset, long=True) or [offset])[0]
+            self._cmds.setAttr(offset + ".rotateOrder", spec.rotate_order)
             x_axis, y_axis, z_axis = spec.world_axes
             matrix = (
                 *x_axis,
@@ -7395,6 +7396,13 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     sub_shape_scale=sub_shape_scale,
                     extra=self._capture_body_extra_layer(
                         spec.extra_path, control),
+                    rotate_orders=tuple(
+                        (path, int(self._cmds.getAttr(
+                            path + ".rotateOrder")))
+                        for path in (spec.offset_path,
+                                     *((spec.extra_path,)
+                                       if spec.extra_path else ()),
+                                     spec.control_path)),
                 )
             )
         return tuple(states)

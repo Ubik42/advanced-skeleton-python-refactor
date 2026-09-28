@@ -69,6 +69,7 @@ class BodyLimbFkControlState:
     sub_color: int | None = None
     sub_shape_scale: float | None = None
     extra: BodyExtraControllerState | None = None
+    rotate_orders: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,6 +299,18 @@ def audit_body_limb_fk_controls(
             issues.append(BodyLimbControlIssue(
                 "control_shape_mismatch", "FK 控制缺少 NURBS 曲线", path
             ))
+        if state.rotate_orders:
+            expected_orders = {
+                spec.offset_path: spec.rotate_order,
+                spec.control_path: spec.rotate_order,
+            }
+            if spec.extra_path is not None:
+                expected_orders[spec.extra_path] = spec.rotate_order
+            if (len(state.rotate_orders) != len(expected_orders)
+                    or dict(state.rotate_orders) != expected_orders):
+                issues.append(BodyLimbControlIssue(
+                    "control_rotate_order_mismatch",
+                    "FK Offset／Extra／Control 旋转顺序不一致", path))
         if spec.sub_control_path is None:
             if state.sub_control_path is not None:
                 issues.append(BodyLimbControlIssue(
