@@ -18,6 +18,7 @@ class FitPartTwistSource:
     up_twist_plug: str | None = None
     subtract_body_twist: bool = True
     compensate_start_body: bool = False
+    body_constraint_name: str | None = None
 
     def __post_init__(self) -> None:
         if not self.start_body or not self.down_twist_plug:
@@ -25,7 +26,9 @@ class FitPartTwistSource:
         if (type(self.subtract_body_twist) is not bool
                 or type(self.compensate_start_body) is not bool
                 or (self.subtract_body_twist
-                    and self.compensate_start_body)):
+                    and self.compensate_start_body)
+                or (self.compensate_start_body
+                    and not self.body_constraint_name)):
             raise FitPartTwistValidationError("Body 扭转补偿开关必须是布尔值")
 
 
@@ -44,6 +47,7 @@ class FitPartRotationInput:
     fk_world_matrix_plug: str | None = None
     ik_world_matrix_plug: str | None = None
     compensate_start_body: bool = False
+    body_constraint_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +80,7 @@ class FitPartTwistProjection:
             self.input.up_twist_plug,
             self.input.subtract_body_twist,
             self.input.compensate_start_body,
+            self.input.body_constraint_name,
         )
 
 
@@ -83,6 +88,7 @@ def plan_standard_fit_part_rotation_inputs(
     parts: tuple[FitPartJointSpec, ...],
     *,
     independent_world_matrices: Mapping[str, str] | None = None,
+    independent_body_constraints: Mapping[str, str] | None = None,
 ) -> tuple[FitPartRotationInput, ...]:
     """Resolve twist channels for every non-bendy Fit Part chain.
 
@@ -92,6 +98,13 @@ def plan_standard_fit_part_rotation_inputs(
     """
     starts = {part.start_body: part for part in parts}
     independent_world_matrices = independent_world_matrices or {}
+    independent_body_constraints = independent_body_constraints or {}
+    for body, constraint in independent_body_constraints.items():
+        matrix = independent_world_matrices.get(body)
+        if (not constraint or not matrix
+                or matrix == body + ".worldMatrix[0]"):
+            raise FitPartTwistValidationError(
+                "Body 扭转补偿需要独立的控制矩阵与朝向约束：" + body)
     result = []
     auxiliary = {}
     for start, part in starts.items():
@@ -112,7 +125,8 @@ def plan_standard_fit_part_rotation_inputs(
                 ik_world_matrix_plug=(f"AdvPy_{stem}IKDriver_{side}"
                                       ".worldMatrix[0]"),
                 subtract_body_twist=False,
-                compensate_start_body=True))
+                compensate_start_body=True,
+                body_constraint_name=f"AdvPy_{stem}IKFKBlend_{side}"))
         else:
             up = None
             if part.dual_twist_child:
@@ -132,7 +146,12 @@ def plan_standard_fit_part_rotation_inputs(
                 start, "", start + ".rotateOrder",
                 up_twist_plug=up,
                 world_matrix_plug=independent_world_matrices.get(
-                    start, start + ".worldMatrix[0]")))
+                    start, start + ".worldMatrix[0]"),
+                subtract_body_twist=(
+                    start not in independent_body_constraints),
+                compensate_start_body=(
+                    start in independent_body_constraints),
+                body_constraint_name=independent_body_constraints.get(start)))
     return tuple(result) + tuple(auxiliary.values())
 
 
@@ -155,7 +174,8 @@ def plan_fit_part_twist_projections(
             raise FitPartTwistValidationError("Part 扭转投影用途无效")
         if (type(item.compensate_start_body) is not bool
                 or (item.compensate_start_body
-                    and item.subtract_body_twist)):
+                    and (item.subtract_body_twist
+                         or not item.body_constraint_name))):
             raise FitPartTwistValidationError("Body 扭转补偿配置冲突")
         if blended_matrix and not all((item.fk_world_matrix_plug,
                                        item.ik_world_matrix_plug,
@@ -218,6 +238,7 @@ class FitPartTwistStep:
     use_offset_parent_matrix: bool = False
     matrix_name: str | None = None
     compensate_start_body: bool = False
+    body_constraint_name: str | None = None
 
     @property
     def body_compensation_nodes(self) -> tuple[str, ...]:
@@ -291,7 +312,8 @@ def plan_fit_part_twist(
                 source.up_twist_plug, previous_target, amount_node,
                 up_amount_node, target_node, difference_node,
                 use_opm, matrix_name,
-                part.index == 1 and source.compensate_start_body)
+                part.index == 1 and source.compensate_start_body,
+                source.body_constraint_name if part.index == 1 else None)
             names = (amount_node, target_node, difference_node)
             names += (up_amount_node,) if up_amount_node else ()
             names += (matrix_name,) if matrix_name else ()

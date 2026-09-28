@@ -585,8 +585,7 @@ class MayaFitPartMixin:
         if step.compensate_start_body:
             body_name = step.start_body.rsplit("|", 1)[-1]
             bodies = c.ls(body_name, long=True, type="joint") or []
-            stem, _, side = body_name.rpartition("_")
-            constraint = f"AdvPy_{stem}IKFKBlend_{side}"
+            constraint = step.body_constraint_name
             if (len(bodies) != 1
                     or not c.objExists(bodies[0] + ".advPySourceJoint")
                     or not c.objExists(constraint)
@@ -612,8 +611,7 @@ class MayaFitPartMixin:
         if step.compensate_start_body:
             body_name = step.start_body.rsplit("|", 1)[-1]
             body = (c.ls(body_name, long=True, type="joint") or [])[0]
-            stem, _, side = body_name.rpartition("_")
-            constraint = f"AdvPy_{stem}IKFKBlend_{side}"
+            constraint = step.body_constraint_name
             weight_name, amount_name, offset_name = (
                 step.body_compensation_nodes)
             c.addAttr(body, longName="twistAmount",
@@ -714,8 +712,7 @@ class MayaFitPartMixin:
             if len(bodies) != 1:
                 return None
             body = bodies[0]
-            stem, _, side = body_name.rpartition("_")
-            constraint = f"AdvPy_{stem}IKFKBlend_{side}"
+            constraint = step.body_constraint_name
             weight_name, amount_name, offset_name = (
                 step.body_compensation_nodes)
             body_links = (

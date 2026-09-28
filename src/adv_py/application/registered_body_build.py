@@ -82,18 +82,21 @@ class _JoinedTransactionHost:
         yield
 
 
-def _independent_hand_twist_matrices(
+def _independent_hand_twist_sources(
     plan: BodyCharacterRigBuildPlan,
-) -> dict[str, str]:
+) -> tuple[dict[str, str], dict[str, str]]:
     """Use FK controls that remain outside their driven Body Part chains."""
     if plan.hand is None:
-        return {}
-    return {
+        return {}, {}
+    matrices = {
         control.driven_joint: (
             control.source_override_path or control.sub_control_path
             or control.control_path) + ".worldMatrix[0]"
         for control in plan.hand.controls.controls
     }
+    constraints = {control.driven_joint: control.constraint_name
+                   for control in plan.hand.controls.controls}
+    return matrices, constraints
 
 
 def _with_inbetween_fk_sources(
@@ -262,10 +265,12 @@ class BuildRegisteredBodyCharacter:
             hip_swing_reverse = None
             if use_fit_part_hierarchy:
                 if fit_part_twist_sources is None:
+                    hand_matrices, hand_constraints = (
+                        _independent_hand_twist_sources(rig.plan))
                     rotation_inputs = plan_standard_fit_part_rotation_inputs(
                         twist_parts,
-                        independent_world_matrices=(
-                            _independent_hand_twist_matrices(rig.plan)))
+                        independent_world_matrices=hand_matrices,
+                        independent_body_constraints=hand_constraints)
                     projections = plan_fit_part_twist_projections(
                         rotation_inputs)
                     plan_fit_part_twist(
