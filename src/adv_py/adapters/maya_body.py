@@ -8163,6 +8163,13 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         self._cmds.attributeQuery(
                             "advPyIconTemplate", node=control,
                             exists=True) else None),
+                    icon_mirrored=(bool(self._cmds.getAttr(
+                        control + ".advPyIconMirrored")) if
+                        self._cmds.attributeQuery(
+                            "advPyIconMirrored", node=control,
+                            exists=True) else None),
+                    local_scale=tuple(float(value) for value in
+                        self._cmds.getAttr(control + ".scale")[0]),
                     sub_control_path=sub_path,
                     sub_parent_path=sub_parent,
                     sub_shape_type=sub_shape_type,

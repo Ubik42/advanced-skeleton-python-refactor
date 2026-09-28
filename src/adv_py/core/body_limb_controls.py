@@ -76,6 +76,8 @@ class BodyLimbFkControlState:
     extra: BodyExtraControllerState | None = None
     rotate_orders: tuple[tuple[str, int], ...] = ()
     icon_template: str | None = None
+    icon_mirrored: bool | None = None
+    local_scale: Vector3 | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,6 +317,17 @@ def audit_body_limb_fk_controls(
                                       "fallback:" + expected_icon):
             issues.append(BodyLimbControlIssue(
                 "control_icon_mismatch", "FK 控制图标模板不一致", path
+            ))
+        if (state.icon_mirrored is not None
+                and state.icon_mirrored != (spec.side is FitBuildSide.LEFT)):
+            issues.append(BodyLimbControlIssue(
+                "control_icon_mirror_mismatch", "FK 左右图标镜像不一致", path
+            ))
+        if (state.local_scale is not None and any(
+                abs(value - 1.0) > tolerance
+                for value in state.local_scale)):
+            issues.append(BodyLimbControlIssue(
+                "control_icon_scale_mismatch", "FK 图标局部缩放未归一", path
             ))
         if state.rotate_orders:
             expected_orders = {

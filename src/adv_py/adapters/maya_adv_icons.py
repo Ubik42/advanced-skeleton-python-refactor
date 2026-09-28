@@ -169,6 +169,10 @@ def create_adv_icon(commands, *, name: str, parent: str,
     commands.setAttr(control + ".advPyIconTemplate",
                      template if source is not None else "fallback:" + template,
                      type="string", lock=True)
+    commands.addAttr(control, longName="advPyIconMirrored",
+                     attributeType="bool")
+    commands.setAttr(control + ".advPyIconMirrored",
+                     mirror_left, lock=True)
     return control
 
 
