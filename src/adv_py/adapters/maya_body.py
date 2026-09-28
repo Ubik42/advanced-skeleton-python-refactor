@@ -861,19 +861,21 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         self._transaction_changed = True
         self._cmds.delete(matches[0])
 
-    def create_body_control_root(self, name: str) -> str:
+    def create_body_control_root(self, name: str, *,
+                                 parent_path: str | None = None) -> str:
         self._require_transaction()
         if self.find_name_collisions(name):
             raise FitSkeletonValidationError(f"Body 控制根名称冲突：{name}")
         self._transaction_changed = True
-        parent = ("|Group|MotionSystem|FKSystem"
+        parent = parent_path or ("|Group|MotionSystem|FKSystem"
                   if name in ("AdvPy_ArmFKControls", "AdvPy_LegFKControls")
                   and self._cmds.objExists("|Group|MotionSystem|FKSystem")
                   else None)
-        if (name in ("AdvPy_ArmIKControls", "AdvPy_LegIKControls")
+        if (parent_path is None
+                and name in ("AdvPy_ArmIKControls", "AdvPy_LegIKControls")
                 and self._cmds.objExists("|Group|MotionSystem|IKSystem")):
             parent = "|Group|MotionSystem|IKSystem"
-        if (name == "AdvPy_TorsoControls"
+        if (parent_path is None and name == "AdvPy_TorsoControls"
                 and self._cmds.objExists(
                     "|Group|MotionSystem|RootSystem|RootFollowMain")):
             parent = "|Group|MotionSystem|RootSystem|RootFollowMain"

@@ -77,6 +77,37 @@ class BodyLegLockSpace:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyRootXSpec:
+    offset_path: str
+    extra_path: str
+    control_path: str
+    world_position: tuple[float, float, float]
+    radius: float
+
+    @property
+    def offset_name(self) -> str:
+        return self.offset_path.rsplit("|", 1)[-1]
+
+    @property
+    def extra_name(self) -> str:
+        return self.extra_path.rsplit("|", 1)[-1]
+
+    @property
+    def control_name(self) -> str:
+        return self.control_path.rsplit("|", 1)[-1]
+
+
+@dataclass(frozen=True, slots=True)
+class BodyRootXState:
+    offset_parent: str | None
+    extra_parent: str | None
+    control_parent: str | None
+    world_position: tuple[float, float, float]
+    control_rotate_order: int
+    shape_type: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class BodyTorsoPlan:
     controls: BodyLimbFkControlPlan
     pelvis_translation: BodySpaceAttachment
@@ -86,6 +117,7 @@ class BodyTorsoPlan:
     head_aim: HeadAimPlan | None = None
     spline: BodySplinePlan | None = None
     use_offset_parent_matrix: bool = False
+    root_x: BodyRootXSpec | None = None
 
     @property
     def root_fkx_path(self) -> str:
@@ -103,7 +135,11 @@ class BodyTorsoPlan:
                          if self.use_offset_parent_matrix
                          and item.kind == "parentConstraint"
                          and not item.translation_only else (item.name,)))
-        return (self.controls.root_name,) + tuple(
+        root_x_names = ((self.root_x.offset_name, self.root_x.extra_name,
+                         self.root_x.control_name,
+                         self.root_x.control_name + "Shape")
+                        if self.root_x is not None else ())
+        return root_x_names + (self.controls.root_name,) + tuple(
             name for control in self.controls.controls
             for name in (control.offset_name, control.control_name,
                          control.control_name + "Shape", control.constraint_name,
@@ -129,6 +165,7 @@ class BodyTorsoSnapshot:
     leg_lock_compensation_source: str | None = None
     leg_lock_decompose_source: str | None = None
     leg_lock_channel_sources: tuple[str | None, ...] = ()
+    root_x: BodyRootXState | None = None
 
 
 def plan_body_torso(
@@ -148,8 +185,23 @@ def plan_body_torso(
     nested = body.root.startswith("|Group|DeformationSystem|")
     root_parent_path = ("|Group|MotionSystem|RootSystem|RootFollowMain"
                         if nested else "")
-    root_path = f"{root_parent_path}|{root_name}"
     from .body_controller_appearance import body_fk_curve_radius
+    root_x = None
+    if nested:
+        root_joint = joints["Root_M"]
+        root_child = next((joints[child_name]
+                           for child_name, parent in parents.items()
+                           if parent == "Root_M"), None)
+        root_x_offset = root_parent_path + "|AdvPy_RootXOffset"
+        root_x_extra = root_x_offset + "|AdvPy_RootXExtra"
+        root_x_control = root_x_extra + "|AdvPy_RootX"
+        root_x = BodyRootXSpec(
+            root_x_offset, root_x_extra, root_x_control,
+            root_joint.world_position,
+            body_fk_curve_radius(body, root_joint, radius,
+                                 preferred_child=root_child) * 0.23)
+        root_parent_path = root_x_control
+    root_path = f"{root_parent_path}|{root_name}"
 
     controls = []
     by_joint = {}
@@ -225,7 +277,8 @@ def plan_body_torso(
                 f"AdvPy_Torso{label}StretchOrigin_{suffix}", source, stretches[0].start_path, "parentConstraint", True,
             ))
     plan = BodyTorsoPlan(BodyLimbFkControlPlan(root_path, root_name, tuple(controls)), pelvis, tuple(attachments), leg_lock,
-                         use_offset_parent_matrix=build_options.use_offset_parent_matrix)
+                         use_offset_parent_matrix=build_options.use_offset_parent_matrix,
+                         root_x=root_x)
     if spine_ik:
         plan=with_spine_ik(body,plan) if description==BodyAxialDescription() else with_spline_ik(body,plan,description)
     return with_head_aim(plan,body,description,up_axis) if head_aim else plan
@@ -233,6 +286,22 @@ def plan_body_torso(
 
 def audit_body_torso(plan: BodyTorsoPlan, snapshot: BodyTorsoSnapshot) -> tuple[str, ...]:
     issues = [item.message for item in audit_body_limb_fk_controls(plan.controls, snapshot.controls, limb_label="Torso")]
+    if plan.root_x is None:
+        if snapshot.root_x is not None:
+            issues.append("RootX 控制器不在计划中")
+    elif snapshot.root_x is None:
+        issues.append("RootX 控制器缺失")
+    else:
+        root_x = plan.root_x
+        state = snapshot.root_x
+        if (state.offset_parent != root_x.offset_path.rsplit("|", 1)[0]
+                or state.extra_parent != root_x.offset_path
+                or state.control_parent != root_x.extra_path
+                or any(abs(a - b) > 1e-4 for a, b in zip(
+                    state.world_position, root_x.world_position))
+                or state.control_rotate_order != 3
+                or state.shape_type != "nurbsCurve"):
+            issues.append("RootX 控制器层级或绑定姿态不一致")
     if snapshot.root_fkx_parent_path != plan.root_fkx_path.rsplit("|", 1)[0]:
         issues.append("Root FKX 接收层父链不一致")
     if (snapshot.leg_lock_parent_path
