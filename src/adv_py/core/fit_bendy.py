@@ -59,6 +59,21 @@ class FitBendyChainSpec:
         return f"BendX{self.stem}{self.control_count + 1}_{self.side}"
 
     @property
+    def skin_name(self) -> str:
+        return f"{self.prefix}SC_{self.side}"
+
+    @property
+    def guide_node_names(self) -> tuple[str, ...]:
+        return (self.curve_name, self.curve_name + "Shape",
+                self.skin_name, *self.influence_names,
+                *self.control_names,
+                *(name + "Shape" for name in self.control_names),
+                *("AdvPy_BendGuide" + name
+                  for name in self.influence_names),
+                self.end_proxy_name, *self.motion_path_names,
+                *self.motion_transform_names)
+
+    @property
     def motion_path_names(self) -> tuple[str, ...]:
         return tuple(f"BendyMP{self.stem}{index}_{self.side}"
                      for index in range(len(self.part_names) + 1))
