@@ -40,7 +40,11 @@ class BuildBodySelectionSets:
               extras: tuple[str, ...] = ()) -> BodySelectionSetsPlan:
         controls, joints = self._host.resolve_body_selection_members(
             registration, segments, extras)
-        plan = plan_body_selection_sets(controls, joints)
+        pose_channels = tuple((channel.node, channel.attribute)
+                              for channel in registration.channels
+                              if channel.key.startswith("fitpart."))
+        plan = plan_body_selection_sets(
+            controls, joints, pose_channels)
         self._host.preflight_body_selection_sets(plan)
         with self._host.transaction("创建角色控制与变形选择集"):
             self._host.create_body_selection_sets(plan)

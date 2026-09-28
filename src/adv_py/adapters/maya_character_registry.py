@@ -240,6 +240,9 @@ class MayaCharacterRegistryMixin:
             c.connectAttr(member.path+".message",REGISTRY_NAME+f".members[{index}]")
         c.setAttr(REGISTRY_NAME+".members",lock=True)
 
+    def capture_character_registration_node(self, path: str):
+        return self._registry_node(path)
+
     def _registry_node(self, path):
         c = self._cmds
         if (c.ls(path,long=True) or []) != [path] or c.nodeType(path) not in ("transform","joint"):

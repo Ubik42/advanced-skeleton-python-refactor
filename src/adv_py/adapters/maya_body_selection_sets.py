@@ -12,7 +12,10 @@ class MayaBodySelectionSetsMixin:
         address = self.scene_address(name)
         return address if address.startswith((":", "|")) else ":" + address
 
-    def _body_build_pose_commands(self, controls: tuple[str, ...]) -> str:
+    def _body_build_pose_commands(
+        self, controls: tuple[str, ...],
+        pose_channels: tuple[tuple[str, str], ...] = (),
+    ) -> str:
         c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
         commands = []
         for path in controls:
@@ -37,10 +40,21 @@ class MayaBodySelectionSetsMixin:
                     commands.append(f'setAttr "{node}.{attribute}" '
                                     + str(int(value) if isinstance(value, bool)
                                           else value) + ";")
+        for path, attribute in pose_channels:
+            node = self.scene_address(path)
+            value = c.getAttr(node + "." + attribute)
+            if not isinstance(value, (int, float, bool)):
+                raise ValueError("Fit Part 构建姿态通道不是数值："
+                                 + path + "." + attribute)
+            commands.append(f'setAttr "{node}.{attribute}" '
+                            + str(int(value) if isinstance(value, bool)
+                                  else value) + ";")
         return "".join(commands)
 
-    def _body_build_pose_values(self, controls: tuple[str, ...]
-                                ) -> tuple[tuple[str, str, float], ...]:
+    def _body_build_pose_values(
+        self, controls: tuple[str, ...],
+        pose_channels: tuple[tuple[str, str], ...] = (),
+    ) -> tuple[tuple[str, str, float], ...]:
         c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
         rows = []
         standard = tuple(f"{kind}{axis}" for kind in (
@@ -58,6 +72,16 @@ class MayaBodySelectionSetsMixin:
                 value = c.getAttr(plug)
                 if isinstance(value, (int, float, bool)):
                     rows.append((path, attribute, float(value)))
+        for path, attribute in pose_channels:
+            plug = self.scene_address(path) + "." + attribute
+            if (not c.objExists(plug)
+                    or not c.getAttr(plug, keyable=True)
+                    or not c.getAttr(plug, settable=True)):
+                raise ValueError("Fit Part 构建姿态通道不可写：" + plug)
+            value = c.getAttr(plug)
+            if not isinstance(value, (int, float, bool)):
+                raise ValueError("Fit Part 构建姿态通道不是数值：" + plug)
+            rows.append((path, attribute, float(value)))
         return tuple(rows)
 
     def resolve_body_selection_members(
@@ -170,12 +194,13 @@ class MayaBodySelectionSetsMixin:
             c.setAttr(pose + "." + attribute, lock=True, keyable=False,
                       channelBox=False)
         for attribute, value in (("udAttr", self._body_build_pose_commands(
-                plan.controls)), ("udExtraAttr", "")):
+                plan.controls, plan.pose_channels)), ("udExtraAttr", "")):
             c.addAttr(pose, longName=attribute, dataType="string")
             c.setAttr(pose + "." + attribute, value, type="string")
         c.addAttr(pose, longName="advPyPoseData", dataType="string")
         c.setAttr(pose + ".advPyPoseData", json.dumps(
-            self._body_build_pose_values(plan.controls),
+            self._body_build_pose_values(
+                plan.controls, plan.pose_channels),
             separators=(",", ":")), type="string")
         self._transaction_changed = True
 
@@ -242,11 +267,13 @@ class MayaBodySelectionSetsMixin:
                 or not c.objExists(pose + ".udExtraAttr")
                 or not c.objExists(pose + ".advPyPoseData")
                 or (c.getAttr(pose + ".udAttr") or "")
-                != self._body_build_pose_commands(plan.controls)
+                != self._body_build_pose_commands(
+                    plan.controls, plan.pose_channels)
                 or (c.getAttr(pose + ".udExtraAttr") or "") != ""
                 or json.loads(c.getAttr(pose + ".advPyPoseData"))
                 != [list(row) for row in self._body_build_pose_values(
-                    plan.controls)]):
+                    plan.controls, plan.pose_channels)]):
             raise RuntimeError("角色 buildPose 初始复位记录不一致")
         return BodySelectionSetsPlan(members(plan.control_set),
-                                     members(plan.deform_set))
+                                     members(plan.deform_set),
+                                     plan.pose_channels)

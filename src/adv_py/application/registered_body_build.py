@@ -46,6 +46,7 @@ from .fit_bendy_registration import RegisterBendyControls
 from .fit_part_twist import (
     BuildFitPartTwistDrivers, PrepareFitPartTwistSources,
 )
+from .fit_part_registration import RegisterFitPartChannels
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
 from .fit_inbetween_body import plan_combined_part_hierarchy
@@ -368,6 +369,7 @@ class BuildRegisteredBodyCharacter:
                 BuildFitBendyGuides(joined).apply(bendy_chains,
                                                   follows=follows)
             fit_part_hierarchy = None
+            twist_steps = ()
             inbetween_segments = ()
             solver_mapping = None
             inbetween_untwisters = ()
@@ -403,7 +405,7 @@ class BuildRegisteredBodyCharacter:
                     up_twist_plug=(final_paths.remap_body_reference(
                         source.up_twist_plug) if source.up_twist_plug else None),
                 ) for source in twist_sources)
-                BuildFitPartTwistDrivers(joined).apply(
+                twist_steps = BuildFitPartTwistDrivers(joined).apply(
                     ordinary_twist_parts, active_twist_sources)
                 BuildFitPartScaleDrivers(joined).apply(
                     part_plan.fit_parts)
@@ -673,6 +675,10 @@ class BuildRegisteredBodyCharacter:
                         + "；".join(torso_issues))
                 rig = replace(rig, plan=rig_plan, torso=torso_snapshot)
             registration = RegisterBodyCharacter(joined).apply(rig)
+            if fit_part_hierarchy is not None and twist_steps:
+                registration = RegisterFitPartChannels(joined).apply(
+                    registration, twist_steps,
+                    fit_part_hierarchy.final_paths)
             if inbetween_segments or hip_swing_reverse is not None:
                 registration = RegisterInbetweenControls(joined).apply(
                     registration, inbetween_segments,
