@@ -39,3 +39,53 @@ def audit_removed_influences(
                 old.influence_count - old.unused_count):
             return (f"未能核对无效影响关节的清理结果：{old.skin}",)
     return ()
+
+
+PRUNE_THRESHOLD = 0.01
+
+
+@dataclass(frozen=True, slots=True)
+class SkinWeightState:
+    skin: str
+    shape: str
+    vertex_count: int
+    influence_count: int
+    weak_count: int
+    locked_weak_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class PruneSkinWeightsPlan:
+    before: tuple[SkinWeightState, ...]
+    threshold: float = PRUNE_THRESHOLD
+
+
+def plan_prune_skin_weights(
+        before: tuple[SkinWeightState, ...]) -> PruneSkinWeightsPlan:
+    if not before:
+        raise ValueError("当前角色 Geometry 下没有蒙皮网格")
+    if len({(item.skin, item.shape) for item in before}) != len(before):
+        raise ValueError("重复的 Skin 网格")
+    for item in before:
+        if (item.vertex_count < 1 or item.influence_count < 1
+                or item.weak_count < 0
+                or item.locked_weak_count < 0
+                or item.locked_weak_count > item.weak_count):
+            raise ValueError("Skin 权重计数无效：" + item.shape)
+        if item.locked_weak_count:
+            raise ValueError("低权重影响关节被锁定，无法修剪：" + item.shape)
+    return PruneSkinWeightsPlan(before)
+
+
+def audit_pruned_skin_weights(
+        plan: PruneSkinWeightsPlan,
+        after: tuple[SkinWeightState, ...]) -> tuple[str, ...]:
+    if tuple((item.skin, item.shape, item.vertex_count,
+              item.influence_count) for item in after) != tuple(
+            (item.skin, item.shape, item.vertex_count,
+             item.influence_count) for item in plan.before):
+        return ("Skin 网格或拓扑在修剪期间改变",)
+    for item in after:
+        if item.weak_count:
+            return ("仍有低于 0.01 的非零 Skin 权重：" + item.shape,)
+    return ()

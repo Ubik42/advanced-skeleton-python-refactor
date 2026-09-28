@@ -1351,6 +1351,8 @@ def create_panel(controller: MayaPanelController | None = None):
             group, form = self._group("00 · Optimize", [])
             form.addRow(self._button("Remove Unused Influences",
                                      self._remove_unused_skin_influences))
+            form.addRow(self._button("Prune Small Weights",
+                                     self._prune_small_skin_weights))
             stack.addWidget(group)
             stack.addStretch(1)
             return page
@@ -1359,6 +1361,12 @@ def create_panel(controller: MayaPanelController | None = None):
             skins, removed = self.controller.remove_unused_skin_influences(
                 self._namespace())
             return f"已检查 {skins} 个 Skin，清理 {removed} 个无效影响关节。"
+
+        def _prune_small_skin_weights(self):
+            meshes, weak = self.controller.prune_small_skin_weights(
+                self._namespace())
+            return (f"已检查 {meshes} 个蒙皮网格；原有 {weak} 项非零权重"
+                    "低于 0.01，已完成修剪并回读。")
 
         def _mocap_page(self):
             page, stack = self._page()
