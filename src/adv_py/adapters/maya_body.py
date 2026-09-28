@@ -982,6 +982,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                                   type="joint") or []) != [follow.parent_joint]:
                     raise FitSkeletonValidationError("Head Aim 上游关节缺失")
                 if (self._cmds.objExists(follow.target_control + ".follow")
+                        or source(follow.target_offset + ".offsetParentMatrix")
+                        is not None
                         or any(source(follow.target_offset + "." + kind + axis)
                                is not None
                                or not bool(self._cmds.getAttr(
@@ -1181,31 +1183,94 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     arrow.annotation_path + ".visibility")
             follow = plan.head_aim_follow
             if follow is not None:
+                from maya.api import OpenMaya as om
+
+                def values(matrix):
+                    return tuple(float(matrix[row][column])
+                                 for row in range(4) for column in range(4))
+
+                def set_matrix(plug, matrix):
+                    self._cmds.setAttr(plug, *values(matrix), type="matrix")
+
+                bind = om.MMatrix(self._cmds.xform(
+                    follow.target_offset, query=True, worldSpace=True,
+                    matrix=True))
+                if any(abs(a - b) > 1e-4 for a, b in zip(
+                        values(bind), follow.bind_world_matrix)):
+                    raise RuntimeError("Head Aim 目标绑定矩阵在总控创建前发生变化")
+                main_bind = om.MMatrix(self._cmds.xform(
+                    control, query=True, worldSpace=True, matrix=True))
+                parent_bind = om.MMatrix(self._cmds.xform(
+                    follow.parent_joint, query=True,
+                    worldSpace=True, matrix=True))
                 self._cmds.addAttr(
                     follow.target_control, longName="follow",
                     attributeType="double", minValue=0.0, maxValue=10.0,
                     defaultValue=10.0, keyable=True)
-                constraint = self._cmds.parentConstraint(
-                    control, follow.parent_joint, follow.target_offset,
-                    name=follow.constraint_name, maintainOffset=True)[0]
-                aliases = self._cmds.parentConstraint(
-                    constraint, query=True, weightAliasList=True) or []
-                if len(aliases) != 2:
-                    raise RuntimeError("Head Aim 跟随权重目标数量漂移")
+                static = self._cmds.createNode(
+                    "multMatrix", name=follow.static_matrix_name,
+                    skipSelect=True)
+                set_matrix(static + ".matrixIn[0]",
+                           bind * main_bind.inverse())
+                self._cmds.connectAttr(
+                    control + ".worldMatrix[0]",
+                    static + ".matrixIn[1]")
+                parent = self._cmds.createNode(
+                    "multMatrix", name=follow.parent_matrix_name,
+                    skipSelect=True)
+                set_matrix(parent + ".matrixIn[0]",
+                           bind * parent_bind.inverse())
+                self._cmds.connectAttr(
+                    follow.parent_joint + ".worldMatrix[0]",
+                    parent + ".matrixIn[1]")
+                blend = self._cmds.createNode(
+                    "blendMatrix", name=follow.blend_name,
+                    skipSelect=True)
+                self._cmds.connectAttr(
+                    static + ".matrixSum", blend + ".inputMatrix")
+                self._cmds.connectAttr(
+                    parent + ".matrixSum",
+                    blend + ".target[0].targetMatrix")
                 scale = self._cmds.createNode(
                     "multDoubleLinear", name=follow.scale_name,
                     skipSelect=True)
                 self._cmds.setAttr(scale + ".input2", 0.1)
                 self._cmds.connectAttr(
                     follow.target_control + ".follow", scale + ".input1")
-                reverse = self._cmds.createNode(
-                    "reverse", name=follow.reverse_name, skipSelect=True)
                 self._cmds.connectAttr(
-                    scale + ".output", reverse + ".inputX")
+                    scale + ".output", blend + ".target[0].weight")
+                local = self._cmds.createNode(
+                    "multMatrix", name=follow.local_matrix_name,
+                    skipSelect=True)
                 self._cmds.connectAttr(
-                    reverse + ".outputX", constraint + "." + aliases[0])
+                    blend + ".outputMatrix", local + ".matrixIn[0]")
                 self._cmds.connectAttr(
-                    scale + ".output", constraint + "." + aliases[1])
+                    follow.target_offset.rsplit("|", 1)[0]
+                    + ".worldInverseMatrix[0]", local + ".matrixIn[1]")
+                for kind, neutral in (("translate", (0.0, 0.0, 0.0)),
+                                      ("rotate", (0.0, 0.0, 0.0)),
+                                      ("scale", (1.0, 1.0, 1.0))):
+                    self._cmds.setAttr(follow.target_offset + "." + kind,
+                                       *neutral, type="double3")
+                if follow.use_offset_parent_matrix:
+                    self._cmds.connectAttr(
+                        local + ".matrixSum",
+                        follow.target_offset + ".offsetParentMatrix")
+                else:
+                    decompose = self._cmds.createNode(
+                        "decomposeMatrix", name=follow.decompose_name,
+                        skipSelect=True)
+                    self._cmds.setAttr(
+                        decompose + ".inputRotateOrder",
+                        self._cmds.getAttr(
+                            follow.target_offset + ".rotateOrder"))
+                    self._cmds.connectAttr(
+                        local + ".matrixSum",
+                        decompose + ".inputMatrix")
+                    for kind in ("Translate", "Rotate", "Scale"):
+                        self._cmds.connectAttr(
+                            decompose + ".output" + kind,
+                            follow.target_offset + "." + kind.lower())
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
@@ -1420,32 +1485,60 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
 
     def _capture_body_head_aim_follow(self, follow, main, source):
         c = self._cmds
-        constraints = c.ls(follow.constraint_path, long=True,
-                            type="parentConstraint") or []
-        if constraints != [follow.constraint_path]:
-            raise FitSkeletonValidationError("Head Aim 跟随约束缺失")
-        targets = tuple((c.ls(target, long=True) or [target])[0]
-                        for target in (c.parentConstraint(
-                            follow.constraint_path, query=True,
-                            targetList=True) or []))
-        aliases = c.parentConstraint(
-            follow.constraint_path, query=True, weightAliasList=True) or []
-        if len(aliases) != 2:
-            raise FitSkeletonValidationError("Head Aim 跟随权重缺失")
+        def matrix(plug):
+            values = c.getAttr(plug)
+            if len(values) == 1 and isinstance(values[0], (tuple, list)):
+                values = values[0]
+            return tuple(float(value) for value in values)
+
+        node_types = ((follow.static_matrix_name, "multMatrix"),
+                      (follow.parent_matrix_name, "multMatrix"),
+                      (follow.blend_name, "blendMatrix"),
+                      (follow.scale_name, "multDoubleLinear"),
+                      (follow.local_matrix_name, "multMatrix"))
+        if not follow.use_offset_parent_matrix:
+            node_types += ((follow.decompose_name, "decomposeMatrix"),)
+        if any((c.ls(name, type=node_type) or []) != [name]
+               for name, node_type in node_types):
+            raise FitSkeletonValidationError("Head Aim 跟随矩阵节点缺失")
         bounds = tuple(c.attributeQuery("follow", node=follow.target_control,
                                        **{kind: True}) or []
                        for kind in ("minimum", "maximum"))
+        output = (
+            source(follow.target_offset + ".offsetParentMatrix"),
+            tuple(source(follow.target_offset + "." + kind)
+                  for kind in ("translate", "rotate", "scale")),
+            (source(follow.decompose_name + ".inputMatrix")
+             if not follow.use_offset_parent_matrix else None),
+            (int(c.getAttr(follow.decompose_name + ".inputRotateOrder"))
+             if not follow.use_offset_parent_matrix else None),
+            tuple(tuple(float(value) for value in
+                        c.getAttr(follow.target_offset + "." + kind)[0])
+                  for kind in ("translate", "rotate", "scale")),
+        )
         return (follow.target_control,
                 float(c.getAttr(follow.target_control + ".follow")),
-                bounds, follow.constraint_path, targets,
+                bounds, follow.use_offset_parent_matrix,
+                source(follow.static_matrix_name + ".matrixIn[1]"),
+                source(follow.parent_matrix_name + ".matrixIn[1]"),
+                source(follow.blend_name + ".inputMatrix"),
+                source(follow.blend_name + ".target[0].targetMatrix"),
                 source(follow.scale_name + ".input1"),
                 float(c.getAttr(follow.scale_name + ".input2")),
-                source(follow.reverse_name + ".inputX"),
-                source(follow.constraint_path + "." + aliases[0]),
-                source(follow.constraint_path + "." + aliases[1]),
-                tuple(source(follow.target_offset + "." + kind + axis)
-                      for kind in ("translate", "rotate")
-                      for axis in "XYZ"))
+                source(follow.blend_name + ".target[0].weight"),
+                source(follow.local_matrix_name + ".matrixIn[0]"),
+                source(follow.local_matrix_name + ".matrixIn[1]"),
+                output,
+                tuple(float(value) for value in c.xform(
+                    follow.target_offset, query=True,
+                    worldSpace=True, matrix=True)),
+                (matrix(follow.static_matrix_name + ".matrixIn[0]"),
+                 matrix(follow.parent_matrix_name + ".matrixIn[0]"),
+                 tuple(float(value) for value in c.xform(
+                     main, query=True, worldSpace=True, matrix=True)),
+                 tuple(float(value) for value in c.xform(
+                     follow.parent_joint, query=True,
+                     worldSpace=True, matrix=True))))
 
     def create_body_root_motion(self, plan: BodyRootMotionPlan) -> None:
         self._require_transaction()

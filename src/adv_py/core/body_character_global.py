@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from math import isfinite
 
 from .fit_container import FitUpAxis
+from .matrix import multiply, matrix44
 
 
 Vector3 = tuple[float, float, float]
@@ -55,14 +56,28 @@ class BodyHeadAimFollowSpec:
     target_offset: str
     target_control: str
     parent_joint: str
+    bind_world_matrix: tuple[float, ...]
+    use_offset_parent_matrix: bool
 
     @property
-    def constraint_name(self) -> str:
-        return "AdvPy_HeadAimFollowConstraint"
+    def static_matrix_name(self) -> str:
+        return "AdvPy_HeadAimFollowStaticMM"
 
     @property
-    def constraint_path(self) -> str:
-        return self.target_offset + "|" + self.constraint_name
+    def parent_matrix_name(self) -> str:
+        return "AdvPy_HeadAimFollowParentMM"
+
+    @property
+    def blend_name(self) -> str:
+        return "AdvPy_HeadAimFollowBlend"
+
+    @property
+    def local_matrix_name(self) -> str:
+        return "AdvPy_HeadAimFollowLocalMM"
+
+    @property
+    def decompose_name(self) -> str:
+        return "AdvPy_HeadAimFollowDecompose"
 
     @property
     def scale_name(self) -> str:
@@ -106,9 +121,13 @@ class BodyCharacterGlobalPlan:
             self.shape_name,
             self.scale_node_name,
             *(name for arrow in self.pole_arrows for name in arrow.node_names),
-            *((self.head_aim_follow.constraint_name,
+            *((self.head_aim_follow.static_matrix_name,
+               self.head_aim_follow.parent_matrix_name,
+               self.head_aim_follow.blend_name,
+               self.head_aim_follow.local_matrix_name,
                self.head_aim_follow.scale_name,
-               self.head_aim_follow.reverse_name)
+               *((self.head_aim_follow.decompose_name,)
+                 if not self.head_aim_follow.use_offset_parent_matrix else ()))
               if self.head_aim_follow is not None else ()),
         )
 
@@ -277,7 +296,12 @@ def plan_body_character_global(
                  or not all(isinstance(path, str) and path.startswith("|")
                             for path in (head_aim_follow.target_offset,
                                          head_aim_follow.target_control,
-                                         head_aim_follow.parent_joint))))
+                                         head_aim_follow.parent_joint))
+                 or type(head_aim_follow.use_offset_parent_matrix) is not bool
+                 or len(head_aim_follow.bind_world_matrix) != 16
+                 or any(not isinstance(value, (int, float))
+                        or not isfinite(float(value))
+                        for value in head_aim_follow.bind_world_matrix)))
         or (not body_root_via_controls and body_root not in driven_roots)
         or (body_root_via_controls and (
             body_root in driven_roots
@@ -555,23 +579,56 @@ def audit_body_character_global(
             plan.control_path,
         ))
     follow = plan.head_aim_follow
-    expected_follow = None
-    if follow is not None:
-        expected_follow = (
+    state = snapshot.head_aim_follow_state
+    follow_ok = state is None if follow is None else False
+    if follow is not None and state is not None and len(state) == 16:
+        expected_prefix = (
             follow.target_control, 10.0, ((0.0,), (10.0,)),
-            follow.constraint_path,
-            (plan.control_path, follow.parent_joint),
+            follow.use_offset_parent_matrix,
+            f"{plan.control_path}.worldMatrix[0]",
+            f"{follow.parent_joint}.worldMatrix[0]",
+            follow.static_matrix_name + ".matrixSum",
+            follow.parent_matrix_name + ".matrixSum",
             follow.target_control + ".follow", 0.1,
             follow.scale_name + ".output",
-            follow.reverse_name + ".outputX",
-            follow.scale_name + ".output",
-            tuple(f"{follow.constraint_path}.constraint{kind}{axis}"
-                  for kind in ("Translate", "Rotate") for axis in "XYZ"),
+            follow.blend_name + ".outputMatrix",
+            (follow.target_offset.rsplit("|", 1)[0]
+             + ".worldInverseMatrix[0]"),
         )
-    if snapshot.head_aim_follow_state != expected_follow:
+        output = state[13]
+        if not isinstance(output, tuple) or len(output) != 5:
+            output = (None, (), None, None, ())
+        if follow.use_offset_parent_matrix:
+            expected_output = (follow.local_matrix_name + ".matrixSum",
+                               (None, None, None), None, None)
+            neutral_channels = output[4] == ((0.0, 0.0, 0.0),
+                                             (0.0, 0.0, 0.0),
+                                             (1.0, 1.0, 1.0))
+        else:
+            expected_output = (
+                None,
+                tuple(f"{follow.decompose_name}.output{kind}"
+                      for kind in ("Translate", "Rotate", "Scale")),
+                follow.local_matrix_name + ".matrixSum", 0)
+            neutral_channels = True
+        follow_ok = (state[:13] == expected_prefix
+                     and output[:4] == expected_output
+                     and neutral_channels
+                     and _close(state[14], follow.bind_world_matrix,
+                                tolerance))
+        offsets = state[15]
+        if len(offsets) != 4 or any(len(matrix) != 16 for matrix in offsets):
+            follow_ok = False
+        else:
+            follow_ok = (follow_ok and _close(
+                multiply(matrix44(offsets[0]), matrix44(offsets[2])),
+                follow.bind_world_matrix, tolerance) and _close(
+                multiply(matrix44(offsets[1]), matrix44(offsets[3])),
+                follow.bind_world_matrix, tolerance))
+    if not follow_ok:
         issues.append(BodyCharacterGlobalIssue(
             "head_aim_follow_mismatch",
-            "Head Aim 目标的 follow 通道或父级跟随接线不一致",
+            "Head Aim 目标的 follow 矩阵图或绑定姿态不一致",
             follow.target_control if follow is not None else None,
         ))
     return tuple(issues)

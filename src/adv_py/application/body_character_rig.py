@@ -15,6 +15,7 @@ from adv_py.core.body_character_global import (
 from adv_py.core.body_hand_fit import (
     advanced_skeleton_hand_source_joint_names, body_hand_source_joint_names,
 )
+from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.body_direct_fk_scale import (
     BodyDirectFkScaleSpec, plan_body_direct_fk_scales,
@@ -266,7 +267,12 @@ class BuildBodyCharacterRig:
                 BodyHeadAimFollowSpec(
                     torso.torso.head_aim.target_offset,
                     torso.torso.head_aim.target,
-                    torso.torso.head_aim.follow_parent_joint)
+                    torso.torso.head_aim.follow_parent_joint,
+                    tuple(value for axis in torso.torso.head_aim.axes
+                          for value in (*axis, 0.0))
+                    + (*torso.torso.head_aim.position, 1.0),
+                    BodyBuildOptions.from_fit_settings(
+                        safety.symmetry.settings).use_offset_parent_matrix)
                 if torso is not None and torso.torso.head_aim is not None
                 else None),
         )
