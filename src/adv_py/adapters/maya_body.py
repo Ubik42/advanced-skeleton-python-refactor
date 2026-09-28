@@ -970,6 +970,27 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                             type="transform") or []) != [arrow.pole_control]):
                     raise FitSkeletonValidationError(
                         "Pole Vector 箭头的中段关节或控制器失效")
+            follow = plan.head_aim_follow
+            if follow is not None:
+                if (self._cmds.ls(follow.target_offset, long=True,
+                                  type="transform") or []) != [follow.target_offset]:
+                    raise FitSkeletonValidationError("Head Aim 跟随层缺失")
+                if (self._cmds.ls(follow.target_control, long=True,
+                                  type="transform") or []) != [follow.target_control]:
+                    raise FitSkeletonValidationError("Head Aim 目标控制器缺失")
+                if (self._cmds.ls(follow.parent_joint, long=True,
+                                  type="joint") or []) != [follow.parent_joint]:
+                    raise FitSkeletonValidationError("Head Aim 上游关节缺失")
+                if (self._cmds.objExists(follow.target_control + ".follow")
+                        or any(source(follow.target_offset + "." + kind + axis)
+                               is not None
+                               or not bool(self._cmds.getAttr(
+                                   follow.target_offset + "." + kind + axis,
+                                   settable=True))
+                               for kind in ("translate", "rotate")
+                               for axis in "XYZ")):
+                    raise FitSkeletonValidationError(
+                        "Head Aim 跟随目标通道不可安全接线")
 
             self._transaction_changed = True
             existing_group = self._cmds.ls(
@@ -1158,6 +1179,33 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 self._cmds.connectAttr(
                     control + ".arrowVis",
                     arrow.annotation_path + ".visibility")
+            follow = plan.head_aim_follow
+            if follow is not None:
+                self._cmds.addAttr(
+                    follow.target_control, longName="follow",
+                    attributeType="double", minValue=0.0, maxValue=10.0,
+                    defaultValue=10.0, keyable=True)
+                constraint = self._cmds.parentConstraint(
+                    control, follow.parent_joint, follow.target_offset,
+                    name=follow.constraint_name, maintainOffset=True)[0]
+                aliases = self._cmds.parentConstraint(
+                    constraint, query=True, weightAliasList=True) or []
+                if len(aliases) != 2:
+                    raise RuntimeError("Head Aim 跟随权重目标数量漂移")
+                scale = self._cmds.createNode(
+                    "multDoubleLinear", name=follow.scale_name,
+                    skipSelect=True)
+                self._cmds.setAttr(scale + ".input2", 0.1)
+                self._cmds.connectAttr(
+                    follow.target_control + ".follow", scale + ".input1")
+                reverse = self._cmds.createNode(
+                    "reverse", name=follow.reverse_name, skipSelect=True)
+                self._cmds.connectAttr(
+                    scale + ".output", reverse + ".inputX")
+                self._cmds.connectAttr(
+                    reverse + ".outputX", constraint + "." + aliases[0])
+                self._cmds.connectAttr(
+                    scale + ".output", constraint + "." + aliases[1])
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
@@ -1364,7 +1412,40 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                       arrow.annotation_shape_path + ".overrideDisplayType"))
                   == 2))
                 for arrow in plan.pole_arrows),
+            head_aim_follow_state=(
+                self._capture_body_head_aim_follow(plan.head_aim_follow,
+                                                    control, source)
+                if plan.head_aim_follow is not None else None),
         )
+
+    def _capture_body_head_aim_follow(self, follow, main, source):
+        c = self._cmds
+        constraints = c.ls(follow.constraint_path, long=True,
+                            type="parentConstraint") or []
+        if constraints != [follow.constraint_path]:
+            raise FitSkeletonValidationError("Head Aim 跟随约束缺失")
+        targets = tuple((c.ls(target, long=True) or [target])[0]
+                        for target in (c.parentConstraint(
+                            follow.constraint_path, query=True,
+                            targetList=True) or []))
+        aliases = c.parentConstraint(
+            follow.constraint_path, query=True, weightAliasList=True) or []
+        if len(aliases) != 2:
+            raise FitSkeletonValidationError("Head Aim 跟随权重缺失")
+        bounds = tuple(c.attributeQuery("follow", node=follow.target_control,
+                                       **{kind: True}) or []
+                       for kind in ("minimum", "maximum"))
+        return (follow.target_control,
+                float(c.getAttr(follow.target_control + ".follow")),
+                bounds, follow.constraint_path, targets,
+                source(follow.scale_name + ".input1"),
+                float(c.getAttr(follow.scale_name + ".input2")),
+                source(follow.reverse_name + ".inputX"),
+                source(follow.constraint_path + "." + aliases[0]),
+                source(follow.constraint_path + "." + aliases[1]),
+                tuple(source(follow.target_offset + "." + kind + axis)
+                      for kind in ("translate", "rotate")
+                      for axis in "XYZ"))
 
     def create_body_root_motion(self, plan: BodyRootMotionPlan) -> None:
         self._require_transaction()

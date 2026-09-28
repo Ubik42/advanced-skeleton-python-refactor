@@ -39,7 +39,7 @@ def character_channels(rig):
         add("spine.spline", spline.settings, ("spineIkFk", "stretch", "volume"))
     if p.torso.torso.head_aim:
         aim=p.torso.torso.head_aim
-        add('head.aim.target',aim.target,translation+rotation)
+        add('head.aim.target',aim.target,translation+rotation+('follow',))
         add('head.aim',aim.head_control,('headAim',))
     for label,module in (("arm",p.arm),("leg",p.leg)):
         for control in module.fk_controls.controls:

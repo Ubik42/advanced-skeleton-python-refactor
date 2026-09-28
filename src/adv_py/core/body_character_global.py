@@ -51,6 +51,29 @@ class BodyPoleArrowSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyHeadAimFollowSpec:
+    target_offset: str
+    target_control: str
+    parent_joint: str
+
+    @property
+    def constraint_name(self) -> str:
+        return "AdvPy_HeadAimFollowConstraint"
+
+    @property
+    def constraint_path(self) -> str:
+        return self.target_offset + "|" + self.constraint_name
+
+    @property
+    def scale_name(self) -> str:
+        return "AdvPy_HeadAimFollowScale"
+
+    @property
+    def reverse_name(self) -> str:
+        return "AdvPy_HeadAimFollowReverse"
+
+
+@dataclass(frozen=True, slots=True)
 class BodyCharacterGlobalPlan:
     root_name: str
     root_path: str
@@ -71,6 +94,7 @@ class BodyCharacterGlobalPlan:
     finger_visibility_paths: tuple[str, ...]
     aim_fk_control_path: str | None
     pole_arrows: tuple[BodyPoleArrowSpec, ...]
+    head_aim_follow: BodyHeadAimFollowSpec | None
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -82,6 +106,10 @@ class BodyCharacterGlobalPlan:
             self.shape_name,
             self.scale_node_name,
             *(name for arrow in self.pole_arrows for name in arrow.node_names),
+            *((self.head_aim_follow.constraint_name,
+               self.head_aim_follow.scale_name,
+               self.head_aim_follow.reverse_name)
+              if self.head_aim_follow is not None else ()),
         )
 
     @property
@@ -197,6 +225,7 @@ class BodyCharacterGlobalSnapshot:
     reserved_visibility_values: tuple[tuple[str, bool], ...] = ()
     pole_arrow_states: tuple[tuple[str, str, str | None, str | None,
                                    bool, bool], ...] = ()
+    head_aim_follow_state: tuple | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,6 +246,7 @@ def plan_body_character_global(
     finger_visibility_paths: tuple[str, ...] = (),
     aim_fk_control_path: str | None = None,
     pole_arrows: tuple[BodyPoleArrowSpec, ...] = (),
+    head_aim_follow: BodyHeadAimFollowSpec | None = None,
 ) -> BodyCharacterGlobalPlan:
     if (
         not isinstance(up_axis, FitUpAxis)
@@ -242,6 +272,12 @@ def plan_body_character_global(
                for arrow in pole_arrows)
         or len({name for arrow in pole_arrows for name in arrow.node_names})
            != 4 * len(pole_arrows)
+        or (head_aim_follow is not None
+            and (not isinstance(head_aim_follow, BodyHeadAimFollowSpec)
+                 or not all(isinstance(path, str) and path.startswith("|")
+                            for path in (head_aim_follow.target_offset,
+                                         head_aim_follow.target_control,
+                                         head_aim_follow.parent_joint))))
         or (not body_root_via_controls and body_root not in driven_roots)
         or (body_root_via_controls and (
             body_root in driven_roots
@@ -316,6 +352,7 @@ def plan_body_character_global(
         finger_visibility_paths=finger_visibility_paths,
         aim_fk_control_path=aim_fk_control_path,
         pole_arrows=pole_arrows,
+        head_aim_follow=head_aim_follow,
     )
 
 
@@ -516,6 +553,26 @@ def audit_body_character_global(
             "pole_arrow_mismatch",
             "Pole Vector 注释箭头层级或总控接线不一致",
             plan.control_path,
+        ))
+    follow = plan.head_aim_follow
+    expected_follow = None
+    if follow is not None:
+        expected_follow = (
+            follow.target_control, 10.0, ((0.0,), (10.0,)),
+            follow.constraint_path,
+            (plan.control_path, follow.parent_joint),
+            follow.target_control + ".follow", 0.1,
+            follow.scale_name + ".output",
+            follow.reverse_name + ".outputX",
+            follow.scale_name + ".output",
+            tuple(f"{follow.constraint_path}.constraint{kind}{axis}"
+                  for kind in ("Translate", "Rotate") for axis in "XYZ"),
+        )
+    if snapshot.head_aim_follow_state != expected_follow:
+        issues.append(BodyCharacterGlobalIssue(
+            "head_aim_follow_mismatch",
+            "Head Aim 目标的 follow 通道或父级跟随接线不一致",
+            follow.target_control if follow is not None else None,
         ))
     return tuple(issues)
 

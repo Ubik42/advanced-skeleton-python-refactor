@@ -7,10 +7,16 @@ from .maya_adv_icons import create_adv_icon
 def audit_registered(host,registration):
     channels=[ch for ch in registration.channels if ch.key.startswith('head.aim.')]
     if not channels:return
-    expected={'head.aim.headAim',*('head.aim.target.'+kind+axis for kind in ('translate','rotate') for axis in 'XYZ')}
-    if len(channels)!=7 or {ch.key for ch in channels}!=expected:raise CharacterRegistryError('头部瞄准通道声明不完整')
-    audit(host,next(ch.node for ch in channels if ch.key=='head.aim.headAim'),
-        next(ch.node for ch in channels if ch.key=='head.aim.target.translateX'))
+    base={'head.aim.headAim',*('head.aim.target.'+kind+axis for kind in ('translate','rotate') for axis in 'XYZ')}
+    keys={ch.key for ch in channels}
+    if keys not in (base,base|{'head.aim.target.follow'}) or len(keys)!=len(channels):
+        raise CharacterRegistryError('头部瞄准通道声明不完整')
+    target=next(ch.node for ch in channels if ch.key=='head.aim.target.translateX')
+    if 'head.aim.target.follow' in keys:
+        follow=next(ch for ch in channels if ch.key=='head.aim.target.follow')
+        if follow.node!=target or follow.attribute!='follow':
+            raise CharacterRegistryError('头部瞄准跟随通道目标不一致')
+    audit(host,next(ch.node for ch in channels if ch.key=='head.aim.headAim'),target)
 
 
 def create(host,plan):

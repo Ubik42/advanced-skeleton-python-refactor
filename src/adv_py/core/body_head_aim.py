@@ -17,6 +17,7 @@ class HeadAimPlan:
     radius: float
     aim_axis: tuple
     up_axis: tuple
+    follow_parent_joint: str
 
     @property
     def rest(self):return self.offset+'|AdvPy_HeadAimRest'
@@ -57,5 +58,5 @@ def with_head_aim(torso,body,description,up_axis=FitUpAxis.Z):
                      else torso.controls.root_path)
     target_offset=target_parent+'|AdvPy_HeadAimOffset'
     plan=HeadAimPlan(updated.control_path,parent_layer,pivot,target_offset,target_offset+'|AdvPy_HeadAim',
-        tuple(p+length*3*x for p,x in zip(head.world_position,forward)),head.world_axes,control.radius*.6,aim_axis,local_up)
+        tuple(p+length*3*x for p,x in zip(head.world_position,forward)),head.world_axes,control.radius*.6,aim_axis,local_up,parent.path)
     return replace(torso,controls=replace(torso.controls,controls=tuple(updated if c==control else c for c in torso.controls.controls)),head_aim=plan)
