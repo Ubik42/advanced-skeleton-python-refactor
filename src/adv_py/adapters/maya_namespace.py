@@ -30,6 +30,12 @@ _CREATE |= {'duplicateCurve'}
 _NODE_ARGS |= {'polyNormalPerVertex', 'polySoftEdge'}
 _CREATE |= {'polySoftEdge'}
 _NODE_ARGS |= {'move', 'scale', 'rebuildCurve'}
+_NODE_ARGS |= {'spaceLocator'}
+_NODE_RESULTS |= {'spaceLocator'}
+_CREATE |= {'spaceLocator'}
+_NODE_ARGS |= {'sets'}
+_NODE_RESULTS |= {'sets'}
+_CREATE |= {'sets'}
 
 
 class MayaCharacterCommands:
@@ -84,6 +90,12 @@ class MayaCharacterCommands:
                 args=[address(a) for a in args]
             for flag in ('name','n','parent','p','node','startJoint','sj','endEffector','ee','worldUpObject','curve'):
                 if flag in kwargs and isinstance(kwargs[flag],str):kwargs[flag]=address(kwargs[flag])
+            if name=='sets':
+                for flag in ('add', 'isMember'):
+                    if flag in kwargs and isinstance(kwargs[flag], str):
+                        kwargs[flag]=address(kwargs[flag])
+            if name=='skinCluster' and 'addInfluence' in kwargs:
+                kwargs['addInfluence']=address(kwargs['addInfluence'])
             if name=='ikHandle' and isinstance(kwargs.get('solver'),str) and kwargs['solver'] not in SHARED_NODES:
                 kwargs['solver']=identity.to_scene(kwargs['solver']).lstrip(':')
             elif name=='ikHandle' and not query and kwargs.get('solver') in SHARED_NODES:

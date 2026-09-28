@@ -434,6 +434,69 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
                     continue
                 c.skinCluster(cluster, edit=True, addInfluence=joints,
                               dropoffRate=4.0)
+        self._verify_multi_chain(spec)
+
+    def _verify_multi_chain(self, spec: PartialJointSpec) -> None:
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        suffix = spec.stem + "_" + spec.side
+        group = self._unique("PartialMultiJoints" + suffix, "transform")
+        handle = self._unique("IkHandlePartial" + suffix, "ikHandle")
+        curve = self._unique("IKCurve" + suffix, "transform")
+        joints = tuple(self._unique(
+            "%sPartial%d_%s" % (spec.stem, index, spec.side), "joint")
+            for index in range(1, spec.count + 1))
+        source_parent = self._unique(spec.parent, "joint")
+        for index, joint in enumerate(joints):
+            expected_parent = source_parent if index == 0 else joints[index - 1]
+            actual_parent = c.listRelatives(joint, parent=True,
+                                            fullPath=True) or []
+            if (actual_parent != [expected_parent]
+                    or not c.sets(joint, isMember=self.scene_address(
+                        "DeformSet"))):
+                raise RuntimeError("多段 Partial 关节层级或 DeformSet 不一致："
+                                   + joint)
+        for node in (handle, curve):
+            if (c.listRelatives(node, parent=True,
+                                fullPath=True) or []) != [group]:
+                raise RuntimeError("多段 Partial IK 系统层级不一致：" + node)
+        shape = c.listRelatives(curve, shapes=True, fullPath=True,
+                                type="nurbsCurve") or []
+        if len(shape) != 1:
+            raise RuntimeError("多段 Partial IK 曲线形状不完整")
+        info = self._unique("IKCurveInfo" + suffix, "curveInfo")
+        normalize = self._unique("IKCurveInfoNormalize" + suffix,
+                                 "multiplyDivide")
+        divisor = self._unique("IKCurveInfoAllMultiply" + suffix,
+                               "multiplyDivide")
+        tx = self._unique("IKCurveTxMultiply" + suffix, "multiplyDivide")
+        connections = (
+            (shape[0] + ".worldSpace[0]", info + ".inputCurve"),
+            (info + ".arcLength", normalize + ".input1X"),
+            (normalize + ".outputX", divisor + ".input1X"),
+            (self.scene_address("MainScaleMultiplyDivide") + ".outputX",
+             divisor + ".input2X"),
+            (divisor + ".outputX", tx + ".input2X"),
+            *((tx + ".outputX", joint + ".translateX")
+              for joint in joints[1:]),
+        )
+        if any(not c.isConnected(source, destination)
+               for source, destination in connections):
+            raise RuntimeError("多段 Partial 曲线伸缩连接不完整")
+        if spec.auto_bind:
+            source = self._unique(spec.joint, "joint")
+            clusters = set(c.listConnections(
+                source, source=False, destination=True,
+                type="skinCluster") or ())
+            for cluster in clusters:
+                if self._leaf(cluster) == "skinClusterSkinCage":
+                    continue
+                influences = set(c.ls(
+                    c.skinCluster(cluster, query=True,
+                                  influence=True) or [],
+                    long=True, type="joint") or ())
+                if not set(joints) <= influences:
+                    raise RuntimeError("多段 Partial Skin 影响关节不完整："
+                                       + cluster)
 
     def delete_partial_joint(self, spec: PartialDeleteSpec) -> None:
         self._require_transaction()
