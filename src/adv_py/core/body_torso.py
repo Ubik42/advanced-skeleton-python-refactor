@@ -151,6 +151,10 @@ def plan_body_torso(
     root_path = f"{root_parent_path}|{root_name}"
     controls = []
     by_joint = {}
+    y_positions = tuple(joint.world_position[1] for joint in body.joints)
+    character_height = max(y_positions) - min(y_positions)
+    if not isfinite(character_height) or character_height <= 0:
+        raise FitSkeletonValidationError("Torso 缺少有效角色高度")
     for name, parent_name in parents.items():
         joint = joints[name]
         expected_parent = joints[parent_name].path if parent_name else None
@@ -167,14 +171,31 @@ def plan_body_torso(
                     if build_options.sub_controllers else None)
         sub_path = (f"{control_path}|{sub_name}"
                     if sub_name is not None else None)
+        if joint.fit_has_deform_profile:
+            curve_scale = (joint.deform_profile.fat
+                           * joint.deform_profile.fat_front)
+        else:
+            torso_child = next((joints[child_name]
+                                for child_name, parent in parents.items()
+                                if parent == name), None)
+            direct_children = tuple(state for state in body.joints
+                                    if state.parent_path == joint.path)
+            first_child = (torso_child or
+                           (direct_children[0] if direct_children else None))
+            curve_scale = character_height / 30.0
+            if first_child is not None:
+                distance = sum((a - b) ** 2 for a, b in zip(
+                    joint.world_position,
+                    first_child.world_position)) ** 0.5
+                curve_scale *= (distance / 2.0 if distance > 1.0
+                                else (1.0 + distance) / 2.0)
         spec = BodyLimbFkControlSpec(
             side=joint.side, driven_joint=joint.path,
             offset_path=offset_path, offset_name=offset_name,
             control_path=control_path, control_name=control_name,
             parent_path=parent, constraint_name=f"AdvPy_Torso{name}Orient",
             world_position=joint.world_position, world_axes=joint.world_axes,
-            radius=max(1e-4, float(radius) * joint.deform_profile.fat
-                       * joint.deform_profile.fat_front),
+            radius=max(1e-4, float(radius) * curve_scale),
             source_override_path=(
                 f"{sub_path or control_path}|AdvPy_RootFKX"
                 if name == "Root_M" else None),

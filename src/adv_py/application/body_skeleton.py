@@ -38,6 +38,7 @@ class BodySkeletonHost(Protocol):
     def read_joint_label(self, joint: str) -> JointLabel | None: ...
 
     def read_fit_deform_profile(self, joint: str) -> FitDeformProfile: ...
+    def read_fit_deform_profile_presence(self, joint: str) -> bool: ...
 
     def read_fit_skin_enabled(self, joint: str) -> bool: ...
 
@@ -114,6 +115,10 @@ class BuildBodySkeleton:
             node.path: self._host.read_fit_deform_profile(node.path)
             for node in symmetry.source.hierarchy.joints
         }
+        profile_presence = {
+            node.path: self._host.read_fit_deform_profile_presence(node.path)
+            for node in symmetry.source.hierarchy.joints
+        }
         skin_enabled = {
             node.path: self._host.read_fit_skin_enabled(node.path)
             for node in symmetry.source.hierarchy.joints
@@ -142,7 +147,8 @@ class BuildBodySkeleton:
                 profiles[instance.source_joint],
                 skin_enabled[instance.source_joint],
                 rotation_orders[instance.source_joint],
-                segment_scale_compensate)
+                segment_scale_compensate,
+                profile_presence[instance.source_joint])
             for instance in symmetry.instances
             if instance.source_joint in labels
         )

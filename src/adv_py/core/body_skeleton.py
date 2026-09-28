@@ -60,6 +60,7 @@ class BodyJointSpec:
     skin_enabled: bool = True
     rotation_order: int = 0
     segment_scale_compensate: bool = True
+    fit_has_deform_profile: bool = False
 
     @classmethod
     def from_symmetry(
@@ -70,6 +71,7 @@ class BodyJointSpec:
         skin_enabled: bool = True,
         rotation_order: int = 0,
         segment_scale_compensate: bool = True,
+        fit_has_deform_profile: bool = False,
     ) -> "BodyJointSpec":
         return cls(
             source_joint=instance.source_joint,
@@ -83,6 +85,7 @@ class BodyJointSpec:
             skin_enabled=skin_enabled,
             rotation_order=rotation_order,
             segment_scale_compensate=segment_scale_compensate,
+            fit_has_deform_profile=fit_has_deform_profile,
         )
 
     def __post_init__(self) -> None:
@@ -103,6 +106,8 @@ class BodyJointSpec:
             raise BodySkeletonValidationError("Maya 旋转顺序必须是 0 到 5 的整数")
         if not isinstance(self.segment_scale_compensate, bool):
             raise BodySkeletonValidationError("分段缩放补偿开关必须是布尔值")
+        if type(self.fit_has_deform_profile) is not bool:
+            raise BodySkeletonValidationError("Fit 体积属性存在标记必须是布尔值")
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +127,7 @@ class BodyJointState:
     skin_enabled: bool = True
     rotation_order: int = 0
     segment_scale_compensate: bool = True
+    fit_has_deform_profile: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,6 +335,9 @@ def audit_body_skeleton(
         if state.segment_scale_compensate != spec.segment_scale_compensate:
             issues.append(BodySkeletonIssue(
                 "segment_scale_mismatch", "分段缩放补偿不一致", path))
+        if state.fit_has_deform_profile != spec.fit_has_deform_profile:
+            issues.append(BodySkeletonIssue(
+                "fit_volume_presence_mismatch", "Fit 体积属性来源标记不一致", path))
         if any(abs(current - wanted) > tolerance for current, wanted in zip(
             (state.deform_profile.fat, state.deform_profile.fat_front,
              state.deform_profile.fat_width),

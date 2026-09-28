@@ -351,6 +351,14 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             read("fat"), read("fatFront", "fatY"),
             read("fatWidth", "fatZ"))
 
+    def read_fit_deform_profile_presence(self, joint: str) -> bool:
+        c = self._cmds
+        matches = c.ls(joint, long=True, type="joint") or []
+        if len(matches) != 1 or matches[0] != joint:
+            raise FitSkeletonValidationError("Fit 体积属性来源关节无效：" + joint)
+        return all(c.attributeQuery(name, node=joint, exists=True)
+                   for name in ("fat", "fatFront", "fatWidth"))
+
     def read_fit_skin_enabled(self, joint: str) -> bool:
         c = self._cmds
         current = c.ls(joint, long=True, type="joint") or []
@@ -431,6 +439,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                                minValue=0.0, defaultValue=value, keyable=False)
         self._cmds.addAttr(path, longName="advPySkinEnabled",
                            attributeType="bool", defaultValue=spec.skin_enabled)
+        self._cmds.addAttr(path, longName="advPyFitHasDeformProfile",
+                           attributeType="bool",
+                           defaultValue=spec.fit_has_deform_profile)
         return path
 
     def create_body_system_hierarchy(self) -> str:
@@ -716,6 +727,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         path + ".rotateOrder")),
                     segment_scale_compensate=bool(self._cmds.getAttr(
                         path + ".segmentScaleCompensate")),
+                    fit_has_deform_profile=(
+                        bool(self._cmds.getAttr(
+                            path + ".advPyFitHasDeformProfile"))
+                        if self._cmds.attributeQuery(
+                            "advPyFitHasDeformProfile", node=path,
+                            exists=True) else False),
                 )
             )
         return BodySkeletonSnapshot(
