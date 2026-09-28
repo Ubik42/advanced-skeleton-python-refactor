@@ -19,6 +19,13 @@ def promote(host,staged):
     old_paths={_by_uuid(c,uuid) for uuid in old_ids}
     fit=staged.original.registration.container
     old_fit=host.scene_address(fit)
+    retained_paths={fit,*[row.path for row in staged.original.extensions],*(
+        shape.rsplit('|',1)[0]
+        for skin in staged.original.skins for shape,_,_ in skin.meshes)}
+    retained_physical={
+        (c.ls(host.scene_address(path),long=True) or
+         [host.scene_address(path)])[0]
+        for path in retained_paths}
     replacement_by_role={role:new for role,_,new,_ in rows}
     shared={host.scene_address(name).lstrip(':') for name in SHARED_NODES}
     # After handoff, no preserved data may still depend on a deletion candidate.
@@ -34,7 +41,8 @@ def promote(host,staged):
                 raise CharacterRegistryError('旧 Rig 仍连接到保留边界之外：'+plug)
         if 'dagNode' in (c.nodeType(node,inherited=True) or []):
             children=c.listRelatives(node,children=True,fullPath=True) or []
-            if any(child not in old_paths for child in children):
+            if any(child not in old_paths and child not in retained_physical
+                   for child in children):
                 raise CharacterRegistryError('旧 Rig 清理仍会影响用户子节点：'+node)
     rename=[];references={}
     for role,old,new,kind in rows:
@@ -52,9 +60,6 @@ def promote(host,staged):
         node,separator,component=item.partition('.')
         uuid=c.ls(node,uuid=True)[0]
         selection.append((replacement_by_old.get(uuid,uuid),separator+component))
-    retained_paths={fit,*[row.path for row in staged.original.extensions],*(
-        shape.rsplit('|',1)[0]
-        for skin in staged.original.skins for shape,_,_ in skin.meshes)}
     retained=[]
     for logical in sorted(retained_paths,key=lambda path:(path.count('|'),path)):
         node=host.scene_address(logical)
