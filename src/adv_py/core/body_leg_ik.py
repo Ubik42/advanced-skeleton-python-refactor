@@ -199,7 +199,9 @@ def plan_body_leg_ik(
             ankle_position=ankle,
             ankle_axes=sources[2].world_axes,
             pole_position=pole,
-            radius=float(radius),
+            radius=max(1e-4, float(radius)
+                       * sources[2].deform_profile.fat
+                       * sources[2].deform_profile.fat_front),
             ankle_constraint_name=f"AdvPy_LegIKAnkleOrient_{suffix}",
             toe_driver_path=toe_driver,
             toe_end_driver_path=toe_end_driver,

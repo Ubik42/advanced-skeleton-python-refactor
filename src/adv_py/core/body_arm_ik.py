@@ -154,7 +154,9 @@ def plan_body_arm_ik(
             pole_offset_path, pole_offset_name,
             f"{pole_extra_path}|{pole_control_name}", pole_control_name,
             f"AdvPy_ArmIKHandle_{side_name}", f"AdvPy_ArmPVConstraint_{side_name}",
-            wrist, sources[2].world_axes, pole, float(radius),
+            wrist, sources[2].world_axes, pole,
+            max(1e-4, float(radius) * sources[2].deform_profile.fat
+                * sources[2].deform_profile.fat_front),
             f"AdvPy_ArmIKWristOrient_{side_name}",
             wrist_sub_path=(
                 f"{wrist_extra_path}|{wrist_control_name}|AdvPy_ArmIKSub_{side_name}"

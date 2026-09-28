@@ -329,6 +329,7 @@ def plan_body_hand_fk_controls(
                     world_position=state.world_position,
                     world_axes=state.world_axes,
                     radius=float(radius) * radius_factors[index - 1],
+                    rotate_order=state.rotation_order,
                     control_parent_path=pose_path,
                     sub_control_path=(
                         f"{control_path}|{sub_name}" if sub_name else None),
