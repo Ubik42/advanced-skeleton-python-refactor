@@ -863,6 +863,15 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)
         return SetUnrealTwistHierarchy(host).apply(enable)
 
+    def game_engine_scaling(self, namespace: str, enable: bool) -> int:
+        from adv_py.adapters.maya_body import MayaBodyBuildHost
+        from adv_py.application.body_game_scaling import SwitchBodyGameScaling
+
+        host = MayaBodyBuildHost(
+            namespace=None if namespace == ":" else namespace)
+        plan = SwitchBodyGameScaling(host).apply(enable=enable)
+        return len(plan.joints)
+
     def unreal_rename(self, namespace: str):
         from adv_py.adapters.maya_unreal_rename import MayaUnrealRenameHost
         from adv_py.application.unreal_rename import RenameToUnreal

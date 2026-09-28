@@ -136,9 +136,10 @@ class MayaBodyGameScalingMixin:
                 prefix = namespace + ":" if separator else ""
                 if not separator:
                     bare = leaf
-                c.disconnectAttr(joint.fk_parent_disconnect_compound,
-                                 prefix + "FKParentConstraintTo" + bare
-                                 + ".scale")
+                target = prefix + "FKParentConstraintTo" + bare + ".scale"
+                if c.isConnected(joint.fk_parent_disconnect_compound, target):
+                    c.disconnectAttr(joint.fk_parent_disconnect_compound,
+                                     target)
             for axis in joint.axes:
                 scale = path + ".scale" + axis.axis
                 stored = path + ".GameEngineScalingS" + axis.axis
@@ -146,15 +147,19 @@ class MayaBodyGameScalingMixin:
                     c.addAttr(path, longName="GameEngineScalingS" + axis.axis,
                               attributeType="double", keyable=False)
                 if axis.reroute_source:
-                    c.connectAttr(axis.reroute_source, stored, force=True)
+                    if not c.isConnected(axis.reroute_source, stored):
+                        c.connectAttr(axis.reroute_source, stored, force=True)
                 if axis.disconnect_scale_source:
-                    c.disconnectAttr(axis.disconnect_scale_source, scale)
+                    if c.isConnected(axis.disconnect_scale_source, scale):
+                        c.disconnectAttr(axis.disconnect_scale_source, scale)
                     c.setAttr(scale, 1.0)
                 if axis.fk_parent_scale_target:
-                    c.connectAttr(stored, axis.fk_parent_scale_target,
-                                  force=True)
+                    if not c.isConnected(stored, axis.fk_parent_scale_target):
+                        c.connectAttr(stored, axis.fk_parent_scale_target,
+                                      force=True)
                 if axis.restore_source:
-                    c.connectAttr(axis.restore_source, scale, force=True)
+                    if not c.isConnected(axis.restore_source, scale):
+                        c.connectAttr(axis.restore_source, scale, force=True)
         for node in plan.nodes:
             c.createNode("multiplyDivide", name=node.name, skipSelect=True)
             c.setAttr(node.name + ".operation", node.operation)

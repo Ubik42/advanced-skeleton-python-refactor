@@ -87,6 +87,9 @@ ADV_OPERATIONS = {
         ("设置控制器局部轴", 0, "10 · Control Orient"),
         ("分离全部控制器", 0, "10 · Control Orient"),
         ("重新附着全部控制器", 0, "10 · Control Orient")),
+    ("Body", "Game Engine"): (
+        ("启用 Game Engine Scaling", 0, "10A · Game Engine"),
+        ("恢复 Maya Scaling", 0, "10A · Game Engine")),
     ("Body", "Unreal Joints"): (
         ("重命名为 Unreal 关节", 0, "11 · Unreal Joints"),
         ("恢复 ADV 关节名称", 0, "11 · Unreal Joints"),

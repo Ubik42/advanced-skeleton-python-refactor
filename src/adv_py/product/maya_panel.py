@@ -677,6 +677,13 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("重新附着全部控制器", self._attach_control_orient_custom))
             stack.addWidget(group)
 
+            group, form = self._group("10A · Game Engine", [])
+            form.addRow(self._button("启用 Game Engine Scaling",
+                                     self._enable_game_engine_scaling))
+            form.addRow(self._button("恢复 Maya Scaling",
+                                     self._disable_game_engine_scaling))
+            stack.addWidget(group)
+
             group, form = self._group("11 · Unreal Joints", [])
             form.addRow(self._button("重命名为 Unreal 关节",
                                      self._rename_to_unreal))
@@ -1851,6 +1858,14 @@ def create_panel(controller: MayaPanelController | None = None):
         def _delete_unreal_twist_hierarchy(self):
             count = self.controller.unreal_twist_hierarchy(self._namespace(), False)
             return f"已恢复 {count} 个 Twist 层级关节"
+
+        def _enable_game_engine_scaling(self):
+            count = self.controller.game_engine_scaling(self._namespace(), True)
+            return f"已切换 {count} 个 Body 关节的 Game Engine Scaling"
+
+        def _disable_game_engine_scaling(self):
+            count = self.controller.game_engine_scaling(self._namespace(), False)
+            return f"已恢复 {count} 个 Body 关节的 Maya Scaling"
 
         def _rename_to_unreal(self):
             plan = self.controller.unreal_rename(self._namespace())
