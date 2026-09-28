@@ -90,6 +90,10 @@ class MayaBodySelectionSetsMixin:
             node = matches[0]
             if c.nodeType(node) != "transform":
                 continue
+            if (c.attributeQuery("advPyNoControl", node=node,
+                                 exists=True)
+                    and c.getAttr(node + ".advPyNoControl")):
+                continue
             shapes = c.listRelatives(node, shapes=True,
                                      type="nurbsCurve") or []
             if shapes:

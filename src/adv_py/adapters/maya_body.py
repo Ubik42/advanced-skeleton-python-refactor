@@ -7902,6 +7902,40 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             else:
                 self._cmds.select(clear=True)
 
+    def hide_body_fk_control(self, control: str) -> None:
+        self._require_transaction()
+        c = self._cmds
+        if (c.ls(control, long=True, type="transform") or []) != [control]:
+            raise FitSkeletonValidationError("No Control 目标控制器缺失："
+                                             + control)
+        shapes = c.listRelatives(control, shapes=True, fullPath=True,
+                                 type="nurbsCurve") or []
+        if not shapes or c.attributeQuery("advPyNoControl", node=control,
+                                         exists=True):
+            raise FitSkeletonValidationError("No Control 目标曲线状态无效："
+                                             + control)
+        self._transaction_changed = True
+        c.addAttr(control, longName="advPyNoControl",
+                  attributeType="bool")
+        c.setAttr(control + ".advPyNoControl", True, lock=True)
+        for shape in shapes:
+            c.setAttr(shape + ".visibility", False, lock=True)
+
+    def capture_hidden_body_fk_control(self, control: str) -> bool:
+        c = self._cmds
+        if (c.ls(control, long=True, type="transform") or []) != [control]:
+            return False
+        if (not c.attributeQuery("advPyNoControl", node=control,
+                                 exists=True)
+                or not c.getAttr(control + ".advPyNoControl")):
+            return False
+        shapes = c.listRelatives(control, shapes=True, fullPath=True,
+                                 type="nurbsCurve") or []
+        return bool(shapes) and all(
+            not c.getAttr(shape + ".visibility")
+            and c.getAttr(shape + ".visibility", lock=True)
+            for shape in shapes)
+
     def capture_body_arm_fk_controls(
         self,
         plan: BodyArmFkControlPlan,

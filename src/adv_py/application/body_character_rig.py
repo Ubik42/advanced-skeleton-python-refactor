@@ -21,6 +21,7 @@ from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.body_direct_fk_scale import (
     BodyDirectFkScaleSpec, plan_body_direct_fk_scales,
 )
+from adv_py.core.body_no_control import plan_body_no_control
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
@@ -74,6 +75,9 @@ class BodyCharacterRigHost(
     def capture_body_direct_fk_scale(
         self, spec: BodyDirectFkScaleSpec) -> bool: ...
 
+    def hide_body_fk_control(self, control: str) -> None: ...
+    def capture_hidden_body_fk_control(self, control: str) -> bool: ...
+
 
 @dataclass(frozen=True, slots=True)
 class BodyCharacterRigBuildPlan:
@@ -87,6 +91,7 @@ class BodyCharacterRigBuildPlan:
     torso: BodyTorsoBuildPlan | None = None
     control_spaces: BodyControlSpacesPlan | None = None
     direct_fk_scales: tuple[BodyDirectFkScaleSpec, ...] = ()
+    no_control_paths: tuple[str, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -305,6 +310,11 @@ class BuildBodyCharacterRig:
             + (hand.controls.controls if hand else ()))
         direct_fk_scales = plan_body_direct_fk_scales(
             safety.body, direct_controls)
+        no_control_paths = plan_body_no_control(
+            safety.symmetry.source.metadata,
+            arm.fk_controls.controls + leg.fk_controls.controls
+            + (hand.controls.controls if hand else ())
+            + (torso.torso.controls.controls if torso else ()))
         collisions = tuple(sorted({
             path
             for name in global_control.node_names + (spaces.node_names if spaces else ())
@@ -322,6 +332,7 @@ class BuildBodyCharacterRig:
             torso=torso,
             control_spaces=spaces,
             direct_fk_scales=direct_fk_scales,
+            no_control_paths=no_control_paths,
             shared_input_stable=(
                 arm.safety == leg.safety
                 and (hand is None or hand.safety == arm.safety)
@@ -389,6 +400,11 @@ class BuildBodyCharacterRig:
                 if plan.hand is not None else None
             )
             torso = self._torso.build_in_transaction(plan.torso) if plan.torso else None
+            for control in plan.no_control_paths:
+                self._host.hide_body_fk_control(control)
+            if any(not self._host.capture_hidden_body_fk_control(control)
+                   for control in plan.no_control_paths):
+                raise RuntimeError("Fit noControl 曲线隐藏状态不一致")
             self._host.create_body_character_global(plan.global_control)
             for spec in plan.direct_fk_scales:
                 self._host.preflight_body_direct_fk_scale(spec)
