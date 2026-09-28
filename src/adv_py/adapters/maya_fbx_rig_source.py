@@ -427,6 +427,7 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         if any((c.ls(path, long=True, type="transform") or []) != [path]
                for path in ("|Group|DeformationSystem",
                             "|Group|MotionSystem|RootSystem",
+                            "|Group|MotionSystem|ConstraintSystem",
                             "|Group|MotionSystem|MainSystem",
                             "|Group|MotionSystem|MainSystem|Main")):
             raise ValueError("FBX rig Root Motion 缺少主控系统")
@@ -465,6 +466,12 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             maintainOffset=False, name=motion.body_constraint)
         if len(driven) != 1:
             raise RuntimeError("FBX rig Root Motion 控制约束创建失败")
+        constraint_system = "|Group|MotionSystem|ConstraintSystem"
+        moved_constraint = c.parent(driven[0], constraint_system,
+                                    absolute=True)[0]
+        if (c.ls(moved_constraint, long=True, type="parentConstraint")
+                or []) != [constraint_system + "|" + motion.body_constraint]:
+            raise RuntimeError("FBX rig Root Motion 约束未进入 ConstraintSystem")
         main = "|Group|MotionSystem|MainSystem|Main"
         main_system = "|Group|MotionSystem|MainSystem"
         follow_constraint = c.parentConstraint(main, main_system, follow,
@@ -608,7 +615,8 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                     and (c.listRelatives(motion.source_constraint,
                         parent=True, fullPath=True) or []) == [game_source]
                     and (c.listRelatives(motion.body_constraint,
-                        parent=True, fullPath=True) or []) == [motion.joint_path]
+                        parent=True, fullPath=True) or []) == [
+                            "|Group|MotionSystem|ConstraintSystem"]
                     and (c.listRelatives(motion.follow_constraint,
                         parent=True, fullPath=True) or []) == [motion.follow_path]
                     and len(aliases) == 2

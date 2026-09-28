@@ -226,7 +226,8 @@ class BuildRegisteredBodyCharacter:
                                   "MotionSystem", "FKSystem", "IKSystem",
                                   "FKIKSystem", "TwistSystem",
                                   "BendSystem", "RootSystem",
-                                  "RootFollowMain", "AimSystem")
+                                  "RootFollowMain", "AimSystem",
+                                  "ConstraintSystem", "DrivingSystem")
                 for path in self._host.find_name_collisions(name))
             if hierarchy_collisions:
                 raise FitSkeletonValidationError(
@@ -687,6 +688,10 @@ class BuildRegisteredBodyCharacter:
                 ("|Group|MotionSystem|RootSystem|RootFollowMain",
                  "|Group|MotionSystem|RootSystem", "transform"),
                 ("|Group|MotionSystem|AimSystem",
+                 "|Group|MotionSystem", "transform"),
+                ("|Group|MotionSystem|ConstraintSystem",
+                 "|Group|MotionSystem", "transform"),
+                ("|Group|MotionSystem|DrivingSystem",
                  "|Group|MotionSystem", "transform"),
                 (skeleton.snapshot.root, _DEFORMATION_SYSTEM_PATH, "joint"),
             ):

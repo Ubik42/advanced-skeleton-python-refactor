@@ -162,7 +162,8 @@ class BodyCharacterGlobalPlan:
 
     @property
     def scale_system_paths(self) -> tuple[str, ...]:
-        return (("|Group|MotionSystem|AimSystem",)
+        return (("|Group|MotionSystem|AimSystem",
+                 "|Group|MotionSystem|DrivingSystem")
                 if self.visibility_controls else ())
 
     @property
@@ -242,6 +243,7 @@ class BodyCharacterGlobalSnapshot:
     aim_fk_visibility: tuple[str, bool, str | None] | None = None
     aim_fk_visibility_value: bool | None = None
     reserved_visibility_values: tuple[tuple[str, bool], ...] = ()
+    driving_visibility_source: str | None = None
     pole_arrow_states: tuple[tuple[str, str, str | None, str | None,
                                    bool, bool], ...] = ()
     head_aim_follow_state: tuple | None = None
@@ -513,7 +515,7 @@ def audit_body_character_global(
     if snapshot.scale_system_sources != expected_system_scales:
         issues.append(BodyCharacterGlobalIssue(
             "system_scale_mismatch",
-            "AimSystem 的总控比例接线不一致",
+            "AimSystem 或 DrivingSystem 的总控比例接线不一致",
             plan.control_path,
         ))
     expected_joint_visibility = (
@@ -566,6 +568,15 @@ def audit_body_character_global(
             "reserved_visibility_attributes_mismatch",
             "总控预留显示属性缺失或默认值不一致",
             plan.control_path,
+        ))
+    expected_driving_source = (
+        plan.control_path + ".drvSysVis"
+        if plan.visibility_controls else None)
+    if snapshot.driving_visibility_source != expected_driving_source:
+        issues.append(BodyCharacterGlobalIssue(
+            "driving_visibility_mismatch",
+            "DrivingSystem 显示连接不一致",
+            "|Group|MotionSystem|DrivingSystem",
         ))
     expected_arrows = tuple(
         (arrow.locator_path, arrow.annotation_path,

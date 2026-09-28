@@ -440,7 +440,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                for name in ("Group", "DeformationSystem", "Geometry",
                             "MotionSystem", "FKSystem", "IKSystem",
                             "FKIKSystem", "TwistSystem", "BendSystem",
-                            "RootSystem", "RootFollowMain", "AimSystem")):
+                            "RootSystem", "RootFollowMain", "AimSystem",
+                            "ConstraintSystem", "DrivingSystem")):
             raise FitSkeletonValidationError(
                 "角色系统层级名称已被占用")
         group = self._cmds.createNode(
@@ -479,6 +480,14 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             skipSelect=True)
         self._cmds.createNode(
             "transform", name="AimSystem", parent=motion,
+            skipSelect=True)
+        constraint_system = self._cmds.createNode(
+            "transform", name="ConstraintSystem", parent=motion,
+            skipSelect=True)
+        self._cmds.setAttr(constraint_system + ".visibility", False)
+        self._cmds.setAttr(constraint_system + ".visibility", lock=True)
+        self._cmds.createNode(
+            "transform", name="DrivingSystem", parent=motion,
             skipSelect=True)
         for kind in ("translate", "rotate", "scale"):
             for axis in "XYZ":
@@ -560,6 +569,13 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     lock=True))):
             raise FitSkeletonValidationError(
                 "角色 BendSystem 不得继承 MotionSystem 变换")
+        constraint_visibility = (
+            "|Group|MotionSystem|ConstraintSystem.visibility")
+        if (bool(self._cmds.getAttr(constraint_visibility))
+                or not bool(self._cmds.getAttr(
+                    constraint_visibility, lock=True))):
+            raise FitSkeletonValidationError(
+                "角色 ConstraintSystem 必须隐藏并锁定可见性")
         if any(
             not bool(self._cmds.getAttr(
                 f"|Group.{kind}{axis}", lock=True))
@@ -585,6 +601,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                  "|Group|MotionSystem|RootSystem",
                  "|Group|MotionSystem|RootSystem|RootFollowMain",
                  "|Group|MotionSystem|AimSystem",
+                 "|Group|MotionSystem|ConstraintSystem",
+                 "|Group|MotionSystem|DrivingSystem",
                  body_root_path)
         rows = []
         for path in paths:
@@ -1156,6 +1174,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     control, longName=name, attributeType="bool",
                     defaultValue=True, keyable=False)
                 self._cmds.setAttr(control + "." + name, channelBox=True)
+            if plan.visibility_controls:
+                self._cmds.connectAttr(
+                    control + ".drvSysVis",
+                    "|Group|MotionSystem|DrivingSystem.visibility")
             for arrow in plan.pole_arrows:
                 locator = self._cmds.createNode(
                     "transform", name=arrow.locator_name,
@@ -1457,6 +1479,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             reserved_visibility_values=tuple(
                 (name, bool(self._cmds.getAttr(control + "." + name)))
                 for name in plan.reserved_visibility_attributes),
+            driving_visibility_source=(
+                source("|Group|MotionSystem|DrivingSystem.visibility")
+                if plan.visibility_controls else None),
             pole_arrow_states=tuple(
                 (one_path(arrow.locator_path, "transform"),
                  one_path(arrow.annotation_path, "transform"),
