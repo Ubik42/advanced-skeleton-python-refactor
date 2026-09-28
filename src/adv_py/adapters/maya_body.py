@@ -246,7 +246,7 @@ from adv_py.core.fit_symmetry import FitBuildSide
 
 from .maya_fit import MayaFitJointHost
 from .maya_control_curves import MayaControlCurveMixin
-from .maya_adv_icons import create_adv_icon
+from .maya_adv_icons import create_adv_icon, original_fit_icon_axis_offset
 from .maya_fit_part import MayaFitPartMixin
 from .maya_fit_bendy import MayaFitBendyMixin
 from .maya_body_selection_sets import MayaBodySelectionSetsMixin
@@ -7079,7 +7079,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                               r"Part[0-9]", spec.control_name)
                           else "FK_icon"),
                 radius=spec.radius,
-                fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12)
+                fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12,
+                axis_offset=original_fit_icon_axis_offset(
+                    self._cmds, spec.control_name))
             control = (self._cmds.ls(control, long=True) or [control])[0]
             if offset != spec.offset_path or control != spec.control_path:
                 raise RuntimeError(

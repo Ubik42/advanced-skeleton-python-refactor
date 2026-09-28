@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import re
 
+from adv_py.core.adv_icon_axis import icon_axis_offset, rotate_icon_point
+
 
 _TRANSFORM = re.compile(r'createNode transform -n "([^"]+)";')
 _SHAPE = re.compile(r'createNode nurbsCurve -n "([^"]+)" -p "([^"]+)";')
@@ -97,15 +99,21 @@ def _templates(source: Path) -> dict[str, tuple[dict, ...]]:
 def create_adv_icon(commands, *, name: str, parent: str,
                     template: str, radius: float,
                     fallback_normal: tuple[float, float, float],
-                    fallback_sections: int = 8) -> str:
+                    fallback_sections: int = 8,
+                    axis_offset: tuple[float, float, float] = (0, 0, 0)) -> str:
     """Make an original icon when installed, or preserve the prior circle."""
     if (not isinstance(name, str) or not name
             or not isinstance(parent, str) or not parent
             or not isinstance(radius, (int, float))
-            or not isfinite(radius) or radius <= 0):
+            or not isfinite(radius) or radius <= 0
+            or len(axis_offset) != 3
+            or any(not isinstance(value, (int, float))
+                   or not isfinite(value) for value in axis_offset)):
         raise ValueError("控制器图标参数无效")
     source = _icon_source()
     if source is None:
+        if axis_offset != (0, 0, 0):
+            raise ValueError("按 Fit 轴旋转图标需要原版 asIcons.ma")
         curve = commands.circle(
             name=name, normal=fallback_normal, radius=radius,
             degree=3, sections=fallback_sections,
@@ -115,7 +123,8 @@ def create_adv_icon(commands, *, name: str, parent: str,
         if not shapes or len(shapes) != 1:
             raise ValueError("原版控制器图标模板缺失：" + template)
         spec = shapes[0]
-        points = [tuple(float(value) * radius for value in point)
+        points = [tuple(float(value) * radius for value in
+                        rotate_icon_point(point, axis_offset))
                   for point in spec["points"]]
         curve = commands.curve(
             name=name, degree=spec["degree"], point=points,
@@ -132,6 +141,12 @@ def create_adv_icon(commands, *, name: str, parent: str,
                 or int(commands.getAttr(actual[0] + ".form"))
                 != (2 if spec["periodic"] else 0)):
             raise RuntimeError("原版图标曲线参数读回不一致：" + name)
+        for index in sorted({0, len(points) // 2, len(points) - 1}):
+            position = commands.pointPosition(
+                actual[0] + f".cv[{index}]", local=True)
+            if any(abs(float(value) - expected) > 1e-4
+                   for value, expected in zip(position, points[index])):
+                raise RuntimeError("原版图标曲线轴向读回不一致：" + name)
         commands.setAttr(actual[0] + ".overrideEnabled",
                          spec["override_enabled"])
         commands.setAttr(actual[0] + ".overrideColor",
@@ -146,3 +161,54 @@ def create_adv_icon(commands, *, name: str, parent: str,
         commands.setAttr(control + ".advPyIconTemplate", template,
                          type="string", lock=True)
     return control
+
+
+def original_fit_icon_axis_offset(commands, control_name: str
+                                  ) -> tuple[float, float, float]:
+    """Resolve asGetAxis(..., Main, 0) for a standard FK control."""
+    fit = commands.ls("|Group|FitSkeleton", long=True,
+                      type="transform") or ()
+    if len(fit) != 1:
+        raise ValueError("控制器图标找不到唯一 FitSkeleton")
+    worldmatch = (commands.attributeQuery("worldmatch", node=fit[0],
+                                         exists=True)
+                  and bool(commands.getAttr(fit[0] + ".worldmatch")))
+    primary, secondary = "X", "Y"
+    if worldmatch:
+        match = re.fullmatch(r"AdvPy_(.+)FK_[RL]",
+                             control_name.rsplit(":", 1)[-1])
+        if match is None:
+            raise ValueError("FK 控制器名称不能解析 Fit 关节：" + control_name)
+        source_name = re.sub(r"Part[0-9]+$", "", match.group(1))
+        candidates = (source_name,)
+        finger = re.fullmatch(r"(Thumb|Index|Middle|Ring|Pinky)([1-4])",
+                              source_name)
+        if finger:
+            candidates += (finger.group(1) + "Finger" + finger.group(2),)
+        joints = commands.listRelatives(fit[0], allDescendents=True,
+                                        fullPath=True, type="joint") or ()
+        source = []
+        for candidate in candidates:
+            source = [joint for joint in joints
+                      if joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                      == candidate]
+            if source:
+                break
+        if len(source) != 1:
+            raise ValueError("控制器图标找不到唯一 Fit 关节：" + source_name)
+        def axis(attribute: str, default: str) -> str:
+            if not commands.attributeQuery(attribute, node=source[0],
+                                           exists=True):
+                return default
+            names = commands.attributeQuery(attribute, node=source[0],
+                                            listEnum=True) or ()
+            if len(names) != 1:
+                raise ValueError("Fit 关节轴枚举无效：" + source[0])
+            options = names[0].split(":")
+            index = int(commands.getAttr(source[0] + "." + attribute))
+            if not 0 <= index < len(options):
+                raise ValueError("Fit 关节轴枚举越界：" + source[0])
+            return options[index]
+        primary = axis("primaryAxis", "X")
+        secondary = axis("secondaryAxis", "Y")
+    return icon_axis_offset(primary, secondary)
