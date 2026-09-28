@@ -1,6 +1,12 @@
 """Maya operations for temporary 6.925 Inbetween Fit guides."""
 from __future__ import annotations
 
+from dataclasses import replace
+
+from adv_py.core.body_parent_constraint import (
+    audit_body_parent_constraint, plan_body_parent_constraint,
+)
+
 from adv_py.core.body_skeleton import FitDeformProfile
 from adv_py.core.fit_inbetween import (
     FitInbetweenGuide, FitInbetweenGuideState, FitInbetweenPlan,
@@ -32,9 +38,31 @@ from adv_py.core.fit_inbetween_matrix import (
 )
 from adv_py.core.joint_labels import JointLabel
 from .maya_adv_icons import create_adv_icon, original_fit_icon_axis_offset
+from .maya_body_parent_constraint import _matrix
 
 
 class MayaFitInbetweenMixin:
+    def _inbetween_follow_matrix_plan(self, plan: InbetweenFkRewirePlan):
+        drivers = self._cmds.ls(plan.last_part_fkx_name, long=True,
+                                type="joint") or []
+        if len(drivers) != 1 or plan.downstream_fk_offset_path is None:
+            raise ValueError("Inbetween 下游 FK 矩阵跟随来源无效")
+        source = self.capture_parent_constraint_input(
+            drivers[0], plan.downstream_fk_offset_path, True)
+        source = replace(
+            source, use_offset_parent_matrix=True, skip_scale=True,
+            include_pick_matrix=True)
+        prepared = plan_body_parent_constraint(source)
+        if (self._cmds.objExists(prepared.mult_matrix)
+                and self._cmds.nodeType(prepared.mult_matrix)
+                == "multMatrix"
+                and self._cmds.connectionInfo(
+                    prepared.mult_matrix + ".matrixIn[1]",
+                    isDestination=True)):
+            source = replace(source, offset_matrix=_matrix(
+                self._cmds.getAttr(prepared.mult_matrix + ".matrixIn[0]")))
+        return plan_body_parent_constraint(source)
+
     def preflight_inbetween_ik_solver(
         self, plan: InbetweenIkSolverPlan,
     ) -> None:
@@ -458,6 +486,9 @@ class MayaFitInbetweenMixin:
                    for channel in ("translate", "rotate")
                    for axis in "XYZ"):
                 raise ValueError("Inbetween 下游 FK Offset 通道被占用")
+            if plan.use_offset_parent_matrix:
+                self.preflight_parent_constraint(
+                    self._inbetween_follow_matrix_plan(plan))
 
     def apply_inbetween_fk_rewire(
         self, plan: InbetweenFkRewirePlan
@@ -477,10 +508,14 @@ class MayaFitInbetweenMixin:
                            maintainOffset=False,
                            name=plan.start_fk_constraint_name)
         if plan.downstream_fk_offset_path is not None:
-            c.parentConstraint(plan.last_part_fkx_name,
-                               plan.downstream_fk_offset_path,
-                               maintainOffset=True,
-                               name=plan.follow_constraint_name)
+            if plan.use_offset_parent_matrix:
+                self.create_parent_constraint(
+                    self._inbetween_follow_matrix_plan(plan))
+            else:
+                c.parentConstraint(plan.last_part_fkx_name,
+                                   plan.downstream_fk_offset_path,
+                                   maintainOffset=True,
+                                   name=plan.follow_constraint_name)
         observed = [(plan.start_fk_driver_path, before_driver)]
         if before_offset is not None:
             observed.append((plan.downstream_fk_offset_path,
@@ -506,6 +541,14 @@ class MayaFitInbetweenMixin:
             return (len(orient_targets) == 1
                     and orient_targets[0].rsplit("|", 1)[-1]
                     == plan.start_fkx_name)
+        if plan.use_offset_parent_matrix:
+            matrix_plan = self._inbetween_follow_matrix_plan(plan)
+            return (len(orient_targets) == 1
+                    and orient_targets[0].rsplit("|", 1)[-1]
+                    == plan.start_fkx_name
+                    and not audit_body_parent_constraint(
+                        matrix_plan,
+                        self.capture_parent_constraint_state(matrix_plan)))
         follow = c.ls(plan.follow_constraint_name,
                       type="parentConstraint") or []
         if len(follow) != 1:

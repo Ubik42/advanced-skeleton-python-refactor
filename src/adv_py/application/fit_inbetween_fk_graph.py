@@ -40,6 +40,7 @@ class InbetweenFkGraphResult:
     matrices: InbetweenMatrixPlan
     destinations: tuple[InbetweenMatrixDestination, ...]
     parts: InbetweenFkPartsPlan | None = None
+    use_offset_parent_matrix: bool = False
 
 
 class BuildInbetweenFkGraph:
@@ -68,7 +69,7 @@ class BuildInbetweenFkGraph:
         destinations = plan_inbetween_matrix_destinations(
             matrices, start_fkx_opm_plug=anchor.start_fkx_opm_plug,
             part_fk_matrix_plugs=part_fk_matrix_plugs)
-        return self._build(anchor, bias, matrices, destinations, None)
+        return self._build(anchor, bias, matrices, destinations, None, False)
 
     def apply_with_parts(
         self, start_body_name: str,
@@ -86,6 +87,10 @@ class BuildInbetweenFkGraph:
         parts = plan_inbetween_fk_parts(
             anchor, body_parts, fk_system_path=fk_system_path,
             radius=part_control_radius)
+        opm_modes = {not part.segment_scale_compensate
+                     for part in body_parts}
+        if len(opm_modes) != 1:
+            raise ValueError("同一 Inbetween 链的 OPM 模式不一致")
         bias = plan_inbetween_bias(
             start_body_name, tuple(part.part_name for part in parts.parts),
             fk_control_path + ".bias")
@@ -96,7 +101,8 @@ class BuildInbetweenFkGraph:
         destinations = plan_inbetween_matrix_destinations(
             matrices, start_fkx_opm_plug=anchor.start_fkx_opm_plug,
             part_fk_matrix_plugs=parts.receiver_plugs)
-        return self._build(anchor, bias, matrices, destinations, parts)
+        return self._build(anchor, bias, matrices, destinations, parts,
+                           opm_modes.pop())
 
     def _build(
         self,
@@ -105,6 +111,7 @@ class BuildInbetweenFkGraph:
         matrices: InbetweenMatrixPlan,
         destinations: tuple[InbetweenMatrixDestination, ...],
         parts: InbetweenFkPartsPlan | None,
+        use_offset_parent_matrix: bool,
     ) -> InbetweenFkGraphResult:
         self._host.preflight_inbetween_fk_anchor(anchor)
         self._host.preflight_inbetween_bias(bias)
@@ -149,4 +156,5 @@ class BuildInbetweenFkGraph:
                 raise RuntimeError("Inbetween FK 矩阵接收端不完整："
                                    + anchor.start_body_name)
         return InbetweenFkGraphResult(
-            anchor, bias, matrices, destinations, parts)
+            anchor, bias, matrices, destinations, parts,
+            use_offset_parent_matrix)

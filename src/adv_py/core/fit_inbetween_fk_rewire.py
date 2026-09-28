@@ -16,6 +16,7 @@ class InbetweenFkRewirePlan:
     downstream_fk_offset_path: str | None
     last_part_fkx_name: str
     follow_constraint_name: str | None
+    use_offset_parent_matrix: bool = False
 
 
 def plan_inbetween_fk_rewire(
@@ -24,10 +25,12 @@ def plan_inbetween_fk_rewire(
     start_fk_driver_path: str,
     start_fk_constraint_name: str,
     downstream_fk_offset_path: str | None,
+    use_offset_parent_matrix: bool = False,
 ) -> InbetweenFkRewirePlan:
     if not parts.parts or parts.start_body_name != anchor.start_body_name:
         raise ValueError("Inbetween FK 改接需要完整的 Part 控制链")
-    if (not start_fk_driver_path.startswith("|")
+    if (type(use_offset_parent_matrix) is not bool
+            or not start_fk_driver_path.startswith("|")
             or not start_fk_constraint_name
             or (downstream_fk_offset_path is not None and (
                 not downstream_fk_offset_path.startswith("|")
@@ -41,4 +44,5 @@ def plan_inbetween_fk_rewire(
         parts.parts[-1].fkx_name,
         ("AdvPy_" + anchor.start_body_name
          + "_InbetweenNextFKFollow"
-         if downstream_fk_offset_path is not None else None))
+         if downstream_fk_offset_path is not None else None),
+        use_offset_parent_matrix)
