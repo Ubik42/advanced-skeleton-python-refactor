@@ -485,7 +485,33 @@ class BuildRegisteredBodyCharacter:
                 if solver_mapping is not None:
                     rebased_plan = rebase_character_rig_after_inbetween_ik(
                         rebased_plan, solver_mapping)
-                rig = replace(rig, plan=rebased_plan, body=driven_body)
+                # Part creation reparents Body joints.  Keep every result
+                # returned by this build on the same final DAG as the
+                # registration and Skin inputs, even without Inbetween parts.
+                skeleton = replace(
+                    skeleton,
+                    snapshot=driven_body,
+                    orientation_changes=rebase_plan_paths_after_parts(
+                        skeleton.orientation_changes, final_paths),
+                )
+                rig = replace(
+                    rig,
+                    plan=rebased_plan,
+                    body=driven_body,
+                    arm=replace(
+                        rebase_plan_paths_after_parts(rig.arm, final_paths),
+                        plan=rebased_plan.arm, body=driven_body),
+                    leg=replace(
+                        rebase_plan_paths_after_parts(rig.leg, final_paths),
+                        plan=rebased_plan.leg, body=driven_body),
+                    hand=(replace(
+                        rebase_plan_paths_after_parts(rig.hand, final_paths),
+                        plan=rebased_plan.hand, body=driven_body)
+                        if rig.hand is not None and rebased_plan.hand is not None
+                        else None),
+                    torso=(rebase_plan_paths_after_parts(rig.torso, final_paths)
+                           if rig.torso is not None else None),
+                )
                 if inbetween_segments:
                     arm_fk = joined.capture_body_arm_fk_controls(
                         rig.plan.arm.fk_controls)
