@@ -22,6 +22,12 @@ class FitBendyChainSpec:
     part_positions: tuple[tuple[float, float, float], ...]
     child_start_control: str | None = None
     parent_bendy: bool = False
+    child_junction_control: str | None = None
+    child_source_proxy: str | None = None
+
+    def __post_init__(self) -> None:
+        if bool(self.child_junction_control) != bool(self.child_source_proxy):
+            raise ValueError("Bendy Circular 缺少相邻段控制或驱动来源")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -88,7 +94,19 @@ class FitBendyChainSpec:
                 f"AdvPy_{self.prefix}EndBlend_{self.side}",
                 *(f"AdvPy_{name}Follow" for name in self.control_names),
                 *(name + "Offset" for name in self.control_names),
-                f"AdvPy_{self.end_proxy_name}Follow")
+                f"AdvPy_{self.end_proxy_name}Follow",
+                *((self.circular_name, *self.circular_graph_names)
+                  if self.child_junction_control else ()))
+
+    @property
+    def circular_name(self) -> str:
+        return f"BendCircular{self.stem}_{self.side}"
+
+    @property
+    def circular_graph_names(self) -> tuple[str, str, str, str]:
+        prefix = f"AdvPy_{self.prefix}Circular_{self.side}"
+        return (prefix + "Relative", prefix + "Angle",
+                prefix + "Length", prefix + "Amount")
 
     @property
     def skin_name(self) -> str:
@@ -340,4 +358,8 @@ def plan_fit_bendy_chains(
         child_start_control=by_bendy_start[item.end_body].control_names[1]
         if item.end_body in by_bendy_start else None,
         parent_bendy=item.start_body in by_bendy_end,
+        child_junction_control=by_bendy_start[item.end_body].junction_name
+        if item.end_body in by_bendy_start else None,
+        child_source_proxy=by_bendy_start[item.end_body].follow_node_names[0]
+        if item.end_body in by_bendy_start else None,
     ) for item in result)

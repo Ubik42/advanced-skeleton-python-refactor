@@ -75,6 +75,10 @@ class FitBendyGuideHost(Protocol):
         self, spec: FitBendyFollowSpec) -> None: ...
     def capture_fit_bendy_follow(
         self, spec: FitBendyFollowSpec) -> bool: ...
+    def create_fit_bendy_circular(
+        self, spec: FitBendyChainSpec) -> None: ...
+    def capture_fit_bendy_circular(
+        self, spec: FitBendyChainSpec) -> bool: ...
     def preflight_fit_bendy_micro(
         self, spec: FitBendyChainSpec) -> None: ...
     def create_fit_bendy_micro(
@@ -129,6 +133,8 @@ class BuildFitBendyGuides:
             for follow in follows:
                 self._host.create_fit_bendy_follow(follow)
             for follow in follows:
+                self._host.create_fit_bendy_circular(follow.chain)
+            for follow in follows:
                 self._host.create_fit_bendy_secondary(follow.chain)
             for follow in follows:
                 self._host.create_fit_bendy_twist_projections(follow.chain)
@@ -148,6 +154,9 @@ class BuildFitBendyGuides:
                 if not self._host.capture_fit_bendy_secondary(follow.chain):
                     raise RuntimeError("Bendy 第二曲线接线不一致："
                                        + follow.chain.secondary_curve_name)
+                if not self._host.capture_fit_bendy_circular(follow.chain):
+                    raise RuntimeError("Bendy 交界 Circular 接线不一致："
+                                       + follow.chain.curve_name)
         return chains
 
 

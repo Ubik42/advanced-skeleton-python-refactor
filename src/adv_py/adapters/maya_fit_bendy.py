@@ -394,6 +394,10 @@ class MayaFitBendyMixin:
                                 constructionHistory=False)[0]
             c.parent(junction, junction_offset, absolute=True)
             c.xform(junction, worldSpace=True, translation=start)
+            c.addAttr(junction, longName="circular",
+                      attributeType="double", softMinValue=0.0,
+                      softMaxValue=10.0, defaultValue=0.0,
+                      keyable=True)
             c.createNode("transform", name=spec.junction_output_name,
                          parent=junction, skipSelect=True)
         end_proxy = c.createNode("transform", name=spec.end_proxy_name,
@@ -509,6 +513,85 @@ class MayaFitBendyMixin:
                            name=f"AdvPy_{chain.end_proxy_name}Follow")
         self._transaction_changed = True
 
+    def create_fit_bendy_circular(self,
+                                   spec: FitBendyChainSpec) -> None:
+        if not spec.child_junction_control:
+            return
+        self._require_transaction()
+        c = self._cmds
+        master = spec.control_names[0]
+        circular = c.createNode("transform", name=spec.circular_name,
+                                parent=master + "Offset", skipSelect=True)
+        c.parent(master, circular, absolute=True)
+        relative_name, angle_name, length_name, amount_name = (
+            spec.circular_graph_names)
+        relative = c.createNode("multMatrix", name=relative_name,
+                                skipSelect=True)
+        angle = c.createNode("decomposeMatrix", name=angle_name,
+                             skipSelect=True)
+        length = c.createNode("multDoubleLinear", name=length_name,
+                              skipSelect=True)
+        amount = c.createNode("multDoubleLinear", name=amount_name,
+                              skipSelect=True)
+        child_proxy = spec.child_source_proxy
+        parent_proxy = spec.follow_node_names[0]
+        c.connectAttr(child_proxy + ".worldMatrix[0]",
+                      relative + ".matrixIn[0]")
+        c.connectAttr(parent_proxy + ".worldInverseMatrix[0]",
+                      relative + ".matrixIn[1]")
+        c.connectAttr(relative + ".matrixSum",
+                      angle + ".inputMatrix")
+        c.connectAttr(angle + ".outputRotateZ",
+                      length + ".input1")
+        span = sum((a - b) ** 2 for a, b in zip(
+            spec.start_position, spec.end_position)) ** 0.5
+        c.setAttr(length + ".input2",
+                  -0.000375 * span * (-1 if spec.side == "L" else 1))
+        c.connectAttr(length + ".output", amount + ".input1")
+        c.connectAttr(spec.child_junction_control + ".circular",
+                      amount + ".input2")
+        c.connectAttr(amount + ".output", circular + ".translateY")
+        self._transaction_changed = True
+
+    def capture_fit_bendy_circular(self,
+                                    spec: FitBendyChainSpec) -> bool:
+        if not spec.child_junction_control:
+            return True
+        c = self._cmds
+        relative, angle, length, amount = spec.circular_graph_names
+        circular = spec.circular_name
+        return (c.objExists(circular)
+                and c.nodeType(circular) == "transform"
+                and c.objExists(relative)
+                and c.nodeType(relative) == "multMatrix"
+                and c.objExists(angle)
+                and c.nodeType(angle) == "decomposeMatrix"
+                and c.objExists(length)
+                and c.nodeType(length) == "multDoubleLinear"
+                and c.objExists(amount)
+                and c.nodeType(amount) == "multDoubleLinear"
+                and c.connectionInfo(relative + ".matrixIn[0]",
+                                     sourceFromDestination=True)
+                == spec.child_source_proxy + ".worldMatrix[0]"
+                and c.connectionInfo(relative + ".matrixIn[1]",
+                                     sourceFromDestination=True)
+                == spec.follow_node_names[0] + ".worldInverseMatrix[0]"
+                and c.connectionInfo(angle + ".inputMatrix",
+                                     sourceFromDestination=True)
+                == relative + ".matrixSum"
+                and c.connectionInfo(length + ".input1",
+                                     sourceFromDestination=True)
+                == angle + ".outputRotateZ"
+                and c.connectionInfo(amount + ".input1",
+                                     sourceFromDestination=True)
+                == length + ".output"
+                and c.connectionInfo(amount + ".input2",
+                                     sourceFromDestination=True)
+                == spec.child_junction_control + ".circular"
+                and c.connectionInfo(circular + ".translateY",
+                                     sourceFromDestination=True)
+                == amount + ".output")
+
     def capture_fit_bendy_follow(self, spec: "FitBendyFollowSpec") -> bool:
         c = self._cmds
         names = spec.chain.follow_node_names
@@ -542,13 +625,17 @@ class MayaFitBendyMixin:
         for control in spec.chain.control_names:
             offset = control + "Offset"
             follow = f"AdvPy_{control}Follow"
+            parent = (spec.chain.circular_name
+                      if control == spec.chain.control_names[0]
+                      and spec.chain.child_junction_control else offset)
             if (not c.objExists(offset) or not c.objExists(follow)
                     or c.nodeType(follow) != "parentConstraint"
                     or (c.listRelatives(control, parent=True) or [])
-                    != [offset]):
+                    != [parent]):
                 return False
-        return (c.objExists(names[-1])
-                and c.nodeType(names[-1]) == "parentConstraint")
+        end_follow = f"AdvPy_{spec.chain.end_proxy_name}Follow"
+        return (c.objExists(end_follow)
+                and c.nodeType(end_follow) == "parentConstraint")
 
     def create_fit_bendy_twist_projections(
             self, spec: FitBendyChainSpec) -> None:
@@ -862,6 +949,9 @@ class MayaFitBendyMixin:
                 for name in (spec.junction_offset_name,
                              spec.junction_name,
                              spec.junction_output_name)):
+            return False
+        if (spec.parent_bendy
+                and not c.objExists(spec.junction_name + ".circular")):
             return False
         for index, (path, transform) in enumerate(zip(
                 spec.motion_path_names, spec.motion_transform_names)):

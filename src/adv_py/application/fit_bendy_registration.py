@@ -45,13 +45,19 @@ class RegisterBendyControls:
         attrs = tuple(prefix + axis for prefix in
                       ("translate", "rotate", "scale") for axis in "XYZ")
         for chain in chains:
+            def bend_path(control: str) -> str:
+                prefix = "|AdvPy_BendSystem|" + control + "Offset|"
+                if (control == chain.control_names[0]
+                        and chain.child_junction_control):
+                    prefix += chain.circular_name + "|"
+                return prefix + control
+
             for control in chain.control_names:
-                path = ("|AdvPy_BendSystem|" + control + "Offset|" + control)
+                path = bend_path(control)
                 for attr in attrs:
                     add("bendy." + control + "." + attr, path, attr)
             add("bendy." + chain.control_names[0] + ".microVis",
-                "|AdvPy_BendSystem|" + chain.control_names[0]
-                + "Offset|" + chain.control_names[0], "microVis")
+                bend_path(chain.control_names[0]), "microVis")
             if chain.parent_bendy:
                 start_control = chain.control_names[1]
                 path = ("|AdvPy_BendSystem|" + start_control + "Offset|"
@@ -60,6 +66,8 @@ class RegisterBendyControls:
                 for attr in attrs:
                     add("bendy." + chain.junction_name + "." + attr,
                         path, attr)
+                add("bendy." + chain.junction_name + ".circular",
+                    path, "circular")
             for offset, control in zip(chain.micro_offset_names,
                                        chain.micro_control_names):
                 path = "|AdvPy_MicroSystem|" + offset + "|" + control
