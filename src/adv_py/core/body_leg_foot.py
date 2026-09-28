@@ -38,6 +38,13 @@ class BodyLegFootPivotSpec:
     target_plug: str
     multiplier_name: str | None = None
     multiplier: float = 1.0
+    roll_offset_name: str = ""
+    roll_offset_path: str = ""
+    roll_extra_name: str = ""
+    roll_extra_path: str = ""
+    roll_control_name: str = ""
+    roll_control_path: str = ""
+    roll_radius: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +138,14 @@ class BodyLegFootPivotState:
     rotation_source: str | None
     multiplier_input_source: str | None = None
     multiplier_value: float | None = None
+    roll_offset_path: str | None = None
+    roll_offset_parent_path: str | None = None
+    roll_extra_path: str | None = None
+    roll_extra_parent_path: str | None = None
+    roll_control_path: str | None = None
+    roll_control_parent_path: str | None = None
+    roll_control_position: Vector3 | None = None
+    roll_control_shape: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,9 +212,12 @@ def plan_body_leg_foot(
     body: BodySkeletonSnapshot,
     ik: BodyLegIkPlan,
     *, legacy_toe_controls: bool = False,
+    legacy_roll_controls: bool = False,
 ) -> BodyLegFootPlan:
     if type(legacy_toe_controls) is not bool:
         raise BodyLegFootValidationError("Toe 控制器版本选项无效")
+    if type(legacy_roll_controls) is not bool:
+        raise BodyLegFootValidationError("Roll 控制器版本选项无效")
     body_by_name = {joint.name: joint for joint in body.joints}
     if len(body_by_name) != len(body.joints):
         raise BodyLegFootValidationError("Body 关节名称必须唯一")
@@ -242,8 +260,20 @@ def plan_body_leg_foot(
         parent = limb.ankle_control_path
         pivots = []
         for role, marker, attribute, axis, multiplier in marker_roles:
+            roll_offset_name = (f"AdvPy_RollOffset{marker}_{suffix}"
+                                if not legacy_roll_controls else "")
+            roll_offset_path = (f"{parent}|{roll_offset_name}"
+                                if roll_offset_name else "")
+            roll_extra_name = (f"AdvPy_RollExtra{marker}_{suffix}"
+                               if roll_offset_name else "")
+            roll_extra_path = (f"{roll_offset_path}|{roll_extra_name}"
+                               if roll_extra_name else "")
+            roll_control_name = (f"AdvPy_Roll{marker}_{suffix}"
+                                 if roll_extra_name else "")
+            roll_control_path = (f"{roll_extra_path}|{roll_control_name}"
+                                 if roll_control_name else "")
             name = f"AdvPy_Foot{role.value.title()}Pivot_{suffix}"
-            path = f"{parent}|{name}"
+            path = f"{roll_control_path or parent}|{name}"
             multiplier_name = (
                 f"AdvPy_FootInnerBankSign_{suffix}"
                 if multiplier != 1.0
@@ -262,7 +292,7 @@ def plan_body_leg_foot(
                 role=role,
                 name=name,
                 path=path,
-                parent_path=parent,
+                parent_path=roll_control_path or parent,
                 world_position=body_by_name[f"{marker}_{suffix}"].world_position,
                 attribute=attribute,
                 rotation_axis=axis,
@@ -270,6 +300,15 @@ def plan_body_leg_foot(
                 target_plug=f"{path}.rotate{axis}",
                 multiplier_name=multiplier_name,
                 multiplier=multiplier,
+                roll_offset_name=roll_offset_name,
+                roll_offset_path=roll_offset_path,
+                roll_extra_name=roll_extra_name,
+                roll_extra_path=roll_extra_path,
+                roll_control_name=roll_control_name,
+                roll_control_path=roll_control_path,
+                roll_radius=(body_fk_curve_radius(
+                    body, body_by_name[f"{marker}_{suffix}"], ik.base_radius)
+                    if roll_control_name else 0.0),
             ))
             parent = path
         toe_pivot_path = next(
@@ -429,6 +468,25 @@ def audit_body_leg_foot(
                 continue
             if actual_pivot.path != pivot.path or actual_pivot.parent_path != pivot.parent_path:
                 issues.append(BodyLegFootIssue("foot_pivot_hierarchy", "Foot pivot 层级不一致", subject))
+            if pivot.roll_control_name and (
+                actual_pivot.roll_offset_path != pivot.roll_offset_path
+                or actual_pivot.roll_offset_parent_path != pivot.roll_offset_path.rsplit("|", 1)[0]
+                or actual_pivot.roll_extra_path != pivot.roll_extra_path
+                or actual_pivot.roll_extra_parent_path != pivot.roll_offset_path
+                or actual_pivot.roll_control_path != pivot.roll_control_path
+                or actual_pivot.roll_control_parent_path != pivot.roll_extra_path
+            ):
+                issues.append(BodyLegFootIssue(
+                    "foot_roll_control_hierarchy", "Roll 控制层级不一致", subject))
+            if pivot.roll_control_name and actual_pivot.roll_control_shape != "nurbsCurve":
+                issues.append(BodyLegFootIssue(
+                    "foot_roll_control_shape", "Roll 控制缺少 NURBS 曲线", subject))
+            if (pivot.roll_control_name and check_initial_pose
+                    and (actual_pivot.roll_control_position is None
+                         or not _close(actual_pivot.roll_control_position,
+                                       pivot.world_position, tolerance))):
+                issues.append(BodyLegFootIssue(
+                    "foot_roll_control_position", "Roll 控制初始位置不一致", subject))
             if check_initial_pose and not _close(
                 actual_pivot.world_position, pivot.world_position, tolerance
             ):

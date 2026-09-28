@@ -60,6 +60,10 @@ def character_channels(rig):
         add("leg.settings",settings.settings_path,tuple(s.attribute for s in settings.sides))
     for side in p.leg.foot.sides:
         add("foot."+side.side.value,side.ankle_control_path,side.attributes)
+        for pivot in side.pivots:
+            if pivot.roll_control_path:
+                add("foot.roll."+pivot.role.value+"."+side.side.value,
+                    pivot.roll_control_path,rotation)
         add("foot.toe."+side.side.value,side.toe_control_path,rotation)
     if p.hand:
         for control in p.hand.controls.controls:

@@ -5955,6 +5955,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 required.append(side.handle_name)
             names = [pivot.name for pivot in side.pivots]
             names.extend(
+                name for pivot in side.pivots
+                for name in (pivot.roll_offset_name, pivot.roll_extra_name,
+                             pivot.roll_control_name) if name)
+            names.extend(
                 pivot.multiplier_name
                 for pivot in side.pivots
                 if pivot.multiplier_name
@@ -6079,6 +6083,33 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 for source, target in node.input_connections:
                     self._cmds.connectAttr(source, target)
             for pivot in spec.pivots:
+                if pivot.roll_control_name:
+                    roll_parent = pivot.roll_offset_path.rsplit("|", 1)[0]
+                    offset = self._cmds.createNode(
+                        "transform", name=pivot.roll_offset_name,
+                        parent=roll_parent, skipSelect=True)
+                    offset = (self._cmds.ls(offset, long=True) or [offset])[0]
+                    if offset != pivot.roll_offset_path:
+                        raise RuntimeError("Foot Roll Offset 路径漂移")
+                    self._cmds.xform(
+                        offset, worldSpace=True,
+                        translation=pivot.world_position)
+                    extra = self._cmds.createNode(
+                        "transform", name=pivot.roll_extra_name,
+                        parent=offset, skipSelect=True)
+                    extra = (self._cmds.ls(extra, long=True) or [extra])[0]
+                    if extra != pivot.roll_extra_path:
+                        raise RuntimeError("Foot Roll Extra 路径漂移")
+                    control = create_adv_icon(
+                        self._cmds, name=pivot.roll_control_name,
+                        parent=extra, template="Roll_icon",
+                        radius=pivot.roll_radius,
+                        fallback_normal=(0.0, 1.0, 0.0),
+                        mirror_left=spec.side is FitBuildSide.LEFT)
+                    control = (self._cmds.ls(control, long=True)
+                               or [control])[0]
+                    if control != pivot.roll_control_path:
+                        raise RuntimeError("Foot Roll 控制路径漂移")
                 created = self._cmds.createNode(
                     "transform",
                     name=pivot.name,
@@ -6221,16 +6252,28 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         found = []
         for limb in ik.limbs:
             suffix = limb.side.value
-            path = limb.ankle_control_path + "".join(
-                f"|AdvPy_Foot{role}Pivot_{suffix}"
-                for role in ("Heel", "Outer", "Inner", "Toe"))
-            path += (f"|AdvPy_ToeIKOffset_{suffix}"
-                     f"|AdvPy_ToeIKExtra_{suffix}")
-            matches = self._cmds.ls(path, long=True,
-                                    type="transform") or []
-            found.append(matches == [path])
+            matches = self._cmds.ls(
+                f"AdvPy_ToeIKExtra_{suffix}", long=True,
+                type="transform") or []
+            descendants = [path for path in matches if path.startswith(
+                limb.ankle_control_path + "|")]
+            found.append(len(descendants) == 1)
         if len(found) != 2 or found[0] != found[1]:
             raise FitSkeletonValidationError("双侧 Toe IK 控制层版本不一致")
+        return found[0]
+
+    def body_leg_roll_control_mode(self, ik: BodyLegIkPlan) -> bool:
+        found = []
+        for limb in ik.limbs:
+            suffix = limb.side.value
+            path = (f"{limb.ankle_control_path}"
+                    f"|AdvPy_RollOffsetHeel_{suffix}"
+                    f"|AdvPy_RollExtraHeel_{suffix}"
+                    f"|AdvPy_RollHeel_{suffix}")
+            found.append((self._cmds.ls(
+                path, long=True, type="transform") or []) == [path])
+        if len(found) != 2 or found[0] != found[1]:
+            raise FitSkeletonValidationError("双侧 Roll 控制层版本不一致")
         return found[0]
 
     def capture_body_leg_foot(
@@ -6250,6 +6293,21 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             )
             pivots = []
             for pivot in spec.pivots:
+                roll_paths = (pivot.roll_offset_path, pivot.roll_extra_path,
+                              pivot.roll_control_path)
+                roll_nodes = []
+                roll_parents = []
+                if pivot.roll_control_name:
+                    for roll_path in roll_paths:
+                        matches = self._cmds.ls(
+                            roll_path, long=True, type="transform") or []
+                        if len(matches) != 1:
+                            raise FitSkeletonValidationError(
+                                "Foot Roll 控制节点集合无效")
+                        roll_nodes.append(matches[0])
+                        parents = self._cmds.listRelatives(
+                            matches[0], parent=True, fullPath=True) or []
+                        roll_parents.append(parents[0] if parents else None)
                 nodes = self._cmds.ls(pivot.path, long=True, type="transform") or []
                 if len(nodes) != 1:
                     raise FitSkeletonValidationError("Foot pivot 节点集合无效")
@@ -6295,6 +6353,21 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     rotation_source=source,
                     multiplier_input_source=multiplier_input,
                     multiplier_value=multiplier_value,
+                    roll_offset_path=roll_nodes[0] if roll_nodes else None,
+                    roll_offset_parent_path=roll_parents[0] if roll_parents else None,
+                    roll_extra_path=roll_nodes[1] if roll_nodes else None,
+                    roll_extra_parent_path=roll_parents[1] if roll_parents else None,
+                    roll_control_path=roll_nodes[2] if roll_nodes else None,
+                    roll_control_parent_path=roll_parents[2] if roll_parents else None,
+                    roll_control_position=(tuple(float(value) for value in
+                        self._cmds.xform(roll_nodes[2], query=True,
+                                         worldSpace=True, translation=True))
+                        if roll_nodes else None),
+                    roll_control_shape=(
+                        "nurbsCurve" if len(self._cmds.listRelatives(
+                            roll_nodes[2], shapes=True, noIntermediate=True,
+                            fullPath=True, type="nurbsCurve") or []) == 1
+                        else None) if roll_nodes else None,
                 ))
             handles = self._cmds.ls(spec.handle_name, long=True, type="ikHandle") or []
             if len(handles) != 1:
