@@ -58,6 +58,7 @@ class PanelCharacter:
     channel_count: int = 0
     issue: str = ""
     segment_joint_count: int = 0
+    mode: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,6 +283,7 @@ class MayaPanelController:
 
     def characters(self) -> tuple[PanelCharacter, ...]:
         from adv_py.adapters.maya_scene_gateway import MayaSceneGateway
+        from maya import cmds
 
         entries = []
         for namespace in MayaSceneGateway().namespaces():
@@ -290,7 +292,18 @@ class MayaPanelController:
             resolver = ResolveBodyCharacter(host)
             names = resolver.discover()
             if not names:
-                entries.append(PanelCharacter(label, False))
+                marker = "|Group.advPyFbxRigMode"
+                if (label == ":" and cmds.objExists(marker)
+                        and cmds.getAttr(marker) == "generic_fk_v1"):
+                    body = "|Group|DeformationSystem"
+                    count = len(cmds.listRelatives(body,
+                        allDescendents=True, type="joint",
+                        fullPath=True) or ())
+                    entries.append(PanelCharacter(label, False,
+                                                  joint_count=count,
+                                                  mode="generic_fk"))
+                else:
+                    entries.append(PanelCharacter(label, False))
                 continue
             try:
                 registration = resolver.execute(names[0])

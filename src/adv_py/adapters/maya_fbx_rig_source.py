@@ -199,6 +199,9 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
     ) -> None:
         self._require_transaction()
         c = self._cmds
+        self._fbx_bind_positions = {
+            joint.path: joint.world_position
+            for joint in plan.bind_pose_joints}
         if source.animation_key_times:
             self._transaction_changed = True
             c.playbackOptions(minTime=-1, animationStartTime=-1,
@@ -373,6 +376,10 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         c.sets(tuple(control_paths.values()) + (main,), name="ControlSet")
         c.sets(tuple(joint.path for joint in body.joints), name="DeformSet")
         c.sets("ControlSet", "DeformSet", name="AllSet")
+        group = "|Group"
+        c.addAttr(group, longName="advPyFbxRigMode", dataType="string")
+        c.setAttr(group + ".advPyFbxRigMode", "generic_fk_v1",
+                  type="string", lock=True)
         if set(control_paths) != {spec.control_name for spec in controls}:
             raise RuntimeError("FBX rig FK 控制器写后数量不符")
         self._transaction_changed = True
@@ -483,10 +490,14 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                            long=True) or (None,))[0]
             resolved = tuple((c.ls(target, long=True) or (None,))[0]
                              for target in targets)
-            outputs = c.listConnections(source + ".translate",
-                source=True, destination=False,
-                type="parentConstraint") or ()
-            if resolved == (driver,) and constraint in outputs:
+            constraint_paths = c.ls(constraint, long=True,
+                                    type="parentConstraint") or ()
+            connected = (len(constraint_paths) == 1 and all(
+                c.isConnected(
+                    constraint_paths[0] + ".constraintTranslate" + axis,
+                    source + ".translate" + axis)
+                for axis in "XYZ"))
+            if resolved == (driver,) and connected:
                 connected_controls.append(link.control_name)
                 connected_sources.append(source)
         source_nodes = tuple(source_paths.values())

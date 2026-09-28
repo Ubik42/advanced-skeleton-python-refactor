@@ -2580,6 +2580,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 title = ("根命名空间" if entry.namespace == ":" else entry.namespace)
                 detail = (f"{title} · {entry.joint_count} 关节 / "
                           f"{entry.channel_count} 通道" if entry.registered
+                          else f"{title} · {entry.joint_count} 关节 / 通用 FK"
+                          if entry.mode == "generic_fk"
                           else f"{title} · 未登记")
                 item = QtWidgets.QListWidgetItem(title)
                 item.setToolTip(entry.issue or detail)

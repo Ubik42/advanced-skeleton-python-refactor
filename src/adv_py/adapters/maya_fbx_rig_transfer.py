@@ -108,6 +108,19 @@ class MayaFBXRigTransferMixin:
                                          destination=False, plugs=True):
                         raise ValueError("FBX rig 原骨架仍有外部通道驱动："
                                          + plug)
+        c.autoKeyframe(state=False)
+        c.currentTime(-1)
+        for pose in c.ls(type="dagPose") or ():
+            c.dagPose(pose, restore=True)
+        expected = getattr(self, "_fbx_bind_positions", {})
+        if set(expected) != set(source_paths):
+            raise RuntimeError("FBX rig 来源绑定姿态记录不完整")
+        for original, path in source_paths.items():
+            position = c.xform(path, query=True, worldSpace=True,
+                               translation=True)
+            if any(abs(float(value) - target) > 1e-4
+                   for value, target in zip(position, expected[original])):
+                raise RuntimeError("FBX rig 原骨架未恢复绑定姿态：" + path)
 
     def connect_fbx_controls_to_source(
         self, transfer: FBXRigControlTransferPlan,
