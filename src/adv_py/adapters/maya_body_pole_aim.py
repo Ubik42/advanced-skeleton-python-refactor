@@ -59,7 +59,7 @@ class MayaBodyPoleAimMixin:
         c.connectAttr(spec.swivel_plug, swivel + '.inputRotateX')
         self.capture_body_leg_pole_aim(spec)
 
-    def capture_body_leg_pole_aim(self, spec):
+    def capture_body_leg_pole_aim(self, spec, *, check_initial_pose=True):
         c = self._cmds
         expected = ((spec.frame_path, 'transform'),
                     (spec.aligned_path, 'transform'),
@@ -104,9 +104,68 @@ class MayaBodyPoleAimMixin:
             raise FitSkeletonValidationError('PoleAim 模式仍由 IK Handle twist 驱动')
         if c.getAttr(spec.matrix_name + '.secondaryMode') != 2:
             raise FitSkeletonValidationError('PoleAim 副轴求解模式变化')
-        position = c.xform(spec.target_path, query=True,
-                           worldSpace=True, translation=True)
-        if any(abs(a - b) > 1e-4
-               for a, b in zip(position, spec.pole_position)):
-            raise FitSkeletonValidationError('PoleAim 中性目标位置漂移')
+        for attribute in ('secondaryInputAxis', 'secondaryTargetVector'):
+            value = c.getAttr(spec.matrix_name + '.' + attribute)[0]
+            if any(abs(a - b) > 1e-8
+                   for a, b in zip(value, (0.0, 0.0, 1.0))):
+                raise FitSkeletonValidationError('PoleAim 副轴向量变化')
+        if check_initial_pose:
+            position = c.xform(spec.target_path, query=True,
+                               worldSpace=True, translation=True)
+            if any(abs(a - b) > 1e-4
+                   for a, b in zip(position, spec.pole_position)):
+                raise FitSkeletonValidationError('PoleAim 中性目标位置漂移')
         return True
+
+
+def audit_registered_pole_aim(host, registration):
+    """Recheck the stored PoleAim graph without assuming a neutral pose."""
+    from adv_py.core.body_leg_pole_aim import BodyLegPoleAimSpec
+    from adv_py.core.fit_symmetry import FitBuildSide
+
+    channels = {channel.key: channel for channel in registration.channels}
+    for space in registration.spaces.spaces:
+        if not space.key.startswith('foot_'):
+            continue
+        suffix = space.key.rsplit('_', 1)[-1]
+        target = space.source('body', 1)
+        short_name = target.rsplit('|', 1)[-1]
+        namespace = (short_name.rsplit(':', 1)[0] + ':'
+                     if ':' in short_name else '')
+        expected_name = namespace + f'AdvPy_PoleAimTarget_{suffix}'
+        if target.rsplit('|', 1)[-1] != expected_name:
+            if space.body_target_sources:
+                raise FitSkeletonValidationError('Leg PoleAim 登记来源名称不一致')
+            continue
+        channel = channels.get(f'foot.{suffix}.swivel')
+        if channel is None or channel.attribute != 'swivel':
+            raise FitSkeletonValidationError('Leg PoleAim swivel 登记缺失')
+        ik_root = target.rsplit('|', 2)[0]
+        ankle = channel.node
+        aligned_parent = (ankle + f'|{namespace}AdvPy_LegIKSub_{suffix}'
+                          if host._cmds.objExists(
+                              ankle + f'|{namespace}AdvPy_LegIKSub_{suffix}')
+                          else ankle)
+        group = registration.body_root.split('|')[1]
+        parent_source = (f'|{group}|{namespace}MotionSystem|'
+                         f'{namespace}RootSystem|'
+                         f'{namespace}AdvPy_LegLockConstrained')
+        spec = BodyLegPoleAimSpec(
+            side=FitBuildSide(suffix),
+            parent_source=parent_source,
+            ik_root=ik_root,
+            ankle_control=ankle,
+            ankle_frame_parent=aligned_parent,
+            pole_offset=space.targets[1],
+            pole_position=(0.0, 0.0, 0.0),
+            swivel_plug=ankle + '.swivel',
+            handle_twist=f'{namespace}AdvPy_LegIKHandle_{suffix}.twist',
+            frame_name=f'{namespace}AdvPy_PoleParentFrame_{suffix}',
+            aligned_name=f'{namespace}AdvPy_PoleAlignedOffset_{suffix}',
+            aim_name=f'{namespace}AdvPy_PoleAim_{suffix}',
+            target_name=expected_name,
+            matrix_name=f'{namespace}AdvPy_PoleAimAM_{suffix}',
+            swivel_name=f'{namespace}AdvPy_PoleAimSwivelCM_{suffix}',
+            local_name=f'{namespace}AdvPy_PoleAimLocalMM_{suffix}',
+        )
+        host.capture_body_leg_pole_aim(spec, check_initial_pose=False)

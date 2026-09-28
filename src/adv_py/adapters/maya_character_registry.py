@@ -374,6 +374,8 @@ class MayaCharacterRegistryMixin:
         self.validate_character_spine(plan.spine)
         for spec in plan.spaces.spaces:
             self.capture_control_space_mode(spec)
+        from .maya_body_pole_aim import audit_registered_pole_aim
+        audit_registered_pole_aim(self, plan)
 
     def create_character_registration(self, plan):
         self._require_transaction()

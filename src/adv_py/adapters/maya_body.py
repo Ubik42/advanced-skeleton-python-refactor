@@ -6816,8 +6816,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 skipConversionNodes=True) or []
             swivel_source = (self._canonical_plug(swivel_inputs[0])
                              if len(swivel_inputs) == 1 else None)
+            ankle_name = spec.ankle_control_path.rsplit("|", 1)[-1]
+            namespace = (ankle_name.rsplit(":", 1)[0] + ":"
+                         if ":" in ankle_name else "")
             pole_aim_swivel = (
-                f"AdvPy_PoleAimSwivelCM_{spec.side.value}")
+                f"{namespace}AdvPy_PoleAimSwivelCM_{spec.side.value}")
             if self._cmds.objExists(pole_aim_swivel):
                 swivel_inputs = self._cmds.listConnections(
                     pole_aim_swivel + ".inputRotateX", source=True,
