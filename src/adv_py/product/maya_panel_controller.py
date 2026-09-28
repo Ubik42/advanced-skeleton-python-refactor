@@ -883,6 +883,14 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)
         return SetRigDisplay(host).apply(operation, value)
 
+    def remove_unused_skin_influences(self, namespace: str) -> tuple[int, int]:
+        from adv_py.adapters.maya_skin_optimize import MayaSkinOptimizeHost
+        from adv_py.application.skin_optimize import RemoveUnusedSkinInfluences
+
+        host = MayaSkinOptimizeHost(
+            namespace=None if namespace == ":" else namespace)
+        return RemoveUnusedSkinInfluences(host).apply()
+
     def unreal_rename(self, namespace: str):
         from adv_py.adapters.maya_unreal_rename import MayaUnrealRenameHost
         from adv_py.application.unreal_rename import RenameToUnreal

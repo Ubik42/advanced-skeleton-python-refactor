@@ -181,6 +181,8 @@ ADV_OPERATIONS = {
         ("关节显示", 6, "00 · Display"),
         ("关节轴显示", 6, "00 · Display"),
         ("关节尺寸", 6, "00 · Display")),
+    ("Optimize", None): (
+        ("Remove Unused Influences", 7, "00 · Optimize"),),
     ("Publish", None): (
         ("导出独立 Maya 场景", 5, "01 · 导出迁移后的完整角色"),
         ("准备并烘焙发布骨架", 5, "02 · 烘焙并发布独立骨架")),

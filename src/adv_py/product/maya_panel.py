@@ -152,6 +152,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.tabs.addTab(self._mocap_page(), "动捕")
             self.tabs.addTab(self._publish_page(), "发布")
             self.tabs.addTab(self._display_page(), "显示")
+            self.tabs.addTab(self._optimize_page(), "优化")
             layout.addWidget(self.tabs, 1)
             layout.addWidget(QtWidgets.QLabel("最近操作"))
             self.status = QtWidgets.QPlainTextEdit()
@@ -1344,6 +1345,20 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(), operation, value)
             return ("已设置 " + operation + "；当前关节尺寸 "
                     + f"{state.joint_size:.2f}")
+
+        def _optimize_page(self):
+            page, stack = self._page()
+            group, form = self._group("00 · Optimize", [])
+            form.addRow(self._button("Remove Unused Influences",
+                                     self._remove_unused_skin_influences))
+            stack.addWidget(group)
+            stack.addStretch(1)
+            return page
+
+        def _remove_unused_skin_influences(self):
+            skins, removed = self.controller.remove_unused_skin_influences(
+                self._namespace())
+            return f"已检查 {skins} 个 Skin，清理 {removed} 个无效影响关节。"
 
         def _mocap_page(self):
             page, stack = self._page()
