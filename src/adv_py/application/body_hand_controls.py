@@ -103,7 +103,7 @@ class BuildBodyHandFkControls:
         container_name: str = "FitSkeleton",
         *,
         body_root_name: str = "Root_M",
-        control_radius: float = 0.3,
+        control_radius: float = 1.5,
         center_tolerance: float = 0.01,
     ) -> BodyHandFkBuildPlan:
         safety = self._inspector.execute(
@@ -117,7 +117,7 @@ class BuildBodyHandFkControls:
         self,
         safety: BodyRebuildSafetyAudit,
         *,
-        control_radius: float = 0.3,
+        control_radius: float = 1.5,
     ) -> BodyHandFkBuildPlan:
         """Plan Hand FK from an already captured shared Character input."""
 
@@ -149,7 +149,7 @@ class BuildBodyHandFkControls:
         container_name: str = "FitSkeleton",
         *,
         body_root_name: str = "Root_M",
-        control_radius: float = 0.3,
+        control_radius: float = 1.5,
         center_tolerance: float = 0.01,
     ) -> BodyHandFkBuildResult:
         plan = self.plan(

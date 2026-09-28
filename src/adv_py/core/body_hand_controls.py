@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from math import isfinite
 
 from .body_build_options import BodyBuildOptions
+from .body_controller_appearance import body_fk_curve_radius
 from .body_hand_fit import (
     BODY_HAND_DIGITS, BODY_HAND_SEGMENTS, BodyHandDigit,
     advanced_skeleton_hand_source_joint_names, body_hand_source_joint_names,
@@ -53,6 +54,7 @@ class BodyHandFkRootSpec:
     world_position: Vector3
     world_axes: AxisFrame
     use_offset_parent_matrix: bool = True
+    source_icon_size: bool = False
 
     @property
     def follow_matrix_name(self) -> str | None:
@@ -114,6 +116,7 @@ class BodyHandFkRootState:
     follow_matrix_sources: tuple[str | None, str | None, str | None] = (None, None, None)
     follow_constraint_targets: tuple[str, ...] = ()
     follow_constraint_channels: tuple[str | None, ...] = ()
+    source_icon_size: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,12 +239,15 @@ class BodyHandPoseSnapshot:
 def plan_body_hand_fk_controls(
     body: BodySkeletonSnapshot,
     *,
-    radius: float = 0.3,
+    radius: float = 1.5,
     namespace: str | None = None,
     build_options: BodyBuildOptions = BodyBuildOptions(),
+    source_icon_size: bool = True,
 ) -> BodyHandFkControlPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise BodyHandControlValidationError("Hand 构建选项类型无效")
+    if type(source_icon_size) is not bool:
+        raise BodyHandControlValidationError("Hand FK 曲线尺寸规则无效")
     if (
         isinstance(radius, bool)
         or not isinstance(radius, (int, float))
@@ -271,7 +277,7 @@ def plan_body_hand_fk_controls(
 
     roots = []
     controls = []
-    radius_factors = (1.0, 0.82, 0.68)
+    legacy_radius_factors = (1.0, 0.82, 0.68)
     for suffix, side in (("R", FitBuildSide.RIGHT), ("L", FitBuildSide.LEFT)):
         wrist = by_name.get(f"Wrist_{suffix}")
         if wrist is None or wrist.side is not side:
@@ -292,6 +298,7 @@ def plan_body_hand_fk_controls(
             world_position=wrist.world_position,
             world_axes=wrist.world_axes,
             use_offset_parent_matrix=build_options.use_offset_parent_matrix,
+            source_icon_size=source_icon_size,
         ))
 
         for digit in BODY_HAND_DIGITS:
@@ -352,7 +359,10 @@ def plan_body_hand_fk_controls(
                     ),
                     world_position=state.world_position,
                     world_axes=state.world_axes,
-                    radius=float(radius) * radius_factors[index - 1],
+                    radius=(body_fk_curve_radius(
+                        body, state, float(radius), preferred_child=states[index])
+                        if source_icon_size else
+                        float(radius) * legacy_radius_factors[index - 1]),
                     rotate_order=state.rotation_order,
                     control_parent_path=pose_path,
                     sub_control_path=(
@@ -661,6 +671,12 @@ def audit_body_hand_fk_controls(
     for path in sorted(set(expected_roots) & set(actual_roots)):
         spec = expected_roots[path]
         state = actual_roots[path]
+        if state.source_icon_size != spec.source_icon_size:
+            issues.append(BodyHandControlIssue(
+                "hand_root_icon_size_mode_mismatch",
+                "Hand FK 曲线尺寸规则标记不一致",
+                path,
+            ))
         if state.parent_path != spec.parent_path:
             issues.append(BodyHandControlIssue(
                 "hand_root_parent_mismatch",

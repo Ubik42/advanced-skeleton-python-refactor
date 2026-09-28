@@ -155,7 +155,7 @@ class InspectBodyHandPoseRig:
         body_root_name: str = "Root_M",
         source_container: str | None = None,
         expected_joint_count: int = 70,
-        control_radius: float = 0.3,
+        control_radius: float | None = None,
         access_mode: BodyHandPoseAccessMode = BodyHandPoseAccessMode.READ_ONLY,
         target_side: FitBuildSide | None = None,
     ) -> BodyHandPoseRigInspection:
@@ -171,15 +171,26 @@ class InspectBodyHandPoseRig:
                 + "；".join(issue.message for issue in provenance_issues)
             )
         namespace = _body_namespace(body)
+        build_options = BodyBuildOptions.from_fit_settings(
+            self._host.read_fit_skeleton_settings(source_container))
         hand = plan_body_hand_fk_controls(
             body,
-            radius=control_radius,
+            radius=1.5 if control_radius is None else control_radius,
             namespace=namespace,
-            build_options=BodyBuildOptions.from_fit_settings(
-                self._host.read_fit_skeleton_settings(source_container)),
+            build_options=build_options,
         )
-        pose = plan_body_hand_pose_controls(hand)
         hand_snapshot = self._host.capture_body_hand_fk_controls(hand)
+        if hand_snapshot.roots and all(
+            not root.source_icon_size for root in hand_snapshot.roots
+        ):
+            hand = plan_body_hand_fk_controls(
+                body,
+                radius=0.3 if control_radius is None else control_radius,
+                namespace=namespace,
+                build_options=build_options,
+                source_icon_size=False,
+            )
+        pose = plan_body_hand_pose_controls(hand)
         hand_issues = audit_body_hand_fk_controls(
             hand,
             hand_snapshot,

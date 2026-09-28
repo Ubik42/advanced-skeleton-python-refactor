@@ -6636,6 +6636,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             root = (self._cmds.ls(root, long=True) or [root])[0]
             if root != spec.path:
                 raise RuntimeError(f"Hand FK 根节点路径漂移：{spec.name}")
+            if spec.source_icon_size:
+                self._cmds.addAttr(root, longName="advPyHandSourceIconSize",
+                                   attributeType="bool", defaultValue=True)
             if spec.follow_matrix_name is not None:
                 follow = self._cmds.createNode(
                     "multMatrix", name=spec.follow_matrix_name,
@@ -7360,6 +7363,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                           for kind in ("translate", "rotate")
                           for axis in "XYZ")
                     if spec.follow_constraint_name else ()
+                ),
+                source_icon_size=(
+                    self._cmds.attributeQuery("advPyHandSourceIconSize",
+                                              node=path, exists=True)
+                    and bool(self._cmds.getAttr(
+                        path + ".advPyHandSourceIconSize"))
                 ),
             ))
         controls = self._capture_body_limb_fk_control_states(
