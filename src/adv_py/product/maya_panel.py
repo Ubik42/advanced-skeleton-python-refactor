@@ -372,7 +372,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.build_segment_influences.setChecked(True)
             self.build_fit_parts = QtWidgets.QCheckBox(
                 "按 Fit 的 Twist / Inbetween 设置构建分段")
-            self.build_fit_parts.setChecked(False)
+            self.build_fit_parts.setChecked(True)
             self.build_fit_parts.setEnabled(
                 self.build_segment_influences.isChecked())
             self.build_segment_influences.toggled.connect(

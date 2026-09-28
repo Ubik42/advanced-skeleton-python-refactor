@@ -208,8 +208,9 @@ def parser() -> argparse.ArgumentParser:
     body_build.add_argument("--spine-segments", type=int,
         help="可变脊柱段数；标准双段角色可省略")
     body_build.add_argument("--head-aim", action="store_true")
-    body_build.add_argument("--fit-parts", action="store_true",
-        help="按 Fit 的 Twist/Inbetween 元数据构建分段关节并登记为 Skin 影响")
+    body_build.add_argument("--fit-parts", action=argparse.BooleanOptionalAction,
+        default=True,
+        help="按 Fit 的 Twist/Inbetween 元数据构建分段关节并登记为 Skin 影响（默认启用）")
     body_build.add_argument("--output", type=Path, required=True)
     fit_export = commands.add_parser("fit-export",
         help="导出现有 Fit 容器的完整文档")
