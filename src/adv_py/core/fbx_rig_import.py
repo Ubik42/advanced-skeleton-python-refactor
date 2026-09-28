@@ -81,6 +81,19 @@ class FBXRigImportPlan:
     names_requiring_underscore_removal: tuple[str, ...]
     collapsed_fit_source_joints: tuple[str, ...] = ()
     bind_pose_joints: tuple[FBXRigSourceJoint, ...] = ()
+    fit_display_radius: float = 3.0
+
+
+def fbx_fit_display_radius(bound_skin_upper_y: float | None) -> float:
+    """Scale the initial 3 cm Fit ring as asFBXRig does at bind pose."""
+    if bound_skin_upper_y is None:
+        return 3.0
+    if (isinstance(bound_skin_upper_y, bool)
+            or not isinstance(bound_skin_upper_y, (int, float))
+            or not isfinite(bound_skin_upper_y)
+            or bound_skin_upper_y <= 0):
+        raise ValueError("FBX rig 来源蒙皮模型上边界无效")
+    return 0.3 * bound_skin_upper_y
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +259,7 @@ def plan_fbx_rig_import(
     *,
     animation_key_times: tuple[float, ...] = (),
     highest_descendant_y: float | None = None,
+    bound_skin_upper_y: float | None = None,
 ) -> FBXRigImportPlan:
     """Interpret a bound source skeleton before any scene renaming or bake."""
     if not joints:
@@ -286,6 +300,9 @@ def plan_fbx_rig_import(
             or not isfinite(max_y) or max_y <= 0):
         raise ValueError("FBX rig 来源高度无效")
     scale = max_y / 17.176163
+    # asCreateFitSkeleton starts at radius 3; FBX rig scales its CVs by
+    # the bound geometry's upper Y boundary divided by ten.
+    fit_display_radius = fbx_fit_display_radius(bound_skin_upper_y)
     threshold = scale * .01
     children = {joint.path: tuple(child for child in joints
                 if child.parent == joint.path) for joint in joints}
@@ -392,4 +409,4 @@ def plan_fbx_rig_import(
         -1 if last_frame is not None else None, last_frame,
         tuple(joint.path for joint in descendants if "_" in joint.name),
         tuple(joint.path for joint in kept if joint.path in collapsed),
-        joints)
+        joints, fit_display_radius)

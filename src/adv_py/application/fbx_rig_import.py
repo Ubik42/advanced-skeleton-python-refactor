@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 from typing import Mapping, Protocol
 
 from adv_py.core.fbx_rig_import import (
     FBXRigControlTransferPlan, FBXRigFitGuideState, FBXRigImportPlan,
     FBXRigSourceJoint, audit_fbx_fit_guides, fbx_bind_pose_matches,
-    plan_fbx_control_transfer, plan_fbx_rig_import,
+    fbx_fit_display_radius, plan_fbx_control_transfer, plan_fbx_rig_import,
     validate_fbx_source_namespace_paths,
 )
 
@@ -25,6 +25,7 @@ class FBXRigSourceCapture:
     playback_start: float
     playback_end: float
     auto_key_enabled: bool
+    bound_skin_upper_y: float | None = None
 
     def __post_init__(self) -> None:
         if (type(self.auto_key_enabled) is not bool
@@ -33,6 +34,11 @@ class FBXRigSourceCapture:
                 or any(not isfinite(value) for value in (
                     self.current_time, self.playback_start,
                     self.playback_end))
+                or (self.bound_skin_upper_y is not None and (
+                    isinstance(self.bound_skin_upper_y, bool)
+                    or not isinstance(self.bound_skin_upper_y, (int, float))
+                    or not isfinite(self.bound_skin_upper_y)
+                    or self.bound_skin_upper_y <= 0))
                 or self.playback_end < self.playback_start):
             raise ValueError("FBX rig 来源场景时间或绑定模型记录无效")
 
@@ -84,6 +90,7 @@ class FBXRigHost(Protocol):
     def capture_fbx_fit_guides(
         self, plan: FBXRigImportPlan,
     ) -> tuple[FBXRigFitGuideState, ...]: ...
+    def capture_fbx_fit_display_radius(self) -> float: ...
     def build_fbx_advanced_skeleton(self, plan: FBXRigImportPlan) -> None: ...
     def enlarge_small_fbx_fk_controls(
         self, plan: FBXRigImportPlan, bound_meshes: tuple[str, ...],
@@ -140,7 +147,8 @@ class BuildFBXRig:
         plan = plan_fbx_rig_import(
             bind_joints,
             animation_key_times=source.animation_key_times,
-            highest_descendant_y=source.highest_descendant_y)
+            highest_descendant_y=source.highest_descendant_y,
+            bound_skin_upper_y=source.bound_skin_upper_y)
         if {joint.path for joint in bind_joints} != {
                 joint.path for joint in source.joints}:
             raise ValueError("FBX rig 绑定姿态关节集合与当前来源不一致")
@@ -166,12 +174,18 @@ class BuildFBXRig:
         with self._host.transaction("从 FBX 骨架构建 ADV 控制"):
             try:
                 self._host.prepare_fbx_bind_pose(plan, source)
-                prepared = self._host.capture_fbx_rig_source().joints
-                if not fbx_bind_pose_matches(plan.bind_pose_joints, prepared):
+                prepared = self._host.capture_fbx_rig_source()
+                if not fbx_bind_pose_matches(plan.bind_pose_joints,
+                                             prepared.joints):
                     raise RuntimeError("FBX rig 恢复后的来源绑定姿态与计划不一致")
+                plan = replace(plan, fit_display_radius=
+                    fbx_fit_display_radius(prepared.bound_skin_upper_y))
                 source_paths = self._host.move_fbx_source_to_namespace(plan)
                 validate_fbx_source_namespace_paths(plan, source_paths)
                 self._host.create_fbx_fit_guides(plan)
+                if abs(self._host.capture_fbx_fit_display_radius()
+                       - plan.fit_display_radius) > 1e-4:
+                    raise RuntimeError("FBX rig Fit 圆环尺寸与来源模型不一致")
                 fit_issues = audit_fbx_fit_guides(
                     plan, self._host.capture_fbx_fit_guides(plan))
                 if fit_issues:

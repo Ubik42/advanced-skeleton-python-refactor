@@ -103,12 +103,15 @@ class MayaFBXRigSourceReader:
                 tuple(sorted(geometry_ids)), influence_ids))
         if not getattr(self, "_transaction_active", False):
             self._fbx_skin_boundary = tuple(sorted(skin_boundary))
+        bound_skin_upper_y = (float(c.exactWorldBoundingBox(meshes[0])[4])
+                              if meshes else None)
         return FBXRigSourceCapture(
             joints, times, highest_y, None, tuple(meshes),
             float(c.currentTime(query=True)),
             float(c.playbackOptions(query=True, minTime=True)),
             float(c.playbackOptions(query=True, maxTime=True)),
-            bool(c.autoKeyframe(query=True, state=True)))
+            bool(c.autoKeyframe(query=True, state=True)),
+            bound_skin_upper_y)
 
     def capture_fbx_bind_pose_joints(
         self, source: FBXRigSourceCapture,
@@ -274,7 +277,8 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                            if len(names) > 1)
         request = FitOrientationRequest(tuple(children), selections)
         joined = _JoinedTransactionHost(self)
-        CreateFitSkeleton(joined).apply("FitSkeleton")
+        CreateFitSkeleton(joined).apply(
+            "FitSkeleton", display_radius=plan.fit_display_radius)
         c.setAttr("FitSkeleton.lockCenterJoints", False)
         BuildOrientedFitTemplate(joined).apply(template, request,
             "FitSkeleton", transaction_label="建立 FBX rig Fit 导向",
@@ -286,6 +290,16 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             c.addAttr(path, longName="control", attributeType="bool",
                       defaultValue=True, keyable=True)
         self._transaction_changed = True
+
+    def capture_fbx_fit_display_radius(self) -> float:
+        c = self._cmds
+        shapes = c.listRelatives("FitSkeleton", shapes=True,
+                                 noIntermediate=True, fullPath=True,
+                                 type="nurbsCurve") or ()
+        if len(shapes) != 1:
+            raise RuntimeError("FBX rig Fit 圆环曲线缺失或不唯一")
+        bounds = c.exactWorldBoundingBox(shapes[0])
+        return float(bounds[3] - bounds[0]) / 2.0
 
     @staticmethod
     def _fbx_fit_guide_path(name: str, by_name: dict) -> str:
