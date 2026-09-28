@@ -6294,8 +6294,15 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     raise RuntimeError("Foot Pivot Offset 路径漂移")
                 self._cmds.xform(offset, worldSpace=True,
                                 translation=manual.world_position)
-                self._cmds.xform(offset, worldSpace=True,
-                                rotation=manual.world_rotation)
+                if manual.world_axes is None:
+                    self._cmds.xform(offset, worldSpace=True,
+                                    rotation=manual.world_rotation)
+                else:
+                    x_axis, y_axis, z_axis = manual.world_axes
+                    self._cmds.xform(
+                        offset, worldSpace=True,
+                        matrix=(*x_axis, 0.0, *y_axis, 0.0,
+                                *z_axis, 0.0, *manual.world_position, 1.0))
                 control = self._cmds.curve(
                     name=manual.control_name, degree=1,
                     point=((0, 0, 0), (1, -4, 0), (-1, -4, 0), (0, 0, 0)),
@@ -7048,7 +7055,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     tuple(float(value) for value in self._cmds.getAttr(
                         manual_control + ".rotate")[0])
                     if manual_control else None,
-                    connections))
+                    connections,
+                    (self._spine_world_frame(manual_offset)[1]
+                     if manual_offset and manual.world_axes is not None
+                     else None)))
 
             high_state = None
             if spec.high_heel is not None:

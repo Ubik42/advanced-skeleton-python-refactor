@@ -137,6 +137,7 @@ class BodyLegFootManualPivotSpec:
     world_position: Vector3
     world_rotation: Vector3
     radius: float
+    world_axes: AxisFrame | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,6 +310,7 @@ class BodyLegFootManualPivotState:
     local_translation: Vector3 | None
     local_rotation: Vector3 | None
     graph_connections: tuple[tuple[str, str | None], ...]
+    world_axes: AxisFrame | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -632,7 +634,8 @@ def plan_body_leg_foot(
                     roll_world_rotation,
                     body_fk_curve_radius(
                         body, body_by_name[f"{marker}_{suffix}"],
-                        ik.base_radius) / 4.0))
+                        ik.base_radius) / 4.0,
+                    roll_world_axes))
             multiplier_name = (
                 f"AdvPy_FootInnerBankSign_{suffix}"
                 if legacy_roll_controls and multiplier != 1.0
@@ -1000,16 +1003,25 @@ def audit_body_leg_foot(
                 issues.append(BodyLegFootIssue(
                     "foot_manual_graph", "Foot Pivot 层级或矩阵补偿不一致",
                     manual.control_name))
+            if manual.world_axes is not None:
+                manual_orientation_matches = (
+                    found.world_axes is not None
+                    and len(found.world_axes) == 3
+                    and all(_close(actual, expected, tolerance)
+                            for actual, expected in zip(
+                                found.world_axes, manual.world_axes)))
+            else:
+                manual_orientation_matches = (
+                    found.world_rotation is not None
+                    and _close_angles(found.world_rotation,
+                                      manual.world_rotation, tolerance))
             if check_initial_pose and (
                     found.world_position is None
-                    or found.world_rotation is None
+                    or not manual_orientation_matches
                     or found.local_translation is None
                     or found.local_rotation is None
                     or not _close(found.world_position,
                                   manual.world_position, tolerance)
-                    or not _close_angles(found.world_rotation,
-                                         manual.world_rotation,
-                                         tolerance)
                     or not _close(found.local_translation,
                                   (0.0, 0.0, 0.0), tolerance)
                     or not _close_angles(found.local_rotation,
