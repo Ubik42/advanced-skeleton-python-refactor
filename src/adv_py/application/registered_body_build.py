@@ -370,6 +370,7 @@ class BuildRegisteredBodyCharacter:
                                                   follows=follows)
             fit_part_hierarchy = None
             twist_steps = ()
+            scale_plan = None
             inbetween_segments = ()
             solver_mapping = None
             inbetween_untwisters = ()
@@ -407,7 +408,7 @@ class BuildRegisteredBodyCharacter:
                 ) for source in twist_sources)
                 twist_steps = BuildFitPartTwistDrivers(joined).apply(
                     ordinary_twist_parts, active_twist_sources)
-                BuildFitPartScaleDrivers(joined).apply(
+                scale_plan = BuildFitPartScaleDrivers(joined).apply(
                     part_plan.fit_parts)
                 if bendy_chains:
                     BuildFitBendyDeform(joined).apply(bendy_chains)
@@ -675,10 +676,24 @@ class BuildRegisteredBodyCharacter:
                         + "；".join(torso_issues))
                 rig = replace(rig, plan=rig_plan, torso=torso_snapshot)
             registration = RegisterBodyCharacter(joined).apply(rig)
-            if fit_part_hierarchy is not None and twist_steps:
+            if (fit_part_hierarchy is not None
+                    and (twist_steps or (scale_plan is not None
+                                         and scale_plan.limbs))):
+                ik_paths = tuple(
+                    limb.wrist_control_path
+                    for limb in rig.plan.arm.ik.limbs) + tuple(
+                    limb.ankle_control_path
+                    for limb in rig.plan.leg.ik.limbs)
+                ik_control_paths = {
+                    path.rsplit("|", 1)[-1]: path
+                    for path in ik_paths
+                }
+                if len(ik_control_paths) != len(ik_paths):
+                    raise ValueError("Fit Part IK 控制器名称重复")
                 registration = RegisterFitPartChannels(joined).apply(
                     registration, twist_steps,
-                    fit_part_hierarchy.final_paths)
+                    fit_part_hierarchy.final_paths,
+                    scale_plan, ik_control_paths)
             if inbetween_segments or hip_swing_reverse is not None:
                 registration = RegisterInbetweenControls(joined).apply(
                     registration, inbetween_segments,

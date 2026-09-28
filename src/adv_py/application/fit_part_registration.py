@@ -1,9 +1,9 @@
-"""Add Fit Part twist controls to the built character's animation registry."""
+"""Add Fit Part animator channels to the built character registry."""
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
 from dataclasses import replace
-from typing import Protocol
+from typing import Mapping, Protocol
 
 from adv_py.core.character_registry import (
     CharacterNode, CharacterRegistration, encode_registration,
@@ -13,6 +13,7 @@ from adv_py.core.fit_part_registration import (
     plan_fit_part_animation_channels,
 )
 from adv_py.core.fit_part_twist import FitPartTwistStep
+from adv_py.core.fit_part_scale import FitPartScalePlan
 
 
 class FitPartRegistrationHost(Protocol):
@@ -38,8 +39,11 @@ class RegisterFitPartChannels:
         self, before: CharacterRegistration,
         steps: tuple[FitPartTwistStep, ...],
         paths: FitPartFinalPaths,
+        scale: FitPartScalePlan | None = None,
+        ik_control_paths: Mapping[str, str] | None = None,
     ) -> CharacterRegistration:
-        added = plan_fit_part_animation_channels(steps, paths)
+        added = plan_fit_part_animation_channels(
+            steps, paths, scale, ik_control_paths)
         if not added:
             return before
         if self._host.read_character_registration() != before:
@@ -67,8 +71,8 @@ class RegisterFitPartChannels:
                         channels=before.channels + added,
                         nodes=tuple(nodes))
         encode_registration(after)
-        with self._host.transaction("登记 Fit Part 扭转动画通道"):
+        with self._host.transaction("登记 Fit Part 动画通道"):
             self._host.write_character_registration_extension(before, after)
             if self._host.read_character_registration() != after:
-                raise RuntimeError("Fit Part 扭转动画通道登记读回不一致")
+                raise RuntimeError("Fit Part 动画通道登记读回不一致")
         return after
