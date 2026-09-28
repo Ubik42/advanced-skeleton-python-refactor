@@ -93,8 +93,10 @@ def plan_standard_fit_part_rotation_inputs(
     """Resolve twist channels for every non-bendy Fit Part chain.
 
     Standard Arm/Leg chains blend their independent FK/IK driver matrices.
-    Other joints use their Body world matrix. Both are measured against a
-    bind-aligned reference that follows the original parent.
+    Other joints use an independent FK source when the rig exposes one, or
+    their Body world matrix. Both are measured against a bind-aligned
+    reference that follows the original parent. A dual-twist child must use
+    an independent source because its Body is reparented below the Part chain.
     """
     starts = {part.start_body: part for part in parts}
     independent_world_matrices = independent_world_matrices or {}
