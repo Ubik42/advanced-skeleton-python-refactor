@@ -37,6 +37,10 @@ class BodyLegFkToIkPlan:
     required_writable_plugs: tuple[str, ...]
     foot_reset_values: tuple[tuple[str, float], ...] = ()
     roll_rotation_plugs: tuple[str, ...] = ()
+    toe_end_body_path: str | None = None
+    toe_end_ik_driver_path: str | None = None
+    toe_end_body_position: Vector3 | None = None
+    toe_end_body_axes: AxisFrame | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +53,7 @@ class BodyLegFkToIkSceneState:
     toe_body_axes: tuple[Vector3, ...]
     foot_attribute_values: tuple[tuple[str, float], ...]
     roll_rotation_values: tuple[tuple[str, float], ...] = ()
+    toe_end_body_axes: tuple[Vector3, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +135,10 @@ def plan_body_leg_fk_to_ik(
     )
     if toe is None or toe_blend is None:
         raise ValueError("Leg FK→IK 匹配要求 Toes Body 与 IK driver 输出")
+    toe_end = by_name.get(f"ToesEnd_{side.value}")
+    toe_end_blend = next(
+        (joint for joint in blend_side.joints
+         if toe_end is not None and joint.body_joint == toe_end.path), None)
     line = tuple(
         end - start
         for start, end in zip(joints[0].world_position, joints[2].world_position)
@@ -183,7 +192,9 @@ def plan_body_leg_fk_to_ik(
         for channel in channels
     ) + tuple(
         f"{foot_side.toe_control_path}.rotate{axis}" for axis in "XYZ"
-    ) + foot_plugs + roll_rotation_plugs + (blend_plug,)
+    ) + foot_plugs + roll_rotation_plugs + (blend_plug,) + (
+        tuple(f"{toe_end_blend.ik_driver}.rotate{axis}" for axis in "XYZ")
+        if toe_end_blend is not None else ())
     return BodyLegFkToIkPlan(
         side=side,
         blend_plug=blend_plug,
@@ -214,8 +225,17 @@ def plan_body_leg_fk_to_ik(
             toe.path,
             limb.chain[2],
             toe_blend.ik_driver,
+            *((toe_end.path, toe_end_blend.ik_driver)
+              if toe_end_blend is not None else ()),
         ),
         required_writable_plugs=writable,
+        toe_end_body_path=(toe_end.path if toe_end_blend is not None else None),
+        toe_end_ik_driver_path=(toe_end_blend.ik_driver
+                                if toe_end_blend is not None else None),
+        toe_end_body_position=(toe_end.world_position
+                               if toe_end_blend is not None else None),
+        toe_end_body_axes=(toe_end.world_axes
+                           if toe_end_blend is not None else None),
     )
 
 
@@ -288,6 +308,15 @@ def audit_body_leg_fk_to_ik_preflight(
             "Leg FK→IK 匹配 Toes 姿态已变化",
             plan.side.value,
         ))
+    if (plan.toe_end_body_axes is not None and (
+            len(state.toe_end_body_axes) != 3
+            or any(not _close(actual, expected, tolerance)
+                   for actual, expected in zip(
+                       state.toe_end_body_axes,
+                       plan.toe_end_body_axes)))):
+        issues.append(BodyLegMatchIssue(
+            "pose_drift", "Leg FK→IK 匹配 ToesEnd 姿态已变化",
+            plan.side.value))
     return tuple(issues)
 
 
@@ -341,6 +370,22 @@ def audit_body_leg_fk_to_ik_result(
             "Leg FK→IK 切换后 Toes 朝向跳变",
             plan.toe_body_path,
         ))
+    if plan.toe_end_body_path is not None:
+        toe_end = by_path.get(plan.toe_end_body_path)
+        if (toe_end is None or plan.toe_end_body_position is None
+                or not _close(toe_end.world_position,
+                              plan.toe_end_body_position,
+                              position_tolerance)):
+            issues.append(BodyLegMatchIssue(
+                "toe_end_position_pop", "Leg FK→IK 切换后 ToesEnd 位置跳变",
+                plan.toe_end_body_path))
+        if (toe_end is None or plan.toe_end_body_axes is None
+                or any(not _close(actual, expected, axis_tolerance)
+                       for actual, expected in zip(
+                           toe_end.world_axes, plan.toe_end_body_axes))):
+            issues.append(BodyLegMatchIssue(
+                "toe_end_orientation_pop", "Leg FK→IK 切换后 ToesEnd 朝向跳变",
+                plan.toe_end_body_path))
     return tuple(issues)
 
 

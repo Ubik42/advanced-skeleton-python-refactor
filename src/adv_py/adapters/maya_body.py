@@ -5146,6 +5146,16 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 )
                 for index in (0, 4, 8)
             )
+        toe_end_body_axes = ()
+        if (plan.toe_end_body_path is not None
+                and self._cmds.objExists(plan.toe_end_body_path)):
+            matrix = self._cmds.xform(
+                plan.toe_end_body_path, query=True,
+                worldSpace=True, matrix=True)
+            toe_end_body_axes = tuple(
+                self._normalized_vector(
+                    tuple(float(item) for item in matrix[index:index + 3]))
+                for index in (0, 4, 8))
         foot_values = tuple(
             (plug, float(self._cmds.getAttr(plug)))
             for plug in plan.foot_attribute_plugs
@@ -5165,6 +5175,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             toe_body_axes,
             foot_values,
             roll_values,
+            toe_end_body_axes,
         )
 
     def apply_body_leg_fk_to_ik(self, plan: BodyLegFkToIkPlan) -> None:
@@ -5212,6 +5223,18 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 *toe_position, 1.0,
             )
             self._spine_set_world_rotation(plan.toe_control_path,toe_matrix)
+            if plan.toe_end_ik_driver_path is not None:
+                if plan.toe_end_body_axes is None:
+                    raise RuntimeError("Leg FK→IK 缺少 ToesEnd 目标朝向")
+                end_position = tuple(float(value) for value in self._cmds.xform(
+                    plan.toe_end_ik_driver_path, query=True,
+                    worldSpace=True, translation=True))
+                end_x, end_y, end_z = plan.toe_end_body_axes
+                end_matrix = (
+                    *end_x, 0.0, *end_y, 0.0, *end_z, 0.0,
+                    *end_position, 1.0)
+                self._spine_set_world_rotation(
+                    plan.toe_end_ik_driver_path, end_matrix)
             self._cmds.setAttr(plan.blend_plug, 1.0)
             finish_orientation_match(self,"leg",plan.side.value,orientation_state)
             finish_match(self,shape_state)
