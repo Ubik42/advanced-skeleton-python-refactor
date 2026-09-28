@@ -11,10 +11,20 @@ if TYPE_CHECKING:
 
 _GROUPS = ("AdvPy_BendSystem", "AdvPy_BendCurve",
            "AdvPy_BendJoints", "AdvPy_BendMPX")
+_MICRO_GROUP = "AdvPy_MicroSystem"
 _OWNER = "adv_py.fit_bendy_guides.v1"
 
 
 class MayaFitBendyMixin:
+    def preflight_fit_bendy_micro(self, spec: FitBendyChainSpec) -> None:
+        c = self._cmds
+        if any(c.objExists(name) for name in spec.micro_node_names):
+            raise ValueError("Bendy 微控制节点名称已占用：" + spec.curve_name)
+        if c.objExists(_MICRO_GROUP):
+            marker = _MICRO_GROUP + ".advPyBendyGuideOwner"
+            if not c.objExists(marker) or c.getAttr(marker) != _OWNER:
+                raise ValueError("Bendy 微控制组不属于当前构建")
+
     def preflight_fit_bendy_follow(self, spec: "FitBendyFollowSpec") -> None:
         c = self._cmds
         if any(c.objExists(name) for name in spec.chain.follow_node_names):
@@ -113,12 +123,21 @@ class MayaFitBendyMixin:
                                  size=True))
         if cv_count < len(influences) + 1:
             raise RuntimeError("Bendy 曲线控制点不足")
+        if cv_count != spec.control_count + 4:
+            raise RuntimeError("Bendy 曲线 CV 数量与原版重建规则不一致")
         for index in range(cv_count):
-            driver_index = min(len(influences) - 1,
-                               round(index * (len(influences) - 1)
-                                     / (cv_count - 1)))
             c.skinPercent(skin, curve + f".cv[{index}]",
-                          transformValue=[(influences[driver_index], 1.0)])
+                          transformValue=[(influences[0], 1.0)])
+        for index in (cv_count - 2, cv_count - 1):
+            c.skinPercent(skin, curve + f".cv[{index}]",
+                          transformValue=[(influences[-1], 1.0)])
+        for index, joint in enumerate(influences[1:-1], start=1):
+            c.skinPercent(skin, curve + f".cv[{index + 1}]",
+                          transformValue=[(joint, 1.0)])
+        c.skinPercent(skin, curve + ".cv[1]",
+                      transformValue=[(influences[1], 0.4)])
+        c.skinPercent(skin, curve + f".cv[{cv_count - 2}]",
+                      transformValue=[(influences[-2], 0.4)])
         for index, (path_name, transform_name) in enumerate(zip(
                 spec.motion_path_names,
                 spec.motion_transform_names)):
@@ -233,6 +252,73 @@ class MayaFitBendyMixin:
                 return False
         return (c.objExists(names[-1])
                 and c.nodeType(names[-1]) == "parentConstraint")
+
+    def create_fit_bendy_micro(self, spec: FitBendyChainSpec) -> None:
+        """Place animator micro controls on the curve's sampled frames."""
+        self._require_transaction()
+        c = self._cmds
+        if not c.objExists(_MICRO_GROUP):
+            group = c.createNode("transform", name=_MICRO_GROUP,
+                                 skipSelect=True)
+            c.addAttr(group, longName="advPyBendyGuideOwner",
+                      dataType="string")
+            c.setAttr(group + ".advPyBendyGuideOwner", _OWNER,
+                      type="string", lock=True)
+        master = spec.control_names[0]
+        c.addAttr(master, longName="microVis", attributeType="bool",
+                  defaultValue=False, keyable=False)
+        c.setAttr(master + ".microVis", channelBox=True)
+        positions = (spec.start_position, *spec.part_positions)
+        for index, (offset_name, control_name, output_name,
+                    guide_name, position) in enumerate(zip(
+                        spec.micro_offset_names, spec.micro_control_names,
+                        spec.micro_output_names,
+                        spec.motion_transform_names, positions)):
+            offset = c.createNode("transform", name=offset_name,
+                                  parent=_MICRO_GROUP, skipSelect=True)
+            c.xform(offset, worldSpace=True, translation=position)
+            control = c.circle(name=control_name, normal=(1, 0, 0),
+                               radius=0.15,
+                               constructionHistory=False)[0]
+            c.parent(control, offset, absolute=True)
+            c.xform(control, worldSpace=True, translation=position)
+            c.createNode("transform", name=output_name,
+                         parent=control, skipSelect=True)
+            c.connectAttr(master + ".microVis", offset + ".visibility")
+            target = (spec.motion_transform_names[index + 1]
+                      if index + 1 < len(spec.motion_transform_names)
+                      else spec.end_proxy_name)
+            c.aimConstraint(target, guide_name,
+                            aimVector=((-1 if spec.side == "L" else 1),
+                                       0, 0), upVector=(0, 0, 1),
+                            worldUpType="objectrotation",
+                            worldUpObject=spec.follow_node_names[0],
+                            name=guide_name + "Aim")
+            c.parentConstraint(guide_name, offset, maintainOffset=True,
+                               name=guide_name + "MicroFollow")
+        self._transaction_changed = True
+
+    def capture_fit_bendy_micro(self, spec: FitBendyChainSpec) -> bool:
+        c = self._cmds
+        master = spec.control_names[0]
+        if (not c.objExists(_MICRO_GROUP)
+                or not c.objExists(master + ".microVis")):
+            return False
+        for offset, control, output, guide in zip(
+                spec.micro_offset_names, spec.micro_control_names,
+                spec.micro_output_names, spec.motion_transform_names):
+            if (not c.objExists(offset) or not c.objExists(control)
+                    or not c.objExists(output)
+                    or not c.objExists(guide + "Aim")
+                    or c.nodeType(guide + "Aim") != "aimConstraint"
+                    or not c.objExists(guide + "MicroFollow")
+                    or c.nodeType(guide + "MicroFollow")
+                    != "parentConstraint"
+                    or c.connectionInfo(offset + ".visibility",
+                                        sourceFromDestination=True)
+                    != master + ".microVis"):
+                return False
+        return True
 
     def capture_fit_bendy_guides(
         self, spec: FitBendyChainSpec

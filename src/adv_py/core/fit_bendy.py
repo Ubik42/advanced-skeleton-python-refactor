@@ -95,6 +95,30 @@ class FitBendyChainSpec:
         return tuple(f"BendMPX{self.stem}{index}_{self.side}"
                      for index in range(len(self.part_names) + 1))
 
+    @property
+    def deform_names(self) -> tuple[str, ...]:
+        return (self.start_body.rsplit("|", 1)[-1], *self.part_names)
+
+    @property
+    def micro_offset_names(self) -> tuple[str, ...]:
+        return tuple("MicroOffset" + name for name in self.deform_names)
+
+    @property
+    def micro_control_names(self) -> tuple[str, ...]:
+        return tuple("Micro" + name for name in self.deform_names)
+
+    @property
+    def micro_output_names(self) -> tuple[str, ...]:
+        return tuple("MicroX" + name for name in self.deform_names)
+
+    @property
+    def micro_node_names(self) -> tuple[str, ...]:
+        return (*self.micro_offset_names, *self.micro_control_names,
+                *(name + "Shape" for name in self.micro_control_names),
+                *self.micro_output_names,
+                *(name + "Aim" for name in self.motion_transform_names),
+                *(name + "MicroFollow" for name in self.motion_transform_names))
+
 
 def plan_fit_bendy_chains(
     parts: tuple[FitPartJointSpec, ...],
@@ -119,9 +143,11 @@ def plan_fit_bendy_chains(
         setting = by_source.get(first.source_joint)
         if setting is None:
             raise ValueError("Fit Bendy 缺少来源元数据：" + first.source_joint)
-        count = setting.bendy_controls or 0
-        if count <= 0:
+        requested_controls = setting.bendy_controls or 0
+        if requested_controls <= 0:
             continue
+        # MEL adds one base controller before constructing the Bendy chain.
+        count = requested_controls + 1
         if (len(chain) != first.count
                 or tuple(part.index for part in chain)
                 != tuple(range(1, first.count + 1))
