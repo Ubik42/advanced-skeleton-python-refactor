@@ -245,8 +245,10 @@ def plan_fit_part_twist_projections(
             prefix + "IkDecompose" if has_ik else None,
             prefix + "IkProject" if has_ik else None,
             prefix + "Blend" if has_ik else None,
-            prefix + "Reference" if (item.world_matrix_plug
-                                      or blended_matrix) else None,
+            prefix + "Reference" if ((item.world_matrix_plug
+                                      or blended_matrix)
+                                     and item.reference_inverse_plug is None)
+            else None,
             prefix + "WorldBlend" if blended_matrix else None,
         )
         names = (projection.compose_name, projection.decompose_name,

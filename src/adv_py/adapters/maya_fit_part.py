@@ -443,13 +443,17 @@ class MayaFitPartMixin:
                 and not c.objExists(inputs.reference_inverse_plug)):
             raise ValueError("Fit Part 参考逆矩阵不存在："
                              + inputs.reference_inverse_plug)
-        if projection.reference_name:
+        if inputs.world_matrix_plug or projection.matrix_blend_name:
+            if not (projection.reference_name
+                    or inputs.reference_inverse_plug):
+                raise ValueError("Fit Part 矩阵投影缺少参考逆矩阵")
             matches = c.ls(inputs.start_body, long=True, type="joint") or []
             if matches != [inputs.start_body]:
                 raise ValueError("Fit Part 矩阵投影起点关节无效")
-            parent = projection.reference_parent_path
-            if parent and (c.ls(parent, long=True) or []) != [parent]:
-                raise ValueError("Fit Part 矩阵参照父级无效")
+            if projection.reference_name:
+                parent = projection.reference_parent_path
+                if parent and (c.ls(parent, long=True) or []) != [parent]:
+                    raise ValueError("Fit Part 矩阵参照父级无效")
 
     def create_fit_part_twist_projection(
         self, projection: FitPartTwistProjection
@@ -475,7 +479,7 @@ class MayaFitPartMixin:
                           project + ".inputQuatW")
             return project + ".outputRotateX"
 
-        if projection.reference_name:
+        if source.world_matrix_plug or projection.matrix_blend_name:
             matrix_source = source.world_matrix_plug
             if projection.matrix_blend_name:
                 world_blend = c.createNode(
@@ -487,19 +491,20 @@ class MayaFitPartMixin:
                 c.connectAttr(source.ik_fk_blend_plug,
                               world_blend + ".target[0].weight")
                 matrix_source = world_blend + ".outputMatrix"
-            options = ({"parent": projection.reference_parent_path}
-                       if projection.reference_parent_path else {})
-            reference = c.createNode(
-                "transform", name=projection.reference_name,
-                skipSelect=True, **options)
-            c.xform(reference, worldSpace=True, matrix=c.xform(
-                source.start_body, query=True, worldSpace=True,
-                matrix=True))
-            c.addAttr(reference, longName="advPyTwistReferenceOwner",
-                      dataType="string")
-            c.setAttr(reference + ".advPyTwistReferenceOwner",
-                      "adv_py.fit_part_twist.v1", type="string", lock=True)
-            c.setAttr(reference + ".visibility", False)
+            if projection.reference_name:
+                options = ({"parent": projection.reference_parent_path}
+                           if projection.reference_parent_path else {})
+                reference = c.createNode(
+                    "transform", name=projection.reference_name,
+                    skipSelect=True, **options)
+                c.xform(reference, worldSpace=True, matrix=c.xform(
+                    source.start_body, query=True, worldSpace=True,
+                    matrix=True))
+                c.addAttr(reference, longName="advPyTwistReferenceOwner",
+                          dataType="string")
+                c.setAttr(reference + ".advPyTwistReferenceOwner",
+                          "adv_py.fit_part_twist.v1", type="string", lock=True)
+                c.setAttr(reference + ".visibility", False)
             matrix = c.createNode("multMatrix", name=projection.compose_name)
             decompose = c.createNode("decomposeMatrix",
                                      name=projection.decompose_name)
@@ -508,7 +513,7 @@ class MayaFitPartMixin:
             c.connectAttr(matrix_source,
                           matrix + ".matrixIn[0]")
             c.connectAttr(source.reference_inverse_plug or
-                          reference + ".worldInverseMatrix[0]",
+                          projection.reference_name + ".worldInverseMatrix[0]",
                           matrix + ".matrixIn[1]")
             c.connectAttr(matrix + ".matrixSum",
                           decompose + ".inputMatrix")
@@ -567,13 +572,14 @@ class MayaFitPartMixin:
                        for source, target in expected)
 
         source = projection.input
-        if projection.reference_name:
+        if source.world_matrix_plug or projection.matrix_blend_name:
             reference = projection.reference_name
             matrix = projection.compose_name
             decompose = projection.decompose_name
             project = projection.project_name
-            parent = c.listRelatives(reference, parent=True,
+            parent = (c.listRelatives(reference, parent=True,
                                      fullPath=True) or []
+                      if reference else [])
             matrix_source = (projection.matrix_blend_name + ".outputMatrix"
                              if projection.matrix_blend_name
                              else source.world_matrix_plug)
@@ -590,22 +596,24 @@ class MayaFitPartMixin:
             )
             if (any(not c.objExists(name) or c.nodeType(name) != kind
                     for name, kind in (
-                        (reference, "transform"),
                         (matrix, "multMatrix"),
                         (decompose, "decomposeMatrix"),
                         (project, "quatToEuler")))
-                    or parent != ([projection.reference_parent_path]
-                                  if projection.reference_parent_path else [])
-                    or not c.objExists(
-                        reference + ".advPyTwistReferenceOwner")
-                    or c.getAttr(reference + ".advPyTwistReferenceOwner")
-                    != "adv_py.fit_part_twist.v1"
-                    or c.getAttr(reference + ".visibility")
-                    or max(abs(float(a) - float(b)) for a, b in zip(
-                        c.xform(reference, query=True, worldSpace=True,
-                                matrix=True),
-                        c.xform(source.start_body, query=True,
-                                worldSpace=True, matrix=True))) > 1e-4
+                    or (reference is not None and (
+                        not c.objExists(reference)
+                        or c.nodeType(reference) != "transform"
+                        or parent != ([projection.reference_parent_path]
+                                      if projection.reference_parent_path else [])
+                        or not c.objExists(
+                            reference + ".advPyTwistReferenceOwner")
+                        or c.getAttr(reference + ".advPyTwistReferenceOwner")
+                        != "adv_py.fit_part_twist.v1"
+                        or c.getAttr(reference + ".visibility")
+                        or max(abs(float(a) - float(b)) for a, b in zip(
+                            c.xform(reference, query=True, worldSpace=True,
+                                    matrix=True),
+                            c.xform(source.start_body, query=True,
+                                    worldSpace=True, matrix=True))) > 1e-4))
                     or any(c.connectionInfo(target,
                            sourceFromDestination=True) != upstream
                            for upstream, target in expected)):
