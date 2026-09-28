@@ -437,13 +437,19 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         """Reserve the original rig's Group and DeformationSystem before Body."""
         self._require_transaction()
         if any(self.find_name_collisions(name)
-               for name in ("Group", "DeformationSystem")):
-            raise FitSkeletonValidationError("Group 或 DeformationSystem 已存在")
+               for name in ("Group", "DeformationSystem", "Geometry")):
+            raise FitSkeletonValidationError(
+                "Group、DeformationSystem 或 Geometry 已存在")
         group = self._cmds.createNode(
             "transform", name="Group", skipSelect=True)
         deformation = self._cmds.createNode(
             "transform", name="DeformationSystem", parent=group,
             skipSelect=True)
+        geometry = self._cmds.createNode(
+            "transform", name="Geometry", parent=group,
+            skipSelect=True)
+        self._cmds.setAttr(geometry + ".inheritsTransform", False)
+        self._cmds.setAttr(geometry + ".inheritsTransform", lock=True)
         self._transaction_changed = True
         group_path = (self._cmds.ls(group, long=True) or [group])[0]
         deformation_path = (self._cmds.ls(deformation, long=True)
@@ -451,6 +457,44 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         if group_path != "|Group" or deformation_path != "|Group|DeformationSystem":
             raise RuntimeError("Body 系统层级路径漂移")
         return deformation_path
+
+    def parent_body_mesh_under_geometry(self, mesh_path: str) -> str:
+        self._require_transaction()
+        self.preflight_body_mesh(mesh_path)
+        geometry = "|Group|Geometry"
+        if (self._cmds.ls(geometry, long=True, type="transform") or []) != [geometry]:
+            raise FitSkeletonValidationError("角色 Geometry 层级不存在")
+        parents = self._cmds.listRelatives(
+            mesh_path, parent=True, fullPath=True) or []
+        if parents == [geometry]:
+            return mesh_path
+        self._transaction_changed = True
+        moved = self._cmds.parent(mesh_path, geometry)[0]
+        path = (self._cmds.ls(moved, long=True) or [moved])[0]
+        if path != geometry + "|" + mesh_path.rsplit("|", 1)[-1]:
+            raise RuntimeError("Skin 网格移入 Geometry 后路径漂移")
+        self.preflight_body_mesh(path)
+        return path
+
+    def capture_body_system_hierarchy(
+        self, body_root_path: str,
+    ) -> tuple[tuple[str, str | None, str], ...]:
+        if bool(self._cmds.getAttr("|Group|Geometry.inheritsTransform")):
+            raise FitSkeletonValidationError(
+                "角色 Geometry 不得继承 Group 变换")
+        paths = ("|Group", "|Group|DeformationSystem",
+                 "|Group|Geometry", body_root_path)
+        rows = []
+        for path in paths:
+            matches = self._cmds.ls(path, long=True) or []
+            if matches != [path]:
+                raise FitSkeletonValidationError(
+                    "Body 系统层级节点缺失或路径不唯一：" + path)
+            parents = self._cmds.listRelatives(
+                path, parent=True, fullPath=True) or []
+            rows.append((path, parents[0] if parents else None,
+                         self._cmds.nodeType(path)))
+        return tuple(rows)
 
     def scene_linear_unit(self) -> BodyFbxLinearUnit:
         value = str(self._cmds.currentUnit(query=True, linear=True))

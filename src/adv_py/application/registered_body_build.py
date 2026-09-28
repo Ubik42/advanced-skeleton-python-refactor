@@ -226,7 +226,7 @@ class BuildRegisteredBodyCharacter:
             raise FitSkeletonValidationError(
                 "角色构建预检失败，场景未修改：" + "；".join(preview.blockers))
         hierarchy_collisions = tuple(
-            path for name in ("Group", "DeformationSystem")
+            path for name in ("Group", "DeformationSystem", "Geometry")
             for path in self._host.find_name_collisions(name))
         if hierarchy_collisions:
             raise FitSkeletonValidationError(
@@ -646,6 +646,15 @@ class BuildRegisteredBodyCharacter:
                              for extra in chain.micro_extra_names))
             if joined.has_body_build_pose_overrides():
                 GoToBodyBuildPose(joined).apply()
+            hierarchy = joined.capture_body_system_hierarchy(
+                skeleton.snapshot.root)
+            if hierarchy != (
+                ("|Group", None, "transform"),
+                (_DEFORMATION_SYSTEM_PATH, "|Group", "transform"),
+                ("|Group|Geometry", "|Group", "transform"),
+                (skeleton.snapshot.root, _DEFORMATION_SYSTEM_PATH, "joint"),
+            ):
+                raise RuntimeError("角色主构建结束时 Body 变形系统层级不一致")
         return RegisteredBodyBuildResult(
             skeleton, rig, registration, tuple(segments),
             fit_part_hierarchy, inbetween_segments,

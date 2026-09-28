@@ -80,9 +80,12 @@ class BuildRegisteredSkinnedBodyCharacter:
                 tuple(item.path for item in character.registration.body)
                 + character.segment_influences)
                 if joined.read_skin_influence_enabled(path))
+            geometry_meshes = tuple(
+                joined.parent_body_mesh_under_geometry(mesh)
+                for mesh in plan.meshes)
             skins = tuple(BindSkin(joined).apply(mesh, influences,
                 skin_name=name, maximum_influences=plan.maximum_influences)
-                for mesh, name in zip(plan.meshes, plan.skin_names))
+                for mesh, name in zip(geometry_meshes, plan.skin_names))
             if on_stage:
                 on_stage("skins-bound")
         return RegisteredSkinnedBodyBuildResult(character, skins)
