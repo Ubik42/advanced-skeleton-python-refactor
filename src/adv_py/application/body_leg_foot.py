@@ -86,7 +86,8 @@ class BuildBodyLegFoot:
             container_name, center_tolerance=center_tolerance
         )
         body = self._host.capture_body_skeleton(body_root_name)
-        mechanisms = plan_body_leg_mechanisms(body)
+        mechanisms = plan_body_leg_mechanisms(
+            body, allow_part_parents=True)
         ik = plan_body_leg_ik(
             body,
             mechanisms,

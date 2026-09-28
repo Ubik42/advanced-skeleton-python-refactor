@@ -7,6 +7,25 @@ from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
 
 
+def body_limb_parent_matches(
+    parent_path: str | None, previous_body_path: str,
+    *, allow_part_parents: bool,
+) -> bool:
+    if parent_path == previous_body_path:
+        return True
+    if (not allow_part_parents or parent_path is None
+            or not parent_path.startswith(previous_body_path + "|")):
+        return False
+    intervening = parent_path[len(previous_body_path) + 1:].split("|")
+    previous_name = previous_body_path.rsplit("|", 1)[-1]
+    stem, side_separator, side = previous_name.rsplit(":", 1)[-1].rpartition("_")
+    if not side_separator or side not in ("R", "L", "M"):
+        return False
+    return bool(intervening) and all(
+        item.rsplit(":", 1)[-1] == f"{stem}Part{index}_{side}"
+        for index, item in enumerate(intervening, 1))
+
+
 Vector3 = tuple[float, float, float]
 
 
@@ -68,7 +87,10 @@ def plan_body_limb_mechanisms(
     *,
     limb_label: str,
     joint_names: tuple[str, ...],
+    allow_part_parents: bool = False,
 ) -> BodyLimbMechanismPlan:
+    if type(allow_part_parents) is not bool:
+        raise BodyLimbMechanismValidationError("Part 父级开关无效")
     if not limb_label.isalpha() or len(joint_names) < 2 or len(set(joint_names)) != len(joint_names) or any(
         not name.isalpha() for name in joint_names
     ):
@@ -100,7 +122,10 @@ def plan_body_limb_mechanisms(
                     raise BodyLimbMechanismValidationError(
                         f"{source.name} 的 Body side 与名称不一致"
                     )
-                if source_parent is not None and source.parent_path != source_parent:
+                if (source_parent is not None
+                        and not body_limb_parent_matches(
+                            source.parent_path, source_parent,
+                            allow_part_parents=allow_part_parents)):
                     raise BodyLimbMechanismValidationError(
                         f"{source.name} 不在预期 {limb_label} 父链上"
                     )

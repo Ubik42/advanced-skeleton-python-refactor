@@ -111,7 +111,8 @@ class BuildBodyLegIkControls:
             ),
             body.provenance,
         )
-        mechanism_plan = plan_body_leg_mechanisms(body)
+        mechanism_plan = plan_body_leg_mechanisms(
+            body, allow_part_parents=True)
         mechanisms = self._host.capture_body_leg_mechanisms(mechanism_plan)
         mechanism_issues = audit_body_leg_mechanisms(
             mechanism_plan,
@@ -195,7 +196,8 @@ class BuildBodyLegIkControls:
             if self._host.capture_body_skeleton(body_root_name) != plan.body:
                 raise RuntimeError("Leg IK 构建后 Body 发生变化")
             current_mechanisms = self._host.capture_body_leg_mechanisms(
-                plan_body_leg_mechanisms(plan.body)
+                plan_body_leg_mechanisms(
+                    plan.body, allow_part_parents=True)
             )
             if _mechanism_structure_changed(
                 plan.mechanisms,

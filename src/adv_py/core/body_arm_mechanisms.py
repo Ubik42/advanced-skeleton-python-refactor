@@ -23,11 +23,14 @@ BodyArmMechanismSnapshot = BodyLimbMechanismSnapshot
 BodyArmMechanismValidationError = BodyLimbMechanismValidationError
 
 
-def plan_body_arm_mechanisms(body: BodySkeletonSnapshot) -> BodyArmMechanismPlan:
+def plan_body_arm_mechanisms(
+    body: BodySkeletonSnapshot, *, allow_part_parents: bool = False,
+) -> BodyArmMechanismPlan:
     return plan_body_limb_mechanisms(
         body,
         limb_label="Arm",
         joint_names=("Shoulder", "Elbow", "Wrist"),
+        allow_part_parents=allow_part_parents,
     )
 
 

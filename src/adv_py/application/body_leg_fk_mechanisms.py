@@ -125,7 +125,8 @@ class BuildBodyLegFkMechanismControls:
             expected_provenance,
             body.provenance,
         )
-        mechanism_plan = plan_body_leg_mechanisms(body)
+        mechanism_plan = plan_body_leg_mechanisms(
+            body, allow_part_parents=True)
         mechanisms = self._host.capture_body_leg_mechanisms(mechanism_plan)
         mechanism_issues = audit_body_leg_mechanisms(
             mechanism_plan,
@@ -146,6 +147,7 @@ class BuildBodyLegFkMechanismControls:
                 symmetry.settings).extra_controllers,
             terminal_toes_end_control=terminal_toes_end_control_enabled(
                 symmetry.source.metadata),
+            allow_part_parents=True,
         )
         names = [controls.root_name]
         for spec in controls.controls:
@@ -210,7 +212,8 @@ class BuildBodyLegFkMechanismControls:
                 )
             if self._host.capture_body_skeleton(body_root_name) != plan.body:
                 raise RuntimeError("Leg FK 机制控制构建后复检失败：Body 发生变化")
-            expected_mechanisms = plan_body_leg_mechanisms(plan.body)
+            expected_mechanisms = plan_body_leg_mechanisms(
+                plan.body, allow_part_parents=True)
             if (
                 self._host.capture_body_leg_mechanisms(expected_mechanisms)
                 != plan.mechanisms

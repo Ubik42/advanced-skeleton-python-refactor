@@ -95,7 +95,8 @@ class BuildBodyLegVisibility:
     ) -> BodyLegVisibilityBuildPlan:
         symmetry = self._symmetry.execute(container_name, center_tolerance=center_tolerance)
         body = self._host.capture_body_skeleton(body_root_name)
-        mechanism_plan = plan_body_leg_mechanisms(body)
+        mechanism_plan = plan_body_leg_mechanisms(
+            body, allow_part_parents=True)
         mechanisms = self._host.capture_body_leg_mechanisms(mechanism_plan)
         fk_drivers = {
             spec.source_joint: spec.path
@@ -109,7 +110,8 @@ class BuildBodyLegVisibility:
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).extra_controllers,
             terminal_toes_end_control=terminal_toes_end_control_enabled(
-                symmetry.source.metadata))
+                symmetry.source.metadata),
+            allow_part_parents=True)
         ik = plan_body_leg_ik(
             body,
             mechanism_plan,

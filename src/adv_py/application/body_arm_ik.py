@@ -83,7 +83,8 @@ class BuildBodyArmIkControls:
             ),
             body.provenance,
         )
-        mechanism_plan = plan_body_arm_mechanisms(body)
+        mechanism_plan = plan_body_arm_mechanisms(
+            body, allow_part_parents=True)
         mechanisms = self._host.capture_body_arm_mechanisms(mechanism_plan)
         mechanism_issues = audit_body_arm_mechanisms(mechanism_plan, mechanisms)
         ik = plan_body_arm_ik(
@@ -154,7 +155,8 @@ class BuildBodyArmIkControls:
             if self._host.capture_body_skeleton(body_root_name) != plan.body:
                 raise RuntimeError("Arm IK 构建后 Body 发生变化")
             current_mechanisms = self._host.capture_body_arm_mechanisms(
-                plan_body_arm_mechanisms(plan.body)
+                plan_body_arm_mechanisms(
+                    plan.body, allow_part_parents=True)
             )
             before_by_path = {state.path: state for state in plan.mechanisms.joints}
             after_by_path = {state.path: state for state in current_mechanisms.joints}

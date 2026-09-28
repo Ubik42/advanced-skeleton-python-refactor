@@ -57,7 +57,8 @@ class BuildBodyArmBlend:
         symmetry = self._symmetry.execute(container_name, center_tolerance=center_tolerance)
         body = self._host.capture_body_skeleton(body_root_name)
         provenance_issues = audit_body_provenance(oriented_body_provenance(symmetry.source.hierarchy.container, len(symmetry.instances)), body.provenance)
-        mechanism_plan = plan_body_arm_mechanisms(body)
+        mechanism_plan = plan_body_arm_mechanisms(
+            body, allow_part_parents=True)
         mechanisms = self._host.capture_body_arm_mechanisms(mechanism_plan)
         mechanism_issues = audit_body_arm_mechanisms(mechanism_plan, mechanisms)
         blend = plan_body_arm_blend(body, mechanism_plan)

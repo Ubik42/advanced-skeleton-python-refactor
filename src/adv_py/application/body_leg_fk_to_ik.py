@@ -137,7 +137,8 @@ class MatchBodyLegFkToIk:
             ),
             body.provenance,
         )
-        mechanisms = plan_body_leg_mechanisms(body)
+        mechanisms = plan_body_leg_mechanisms(
+            body, allow_part_parents=True)
         ik = plan_body_leg_ik(
             body, mechanisms, pole_distance_scale=pole_distance_scale,
             sub_controllers=BodyBuildOptions.from_fit_settings(

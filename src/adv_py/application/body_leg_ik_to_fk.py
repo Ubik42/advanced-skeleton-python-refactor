@@ -117,7 +117,8 @@ class MatchBodyLegIkToFk:
             ),
             body.provenance,
         )
-        mechanisms = plan_body_leg_mechanisms(body)
+        mechanisms = plan_body_leg_mechanisms(
+            body, allow_part_parents=True)
         fk_drivers = {
             spec.source_joint: spec.path
             for spec in mechanisms.joints
@@ -131,6 +132,7 @@ class MatchBodyLegIkToFk:
                 symmetry.settings).extra_controllers,
             terminal_toes_end_control=terminal_toes_end_control_enabled(
                 symmetry.source.metadata),
+            allow_part_parents=True,
         )
         blend = plan_body_leg_blend(
             body, mechanisms,

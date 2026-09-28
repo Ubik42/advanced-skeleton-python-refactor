@@ -9,6 +9,7 @@ from .body_controller_layers import (
 )
 from .body_skeleton import BodySkeletonSnapshot
 from .body_controller_appearance import body_fk_curve_radius
+from .body_limb_mechanisms import body_limb_parent_matches
 from .fit_symmetry import AxisFrame, FitBuildSide
 
 
@@ -130,7 +131,10 @@ def plan_body_limb_fk_controls(
     sub_controllers: bool = False,
     extra_controllers: bool = False,
     root_parent_path: str | None = None,
+    allow_part_parents: bool = False,
 ) -> BodyLimbFkControlPlan:
+    if type(allow_part_parents) is not bool:
+        raise BodyLimbControlValidationError("FK Part 父级开关无效")
     if type(sub_controllers) is not bool or type(extra_controllers) is not bool:
         raise BodyLimbControlValidationError("FK 控制器开关必须是布尔值")
     if (
@@ -204,7 +208,9 @@ def plan_body_limb_fk_controls(
                 raise BodyLimbControlValidationError(
                     f"{state.name} 的 Body side 与名称不一致"
                 )
-            if previous_joint is not None and state.parent_path != previous_joint:
+            if (previous_joint is not None and not body_limb_parent_matches(
+                    state.parent_path, previous_joint,
+                    allow_part_parents=allow_part_parents)):
                 raise BodyLimbControlValidationError(
                     f"{state.name} 不在预期 {limb_label} FK 父链上"
                 )

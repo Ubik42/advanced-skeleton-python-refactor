@@ -30,6 +30,7 @@ def plan_body_arm_fk_controls(
     driven_joint_by_source: Mapping[str, str] | None = None,
     sub_controllers: bool = False,
     extra_controllers: bool = False,
+    allow_part_parents: bool = False,
 ) -> BodyArmFkControlPlan:
     return plan_body_limb_fk_controls(
         body,
@@ -42,6 +43,7 @@ def plan_body_arm_fk_controls(
         root_parent_path=("|Group|MotionSystem|FKSystem"
                           if body.root.startswith("|Group|DeformationSystem|")
                           else None),
+        allow_part_parents=allow_part_parents,
     )
 
 

@@ -64,7 +64,8 @@ class MatchBodyArmFkToIk:
         symmetry = self._symmetry.execute(container_name, center_tolerance=center_tolerance)
         body = self._host.capture_body_skeleton(body_root_name)
         provenance = audit_body_provenance(oriented_body_provenance(symmetry.source.hierarchy.container, len(symmetry.instances)), body.provenance)
-        mechanisms = plan_body_arm_mechanisms(body)
+        mechanisms = plan_body_arm_mechanisms(
+            body, allow_part_parents=True)
         ik = plan_body_arm_ik(
             body, mechanisms, pole_distance_scale=pole_distance_scale,
             sub_controllers=BodyBuildOptions.from_fit_settings(

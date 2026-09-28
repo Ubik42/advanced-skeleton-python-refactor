@@ -47,6 +47,7 @@ def plan_body_leg_fk_controls(
     sub_controllers: bool = False,
     extra_controllers: bool = False,
     terminal_toes_end_control: bool = False,
+    allow_part_parents: bool = False,
 ) -> BodyLegFkControlPlan:
     if type(terminal_toes_end_control) is not bool:
         raise BodyLegControlValidationError("ToesEnd Control 开关无效")
@@ -63,6 +64,7 @@ def plan_body_leg_fk_controls(
         root_parent_path=("|Group|MotionSystem|FKSystem"
                           if body.root.startswith("|Group|DeformationSystem|")
                           else None),
+        allow_part_parents=allow_part_parents,
     )
 
 
