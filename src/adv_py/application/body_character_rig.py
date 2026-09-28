@@ -33,6 +33,7 @@ from adv_py.core.body_fk_channel_locks import (
     BodyFkChannelLockSpec, plan_body_fk_channel_locks,
 )
 from adv_py.core.fit_container import FitUpAxis
+from adv_py.core.fit_tweaker import FitTweakerPlan, plan_fit_tweakers
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .body_arm_rig import (
@@ -56,6 +57,7 @@ from .body_hand_controls import (
 from .body_rebuild import InspectBodyRebuildSafety
 from .body_rig_validation import body_bind_pose_matches
 from .body_fk_scale_compensation import BuildBodyFkScaleCompensation
+from .fit_tweaker import BuildFitTweakers
 from .body_torso import BodyTorsoHost, BodyTorsoBuildPlan, BuildBodyTorso
 from adv_py.core.body_torso import BodyTorsoSnapshot
 from adv_py.core.body_control_spaces import BodyControlSpacesPlan, plan_body_control_spaces
@@ -121,6 +123,7 @@ class BodyCharacterRigBuildPlan:
     shared_input_stable: bool
     torso: BodyTorsoBuildPlan | None = None
     control_spaces: BodyControlSpacesPlan | None = None
+    fit_tweakers: FitTweakerPlan | None = None
     direct_fk_scales: tuple[BodyDirectFkScaleSpec, ...] = ()
     fk_scale_compensations: tuple[BodyFkScaleCompensationSpec, ...] = ()
     no_control_paths: tuple[str, ...] = ()
@@ -222,12 +225,6 @@ class BuildBodyCharacterRig:
         safety = self._inspector.execute(
             container_name, root_name=body_root_name, center_tolerance=center_tolerance,
         )
-        if (not defer_fit_tweakers and BodyBuildOptions.from_fit_settings(
-                safety.symmetry.settings).use_offset_parent_matrix
-                and any(item.tweaker_control
-                        for item in safety.symmetry.source.metadata)):
-            raise FitSkeletonValidationError(
-                "Fit tweakerControl 的 OPM 关节驱动尚未接入 Body 主构建")
         fit_height = fit_character_height(tuple(
             node.world_position for node in
             safety.symmetry.source.hierarchy.joints))
@@ -359,6 +356,19 @@ class BuildBodyCharacterRig:
                 if torso is not None and torso.torso.head_aim is not None
                 else None),
         )
+        fit_tweakers = (
+            plan_fit_tweakers(
+                safety.symmetry.instances,
+                safety.symmetry.source.metadata, (),
+                motion_system_path=(
+                    global_control.root_path.rsplit("|", 2)[0]),
+                global_control_path=global_control.control_path)
+            if (not defer_fit_tweakers
+                and BodyBuildOptions.from_fit_settings(
+                    safety.symmetry.settings).use_offset_parent_matrix
+                and any(item.tweaker_control
+                        for item in safety.symmetry.source.metadata))
+            else None)
         spaces = plan_body_control_spaces(safety.body, torso.torso, arm, leg, global_control) if include_control_spaces else None
         direct_controls = (
             (torso.torso.controls.controls if torso else ())
@@ -402,6 +412,10 @@ class BuildBodyCharacterRig:
             path
             for name in (global_control.node_names
                          + (spaces.node_names if spaces else ())
+                         + ((fit_tweakers.system_path.rsplit("|", 1)[-1],)
+                            + tuple(name for spec in fit_tweakers.controls
+                                    for name in spec.node_names)
+                            if fit_tweakers else ())
                          + tuple(name for spec in fk_globals
                                  for name in spec.node_names))
             if not (name in ("Group", "MotionSystem") and safety.body.root.startswith(
@@ -417,6 +431,7 @@ class BuildBodyCharacterRig:
             global_name_collisions=collisions,
             torso=torso,
             control_spaces=spaces,
+            fit_tweakers=fit_tweakers,
             direct_fk_scales=direct_fk_scales,
             fk_scale_compensations=fk_scale_compensations,
             no_control_paths=no_control_paths,
@@ -534,6 +549,8 @@ class BuildBodyCharacterRig:
             if any(not self._host.capture_body_fk_channel_locks(spec)
                    for spec in plan.fk_channel_locks):
                 raise RuntimeError("Fit FK 控制通道锁定状态不一致")
+            if plan.fit_tweakers is not None:
+                BuildFitTweakers(self._host).apply(plan.fit_tweakers)
             body = self._host.capture_body_skeleton(body_root_name)
             if not body_bind_pose_matches(plan.arm.safety.body, body):
                 raise RuntimeError("角色总控中性状态改变了 Body 绑定姿态")

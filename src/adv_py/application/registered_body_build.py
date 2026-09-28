@@ -681,7 +681,7 @@ class BuildRegisteredBodyCharacter:
                     part_plan.symmetry.source.metadata,
                     part_plan.fit_parts if fit_part_hierarchy is not None else (),
                     motion_system_path=(
-                        rig.plan.arm.fk_controls.root_path.rsplit("|", 2)[0]),
+                        rig.plan.global_control.root_path.rsplit("|", 2)[0]),
                     global_control_path=rig.plan.global_control.control_path,
                     final_paths=(fit_part_hierarchy.final_paths
                                  if fit_part_hierarchy is not None else None))

@@ -38,7 +38,7 @@ class FitTweakerPlan:
 
 @dataclass(frozen=True, slots=True)
 class FitTweakerSourceState:
-    parent_path: str
+    parent_path: str | None
     offset_matrix_source: str | None
     static_offset_matrix: tuple[float, ...]
     world_matrix: tuple[float, ...]
@@ -58,6 +58,8 @@ def plan_fit_tweakers(
         raise ValueError("Tweaker Fit 来源重复")
     if not motion_system_path.startswith("|") or not global_control_path.startswith("|"):
         raise ValueError("Tweaker 需要明确的 MotionSystem 与总控路径")
+    if parts and final_paths is None:
+        raise ValueError("Tweaker Part 需要最终关节路径映射")
     ns = motion_system_path.rsplit("|", 1)[-1].rsplit(":", 1)
     prefix = ns[0] + ":" if len(ns) == 2 else ""
     system_path = motion_system_path + "|" + prefix + "TweakerSystem"
@@ -98,6 +100,9 @@ def plan_fit_tweakers(
             if (part.source_joint == instance.source_joint
                     and part.side is instance.side
                     and part.start_body == instance.output_path):
+                if part.name not in part_paths:
+                    raise ValueError("Tweaker Part 缺少最终路径："
+                                     + part.name)
                 add(instance.source_joint,
-                    part_paths.get(part.name, part.path))
+                    part_paths[part.name])
     return FitTweakerPlan(system_path, global_control_path, tuple(result))

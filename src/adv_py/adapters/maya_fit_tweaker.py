@@ -50,8 +50,8 @@ class MayaFitTweakerMixin:
                                  + spec.target_path)
             parent = c.listRelatives(spec.target_path, parent=True,
                                      fullPath=True) or []
-            if len(parent) != 1:
-                raise ValueError("Tweaker 目标关节缺少父级："
+            if len(parent) > 1:
+                raise ValueError("Tweaker 目标关节父级不唯一："
                                  + spec.target_path)
             if c.getAttr(spec.target_path + ".offsetParentMatrix",
                          lock=True):
@@ -74,7 +74,7 @@ class MayaFitTweakerMixin:
                 raise ValueError("Tweaker 目标矩阵无效："
                                  + spec.target_path)
             states.append(FitTweakerSourceState(
-                parent[0], c.connectionInfo(
+                parent[0] if parent else None, c.connectionInfo(
                     spec.target_path + ".offsetParentMatrix",
                     sourceFromDestination=True) or None,
                 opm, world))
@@ -159,8 +159,9 @@ class MayaFitTweakerMixin:
         else:
             c.setAttr(base + ".matrixIn[1]",
                       *state.static_offset_matrix, type="matrix")
-        c.connectAttr(state.parent_path + ".worldMatrix[0]",
-                      base + ".matrixIn[2]")
+        if state.parent_path is not None:
+            c.connectAttr(state.parent_path + ".worldMatrix[0]",
+                          base + ".matrixIn[2]")
         c.connectAttr(base + ".matrixSum",
                       offset_mm + ".matrixIn[0]")
         c.connectAttr(plan.system_path + ".worldInverseMatrix[0]",
@@ -173,8 +174,9 @@ class MayaFitTweakerMixin:
                       final + ".matrixIn[0]")
         c.connectAttr(spec.x_path + ".worldMatrix[0]",
                       final + ".matrixIn[1]")
-        c.connectAttr(state.parent_path + ".worldInverseMatrix[0]",
-                      final + ".matrixIn[2]")
+        if state.parent_path is not None:
+            c.connectAttr(state.parent_path + ".worldInverseMatrix[0]",
+                          final + ".matrixIn[2]")
         if state.offset_matrix_source:
             c.disconnectAttr(state.offset_matrix_source,
                              spec.target_path + ".offsetParentMatrix")
@@ -189,8 +191,6 @@ class MayaFitTweakerMixin:
         links = (
             (spec.target_path + ".matrix",
              spec.base_world_name + ".matrixIn[0]"),
-            (state.parent_path + ".worldMatrix[0]",
-             spec.base_world_name + ".matrixIn[2]"),
             (spec.base_world_name + ".matrixSum",
              spec.offset_matrix_name + ".matrixIn[0]"),
             (plan.system_path + ".worldInverseMatrix[0]",
@@ -203,11 +203,16 @@ class MayaFitTweakerMixin:
              spec.final_matrix_name + ".matrixIn[0]"),
             (spec.x_path + ".worldMatrix[0]",
              spec.final_matrix_name + ".matrixIn[1]"),
-            (state.parent_path + ".worldInverseMatrix[0]",
-             spec.final_matrix_name + ".matrixIn[2]"),
             (spec.final_matrix_name + ".matrixSum",
              spec.target_path + ".offsetParentMatrix"),
         )
+        if state.parent_path is not None:
+            links += (
+                (state.parent_path + ".worldMatrix[0]",
+                 spec.base_world_name + ".matrixIn[2]"),
+                (state.parent_path + ".worldInverseMatrix[0]",
+                 spec.final_matrix_name + ".matrixIn[2]"),
+            )
         if state.offset_matrix_source:
             links += ((state.offset_matrix_source,
                        spec.base_world_name + ".matrixIn[1]"),)
