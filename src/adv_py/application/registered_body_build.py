@@ -82,6 +82,20 @@ class _JoinedTransactionHost:
         yield
 
 
+def _independent_hand_twist_matrices(
+    plan: BodyCharacterRigBuildPlan,
+) -> dict[str, str]:
+    """Use FK controls that remain outside their driven Body Part chains."""
+    if plan.hand is None:
+        return {}
+    return {
+        control.driven_joint: (
+            control.source_override_path or control.sub_control_path
+            or control.control_path) + ".worldMatrix[0]"
+        for control in plan.hand.controls.controls
+    }
+
+
 def _with_inbetween_fk_sources(
     plan: BodyCharacterRigBuildPlan,
     segments: tuple[InbetweenLimbSegmentResult | InbetweenFkSegmentResult, ...],
@@ -217,15 +231,8 @@ class BuildRegisteredBodyCharacter:
                     "Root 分段 HipSwinger 缺少 Root 至脊柱首节的 Part 链")
             twist_parts = tuple(part for part in part_plan.fit_parts
                                 if part.kind == "twist")
-            if fit_part_twist_sources is None:
-                rotation_inputs = plan_standard_fit_part_rotation_inputs(
-                    twist_parts)
-                projections = plan_fit_part_twist_projections(rotation_inputs)
-                preview_sources = tuple(item.source() for item in projections
-                                        if item.input.distribution_source)
-            else:
-                preview_sources = fit_part_twist_sources
-            plan_fit_part_twist(twist_parts, preview_sources)
+            if fit_part_twist_sources is not None:
+                plan_fit_part_twist(twist_parts, fit_part_twist_sources)
         else:
             hip_selection = plan_hip_swing_fit_selection(
                 self._host.capture_fit_orientation(container_name),
@@ -254,6 +261,17 @@ class BuildRegisteredBodyCharacter:
             inbetween_untwisters = ()
             hip_swing_reverse = None
             if use_fit_part_hierarchy:
+                if fit_part_twist_sources is None:
+                    rotation_inputs = plan_standard_fit_part_rotation_inputs(
+                        twist_parts,
+                        independent_world_matrices=(
+                            _independent_hand_twist_matrices(rig.plan)))
+                    projections = plan_fit_part_twist_projections(
+                        rotation_inputs)
+                    plan_fit_part_twist(
+                        twist_parts,
+                        tuple(item.source() for item in projections
+                              if item.input.distribution_source))
                 twist_sources = (
                     PrepareFitPartTwistSources(joined).apply(rotation_inputs)
                     if fit_part_twist_sources is None

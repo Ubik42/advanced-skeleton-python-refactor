@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
 from .fit_part import FitPartJointSpec
 
@@ -80,6 +81,8 @@ class FitPartTwistProjection:
 
 def plan_standard_fit_part_rotation_inputs(
     parts: tuple[FitPartJointSpec, ...],
+    *,
+    independent_world_matrices: Mapping[str, str] | None = None,
 ) -> tuple[FitPartRotationInput, ...]:
     """Resolve twist channels for every non-bendy Fit Part chain.
 
@@ -88,6 +91,7 @@ def plan_standard_fit_part_rotation_inputs(
     bind-aligned reference that follows the original parent.
     """
     starts = {part.start_body: part for part in parts}
+    independent_world_matrices = independent_world_matrices or {}
     result = []
     auxiliary = {}
     for start, part in starts.items():
@@ -114,16 +118,21 @@ def plan_standard_fit_part_rotation_inputs(
             if part.dual_twist_child:
                 child = part.end_body
                 child_name = child.rsplit("|", 1)[-1]
+                child_matrix = independent_world_matrices.get(child)
+                if not child_matrix:
+                    raise FitPartTwistValidationError(
+                        "双端 Twist 下游缺少独立控制来源：" + child_name)
                 up = (f"AdvPy_{child_name}_FitPartTwistProject"
                       ".outputRotateX")
                 auxiliary[child] = FitPartRotationInput(
                     child, "", child + ".rotateOrder",
-                    world_matrix_plug=child + ".worldMatrix[0]",
+                    world_matrix_plug=child_matrix,
                     distribution_source=False)
             result.append(FitPartRotationInput(
                 start, "", start + ".rotateOrder",
                 up_twist_plug=up,
-                world_matrix_plug=start + ".worldMatrix[0]"))
+                world_matrix_plug=independent_world_matrices.get(
+                    start, start + ".worldMatrix[0]")))
     return tuple(result) + tuple(auxiliary.values())
 
 
