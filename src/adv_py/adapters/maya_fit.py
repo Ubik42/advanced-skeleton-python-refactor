@@ -817,11 +817,20 @@ class MayaFitJointHost:
             for field, spec in _FIT_ATTRIBUTES.items()
             if self._attribute_exists(joint, spec.name)
         }
+        twist_joints = self._optional_number(joint, "twistJoints", int)
+        bendy_controls = self._optional_number(joint, "bendyCtrls", int)
+        if (bendy_controls is None
+                and twist_joints is not None and twist_joints > 0
+                and self._optional_bool(joint, "bendyJoints")):
+            # ADV 6.925 maps the old boolean to one controller when no
+            # bendyCtrls attribute overrides it and a Twist chain exists.
+            bendy_controls = 1
+            present.add(FitJointField.BENDY_CONTROLS)
         inherited_no_flip, no_flip = self._inherited_fit_bool(joint, "noFlip")
         return FitJointMetadata(
             joint=joint,
-            twist_joints=self._optional_number(joint, "twistJoints", int),
-            bendy_controls=self._optional_number(joint, "bendyCtrls", int),
+            twist_joints=twist_joints,
+            bendy_controls=bendy_controls,
             inbetween_joints=self._optional_number(joint, "inbetweenJoints", int),
             untwister=self._optional_bool(joint, "unTwister"),
             control=self._optional_bool(joint, "control"),
@@ -853,6 +862,10 @@ class MayaFitJointHost:
             if exists:
                 self._transaction_changed = True
                 self._cmds.deleteAttr(f"{joint}.{spec.name}")
+            if (edit.field is FitJointField.BENDY_CONTROLS
+                    and self._attribute_exists(joint, "bendyJoints")):
+                self._transaction_changed = True
+                self._cmds.deleteAttr(f"{joint}.bendyJoints")
             return
 
         if not exists:
