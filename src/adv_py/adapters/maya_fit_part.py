@@ -332,7 +332,8 @@ class MayaFitPartMixin:
                      for name in names)
 
     def preflight_fit_part_twist_projection(
-        self, projection: FitPartTwistProjection
+        self, projection: FitPartTwistProjection,
+        planned_outputs: frozenset[str] = frozenset(),
     ) -> None:
         c = self._cmds
         inputs = projection.input
@@ -341,7 +342,9 @@ class MayaFitPartMixin:
                  inputs.ik_rotate_order_plug, inputs.ik_fk_blend_plug,
                  inputs.world_matrix_plug)
         for plug in plugs:
-            if plug and not c.objExists(plug):
+            if (plug and not (plug == inputs.up_twist_plug
+                              and plug in planned_outputs)
+                    and not c.objExists(plug)):
                 raise ValueError("Fit Part 扭转投影来源不存在：" + plug)
         if projection.reference_name:
             matches = c.ls(inputs.start_body, long=True, type="joint") or []

@@ -25,7 +25,8 @@ class FitPartTwistHost(Protocol):
     ) -> str | None: ...
 
     def preflight_fit_part_twist_projection(
-        self, projection: FitPartTwistProjection
+        self, projection: FitPartTwistProjection,
+        planned_outputs: frozenset[str] = frozenset(),
     ) -> None: ...
 
     def create_fit_part_twist_projection(
@@ -44,8 +45,11 @@ class PrepareFitPartTwistSources:
     def apply(self, inputs: tuple[FitPartRotationInput, ...]
               ) -> tuple[FitPartTwistSource, ...]:
         projections = plan_fit_part_twist_projections(inputs)
+        planned_outputs = frozenset(item.output_plug
+                                    for item in projections)
         for projection in projections:
-            self._host.preflight_fit_part_twist_projection(projection)
+            self._host.preflight_fit_part_twist_projection(
+                projection, planned_outputs)
             names = (projection.compose_name, projection.decompose_name,
                      projection.project_name)
             names += tuple(name for name in (
@@ -65,7 +69,8 @@ class PrepareFitPartTwistSources:
                         != projection.output_plug):
                     raise RuntimeError("Fit Part 扭转投影输出不一致："
                                        + projection.input.start_body)
-        return tuple(projection.source() for projection in projections)
+        return tuple(projection.source() for projection in projections
+                     if projection.input.distribution_source)
 
 
 class BuildFitPartTwistDrivers:

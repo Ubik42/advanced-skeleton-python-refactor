@@ -35,6 +35,7 @@ class FitPartRotationInput:
     ik_fk_blend_plug: str | None = None
     subtract_body_twist: bool = True
     world_matrix_plug: str | None = None
+    distribution_source: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +80,7 @@ def plan_standard_fit_part_rotation_inputs(
     """
     starts = {part.start_body: part for part in parts}
     result = []
+    auxiliary = {}
     for start, part in starts.items():
         stem = part.start_body_name.rsplit("_", 1)[0]
         side = part.side.value
@@ -97,10 +99,21 @@ def plan_standard_fit_part_rotation_inputs(
                 ik + ".rotate", ik + ".rotateOrder",
                 f"AdvPy_LegSettings.legIkFk_{side}"))
         else:
+            up = None
+            if part.dual_twist_child:
+                child = part.end_body
+                child_name = child.rsplit("|", 1)[-1]
+                up = (f"AdvPy_{child_name}_FitPartTwistProject"
+                      ".outputRotateX")
+                auxiliary[child] = FitPartRotationInput(
+                    child, "", child + ".rotateOrder",
+                    world_matrix_plug=child + ".worldMatrix[0]",
+                    distribution_source=False)
             result.append(FitPartRotationInput(
                 start, "", start + ".rotateOrder",
+                up_twist_plug=up,
                 world_matrix_plug=start + ".worldMatrix[0]"))
-    return tuple(result)
+    return tuple(result) + tuple(auxiliary.values())
 
 
 def plan_fit_part_twist_projections(
@@ -114,6 +127,8 @@ def plan_fit_part_twist_projections(
         if (not item.rotate_order_plug
                 or bool(item.rotation_plug) == bool(item.world_matrix_plug)):
             raise FitPartTwistValidationError("Part 旋转及旋转顺序来源不能为空")
+        if type(item.distribution_source) is not bool:
+            raise FitPartTwistValidationError("Part 扭转投影用途无效")
         if item.world_matrix_plug and any((item.ik_rotation_plug,
                                            item.ik_rotate_order_plug,
                                            item.ik_fk_blend_plug)):

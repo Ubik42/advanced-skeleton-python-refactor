@@ -221,7 +221,8 @@ class BuildRegisteredBodyCharacter:
                 rotation_inputs = plan_standard_fit_part_rotation_inputs(
                     twist_parts)
                 projections = plan_fit_part_twist_projections(rotation_inputs)
-                preview_sources = tuple(item.source() for item in projections)
+                preview_sources = tuple(item.source() for item in projections
+                                        if item.input.distribution_source)
             else:
                 preview_sources = fit_part_twist_sources
             plan_fit_part_twist(twist_parts, preview_sources)

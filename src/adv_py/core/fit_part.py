@@ -35,6 +35,7 @@ class FitPartJointSpec:
     rotation_order: int = 0
     segment_scale_compensate: bool = True
     kind: str = "twist"
+    dual_twist_child: bool = False
 
     @property
     def start_body_name(self) -> str:
@@ -312,6 +313,15 @@ def plan_fit_part_joints(
             continue
         start_body = by_path[start.output_path]
         end_body = by_path[end.output_path]
+        end_metadata = by_source.get(end.source_joint)
+        if end_metadata is None:
+            raise FitPartValidationError("Part 下游 Fit 关节缺少元数据："
+                                         + end.source_joint)
+        end_children = [child for child in children.get(end.output_path, ())
+                        if child.side is end.side]
+        dual_twist_child = (end_metadata.twist_joints is None
+                            and _select_downstream(end, end_children)
+                            is not None)
         parent = start.output_path
         stem = start.output_name.rsplit("_", 1)[0]
         for index in range(1, count + 1):
@@ -330,7 +340,8 @@ def plan_fit_part_joints(
                     end_body.deform_profile, fraction),
                 start_body.skin_enabled,
                 start_body.rotation_order,
-                start_body.segment_scale_compensate))
+                start_body.segment_scale_compensate,
+                dual_twist_child=dual_twist_child))
             parent = path
     return tuple(parts)
 
