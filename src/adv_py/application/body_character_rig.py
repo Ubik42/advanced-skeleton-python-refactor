@@ -225,8 +225,17 @@ class BuildBodyCharacterRig:
             self._torso.plan_from_safety(safety, arm, leg, radius=torso_control_radius, spine_ik=include_spine_ik,description=axial_description,head_aim=include_head_aim)
             if include_torso else None
         )
-        driven_roots = (
-            torso.torso.controls.root_path if torso else arm.safety.body.root,
+        root_follow_main_path = (
+            "|Group|MotionSystem|RootSystem|RootFollowMain"
+            if (torso is not None and torso.torso.controls.root_path.startswith(
+                "|Group|MotionSystem|RootSystem|RootFollowMain|"))
+            else None)
+        primary_driven = (
+            arm.safety.body.root if torso is None else
+            torso.torso.controls.root_path
+            if root_follow_main_path is None else None)
+        driven_roots = (() if primary_driven is None else
+                        (primary_driven,)) + (
             arm.mechanisms.root_path,
             arm.fk_controls.root_path,
             arm.ik.root_path,
@@ -249,6 +258,7 @@ class BuildBodyCharacterRig:
             ),
             radius=global_control_radius,
             body_root_via_controls=include_torso,
+            root_follow_main_path=root_follow_main_path,
             finger_visibility_paths=(
                 tuple(root.path for root in hand.controls.roots)
                 if hand is not None else ()),

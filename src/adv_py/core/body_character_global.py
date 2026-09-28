@@ -110,6 +110,17 @@ class BodyCharacterGlobalPlan:
     aim_fk_control_path: str | None
     pole_arrows: tuple[BodyPoleArrowSpec, ...]
     head_aim_follow: BodyHeadAimFollowSpec | None
+    root_follow_main_path: str | None = None
+
+    @property
+    def root_follow_constraint_name(self) -> str | None:
+        return ("RootFollowMain_parentConstraint1"
+                if self.root_follow_main_path is not None else None)
+
+    @property
+    def root_follow_scale_constraint_name(self) -> str | None:
+        return ("RootFollowMain_scaleConstraint1"
+                if self.root_follow_main_path is not None else None)
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -120,6 +131,10 @@ class BodyCharacterGlobalPlan:
             self.control_name,
             self.shape_name,
             self.scale_node_name,
+            *((self.root_follow_constraint_name,)
+              if self.root_follow_constraint_name is not None else ()),
+            *((self.root_follow_scale_constraint_name,)
+              if self.root_follow_scale_constraint_name is not None else ()),
             *(name for arrow in self.pole_arrows for name in arrow.node_names),
             *((self.head_aim_follow.static_matrix_name,
                self.head_aim_follow.parent_matrix_name,
@@ -247,6 +262,8 @@ class BodyCharacterGlobalSnapshot:
     pole_arrow_states: tuple[tuple[str, str, str | None, str | None,
                                    bool, bool], ...] = ()
     head_aim_follow_state: tuple | None = None
+    root_follow_main_state: tuple[str, str | None, str | None,
+                                  str | None, str | None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +285,7 @@ def plan_body_character_global(
     aim_fk_control_path: str | None = None,
     pole_arrows: tuple[BodyPoleArrowSpec, ...] = (),
     head_aim_follow: BodyHeadAimFollowSpec | None = None,
+    root_follow_main_path: str | None = None,
 ) -> BodyCharacterGlobalPlan:
     if (
         not isinstance(up_axis, FitUpAxis)
@@ -304,6 +322,12 @@ def plan_body_character_global(
                  or any(not isinstance(value, (int, float))
                         or not isfinite(float(value))
                         for value in head_aim_follow.bind_world_matrix)))
+        or (root_follow_main_path is not None and (
+            not body_root_via_controls
+            or root_follow_main_path !=
+            "|Group|MotionSystem|RootSystem|RootFollowMain"
+            or any(path.startswith(root_follow_main_path + "|")
+                   for path in driven_roots)))
         or (not body_root_via_controls and body_root not in driven_roots)
         or (body_root_via_controls and (
             body_root in driven_roots
@@ -379,6 +403,7 @@ def plan_body_character_global(
         aim_fk_control_path=aim_fk_control_path,
         pole_arrows=pole_arrows,
         head_aim_follow=head_aim_follow,
+        root_follow_main_path=root_follow_main_path,
     )
 
 
@@ -446,6 +471,19 @@ def audit_body_character_global(
             "control_mismatch",
             "角色总控曲线、通道或 uniform scale 属性不一致",
             plan.control_path,
+        ))
+
+    expected_root_follow = (
+        (plan.root_follow_main_path,
+         plan.root_follow_constraint_name,
+         plan.root_follow_scale_constraint_name,
+         plan.control_path, plan.control_path)
+        if plan.root_follow_main_path is not None else None)
+    if snapshot.root_follow_main_state != expected_root_follow:
+        issues.append(BodyCharacterGlobalIssue(
+            "root_follow_main_mismatch",
+            "RootFollowMain 的 Main 跟随约束不一致",
+            plan.root_follow_main_path,
         ))
 
     actual_roots = {state.path: state for state in snapshot.driven_roots}
