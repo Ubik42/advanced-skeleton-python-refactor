@@ -4612,22 +4612,28 @@ class MayaBodyBuildHost(MayaBodyParentConstraintMixin, MayaBodyGameScalingMixin,
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
-    def _create_body_ik_sub_control(
+    def _create_body_sub_control(
         self, control: str, sub_name: str, sub_path: str,
-        radius: float,
     ) -> None:
-        sub = self._cmds.circle(
-            name=sub_name, normal=(1.0, 0.0, 0.0),
-            radius=radius * 0.9, degree=3, sections=12,
-            constructionHistory=False)[0]
+        main_shapes = self._cmds.listRelatives(
+            control, shapes=True, noIntermediate=True,
+            fullPath=True, type="nurbsCurve") or []
+        if len(main_shapes) != 1:
+            raise RuntimeError("Sub 来源控制器须恰有一条曲线")
+        sub = self._cmds.duplicateCurve(
+            main_shapes[0], constructionHistory=False, local=True)[0]
+        sub = self._cmds.rename(sub, sub_name)
         sub = self._cmds.parent(sub, control, relative=True)[0]
         sub = (self._cmds.ls(sub, long=True) or [sub])[0]
         if sub != sub_path:
-            raise RuntimeError("IK Sub 控制器路径漂移")
+            raise RuntimeError("Body Sub 控制器路径漂移")
         shapes = self._cmds.listRelatives(
             sub, shapes=True, noIntermediate=True, fullPath=True) or []
         if len(shapes) != 1:
-            raise RuntimeError("IK Sub 控制器曲线无效")
+            raise RuntimeError("Body Sub 控制器曲线无效")
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        c.scale(0.9, 0.9, 0.9, shapes[0] + ".cv[*]",
+                relative=True, pivot=(0, 0, 0))
         self._cmds.setAttr(shapes[0] + ".overrideEnabled", True)
         self._cmds.setAttr(shapes[0] + ".overrideColor", 30)
         self._cmds.addAttr(control, longName="subControl",
@@ -4648,12 +4654,15 @@ class MayaBodyBuildHost(MayaBodyParentConstraintMixin, MayaBodyGameScalingMixin,
         return extra
 
     def _add_body_extra_curve(
-        self, extra: str, control: str, radius: float,
+        self, extra: str, control: str,
     ) -> None:
-        temp = self._cmds.circle(
-            name=extra.rsplit("|", 1)[-1] + "CurveTemp",
-            normal=(1.0, 0.0, 0.0), radius=radius * 1.1,
-            degree=3, sections=12, constructionHistory=False)[0]
+        main_shapes = self._cmds.listRelatives(
+            control, shapes=True, noIntermediate=True,
+            fullPath=True, type="nurbsCurve") or []
+        if len(main_shapes) != 1:
+            raise RuntimeError("Extra 来源控制器须恰有一条曲线")
+        temp = self._cmds.duplicateCurve(
+            main_shapes[0], constructionHistory=False, local=True)[0]
         shapes = self._cmds.listRelatives(
             temp, shapes=True, noIntermediate=True, fullPath=True) or []
         if len(shapes) != 1:
@@ -4665,6 +4674,9 @@ class MayaBodyBuildHost(MayaBodyParentConstraintMixin, MayaBodyGameScalingMixin,
         shape = (self._cmds.ls(shape, long=True) or [shape])[0]
         if self._cmds.objExists(temp):
             self._cmds.delete(temp)
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        c.scale(1.1, 1.1, 1.1, shape + ".cv[*]",
+                relative=True, pivot=(0, 0, 0))
         self._cmds.setAttr(shape + ".overrideEnabled", True)
         self._cmds.setAttr(shape + ".overrideColor", 29)
         self._cmds.addAttr(control, longName="extraControl",
@@ -4823,13 +4835,12 @@ class MayaBodyBuildHost(MayaBodyParentConstraintMixin, MayaBodyGameScalingMixin,
                 raise RuntimeError("Arm IK 控制路径漂移")
             if spec.wrist_extra_curve:
                 self._add_body_extra_curve(
-                    wrist_extra, wrist, spec.radius)
+                    wrist_extra, wrist)
             if spec.wrist_sub_path is not None:
                 if spec.wrist_sub_name is None:
                     raise FitSkeletonValidationError("Arm IK Sub 缺少名称")
-                self._create_body_ik_sub_control(
-                    wrist, spec.wrist_sub_name, spec.wrist_sub_path,
-                    spec.radius)
+                self._create_body_sub_control(
+                    wrist, spec.wrist_sub_name, spec.wrist_sub_path)
             handle, _ = self._cmds.ikHandle(name=spec.handle_name, startJoint=spec.chain[0], endEffector=spec.chain[2], solver="ikRPsolver")
             self._cmds.parent(handle, wrist, absolute=True)
             self._cmds.poleVectorConstraint(pole, handle, name=spec.pole_constraint_name)
@@ -4984,13 +4995,12 @@ class MayaBodyBuildHost(MayaBodyParentConstraintMixin, MayaBodyGameScalingMixin,
                 raise RuntimeError("Leg IK 控制路径漂移")
             if spec.ankle_extra_curve:
                 self._add_body_extra_curve(
-                    ankle_extra, ankle, spec.radius)
+                    ankle_extra, ankle)
             if spec.ankle_sub_path is not None:
                 if spec.ankle_sub_name is None:
                     raise FitSkeletonValidationError("Leg IK Sub 缺少名称")
-                self._create_body_ik_sub_control(
-                    ankle, spec.ankle_sub_name, spec.ankle_sub_path,
-                    spec.radius)
+                self._create_body_sub_control(
+                    ankle, spec.ankle_sub_name, spec.ankle_sub_path)
             handle, _ = self._cmds.ikHandle(
                 name=spec.handle_name,
                 startJoint=spec.chain[0],
@@ -6443,35 +6453,13 @@ class MayaBodyBuildHost(MayaBodyParentConstraintMixin, MayaBodyGameScalingMixin,
                 if spec.extra_path is None:
                     raise FitSkeletonValidationError("FK Extra 曲线缺少层路径")
                 self._add_body_extra_curve(
-                    spec.extra_path, control, spec.radius)
+                    spec.extra_path, control)
             if spec.sub_control_path is not None:
                 if spec.sub_control_name is None:
                     raise FitSkeletonValidationError("FK Sub 控制器缺少名称")
-                sub = self._cmds.circle(
-                    name=spec.sub_control_name,
-                    normal=(1.0, 0.0, 0.0),
-                    radius=spec.radius * 0.9,
-                    degree=3,
-                    sections=12,
-                    constructionHistory=False,
-                )[0]
-                sub = self._cmds.parent(sub, control, relative=True)[0]
-                sub = (self._cmds.ls(sub, long=True) or [sub])[0]
-                if sub != spec.sub_control_path:
-                    raise RuntimeError("FK Sub 控制器路径漂移")
-                shape = self._cmds.listRelatives(
-                    sub, shapes=True, noIntermediate=True, fullPath=True,
-                ) or []
-                if len(shape) != 1:
-                    raise RuntimeError("FK Sub 控制器曲线无效")
-                self._cmds.setAttr(shape[0] + ".overrideEnabled", True)
-                self._cmds.setAttr(shape[0] + ".overrideColor", 30)
-                self._cmds.addAttr(control, longName="subControl",
-                                   attributeType="bool", defaultValue=False)
-                self._cmds.setAttr(control + ".subControl",
-                                   edit=True, channelBox=True)
-                self._cmds.connectAttr(control + ".subControl",
-                                       shape[0] + ".visibility", force=True)
+                self._create_body_sub_control(
+                    control, spec.sub_control_name,
+                    spec.sub_control_path)
             orientation_source = (
                 spec.sub_control_path or control)
             if spec.source_override_path is not None:
