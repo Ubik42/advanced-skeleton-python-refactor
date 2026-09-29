@@ -29,16 +29,6 @@ def enabled(registration):
 def install(host, registration):
     host._require_transaction()
     extra = channels(registration)
-    if len(registration.spine.body_joints)==2 and host._cmds.getAttr('AdvPy_SplineIKHandle.dTwistControlEnable'):
-        before_twist=tuple(host._spine_world_frame(j.path)[0] for j in registration.body)
-        host._transaction_changed=True
-        host._cmds.setAttr('AdvPy_SplineIKHandle.dTwistControlEnable',False)
-        after_twist=tuple(host._spine_world_frame(j.path)[0] for j in registration.body)
-        if max(abs(a-b) for x,y in zip(before_twist,after_twist) for a,b in zip(x,y))>1e-4:
-            raise CharacterRegistryError('单段脊柱扭转修正改变当前姿态')
-    if enabled(registration):
-        audit(host, registration)
-        return registration
     c = host._cmds
     plan = registration.spine
     try:
@@ -46,6 +36,17 @@ def install(host, registration):
             plan.root_path+'.advPySplineOwner'))
     except FitSkeletonValidationError as exc:
         raise CharacterRegistryError('曲线脊柱求解图所有权无效') from exc
+    if (len(plan.body_joints)==2 and version<18
+            and c.getAttr('AdvPy_SplineIKHandle.dTwistControlEnable')):
+        before_twist=tuple(host._spine_world_frame(j.path)[0] for j in registration.body)
+        host._transaction_changed=True
+        c.setAttr('AdvPy_SplineIKHandle.dTwistControlEnable',False)
+        after_twist=tuple(host._spine_world_frame(j.path)[0] for j in registration.body)
+        if max(abs(a-b) for x,y in zip(before_twist,after_twist) for a,b in zip(x,y))>1e-4:
+            raise CharacterRegistryError('单段脊柱扭转修正改变当前姿态')
+    if enabled(registration):
+        audit(host, registration)
+        return registration
     if version < 2:
         raise CharacterRegistryError('曲线脊柱匹配要求受支持的求解图；旧实验角色需要显式迁移')
     count = len(plan.body_joints)

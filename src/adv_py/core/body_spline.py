@@ -9,7 +9,7 @@ from .body_limb_mechanisms import BodyLimbMechanismJointSpec,BodyLimbMechanismRo
 from .fit_settings import FitSkeletonValidationError
 
 
-CURRENT_SPLINE_VERSION = 17
+CURRENT_SPLINE_VERSION = 19
 
 
 def spline_owner_version(marker: str) -> int:
@@ -75,8 +75,9 @@ class BodySplinePlan:
             'AdvPy_SplineChestOrient','AdvPy_SplineReverse','AdvPy_SplineArc',
             'AdvPy_SplineRatio','AdvPy_SplineStretchBlend','AdvPy_SplineClamp','AdvPy_SplineVolumeExponent','AdvPy_SplineVolume',
             'AdvPy_SplineVolumeRatioClamp','AdvPy_SplineVolumeBlend',
-            'AdvPy_SplineIKEndLocalStartOrient',
-            'AdvPy_SplineFlipUpAxis','AdvPy_SplineFlipVector')
+            'AdvPy_SplineFlipUpAxis','AdvPy_SplineFlipVector') + (
+            ('AdvPy_SplineIKEndLocalStartOrient',)
+            if len(self.body_joints)>2 else ())
         targets=tuple(f'AdvPy_SplineIK{i}{suffix}' for i in range(len(self.targets)) for suffix in ('Offset','','Shape','Matrix','Position'))
         outputs=tuple(f'AdvPy_Spline{kind}{i}' for i in range(1,len(self.body_joints)) for kind in ('Point','Orient','Scale','Length','FKWorldScale','IKWorldScale'))
         rests=tuple(f'AdvPy_SplineIKRest{i}' for i in range(1,len(self.body_joints))) if self.curved else ()

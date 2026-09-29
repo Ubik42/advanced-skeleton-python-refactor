@@ -44,15 +44,16 @@ def create(host,plan):
         for kind in ('translate','rotate','scale','shear'):
             for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ')):
                 c.setAttr(local+'.'+kind+axis,lock=True,keyable=False)
-    end_up=host._spine_frame('AdvPy_SplineIKEndLocalStartOrient',plan.targets[-1],
-                             plan.positions[-1],plan.joints[0].world_axes)
-    c.addAttr(end_up,longName='advPySplineEndUpBind',dataType='string')
-    c.setAttr(end_up+'.advPySplineEndUpBind',
-              json.dumps(tuple(c.getAttr(end_up+'.matrix'))),
-              type='string',lock=True)
-    for kind in ('translate','rotate','scale','shear'):
-        for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ')):
-            c.setAttr(end_up+'.'+kind+axis,lock=True,keyable=False)
+    if n>2:
+        end_up=host._spine_frame('AdvPy_SplineIKEndLocalStartOrient',plan.targets[-1],
+                                 plan.positions[-1],plan.joints[0].world_axes)
+        c.addAttr(end_up,longName='advPySplineEndUpBind',dataType='string')
+        c.setAttr(end_up+'.advPySplineEndUpBind',
+                  json.dumps(tuple(c.getAttr(end_up+'.matrix'))),
+                  type='string',lock=True)
+        for kind in ('translate','rotate','scale','shear'):
+            for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ')):
+                c.setAttr(end_up+'.'+kind+axis,lock=True,keyable=False)
     for attribute,default,maximum,label in (
             ('spineIkFk',0.,1.,'脊柱 IK 权重'),
             ('stretchy',10.,10.,'脊柱伸展'),
@@ -77,13 +78,15 @@ def create(host,plan):
     handle,effector=c.ikHandle(name='AdvPy_SplineIKHandle',startJoint=ik[0].path,endEffector=ik[-1].path,
         solver='ikSplineSolver',curve=plan.curve,createCurve=False,parentCurve=False)
     c.rename(effector,'AdvPy_SplineIKEffector');c.parent(handle,plan.root_path)
-    for attr,value in (('dTwistControlEnable',n>2),('dWorldUpType',4),('dForwardAxis',0),('dWorldUpAxis',0)):
+    for attr,value in (('dTwistControlEnable',True),('dWorldUpType',3 if n==2 else 4),
+                       ('dForwardAxis',0),('dWorldUpAxis',0)):
         c.setAttr('AdvPy_SplineIKHandle.'+attr,value)
     for attr in ('dWorldUpVector','dWorldUpVectorEnd'):c.setAttr('AdvPy_SplineIKHandle.'+attr,0.,1.,0.,type='double3')
     c.connectAttr(plan.targets[0]+'|AdvPy_SplineIKLocalOrient0.worldMatrix[0]',
                   'AdvPy_SplineIKHandle.dWorldUpMatrix')
-    c.connectAttr(end_up+'.worldMatrix[0]',
-                  'AdvPy_SplineIKHandle.dWorldUpMatrixEnd')
+    if n>2:
+        c.connectAttr(end_up+'.worldMatrix[0]',
+                      'AdvPy_SplineIKHandle.dWorldUpMatrixEnd')
     c.addAttr(plan.settings,longName='noFlipAxis',attributeType='enum',
               enumName='180turn:180bend:180side:',defaultValue=0,keyable=False)
     c.createNode('setRange',name='AdvPy_SplineFlipUpAxis',skipSelect=True)
@@ -233,7 +236,8 @@ def audit(host,plan):
     original_range=version>=8
     terminal_without_volume=version>=10
     original_volume_graph=version>=12
-    end_local_start=version>=14
+    single_segment_twist=version>=18 and n==2
+    end_local_start=version>=14 and not single_segment_twist
     flip_axis_graph=version>=16
     missing=tuple(name for name in plan.node_names
                   if not (version==1 and 'WorldScale' in name)
@@ -264,6 +268,9 @@ def audit(host,plan):
                    'AdvPy_SplineIKHandle.dWorldUpMatrix'),
                   (plan.targets[-1]+'|AdvPy_SplineIKEndLocalStartOrient.worldMatrix[0]',
                    'AdvPy_SplineIKHandle.dWorldUpMatrixEnd')]
+    elif single_segment_twist:
+        edges.append((plan.targets[0]+'|AdvPy_SplineIKLocalOrient0.worldMatrix[0]',
+                      'AdvPy_SplineIKHandle.dWorldUpMatrix'))
     else:
         edges += [(plan.targets[0]+'.worldMatrix[0]','AdvPy_SplineIKHandle.dWorldUpMatrix'),
                   (plan.targets[-1]+'.worldMatrix[0]','AdvPy_SplineIKHandle.dWorldUpMatrixEnd')]
@@ -363,7 +370,7 @@ def audit(host,plan):
                 raise FitSkeletonValidationError('Spline IK 局部朝向绑定矩阵被修改')
     if end_local_start:
         end_up=plan.targets[-1]+'|AdvPy_SplineIKEndLocalStartOrient'
-        if (c.nodeType(end_up)!='transform'
+        if (not c.objExists(end_up) or c.nodeType(end_up)!='transform'
                 or (c.listRelatives(end_up,parent=True,fullPath=True) or [])!=[plan.targets[-1]]
                 or not c.getAttr(end_up+'.advPySplineEndUpBind',lock=True)):
             raise FitSkeletonValidationError('Spline 末端起点朝向层身份无效')
@@ -383,7 +390,8 @@ def audit(host,plan):
     constants={'AdvPy_SplineRatio.operation':2,'AdvPy_SplineRatio.input2X':rest_arc,
         'AdvPy_SplineStretchBlend.color2R':1.,'AdvPy_SplineClamp.minR':.001,'AdvPy_SplineClamp.maxR':1000.,
         'AdvPy_SplineVolumeExponent.operation':1,'AdvPy_SplineVolume.operation':3,
-        'AdvPy_SplineIKHandle.dTwistControlEnable':1,'AdvPy_SplineIKHandle.dWorldUpType':4,
+        'AdvPy_SplineIKHandle.dTwistControlEnable':1,
+        'AdvPy_SplineIKHandle.dWorldUpType':3 if single_segment_twist else 4,
         'AdvPy_SplineIKHandle.dForwardAxis':0}
     if flip_axis_graph:
         if (not c.attributeQuery('noFlipAxis',node=plan.settings,exists=True)
@@ -425,7 +433,8 @@ def audit(host,plan):
                 constants[f'AdvPy_SplineIKScaleAdd{i}.input2']=1.
             else:
                 for axis in 'XYZ':constants[volume+'.input2'+axis]=1.
-    if n==2:constants.pop('AdvPy_SplineIKHandle.dTwistControlEnable')
+    if n==2 and not single_segment_twist:
+        constants.pop('AdvPy_SplineIKHandle.dTwistControlEnable')
     constants.update({f'AdvPy_SplineLength{i}.input1X':length for i,length in enumerate(plan.lengths,1)})
     changed=[(plug,c.getAttr(plug),value) for plug,value in constants.items() if abs(c.getAttr(plug)-value)>1e-6*max(1.,abs(value))]
     if changed:raise FitSkeletonValidationError('Spline 求解常量被修改：'+repr(changed[:3]))
