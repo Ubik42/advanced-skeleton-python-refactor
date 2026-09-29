@@ -244,6 +244,13 @@ class BuildBodyCharacterRig:
             container_name, root_name=body_root_name, center_tolerance=center_tolerance,
             part_paths=part_paths,
         )
+        curve_guides = tuple(item.joint for item in
+                             safety.symmetry.source.metadata
+                             if item.curve_guide is not None)
+        if curve_guides:
+            raise FitSkeletonValidationError(
+                "Curve Guide 曲线驱动尚未接入 Body 构建："
+                + "、".join(curve_guides))
         # ADV 6.925 ignores aim on terminal Fit joints; only a joint with a
         # direct child enters the generic FKAim/AimSystem construction loop.
         fit_parents = {joint.dag_parent for joint in
