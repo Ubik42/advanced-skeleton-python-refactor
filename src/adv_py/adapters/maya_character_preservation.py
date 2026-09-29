@@ -110,12 +110,23 @@ def capture_extension(host,node):
     kind=c.nodeType(node)
     attributes=[]
     for attr in sorted(c.listAttr(node,userDefined=True) or []):
-        if c.attributeQuery(attr,node=node,listChildren=True):continue
-        plug=node+'.'+attr;datatype=c.getAttr(plug,type=True)
+        children=tuple(c.attributeQuery(attr,node=node,listChildren=True) or ())
+        plug=node+'.'+attr
+        datatype=(c.attributeQuery(attr,node=node,attributeType=True)
+                  if children else c.getAttr(plug,type=True))
         if c.attributeQuery(attr,node=node,multi=True):
             raise CharacterRegistryError('用户扩展数组需要专用保留协议：'+plug)
-        if datatype=='message':value=None
-        elif datatype in ('string','bool','byte','short','long','float','double','doubleAngle','doubleLinear','enum','matrix'):
+        if children:
+            if datatype not in ('double2','double3','float2','float3',
+                                'long2','long3','short2','short3',
+                                'compound'):
+                raise CharacterRegistryError(
+                    '用户扩展复合属性类型尚无保留协议：'+plug+' '+datatype)
+            value=None  # The child values are captured independently.
+        elif datatype=='message':value=None
+        elif datatype in ('string','bool','byte','char','short','long',
+                          'float','double','doubleAngle','doubleLinear',
+                          'enum','time','matrix'):
             # Request the explicit time context: after sampling other frames,
             # Maya can leave non-transform custom attributes with a stale cache.
             value=c.getAttr(plug,time=c.currentTime(q=True))
@@ -126,12 +137,19 @@ def capture_extension(host,node):
             if c.attributeQuery(attr,node=node,**{exists:True}):
                 metadata.append((flag,tuple(c.attributeQuery(attr,node=node,**{flag:True}))))
         if datatype=='enum':metadata.append(('enum',tuple(c.attributeQuery(attr,node=node,listEnum=True) or [])))
-        if datatype not in ('string','matrix','message'):
+        if datatype not in ('string','matrix','message') and not children:
             metadata.append(('default',tuple(c.attributeQuery(attr,node=node,listDefault=True) or [])))
         metadata.append(('parent',tuple(c.attributeQuery(attr,node=node,listParent=True) or [])))
+        if children:metadata.append(('children',children))
         metadata.append(('niceName',c.attributeQuery(attr,node=node,niceName=True)))
         metadata.append(('channelBox',bool(c.getAttr(plug,channelBox=True))))
         attributes.append((attr,datatype,value,bool(c.getAttr(plug,lock=True)),bool(c.getAttr(plug,keyable=True)),tuple(metadata)))
+    captured={item[0] for item in attributes}
+    for name,_,_,_,_,metadata in attributes:
+        children=tuple(dict(metadata).get('children') or ())
+        if children and not set(children)<=captured:
+            raise CharacterRegistryError(
+                '用户扩展复合属性子级未完整捕获：'+node+'.'+name)
     parent=(c.listRelatives(node,parent=True,fullPath=True) or [None])[0] if 'dagNode' in (c.nodeType(node,inherited=True) or []) else None
     matrix=tuple(c.xform(node,q=True,matrix=True,objectSpace=True)) if kind in ('transform','joint') else None
     return PreservedExtension(node,c.ls(node,uuid=True)[0],kind,parent,matrix,tuple(attributes),connections(host,node))

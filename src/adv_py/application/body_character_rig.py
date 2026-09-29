@@ -227,10 +227,13 @@ class BuildBodyCharacterRig:
         include_head_aim: bool = False,
         defer_fit_tweakers: bool = False,
         defer_curve_guides: bool = False,
+        defer_partial_hand_to_generic: bool = False,
         part_paths: FitPartFinalPaths | None = None,
     ) -> BodyCharacterRigBuildPlan:
         if type(defer_fit_tweakers) is not bool:
             raise FitSkeletonValidationError("Tweaker 延后构建选项必须是布尔值")
+        if type(defer_partial_hand_to_generic) is not bool:
+            raise FitSkeletonValidationError("局部手指通用 FK 选项必须是布尔值")
         if not isinstance(include_head_aim,bool) or (include_head_aim and not include_torso):
             raise FitSkeletonValidationError('头部瞄准需要显式启用 Torso')
         if axial_description is not None and not include_torso:
@@ -311,14 +314,19 @@ class BuildBodyCharacterRig:
                 aim_joint_names=aim_source_names,
             )
         elif present_hand_names or present_original_names:
-            expected = (original_hand_names if present_original_names
-                        else expected_hand_names)
-            present = present_hand_names | present_original_names
-            missing = sorted(expected - present)
-            hand_schema_blockers = (
-                "Body 包含不完整的双侧五指集合，Hand FK 不会静默跳过；"
-                f"缺少 {len(missing)} 个关节：" + "、".join(missing),
-            )
+            if not defer_partial_hand_to_generic:
+                expected = (original_hand_names if present_original_names
+                            else expected_hand_names)
+                present = present_hand_names | present_original_names
+                missing = sorted(expected - present)
+                hand_schema_blockers = (
+                    "Body 包含不完整的双侧五指集合；"
+                    "局部手指需要完整角色构建中的通用 FK；"
+                    f"缺少 {len(missing)} 个五指宏关节："
+                    + "、".join(missing),
+                )
+            # MEL permits one-to-four fingers and asymmetric optional digits.
+            # The full character pipeline builds them in its generic FK pass.
         torso = (
             self._torso.plan_from_safety(safety, arm, leg, radius=torso_control_radius, spine_ik=include_spine_ik,description=axial_description,head_aim=include_head_aim,aim_joint_names=aim_source_names)
             if include_torso else None
@@ -553,6 +561,7 @@ class BuildBodyCharacterRig:
         include_head_aim: bool = False,
         defer_fit_tweakers: bool = False,
         defer_curve_guides: bool = False,
+        defer_partial_hand_to_generic: bool = False,
         part_paths: FitPartFinalPaths | None = None,
     ) -> BodyCharacterRigBuildResult:
         plan = self.plan(
@@ -570,6 +579,7 @@ class BuildBodyCharacterRig:
             include_head_aim=include_head_aim,
             defer_fit_tweakers=defer_fit_tweakers,
             defer_curve_guides=defer_curve_guides,
+            defer_partial_hand_to_generic=defer_partial_hand_to_generic,
             part_paths=part_paths,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,

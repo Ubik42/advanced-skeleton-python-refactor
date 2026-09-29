@@ -2447,7 +2447,8 @@ def create_panel(controller: MayaPanelController | None = None):
         def _build_character(self):
             value = self.spine_segments.value()
             meshes = self._build_mesh_paths()
-            result = self.controller.body_build(self._namespace(),
+            selected_namespace = self._namespace()
+            result = self.controller.body_build(selected_namespace,
                 self.fit_container.text().strip(),
                 spine_segments=value if value else None,
                 head_aim=self.head_aim.isChecked(),
@@ -2457,9 +2458,14 @@ def create_panel(controller: MayaPanelController | None = None):
                 segment_influences=self.build_segment_influences.isChecked(),
                 fit_parts=(self.build_segment_influences.isChecked()
                            and self.build_fit_parts.isChecked()))
+            if result.namespace != selected_namespace:
+                self._next_role = result.namespace
+            destination = (f"；新角色 {result.namespace}"
+                           if result.namespace != selected_namespace else "")
             return (f"角色已登记：{result.joint_count} 个关节、"
                     f"{result.segment_joint_count} 个分段变形关节、"
-                    f"{result.channel_count} 个通道、{len(meshes)} 套 Skin")
+                    f"{result.channel_count} 个通道、{len(meshes)} 套 Skin"
+                    f"{destination}")
 
         def _build_from_source(self):
             meshes = self._build_mesh_paths()

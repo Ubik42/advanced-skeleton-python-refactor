@@ -12,6 +12,11 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
     def capture_source_skeleton(self, root: str) -> tuple[SourceSkeletonJoint, ...]:
         from maya import cmds
 
+        # A selected source can live outside the target character namespace.
+        # Read its physical DAG paths with an unscoped adapter; the receiving
+        # host remains scoped for all Fit/Body writes.
+        source_reader = (self if self.namespace is None else
+                         MayaSourceSkeletonFitHost(namespace=None))
         matches = cmds.ls(root, long=True, type="joint") or []
         if len(matches) != 1:
             raise ValueError("请选择唯一的来源根关节")
@@ -66,7 +71,7 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                                             fullPath=True) or [None])[0]
             position = tuple(float(value) for value in cmds.xform(
                 path, query=True, worldSpace=True, translation=True))
-            metadata = self.read_fit_joint_metadata(path)
+            metadata = source_reader.read_fit_joint_metadata(path)
             joints.append(SourceSkeletonJoint(path,
                 path.rsplit("|", 1)[-1], parent, position,
                 optional_int(path, "twistJoints"),
@@ -76,7 +81,8 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                 int(cmds.getAttr(path + ".rotateOrder")),
                 additional_fit_edits(metadata),
                 metadata.no_flip,
-                self.read_fit_skin_enabled(path)))
+                source_reader.read_fit_skin_enabled(path),
+                source_reader.read_joint_label(path)))
         return tuple(joints)
 
     def write_fit_no_skin(self, joint: str) -> None:

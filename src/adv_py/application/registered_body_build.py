@@ -636,6 +636,7 @@ class BuildRegisteredBodyCharacter:
                 include_head_aim=include_head_aim,
                 defer_fit_tweakers=True,
                 defer_curve_guides=True,
+                defer_partial_hand_to_generic=True,
                 part_paths=final_paths)
             if not use_fit_part_hierarchy:
                 BuildFitPartScaleDrivers(joined).apply_terminal_only(

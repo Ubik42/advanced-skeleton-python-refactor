@@ -101,6 +101,10 @@ class MayaCharacterCommands:
             elif name in _NODE_ARGS or name in ('select','listAttr'):
                 args=[address(a) for a in args]
             for flag in ('name','n','parent','p','node','startJoint','sj','endEffector','ee','worldUpObject','curve'):
+                # addAttr(parent=...) identifies another attribute on this
+                # node, not a DAG parent and never carries a namespace.
+                if name=='addAttr' and flag in ('parent','p'):
+                    continue
                 if flag in kwargs and isinstance(kwargs[flag],str):kwargs[flag]=address(kwargs[flag])
             if name=='sets':
                 for flag in ('add', 'isMember'):

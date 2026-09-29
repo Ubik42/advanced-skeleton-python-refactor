@@ -85,14 +85,18 @@ def sample(host,staged,frames,target=False):
             for row in staged.original.extensions:
                 node=_by_uuid(c,row.uuid)
                 for attribute,datatype,*_ in row.attributes:
-                    if datatype in ('bool','byte','short','long','float','double','doubleAngle','doubleLinear','enum','matrix'):
+                    if datatype in ('bool','byte','char','short','long',
+                                    'float','double','doubleAngle',
+                                    'doubleLinear','enum','time','matrix'):
                         value=c.getAttr(node+'.'+attribute,time=frame)
                         values=tuple(value) if isinstance(value,(tuple,list)) else (float(value),)
                         attachments+=((row.uuid+'.'+attribute,values),)
             for row in staged.custom_properties:
                 node=active.scene_address(row.path)
                 for attribute,datatype,*_ in row.attributes:
-                    if datatype in ('bool','byte','short','long','float','double','doubleAngle','doubleLinear','enum','matrix'):
+                    if datatype in ('bool','byte','char','short','long',
+                                    'float','double','doubleAngle',
+                                    'doubleLinear','enum','time','matrix'):
                         value=c.getAttr(node+'.'+attribute,time=frame)
                         values=tuple(value) if isinstance(value,(tuple,list)) else (float(value),)
                         attachments+=((row.uuid+'.'+attribute,values),)

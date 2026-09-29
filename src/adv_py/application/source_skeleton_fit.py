@@ -39,6 +39,7 @@ class SourceSkeletonJoint:
     additional_fit_edits: tuple[FitJointFieldEdit, ...] = ()
     effective_no_flip: bool | None = None
     effective_skin_enabled: bool | None = None
+    label: JointLabel | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,6 +212,15 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         if joint.path != root.path and root.path not in visited:
             raise FitSkeletonValidationError(
                 "来源骨架关节未连接到唯一根关节：" + joint.name)
+    def left_mirror_branch(joint: SourceSkeletonJoint) -> bool:
+        current = joint.path
+        while current in by_path:
+            ancestor = by_path[current]
+            if ancestor.name.rsplit(":", 1)[-1].endswith("_L"):
+                return True
+            current = ancestor.parent
+        return False
+
     axial_paths = _axial_source_paths(source, root)
     axial_names = tuple(f"Spine{index}" for index in
                         range(1, len(axial_paths))) + ("Chest",)
@@ -221,6 +231,8 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
 
     by_name: dict[str, SourceSkeletonJoint] = {}
     for joint in source:
+        if left_mirror_branch(joint):
+            continue
         name = mapped_name(joint)
         if name is None:
             continue
@@ -246,12 +258,9 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         reference = hand
         request = hand_request
     elif all(spec.name in by_name for spec in body.joints):
-        hand_names = {spec.name for spec in hand.joints}
-        partial_hand = (hand_names - {spec.name for spec in body.joints})
-        if partial_hand & by_name.keys():
-            missing_hand = sorted(partial_hand - by_name.keys())
-            raise FitSkeletonValidationError(
-                "来源骨架五指链不完整：" + "、".join(missing_hand))
+        # Incomplete or non-five-finger hands are ordinary Fit branches in
+        # the MEL build. The common torso/body template stays authoritative;
+        # present digits join the extra-branch path below.
         reference = body
         request = body_request
     else:
@@ -273,6 +282,49 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
             reference.name, reference.joints + present_foot)
 
     source_by_path = {joint.path: joint for joint in source}
+    canonical_names = {spec.name for spec in reference.joints}
+    for joint in source:
+        mapped = mapped_name(joint)
+        if (mapped is not None and mapped not in canonical_names
+                and not left_mirror_branch(joint)
+                and by_name[mapped].path != joint.path):
+            raise FitSkeletonValidationError(
+                "附加来源关节映射到相同 Fit 名称：" + mapped)
+    # MEL's selected-joint build keeps non-template branches. Preserve every
+    # uniquely mapped right/center branch in the editable Fit instead of
+    # silently dropping tails, props and additional deform chains.
+    extra_specs = []
+    extra_rows = sorted(((name, joint) for name, joint in by_name.items()
+                         if name not in canonical_names
+                         and joint.path in source_by_path
+                         and not left_mirror_branch(joint)),
+                        key=lambda row: (row[1].path.count("|"), row[1].path))
+    available_names = set(canonical_names)
+    for name, joint in extra_rows:
+        parent_path = joint.parent
+        parent_name = None
+        while parent_path in source_by_path:
+            candidate = mapped_name(source_by_path[parent_path])
+            if candidate in available_names:
+                parent_name = candidate
+                break
+            parent_path = source_by_path[parent_path].parent
+        if parent_name is None:
+            raise FitSkeletonValidationError(
+                "附加来源关节无法连接到 Fit 主链：" + joint.name)
+        if by_name[parent_name].path != parent_path:
+            raise FitSkeletonValidationError(
+                "附加来源关节的父关节映射不唯一：" + joint.name)
+        parent_position = by_name[parent_name].world_position
+        position = tuple(value - parent for value, parent in zip(
+            joint.world_position, parent_position))
+        extra_specs.append(FitJointSpec(
+            name, parent_name, position,
+            joint.label or JointLabel.parse("Other")))
+        available_names.add(name)
+    if extra_specs:
+        reference = FitTemplateSpec(
+            reference.name, reference.joints + tuple(extra_specs))
     reference_names = {spec.name for spec in reference.joints}
     reference_parents = {spec.name: spec.parent for spec in reference.joints}
 
@@ -349,9 +401,12 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                 "来源 Fit 元数据与分段设置重复：" + joint.name)
         expected_parent = reference_joint.parent
         parent_path = joint.parent
+        ancestry_names = (canonical_names if reference_joint.name in
+                          canonical_names else reference_names)
         while parent_path and parent_path in source_by_path:
             parent_name = mapped_name(source_by_path[parent_path])
-            if parent_name in reference_names and parent_name != reference_joint.name:
+            if (parent_name in ancestry_names
+                    and parent_name != reference_joint.name):
                 break
             parent_path = source_by_path[parent_path].parent
         actual_parent = (mapped_name(source_by_path[parent_path])
@@ -365,7 +420,8 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         position = tuple(value - parent for value, parent in zip(
             joint.world_position, parent_position))
         specs.append(FitJointSpec(reference_joint.name, expected_parent,
-                                  position, reference_joint.label))
+                                  position,
+                                  joint.label or reference_joint.label))
         edits = []
         for value, field in (
                 (joint.twist_joints, FitJointField.TWIST_JOINTS),
