@@ -5529,6 +5529,19 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             control, (*(matched[index] for index in range(12)),
                       *position, 1.0))
 
+    def _audit_limb_fk_driver_axes(self, driver_paths, target_axes,
+                                   limb_label: str) -> None:
+        if len(driver_paths) != len(target_axes):
+            raise FitSkeletonValidationError(
+                limb_label + " IK→FK 驱动关节数量与 IK 目标不一致")
+        for driver, expected in zip(driver_paths, target_axes):
+            actual = self._spine_world_frame(driver)[1]
+            if any(abs(component - target) > 1e-3
+                   for axis, goal in zip(actual, expected)
+                   for component, target in zip(axis, goal)):
+                raise FitSkeletonValidationError(
+                    limb_label + " IK→FK 驱动朝向未对齐：" + driver)
+
     def apply_body_leg_ik_to_fk(self, plan: BodyLegIkToFkPlan) -> None:
         self._require_transaction()
         state = self.capture_body_leg_ik_to_fk_state(plan)
@@ -5549,6 +5562,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 plan.fk_segment_translations,
             ):
                 self._cmds.setAttr(plug, value)
+            self._audit_limb_fk_driver_axes(
+                plan.fk_driver_paths, state.ik_source_axes, "Leg")
             self._cmds.setAttr(plan.blend_plug, 0.0)
             finish_match(self,shape_state)
         finally:
@@ -5623,6 +5638,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 plan.fk_segment_translations,
             ):
                 self._cmds.setAttr(plug, value)
+            self._audit_limb_fk_driver_axes(
+                plan.fk_driver_paths, state.ik_source_axes, "Arm")
             self._cmds.setAttr(plan.blend_plug, 0.0)
             finish_match(self,shape_state)
         finally:
