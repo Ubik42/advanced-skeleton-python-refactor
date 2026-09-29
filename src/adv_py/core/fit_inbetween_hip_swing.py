@@ -35,6 +35,13 @@ def plan_hip_swing_fit_selection(
     if len(roots) != 1:
         raise ValueError("HipSwinger 需要唯一的 Fit Root")
     root = roots[0]
+    root_options = metadata[root.path]
+    if (root_options.hip_swinger is not False
+            and (root_options.free_orient
+                 or root_options.world_orient_up is not None)):
+        raise ValueError(
+            "Root 的 freeOrient/worldOrient 与 HipSwinger 不能同时启用；"
+            "原版要求先关闭 Root.hipSwinger")
     children = [node for node in nodes.values()
                 if node.dag_parent == root.path]
     labelled = [node for node in children

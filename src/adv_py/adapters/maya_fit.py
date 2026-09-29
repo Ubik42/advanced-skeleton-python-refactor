@@ -93,6 +93,8 @@ _FIT_ATTRIBUTES = {
     FitJointField.WHEEL: _MayaFitAttribute("wheel", "bool"),
     FitJointField.ROLLING_BALL: _MayaFitAttribute("rollingBall", "bool"),
     FitJointField.CURVE_GUIDE: _MayaFitAttribute("curveGuide", "string"),
+    FitJointField.FREE_ORIENT: _MayaFitAttribute("freeOrient", "bool"),
+    FitJointField.FLIP_ORIENT: _MayaFitAttribute("flipOrient", "bool"),
     FitJointField.NO_MIRROR: _MayaFitAttribute("noMirror", "bool"),
     FitJointField.NO_MIRROR_LEFT: _MayaFitAttribute("noMirrorLeft", "bool"),
     FitJointField.NO_FLIP: _MayaFitAttribute("noFlip", "bool"),
@@ -624,7 +626,8 @@ class MayaFitJointHost:
             descendant_paths.append((matches[0], position))
 
         self._transaction_changed = True
-        if len(preserved_children) > 1:
+        if (len(preserved_children) > 1
+                or change.use_explicit_world_axes):
             primary = change.desired_primary_world
             secondary = change.desired_secondary_world
             tertiary = (
@@ -896,6 +899,8 @@ class MayaFitJointHost:
             wheel=FitJointField.WHEEL in present,
             rolling_ball=FitJointField.ROLLING_BALL in present,
             curve_guide=self._optional_mesh_target(joint, "curveGuide"),
+            free_orient=self._optional_bool(joint, "freeOrient"),
+            flip_orient=self._optional_bool(joint, "flipOrient"),
             no_mirror=self._optional_bool(joint, "noMirror"),
             no_mirror_left=self._optional_bool(joint, "noMirrorLeft"),
             no_flip=no_flip,

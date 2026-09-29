@@ -199,6 +199,7 @@ class FitOrientationChange:
     desired_primary_world: Vector3
     desired_secondary_world: Vector3
     secondary_world_axis: FitWorldAxis
+    use_explicit_world_axes: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,7 +458,17 @@ def plan_simple_fit_orientations(
             _subtract(child.world_position, hierarchy[path].world_position),
             f"{hierarchy[path].short_name} 与子级位置重合",
         )
-        secondary_axis, reference = _secondary_reference(snapshot.up_axis, primary)
+        free_orient = bool(item_metadata and item_metadata.free_orient)
+        secondary_axis, default_reference = _secondary_reference(
+            snapshot.up_axis, primary)
+        # MEL's freeOrient bypasses the IK-plane up target and places the
+        # self-up helper on the joint's current local up axis.  Projecting
+        # that axis after aiming at the child preserves its roll.  In this
+        # self-up branch flipOrient reverses both the local up vector and
+        # helper offset, so its two signs cancel; the IK-plane branch needs
+        # its own solver and must not be approximated here.
+        reference = (state.world_axes[1]
+                     if free_orient else default_reference)
         secondary = _normalize(
             _subtract(reference, _scale(primary, _dot(reference, primary))),
             "无法建立稳定的 secondary axis",
@@ -485,6 +496,7 @@ def plan_simple_fit_orientations(
                 desired_primary_world=primary,
                 desired_secondary_world=secondary,
                 secondary_world_axis=secondary_axis,
+                use_explicit_world_axes=free_orient,
             )
         )
     return tuple(changes)

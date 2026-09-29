@@ -27,6 +27,8 @@ class FitJointField(str, Enum):
     WHEEL = "wheel"
     ROLLING_BALL = "rolling_ball"
     CURVE_GUIDE = "curve_guide"
+    FREE_ORIENT = "free_orient"
+    FLIP_ORIENT = "flip_orient"
     NO_MIRROR = "no_mirror"
     NO_MIRROR_LEFT = "no_mirror_left"
     NO_FLIP = "no_flip"
@@ -142,6 +144,8 @@ class FitJointMetadata:
     wheel: bool = False
     rolling_ball: bool = False
     curve_guide: str | None = None
+    free_orient: bool = False
+    flip_orient: bool = False
     parent_constraint: str | None = None
     point_constraint: str | None = None
     orient_constraint: str | None = None
@@ -192,6 +196,8 @@ _BOOLEAN_FIELDS = {
     FitJointField.FOOT_PIVOTS,
     FitJointField.WHEEL,
     FitJointField.ROLLING_BALL,
+    FitJointField.FREE_ORIENT,
+    FitJointField.FLIP_ORIENT,
     FitJointField.NO_MIRROR,
     FitJointField.NO_MIRROR_LEFT,
     FitJointField.NO_FLIP,
@@ -415,7 +421,8 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
     if type(metadata.foot_pivots) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_foot_pivots", "Foot Pivots 开关必须是布尔值"))
-    for field in (FitJointField.WHEEL, FitJointField.ROLLING_BALL):
+    for field in (FitJointField.WHEEL, FitJointField.ROLLING_BALL,
+                  FitJointField.FREE_ORIENT, FitJointField.FLIP_ORIENT):
         if type(getattr(metadata, field.value)) is not bool:
             issues.append(FitJointIssue(metadata.joint,
                                         "invalid_" + field.value,
