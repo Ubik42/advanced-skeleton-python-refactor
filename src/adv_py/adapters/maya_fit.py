@@ -636,19 +636,36 @@ class MayaFitJointHost:
         scale = tuple(float(value) for value in self._cmds.getAttr(
             container + ".scale"
         )[0])
-        if all(abs(value - 1.0) <= 1e-8 for value in scale):
-            return
         joints = self._cmds.listRelatives(
             container, allDescendents=True, type="joint", fullPath=True
         ) or []
+        container_scaled = any(abs(value - 1.0) > 1e-8 for value in scale)
+        joint_scaled = any(any(abs(float(value) - 1.0) > 1e-8
+                               for value in self._cmds.getAttr(
+                                   joint + ".scale")[0]) for joint in joints)
+        if not container_scaled and not joint_scaled:
+            return
         positions = {joint: tuple(float(value) for value in self._cmds.xform(
             joint, query=True, worldSpace=True, translation=True
         )) for joint in joints}
         self._transaction_changed = True
-        self._cmds.makeIdentity(
-            container, apply=True, translate=False, rotate=False,
-            scale=True, normal=False,
-        )
+        if container_scaled:
+            self._cmds.makeIdentity(
+                container, apply=True, translate=False, rotate=False,
+                scale=True, normal=False,
+            )
+        # Scale may be pushed from the Fit container into its joint children.
+        # Walk parent-first so it is carried down the chain to the end joints.
+        for joint in reversed(joints):
+            current = self._cmds.ls(joint, long=True, type="joint") or []
+            if len(current) != 1:
+                raise RuntimeError("Fit 缩放烘焙改变了关节层级：" + joint)
+            if any(abs(float(value) - 1.0) > 1e-8 for value in self._cmds.getAttr(
+                    current[0] + ".scale")[0]):
+                self._cmds.makeIdentity(
+                    current[0], apply=True, translate=False, rotate=False,
+                    scale=True, normal=False,
+                )
         if any(abs(float(value) - 1.0) > 1e-6 for value in self._cmds.getAttr(
                 container + ".scale")[0]):
             raise RuntimeError("Fit 缩放烘焙后容器未恢复单位缩放")
@@ -662,7 +679,11 @@ class MayaFitJointHost:
             if any(abs(float(value) - target) > 1e-5 * max(1.0, abs(target))
                    for value, target in zip(location, expected)):
                 raise RuntimeError("Fit 缩放烘焙改变了关节世界位置：" + joint)
-            if self._cmds.attributeQuery("fat", node=actual[0], exists=True):
+            if any(abs(float(value) - 1.0) > 1e-6 for value in self._cmds.getAttr(
+                    actual[0] + ".scale")[0]):
+                raise RuntimeError("Fit 缩放烘焙后关节未恢复单位缩放：" + joint)
+            if container_scaled and self._cmds.attributeQuery(
+                    "fat", node=actual[0], exists=True):
                 plug = actual[0] + ".fat"
                 self._cmds.setAttr(plug, float(self._cmds.getAttr(plug)) * scale[1])
 
