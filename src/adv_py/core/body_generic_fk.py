@@ -130,8 +130,14 @@ def plan_body_generic_fk(
                 break
             parent_spec = (spec_by_path[parent_spec].parent_path
                            if parent_spec in spec_by_path else None)
+        final_path = ((remapped_body_paths or {}).get(spec.path, spec.path))
+        final_parent = ((remapped_body_paths or {}).get(
+            spec.parent_path, spec.parent_path)
+            if spec.parent_path is not None else None)
+        child_of_part = (final_parent is not None
+                         and final_path != final_parent + "|" + spec.name)
         if (spec.parent_path is not None
-                and (standard_parent
+                and (standard_parent or child_of_part
                      or item.child_of_part not in (None, 0))):
             source_parent = spec.parent_path
             while (source_parent in removable_body_paths
