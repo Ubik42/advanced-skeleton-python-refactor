@@ -45,6 +45,12 @@ def _bendy_dag_name(path: str) -> str:
     return path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
 
 
+def _bendy_parent_name(cmds, node: str) -> str | None:
+    parents = cmds.listRelatives(node, parent=True,
+                                 fullPath=True) or []
+    return _bendy_dag_name(parents[0]) if len(parents) == 1 else None
+
+
 class MayaFitBendyMixin:
     def _align_bendy_control(
             self, node: str, position: tuple[float, float, float],
@@ -1025,10 +1031,10 @@ class MayaFitBendyMixin:
         circular = spec.circular_name
         return (c.objExists(circular)
                 and c.nodeType(circular) == "transform"
-                and (c.listRelatives(circular, parent=True) or [])
-                == [spec.control_names[0] + "Offset"]
-                and (c.listRelatives(spec.control_names[0] + "Extra",
-                                     parent=True) or []) == [circular]
+                and _bendy_parent_name(c, circular)
+                == spec.control_names[0] + "Offset"
+                and _bendy_parent_name(
+                    c, spec.control_names[0] + "Extra") == circular
                 and c.objExists(relative)
                 and c.nodeType(relative) == "multMatrix"
                 and c.objExists(angle)
@@ -1107,10 +1113,17 @@ class MayaFitBendyMixin:
                     != spec.chain.rotation_order
                     or int(c.getAttr(extra + ".rotateOrder"))
                     != spec.chain.rotation_order
-                    or (c.listRelatives(extra, parent=True) or [])
-                    != [extra_parent]
-                    or (c.listRelatives(control, parent=True) or [])
-                    != [extra]):
+                    or _bendy_parent_name(c, extra) != extra_parent
+                    or _bendy_parent_name(c, control) != extra):
+                return False
+            expected_position = (
+                spec.chain.master_position if index == 0
+                else spec.chain.control_positions[index - 1])
+            position = c.xform(offset, query=True,
+                               worldSpace=True, translation=True)
+            if any(abs(float(actual) - expected) > 1e-4
+                   for actual, expected in zip(
+                       position, expected_position)):
                 return False
             if index == 0:
                 marker = offset + ".advPyBendyOrientedBind"
@@ -1130,6 +1143,12 @@ class MayaFitBendyMixin:
                   or c.nodeType(follow) != "parentConstraint"):
                 return False
         chain = spec.chain
+        end_position = c.xform(chain.end_proxy_name, query=True,
+                               worldSpace=True, translation=True)
+        if any(abs(float(actual) - expected) > 1e-4
+               for actual, expected in zip(
+                   end_position, chain.end_position)):
+            return False
         if chain.child_start_influence or spec.end_matrix_follow:
             translation, rotation, world = chain.end_follow_matrix_names
             end = chain.end_proxy_name
@@ -1186,8 +1205,7 @@ class MayaFitBendyMixin:
                         (frame, "transform")))
                 and abs(float(c.getAttr(negate + ".input2")) + 1.0)
                 < 1e-6
-                and (c.listRelatives(frame, parent=True) or [])
-                == [_GROUPS[0]]
+                and _bendy_parent_name(c, frame) == _GROUPS[0]
                 and not bool(c.getAttr(frame + ".visibility"))
                 and c.connectionInfo(negate + ".input1",
                                      sourceFromDestination=True)
@@ -1511,11 +1529,11 @@ class MayaFitBendyMixin:
                 spec.micro_scale_names[index])
             if (not c.objExists(offset) or not c.objExists(extra)
                     or c.nodeType(extra) != "transform"
-                    or (c.listRelatives(extra, parent=True) or []) != [offset]
+                    or _bendy_parent_name(c, extra) != offset
                     or not c.objExists(control)
-                    or (c.listRelatives(control, parent=True) or []) != [extra]
+                    or _bendy_parent_name(c, control) != extra
                     or not c.objExists(output)
-                    or (c.listRelatives(output, parent=True) or []) != [control]
+                    or _bendy_parent_name(c, output) != control
                     or not c.objExists(blend)
                     or c.nodeType(blend) != "blendMatrix"
                     or c.connectionInfo(blend + ".inputMatrix",
@@ -1681,12 +1699,10 @@ class MayaFitBendyMixin:
                     spec.junction_extra_name, spec.junction_name)):
             return False
         if (spec.parent_bendy
-                and ((c.listRelatives(spec.junction_extra_name,
-                                      parent=True) or [])
-                     != [spec.junction_offset_name]
-                     or (c.listRelatives(spec.junction_name,
-                                         parent=True) or [])
-                     != [spec.junction_extra_name])):
+                and (_bendy_parent_name(c, spec.junction_extra_name)
+                     != spec.junction_offset_name
+                     or _bendy_parent_name(c, spec.junction_name)
+                     != spec.junction_extra_name)):
             return False
         if (spec.parent_bendy
                 and not c.objExists(spec.junction_name + ".circular")):
