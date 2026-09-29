@@ -45,7 +45,7 @@ class BuildCharacterFromSourceSkeleton:
 
     def plan(self, source_root: str, container: str = "FitSkeleton", *,
              meshes: tuple[str, ...] = (),
-             maximum_influences: int = 4,
+             maximum_influences: int = 3,
              include_head_aim: bool = False,
              include_segment_influences: bool = True,
              use_fit_part_hierarchy: bool = True,
@@ -68,7 +68,7 @@ class BuildCharacterFromSourceSkeleton:
 
     def apply(self, source_root: str, container: str = "FitSkeleton", *,
               meshes: tuple[str, ...] = (),
-              maximum_influences: int = 4,
+              maximum_influences: int = 3,
               include_head_aim: bool = False,
               include_segment_influences: bool = True,
               use_fit_part_hierarchy: bool = True,

@@ -740,7 +740,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.build_use_preparation_skin.setChecked(True)
             self.build_max_influences = QtWidgets.QSpinBox()
             self.build_max_influences.setRange(1, 256)
-            self.build_max_influences.setValue(4)
+            self.build_max_influences.setValue(3)
             self.build_segment_influences = QtWidgets.QCheckBox(
                 "构建四肢及可用的标准躯干、手指分段关节")
             self.build_segment_influences.setChecked(True)

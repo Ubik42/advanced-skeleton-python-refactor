@@ -6,10 +6,17 @@ from enum import Enum
 
 class SkinBindMethod(str, Enum):
     CLOSEST_DISTANCE = "closest_distance"
+    CLOSEST_IN_HIERARCHY = "closest_in_hierarchy"
 
 
 class SkinWeightNormalization(str, Enum):
     INTERACTIVE = "interactive"
+    POST = "post"
+
+
+class SkinningMethod(str, Enum):
+    CLASSIC_LINEAR = "classic_linear"
+    DUAL_QUATERNION = "dual_quaternion"
 
 
 class SkinBindValidationError(ValueError):
@@ -25,6 +32,7 @@ class SkinBindPlan:
     maintain_maximum_influences: bool
     bind_method: SkinBindMethod
     normalization: SkinWeightNormalization
+    skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +53,7 @@ class SkinBindSnapshot:
     maintain_maximum_influences: bool
     bind_method: SkinBindMethod | None
     normalization: SkinWeightNormalization | None
+    skinning_method: SkinningMethod | None = SkinningMethod.CLASSIC_LINEAR
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +70,9 @@ def plan_skin_bind(
     skin_name: str = "AdvPy_BodySkin",
     maximum_influences: int = 4,
     maintain_maximum_influences: bool = True,
+    bind_method: SkinBindMethod = SkinBindMethod.CLOSEST_DISTANCE,
+    normalization: SkinWeightNormalization = SkinWeightNormalization.INTERACTIVE,
+    skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR,
 ) -> SkinBindPlan:
     if not isinstance(mesh_path, str) or not mesh_path.strip():
         raise SkinBindValidationError("Skin Bind 需要显式 mesh 路径")
@@ -85,14 +97,21 @@ def plan_skin_bind(
         raise SkinBindValidationError("Skin Bind 最大影响数必须是正整数")
     if not isinstance(maintain_maximum_influences, bool):
         raise SkinBindValidationError("Skin Bind 最大影响数开关必须是布尔值")
+    if not isinstance(bind_method, SkinBindMethod):
+        raise SkinBindValidationError("Skin Bind 绑定方法无效")
+    if not isinstance(normalization, SkinWeightNormalization):
+        raise SkinBindValidationError("Skin Bind 权重归一化模式无效")
+    if not isinstance(skinning_method, SkinningMethod):
+        raise SkinBindValidationError("Skin Bind 蒙皮计算方法无效")
     return SkinBindPlan(
         mesh_path.strip(),
         tuple(path.strip() for path in influence_paths),
         skin_name.strip(),
         maximum_influences,
         maintain_maximum_influences,
-        SkinBindMethod.CLOSEST_DISTANCE,
-        SkinWeightNormalization.INTERACTIVE,
+        bind_method,
+        normalization,
+        skinning_method,
     )
 
 
@@ -178,6 +197,11 @@ def audit_skin_bind_result(
             snapshot.normalization is plan.normalization,
             "normalization_mismatch",
             "权重归一化模式不一致",
+        ),
+        (
+            snapshot.skinning_method is plan.skinning_method,
+            "skinning_method_mismatch",
+            "蒙皮计算方法不一致",
         ),
     )
     for passed, code, message in checks:

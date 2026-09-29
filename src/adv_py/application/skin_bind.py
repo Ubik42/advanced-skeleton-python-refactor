@@ -6,6 +6,9 @@ from typing import Protocol
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.skin_bind import (
+    SkinBindMethod,
+    SkinWeightNormalization,
+    SkinningMethod,
     SkinBindInputState,
     SkinBindIssue,
     SkinBindPlan,
@@ -69,6 +72,9 @@ class BindSkin:
         skin_name: str = "AdvPy_BodySkin",
         maximum_influences: int = 4,
         maintain_maximum_influences: bool = True,
+        bind_method: SkinBindMethod = SkinBindMethod.CLOSEST_DISTANCE,
+        normalization: SkinWeightNormalization = SkinWeightNormalization.INTERACTIVE,
+        skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR,
     ) -> SkinBindBuildPlan:
         bind = plan_skin_bind(
             mesh_path,
@@ -76,6 +82,9 @@ class BindSkin:
             skin_name=skin_name,
             maximum_influences=maximum_influences,
             maintain_maximum_influences=maintain_maximum_influences,
+            bind_method=bind_method,
+            normalization=normalization,
+            skinning_method=skinning_method,
         )
         state = self._host.capture_skin_bind_input(bind)
         return SkinBindBuildPlan(
@@ -93,6 +102,9 @@ class BindSkin:
         skin_name: str = "AdvPy_BodySkin",
         maximum_influences: int = 4,
         maintain_maximum_influences: bool = True,
+        bind_method: SkinBindMethod = SkinBindMethod.CLOSEST_DISTANCE,
+        normalization: SkinWeightNormalization = SkinWeightNormalization.INTERACTIVE,
+        skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR,
     ) -> SkinBindBuildResult:
         plan = self.plan(
             mesh_path,
@@ -100,6 +112,9 @@ class BindSkin:
             skin_name=skin_name,
             maximum_influences=maximum_influences,
             maintain_maximum_influences=maintain_maximum_influences,
+            bind_method=bind_method,
+            normalization=normalization,
+            skinning_method=skinning_method,
         )
         if not plan.ready:
             raise FitSkeletonValidationError(

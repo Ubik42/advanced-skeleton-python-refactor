@@ -5,6 +5,9 @@ from dataclasses import dataclass
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_part_twist import FitPartTwistSource
+from adv_py.core.skin_bind import (
+    SkinBindMethod, SkinWeightNormalization, SkinningMethod,
+)
 
 from .registered_body_build import (BuildRegisteredBodyCharacter,
                                     RegisteredBodyBuildResult,
@@ -32,7 +35,7 @@ class BuildRegisteredSkinnedBodyCharacter:
 
     def plan(self, meshes: tuple[str, ...], *,
              skin_prefix: str = "AdvPy_BodySkin",
-             maximum_influences: int = 4) -> RegisteredSkinnedBodyBuildPlan:
+             maximum_influences: int = 3) -> RegisteredSkinnedBodyBuildPlan:
         if (not meshes or any(not isinstance(mesh, str) or not mesh.strip()
                               for mesh in meshes)
                 or len(set(meshes)) != len(meshes)
@@ -56,7 +59,7 @@ class BuildRegisteredSkinnedBodyCharacter:
     def apply(self, meshes: tuple[str, ...], *,
               container_name: str = "FitSkeleton",
               skin_prefix: str = "AdvPy_BodySkin",
-              maximum_influences: int = 4,
+              maximum_influences: int = 3,
               axial_description=None,
               include_head_aim: bool = False,
               infer_missing_labels: bool = False,
@@ -82,15 +85,25 @@ class BuildRegisteredSkinnedBodyCharacter:
                 _defer_all_set=True)
             if on_stage:
                 on_stage("rig-built")
-            influences = tuple(path for path in (
-                tuple(item.path for item in character.registration.body)
-                + character.segment_influences)
-                if joined.read_skin_influence_enabled(path))
+            _, influences = joined.resolve_body_selection_members(
+                character.registration, character.segment_influences,
+                character.selection_extras)
+            influences = tuple(
+                path for path in influences
+                if path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                not in {"Eye_R", "Eye_L", "Jaw_M"})
+            if not influences:
+                raise FitSkeletonValidationError(
+                    "DeformSet 没有可用于 Skin 的影响关节")
             geometry_meshes = tuple(
                 joined.parent_body_mesh_under_geometry(mesh)
                 for mesh in plan.meshes)
             skins = tuple(BindSkin(joined).apply(mesh, influences,
-                skin_name=name, maximum_influences=plan.maximum_influences)
+                skin_name=name, maximum_influences=plan.maximum_influences,
+                maintain_maximum_influences=False,
+                bind_method=SkinBindMethod.CLOSEST_IN_HIERARCHY,
+                normalization=SkinWeightNormalization.POST,
+                skinning_method=SkinningMethod.DUAL_QUATERNION)
                 for mesh, name in zip(geometry_meshes, plan.skin_names))
             finalize_body_character_sets(
                 joined, character.registration, character.rig.plan,

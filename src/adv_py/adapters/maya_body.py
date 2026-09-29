@@ -231,6 +231,7 @@ from adv_py.core.skin_bind import (
     SkinBindPlan,
     SkinBindSnapshot,
     SkinWeightNormalization,
+    SkinningMethod,
 )
 from adv_py.core.skin_weights import (
     SKIN_WEIGHT_VISIBLE_THRESHOLD,
@@ -5127,14 +5128,24 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                 list(plan.influence_paths),
                 plan.mesh_path,
                 toSelectedBones=True,
-                bindMethod=0,
-                normalizeWeights=1,
+                bindMethod={
+                    SkinBindMethod.CLOSEST_DISTANCE: 0,
+                    SkinBindMethod.CLOSEST_IN_HIERARCHY: 1,
+                }[plan.bind_method],
+                normalizeWeights={
+                    SkinWeightNormalization.INTERACTIVE: 1,
+                    SkinWeightNormalization.POST: 2,
+                }[plan.normalization],
                 maximumInfluences=plan.maximum_influences,
                 obeyMaxInfluences=plan.maintain_maximum_influences,
                 name=plan.skin_name,
             )
             if not created or created[0] != plan.skin_name:
                 raise RuntimeError("Maya 未按计划创建 skinCluster")
+            self._cmds.setAttr(
+                created[0] + ".skinningMethod",
+                {SkinningMethod.CLASSIC_LINEAR: 0,
+                 SkinningMethod.DUAL_QUATERNION: 1}[plan.skinning_method])
             self._cmds.addAttr(created[0], longName=TOPOLOGY_ATTRIBUTE,
                                dataType="string")
             self._cmds.setAttr(f"{created[0]}.{TOPOLOGY_ATTRIBUTE}",
@@ -5214,12 +5225,22 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
             matches = self._cmds.ls(joint, long=True, type="joint") or []
             if len(matches) == 1:
                 influences.append(matches[0])
-        bind_method = {0: SkinBindMethod.CLOSEST_DISTANCE}.get(
+        bind_method = {
+            0: SkinBindMethod.CLOSEST_DISTANCE,
+            1: SkinBindMethod.CLOSEST_IN_HIERARCHY,
+        }.get(
             int(self._cmds.getAttr(f"{skin}.bindMethod"))
         )
-        normalization = {1: SkinWeightNormalization.INTERACTIVE}.get(
+        normalization = {
+            1: SkinWeightNormalization.INTERACTIVE,
+            2: SkinWeightNormalization.POST,
+        }.get(
             int(self._cmds.getAttr(f"{skin}.normalizeWeights"))
         )
+        skinning_method = {
+            0: SkinningMethod.CLASSIC_LINEAR,
+            1: SkinningMethod.DUAL_QUATERNION,
+        }.get(int(self._cmds.getAttr(f"{skin}.skinningMethod")))
         return SkinBindSnapshot(
             skin,
             tuple(geometry),
@@ -5228,6 +5249,7 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
             bool(self._cmds.getAttr(f"{skin}.maintainMaxInfluences")),
             bind_method,
             normalization,
+            skinning_method,
         )
 
     def capture_skin_weight_input(

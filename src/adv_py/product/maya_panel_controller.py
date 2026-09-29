@@ -561,7 +561,7 @@ class MayaPanelController:
                    head_aim: bool = False,
                    infer_missing_labels: bool = False,
                    meshes: tuple[str, ...] = (),
-                   maximum_influences: int = 4,
+                   maximum_influences: int = 3,
                    segment_influences: bool = True,
                    fit_parts: bool = True) -> PanelCharacter:
         from adv_py.application.character_from_fit import BuildCharacterFromFit
@@ -582,7 +582,7 @@ class MayaPanelController:
     def body_build_from_source(self, namespace: str, source_root: str,
                                container: str = "FitSkeleton", *,
                                meshes: tuple[str, ...] = (),
-                               maximum_influences: int = 4,
+                               maximum_influences: int = 3,
                                head_aim: bool = False,
                                segment_influences: bool = True,
                                fit_parts: bool = True) -> PanelCharacter:
