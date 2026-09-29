@@ -370,7 +370,6 @@ class BuildBodyLegRig:
                 if name)
             if side.hybrid is not None:
                 names.extend(side.hybrid.node_names)
-                names.append(side.hybrid_align_name)
             else:
                 names.extend((
                     side.toe_offset_name,
@@ -385,6 +384,7 @@ class BuildBodyLegRig:
                 names.extend((side.qtoes_handle_name,
                               side.qtoes_effector_name))
             names.extend(node.name for node in side.roll.nodes)
+            names.extend(helper.name for helper in side.align_helpers)
             for manual in side.manual_pivots:
                 names.extend((manual.offset_name, manual.control_name,
                               manual.reverse_name, manual.matrix_name,

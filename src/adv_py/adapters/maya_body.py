@@ -212,6 +212,7 @@ from adv_py.core.body_leg_foot import (
     BodyLegFootManualPivotState,
     BodyLegFootHighHeelState,
     BodyLegFootHybridState,
+    BodyLegFootAlignState,
     BodyLegFootRockPivotState,
     BodyLegFootRollNodeState,
     BodyLegFootRollState,
@@ -5306,16 +5307,18 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 continue
             matrix, axes = self._spine_world_frame(path)
             hybrid_poses.append((path, matrix[12:15], axes))
-        hybrid_fk_poses = []
-        hybrid_fk_sources = tuple(
+        match_source_poses = []
+        match_sources = tuple(
             source for _, source in plan.hybrid_control_targets) + (
-                (plan.hybrid_ankle_axis_source,)
-                if plan.hybrid_ankle_axis_source is not None else ())
-        for source in hybrid_fk_sources:
+                (plan.ankle_match_axis_source,)
+                if plan.ankle_match_axis_source is not None else ()) + (
+                (plan.toe_match_axis_source,)
+                if plan.toe_match_axis_source is not None else ())
+        for source in match_sources:
             if not self._cmds.objExists(source):
                 continue
             matrix, axes = self._spine_world_frame(source)
-            hybrid_fk_poses.append((source, matrix[12:15], axes))
+            match_source_poses.append((source, matrix[12:15], axes))
         return BodyLegFkToIkSceneState(
             existing,
             writable,
@@ -5327,7 +5330,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             roll_values,
             toe_end_body_axes,
             tuple(hybrid_poses),
-            tuple(hybrid_fk_poses),
+            tuple(match_source_poses),
         )
 
     def apply_body_leg_fk_to_ik(self, plan: BodyLegFkToIkPlan) -> None:
@@ -5353,13 +5356,13 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 translation=plan.pole_position,
             )
             fk_poses = {path: (position, axes)
-                        for path, position, axes in state.hybrid_fk_poses}
+                        for path, position, axes in state.match_source_poses}
             ankle_position = (fk_poses[
-                plan.hybrid_ankle_position_source][0]
-                if plan.hybrid_ankle_position_source is not None
+                plan.ankle_match_position_source][0]
+                if plan.ankle_match_position_source is not None
                 else plan.ankle_position)
-            ankle_axes = (fk_poses[plan.hybrid_ankle_axis_source][1]
-                          if plan.hybrid_ankle_axis_source is not None
+            ankle_axes = (fk_poses[plan.ankle_match_axis_source][1]
+                          if plan.ankle_match_axis_source is not None
                           else plan.ankle_axes)
             x_axis, y_axis, z_axis = ankle_axes
             matrix = (
@@ -5387,7 +5390,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     worldSpace=True,
                     translation=True,
                 ))
-                toe_x, toe_y, toe_z = plan.toe_body_axes
+                toe_axes = (fk_poses[plan.toe_match_axis_source][1]
+                            if plan.toe_match_axis_source is not None
+                            else plan.toe_body_axes)
+                toe_x, toe_y, toe_z = toe_axes
                 toe_matrix = (
                     *toe_x, 0.0,
                     *toe_y, 0.0,
@@ -6216,8 +6222,6 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             )
             if side.hybrid is not None:
                 names.extend(side.hybrid.node_names)
-                names.append(side.hybrid_align_name)
-                required.append(side.hybrid_align_parent_path)
                 required.append(
                     side.hybrid.segments[0].sampler1_offset_path
                     .rsplit("|", 1)[0])
@@ -6238,6 +6242,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 names.extend((side.qtoes_handle_name,
                               side.qtoes_effector_name))
             names.extend(node.name for node in side.roll.nodes)
+            names.extend(helper.name for helper in side.align_helpers)
+            required.extend(helper.parent_path for helper in side.align_helpers)
             for manual in side.manual_pivots:
                 names.extend((manual.offset_name, manual.control_name,
                               manual.reverse_name, manual.matrix_name,
@@ -6348,6 +6354,18 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self._transaction_changed = True
+            for helper in spec.align_helpers:
+                node = self._cmds.createNode(
+                    "transform", name=helper.name,
+                    parent=helper.parent_path, skipSelect=True)
+                node = (self._cmds.ls(node, long=True) or [node])[0]
+                if node != helper.path:
+                    raise RuntimeError("AlignIKTo 路径漂移：" + helper.name)
+                x_axis, y_axis, z_axis = helper.world_axes
+                self._cmds.xform(
+                    node, worldSpace=True,
+                    matrix=(*x_axis, 0.0, *y_axis, 0.0,
+                            *z_axis, 0.0, *helper.world_position, 1.0))
             for attribute in spec.attributes:
                 if attribute == "footPivotsVis":
                     self._cmds.addAttr(
@@ -6836,14 +6854,6 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 raise RuntimeError("Foot IKHybrid 节点路径漂移：" + name)
             return node
 
-        if (spec.hybrid_align_position is None
-                or spec.hybrid_align_axes is None):
-            raise RuntimeError("Foot IKHybrid 缺少 AlignIKTo 初始姿态")
-        create_at(
-            spec.hybrid_align_name, spec.hybrid_align_path,
-            spec.hybrid_align_parent_path,
-            spec.hybrid_align_position, spec.hybrid_align_axes)
-
         for segment in hybrid.segments:
             offset = create_at(
                 segment.control_offset_name,
@@ -7136,11 +7146,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 return (constraint, source, driven)
 
             ankle_orientation = orientation_state(spec.ankle_constraint_name)
+            align_states = self._capture_body_leg_foot_align_helpers(spec)
             if spec.hybrid is not None:
                 sides.append(self._capture_body_leg_foot_hybrid_side(
                     spec, values, tuple(pivots),
                     parents[0] if parents else None,
-                    ankle_orientation, swivel_source))
+                    ankle_orientation, swivel_source, align_states))
                 continue
             toe_offsets = self._cmds.ls(
                 spec.toe_offset_path, long=True, type="transform"
@@ -7369,11 +7380,30 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 rock_pivots=tuple(rock_pivots),
                 manual_pivots=tuple(manual_states),
                 high_heel=high_state,
+                align_helpers=align_states,
                 qtoes_handle_parent_path=qtoes_parent,
                 qtoes_handle_joint_list=qtoes_joint_list,
                 qtoes_handle_solver=qtoes_solver,
             ))
         return BodyLegFootSnapshot(tuple(sides))
+
+    def _capture_body_leg_foot_align_helpers(
+        self, spec: BodyLegFootSideSpec,
+    ) -> tuple[BodyLegFootAlignState, ...]:
+        states = []
+        for helper in spec.align_helpers:
+            found = self._cmds.ls(
+                helper.path, long=True, type="transform") or []
+            node = found[0] if len(found) == 1 else None
+            parents = (self._cmds.listRelatives(
+                node, parent=True, fullPath=True) or []
+                if node else [])
+            matrix, axes = (self._spine_world_frame(node)
+                            if node else (None, None))
+            states.append(BodyLegFootAlignState(
+                node, parents[0] if parents else None,
+                matrix[12:15] if matrix else None, axes))
+        return tuple(states)
 
     def _capture_body_leg_foot_manual_state(
         self, spec, handle_path, source_of, transform_at,
@@ -7463,7 +7493,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
 
     def _capture_body_leg_foot_hybrid_side(
         self, spec: BodyLegFootSideSpec, values, pivots,
-        handle_parent, ankle_orientation, swivel_source,
+        handle_parent, ankle_orientation, swivel_source, align_states,
     ) -> BodyLegFootSideState:
         hybrid = spec.hybrid
         if hybrid is None:
@@ -7583,9 +7613,6 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         manual_states, high_state = (
             self._capture_body_leg_foot_manual_state(
                 spec, limb_handles[0], source_of, node_parent))
-        align_node, align_parent = node_parent(spec.hybrid_align_path)
-        align_axes = (self._spine_world_frame(align_node)[1]
-                      if align_node is not None else None)
 
         return BodyLegFootSideState(
             spec.side, values, pivots, handle_parent,
@@ -7598,9 +7625,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             rock_pivots=tuple(rock_pivots),
             manual_pivots=manual_states,
             high_heel=high_state,
-            hybrid_align_path=align_node,
-            hybrid_align_parent_path=align_parent,
-            hybrid_align_axes=align_axes,
+            align_helpers=align_states,
             hybrid=BodyLegFootHybridState(
                 tuple(nodes), tuple(connections), tuple(targets),
                 tuple(handles), tuple(shapes), tuple(control_axes)))
