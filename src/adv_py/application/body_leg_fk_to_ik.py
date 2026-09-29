@@ -256,7 +256,8 @@ class MatchBodyLegFkToIk:
             issues = audit_body_leg_fk_to_ik_result(
                 plan.match, body, target.attribute_value
             )
-            issues += audit_body_leg_fk_to_ik_foot_result(plan.match, foot)
+            issues += audit_body_leg_fk_to_ik_foot_result(
+                plan.match, foot, plan.scene_state)
             current_other = tuple(
                 (value.side, value.attribute_value)
                 for value in blend.sides

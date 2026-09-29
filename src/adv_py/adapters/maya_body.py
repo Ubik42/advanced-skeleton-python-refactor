@@ -5306,6 +5306,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 continue
             matrix, axes = self._spine_world_frame(path)
             hybrid_poses.append((path, matrix[12:15], axes))
+        hybrid_fk_poses = []
+        for _, source in plan.hybrid_control_targets:
+            if not self._cmds.objExists(source):
+                continue
+            matrix, axes = self._spine_world_frame(source)
+            hybrid_fk_poses.append((source, matrix[12:15], axes))
         return BodyLegFkToIkSceneState(
             existing,
             writable,
@@ -5317,6 +5323,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             roll_values,
             toe_end_body_axes,
             tuple(hybrid_poses),
+            tuple(hybrid_fk_poses),
         )
 
     def apply_body_leg_fk_to_ik(self, plan: BodyLegFkToIkPlan) -> None:
@@ -5341,19 +5348,29 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 worldSpace=True,
                 translation=plan.pole_position,
             )
-            x_axis, y_axis, z_axis = plan.ankle_axes
+            fk_poses = {path: (position, axes)
+                        for path, position, axes in state.hybrid_fk_poses}
+            ankle_position = (fk_poses[
+                plan.hybrid_ankle_position_source][0]
+                if plan.hybrid_ankle_position_source is not None
+                else plan.ankle_position)
+            ankle_axes = (fk_poses[plan.hybrid_ankle_axis_source][1]
+                          if plan.hybrid_ankle_axis_source is not None
+                          else plan.ankle_axes)
+            x_axis, y_axis, z_axis = ankle_axes
             matrix = (
                 *x_axis, 0.0,
                 *y_axis, 0.0,
                 *z_axis, 0.0,
-                *plan.ankle_position, 1.0,
+                *ankle_position, 1.0,
             )
-            self._cmds.xform(plan.ankle_control_path, worldSpace=True, translation=plan.ankle_position)
+            self._cmds.xform(plan.ankle_control_path, worldSpace=True, translation=ankle_position)
             self._spine_set_world_rotation(plan.ankle_control_path,matrix)
             if plan.reverse_roll_control_path is not None:
                 self._match_body_leg_hybrid_roll(plan)
-                for path, _, axes in plan.hybrid_control_targets:
+                for path, source in plan.hybrid_control_targets:
                     control_matrix = self._spine_world_frame(path)[0]
+                    axes = fk_poses[source][1]
                     x_axis, y_axis, z_axis = axes
                     target_matrix = (
                         *x_axis, 0.0, *y_axis, 0.0,
