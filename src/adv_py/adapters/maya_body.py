@@ -8077,6 +8077,18 @@ class MayaBodyBuildHost(MayaBodyFitWheelMixin, MayaBodyBuildPoseMixin, MayaBodyS
     def create_body_leg_fk_control(self, spec: BodyLegFkControlSpec) -> None:
         self._create_body_limb_fk_control(spec, "Leg")
 
+    def create_body_generic_fk(self, plan) -> None:
+        if not plan.controls:
+            return
+        parent = plan.root_path.rsplit("|", 1)[0]
+        name = plan.root_path.rsplit("|", 1)[-1]
+        if self.create_body_control_root(name, parent_path=parent) != plan.root_path:
+            raise RuntimeError("通用 FK 控制根路径漂移")
+        for spec in plan.controls:
+            self._create_body_limb_fk_control(spec, "Generic")
+        for path in plan.hidden_controls:
+            self.hide_body_fk_control(path)
+
     def capture_body_hand_fk_input(
         self,
         plan: BodyHandFkControlPlan,

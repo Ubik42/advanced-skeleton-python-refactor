@@ -42,6 +42,7 @@ from adv_py.core.body_fit_aim_at import plan_body_fit_aim_at
 from adv_py.core.body_fit_geo_attach import plan_body_fit_geo_attach
 from adv_py.core.body_fit_proximity_pin import plan_body_fit_proximity_pin
 from adv_py.core.body_fit_wheel import plan_body_fit_wheels
+from adv_py.core.body_generic_fk import plan_body_generic_fk
 from adv_py.core.body_center_between_feet import plan_body_center_between_feet
 from adv_py.core.body_fit_dependency import validate_fit_control_dependencies
 from adv_py.core.body_system_hierarchy import (
@@ -85,6 +86,7 @@ from .body_center_between_feet import (
     BuildCenterBetweenFeet, RegisterCenterBetweenFeet,
 )
 from .fit_wheel_registration import RegisterFitWheels
+from .generic_fk_registration import RegisterGenericFk
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
 from .fit_inbetween_body import plan_combined_part_hierarchy
@@ -842,16 +844,26 @@ class BuildRegisteredBodyCharacter:
                         "无分段 HipSwinger 接线后 Torso 复检失败："
                         + "；".join(torso_issues))
                 rig = replace(rig, plan=rig_plan, torso=torso_snapshot)
-            fk_control_specs = (
+            fit_metadata = rig.plan.arm.safety.symmetry.source.metadata
+            standard_fk_specs = (
                 rig.plan.arm.fk_controls.controls
                 + rig.plan.leg.fk_controls.controls
                 + (rig.plan.hand.controls.controls
                    if rig.plan.hand is not None else ())
                 + (rig.plan.torso.torso.controls.controls
                    if rig.plan.torso is not None else ()))
+            generic_fk = plan_body_generic_fk(
+                skeleton.snapshot, part_plan.specs,
+                fit_metadata, standard_fk_specs,
+                sub_controllers=(
+                    preview.build.build_options.sub_controllers),
+                extra_controllers=(
+                    preview.build.build_options.extra_controllers))
+            joined.create_body_generic_fk(generic_fk)
+            fk_control_specs = (standard_fk_specs
+                                + generic_fk.controls)
             pre_constraint_body = joined.capture_body_skeleton(
                 skeleton.snapshot.root)
-            fit_metadata = rig.plan.arm.safety.symmetry.source.metadata
             wheels = plan_body_fit_wheels(
                 fit_metadata, part_plan.symmetry.instances,
                 fk_control_specs,
@@ -1023,6 +1035,8 @@ class BuildRegisteredBodyCharacter:
                 BuildFitTweakers(joined).apply(tweakers)
             joined.create_body_fit_wheels(wheels)
             registration = RegisterBodyCharacter(joined).apply(rig)
+            registration = RegisterGenericFk(joined).apply(
+                registration, generic_fk)
             registration = RegisterFitWheels(joined).apply(
                 registration, wheels)
             registration = RegisterFitAdvancedConstraints(joined).apply(
