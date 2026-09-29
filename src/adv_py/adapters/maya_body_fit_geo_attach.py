@@ -61,6 +61,22 @@ class MayaBodyFitGeoAttachMixin:
             shape = shapes[0]
         else:
             raise ValueError("Geo Attach 目标不是 polygon 网格")
+        offset_scene = self.scene_address(spec.fk_offset)
+        if mesh == offset_scene or mesh.startswith(offset_scene + "|"):
+            raise ValueError("Geo Attach 网格不能位于自身 FK Offset 下")
+        source_scene = self.scene_address(spec.source_body)
+        for history in raw.listHistory(shape, pruneDagObjects=True) or []:
+            if raw.nodeType(history) != "skinCluster":
+                continue
+            influences = raw.skinCluster(history, query=True,
+                                         influence=True) or []
+            for influence in influences:
+                paths = raw.ls(influence, long=True) or []
+                if any(path == source_scene
+                       or path.startswith(source_scene + "|")
+                       for path in paths):
+                    raise ValueError(
+                        "Geo Attach 网格蒙皮依赖自身 FK 驱动关节：" + mesh)
         plug = spec.fk_offset + ".offsetParentMatrix"
         if c.getAttr(plug, lock=True):
             raise ValueError("Geo Attach FK Offset 矩阵已锁定")
