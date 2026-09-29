@@ -458,9 +458,16 @@ class MayaShapersCreateHost:
         if not deformers:
             raise RuntimeError("Shapers 插件未创建变形器")
         for curve in curves:
-            connected = c.listConnections(
-                curve + ".worldSpace[0]", source=False,
-                destination=True, type="shapersDeformer") or []
+            shapes = c.listRelatives(curve, shapes=True,
+                                     noIntermediate=True,
+                                     fullPath=True) or []
+            connected = set()
+            for shape in shapes:
+                if c.nodeType(shape) not in ("nurbsCurve", "bezierCurve"):
+                    continue
+                connected.update(c.listConnections(
+                    shape + ".worldSpace[0]", source=False,
+                    destination=True, type="shapersDeformer") or [])
             if not set(connected).intersection(deformers):
                 raise RuntimeError("Shapers 插件未绑定控制曲线：" + curve)
         main = self.prefix + "Main"

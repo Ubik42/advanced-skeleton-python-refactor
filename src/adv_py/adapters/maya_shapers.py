@@ -7,10 +7,44 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from zipfile import ZipFile
 
 from adv_py.application.shapers_plugin import (ShapersPluginStatus,
                                                ShapersSetupResult)
 from adv_py.core.shapers_plugin import ShapersPluginPlan
+
+
+_ASSET_ROOT = Path(__file__).resolve().parents[3] / "local" / "adv_6_925"
+_PROJECT_SHAPERS = _ASSET_ROOT / "AdvancedSkeletonFiles" / "div" / "shapers"
+_PROJECT_ARCHIVE = _ASSET_ROOT / "AdvancedSkeleton.zip"
+
+
+def _unpack_project_shapers() -> None:
+    """Materialize original plug-ins only when the bundled archive is used."""
+    prefix = "AdvancedSkeletonFiles/div/shapers/"
+    root = _ASSET_ROOT.resolve()
+    with ZipFile(_PROJECT_ARCHIVE) as archive:
+        entries = [entry for entry in archive.infolist()
+                   if entry.filename.startswith(prefix) and not entry.is_dir()]
+        if not any(entry.filename == prefix + "Shapers.py" for entry in entries):
+            raise ValueError("原版压缩包中缺少 Shapers.py")
+        for entry in entries:
+            target = (root / entry.filename).resolve()
+            if root not in target.parents:
+                raise ValueError("Shapers 插件压缩包路径无效")
+            if target.is_file():
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                    "wb", delete=False, dir=target.parent,
+                    prefix=target.name + ".", suffix=".tmp") as handle:
+                temporary = Path(handle.name)
+                handle.write(archive.read(entry))
+            try:
+                os.replace(temporary, target)
+            finally:
+                if temporary.exists():
+                    temporary.unlink()
 
 
 def _cmds():
@@ -22,6 +56,8 @@ def discover_shapers_root() -> Path | None:
     configured = os.environ.get("ADV_6925_SHAPERS_DIR", "").strip()
     if configured:
         return Path(configured).expanduser().resolve()
+    if _PROJECT_SHAPERS.is_dir() or _PROJECT_ARCHIVE.is_file():
+        return _PROJECT_SHAPERS.resolve()
     from .maya_adv_icons import _icon_source
 
     icons = _icon_source()
@@ -43,6 +79,8 @@ class MayaShapersSetupHost:
                 or root.parent.name.lower() != "div"
                 or root.parent.parent.name.lower() != "advancedskeletonfiles"):
             raise ValueError("请选择原版 AdvancedSkeletonFiles/div/shapers 目录")
+        if root == _PROJECT_SHAPERS.resolve() and _PROJECT_ARCHIVE.is_file():
+            _unpack_project_shapers()
         c = self.cmds
         platform = ("Windows" if c.about(win=True) else
                     "macOS" if c.about(mac=True) else
@@ -100,7 +138,7 @@ class MayaShapersSetupHost:
                     remembered.append(fields[2])
         if plan.module_relative_path not in remembered:
             remembered.append(plan.module_relative_path)
-        remembered.sort(key=lambda path: path != prefix)
+        remembered.sort(key=lambda path: path != plan.module_relative_path)
         source_root = plan.root.parent.parent.parent
         content = (f"+ AdvancedSkeleton 6.925 {source_root}\n"
                    + "".join("MAYA_PLUG_IN_PATH +:= " + path + "\n"
