@@ -1386,6 +1386,16 @@ class MayaPanelController:
         from adv_py.application.sub_wrap import SubWrapOperations
         return SubWrapOperations(MayaSubWrapHost(namespace)).exclude_selected()
 
+    def geometry_cut_up_create(self, namespace: str) -> int:
+        from adv_py.adapters.maya_geometry_cut_up import MayaGeometryCutUpHost
+        from adv_py.application.geometry_cut_up import CreateGeometryCutUp
+        return CreateGeometryCutUp(MayaGeometryCutUpHost(namespace)).execute()
+
+    def geometry_cut_up_delete(self, namespace: str) -> None:
+        from adv_py.adapters.maya_geometry_cut_up import MayaGeometryCutUpHost
+        from adv_py.application.geometry_cut_up import DeleteGeometryCutUp
+        DeleteGeometryCutUp(MayaGeometryCutUpHost(namespace)).execute()
+
     def skin_cage_print_reuse(self, namespace: str, *, transforms: bool,
                               shapes: bool, catch: bool) -> int:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost

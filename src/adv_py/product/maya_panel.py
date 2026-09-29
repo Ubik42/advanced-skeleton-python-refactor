@@ -242,6 +242,7 @@ def create_panel(controller: MayaPanelController | None = None):
                        self._skin_cage_page(),
                        self._sub_wrap_page(),
                        self._skin_loop_page(),
+                       self._geometry_cut_up_page(),
                        self._animation_page(), self._face_page(),
                        self._mocap_page(), self._publish_page(),
                        self._display_page(), self._optimize_page())
@@ -290,7 +291,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('Geometry / Muscular', ()),
                     ('Geometry / PolyBoxes', ()),
                     ('Geometry / Mannequin', ()),
-                    ('Geometry / Skin Cut-Up', ()),
+                    ('Geometry / Skin Cut-Up', ('00 · Skin Cut-Up',)),
                     ('Custom Controllers', ('06 · 自定义控制器',)),
                     ('Squash Controller', ('07 · Squash Controller',)),
                     ('Motion System', ('08 · Motion System',)),
@@ -1793,6 +1794,17 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addStretch(1)
             return page
 
+        def _geometry_cut_up_page(self):
+            page, stack = self._page()
+            group, form = self._group("00 · Skin Cut-Up", [])
+            form.addRow(QtWidgets.QLabel(
+                "选择已蒙皮网格，按每个面的主导关节生成几何分片。"))
+            form.addRow(self._button("Create", self._geometry_cut_up_create))
+            form.addRow(self._button("Delete", self._geometry_cut_up_delete))
+            stack.addWidget(group)
+            stack.addStretch(1)
+            return page
+
         def _display_page(self):
             page, stack = self._page()
             group, form = self._group("00 · Display", [])
@@ -2740,6 +2752,14 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.sub_wrap_exclude_selected(
                 self._namespace())
             return f"已排除 {count} 个 Wrap 顶点"
+
+        def _geometry_cut_up_create(self):
+            count = self.controller.geometry_cut_up_create(self._namespace())
+            return f"已创建 {count} 个 Skin Cut-Up 几何分片"
+
+        def _geometry_cut_up_delete(self):
+            self.controller.geometry_cut_up_delete(self._namespace())
+            return "已删除 Skin Cut-Up 几何分片"
 
         def _copy_skin_cage_weights(self):
             count = self.controller.skin_cage_copy_weights(self._namespace())
