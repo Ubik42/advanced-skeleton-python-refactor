@@ -42,8 +42,28 @@ class MayaCharacterRegistryMixin:
                 body + '.scale' + axis, sourceFromDestination=True)
                 for axis in 'XYZ')
             expected = tuple(control + '.scale' + axis for axis in 'XYZ')
+            body_leaf = body.rsplit('|', 1)[-1]
+            body_namespace = (body_leaf.rsplit(':', 1)[0] + ':'
+                              if ':' in body_leaf else '')
+            bendy_scale = (body_namespace + 'AdvPy_'
+                           + body_leaf.rsplit(':', 1)[-1]
+                           + 'BendyFKScale')
             if sources == expected:
                 scale.add(control)
+            elif c.objExists(bendy_scale):
+                if (c.nodeType(bendy_scale) != 'multiplyDivide'
+                        or int(c.getAttr(bendy_scale + '.operation')) != 1
+                        or c.connectionInfo(body + '.scale',
+                                            sourceFromDestination=True)
+                        != bendy_scale + '.output'
+                        or c.connectionInfo(bendy_scale + '.input2',
+                                            sourceFromDestination=True)
+                        != control + '.scale'
+                        or not c.connectionInfo(
+                            bendy_scale + '.input1',
+                            sourceFromDestination=True)):
+                    raise CharacterRegistryError(
+                        '旧通用 Bendy FK 缩放图无效：' + stem)
             elif any(sources):
                 raise CharacterRegistryError(
                     '旧通用 FK 缩放连接不是完整的直驱图：' + stem)
