@@ -6497,6 +6497,9 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
             ))
             if side.qtoes_driver_path:
                 required.append(side.qtoes_driver_path)
+            required.extend(driver for step in side.intermediate_handles
+                            for driver in (step.start_driver_path,
+                                           step.end_driver_path))
             if len(handles) == 1:
                 required.append(handles[0])
                 if side.pivots[0].roll_control_name:
