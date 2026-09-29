@@ -1920,6 +1920,9 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow("Boolean", self._button(
                 "Create", self._geometry_boolean_create))
             form.addRow(self._button("Delete", self._geometry_boolean_delete))
+            form.addRow("Warp", self._button(
+                "Create", self._geometry_warp_create))
+            form.addRow(self._button("Delete", self._geometry_warp_delete))
             form.addRow("BoxSkin", self._button(
                 "Create", self._geometry_box_skin_create))
             form.addRow(self._button("Delete", self._geometry_box_skin_delete))
@@ -2948,6 +2951,14 @@ def create_panel(controller: MayaPanelController | None = None):
         def _geometry_boolean_delete(self):
             self.controller.geometry_boolean_delete(self._namespace())
             return "已删除 Boolean 几何体"
+
+        def _geometry_warp_create(self):
+            count = self.controller.geometry_warp_create(self._namespace())
+            return f"已创建 {count} 个 Warp 几何体"
+
+        def _geometry_warp_delete(self):
+            self.controller.geometry_warp_delete(self._namespace())
+            return "已删除 Warp 几何体"
 
         def _geometry_cut_up_delete(self):
             self.controller.geometry_cut_up_delete(self._namespace())

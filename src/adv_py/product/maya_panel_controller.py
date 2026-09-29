@@ -1475,6 +1475,18 @@ class MayaPanelController:
 
         DeleteBoolean(MayaBooleanHost(namespace)).execute()
 
+    def geometry_warp_create(self, namespace: str) -> int:
+        from adv_py.adapters.maya_geometry_warp import MayaWarpHost
+        from adv_py.application.geometry_warp import CreateWarp
+
+        return CreateWarp(MayaWarpHost(namespace)).execute()
+
+    def geometry_warp_delete(self, namespace: str) -> None:
+        from adv_py.adapters.maya_geometry_warp import MayaWarpHost
+        from adv_py.application.geometry_warp import DeleteWarp
+
+        DeleteWarp(MayaWarpHost(namespace)).execute()
+
     def geometry_cut_up_delete(self, namespace: str) -> None:
         from adv_py.adapters.maya_geometry_cut_up import MayaGeometryCutUpHost
         from adv_py.application.geometry_cut_up import DeleteGeometryCutUp
