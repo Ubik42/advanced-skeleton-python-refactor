@@ -71,6 +71,29 @@ class MayaBodyFitWheelMixin:
         diameter = position[1] * 2.0
         if diameter < 0.01:
             diameter = 1.0
+        shapes = c.listRelatives(control, shapes=True, fullPath=True,
+                                 type="nurbsCurve") or []
+        if (len(shapes) == 1 and
+                int(c.getAttr(shapes[0] + ".controlPoints", size=True)) == 11):
+            # FK_icon in the original asIcons.ma has eight distinct ring
+            # points and three periodic closing CVs.  The MEL builder edits
+            # those eight CVs before sizing the whole control by radius.
+            points = (
+                (0, -0.783612, -0.783612),
+                (0, 0, -1.108194),
+                (0, 0.783612, -0.783612),
+                (0, 1.108194, 0),
+                (0, 0.783612, 0.783612),
+                (0, 0, 1.108194),
+                (0, -0.783612, 0.783612),
+                (0, -1.108194, 0),
+            )
+            for index, point in enumerate(points):
+                c.xform(control + f".cv[{index}]", objectSpace=True,
+                        translation=point)
+            factor = diameter / 2.0
+            c.scale(factor, factor, factor, control + ".cv[*]",
+                    relative=True, objectSpace=True, pivot=(0, 0, 0))
         c.addAttr(control, longName="diameter", attributeType="double",
                   defaultValue=diameter, keyable=True)
         c.addAttr(control, longName="autoRoll", attributeType="double",
