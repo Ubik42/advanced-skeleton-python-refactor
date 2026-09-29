@@ -55,7 +55,8 @@ def character_channels(rig):
         for index, target in enumerate(spline.targets):
             add(f"spine.spline.{index}", target,
                 (() if index == 0 else translation)
-                + (rotation if index in (0, len(spline.targets)-1) else ())
+                + (rotation if index in (0, len(spline.targets)-1)
+                   or spline.twist_ramp_graph else ())
                 + tuple("scale" + axis for axis in "XYZ"))
         add("spine.spline", spline.settings,
             ("spineIkFk", "stretchy", "volume") +

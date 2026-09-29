@@ -31,7 +31,7 @@ def match_ik(host, registration, before):
     for index,control in enumerate(plan.targets):
         if index:
             parameters.extend((control+'.translate'+axis,length,None,None) for axis in 'XYZ')
-        if index in (0,len(plan.targets)-1):
+        if index in (0,len(plan.targets)-1) or plan.twist_ramp_graph:
             parameters.extend((control+'.rotate'+axis,180./pi,None,None) for axis in 'XYZ')
     try:
         original_range=spline_owner_version(c.getAttr(

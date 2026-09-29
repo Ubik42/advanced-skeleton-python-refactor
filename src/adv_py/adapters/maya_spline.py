@@ -8,6 +8,7 @@ from adv_py.core.body_spline import (
 from .maya_adv_icons import create_adv_icon
 from . import maya_chest_space
 from . import maya_spline_even
+from . import maya_spline_twist
 
 
 def prepare(host,plan):
@@ -16,7 +17,8 @@ def prepare(host,plan):
     c.createNode('transform',name='AdvPy_SplineMechanisms',parent=plan.root_path.rsplit('|',1)[0],skipSelect=True)
     c.addAttr(plan.root_path,longName='advPySplineOwner',dataType='string')
     c.setAttr(plan.root_path+'.advPySplineOwner',
-              current_spline_owner(plan.curved, plan.even_stretch_graph),
+              current_spline_owner(plan.curved, plan.even_stretch_graph,
+                                   plan.twist_ramp_graph),
               type='string',lock=True)
     for joint in plan.joints:host.create_body_arm_mechanism_joint(joint)
     last=plan.joints[len(plan.body_joints)-1]
@@ -34,7 +36,9 @@ def create(host,plan):
         create_adv_icon(c,name=f'AdvPy_SplineIK{i}',parent=offset,
                         template='IK_icon',radius=1.5,
                         fallback_normal=(1.,0.,0.))
-        locked=(['translate'+a for a in 'XYZ'] if i==0 else [])+(['rotate'+a for a in 'XYZ'] if 0<i<len(plan.targets)-1 else [])
+        locked=(['translate'+a for a in 'XYZ'] if i==0 else [])+(
+            ['rotate'+a for a in 'XYZ']
+            if 0<i<len(plan.targets)-1 and not plan.twist_ramp_graph else [])
         for attr in locked:c.setAttr(target+'.'+attr,lock=True,keyable=False)
         orientation=(plan.joints[n-1].world_axes
                      if i==len(plan.targets)-1 else plan.joints[0].world_axes)
@@ -109,6 +113,8 @@ def create(host,plan):
         for suffix in ('','End'):
             c.connectAttr('AdvPy_SplineFlipVector.outValue'+axis,
                           'AdvPy_SplineIKHandle.dWorldUpVector'+suffix+axis)
+    if plan.twist_ramp_graph:
+        maya_spline_twist.create(host, plan)
     c.orientConstraint(plan.targets[-1],ik[-1].path,maintainOffset=True,name='AdvPy_SplineChestOrient')
     c.createNode('curveInfo',name='AdvPy_SplineArc',skipSelect=True)
     c.connectAttr(shape+'.local','AdvPy_SplineArc.inputCurve')
@@ -240,6 +246,8 @@ def audit(host,plan):
         raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
     if (version>=20)!=plan.even_stretch_graph:
         raise FitSkeletonValidationError('Spline stretchEven 计划与求解图版本不一致')
+    if (version>=22)!=plan.twist_ramp_graph:
+        raise FitSkeletonValidationError('Spline 中间扭转计划与求解图版本不一致')
     new_scaling=version>=4
     oriented_scaling=version>=6
     original_range=version>=8
@@ -295,6 +303,8 @@ def audit(host,plan):
                               'AdvPy_SplineIKHandle.dWorldUpVector'+suffix+axis))
     if plan.even_stretch_graph:
         maya_spline_even.audit(host, plan, shape, plan.joints[n:])
+    if plan.twist_ramp_graph:
+        maya_spline_twist.audit(host, plan)
     if original_range:
         edges += [(plan.settings+'.stretchy','AdvPy_SplineStretchUnit.input'),
                   ('AdvPy_SplineStretchUnit.output','AdvPy_SplineStretchBlend.blender'),

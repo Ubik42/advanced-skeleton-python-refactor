@@ -13,15 +13,22 @@ def decode_spline(raw, body):
         raw = {**raw, 'use_offset_parent_matrix': False}
     if isinstance(raw, dict) and 'even_stretch_graph' not in raw:
         raw = {**raw, 'even_stretch_graph': False}
+    if isinstance(raw, dict) and 'twist_ramp_graph' not in raw:
+        raw = {**raw, 'twist_ramp_graph': False}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
     if type(raw['use_offset_parent_matrix']) is not bool:
         raise CharacterRegistryError('Spline OPM 开关无效')
     if type(raw['even_stretch_graph']) is not bool:
         raise CharacterRegistryError('Spline stretchEven 图标记无效')
+    if (type(raw['twist_ramp_graph']) is not bool
+            or (raw['twist_ramp_graph'] and not raw['even_stretch_graph'])):
+        raise CharacterRegistryError('Spline 中间扭转图标记无效')
     body_paths = tuple(path(p) for p in raw['body_joints'])
     count = len(body_paths)
     if not 2 <= count <= 64 or len(set(body_paths)) != count:
         raise CharacterRegistryError('曲线脊柱关节数量或身份无效')
+    if raw['twist_ramp_graph'] and count<=2:
+        raise CharacterRegistryError('两关节 Spline 不使用中间扭转曲线')
     by_path = {joint.path: joint for joint in body}
     if any(p not in by_path for p in body_paths) or any(
         by_path[p].parent != parent for parent, p in zip(body_paths, body_paths[1:])
@@ -62,4 +69,4 @@ def decode_spline(raw, body):
     return BodySplinePlan(root, tuple(joints), body_paths, controls, path(raw['pelvis_control']),
                           path(raw['chest_space']), targets, positions, axes,
                           lengths, raw['use_offset_parent_matrix'],
-                          raw['even_stretch_graph'])
+                          raw['even_stretch_graph'], raw['twist_ramp_graph'])
