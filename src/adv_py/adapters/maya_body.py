@@ -841,14 +841,25 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
         for path in sorted(set(paths), key=lambda value: (value.count("|"), value)):
             parents = c.listRelatives(path, parent=True, fullPath=True) or []
             matrix = c.xform(path, query=True, worldSpace=True, matrix=True)
+            name = path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
             side_code = int(c.getAttr(path + ".side"))
             side = _CORE_SIDE_FROM_MAYA.get(side_code)
             if side is None:
                 raise FitSkeletonValidationError(
                     f"导出关节侧向值无效：{path}.side={side_code}")
+            if (side is FitBuildSide.MIDDLE
+                    and c.attributeQuery("advPyAuxiliaryInfluenceKind",
+                                         node=path, exists=True)
+                    and c.getAttr(path + ".advPyAuxiliaryInfluenceKind")
+                        in ("fit-part-v1", "fit-inbetween-v1")):
+                # Older Part builds left Maya's side at its default value.
+                if name.endswith("_L"):
+                    side = FitBuildSide.LEFT
+                elif name.endswith("_R"):
+                    side = FitBuildSide.RIGHT
             result.append(BodyExportSourceJoint(
                 path=path,
-                name=path.rsplit("|", 1)[-1].rsplit(":", 1)[-1],
+                name=name,
                 parent_path=parents[0] if parents else None,
                 side=side,
                 label=self.read_joint_label(path),
