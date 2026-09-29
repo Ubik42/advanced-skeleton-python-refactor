@@ -723,6 +723,8 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(position_row)
             form.addRow(self._button("更新 Fit 元数据", self._edit_fit_metadata))
             form.addRow(self._button("重采样 Fit 关节链", self._resample_fit))
+            form.addRow(self._button("创建／移除非对称 Fit 关节",
+                                      self._body_toggle_fit_non_symmetry))
             stack.addWidget(group)
 
             self.spine_segments = QtWidgets.QSpinBox()
@@ -3338,6 +3340,11 @@ def create_panel(controller: MayaPanelController | None = None):
             fit_visible = self.controller.body_toggle_fit_advanced(
                 self._namespace())
             return "已显示 Body Fit" if fit_visible else "已显示 Body 绑定控制"
+
+        def _body_toggle_fit_non_symmetry(self):
+            changed = self.controller.body_toggle_fit_non_symmetry(
+                self._namespace())
+            return "已切换非对称 Fit 分支：" + str(len(changed))
 
         def _face_tweaks_detach_controllers(self):
             skins = self.controller.face_tweaks_detach_controllers(

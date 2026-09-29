@@ -582,6 +582,9 @@ class MayaPanelController:
     def body_toggle_fit_advanced(self, namespace: str) -> bool:
         return self._host(namespace).toggle_fit_advanced_visibility()
 
+    def body_toggle_fit_non_symmetry(self, namespace: str) -> tuple[str, ...]:
+        return self._host(namespace).toggle_fit_non_symmetry_joints()
+
     def body_build_from_source(self, namespace: str, source_root: str,
                                container: str = "FitSkeleton", *,
                                meshes: tuple[str, ...] = (),
