@@ -247,6 +247,13 @@ def plan_body_generic_fk(
         control_by_name[spec.name] = control_path
         if item.no_control:
             hidden.append(control_path)
+    if follower_sources is not None:
+        retained = {follower.name.removeprefix(
+            "AdvPy_GenericFKFollow_") for follower in followers.values()}
+        missing = follower_sources - retained
+        if missing:
+            raise ValueError("旧角色通用 FK 跟随层无法从当前 Fit 重建："
+                             + "、".join(sorted(missing)))
     return BodyGenericFkPlan(root_path, tuple(controls), tuple(hidden),
                              tuple(followers.values()),
                              finger_visibility_plug)
