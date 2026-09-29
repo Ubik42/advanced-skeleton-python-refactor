@@ -62,6 +62,8 @@ def create_panel(controller: MayaPanelController | None = None):
             self.resize(950, 710)
             self._busy = False
             self._build_ui()
+            self._base_style = self.styleSheet()
+            self._apply_panel_palette(self.controller.panel_palette())
             self.refresh_characters()
 
         def _build_ui(self):
@@ -308,6 +310,8 @@ def create_panel(controller: MayaPanelController | None = None):
                             group = groups.pop(name)
                             group.setTitle(name.split(' · ', 1)[-1])
                             section_layout.addWidget(group)
+                    elif category == 'Preparation' and title == 'Settings':
+                        section_layout.addWidget(self._settings_group())
                     else:
                         section_layout.addWidget(QtWidgets.QLabel('尚未实现'))
             if groups:
@@ -315,6 +319,120 @@ def create_panel(controller: MayaPanelController | None = None):
                                    + '、'.join(sorted(groups)))
             stack.addStretch(1)
             return page
+
+        def _settings_group(self):
+            from adv_py.core.panel_preferences import PANEL_COLOR_DEFAULTS
+
+            palette = self.controller.panel_palette()
+            group, form = self._group('GUI Colors', [])
+            self.palette_enabled = QtWidgets.QCheckBox('使用自定义颜色')
+            self.palette_enabled.setChecked(palette.enabled)
+            self.palette_enabled.toggled.connect(lambda active: self._run_panel_preference(
+                '自定义颜色', lambda: self._set_palette_enabled(active)))
+            form.addRow(self.palette_enabled)
+            self.palette_buttons = {}
+            labels = {
+                'Background': '背景', 'Level1': '一级栏目',
+                'Level2': '二级栏目', 'Buttons': '按钮',
+                'DropDowns': '下拉框', 'CheckBoxes': '复选框',
+            }
+            for kind, _ in PANEL_COLOR_DEFAULTS:
+                button = QtWidgets.QPushButton('选择颜色')
+                button.setObjectName('AdvPyPaletteSample')
+                button.clicked.connect(lambda _, item=kind:
+                    self._choose_palette_color(item))
+                form.addRow(labels[kind], button)
+                self.palette_buttons[kind] = button
+            reset = QtWidgets.QPushButton('恢复默认颜色')
+            reset.clicked.connect(lambda: self._run_panel_preference(
+                '恢复默认颜色', self._reset_panel_palette))
+            form.addRow(reset)
+            form.addRow(QtWidgets.QLabel('界面语言：简体中文'))
+            self._update_palette_samples(palette)
+            return group
+
+        def _update_palette_samples(self, palette):
+            for kind, button in self.palette_buttons.items():
+                rgb = palette.color(kind)
+                red, green, blue = (round(channel * 255) for channel in rgb)
+                button.setStyleSheet(
+                    f'background: rgb({red}, {green}, {blue}); '
+                    f'color: {self._palette_ink(rgb)}; '
+                    'border: 1px solid #9BA8B5;')
+
+        def _palette_ink(self, rgb):
+            linear = tuple(channel / 12.92 if channel <= 0.04045
+                           else ((channel + 0.055) / 1.055) ** 2.4
+                           for channel in rgb)
+            luminance = sum(weight * value for weight, value in zip(
+                (0.2126, 0.7152, 0.0722), linear))
+            return '#141A22' if luminance > 0.179 else '#F6FAFF'
+
+        def _apply_panel_palette(self, palette):
+            self._update_palette_samples(palette)
+            if not palette.enabled:
+                self.setStyleSheet(self._base_style)
+                return
+            def color(kind):
+                return '#%02X%02X%02X' % tuple(
+                    round(channel * 255) for channel in palette.color(kind))
+            self.setStyleSheet(self._base_style + f'''
+                QWidget#AdvPyCharacterPanel, QWidget#PageContent,
+                QWidget#qt_scrollarea_viewport {{ background: {color('Background')};
+                    color: {self._palette_ink(palette.color('Background'))}; }}
+                QToolButton#AdvPyCategory {{ background: {color('Level1')};
+                    color: {self._palette_ink(palette.color('Level1'))}; }}
+                QToolButton#AdvPySection {{ background: {color('Level2')};
+                    color: {self._palette_ink(palette.color('Level2'))}; }}
+                QPushButton, QPushButton#PrimaryAction {{
+                    background: {color('Buttons')};
+                    color: {self._palette_ink(palette.color('Buttons'))}; }}
+                QComboBox {{ background: {color('DropDowns')};
+                    color: {self._palette_ink(palette.color('DropDowns'))}; }}
+                QCheckBox::indicator:checked {{ background: {color('CheckBoxes')}; }}
+            ''')
+
+        def _set_palette_enabled(self, active):
+            palette = self.controller.set_panel_palette_enabled(bool(active))
+            self._apply_panel_palette(palette)
+            return '已保存自定义颜色开关'
+
+        def _choose_palette_color(self, kind):
+            from PySide2 import QtGui
+
+            before = self.controller.panel_palette()
+            chosen = QtWidgets.QColorDialog.getColor(
+                QtGui.QColor.fromRgbF(*before.color(kind)), self,
+                '选择面板颜色')
+            if not chosen.isValid():
+                return
+            self._run_panel_preference('设置面板颜色', lambda: self._save_panel_color(
+                kind, (chosen.redF(), chosen.greenF(), chosen.blueF())))
+
+        def _run_panel_preference(self, label, callback):
+            if self._busy:
+                return
+            self._busy = True
+            try:
+                self.status.setPlainText(callback())
+            except (OSError, ValueError, RuntimeError) as error:
+                self.status.setPlainText('操作失败：' + str(error))
+                QtWidgets.QMessageBox.warning(self, label, str(error))
+            finally:
+                self._busy = False
+
+        def _save_panel_color(self, kind, rgb):
+            palette = self.controller.set_panel_color(kind, rgb)
+            self._apply_panel_palette(palette)
+            return '已保存面板颜色'
+
+        def _reset_panel_palette(self):
+            palette = self.controller.reset_panel_colors()
+            previous = self.palette_enabled.blockSignals(True)
+            self.palette_enabled.setChecked(False)
+            self.palette_enabled.blockSignals(previous)
+            self._apply_panel_palette(palette)
+            return '已恢复默认颜色'
 
         def _file_field(self, caption, *, save=False, filter_text="JSON 文件 (*.json)"):
             holder = QtWidgets.QWidget()

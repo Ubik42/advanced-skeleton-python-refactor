@@ -188,6 +188,69 @@ class MayaPanelController:
     def __init__(self, host_factory=MayaFaceHost):
         self._host_factory = host_factory
 
+    def panel_palette(self):
+        from maya import cmds
+        from adv_py.core.panel_preferences import (
+            PANEL_COLOR_DEFAULTS, PanelPalette, panel_rgb)
+
+        enabled = (bool(cmds.optionVar(query="asSettingsUseCustomColors"))
+                   if cmds.optionVar(exists="asSettingsUseCustomColors")
+                   else False)
+        colors = []
+        for kind, fallback in PANEL_COLOR_DEFAULTS:
+            key = "asSettingsUseCustomColors" + kind
+            value = (cmds.optionVar(query=key)
+                     if cmds.optionVar(exists=key) else fallback)
+            try:
+                color = panel_rgb(value)
+            except ValueError:
+                color = fallback
+            colors.append((kind, color))
+        return PanelPalette(enabled, tuple(colors))
+
+    def set_panel_palette_enabled(self, enabled: bool):
+        from maya import cmds
+
+        if type(enabled) is not bool:
+            raise ValueError("自定义颜色开关无效")
+        cmds.optionVar(intValue=("asSettingsUseCustomColors", int(enabled)))
+        result = self.panel_palette()
+        if result.enabled != enabled:
+            raise RuntimeError("自定义颜色开关保存失败")
+        return result
+
+    def set_panel_color(self, kind: str, rgb):
+        from maya import cmds
+        from adv_py.core.panel_preferences import PANEL_COLOR_KINDS, panel_rgb
+
+        if kind not in PANEL_COLOR_KINDS:
+            raise ValueError("面板颜色栏目无效")
+        color = panel_rgb(rgb)
+        key = "asSettingsUseCustomColors" + kind
+        if cmds.optionVar(exists=key):
+            cmds.optionVar(remove=key)
+        for value in color:
+            cmds.optionVar(floatValueAppend=(key, value))
+        result = self.panel_palette()
+        if any(abs(a - b) > 1e-6 for a, b in zip(result.color(kind), color)):
+            raise RuntimeError("面板颜色保存失败")
+        return result
+
+    def reset_panel_colors(self):
+        from maya import cmds
+        from adv_py.core.panel_preferences import PANEL_COLOR_DEFAULTS
+
+        keys = ("asSettingsUseCustomColors",) + tuple(
+            "asSettingsUseCustomColors" + kind + suffix
+            for kind, _ in PANEL_COLOR_DEFAULTS for suffix in ("", "Fade"))
+        for key in keys:
+            if cmds.optionVar(exists=key):
+                cmds.optionVar(remove=key)
+        result = self.panel_palette()
+        if result.enabled or result.colors != PANEL_COLOR_DEFAULTS:
+            raise RuntimeError("面板颜色未恢复默认值")
+        return result
+
     def _host(self, namespace: str):
         if not isinstance(namespace, str) or not namespace.strip():
             raise ValueError("请选择角色命名空间")
