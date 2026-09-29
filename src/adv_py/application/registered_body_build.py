@@ -368,6 +368,43 @@ def _refresh_fit_orientations_before_body(host, container_name: str) -> None:
             editor.apply_plan_in_transaction(plan)
 
 
+def _preflight_centered_root_spine(host, hierarchy) -> None:
+    """Match the Root spline-IK center check in asBuildAdvancedSkeleton."""
+    nodes = {node.path: node for node in hierarchy.joints}
+    roots = [node for node in hierarchy.joints
+             if node.dag_parent == hierarchy.container]
+    if len(roots) != 1:
+        return
+    root = roots[0]
+    root_label = host.read_joint_label(root.path)
+    if root_label is None or not root_label.text.startswith("Root"):
+        return
+    chest = [node for node in hierarchy.joints
+             if node.path.startswith(root.path + "|")
+             and (label := host.read_joint_label(node.path)) is not None
+             and "Chest" in label.text]
+    if len(chest) != 1:
+        return
+    chain = []
+    current = chest[0]
+    while current.path != root.path:
+        chain.append(current)
+        if current.dag_parent not in nodes:
+            return
+        current = nodes[current.dag_parent]
+    chain.append(root)
+    maximum_y = max((node.world_position[1] for node in hierarchy.joints),
+                    default=0.0)
+    scale = max(0.01, maximum_y / 17.176163) if maximum_y > 0 else 1.0
+    tolerance = 0.01 * scale
+    off_center = [node.path for node in chain
+                  if abs(node.world_position[0]) > tolerance]
+    if off_center:
+        raise FitSkeletonValidationError(
+            "Root→Chest 脊柱 IK 链关节不在中线：" + "、".join(off_center)
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class RegisteredBodyBuildResult:
     skeleton: OrientedBodySkeletonBuildResult
@@ -428,6 +465,7 @@ class BuildRegisteredBodyCharacter:
                 joined.normalize_fit_ik_labels(container_name)
                 joined.bake_fit_container_scale(container_name)
                 fit_hierarchy = joined.capture_fit_hierarchy(container_name)
+                _preflight_centered_root_spine(joined, fit_hierarchy)
                 joined.write_missing_fit_deform_profiles(
                     container_name,
                     tuple(node.path for node in fit_hierarchy.joints),
