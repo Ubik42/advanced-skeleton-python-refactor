@@ -124,7 +124,8 @@ class BuildInbetweenLimbSegments:
                     fk, start_fk_driver_path=binding.start_fk_driver_path,
                     start_fk_constraint_name=binding.start_fk_constraint_name,
                     downstream_fk_offset_path=(
-                        binding.downstream_fk_offset_path))
+                        binding.downstream_fk_offset_path),
+                    start_fk_source_path=binding.start_fk_source_path)
                 fk_rows.append((binding, fk, rewire))
             for request in mapping.requests:
                 plan = request.plan
@@ -175,6 +176,7 @@ class BuildInbetweenLimbSegment:
         start_fk_driver_path: str,
         start_fk_constraint_name: str,
         downstream_fk_offset_path: str,
+        start_fk_source_path: str | None = None,
         start_ik_driver: str,
         end_ik_driver: str,
         fk_weight_plug: str,
@@ -200,7 +202,8 @@ class BuildInbetweenLimbSegment:
             rewire = BuildInbetweenFkRewire(joined).apply(
                 fk, start_fk_driver_path=start_fk_driver_path,
                 start_fk_constraint_name=start_fk_constraint_name,
-                downstream_fk_offset_path=downstream_fk_offset_path)
+                downstream_fk_offset_path=downstream_fk_offset_path,
+                start_fk_source_path=start_fk_source_path)
             ik = BuildInbetweenIkParts(joined).apply(
                 body_parts, start_ik_driver=start_ik_driver,
                 end_ik_driver=end_ik_driver)

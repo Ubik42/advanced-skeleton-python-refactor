@@ -38,6 +38,7 @@ def plan_body_generic_fk(
     *, sub_controllers: bool, extra_controllers: bool,
     radius: float = 1.5,
     aim_sources: frozenset[str] | None = None,
+    inbetween_start_paths: frozenset[str] = frozenset(),
 ) -> BodyGenericFkPlan:
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
     state_by_name = {state.name: state for state in body.joints}
@@ -113,8 +114,9 @@ def plan_body_generic_fk(
             rotate_order=state.rotation_order,
             sub_control_path=sub_path,
             sub_control_name=sub_name,
-            source_override_path=(sub_path or control_path)
-                                 + "|AdvPy_" + stem + "FKX",
+            source_override_path=(None if spec.path in inbetween_start_paths
+                                  else (sub_path or control_path)
+                                  + "|AdvPy_" + stem + "FKX"),
             extra_path=extra_path,
             extra_name=extra_name,
             extra_curve=extra_controllers,

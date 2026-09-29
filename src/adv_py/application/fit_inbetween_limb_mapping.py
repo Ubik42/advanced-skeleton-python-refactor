@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from adv_py.core.body_limb_mechanisms import BodyLimbMechanismRole
 from adv_py.core.body_hand_fit import BODY_HAND_DIGITS
+from adv_py.core.body_generic_fk import BodyGenericFkPlan
+from adv_py.core.body_limb_controls import BodyLimbFkControlSpec
 from adv_py.core.fit_part import FitPartFinalPaths, FitPartJointSpec
 
 from .body_character_rig import BodyCharacterRigBuildPlan
@@ -52,6 +54,7 @@ class InbetweenLimbBinding:
     rotate_order: int
     part_control_radius: float
     spline_root_path: str | None = None
+    start_fk_source_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,12 +69,14 @@ class InbetweenFkBinding:
     end_fk_control_path: str | None
     rotate_order: int
     part_control_radius: float
+    start_fk_source_path: str | None = None
 
 
 def plan_inbetween_limb_bindings(
     parts: tuple[FitPartJointSpec, ...],
     rig: BodyCharacterRigBuildPlan,
     *, final_paths: FitPartFinalPaths | None = None,
+    defer_generic: bool = False,
 ) -> tuple[InbetweenLimbBinding | InbetweenFkBinding, ...]:
     """Map Inbetween chains to the actual FK/IK mechanism and control paths."""
     grouped: dict[str, list[FitPartJointSpec]] = {}
@@ -94,9 +99,7 @@ def plan_inbetween_limb_bindings(
         hand_edge = (start_name, end_name) in _HAND_EDGES
         neck_edge = (first.start_body_name,
                      first.end_body_name) == ("Neck_M", "Head_M")
-        if ((branch is None and not spine_edge and spline_index is None
-             and not neck_edge and not hand_edge)
-                or side != end_side
+        if (side != end_side
                 or any(part.start_body != first.start_body
                        or part.end_body != first.end_body
                        or part.side != first.side
@@ -105,8 +108,16 @@ def plan_inbetween_limb_bindings(
                        for index, part in enumerate(chain, 1))):
             raise ValueError("Inbetween 段尚不能映射到标准 Rig："
                              + first.start_body_name)
+        if (branch is None and not spine_edge and spline_index is None
+                and not neck_edge and not hand_edge):
+            if defer_generic:
+                continue
+            raise ValueError("Inbetween 段尚不能映射到标准 Rig："
+                             + first.start_body_name)
         if hand_edge:
             if rig.hand is None or final_paths is None:
+                if defer_generic:
+                    continue
                 raise ValueError("手指 Inbetween 需要完整 Hand FK 和 Part 路径")
             controls = rig.hand.controls.controls
             starts = [item for item in controls
@@ -135,6 +146,10 @@ def plan_inbetween_limb_bindings(
                 (remap(end_control.control_path)
                  if end_control else None),
                 first.rotation_order, start_control.radius * 0.2,
+                start_fk_source_path=(
+                    remap(start_control.source_override_path
+                          or start_control.sub_control_path
+                          or start_control.control_path)),
             ))
             continue
         if neck_edge:
@@ -156,6 +171,10 @@ def plan_inbetween_limb_bindings(
                 end_controls[0].offset_path,
                 end_controls[0].control_path,
                 first.rotation_order, start_control.radius * 0.2,
+                start_fk_source_path=(
+                    start_control.source_override_path
+                    or start_control.sub_control_path
+                    or start_control.control_path),
             ))
             continue
         if spline_index is not None:
@@ -183,6 +202,10 @@ def plan_inbetween_limb_bindings(
                 spline.settings + ".spineIkFk",
                 first.rotation_order, start_control.radius * 0.2,
                 spline.root_path,
+                start_fk_source_path=(
+                    start_control.source_override_path
+                    or start_control.sub_control_path
+                    or start_control.control_path),
             ))
             continue
         if spine_edge:
@@ -217,6 +240,10 @@ def plan_inbetween_limb_bindings(
                 spine.joints[ik_index + 1].path,
                 "AdvPy_SpineReverse.outputX", spine.blend_plug,
                 first.rotation_order, start_control.radius * 0.2,
+                start_fk_source_path=(
+                    start_control.source_override_path
+                    or start_control.sub_control_path
+                    or start_control.control_path),
             ))
             continue
         module = rig.arm if branch == "arm" else rig.leg
@@ -265,5 +292,66 @@ def plan_inbetween_limb_bindings(
             module.blend.settings_path + "." + blend.attribute,
             first.rotation_order,
             start_control.radius * 0.2,
+            start_fk_source_path=(
+                start_control.source_override_path
+                or start_control.sub_control_path
+                or start_control.control_path),
         ))
     return tuple(bindings)
+
+
+def plan_generic_inbetween_fk_bindings(
+    parts: tuple[FitPartJointSpec, ...],
+    generic: BodyGenericFkPlan,
+    standard_controls: tuple[BodyLimbFkControlSpec, ...],
+    *, final_paths: FitPartFinalPaths,
+    handled_start_paths: frozenset[str],
+) -> tuple[InbetweenFkBinding, ...]:
+    """Resolve deferred Fit branches against their generated generic FK chain."""
+    grouped: dict[str, list[FitPartJointSpec]] = {}
+    for part in parts:
+        if part.kind == "inbetween" and part.start_body not in handled_start_paths:
+            grouped.setdefault(part.start_body, []).append(part)
+    generic_by_driven = {control.driven_joint: control
+                         for control in generic.controls}
+    end_by_name = {
+        (name, control.side.value): control
+        for control in standard_controls + generic.controls
+        for name in control.fit_joint_names
+    }
+    result = []
+    for start_path, chain in grouped.items():
+        chain.sort(key=lambda part: part.index)
+        first = chain[0]
+        if (any(part.start_body != start_path
+                or part.end_body != first.end_body
+                or part.side != first.side
+                or part.count != len(chain)
+                or part.index != index
+                for index, part in enumerate(chain, 1))):
+            raise ValueError("附加 Inbetween Part 链不完整："
+                             + first.start_body_name)
+        start = generic_by_driven.get(
+            final_paths.remap_body_reference(start_path))
+        if start is None:
+            raise ValueError("附加 Inbetween 缺少通用 FK 起点："
+                             + first.start_body_name)
+        end_name, end_side = first.end_body_name.rsplit("_", 1)
+        if end_side != first.side.value:
+            raise ValueError("附加 Inbetween 起终点侧别不同："
+                             + first.start_body_name)
+        end = end_by_name.get((end_name, end_side))
+        if end is not None and end.control_path == start.control_path:
+            raise ValueError("附加 Inbetween 下游 FK 与起点相同："
+                             + first.start_body_name)
+        result.append(InbetweenFkBinding(
+            tuple(chain), start.offset_path, start.control_path,
+            generic.root_path, start.driven_joint, start.constraint_name,
+            end.offset_path if end is not None else None,
+            end.control_path if end is not None else None,
+            first.rotation_order, start.radius * 0.2,
+            start_fk_source_path=(start.source_override_path
+                                  or start.sub_control_path
+                                  or start.control_path),
+        ))
+    return tuple(result)

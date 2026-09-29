@@ -471,7 +471,8 @@ class MayaFitInbetweenMixin:
                                      targetList=True) or []
         if (len(targets) != 1
                 or (c.ls(targets[0], long=True) or [])
-                != [plan.start_fk_control_path]):
+                != [plan.start_fk_source_path
+                    or plan.start_fk_control_path]):
             raise ValueError("Inbetween 起点 FK 来源已变化")
         driver = plan.start_fk_driver_path
         for axis in "XYZ":

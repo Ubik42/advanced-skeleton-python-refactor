@@ -59,6 +59,7 @@ class BuildInbetweenFkSegment:
         start_fk_driver_path: str,
         start_fk_constraint_name: str,
         downstream_fk_offset_path: str | None,
+        start_fk_source_path: str | None = None,
         rotate_order: int,
         part_control_radius: float,
         sub_controllers: bool = False,
@@ -80,7 +81,8 @@ class BuildInbetweenFkSegment:
             rewire = BuildInbetweenFkRewire(joined).apply(
                 fk, start_fk_driver_path=start_fk_driver_path,
                 start_fk_constraint_name=start_fk_constraint_name,
-                downstream_fk_offset_path=downstream_fk_offset_path)
+                downstream_fk_offset_path=downstream_fk_offset_path,
+                start_fk_source_path=start_fk_source_path)
             if fk.parts is None:
                 raise RuntimeError("Inbetween FK 缺少 Part 接收层")
             body = BuildInbetweenFkBodyDrivers(joined).apply(fk.parts)

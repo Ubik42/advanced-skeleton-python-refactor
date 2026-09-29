@@ -36,6 +36,7 @@ class BuildInbetweenFkRewire:
         start_fk_driver_path: str,
         start_fk_constraint_name: str,
         downstream_fk_offset_path: str | None,
+        start_fk_source_path: str | None = None,
     ) -> InbetweenFkRewirePlan:
         if graph.parts is None:
             raise ValueError("Inbetween FK 改接缺少 Part 接收层")
@@ -44,7 +45,8 @@ class BuildInbetweenFkRewire:
             start_fk_driver_path=start_fk_driver_path,
             start_fk_constraint_name=start_fk_constraint_name,
             downstream_fk_offset_path=downstream_fk_offset_path,
-            use_offset_parent_matrix=graph.use_offset_parent_matrix)
+            use_offset_parent_matrix=graph.use_offset_parent_matrix,
+            start_fk_source_path=start_fk_source_path)
         self._host.preflight_inbetween_fk_rewire(plan)
         with self._host.transaction("改接 Inbetween FK 链"):
             self._host.apply_inbetween_fk_rewire(plan)

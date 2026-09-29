@@ -114,7 +114,7 @@ from .fit_orientation_auto import OrientFitJoints
 from .fit_inbetween_body import plan_combined_part_hierarchy
 from .fit_inbetween_limb_mapping import (
     InbetweenFkBinding, InbetweenLimbBinding,
-    plan_inbetween_limb_bindings,
+    plan_generic_inbetween_fk_bindings, plan_inbetween_limb_bindings,
 )
 from .fit_inbetween_limb_segment import (
     BuildInbetweenLimbSegments, InbetweenLimbSegmentResult,
@@ -668,6 +668,8 @@ class BuildRegisteredBodyCharacter:
             twist_steps = ()
             scale_plan = None
             inbetween_segments = ()
+            inbetween_parts = ()
+            inbetween_bindings = ()
             solver_mapping = None
             inbetween_untwisters = ()
             hip_swing_reverse = None
@@ -737,7 +739,9 @@ class BuildRegisteredBodyCharacter:
                 if inbetween_parts:
                     bindings = plan_inbetween_limb_bindings(
                         inbetween_parts, rig.plan,
-                        final_paths=final_paths)
+                        final_paths=final_paths,
+                        defer_generic=True)
+                    inbetween_bindings = bindings
                     limb_bindings = tuple(
                         binding for binding in bindings
                         if isinstance(binding, InbetweenLimbBinding))
@@ -765,6 +769,8 @@ class BuildRegisteredBodyCharacter:
                                     start_fk_driver_path=neck_driver,
                                     start_fk_constraint_name=(
                                         binding.start_fk_constraint_name),
+                                    start_fk_source_path=(
+                                        binding.start_fk_source_path),
                                     downstream_fk_offset_path=(
                                         binding.downstream_fk_offset_path),
                                     rotate_order=binding.rotate_order,
@@ -1018,7 +1024,20 @@ class BuildRegisteredBodyCharacter:
                 extra_controllers=(
                     preview.build.build_options.extra_controllers),
                 aim_sources=(_generic_fk_policy.aim_sources
-                             if _generic_fk_policy is not None else None))
+                             if _generic_fk_policy is not None else None),
+                inbetween_start_paths=frozenset(
+                    part.start_body for part in inbetween_parts
+                    if part.start_body not in {
+                        binding.parts[0].start_body
+                        for binding in inbetween_bindings}))
+            generic_inbetween_bindings = (
+                plan_generic_inbetween_fk_bindings(
+                    inbetween_parts, generic_fk, standard_fk_specs,
+                    final_paths=final_paths,
+                    handled_start_paths=frozenset(
+                        binding.parts[0].start_body
+                        for binding in inbetween_bindings))
+                if inbetween_parts and final_paths is not None else ())
             fit_hierarchy = rig.plan.arm.safety.symmetry.source.hierarchy
             fit_parents = {joint.dag_parent
                            for joint in fit_hierarchy.joints}
@@ -1053,6 +1072,67 @@ class BuildRegisteredBodyCharacter:
                 if any(not joined.capture_hidden_body_fk_control(path)
                        for path in generic_fk.hidden_controls):
                     raise RuntimeError("通用 FK noControl 隐藏状态不一致")
+            if generic_inbetween_bindings:
+                generic_segments = tuple(
+                    BuildInbetweenFkSegment(joined).apply(
+                        binding.parts,
+                        fk_offset_path=binding.fk_offset_path,
+                        fk_control_path=binding.fk_control_path,
+                        fk_system_path=binding.fk_system_path,
+                        start_fk_driver_path=binding.start_fk_driver_path,
+                        start_fk_constraint_name=(
+                            binding.start_fk_constraint_name),
+                        start_fk_source_path=(
+                            binding.start_fk_source_path),
+                        downstream_fk_offset_path=(
+                            binding.downstream_fk_offset_path),
+                        rotate_order=binding.rotate_order,
+                        part_control_radius=binding.part_control_radius,
+                        sub_controllers=(
+                            preview.build.build_options.sub_controllers),
+                        extra_controllers=(
+                            preview.build.build_options.extra_controllers))
+                    for binding in generic_inbetween_bindings)
+                inbetween_segments += generic_segments
+                for binding in generic_inbetween_bindings:
+                    if (binding.parts[0].source_joint in untwister_sources
+                            and (binding.end_fk_control_path is None
+                                 or binding.downstream_fk_offset_path is None)):
+                        raise ValueError(
+                            "附加 Inbetween UnTwister 缺少下游 FK 控制")
+                inbetween_untwisters += tuple(
+                    BuildInbetweenUnTwister(joined).apply(
+                        binding.parts,
+                        tuple(item.constraint_name
+                              for item in segment.body.parts),
+                        end_fk_control_path=binding.end_fk_control_path,
+                        end_fk_offset_path=(
+                            binding.downstream_fk_offset_path))
+                    for binding, segment in zip(
+                        generic_inbetween_bindings, generic_segments)
+                    if binding.parts[0].source_joint in untwister_sources)
+                rewired = {
+                    segment.rewire.start_fk_constraint_name:
+                    segment.fk.anchor.fk_offset_path + "|"
+                    + segment.fk.anchor.fkx_name
+                    for segment in generic_segments}
+                generic_fk = replace(generic_fk, controls=tuple(
+                    replace(control, source_override_path=(
+                        rewired.get(control.constraint_name,
+                                    control.source_override_path)))
+                    for control in generic_fk.controls))
+                generic_fk_state = joined.capture_body_generic_fk_controls(
+                    generic_fk)
+                if audit_body_limb_fk_controls(
+                        generic_fk, generic_fk_state,
+                        limb_label="Generic", check_initial_pose=False):
+                    raise RuntimeError(
+                        "附加 Inbetween 改接后通用 FK 控制层不一致")
+                if not body_bind_pose_matches(
+                        skeleton.snapshot,
+                        joined.capture_body_skeleton(skeleton.snapshot.root)):
+                    raise RuntimeError(
+                        "附加 Inbetween 改接改变 Body 绑定姿态")
             scale_controls = tuple(
                 control for control in generic_fk.controls
                 if (_generic_fk_policy is None
