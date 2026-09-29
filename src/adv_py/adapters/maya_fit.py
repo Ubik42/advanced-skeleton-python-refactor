@@ -103,6 +103,7 @@ _FIT_ATTRIBUTES = {
     FitJointField.FOLLOW_LEFT_RIGHT: _MayaFitAttribute("followLeftRight", "bool"),
     FitJointField.FOLLOW_WORLD: _MayaFitAttribute("followWorld", "bool"),
     FitJointField.FOLLOW_SPACES: _MayaFitAttribute("followSpaces", "bool"),
+    FitJointField.IK_FOLLOW: _MayaFitAttribute("ikFollow", "string"),
     FitJointField.WORLD_ORIENT_UP: _MayaFitAttribute(
         "worldOrientUp",
         "enum",
@@ -893,6 +894,7 @@ class MayaFitJointHost:
             follow_world=self._optional_bool(joint, "followWorld"),
             follow_by_name=follow_by_name,
             follow_spaces=self._optional_bool(joint, "followSpaces"),
+            ik_follow=self._optional_constraint_target(joint, "ikFollow"),
             world_orient_up=self._optional_enum(joint, "worldOrientUp"),
             world_orient_forward=self._optional_enum(joint, "worldOrientForward"),
             ik_local_mode=self._optional_enum(joint, "ikLocal"),

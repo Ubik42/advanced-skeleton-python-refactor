@@ -35,7 +35,7 @@ class MayaBodyFitFollowMixin:
             raise ValueError("Fit Follow 接收层不在 FK Offset 下")
         if any(self.find_name_collisions(name) for name in spec.node_names):
             raise ValueError("Fit Follow 节点名称冲突")
-        for attr in ("follow",) + (
+        for attr in (spec.control_attribute,) + (
                 ("followLeftRight",) if spec.opposite_target else ()) + (
                 ("followWorld",) if spec.world_target else ()):
             if c.attributeQuery(attr, node=spec.fk_control, exists=True):
@@ -165,7 +165,7 @@ class MayaBodyFitFollowMixin:
         c.connectAttr(receiver + ".matrixSum",
                       spec.receiver + ".offsetParentMatrix")
 
-        weights = (("follow", spec.primary_weight, 0, 10.0),) + (
+        weights = ((spec.control_attribute, spec.primary_weight, 0, 10.0),) + (
             (("followLeftRight", spec.opposite_weight, 1, 0.0),)
             if spec.opposite_target else ()) + (
             (("followWorld", spec.world_weight, 2, 0.0),)
@@ -293,7 +293,7 @@ class MayaBodyFitFollowMixin:
                                         for a, b in zip(
                                             actual, source.offset_world)):
                 return False
-        weights = (("follow", spec.primary_weight, 0, 10.0),) + (
+        weights = ((spec.control_attribute, spec.primary_weight, 0, 10.0),) + (
             (("followLeftRight", spec.opposite_weight, 1, 0.0),)
             if spec.opposite_target else ()) + (
             (("followWorld", spec.world_weight, 2, 0.0),)

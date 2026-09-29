@@ -370,6 +370,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ("Follow 世界空间", "follow_world"),
                     ("Follow* 命名目标", "follow_by_name"),
                     ("Follow Spaces", "follow_spaces"),
+                    ("IK Follow 目标", "ik_follow"),
                     ("World Orient Up", "world_orient_up"),
                     ("World Orient Forward", "world_orient_forward"),
                     ("IK Local Mode", "ik_local_mode")):

@@ -42,6 +42,7 @@ class FitJointField(str, Enum):
     FOLLOW_WORLD = "follow_world"
     FOLLOW_BY_NAME = "follow_by_name"
     FOLLOW_SPACES = "follow_spaces"
+    IK_FOLLOW = "ik_follow"
 
 
 FitJointValue = bool | int | float | str | tuple[tuple[str, float], ...]
@@ -119,6 +120,7 @@ class FitJointMetadata:
     follow_world: bool = False
     follow_by_name: tuple[tuple[str, float], ...] = ()
     follow_spaces: bool = False
+    ik_follow: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,7 +179,8 @@ _CONSTRAINT_FIELDS = frozenset((
     FitJointField.PARENT_CONSTRAINT, FitJointField.POINT_CONSTRAINT,
     FitJointField.ORIENT_CONSTRAINT, FitJointField.SCALE_CONSTRAINT,
 ))
-_TARGET_FIELDS = _CONSTRAINT_FIELDS | {FitJointField.FOLLOW}
+_TARGET_FIELDS = _CONSTRAINT_FIELDS | {
+    FitJointField.FOLLOW, FitJointField.IK_FOLLOW}
 _BUILD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*\Z")
 _FOLLOW_RESERVED = frozenset(("LeftRight", "World", "Spaces"))
 

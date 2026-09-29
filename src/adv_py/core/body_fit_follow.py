@@ -29,6 +29,7 @@ class BodyFitFollowSpec:
     ancestor_parent_matrix: str | None = None
     ancestor_translation_pick: str | None = None
     ancestor_mix: str | None = None
+    control_attribute: str = "follow"
 
     @property
     def node_names(self) -> tuple[str, ...]:
