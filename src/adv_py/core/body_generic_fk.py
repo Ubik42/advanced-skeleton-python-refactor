@@ -164,17 +164,29 @@ def plan_body_generic_fk(
                     and spec.name not in follower_sources
                     and legacy_source in follower_sources
                     else spec.name)
+                legacy_follower = follower_key == legacy_source
+                if legacy_follower:
+                    # Earlier registered characters used one follower per
+                    # Body parent, with unfiltered OPM scale or no
+                    # non-OPM scale connection. Keep that saved layout.
+                    body_parent = body_joint
+                    use_root_follow = False
                 follower_name = "AdvPy_GenericFKFollow_" + follower_key
                 follower_path = root_path + "|" + follower_name
-                inherit_scale = not fit_segment_scale_compensate(
-                    item, spec.name,
-                    spec.parent_path.rsplit("|", 1)[-1],
-                    use_offset_parent_matrix=use_offset_parent_matrix,
-                    is_finger=source_name in finger_names)
+                inherit_scale = (
+                    use_offset_parent_matrix if legacy_follower else
+                    not fit_segment_scale_compensate(
+                        item, spec.name,
+                        spec.parent_path.rsplit("|", 1)[-1],
+                        use_offset_parent_matrix=use_offset_parent_matrix,
+                        is_finger=source_name in finger_names))
                 follower = BodyGenericFkFollowerSpec(
                     follower_path, follower_name, body_parent,
                     use_offset_parent_matrix, inherit_scale,
-                    use_parent_constraint=use_root_follow,
+                    use_parent_constraint=(
+                        use_root_follow
+                        or (legacy_follower
+                            and not use_offset_parent_matrix)),
                     scale_source_body_joint=(
                         body_joint if use_root_follow else None))
                 if (follower_path in followers
