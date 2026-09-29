@@ -376,6 +376,9 @@ class BuildBodyLegRig:
                 side.toe_end_handle_name,
                 side.toe_end_effector_name,
             ))
+            if side.qtoes_handle_name:
+                names.extend((side.qtoes_handle_name,
+                              side.qtoes_effector_name))
             names.extend(node.name for node in side.roll.nodes)
             for manual in side.manual_pivots:
                 names.extend((manual.offset_name, manual.control_name,

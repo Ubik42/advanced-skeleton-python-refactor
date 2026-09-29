@@ -61,6 +61,7 @@ class BodyLegFootPivotRole(str, Enum):
     INNER = "inner"
     TOE = "toe"
     BALL = "ball"
+    QTOES = "qtoes"
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +195,10 @@ class BodyLegFootSideSpec:
     toe_end_handle_name: str = ""
     toe_end_effector_name: str = ""
     toe_end_solver_joint_list: tuple[str, ...] | None = None
+    qtoes_driver_path: str = ""
+    qtoes_handle_name: str = ""
+    qtoes_effector_name: str = ""
+    qtoes_solver_joint_list: tuple[str, ...] | None = None
 
     @property
     def toe_handle_parent_path(self) -> str:
@@ -201,6 +206,17 @@ class BodyLegFootSideSpec:
                     if pivot.role is BodyLegFootPivotRole.BALL)
         return next((manual.reverse_path for manual in self.manual_pivots
                      if manual.target_path == ball), ball)
+
+    @property
+    def qtoes_handle_parent_path(self) -> str:
+        pivot = next(pivot.path for pivot in self.pivots
+                     if pivot.role is BodyLegFootPivotRole.QTOES)
+        return next((manual.reverse_path for manual in self.manual_pivots
+                     if manual.target_path == pivot), pivot)
+
+    @property
+    def toe_handle_start_path(self) -> str:
+        return self.qtoes_driver_path or self.ankle_driver_path
 
     @property
     def attributes(self) -> tuple[str, ...]:
@@ -359,6 +375,9 @@ class BodyLegFootSideState:
     rock_pivots: tuple[BodyLegFootRockPivotState, ...] = ()
     manual_pivots: tuple[BodyLegFootManualPivotState, ...] = ()
     high_heel: BodyLegFootHighHeelState | None = None
+    qtoes_handle_parent_path: str | None = None
+    qtoes_handle_joint_list: tuple[str, ...] = ()
+    qtoes_handle_solver: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -440,8 +459,31 @@ def plan_body_leg_foot(
             raise BodyLegFootValidationError(
                 f"Body 缺少 {suffix} 侧唯一的 Toes/ToesEnd 标记"
             )
+        qtoes_topology = qtoes_by_suffix[suffix]
+        if qtoes_topology.hybrid:
+            raise BodyLegFootValidationError(
+                f"{suffix} 侧 QToes 需要 IKHybrid Roll／Sampler 和逐段 IK Handle")
+        qtoes_joint = next((joint for joint in body.joints
+                            if joint.path == qtoes_topology.qtoes_path), None)
+        separate_qtoes = (qtoes_joint is not None
+                           and qtoes_joint.path != qtoes_topology.toes_path)
+        if qtoes_topology.intermediate_paths and not separate_qtoes:
+            raise BodyLegFootValidationError(
+                f"{suffix} 侧脚趾主链含尚未规划逐段 Foot IK 的中间关节")
+        if separate_qtoes and (legacy_roll_controls or
+                qtoes_topology.intermediate_paths != (qtoes_joint.path,)):
+            raise BodyLegFootValidationError(
+                f"{suffix} 侧 QToes 脚趾主链尚不能使用旧版 Roll 或额外中间关节")
+        if separate_qtoes and (limb.toe_solver_joint_list is None or
+                len(limb.toe_solver_joint_list) != 2):
+            raise BodyLegFootValidationError(
+                f"{suffix} 侧 QToes 缺少 Ankle→QToes IK 机制关节")
         marker_roles = tuple(row for row in all_marker_roles
                              if f"{row[1]}_{suffix}" in body_by_name)
+        if separate_qtoes:
+            marker_roles += ((BodyLegFootPivotRole.QTOES,
+                              qtoes_joint.name.removesuffix("_" + suffix),
+                              "", "Y", 1.0),)
         if manual_enabled and (
                 f"Heel_{suffix}" not in body_by_name
                 or f"BigToe_{suffix}" not in body_by_name
@@ -454,14 +496,6 @@ def plan_body_leg_foot(
         if any(body_by_name[f"{marker}_{suffix}"].side is not limb.side
                for _, marker, *_ in marker_roles):
             raise BodyLegFootValidationError(f"Foot 标记侧向与名称不一致：{suffix}")
-        qtoes_topology = qtoes_by_suffix[suffix]
-        if (qtoes_topology.hybrid or
-                (qtoes_topology.qtoes_path and
-                 qtoes_topology.qtoes_path != qtoes_topology.toes_path)):
-            raise BodyLegFootValidationError(
-                f"{suffix} 侧存在独立 QToes 关节；"
-                "Leg 机制／FK／混合链已规划该关节，"
-                "Foot 仍缺 QToes Roll 与逐段 IK Handle")
         if qtoes_topology.qtoes_path and up_axis is not FitUpAxis.Y:
             raise BodyLegFootValidationError(
                 "原版 QToes Roll 局部朝向要求 Y-up 场景")
@@ -875,11 +909,21 @@ def plan_body_leg_foot(
             toe_control_rotate_order=body_by_name[f"Toes_{suffix}"].rotation_order,
             toe_handle_name=f"AdvPy_LegIKToesHandle_{suffix}",
             toe_effector_name=f"AdvPy_LegIKToesEffector_{suffix}",
-            toe_solver_joint_list=limb.toe_solver_joint_list,
+            toe_solver_joint_list=(None if separate_qtoes
+                                   else limb.toe_solver_joint_list),
             toe_end_driver_path=limb.toe_end_driver_path,
             toe_end_handle_name=f"AdvPy_LegIKToesEndHandle_{suffix}",
             toe_end_effector_name=f"AdvPy_LegIKToesEndEffector_{suffix}",
             toe_end_solver_joint_list=limb.toe_end_solver_joint_list,
+            qtoes_driver_path=(limb.toe_solver_joint_list[-1]
+                               if separate_qtoes and limb.toe_solver_joint_list
+                               else ""),
+            qtoes_handle_name=(f"AdvPy_LegIKQToesHandle_{suffix}"
+                               if separate_qtoes else ""),
+            qtoes_effector_name=(f"AdvPy_LegIKQToesEffector_{suffix}"
+                                 if separate_qtoes else ""),
+            qtoes_solver_joint_list=(limb.toe_solver_joint_list
+                                     if separate_qtoes else None),
         ))
     return BodyLegFootPlan(tuple(sides))
 
@@ -1164,7 +1208,7 @@ def audit_body_leg_foot(
         if (state.toe_handle_parent_path != spec.toe_handle_parent_path
                 or state.toe_handle_joint_list != (
                     spec.toe_solver_joint_list
-                    or (spec.ankle_driver_path,))
+                    or (spec.toe_handle_start_path,))
                 or state.toe_handle_solver != "ikSCsolver"):
             issues.append(BodyLegFootIssue(
                 "foot_toe_ik_handle", "Toes 单链 IK 求解器结构不一致",
@@ -1176,6 +1220,15 @@ def audit_body_leg_foot(
                 or state.toe_end_handle_solver != "ikSCsolver"):
             issues.append(BodyLegFootIssue(
                 "foot_toe_end_ik_handle", "ToesEnd 单链 IK 求解器结构不一致",
+                spec.side.value))
+        if spec.qtoes_driver_path and (
+                state.qtoes_handle_parent_path != spec.qtoes_handle_parent_path
+                or state.qtoes_handle_joint_list != (
+                    spec.qtoes_solver_joint_list
+                    or (spec.ankle_driver_path,))
+                or state.qtoes_handle_solver != "ikSCsolver"):
+            issues.append(BodyLegFootIssue(
+                "foot_qtoes_ik_handle", "QToes 单链 IK 求解器结构不一致",
                 spec.side.value))
         if (
             state.ankle_constraint_name != spec.ankle_constraint_name

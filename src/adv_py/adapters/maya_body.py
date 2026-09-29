@@ -6118,6 +6118,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 side.toe_end_driver_path,
                 side.ankle_constraint_name,
             ))
+            if side.qtoes_driver_path:
+                required.append(side.qtoes_driver_path)
             if len(handles) == 1:
                 required.append(handles[0])
                 if side.pivots[0].roll_control_name:
@@ -6147,6 +6149,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 names.append(side.toe_extra_name)
             names.extend((side.toe_handle_name, side.toe_effector_name))
             names.extend((side.toe_end_handle_name, side.toe_end_effector_name))
+            if side.qtoes_handle_name:
+                names.extend((side.qtoes_handle_name,
+                              side.qtoes_effector_name))
             names.extend(node.name for node in side.roll.nodes)
             for manual in side.manual_pivots:
                 names.extend((manual.offset_name, manual.control_name,
@@ -6168,6 +6173,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 side.ankle_driver_path,
                 side.toe_driver_path,
                 side.toe_end_driver_path,
+                *((side.qtoes_driver_path,)
+                  if side.qtoes_driver_path else ()),
                 side.ankle_constraint_name,
                 *handles,
             ):
@@ -6624,9 +6631,26 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 maintainOffset=False,
                 name=spec.ankle_constraint_name,
             )
+            if spec.qtoes_driver_path:
+                qtoes_handle, qtoes_effector = self._cmds.ikHandle(
+                    name=spec.qtoes_handle_name,
+                    startJoint=spec.ankle_driver_path,
+                    endEffector=spec.qtoes_driver_path,
+                    solver="ikSCsolver",
+                    sticky="sticky",
+                )
+                self._cmds.rename(qtoes_effector,
+                                  spec.qtoes_effector_name)
+                self._cmds.parent(qtoes_handle,
+                                  spec.qtoes_handle_parent_path,
+                                  absolute=True)
+                self._cmds.setAttr(
+                    spec.qtoes_handle_name + ".visibility", False)
+                self._cmds.setAttr(
+                    spec.qtoes_effector_name + ".visibility", False)
             toe_handle, toe_effector = self._cmds.ikHandle(
                 name=spec.toe_handle_name,
-                startJoint=spec.ankle_driver_path,
+                startJoint=spec.toe_handle_start_path,
                 endEffector=spec.toe_driver_path,
                 solver="ikSCsolver",
                 sticky="sticky",
@@ -7001,6 +7025,26 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 (self._cmds.ls(joint, long=True) or [joint])[0]
                 for joint in (self._cmds.ikHandle(
                     toe_end_handles[0], query=True, jointList=True) or []))
+            qtoes_parent = None
+            qtoes_joint_list = ()
+            qtoes_solver = None
+            if spec.qtoes_driver_path:
+                qtoes_handles = self._cmds.ls(
+                    spec.qtoes_handle_name, long=True,
+                    type="ikHandle") or []
+                if len(qtoes_handles) != 1:
+                    raise FitSkeletonValidationError(
+                        "QToes IK Handle 节点集合无效")
+                qtoes_parents = self._cmds.listRelatives(
+                    qtoes_handles[0], parent=True, fullPath=True) or []
+                qtoes_parent = qtoes_parents[0] if qtoes_parents else None
+                qtoes_joint_list = tuple(
+                    (self._cmds.ls(joint, long=True) or [joint])[0]
+                    for joint in (self._cmds.ikHandle(
+                        qtoes_handles[0], query=True,
+                        jointList=True) or []))
+                qtoes_solver = self._cmds.ikHandle(
+                    qtoes_handles[0], query=True, solver=True)
 
             def source_of(target):
                 connections = self._cmds.listConnections(
@@ -7160,6 +7204,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 rock_pivots=tuple(rock_pivots),
                 manual_pivots=tuple(manual_states),
                 high_heel=high_state,
+                qtoes_handle_parent_path=qtoes_parent,
+                qtoes_handle_joint_list=qtoes_joint_list,
+                qtoes_handle_solver=qtoes_solver,
             ))
         return BodyLegFootSnapshot(tuple(sides))
 

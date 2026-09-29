@@ -93,28 +93,42 @@ def plan_character_inbetween_ik_solvers(
                 handle_parent_path=spine.ik_control,
                 pole_control_path=spine.pole_control,
                 pole_constraint_name="AdvPy_SpinePoleConstraint")
-    rp_solvers = tuple(request.plan for request in requests)
     for foot in rig.leg.foot.sides:
-        original_edge = (foot.ankle_driver_path,
-                         foot.toe_driver_path)
-        binding = pending.pop(original_edge, None)
-        if binding is None:
-            continue
-        active = rebase_inbetween_ik_reference(
-            foot, rp_solvers)
-        chain = (active.ankle_driver_path,
-                 active.toe_driver_path)
-        segment = plan_inbetween_ik_parts(
-            binding.parts, start_ik_driver=chain[0],
-            end_ik_driver=chain[1])
-        toe_plan = plan_inbetween_ik_solver(
-            chain, (segment,), handle_name=foot.toe_handle_name,
-            effector_name=foot.toe_effector_name,
-            solver_name="ikSCsolver",
-            handle_parent_path=foot.toe_handle_parent_path,
-            pole_control_path=None, pole_constraint_name=None)
-        requests.append(InbetweenIkSolverRequest(
-            toe_plan, (segment,)))
+        edges = (
+            ((foot.ankle_driver_path, foot.qtoes_driver_path),
+             foot.qtoes_handle_name, foot.qtoes_effector_name,
+             foot.qtoes_handle_parent_path)
+            if foot.qtoes_driver_path else None,
+            ((foot.toe_handle_start_path, foot.toe_driver_path),
+             foot.toe_handle_name, foot.toe_effector_name,
+             foot.toe_handle_parent_path),
+        )
+        for entry in edges:
+            if entry is None:
+                continue
+            original_edge, handle_name, effector_name, handle_parent = entry
+            binding = pending.pop(original_edge, None)
+            if binding is None:
+                continue
+            active = rebase_inbetween_ik_reference(
+                foot, tuple(request.plan for request in requests))
+            if handle_name == foot.qtoes_handle_name:
+                chain = (active.ankle_driver_path,
+                         active.qtoes_driver_path)
+            else:
+                chain = (active.toe_handle_start_path,
+                         active.toe_driver_path)
+            segment = plan_inbetween_ik_parts(
+                binding.parts, start_ik_driver=chain[0],
+                end_ik_driver=chain[1])
+            toe_plan = plan_inbetween_ik_solver(
+                chain, (segment,), handle_name=handle_name,
+                effector_name=effector_name,
+                solver_name="ikSCsolver",
+                handle_parent_path=handle_parent,
+                pole_control_path=None, pole_constraint_name=None)
+            requests.append(InbetweenIkSolverRequest(
+                toe_plan, (segment,)))
     for foot in rig.leg.foot.sides:
         original_edge = (foot.toe_driver_path,
                          foot.toe_end_driver_path)
@@ -176,6 +190,10 @@ def rebase_character_rig_after_inbetween_ik(
                 by_handle[spec.toe_handle_name].solved_joint_list
                 if spec.toe_handle_name in by_handle
                 else spec.toe_solver_joint_list),
+            qtoes_solver_joint_list=(
+                by_handle[spec.qtoes_handle_name].solved_joint_list
+                if spec.qtoes_handle_name in by_handle
+                else spec.qtoes_solver_joint_list),
             toe_end_solver_joint_list=(
                 by_handle[spec.toe_end_handle_name].solved_joint_list
                 if spec.toe_end_handle_name in by_handle
