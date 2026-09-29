@@ -157,7 +157,7 @@ class MatchBodyLegFkToIk:
                 use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
                     symmetry.settings).use_offset_parent_matrix))
         foot = plan_body_leg_foot(
-            body, ik,
+            body, ik, mechanisms,
             legacy_toe_controls=not self._host.body_leg_toe_extra_mode(ik),
             legacy_roll_controls=not self._host.body_leg_roll_control_mode(ik),
             up_axis=symmetry.source.up_axis,

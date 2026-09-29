@@ -5,6 +5,7 @@ from enum import Enum
 from math import atan2, degrees, isfinite, sqrt
 
 from .body_leg_ik import BodyLegIkPlan
+from .body_leg_mechanisms import BodyLegMechanismPlan, BodyLegMechanismRole
 from .body_leg_qtoes import plan_leg_qtoes_topology
 from .body_controller_appearance import body_fk_curve_radius
 from .body_skeleton import BodySkeletonSnapshot
@@ -257,6 +258,11 @@ class BodyLegFootSideSpec:
     qtoes_effector_name: str = ""
     qtoes_solver_joint_list: tuple[str, ...] | None = None
     hybrid: BodyLegFootHybridSpec | None = None
+    hybrid_align_name: str = ""
+    hybrid_align_path: str = ""
+    hybrid_align_parent_path: str = ""
+    hybrid_align_position: Vector3 | None = None
+    hybrid_align_axes: AxisFrame | None = None
 
     @property
     def toe_handle_parent_path(self) -> str:
@@ -447,6 +453,9 @@ class BodyLegFootSideState:
     qtoes_handle_joint_list: tuple[str, ...] = ()
     qtoes_handle_solver: str | None = None
     hybrid: BodyLegFootHybridState | None = None
+    hybrid_align_path: str | None = None
+    hybrid_align_parent_path: str | None = None
+    hybrid_align_axes: AxisFrame | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -464,6 +473,7 @@ class BodyLegFootIssue:
 def plan_body_leg_foot(
     body: BodySkeletonSnapshot,
     ik: BodyLegIkPlan,
+    mechanisms: BodyLegMechanismPlan,
     *, legacy_toe_controls: bool = False,
     legacy_roll_controls: bool = False,
     up_axis: FitUpAxis = FitUpAxis.Y,
@@ -486,6 +496,9 @@ def plan_body_leg_foot(
             "6.925 Foot Pivots 的 HighHeel 驱动需要 Y-up 场景")
     body_by_name = {joint.name: joint for joint in body.joints}
     body_by_path = {joint.path: joint for joint in body.joints}
+    fk_by_source = {joint.source_joint: joint.path
+                    for joint in mechanisms.joints
+                    if joint.role is BodyLegMechanismRole.FK}
     if len(body_by_name) != len(body.joints):
         raise BodyLegFootValidationError("Body 关节名称必须唯一")
     try:
@@ -1027,6 +1040,15 @@ def plan_body_leg_foot(
                     ((f"AdvPy_FootRock{role}Sign_{suffix}.input2", -1.0),))
                     for role in ("Inner", "Outer"))
             roll_nodes += rock_nodes
+        hybrid_align_source = (hybrid.segments[-2].source_path
+                               if hybrid is not None else None)
+        if hybrid_align_source is not None and hybrid_align_source not in fk_by_source:
+            raise BodyLegFootValidationError(
+                f"{suffix} 侧 IKHybrid 缺少远端中间关节 FK 驱动")
+        hybrid_align_parent = (fk_by_source[hybrid_align_source]
+                               if hybrid_align_source is not None else "")
+        hybrid_align_name = (f"AdvPy_AlignIKTo{body_by_path[hybrid_align_source].name}"
+                             if hybrid_align_source is not None else "")
         sides.append(BodyLegFootSideSpec(
             side=limb.side,
             legacy_roll_controls=legacy_roll_controls,
@@ -1081,6 +1103,14 @@ def plan_body_leg_foot(
             qtoes_solver_joint_list=(limb.toe_solver_joint_list
                                      if separate_qtoes and not hybrid else None),
             hybrid=hybrid,
+            hybrid_align_name=hybrid_align_name,
+            hybrid_align_path=(f"{hybrid_align_parent}|{hybrid_align_name}"
+                               if hybrid_align_name else ""),
+            hybrid_align_parent_path=hybrid_align_parent,
+            hybrid_align_position=(body_by_path[hybrid_align_source].world_position
+                                   if hybrid_align_source is not None else None),
+            hybrid_align_axes=(limb.ankle_axes
+                               if hybrid_align_source is not None else None),
         ))
     return BodyLegFootPlan(tuple(sides))
 
@@ -1449,6 +1479,20 @@ def audit_body_leg_foot(
                 ))
         if spec.hybrid is not None:
             hybrid = spec.hybrid
+            if (state.hybrid_align_path != spec.hybrid_align_path
+                    or state.hybrid_align_parent_path !=
+                    spec.hybrid_align_parent_path
+                    or (check_initial_pose and (
+                        state.hybrid_align_axes is None
+                        or spec.hybrid_align_axes is None
+                        or any(not _close(actual, expected, tolerance)
+                               for actual, expected in zip(
+                                   state.hybrid_align_axes,
+                                   spec.hybrid_align_axes))))):
+                issues.append(BodyLegFootIssue(
+                    "foot_hybrid_align",
+                    "IKHybrid AlignIKTo 层级或初始朝向不一致",
+                    spec.side.value))
             expected_nodes = tuple(
                 (path, path, path.rsplit("|", 1)[0])
                 for segment in hybrid.segments

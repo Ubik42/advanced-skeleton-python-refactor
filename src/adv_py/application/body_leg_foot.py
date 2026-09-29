@@ -103,7 +103,7 @@ class BuildBodyLegFoot:
         requested_pivots = requested_foot_pivot_sides(
             symmetry.instances, symmetry.source.metadata)
         foot = plan_body_leg_foot(
-            body, ik, up_axis=symmetry.source.up_axis,
+            body, ik, mechanisms, up_axis=symmetry.source.up_axis,
             foot_pivots_by_side=frozenset(requested_pivots))
         provenance = audit_body_provenance(
             oriented_body_provenance(

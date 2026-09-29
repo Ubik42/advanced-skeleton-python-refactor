@@ -271,7 +271,8 @@ class BuildBodyLegRig:
         requested_pivots = requested_foot_pivot_sides(
             safety.symmetry.instances, safety.symmetry.source.metadata)
         foot = plan_body_leg_foot(
-            safety.body, ik, up_axis=safety.symmetry.source.up_axis,
+            safety.body, ik, mechanisms,
+            up_axis=safety.symmetry.source.up_axis,
             foot_pivots_by_side=frozenset(requested_pivots))
         pole_aim = (
             plan_body_leg_pole_aim(
@@ -369,6 +370,7 @@ class BuildBodyLegRig:
                 if name)
             if side.hybrid is not None:
                 names.extend(side.hybrid.node_names)
+                names.append(side.hybrid_align_name)
             else:
                 names.extend((
                     side.toe_offset_name,

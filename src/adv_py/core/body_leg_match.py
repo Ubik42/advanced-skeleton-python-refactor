@@ -170,6 +170,8 @@ def plan_body_leg_fk_to_ik(
                              f"AdvPy_Roll{proximal.marker_name}_{side.value}"), None)
         if reverse_roll is None:
             raise ValueError("IKHybrid 缺少近端 Roll 控制器")
+        if not foot_side.hybrid_align_path:
+            raise ValueError("IKHybrid 缺少 AlignIKTo 辅助节点")
         ankle_target_position = by_path[proximal.source_path].world_position
         ankle_target_axes = by_path[distal.source_path].world_axes
     else:
@@ -263,6 +265,8 @@ def plan_body_leg_fk_to_ik(
             *(source for _, source in hybrid_targets),
             *((foot_side.handle_name, reverse_roll)
               if reverse_roll is not None else ()),
+            *((foot_side.hybrid_align_path,)
+              if hybrid is not None else ()),
             *(pivot.roll_control_path for pivot in foot_side.pivots
               if pivot.roll_control_path),
             *(manual.control_path for manual in foot_side.manual_pivots),
@@ -285,7 +289,7 @@ def plan_body_leg_fk_to_ik(
         hybrid_joint_poses=hybrid_poses,
         hybrid_ankle_position_source=(fk_by_body[proximal.source_path]
                                       if hybrid is not None else None),
-        hybrid_ankle_axis_source=(fk_by_body[distal.source_path]
+        hybrid_ankle_axis_source=(foot_side.hybrid_align_path
                                   if hybrid is not None else None),
         reverse_roll_control_path=reverse_roll,
         reverse_roll_handle_name=(foot_side.handle_name
@@ -384,8 +388,11 @@ def audit_body_leg_fk_to_ik_preflight(
         issues.append(BodyLegMatchIssue(
             "hybrid_pose_drift", "IKHybrid 来源关节姿态已变化",
             plan.side.value))
-    if (tuple(path for path, _, _ in state.hybrid_fk_poses) !=
-            tuple(source for _, source in plan.hybrid_control_targets)):
+    wanted_fk_sources = tuple(
+        source for _, source in plan.hybrid_control_targets) + (
+            (plan.hybrid_ankle_axis_source,)
+            if plan.hybrid_ankle_axis_source is not None else ())
+    if tuple(path for path, _, _ in state.hybrid_fk_poses) != wanted_fk_sources:
         issues.append(BodyLegMatchIssue(
             "hybrid_fk_source_missing", "IKHybrid 缺少 FK 驱动姿态",
             plan.side.value))
