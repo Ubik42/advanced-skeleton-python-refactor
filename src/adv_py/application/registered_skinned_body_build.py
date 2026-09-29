@@ -9,6 +9,7 @@ from adv_py.core.fit_part_twist import FitPartTwistSource
 from .registered_body_build import (BuildRegisteredBodyCharacter,
                                     RegisteredBodyBuildResult,
                                     _JoinedTransactionHost)
+from .body_selection_sets import finalize_body_character_sets
 from .skin_bind import BindSkin, SkinBindBuildResult
 
 
@@ -62,9 +63,12 @@ class BuildRegisteredSkinnedBodyCharacter:
               include_segment_influences: bool = True,
               use_fit_part_hierarchy: bool = True,
               fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
-              on_stage=None) -> RegisteredSkinnedBodyBuildResult:
+              on_stage=None,
+              _scene_before=None) -> RegisteredSkinnedBodyBuildResult:
         plan = self.plan(meshes, skin_prefix=skin_prefix,
                          maximum_influences=maximum_influences)
+        scene_before = (_scene_before if _scene_before is not None
+                        else self._host.capture_body_scene_nodes())
         with self._host.transaction("从 Fit 构建完整蒙皮角色"):
             joined = _JoinedTransactionHost(self._host)
             character = BuildRegisteredBodyCharacter(joined).apply(
@@ -73,7 +77,9 @@ class BuildRegisteredSkinnedBodyCharacter:
                 infer_missing_labels=infer_missing_labels,
                 include_segment_influences=include_segment_influences,
                 use_fit_part_hierarchy=use_fit_part_hierarchy,
-                fit_part_twist_sources=fit_part_twist_sources)
+                fit_part_twist_sources=fit_part_twist_sources,
+                _scene_before=scene_before,
+                _defer_all_set=True)
             if on_stage:
                 on_stage("rig-built")
             influences = tuple(path for path in (
@@ -86,6 +92,10 @@ class BuildRegisteredSkinnedBodyCharacter:
             skins = tuple(BindSkin(joined).apply(mesh, influences,
                 skin_name=name, maximum_influences=plan.maximum_influences)
                 for mesh, name in zip(geometry_meshes, plan.skin_names))
+            finalize_body_character_sets(
+                joined, character.registration, character.rig.plan,
+                scene_before=scene_before, fit_container=container_name,
+                create_sets=False)
             if on_stage:
                 on_stage("skins-bound")
         return RegisteredSkinnedBodyBuildResult(character, skins)

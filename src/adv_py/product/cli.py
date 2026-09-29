@@ -15,7 +15,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation, BakeBodyExportSkele
     EnableBodyCharacterSplineAnimation, EnableBodyCharacterSpaceAnimation,
     BakeBodyCharacterLimbMode, BakeBodyCharacterSpineMode,
     SwitchBodyCharacterSpace,
-    BuildRegisteredBodyCharacter,
+    BuildCharacterFromFit,
     CreateAndImportFitSkeleton, ExportFitSkeleton,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget,
     BindSkin,
@@ -43,7 +43,6 @@ from adv_py.core import (BodyFbxCurvePolicy, BodyFbxEncoding,
                          FaceLandmark, FaceShapeKind, FaceTarget,
                          face_performance_from_json,
                          registered_spine_weight_redistribution)
-from adv_py.core.variable_body_fit import variable_axial_description
 from .input_documents import (load_face_build_spec, load_face_landmarks,
                               load_skin_path_mapping, load_skin_redistribution,
                               load_surface_alignment, load_reference_path_map)
@@ -487,13 +486,12 @@ def _run(args, gateway) -> dict:
                 "joints": len(imported.joint_paths)}
     if args.command == "body-build":
         output = gateway.preflight_output(args.output)
-        description = (variable_axial_description(args.spine_segments)
-            if args.spine_segments is not None else None)
-        built = BuildRegisteredBodyCharacter(host).apply(args.fit,
-            axial_description=description, include_head_aim=args.head_aim,
+        built = BuildCharacterFromFit(host).apply(args.fit,
+            spine_segments=args.spine_segments,
+            include_head_aim=args.head_aim,
             include_segment_influences=args.fit_parts,
             use_fit_part_hierarchy=args.fit_parts)
-        registration = built.registration
+        registration = built.body.registration
         _emit("character_registered", channels=len(registration.channels))
         saved = gateway.save_new(output)
         _emit("scene_saved", scene=str(saved))

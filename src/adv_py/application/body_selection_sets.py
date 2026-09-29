@@ -74,3 +74,33 @@ def unregistered_fk_selection_extras(
         if spec.control_path not in registered
         and spec.control_path not in rig_plan.no_control_paths
     )
+
+
+def finalize_body_character_sets(
+    host, registration: CharacterRegistration, rig_plan, *,
+    segments: tuple[str, ...] = (),
+    extras: tuple[str, ...] = (),
+    scene_before=None,
+    fit_container: str = "FitSkeleton",
+    create_sets: bool = True,
+    populate_all: bool = True,
+) -> None:
+    """Finish ownership only after the last rig/Skin node has been created.
+
+    Rebuild can defer this step until its legacy channels are reconciled.
+    A skinned build creates the sets with the rig, then calls this function
+    again after Skin binding with ``create_sets=False``.
+    """
+    if create_sets:
+        BuildBodySelectionSets(host).apply(
+            registration, segments,
+            extras=extras + unregistered_fk_selection_extras(
+                registration, rig_plan))
+        if host.has_body_build_pose_overrides():
+            from .body_build_pose import GoToBodyBuildPose
+            GoToBodyBuildPose(host).apply()
+    if populate_all:
+        if scene_before is None:
+            raise ValueError("登记 AllSet 需要构建前场景快照")
+        from .body_all_set import PopulateBodyAllSet
+        PopulateBodyAllSet(host).apply(scene_before, fit_container)

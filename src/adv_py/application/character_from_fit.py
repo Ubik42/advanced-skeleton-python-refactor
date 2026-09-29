@@ -119,6 +119,7 @@ class BuildCharacterFromFit:
             return CharacterFromFitResult(character, ())
         with self._host.transaction("复制模型并构建蒙皮角色"):
             joined = _JoinedTransactionHost(self._host)
+            scene_before = joined.capture_body_scene_nodes()
             local_meshes = tuple(
                 self._host.copy_external_mesh_for_character(mesh)
                 for mesh in plan.meshes)
@@ -129,5 +130,6 @@ class BuildCharacterFromFit:
                 include_head_aim=plan.include_head_aim,
                 infer_missing_labels=plan.infer_missing_labels,
                 include_segment_influences=plan.include_segment_influences,
-                use_fit_part_hierarchy=plan.use_fit_part_hierarchy)
+                use_fit_part_hierarchy=plan.use_fit_part_hierarchy,
+                _scene_before=scene_before)
             return CharacterFromFitResult(built.character, built.skins)

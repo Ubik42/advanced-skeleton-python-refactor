@@ -1,22 +1,23 @@
 """Build and verify a replacement rig before transferring any original data."""
-from dataclasses import dataclass,replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from adv_py.core.character_registry import CharacterRegistration
-from adv_py.core.character_preservation import CharacterPreservation,RebuildOwnership,validate_rebuild_layout,character_transfer_error
+from adv_py.core.body_description import BodyAxialDescription
+from adv_py.core.body_spline import BodySplinePlan
+from adv_py.core.character_registry import (
+    CharacterRegistration, CharacterRegistryError,
+)
+from adv_py.core.character_preservation import (
+    CharacterPreservation, RebuildOwnership, character_transfer_error,
+)
 from .character_preservation import CaptureBodyCharacterPreservation
 from .fit_skeleton_io import ExportFitSkeleton,CreateAndImportFitSkeleton
 from .registered_body_build import BuildRegisteredBodyCharacter
-from .body_selection_sets import (
-    BuildBodySelectionSets, unregistered_fk_selection_extras,
-)
-from .body_all_set import PopulateBodyAllSet
-from .body_build_pose import GoToBodyBuildPose
+from .body_selection_sets import finalize_body_character_sets
 from .character_limb_animation import EnableBodyCharacterLimbAnimation
 from .character_stretch_matching import EnableBodyCharacterStretchMatching
 from .character_spaces import EnableBodyCharacterSpaceAnimation
-from adv_py.core.character_registry import CharacterRegistryError
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,49 @@ class StagedCharacterRebuild:
     registration: CharacterRegistration
     custom_properties: tuple = ()
     ownership: RebuildOwnership | None = None
+
+
+def _rebuild_axial_description(
+    registration: CharacterRegistration,
+) -> BodyAxialDescription | None:
+    if not isinstance(registration.spine, BodySplinePlan):
+        return None
+    by_path = {joint.path: joint for joint in registration.body}
+    heads = [joint for joint in registration.body
+             if joint.path.rsplit("|", 1)[-1] == "Head_M"]
+    if len(heads) != 1:
+        raise CharacterRegistryError(
+            "可变身体重建需要明确的 Head_M 颈头终点")
+    neck = []
+    joint = heads[0]
+    chest = registration.spine.body_joints[-1]
+    visited = set()
+    while joint.path != chest:
+        if joint.path in visited:
+            raise CharacterRegistryError("重建颈头链存在父级循环")
+        visited.add(joint.path)
+        neck.append(joint.path.rsplit("|", 1)[-1])
+        if joint.parent not in by_path:
+            raise CharacterRegistryError("重建颈头链没有连接到胸部")
+        joint = by_path[joint.parent]
+    return BodyAxialDescription(
+        spine=tuple(path.rsplit("|", 1)[-1]
+                    for path in registration.spine.body_joints),
+        neck=tuple(reversed(neck)),
+    )
+
+
+def _transfer_sample_frames(
+    original: CharacterPreservation,
+) -> tuple[float, ...]:
+    keys = sorted({original.current_time,
+                   *(time for curve in original.curves for time in curve.times)})
+    frames = tuple(sorted({*keys, *((a + b) / 2
+                                    for a, b in zip(keys, keys[1:]))}))
+    if len(frames) > 2000:
+        raise CharacterRegistryError(
+            "交接复检采样最多 2000 帧，需要分段验证策略")
+    return frames
 
 
 class StageBodyCharacterRebuild:
@@ -50,24 +94,8 @@ class StageBodyCharacterRebuild:
                 CreateAndImportFitSkeleton(stage).apply(fit)
                 scene_before = stage.capture_body_scene_nodes()
                 keys={channel.key for channel in original.registration.channels}
-                from adv_py.core.body_spline import BodySplinePlan
-                from adv_py.core.body_description import BodyAxialDescription
-                description = None
-                if isinstance(original.registration.spine, BodySplinePlan):
-                    source = original.registration
-                    by_path = {joint.path: joint for joint in source.body}
-                    heads = [joint for joint in source.body if joint.path.rsplit('|',1)[-1] == 'Head_M']
-                    if len(heads) != 1:
-                        raise CharacterRegistryError('可变身体重建需要明确的 Head_M 颈头终点')
-                    neck = []
-                    joint = heads[0]
-                    while joint.path != source.spine.body_joints[-1]:
-                        neck.append(joint.path.rsplit('|',1)[-1])
-                        if joint.parent not in by_path:
-                            raise CharacterRegistryError('重建颈头链没有连接到胸部')
-                        joint = by_path[joint.parent]
-                    description = BodyAxialDescription(
-                        spine=tuple(p.rsplit('|',1)[-1] for p in source.spine.body_joints), neck=tuple(reversed(neck)))
+                description = _rebuild_axial_description(
+                    original.registration)
                 # Rebuild the same Body/Part/control graph as a fresh
                 # character. Selection sets wait until legacy channel
                 # compatibility and animation registration are resolved.
@@ -76,7 +104,8 @@ class StageBodyCharacterRebuild:
                     axial_description=description,
                     include_head_aim='head.aim.headAim' in keys,
                     _include_dynamic=include_dynamic,
-                    _defer_selection_sets=True)
+                    _defer_selection_sets=True,
+                    _scene_before=scene_before)
                 fit_path = '|Group|FitSkeleton'
                 registration = built.registration
                 if any('.ikOrientation.' in key for key in keys):registration=EnableBodyCharacterLimbAnimation(stage).apply()
@@ -92,15 +121,12 @@ class StageBodyCharacterRebuild:
                 host.match_character_rebuild_solver(stage,registration)
                 registration=host.preserve_character_rebuild_binding(stage,original.registration,registration)
                 if selection_mode != "none":
-                    BuildBodySelectionSets(stage).apply(
-                        registration, built.segment_influences,
-                        extras=(built.selection_extras
-                                + unregistered_fk_selection_extras(
-                                    registration, built.rig.plan)))
-                    if stage.has_body_build_pose_overrides():
-                        GoToBodyBuildPose(stage).apply()
-                    if selection_mode == "populated":
-                        PopulateBodyAllSet(stage).apply(scene_before, fit_path)
+                    finalize_body_character_sets(
+                        stage, registration, built.rig.plan,
+                        segments=built.segment_influences,
+                        extras=built.selection_extras,
+                        scene_before=scene_before, fit_container=fit_path,
+                        populate_all=selection_mode == "populated")
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('暂存构建改写了原角色，已回滚')
                 properties=host.plan_character_property_transfer(original,namespace)
@@ -121,9 +147,7 @@ class TransferStagedBodyCharacterData:
         host.preflight_character_transfer(staged)
         if staged.ownership is not None and host.audit_character_rebuild_ownership(staged)!=staged.ownership:
             raise CharacterRegistryError('暂存后的 Rig 归属或连接已变化，请重新暂存')
-        keys=sorted({original.current_time,*[t for curve in original.curves for t in curve.times]})
-        frames=tuple(sorted({*keys,*[(a+b)/2 for a,b in zip(keys,keys[1:])]}))
-        if len(frames)>2000:raise CharacterRegistryError('交接复检采样最多 2000 帧，需要分段验证策略')
+        frames=_transfer_sample_frames(original)
         before=host.sample_character_transfer(staged,frames)
         with host.character_rebuild_transaction('Transfer preserved data to replacement rig'):
             host.transfer_character_data(staged)
@@ -144,8 +168,7 @@ class RebuildBodyCharacter:
         with host.transaction('Rebuild character preserving user data'):
             staged=StageBodyCharacterRebuild(host).apply(namespace,extensions=extensions)
             TransferStagedBodyCharacterData(host).apply(staged)
-            keys=sorted({staged.original.current_time,*[t for curve in staged.original.curves for t in curve.times]})
-            frames=tuple(sorted({*keys,*[(a+b)/2 for a,b in zip(keys,keys[1:])]}))
+            frames=_transfer_sample_frames(staged.original)
             before=host.sample_character_transfer(staged,frames,target=True)
             promoted=host.promote_character_rebuild(staged)
             after=host.sample_character_transfer(promoted,frames,target=True)

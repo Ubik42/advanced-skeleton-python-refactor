@@ -52,10 +52,8 @@ from .body_rig_validation import body_bind_pose_matches
 from adv_py.core.body_skeleton import body_skeleton_unchanged
 from .character_registry import RegisterBodyCharacter
 from .body_selection_sets import (
-    BuildBodySelectionSets, unregistered_fk_selection_extras,
+    finalize_body_character_sets,
 )
-from .body_all_set import PopulateBodyAllSet
-from .body_build_pose import GoToBodyBuildPose
 from .finger_mid_deform import BuildFingerMidDeform
 from .fit_part import BuildFitPartHierarchy, FitPartHierarchyResult
 from .fit_bendy import (BuildFitBendyDeform, BuildFitBendyGuides,
@@ -310,6 +308,7 @@ class BuildRegisteredBodyCharacter:
               _scene_before=None,
               _include_dynamic: bool = True,
               _defer_selection_sets: bool = False,
+              _defer_all_set: bool = False,
               ) -> RegisteredBodyBuildResult:
         if _scene_before is None:
             capture_nodes = getattr(self._host,
@@ -350,7 +349,8 @@ class BuildRegisteredBodyCharacter:
                     _hierarchy_prepared=True,
                     _scene_before=_scene_before,
                     _include_dynamic=_include_dynamic,
-                    _defer_selection_sets=_defer_selection_sets)
+                    _defer_selection_sets=_defer_selection_sets,
+                    _defer_all_set=_defer_all_set)
         preview = BuildOrientedBodySkeleton(self._host).plan(
             container_name, infer_missing_labels=infer_missing_labels,
             root_parent_path=_DEFORMATION_SYSTEM_PATH)
@@ -1046,13 +1046,10 @@ class BuildRegisteredBodyCharacter:
                 extra for chain in bendy_chains
                 for extra in chain.micro_extra_names)
             if not _defer_selection_sets:
-                BuildBodySelectionSets(joined).apply(
-                    registration, tuple(segments),
-                    extras=(selection_extras
-                            + unregistered_fk_selection_extras(
-                                registration, rig.plan)))
-                if joined.has_body_build_pose_overrides():
-                    GoToBodyBuildPose(joined).apply()
+                finalize_body_character_sets(
+                    joined, registration, rig.plan,
+                    segments=tuple(segments), extras=selection_extras,
+                    populate_all=False)
             joined.finalize_fit_skeleton_visibility(container_name)
             hierarchy = joined.capture_body_system_hierarchy(
                 skeleton.snapshot.root, container_name,
@@ -1061,9 +1058,12 @@ class BuildRegisteredBodyCharacter:
                     skeleton.snapshot.root, container_name,
                     include_dynamic=_include_dynamic):
                 raise RuntimeError("角色主构建结束时 Body 变形系统层级不一致")
-            if _scene_before is not None and not _defer_selection_sets:
-                PopulateBodyAllSet(joined).apply(
-                    _scene_before, container_name)
+            if (_scene_before is not None and not _defer_selection_sets
+                    and not _defer_all_set):
+                finalize_body_character_sets(
+                    joined, registration, rig.plan,
+                    scene_before=_scene_before,
+                    fit_container=container_name, create_sets=False)
         return RegisteredBodyBuildResult(
             skeleton, rig, registration, tuple(segments),
             fit_part_hierarchy, inbetween_segments,
