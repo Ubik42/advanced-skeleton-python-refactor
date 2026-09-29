@@ -494,6 +494,50 @@ class MayaFitJointHost:
             )
         return FitHierarchySnapshot(container=container, joints=tuple(nodes))
 
+    def collapse_fit_generated_transforms(self, container_name: str) -> None:
+        """Remove Maya-generated transform wrappers around Fit joints."""
+        self._require_transaction()
+        container = self._resolve_transform(
+            container_name, FitHierarchyValidationError
+        )
+        descendants = self._cmds.listRelatives(
+            container, allDescendents=True, fullPath=True
+        ) or []
+        wrappers = [path for path in descendants
+                    if self._cmds.nodeType(path) == "transform"
+                    and path.rsplit("|", 1)[-1].startswith("transform")]
+        for wrapper in wrappers:
+            current = self._cmds.ls(wrapper, long=True, type="transform") or []
+            if len(current) != 1:
+                raise RuntimeError("Fit 自动生成的中间层路径不唯一：" + wrapper)
+            parent = self._cmds.listRelatives(
+                current[0], parent=True, fullPath=True
+            ) or []
+            if len(parent) != 1:
+                raise RuntimeError("Fit 自动生成的中间层缺少父级：" + wrapper)
+            children = self._cmds.listRelatives(
+                current[0], children=True, fullPath=True
+            ) or []
+            if any(self._cmds.nodeType(child) not in ("joint", "transform")
+                   for child in children):
+                raise FitSkeletonValidationError(
+                    "Fit 自动生成的中间层包含非关节对象：" + wrapper
+                )
+            if any(self._cmds.nodeType(child) == "transform" for child in children):
+                raise FitSkeletonValidationError(
+                    "Fit 自动生成的中间层包含其他 transform：" + wrapper
+                )
+            self._transaction_changed = True
+            for child in children:
+                result = self._cmds.parent(child, parent[0], absolute=True)
+                moved = self._cmds.ls(result[0], long=True, type="joint") or []
+                if len(moved) != 1 or (self._cmds.listRelatives(
+                        moved[0], parent=True, fullPath=True) or []) != parent:
+                    raise RuntimeError(
+                        "Fit 自动生成的中间层移除时再次产生中间层：" + wrapper
+                    )
+            self._cmds.delete(current[0])
+
     def prepare_fit_root(self, container_name: str) -> str:
         """Apply the root naming/insertion pass from asBuildAdvancedSkeleton."""
         self._require_transaction()

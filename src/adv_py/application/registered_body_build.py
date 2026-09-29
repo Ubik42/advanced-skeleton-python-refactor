@@ -422,6 +422,7 @@ class BuildRegisteredBodyCharacter:
                     + "、".join(hierarchy_collisions))
             with self._host.transaction("构建并登记完整 Body 角色"):
                 joined = _JoinedTransactionHost(self._host)
+                joined.collapse_fit_generated_transforms(container_name)
                 joined.prepare_fit_root(container_name)
                 joined.normalize_fit_joint_names(container_name)
                 joined.normalize_fit_ik_labels(container_name)
