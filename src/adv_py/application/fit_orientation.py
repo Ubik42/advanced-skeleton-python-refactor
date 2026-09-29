@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from adv_py.core.fit_hierarchy import audit_fit_hierarchy
@@ -258,8 +258,18 @@ class OrientWorldFitJoints:
             )
         if settings != plan.before_settings:
             raise RuntimeError("worldOrient 修改后复检失败：容器设置被改写")
-        if verified.metadata != plan.before.metadata:
-            raise RuntimeError("worldOrient 修改后复检失败：元数据被改写")
+        corrections = {
+            change.joint: change.corrected_world_orient_forward
+            for change in plan.changes
+            if change.corrected_world_orient_forward is not None
+        }
+        expected_metadata = tuple(
+            replace(item, world_orient_forward=corrections[item.joint])
+            if item.joint in corrections else item
+            for item in plan.before.metadata
+        )
+        if verified.metadata != expected_metadata:
+            raise RuntimeError("worldOrient 修改后复检失败：元数据与原版修正规则不符")
         if verified.axis_configuration != plan.before.axis_configuration:
             raise RuntimeError("worldOrient 修改后复检失败：全局轴配置被改写")
 

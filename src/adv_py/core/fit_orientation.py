@@ -92,6 +92,7 @@ def parse_world_orientation_policy(
     world_orient_forward: str | None,
     *,
     joint: str = "Fit joint",
+    allow_axis_conflict: bool = False,
 ) -> FitWorldOrientationPolicy | None:
     if world_orient_up is None:
         if world_orient_forward is not None:
@@ -130,7 +131,7 @@ def parse_world_orientation_policy(
         raise FitOrientationValidationError(
             f"{joint} 的 worldOrientForward 值无效：{world_orient_forward}"
         ) from error
-    if forward.unsigned_axis is up.unsigned_axis:
+    if forward.unsigned_axis is up.unsigned_axis and not allow_axis_conflict:
         raise FitOrientationValidationError(
             f"{joint} 的 worldOrientUp 与 worldOrientForward 不能使用同一本地轴"
         )
@@ -223,6 +224,8 @@ class FitWorldOrientationChange:
     descendant_world_positions: tuple[tuple[str, Vector3], ...]
     desired_world_axes: tuple[Vector3, Vector3, Vector3]
     policy: FitWorldOrientationPolicy
+    world_match_axes: tuple[FitLocalDirection, FitLocalDirection] | None = None
+    corrected_world_orient_forward: str | None = None
 
 
 def world_axes_from_orientation_policy(
@@ -281,11 +284,6 @@ def plan_world_fit_orientations(
         raise FitOrientationValidationError(
             "worldOrient 当前只支持 Maya Y-Up 场景"
         )
-    if snapshot.axis_configuration.world_match:
-        raise FitOrientationValidationError(
-            "World Match 已启用；当前 worldOrient 写入器不处理该分支"
-        )
-
     hierarchy = {node.path: node for node in snapshot.hierarchy.joints}
     orientations = {state.joint: state for state in snapshot.joints}
     metadata = {item.joint: item for item in snapshot.metadata}
@@ -302,10 +300,45 @@ def plan_world_fit_orientations(
             metadata[path].world_orient_up,
             metadata[path].world_orient_forward,
             joint=node.short_name,
+            allow_axis_conflict=True,
         )
         if policy is None:
             raise FitOrientationValidationError(
                 f"{node.short_name} 没有 worldOrient 策略"
+            )
+        world_match = snapshot.axis_configuration.world_match
+        corrected_forward: str | None = None
+        if world_match:
+            # asFitModeUpdateJoints forces worldOrientUp to Y-Up under
+            # worldmatch and stores -Y/Z as the local aim/secondary pair.
+            policy = FitWorldOrientationPolicy(FitLocalDirection.POSITIVE_Y,
+                                               policy.forward_local_direction)
+        if (policy.forward_local_direction is not None
+                and policy.forward_local_direction.unsigned_axis
+                is policy.up_local_direction.unsigned_axis):
+            up_index = {
+                FitLocalDirection.POSITIVE_X: 0,
+                FitLocalDirection.POSITIVE_Y: 1,
+                FitLocalDirection.POSITIVE_Z: 2,
+                FitLocalDirection.NEGATIVE_X: 3,
+                FitLocalDirection.NEGATIVE_Y: 4,
+                FitLocalDirection.NEGATIVE_Z: 5,
+            }[policy.up_local_direction]
+            next_index = 0 if up_index == 5 else up_index + 1
+            corrected_forward = (
+                "xForward", "yForward", "zForward",
+                "xBackward", "yBackward", "zBackward",
+            )[next_index]
+            policy = FitWorldOrientationPolicy(
+                policy.up_local_direction,
+                (
+                    FitLocalDirection.POSITIVE_X,
+                    FitLocalDirection.POSITIVE_Y,
+                    FitLocalDirection.POSITIVE_Z,
+                    FitLocalDirection.NEGATIVE_X,
+                    FitLocalDirection.NEGATIVE_Y,
+                    FitLocalDirection.NEGATIVE_Z,
+                )[next_index],
             )
         direct_children = children[path]
         if len(direct_children) != 1:
@@ -324,12 +357,14 @@ def plan_world_fit_orientations(
             horizontal = (direction[0], 0.0, direction[2])
             desired = world_axes_from_orientation_policy(
                 policy,
-                free_secondary_local=snapshot.axis_configuration.secondary,
+                free_secondary_local=(FitLocalDirection.POSITIVE_Z
+                                      if world_match else
+                                      snapshot.axis_configuration.secondary),
                 free_secondary_world=horizontal,
             )
         else:
             desired = world_axes_from_orientation_policy(policy)
-        if all(
+        if not world_match and all(
             _dot(_normalize(current, "当前世界轴无效"), wanted)
             >= 1.0 - tolerance
             for current, wanted in zip(state.world_axes, desired)
@@ -351,6 +386,10 @@ def plan_world_fit_orientations(
                 ),
                 desired_world_axes=desired,
                 policy=policy,
+                world_match_axes=(FitLocalDirection.NEGATIVE_Y,
+                                  FitLocalDirection.POSITIVE_Z)
+                if world_match else None,
+                corrected_world_orient_forward=corrected_forward,
             )
         )
     return tuple(changes)

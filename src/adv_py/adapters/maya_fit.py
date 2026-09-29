@@ -665,7 +665,6 @@ class MayaFitJointHost:
                 child, children=True, type="joint", fullPath=True
             ) or []):
                 self._write_fit_axis_enums(child, change.world_match_axes)
-
     def _write_fit_axis_enums(
         self,
         joint: str,
@@ -743,6 +742,21 @@ class MayaFitJointHost:
                 descendant,
                 worldSpace=True,
                 translation=descendant_position,
+            )
+        if change.world_match_axes is not None:
+            self._write_fit_axis_enums(joint, change.world_match_axes)
+            if not (self._cmds.listRelatives(
+                child, children=True, type="joint", fullPath=True
+            ) or []):
+                self._write_fit_axis_enums(child, change.world_match_axes)
+        if change.corrected_world_orient_forward is not None:
+            # MEL writes the next Forward enum when Up and Forward coincide.
+            enum_names = _FIT_ATTRIBUTES[
+                FitJointField.WORLD_ORIENT_FORWARD
+            ].enum_names
+            self._cmds.setAttr(
+                f"{joint}.worldOrientForward",
+                enum_names.index(change.corrected_world_orient_forward),
             )
 
     def read_fit_skeleton_settings(
