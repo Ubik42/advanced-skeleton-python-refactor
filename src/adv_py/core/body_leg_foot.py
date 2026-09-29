@@ -66,7 +66,7 @@ class BodyLegFootPivotRole(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class BodyLegFootPivotSpec:
-    role: BodyLegFootPivotRole
+    role: BodyLegFootPivotRole | str
     name: str
     path: str
     parent_path: str
@@ -162,6 +162,63 @@ class BodyLegFootHighHeelSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyLegFootHybridSegmentSpec:
+    marker_name: str
+    start_driver_path: str
+    end_driver_path: str
+    handle_name: str
+    effector_name: str
+    handle_parent_path: str
+    control_offset_name: str
+    control_offset_path: str
+    control_name: str
+    control_path: str
+    source_path: str
+    source_position: Vector3
+    source_axes: AxisFrame
+    sampler1_offset_name: str
+    sampler1_offset_path: str
+    sampler1_name: str
+    sampler1_path: str
+    sampler2_offset_name: str
+    sampler2_offset_path: str
+    sampler2_name: str
+    sampler2_path: str
+    sampler2_parent_constraint: str
+    end_source_path: str
+    end_position: Vector3
+    end_axes: AxisFrame
+    wrapper_offset_name: str
+    wrapper_offset_path: str
+    wrapper_name: str
+    wrapper_path: str
+    radius: float
+    solver_joint_list: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BodyLegFootHybridSpec:
+    initial_handle_name: str
+    initial_effector_name: str
+    initial_start_driver_path: str
+    initial_end_driver_path: str
+    initial_handle_parent_path: str
+    segments: tuple[BodyLegFootHybridSegmentSpec, ...]
+    initial_solver_joint_list: tuple[str, ...] | None = None
+
+    @property
+    def node_names(self) -> tuple[str, ...]:
+        return (self.initial_handle_name, self.initial_effector_name,
+                *(name for segment in self.segments for name in (
+                    segment.handle_name, segment.effector_name,
+                    segment.control_offset_name, segment.control_name,
+                    segment.sampler1_offset_name, segment.sampler1_name,
+                    segment.sampler2_offset_name, segment.sampler2_name,
+                    segment.sampler2_parent_constraint,
+                    segment.wrapper_offset_name, segment.wrapper_name)))
+
+
+@dataclass(frozen=True, slots=True)
 class BodyLegFootSideSpec:
     side: FitBuildSide
     legacy_roll_controls: bool
@@ -199,6 +256,7 @@ class BodyLegFootSideSpec:
     qtoes_handle_name: str = ""
     qtoes_effector_name: str = ""
     qtoes_solver_joint_list: tuple[str, ...] | None = None
+    hybrid: BodyLegFootHybridSpec | None = None
 
     @property
     def toe_handle_parent_path(self) -> str:
@@ -262,7 +320,7 @@ class BodyLegFootInputState:
 
 @dataclass(frozen=True, slots=True)
 class BodyLegFootPivotState:
-    role: BodyLegFootPivotRole
+    role: BodyLegFootPivotRole | str
     path: str
     parent_path: str | None
     world_position: Vector3
@@ -341,6 +399,15 @@ class BodyLegFootHighHeelState:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyLegFootHybridState:
+    nodes: tuple[tuple[str, str | None, str | None], ...]
+    connections: tuple[tuple[str, str | None], ...]
+    constraint_targets: tuple[tuple[str, str | None], ...]
+    handles: tuple[tuple[str, str | None, tuple[str, ...], str | None], ...]
+    control_shapes: tuple[tuple[str, str | None], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BodyLegFootSideState:
     side: FitBuildSide
     attribute_values: tuple[tuple[str, float], ...]
@@ -378,6 +445,7 @@ class BodyLegFootSideState:
     qtoes_handle_parent_path: str | None = None
     qtoes_handle_joint_list: tuple[str, ...] = ()
     qtoes_handle_solver: str | None = None
+    hybrid: BodyLegFootHybridState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -416,6 +484,7 @@ def plan_body_leg_foot(
         raise BodyLegFootValidationError(
             "6.925 Foot Pivots 的 HighHeel 驱动需要 Y-up 场景")
     body_by_name = {joint.name: joint for joint in body.joints}
+    body_by_path = {joint.path: joint for joint in body.joints}
     if len(body_by_name) != len(body.joints):
         raise BodyLegFootValidationError("Body 关节名称必须唯一")
     try:
@@ -460,27 +529,40 @@ def plan_body_leg_foot(
                 f"Body 缺少 {suffix} 侧唯一的 Toes/ToesEnd 标记"
             )
         qtoes_topology = qtoes_by_suffix[suffix]
-        if qtoes_topology.hybrid:
-            raise BodyLegFootValidationError(
-                f"{suffix} 侧 QToes 需要 IKHybrid Roll／Sampler 和逐段 IK Handle")
-        qtoes_joint = next((joint for joint in body.joints
-                            if joint.path == qtoes_topology.qtoes_path), None)
+        qtoes_joint = body_by_path.get(qtoes_topology.qtoes_path)
         separate_qtoes = (qtoes_joint is not None
                            and qtoes_joint.path != qtoes_topology.toes_path)
-        if qtoes_topology.intermediate_paths and not separate_qtoes:
+        if (qtoes_topology.intermediate_paths and not separate_qtoes
+                and not qtoes_topology.hybrid):
             raise BodyLegFootValidationError(
                 f"{suffix} 侧脚趾主链含尚未规划逐段 Foot IK 的中间关节")
-        if separate_qtoes and (legacy_roll_controls or
+        if qtoes_topology.hybrid and legacy_roll_controls:
+            raise BodyLegFootValidationError(
+                f"{suffix} 侧 IKHybrid 要求新建 Roll 控制层")
+        if qtoes_topology.hybrid and manual_enabled:
+            raise BodyLegFootValidationError(
+                f"{suffix} 侧 IKHybrid 与 Foot Pivots 的组合尚未接入")
+        if separate_qtoes and not qtoes_topology.hybrid and (legacy_roll_controls or
                 qtoes_topology.intermediate_paths != (qtoes_joint.path,)):
             raise BodyLegFootValidationError(
                 f"{suffix} 侧 QToes 脚趾主链尚不能使用旧版 Roll 或额外中间关节")
-        if separate_qtoes and (limb.toe_solver_joint_list is None or
+        if separate_qtoes and not qtoes_topology.hybrid and (
+                limb.toe_solver_joint_list is None or
                 len(limb.toe_solver_joint_list) != 2):
             raise BodyLegFootValidationError(
                 f"{suffix} 侧 QToes 缺少 Ankle→QToes IK 机制关节")
         marker_roles = tuple(row for row in all_marker_roles
                              if f"{row[1]}_{suffix}" in body_by_name)
-        if separate_qtoes:
+        if qtoes_topology.hybrid:
+            marker_roles += tuple(
+                ((BodyLegFootPivotRole.QTOES
+                  if joint.path == qtoes_topology.qtoes_path
+                  else "segment:" + joint.name),
+                 joint.name.removesuffix("_" + suffix), "", "Y", 1.0)
+                for joint in reversed(tuple(
+                    body_by_path[path]
+                    for path in qtoes_topology.intermediate_paths)))
+        elif separate_qtoes:
             marker_roles += ((BodyLegFootPivotRole.QTOES,
                               qtoes_joint.name.removesuffix("_" + suffix),
                               "", "Y", 1.0),)
@@ -734,6 +816,81 @@ def plan_body_leg_foot(
             pivot.path for pivot in pivots
             if pivot.role is BodyLegFootPivotRole.TOE
         )
+        hybrid = None
+        if qtoes_topology.hybrid:
+            source_paths = (qtoes_topology.intermediate_paths
+                            + (qtoes_topology.toes_path,))
+            end_paths = source_paths[1:] + (qtoes_topology.toes_end_path,)
+            driver_chain = ((*limb.toe_solver_joint_list,
+                             limb.toe_driver_path, limb.toe_end_driver_path)
+                            if limb.toe_solver_joint_list else ())
+            if len(driver_chain) != len(source_paths) + 2:
+                raise BodyLegFootValidationError(
+                    f"{suffix} 侧 IKHybrid 机制链与 Ankle→Toes 主链不一致")
+            pivot_by_marker = {pivot.name.removeprefix("AdvPy_Roll")
+                               .removesuffix("_" + suffix): pivot
+                               for pivot in pivots if pivot.roll_control_name}
+            segments = []
+            control_parent = limb.ankle_control_path
+            sampler2_parent = ik.root_path
+            for index, (source_path, end_path) in enumerate(zip(
+                    source_paths, end_paths)):
+                source = body_by_path[source_path]
+                end = body_by_path[end_path]
+                marker = source.name.removesuffix("_" + suffix)
+                end_marker = end.name.removesuffix("_" + suffix)
+                end_pivot = pivot_by_marker.get(end_marker)
+                if end_pivot is None:
+                    raise BodyLegFootValidationError(
+                        f"{suffix} 侧 IKHybrid 缺少 {end_marker} Roll")
+                stem = f"AdvPy_{marker}Pivot"
+                control_offset_name = f"AdvPy_IKhybridOffset{marker}_{suffix}"
+                control_offset = f"{control_parent}|{control_offset_name}"
+                control_name = f"AdvPy_IKhybrid{marker}_{suffix}"
+                control_path = f"{control_offset}|{control_name}"
+                sampler1_offset_name = f"{stem}Sampler1Offset_{suffix}"
+                sampler1_offset = f"{ik.root_path}|{sampler1_offset_name}"
+                sampler1_name = f"{stem}Sampler1_{suffix}"
+                sampler1 = f"{sampler1_offset}|{sampler1_name}"
+                sampler2_offset_name = f"{stem}Sampler2Offset_{suffix}"
+                sampler2_offset = f"{sampler2_parent}|{sampler2_offset_name}"
+                sampler2_name = f"{stem}Sampler2_{suffix}"
+                sampler2 = f"{sampler2_offset}|{sampler2_name}"
+                wrapper_offset_name = f"{stem}IKHybridRollOffset_{suffix}"
+                wrapper_offset = f"{end_pivot.path}|{wrapper_offset_name}"
+                wrapper_name = f"{stem}IKHybridRoll_{suffix}"
+                wrapper = f"{wrapper_offset}|{wrapper_name}"
+                segments.append(BodyLegFootHybridSegmentSpec(
+                    marker, driver_chain[index + 1], driver_chain[index + 2],
+                    f"AdvPy_LegIK{marker}Handle_{suffix}",
+                    f"AdvPy_LegIK{marker}Effector_{suffix}", wrapper,
+                    control_offset_name, control_offset,
+                    control_name, control_path,
+                    source_path, source.world_position, source.world_axes,
+                    sampler1_offset_name, sampler1_offset,
+                    sampler1_name, sampler1,
+                    sampler2_offset_name, sampler2_offset,
+                    sampler2_name, sampler2,
+                    f"AdvPy_{marker}PivotSamplerConstraint_{suffix}",
+                    end_path, end.world_position, end.world_axes,
+                    wrapper_offset_name, wrapper_offset,
+                    wrapper_name, wrapper,
+                    body_fk_curve_radius(body, source, ik.base_radius),
+                ))
+                control_parent = control_path
+                sampler2_parent = sampler2
+            first = body_by_path[source_paths[0]]
+            first_pivot = pivot_by_marker.get(
+                first.name.removesuffix("_" + suffix))
+            if first_pivot is None:
+                raise BodyLegFootValidationError(
+                    f"{suffix} 侧 IKHybrid 缺少首段 Roll")
+            hybrid = BodyLegFootHybridSpec(
+                f"AdvPy_LegIKAnkleTo{first.name.removesuffix('_' + suffix)}Handle_{suffix}",
+                f"AdvPy_LegIKAnkleTo{first.name.removesuffix('_' + suffix)}Effector_{suffix}",
+                driver_chain[0], driver_chain[1], first_pivot.path,
+                tuple(segments),
+            )
         toe_offset_name = f"AdvPy_ToeIKOffset_{suffix}"
         toe_parent_path = (next(manual.reverse_path
                                 for manual in manual_pivots
@@ -916,14 +1073,16 @@ def plan_body_leg_foot(
             toe_end_effector_name=f"AdvPy_LegIKToesEndEffector_{suffix}",
             toe_end_solver_joint_list=limb.toe_end_solver_joint_list,
             qtoes_driver_path=(limb.toe_solver_joint_list[-1]
-                               if separate_qtoes and limb.toe_solver_joint_list
+                               if separate_qtoes and not hybrid
+                               and limb.toe_solver_joint_list
                                else ""),
             qtoes_handle_name=(f"AdvPy_LegIKQToesHandle_{suffix}"
-                               if separate_qtoes else ""),
+                               if separate_qtoes and not hybrid else ""),
             qtoes_effector_name=(f"AdvPy_LegIKQToesEffector_{suffix}"
-                                 if separate_qtoes else ""),
+                                 if separate_qtoes and not hybrid else ""),
             qtoes_solver_joint_list=(limb.toe_solver_joint_list
-                                     if separate_qtoes else None),
+                                     if separate_qtoes and not hybrid else None),
+            hybrid=hybrid,
         ))
     return BodyLegFootPlan(tuple(sides))
 
@@ -1132,7 +1291,9 @@ def audit_body_leg_foot(
             roll_parent = (manual.control_path if manual is not None
                            else pivot.roll_offset_path)
             actual_pivot = pivot_by_role.get(pivot.role)
-            subject = f"{spec.side.value}:{pivot.role.value}"
+            role_name = (pivot.role.value if isinstance(
+                pivot.role, BodyLegFootPivotRole) else pivot.role)
+            subject = f"{spec.side.value}:{role_name}"
             if actual_pivot is None:
                 issues.append(BodyLegFootIssue("missing_foot_pivot", "缺少 Foot pivot", subject))
                 continue
@@ -1205,7 +1366,7 @@ def audit_body_leg_foot(
             issues.append(BodyLegFootIssue(
                 "foot_swivel", "Leg IK swivel 驱动来源不一致",
                 spec.side.value))
-        if (state.toe_handle_parent_path != spec.toe_handle_parent_path
+        if spec.hybrid is None and (state.toe_handle_parent_path != spec.toe_handle_parent_path
                 or state.toe_handle_joint_list != (
                     spec.toe_solver_joint_list
                     or (spec.toe_handle_start_path,))
@@ -1213,7 +1374,7 @@ def audit_body_leg_foot(
             issues.append(BodyLegFootIssue(
                 "foot_toe_ik_handle", "Toes 单链 IK 求解器结构不一致",
                 spec.side.value))
-        if (state.toe_end_handle_parent_path != spec.toe_control_path
+        if spec.hybrid is None and (state.toe_end_handle_parent_path != spec.toe_control_path
                 or state.toe_end_handle_joint_list != (
                     spec.toe_end_solver_joint_list
                     or (spec.toe_driver_path,))
@@ -1288,6 +1449,58 @@ def audit_body_leg_foot(
                     "自动 footRoll 节点类型、输入或参数不一致",
                     expected_node.name,
                 ))
+        if spec.hybrid is not None:
+            hybrid = spec.hybrid
+            expected_nodes = tuple(
+                (path, path, path.rsplit("|", 1)[0])
+                for segment in hybrid.segments
+                for path in (
+                    segment.control_offset_path, segment.control_path,
+                    segment.sampler1_offset_path, segment.sampler1_path,
+                    segment.sampler2_offset_path, segment.sampler2_path,
+                    segment.wrapper_offset_path, segment.wrapper_path))
+            expected_connections = tuple(
+                (target, source)
+                for segment in hybrid.segments
+                for target, source in (
+                    (segment.sampler2_path + ".rotate",
+                     segment.control_path + ".rotate"),
+                    (segment.wrapper_path + ".translate",
+                     segment.sampler1_path + ".translate"),
+                    (segment.wrapper_path + ".rotate",
+                     segment.sampler1_path + ".rotate")))
+            expected_constraints = tuple(
+                (segment.sampler2_parent_constraint,
+                 segment.sampler2_path)
+                for segment in hybrid.segments)
+            expected_handles = (
+                (hybrid.initial_handle_name,
+                 hybrid.initial_handle_parent_path,
+                 hybrid.initial_solver_joint_list
+                 or (hybrid.initial_start_driver_path,), "ikSCsolver"),
+                *((segment.handle_name, segment.handle_parent_path,
+                   segment.solver_joint_list
+                   or (segment.start_driver_path,), "ikSCsolver")
+                  for segment in hybrid.segments),
+            )
+            expected_shapes = tuple(
+                (segment.control_path, "nurbsCurve")
+                for segment in hybrid.segments)
+            if (state.hybrid is None
+                    or state.hybrid.nodes != expected_nodes
+                    or state.hybrid.connections != expected_connections
+                    or state.hybrid.constraint_targets != expected_constraints
+                    or state.hybrid.handles != expected_handles
+                    or state.hybrid.control_shapes != expected_shapes):
+                issues.append(BodyLegFootIssue(
+                    "foot_ik_hybrid_graph",
+                    "IKHybrid 控制、Sampler 或逐段 Handle 不一致",
+                    spec.side.value))
+            continue
+        if state.hybrid is not None:
+            issues.append(BodyLegFootIssue(
+                "foot_ik_hybrid_unexpected", "标准 Foot 不应有 IKHybrid 图",
+                spec.side.value))
         toe_pivot_path = next(
             pivot.path for pivot in spec.pivots
             if pivot.role is BodyLegFootPivotRole.TOE

@@ -108,6 +108,8 @@ def plan_body_leg_fk_to_ik(
     if len(foot_sides) != 1:
         raise ValueError("Leg FK→IK 匹配要求唯一的目标侧 Foot")
     foot_side = foot_sides[0]
+    if foot_side.hybrid is not None:
+        raise ValueError("Leg FK→IK 匹配的 IKHybrid 控制对齐尚未接入")
     by_path = {joint.path: joint for joint in body.joints}
     by_name = {joint.name: joint for joint in body.joints}
     wanted_names = tuple(
@@ -441,39 +443,29 @@ def plan_body_leg_ik_to_fk(
 ) -> BodyLegIkToFkPlan:
     if side not in (FitBuildSide.RIGHT, FitBuildSide.LEFT):
         raise ValueError("Leg IK→FK 匹配只接受 Left 或 Right")
-    control_by_name = {
-        spec.control_name: spec
-        for spec in fk_controls.controls
-        if spec.side is side
-    }
-    terminal_control = f"AdvPy_ToesEndFK_{side.value}" in control_by_name
-    control_names = (
-        f"AdvPy_HipFK_{side.value}",
-        f"AdvPy_KneeFK_{side.value}",
-        f"AdvPy_AnkleFK_{side.value}",
-        f"AdvPy_ToesFK_{side.value}",
-    ) + ((f"AdvPy_ToesEndFK_{side.value}",)
-         if terminal_control else ())
-    controls = tuple(
-        control_by_name[name]
-        for name in control_names
-        if name in control_by_name
-    )
+    controls = tuple(spec for spec in fk_controls.controls
+                     if spec.side is side)
     blend_sides = tuple(spec for spec in blend.sides if spec.side is side)
-    if len(controls) != len(control_names) or len(blend_sides) != 1:
+    if len(controls) < 4 or len(blend_sides) != 1:
         raise ValueError("Leg IK→FK 匹配缺少目标侧 FK 控制链")
+    blend_by_fk = {joint.fk_driver: joint
+                   for joint in blend_sides[0].joints}
+    if len(blend_by_fk) != len(blend_sides[0].joints) or any(
+            control.driven_joint not in blend_by_fk
+            for control in controls):
+        raise ValueError("Leg IK→FK 匹配的 FK 控制与 Body 混合关节不一致")
     by_path = {joint.path: joint for joint in body.joints}
-    by_name = {joint.name: joint for joint in body.joints}
-    joint_names = (("Hip", "Knee", "Ankle", "Toes", "ToesEnd")
-                   if terminal_control else
-                   ("Hip", "Knee", "Ankle", "Toes"))
-    wanted_names = tuple(f"{name}_{side.value}" for name in joint_names)
-    paths = tuple(
-        by_name[name].path for name in wanted_names if name in by_name
-    )
+    paths = tuple(blend_by_fk[control.driven_joint].body_joint
+                  for control in controls)
     blended_paths = {joint.body_joint for joint in blend_sides[0].joints}
     if (
-        len(paths) != len(joint_names)
+        len(set(paths)) != len(paths)
+        or tuple(by_path[path].name for path in paths[:3]
+                 if path in by_path) != tuple(
+                     f"{name}_{side.value}" for name in
+                     ("Hip", "Knee", "Ankle"))
+        or (paths[-1] in by_path and by_path[paths[-1]].name
+            not in (f"Toes_{side.value}", f"ToesEnd_{side.value}"))
         or any(path not in by_path for path in paths)
         or any(path not in blended_paths for path in paths)
     ):

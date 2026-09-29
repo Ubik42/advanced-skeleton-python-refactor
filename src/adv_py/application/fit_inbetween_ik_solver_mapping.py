@@ -94,6 +94,46 @@ def plan_character_inbetween_ik_solvers(
                 pole_control_path=spine.pole_control,
                 pole_constraint_name="AdvPy_SpinePoleConstraint")
     for foot in rig.leg.foot.sides:
+        if foot.hybrid is not None:
+            entries = (
+                ((foot.hybrid.initial_start_driver_path,
+                  foot.hybrid.initial_end_driver_path),
+                 foot.hybrid.initial_handle_name,
+                 foot.hybrid.initial_effector_name,
+                 foot.hybrid.initial_handle_parent_path, -1),
+                *(( (segment.start_driver_path,
+                     segment.end_driver_path),
+                    segment.handle_name, segment.effector_name,
+                    segment.handle_parent_path, index)
+                  for index, segment in enumerate(
+                      foot.hybrid.segments)),
+            )
+            for edge, handle_name, effector_name, parent, index in entries:
+                binding = pending.pop(edge, None)
+                if binding is None:
+                    continue
+                active = rebase_inbetween_ik_reference(
+                    foot, tuple(request.plan for request in requests))
+                active_hybrid = active.hybrid
+                if active_hybrid is None:
+                    raise ValueError("IKHybrid 计划在路径改写后缺失")
+                chain = ((active_hybrid.initial_start_driver_path,
+                          active_hybrid.initial_end_driver_path)
+                         if index == -1 else
+                         (active_hybrid.segments[index].start_driver_path,
+                          active_hybrid.segments[index].end_driver_path))
+                segment_plan = plan_inbetween_ik_parts(
+                    binding.parts, start_ik_driver=chain[0],
+                    end_ik_driver=chain[1])
+                solver = plan_inbetween_ik_solver(
+                    chain, (segment_plan,), handle_name=handle_name,
+                    effector_name=effector_name,
+                    solver_name="ikSCsolver",
+                    handle_parent_path=parent,
+                    pole_control_path=None, pole_constraint_name=None)
+                requests.append(InbetweenIkSolverRequest(
+                    solver, (segment_plan,)))
+            continue
         edges = (
             ((foot.ankle_driver_path, foot.qtoes_driver_path),
              foot.qtoes_handle_name, foot.qtoes_effector_name,
@@ -194,6 +234,21 @@ def rebase_character_rig_after_inbetween_ik(
                 by_handle[spec.qtoes_handle_name].solved_joint_list
                 if spec.qtoes_handle_name in by_handle
                 else spec.qtoes_solver_joint_list),
+            hybrid=(replace(
+                spec.hybrid,
+                initial_solver_joint_list=(
+                    by_handle[spec.hybrid.initial_handle_name]
+                    .solved_joint_list
+                    if spec.hybrid.initial_handle_name in by_handle
+                    else spec.hybrid.initial_solver_joint_list),
+                segments=tuple(replace(
+                    segment,
+                    solver_joint_list=(
+                        by_handle[segment.handle_name].solved_joint_list
+                        if segment.handle_name in by_handle
+                        else segment.solver_joint_list))
+                    for segment in spec.hybrid.segments))
+                if spec.hybrid is not None else None),
             toe_end_solver_joint_list=(
                 by_handle[spec.toe_end_handle_name].solved_joint_list
                 if spec.toe_end_handle_name in by_handle

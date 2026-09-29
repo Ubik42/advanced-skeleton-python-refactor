@@ -367,15 +367,18 @@ class BuildBodyLegRig:
                              pivot.roll_roller_name,
                              pivot.roll_extra_name)
                 if name)
-            names.extend((
-                side.toe_offset_name,
-                side.toe_extra_name,
-                side.toe_control_name,
-                side.toe_handle_name,
-                side.toe_effector_name,
-                side.toe_end_handle_name,
-                side.toe_end_effector_name,
-            ))
+            if side.hybrid is not None:
+                names.extend(side.hybrid.node_names)
+            else:
+                names.extend((
+                    side.toe_offset_name,
+                    side.toe_extra_name,
+                    side.toe_control_name,
+                    side.toe_handle_name,
+                    side.toe_effector_name,
+                    side.toe_end_handle_name,
+                    side.toe_end_effector_name,
+                ))
             if side.qtoes_handle_name:
                 names.extend((side.qtoes_handle_name,
                               side.qtoes_effector_name))

@@ -73,12 +73,20 @@ def character_channels(rig):
         add("foot."+side.side.value,side.ankle_control_path,side.attributes)
         for pivot in side.pivots:
             if pivot.roll_control_path:
-                add("foot.roll."+pivot.role.value+"."+side.side.value,
+                role = (pivot.role.value if hasattr(pivot.role, "value")
+                        else pivot.role)
+                add("foot.roll."+role+"."+side.side.value,
                     pivot.roll_control_path,rotation)
         for manual in side.manual_pivots:
             add("foot.pivot."+manual.target_name+"."+side.side.value,
                 manual.control_path,translation+rotation)
-        add("foot.toe."+side.side.value,side.toe_control_path,rotation)
+        if side.hybrid is not None:
+            for segment in side.hybrid.segments:
+                add("foot.ikhybrid."+segment.marker_name+"."
+                    +side.side.value,segment.control_path,
+                    translation+rotation)
+        else:
+            add("foot.toe."+side.side.value,side.toe_control_path,rotation)
     if p.hand:
         for control in p.hand.controls.controls:
             add("hand.fk."+control.control_name.removeprefix("AdvPy_"),control.control_path,rotation)

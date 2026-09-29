@@ -211,6 +211,7 @@ from adv_py.core.body_leg_foot import (
     BodyLegFootPivotState,
     BodyLegFootManualPivotState,
     BodyLegFootHighHeelState,
+    BodyLegFootHybridState,
     BodyLegFootRockPivotState,
     BodyLegFootRollNodeState,
     BodyLegFootRollState,
@@ -6144,11 +6145,24 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 for pivot in side.pivots
                 if pivot.multiplier_name
             )
-            names.extend((side.toe_offset_name, side.toe_control_name))
-            if side.toe_extra_name:
-                names.append(side.toe_extra_name)
-            names.extend((side.toe_handle_name, side.toe_effector_name))
-            names.extend((side.toe_end_handle_name, side.toe_end_effector_name))
+            if side.hybrid is not None:
+                names.extend(side.hybrid.node_names)
+                required.append(
+                    side.hybrid.segments[0].sampler1_offset_path
+                    .rsplit("|", 1)[0])
+                required.extend((side.hybrid.initial_start_driver_path,
+                                 side.hybrid.initial_end_driver_path))
+                required.extend(
+                    driver for segment in side.hybrid.segments
+                    for driver in (segment.start_driver_path,
+                                   segment.end_driver_path))
+            else:
+                names.extend((side.toe_offset_name, side.toe_control_name))
+                if side.toe_extra_name:
+                    names.append(side.toe_extra_name)
+                names.extend((side.toe_handle_name, side.toe_effector_name))
+                names.extend((side.toe_end_handle_name,
+                              side.toe_end_effector_name))
             if side.qtoes_handle_name:
                 names.extend((side.qtoes_handle_name,
                               side.qtoes_effector_name))
@@ -6175,6 +6189,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 side.toe_end_driver_path,
                 *((side.qtoes_driver_path,)
                   if side.qtoes_driver_path else ()),
+                *((driver for segment in side.hybrid.segments
+                   for driver in (segment.start_driver_path,
+                                  segment.end_driver_path))
+                  if side.hybrid is not None else ()),
                 side.ankle_constraint_name,
                 *handles,
             ):
@@ -6220,16 +6238,20 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     invalid_ankle_constraints.append(side.ankle_constraint_name)
             elif self._cmds.objExists(side.ankle_constraint_name):
                 invalid_ankle_constraints.append(side.ankle_constraint_name)
-            for axis in "XYZ":
-                plug = f"{side.toe_driver_path}.rotate{axis}"
-                sources = self._cmds.listConnections(
-                    plug,
-                    source=True,
-                    destination=False,
-                    plugs=True,
-                ) or []
-                if sources:
-                    occupied_rotations.append(plug)
+            rotation_drivers = (
+                tuple(dict.fromkeys((
+                    side.hybrid.initial_end_driver_path,
+                    *(segment.end_driver_path
+                      for segment in side.hybrid.segments))))
+                if side.hybrid is not None else (side.toe_driver_path,))
+            for driver in rotation_drivers:
+                for axis in "XYZ":
+                    plug = f"{driver}.rotate{axis}"
+                    sources = self._cmds.listConnections(
+                        plug, source=True, destination=False,
+                        plugs=True) or []
+                    if sources:
+                        occupied_rotations.append(plug)
         missing = tuple(path for path in required if not self._cmds.objExists(path))
         return BodyLegFootInputState(
             missing_required_paths=missing,
@@ -6491,6 +6513,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     self._cmds.connectAttr(f"{multiplier}.output", pivot.target_plug)
                 elif pivot.source_plug:
                     self._cmds.connectAttr(pivot.source_plug, pivot.target_plug)
+            if spec.hybrid is not None:
+                self._create_body_leg_foot_hybrid_side(spec)
+                return
             toe_offset = self._cmds.createNode(
                 "transform",
                 name=spec.toe_offset_name,
@@ -6677,6 +6702,124 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 self._cmds.select(selection, replace=True)
             else:
                 self._cmds.select(clear=True)
+
+    def _create_body_leg_foot_hybrid_side(
+        self, spec: BodyLegFootSideSpec,
+    ) -> None:
+        hybrid = spec.hybrid
+        if hybrid is None:
+            raise RuntimeError("Foot IKHybrid 计划缺失")
+        handles = self._cmds.ls(
+            spec.handle_name, long=True, type="ikHandle") or []
+        if len(handles) != 1:
+            raise FitSkeletonValidationError("Leg IK Handle 在执行前失效")
+        self._cmds.parent(handles[0], spec.final_handle_parent_path,
+                          absolute=True)
+        self._cmds.connectAttr(
+            spec.ankle_control_path + ".swivel",
+            spec.handle_name + ".twist")
+        constraints = self._cmds.ls(
+            spec.ankle_constraint_name, type="orientConstraint") or []
+        if len(constraints) != 1:
+            raise FitSkeletonValidationError("Ankle IK 朝向约束在执行前失效")
+        self._cmds.delete(constraints[0])
+        self._cmds.orientConstraint(
+            spec.ankle_orientation_source_path,
+            spec.ankle_driver_path,
+            maintainOffset=False, name=spec.ankle_constraint_name)
+
+        def create_at(name, path, parent, position, axes):
+            node = self._cmds.createNode(
+                "transform", name=name, parent=parent,
+                skipSelect=True)
+            node = (self._cmds.ls(node, long=True) or [node])[0]
+            if node != path:
+                raise RuntimeError("Foot IKHybrid 节点路径漂移：" + name)
+            x_axis, y_axis, z_axis = axes
+            self._cmds.xform(
+                node, worldSpace=True,
+                matrix=(*x_axis, 0.0, *y_axis, 0.0,
+                        *z_axis, 0.0, *position, 1.0))
+            return node
+
+        def create_child(name, path, parent):
+            node = self._cmds.createNode(
+                "transform", name=name, parent=parent,
+                skipSelect=True)
+            node = (self._cmds.ls(node, long=True) or [node])[0]
+            if node != path:
+                raise RuntimeError("Foot IKHybrid 节点路径漂移：" + name)
+            return node
+
+        for segment in hybrid.segments:
+            offset = create_at(
+                segment.control_offset_name,
+                segment.control_offset_path,
+                segment.control_offset_path.rsplit("|", 1)[0],
+                segment.source_position, segment.source_axes)
+            control = create_adv_icon(
+                self._cmds, name=segment.control_name,
+                parent=offset, template="IKhybrid_icon",
+                radius=segment.radius,
+                fallback_normal=(0.0, 1.0, 0.0),
+                mirror_left=spec.side is FitBuildSide.LEFT)
+            control = (self._cmds.ls(control, long=True) or [control])[0]
+            if control != segment.control_path:
+                raise RuntimeError("Foot IKHybrid 控制路径漂移")
+            sampler1_offset = create_at(
+                segment.sampler1_offset_name,
+                segment.sampler1_offset_path,
+                segment.sampler1_offset_path.rsplit("|", 1)[0],
+                segment.end_position, segment.end_axes)
+            sampler1 = create_child(
+                segment.sampler1_name, segment.sampler1_path,
+                sampler1_offset)
+            sampler2_offset = create_at(
+                segment.sampler2_offset_name,
+                segment.sampler2_offset_path,
+                segment.sampler2_offset_path.rsplit("|", 1)[0],
+                segment.source_position, segment.source_axes)
+            sampler2 = create_child(
+                segment.sampler2_name, segment.sampler2_path,
+                sampler2_offset)
+            self._cmds.connectAttr(control + ".rotate",
+                                   sampler2 + ".rotate")
+            self._cmds.parentConstraint(
+                sampler2, sampler1, maintainOffset=True,
+                name=segment.sampler2_parent_constraint)
+            wrapper_offset = create_at(
+                segment.wrapper_offset_name,
+                segment.wrapper_offset_path,
+                segment.wrapper_offset_path.rsplit("|", 1)[0],
+                segment.end_position, segment.end_axes)
+            wrapper = create_child(
+                segment.wrapper_name, segment.wrapper_path,
+                wrapper_offset)
+            self._cmds.connectAttr(sampler1 + ".translate",
+                                   wrapper + ".translate")
+            self._cmds.connectAttr(sampler1 + ".rotate",
+                                   wrapper + ".rotate")
+
+        def create_handle(name, effector_name, start, end, parent):
+            handle, effector = self._cmds.ikHandle(
+                name=name, startJoint=start, endEffector=end,
+                solver="ikSCsolver", sticky="sticky")
+            self._cmds.rename(effector, effector_name)
+            self._cmds.parent(handle, parent, absolute=True)
+            self._cmds.setAttr(name + ".visibility", False)
+            self._cmds.setAttr(effector_name + ".visibility", False)
+
+        create_handle(
+            hybrid.initial_handle_name,
+            hybrid.initial_effector_name,
+            hybrid.initial_start_driver_path,
+            hybrid.initial_end_driver_path,
+            hybrid.initial_handle_parent_path)
+        for segment in hybrid.segments:
+            create_handle(
+                segment.handle_name, segment.effector_name,
+                segment.start_driver_path, segment.end_driver_path,
+                segment.handle_parent_path)
 
     def body_leg_toe_extra_mode(self, ik: BodyLegIkPlan) -> bool:
         found = []
@@ -6900,6 +7043,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 return (constraint, source, driven)
 
             ankle_orientation = orientation_state(spec.ankle_constraint_name)
+            if spec.hybrid is not None:
+                sides.append(self._capture_body_leg_foot_hybrid_side(
+                    spec, values, tuple(pivots),
+                    parents[0] if parents else None,
+                    ankle_orientation, swivel_source))
+                continue
             toe_offsets = self._cmds.ls(
                 spec.toe_offset_path, long=True, type="transform"
             ) or []
@@ -7209,6 +7358,128 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 qtoes_handle_solver=qtoes_solver,
             ))
         return BodyLegFootSnapshot(tuple(sides))
+
+    def _capture_body_leg_foot_hybrid_side(
+        self, spec: BodyLegFootSideSpec, values, pivots,
+        handle_parent, ankle_orientation, swivel_source,
+    ) -> BodyLegFootSideState:
+        hybrid = spec.hybrid
+        if hybrid is None:
+            raise RuntimeError("Foot IKHybrid 计划缺失")
+
+        def node_parent(path):
+            matches = self._cmds.ls(
+                path, long=True, type="transform") or []
+            if len(matches) != 1:
+                return None, None
+            parents = self._cmds.listRelatives(
+                matches[0], parent=True, fullPath=True) or []
+            return matches[0], parents[0] if parents else None
+
+        def source_of(plug):
+            sources = self._cmds.listConnections(
+                plug, source=True, destination=False,
+                plugs=True, skipConversionNodes=True) or []
+            return self._canonical_plug(sources[0]) if len(sources) == 1 else None
+
+        nodes = []
+        connections = []
+        targets = []
+        shapes = []
+        for segment in hybrid.segments:
+            for path in (segment.control_offset_path, segment.control_path,
+                         segment.sampler1_offset_path, segment.sampler1_path,
+                         segment.sampler2_offset_path, segment.sampler2_path,
+                         segment.wrapper_offset_path, segment.wrapper_path):
+                nodes.append((path, *node_parent(path)))
+            for target in (segment.sampler2_path + ".rotate",
+                           segment.wrapper_path + ".translate",
+                           segment.wrapper_path + ".rotate"):
+                connections.append((target, source_of(target)))
+            constraint = self._cmds.ls(
+                segment.sampler2_parent_constraint,
+                type="parentConstraint") or []
+            assigned = (self._cmds.parentConstraint(
+                constraint[0], query=True, targetList=True) or []
+                if len(constraint) == 1 else [])
+            target_path = ((self._cmds.ls(assigned[0], long=True)
+                            or [assigned[0]])[0]
+                           if len(assigned) == 1 else None)
+            targets.append((segment.sampler2_parent_constraint,
+                            target_path))
+            controls = self._cmds.ls(
+                segment.control_path, long=True,
+                type="transform") or []
+            control_shapes = (self._cmds.listRelatives(
+                controls[0], shapes=True, noIntermediate=True,
+                fullPath=True, type="nurbsCurve") or []
+                if len(controls) == 1 else [])
+            shapes.append((segment.control_path,
+                           "nurbsCurve" if control_shapes else None))
+
+        handles = []
+        for name in (hybrid.initial_handle_name,
+                     *(segment.handle_name for segment in hybrid.segments)):
+            found = self._cmds.ls(
+                name, long=True, type="ikHandle") or []
+            if len(found) != 1:
+                handles.append((name, None, (), None))
+                continue
+            parents = self._cmds.listRelatives(
+                found[0], parent=True, fullPath=True) or []
+            joint_list = tuple(
+                (self._cmds.ls(joint, long=True) or [joint])[0]
+                for joint in (self._cmds.ikHandle(
+                    found[0], query=True, jointList=True) or []))
+            handles.append((name, parents[0] if parents else None,
+                            joint_list, self._cmds.ikHandle(
+                                found[0], query=True, solver=True)))
+
+        roll_nodes = []
+        for node_spec in spec.roll.nodes:
+            found = self._cmds.ls(node_spec.name) or []
+            roll_nodes.append(BodyLegFootRollNodeState(
+                node_spec.name,
+                self._cmds.nodeType(found[0]) if len(found) == 1 else None,
+                tuple((target, source_of(target))
+                      for _, target in node_spec.input_connections),
+                tuple((plug, float(self._cmds.getAttr(plug))
+                       if self._cmds.objExists(plug) else None)
+                      for plug, _ in node_spec.numeric_values)))
+        roll_state = BodyLegFootRollState(
+            spec.roll.master_plug,
+            float(self._cmds.getAttr(spec.roll.master_plug)),
+            tuple(roll_nodes))
+
+        rock_pivots = []
+        if spec.rock is not None:
+            for path in (spec.rock.inner_path, spec.rock.outer_path):
+                node, parent = node_parent(path)
+                rock_pivots.append(BodyLegFootRockPivotState(
+                    node, parent,
+                    tuple(float(value) for value in self._cmds.xform(
+                        node, query=True, worldSpace=True,
+                        translation=True)) if node else None,
+                    tuple(float(value) for value in self._cmds.xform(
+                        node, query=True, worldSpace=True,
+                        rotation=True)) if node else None,
+                    source_of(node + ".rotate" + spec.rock.rotation_axis)
+                    if node else None,
+                    int(self._cmds.getAttr(node + ".rotateOrder"))
+                    if node else None))
+
+        return BodyLegFootSideState(
+            spec.side, values, pivots, handle_parent,
+            *ankle_orientation,
+            None, None, None, None,
+            spec.toe_control_position, spec.toe_control_axes,
+            (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), None,
+            roll_state,
+            swivel_source=swivel_source,
+            rock_pivots=tuple(rock_pivots),
+            hybrid=BodyLegFootHybridState(
+                tuple(nodes), tuple(connections), tuple(targets),
+                tuple(handles), tuple(shapes)))
 
     def _canonical_plug(self, plug: str) -> str:
         node, attribute = plug.split(".", 1)
