@@ -262,6 +262,11 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         finally:
             c.namespace(setNamespace=previous_namespace)
         all_paths = self._source_transform_paths(plan.top_joint)
+        identities = {
+            path: ((c.ls(path, uuid=True) or (None,))[0], c.nodeType(path))
+            for path in all_paths}
+        if any(identifier is None for identifier, _ in identities.values()):
+            raise RuntimeError("FBX rig 来源 transform 缺少节点身份")
         paths = {path: path for path in all_paths}
         for original in sorted(all_paths,
                                key=lambda path: path.count("|"),
@@ -281,6 +286,20 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             for original, mapped in tuple(paths.items()):
                 if mapped.startswith(current + "|"):
                     paths[original] = resolved[0] + mapped[len(current):]
+        for original, mapped in paths.items():
+            resolved = c.ls(mapped, long=True) or ()
+            expected_id, expected_kind = identities[original]
+            if (resolved != [mapped]
+                    or (c.ls(mapped, uuid=True) or (None,))[0] != expected_id
+                    or c.nodeType(mapped) != expected_kind):
+                raise RuntimeError(
+                    "FBX rig 来源 transform 在迁移后身份或类型改变："
+                    + original)
+            parent = original.rsplit("|", 1)[0]
+            if parent in paths and not mapped.startswith(paths[parent] + "|"):
+                raise RuntimeError(
+                    "FBX rig 来源 transform 父链在迁移后断开："
+                    + original)
         self._fbx_source_transform_paths = tuple(sorted(set(paths.values())))
         return {joint.path: paths[joint.path]
                 for joint in plan.bind_pose_joints}
@@ -645,10 +664,13 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         source_animation_removed = not any(
             c.listConnections(path, source=True, destination=False,
                               type="animCurve") for path in source_nodes)
-        baked = (plan.last_bake_frame is not None and all(
-            c.keyframe(link.control_name, query=True,
-                       timeChange=True)
-            for link in transfer.links))
+        baked = (plan.last_bake_frame is not None
+                 and tuple(getattr(self, "_fbx_baked_control_names", ()))
+                     == transfer.bake_control_names
+                 and all(c.objExists(name)
+                         for name in transfer.bake_control_names)
+                 and any(c.keyframe(name, query=True, timeChange=True)
+                         for name in transfer.bake_control_names))
         game_connected = False
         if plan.game_root_joint is not None:
             motion = plan_fbx_game_root_motion(plan)

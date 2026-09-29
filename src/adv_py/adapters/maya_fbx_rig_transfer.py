@@ -64,6 +64,12 @@ class MayaFBXRigTransferMixin:
             if not times:
                 raise RuntimeError("FBX rig 控制器烘焙后没有关键帧："
                                    + control)
+        # 6.925 removes baked curves on attributes that never changed.
+        self._cmds.delete(controls, staticChannels=True,
+                          unitlessAnimationCurves=False,
+                          hierarchy="none", controlPoints=False,
+                          shape=True)
+        self._fbx_baked_control_names = transfer.bake_control_names
 
     def remove_fbx_source_animation_and_bake_links(
         self, transfer: FBXRigControlTransferPlan,
