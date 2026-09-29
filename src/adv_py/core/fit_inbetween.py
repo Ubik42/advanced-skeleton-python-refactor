@@ -104,6 +104,8 @@ def plan_fit_inbetween(
         raise FitInbetweenValidationError("Fit 关节短名必须唯一")
     for node in hierarchy.joints:
         children.setdefault(node.dag_parent or "", []).append(node)
+    for siblings in children.values():
+        siblings.sort(key=lambda node: node.sibling_index)
     guides: list[FitInbetweenGuide] = []
     reparents: list[FitInbetweenReparent] = []
     for start in hierarchy.joints:
@@ -154,11 +156,9 @@ def _rla_child(start: FitHierarchyNode,
     selected = next((child for child in candidates
                      if (abs(child.world_position[0]) < tolerance)
                      == center), None)
-    preference = next((target for key, target in (
-        ("Head", "Head"), ("Ankle", "Toes"),
-        ("Toes", "Toes"), ("Root", "Spine"))
-        if key in start.short_name), None)
-    if preference is not None:
-        selected = next((child for child in candidates
-                         if preference in child.short_name), selected)
+    for marker, preferred in (("Head", "Head"), ("Ankle", "Toes"),
+                              ("Toes", "Toes"), ("Root", "Spine")):
+        if marker in start.short_name:
+            selected = next((child for child in reversed(candidates)
+                             if preferred in child.short_name), selected)
     return selected
