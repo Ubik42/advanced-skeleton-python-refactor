@@ -1285,6 +1285,25 @@ class MayaPanelController:
 
         set_smooth_bind_options()
 
+    def skin_cage_delete(self, namespace: str) -> int:
+        from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
+        from adv_py.application.skin_cage import DeleteSkinCage
+
+        return DeleteSkinCage(MayaSkinCageHost(namespace)).execute()
+
+    def skin_cage_copy_weights(self, namespace: str) -> int:
+        from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
+        from adv_py.application.skin_cage import CopySkinCageWeights
+
+        return CopySkinCageWeights(MayaSkinCageHost(namespace)).execute()
+
+    def skin_cage_print_reuse(self, namespace: str, *, transforms: bool,
+                              shapes: bool, catch: bool) -> int:
+        from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
+
+        return MayaSkinCageHost(namespace).print_reuse_commands(
+            transforms=transforms, shapes=shapes, catch=catch)
+
     def skin_loops_create(self, namespace: str, *, mirror: bool = True) -> int:
         from adv_py.adapters.maya_skin_loops import MayaSkinLoopsHost
         from adv_py.application.skin_loops import CreateSkinLoops

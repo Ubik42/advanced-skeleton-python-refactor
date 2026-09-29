@@ -239,6 +239,7 @@ def create_panel(controller: MayaPanelController | None = None):
             # Reuse the existing operation widgets while arranging their
             # entrances in the order of the 6.925 MEL frame layouts.
             sources = (self._fit_page(), self._skin_page(),
+                       self._skin_cage_page(),
                        self._skin_loop_page(),
                        self._animation_page(), self._face_page(),
                        self._mocap_page(), self._publish_page(),
@@ -279,7 +280,7 @@ def create_panel(controller: MayaPanelController | None = None):
                                            '01 · 建立 Skin', '02 · 权重文档',
                                            '03 · 跨场景源资产',
                                            '04 · 跨拓扑权重转移')),
-                    ('Deform / SkinCage', ()),
+                    ('Deform / SkinCage', ('00 · SkinCage',)),
                     ('Deform / SubWrap', ()),
                     ('Deform / SkinLoops', ('00 · SkinLoops',)),
                     ('Deform Shapers', ()),
@@ -1699,6 +1700,29 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addStretch(1)
             return page
 
+        def _skin_cage_page(self):
+            page, stack = self._page()
+            group, form = self._group("00 · SkinCage", [])
+            form.addRow(QtWidgets.QLabel("Cage"))
+            form.addRow(self._button("删除 Cage", self._delete_skin_cage))
+            form.addRow(QtWidgets.QLabel("选择待变形网格或其顶点，然后复制 Cage 权重。"))
+            form.addRow(self._button("复制权重", self._copy_skin_cage_weights))
+            form.addRow(QtWidgets.QLabel("Re-use：将当前可见 SkinCurves 形状输出到 Script Editor。"))
+            self.skin_cage_reuse_xform = QtWidgets.QCheckBox("xform")
+            self.skin_cage_reuse_xform.setChecked(True)
+            self.skin_cage_reuse_shape = QtWidgets.QCheckBox("shape")
+            self.skin_cage_reuse_shape.setChecked(True)
+            self.skin_cage_reuse_catch = QtWidgets.QCheckBox("catch")
+            for option in (self.skin_cage_reuse_xform,
+                           self.skin_cage_reuse_shape,
+                           self.skin_cage_reuse_catch):
+                form.addRow(option)
+            form.addRow(self._button("Print Commands",
+                                     self._print_skin_cage_reuse))
+            stack.addWidget(group)
+            stack.addStretch(1)
+            return page
+
         def _skin_loop_page(self):
             page, stack = self._page()
             self.skin_loop_mirror = QtWidgets.QCheckBox("自动镜像到对侧")
@@ -2601,6 +2625,22 @@ def create_panel(controller: MayaPanelController | None = None):
         def _set_smooth_bind_options(self):
             self.controller.skinning_set_smooth_bind_options()
             return "已设置原版 Smooth Bind 选项，并打开 Maya 绑定选项窗口"
+
+        def _delete_skin_cage(self):
+            count = self.controller.skin_cage_delete(self._namespace())
+            return f"已删除 {count} 个 SkinCage 节点"
+
+        def _copy_skin_cage_weights(self):
+            count = self.controller.skin_cage_copy_weights(self._namespace())
+            return f"已复制 SkinCage 权重到 {count} 个网格"
+
+        def _print_skin_cage_reuse(self):
+            count = self.controller.skin_cage_print_reuse(
+                self._namespace(),
+                transforms=self.skin_cage_reuse_xform.isChecked(),
+                shapes=self.skin_cage_reuse_shape.isChecked(),
+                catch=self.skin_cage_reuse_catch.isChecked())
+            return f"已输出 {count} 条 SkinCage 复用命令"
 
         def _create_skin_loop(self):
             count = self.controller.skin_loops_create(
