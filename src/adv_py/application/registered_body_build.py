@@ -364,7 +364,7 @@ def _refresh_fit_orientations_before_body(host, container_name: str) -> None:
     if targets:
         editor = OrientFitJoints(host)
         plan = editor.plan(FitOrientationRequest(targets), container_name)
-        if plan.changes:
+        if plan.changes or plan.terminal_resets:
             editor.apply_plan_in_transaction(plan)
 
 

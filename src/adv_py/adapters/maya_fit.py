@@ -673,6 +673,7 @@ class MayaFitJointHost:
                 child, children=True, type="joint", fullPath=True
             ) or []):
                 self._write_fit_axis_enums(child, change.world_match_axes)
+
     def _write_fit_axis_enums(
         self,
         joint: str,
@@ -687,6 +688,33 @@ class MayaFitJointHost:
                     enumName="X:Y:Z:-X:-Y:-Z:",
                 )
             self._cmds.setAttr(f"{joint}.{attribute}", values[direction.value])
+
+    def zero_fit_terminal_joint(self, joint: str) -> None:
+        self._require_transaction()
+        matches = self._cmds.ls(joint, long=True, type="joint") or []
+        if len(matches) != 1:
+            raise FitSkeletonValidationError("末端 Fit joint 在执行前失效")
+        path = matches[0]
+        if (self._cmds.listRelatives(
+                path, children=True, type="joint", fullPath=True) or []):
+            raise FitSkeletonValidationError("Fit joint 已不再是末端关节")
+        if self._cmds.attributeQuery("control", node=path, exists=True):
+            raise FitSkeletonValidationError("Fit 末端关节已添加 control 属性")
+        plugs = tuple(f"{path}.{name}{axis}" for name in (
+            "jointOrient", "rotate") for axis in "XYZ")
+        locked = tuple(bool(self._cmds.getAttr(plug, lock=True))
+                       for plug in plugs)
+        self._transaction_changed = True
+        try:
+            for plug, was_locked in zip(plugs, locked):
+                if was_locked:
+                    self._cmds.setAttr(plug, lock=False)
+            self._cmds.setAttr(f"{path}.jointOrient", 0, 0, 0)
+            self._cmds.setAttr(f"{path}.rotate", 0, 0, 0)
+        finally:
+            for plug, was_locked in zip(plugs, locked):
+                if was_locked:
+                    self._cmds.setAttr(plug, lock=True)
 
     def orient_world_fit_joint(self, change: FitWorldOrientationChange) -> None:
         self._require_transaction()

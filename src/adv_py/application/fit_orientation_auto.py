@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 from adv_py.core.fit_hierarchy import audit_fit_hierarchy
+from adv_py.core.fit_metadata import FitJointField
 from adv_py.core.fit_orientation import (
     FitOrientationChange,
     FitOrientationRequest,
@@ -15,6 +16,7 @@ from adv_py.core.fit_orientation import (
     orientation_matches,
     plan_simple_fit_orientations,
     plan_world_fit_orientations,
+    select_fit_orientation_child,
     world_orientation_matches,
 )
 from adv_py.core.fit_settings import FitSkeletonSettings, audit_fit_skeleton_settings
@@ -28,6 +30,7 @@ class FitOrientationAutoHost(Protocol):
     def read_fit_skeleton_settings(self, container_name: str) -> FitSkeletonSettings: ...
     def orient_fit_joint(self, change: FitOrientationChange) -> None: ...
     def orient_world_fit_joint(self, change: FitWorldOrientationChange) -> None: ...
+    def zero_fit_terminal_joint(self, joint: str) -> None: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
 
 
@@ -36,6 +39,7 @@ class FitOrientationAutoPlan:
     before: FitOrientationSnapshot
     before_settings: FitSkeletonSettings
     changes: tuple[FitChange, ...]
+    terminal_resets: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,14 +113,35 @@ class OrientFitJoints:
                 before, FitOrientationRequest(tuple(world))
             ))
         changes.sort(key=lambda item: (item.joint.count("|"), item.joint))
-        return FitOrientationAutoPlan(before, settings, tuple(changes))
+        children: dict[str, list[str]] = {path: [] for path in nodes}
+        for node in nodes.values():
+            if node.dag_parent in children:
+                children[node.dag_parent].append(node.path)
+        overrides = {}
+        for choice in selected:
+            parent = nodes.get(choice.joint) or by_name[choice.joint]
+            child = nodes.get(choice.child) or by_name.get(choice.child)
+            if child is not None:
+                overrides[parent.path] = child.path
+        terminal_resets = set()
+        for parent in (*simple, *world):
+            child = overrides.get(parent) or select_fit_orientation_child(
+                before, parent
+            )
+            if (child is not None and not children[child]
+                    and FitJointField.CONTROL
+                    not in metadata[child].present_fields):
+                terminal_resets.add(child)
+        return FitOrientationAutoPlan(
+            before, settings, tuple(changes), tuple(sorted(terminal_resets))
+        )
 
     def apply(
         self, request: FitOrientationRequest,
         container_name: str = "FitSkeleton",
     ) -> FitOrientationAutoResult:
         plan = self.plan(request, container_name)
-        if not plan.changes:
+        if not plan.changes and not plan.terminal_resets:
             return FitOrientationAutoResult(plan, plan.before)
         with self._host.transaction(
             f"更新 {len(plan.changes)} 个 Fit joint 朝向"
@@ -133,6 +158,8 @@ class OrientFitJoints:
                 self._host.orient_world_fit_joint(change)
             else:
                 self._host.orient_fit_joint(change)
+        for joint in plan.terminal_resets:
+            self._host.zero_fit_terminal_joint(joint)
         verified = self._host.capture_fit_orientation(
             plan.before.hierarchy.container
         )
@@ -195,6 +222,10 @@ class OrientFitJoints:
                 matches = world_orientation_matches(change, state)
             elif isinstance(change, FitOrientationChange):
                 matches = orientation_matches(change, state)
+            elif path in plan.terminal_resets:
+                matches = (all(abs(value) <= 1e-5
+                               for value in (*state.joint_orient,
+                                             *state.rotation)))
             else:
                 matches = state.joint_orient == old_states[path].joint_orient
             if not matches:
