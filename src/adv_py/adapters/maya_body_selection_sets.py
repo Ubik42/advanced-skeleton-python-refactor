@@ -4,10 +4,56 @@ from __future__ import annotations
 import json
 
 from adv_py.core.body_selection_sets import BodySelectionSetsPlan
+from adv_py.core.body_all_set import BodyAllSetNode, BodyAllSetPlan
+from adv_py.core.character_identity import CharacterIdentity
 from adv_py.core.character_registry import CharacterRegistration
 
 
 class MayaBodySelectionSetsMixin:
+    def capture_body_scene_nodes(self) -> tuple[BodyAllSetNode, ...]:
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        identity = CharacterIdentity(self.namespace or "")
+        nodes = []
+        for path in c.ls(long=True) or []:
+            if not identity.owns(path):
+                continue
+            nodes.append(BodyAllSetNode(
+                identity.to_local(path), c.nodeType(path),
+                bool(c.referenceQuery(path, isNodeReferenced=True))))
+        return tuple(sorted(nodes, key=lambda node: node.path))
+
+    def populate_body_all_set(self, plan: BodyAllSetPlan) -> None:
+        self._require_transaction()
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        target = self._body_selection_set_address(plan.set_name)
+        if not c.objExists(target) or c.nodeType(target) != "objectSet":
+            raise ValueError("角色 AllSet 不存在")
+        if c.sets(target, query=True):
+            raise ValueError("角色 AllSet 已有成员")
+        members = tuple(
+            address if address.startswith((":", "|")) else ":" + address
+            for address in (self.scene_address(path) for path in plan.members))
+        for member in members:
+            if not c.objExists(member) or c.referenceQuery(
+                    member, isNodeReferenced=True):
+                raise ValueError("AllSet 成员缺失或属于引用：" + member)
+        self._transaction_changed = True
+        c.sets(members, add=target)
+
+    def capture_body_all_set_members(self) -> tuple[str, ...]:
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        target = self._body_selection_set_address("AllSet")
+        if not c.objExists(target) or c.nodeType(target) != "objectSet":
+            raise RuntimeError("角色 AllSet 不存在")
+        identity = CharacterIdentity(self.namespace or "")
+        members = []
+        for member in c.sets(target, query=True) or []:
+            paths = c.ls(member, long=True) or []
+            if len(paths) != 1 or not identity.owns(paths[0]):
+                raise RuntimeError("角色 AllSet 成员不唯一或越界：" + member)
+            members.append(identity.to_local(paths[0]))
+        return tuple(members)
+
     def _body_selection_set_address(self, name: str) -> str:
         address = self.scene_address(name)
         return address if address.startswith((":", "|")) else ":" + address
@@ -238,7 +284,6 @@ class MayaBodySelectionSetsMixin:
         all_set = self._body_selection_set_address(plan.all_set)
         root_set = self._body_selection_set_address(plan.root_set)
         if (not c.objExists(all_set) or c.nodeType(all_set) != "objectSet"
-                or c.sets(all_set, query=True)
                 or not c.objExists(root_set)
                 or c.nodeType(root_set) != "objectSet"):
             raise RuntimeError("角色选择集根层不完整")

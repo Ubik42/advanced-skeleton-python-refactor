@@ -49,6 +49,7 @@ from .body_rig_validation import body_bind_pose_matches
 from adv_py.core.body_skeleton import body_skeleton_unchanged
 from .character_registry import RegisterBodyCharacter
 from .body_selection_sets import BuildBodySelectionSets
+from .body_all_set import PopulateBodyAllSet
 from .body_build_pose import GoToBodyBuildPose
 from .finger_mid_deform import BuildFingerMidDeform
 from .fit_part import BuildFitPartHierarchy, FitPartHierarchyResult
@@ -300,7 +301,13 @@ class BuildRegisteredBodyCharacter:
               use_fit_part_hierarchy: bool = True,
               fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
               _hierarchy_prepared: bool = False,
+              _scene_before=None,
               ) -> RegisteredBodyBuildResult:
+        if _scene_before is None:
+            capture_nodes = getattr(self._host,
+                                    "capture_body_scene_nodes", None)
+            if capture_nodes is not None:
+                _scene_before = capture_nodes()
         if not _hierarchy_prepared:
             preflight_registered_fit_parts(
                 self._host, container_name,
@@ -337,7 +344,8 @@ class BuildRegisteredBodyCharacter:
                     include_segment_influences=include_segment_influences,
                     use_fit_part_hierarchy=use_fit_part_hierarchy,
                     fit_part_twist_sources=fit_part_twist_sources,
-                    _hierarchy_prepared=True)
+                    _hierarchy_prepared=True,
+                    _scene_before=_scene_before)
         preview = BuildOrientedBodySkeleton(self._host).plan(
             container_name, infer_missing_labels=infer_missing_labels,
             root_parent_path=_DEFORMATION_SYSTEM_PATH)
@@ -1079,6 +1087,9 @@ class BuildRegisteredBodyCharacter:
                 (skeleton.snapshot.root, _DEFORMATION_SYSTEM_PATH, "joint"),
             ):
                 raise RuntimeError("角色主构建结束时 Body 变形系统层级不一致")
+            if _scene_before is not None:
+                PopulateBodyAllSet(joined).apply(
+                    _scene_before, container_name)
         return RegisteredBodyBuildResult(
             skeleton, rig, registration, tuple(segments),
             fit_part_hierarchy, inbetween_segments,
