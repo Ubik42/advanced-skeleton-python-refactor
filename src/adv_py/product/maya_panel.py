@@ -1710,6 +1710,10 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("创建 SkinLoop", self._create_skin_loop))
             form.addRow(self._button("选择全部 SkinLoops",
                                      self._select_all_skin_loops))
+            form.addRow(QtWidgets.QLabel(
+                "选择待复制权重的网格或其组件，再复制已绑定 SkinLoop 网格的权重。"))
+            form.addRow(self._button("复制 SkinLoop 权重",
+                                     self._copy_skin_loop_weights))
             stack.addWidget(group)
             stack.addStretch(1)
             return page
@@ -2599,6 +2603,10 @@ def create_panel(controller: MayaPanelController | None = None):
         def _select_all_skin_loops(self):
             count = self.controller.skin_loops_select_all(self._namespace())
             return f"已选择 {count} 个 SkinLoop 的网格边"
+
+        def _copy_skin_loop_weights(self):
+            count = self.controller.skin_loops_copy_weights(self._namespace())
+            return f"已复制 SkinLoop 权重到 {count} 个网格"
 
         def _apply_delta_mush(self):
             count = self.controller.delta_mush_apply(self._namespace())

@@ -4,7 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import re
 
-from adv_py.core.skin_loops import SkinLoopSpec
+from adv_py.core.skin_loops import SkinLoopCopySpec, SkinLoopSpec
 
 
 _EDGE = re.compile(r"^(.*)\.e\[(\d+)\]$")
@@ -200,3 +200,130 @@ class MayaSkinLoopsHost:
             raise ValueError("SkinLoops 内没有网格边")
         c.select(edges, replace=True)
         return len(loops)
+
+    def _skin(self, mesh: str) -> str | None:
+        c = self.cmds
+        skins = [node for node in (c.listHistory(
+            mesh, pruneDagObjects=True) or [])
+            if c.nodeType(node) == "skinCluster"]
+        if len(skins) > 1:
+            raise ValueError("SkinLoop Copy 不支持目标网格的多层 Skin")
+        return skins[0] if skins else None
+
+    def _mesh_transform(self, item: str) -> str:
+        c = self.cmds
+        node = item.split(".", 1)[0]
+        if c.nodeType(node) == "mesh":
+            parent = c.listRelatives(node, parent=True,
+                                     fullPath=True) or []
+            if len(parent) != 1:
+                raise ValueError("SkinLoop Copy 网格 Shape 缺少唯一父级")
+            node = parent[0]
+        mesh = self._unique(node, "transform")
+        shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
+                                 fullPath=True, type="mesh") or []
+        if len(shapes) != 1:
+            raise ValueError("SkinLoop Copy 需要唯一多边形网格 Shape")
+        return mesh
+
+    def capture_skin_loop_copy_input(self):
+        c = self.cmds
+        parent = self._name("SkinLoops")
+        if not c.objExists(parent) or c.nodeType(parent) != "objectSet":
+            raise ValueError("当前角色尚无 SkinLoops")
+        loops = sorted(name for name in (c.sets(parent, query=True) or [])
+                       if c.nodeType(name) == "objectSet")
+        if not loops:
+            raise ValueError("SkinLoops 集合没有子边环")
+        first = next((item for loop in loops
+                      for item in (c.ls(c.sets(loop, query=True) or [],
+                                        flatten=True, long=True) or [])), None)
+        if first is None or not _EDGE.fullmatch(first):
+            raise ValueError("SkinLoops 集合缺少网格边")
+        source_mesh = self._mesh_transform(first)
+        source_skin = self._skin(source_mesh)
+        if not source_skin:
+            raise ValueError("SkinLoop 来源网格尚未绑定 Skin")
+        influences = tuple(self._unique(node, "joint")
+                           for node in (c.skinCluster(
+                               source_skin, query=True, influence=True) or []))
+        selected = c.ls(selection=True, long=True, flatten=True) or []
+        if not selected:
+            raise ValueError("先选择要复制权重的网格或网格组件")
+        components = any("." in item for item in selected)
+        if components and any("." not in item for item in selected):
+            raise ValueError("SkinLoop Copy 不能混选网格对象和组件")
+        groups: dict[str, list[str]] = {}
+        for item in selected:
+            mesh = self._mesh_transform(item)
+            groups.setdefault(mesh, []).append(item)
+        if components and len(groups) != 1:
+            raise ValueError("SkinLoop Copy 的组件必须来自同一目标网格")
+        targets = tuple((mesh, tuple(items) if components else (),
+                         self._skin(mesh))
+                        for mesh, items in groups.items())
+        return (source_mesh, source_skin, influences,
+                int(c.getAttr(source_skin + ".skinningMethod")), targets)
+
+    def preflight_skin_loop_copy(self, spec: SkinLoopCopySpec) -> None:
+        c = self.cmds
+        if self._mesh_transform(spec.source_mesh) != spec.source_mesh:
+            raise ValueError("SkinLoop 来源网格已改变")
+        if self._mesh_transform(spec.target_mesh) != spec.target_mesh:
+            raise ValueError("SkinLoop 目标网格已改变")
+        if self._skin(spec.source_mesh) != spec.source_skin:
+            raise ValueError("SkinLoop 来源 Skin 已改变")
+        source_influences = tuple(self._unique(node, "joint") for node in (
+            c.skinCluster(spec.source_skin, query=True, influence=True) or []))
+        if (set(source_influences) != set(spec.source_influences)
+                or int(c.getAttr(spec.source_skin + ".skinningMethod"))
+                != spec.skinning_method):
+            raise ValueError("SkinLoop 来源蒙皮设置已改变")
+        if self._skin(spec.target_mesh) != spec.target_skin:
+            raise ValueError("SkinLoop 目标 Skin 已改变")
+        if (spec.target_components and tuple(c.ls(
+                spec.target_components, long=True, flatten=True) or ())
+                != spec.target_components):
+            raise ValueError("SkinLoop 目标组件已改变")
+        if spec.target_skin is None:
+            leaf = spec.target_mesh.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            name = self._name("AdvPy_SkinLoopCopy_" + leaf)
+            if c.objExists(name):
+                raise ValueError("SkinLoop 新 Skin 名称被占用：" + name)
+        elif c.referenceQuery(spec.target_skin, isNodeReferenced=True):
+            raise ValueError("不能向引用的目标 Skin 增加影响关节")
+
+    def copy_skin_loop_weights(self, spec: SkinLoopCopySpec) -> None:
+        if not self._in_transaction:
+            raise RuntimeError("SkinLoop Copy 必须位于事务中")
+        c = self.cmds
+        skin = spec.target_skin
+        if skin is None:
+            leaf = spec.target_mesh.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            skin = c.skinCluster(
+                list(spec.source_influences), spec.target_mesh,
+                toSelectedBones=True, maximumInfluences=3,
+                name=self._name("AdvPy_SkinLoopCopy_" + leaf))[0]
+        else:
+            current = {self._unique(node, "joint") for node in (
+                c.skinCluster(skin, query=True, influence=True) or [])}
+            for joint in spec.source_influences:
+                if joint not in current:
+                    c.skinCluster(skin, edit=True, addInfluence=joint,
+                                  lockWeights=False, weight=0.0)
+        c.select(spec.source_mesh, replace=True)
+        c.select(spec.target_components or (spec.target_mesh,), add=True)
+        c.copySkinWeights(noMirror=True, surfaceAssociation="closestPoint",
+                          influenceAssociation="closestJoint")
+        c.setAttr(skin + ".skinningMethod", spec.skinning_method)
+
+    def capture_skin_loop_copy(self, spec: SkinLoopCopySpec) -> bool:
+        c = self.cmds
+        skin = self._skin(spec.target_mesh)
+        if not skin or (spec.target_skin and skin != spec.target_skin):
+            return False
+        influences = {self._unique(node, "joint") for node in (
+            c.skinCluster(skin, query=True, influence=True) or [])}
+        return (set(spec.source_influences) <= influences
+                and int(c.getAttr(skin + ".skinningMethod"))
+                == spec.skinning_method)

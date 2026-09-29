@@ -14,6 +14,41 @@ class SkinLoopSpec:
     deform_joint: str
 
 
+@dataclass(frozen=True, slots=True)
+class SkinLoopCopySpec:
+    source_mesh: str
+    source_skin: str
+    target_mesh: str
+    target_components: tuple[str, ...]
+    target_skin: str | None
+    source_influences: tuple[str, ...]
+    skinning_method: int
+
+
+def plan_skin_loop_copy(
+    source_mesh: str, source_skin: str,
+    source_influences: tuple[str, ...], skinning_method: int,
+    targets: tuple[tuple[str, tuple[str, ...], str | None], ...],
+) -> tuple[SkinLoopCopySpec, ...]:
+    if (not source_mesh or not source_skin or not source_influences
+            or len(set(source_influences)) != len(source_influences)
+            or skinning_method not in (0, 1, 2)):
+        raise ValueError("SkinLoop Copy 的来源蒙皮或关节集合无效")
+    if not targets or len({item[0] for item in targets}) != len(targets):
+        raise ValueError("SkinLoop Copy 需要不重复的目标网格")
+    specs = []
+    for mesh, components, skin in targets:
+        if (not mesh or mesh == source_mesh
+                or (skin is not None and skin == source_skin)
+                or any(not component.startswith(mesh + ".")
+                       for component in components)):
+            raise ValueError("SkinLoop Copy 目标网格或组件无效")
+        specs.append(SkinLoopCopySpec(
+            source_mesh, source_skin, mesh, components, skin,
+            source_influences, skinning_method))
+    return tuple(specs)
+
+
 def validate_closed_loop(
     edges: tuple[tuple[int, int, int], ...],
 ) -> tuple[int, ...]:
