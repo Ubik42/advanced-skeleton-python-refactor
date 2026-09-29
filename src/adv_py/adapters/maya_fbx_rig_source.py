@@ -38,6 +38,15 @@ class MayaFBXRigSourceReader:
         names = ("Group", "AllSet", "ControlSet", "DeformSet")
         return tuple(name for name in names if c.objExists(name))
 
+    def _source_transform_paths(self, top_joint: str) -> tuple[str, ...]:
+        """Capture all transform descendants selected by asFBXRig."""
+        c = self._cmds
+        descendants = tuple(c.listRelatives(
+            top_joint, allDescendents=True, fullPath=True) or ())
+        paths = tuple(path for path in descendants
+                      if c.nodeType(path) in ("joint", "transform"))
+        return (*paths, top_joint)
+
     def _source_paths(self) -> tuple[str, ...]:
         c = self._cmds
         joints = tuple(c.ls(type="joint", long=True) or ())
@@ -72,8 +81,9 @@ class MayaFBXRigSourceReader:
         c = self._cmds
         paths = self._source_paths()
         joints = self._joint_states(paths)
+        transforms = self._source_transform_paths(paths[0])
         times = tuple(sorted(set(float(value) for value in (
-            c.keyframe(paths, query=True, timeChange=True) or ()))))
+            c.keyframe(transforms, query=True, timeChange=True) or ()))))
         descendants = c.listRelatives(paths[0], allDescendents=True,
                                        type="transform", fullPath=True) or ()
         highest_y = max((float(c.xform(path, query=True, worldSpace=True,
@@ -175,15 +185,6 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
 
     def route_to_fbx_name_matcher(self) -> None:
         raise NotImplementedError("NameMatcher 构建宿主尚未实现")
-
-    def _source_transform_paths(self, top_joint: str) -> tuple[str, ...]:
-        """Capture all transform descendants renamed by asFBXRig."""
-        c = self._cmds
-        descendants = tuple(c.listRelatives(
-            top_joint, allDescendents=True, fullPath=True) or ())
-        paths = tuple(path for path in descendants
-                      if c.nodeType(path) in ("joint", "transform"))
-        return (*paths, top_joint)
 
     def preflight_fbx_rig_import(
         self, plan: FBXRigImportPlan, source: FBXRigSourceCapture,
