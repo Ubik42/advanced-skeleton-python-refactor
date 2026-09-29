@@ -459,39 +459,58 @@ class BuildRegisteredBodyCharacter:
                     + "、".join(hierarchy_collisions))
             with self._host.transaction("构建并登记完整 Body 角色"):
                 joined = _JoinedTransactionHost(self._host)
-                joined.collapse_fit_generated_transforms(container_name)
-                joined.prepare_fit_root(container_name)
-                joined.normalize_fit_joint_names(container_name)
-                joined.normalize_fit_ik_labels(container_name)
-                joined.bake_fit_container_scale(container_name)
-                _refresh_fit_orientations_before_body(joined, container_name)
-                fit_hierarchy = joined.capture_fit_hierarchy(container_name)
-                _preflight_centered_root_spine(joined, fit_hierarchy)
-                joined.write_missing_fit_deform_profiles(
-                    container_name,
-                    tuple(node.path for node in fit_hierarchy.joints),
-                )
-                preflight_registered_fit_parts(
-                    joined, container_name,
-                    include_segment_influences=include_segment_influences,
-                    use_fit_part_hierarchy=use_fit_part_hierarchy,
-                    fit_part_twist_sources=fit_part_twist_sources)
-                if joined.create_body_system_hierarchy(
-                        include_dynamic=_include_dynamic) != _DEFORMATION_SYSTEM_PATH:
-                    raise RuntimeError("Body 变形系统层级创建路径漂移")
-                fit_path = joined.parent_fit_skeleton_under_group(container_name)
-                return BuildRegisteredBodyCharacter(joined).apply(
-                    fit_path, axial_description=axial_description,
-                    include_head_aim=include_head_aim,
-                    infer_missing_labels=infer_missing_labels,
-                    include_segment_influences=include_segment_influences,
-                    use_fit_part_hierarchy=use_fit_part_hierarchy,
-                    fit_part_twist_sources=fit_part_twist_sources,
-                    _hierarchy_prepared=True,
-                    _scene_before=_scene_before,
-                    _include_dynamic=_include_dynamic,
-                    _defer_selection_sets=_defer_selection_sets,
-                    _defer_all_set=_defer_all_set)
+                original_up_axis = joined.scene_up_axis().value
+                try:
+                    joined.collapse_fit_generated_transforms(container_name)
+                    joined.prepare_fit_root(container_name)
+                    joined.normalize_fit_joint_names(container_name)
+                    joined.normalize_fit_ik_labels(container_name)
+                    joined.bake_fit_container_scale(container_name)
+                    if original_up_axis == "y":
+                        _refresh_fit_orientations_before_body(
+                            joined, container_name)
+                    fit_hierarchy = joined.capture_fit_hierarchy(container_name)
+                    _preflight_centered_root_spine(joined, fit_hierarchy)
+                    if original_up_axis == "z":
+                        # MEL builds in Y-up, then rotates the finished Group
+                        # back into the original Z-up scene.
+                        joined.flip_character_scene_up_axis(container_name, "y")
+                        _refresh_fit_orientations_before_body(
+                            joined, container_name)
+                        fit_hierarchy = joined.capture_fit_hierarchy(
+                            container_name)
+                    joined.write_missing_fit_deform_profiles(
+                        container_name,
+                        tuple(node.path for node in fit_hierarchy.joints),
+                    )
+                    preflight_registered_fit_parts(
+                        joined, container_name,
+                        include_segment_influences=include_segment_influences,
+                        use_fit_part_hierarchy=use_fit_part_hierarchy,
+                        fit_part_twist_sources=fit_part_twist_sources)
+                    if joined.create_body_system_hierarchy(
+                            include_dynamic=_include_dynamic) != _DEFORMATION_SYSTEM_PATH:
+                        raise RuntimeError("Body 变形系统层级创建路径漂移")
+                    fit_path = joined.parent_fit_skeleton_under_group(
+                        container_name)
+                    result = BuildRegisteredBodyCharacter(joined).apply(
+                        fit_path, axial_description=axial_description,
+                        include_head_aim=include_head_aim,
+                        infer_missing_labels=infer_missing_labels,
+                        include_segment_influences=include_segment_influences,
+                        use_fit_part_hierarchy=use_fit_part_hierarchy,
+                        fit_part_twist_sources=fit_part_twist_sources,
+                        _hierarchy_prepared=True,
+                        _scene_before=_scene_before,
+                        _include_dynamic=_include_dynamic,
+                        _defer_selection_sets=_defer_selection_sets,
+                        _defer_all_set=_defer_all_set)
+                    if original_up_axis == "z":
+                        joined.flip_character_scene_up_axis("|Group", "z")
+                    return result
+                finally:
+                    if joined.scene_up_axis().value != original_up_axis:
+                        joined.set_scene_up_axis(original_up_axis)
         preview = BuildOrientedBodySkeleton(self._host).plan(
             container_name, infer_missing_labels=infer_missing_labels,
             root_parent_path=_DEFORMATION_SYSTEM_PATH)

@@ -483,6 +483,42 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
         path = "|Group|MotionSystem|DynamicSystem"
         return (self._cmds.ls(path, long=True, type="transform") or []) == [path]
 
+    def set_scene_up_axis(self, axis: str) -> None:
+        """Set Maya's scene axis inside the character build undo chunk."""
+        self._require_transaction()
+        if axis not in ("y", "z"):
+            raise ValueError("场景上方向只能是 Y 或 Z")
+        if self._cmds.upAxis(query=True, axis=True) != axis:
+            self._transaction_changed = True
+            self._cmds.upAxis(axis=axis)
+
+    def flip_character_scene_up_axis(self, transform: str, axis: str) -> None:
+        """Port asSceneUpAxisFlip's rotate-channel and up-axis sequence."""
+        self._require_transaction()
+        matches = self._cmds.ls(transform, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise FitSkeletonValidationError(
+                "场景上方向转换目标不存在或不唯一：" + transform)
+        transform = matches[0]
+        if axis not in ("y", "z"):
+            raise ValueError("场景上方向只能是 Y 或 Z")
+        channels = tuple(transform + ".r" + suffix
+                         for suffix in ("x", "y", "z", ""))
+        locked = tuple(bool(self._cmds.getAttr(plug, lock=True))
+                       for plug in channels)
+        self._transaction_changed = True
+        try:
+            for plug, was_locked in zip(channels, locked):
+                if was_locked:
+                    self._cmds.setAttr(plug, lock=False)
+            self._cmds.setAttr(transform + ".r", 90 if axis == "z" else 0,
+                               0, 0, type="float3")
+        finally:
+            for plug, was_locked in zip(channels, locked):
+                if was_locked:
+                    self._cmds.setAttr(plug, lock=True)
+        self.set_scene_up_axis(axis)
+
     def create_body_system_hierarchy(
         self, *, include_dynamic: bool = True,
     ) -> str:
