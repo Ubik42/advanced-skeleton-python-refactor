@@ -62,8 +62,7 @@ class MayaFitNonSymmetryMixin:
     def toggle_fit_non_symmetry_joints(self) -> tuple[str, ...]:
         """Create mirrored independent branches, or remove them on next use."""
         c = self._non_symmetry_cmds
-        fit = self._resolve_transform(
-            "FitSkeleton", FitSkeletonValidationError)
+        self._resolve_transform("FitSkeleton", FitSkeletonValidationError)
         selection = tuple(c.ls(selection=True, long=True) or ())
         result = []
         with self.transaction("切换 Fit 非对称关节"):
@@ -85,6 +84,17 @@ class MayaFitNonSymmetryMixin:
                            for path in roots):
                         raise FitSkeletonValidationError(
                             "引用中的非对称 Fit 关节不能删除")
+                    for joint in hierarchy.joints:
+                        if (joint.path not in generated
+                                and c.referenceQuery(
+                                    joint.path, isNodeReferenced=True)
+                                and any(c.attributeQuery(
+                                    attribute, node=joint.path, exists=True)
+                                    for attribute in ("noMirror",
+                                                      "noMirrorLeft"))):
+                            raise FitSkeletonValidationError(
+                                "引用中的 Fit 关节不能删除非对称属性："
+                                + joint.path)
                     self._transaction_changed = True
                     c.delete(*roots)
                     for joint in hierarchy.joints:
