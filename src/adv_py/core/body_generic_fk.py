@@ -44,12 +44,24 @@ class BodyGenericFkFollowerSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyGenericFkEndpointSpec:
+    path: str
+    name: str
+    parent_path: str
+    driven_joint: str
+    world_position: tuple[float, float, float]
+    world_axes: tuple[tuple[float, float, float], ...]
+    rotate_order: int
+
+
+@dataclass(frozen=True, slots=True)
 class BodyGenericFkPlan:
     root_path: str
     controls: tuple[BodyLimbFkControlSpec, ...]
     hidden_controls: tuple[str, ...]
     followers: tuple[BodyGenericFkFollowerSpec, ...] = ()
     finger_visibility_plug: str | None = None
+    endpoints: tuple[BodyGenericFkEndpointSpec, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +95,7 @@ def plan_body_generic_fk(
     root_follow_transform: str | None = None,
     follower_sources: frozenset[str] | None = None,
     finger_visibility_plug: str | None = None,
+    bendy_end_paths: frozenset[str] = frozenset(),
 ) -> BodyGenericFkPlan:
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
     state_by_name = {state.name.rsplit(":", 1)[-1]: state
@@ -103,6 +116,7 @@ def plan_body_generic_fk(
     controls: list[BodyLimbFkControlSpec] = []
     hidden: list[str] = []
     followers: dict[str, BodyGenericFkFollowerSpec] = {}
+    endpoints: list[BodyGenericFkEndpointSpec] = []
     finger_names = frozenset(body_hand_source_joint_names()) | frozenset(
         advanced_skeleton_hand_source_joint_names())
     for spec in sorted(specs, key=lambda item: (item.path.count("|"),
@@ -117,10 +131,16 @@ def plan_body_generic_fk(
         if (spec.name in control_by_name
                 or source_name + "_" + spec.side.value in control_by_name):
             continue
+        needs_endpoint = (final_path in bendy_end_paths
+                          and spec.path not in child_paths
+                          and not item.control
+                          and not (use_offset_parent_matrix
+                                   and item.tweaker_control))
         if (spec.path not in child_paths
                 and not item.control
                 and not (use_offset_parent_matrix
-                         and item.tweaker_control)):
+                         and item.tweaker_control)
+                and not needs_endpoint):
             continue
         state = state_by_name.get(spec.name)
         if state is None or state.path != final_path:
@@ -142,7 +162,7 @@ def plan_body_generic_fk(
             if spec.parent_path is not None else None)
         child_of_part = (final_parent is not None
                          and final_path.rsplit("|", 1)[0] != final_parent)
-        if (spec.parent_path is not None
+        if (not needs_endpoint and spec.parent_path is not None
                 and (standard_parent or child_of_part
                      or item.child_of_part not in (None, 0))):
             source_parent = spec.parent_path
@@ -205,6 +225,17 @@ def plan_body_generic_fk(
                                      + follower_name)
                 followers[follower_path] = follower
                 parent_control = follower_path
+        if needs_endpoint:
+            if parent_control == root_path:
+                raise ValueError("Bendy 末端缺少独立的上游 FK 控制："
+                                 + spec.name)
+            endpoint_name = "AdvPy_" + spec.name + "BendyEndFKX"
+            endpoints.append(BodyGenericFkEndpointSpec(
+                parent_control + "|" + endpoint_name,
+                endpoint_name, parent_control, state.path,
+                state.world_position, state.world_axes,
+                state.rotation_order))
+            continue
         stem = spec.name
         offset_name = "AdvPy_" + stem + "FKOffset"
         extra_name = "AdvPy_" + stem + "FKExtra"
@@ -264,4 +295,5 @@ def plan_body_generic_fk(
                              + "、".join(sorted(missing)))
     return BodyGenericFkPlan(root_path, tuple(controls), tuple(hidden),
                              tuple(followers.values()),
-                             finger_visibility_plug)
+                             finger_visibility_plug,
+                             tuple(endpoints))

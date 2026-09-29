@@ -8439,7 +8439,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         self._create_body_limb_fk_control(spec, "Leg")
 
     def create_body_generic_fk(self, plan) -> None:
-        if not plan.controls:
+        if not plan.controls and not plan.endpoints:
             return
         self._require_transaction()
         parent = plan.root_path.rsplit("|", 1)[0]
@@ -8525,12 +8525,35 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                               node + ".visibility")
         for spec in plan.controls:
             self._create_body_limb_fk_control(spec, "Generic")
+        for endpoint in plan.endpoints:
+            if (self.find_name_collisions(endpoint.name)
+                    or (c.ls(endpoint.parent_path, long=True,
+                             type="transform") or []) != [
+                                 endpoint.parent_path]
+                    or (c.ls(endpoint.driven_joint, long=True,
+                             type="joint") or []) != [
+                                 endpoint.driven_joint]):
+                raise FitSkeletonValidationError(
+                    "Bendy 末端 FK 参照父级或名称无效：" + endpoint.name)
+            node = c.createNode("transform", name=endpoint.name,
+                                parent=endpoint.parent_path,
+                                skipSelect=True)
+            node = (c.ls(node, long=True) or [node])[0]
+            if node != endpoint.path:
+                raise RuntimeError("Bendy 末端 FK 参照路径漂移："
+                                   + endpoint.name)
+            c.setAttr(node + ".rotateOrder", endpoint.rotate_order)
+            c.xform(node, worldSpace=True, matrix=tuple(
+                value for axis in endpoint.world_axes
+                for value in (*axis, 0.0))
+                + (*endpoint.world_position, 1.0))
+            c.setAttr(node + ".visibility", False)
         for path in plan.hidden_controls:
             self.hide_body_fk_control(path)
 
     def capture_body_generic_fk_followers(self, plan) -> bool:
         c = self._cmds
-        if not plan.controls:
+        if not plan.controls and not plan.endpoints:
             return not plan.followers
         for follower in plan.followers:
             if (c.ls(follower.path, long=True,
@@ -8612,6 +8635,29 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         follower.path + ".visibility",
                         sourceFromDestination=True)
                         != plan.finger_visibility_plug):
+                return False
+        return True
+
+    def capture_body_generic_fk_endpoints(self, plan) -> bool:
+        c = self._cmds
+        for endpoint in plan.endpoints:
+            if ((c.ls(endpoint.path, long=True,
+                      type="transform") or []) != [endpoint.path]
+                    or (c.listRelatives(endpoint.path, parent=True,
+                                        fullPath=True) or []) != [
+                                            endpoint.parent_path]
+                    or bool(c.getAttr(endpoint.path + ".visibility"))
+                    or int(c.getAttr(endpoint.path + ".rotateOrder"))
+                    != endpoint.rotate_order):
+                return False
+            actual = c.xform(endpoint.path, query=True,
+                             worldSpace=True, matrix=True)
+            expected = tuple(value for axis in endpoint.world_axes
+                             for value in (*axis, 0.0)) + (
+                                 *endpoint.world_position, 1.0)
+            if (len(actual) != 16 or any(
+                    abs(float(a) - b) > 1e-4
+                    for a, b in zip(actual, expected))):
                 return False
         return True
 

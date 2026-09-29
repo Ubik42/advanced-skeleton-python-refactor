@@ -7,6 +7,7 @@ from typing import Protocol
 
 from adv_py.core.fit_bendy import FitBendyChainSpec, FitBendyFkScaleSpec
 from adv_py.core.body_limb_controls import BodyLimbFkControlSpec
+from adv_py.core.body_generic_fk import BodyGenericFkEndpointSpec
 from .body_character_rig import BodyCharacterRigBuildPlan
 
 
@@ -29,6 +30,7 @@ class FitBendyFollowSpec:
 def fit_bendy_world_sources(
     rig: BodyCharacterRigBuildPlan,
     generic_controls: tuple[BodyLimbFkControlSpec, ...] = (),
+    generic_endpoints: tuple[BodyGenericFkEndpointSpec, ...] = (),
 ) -> dict[str, FitBendyWorldSource]:
     """Resolve available independent frames without reading driven Body."""
     # The same direct-control and spine mechanism map drives ordinary Part twist.
@@ -56,6 +58,12 @@ def fit_bendy_world_sources(
                   or control.sub_control_path or control.control_path)
         sources[control.driven_joint] = FitBendyWorldSource(
             source + ".worldMatrix[0]")
+    for endpoint in generic_endpoints:
+        if endpoint.driven_joint in sources:
+            raise ValueError("Bendy 末端 FK 参照与已有来源重复："
+                             + endpoint.driven_joint)
+        sources[endpoint.driven_joint] = FitBendyWorldSource(
+            endpoint.path + ".worldMatrix[0]")
     return sources
 
 
@@ -89,9 +97,11 @@ def plan_fit_bendy_follow(
     chains: tuple[FitBendyChainSpec, ...],
     rig: BodyCharacterRigBuildPlan,
     generic_controls: tuple[BodyLimbFkControlSpec, ...] = (),
+    generic_endpoints: tuple[BodyGenericFkEndpointSpec, ...] = (),
 ) -> tuple[FitBendyFollowSpec, ...]:
     """Resolve Bendy endpoints without depending on driven Body matrices."""
-    sources = fit_bendy_world_sources(rig, generic_controls)
+    sources = fit_bendy_world_sources(
+        rig, generic_controls, generic_endpoints)
     result = []
     for chain in chains:
         start = sources.get(chain.start_body)

@@ -18,7 +18,7 @@ class RegisterGenericFk:
               plan: BodyGenericFkPlan,
               locks: tuple[BodyFkChannelLockSpec, ...] = (),
               ) -> CharacterRegistration:
-        if not plan.controls:
+        if not plan.controls and not plan.endpoints:
             return before
         if self._host.read_character_registration() != before:
             raise ValueError("通用 FK 登记前角色文档已变化")
@@ -74,6 +74,16 @@ class RegisterGenericFk:
                     nodes.append(
                         self._host.capture_character_registration_node(item))
                     known.add(item)
+        for endpoint in plan.endpoints:
+            missing = []
+            parent = endpoint.path
+            while parent and parent not in known:
+                missing.append(parent)
+                parent = parent.rsplit("|", 1)[0]
+            for item in reversed(missing):
+                nodes.append(
+                    self._host.capture_character_registration_node(item))
+                known.add(item)
         after = replace(before, channels=before.channels + tuple(channels),
                         nodes=tuple(nodes))
         encode_registration(after)

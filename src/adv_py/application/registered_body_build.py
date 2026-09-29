@@ -1054,7 +1054,9 @@ class BuildRegisteredBodyCharacter:
                     _generic_fk_policy.follower_sources
                     if _generic_fk_policy is not None else None),
                 finger_visibility_plug=(
-                    rig.plan.global_control.control_path + ".fingerVis"))
+                    rig.plan.global_control.control_path + ".fingerVis"),
+                bendy_end_paths=frozenset(
+                    chain.end_body for chain in deferred_bendy_chains))
             generic_inbetween_bindings = (
                 plan_generic_inbetween_fk_bindings(
                     inbetween_parts, generic_fk, standard_fk_specs,
@@ -1084,6 +1086,8 @@ class BuildRegisteredBodyCharacter:
             joined.create_body_generic_fk(generic_fk)
             if not joined.capture_body_generic_fk_followers(generic_fk):
                 raise RuntimeError("通用 FK 从混合 Body 父链分出的跟随层不一致")
+            if not joined.capture_body_generic_fk_endpoints(generic_fk):
+                raise RuntimeError("Bendy 末端独立 FK 参照层不一致")
             if generic_fk.controls:
                 generic_fk_state = joined.capture_body_generic_fk_controls(
                     generic_fk)
@@ -1180,7 +1184,8 @@ class BuildRegisteredBodyCharacter:
                         "通用 FK Twist 来源改接改变 Body 绑定姿态")
             if deferred_bendy_chains:
                 bendy_follows = plan_fit_bendy_follow(
-                    deferred_bendy_chains, rig.plan, generic_fk.controls)
+                    deferred_bendy_chains, rig.plan, generic_fk.controls,
+                    generic_fk.endpoints)
                 BuildFitBendyGuides(joined).apply(
                     deferred_bendy_chains, follows=bendy_follows)
                 BuildFitBendyDeform(joined).apply(deferred_bendy_chains)
