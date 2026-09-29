@@ -3,13 +3,125 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import sys
+import tempfile
+
+from adv_py.application.shapers_plugin import ShapersSetupResult
+from adv_py.core.shapers_plugin import ShapersPluginPlan
 
 
 def _cmds():
     from maya import cmds
     return cmds
+
+
+def discover_shapers_root() -> Path | None:
+    configured = os.environ.get("ADV_6925_SHAPERS_DIR", "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    from .maya_adv_icons import _icon_source
+
+    icons = _icon_source()
+    if icons:
+        candidate = icons.parent / "shapers"
+        if candidate.is_dir():
+            return candidate.resolve()
+    return None
+
+
+class MayaShapersSetupHost:
+    def __init__(self):
+        self.cmds = _cmds()
+
+    def make_plan(self, root: Path, mode: str,
+                  autoload: bool) -> ShapersPluginPlan:
+        root = root.expanduser().resolve()
+        if (root.name.lower() != "shapers"
+                or root.parent.name.lower() != "div"
+                or root.parent.parent.name.lower() != "advancedskeletonfiles"):
+            raise ValueError("请选择原版 AdvancedSkeletonFiles/div/shapers 目录")
+        c = self.cmds
+        platform = ("Windows" if c.about(win=True) else
+                    "macOS" if c.about(mac=True) else
+                    "Linux" if c.about(linux=True) else "Unknown")
+        extension = {"Windows": ".mll", "macOS": ".bundle",
+                     "Linux": ".so"}.get(platform, "")
+        version = int(c.about(apiVersion=True)) // 10000
+        return ShapersPluginPlan(root, version, platform, extension,
+                                  mode, autoload)
+
+    def _loaded_plugin(self) -> tuple[str, Path] | None:
+        c = self.cmds
+        for name in c.pluginInfo(query=True, listPlugins=True) or []:
+            path = Path(c.pluginInfo(name, query=True, path=True) or "")
+            if path.name.lower() in ("shapers.py", "shapers.mll",
+                                     "shapers.bundle", "shapers.so"):
+                return name, path.resolve()
+        return None
+
+    def _module_path(self) -> Path:
+        app = os.environ.get("MAYA_APP_DIR", "").strip()
+        return (Path(app).expanduser() if app else
+                Path.home() / "Documents" / "maya") / "modules" / "AdvancedSkeleton.mod"
+
+    def _write_module(self, plan: ShapersPluginPlan) -> Path:
+        target = self._module_path()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        prefix = "AdvancedSkeletonFiles/div/shapers"
+        remembered = []
+        if target.is_file():
+            for line in target.read_text(encoding="utf-8").splitlines():
+                fields = line.split()
+                if (len(fields) >= 3 and fields[:2] ==
+                        ["MAYA_PLUG_IN_PATH", "+:="]
+                        and fields[2].startswith(prefix)
+                        and fields[2] not in remembered):
+                    remembered.append(fields[2])
+        if plan.module_relative_path not in remembered:
+            remembered.append(plan.module_relative_path)
+        remembered.sort(key=lambda path: path != prefix)
+        source_root = plan.root.parent.parent.parent
+        content = (f"+ AdvancedSkeleton 6.925 {source_root}\n"
+                   + "".join("MAYA_PLUG_IN_PATH +:= " + path + "\n"
+                             for path in remembered))
+        temp = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                    "w", encoding="utf-8", newline="\n", delete=False,
+                    dir=target.parent, prefix="AdvancedSkeleton.",
+                    suffix=".mod.tmp") as handle:
+                temp = Path(handle.name)
+                handle.write(content)
+            os.replace(temp, target)
+        finally:
+            if temp and temp.exists():
+                temp.unlink()
+        if target.read_text(encoding="utf-8") != content:
+            raise RuntimeError("Shapers 模块路径写后读回不一致")
+        return target
+
+    def configure(self, plan: ShapersPluginPlan) -> ShapersSetupResult:
+        c = self.cmds
+        selected = plan.require_file().resolve()
+        current = self._loaded_plugin()
+        restart = bool(current and current[1] != selected)
+        if not current:
+            c.loadPlugin(str(selected), quiet=True)
+            current = self._loaded_plugin()
+            if not current or current[1] != selected:
+                raise RuntimeError("Shapers 插件加载后未出现在 Maya 插件列表")
+            if not plan.use_native:
+                _python_shapers(c)
+        module = self._write_module(plan)
+        plugin_name = current[0]
+        c.pluginInfo(plugin_name, edit=True, autoload=plan.autoload)
+        if bool(c.pluginInfo(plugin_name, query=True,
+                             autoload=True)) != plan.autoload:
+            raise RuntimeError("Shapers 自动加载设置读回不一致")
+        return ShapersSetupResult(selected, module, not restart,
+                                  restart, plan.autoload)
 
 
 def list_shapers(namespace: str) -> tuple[str, ...]:

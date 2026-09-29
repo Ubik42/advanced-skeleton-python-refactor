@@ -1497,6 +1497,20 @@ class MayaPanelController:
 
         return list_shapers(namespace)
 
+    def shapers_plugin_root(self) -> str:
+        from adv_py.adapters.maya_shapers import discover_shapers_root
+
+        root = discover_shapers_root()
+        return str(root) if root else ""
+
+    def shapers_setup(self, root: Path, *, mode: str,
+                      autoload: bool):
+        from adv_py.adapters.maya_shapers import MayaShapersSetupHost
+        from adv_py.application.shapers_plugin import SetupShapersPlugin
+
+        return SetupShapersPlugin(MayaShapersSetupHost()).apply(
+            root, mode=mode, autoload=autoload)
+
     def shapers_select(self, namespace: str, node: str | None = None) -> int:
         from adv_py.adapters.maya_shapers import select_shapers
 
