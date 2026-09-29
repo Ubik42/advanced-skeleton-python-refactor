@@ -8518,6 +8518,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                   + ".scale" + axis,
                                   node + ".scale" + axis)
             if (follower.source_body_joint.rsplit("|", 1)[-1]
+                    .rsplit(":", 1)[-1]
                     .startswith("Wrist_")
                     and plan.finger_visibility_plug is not None):
                 c.connectAttr(plan.finger_visibility_plug,
@@ -8604,6 +8605,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                 if follower.inherit_scale else "")):
                         return False
             if (follower.source_body_joint.rsplit("|", 1)[-1]
+                    .rsplit(":", 1)[-1]
                     .startswith("Wrist_")
                     and plan.finger_visibility_plug is not None
                     and c.connectionInfo(

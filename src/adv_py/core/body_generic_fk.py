@@ -152,11 +152,13 @@ def plan_body_generic_fk(
                 source_parent, source_parent))
             body_parent = body_joint
             use_root_follow = False
-            if (source_parent.rsplit("|", 1)[-1] == "Root_M"
+            if (source_parent.rsplit("|", 1)[-1]
+                    .rsplit(":", 1)[-1] == "Root_M"
                     and root_follow_transform is not None):
                 body_parent = root_follow_transform
                 use_root_follow = True
-            legacy_source = source_parent.rsplit("|", 1)[-1]
+            legacy_source = (source_parent.rsplit("|", 1)[-1]
+                             .rsplit(":", 1)[-1])
             if (follower_sources is None
                     or spec.name in follower_sources
                     or legacy_source in follower_sources):
