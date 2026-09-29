@@ -940,6 +940,11 @@ class MayaFitInbetweenMixin:
                 or controls != [plan.fk_control_path]):
             raise ValueError("Inbetween FK 起点控制层不存在："
                              + plan.start_body_name)
+        target_parent = plan.target_parent_path or plan.fk_control_path
+        if ((c.ls(target_parent, long=True) or []) != [target_parent]
+                or c.nodeType(target_parent) not in ("transform", "joint")):
+            raise ValueError("Inbetween FK 原约束来源不存在："
+                             + target_parent)
         names = (plan.base_name, plan.target_name,
                  plan.extra_name, plan.fkx_name)
         if len(set(names)) != len(names) or any(
@@ -960,7 +965,9 @@ class MayaFitInbetweenMixin:
         extra = c.createNode("transform", name=plan.extra_name,
                              parent=plan.fk_offset_path, skipSelect=True)
         target = c.createNode("transform", name=plan.target_name,
-                              parent=plan.fk_control_path, skipSelect=True)
+                              parent=(plan.target_parent_path
+                                      or plan.fk_control_path),
+                              skipSelect=True)
         fkx = c.createNode("joint", name=plan.fkx_name,
                            parent=plan.fk_offset_path, skipSelect=True)
         self._transaction_changed = True
@@ -989,7 +996,9 @@ class MayaFitInbetweenMixin:
             return (None, None, None, None)
         for name, parent_name, node_type in (
             (plan.base_name, plan.fk_offset_path, "transform"),
-            (plan.target_name, plan.fk_control_path, "transform"),
+            (plan.target_name,
+             plan.target_parent_path or plan.fk_control_path,
+             "transform"),
             (plan.extra_name, plan.fk_offset_path, "transform"),
             (plan.fkx_name, plan.fk_offset_path, "joint"),
         ):

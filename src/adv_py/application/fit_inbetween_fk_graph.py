@@ -56,10 +56,12 @@ class BuildInbetweenFkGraph:
         fk_control_path: str,
         rotate_order: int,
         part_fk_matrix_plugs: tuple[str, ...],
+        fk_source_path: str | None = None,
     ) -> InbetweenFkGraphResult:
         anchor = plan_inbetween_fk_anchor(
             start_body_name, fk_offset_path=fk_offset_path,
-            fk_control_path=fk_control_path, rotate_order=rotate_order)
+            fk_control_path=fk_control_path, rotate_order=rotate_order,
+            fk_source_path=fk_source_path)
         bias = plan_inbetween_bias(
             start_body_name, part_names, fk_control_path + ".bias")
         matrices = plan_inbetween_matrices(
@@ -81,11 +83,13 @@ class BuildInbetweenFkGraph:
         part_control_radius: float,
         sub_controllers: bool = False,
         extra_controllers: bool = False,
+        fk_source_path: str | None = None,
     ) -> InbetweenFkGraphResult:
         """Create every Part receiver and connect the FK graph atomically."""
         anchor = plan_inbetween_fk_anchor(
             start_body_name, fk_offset_path=fk_offset_path,
-            fk_control_path=fk_control_path, rotate_order=rotate_order)
+            fk_control_path=fk_control_path, rotate_order=rotate_order,
+            fk_source_path=fk_source_path)
         parts = plan_inbetween_fk_parts(
             anchor, body_parts, fk_system_path=fk_system_path,
             radius=part_control_radius,

@@ -119,7 +119,8 @@ class BuildInbetweenLimbSegments:
                     rotate_order=binding.rotate_order,
                     part_control_radius=binding.part_control_radius,
                     sub_controllers=sub_controllers,
-                    extra_controllers=extra_controllers)
+                    extra_controllers=extra_controllers,
+                    fk_source_path=binding.start_fk_source_path)
                 rewire = BuildInbetweenFkRewire(joined).apply(
                     fk, start_fk_driver_path=binding.start_fk_driver_path,
                     start_fk_constraint_name=binding.start_fk_constraint_name,
@@ -198,7 +199,8 @@ class BuildInbetweenLimbSegment:
                 rotate_order=rotate_order,
                 part_control_radius=part_control_radius,
                 sub_controllers=sub_controllers,
-                extra_controllers=extra_controllers)
+                extra_controllers=extra_controllers,
+                fk_source_path=start_fk_source_path)
             rewire = BuildInbetweenFkRewire(joined).apply(
                 fk, start_fk_driver_path=start_fk_driver_path,
                 start_fk_constraint_name=start_fk_constraint_name,
