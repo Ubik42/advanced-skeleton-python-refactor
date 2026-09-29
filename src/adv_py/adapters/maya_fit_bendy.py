@@ -1,6 +1,7 @@
 """Maya construction boundary for 6.925 Bendy guide curves."""
 from __future__ import annotations
 
+from math import isfinite
 from typing import TYPE_CHECKING
 
 from adv_py.core.fit_bendy import FitBendyChainSpec
@@ -45,6 +46,40 @@ def _bendy_dag_name(path: str) -> str:
 
 
 class MayaFitBendyMixin:
+    def _bendy_bind_parameter(self, shape: str,
+                              position: tuple[float, ...]) -> float:
+        c = self._cmds
+        nearest = c.createNode("nearestPointOnCurve", skipSelect=True)
+        try:
+            c.connectAttr(shape + ".worldSpace[0]",
+                          nearest + ".inputCurve")
+            c.setAttr(nearest + ".inPosition", *position,
+                      type="double3")
+            parameter = float(c.getAttr(nearest + ".parameter"))
+        finally:
+            c.delete(nearest)
+        if not isfinite(parameter) or not 0.0 <= parameter <= 1.0:
+            raise ValueError("Bendy 绑定曲线参数超出原版 0–1 范围："
+                             + shape)
+        return parameter
+
+    def _set_bendy_motion_parameter(self, path: str,
+                                    parameter: float) -> None:
+        c = self._cmds
+        c.setAttr(path + ".uValue", parameter)
+        c.addAttr(path, longName="advPyBendyBindU",
+                  attributeType="double", defaultValue=parameter)
+        c.setAttr(path + ".advPyBendyBindU", lock=True)
+
+    def _bendy_motion_parameter_matches(self, path: str) -> bool:
+        c = self._cmds
+        plug = path + ".advPyBendyBindU"
+        if not c.objExists(plug) or not c.getAttr(plug, lock=True):
+            return False
+        value = float(c.getAttr(path + ".uValue"))
+        return (isfinite(value) and 0.0 <= value <= 1.0
+                and abs(value - float(c.getAttr(plug))) <= 1e-8)
+
     def capture_bendy_control_path(
         self, name: str, ancestors: tuple[str, ...],
     ) -> str:
@@ -188,8 +223,10 @@ class MayaFitBendyMixin:
             c.setAttr(path + ".worldUpType", 2)
             c.setAttr(path + ".frontAxis", 0)
             c.setAttr(path + ".upAxis", 1)
-            c.setAttr(path + ".uValue",
-                      index / (spec.control_count + 1))
+            position = tuple(c.xform(control, query=True,
+                                     worldSpace=True, translation=True))
+            self._set_bendy_motion_parameter(path,
+                self._bendy_bind_parameter(shapes[0], position))
             c.connectAttr(spec.control_names[0] + ".worldMatrix[0]",
                           path + ".worldUpMatrix")
             c.connectAttr(shapes[0] + ".worldSpace[0]",
@@ -279,8 +316,7 @@ class MayaFitBendyMixin:
                     != spec.control_names[0] + ".parametric"
                     or not c.objExists(follow)
                     or c.nodeType(follow) != "parentConstraint"
-                    or abs(float(c.getAttr(path + ".uValue"))
-                           - index / (spec.control_count + 1)) > 1e-8):
+                    or not self._bendy_motion_parameter_matches(path)):
                 return False
         return True
 
@@ -608,17 +644,18 @@ class MayaFitBendyMixin:
                       transformValue=[(influences[1], 0.4)])
         c.skinPercent(skin, curve + f".cv[{cv_count - 2}]",
                       transformValue=[(influences[-2], 0.4)])
-        for index, (path_name, transform_name) in enumerate(zip(
+        for path_name, transform_name, position in zip(
                 spec.motion_path_names,
-                spec.motion_transform_names)):
+                spec.motion_transform_names,
+                (spec.start_position, *spec.part_positions)):
             path = c.createNode("motionPath", name=path_name,
                                 skipSelect=True)
             transform = c.createNode("transform", name=transform_name,
                                      parent=_GROUPS[3], skipSelect=True)
             c.connectAttr(spec.control_names[0] + ".parametric",
                           path + ".fractionMode")
-            c.setAttr(path + ".uValue",
-                      index / (len(spec.part_names) + 1))
+            self._set_bendy_motion_parameter(path,
+                self._bendy_bind_parameter(shapes[0], position))
             c.connectAttr(shapes[0] + ".worldSpace[0]",
                           path + ".geometryPath")
             c.connectAttr(path + ".allCoordinates",
@@ -1305,7 +1342,6 @@ class MayaFitBendyMixin:
                     or c.connectionInfo(path + ".fractionMode",
                                         sourceFromDestination=True)
                     != spec.control_names[0] + ".parametric"
-                    or abs(float(c.getAttr(path + ".uValue"))
-                           - index / (len(spec.part_names) + 1)) > 1e-8):
+                    or not self._bendy_motion_parameter_matches(path)):
                 return False
         return True
