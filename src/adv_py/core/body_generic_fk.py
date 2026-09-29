@@ -83,7 +83,8 @@ def plan_body_generic_fk(
     finger_visibility_plug: str | None = None,
 ) -> BodyGenericFkPlan:
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
-    state_by_name = {state.name: state for state in body.joints}
+    state_by_name = {state.name.rsplit(":", 1)[-1]: state
+                     for state in body.joints}
     metadata_by_source = {item.joint: item for item in metadata}
     spec_by_path = {spec.path: spec for spec in specs}
     removable_body_paths = frozenset(plan_body_non_deform_markers(body))
