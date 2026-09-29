@@ -46,7 +46,9 @@ def character_channels(rig):
     spine = p.torso.torso.spine
     if spine:
         add("spine.ik",spine.ik_control,
-            translation+rotation+("waistRoll","spineIkFk","stretchy","volume"))
+            translation+rotation+("waistRoll","spineIkFk","stretchy",
+                                  "volume","Lenght1","Lenght2",
+                                  "Fatness1","Fatness2"))
         add("spine.pole",spine.pole_control,translation)
     else:
         spline = p.torso.torso.spline

@@ -74,6 +74,8 @@ class BodySpinePlan:
             "AdvPy_SpineStretchBlend", "AdvPy_SpineStretchSegments",
             "AdvPy_SpineVolumeInverse", "AdvPy_SpineVolumePower",
             "AdvPy_SpineVolumeWeight", "AdvPy_SpineVolumeBlend",
+            "AdvPy_SpineLength1", "AdvPy_SpineLength2",
+            "AdvPy_SpineFatness1", "AdvPy_SpineFatness2",
         ) + (("AdvPy_SpineChestSpaceMM", "AdvPy_SpineChestSpacePM")
              if self.use_offset_parent_matrix else
              ("AdvPy_SpineChestSpaceParent",))
