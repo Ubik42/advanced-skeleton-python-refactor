@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from adv_py.core.body_build_options import BodyBuildOptions
+from adv_py.core.body_leg_qtoes import plan_leg_joint_names
 from adv_py.core.body_leg_controls import (
     BodyLegControlIssue,
     BodyLegFkControlPlan,
@@ -139,6 +140,7 @@ class BuildBodyLegFkMechanismControls:
         }
         controls = plan_body_leg_fk_controls(
             body,
+            joint_names=plan_leg_joint_names(body),
             radius=control_radius,
             driven_joint_by_source=fk_drivers,
             sub_controllers=BodyBuildOptions.from_fit_settings(

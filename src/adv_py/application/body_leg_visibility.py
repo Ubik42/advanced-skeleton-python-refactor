@@ -8,6 +8,7 @@ from typing import Protocol
 
 from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.body_leg_blend import audit_body_leg_blend, plan_body_leg_blend
+from adv_py.core.body_leg_qtoes import plan_leg_joint_names
 from adv_py.core.body_leg_controls import (
     audit_body_leg_fk_controls, plan_body_leg_fk_controls,
     terminal_toes_end_control_enabled,
@@ -105,6 +106,7 @@ class BuildBodyLegVisibility:
         }
         fk = plan_body_leg_fk_controls(
             body, radius=control_radius, driven_joint_by_source=fk_drivers,
+            joint_names=plan_leg_joint_names(body),
             sub_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).sub_controllers,
             extra_controllers=BodyBuildOptions.from_fit_settings(
@@ -126,6 +128,7 @@ class BuildBodyLegVisibility:
         )
         blend = plan_body_leg_blend(
             body, mechanism_plan,
+            joint_names=plan_leg_joint_names(body),
             terminal_toes_end_control=terminal_toes_end_control_enabled(
                 symmetry.source.metadata,
                 use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(

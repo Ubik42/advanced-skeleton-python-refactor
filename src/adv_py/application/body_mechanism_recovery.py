@@ -13,6 +13,7 @@ from adv_py.core.body_leg_mechanisms import (
 )
 from adv_py.core.body_limb_mechanisms import recover_body_limb_mechanisms
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
+from adv_py.core.body_leg_qtoes import plan_leg_joint_names
 
 
 class BodyArmMechanismRecoveryHost(Protocol):
@@ -40,6 +41,8 @@ def plan_existing_body_leg_mechanisms(
     host: BodyLegMechanismRecoveryHost,
     body: BodySkeletonSnapshot,
 ) -> BodyLegMechanismPlan:
-    base = plan_body_leg_mechanisms(body, allow_part_parents=True)
+    base = plan_body_leg_mechanisms(
+        body, allow_part_parents=True,
+        joint_names=plan_leg_joint_names(body))
     snapshot = host.capture_body_leg_mechanisms(base)
     return recover_body_limb_mechanisms(base, body, snapshot)
