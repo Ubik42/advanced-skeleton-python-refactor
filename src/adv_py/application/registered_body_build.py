@@ -423,6 +423,7 @@ class BuildRegisteredBodyCharacter:
             with self._host.transaction("构建并登记完整 Body 角色"):
                 joined = _JoinedTransactionHost(self._host)
                 joined.prepare_fit_root(container_name)
+                joined.normalize_fit_joint_names(container_name)
                 joined.normalize_fit_ik_labels(container_name)
                 fit_hierarchy = joined.capture_fit_hierarchy(container_name)
                 joined.write_missing_fit_deform_profiles(

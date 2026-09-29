@@ -512,9 +512,13 @@ class MayaFitJointHost:
         position = tuple(float(value) for value in self._cmds.xform(
             first, query=True, worldSpace=True, translation=True
         ))
-        scale = float(self._cmds.getAttr(f"{container}.scaleX"))
-        if scale <= 0:
-            raise FitSkeletonValidationError("FitSkeleton.scaleX 必须大于零")
+        descendants = self._cmds.listRelatives(
+            container, allDescendents=True, type="joint", fullPath=True
+        ) or []
+        maximum_y = max((float(self._cmds.xform(
+            joint, query=True, worldSpace=True, translation=True
+        )[1]) for joint in descendants), default=0.0)
+        scale = max(0.01, maximum_y / 17.176163) if maximum_y > 0 else 1.0
         if abs(position[0]) <= 0.01 * scale:
             if name == "Root":
                 return first
@@ -589,6 +593,39 @@ class MayaFitJointHost:
                 )
             self.set_joint_label(joint, JointLabel.parse(candidate))
             used.add(candidate)
+
+    def normalize_fit_joint_names(self, container_name: str) -> None:
+        """Give Fit joints unique short names before name-based rig generation."""
+        self._require_transaction()
+        container = self._resolve_transform(
+            container_name, FitHierarchyValidationError
+        )
+        joints = self._cmds.listRelatives(
+            container, allDescendents=True, type="joint", fullPath=True
+        ) or []
+        # Maya returns descendants before their parents. Renaming in this
+        # order keeps the remaining full paths valid throughout the pass.
+        for joint in joints:
+            short = joint.rsplit("|", 1)[-1]
+            if len(self._cmds.ls(short, long=True) or []) <= 1:
+                continue
+            for index in range(1, 99):
+                candidate = short + str(index)
+                if not self._cmds.objExists(candidate):
+                    self._transaction_changed = True
+                    renamed = self._cmds.rename(joint, candidate)
+                    resolved = self._cmds.ls(
+                        renamed, long=True, type="joint"
+                    ) or []
+                    if len(resolved) != 1 or resolved[0].rsplit("|", 1)[-1] != candidate:
+                        raise RuntimeError(
+                            "Fit 重名关节重命名后路径不唯一：" + joint
+                        )
+                    break
+            else:
+                raise FitSkeletonValidationError(
+                    "Fit 重名关节没有可用的数字后缀：" + short
+                )
 
     def set_fit_joint_local_position(
         self,
