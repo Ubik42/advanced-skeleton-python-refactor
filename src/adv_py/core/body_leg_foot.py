@@ -617,7 +617,7 @@ def plan_body_leg_foot(
                  joint.name.removesuffix("_" + suffix), "", "Y", 1.0)
                 for joint in reversed(tuple(
                     body_by_path[path]
-                    for path in qtoes_topology.intermediate_paths)))
+                    for path in roll_intermediate)))
         elif separate_qtoes:
             marker_roles += tuple(
                 ((BodyLegFootPivotRole.QTOES
@@ -886,23 +886,31 @@ def plan_body_leg_foot(
         )
         hybrid = None
         if qtoes_topology.hybrid:
-            source_paths = (qtoes_topology.intermediate_paths
-                            + (qtoes_topology.toes_path,))
+            source_paths = roll_intermediate + (qtoes_topology.toes_path,)
             end_paths = source_paths[1:] + (qtoes_topology.toes_end_path,)
-            driver_chain = ((*limb.toe_solver_joint_list,
-                             limb.toe_driver_path, limb.toe_end_driver_path)
-                            if limb.toe_solver_joint_list else ())
-            if len(driver_chain) != len(source_paths) + 2:
+            full_chain = (qtoes_topology.ankle_path,
+                          *qtoes_topology.intermediate_paths,
+                          qtoes_topology.toes_path,
+                          qtoes_topology.toes_end_path)
+            if any(path not in ik_by_source for path in full_chain):
                 raise BodyLegFootValidationError(
                     f"{suffix} 侧 IKHybrid 机制链与 Ankle→Toes 主链不一致")
+            chain_index = {path: index for index, path in enumerate(full_chain)}
+
+            def hybrid_solver_segment(start_source, end_source):
+                source_paths_between = full_chain[
+                    chain_index[start_source]:chain_index[end_source] + 1]
+                return expanded_ik_solver_chain(
+                    mechanisms, tuple(ik_by_source[path]
+                                      for path in source_paths_between))[:-1]
+
             pivot_by_marker = {pivot.name.removeprefix("AdvPy_Roll")
                                .removesuffix("_" + suffix): pivot
                                for pivot in pivots if pivot.roll_control_name}
             segments = []
             control_parent = limb.ankle_control_path
             sampler2_parent = ik.root_path
-            for index, (source_path, end_path) in enumerate(zip(
-                    source_paths, end_paths)):
+            for source_path, end_path in zip(source_paths, end_paths):
                 source = body_by_path[source_path]
                 end = body_by_path[end_path]
                 marker = source.name.removesuffix("_" + suffix)
@@ -929,7 +937,8 @@ def plan_body_leg_foot(
                 wrapper_name = f"{stem}IKHybridRoll_{suffix}"
                 wrapper = f"{wrapper_offset}|{wrapper_name}"
                 segments.append(BodyLegFootHybridSegmentSpec(
-                    marker, driver_chain[index + 1], driver_chain[index + 2],
+                    marker, ik_by_source[source_path],
+                    ik_by_source[end_path],
                     f"AdvPy_LegIK{marker}Handle_{suffix}",
                     f"AdvPy_LegIK{marker}Effector_{suffix}", wrapper,
                     control_offset_name, control_offset,
@@ -944,6 +953,8 @@ def plan_body_leg_foot(
                     wrapper_offset_name, wrapper_offset,
                     wrapper_name, wrapper,
                     body_fk_curve_radius(body, source, ik.base_radius),
+                    solver_joint_list=hybrid_solver_segment(
+                        source_path, end_path),
                 ))
                 control_parent = control_path
                 sampler2_parent = sampler2
@@ -956,8 +967,11 @@ def plan_body_leg_foot(
             hybrid = BodyLegFootHybridSpec(
                 f"AdvPy_LegIKAnkleTo{first.name.removesuffix('_' + suffix)}Handle_{suffix}",
                 f"AdvPy_LegIKAnkleTo{first.name.removesuffix('_' + suffix)}Effector_{suffix}",
-                driver_chain[0], driver_chain[1], first_pivot.path,
+                limb.chain[2], ik_by_source[source_paths[0]],
+                first_pivot.path,
                 tuple(segments),
+                initial_solver_joint_list=hybrid_solver_segment(
+                    qtoes_topology.ankle_path, source_paths[0]),
             )
         toe_offset_name = f"AdvPy_ToeIKOffset_{suffix}"
         toe_parent_path = (next(manual.reverse_path

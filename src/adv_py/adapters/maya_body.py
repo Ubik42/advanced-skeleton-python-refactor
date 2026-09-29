@@ -6500,6 +6500,13 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
             required.extend(driver for step in side.intermediate_handles
                             for driver in (step.start_driver_path,
                                            step.end_driver_path))
+            required.extend(joint for chain in (
+                side.toe_solver_joint_list or (),
+                side.toe_end_solver_joint_list or (),
+                side.qtoes_solver_joint_list or (),
+                *(step.solver_joint_list
+                  for step in side.intermediate_handles),
+            ) for joint in chain)
             if len(handles) == 1:
                 required.append(handles[0])
                 if side.pivots[0].roll_control_name:
@@ -6526,6 +6533,11 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
             )
             if side.hybrid is not None:
                 names.extend(side.hybrid.node_names)
+                required.extend(joint for chain in (
+                    side.hybrid.initial_solver_joint_list or (),
+                    *(segment.solver_joint_list or ()
+                      for segment in side.hybrid.segments),
+                ) for joint in chain)
                 required.append(
                     side.hybrid.segments[0].sampler1_offset_path
                     .rsplit("|", 1)[0])
