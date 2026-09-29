@@ -352,7 +352,7 @@ def plan_body_torso(
                          use_offset_parent_matrix=build_options.use_offset_parent_matrix,
                          root_x=root_x, cogs=tuple(cogs))
     if spine_ik:
-        plan=with_spine_ik(body,plan) if description==BodyAxialDescription() else with_spline_ik(body,plan,description)
+        plan=with_spine_ik(body,plan,build_options) if description==BodyAxialDescription() else with_spline_ik(body,plan,description)
     return with_head_aim(plan,body,description,up_axis) if head_aim else plan
 
 

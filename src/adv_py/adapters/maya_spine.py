@@ -5,6 +5,9 @@ from math import sqrt, isfinite
 from adv_py.core.body_spine import spine_roll_degrees, spine_ik_goal_position
 from adv_py.core.body_limb_ik import solve_limb_pole_position
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from adv_py.core.body_controller_layers import (
+    audit_body_extra_controller, audit_body_sub_controller,
+)
 from .maya_adv_icons import create_adv_icon
 from . import maya_chest_space
 
@@ -62,11 +65,23 @@ class MayaBodySpineMixin:
             (plan.pole_offset, plan.pole_control, plan.pole_position),
         ):
             self._spine_frame(offset.rsplit("|", 1)[-1], offset.rsplit("|", 1)[0], pos, plan.joints[2].world_axes)
+            parent = offset
+            if control == plan.ik_control and plan.ik_extra_path:
+                parent = self._create_body_extra_layer(
+                    offset, plan.ik_extra_path.rsplit("|", 1)[-1],
+                    plan.ik_extra_path)
             create_adv_icon(
-                c, name=control.rsplit("|", 1)[-1], parent=offset,
+                c, name=control.rsplit("|", 1)[-1], parent=parent,
                 template=("IK_icon" if control == plan.ik_control
                           else "Pole_icon"), radius=1.5,
                 fallback_normal=(1.0, 0.0, 0.0))
+            if control == plan.ik_control:
+                if plan.ik_extra_path and plan.ik_extra_curve:
+                    self._add_body_extra_curve(plan.ik_extra_path, control)
+                if plan.ik_sub_path:
+                    self._create_body_sub_control(
+                        control, plan.ik_sub_path.rsplit("|", 1)[-1],
+                        plan.ik_sub_path)
             for axis in "XYZ":
                 c.setAttr(control + ".scale" + axis, lock=True, keyable=False)
         c.addAttr(plan.ik_control, longName="spineIkFk", attributeType="double", minValue=0, maxValue=1, defaultValue=0, keyable=True)
@@ -95,10 +110,10 @@ class MayaBodySpineMixin:
         handle, effector = c.ikHandle(name="AdvPy_SpineIKHandle", startJoint=plan.joints[3].path,
                                       endEffector=plan.joints[5].path, solver="ikRPsolver")
         c.rename(effector, "AdvPy_SpineIKEffector")
-        c.parent(handle, plan.ik_control)
+        c.parent(handle, plan.ik_driver)
         c.setAttr("AdvPy_SpineIKHandle.visibility", False)
         c.poleVectorConstraint(plan.pole_control, "AdvPy_SpineIKHandle", name="AdvPy_SpinePoleConstraint")
-        c.orientConstraint(plan.ik_control, plan.joints[5].path, maintainOffset=False, name="AdvPy_SpineIKChestOrient")
+        c.orientConstraint(plan.ik_driver, plan.joints[5].path, maintainOffset=False, name="AdvPy_SpineIKChestOrient")
         self._create_body_spine_stretch_volume(plan)
         c.createNode("reverse", name="AdvPy_SpineReverse")
         c.connectAttr(plan.blend_plug, "AdvPy_SpineReverse.inputX")
@@ -130,7 +145,7 @@ class MayaBodySpineMixin:
         start = c.createNode("multMatrix", name="AdvPy_SpineStretchStartMM")
         target = c.createNode("multMatrix", name="AdvPy_SpineStretchTargetMM")
         for node, source in ((start, plan.joints[3].path),
-                             (target, plan.ik_control)):
+                             (target, plan.ik_driver)):
             c.connectAttr(source + ".worldMatrix[0]", node + ".matrixIn[0]")
             c.connectAttr(plan.root_path + ".worldInverseMatrix[0]",
                           node + ".matrixIn[1]")
@@ -321,7 +336,7 @@ class MayaBodySpineMixin:
         edges = [
             (plan.joints[3].path + ".worldMatrix[0]",
              "AdvPy_SpineStretchStartMM.matrixIn[0]"),
-            (plan.ik_control + ".worldMatrix[0]",
+            (plan.ik_driver + ".worldMatrix[0]",
              "AdvPy_SpineStretchTargetMM.matrixIn[0]"),
             ("AdvPy_SpineStretchStartMM.matrixSum",
              "AdvPy_SpineStretchDistance.inMatrix1"),
@@ -536,6 +551,28 @@ class MayaBodySpineMixin:
                                            "AdvPy_SpineAntiPop")))
         if any(len(c.ls(name, long=True) or []) != 1 for name in nodes):
             raise FitSkeletonValidationError("Spine 节点集合缺失或名称不唯一")
+        if plan.ik_extra_path:
+            issues = audit_body_extra_controller(
+                plan.ik_offset, plan.ik_control, plan.ik_extra_path,
+                self._capture_body_extra_layer(
+                    plan.ik_extra_path, plan.ik_control),
+                extra_curve=plan.ik_extra_curve)
+            if issues:
+                raise FitSkeletonValidationError(
+                    "Spine IK Extra 层复检失败：" + "；".join(issues))
+            control_parent = c.listRelatives(
+                plan.ik_control, parent=True, fullPath=True) or []
+            if control_parent != [plan.ik_extra_path]:
+                raise FitSkeletonValidationError("Spine IK 控制器父层改变")
+        elif plan.ik_extra_curve:
+            raise FitSkeletonValidationError("旧版 Spine IK 无 Extra 曲线层")
+        sub_state = self._capture_body_ik_sub_control(
+            plan.ik_control, plan.ik_sub_path)
+        issues = audit_body_sub_controller(
+            plan.ik_control, plan.ik_sub_path, sub_state)
+        if issues:
+            raise FitSkeletonValidationError(
+                "Spine IK Sub 层复检失败：" + "；".join(issues))
         if owner in ("adv_py.spine.v2", "adv_py.spine.v3",
                      "adv_py.spine.v4", "adv_py.spine.v5"):
             self._audit_body_spine_stretch_volume(plan, owner)
@@ -583,7 +620,7 @@ class MayaBodySpineMixin:
             "AdvPy_SpineChestSpaceParent",
             plan.use_offset_parent_matrix)
         targets("AdvPy_SpinePoleConstraint", c.poleVectorConstraint, (plan.pole_control,))
-        targets("AdvPy_SpineIKChestOrient", c.orientConstraint, (plan.ik_control,))
+        targets("AdvPy_SpineIKChestOrient", c.orientConstraint, (plan.ik_driver,))
         for role, index in (("FK", 0), ("IK", 3)):
             name = f"AdvPy_Spine{role}RootPoint"
             targets(name, c.pointConstraint, (plan.pelvis_control,))
@@ -634,7 +671,7 @@ class MayaBodySpineMixin:
         chain = tuple(self._resolve_connected_node(node) for node in c.ikHandle(handle, query=True, jointList=True))
         if (chain != (plan.solver_joint_list or
                       tuple(j.path for j in plan.joints[3:5]))
-                or (c.listRelatives(handle, parent=True, fullPath=True) or []) != [plan.ik_control]
+                or (c.listRelatives(handle, parent=True, fullPath=True) or []) != [plan.ik_driver]
                 or not c.isConnected(plan.blend_plug, "AdvPy_SpineReverse.inputX")):
             raise FitSkeletonValidationError("Spine IK handle 或混合输入结构改变")
         for attr in ("translateX", "translateY", "translateZ", "rotateY", "rotateZ"):
@@ -669,7 +706,7 @@ class MayaBodySpineMixin:
         value = c.getAttr(plan.blend_plug)
         if value not in (0.0, 1.0):
             raise FitSkeletonValidationError("Spine 匹配要求当前 blend 位于 FK 或 IK 端点")
-        targets = ([(plan.ik_control, "translate"), (plan.ik_control, "rotate"), (plan.pole_control, "translate")]
+        targets = ([(plan.ik_driver, "translate"), (plan.ik_driver, "rotate"), (plan.pole_control, "translate")]
                    if mode == "ik" else [(path, "rotate") for path in plan.fk_controls])
         for path, kind in targets:
             self._preflight_torso_channels(path, tuple(kind + axis for axis in "XYZ"))
@@ -738,8 +775,8 @@ class MayaBodySpineMixin:
                 c.setAttr(plan.pole_lock_plug, 0.0)
             if owner == "adv_py.spine.v5":
                 c.setAttr(plan.anti_pop_plug, 0.0)
-            c.xform(plan.ik_control, worldSpace=True, translation=spine_ik_goal_position(*positions))
-            self._spine_set_world_rotation(plan.ik_control, frames[2][0])
+            c.xform(plan.ik_driver, worldSpace=True, translation=spine_ik_goal_position(*positions))
+            self._spine_set_world_rotation(plan.ik_driver, frames[2][0])
             c.xform(plan.pole_control, worldSpace=True, translation=pole)
             c.setAttr(plan.roll_plug, spine_roll_degrees(frames[1][1], self._spine_world_frame(plan.joints[4].path)[1]))
             c.setAttr(plan.blend_plug, 1.0)

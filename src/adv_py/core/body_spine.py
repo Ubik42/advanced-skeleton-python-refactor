@@ -8,6 +8,7 @@ from .body_limb_controls import (
 )
 from .body_limb_mechanisms import BodyLimbMechanismJointSpec, BodyLimbMechanismRole
 from .body_limb_ik import solve_limb_pole_position
+from .body_build_options import BodyBuildOptions
 from .fit_settings import FitSkeletonValidationError
 
 SPINE_MATCH_TOLERANCE = 1e-4
@@ -39,6 +40,18 @@ class BodySpinePlan:
     lengths: tuple[float, float]
     solver_joint_list: tuple[str, ...] | None = None
     use_offset_parent_matrix: bool = False
+    ik_sub_path: str | None = None
+    ik_extra_curve: bool = False
+
+    @property
+    def ik_extra_path(self) -> str | None:
+        parent = self.ik_control.rsplit("|", 1)[0]
+        name = parent.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        return parent if name == "AdvPy_SpineIKExtra" else None
+
+    @property
+    def ik_driver(self) -> str:
+        return self.ik_sub_path or self.ik_control
 
     @property
     def blend_plug(self) -> str:
@@ -70,6 +83,11 @@ class BodySpinePlan:
             self.root_path, self.ik_offset, self.ik_control, self.ik_control + "Shape",
             self.pole_offset, self.pole_control, self.pole_control + "Shape",
             self.waist_output, self.chest_space,
+            *((self.ik_extra_path,) if self.ik_extra_path else ()),
+            *((self.ik_extra_path + "|AdvPy_SpineIKExtraShape",)
+              if self.ik_extra_path and self.ik_extra_curve else ()),
+            *((self.ik_sub_path, self.ik_sub_path + "Shape")
+              if self.ik_sub_path else ()),
         )) + tuple(j.name for j in self.joints) + (
             "AdvPy_SpineIKHandle", "AdvPy_SpineIKEffector", "AdvPy_SpinePoleConstraint",
             "AdvPy_SpineFKRootPoint", "AdvPy_SpineIKRootPoint", "AdvPy_SpineIKChestOrient",
@@ -94,7 +112,7 @@ class BodySpinePlan:
              ("AdvPy_SpineChestSpaceParent",))
 
 
-def with_spine_ik(body, torso):
+def with_spine_ik(body, torso, build_options: BodyBuildOptions = BodyBuildOptions()):
     """Extend the fixed torso topology with a separate two-segment spine mechanism."""
     states = {j.name: j for j in body.joints}
     source = tuple(states[name] for name in ("Root_M", "Spine1_M", "Chest_M"))
@@ -165,16 +183,21 @@ def with_spine_ik(body, torso):
         old_to_new[control.control_path] = updated.control_path
         updated_upper.append(updated)
     ik_offset = torso.controls.root_path + "|AdvPy_SpineIKOffset"
+    ik_extra = ik_offset + "|AdvPy_SpineIKExtra"
+    ik_control = ik_extra + "|AdvPy_SpineIK"
     pole_offset = torso.controls.root_path + "|AdvPy_SpinePoleOffset"
     plan = BodySpinePlan(
         root, tuple(specs), pelvis.control_path,
         (base.control_path, waist.control_path, chest.control_path),
-        tuple(j.path for j in source), ik_offset, ik_offset+"|AdvPy_SpineIK",
+        tuple(j.path for j in source), ik_offset, ik_control,
         pole_offset, pole_offset+"|AdvPy_SpinePole",
         solve_limb_pole_position(*(j.world_position for j in source), source[0].world_axes[1],
                                 limb_label="Spine", distance_scale=0.75),
         specs[4].path+"|AdvPy_SpineWaistOutput", space, tuple(lengths),
         use_offset_parent_matrix=torso.use_offset_parent_matrix,
+        ik_sub_path=(ik_control + "|AdvPy_SpineIKSub"
+                     if build_options.sub_controllers else None),
+        ik_extra_curve=build_options.extra_controllers,
     )
     return replace(torso, controls=replace(torso.controls, controls=(pelvis, base, waist, chest, *updated_upper)), spine=plan)
 

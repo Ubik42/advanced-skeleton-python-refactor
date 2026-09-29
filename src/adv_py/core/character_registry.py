@@ -236,9 +236,14 @@ def decode_registration(text):
                 raw = {**raw, "solver_joint_list": None}
             if isinstance(raw, dict) and "use_offset_parent_matrix" not in raw:
                 raw = {**raw, "use_offset_parent_matrix": False}
+            if isinstance(raw, dict) and "ik_sub_path" not in raw:
+                raw = {**raw, "ik_sub_path": None,
+                       "ik_extra_curve": False}
             raw = exact(raw, (f.name for f in fields(BodySpinePlan)))
             if type(raw["use_offset_parent_matrix"]) is not bool:
                 raise CharacterRegistryError("Spine OPM 开关无效")
+            if type(raw["ik_extra_curve"]) is not bool:
+                raise CharacterRegistryError("Spine IK Extra 开关无效")
             joints = []
             for row in raw["joints"]:
                 exact(row,(f.name for f in fields(BodyLimbMechanismJointSpec)))
@@ -251,8 +256,11 @@ def decode_registration(text):
                 joints.append(BodyLimbMechanismJointSpec(BodyLimbMechanismRole(row["role"]),FitBuildSide(row["side"]),path(row["source_joint"]),node,row["name"],path(row["parent_path"]),vector(row["world_position"],3),axes))
             if len(joints) != 6 or tuple(j.role.value for j in joints) != ("fk",)*3+("ik",)*3:
                 raise CharacterRegistryError("Spine 机制链不完整")
-            values = {k:path(v) for k,v in raw.items() if k not in ("joints","fk_controls","body_joints","pole_position","lengths","solver_joint_list","use_offset_parent_matrix")}
+            values = {k:path(v) for k,v in raw.items() if k not in ("joints","fk_controls","body_joints","pole_position","lengths","solver_joint_list","use_offset_parent_matrix","ik_sub_path","ik_extra_curve")}
             values["use_offset_parent_matrix"] = raw["use_offset_parent_matrix"]
+            values["ik_sub_path"] = (path(raw["ik_sub_path"])
+                                     if raw["ik_sub_path"] is not None else None)
+            values["ik_extra_curve"] = raw["ik_extra_curve"]
             solver_joints = raw["solver_joint_list"]
             if solver_joints is not None:
                 if (not isinstance(solver_joints, list)

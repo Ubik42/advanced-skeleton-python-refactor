@@ -90,7 +90,7 @@ def plan_character_inbetween_ik_solvers(
                 handle_name="AdvPy_SpineIKHandle",
                 effector_name="AdvPy_SpineIKEffector",
                 solver_name="ikRPsolver",
-                handle_parent_path=spine.ik_control,
+                handle_parent_path=spine.ik_driver,
                 pole_control_path=spine.pole_control,
                 pole_constraint_name="AdvPy_SpinePoleConstraint")
     for foot in rig.leg.foot.sides:
