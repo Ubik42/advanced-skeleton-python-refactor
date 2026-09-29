@@ -30,6 +30,18 @@ class FitBendyFollowSpec:
     chain: FitBendyChainSpec
     start: FitBendyWorldSource
     end: FitBendyWorldSource
+    master_aim_follow: bool = True
+
+    @property
+    def node_names(self) -> tuple[str, ...]:
+        names = self.chain.follow_node_names
+        if not self.master_aim_follow:
+            return names
+        master_constraint = ("AdvPy_" + self.chain.control_names[0]
+                             + "Follow")
+        return tuple(name for name in names
+                     if name != master_constraint) + (
+                         self.chain.master_follow_matrix_names)
 
 
 def fit_bendy_world_sources(
@@ -103,6 +115,7 @@ def plan_fit_bendy_follow(
     rig: BodyCharacterRigBuildPlan,
     generic_controls: tuple[BodyLimbFkControlSpec, ...] = (),
     generic_endpoints: tuple[BodyGenericFkEndpointSpec, ...] = (),
+    master_aim_sources: frozenset[str] | None = None,
 ) -> tuple[FitBendyFollowSpec, ...]:
     """Resolve Bendy endpoints without depending on driven Body matrices."""
     sources = fit_bendy_world_sources(
@@ -117,7 +130,10 @@ def plan_fit_bendy_follow(
         for source in (start, end):
             if (source.ik_matrix is None) != (source.blend_plug is None):
                 raise ValueError("Bendy IK/FK 来源不完整：" + chain.curve_name)
-        result.append(FitBendyFollowSpec(chain, start, end))
+        result.append(FitBendyFollowSpec(
+            chain, start, end,
+            master_aim_sources is None
+            or chain.control_names[0] in master_aim_sources))
     return tuple(result)
 
 
@@ -172,7 +188,7 @@ class BuildFitBendyGuides:
             used.update(names)
             self._host.preflight_fit_bendy_guides(chain)
         for follow in follows:
-            names = set(follow.chain.follow_node_names)
+            names = set(follow.node_names)
             if names & used:
                 raise ValueError("Fit Bendy 跟随节点名称重复")
             used.update(names)

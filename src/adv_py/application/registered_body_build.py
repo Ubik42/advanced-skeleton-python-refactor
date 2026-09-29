@@ -671,7 +671,10 @@ class BuildRegisteredBodyCharacter:
                 split_fit_bendy_chains(bendy_chains, rig.plan))
             if early_bendy_chains:
                 early_bendy_follows = plan_fit_bendy_follow(
-                    early_bendy_chains, rig.plan)
+                    early_bendy_chains, rig.plan,
+                    master_aim_sources=(
+                        _generic_fk_policy.bendy_aim_follow_controls
+                        if _generic_fk_policy is not None else None))
                 BuildFitBendyGuides(joined).apply(
                     early_bendy_chains, follows=early_bendy_follows)
             twist_steps = ()
@@ -1193,7 +1196,10 @@ class BuildRegisteredBodyCharacter:
             if deferred_bendy_chains:
                 bendy_follows = plan_fit_bendy_follow(
                     deferred_bendy_chains, rig.plan, generic_fk.controls,
-                    generic_fk.endpoints)
+                    generic_fk.endpoints,
+                    master_aim_sources=(
+                        _generic_fk_policy.bendy_aim_follow_controls
+                        if _generic_fk_policy is not None else None))
                 BuildFitBendyGuides(joined).apply(
                     deferred_bendy_chains, follows=bendy_follows)
                 BuildFitBendyDeform(joined).apply(deferred_bendy_chains)

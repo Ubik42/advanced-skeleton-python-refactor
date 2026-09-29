@@ -525,8 +525,11 @@ class MayaFitBendyMixin:
 
     def preflight_fit_bendy_follow(self, spec: "FitBendyFollowSpec") -> None:
         c = self._cmds
-        if any(c.objExists(name) for name in spec.chain.follow_node_names):
+        if any(c.objExists(name) for name in spec.node_names):
             raise ValueError("Bendy 跟随节点名称已占用：" + spec.chain.curve_name)
+        if (spec.master_aim_follow
+                and "aimMatrix" not in (c.allNodeTypes() or [])):
+            raise ValueError("Bendy 主控制跟随需要 aimMatrix 节点")
         for source in (spec.start, spec.end):
             for plug in (source.fk_matrix, source.ik_matrix, source.blend_plug):
                 if plug is not None and not c.objExists(plug):
@@ -755,9 +758,13 @@ class MayaFitBendyMixin:
             c.xform(offset, worldSpace=True, translation=position)
             c.setAttr(offset + ".rotateOrder", chain.rotation_order)
             extra = c.createNode("transform", name=control + "Extra",
-                                 parent=offset, skipSelect=True)
+                                  parent=offset, skipSelect=True)
             c.setAttr(extra + ".rotateOrder", chain.rotation_order)
             c.parent(control, extra, absolute=True)
+            if index == 0 and spec.master_aim_follow:
+                self._create_fit_bendy_master_aim_follow(
+                    chain, offset, start_proxy, end_proxy)
+                continue
             targets = ((start_proxy, end_proxy) if index == 0
                        or index > 1 else (start_proxy,))
             constraint = c.parentConstraint(
@@ -808,6 +815,87 @@ class MayaFitBendyMixin:
                                maintainOffset=True,
                                name=f"AdvPy_{chain.end_proxy_name}Follow")
         self._transaction_changed = True
+
+    def _create_fit_bendy_master_aim_follow(
+            self, chain: FitBendyChainSpec, offset: str,
+            start_proxy: str, end_proxy: str) -> None:
+        """Mirror MEL's translated blend and half-strength aimed BendOffset."""
+        from maya.api import OpenMaya as om
+
+        c = self._cmds
+        (blend_name, translate_name, rotate_name, mix_name, aim_name,
+         bind_name, world_name, pick_name) = chain.master_follow_matrix_names
+        blend = c.createNode("blendMatrix", name=blend_name,
+                             skipSelect=True)
+        c.connectAttr(start_proxy + ".worldMatrix[0]",
+                      blend + ".inputMatrix")
+        c.connectAttr(end_proxy + ".worldMatrix[0]",
+                      blend + ".target[0].targetMatrix")
+        c.setAttr(blend + ".target[0].weight", 0.5)
+        translate = c.createNode("pickMatrix", name=translate_name,
+                                 skipSelect=True)
+        c.connectAttr(blend + ".outputMatrix",
+                      translate + ".inputMatrix")
+        for attribute in ("useRotate", "useScale", "useShear"):
+            c.setAttr(translate + "." + attribute, False)
+        rotate = c.createNode("pickMatrix", name=rotate_name,
+                              skipSelect=True)
+        c.connectAttr(start_proxy + ".worldMatrix[0]",
+                      rotate + ".inputMatrix")
+        for attribute in ("useTranslate", "useScale", "useShear"):
+            c.setAttr(rotate + "." + attribute, False)
+        mix = c.createNode("multMatrix", name=mix_name,
+                           skipSelect=True)
+        c.connectAttr(rotate + ".outputMatrix", mix + ".matrixIn[0]")
+        c.connectAttr(translate + ".outputMatrix", mix + ".matrixIn[1]")
+        aim = c.createNode("aimMatrix", name=aim_name,
+                           skipSelect=True)
+        side = -1 if chain.side == "L" else 1
+        c.setAttr(aim + ".envelope", 0.5)
+        c.setAttr(aim + ".primaryInputAxis", side, 0, 0)
+        c.setAttr(aim + ".secondaryInputAxis", 0, 0, side)
+        c.setAttr(aim + ".secondaryTargetVector", 0, 0, side)
+        c.connectAttr(mix + ".matrixSum", aim + ".inputMatrix")
+        c.connectAttr(end_proxy + ".worldMatrix[0]",
+                      aim + ".primaryTargetMatrix")
+        c.connectAttr(start_proxy + ".worldMatrix[0]",
+                      aim + ".secondaryTargetMatrix")
+        rest = om.MMatrix(c.xform(
+            offset, query=True, worldSpace=True, matrix=True))
+        value = c.getAttr(aim + ".outputMatrix")
+        if len(value) == 1 and isinstance(value[0], (tuple, list)):
+            value = value[0]
+        bind_offset = rest * om.MMatrix(value).inverse()
+        bind = c.createNode("multMatrix", name=bind_name,
+                            skipSelect=True)
+        c.setAttr(bind + ".matrixIn[0]",
+                  *(float(bind_offset[row][column])
+                    for row in range(4) for column in range(4)),
+                  type="matrix")
+        c.connectAttr(aim + ".outputMatrix", bind + ".matrixIn[1]")
+        world = c.createNode("multMatrix", name=world_name,
+                             skipSelect=True)
+        c.connectAttr(bind + ".matrixSum", world + ".matrixIn[0]")
+        c.connectAttr(offset + ".parentInverseMatrix[0]",
+                      world + ".matrixIn[1]")
+        pick = c.createNode("pickMatrix", name=pick_name,
+                            skipSelect=True)
+        c.connectAttr(world + ".matrixSum", pick + ".inputMatrix")
+        c.setAttr(pick + ".useScale", False)
+        c.setAttr(pick + ".useShear", False)
+        c.setAttr(offset + ".translate", 0, 0, 0)
+        c.setAttr(offset + ".rotate", 0, 0, 0)
+        c.setAttr(offset + ".scale", 1, 1, 1)
+        c.setAttr(offset + ".shear", 0, 0, 0)
+        c.connectAttr(pick + ".outputMatrix",
+                      offset + ".offsetParentMatrix")
+        current = c.xform(offset, query=True, worldSpace=True,
+                          translation=True)
+        expected = chain.master_position
+        if any(abs(float(a) - b) > 1e-4
+               for a, b in zip(current, expected)):
+            raise RuntimeError("Bendy 主控制瞄准跟随改变绑定位置："
+                               + chain.curve_name)
 
     def create_fit_bendy_circular(self,
                                    spec: FitBendyChainSpec) -> None:
@@ -922,7 +1010,7 @@ class MayaFitBendyMixin:
             if c.connectionInfo(world + ".matrixIn[0]",
                                 sourceFromDestination=True) != expected:
                 return False
-        for control in spec.chain.control_names:
+        for index, control in enumerate(spec.chain.control_names):
             offset = control + "Offset"
             extra = control + "Extra"
             follow = f"AdvPy_{control}Follow"
@@ -930,8 +1018,6 @@ class MayaFitBendyMixin:
                             if control == spec.chain.control_names[0]
                             and spec.chain.child_junction_control else offset)
             if (not c.objExists(offset) or not c.objExists(extra)
-                    or not c.objExists(follow)
-                    or c.nodeType(follow) != "parentConstraint"
                     or int(c.getAttr(offset + ".rotateOrder"))
                     != spec.chain.rotation_order
                     or int(c.getAttr(extra + ".rotateOrder"))
@@ -940,6 +1026,13 @@ class MayaFitBendyMixin:
                     != [extra_parent]
                     or (c.listRelatives(control, parent=True) or [])
                     != [extra]):
+                return False
+            if index == 0 and spec.master_aim_follow:
+                if not self._capture_fit_bendy_master_aim_follow(
+                        spec.chain, offset, names[0], names[1]):
+                    return False
+            elif (not c.objExists(follow)
+                  or c.nodeType(follow) != "parentConstraint"):
                 return False
         chain = spec.chain
         if chain.child_start_influence:
@@ -980,6 +1073,69 @@ class MayaFitBendyMixin:
         end_follow = f"AdvPy_{chain.end_proxy_name}Follow"
         return (c.objExists(end_follow)
                 and c.nodeType(end_follow) == "parentConstraint")
+
+    def _capture_fit_bendy_master_aim_follow(
+            self, chain: FitBendyChainSpec, offset: str,
+            start_proxy: str, end_proxy: str) -> bool:
+        c = self._cmds
+        (blend, translate, rotate, mix, aim, bind,
+         world, pick) = chain.master_follow_matrix_names
+        nodes = ((blend, "blendMatrix"), (translate, "pickMatrix"),
+                 (rotate, "pickMatrix"), (mix, "multMatrix"),
+                 (aim, "aimMatrix"), (bind, "multMatrix"),
+                 (world, "multMatrix"), (pick, "pickMatrix"))
+        if any(not c.objExists(name) or c.nodeType(name) != kind
+               for name, kind in nodes):
+            return False
+        connections = (
+            (blend + ".inputMatrix", start_proxy + ".worldMatrix[0]"),
+            (blend + ".target[0].targetMatrix",
+             end_proxy + ".worldMatrix[0]"),
+            (translate + ".inputMatrix", blend + ".outputMatrix"),
+            (rotate + ".inputMatrix", start_proxy + ".worldMatrix[0]"),
+            (mix + ".matrixIn[0]", rotate + ".outputMatrix"),
+            (mix + ".matrixIn[1]", translate + ".outputMatrix"),
+            (aim + ".inputMatrix", mix + ".matrixSum"),
+            (aim + ".primaryTargetMatrix",
+             end_proxy + ".worldMatrix[0]"),
+            (aim + ".secondaryTargetMatrix",
+             start_proxy + ".worldMatrix[0]"),
+            (bind + ".matrixIn[1]", aim + ".outputMatrix"),
+            (world + ".matrixIn[0]", bind + ".matrixSum"),
+            (world + ".matrixIn[1]",
+             offset + ".parentInverseMatrix[0]"),
+            (pick + ".inputMatrix", world + ".matrixSum"),
+            (offset + ".offsetParentMatrix", pick + ".outputMatrix"))
+        if any(c.connectionInfo(destination,
+                                sourceFromDestination=True) != source
+               for destination, source in connections):
+            return False
+        if c.connectionInfo(bind + ".matrixIn[0]",
+                            sourceFromDestination=True):
+            return False
+        if (abs(float(c.getAttr(blend + ".target[0].weight")) - 0.5)
+                > 1e-6
+                or abs(float(c.getAttr(aim + ".envelope")) - 0.5)
+                > 1e-6):
+            return False
+        for node, disabled in ((translate, ("useRotate", "useScale",
+                                            "useShear")),
+                               (rotate, ("useTranslate", "useScale",
+                                         "useShear")),
+                               (pick, ("useScale", "useShear"))):
+            if any(c.getAttr(node + "." + attribute)
+                   for attribute in disabled):
+                return False
+        side = -1 if chain.side == "L" else 1
+        axes = (("primaryInputAxis", (side, 0, 0)),
+                ("secondaryInputAxis", (0, 0, side)),
+                ("secondaryTargetVector", (0, 0, side)))
+        for attribute, expected in axes:
+            actual = c.getAttr(aim + "." + attribute)[0]
+            if any(abs(float(a) - b) > 1e-6
+                   for a, b in zip(actual, expected)):
+                return False
+        return True
 
     def create_fit_bendy_twist_projections(
             self, spec: FitBendyChainSpec) -> None:

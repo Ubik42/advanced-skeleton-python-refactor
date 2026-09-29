@@ -127,11 +127,21 @@ class MayaCharacterRegistryMixin:
             and node.path.rsplit('|', 1)[0].rsplit('|', 1)[-1]
                 .rsplit(':', 1)[-1]
                 == 'AdvPy_GenericFKControls')
+        bendy_masters = frozenset(
+            key.split('.', 2)[1] for key in keys
+            if key.startswith('bendy.')
+            and key.endswith('.microVis'))
+        bendy_aim_follow = frozenset(
+            control for control in bendy_masters
+            if c.objExists('AdvPy_' + control.rsplit('_', 1)[0]
+                           + 'MasterFollow_'
+                           + control.rsplit('_', 1)[-1] + 'Aim'))
         return GenericFkFeaturePolicy(
             frozenset(scale), frozenset(compensated),
             frozenset(globally_driven), aim_sources,
             follower_sources, frozenset(independent),
-            frozenset(twist_rewired), frozenset(bendy_scales))
+            frozenset(twist_rewired), frozenset(bendy_scales),
+            bendy_aim_follow)
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

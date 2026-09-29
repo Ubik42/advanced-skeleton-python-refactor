@@ -136,6 +136,14 @@ class FitBendyChainSpec:
                   if self.child_junction_control else ()))
 
     @property
+    def master_follow_matrix_names(self) -> tuple[str, ...]:
+        prefix = f"AdvPy_{self.prefix}MasterFollow_{self.side}"
+        return (
+            prefix + "Blend", prefix + "Translate",
+            prefix + "Rotate", prefix + "Mix", prefix + "Aim",
+            prefix + "Offset", prefix + "World", prefix + "Pick")
+
+    @property
     def circular_name(self) -> str:
         return f"BendCircular{self.stem}_{self.side}"
 
