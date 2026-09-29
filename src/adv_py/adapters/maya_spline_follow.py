@@ -19,11 +19,11 @@ def create(host, plan):
     count = len(plan.targets)
     if count < 3 or len(plan.body_joints) <= 2:
         raise FitSkeletonValidationError('Spline 中间跟随需要多段 IK 链')
-    start = _follow_frame(c, plan, 'AdvPy_SplineFollowStart', plan.targets[0])
-    end = _follow_frame(c, plan, 'AdvPy_SplineFollowEnd', plan.targets[-1])
-    c.parentConstraint(plan.targets[0], start, maintainOffset=False,
+    start = _follow_frame(c, plan, 'AdvPy_SplineFollowStart', plan.driver_targets[0])
+    end = _follow_frame(c, plan, 'AdvPy_SplineFollowEnd', plan.driver_targets[-1])
+    c.parentConstraint(plan.driver_targets[0], start, maintainOffset=False,
                        name='AdvPy_SplineFollowStartConstraint')
-    c.parentConstraint(plan.targets[-1], end, maintainOffset=False,
+    c.parentConstraint(plan.driver_targets[-1], end, maintainOffset=False,
                        name='AdvPy_SplineFollowEndConstraint')
     c.createNode('setRange', name='AdvPy_SplineMidFlipAxis', skipSelect=True)
     for plug, value in (('minX', 2), ('maxX', 1), ('oldMaxX', 1)):
@@ -31,7 +31,7 @@ def create(host, plan):
     c.connectAttr(plan.settings+'.noFlipAxis',
                   'AdvPy_SplineMidFlipAxis.valueX')
     for index, target in enumerate(plan.targets[1:-1], 1):
-        offset = target.rsplit('|', 1)[0]
+        offset = plan.offset_targets[index]
         default = 10.0*index/(count-1)
         c.addAttr(target, longName='followEnd', niceName='跟随末端',
                   attributeType='double', minValue=0., maxValue=10.,
@@ -80,8 +80,8 @@ def audit(host, plan):
                  'AdvPy_SplineMidFlipAxis.maxX': 1,
                  'AdvPy_SplineMidFlipAxis.oldMaxX': 1}
     for frame, source, name in (
-            (start, plan.targets[0], 'AdvPy_SplineFollowStartConstraint'),
-            (end, plan.targets[-1], 'AdvPy_SplineFollowEndConstraint')):
+            (start, plan.driver_targets[0], 'AdvPy_SplineFollowStartConstraint'),
+            (end, plan.driver_targets[-1], 'AdvPy_SplineFollowEndConstraint')):
         if c.getAttr(frame+'.inheritsTransform'):
             raise FitSkeletonValidationError('Spline 跟随参考继承了机制层变换')
         targets = tuple(host._resolve_connected_node(p)
@@ -99,7 +99,7 @@ def audit(host, plan):
         if (not c.attributeQuery('followEnd', node=target, exists=True)
                 or c.getAttr(target+'.followEnd', type=True)!='double'):
             raise FitSkeletonValidationError('Spline 中间跟随权重属性缺失')
-        offset = target.rsplit('|', 1)[0]
+        offset = plan.offset_targets[index]
         expected_parent = (plan.mid_follow_parent if plan.isolated_mid_follow_graph
                            else plan.pelvis_control)
         if (c.listRelatives(offset, parent=True, fullPath=True) or []) != [expected_parent]:

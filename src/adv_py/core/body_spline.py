@@ -7,6 +7,7 @@ from .body_limb_controls import (
 )
 from .body_limb_mechanisms import BodyLimbMechanismJointSpec,BodyLimbMechanismRole
 from .fit_settings import FitSkeletonValidationError
+from .body_build_options import BodyBuildOptions
 
 
 CURRENT_SPLINE_VERSION = 27
@@ -58,6 +59,28 @@ class BodySplinePlan:
     twist_ramp_graph: bool = False
     mid_follow_graph: bool = False
     isolated_mid_follow_graph: bool = False
+    sub_targets: tuple[str, ...] = ()
+    extra_curve: bool = False
+
+    @property
+    def extra_targets(self) -> tuple[str, ...]:
+        parents = tuple(target.rsplit('|', 1)[0]
+                        for target in self.targets)
+        if all(parent.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
+               == f'AdvPy_SplineIK{index}Extra'
+               for index, parent in enumerate(parents)):
+            return parents
+        return ()
+
+    @property
+    def driver_targets(self) -> tuple[str, ...]:
+        return self.sub_targets or self.targets
+
+    @property
+    def offset_targets(self) -> tuple[str, ...]:
+        return tuple(extra.rsplit('|', 1)[0]
+                     for extra in self.extra_targets) if self.extra_targets else tuple(
+                         target.rsplit('|', 1)[0] for target in self.targets)
 
     @property
     def mid_follow_parent(self):
@@ -139,7 +162,15 @@ class BodySplinePlan:
             f'AdvPy_SplineFollow{kind}{i}'
             for i in range(1,len(self.targets)-1)
             for kind in ('Weight','Reverse','Constraint'))
-        return (fixed+chest+tuple(j.name for j in self.joints)+targets+outputs+
+        layers = (tuple(path.rsplit('|', 1)[-1] for path in self.extra_targets)
+                  + tuple(extra.rsplit('|', 1)[-1] + 'Shape'
+                          for extra in self.extra_targets)
+                  if self.extra_curve else tuple(
+                      path.rsplit('|', 1)[-1] for path in self.extra_targets))
+        layers += tuple(name for sub in self.sub_targets
+                        for name in (sub.rsplit('|', 1)[-1],
+                                     sub.rsplit('|', 1)[-1] + 'Shape'))
+        return (fixed+chest+tuple(j.name for j in self.joints)+targets+layers+outputs+
                 rests+scaling+orientations+(even if self.even_stretch_graph else ())+
                 (twist if self.twist_ramp_graph else ())+
                 (follow if self.mid_follow_graph else ())+
@@ -221,7 +252,8 @@ def fit_spline_controls(points):
     return (points[0],)+tuple(tuple(coordinates[axis][i] for axis in range(3)) for i in range(interior))+(points[-1],)
 
 
-def with_spline_ik(body,torso,description):
+def with_spline_ik(body,torso,description,
+                   build_options: BodyBuildOptions = BodyBuildOptions()):
     states=description.validate(body)
     source=tuple(states[name] for name in description.spine)
     delta=tuple(b-a for a,b in zip(source[0].world_position,source[-1].world_position))
@@ -294,7 +326,9 @@ def with_spline_ik(body,torso,description):
     isolated_follow=len(source)>2
     targets=tuple((pelvis.control_path+
                    ('|AdvPy_SplineIKFollowMain' if isolated_follow and 0<i<len(positions)-1 else '')+
-                   f'|AdvPy_SplineIK{i}Offset|AdvPy_SplineIK{i}')
+                   f'|AdvPy_SplineIK{i}Offset|AdvPy_SplineIK{i}Extra|AdvPy_SplineIK{i}')
                   for i in range(len(positions)))
-    plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths),torso.use_offset_parent_matrix,True,isolated_follow,isolated_follow,isolated_follow)
+    subs=tuple(target+f'|AdvPy_SplineIK{i}Sub'
+               for i,target in enumerate(targets)) if build_options.sub_controllers else ()
+    plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths),torso.use_offset_parent_matrix,True,isolated_follow,isolated_follow,isolated_follow,subs,build_options.extra_controllers)
     return replace(torso,controls=replace(torso.controls,controls=tuple(updated)),spline=plan)

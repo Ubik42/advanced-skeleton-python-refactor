@@ -5,6 +5,9 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.body_spline import (
     current_spline_owner, spline_ik_scale_weights, spline_owner_version,
 )
+from adv_py.core.body_controller_layers import (
+    audit_body_extra_controller, audit_body_sub_controller,
+)
 from .maya_adv_icons import create_adv_icon
 from . import maya_chest_space
 from . import maya_spline_even
@@ -41,20 +44,31 @@ def create(host,plan):
             for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ')):
                 c.setAttr(follow_parent+'.'+kind+axis,lock=True,keyable=False)
     for i,(target,position) in enumerate(zip(plan.targets,plan.positions)):
-        offset=target.rsplit('|',1)[0]
+        offset=plan.offset_targets[i]
         parent=(plan.mid_follow_parent if plan.isolated_mid_follow_graph
                 and 0<i<len(plan.targets)-1 else plan.pelvis_control)
         host._spine_frame(f'AdvPy_SplineIK{i}Offset',parent,position,plan.axes)
-        create_adv_icon(c,name=f'AdvPy_SplineIK{i}',parent=offset,
+        extra = plan.extra_targets[i] if plan.extra_targets else None
+        if extra:
+            host._create_body_extra_layer(
+                offset, extra.rsplit('|', 1)[-1], extra)
+        create_adv_icon(c,name=f'AdvPy_SplineIK{i}',parent=extra or offset,
                         template='IK_icon',radius=1.5,
                         fallback_normal=(1.,0.,0.))
+        if extra and plan.extra_curve:
+            host._add_body_extra_curve(extra, target)
+        if plan.sub_targets:
+            sub = plan.sub_targets[i]
+            host._create_body_sub_control(
+                target, sub.rsplit('|', 1)[-1], sub)
         locked=(['translate'+a for a in 'XYZ'] if i==0 else [])+(
             ['rotate'+a for a in 'XYZ']
             if 0<i<len(plan.targets)-1 and not plan.twist_ramp_graph else [])
         for attr in locked:c.setAttr(target+'.'+attr,lock=True,keyable=False)
         orientation=(plan.joints[n-1].world_axes
                      if i==len(plan.targets)-1 else plan.joints[0].world_axes)
-        local=host._spine_frame(f'AdvPy_SplineIKLocalOrient{i}',target,
+        local=host._spine_frame(f'AdvPy_SplineIKLocalOrient{i}',
+                                plan.driver_targets[i],
                                 position,orientation)
         c.addAttr(local,longName='advPySplineIKLocalBind',dataType='string')
         c.setAttr(local+'.advPySplineIKLocalBind',
@@ -64,7 +78,7 @@ def create(host,plan):
             for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ')):
                 c.setAttr(local+'.'+kind+axis,lock=True,keyable=False)
     if n>2:
-        end_up=host._spine_frame('AdvPy_SplineIKEndLocalStartOrient',plan.targets[-1],
+        end_up=host._spine_frame('AdvPy_SplineIKEndLocalStartOrient',plan.driver_targets[-1],
                                  plan.positions[-1],plan.joints[0].world_axes)
         c.addAttr(end_up,longName='advPySplineEndUpBind',dataType='string')
         c.setAttr(end_up+'.advPySplineEndUpBind',
@@ -88,12 +102,12 @@ def create(host,plan):
     for i,target in enumerate(plan.targets):
         matrix=f'AdvPy_SplineIK{i}Matrix';position=f'AdvPy_SplineIK{i}Position'
         c.createNode('multMatrix',name=matrix,skipSelect=True);c.createNode('decomposeMatrix',name=position,skipSelect=True)
-        c.connectAttr(target+'.worldMatrix[0]',matrix+'.matrixIn[0]')
+        c.connectAttr(plan.driver_targets[i]+'.worldMatrix[0]',matrix+'.matrixIn[0]')
         c.connectAttr(plan.curve+'.worldInverseMatrix[0]',matrix+'.matrixIn[1]')
         c.connectAttr(matrix+'.matrixSum',position+'.inputMatrix')
         c.connectAttr(position+'.outputTranslate',shape+f'.controlPoints[{i}]')
     c.pointConstraint(plan.pelvis_control,fk[0].path,maintainOffset=False,name='AdvPy_SplineFKRootPoint')
-    c.pointConstraint(plan.targets[0],ik[0].path,maintainOffset=False,name='AdvPy_SplineIKRootPoint')
+    c.pointConstraint(plan.driver_targets[0],ik[0].path,maintainOffset=False,name='AdvPy_SplineIKRootPoint')
     handle,effector=c.ikHandle(name='AdvPy_SplineIKHandle',startJoint=ik[0].path,endEffector=ik[-1].path,
         solver='ikSplineSolver',curve=plan.curve,createCurve=False,parentCurve=False)
     c.rename(effector,'AdvPy_SplineIKEffector');c.parent(handle,plan.root_path)
@@ -101,7 +115,7 @@ def create(host,plan):
                        ('dForwardAxis',0),('dWorldUpAxis',0)):
         c.setAttr('AdvPy_SplineIKHandle.'+attr,value)
     for attr in ('dWorldUpVector','dWorldUpVectorEnd'):c.setAttr('AdvPy_SplineIKHandle.'+attr,0.,1.,0.,type='double3')
-    c.connectAttr(plan.targets[0]+'|AdvPy_SplineIKLocalOrient0.worldMatrix[0]',
+    c.connectAttr(plan.driver_targets[0]+'|AdvPy_SplineIKLocalOrient0.worldMatrix[0]',
                   'AdvPy_SplineIKHandle.dWorldUpMatrix')
     if n>2:
         c.connectAttr(end_up+'.worldMatrix[0]',
@@ -129,7 +143,7 @@ def create(host,plan):
         maya_spline_twist.create(host, plan)
     if plan.mid_follow_graph:
         maya_spline_follow.create(host, plan)
-    c.orientConstraint(plan.targets[-1],ik[-1].path,maintainOffset=True,name='AdvPy_SplineChestOrient')
+    c.orientConstraint(plan.driver_targets[-1],ik[-1].path,maintainOffset=True,name='AdvPy_SplineChestOrient')
     c.createNode('curveInfo',name='AdvPy_SplineArc',skipSelect=True)
     c.connectAttr(shape+'.local','AdvPy_SplineArc.inputCurve')
     c.createNode('multiplyDivide',name='AdvPy_SplineRatio',skipSelect=True)
@@ -179,7 +193,7 @@ def create(host,plan):
         c.connectAttr(plan.scale_reference+'.worldMatrix[0]',blend+'.inputMatrix')
         for index,weight in enumerate(spline_ik_scale_weights(i,n,len(plan.targets))):
             if weight:
-                c.connectAttr(plan.targets[index]+f'|AdvPy_SplineIKLocalOrient{index}.worldMatrix[0]',blend+f'.target[{index}].targetMatrix')
+                c.connectAttr(plan.driver_targets[index]+f'|AdvPy_SplineIKLocalOrient{index}.worldMatrix[0]',blend+f'.target[{index}].targetMatrix')
                 c.setAttr(blend+f'.target[{index}].weight',weight)
         c.connectAttr(blend+'.outputMatrix',relative+'.matrixIn[0]')
         c.connectAttr(plan.scale_reference+'.worldInverseMatrix[0]',relative+'.matrixIn[1]')
@@ -291,6 +305,35 @@ def audit(host,plan):
                       f'AdvPy_SplineIKScaleAdd{n-1}'))
                   and len(c.ls(name,long=True) or [])!=1)
     if missing:raise FitSkeletonValidationError('Spline 节点缺失或名称不唯一：'+repr(missing))
+    for index, target in enumerate(plan.targets):
+        extra = plan.extra_targets[index] if plan.extra_targets else None
+        if extra:
+            issues = audit_body_extra_controller(
+                plan.offset_targets[index], target, extra,
+                host._capture_body_extra_layer(extra, target),
+                extra_curve=plan.extra_curve)
+            if issues:
+                raise FitSkeletonValidationError(
+                    'Spline IK Extra 层复检失败：'+'；'.join(issues))
+        sub = plan.sub_targets[index] if plan.sub_targets else None
+        issues = audit_body_sub_controller(
+            target, sub, host._capture_body_ik_sub_control(target, sub))
+        if issues:
+            raise FitSkeletonValidationError(
+                'Spline IK Sub 层复检失败：'+'；'.join(issues))
+        expected_parent = extra or plan.offset_targets[index]
+        if (c.listRelatives(target, parent=True, fullPath=True) or []) != [expected_parent]:
+            raise FitSkeletonValidationError('Spline IK 主控父层改变')
+    for name, command, source in (
+            ('AdvPy_SplineIKRootPoint', c.pointConstraint,
+             plan.driver_targets[0]),
+            ('AdvPy_SplineChestOrient', c.orientConstraint,
+             plan.driver_targets[-1])):
+        actual = tuple(host._resolve_connected_node(node)
+                       for node in command(name, query=True,
+                                           targetList=True) or [])
+        if actual != (source,):
+            raise FitSkeletonValidationError('Spline IK 端点约束来源改变：'+name)
     if c.ikHandle('AdvPy_SplineIKHandle',q=True,solver=True)!='ikSplineSolver':raise FitSkeletonValidationError('Spline 求解器被替换')
     shape=plan.curve+'|AdvPy_SplineCurveShape'
     edges=[(shape+'.worldSpace[0]','AdvPy_SplineIKHandle.inCurve'),(shape+'.local','AdvPy_SplineArc.inputCurve'),
@@ -299,16 +342,16 @@ def audit(host,plan):
         (plan.settings+'.spineIkFk','AdvPy_SplineReverse.inputX'),
         ]
     if end_local_start:
-        edges += [(plan.targets[0]+'|AdvPy_SplineIKLocalOrient0.worldMatrix[0]',
+        edges += [(plan.driver_targets[0]+'|AdvPy_SplineIKLocalOrient0.worldMatrix[0]',
                    'AdvPy_SplineIKHandle.dWorldUpMatrix'),
-                  (plan.targets[-1]+'|AdvPy_SplineIKEndLocalStartOrient.worldMatrix[0]',
+                  (plan.driver_targets[-1]+'|AdvPy_SplineIKEndLocalStartOrient.worldMatrix[0]',
                    'AdvPy_SplineIKHandle.dWorldUpMatrixEnd')]
     elif single_segment_twist:
-        edges.append((plan.targets[0]+'|AdvPy_SplineIKLocalOrient0.worldMatrix[0]',
+        edges.append((plan.driver_targets[0]+'|AdvPy_SplineIKLocalOrient0.worldMatrix[0]',
                       'AdvPy_SplineIKHandle.dWorldUpMatrix'))
     else:
-        edges += [(plan.targets[0]+'.worldMatrix[0]','AdvPy_SplineIKHandle.dWorldUpMatrix'),
-                  (plan.targets[-1]+'.worldMatrix[0]','AdvPy_SplineIKHandle.dWorldUpMatrixEnd')]
+        edges += [(plan.driver_targets[0]+'.worldMatrix[0]','AdvPy_SplineIKHandle.dWorldUpMatrix'),
+                  (plan.driver_targets[-1]+'.worldMatrix[0]','AdvPy_SplineIKHandle.dWorldUpMatrixEnd')]
     if flip_axis_graph:
         edges += [(plan.settings+'.noFlipAxis','AdvPy_SplineFlipUpAxis.valueX'),
                   ('AdvPy_SplineFlipUpAxis.outValueX',
@@ -344,7 +387,7 @@ def audit(host,plan):
         edges += [('AdvPy_SplineVolumeExponent.outputX','AdvPy_SplineVolume.input2X'),
                   ('AdvPy_SplineClamp.outputR','AdvPy_SplineVolume.input1X')]
     for i,target in enumerate(plan.targets):
-        edges += [(target+'.worldMatrix[0]',f'AdvPy_SplineIK{i}Matrix.matrixIn[0]'),
+        edges += [(plan.driver_targets[i]+'.worldMatrix[0]',f'AdvPy_SplineIK{i}Matrix.matrixIn[0]'),
             (plan.curve+'.worldInverseMatrix[0]',f'AdvPy_SplineIK{i}Matrix.matrixIn[1]'),
             (f'AdvPy_SplineIK{i}Matrix.matrixSum',f'AdvPy_SplineIK{i}Position.inputMatrix'),
             (f'AdvPy_SplineIK{i}Position.outputTranslate',shape+f'.controlPoints[{i}]')]
@@ -369,7 +412,7 @@ def audit(host,plan):
                 if weight:
                     orientation=(f'|AdvPy_SplineIKLocalOrient{index}'
                                  if oriented_scaling else '')
-                    edges.append((plan.targets[index]+orientation+'.worldMatrix[0]',
+                    edges.append((plan.driver_targets[index]+orientation+'.worldMatrix[0]',
                                   blend+f'.target[{index}].targetMatrix'))
             if i and not (terminal_without_volume and i==n-1):
                 weight=f'AdvPy_SplineIKScaleWeight{i}'
@@ -396,9 +439,9 @@ def audit(host,plan):
         raise FitSkeletonValidationError('Spline IK 缩放控制通道不可动画')
     if oriented_scaling:
         for i,target in enumerate(plan.targets):
-            local=target+f'|AdvPy_SplineIKLocalOrient{i}'
+            local=plan.driver_targets[i]+f'|AdvPy_SplineIKLocalOrient{i}'
             if (c.nodeType(local)!='transform'
-                    or (c.listRelatives(local,parent=True,fullPath=True) or [])!=[target]
+                    or (c.listRelatives(local,parent=True,fullPath=True) or [])!=[plan.driver_targets[i]]
                     or not c.getAttr(local+'.advPySplineIKLocalBind',lock=True)):
                 raise FitSkeletonValidationError('Spline IK 局部朝向层身份无效')
             recorded=json.loads(c.getAttr(local+'.advPySplineIKLocalBind'))
@@ -410,9 +453,9 @@ def audit(host,plan):
                            for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ')))):
                 raise FitSkeletonValidationError('Spline IK 局部朝向绑定矩阵被修改')
     if end_local_start:
-        end_up=plan.targets[-1]+'|AdvPy_SplineIKEndLocalStartOrient'
+        end_up=plan.driver_targets[-1]+'|AdvPy_SplineIKEndLocalStartOrient'
         if (not c.objExists(end_up) or c.nodeType(end_up)!='transform'
-                or (c.listRelatives(end_up,parent=True,fullPath=True) or [])!=[plan.targets[-1]]
+                or (c.listRelatives(end_up,parent=True,fullPath=True) or [])!=[plan.driver_targets[-1]]
                 or not c.getAttr(end_up+'.advPySplineEndUpBind',lock=True)):
             raise FitSkeletonValidationError('Spline 末端起点朝向层身份无效')
         recorded=json.loads(c.getAttr(end_up+'.advPySplineEndUpBind'))

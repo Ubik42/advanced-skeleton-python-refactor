@@ -19,6 +19,8 @@ def decode_spline(raw, body):
         raw = {**raw, 'mid_follow_graph': False}
     if isinstance(raw, dict) and 'isolated_mid_follow_graph' not in raw:
         raw = {**raw, 'isolated_mid_follow_graph': False}
+    if isinstance(raw, dict) and 'sub_targets' not in raw:
+        raw = {**raw, 'sub_targets': [], 'extra_curve': False}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
     if type(raw['use_offset_parent_matrix']) is not bool:
         raise CharacterRegistryError('Spline OPM 开关无效')
@@ -33,6 +35,8 @@ def decode_spline(raw, body):
     if (type(raw['isolated_mid_follow_graph']) is not bool
             or (raw['isolated_mid_follow_graph'] and not raw['mid_follow_graph'])):
         raise CharacterRegistryError('Spline 独立跟随层标记无效')
+    if type(raw['extra_curve']) is not bool:
+        raise CharacterRegistryError('Spline IK Extra 曲线标记无效')
     body_paths = tuple(path(p) for p in raw['body_joints'])
     count = len(body_paths)
     if not 2 <= count <= 64 or len(set(body_paths)) != count:
@@ -56,11 +60,29 @@ def decode_spline(raw, body):
         raise CharacterRegistryError('曲线脊柱朝向必须正交归一')
     positions = tuple(vector(position, 3) for position in raw['positions'])
     targets = tuple(path(target) for target in raw['targets'])
+    subs = tuple(path(target) for target in raw['sub_targets'])
+    if subs and (len(subs) != len(targets) or any(
+            sub != target+f'|AdvPy_SplineIK{index}Sub'
+            for index, (target, sub) in enumerate(zip(targets, subs)))):
+        raise CharacterRegistryError('Spline IK Sub 控制器层级无效')
+    has_extras = all(target.rsplit('|', 1)[0].rsplit('|', 1)[-1]
+                     == f'AdvPy_SplineIK{index}Extra'
+                     for index, target in enumerate(targets))
+    if raw['extra_curve'] and not has_extras:
+        raise CharacterRegistryError('Spline IK Extra 曲线缺少父层')
+    for index, target in enumerate(targets):
+        offset = (target.rsplit('|', 2)[0] if has_extras
+                  else target.rsplit('|', 1)[0])
+        if offset.rsplit('|', 1)[-1] != f'AdvPy_SplineIK{index}Offset':
+            raise CharacterRegistryError('Spline IK Offset 层级无效')
     if raw['isolated_mid_follow_graph']:
         for index, target in enumerate(targets):
             parent = (raw['pelvis_control']+'|AdvPy_SplineIKFollowMain'
                       if 0<index<len(targets)-1 else raw['pelvis_control'])
-            if target != parent+f'|AdvPy_SplineIK{index}Offset|AdvPy_SplineIK{index}':
+            offset = parent+f'|AdvPy_SplineIK{index}Offset'
+            expected = (offset+f'|AdvPy_SplineIK{index}Extra|AdvPy_SplineIK{index}'
+                        if has_extras else offset+f'|AdvPy_SplineIK{index}')
+            if target != expected:
                 raise CharacterRegistryError('曲线脊柱 IK 控制器层级与跟随模式不一致')
     controls = tuple(path(control) for control in raw['fk_controls'])
     if (len(targets) not in (4,max(4,count+1)) or len(positions)!=len(targets)
@@ -88,4 +110,5 @@ def decode_spline(raw, body):
                           path(raw['chest_space']), targets, positions, axes,
                           lengths, raw['use_offset_parent_matrix'],
                           raw['even_stretch_graph'], raw['twist_ramp_graph'],
-                          raw['mid_follow_graph'], raw['isolated_mid_follow_graph'])
+                          raw['mid_follow_graph'], raw['isolated_mid_follow_graph'],
+                          subs, raw['extra_curve'])

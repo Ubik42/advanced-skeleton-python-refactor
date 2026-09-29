@@ -35,7 +35,7 @@ def plan_body_fit_ik_follow(
     if spline is not None:
         control = spline.targets[-1]
         add(spline.body_joints[-1], control,
-            control.rsplit("|", 1)[0], "M")
+            spline.offset_targets[-1], "M")
     result = []
     used = set()
     for item in metadata:

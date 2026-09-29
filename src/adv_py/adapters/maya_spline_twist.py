@@ -20,8 +20,8 @@ def create(host, plan):
         c.setAttr(entry+'.position', index/(count-1))
         if index in (0, count-1):
             continue
-        control = plan.targets[index]
-        offset = control.rsplit('|', 1)[0]
+        control = plan.driver_targets[index]
+        offset = plan.offset_targets[index]
         relative = c.createNode('multMatrix',
             name=f'AdvPy_SplineTwistRelative{index}', skipSelect=True)
         decompose = c.createNode('decomposeMatrix',
@@ -57,8 +57,8 @@ def audit(host, plan):
             if any(abs(value)>1e-8 for value in c.getAttr(entry+'.color')[0]):
                 raise FitSkeletonValidationError('Spline 扭转曲线端点不为零')
             continue
-        control = plan.targets[index]
-        offset = control.rsplit('|', 1)[0]
+        control = plan.driver_targets[index]
+        offset = plan.offset_targets[index]
         for axis in 'XYZ':
             if (c.getAttr(control+'.rotate'+axis, lock=True)
                     or not c.getAttr(control+'.rotate'+axis, keyable=True)):

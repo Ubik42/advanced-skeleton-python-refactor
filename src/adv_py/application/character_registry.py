@@ -72,6 +72,12 @@ def character_channels(rig):
                 + (rotation if index in (0, len(spline.targets)-1)
                    or spline.twist_ramp_graph else ())
                 + tuple("scale" + axis for axis in "XYZ"))
+            if spline.extra_targets:
+                add(f"spine.spline.{index}.extra",
+                    spline.extra_targets[index], transform)
+            if spline.sub_targets:
+                add(f"spine.spline.{index}.sub",
+                    spline.sub_targets[index], transform)
         add("spine.spline", spline.settings,
             ("spineIkFk", "stretchy", "volume") +
             (("stretchEven",) if spline.even_stretch_graph else ()))

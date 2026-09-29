@@ -53,7 +53,7 @@ def create(host, plan, shape, ik):
 
     for i, arc in enumerate(arcs):
         if i == n-1:
-            c.orientConstraint(plan.targets[-1], arc, maintainOffset=True,
+            c.orientConstraint(plan.driver_targets[-1], arc, maintainOffset=True,
                                name=f'AdvPy_SplineIKArcEndOrient{i}')
         else:
             c.aimConstraint(arcs[i+1], arc, maintainOffset=True,
@@ -114,7 +114,7 @@ def audit(host, plan, shape, ik):
         if i == n-1:
             command = c.orientConstraint
             node = f'AdvPy_SplineIKArcEndOrient{i}'
-            targets = (plan.targets[-1],)
+            targets = (plan.driver_targets[-1],)
         else:
             command = c.aimConstraint
             node = f'AdvPy_SplineIKArcAim{i}'

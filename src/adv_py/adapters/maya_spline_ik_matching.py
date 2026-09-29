@@ -28,13 +28,13 @@ def match_ik(host, registration, before):
     if any(abs(sqrt(sum(value*value for value in matrix[:3]))-scale)>1e-5 for matrix in matrices[1:]):
         raise CharacterRegistryError('当前 FK 含独立纵向缩放，此版曲线 IK 匹配尚未求解逐控制器缩放')
     parameters = []
-    for index,control in enumerate(plan.targets):
+    for index,control in enumerate(plan.driver_targets):
         if index:
             parameters.extend((control+'.translate'+axis,length,None,None) for axis in 'XYZ')
         if index in (0,len(plan.targets)-1) or plan.twist_ramp_graph:
             parameters.extend((control+'.rotate'+axis,180./pi,None,None) for axis in 'XYZ')
         if 0<index<len(plan.targets)-1 and plan.mid_follow_graph:
-            parameters.append((control+'.followEnd',10.,0.,1.))
+            parameters.append((plan.targets[index]+'.followEnd',10.,0.,1.))
     try:
         original_range=spline_owner_version(c.getAttr(
             plan.root_path+'.advPySplineOwner'))>=8
