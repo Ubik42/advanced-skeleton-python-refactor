@@ -1,16 +1,38 @@
 """Add Bendy and Micro animator channels to the character registry."""
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from dataclasses import replace
+from typing import Protocol
 
 from adv_py.core.character_registry import (
-    CharacterChannel, CharacterRegistration, encode_registration,
+    CharacterChannel, CharacterNode, CharacterRegistration,
+    encode_registration,
 )
 from adv_py.core.fit_bendy import FitBendyChainSpec
 
 
+class BendyRegistrationHost(Protocol):
+    def read_character_registration(self) -> CharacterRegistration: ...
+
+    def capture_inbetween_registration_node(
+        self, path: str,
+    ) -> CharacterNode: ...
+
+    def capture_bendy_control_path(
+        self, name: str, ancestors: tuple[str, ...],
+    ) -> str: ...
+
+    def write_character_registration_extension(
+        self, before: CharacterRegistration,
+        after: CharacterRegistration,
+    ) -> None: ...
+
+    def transaction(self, label: str) -> AbstractContextManager[None]: ...
+
+
 class RegisterBendyControls:
-    def __init__(self, host) -> None:
+    def __init__(self, host: BendyRegistrationHost) -> None:
         self._host = host
 
     def apply(self, before: CharacterRegistration,
@@ -45,32 +67,35 @@ class RegisterBendyControls:
         attrs = tuple(prefix + axis for prefix in
                       ("translate", "rotate", "scale") for axis in "XYZ")
         for chain in chains:
-            def bend_path(control: str) -> str:
-                prefix = "|AdvPy_BendSystem|" + control + "Offset|"
+            bend_paths = {}
+            for control in chain.control_names:
+                ancestors = (control + "Offset", "AdvPy_BendSystem")
                 if (control == chain.control_names[0]
                         and chain.child_junction_control):
-                    prefix += chain.circular_name + "|"
-                return prefix + control
-
-            for control in chain.control_names:
-                path = bend_path(control)
+                    ancestors = (chain.circular_name, *ancestors)
+                path = self._host.capture_bendy_control_path(
+                    control, ancestors)
+                bend_paths[control] = path
                 for attr in attrs:
                     add("bendy." + control + "." + attr, path, attr)
             add("bendy." + chain.control_names[0] + ".microVis",
-                bend_path(chain.control_names[0]), "microVis")
+                bend_paths[chain.control_names[0]], "microVis")
             if chain.parent_bendy:
                 start_control = chain.control_names[1]
-                path = ("|AdvPy_BendSystem|" + start_control + "Offset|"
-                        + start_control + "|" + chain.junction_offset_name
-                        + "|" + chain.junction_name)
+                path = self._host.capture_bendy_control_path(
+                    chain.junction_name,
+                    (chain.junction_offset_name, start_control,
+                     start_control + "Offset", "AdvPy_BendSystem"))
                 for attr in attrs:
                     add("bendy." + chain.junction_name + "." + attr,
                         path, attr)
                 add("bendy." + chain.junction_name + ".circular",
                     path, "circular")
-            for offset, control in zip(chain.micro_offset_names,
-                                       chain.micro_control_names):
-                path = "|AdvPy_MicroSystem|" + offset + "|" + control
+            for offset, extra, control in zip(
+                    chain.micro_offset_names, chain.micro_extra_names,
+                    chain.micro_control_names):
+                path = self._host.capture_bendy_control_path(
+                    control, (extra, offset, "AdvPy_MicroSystem"))
                 for attr in attrs:
                     add("micro." + control + "." + attr, path, attr)
         after = replace(before, channels=tuple(channels), nodes=tuple(nodes))

@@ -40,7 +40,36 @@ _MASTER_BEND_PROFILE_XZ = (
 )
 
 
+def _bendy_dag_name(path: str) -> str:
+    return path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+
+
 class MayaFitBendyMixin:
+    def capture_bendy_control_path(
+        self, name: str, ancestors: tuple[str, ...],
+    ) -> str:
+        """Resolve an animator control only under its planned Bendy chain."""
+        c = self._cmds
+        if (not name or not ancestors
+                or ancestors[-1] not in (_GROUPS[0], _MICRO_GROUP)):
+            raise ValueError("Bendy 控制器父链计划无效：" + name)
+        matches = sorted(set(c.ls(name, "*:" + name, long=True,
+                                  type="transform") or []))
+        if len(matches) != 1:
+            raise ValueError("Bendy 控制器不唯一或不存在：" + name)
+        path = matches[0]
+        parent = path
+        for expected in ancestors:
+            rows = c.listRelatives(parent, parent=True,
+                                   fullPath=True) or []
+            if len(rows) != 1 or _bendy_dag_name(rows[0]) != expected:
+                raise ValueError("Bendy 控制器父链与计划不一致：" + name)
+            parent = rows[0]
+        marker = parent + ".advPyBendyGuideOwner"
+        if not c.objExists(marker) or c.getAttr(marker) != _OWNER:
+            raise ValueError("Bendy 控制器系统归属无效：" + name)
+        return path
+
     def preflight_fit_bendy_secondary(self,
                                       spec: FitBendyChainSpec) -> None:
         c = self._cmds
