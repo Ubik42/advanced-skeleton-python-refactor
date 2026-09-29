@@ -330,11 +330,13 @@ class BodyCharacterGlobalSnapshot:
                                       tuple[float, float, float],
                                       tuple[float, float, float],
                                       tuple[float, float, float],
-                                      str | None], ...] = ()
+                                      str | None, bool | None,
+                                      int | None], ...] = ()
     extra_scale_sources: tuple[tuple[str | None, ...], ...] = ()
     extra_scale_operations: tuple[int | None, ...] = ()
     extra_motion_sources: tuple[str | None, str | None, str | None] = (
         None, None, None)
+    control_shape_visibility_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -581,6 +583,8 @@ def audit_body_character_global(
         snapshot.control_path == plan.control_path
         and snapshot.control_parent_path == plan.offset_path
         and snapshot.control_shape_type == "nurbsCurve"
+        and snapshot.control_shape_visibility_source
+        == f"{plan.motion_system_path}.visibility"
         and _close(snapshot.control_translation, neutral, tolerance)
         and _close(snapshot.control_rotation, neutral, tolerance)
         and _close(snapshot.control_scale, one, tolerance)
@@ -600,7 +604,7 @@ def audit_body_character_global(
          plan.extra_control_paths[index] if index < len(plan.extra_control_paths)
          else plan.root_path,
          "nurbsCurve", neutral, neutral, one,
-         f"{plan.motion_system_path}.visibility")
+         f"{plan.motion_system_path}.visibility", True, 19 + index)
         for index, path in enumerate(plan.extra_control_paths, 1))
     if snapshot.extra_control_states != expected_extra_controls:
         issues.append(BodyCharacterGlobalIssue(

@@ -586,6 +586,8 @@ class FakeBodySkeletonHost:
             control_path=plan.control_path,
             control_parent_path=plan.offset_path,
             control_shape_type="nurbsCurve",
+            control_shape_visibility_source=(
+                plan.motion_system_path + ".visibility"),
             control_translation=(0.0, 0.0, 0.0),
             control_rotation=(0.0, 0.0, 0.0),
             control_scale=(1.0, 1.0, 1.0),

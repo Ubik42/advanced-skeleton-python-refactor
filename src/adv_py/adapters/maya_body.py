@@ -1116,6 +1116,27 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 parent=main_system,
                 skipSelect=True,
             )
+            fit_shapes = (
+                self._cmds.listRelatives(
+                    "|Group|FitSkeleton", shapes=True, noIntermediate=True,
+                    fullPath=True, type="nurbsCurve") or []
+                if self._cmds.objExists("|Group|FitSkeleton") else [])
+            fit_shape = fit_shapes[0] if len(fit_shapes) == 1 else None
+
+            def copy_fit_outline(destination: str, expansion: float = 1.0) -> None:
+                if fit_shape is None:
+                    return
+                self._cmds.connectAttr(fit_shape + ".worldSpace[0]",
+                                       destination + ".create", force=True)
+                self._cmds.getAttr(destination + ".spans")
+                self._cmds.disconnectAttr(fit_shape + ".worldSpace[0]",
+                                          destination + ".create")
+                if expansion != 1.0:
+                    self._cmds.scale(
+                        expansion, expansion, expansion,
+                        destination + ".cv[*]", relative=True,
+                        objectSpace=True, pivot=(0, 0, 0))
+
             extra_parent = root
             for index in range(len(plan.extra_control_paths), 0, -1):
                 extra_name = f"AdvPy_MainExtra{index}"
@@ -1131,6 +1152,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 if len(shapes) != 1:
                     raise RuntimeError("MainExtra 曲线 shape 创建失败")
                 shape = self._cmds.rename(shapes[0], extra_name + "Shape")
+                copy_fit_outline(shape, 1.1 ** index)
                 self._cmds.setAttr(shape + ".overrideEnabled", True)
                 self._cmds.setAttr(shape + ".overrideColor", 19 + index)
                 self._cmds.connectAttr(motion + ".visibility",
@@ -1157,6 +1179,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             if len(shapes) != 1:
                 raise RuntimeError("角色总控曲线 shape 创建失败")
             shape = self._cmds.rename(shapes[0], plan.shape_name)
+            copy_fit_outline(shape)
+            self._cmds.connectAttr(motion + ".visibility",
+                                   shape + ".visibility")
             if (
                 root != plan.root_path
                 or offset != plan.offset_path
@@ -1720,6 +1745,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             control_scale_sources=tuple(
                 source(f"{control}.scale{axis}") for axis in "XYZ"
             ),
+            control_shape_visibility_source=(
+                source(shapes[0] + ".visibility")
+                if len(shapes) == 1 else None),
             extra_control_states=tuple(
                 (one_path(path, "transform"), parent(path),
                  (self._cmds.nodeType(shapes[0])
@@ -1729,6 +1757,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                  vector(path, "translate"), vector(path, "rotate"),
                  vector(path, "scale"),
                  (source(shapes[0] + ".visibility")
+                  if len(shapes) == 1 else None),
+                 (bool(self._cmds.getAttr(shapes[0] + ".overrideEnabled"))
+                  if len(shapes) == 1 else None),
+                 (int(self._cmds.getAttr(shapes[0] + ".overrideColor"))
                   if len(shapes) == 1 else None))
                 for path in plan.extra_control_paths
                 for shapes in (self._cmds.listRelatives(
