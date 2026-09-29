@@ -66,6 +66,9 @@ class MayaFaceSkinLayersHost(MayaFacePreHost):
         """Switch mesh and layer visibility exactly as asShowLayer does."""
         if not isinstance(layer, str) or not layer:
             raise ValueError("Face SkinLayer 名称无效")
+        if not self._mode_allows_layers():
+            raise FitSkeletonValidationError(
+                "当前 Face RigType 或 GameEngine 模式不提供 Skin Layers")
         c = self._maya
         group, children = self._group_and_children()
         available = self._layers_from_children(children)
