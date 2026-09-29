@@ -22,6 +22,27 @@ _FIT_INBETWEEN_KIND = "fit-inbetween-v1"
 
 
 class MayaFitPartMixin:
+    def _has_fit_part_parent_chain(self, child: str,
+                                   ancestor: str) -> bool:
+        """Require every inserted joint between two Body nodes to be a Part."""
+        c = self._cmds
+        current = child
+        while current != ancestor:
+            parents = c.listRelatives(current, parent=True,
+                                      fullPath=True) or []
+            if len(parents) != 1:
+                return False
+            current = parents[0]
+            if current == ancestor:
+                return True
+            marker = current + ".advPyAuxiliaryInfluenceKind"
+            if (c.nodeType(current) != "joint"
+                    or not c.objExists(marker)
+                    or c.getAttr(marker) not in (
+                        _FIT_PART_KIND, _FIT_INBETWEEN_KIND)):
+                return False
+        return True
+
     def preflight_fit_part_toe_scale(self, toe: FitPartToeScale) -> None:
         c = self._cmds
         body = self._unique_fit_part_joint(toe.body_name)
@@ -653,13 +674,10 @@ class MayaFitPartMixin:
             if matches != [inputs.start_body]:
                 raise ValueError("Fit Part 矩阵投影起点关节无效")
             if projection.static_source_name:
-                parent = c.listRelatives(inputs.start_body, parent=True,
-                                         fullPath=True) or []
                 source_parent = inputs.static_parent_body
                 if (not source_parent
-                        or not inputs.start_body.startswith(
-                            source_parent + "|")
-                        or not parent):
+                        or not self._has_fit_part_parent_chain(
+                            inputs.start_body, source_parent)):
                     raise ValueError("静态下游 Twist 来源不在原 Body 父链")
                 channels = ("rotate", "rotateX", "rotateY", "rotateZ")
                 if (any(c.connectionInfo(inputs.start_body + "." + attr,
@@ -671,7 +689,10 @@ class MayaFitPartMixin:
                                      + inputs.start_body)
             if projection.reference_name:
                 parent = projection.reference_parent_path
-                if parent and (c.ls(parent, long=True) or []) != [parent]:
+                if (parent and ((c.ls(parent, long=True) or [])
+                                != [parent]
+                                or not self._has_fit_part_parent_chain(
+                                    inputs.start_body, parent))):
                     raise ValueError("Fit Part 矩阵参照父级无效")
 
     def create_fit_part_twist_projection(
@@ -932,7 +953,8 @@ class MayaFitPartMixin:
                        for name in (static, reference))
                 or (c.ls(child_path, long=True, type="joint") or [])
                 != [child_path]
-                or not child_path.startswith(parent_path + "|")
+                or not self._has_fit_part_parent_chain(
+                    child_path, parent_path)
                 or (c.listRelatives(child_path, parent=True,
                                     fullPath=True) or []) == [parent_path]):
             return False
