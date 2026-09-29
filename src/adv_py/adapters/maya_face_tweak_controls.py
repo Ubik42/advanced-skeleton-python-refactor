@@ -234,11 +234,16 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
     def _attach_orient_control(self, leaf: str) -> bool:
         c = self._maya
         control = self._resolve_face_control(leaf)
-        if not (c.getAttr(control + ".translateX", keyable=True)
-                or c.getAttr(control + ".rotateX", keyable=True)):
+        translate_keyable = bool(c.getAttr(control + ".translateX",
+                                            keyable=True))
+        rotate_keyable = bool(c.getAttr(control + ".rotateX",
+                                         keyable=True))
+        if not (translate_keyable or rotate_keyable):
             return False
-        translation = c.getAttr(control + ".translate")[0]
-        rotation = c.getAttr(control + ".rotate")[0]
+        translation = (c.getAttr(control + ".translate")[0]
+                       if translate_keyable else (0.0, 0.0, 0.0))
+        rotation = (c.getAttr(control + ".rotate")[0]
+                    if rotate_keyable else (0.0, 0.0, 0.0))
         if not any(abs(float(value)) > 1e-9
                    for value in (*translation, *rotation)):
             return False
