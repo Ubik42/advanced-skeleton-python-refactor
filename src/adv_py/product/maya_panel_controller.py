@@ -122,6 +122,7 @@ _FIT_BOOLEAN_FIELDS = frozenset({
     FitJointField.NO_CONTROL,
     FitJointField.NO_SKIN,
     FitJointField.SEG_SCALE_COMP,
+    FitJointField.HIP_SWINGER,
     FitJointField.COG,
     FitJointField.AIM,
     FitJointField.FOOT_PIVOTS,
@@ -131,7 +132,7 @@ _FIT_BOOLEAN_FIELDS = frozenset({
     FitJointField.FOLLOW_LEFT_RIGHT,
     FitJointField.FOLLOW_WORLD,
     FitJointField.FOLLOW_SPACES,
-    FitJointField.IK_FOLLOW,
+    FitJointField.LEG_LOCK,
 })
 
 

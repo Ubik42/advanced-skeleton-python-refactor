@@ -66,6 +66,35 @@ class BodyLegLockSpace:
     decompose_name: str
     root_fkx_path: str
     compensation_source: str | None = None
+    static_source: str | None = None
+    weight_control: str | None = None
+    enabled: bool = True
+
+    @property
+    def static_matrix_name(self) -> str:
+        return "AdvPy_LegLockStaticMM"
+
+    @property
+    def blend_name(self) -> str:
+        return "AdvPy_LegLockBM"
+
+    @property
+    def weight_name(self) -> str:
+        return "AdvPy_LegLockWeight"
+
+    @property
+    def matrix_source(self) -> str:
+        if self.static_source is None:
+            return self.root_fkx_path + ".worldMatrix[0]"
+        return ((self.blend_name + ".outputMatrix") if self.enabled
+                else (self.static_matrix_name + ".matrixSum"))
+
+    @property
+    def node_names(self) -> tuple[str, ...]:
+        if self.static_source is None:
+            return ()
+        return (self.static_matrix_name,) + (
+            (self.blend_name, self.weight_name) if self.enabled else ())
 
     @property
     def compensation_input(self) -> str:
@@ -157,7 +186,8 @@ class BodyTorsoPlan:
                          *((control.source_override_path.rsplit("|", 1)[-1],)
                            if control.source_override_path is not None else ()))
         ) + (self.leg_lock.path.rsplit("|", 1)[-1],
-             self.leg_lock.matrix_name, self.leg_lock.decompose_name) + attachment_names + (self.spine.node_names if self.spine else ()) + (self.head_aim.node_names if self.head_aim else ()) + (self.spline.node_names if self.spline else ())
+             self.leg_lock.matrix_name, self.leg_lock.decompose_name,
+             *self.leg_lock.node_names) + attachment_names + (self.spine.node_names if self.spine else ()) + (self.head_aim.node_names if self.head_aim else ()) + (self.spline.node_names if self.spline else ())
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,18 +200,27 @@ class BodyTorsoSnapshot:
     leg_lock_compensation_source: str | None = None
     leg_lock_decompose_source: str | None = None
     leg_lock_channel_sources: tuple[str | None, ...] = ()
+    leg_lock_static_source: str | None = None
+    leg_lock_dynamic_source: str | None = None
+    leg_lock_weight_source: str | None = None
+    leg_lock_weight_value: float | None = None
+    leg_lock_blend_static_source: str | None = None
+    leg_lock_blend_weight_source: str | None = None
+    leg_lock_weight_scale: float | None = None
     root_x: BodyRootControlState | None = None
     cogs: tuple[BodyRootControlState, ...] = ()
 
 
 def plan_body_torso(
     body: BodySkeletonSnapshot, arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan,
-    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (), aim_joint_names: frozenset[str] = frozenset(),
+    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (), aim_joint_names: frozenset[str] = frozenset(), leg_lock_enabled: bool = True,
 ) -> BodyTorsoPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise FitSkeletonValidationError("Torso 构建选项类型无效")
     if not isinstance(aim_joint_names, frozenset):
         raise FitSkeletonValidationError("Torso Aim 来源集合无效")
+    if type(leg_lock_enabled) is not bool:
+        raise FitSkeletonValidationError("Root Leg Lock 开关必须是布尔值")
     if isinstance(radius, bool) or not isinstance(radius, (int, float)) or not isfinite(radius) or radius <= 0:
         raise FitSkeletonValidationError("Torso 控制半径必须是正有限数")
     description=BodyAxialDescription() if description is None else description
@@ -279,6 +318,10 @@ def plan_body_torso(
          + "|AdvPy_LegLockConstrained"),
         "AdvPy_LegLockMM", "AdvPy_LegLockDM",
         controls[0].source_override_path,
+        static_source=(root_x.control_path if root_x is not None else None),
+        weight_control=(controls[0].control_path
+                        if root_x is not None and leg_lock_enabled else None),
+        enabled=leg_lock_enabled,
     )
     attachments = []
     for label, module, start, anchor in (("Arm", arm, "Shoulder", "Scapula"), ("Leg", leg, "Hip", "Root")):
@@ -347,7 +390,7 @@ def audit_body_torso(plan: BodyTorsoPlan, snapshot: BodyTorsoSnapshot) -> tuple[
         issues.append("Root FKX 接收层父链不一致")
     if (snapshot.leg_lock_parent_path
             != plan.leg_lock.path.rsplit("|", 1)[0]
-            or snapshot.leg_lock_source != plan.leg_lock.root_fkx_path + ".worldMatrix[0]"
+            or snapshot.leg_lock_source != plan.leg_lock.matrix_source
             or snapshot.leg_lock_compensation_source
             != plan.leg_lock.compensation_source
             or snapshot.leg_lock_decompose_source
@@ -356,6 +399,27 @@ def audit_body_torso(plan: BodyTorsoPlan, snapshot: BodyTorsoSnapshot) -> tuple[
                 plan.leg_lock.decompose_name + ".output" + channel
                 for channel in ("Translate", "Rotate", "Scale", "Shear"))):
         issues.append("腿部锁定空间矩阵接线不一致")
+    lock = plan.leg_lock
+    if lock.static_source is not None:
+        if (snapshot.leg_lock_static_source
+                != lock.static_source + ".worldMatrix[0]"
+                or snapshot.leg_lock_dynamic_source != (
+                    lock.root_fkx_path + ".worldMatrix[0]"
+                    if lock.enabled else None)
+                or snapshot.leg_lock_weight_source != (
+                    lock.weight_control + ".legLock"
+                    if lock.enabled else None)
+                or snapshot.leg_lock_weight_value != (
+                    10.0 if lock.enabled else None)
+                or snapshot.leg_lock_blend_static_source != (
+                    lock.static_matrix_name + ".matrixSum"
+                    if lock.enabled else None)
+                or snapshot.leg_lock_blend_weight_source != (
+                    lock.weight_name + ".output"
+                    if lock.enabled else None)
+                or snapshot.leg_lock_weight_scale != (
+                    0.1 if lock.enabled else None)):
+            issues.append("Root Leg Lock 静态／动态权重图不一致")
     specs = (plan.pelvis_translation,) + plan.attachments
     if tuple(item.name for item in snapshot.attachments) != tuple(spec.name for spec in specs):
         issues.append("Torso 空间连接集合不一致")

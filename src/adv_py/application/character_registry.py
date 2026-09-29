@@ -37,6 +37,9 @@ def character_channels(rig):
     for control in p.torso.torso.controls.controls:
         add("torso."+control.control_name.removeprefix("AdvPy_"),control.control_path,
             (translation if control.control_path==p.torso.torso.pelvis_translation.source else ())+rotation)
+    lock = p.torso.torso.leg_lock
+    if lock.static_source is not None and lock.enabled:
+        add("root.leg_lock", lock.weight_control, ("legLock",))
     spine = p.torso.torso.spine
     if spine:
         add("spine.ik",spine.ik_control,translation+rotation+("waistRoll","spineIkFk"))

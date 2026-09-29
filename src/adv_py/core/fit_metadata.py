@@ -50,6 +50,7 @@ class FitJointField(str, Enum):
     GEO_ATTACH = "geo_attach"
     GEO_ATTACH_MODE = "geo_attach_mode"
     PROXIMITY_PIN = "proximity_pin"
+    LEG_LOCK = "leg_lock"
 
 
 FitJointValue = bool | int | float | str | tuple[tuple[str, float], ...]
@@ -149,6 +150,7 @@ class FitJointMetadata:
     geo_attach: str | None = None
     geo_attach_mode: str = "parent"
     proximity_pin: str | None = None
+    leg_lock: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +184,7 @@ _BOOLEAN_FIELDS = {
     FitJointField.FOLLOW_LEFT_RIGHT,
     FitJointField.FOLLOW_WORLD,
     FitJointField.FOLLOW_SPACES,
+    FitJointField.LEG_LOCK,
 }
 _ENUM_OPTIONS = {
     FitJointField.AIM_AXIS: {"x", "y", "z"},
@@ -337,7 +340,8 @@ def predict_fit_joint_metadata(
                 False if (edit.field in _BOOLEAN_FIELDS
                           and edit.field not in (
                               FitJointField.HIP_SWINGER,
-                              FitJointField.SEG_SCALE_COMP))
+                              FitJointField.SEG_SCALE_COMP,
+                              FitJointField.LEG_LOCK))
                 else None
             )
         else:
@@ -438,6 +442,14 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
         issues.append(FitJointIssue(
             metadata.joint, "geo_attach_mode_without_target",
             "Geo Attach 模式需要网格目标"))
+    if metadata.leg_lock is not None:
+        if type(metadata.leg_lock) is not bool:
+            issues.append(FitJointIssue(
+                metadata.joint, "invalid_leg_lock", "Leg Lock 必须是布尔值"))
+        if metadata.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1] != "Root":
+            issues.append(FitJointIssue(
+                metadata.joint, "leg_lock_not_root",
+                "Leg Lock 只能设置在 Root Fit 关节"))
     for field in (FitJointField.AIM_AXIS, FitJointField.AIM_UP_AXIS,
                   FitJointField.AIM_UP_OBJECT):
         if (not isinstance(getattr(metadata, field.value), str)

@@ -119,8 +119,49 @@ class MayaBodyTorsoMixin:
                                   skipSelect=True)
             self._cmds.createNode("decomposeMatrix", name=lock.decompose_name,
                                   skipSelect=True)
-            self._cmds.connectAttr(
-                lock.root_fkx_path + ".worldMatrix[0]", lock.source_input)
+            if lock.static_source is not None:
+                from maya.api import OpenMaya as om
+
+                root_world = om.MMatrix(self._cmds.xform(
+                    lock.root_fkx_path, query=True,
+                    worldSpace=True, matrix=True))
+                static_world = om.MMatrix(self._cmds.xform(
+                    lock.static_source, query=True,
+                    worldSpace=True, matrix=True))
+                static = self._cmds.createNode(
+                    "multMatrix", name=lock.static_matrix_name,
+                    skipSelect=True)
+                self._cmds.setAttr(
+                    static + ".matrixIn[0]",
+                    *tuple(root_world * static_world.inverse()),
+                    type="matrix")
+                self._cmds.connectAttr(
+                    lock.static_source + ".worldMatrix[0]",
+                    static + ".matrixIn[1]")
+                if lock.enabled:
+                    blend = self._cmds.createNode(
+                        "blendMatrix", name=lock.blend_name,
+                        skipSelect=True)
+                    self._cmds.connectAttr(
+                        static + ".matrixSum", blend + ".inputMatrix")
+                    self._cmds.connectAttr(
+                        lock.root_fkx_path + ".worldMatrix[0]",
+                        blend + ".target[0].targetMatrix")
+                    self._cmds.addAttr(
+                        lock.weight_control, longName="legLock",
+                        attributeType="double", minValue=0,
+                        maxValue=10, defaultValue=10, keyable=True)
+                    weight = self._cmds.createNode(
+                        "multDoubleLinear", name=lock.weight_name,
+                        skipSelect=True)
+                    self._cmds.setAttr(weight + ".input2", 0.1)
+                    self._cmds.connectAttr(
+                        lock.weight_control + ".legLock",
+                        weight + ".input1")
+                    self._cmds.connectAttr(
+                        weight + ".output",
+                        blend + ".target[0].weight")
+            self._cmds.connectAttr(lock.matrix_source, lock.source_input)
             self._cmds.connectAttr(
                 lock.matrix_name + ".matrixSum",
                 lock.decompose_name + ".inputMatrix")
@@ -247,6 +288,20 @@ class MayaBodyTorsoMixin:
             source(lock.decompose_name + ".inputMatrix"),
             tuple(source(lock.path + "." + channel)
                   for channel in ("translate", "rotate", "scale", "shear")),
+            (source(lock.static_matrix_name + ".matrixIn[1]")
+             if lock.static_source is not None else None),
+            (source(lock.blend_name + ".target[0].targetMatrix")
+             if lock.static_source is not None and lock.enabled else None),
+            (source(lock.weight_name + ".input1")
+             if lock.static_source is not None and lock.enabled else None),
+            (float(self._cmds.getAttr(lock.weight_control + ".legLock"))
+             if lock.static_source is not None and lock.enabled else None),
+            (source(lock.blend_name + ".inputMatrix")
+             if lock.static_source is not None and lock.enabled else None),
+            (source(lock.blend_name + ".target[0].weight")
+             if lock.static_source is not None and lock.enabled else None),
+            (float(self._cmds.getAttr(lock.weight_name + ".input2"))
+             if lock.static_source is not None and lock.enabled else None),
             (self._capture_body_root_control(plan.root_x)
              if plan.root_x is not None else None),
             tuple(self._capture_body_root_control(spec)

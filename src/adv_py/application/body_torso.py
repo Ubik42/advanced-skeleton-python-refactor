@@ -49,12 +49,20 @@ class BuildBodyTorso:
         cog_names = tuple(item.output_name
                           for item in safety.symmetry.instances
                           if metadata[item.source_joint].cog)
+        root_metadata = tuple(item for item in metadata.values()
+                              if item.joint.rsplit("|", 1)[-1].rsplit(
+                                  ":", 1)[-1] == "Root")
+        if len(root_metadata) != 1:
+            raise FitSkeletonValidationError(
+                "Root Leg Lock 需要唯一的 Root Fit 关节")
         torso = plan_body_torso(
             safety.body, arm, leg, radius=radius, spine_ik=spine_ik,
             description=description, head_aim=head_aim,
             build_options=BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings), cog_names=cog_names,
-            aim_joint_names=aim_joint_names, **options)
+            aim_joint_names=aim_joint_names,
+            leg_lock_enabled=root_metadata[0].leg_lock is not False,
+            **options)
         collisions = tuple(sorted({path for name in torso.node_names for path in self._host.find_name_collisions(name)}))
         self._host.preflight_body_torso(torso)
         return BodyTorsoBuildPlan(safety, torso, collisions)

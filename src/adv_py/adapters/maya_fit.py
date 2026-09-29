@@ -107,6 +107,7 @@ _FIT_ATTRIBUTES = {
     FitJointField.AIM_AT: _MayaFitAttribute("aimAt", "string"),
     FitJointField.GEO_ATTACH: _MayaFitAttribute("geoAttach", "string"),
     FitJointField.PROXIMITY_PIN: _MayaFitAttribute("proximityPin", "string"),
+    FitJointField.LEG_LOCK: _MayaFitAttribute("legLock", "bool"),
     FitJointField.GEO_ATTACH_MODE: _MayaFitAttribute(
         "geoAttachMode", "enum", enum_names=("point", "orient", "parent")),
     FitJointField.AIM_AXIS: _MayaFitAttribute(
@@ -912,6 +913,9 @@ class MayaFitJointHost:
             aim_up_object=self._optional_enum(joint, "aimUpObject") or "self",
             geo_attach=self._optional_mesh_target(joint, "geoAttach"),
             proximity_pin=self._optional_mesh_target(joint, "proximityPin"),
+            leg_lock=(self._optional_bool(joint, "legLock")
+                      if self._attribute_exists(joint, "legLock")
+                      else None),
             geo_attach_mode=self._optional_enum(
                 joint, "geoAttachMode") or "parent",
             world_orient_up=self._optional_enum(joint, "worldOrientUp"),
