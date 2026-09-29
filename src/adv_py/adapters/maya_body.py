@@ -1335,7 +1335,36 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     if len(scale_constraint) != 1:
                         raise RuntimeError("GlobalFollowMain 缩放约束创建失败")
             for plug in plan.scale_destinations:
+                if (plan.spine_root_scale is not None
+                        and plug in tuple(
+                            plan.spine_root_scale.body_root + ".scale" + axis
+                            for axis in "XYZ")):
+                    continue
                 self._cmds.connectAttr(plan.destination_scale_source(plug), plug)
+            spine_scale = plan.spine_root_scale
+            if spine_scale is not None:
+                blend = self._cmds.createNode(
+                    "blendColors", name=spine_scale.blend_name, skipSelect=True)
+                multiply = self._cmds.createNode(
+                    "multiplyDivide", name=spine_scale.multiply_name,
+                    skipSelect=True)
+                self._cmds.setAttr(multiply + ".operation", 1)
+                self._cmds.connectAttr(
+                    spine_scale.ik_scale_plug, blend + ".color1")
+                self._cmds.connectAttr(
+                    spine_scale.fk_scale_plug, blend + ".color2")
+                self._cmds.connectAttr(
+                    spine_scale.mode_plug, blend + ".blender")
+                for axis, color in zip("XYZ", "RGB"):
+                    self._cmds.connectAttr(
+                        plan.effective_scale_source(axis),
+                        multiply + ".input1" + axis)
+                    self._cmds.connectAttr(
+                        blend + ".output" + color,
+                        multiply + ".input2" + axis)
+                    self._cmds.connectAttr(
+                        multiply + ".output" + axis,
+                        spine_scale.body_root + ".scale" + axis)
             for attribute, system_path in plan.visibility_controls:
                 if (self._cmds.ls(system_path, long=True,
                                   type="transform") or []) != [system_path]:
@@ -1788,6 +1817,22 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             scale_destination_sources=tuple(
                 (plug, source(plug))
                 for plug in plan.scale_destinations
+            ),
+            spine_root_scale_state=(
+                (
+                    self._cmds.nodeType(plan.spine_root_scale.blend_name),
+                    self._cmds.nodeType(plan.spine_root_scale.multiply_name),
+                    source(plan.spine_root_scale.blend_name + ".color1"),
+                    source(plan.spine_root_scale.blend_name + ".color2"),
+                    source(plan.spine_root_scale.blend_name + ".blender"),
+                    tuple(source(plan.spine_root_scale.multiply_name
+                                 + ".input1" + axis) for axis in "XYZ"),
+                    tuple(source(plan.spine_root_scale.multiply_name
+                                 + ".input2" + axis) for axis in "XYZ"),
+                    int(self._cmds.getAttr(
+                        plan.spine_root_scale.multiply_name + ".operation")),
+                )
+                if plan.spine_root_scale is not None else None
             ),
             scale_node_input_sources=tuple(
                 source(f"{plan.scale_node_name}.input1{axis}")

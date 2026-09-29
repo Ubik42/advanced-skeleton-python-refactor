@@ -89,6 +89,16 @@ class BodyHeadAimFollowSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class BodySpineRootScaleSpec:
+    body_root: str
+    fk_scale_plug: str
+    ik_scale_plug: str
+    mode_plug: str
+    blend_name: str = "AdvPy_SpineRootScaleBlend"
+    multiply_name: str = "AdvPy_SpineRootScaleMultiply"
+
+
+@dataclass(frozen=True, slots=True)
 class BodyCharacterGlobalPlan:
     root_name: str
     root_path: str
@@ -116,6 +126,7 @@ class BodyCharacterGlobalPlan:
     global_follow_main_path: str | None = None
     global_follow_use_opm: bool = False
     fit_height: float | None = None
+    spine_root_scale: BodySpineRootScaleSpec | None = None
 
     @property
     def root_follow_constraint_name(self) -> str | None:
@@ -162,6 +173,9 @@ class BodyCharacterGlobalPlan:
             self.control_name,
             self.shape_name,
             self.scale_node_name,
+            *((self.spine_root_scale.blend_name,
+               self.spine_root_scale.multiply_name)
+              if self.spine_root_scale is not None else ()),
             *(path.rsplit("|", 1)[-1] for path in self.extra_control_paths),
             *(path.rsplit("|", 1)[-1] + "Shape" for path in self.extra_control_paths),
             *(f"MainScaleMultiplyDivide{i}"
@@ -214,6 +228,9 @@ class BodyCharacterGlobalPlan:
 
     def destination_scale_source(self, plug: str) -> str:
         axis = plug[-1] if plug.endswith((".scaleX", ".scaleY", ".scaleZ")) else "X"
+        if (self.spine_root_scale is not None
+                and plug == self.spine_root_scale.body_root + ".scale" + axis):
+            return f"{self.spine_root_scale.multiply_name}.output{axis}"
         return self.effective_scale_source(axis)
 
     @property
@@ -337,6 +354,7 @@ class BodyCharacterGlobalSnapshot:
     extra_motion_sources: tuple[str | None, str | None, str | None] = (
         None, None, None)
     control_shape_visibility_source: str | None = None
+    spine_root_scale_state: tuple | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -378,6 +396,7 @@ def plan_body_character_global(
     global_follow_main_path: str | None = None,
     global_follow_use_opm: bool = False,
     num_main_extras: int = 0,
+    spine_root_scale: BodySpineRootScaleSpec | None = None,
 ) -> BodyCharacterGlobalPlan:
     if (
         not isinstance(up_axis, FitUpAxis)
@@ -386,6 +405,15 @@ def plan_body_character_global(
         or not isinstance(driven_roots, tuple)
         or not driven_roots
         or not isinstance(scale_destinations, tuple)
+        or (spine_root_scale is not None
+            and (not isinstance(spine_root_scale, BodySpineRootScaleSpec)
+                 or spine_root_scale.body_root != body_root
+                 or any(not isinstance(plug, str) or "." not in plug
+                        for plug in (spine_root_scale.fk_scale_plug,
+                                     spine_root_scale.ik_scale_plug,
+                                     spine_root_scale.mode_plug))
+                 or any(body_root + ".scale" + axis not in scale_destinations
+                        for axis in "XYZ")))
         or not isinstance(body_root_via_controls, bool)
         or type(num_main_extras) is not int
         or num_main_extras < 0
@@ -523,6 +551,7 @@ def plan_body_character_global(
         pole_arrows=pole_arrows,
         head_aim_follow=head_aim_follow,
         extra_control_paths=tuple(extra_paths),
+        spine_root_scale=spine_root_scale,
         root_follow_main_path=root_follow_main_path,
         root_follow_use_opm=root_follow_use_opm,
         global_follow_main_path=global_follow_main_path,
@@ -739,6 +768,20 @@ def audit_body_character_global(
         issues.append(BodyCharacterGlobalIssue(
             "scale_destination_mismatch",
             "Arm/Leg 全局比例补偿接线不一致",
+        ))
+    spine = plan.spine_root_scale
+    expected_spine_state = (
+        ("blendColors", "multiplyDivide", spine.ik_scale_plug,
+         spine.fk_scale_plug, spine.mode_plug,
+         tuple(plan.effective_scale_source(axis) for axis in "XYZ"),
+         tuple(spine.blend_name + ".output" + color
+               for color in "RGB"), 1)
+        if spine is not None else None)
+    if snapshot.spine_root_scale_state != expected_spine_state:
+        issues.append(BodyCharacterGlobalIssue(
+            "spine_root_scale_mismatch",
+            "Spine Root FK／IK 缩放与总控比例接线不一致",
+            spine.body_root if spine else None,
         ))
     expected_inputs = tuple(
         (f"MainScaleMultiplyDivide{len(plan.extra_control_paths)}.output{axis}"

@@ -9,6 +9,7 @@ from adv_py.core.body_character_global import (
     BodyCharacterGlobalSnapshot,
     BodyPoleArrowSpec,
     BodyHeadAimFollowSpec,
+    BodySpineRootScaleSpec,
     audit_body_character_global,
     fit_character_height,
     plan_body_character_global,
@@ -358,6 +359,15 @@ class BuildBodyCharacterRig:
                 f"{leg.stretch.settings_path}."
                 f"{leg.stretch.global_scale_attribute}",
                 *(tuple(f"{safety.body.root}.scale{axis}" for axis in "XYZ") if torso else ()),
+            ),
+            spine_root_scale=(
+                BodySpineRootScaleSpec(
+                    body_root=safety.body.root,
+                    fk_scale_plug=torso.torso.spine.fk_controls[0] + ".scale",
+                    ik_scale_plug=torso.torso.spine.joints[3].path + ".scale",
+                    mode_plug=torso.torso.spine.blend_plug,
+                )
+                if torso is not None and torso.torso.spine is not None else None
             ),
             radius=global_control_radius,
             body_root_via_controls=include_torso,
