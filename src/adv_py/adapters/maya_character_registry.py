@@ -28,6 +28,7 @@ class MayaCharacterRegistryMixin:
         scale = set()
         compensated = set()
         independent = set()
+        bendy_scales = set()
         twist_rewired = set()
         globally_driven = set()
         keys = {channel.key for channel in registration.channels}
@@ -64,9 +65,18 @@ class MayaCharacterRegistryMixin:
                             sourceFromDestination=True)):
                     raise CharacterRegistryError(
                         '旧通用 Bendy FK 缩放图无效：' + stem)
+                bendy_scales.add(control)
             elif any(sources):
-                raise CharacterRegistryError(
-                    '旧通用 FK 缩放连接不是完整的直驱图：' + stem)
+                bendy_source = c.connectionInfo(
+                    body + '.scale', sourceFromDestination=True)
+                bendy_node = (bendy_source.split('.', 1)[0]
+                              if bendy_source else '')
+                if (not bendy_source.endswith('.output')
+                        or not bendy_node.rsplit(':', 1)[-1].startswith(
+                            'AdvPy_BendyDeformScale')
+                        or c.nodeType(bendy_node) != 'multiplyDivide'):
+                    raise CharacterRegistryError(
+                        '旧通用 FK 缩放连接不是完整的直驱图：' + stem)
             if c.attributeQuery('inheritScale', node=control, exists=True):
                 compensated.add(control)
                 offsets = by_leaf.get('AdvPy_' + stem + 'Offset', ())
@@ -120,7 +130,7 @@ class MayaCharacterRegistryMixin:
             frozenset(scale), frozenset(compensated),
             frozenset(globally_driven), aim_sources,
             follower_sources, frozenset(independent),
-            frozenset(twist_rewired))
+            frozenset(twist_rewired), frozenset(bendy_scales))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

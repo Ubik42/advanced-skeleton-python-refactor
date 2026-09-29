@@ -1199,6 +1199,13 @@ class BuildRegisteredBodyCharacter:
                 BuildFitBendyDeform(joined).apply(deferred_bendy_chains)
                 bendy_fk_scales = plan_fit_bendy_fk_scales(
                     deferred_bendy_chains, generic_fk.controls)
+                if (_generic_fk_policy is not None
+                        and _generic_fk_policy.bendy_scale_controls
+                        is not None):
+                    bendy_fk_scales = tuple(
+                        spec for spec in bendy_fk_scales
+                        if spec.control_path in
+                        _generic_fk_policy.bendy_scale_controls)
                 BuildFitBendyFkScales(joined).apply(bendy_fk_scales)
                 if bendy_fk_scales:
                     rig = replace(rig, plan=replace(
