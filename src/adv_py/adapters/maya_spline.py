@@ -12,7 +12,7 @@ def prepare(host,plan):
     c=host._cmds
     c.createNode('transform',name='AdvPy_SplineMechanisms',parent=plan.root_path.rsplit('|',1)[0],skipSelect=True)
     c.addAttr(plan.root_path,longName='advPySplineOwner',dataType='string')
-    c.setAttr(plan.root_path+'.advPySplineOwner','adv_py.spline.v9' if plan.curved else 'adv_py.spline.v8',type='string',lock=True)
+    c.setAttr(plan.root_path+'.advPySplineOwner','adv_py.spline.v11' if plan.curved else 'adv_py.spline.v10',type='string',lock=True)
     for joint in plan.joints:host.create_body_arm_mechanism_joint(joint)
     last=plan.joints[len(plan.body_joints)-1]
     host._spine_frame('AdvPy_SplineChestSpace',plan.chest_space.rsplit('|',1)[0],last.world_position,last.world_axes)
@@ -118,7 +118,7 @@ def create(host,plan):
         c.connectAttr(plan.scale_reference+'.worldInverseMatrix[0]',relative+'.matrixIn[1]')
         c.connectAttr(relative+'.matrixSum',decompose+'.inputMatrix')
         c.connectAttr(decompose+'.outputScale',volume+'.input1')
-        if i:
+        if 0<i<n-1:
             weight=f'AdvPy_SplineIKScaleWeight{i}'
             addition=f'AdvPy_SplineIKScaleAdd{i}'
             c.createNode('multiplyDivide',name=weight,skipSelect=True)
@@ -188,15 +188,20 @@ def audit(host,plan):
     if owner not in ('adv_py.spline.v1','adv_py.spline.v2','adv_py.spline.v3',
                      'adv_py.spline.v4','adv_py.spline.v5',
                      'adv_py.spline.v6','adv_py.spline.v7',
-                     'adv_py.spline.v8','adv_py.spline.v9'):raise FitSkeletonValidationError('Spline 所有权标记无效')
+                     'adv_py.spline.v8','adv_py.spline.v9',
+                     'adv_py.spline.v10','adv_py.spline.v11'):raise FitSkeletonValidationError('Spline 所有权标记无效')
     if (owner in ('adv_py.spline.v3','adv_py.spline.v5','adv_py.spline.v7',
-                  'adv_py.spline.v9'))!=plan.curved:raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
+                  'adv_py.spline.v9','adv_py.spline.v11'))!=plan.curved:raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
     new_scaling=owner in ('adv_py.spline.v4','adv_py.spline.v5',
                           'adv_py.spline.v6','adv_py.spline.v7',
-                          'adv_py.spline.v8','adv_py.spline.v9')
+                          'adv_py.spline.v8','adv_py.spline.v9',
+                          'adv_py.spline.v10','adv_py.spline.v11')
     oriented_scaling=owner in ('adv_py.spline.v6','adv_py.spline.v7',
-                               'adv_py.spline.v8','adv_py.spline.v9')
-    original_range=owner in ('adv_py.spline.v8','adv_py.spline.v9')
+                               'adv_py.spline.v8','adv_py.spline.v9',
+                               'adv_py.spline.v10','adv_py.spline.v11')
+    original_range=owner in ('adv_py.spline.v8','adv_py.spline.v9',
+                             'adv_py.spline.v10','adv_py.spline.v11')
+    terminal_without_volume=owner in ('adv_py.spline.v10','adv_py.spline.v11')
     missing=tuple(name for name in plan.node_names
                   if not (owner=='adv_py.spline.v1' and 'WorldScale' in name)
                   and not (not new_scaling and (name.startswith('AdvPy_SplineIKScale')
@@ -204,6 +209,9 @@ def audit(host,plan):
                   and not (not oriented_scaling and name.startswith('AdvPy_SplineIKLocalOrient'))
                   and not (not original_range and name in (
                       'AdvPy_SplineStretchUnit','AdvPy_SplineVolumeUnit'))
+                  and not (terminal_without_volume and name in (
+                      f'AdvPy_SplineIKScaleWeight{n-1}',
+                      f'AdvPy_SplineIKScaleAdd{n-1}'))
                   and len(c.ls(name,long=True) or [])!=1)
     if missing:raise FitSkeletonValidationError('Spline 节点缺失或名称不唯一：'+repr(missing))
     if c.ikHandle('AdvPy_SplineIKHandle',q=True,solver=True)!='ikSplineSolver':raise FitSkeletonValidationError('Spline 求解器被替换')
@@ -250,7 +258,7 @@ def audit(host,plan):
                                  if oriented_scaling else '')
                     edges.append((plan.targets[index]+orientation+'.worldMatrix[0]',
                                   blend+f'.target[{index}].targetMatrix'))
-            if i:
+            if i and not (terminal_without_volume and i==n-1):
                 weight=f'AdvPy_SplineIKScaleWeight{i}'
                 addition=f'AdvPy_SplineIKScaleAdd{i}'
                 edges += [('AdvPy_SplineVolumeDelta.output',weight+'.input1X'),
@@ -309,7 +317,7 @@ def audit(host,plan):
             for index,weight in enumerate(spline_ik_scale_weights(i,n,len(plan.targets))):
                 if weight:
                     constants[blend+f'.target[{index}].weight']=weight
-            if i:
+            if i and not (terminal_without_volume and i==n-1):
                 fraction=2.0*(i+1)/(n+1)
                 constants[f'AdvPy_SplineIKScaleWeight{i}.input2X']=min(fraction,2.0-fraction)
                 constants[f'AdvPy_SplineIKScaleAdd{i}.input2']=1.
@@ -322,7 +330,8 @@ def audit(host,plan):
     if owner in ('adv_py.spline.v2','adv_py.spline.v3',
                  'adv_py.spline.v4','adv_py.spline.v5',
                  'adv_py.spline.v6','adv_py.spline.v7',
-                 'adv_py.spline.v8','adv_py.spline.v9'):
+                 'adv_py.spline.v8','adv_py.spline.v9',
+                 'adv_py.spline.v10','adv_py.spline.v11'):
         identity=(1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.)
         for i in range(1,n):
             node=f'AdvPy_SplineScale{i}'
