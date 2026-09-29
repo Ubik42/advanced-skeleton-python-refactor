@@ -81,6 +81,11 @@ def _transfer_sample_frames(
 _TRANSFER_SAMPLE_BATCH_SIZE = 8
 
 
+def _rebuild_segment_mode(host, body_root: str) -> str:
+    capture = getattr(host, 'capture_body_rebuild_segment_mode', None)
+    return capture(body_root) if capture is not None else 'fit_part'
+
+
 def _write_transfer_samples(host, staged, frames, stream, *, target):
     """Spool animation and mesh samples without retaining every frame in RAM."""
     for offset in range(0, len(frames), _TRANSFER_SAMPLE_BATCH_SIZE):
@@ -111,6 +116,8 @@ class StageBodyCharacterRebuild:
         host.preflight_character_rebuild_namespace(namespace)
         original=CaptureBodyCharacterPreservation(host).execute(extensions=extensions)
         selection_mode = host.capture_body_rebuild_selection_mode()
+        segment_mode = _rebuild_segment_mode(host,
+            original.registration.body_root)
         include_dynamic = host.has_body_dynamic_system()
         with TemporaryDirectory(prefix='adv-py-rebuild-') as directory:
             fit=Path(directory)/'source.fit.json'
@@ -119,8 +126,10 @@ class StageBodyCharacterRebuild:
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('重建暂存前原角色发生变化')
                 if (host.capture_body_rebuild_selection_mode() != selection_mode
+                        or _rebuild_segment_mode(host,
+                            original.registration.body_root) != segment_mode
                         or host.has_body_dynamic_system() != include_dynamic):
-                    raise RuntimeError('重建暂存前原角色系统层级或选择集发生变化')
+                    raise RuntimeError('重建暂存前原角色系统层级、分段或选择集发生变化')
                 stage=host.create_character_rebuild_host(namespace)
                 CreateAndImportFitSkeleton(stage).apply(fit)
                 scene_before = stage.capture_body_scene_nodes()
@@ -134,6 +143,7 @@ class StageBodyCharacterRebuild:
                     'FitSkeleton',
                     axial_description=description,
                     include_head_aim='head.aim.headAim' in keys,
+                    use_fit_part_hierarchy=segment_mode == 'fit_part',
                     _include_dynamic=include_dynamic,
                     _defer_selection_sets=True,
                     _scene_before=scene_before)

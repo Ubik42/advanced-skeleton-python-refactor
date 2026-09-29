@@ -828,6 +828,27 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
             root, tuple(states), provenance, fit_height,
         )
 
+    def capture_body_rebuild_segment_mode(self, root_name: str) -> str:
+        """Select the same segment construction used by the existing rig."""
+        c = self._cmds
+        roots = c.ls(root_name, long=True, type="joint") or []
+        if len(roots) != 1:
+            raise FitSkeletonValidationError(
+                "重建分段检查需要唯一 Body 根关节：" + root_name)
+        descendants = c.listRelatives(roots[0], allDescendents=True,
+                                      fullPath=True, type="joint") or []
+        kinds = {
+            c.getAttr(path + ".advPyAuxiliaryInfluenceKind")
+            for path in descendants
+            if c.attributeQuery("advPyAuxiliaryInfluenceKind",
+                                node=path, exists=True)
+        }
+        if kinds & {"fit-part-v1", "fit-inbetween-v1"}:
+            return "fit_part"
+        if kinds & {"axial-part-v1", "finger-mid-v1", "limb-part-v1"}:
+            return "legacy_segments"
+        return "fit_part"
+
     def capture_body_export_source_joints(
         self, root_name: str,
     ) -> tuple[BodyExportSourceJoint, ...]:
