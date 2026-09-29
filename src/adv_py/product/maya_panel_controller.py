@@ -1463,6 +1463,18 @@ class MayaPanelController:
 
         DeleteBoxSkin(MayaBoxSkinHost(namespace)).execute()
 
+    def geometry_boolean_create(self, namespace: str) -> int:
+        from adv_py.adapters.maya_geometry_boolean import MayaBooleanHost
+        from adv_py.application.geometry_boolean import CreateBoolean
+
+        return CreateBoolean(MayaBooleanHost(namespace)).execute()
+
+    def geometry_boolean_delete(self, namespace: str) -> None:
+        from adv_py.adapters.maya_geometry_boolean import MayaBooleanHost
+        from adv_py.application.geometry_boolean import DeleteBoolean
+
+        DeleteBoolean(MayaBooleanHost(namespace)).execute()
+
     def geometry_cut_up_delete(self, namespace: str) -> None:
         from adv_py.adapters.maya_geometry_cut_up import MayaGeometryCutUpHost
         from adv_py.application.geometry_cut_up import DeleteGeometryCutUp
