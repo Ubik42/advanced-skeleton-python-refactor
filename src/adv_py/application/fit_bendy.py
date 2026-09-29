@@ -26,12 +26,11 @@ class FitBendyFollowSpec:
     end: FitBendyWorldSource
 
 
-def plan_fit_bendy_follow(
-    chains: tuple[FitBendyChainSpec, ...],
+def fit_bendy_world_sources(
     rig: BodyCharacterRigBuildPlan,
     generic_controls: tuple[BodyLimbFkControlSpec, ...] = (),
-) -> tuple[FitBendyFollowSpec, ...]:
-    """Resolve Bendy endpoints without depending on driven Body matrices."""
+) -> dict[str, FitBendyWorldSource]:
+    """Resolve available independent frames without reading driven Body."""
     # The same direct-control and spine mechanism map drives ordinary Part twist.
     from .registered_body_build import _independent_rig_twist_sources
 
@@ -57,6 +56,42 @@ def plan_fit_bendy_follow(
                   or control.sub_control_path or control.control_path)
         sources[control.driven_joint] = FitBendyWorldSource(
             source + ".worldMatrix[0]")
+    return sources
+
+
+def split_fit_bendy_chains(
+    chains: tuple[FitBendyChainSpec, ...],
+    rig: BodyCharacterRigBuildPlan,
+) -> tuple[tuple[FitBendyChainSpec, ...],
+           tuple[FitBendyChainSpec, ...]]:
+    """Defer an entire connected Bendy component needing generic FK."""
+    available = set(fit_bendy_world_sources(rig))
+    deferred_bodies = {
+        body for chain in chains
+        for body in (chain.start_body, chain.end_body)
+        if body not in available}
+    changed = True
+    while changed:
+        before = len(deferred_bodies)
+        for chain in chains:
+            if (chain.start_body in deferred_bodies
+                    or chain.end_body in deferred_bodies):
+                deferred_bodies.update((chain.start_body, chain.end_body))
+        changed = len(deferred_bodies) != before
+    early = tuple(chain for chain in chains
+                  if chain.start_body not in deferred_bodies)
+    later = tuple(chain for chain in chains
+                  if chain.start_body in deferred_bodies)
+    return early, later
+
+
+def plan_fit_bendy_follow(
+    chains: tuple[FitBendyChainSpec, ...],
+    rig: BodyCharacterRigBuildPlan,
+    generic_controls: tuple[BodyLimbFkControlSpec, ...] = (),
+) -> tuple[FitBendyFollowSpec, ...]:
+    """Resolve Bendy endpoints without depending on driven Body matrices."""
+    sources = fit_bendy_world_sources(rig, generic_controls)
     result = []
     for chain in chains:
         start = sources.get(chain.start_body)

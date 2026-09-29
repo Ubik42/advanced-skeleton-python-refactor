@@ -86,7 +86,7 @@ from .finger_mid_deform import BuildFingerMidDeform
 from .fit_part import BuildFitPartHierarchy, FitPartHierarchyResult
 from .fit_bendy import (BuildFitBendyDeform, BuildFitBendyFkScales,
                         BuildFitBendyGuides,
-                        plan_fit_bendy_follow)
+                        plan_fit_bendy_follow, split_fit_bendy_chains)
 from .fit_bendy_registration import RegisterBendyControls
 from .fit_part_twist import (
     AttachGenericFitPartTwistSources, BuildFitPartTwistDrivers,
@@ -666,6 +666,13 @@ class BuildRegisteredBodyCharacter:
                               if item.ik_local_mode is not None),
                     frozenset(control.control_name
                               for control in rig.plan.leg.fk_controls.controls))
+            early_bendy_chains, deferred_bendy_chains = (
+                split_fit_bendy_chains(bendy_chains, rig.plan))
+            if early_bendy_chains:
+                early_bendy_follows = plan_fit_bendy_follow(
+                    early_bendy_chains, rig.plan)
+                BuildFitBendyGuides(joined).apply(
+                    early_bendy_chains, follows=early_bendy_follows)
             twist_steps = ()
             scale_plan = None
             inbetween_segments = ()
@@ -734,6 +741,8 @@ class BuildRegisteredBodyCharacter:
                               if item.ik_local_mode is not None),
                     frozenset(control.control_name
                               for control in rig.plan.leg.fk_controls.controls))
+                if early_bendy_chains:
+                    BuildFitBendyDeform(joined).apply(early_bendy_chains)
                 inbetween_parts = tuple(
                     part for part in part_plan.fit_parts
                     if part.kind == "inbetween")
@@ -1169,14 +1178,14 @@ class BuildRegisteredBodyCharacter:
                         tolerance=1e-4):
                     raise RuntimeError(
                         "通用 FK Twist 来源改接改变 Body 绑定姿态")
-            if bendy_chains:
+            if deferred_bendy_chains:
                 bendy_follows = plan_fit_bendy_follow(
-                    bendy_chains, rig.plan, generic_fk.controls)
+                    deferred_bendy_chains, rig.plan, generic_fk.controls)
                 BuildFitBendyGuides(joined).apply(
-                    bendy_chains, follows=bendy_follows)
-                BuildFitBendyDeform(joined).apply(bendy_chains)
+                    deferred_bendy_chains, follows=bendy_follows)
+                BuildFitBendyDeform(joined).apply(deferred_bendy_chains)
                 bendy_fk_scales = plan_fit_bendy_fk_scales(
-                    bendy_chains, generic_fk.controls)
+                    deferred_bendy_chains, generic_fk.controls)
                 BuildFitBendyFkScales(joined).apply(bendy_fk_scales)
                 if not body_bind_pose_matches(
                         skeleton.snapshot,
