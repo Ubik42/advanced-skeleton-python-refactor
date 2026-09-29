@@ -21,6 +21,7 @@ def plan_body_all_set(
     before: tuple[BodyAllSetNode, ...],
     after: tuple[BodyAllSetNode, ...],
     fit_container: str,
+    proximity_pin_sources: tuple[str, ...] = (),
 ) -> BodyAllSetPlan:
     fit_name = fit_container.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
     if not fit_name or "." in fit_name:
@@ -33,7 +34,10 @@ def plan_body_all_set(
     old = {node.path for node in before}
     fit_root = "|Group|" + fit_name
     geometry = "|Group|Geometry"
-    excluded = {"Sets", "AllSet", geometry}
+    current = {node.path for node in after}
+    if any(path not in current for path in proximity_pin_sources):
+        raise ValueError("AllSet proximityPin 源节点不在当前角色中")
+    excluded = {"Sets", "AllSet", geometry, *proximity_pin_sources}
     members = []
     for node in after:
         path = node.path

@@ -11,6 +11,7 @@ from adv_py.core.body_all_set import (
 
 class BodyAllSetHost(Protocol):
     def capture_body_scene_nodes(self) -> tuple[BodyAllSetNode, ...]: ...
+    def capture_body_proximity_pin_sources(self) -> tuple[str, ...]: ...
     def populate_body_all_set(self, plan: BodyAllSetPlan) -> None: ...
     def capture_body_all_set_members(self) -> tuple[str, ...]: ...
     def capture_body_control_history(self, plan: BodyAllSetPlan) -> tuple[str, ...]: ...
@@ -27,7 +28,8 @@ class PopulateBodyAllSet:
         self, before: tuple[BodyAllSetNode, ...], fit_container: str,
     ) -> BodyAllSetPlan:
         plan = plan_body_all_set(
-            before, self._host.capture_body_scene_nodes(), fit_container)
+            before, self._host.capture_body_scene_nodes(), fit_container,
+            self._host.capture_body_proximity_pin_sources())
         with self._host.transaction("登记角色 AllSet 节点"):
             self._host.populate_body_all_set(plan)
             actual = self._host.capture_body_all_set_members()

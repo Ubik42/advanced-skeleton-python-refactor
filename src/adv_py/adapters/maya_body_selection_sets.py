@@ -22,6 +22,21 @@ class MayaBodySelectionSetsMixin:
                 bool(c.referenceQuery(path, isNodeReferenced=True))))
         return tuple(sorted(nodes, key=lambda node: node.path))
 
+    def capture_body_proximity_pin_sources(self) -> tuple[str, ...]:
+        """OriginalGeometry intermediates are outside ADV's owned rig set."""
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        identity = CharacterIdentity(self.namespace or "")
+        sources = set()
+        for pin in c.ls(type="proximityPin") or []:
+            for source in c.listConnections(
+                    pin + ".originalGeometry", source=True,
+                    destination=False, shapes=True) or []:
+                matches = c.ls(source, long=True) or []
+                if len(matches) != 1 or not identity.owns(matches[0]):
+                    continue
+                sources.add(identity.to_local(matches[0]))
+        return tuple(sorted(sources))
+
     def populate_body_all_set(self, plan: BodyAllSetPlan) -> None:
         self._require_transaction()
         c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
