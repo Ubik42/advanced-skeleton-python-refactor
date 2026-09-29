@@ -293,17 +293,25 @@ class MayaBodySelectionSetsMixin:
                 raise ValueError("控制器 Extra 层不存在：" + path)
             controls.append(matches[0])
         joints = []
+        def in_deform_set(node: str) -> bool:
+            # ADV removes every terminal joint from DeformSet after building
+            # the complete hierarchy.  A leaf can still be a Skin influence
+            # on an imported character, so this affects selection only.
+            return (self.read_skin_influence_enabled(node)
+                    and bool(c.listRelatives(node, children=True,
+                                             type="joint", fullPath=True)))
+
         for path in dict.fromkeys((joint.path for joint in registration.body)):
             matches = c.ls(path, long=True, type="joint") or []
             if len(matches) != 1:
                 raise ValueError("登记变形关节不存在：" + path)
-            if self.read_skin_influence_enabled(matches[0]):
+            if in_deform_set(matches[0]):
                 joints.append(matches[0])
         for path in segments:
             matches = c.ls(path, long=True, type="joint") or []
             if len(matches) != 1:
                 raise ValueError("分段变形关节不存在：" + path)
-            if self.read_skin_influence_enabled(matches[0]):
+            if in_deform_set(matches[0]):
                 joints.append(matches[0])
         return (tuple(dict.fromkeys(controls)),
                 tuple(dict.fromkeys(joints)))

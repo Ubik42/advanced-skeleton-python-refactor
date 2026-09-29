@@ -3415,6 +3415,21 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
     def create_body_leg_blend(self, plan: BodyLegBlendPlan) -> None:
         self._create_body_limb_blend(plan, "Leg")
 
+    def set_body_leg_initial_ik(self, plan: BodyLegBlendPlan) -> None:
+        """Match ADV's final Foot default after the complete IK graph exists."""
+        self._require_transaction()
+        for side in plan.sides:
+            plug = f"{plan.settings_path}.{side.attribute}"
+            if not self._cmds.objExists(plug):
+                raise FitSkeletonValidationError("Leg IK/FK 默认模式属性缺失：" + plug)
+            if self._cmds.listConnections(plug, source=True,
+                                          destination=False, plugs=True):
+                raise FitSkeletonValidationError("Leg IK/FK 默认模式已被驱动：" + plug)
+            self._cmds.setAttr(plug, 1.0)
+            if abs(float(self._cmds.getAttr(plug)) - 1.0) > 1e-6:
+                raise RuntimeError("Leg IK/FK 默认 IK 写后读回失败：" + plug)
+        self._transaction_changed = True
+
     def _create_body_limb_blend(
         self,
         plan: BodyArmBlendPlan,

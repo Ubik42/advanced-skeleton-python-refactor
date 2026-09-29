@@ -23,6 +23,7 @@ from adv_py.core.fit_part_twist import (
 from adv_py.core.body_torso import audit_body_torso
 from adv_py.core.body_limb_controls import audit_body_limb_fk_controls
 from adv_py.core.body_leg_controls import terminal_toes_end_control_enabled
+from adv_py.core.body_leg_blend import audit_body_leg_blend
 from adv_py.core.body_hand_controls import audit_body_hand_fk_controls
 from adv_py.core.body_arm_ik import audit_body_arm_ik
 from adv_py.core.body_leg_ik import audit_body_leg_ik
@@ -1042,6 +1043,20 @@ class BuildRegisteredBodyCharacter:
                         BuildFingerMidDeform(joined).apply())
                 for spec in BuildLimbPartDeform(joined).apply():
                     segments.extend((spec.part1, spec.part2))
+            # ADV switches Foot limbs to IK only after their handles, pivots,
+            # and secondary controls are complete.  Capture that final mode
+            # in buildPose rather than recording the temporary FK build mode.
+            joined.set_body_leg_initial_ik(rig.plan.leg.blend)
+            final_leg_blend = joined.capture_body_leg_blend(
+                rig.plan.leg.blend)
+            if audit_body_leg_blend(rig.plan.leg.blend, final_leg_blend,
+                                    expected_attribute_value=1.0):
+                raise RuntimeError("Leg 默认 IK 模式或约束连接不一致")
+            final_body = joined.capture_body_skeleton(skeleton.snapshot.root)
+            if not body_bind_pose_matches(skeleton.snapshot, final_body):
+                raise RuntimeError("Leg 切换默认 IK 后 Body 绑定姿态改变")
+            rig = replace(rig, leg=replace(rig.leg, blend=final_leg_blend),
+                          body=final_body)
             selection_extras = tuple(
                 extra for chain in bendy_chains
                 for extra in chain.micro_extra_names)
