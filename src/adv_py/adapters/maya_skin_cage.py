@@ -47,10 +47,14 @@ class MayaSkinCageHost:
         children = {}
         positions = {}
         pending = [roots[0]]
+        face_set = self._name("FaceAllSet")
         while pending:
             joint = pending.pop()
             kids = tuple(c.listRelatives(joint, children=True,
                                          type="joint", fullPath=True) or ())
+            if c.objExists(face_set):
+                kids = tuple(child for child in kids
+                             if not c.sets(child, isMember=face_set))
             children[joint] = kids
             positions[joint] = tuple(c.xform(
                 joint, query=True, worldSpace=True, translation=True))
@@ -259,6 +263,87 @@ class MayaSkinCageHost:
         finally:
             c.delete(sampler)
 
+    def _profile_tweaks(self, plan: SkinCageBuildPlan) -> None:
+        """Apply the ankle, toe and neck edits from asProfileTweaks."""
+        c = self.cmds
+        profiles = c.listRelatives(self._name("MeshCurves"),
+                                   allDescendents=True, type="transform",
+                                   fullPath=True) or []
+        for profile in profiles:
+            leaf = profile.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            if leaf.startswith("Ankle") and leaf.endswith("_endProfile"):
+                side = "_L" if "_L_" in leaf else "_R"
+                fit = self._name(leaf.split("_", 1)[0])
+                if not c.objExists(fit):
+                    continue
+                heel = next((joint for joint in (
+                    c.listRelatives(fit, children=True, type="joint",
+                                    fullPath=True) or ())
+                    if "Heel" in joint.rsplit("|", 1)[-1]), None)
+                if heel is None:
+                    continue
+                center = c.xform(profile, query=True, worldSpace=True,
+                                 translation=True)
+                heel_pos = c.xform(heel, query=True, worldSpace=True,
+                                   translation=True)
+                indices = (2, 3) if side == "_L" else (0, 1, 4)
+                side_factor = -1 if side == "_L" else 1
+                for index in indices:
+                    cv = f"{profile}.cv[{index}]"
+                    local_z = c.getAttr(cv)[0][2]
+                    target = (heel_pos[0] * side_factor,
+                              heel_pos[1], heel_pos[2])
+                    c.xform(cv, worldSpace=True, translation=target)
+                    c.setAttr(cv + ".zValue", local_z)
+                    adjusted = c.xform(cv, query=True, worldSpace=True,
+                                       translation=True)
+                    c.xform(cv, worldSpace=True, translation=(
+                        center[0] + (adjusted[0] - center[0]) * 1.2,
+                        center[1] + (adjusted[1] - center[1]) * 1.2,
+                        adjusted[2]))
+            elif "Toes" in leaf and leaf.endswith("Profile"):
+                center = c.xform(profile, query=True, worldSpace=True,
+                                 translation=True)
+                primary = (2, 3) if "_L_" in leaf else (0, 1, 4)
+                opposite = (0, 1, 4) if "_L_" in leaf else (2, 3)
+                for index in primary:
+                    cv = f"{profile}.cv[{index}]"
+                    pos = c.xform(cv, query=True, worldSpace=True,
+                                  translation=True)
+                    c.xform(cv, worldSpace=True, translation=(
+                        pos[0], center[1] - 1.2 * center[1], pos[2]))
+                if "_start" in leaf:
+                    for index in opposite:
+                        cv = f"{profile}.cv[{index}]"
+                        pos = c.xform(cv, query=True, worldSpace=True,
+                                      translation=True)
+                        c.xform(cv, worldSpace=True, translation=(
+                            pos[0], center[1] + (pos[1] - center[1]) * 0.5,
+                            pos[2]))
+
+        neck_start = self._name("Neck_M_startProfile")
+        neck_middle = self._name("Neck_M_middleProfile")
+        chest_middle = self._name("Chest_M_middleProfile")
+        if not all(c.objExists(node) for node in (
+                neck_start, neck_middle, chest_middle)):
+            return
+        chest_scale = c.getAttr(chest_middle + ".scale")[0]
+        neck_scale = c.getAttr(neck_middle + ".scale")[0]
+        for index in range(5):
+            cv = f"{neck_middle}.cv[{index}]"
+            c.setAttr(neck_middle + ".scale", *chest_scale,
+                      type="double3")
+            wide = c.xform(cv, query=True, worldSpace=True,
+                           translation=True)
+            c.setAttr(neck_middle + ".scale", *neck_scale,
+                      type="double3")
+            regular = c.xform(cv, query=True, worldSpace=True,
+                              translation=True)
+            c.xform(f"{neck_start}.cv[{index}]", worldSpace=True,
+                    translation=(wide[0] * 1.1,
+                                 (wide[1] + regular[1]) / 2,
+                                 (wide[2] + regular[2]) / 2))
+
     def create_cage(self, plan: SkinCageBuildPlan) -> None:
         from maya import mel
 
@@ -289,6 +374,7 @@ class MayaSkinCageHost:
         pieces = []
         copies = []
         chain_influences = []
+        chains_to_loft = []
         for chain in plan.chains:
             leaf = chain.joints[0].rsplit("|", 1)[-1].rsplit(":", 1)[-1]
             profiles = []
@@ -333,6 +419,9 @@ class MayaSkinCageHost:
                 c.move(-height / 250, 0, 0, end + ".cv[0:4]",
                        relative=True, objectSpace=True)
                 profiles.append(end)
+            chains_to_loft.append((leaf, profiles, influences))
+        self._profile_tweaks(plan)
+        for leaf, profiles, influences in chains_to_loft:
             mesh, copy = self._loft_chain(
                 profiles, leaf, groups["NurbsGeometry"],
                 groups["MeshGeometry"])
