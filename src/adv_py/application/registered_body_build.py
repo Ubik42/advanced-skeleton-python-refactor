@@ -23,6 +23,7 @@ from adv_py.core.fit_inbetween_hip_swing import (
 from adv_py.core.fit_hip_swing_no_parts import HipSwingNoPartsPlan
 from adv_py.core.fit_part_twist import (
     FitPartTwistSource, plan_fit_part_twist,
+    plan_generic_fit_part_twist_rewires,
     plan_fit_part_twist_projections,
     plan_standard_fit_part_rotation_inputs,
 )
@@ -85,7 +86,8 @@ from .fit_bendy import (BuildFitBendyDeform, BuildFitBendyGuides,
                         plan_fit_bendy_follow)
 from .fit_bendy_registration import RegisterBendyControls
 from .fit_part_twist import (
-    BuildFitPartTwistDrivers, PrepareFitPartTwistSources,
+    AttachGenericFitPartTwistSources, BuildFitPartTwistDrivers,
+    PrepareFitPartTwistSources,
 )
 from .fit_part_registration import RegisterFitPartChannels
 from .fit_tweaker import BuildFitTweakers
@@ -673,6 +675,7 @@ class BuildRegisteredBodyCharacter:
             solver_mapping = None
             inbetween_untwisters = ()
             hip_swing_reverse = None
+            twist_projections = ()
             if use_fit_part_hierarchy:
                 active_twist_parts = tuple(replace(
                     part,
@@ -702,6 +705,7 @@ class BuildRegisteredBodyCharacter:
                     )
                     projections = plan_fit_part_twist_projections(
                         rotation_inputs)
+                    twist_projections = projections
                     plan_fit_part_twist(
                         active_twist_parts,
                         tuple(item.source() for item in projections
@@ -1148,6 +1152,26 @@ class BuildRegisteredBodyCharacter:
                         joined.capture_body_skeleton(skeleton.snapshot.root)):
                     raise RuntimeError(
                         "附加 Inbetween 改接改变 Body 绑定姿态")
+            twist_rewires = plan_generic_fit_part_twist_rewires(
+                twist_projections, generic_fk.controls)
+            if (_generic_fk_policy is not None
+                    and _generic_fk_policy.twist_rewired_sources is not None):
+                twist_rewires = tuple(
+                    spec for spec in twist_rewires
+                    if spec.start_body.rsplit("|", 1)[-1]
+                    .rsplit(":", 1)[-1] in
+                    _generic_fk_policy.twist_rewired_sources)
+            if twist_rewires:
+                before_twist_rewire = joined.capture_body_skeleton(
+                    skeleton.snapshot.root)
+                AttachGenericFitPartTwistSources(joined).apply(
+                    twist_rewires)
+                if not body_skeleton_unchanged(
+                        before_twist_rewire,
+                        joined.capture_body_skeleton(skeleton.snapshot.root),
+                        tolerance=1e-4):
+                    raise RuntimeError(
+                        "通用 FK Twist 来源改接改变 Body 绑定姿态")
             scale_controls = tuple(
                 control for control in generic_fk.controls
                 if (_generic_fk_policy is None

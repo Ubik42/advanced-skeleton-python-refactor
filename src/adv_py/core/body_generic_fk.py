@@ -66,6 +66,7 @@ class GenericFkFeaturePolicy:
     aim_sources: frozenset[str] | None = None
     follower_sources: frozenset[str] | None = None
     independent_controls: frozenset[str] | None = None
+    twist_rewired_sources: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(

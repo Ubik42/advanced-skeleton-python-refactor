@@ -6,7 +6,8 @@ from typing import Protocol
 
 from adv_py.core.fit_part import FitPartFinalPaths, FitPartJointSpec
 from adv_py.core.fit_part_twist import (
-    FitPartRotationInput, FitPartTwistProjection, FitPartTwistSource,
+    FitPartRotationInput, FitPartTwistControlRewire,
+    FitPartTwistProjection, FitPartTwistSource,
     FitPartTwistStep, plan_fit_part_twist, plan_fit_part_twist_projections,
 )
 
@@ -41,6 +42,36 @@ class FitPartTwistHost(Protocol):
         self, projection: FitPartTwistProjection,
         parent_path: str, child_path: str,
     ) -> bool: ...
+
+    def preflight_fit_part_twist_control_rewire(
+        self, spec: FitPartTwistControlRewire,
+    ) -> None: ...
+
+    def connect_fit_part_twist_control_rewire(
+        self, spec: FitPartTwistControlRewire,
+    ) -> None: ...
+
+    def capture_fit_part_twist_control_rewire(
+        self, spec: FitPartTwistControlRewire,
+    ) -> bool: ...
+
+
+class AttachGenericFitPartTwistSources:
+    def __init__(self, host: FitPartTwistHost) -> None:
+        self._host = host
+
+    def apply(self, specs: tuple[FitPartTwistControlRewire, ...]
+              ) -> tuple[FitPartTwistControlRewire, ...]:
+        for spec in specs:
+            self._host.preflight_fit_part_twist_control_rewire(spec)
+        with self._host.transaction("改接通用 FK 的 Fit Part Twist 来源"):
+            for spec in specs:
+                self._host.connect_fit_part_twist_control_rewire(spec)
+            for spec in specs:
+                if not self._host.capture_fit_part_twist_control_rewire(spec):
+                    raise RuntimeError("通用 FK Twist 来源改接失败："
+                                       + spec.start_body)
+        return specs
 
 
 class PrepareFitPartTwistSources:

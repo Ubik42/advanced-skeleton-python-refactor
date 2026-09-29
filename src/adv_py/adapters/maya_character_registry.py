@@ -28,6 +28,7 @@ class MayaCharacterRegistryMixin:
         scale = set()
         compensated = set()
         independent = set()
+        twist_rewired = set()
         globally_driven = set()
         keys = {channel.key for channel in registration.channels}
         for stem in stems:
@@ -54,6 +55,33 @@ class MayaCharacterRegistryMixin:
                         '旧通用 FK 补偿层无法唯一定位：' + stem)
                 if not bool(c.getAttr(offsets[0] + '.inheritsTransform')):
                     independent.add(control)
+            body_leaf = stem.removesuffix('FK')
+            control_leaf = control.rsplit('|', 1)[-1]
+            namespace = (control_leaf.rsplit(':', 1)[0] + ':'
+                         if ':' in control_leaf else '')
+            compose = namespace + 'AdvPy_' + body_leaf + '_FitPartTwistCompose'
+            if c.objExists(compose):
+                offsets = by_leaf.get('AdvPy_' + stem + 'Offset', ())
+                if len(offsets) != 1:
+                    raise CharacterRegistryError(
+                        '旧通用 Twist 缺少 FK Offset：' + body_leaf)
+                source = c.connectionInfo(
+                    compose + '.matrixIn[0]',
+                    sourceFromDestination=True)
+                source_node = source.split('.', 1)[0] if source else ''
+                source_paths = c.ls(source_node, long=True) or []
+                static = namespace + 'AdvPy_' + body_leaf \
+                    + '_FitPartTwistStaticSource'
+                static_paths = c.ls(static, long=True) or []
+                if len(source_paths) == 1 and source_paths == static_paths:
+                    pass
+                elif (len(source_paths) == 1
+                      and source.endswith('.worldMatrix[0]')
+                      and source_paths[0].startswith(offsets[0] + '|')):
+                    twist_rewired.add(body_leaf)
+                else:
+                    raise CharacterRegistryError(
+                        '旧通用 Twist 来源无法识别：' + body_leaf)
             if 'fk.global.AdvPy_' + stem + '.Global' in keys:
                 globally_driven.add(control)
         aim_sources = frozenset(match.group(1) for key in keys
@@ -71,7 +99,8 @@ class MayaCharacterRegistryMixin:
         return GenericFkFeaturePolicy(
             frozenset(scale), frozenset(compensated),
             frozenset(globally_driven), aim_sources,
-            follower_sources, frozenset(independent))
+            follower_sources, frozenset(independent),
+            frozenset(twist_rewired))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

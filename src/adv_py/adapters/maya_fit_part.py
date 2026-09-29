@@ -11,7 +11,7 @@ from adv_py.core.body_skeleton import FitDeformProfile
 from adv_py.core.fit_symmetry import FitBuildSide
 from adv_py.core.body_direct_fk_scale import BodyDirectFkScaleSpec
 from adv_py.core.fit_part_twist import (
-    FitPartTwistProjection, FitPartTwistStep,
+    FitPartTwistControlRewire, FitPartTwistProjection, FitPartTwistStep,
 )
 from adv_py.core.fit_part_scale import (
     FitPartEndScale, FitPartInheritedScaleChain, FitPartLimbScaleChain,
@@ -982,6 +982,54 @@ class MayaFitPartMixin:
                 c.xform(name, query=True, worldSpace=True, matrix=True),
                 child_matrix)) <= 1e-4
             for name in (static, reference))
+
+    def preflight_fit_part_twist_control_rewire(
+        self, spec: FitPartTwistControlRewire,
+    ) -> None:
+        c = self._cmds
+        if ((c.ls(spec.start_body, long=True, type="joint") or [])
+                != [spec.start_body]
+                or (c.ls(spec.control_source_path, long=True,
+                         type="transform") or [])
+                != [spec.control_source_path]
+                or not c.objExists(spec.static_source_name)
+                or c.nodeType(spec.static_source_name) != "transform"
+                or not c.objExists(spec.compose_name)
+                or c.nodeType(spec.compose_name) != "multMatrix"
+                or c.connectionInfo(spec.matrix_input,
+                                    sourceFromDestination=True)
+                != spec.static_source_name + ".worldMatrix[0]"):
+            raise ValueError("通用 Twist 静态来源无法改接 FK："
+                             + spec.start_body)
+        old = c.xform(spec.static_source_name, query=True,
+                      worldSpace=True, matrix=True)
+        new = c.xform(spec.control_source_path, query=True,
+                      worldSpace=True, matrix=True)
+        if (len(old) != 16 or len(new) != 16
+                or max(abs(float(a) - float(b))
+                       for a, b in zip(old[12:15], new[12:15])) > 1e-4):
+            raise ValueError("通用 Twist FK 来源与绑定静态姿态不一致："
+                             + spec.start_body)
+
+    def connect_fit_part_twist_control_rewire(
+        self, spec: FitPartTwistControlRewire,
+    ) -> None:
+        self._require_transaction()
+        self._transaction_changed = True
+        c = self._cmds
+        c.disconnectAttr(spec.static_source_name + ".worldMatrix[0]",
+                         spec.matrix_input)
+        c.connectAttr(spec.control_matrix, spec.matrix_input)
+        c.delete(spec.static_source_name)
+
+    def capture_fit_part_twist_control_rewire(
+        self, spec: FitPartTwistControlRewire,
+    ) -> bool:
+        c = self._cmds
+        return (not c.objExists(spec.static_source_name)
+                and c.connectionInfo(spec.matrix_input,
+                                     sourceFromDestination=True)
+                == spec.control_matrix)
 
     def preflight_fit_part_twist_step(self, step: FitPartTwistStep) -> None:
         c = self._cmds

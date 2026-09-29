@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from .fit_part import FitPartJointSpec
+from .body_limb_controls import BodyLimbFkControlSpec
 
 
 class FitPartTwistValidationError(ValueError):
@@ -96,6 +97,52 @@ class FitPartTwistProjection:
             self.input.compensate_start_body,
             self.input.body_constraint_name,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class FitPartTwistControlRewire:
+    start_body: str
+    static_source_name: str
+    compose_name: str
+    control_source_path: str
+
+    @property
+    def matrix_input(self) -> str:
+        return self.compose_name + ".matrixIn[0]"
+
+    @property
+    def control_matrix(self) -> str:
+        return self.control_source_path + ".worldMatrix[0]"
+
+
+def plan_generic_fit_part_twist_rewires(
+    projections: tuple[FitPartTwistProjection, ...],
+    controls: tuple[BodyLimbFkControlSpec, ...],
+) -> tuple[FitPartTwistControlRewire, ...]:
+    """Replace a temporary static twist source once its FK driver exists."""
+    by_body = {control.driven_joint: control for control in controls}
+    if len(by_body) != len(controls):
+        raise FitPartTwistValidationError(
+            "通用 Part Twist 的 FK 驱动关节重复")
+    rewires = []
+    for projection in projections:
+        if projection.static_source_name is None:
+            continue
+        control = by_body.get(projection.input.start_body)
+        if control is None:
+            continue
+        source = (control.source_override_path
+                  or control.sub_control_path or control.control_path)
+        if not (source == control.control_path
+                or source.startswith(control.control_path + "|")
+                or source.startswith(control.offset_path + "|")):
+            raise FitPartTwistValidationError(
+                "通用 Part Twist 的 FK 来源脱离控制层：" + source)
+        rewires.append(FitPartTwistControlRewire(
+            projection.input.start_body,
+            projection.static_source_name,
+            projection.compose_name, source))
+    return tuple(rewires)
 
 
 def plan_standard_fit_part_rotation_inputs(
