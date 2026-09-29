@@ -104,6 +104,9 @@ def plan_body_generic_fk(
         advanced_skeleton_hand_source_joint_names())
     for spec in sorted(specs, key=lambda item: (item.path.count("|"),
                                                 item.path)):
+        if ((remapped_body_paths or {}).get(spec.path, spec.path)
+                in removable_body_paths):
+            continue
         item = metadata_by_source[spec.source_joint]
         source_leaf = (spec.source_joint.rsplit("|", 1)[-1]
                        .rsplit(":", 1)[-1])
