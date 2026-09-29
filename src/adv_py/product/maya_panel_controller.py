@@ -1306,6 +1306,13 @@ class MayaPanelController:
         host = MayaSkinLoopsHost("" if namespace == ":" else namespace)
         return len(CopySkinLoopWeights(host).execute())
 
+    def skin_loops_bind(self, namespace: str) -> int:
+        from adv_py.adapters.maya_skin_loops import MayaSkinLoopsHost
+        from adv_py.application.skin_loops import BindSkinLoops
+
+        host = MayaSkinLoopsHost("" if namespace == ":" else namespace)
+        return len(BindSkinLoops(host).execute())
+
     def delta_mush_apply(self, namespace: str = "") -> int:
         from adv_py.adapters.maya_delta_mush import apply_delta_mush_to_selected
 

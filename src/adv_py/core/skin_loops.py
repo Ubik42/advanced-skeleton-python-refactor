@@ -25,6 +25,82 @@ class SkinLoopCopySpec:
     skinning_method: int
 
 
+@dataclass(frozen=True, slots=True)
+class SkinLoopBindLoop:
+    set_name: str
+    deform_joint: str
+    parent_joint: str | None
+    vertices: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SkinLoopBindSpec:
+    mesh: str
+    vertex_count: int
+    edge_vertices: tuple[tuple[int, int], ...]
+    root_joint: str
+    existing_skin: str | None
+    new_skin_name: str
+    loops: tuple[SkinLoopBindLoop, ...]
+
+
+def plan_skin_loop_bind(
+    inputs: tuple[SkinLoopBindSpec, ...],
+) -> tuple[SkinLoopBindSpec, ...]:
+    if not inputs or len({item.mesh for item in inputs}) != len(inputs):
+        raise ValueError("SkinLoop Bind 需要不重复的目标网格")
+    new_names = [item.new_skin_name for item in inputs
+                 if item.existing_skin is None]
+    if len(set(new_names)) != len(new_names):
+        raise ValueError("SkinLoop Bind 新 Skin 名称重复")
+    for item in inputs:
+        if (not item.mesh or not item.root_joint or not item.new_skin_name
+                or item.vertex_count < 3
+                or not item.edge_vertices or not item.loops
+                or len({loop.set_name for loop in item.loops}) != len(item.loops)):
+            raise ValueError("SkinLoop Bind 网格或边环计划不完整")
+        for a, b in item.edge_vertices:
+            if min(a, b) < 0 or max(a, b) >= item.vertex_count or a == b:
+                raise ValueError("SkinLoop Bind 网格拓扑无效")
+        for loop in item.loops:
+            if (not loop.set_name or not loop.deform_joint
+                    or not loop.vertices
+                    or len(set(loop.vertices)) != len(loop.vertices)
+                    or min(loop.vertices) < 0
+                    or max(loop.vertices) >= item.vertex_count):
+                raise ValueError("SkinLoop Bind 边环顶点无效")
+        vertices = [vertex for loop in item.loops for vertex in loop.vertices]
+        if len(set(vertices)) != len(vertices):
+            raise ValueError("多个 SkinLoop 不能共用同一网格顶点")
+    return inputs
+
+
+def partition_skin_loop_regions(
+    vertex_count: int,
+    edge_vertices: tuple[tuple[int, int], ...],
+    blocked_vertices: frozenset[int],
+) -> tuple[frozenset[int], ...]:
+    """Partition non-loop vertices without crossing any SkinLoop barrier."""
+    neighbors = [set() for _ in range(vertex_count)]
+    for a, b in edge_vertices:
+        neighbors[a].add(b)
+        neighbors[b].add(a)
+    remaining = set(range(vertex_count)) - blocked_vertices
+    regions = []
+    while remaining:
+        seed = remaining.pop()
+        region = {seed}
+        stack = [seed]
+        while stack:
+            for neighbor in neighbors[stack.pop()]:
+                if neighbor in remaining:
+                    remaining.remove(neighbor)
+                    region.add(neighbor)
+                    stack.append(neighbor)
+        regions.append(frozenset(region))
+    return tuple(regions)
+
+
 def plan_skin_loop_copy(
     source_mesh: str, source_skin: str,
     source_influences: tuple[str, ...], skinning_method: int,

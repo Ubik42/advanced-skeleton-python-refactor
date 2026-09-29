@@ -4,7 +4,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 import re
 
-from adv_py.core.skin_loops import SkinLoopCopySpec, SkinLoopSpec
+from adv_py.core.skin_loops import (
+    SkinLoopBindLoop, SkinLoopBindSpec, SkinLoopCopySpec, SkinLoopSpec,
+    partition_skin_loop_regions, validate_closed_loop,
+)
 
 
 _EDGE = re.compile(r"^(.*)\.e\[(\d+)\]$")
@@ -327,3 +330,248 @@ class MayaSkinLoopsHost:
         return (set(spec.source_influences) <= influences
                 and int(c.getAttr(skin + ".skinningMethod"))
                 == spec.skinning_method)
+
+    def _bind_loop_vertices(self, loop_set: str, mesh: str,
+                            edge_vertices: tuple[tuple[int, int], ...]
+                            ) -> tuple[int, ...]:
+        c = self.cmds
+        members = c.ls(c.sets(loop_set, query=True) or [],
+                       long=True, flatten=True) or []
+        matches = [_EDGE.fullmatch(item) for item in members]
+        if (not members or any(match is None or match.group(1) != mesh
+                               for match in matches)):
+            raise ValueError("SkinLoop 集合包含其他网格或非边成员：" + loop_set)
+        rows = []
+        for match in matches:
+            index = int(match.group(2))
+            if index >= len(edge_vertices):
+                raise ValueError("SkinLoop 集合含无效边索引：" + loop_set)
+            rows.append((index, *edge_vertices[index]))
+        validate_closed_loop(tuple(rows))
+        return tuple(sorted({vertex for _, a, b in rows
+                             for vertex in (a, b)}))
+
+    def capture_skin_loop_bind_input(self) -> tuple[SkinLoopBindSpec, ...]:
+        c = self.cmds
+        parent = self._name("SkinLoops")
+        if not c.objExists(parent) or c.nodeType(parent) != "objectSet":
+            raise ValueError("当前角色尚无 SkinLoops 集合")
+        loop_sets = tuple(sorted(name for name in (
+            c.sets(parent, query=True) or [])
+            if c.nodeType(name) == "objectSet"))
+        if not loop_sets:
+            raise ValueError("SkinLoops 总集合没有边环")
+        selected = c.ls(selection=True, long=True) or []
+        if not selected or any("." in name for name in selected):
+            raise ValueError("先选择待绑定的网格对象，不要选择网格组件")
+        root = self._unique(self._name("Root_M"), "joint")
+        specs = []
+        for selected_mesh in selected:
+            mesh = self._mesh_transform(selected_mesh)
+            shape = c.listRelatives(mesh, shapes=True,
+                                    noIntermediate=True, fullPath=True,
+                                    type="mesh")[0]
+            fn = self.om.MFnMesh(
+                self.om.MSelectionList().add(shape).getDagPath(0))
+            edges = tuple(fn.getEdgeVertices(index)
+                          for index in range(fn.numEdges))
+            loops = []
+            for loop_set in loop_sets:
+                members = c.ls(c.sets(loop_set, query=True) or [],
+                               long=True, flatten=True) or []
+                if not members:
+                    continue
+                first = _EDGE.fullmatch(members[0])
+                if first is None or first.group(1) != mesh:
+                    continue
+                vertices = self._bind_loop_vertices(loop_set, mesh, edges)
+                leaf = loop_set.rsplit(":", 1)[-1]
+                if not leaf.startswith("SkinLoops_"):
+                    raise ValueError("SkinLoop 子集合名称不符合原版规则："
+                                     + loop_set)
+                joint = self._unique(self._name(leaf[len("SkinLoops_"):]),
+                                     "joint")
+                parent_joint = c.listRelatives(
+                    joint, parent=True, fullPath=True, type="joint") or []
+                loops.append(SkinLoopBindLoop(
+                    loop_set, joint,
+                    parent_joint[0] if parent_joint else None, vertices))
+            if not loops:
+                continue
+            leaf = mesh.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            specs.append(SkinLoopBindSpec(
+                mesh, fn.numVertices, edges, root, self._skin(mesh),
+                self._name("AdvPy_SkinLoopBind_" + leaf), tuple(loops)))
+        if not specs:
+            raise ValueError("所选网格没有对应的 SkinLoop 边环")
+        return tuple(specs)
+
+    def preflight_skin_loop_bind(self, spec: SkinLoopBindSpec) -> None:
+        c = self.cmds
+        if self._skin(spec.mesh) != spec.existing_skin:
+            raise ValueError("SkinLoop 目标 Skin 在执行前改变")
+        if (spec.existing_skin is None and c.objExists(spec.new_skin_name)):
+            raise ValueError("SkinLoop 新 Skin 名称已被占用："
+                             + spec.new_skin_name)
+        if (spec.existing_skin is not None and c.referenceQuery(
+                spec.existing_skin, isNodeReferenced=True)):
+            raise ValueError("不能改写引用场景中的 Skin")
+        if self._unique(spec.root_joint, "joint") != spec.root_joint:
+            raise ValueError("SkinLoop 根关节已改变")
+        shape = c.listRelatives(spec.mesh, shapes=True,
+                                noIntermediate=True, fullPath=True,
+                                type="mesh") or []
+        if len(shape) != 1:
+            raise ValueError("SkinLoop 网格 Shape 已改变")
+        fn = self.om.MFnMesh(
+            self.om.MSelectionList().add(shape[0]).getDagPath(0))
+        if (fn.numVertices != spec.vertex_count
+                or tuple(fn.getEdgeVertices(index)
+                         for index in range(fn.numEdges))
+                != spec.edge_vertices):
+            raise ValueError("SkinLoop 网格拓扑已改变")
+        for loop in spec.loops:
+            if (self._bind_loop_vertices(
+                    loop.set_name, spec.mesh, spec.edge_vertices)
+                    != loop.vertices
+                    or self._unique(loop.deform_joint, "joint")
+                    != loop.deform_joint
+                    or (c.listRelatives(loop.deform_joint, parent=True,
+                                        fullPath=True, type="joint") or [])
+                    != ([loop.parent_joint] if loop.parent_joint else [])):
+                raise ValueError("SkinLoop 边环或关节父级已改变："
+                                 + loop.set_name)
+
+    def _skin_percent(self, skin: str, mesh: str,
+                      vertices: tuple[int, ...] | frozenset[int],
+                      values: tuple[tuple[str, float], ...]) -> None:
+        if not vertices:
+            return
+        components = [f"{mesh}.vtx[{index}]" for index in sorted(vertices)]
+        self.cmds.skinPercent(skin, components,
+                              transformValue=list(values),
+                              normalize=True, zeroRemainingInfluences=True)
+
+    def _hammer_skin_vertices(self, mesh: str,
+                              vertices: set[int]) -> None:
+        if not vertices:
+            return
+        from maya import mel
+
+        self.cmds.select([f"{mesh}.vtx[{index}]"
+                          for index in sorted(vertices)], replace=True)
+        mel.eval("weightHammerVerts;")
+
+    def _active_skin_influences(self, skin: str, mesh: str, vertex: int,
+                                influences: tuple[str, ...]
+                                ) -> tuple[str, ...]:
+        component = f"{mesh}.vtx[{vertex}]"
+        return tuple(joint for joint in influences
+                     if float(self.cmds.skinPercent(
+                         skin, component, query=True,
+                         transform=joint)) > 1e-7)
+
+    def bind_skin_loops(self, spec: SkinLoopBindSpec) -> None:
+        if not self._in_transaction:
+            raise RuntimeError("SkinLoop Bind 必须位于事务中")
+        c = self.cmds
+        skin = spec.existing_skin
+        if skin is None:
+            skin = c.skinCluster(
+                [spec.root_joint], spec.mesh, toSelectedBones=True,
+                maximumInfluences=3, dropoffRate=4,
+                name=spec.new_skin_name)[0]
+        else:
+            active = {self._unique(name, "joint") for name in (
+                c.skinCluster(skin, query=True, influence=True) or [])}
+            if spec.root_joint not in active:
+                c.skinCluster(skin, edit=True, addInfluence=spec.root_joint,
+                              lockWeights=False, weight=0.0)
+        all_vertices = tuple(range(spec.vertex_count))
+        self._skin_percent(skin, spec.mesh, all_vertices,
+                           ((spec.root_joint, 1.0),))
+        for loop in spec.loops:
+            active = {self._unique(name, "joint") for name in (
+                c.skinCluster(skin, query=True, influence=True) or [])}
+            for joint in (loop.deform_joint, loop.parent_joint):
+                if joint and joint not in active:
+                    c.skinCluster(skin, edit=True, addInfluence=joint,
+                                  lockWeights=False, weight=0.0)
+                    active.add(joint)
+            self._skin_percent(skin, spec.mesh, loop.vertices,
+                               ((loop.deform_joint, 1.0),))
+        blocked = frozenset(vertex for loop in spec.loops
+                            for vertex in loop.vertices)
+        neighbors = [set() for _ in range(spec.vertex_count)]
+        for a, b in spec.edge_vertices:
+            neighbors[a].add(b)
+            neighbors[b].add(a)
+        self._hammer_skin_vertices(
+            spec.mesh, set(range(spec.vertex_count)) - blocked)
+        near = {neighbor for vertex in blocked
+                for neighbor in neighbors[vertex] if neighbor not in blocked}
+        self._hammer_skin_vertices(spec.mesh, near)
+        regions = partition_skin_loop_regions(
+            spec.vertex_count, spec.edge_vertices, blocked)
+        region_by_vertex = {vertex: index for index, region in
+                            enumerate(regions) for vertex in region}
+        influences = tuple(self._unique(name, "joint") for name in (
+            c.skinCluster(skin, query=True, influence=True) or []))
+        for loop in spec.loops:
+            descendants = set(c.listRelatives(
+                loop.deform_joint, allDescendents=True,
+                fullPath=True, type="joint") or [])
+            candidate_seeds = {}
+            for vertex in loop.vertices:
+                for neighbor in neighbors[vertex]:
+                    if neighbor in region_by_vertex:
+                        candidate_seeds.setdefault(
+                            region_by_vertex[neighbor], neighbor)
+            for index, seed in sorted(candidate_seeds.items()):
+                active = self._active_skin_influences(
+                    skin, spec.mesh, seed, influences)
+                if (set(active) & descendants) or len(active) == 1:
+                    self._skin_percent(
+                        skin, spec.mesh, regions[index],
+                        ((loop.deform_joint, 1.0),))
+        for loop in spec.loops:
+            leaf = loop.deform_joint.rsplit("|", 1)[-1]
+            if re.search(r"Part\d+_[RLM]$", leaf) or not loop.parent_joint:
+                continue
+            self._skin_percent(skin, spec.mesh, loop.vertices,
+                               ((loop.deform_joint, 0.5),
+                                (loop.parent_joint, 0.5)))
+            ring = {neighbor for vertex in loop.vertices
+                    for neighbor in neighbors[vertex]
+                    if neighbor not in blocked}
+            self._hammer_skin_vertices(spec.mesh, ring)
+
+    def capture_skin_loop_bind(self, spec: SkinLoopBindSpec) -> bool:
+        c = self.cmds
+        skin = self._skin(spec.mesh)
+        if not skin or (spec.existing_skin and skin != spec.existing_skin):
+            return False
+        influences = {self._unique(name, "joint") for name in (
+            c.skinCluster(skin, query=True, influence=True) or [])}
+        expected_joints = {spec.root_joint}
+        expected_joints.update(loop.deform_joint for loop in spec.loops)
+        if not expected_joints <= influences:
+            return False
+        for loop in spec.loops:
+            leaf = loop.deform_joint.rsplit("|", 1)[-1]
+            expected = (1.0 if not loop.parent_joint or re.search(
+                r"Part\d+_[RLM]$", leaf) else 0.5)
+            for vertex in loop.vertices:
+                component = f"{spec.mesh}.vtx[{vertex}]"
+                value = float(c.skinPercent(
+                    skin, component, query=True,
+                    transform=loop.deform_joint))
+                if abs(value - expected) > 1e-4:
+                    return False
+                if loop.parent_joint and expected == 0.5:
+                    parent_weight = float(c.skinPercent(
+                        skin, component, query=True,
+                        transform=loop.parent_joint))
+                    if abs(parent_weight - 0.5) > 1e-4:
+                        return False
+        return True
