@@ -1,7 +1,8 @@
 """Build and verify a replacement rig before transferring any original data."""
 from dataclasses import dataclass, replace
 from pathlib import Path
-from tempfile import TemporaryDirectory
+import pickle
+from tempfile import TemporaryDirectory, TemporaryFile
 
 from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.body_spline import BodySplinePlan
@@ -34,9 +35,12 @@ def _rebuild_axial_description(
 ) -> BodyAxialDescription | None:
     if not isinstance(registration.spine, BodySplinePlan):
         return None
+    def leaf(path: str) -> str:
+        return path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+
     by_path = {joint.path: joint for joint in registration.body}
     heads = [joint for joint in registration.body
-             if joint.path.rsplit("|", 1)[-1] == "Head_M"]
+             if leaf(joint.path) == "Head_M"]
     if len(heads) != 1:
         raise CharacterRegistryError(
             "可变身体重建需要明确的 Head_M 颈头终点")
@@ -48,12 +52,17 @@ def _rebuild_axial_description(
         if joint.path in visited:
             raise CharacterRegistryError("重建颈头链存在父级循环")
         visited.add(joint.path)
-        neck.append(joint.path.rsplit("|", 1)[-1])
-        if joint.parent not in by_path:
+        neck.append(leaf(joint.path))
+        # A rebuilt Body can place Fit Part joints between the registered
+        # neck/head joints. Follow the physical DAG until the next Body joint.
+        parent = joint.parent
+        while parent is not None and parent not in by_path:
+            parent = parent.rsplit("|", 1)[0] or None
+        if parent is None:
             raise CharacterRegistryError("重建颈头链没有连接到胸部")
-        joint = by_path[joint.parent]
+        joint = by_path[parent]
     return BodyAxialDescription(
-        spine=tuple(path.rsplit("|", 1)[-1]
+        spine=tuple(leaf(path)
                     for path in registration.spine.body_joints),
         neck=tuple(reversed(neck)),
     )
@@ -66,10 +75,32 @@ def _transfer_sample_frames(
                    *(time for curve in original.curves for time in curve.times)})
     frames = tuple(sorted({*keys, *((a + b) / 2
                                     for a, b in zip(keys, keys[1:]))}))
-    if len(frames) > 2000:
-        raise CharacterRegistryError(
-            "交接复检采样最多 2000 帧，需要分段验证策略")
     return frames
+
+
+_TRANSFER_SAMPLE_BATCH_SIZE = 8
+
+
+def _write_transfer_samples(host, staged, frames, stream, *, target):
+    """Spool animation and mesh samples without retaining every frame in RAM."""
+    for offset in range(0, len(frames), _TRANSFER_SAMPLE_BATCH_SIZE):
+        batch = frames[offset:offset + _TRANSFER_SAMPLE_BATCH_SIZE]
+        pickle.dump(host.sample_character_transfer(staged, batch,
+                    target=target), stream, protocol=pickle.HIGHEST_PROTOCOL)
+    stream.flush()
+    stream.seek(0)
+
+
+def _compare_transfer_samples(host, staged, frames, stream, *, target):
+    stream.seek(0)
+    greatest = 0.0
+    for offset in range(0, len(frames), _TRANSFER_SAMPLE_BATCH_SIZE):
+        batch = frames[offset:offset + _TRANSFER_SAMPLE_BATCH_SIZE]
+        before = pickle.load(stream)
+        after = host.sample_character_transfer(staged, batch,
+                                               target=target)
+        greatest = max(greatest, character_transfer_error(before, after))
+    return greatest
 
 
 class StageBodyCharacterRebuild:
@@ -148,14 +179,15 @@ class TransferStagedBodyCharacterData:
         if staged.ownership is not None and host.audit_character_rebuild_ownership(staged)!=staged.ownership:
             raise CharacterRegistryError('暂存后的 Rig 归属或连接已变化，请重新暂存')
         frames=_transfer_sample_frames(original)
-        before=host.sample_character_transfer(staged,frames)
-        with host.character_rebuild_transaction('Transfer preserved data to replacement rig'):
-            host.transfer_character_data(staged)
-            host.verify_character_retained_data(staged)
-            after=host.sample_character_transfer(staged,frames,target=True)
-            error=character_transfer_error(before,after)
-            if error>1e-4:
-                raise RuntimeError('交接改变身体、控制空间、蒙皮或用户附件；最大误差：'+str(error))
+        with TemporaryFile(mode='w+b') as baseline:
+            _write_transfer_samples(host,staged,frames,baseline,target=False)
+            with host.character_rebuild_transaction('Transfer preserved data to replacement rig'):
+                host.transfer_character_data(staged)
+                host.verify_character_retained_data(staged)
+                error=_compare_transfer_samples(host,staged,frames,baseline,
+                                                target=True)
+                if error>1e-4:
+                    raise RuntimeError('交接改变身体、控制空间、蒙皮或用户附件；最大误差：'+str(error))
         return staged
 
 
@@ -169,9 +201,10 @@ class RebuildBodyCharacter:
             staged=StageBodyCharacterRebuild(host).apply(namespace,extensions=extensions)
             TransferStagedBodyCharacterData(host).apply(staged)
             frames=_transfer_sample_frames(staged.original)
-            before=host.sample_character_transfer(staged,frames,target=True)
-            promoted=host.promote_character_rebuild(staged)
-            after=host.sample_character_transfer(promoted,frames,target=True)
-            if character_transfer_error(before,after)>1e-4:
-                raise RuntimeError('原位替换改变身体、蒙皮或用户数据')
+            with TemporaryFile(mode='w+b') as baseline:
+                _write_transfer_samples(host,staged,frames,baseline,target=True)
+                promoted=host.promote_character_rebuild(staged)
+                if _compare_transfer_samples(host,promoted,frames,baseline,
+                                             target=True)>1e-4:
+                    raise RuntimeError('原位替换改变身体、蒙皮或用户数据')
         return promoted
