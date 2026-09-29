@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .body_skeleton import BodyJointSpec
 from .fit_part import FitPartJointSpec
 
 
@@ -49,8 +50,9 @@ class FitPartScalePlan:
 
 def plan_fit_part_scale(
     parts: tuple[FitPartJointSpec, ...],
+    body_joints: tuple[BodyJointSpec, ...] = (),
 ) -> FitPartScalePlan:
-    """Use FK/IK scale on limb Body and Parts, Body scale on other Parts.
+    """Use FK/IK scale on limb Body even when a segment has no Parts.
 
     With segment scale compensation enabled, each Part cancels its parent's
     scale and reapplies the segment scale. OPM chains inherit the matrix scale
@@ -61,17 +63,31 @@ def plan_fit_part_scale(
     grouped: dict[str, list[FitPartJointSpec]] = {}
     for part in parts:
         grouped.setdefault(part.start_body_name, []).append(part)
+    limb_stems = frozenset(("Shoulder", "Elbow", "Hip", "Knee"))
+    body_by_name = {joint.name: joint for joint in body_joints}
+    if len(body_by_name) != len(body_joints):
+        raise ValueError("Fit Part 缩放计划存在重名 Body 关节")
+    for name in body_by_name:
+        stem, _, side = name.rpartition("_")
+        if stem in limb_stems and side in ("R", "L"):
+            grouped.setdefault(name, [])
     direct = []
     limbs = []
     inherited = []
     for start, chain in grouped.items():
         chain.sort(key=lambda part: part.index)
         stem, side = start.rsplit("_", 1)
-        use_opm = not chain[0].segment_scale_compensate
+        body = body_by_name.get(start)
+        if body is not None and chain and any(
+                part.segment_scale_compensate
+                != body.segment_scale_compensate for part in chain):
+            raise ValueError("Fit Part 与 Body 缩放补偿模式不一致：" + start)
+        use_opm = not (chain[0].segment_scale_compensate if chain
+                       else body.segment_scale_compensate)
         if any(part.segment_scale_compensate
                != chain[0].segment_scale_compensate for part in chain):
             raise ValueError("Fit Part 链的缩放补偿模式不一致：" + start)
-        if stem in ("Shoulder", "Elbow", "Hip", "Knee"):
+        if stem in limb_stems:
             module = "Arm" if stem in ("Shoulder", "Elbow") else "Leg"
             prefix = f"AdvPy_{stem}_FitPart_{side}"
             limbs.append(FitPartLimbScaleChain(

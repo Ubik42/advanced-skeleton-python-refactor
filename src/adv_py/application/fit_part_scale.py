@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import AbstractContextManager
 from typing import Protocol
 
+from adv_py.core.body_skeleton import BodyJointSpec
 from adv_py.core.fit_part import FitPartJointSpec
 from adv_py.core.fit_part_scale import (
     FitPartInheritedScaleChain, FitPartLimbScaleChain,
@@ -44,9 +45,10 @@ class BuildFitPartScaleDrivers:
         self._host = host
 
     def apply(
-        self, parts: tuple[FitPartJointSpec, ...]
+        self, parts: tuple[FitPartJointSpec, ...],
+        body_joints: tuple[BodyJointSpec, ...] = (),
     ) -> FitPartScalePlan:
-        plan = plan_fit_part_scale(parts)
+        plan = plan_fit_part_scale(parts, body_joints)
         for step in plan.direct:
             self._host.preflight_fit_part_scale(step)
         for chain in plan.limbs:
