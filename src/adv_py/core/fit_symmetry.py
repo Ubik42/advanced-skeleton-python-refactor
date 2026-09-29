@@ -86,8 +86,7 @@ def expand_fit_symmetry(
     }
 
     source_side: dict[str, FitBuildSide] = {}
-    inherited_no_mirror: dict[str, bool] = {}
-    inherited_left_only: dict[str, bool] = {}
+    inherited_mirror_code: dict[str, int] = {}
     inherited_no_flip: dict[str, bool] = {}
     output_paths: dict[tuple[str, FitBuildSide], str] = {}
     instances: list[FitSymmetryInstance] = []
@@ -105,10 +104,14 @@ def expand_fit_symmetry(
         source_side[node.path] = side
 
         item = metadata_by_joint[node.path]
-        no_mirror = inherited_no_mirror.get(parent, False) or item.no_mirror
-        left_only = inherited_left_only.get(parent, False) or item.no_mirror_left
-        inherited_no_mirror[node.path] = no_mirror
-        inherited_left_only[node.path] = left_only
+        mirror_code = inherited_mirror_code.get(parent, 0)
+        if item.no_mirror:
+            mirror_code = -1
+        if item.no_mirror_left and mirror_code == -1:
+            mirror_code = 1
+        inherited_mirror_code[node.path] = mirror_code
+        no_mirror = mirror_code != 0
+        left_only = mirror_code == 1
         no_flip = inherited_no_flip.get(parent, False) or item.no_flip
         inherited_no_flip[node.path] = no_flip
 
@@ -116,13 +119,12 @@ def expand_fit_symmetry(
             raise FitSymmetryValidationError(
                 f"{node.short_name} 从 Left 侧开始；可镜像分支必须从 Right 侧开始"
             )
-        if side is FitBuildSide.LEFT and not left_only:
-            raise FitSymmetryValidationError(
-                f"{node.short_name} 位于 Left 侧时必须显式启用 Left-only 规则"
-            )
-
         if side is FitBuildSide.MIDDLE:
             target_sides = (FitBuildSide.MIDDLE,)
+        elif side is FitBuildSide.LEFT:
+            # MEL accepts an authored left-side branch when noMirror is
+            # enabled: its b=1 pass creates the _L joint in place.
+            target_sides = (FitBuildSide.LEFT,)
         elif no_mirror:
             target_sides = (
                 (FitBuildSide.LEFT,) if left_only else (FitBuildSide.RIGHT,)
@@ -146,7 +148,12 @@ def expand_fit_symmetry(
                 parent_target_side = target_side
                 if source_side[parent] is FitBuildSide.MIDDLE:
                     parent_target_side = FitBuildSide.MIDDLE
-                parent_output = output_paths[(parent, parent_target_side)]
+                parent_key = (parent, parent_target_side)
+                if parent_key not in output_paths:
+                    raise FitSymmetryValidationError(
+                        f"{node.short_name} 的 noMirror 侧别与父关节不一致"
+                    )
+                parent_output = output_paths[parent_key]
             output_name = f"{node.short_name}_{target_side.value}"
             output_path = (
                 f"{parent_output}|{output_name}"

@@ -570,14 +570,6 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
                 "UnTwister 设置需要至少一段 Inbetween 关节",
             )
         )
-    if metadata.no_mirror_left and not metadata.no_mirror:
-        issues.append(
-            FitJointIssue(
-                metadata.joint,
-                "left_rule_without_no_mirror",
-                "noMirrorLeft 需要同时启用 noMirror",
-            )
-        )
     if metadata.child_of_part is not None and not 1 <= metadata.child_of_part <= 10:
         issues.append(
             FitJointIssue(

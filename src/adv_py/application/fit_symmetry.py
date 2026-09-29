@@ -73,7 +73,7 @@ class PlanFitSymmetry:
         instances = expand_fit_symmetry(
             source.hierarchy,
             source.metadata,
-            center_tolerance=center_tolerance,
+            center_tolerance=center_tolerance * source.fit_scale,
             world_axes_by_joint={
                 state.joint: state.world_axes for state in source.joints
             },
