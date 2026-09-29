@@ -657,15 +657,13 @@ class MayaFitPartMixin:
                                          fullPath=True) or []
                 if parent != [inputs.static_parent_body]:
                     raise ValueError("静态下游 Twist 来源不在原 Body 父级")
-                channels = (kind + suffix
-                            for kind in ("translate", "rotate", "scale")
-                            for suffix in ("", "X", "Y", "Z"))
+                channels = ("rotate", "rotateX", "rotateY", "rotateZ")
                 if (any(c.connectionInfo(inputs.start_body + "." + attr,
                         sourceFromDestination=True) for attr in channels)
                         or c.connectionInfo(
                             inputs.start_body + ".offsetParentMatrix",
                             sourceFromDestination=True)):
-                    raise ValueError("下游 Body 已有驱动，不能使用静态 Twist 来源："
+                    raise ValueError("Body 已有旋转驱动，不能使用静态 Twist 来源："
                                      + inputs.start_body)
             if projection.reference_name:
                 parent = projection.reference_parent_path

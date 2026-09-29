@@ -99,11 +99,10 @@ def plan_standard_fit_part_rotation_inputs(
     """Resolve twist channels for every non-bendy Fit Part chain.
 
     Standard Arm/Leg chains blend their independent FK/IK driver matrices.
-    Other joints use an independent FK source when the rig exposes one, or
-    their Body world matrix. Both are measured against a bind-aligned
-    reference that follows the original parent. A dual-twist child without
-    an independent driver gets a bind-aligned static source under that parent,
-    because its Body is reparented below the Part chain.
+    Other joints use an independent FK source when the rig exposes one.
+    Without one, a bind-aligned static source follows the original parent:
+    reading the Body world matrix would cycle after Part reparenting.
+    A dual-twist child follows the same rule when it has no independent driver.
     """
     starts = {part.start_body: part for part in parts}
     independent_world_matrices = independent_world_matrices or {}
@@ -173,21 +172,22 @@ def plan_standard_fit_part_rotation_inputs(
                     f"AdvPy_{stem}IKFKBlend_{side}")))
         else:
             blend = blended_world_matrices.get(start)
+            independent = independent_world_matrices.get(start)
             constraint = (blend[3] if blend else
                           independent_body_constraints.get(start))
             result.append(FitPartRotationInput(
                 start, "", start + ".rotateOrder",
                 up_twist_plug=up,
-                world_matrix_plug=(None if blend else
-                    independent_world_matrices.get(
-                        start, start + ".worldMatrix[0]")),
+                world_matrix_plug=None if blend else independent,
                 fk_world_matrix_plug=blend[0] if blend else None,
                 ik_world_matrix_plug=blend[1] if blend else None,
                 ik_fk_blend_plug=blend[2] if blend else None,
                 subtract_body_twist=not bool(constraint),
                 compensate_start_body=bool(constraint),
                 body_constraint_name=constraint,
-                reference_inverse_plug=reference_inverse_matrices.get(start)))
+                reference_inverse_plug=reference_inverse_matrices.get(start),
+                static_parent_body=(start.rsplit("|", 1)[0]
+                                    if not (blend or independent) else None)))
     return tuple(result) + tuple(auxiliary.values())
 
 
@@ -209,11 +209,10 @@ def plan_fit_part_twist_projections(
         if type(item.distribution_source) is not bool:
             raise FitPartTwistValidationError("Part 扭转投影用途无效")
         if item.static_parent_body and (
-                item.distribution_source
-                or item.static_parent_body != item.start_body.rsplit("|", 1)[0]
+                item.static_parent_body != item.start_body.rsplit("|", 1)[0]
                 or item.reference_inverse_plug is not None):
             raise FitPartTwistValidationError(
-                "静态下游 Twist 来源必须使用原 Body 父级的绑定参考")
+                "静态 Twist 来源必须使用原 Body 父级的绑定参考")
         if (type(item.compensate_start_body) is not bool
                 or (item.compensate_start_body
                     and (item.subtract_body_twist
