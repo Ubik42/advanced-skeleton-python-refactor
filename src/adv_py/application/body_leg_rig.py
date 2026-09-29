@@ -209,6 +209,7 @@ class BuildBodyLegRig:
         self, safety: BodyRebuildSafetyAudit, *, control_radius: float = 1.5,
         pole_distance_scale: float = 0.75, twist_joints_per_segment: int = 2,
         defer_pole_aim: bool = False,
+        aim_joint_names: frozenset[str] = frozenset(),
     ) -> BodyLegRigBuildPlan:
         """Plan this module from the character's shared immutable input."""
         mechanisms = plan_body_leg_mechanisms(safety.body)
@@ -230,6 +231,7 @@ class BuildBodyLegRig:
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).extra_controllers,
             terminal_toes_end_control=terminal_toes_end_control,
+            aim_joint_names=aim_joint_names,
         )
         blend = plan_body_leg_blend(
             safety.body, mechanisms,

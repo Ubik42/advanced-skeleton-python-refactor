@@ -51,6 +51,12 @@ def character_channels(rig):
         aim=p.torso.torso.head_aim
         add('head.aim.target',aim.target,translation+rotation+('follow',))
         add('head.aim',aim.head_control,('headAim',))
+    for aim in getattr(p, "fit_aim", ()):
+        add("fit.aim." + aim.stem + ".center", aim.center_control,
+            translation + rotation + ("follow",))
+        for side in aim.sides:
+            add("fit.aim." + aim.stem + "." + side.suffix,
+                side.target_control, translation + rotation)
     for label,module in (("arm",p.arm),("leg",p.leg)):
         for control in module.fk_controls.controls:
             add(label+".fk."+control.control_name.removeprefix("AdvPy_"),control.control_path,rotation)

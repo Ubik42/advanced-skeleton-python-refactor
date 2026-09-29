@@ -10,6 +10,7 @@ from .maya_torso import MayaBodyTorsoMixin
 from .maya_spine import MayaBodySpineMixin
 from .maya_control_spaces import MayaBodyControlSpacesMixin
 from .maya_body_pole_aim import MayaBodyPoleAimMixin
+from .maya_body_fit_aim import MayaBodyFitAimMixin
 
 import json
 from dataclasses import replace
@@ -306,7 +307,7 @@ _BODY_EXPORT_BAKE_ATTRIBUTES = {
 }
 
 
-class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, MayaBodyFkScaleCompensationMixin, MayaFitTweakerMixin, MayaBodyParentConstraintMixin, MayaBodyGameRootMotionMixin, MayaBodyGameScalingMixin, MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitBendyMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyPoleAimMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
+class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, MayaBodyFkScaleCompensationMixin, MayaFitTweakerMixin, MayaBodyParentConstraintMixin, MayaBodyGameRootMotionMixin, MayaBodyGameScalingMixin, MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitBendyMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyFitAimMixin, MayaBodyPoleAimMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
     """Maya scene adapter for the first materialized Body skeleton stage."""
 
     def copy_external_mesh_for_character(self, mesh_path: str) -> str:

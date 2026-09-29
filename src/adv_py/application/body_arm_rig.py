@@ -104,6 +104,7 @@ class BuildBodyArmRig:
     def plan_from_safety(
         self, safety: BodyRebuildSafetyAudit, *, control_radius: float = 1.5,
         pole_distance_scale: float = 0.75, twist_joints_per_segment: int = 2,
+        aim_joint_names: frozenset[str] = frozenset(),
     ) -> BodyArmRigBuildPlan:
         """Plan this module from the character's shared immutable input."""
         mechanisms = plan_body_arm_mechanisms(safety.body)
@@ -114,7 +115,8 @@ class BuildBodyArmRig:
             sub_controllers=BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).sub_controllers,
             extra_controllers=BodyBuildOptions.from_fit_settings(
-                safety.symmetry.settings).extra_controllers)
+                safety.symmetry.settings).extra_controllers,
+            aim_joint_names=aim_joint_names)
         blend = plan_body_arm_blend(safety.body, mechanisms)
         ik = plan_body_arm_ik(
             safety.body, mechanisms, radius=control_radius,

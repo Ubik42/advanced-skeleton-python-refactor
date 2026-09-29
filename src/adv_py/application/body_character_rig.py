@@ -32,6 +32,7 @@ from adv_py.core.body_fk_global import (
 from adv_py.core.body_fk_channel_locks import (
     BodyFkChannelLockSpec, plan_body_fk_channel_locks,
 )
+from adv_py.core.body_fit_aim import BodyFitAimSpec, plan_body_fit_aim
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_metadata import FitJointField
 from adv_py.core.fit_tweaker import FitTweakerPlan, plan_fit_tweakers
@@ -116,6 +117,12 @@ class BodyCharacterRigHost(
     def capture_body_fk_channel_locks(
         self, spec: BodyFkChannelLockSpec,
     ) -> bool: ...
+    def create_body_fit_aim(self, spec: BodyFitAimSpec, *,
+                            global_control: str,
+                            use_offset_parent_matrix: bool) -> None: ...
+    def capture_body_fit_aim(self, spec: BodyFitAimSpec, *,
+                             global_control: str,
+                             use_offset_parent_matrix: bool) -> bool: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +143,7 @@ class BodyCharacterRigBuildPlan:
     no_control_paths: tuple[str, ...] = ()
     fk_globals: tuple[BodyFkGlobalSpec, ...] = ()
     fk_channel_locks: tuple[BodyFkChannelLockSpec, ...] = ()
+    fit_aim: tuple[BodyFitAimSpec, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -236,14 +244,28 @@ class BuildBodyCharacterRig:
         # direct child enters the generic FKAim/AimSystem construction loop.
         fit_parents = {joint.dag_parent for joint in
                        safety.symmetry.source.hierarchy.joints}
-        unsupported_aim = tuple(
-            item.joint for item in safety.symmetry.source.metadata
+        aim_source_names = frozenset(
+            item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            for item in safety.symmetry.source.metadata
             if FitJointField.AIM in item.present_fields
             and item.joint in fit_parents)
+        arm_aim = aim_source_names & frozenset(("Shoulder", "Elbow", "Wrist"))
+        leg_aim = aim_source_names & frozenset(("Hip", "Knee", "Ankle",
+                                                "Toes", "ToesEnd"))
+        unsupported_aim = tuple(sorted(aim_source_names - arm_aim - leg_aim))
         if unsupported_aim:
             raise FitSkeletonValidationError(
-                "通用 Fit Aim 尚未接入 FK 控制层与 AimSystem："
+                "通用 Fit Aim 来源尚未接入对应 FK 控制层："
                 + "、".join(unsupported_aim))
+        conflicting_aim = tuple(
+            item.joint for item in safety.symmetry.source.metadata
+            if (FitJointField.AIM in item.present_fields
+                and item.joint in fit_parents
+                and item.global_weight is not None))
+        if conflicting_aim:
+            raise FitSkeletonValidationError(
+                "同一 FK Extra 暂不能同时使用 Aim 与 Global："
+                + "、".join(conflicting_aim))
         fit_height = fit_character_height(tuple(
             node.world_position for node in
             safety.symmetry.source.hierarchy.joints))
@@ -256,6 +278,7 @@ class BuildBodyCharacterRig:
             control_radius=arm_control_radius,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
+            aim_joint_names=arm_aim,
         )
         leg = self._leg.plan_from_safety(
             safety,
@@ -263,6 +286,7 @@ class BuildBodyCharacterRig:
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
             defer_pole_aim=include_control_spaces,
+            aim_joint_names=leg_aim,
         )
         expected_hand_names = {
             f"{source_name}_{suffix}"
@@ -425,6 +449,11 @@ class BuildBodyCharacterRig:
             arm.fk_controls.controls + leg.fk_controls.controls
             + (hand.controls.controls if hand else ())
             + (torso.torso.controls.controls if torso else ()))
+        fit_aim = plan_body_fit_aim(
+            safety.symmetry.source.hierarchy,
+            safety.symmetry.source.metadata,
+            safety.body,
+            arm.fk_controls.controls + leg.fk_controls.controls)
         no_control_paths = plan_body_no_control(
             safety.symmetry.source.metadata,
             fk_controls)
@@ -449,6 +478,8 @@ class BuildBodyCharacterRig:
                                     for name in spec.node_names)
                             if fit_tweakers else ())
                          + tuple(name for spec in fk_globals
+                                 for name in spec.node_names)
+                         + tuple(name for spec in fit_aim
                                  for name in spec.node_names))
             if not (name in ("Group", "MotionSystem") and safety.body.root.startswith(
                 "|Group|DeformationSystem|"))
@@ -470,6 +501,7 @@ class BuildBodyCharacterRig:
             no_control_paths=no_control_paths,
             fk_globals=fk_globals,
             fk_channel_locks=fk_channel_locks,
+            fit_aim=fit_aim,
             shared_input_stable=(
                 arm.safety == leg.safety
                 and (hand is None or hand.safety == arm.safety)
@@ -575,6 +607,17 @@ class BuildBodyCharacterRig:
                     "角色总控阶段复检失败："
                     + "；".join(issue.message for issue in issues)
                 )
+            aim_use_opm = BodyBuildOptions.from_fit_settings(
+                plan.arm.safety.symmetry.settings).use_offset_parent_matrix
+            for spec in plan.fit_aim:
+                self._host.create_body_fit_aim(
+                    spec, global_control=plan.global_control.control_path,
+                    use_offset_parent_matrix=aim_use_opm)
+            if any(not self._host.capture_body_fit_aim(
+                    spec, global_control=plan.global_control.control_path,
+                    use_offset_parent_matrix=aim_use_opm)
+                   for spec in plan.fit_aim):
+                raise RuntimeError("通用 Fit Aim 构建后复检失败")
             for spec in plan.pole_aim:
                 self._host.create_body_leg_pole_aim(spec)
             if any(not self._host.capture_body_leg_pole_aim(spec)
