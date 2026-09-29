@@ -585,6 +585,11 @@ class MayaPanelController:
     def body_toggle_fit_non_symmetry(self, namespace: str) -> tuple[str, ...]:
         return self._host(namespace).toggle_fit_non_symmetry_joints()
 
+    def body_delete_advanced(self, namespace: str) -> bool:
+        from adv_py.application.body_delete import DeleteBodyAdvanced
+
+        return DeleteBodyAdvanced(self._host(namespace)).apply()
+
     def body_build_from_source(self, namespace: str, source_root: str,
                                container: str = "FitSkeleton", *,
                                meshes: tuple[str, ...] = (),

@@ -779,6 +779,8 @@ def create_panel(controller: MayaPanelController | None = None):
                                       self._fill_selected_source_root))
             form.addRow(self._button("Toggle Fit/Adv",
                                      self._body_toggle_fit_advanced))
+            form.addRow(self._button("删除 Adv（保留 Fit）",
+                                     self._body_delete_advanced))
             form.addRow(self._button("构建并登记角色", self._build_character,
                                       primary=True))
             form.addRow(self._button("从来源骨架直接构建角色",
@@ -3345,6 +3347,11 @@ def create_panel(controller: MayaPanelController | None = None):
             changed = self.controller.body_toggle_fit_non_symmetry(
                 self._namespace())
             return "已切换非对称 Fit 分支：" + str(len(changed))
+
+        def _body_delete_advanced(self):
+            removed = self.controller.body_delete_advanced(
+                self._namespace())
+            return "已删除 Body Adv，Fit 已保留" if removed else "当前没有 Body Adv"
 
         def _face_tweaks_detach_controllers(self):
             skins = self.controller.face_tweaks_detach_controllers(

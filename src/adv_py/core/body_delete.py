@@ -1,0 +1,16 @@
+"""Captured scope for deleting a generated Body rig without its Fit source."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class BodyDeletePlan:
+    fit: str
+    fit_id: str
+    group: str | None
+    geometry_children: tuple[str, ...]
+    retained_geometry_ids: tuple[str, ...]
+    owned_nodes: tuple[str, ...]
+    set_nodes: tuple[str, ...]
+    scene_up_axis: str
