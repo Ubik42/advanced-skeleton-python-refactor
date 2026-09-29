@@ -3246,9 +3246,9 @@ def create_panel(controller: MayaPanelController | None = None):
             return f"已选择 {area}：{count} 项"
 
         def _face_delta_mush_zero_selected(self):
-            deformer = self.controller.face_delta_mush_zero_selected(
+            deformers = self.controller.face_delta_mush_zero_selected(
                 self._namespace())
-            return "所选区域 DeltaMush 权重已归零：" + deformer
+            return f"所选区域 {len(deformers)} 个 DeltaMush 权重已归零"
 
         def _face_delta_mush_paint(self):
             deformer = self.controller.face_delta_mush_paint(self._namespace())

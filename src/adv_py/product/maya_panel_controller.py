@@ -1918,7 +1918,7 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace
         ).select_face_delta_mush_area(area)
 
-    def face_delta_mush_zero_selected(self, namespace: str) -> str:
+    def face_delta_mush_zero_selected(self, namespace: str) -> tuple[str, ...]:
         from adv_py.adapters.maya_face_delta_mush import MayaFaceDeltaMushHost
 
         return MayaFaceDeltaMushHost(

@@ -158,24 +158,37 @@ class MayaFaceDeltaMushHost(MayaFacePreHost):
                 raise RuntimeError("Face DeltaMush 删除后仍存在")
         return True
 
-    def zero_selected_face_delta_mush_weights(self) -> str:
+    def zero_selected_face_delta_mush_weights(self) -> tuple[str, ...]:
         c = self._maya
         self._require_supported_mode()
         mesh = self._face_mesh()
         deformer = self._deformer(required=False)
-        deformer = self._face_history_deformer(mesh, deformer)
+        if deformer is not None:
+            deformers = (self._face_history_deformer(mesh, deformer),)
+        else:
+            shape = c.listRelatives(mesh, shapes=True,
+                                    noIntermediate=True, fullPath=True,
+                                    type="mesh")[0]
+            history = c.listHistory(shape, pruneDagObjects=True) or ()
+            deformers = tuple(c.ls(history, long=True,
+                                   type="deltaMush") or ()) if history else ()
+            if not deformers:
+                raise FitSkeletonValidationError(
+                    "Face 网格没有可归零权重的 DeltaMush")
         selected = tuple(c.ls(selection=True, long=True,
                               flatten=True) or ())
         if not selected:
             raise FitSkeletonValidationError("请先选择 Face 顶点或区域集合")
         with self.transaction("Face DeltaMush 所选区域权重归零"):
             self._transaction_changed = True
-            c.percent(deformer, value=0)
-        return deformer
+            for item in deformers:
+                c.percent(item, value=0)
+        return deformers
 
     def select_face_delta_mush_area(self, area: str) -> int:
         if area not in ("eyeLidArea", "lipArea"):
             raise ValueError("Face DeltaMush 区域名称无效")
+        self._require_supported_mode()
         c = self._maya
         scoped = self._name(area)
         if not c.objExists(scoped):
