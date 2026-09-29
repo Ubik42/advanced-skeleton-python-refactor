@@ -232,6 +232,18 @@ class BuildBodyCharacterRig:
         safety = self._inspector.execute(
             container_name, root_name=body_root_name, center_tolerance=center_tolerance,
         )
+        # ADV 6.925 ignores aim on terminal Fit joints; only a joint with a
+        # direct child enters the generic FKAim/AimSystem construction loop.
+        fit_parents = {joint.dag_parent for joint in
+                       safety.symmetry.source.hierarchy.joints}
+        unsupported_aim = tuple(
+            item.joint for item in safety.symmetry.source.metadata
+            if FitJointField.AIM in item.present_fields
+            and item.joint in fit_parents)
+        if unsupported_aim:
+            raise FitSkeletonValidationError(
+                "通用 Fit Aim 尚未接入 FK 控制层与 AimSystem："
+                + "、".join(unsupported_aim))
         fit_height = fit_character_height(tuple(
             node.world_position for node in
             safety.symmetry.source.hierarchy.joints))
@@ -413,13 +425,6 @@ class BuildBodyCharacterRig:
             arm.fk_controls.controls + leg.fk_controls.controls
             + (hand.controls.controls if hand else ())
             + (torso.torso.controls.controls if torso else ()))
-        unsupported_aim = tuple(
-            item.joint for item in safety.symmetry.source.metadata
-            if FitJointField.AIM in item.present_fields)
-        if unsupported_aim:
-            raise FitSkeletonValidationError(
-                "通用 Fit Aim 尚未接入 FK 控制层与 AimSystem："
-                + "、".join(unsupported_aim))
         no_control_paths = plan_body_no_control(
             safety.symmetry.source.metadata,
             fk_controls)
