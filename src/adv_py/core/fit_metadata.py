@@ -52,6 +52,7 @@ class FitJointField(str, Enum):
     PROXIMITY_PIN = "proximity_pin"
     LEG_LOCK = "leg_lock"
     CENTER_BETWEEN_FEET = "center_between_feet"
+    NUM_MAIN_EXTRAS = "num_main_extras"
 
 
 FitJointValue = bool | int | float | str | tuple[tuple[str, float], ...]
@@ -153,6 +154,7 @@ class FitJointMetadata:
     proximity_pin: str | None = None
     leg_lock: bool | None = None
     center_between_feet: bool | None = None
+    num_main_extras: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +169,7 @@ _INTEGER_FIELDS = {
     FitJointField.BENDY_CONTROLS,
     FitJointField.INBETWEEN_JOINTS,
     FitJointField.CHILD_OF_PART,
+    FitJointField.NUM_MAIN_EXTRAS,
 }
 _BOOLEAN_FIELDS = {
     FitJointField.UNTWISTER,
@@ -253,6 +256,8 @@ def validate_fit_joint_value(
         return
     if field in _INTEGER_FIELDS and type(value) is not int:
         raise FitJointValidationError(f"{field.value} 必须是整数")
+    if field is FitJointField.NUM_MAIN_EXTRAS and value is not None and value < 0:
+        raise FitJointValidationError("num_main_extras 不能小于 0")
     if field in _BOOLEAN_FIELDS and type(value) is not bool:
         raise FitJointValidationError(f"{field.value} 必须是布尔值")
     if field is FitJointField.GLOBAL_WEIGHT and (
@@ -463,6 +468,15 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
             issues.append(FitJointIssue(
                 metadata.joint, "center_between_feet_not_root",
                 "Center Between Feet 只能设置在 Root Fit 关节"))
+    if metadata.num_main_extras is not None:
+        if type(metadata.num_main_extras) is not int or metadata.num_main_extras < 0:
+            issues.append(FitJointIssue(
+                metadata.joint, "invalid_num_main_extras",
+                "Main Extras 数量必须是非负整数"))
+        if metadata.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1] != "Root":
+            issues.append(FitJointIssue(
+                metadata.joint, "num_main_extras_not_root",
+                "Main Extras 只能设置在 Root Fit 关节"))
     for field in (FitJointField.AIM_AXIS, FitJointField.AIM_UP_AXIS,
                   FitJointField.AIM_UP_OBJECT):
         if (not isinstance(getattr(metadata, field.value), str)

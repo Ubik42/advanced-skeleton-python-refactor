@@ -110,6 +110,7 @@ class BodyCharacterGlobalPlan:
     aim_fk_control_path: str | None
     pole_arrows: tuple[BodyPoleArrowSpec, ...]
     head_aim_follow: BodyHeadAimFollowSpec | None
+    extra_control_paths: tuple[str, ...] = ()
     root_follow_main_path: str | None = None
     root_follow_use_opm: bool = False
     global_follow_main_path: str | None = None
@@ -161,6 +162,12 @@ class BodyCharacterGlobalPlan:
             self.control_name,
             self.shape_name,
             self.scale_node_name,
+            *(path.rsplit("|", 1)[-1] for path in self.extra_control_paths),
+            *(path.rsplit("|", 1)[-1] + "Shape" for path in self.extra_control_paths),
+            *(f"MainScaleMultiplyDivide{i}"
+              for i in range(1, len(self.extra_control_paths) + 1)),
+            *(("AdvPy_MainExtrasRelativeMM", "AdvPy_MainExtrasDecompose")
+              if self.extra_control_paths else ()),
             *((self.root_follow_constraint_name,)
               if self.root_follow_constraint_name is not None else ()),
             *((self.root_follow_scale_constraint_name,)
@@ -199,6 +206,15 @@ class BodyCharacterGlobalPlan:
     @property
     def scale_source(self) -> str:
         return f"{self.control_path}.{self.scale_attribute}"
+
+    def effective_scale_source(self, axis: str) -> str:
+        if not self.extra_control_paths:
+            return self.scale_source
+        return f"MainScaleMultiplyDivide{len(self.extra_control_paths)}.output{axis}"
+
+    def destination_scale_source(self, plug: str) -> str:
+        axis = plug[-1] if plug.endswith((".scaleX", ".scaleY", ".scaleZ")) else "X"
+        return self.effective_scale_source(axis)
 
     @property
     def visibility_controls(self) -> tuple[tuple[str, str], ...]:
@@ -310,6 +326,15 @@ class BodyCharacterGlobalSnapshot:
                                       str | None, bool] | None = None
     fit_height: float | None = None
     fit_height_locked: bool = False
+    extra_control_states: tuple[tuple[str, str | None, str | None,
+                                      tuple[float, float, float],
+                                      tuple[float, float, float],
+                                      tuple[float, float, float],
+                                      str | None], ...] = ()
+    extra_scale_sources: tuple[tuple[str | None, ...], ...] = ()
+    extra_scale_operations: tuple[int | None, ...] = ()
+    extra_motion_sources: tuple[str | None, str | None, str | None] = (
+        None, None, None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,6 +375,7 @@ def plan_body_character_global(
     root_follow_use_opm: bool = False,
     global_follow_main_path: str | None = None,
     global_follow_use_opm: bool = False,
+    num_main_extras: int = 0,
 ) -> BodyCharacterGlobalPlan:
     if (
         not isinstance(up_axis, FitUpAxis)
@@ -359,6 +385,8 @@ def plan_body_character_global(
         or not driven_roots
         or not isinstance(scale_destinations, tuple)
         or not isinstance(body_root_via_controls, bool)
+        or type(num_main_extras) is not int
+        or num_main_extras < 0
         or type(root_follow_use_opm) is not bool
         or type(global_follow_use_opm) is not bool
         or not isinstance(finger_visibility_paths, tuple)
@@ -449,12 +477,21 @@ def plan_body_character_global(
     root_name = "AdvPy_CharacterControls"
     root_path = f"|Group|MotionSystem|MainSystem|{root_name}"
     offset_name = "AdvPy_GlobalOffset"
-    offset_path = f"{root_path}|{offset_name}"
+    extra_paths: list[str] = []
+    extra_parent = root_path
+    for index in range(num_main_extras, 0, -1):
+        extra_parent += f"|AdvPy_MainExtra{index}"
+        extra_paths.insert(0, extra_parent)
+    offset_path = f"{extra_parent}|{offset_name}"
     control_name = "AdvPy_Global"
     control_path = f"{offset_path}|{control_name}"
     names = {"Group", "MotionSystem", "MainSystem", root_name,
              offset_name, control_name, f"{control_name}Shape",
-             "MainScaleMultiplyDivide"}
+             "MainScaleMultiplyDivide",
+             *(f"AdvPy_MainExtra{i}" for i in range(1, num_main_extras + 1)),
+             *(f"MainScaleMultiplyDivide{i}" for i in range(1, num_main_extras + 1)),
+             *(("AdvPy_MainExtrasRelativeMM", "AdvPy_MainExtrasDecompose")
+               if num_main_extras else ())}
     if any(path.rsplit("|", 1)[-1] in names for path in driven_roots):
         raise BodyCharacterGlobalValidationError(
             "角色总控名称与被驱动根节点冲突"
@@ -483,6 +520,7 @@ def plan_body_character_global(
         aim_fk_control_path=aim_fk_control_path,
         pole_arrows=pole_arrows,
         head_aim_follow=head_aim_follow,
+        extra_control_paths=tuple(extra_paths),
         root_follow_main_path=root_follow_main_path,
         root_follow_use_opm=root_follow_use_opm,
         global_follow_main_path=global_follow_main_path,
@@ -526,7 +564,9 @@ def audit_body_character_global(
         ))
     if not (
         snapshot.offset_path == plan.offset_path
-        and snapshot.offset_parent_path == plan.root_path
+        and snapshot.offset_parent_path == (
+            plan.extra_control_paths[0] if plan.extra_control_paths
+            else plan.root_path)
         and _close(snapshot.offset_translation, neutral, tolerance)
         and _close(snapshot.offset_rotation, neutral, tolerance)
         and _close(snapshot.offset_scale, one, tolerance)
@@ -555,6 +595,43 @@ def audit_body_character_global(
             "角色总控曲线、通道或 uniform scale 属性不一致",
             plan.control_path,
         ))
+    expected_extra_controls = tuple(
+        (path,
+         plan.extra_control_paths[index] if index < len(plan.extra_control_paths)
+         else plan.root_path,
+         "nurbsCurve", neutral, neutral, one,
+         f"{plan.motion_system_path}.visibility")
+        for index, path in enumerate(plan.extra_control_paths, 1))
+    if snapshot.extra_control_states != expected_extra_controls:
+        issues.append(BodyCharacterGlobalIssue(
+            "main_extra_controls_mismatch",
+            "MainExtra 曲线层级、默认通道或显示接线不一致",
+            plan.root_path))
+    expected_extra_scales = tuple(
+        tuple(
+            source for axis in "XYZ"
+            for source in (
+                f"{plan.control_path}.scale{axis}" if index == 1
+                else f"MainScaleMultiplyDivide{index - 1}.output{axis}",
+                f"{path}.scale{axis}"))
+        for index, path in enumerate(plan.extra_control_paths, 1))
+    if (snapshot.extra_scale_sources != expected_extra_scales
+            or snapshot.extra_scale_operations
+            != (1,) * len(plan.extra_control_paths)):
+        issues.append(BodyCharacterGlobalIssue(
+            "main_extra_scale_chain_mismatch",
+            "MainExtra 缩放乘积链不一致",
+            plan.scale_node_name))
+    expected_extra_motion = (
+        (f"{plan.control_path}.worldMatrix[0]",
+         f"{plan.motion_system_path}.worldInverseMatrix[0]",
+         "AdvPy_MainExtrasRelativeMM.matrixSum")
+        if plan.extra_control_paths else (None, None, None))
+    if snapshot.extra_motion_sources != expected_extra_motion:
+        issues.append(BodyCharacterGlobalIssue(
+            "main_extra_motion_chain_mismatch",
+            "MainExtra 合成变换矩阵接线不一致",
+            plan.control_path))
     if (plan.fit_height is not None and
             (snapshot.fit_height is None
             or abs(snapshot.fit_height - plan.fit_height) > tolerance
@@ -626,12 +703,14 @@ def audit_body_character_global(
             "角色总控被驱动根集合不一致",
         ))
     expected_translate = tuple(
-        f"{plan.control_path}.translate{axis}" for axis in "XYZ"
-    )
+        (f"AdvPy_MainExtrasDecompose.outputTranslate{axis}"
+         if plan.extra_control_paths else f"{plan.control_path}.translate{axis}")
+        for axis in "XYZ")
     expected_rotate = tuple(
-        f"{plan.control_path}.rotate{axis}" for axis in "XYZ"
-    )
-    expected_scale = (scale_plug, scale_plug, scale_plug)
+        (f"AdvPy_MainExtrasDecompose.outputRotate{axis}"
+         if plan.extra_control_paths else f"{plan.control_path}.rotate{axis}")
+        for axis in "XYZ")
+    expected_scale = tuple(plan.effective_scale_source(axis) for axis in "XYZ")
     for path in plan.driven_roots:
         state = actual_roots.get(path)
         if state is None:
@@ -649,7 +728,7 @@ def audit_body_character_global(
             ))
 
     expected_destinations = tuple(
-        (destination, scale_plug)
+        (destination, plan.destination_scale_source(destination))
         for destination in plan.scale_destinations
     )
     if snapshot.scale_destination_sources != expected_destinations:
@@ -657,8 +736,10 @@ def audit_body_character_global(
             "scale_destination_mismatch",
             "Arm/Leg 全局比例补偿接线不一致",
         ))
-    expected_inputs = tuple(f"{plan.control_path}.scale{axis}"
-                            for axis in "XYZ")
+    expected_inputs = tuple(
+        (f"MainScaleMultiplyDivide{len(plan.extra_control_paths)}.output{axis}"
+         if plan.extra_control_paths else f"{plan.control_path}.scale{axis}")
+        for axis in "XYZ")
     if (snapshot.scale_node_input_sources != expected_inputs
             or snapshot.scale_node_operation != 1
             or not _close(snapshot.scale_node_input2, one, tolerance)

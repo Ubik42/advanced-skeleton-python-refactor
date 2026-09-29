@@ -1116,10 +1116,30 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 parent=main_system,
                 skipSelect=True,
             )
+            extra_parent = root
+            for index in range(len(plan.extra_control_paths), 0, -1):
+                extra_name = f"AdvPy_MainExtra{index}"
+                extra = create_adv_icon(
+                    self._cmds, name=extra_name, parent=extra_parent,
+                    template="Main_icon", radius=plan.radius * 1.1 ** index,
+                    fallback_normal=plan.circle_normal)
+                extra = (self._cmds.ls(extra, long=True) or [extra])[0]
+                if extra != plan.extra_control_paths[index - 1]:
+                    raise RuntimeError("MainExtra 控制层级路径漂移")
+                shapes = self._cmds.listRelatives(
+                    extra, shapes=True, fullPath=True) or []
+                if len(shapes) != 1:
+                    raise RuntimeError("MainExtra 曲线 shape 创建失败")
+                shape = self._cmds.rename(shapes[0], extra_name + "Shape")
+                self._cmds.setAttr(shape + ".overrideEnabled", True)
+                self._cmds.setAttr(shape + ".overrideColor", 19 + index)
+                self._cmds.connectAttr(motion + ".visibility",
+                                       shape + ".visibility")
+                extra_parent = extra
             offset = self._cmds.createNode(
                 "transform",
                 name=plan.offset_name,
-                parent=root,
+                parent=extra_parent,
                 skipSelect=True,
             )
             control = create_adv_icon(
@@ -1174,24 +1194,57 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 skipSelect=True,
             )
             self._cmds.setAttr(f"{scale_node}.operation", 1)
+            scale_input = tuple(f"{control}.scale{axis}" for axis in "XYZ")
+            for index, extra_path in enumerate(plan.extra_control_paths, 1):
+                extra_scale = self._cmds.createNode(
+                    "multiplyDivide", name=f"MainScaleMultiplyDivide{index}",
+                    skipSelect=True)
+                self._cmds.setAttr(extra_scale + ".operation", 1)
+                for axis_index, axis in enumerate("XYZ"):
+                    self._cmds.connectAttr(
+                        scale_input[axis_index],
+                        f"{extra_scale}.input1{axis}")
+                    self._cmds.connectAttr(
+                        f"{extra_path}.scale{axis}",
+                        f"{extra_scale}.input2{axis}")
+                scale_input = tuple(
+                    f"{extra_scale}.output{axis}" for axis in "XYZ")
             for axis in "XYZ":
                 self._cmds.setAttr(f"{scale_node}.input2{axis}", 1.0)
                 self._cmds.connectAttr(
-                    f"{control}.scale{axis}",
+                    scale_input["XYZ".index(axis)],
                     f"{scale_node}.input1{axis}",
                 )
+            motion_decompose = None
+            if plan.extra_control_paths:
+                relative = self._cmds.createNode(
+                    "multMatrix", name="AdvPy_MainExtrasRelativeMM",
+                    skipSelect=True)
+                motion_decompose = self._cmds.createNode(
+                    "decomposeMatrix", name="AdvPy_MainExtrasDecompose",
+                    skipSelect=True)
+                self._cmds.connectAttr(
+                    control + ".worldMatrix[0]", relative + ".matrixIn[0]")
+                self._cmds.connectAttr(
+                    motion + ".worldInverseMatrix[0]",
+                    relative + ".matrixIn[1]")
+                self._cmds.connectAttr(
+                    relative + ".matrixSum",
+                    motion_decompose + ".inputMatrix")
             for path in plan.driven_roots:
                 for axis in "XYZ":
                     self._cmds.connectAttr(
-                        f"{control}.translate{axis}",
+                        (f"{motion_decompose}.outputTranslate{axis}"
+                         if motion_decompose else f"{control}.translate{axis}"),
                         f"{path}.translate{axis}",
                     )
                     self._cmds.connectAttr(
-                        f"{control}.rotate{axis}",
+                        (f"{motion_decompose}.outputRotate{axis}"
+                         if motion_decompose else f"{control}.rotate{axis}"),
                         f"{path}.rotate{axis}",
                     )
                     self._cmds.connectAttr(
-                        plan.scale_source,
+                        plan.effective_scale_source(axis),
                         f"{path}.scale{axis}",
                     )
             if plan.root_follow_main_path is not None:
@@ -1257,7 +1310,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     if len(scale_constraint) != 1:
                         raise RuntimeError("GlobalFollowMain 缩放约束创建失败")
             for plug in plan.scale_destinations:
-                self._cmds.connectAttr(plan.scale_source, plug)
+                self._cmds.connectAttr(plan.destination_scale_source(plug), plug)
             for attribute, system_path in plan.visibility_controls:
                 if (self._cmds.ls(system_path, long=True,
                                   type="transform") or []) != [system_path]:
@@ -1667,6 +1720,34 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             control_scale_sources=tuple(
                 source(f"{control}.scale{axis}") for axis in "XYZ"
             ),
+            extra_control_states=tuple(
+                (one_path(path, "transform"), parent(path),
+                 (self._cmds.nodeType(shapes[0])
+                  if len(shapes) == 1 and shapes[0].rsplit("|", 1)[-1]
+                  == path.rsplit("|", 1)[-1] + "Shape"
+                  else None),
+                 vector(path, "translate"), vector(path, "rotate"),
+                 vector(path, "scale"),
+                 (source(shapes[0] + ".visibility")
+                  if len(shapes) == 1 else None))
+                for path in plan.extra_control_paths
+                for shapes in (self._cmds.listRelatives(
+                    path, shapes=True, fullPath=True) or [],)
+            ),
+            extra_scale_sources=tuple(
+                tuple(source(f"MainScaleMultiplyDivide{index}.input{slot}{axis}")
+                      for axis in "XYZ" for slot in (1, 2))
+                for index in range(1, len(plan.extra_control_paths) + 1)
+            ),
+            extra_scale_operations=tuple(
+                int(self._cmds.getAttr(f"MainScaleMultiplyDivide{index}.operation"))
+                for index in range(1, len(plan.extra_control_paths) + 1)
+            ),
+            extra_motion_sources=(
+                (source("AdvPy_MainExtrasRelativeMM.matrixIn[0]"),
+                 source("AdvPy_MainExtrasRelativeMM.matrixIn[1]"),
+                 source("AdvPy_MainExtrasDecompose.inputMatrix"))
+                if plan.extra_control_paths else (None, None, None)),
             root_follow_main_state=follow_state,
             root_follow_matrix_state=follow_matrix_state,
             global_follow_main_state=global_follow_state,

@@ -28,6 +28,9 @@ def character_channels(rig):
     translation = tuple("translate"+axis for axis in "XYZ")
     rotation = tuple("rotate"+axis for axis in "XYZ")
     add("global",p.global_control.control_path,translation+rotation+(p.global_control.scale_attribute,))
+    for index, path in enumerate(p.global_control.extra_control_paths, 1):
+        add(f"global.extra.{index}", path,
+            translation + rotation + tuple("scale" + axis for axis in "XYZ"))
     if p.torso.torso.root_x is not None:
         add("root.x", p.torso.torso.root_x.control_path,
             translation + rotation + tuple("scale" + axis for axis in "XYZ"))

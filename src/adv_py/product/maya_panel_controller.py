@@ -114,6 +114,7 @@ _FIT_INTEGER_FIELDS = frozenset({
     FitJointField.BENDY_CONTROLS,
     FitJointField.INBETWEEN_JOINTS,
     FitJointField.CHILD_OF_PART,
+    FitJointField.NUM_MAIN_EXTRAS,
 })
 _FIT_BOOLEAN_FIELDS = frozenset({
     FitJointField.UNTWISTER,

@@ -108,6 +108,7 @@ _FIT_ATTRIBUTES = {
     FitJointField.GEO_ATTACH: _MayaFitAttribute("geoAttach", "string"),
     FitJointField.PROXIMITY_PIN: _MayaFitAttribute("proximityPin", "string"),
     FitJointField.LEG_LOCK: _MayaFitAttribute("legLock", "bool"),
+    FitJointField.NUM_MAIN_EXTRAS: _MayaFitAttribute("numMainExtras", "long", 0),
     FitJointField.CENTER_BETWEEN_FEET: _MayaFitAttribute(
         "centerBetweenFeet", "bool"),
     FitJointField.GEO_ATTACH_MODE: _MayaFitAttribute(
@@ -921,6 +922,10 @@ class MayaFitJointHost:
             center_between_feet=(
                 self._optional_bool(joint, "centerBetweenFeet")
                 if self._attribute_exists(joint, "centerBetweenFeet")
+                else None),
+            num_main_extras=(
+                self._optional_number(joint, "numMainExtras", int)
+                if self._attribute_exists(joint, "numMainExtras")
                 else None),
             geo_attach_mode=self._optional_enum(
                 joint, "geoAttachMode") or "parent",

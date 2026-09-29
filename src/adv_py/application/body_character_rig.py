@@ -344,6 +344,11 @@ class BuildBodyCharacterRig:
         )
         global_control = plan_body_character_global(
             up_axis=self._host.scene_up_axis(),
+            num_main_extras=next(
+                (metadata.num_main_extras or 0
+                 for metadata in safety.symmetry.source.metadata
+                 if metadata.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1] == "Root"),
+                0),
             fit_height=fit_height,
             body_root=arm.safety.body.root,
             driven_roots=driven_roots,
