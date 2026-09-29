@@ -58,6 +58,7 @@ class FitPartRotationInput:
     body_constraint_name: str | None = None
     reference_inverse_plug: str | None = None
     static_parent_body: str | None = None
+    reference_parent_body: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,7 +77,9 @@ class FitPartTwistProjection:
 
     @property
     def reference_parent_path(self) -> str | None:
-        parent = self.input.start_body.rsplit("|", 1)[0]
+        parent = (self.input.reference_parent_body
+                  or self.input.static_parent_body
+                  or self.input.start_body.rsplit("|", 1)[0])
         return parent or None
 
     @property
@@ -103,6 +106,7 @@ def plan_standard_fit_part_rotation_inputs(
     blended_world_matrices: Mapping[
         str, tuple[str, str, str, str]] | None = None,
     reference_inverse_matrices: Mapping[str, str] | None = None,
+    semantic_parent_by_body: Mapping[str, str] | None = None,
 ) -> tuple[FitPartRotationInput, ...]:
     """Resolve twist channels for every non-bendy Fit Part chain.
 
@@ -117,6 +121,7 @@ def plan_standard_fit_part_rotation_inputs(
     independent_body_constraints = independent_body_constraints or {}
     blended_world_matrices = blended_world_matrices or {}
     reference_inverse_matrices = reference_inverse_matrices or {}
+    semantic_parent_by_body = semantic_parent_by_body or {}
     if set(blended_world_matrices) & set(independent_world_matrices):
         raise FitPartTwistValidationError("Part 独立与混合矩阵来源不能重复")
     for body, blend in blended_world_matrices.items():
@@ -162,7 +167,8 @@ def plan_standard_fit_part_rotation_inputs(
                 ik_fk_blend_plug=(child_blend[2]
                                   if child_blend else None),
                 static_parent_body=(start if not (child_matrix or child_blend)
-                                    else None))
+                                    else None),
+                reference_parent_body=semantic_parent_by_body.get(child))
         if stem in ("Shoulder", "Elbow", "Hip", "Knee"):
             limb = "Arm" if stem in ("Shoulder", "Elbow") else "Leg"
             blend = blended_world_matrices.get(start)
@@ -177,7 +183,8 @@ def plan_standard_fit_part_rotation_inputs(
                 subtract_body_twist=False,
                 compensate_start_body=True,
                 body_constraint_name=(blend[3] if blend else
-                    f"AdvPy_{stem}IKFKBlend_{side}")))
+                    f"AdvPy_{stem}IKFKBlend_{side}"),
+                reference_parent_body=semantic_parent_by_body.get(start)))
         else:
             blend = blended_world_matrices.get(start)
             independent = independent_world_matrices.get(start)
@@ -194,8 +201,10 @@ def plan_standard_fit_part_rotation_inputs(
                 compensate_start_body=bool(constraint),
                 body_constraint_name=constraint,
                 reference_inverse_plug=reference_inverse_matrices.get(start),
-                static_parent_body=(start.rsplit("|", 1)[0]
-                                    if not (blend or independent) else None)))
+                static_parent_body=(semantic_parent_by_body.get(
+                    start, start.rsplit("|", 1)[0])
+                                    if not (blend or independent) else None),
+                reference_parent_body=semantic_parent_by_body.get(start)))
     return tuple(result) + tuple(auxiliary.values())
 
 
@@ -218,10 +227,16 @@ def plan_fit_part_twist_projections(
             raise FitPartTwistValidationError(
                 "Part 改挂后不能从起点 Body 世界矩阵读取扭转："
                 + item.start_body)
+        if (item.reference_parent_body
+                and not item.start_body.startswith(
+                    item.reference_parent_body + "|")):
+            raise FitPartTwistValidationError(
+                "Part 矩阵参照必须位于起点 Body 的原父链")
         if type(item.distribution_source) is not bool:
             raise FitPartTwistValidationError("Part 扭转投影用途无效")
         if item.static_parent_body and (
-                item.static_parent_body != item.start_body.rsplit("|", 1)[0]
+                not item.start_body.startswith(
+                    item.static_parent_body + "|")
                 or item.reference_inverse_plug is not None):
             raise FitPartTwistValidationError(
                 "静态 Twist 来源必须使用原 Body 父级的绑定参考")

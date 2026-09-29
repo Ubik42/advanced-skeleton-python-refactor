@@ -10,6 +10,9 @@ from adv_py.core.body_rebuild import (
     audit_body_rebuild_safety,
 )
 from adv_py.core.body_skeleton import BodySkeletonSnapshot, oriented_body_provenance
+from adv_py.core.fit_part import (
+    FitPartFinalPaths, semantic_body_snapshot_after_parts,
+)
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 from .fit_symmetry import (FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry,
@@ -57,12 +60,18 @@ class InspectBodyRebuildSafety:
         *,
         root_name: str = "Root_M",
         center_tolerance: float = 0.01,
+        part_paths: FitPartFinalPaths | None = None,
     ) -> BodyRebuildSafetyAudit:
         raw_symmetry = self._symmetry.execute(
             container_name,
             center_tolerance=center_tolerance,
         )
-        body = self._host.capture_body_skeleton(root_name)
+        capture_body = (getattr(self._host,
+                                "capture_physical_body_skeleton",
+                                self._host.capture_body_skeleton)
+                        if part_paths is not None else
+                        self._host.capture_body_skeleton)
+        body = capture_body(root_name)
         symmetry = anchor_fit_symmetry(
             raw_symmetry, body.root.rsplit("|", 1)[0] or None)
         scene = self._host.capture_body_rebuild_state(root_name)
@@ -70,17 +79,19 @@ class InspectBodyRebuildSafety:
             symmetry.source.hierarchy.container,
             len(symmetry.instances),
         )
-        return BodyRebuildSafetyAudit(
-            symmetry,
-            body,
-            scene,
-            audit_body_rebuild_safety(
-                symmetry.instances,
-                body,
-                scene,
-                provenance,
-            ),
-        )
+        issues = audit_body_rebuild_safety(
+            symmetry.instances, body, scene, provenance,
+            part_paths=part_paths)
+        if part_paths is not None:
+            rewrites = dict(part_paths.body_rewrites)
+            symmetry = replace(symmetry, instances=tuple(replace(
+                item,
+                output_path=rewrites[item.output_path],
+                parent_output_path=rewrites.get(
+                    item.parent_output_path, item.parent_output_path),
+            ) for item in symmetry.instances))
+            body = semantic_body_snapshot_after_parts(body, part_paths)
+        return BodyRebuildSafetyAudit(symmetry, body, scene, issues)
 
 
 class BodyReplacementHost(

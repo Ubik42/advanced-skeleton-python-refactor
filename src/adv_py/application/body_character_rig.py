@@ -36,6 +36,7 @@ from adv_py.core.body_fk_channel_locks import (
 from adv_py.core.body_fit_aim import BodyFitAimSpec, plan_body_fit_aim
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_metadata import FitJointField
+from adv_py.core.fit_part import FitPartFinalPaths
 from adv_py.core.fit_tweaker import FitTweakerPlan, plan_fit_tweakers
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
@@ -225,6 +226,7 @@ class BuildBodyCharacterRig:
         axial_description=None,
         include_head_aim: bool = False,
         defer_fit_tweakers: bool = False,
+        part_paths: FitPartFinalPaths | None = None,
     ) -> BodyCharacterRigBuildPlan:
         if type(defer_fit_tweakers) is not bool:
             raise FitSkeletonValidationError("Tweaker 延后构建选项必须是布尔值")
@@ -240,6 +242,7 @@ class BuildBodyCharacterRig:
             raise FitSkeletonValidationError("include_torso 必须是布尔值")
         safety = self._inspector.execute(
             container_name, root_name=body_root_name, center_tolerance=center_tolerance,
+            part_paths=part_paths,
         )
         # ADV 6.925 ignores aim on terminal Fit joints; only a joint with a
         # direct child enters the generic FKAim/AimSystem construction loop.
@@ -540,6 +543,7 @@ class BuildBodyCharacterRig:
         axial_description=None,
         include_head_aim: bool = False,
         defer_fit_tweakers: bool = False,
+        part_paths: FitPartFinalPaths | None = None,
     ) -> BodyCharacterRigBuildResult:
         plan = self.plan(
             container_name,
@@ -555,6 +559,7 @@ class BuildBodyCharacterRig:
             axial_description=axial_description,
             include_head_aim=include_head_aim,
             defer_fit_tweakers=defer_fit_tweakers,
+            part_paths=part_paths,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
             center_tolerance=center_tolerance,
@@ -572,6 +577,7 @@ class BuildBodyCharacterRig:
                 container_name,
                 root_name=body_root_name,
                 center_tolerance=center_tolerance,
+                part_paths=part_paths,
             )
             if current != plan.arm.safety:
                 raise RuntimeError(

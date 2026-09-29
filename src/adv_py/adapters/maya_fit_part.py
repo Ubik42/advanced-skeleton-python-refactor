@@ -655,8 +655,12 @@ class MayaFitPartMixin:
             if projection.static_source_name:
                 parent = c.listRelatives(inputs.start_body, parent=True,
                                          fullPath=True) or []
-                if parent != [inputs.static_parent_body]:
-                    raise ValueError("静态下游 Twist 来源不在原 Body 父级")
+                source_parent = inputs.static_parent_body
+                if (not source_parent
+                        or not inputs.start_body.startswith(
+                            source_parent + "|")
+                        or not parent):
+                    raise ValueError("静态下游 Twist 来源不在原 Body 父链")
                 channels = ("rotate", "rotateX", "rotateY", "rotateZ")
                 if (any(c.connectionInfo(inputs.start_body + "." + attr,
                         sourceFromDestination=True) for attr in channels)

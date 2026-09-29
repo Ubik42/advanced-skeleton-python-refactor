@@ -122,6 +122,30 @@ def rebase_body_snapshot_after_parts(
     return replace(before, root=rewrites[before.root], joints=tuple(joints))
 
 
+def semantic_body_snapshot_after_parts(
+    physical: BodySkeletonSnapshot,
+    paths: FitPartFinalPaths,
+) -> BodySkeletonSnapshot:
+    """Expose final DAG identities with the Body-only parent relationships.
+
+    FK/IK planning concerns the original Body joints.  Part joints inserted
+    between them affect physical parenting, but are independent deformers;
+    control planning still needs the direct semantic Body chain.
+    """
+    rewrites = dict(paths.body_rewrites)
+    reverse = {after: before for before, after in rewrites.items()}
+    if (len(rewrites) != len(paths.body_rewrites)
+            or len(reverse) != len(rewrites)
+            or set(reverse) != {joint.path for joint in physical.joints}):
+        raise FitPartValidationError("Part 语义 Body 快照路径映射不完整")
+    joints = []
+    for joint in physical.joints:
+        old_parent = reverse[joint.path].rsplit("|", 1)[0] or None
+        parent = rewrites.get(old_parent, old_parent)
+        joints.append(replace(joint, parent_path=parent))
+    return replace(physical, joints=tuple(joints))
+
+
 def rebase_plan_paths_after_parts(value: object,
                                   paths: FitPartFinalPaths) -> object:
     """Rebase immutable rig plans after the physical Body DAG changes.

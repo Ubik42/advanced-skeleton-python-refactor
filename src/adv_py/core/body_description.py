@@ -31,6 +31,8 @@ class BodyAxialDescription:
         if joints[self.spine[0]].path!=body.root:
             raise FitSkeletonValidationError('身体描述的骨盆必须为 Body 根')
         for name,parent in self.parents:
-            if joints[name].parent_path!=(joints[parent].path if parent else None):
+            expected_parent = (joints[parent].path if parent else
+                               body.root.rsplit('|', 1)[0] or None)
+            if joints[name].parent_path != expected_parent:
                 raise FitSkeletonValidationError('身体描述父链不匹配：'+name)
         return joints

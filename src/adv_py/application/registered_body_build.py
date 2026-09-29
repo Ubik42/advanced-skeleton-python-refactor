@@ -7,7 +7,9 @@ from dataclasses import dataclass, replace
 from adv_py.core.character_registry import CharacterRegistration
 from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.fit_settings import FitSkeletonValidationError
-from adv_py.core.fit_part import rebase_plan_paths_after_parts
+from adv_py.core.fit_part import (
+    rebase_plan_paths_after_parts, semantic_body_snapshot_after_parts,
+)
 from adv_py.core.fit_tweaker import plan_fit_tweakers
 from adv_py.core.fit_bendy import plan_fit_bendy_chains
 from adv_py.core.fit_inbetween_untwister import InbetweenUnTwisterPlan
@@ -125,6 +127,24 @@ class _JoinedTransactionHost:
     def transaction(self, label):
         del label
         yield
+
+
+class _PartAwareRigHost:
+    """Plan controls on final Body paths while hiding inserted Part edges."""
+
+    def __init__(self, host, paths):
+        self._host = host
+        self._paths = paths
+
+    def __getattr__(self, name):
+        return getattr(self._host, name)
+
+    def capture_physical_body_skeleton(self, root_name):
+        return self._host.capture_body_skeleton(root_name)
+
+    def capture_body_skeleton(self, root_name):
+        return semantic_body_snapshot_after_parts(
+            self.capture_physical_body_skeleton(root_name), self._paths)
 
 
 def _independent_rig_twist_sources(
@@ -450,11 +470,21 @@ class BuildRegisteredBodyCharacter:
             skeleton = BuildOrientedBodySkeleton(joined).apply(
                 container_name, infer_missing_labels=infer_missing_labels,
                 root_parent_path=_DEFORMATION_SYSTEM_PATH)
-            rig = BuildBodyCharacterRig(joined).apply(container_name,
+            fit_part_hierarchy = (
+                BuildFitPartHierarchy(joined).apply(part_plan)
+                if use_fit_part_hierarchy else None)
+            final_paths = (fit_part_hierarchy.final_paths
+                           if fit_part_hierarchy is not None else None)
+            if final_paths is not None and bendy_chains:
+                bendy_chains = rebase_plan_paths_after_parts(
+                    bendy_chains, final_paths)
+            rig_host = (_PartAwareRigHost(joined, final_paths)
+                        if final_paths is not None else joined)
+            rig = BuildBodyCharacterRig(rig_host).apply(container_name,
                 include_torso=True, include_spine_ik=True,
                 include_control_spaces=True, axial_description=axial_description,
                 include_head_aim=include_head_aim,
-                defer_fit_tweakers=True)
+                defer_fit_tweakers=True, part_paths=final_paths)
             if not use_fit_part_hierarchy:
                 BuildFitPartScaleDrivers(joined).apply_terminal_only(
                     part_plan.specs,
@@ -466,7 +496,6 @@ class BuildRegisteredBodyCharacter:
                 follows = plan_fit_bendy_follow(bendy_chains, rig.plan)
                 BuildFitBendyGuides(joined).apply(bendy_chains,
                                                   follows=follows)
-            fit_part_hierarchy = None
             twist_steps = ()
             scale_plan = None
             inbetween_segments = ()
@@ -474,23 +503,36 @@ class BuildRegisteredBodyCharacter:
             inbetween_untwisters = ()
             hip_swing_reverse = None
             if use_fit_part_hierarchy:
+                active_twist_parts = tuple(replace(
+                    part,
+                    start_body=final_paths.remap_body_reference(
+                        part.start_body),
+                    end_body=final_paths.remap_body_reference(
+                        part.end_body),
+                ) for part in ordinary_twist_parts)
                 (control_matrices, body_constraints,
                  blended_matrices, root_child_offsets) = (
                     _independent_rig_twist_sources(rig.plan))
                 if fit_part_twist_sources is None:
                     rotation_inputs = plan_standard_fit_part_rotation_inputs(
-                        ordinary_twist_parts,
+                        active_twist_parts,
                         independent_world_matrices=control_matrices,
                         independent_body_constraints=body_constraints,
                         blended_world_matrices=blended_matrices,
                         reference_inverse_matrices={
                             part.start_body: root_child_offsets[part.start_body]
-                            for part in ordinary_twist_parts
-                            if part.start_body in root_child_offsets})
+                            for part in active_twist_parts
+                            if part.start_body in root_child_offsets},
+                        semantic_parent_by_body={
+                            final_paths.remap_body_reference(spec.path):
+                            final_paths.remap_body_reference(spec.parent_path)
+                            for spec in part_plan.specs
+                            if spec.parent_path is not None},
+                    )
                     projections = plan_fit_part_twist_projections(
                         rotation_inputs)
                     plan_fit_part_twist(
-                        ordinary_twist_parts,
+                        active_twist_parts,
                         tuple(item.source() for item in projections
                               if item.input.distribution_source))
                 twist_sources = (
@@ -498,21 +540,20 @@ class BuildRegisteredBodyCharacter:
                     if fit_part_twist_sources is None
                     else fit_part_twist_sources
                 )
-                fit_part_hierarchy = BuildFitPartHierarchy(joined).apply(
-                    part_plan)
-                final_paths = fit_part_hierarchy.final_paths
                 if fit_part_twist_sources is None:
                     PrepareFitPartTwistSources(joined).assert_reparented_static_sources(
                         projections, final_paths)
                 active_twist_sources = tuple(replace(
                     source,
+                    start_body=final_paths.remap_body_reference(
+                        source.start_body),
                     down_twist_plug=final_paths.remap_body_reference(
                         source.down_twist_plug),
                     up_twist_plug=(final_paths.remap_body_reference(
                         source.up_twist_plug) if source.up_twist_plug else None),
                 ) for source in twist_sources)
                 twist_steps = BuildFitPartTwistDrivers(joined).apply(
-                    ordinary_twist_parts, active_twist_sources)
+                    active_twist_parts, active_twist_sources)
                 scale_plan = BuildFitPartScaleDrivers(joined).apply(
                     part_plan.fit_parts, part_plan.specs,
                     frozenset(item.joint for item in fit_source.metadata
