@@ -175,6 +175,31 @@ def _add_optional_end_markers(by_name: dict[str, SourceSkeletonJoint]) -> None:
     add("ToesEnd", "Toes", tuple(t + f * 0.5 for t, f in zip(toes, foot)))
 
 
+def _add_non_symmetry_end_markers(
+    by_name: dict[str, SourceSkeletonJoint],
+) -> None:
+    """Give a separately authored left chain its own missing end guides."""
+    suffix = "_NonSymmetry"
+
+    def add(name: str, parent: str, previous: str) -> None:
+        if (name in by_name or parent not in by_name
+                or previous not in by_name):
+            return
+        end = by_name[parent].world_position
+        before = by_name[previous].world_position
+        position = tuple(b + (b - a) * 0.5
+                         for a, b in zip(before, end))
+        parent_path = by_name[parent].path
+        by_name[name] = SourceSkeletonJoint(
+            parent_path + "|@fit-guide:" + name,
+            name, parent_path, position)
+
+    for digit in ("Thumb", "Index", "Middle", "Ring", "Pinky"):
+        add(digit + "End" + suffix,
+            digit + "3" + suffix, digit + "2" + suffix)
+    add("ToesEnd" + suffix, "Toes" + suffix, "Ankle" + suffix)
+
+
 def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                              axis: FitUpAxis) -> SourceSkeletonFitPlan:
     """Map a captured hierarchy to Fit data without querying a DCC scene."""
@@ -247,7 +272,43 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         not in right_by_leaf
         and _fit_name(joint.name.rsplit(":", 1)[-1][:-2] + "_R")
         not in right_semantic_names}
-    left_authored_paths = set(unpaired_left_roots)
+    def right_only(joint: SourceSkeletonJoint) -> bool:
+        ancestry = []
+        current = joint.path
+        while current in by_path:
+            ancestor = by_path[current]
+            ancestry.append(ancestor)
+            current = ancestor.parent
+        mirror_code = 0
+        for ancestor in reversed(ancestry):
+            edits = (ancestor.additional_fit_edits
+                     if isinstance(ancestor.additional_fit_edits, tuple)
+                     else ())
+            if any(isinstance(edit, FitJointFieldEdit)
+                   and edit.field is FitJointField.NO_MIRROR
+                   and edit.value is True for edit in edits):
+                mirror_code = -1
+            if (mirror_code == -1
+                    and not joint.name.endswith("_NonSymmetry")
+                    and any(isinstance(edit, FitJointFieldEdit)
+                            and edit.field is FitJointField.NO_MIRROR_LEFT
+                            and edit.value is True for edit in edits)):
+                mirror_code = 1
+        return mirror_code == -1
+
+    # MEL's authored _NonSymmetry chain is a second Fit branch rooted at
+    # the same center joint.  Preserve it when the right source explicitly
+    # disables mirroring instead of silently replacing the real left pose.
+    paired_non_sym_roots = {
+        joint.path for joint in source
+        if (leaf := joint.name.rsplit(":", 1)[-1]).endswith("_L")
+        and (right := right_by_leaf.get(leaf[:-2] + "_R")) is not None
+        and right_only(right)
+        and joint.parent == right.parent
+        and joint.parent in by_path
+        and abs(by_path[joint.parent].world_position[0]) <= 0.01}
+    paired_non_sym_paths = set(paired_non_sym_roots)
+    left_authored_paths = set(unpaired_left_roots) | paired_non_sym_paths
     # A left-only branch can contain children named without a side suffix.
     # They inherit their parent's left-only Body emission in the MEL build.
     # Walk the actual source parent chain so a paired _L child cannot cause
@@ -255,9 +316,18 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     for joint in sorted(source, key=lambda item: item.path.count("|")):
         leaf = joint.name.rsplit(":", 1)[-1]
         semantic_leaf = leaf.removesuffix("_NonSymmetry")
+        if joint.parent in paired_non_sym_paths:
+            paired_non_sym_paths.add(joint.path)
+            left_authored_paths.add(joint.path)
         if (joint.parent in left_authored_paths
                 and "_" not in semantic_leaf):
             left_authored_paths.add(joint.path)
+    unrepresentable_paired_left = {
+        joint.path for joint in source
+        if (leaf := joint.name.rsplit(":", 1)[-1]).endswith("_L")
+        and (right := right_by_leaf.get(leaf[:-2] + "_R")) is not None
+        and right_only(right)
+        and joint.path not in paired_non_sym_paths}
     axial_paths = _axial_source_paths(source, root)
     axial_names = tuple(f"Spine{index}" for index in
                         range(1, len(axial_paths))) + ("Chest",)
@@ -270,6 +340,14 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     optional_aliases = {"Clavicle", "Hand", "Foot", "Toe", "Ball"}
 
     def mapped_name(joint: SourceSkeletonJoint) -> str | None:
+        if joint.path in paired_non_sym_paths:
+            leaf = joint.name.rsplit(":", 1)[-1]
+            counterpart = (right_by_leaf.get(leaf[:-2] + "_R")
+                           if leaf.endswith("_L") else None)
+            base = (mapped_name(counterpart) if counterpart is not None
+                    else leaf.removesuffix("_L")
+                    .removesuffix("_NonSymmetry"))
+            return base + "_NonSymmetry"
         if joint.path in left_authored_paths:
             leaf = joint.name.rsplit(":", 1)[-1]
             base = leaf.removesuffix("_L").removesuffix("_NonSymmetry")
@@ -328,6 +406,7 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         by_name[name] = joint
 
     _add_optional_end_markers(by_name)
+    _add_non_symmetry_end_markers(by_name)
     def fit_world_position(joint: SourceSkeletonJoint) -> tuple[float, float, float]:
         position = joint.world_position
         if joint.path not in left_authored_paths:
@@ -402,6 +481,7 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     left_canonical_paths = {
         joint.path for joint in source
         if left_mirror_branch(joint)
+        and joint.path not in left_authored_paths
         and joint.name.rsplit(":", 1)[-1].endswith("_L")
         and (counterpart := right_by_leaf.get(
             joint.name.rsplit(":", 1)[-1][:-2] + "_R")) is not None
@@ -421,7 +501,8 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     extra_specs = []
     extra_rows = sorted(((name, joint) for name, joint in by_name.items()
                          if name not in canonical_names
-                         and joint.path in source_by_path
+                         and (joint.path in source_by_path
+                              or "|@fit-guide:" in joint.path)
                          and (not left_mirror_branch(joint)
                               or joint.path in left_authored_paths)
                          and joint.path not in left_canonical_paths
@@ -460,14 +541,16 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         if left_mirror_branch(joint)
         and any(joint.path == root_path
                 or joint.path.startswith(root_path + "|")
-                for root_path in unpaired_left_roots)}
+                for root_path in unpaired_left_roots
+                | paired_non_sym_roots)}
     uncovered_left = (affected_left - included_left
                       - left_canonical_paths
                       - set(source_only_intermediates))
+    omitted_left = uncovered_left | unrepresentable_paired_left
     source_only_left_branches = tuple(sorted(
-        path for path in uncovered_left
+        path for path in omitted_left
         if not any(path.startswith(parent + "|")
-                   for parent in uncovered_left)))
+                   for parent in omitted_left)))
     if extra_specs:
         reference = FitTemplateSpec(
             reference.name, reference.joints + tuple(extra_specs))
@@ -598,14 +681,19 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                     and joint.untwister is None):
                 edits.append(FitJointFieldEdit(FitJointField.UNTWISTER, True))
         edits.extend(joint.additional_fit_edits)
-        if joint.path in left_authored_paths:
-            # The Fit source remains under its authored parent, but ADV's
-            # noMirror/noMirrorLeft pair emits only the left Body branch.
+        if joint.path in paired_non_sym_roots:
             edits = [edit for edit in edits if edit.field not in (
                 FitJointField.NO_MIRROR, FitJointField.NO_MIRROR_LEFT)]
-            edits.extend((
-                FitJointFieldEdit(FitJointField.NO_MIRROR, True),
-                FitJointFieldEdit(FitJointField.NO_MIRROR_LEFT, True)))
+            edits.append(FitJointFieldEdit(FitJointField.NO_MIRROR, True))
+        elif (joint.path in left_authored_paths
+              and joint.path not in paired_non_sym_paths):
+            # An unpaired source under a right Fit parent needs
+            # noMirrorLeft so the mirrored pass emits its left Body branch.
+            edits = [edit for edit in edits if edit.field not in (
+                FitJointField.NO_MIRROR, FitJointField.NO_MIRROR_LEFT)]
+            edits.append(FitJointFieldEdit(FitJointField.NO_MIRROR, True))
+            edits.append(FitJointFieldEdit(
+                FitJointField.NO_MIRROR_LEFT, True))
         explicit_no_skin = next((edit.value for edit in edits
                                  if edit.field is FitJointField.NO_SKIN), None)
         if (explicit_no_skin is not None
