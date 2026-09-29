@@ -5300,6 +5300,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             for plug in plan.roll_rotation_plugs
             if self._cmds.objExists(plug)
         )
+        hybrid_poses = []
+        for path, _, _ in plan.hybrid_joint_poses:
+            if not self._cmds.objExists(path):
+                continue
+            matrix, axes = self._spine_world_frame(path)
+            hybrid_poses.append((path, matrix[12:15], axes))
         return BodyLegFkToIkSceneState(
             existing,
             writable,
@@ -5310,6 +5316,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             foot_values,
             roll_values,
             toe_end_body_axes,
+            tuple(hybrid_poses),
         )
 
     def apply_body_leg_fk_to_ik(self, plan: BodyLegFkToIkPlan) -> None:
@@ -5343,20 +5350,30 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             )
             self._cmds.xform(plan.ankle_control_path, worldSpace=True, translation=plan.ankle_position)
             self._spine_set_world_rotation(plan.ankle_control_path,matrix)
-            toe_position = tuple(float(value) for value in self._cmds.xform(
-                plan.toe_control_path,
-                query=True,
-                worldSpace=True,
-                translation=True,
-            ))
-            toe_x, toe_y, toe_z = plan.toe_body_axes
-            toe_matrix = (
-                *toe_x, 0.0,
-                *toe_y, 0.0,
-                *toe_z, 0.0,
-                *toe_position, 1.0,
-            )
-            self._spine_set_world_rotation(plan.toe_control_path,toe_matrix)
+            if plan.reverse_roll_control_path is not None:
+                self._match_body_leg_hybrid_roll(plan)
+                for path, _, axes in plan.hybrid_control_targets:
+                    control_matrix = self._spine_world_frame(path)[0]
+                    x_axis, y_axis, z_axis = axes
+                    target_matrix = (
+                        *x_axis, 0.0, *y_axis, 0.0,
+                        *z_axis, 0.0, *control_matrix[12:15], 1.0)
+                    self._spine_set_world_rotation(path, target_matrix)
+            else:
+                toe_position = tuple(float(value) for value in self._cmds.xform(
+                    plan.toe_control_path,
+                    query=True,
+                    worldSpace=True,
+                    translation=True,
+                ))
+                toe_x, toe_y, toe_z = plan.toe_body_axes
+                toe_matrix = (
+                    *toe_x, 0.0,
+                    *toe_y, 0.0,
+                    *toe_z, 0.0,
+                    *toe_position, 1.0,
+                )
+                self._spine_set_world_rotation(plan.toe_control_path,toe_matrix)
             if plan.toe_end_ik_driver_path is not None:
                 if plan.toe_end_body_axes is None:
                     raise RuntimeError("Leg FK→IK 缺少 ToesEnd 目标朝向")
@@ -5374,6 +5391,37 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             finish_match(self,shape_state)
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
+
+    def _match_body_leg_hybrid_roll(self, plan: BodyLegFkToIkPlan) -> None:
+        roll_path = plan.reverse_roll_control_path
+        handle_name = plan.reverse_roll_handle_name
+        if roll_path is None or handle_name is None:
+            return
+        handles = self._cmds.ls(handle_name, long=True, type="ikHandle") or []
+        if len(handles) != 1:
+            raise FitSkeletonValidationError("IKHybrid 腿部 Handle 不唯一")
+        parent = roll_path.rsplit("|", 1)[0]
+        target = plan.body_joint_paths[2]
+        direction = 1.0 if plan.side is FitBuildSide.RIGHT else -1.0
+        temp1 = self._cmds.createNode(
+            "transform", parent=handles[0], skipSelect=True)
+        try:
+            temp2 = self._cmds.createNode(
+                "transform", parent=roll_path, skipSelect=True)
+            temp2 = self._cmds.parent(temp2, temp1, absolute=True)[0]
+            temp1 = self._cmds.parent(temp1, parent, absolute=True)[0]
+            self._cmds.aimConstraint(
+                target, temp1, maintainOffset=False,
+                aimVector=(-direction, 0.0, 0.0),
+                upVector=(0.0, direction, 0.0),
+                worldUpType="objectrotation", worldUpObject=target)
+            temp2 = (self._cmds.ls(temp2.rsplit("|", 1)[-1], long=True)
+                     or [temp2])[0]
+            self._spine_set_world_rotation(
+                roll_path, self._spine_world_frame(temp2)[0])
+        finally:
+            if self._cmds.objExists(temp1):
+                self._cmds.delete(temp1)
 
     def capture_body_leg_ik_to_fk_state(
         self, plan: BodyLegIkToFkPlan
@@ -7409,6 +7457,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         connections = []
         targets = []
         shapes = []
+        control_axes = []
         for segment in hybrid.segments:
             for path in (segment.control_offset_path, segment.control_path,
                          segment.sampler1_offset_path, segment.sampler1_path,
@@ -7439,6 +7488,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 if len(controls) == 1 else [])
             shapes.append((segment.control_path,
                            "nurbsCurve" if control_shapes else None))
+            control_axes.append((
+                segment.control_path,
+                self._spine_world_frame(controls[0])[1]
+                if len(controls) == 1 else None))
 
         handles = []
         for name in (hybrid.initial_handle_name,
@@ -7513,7 +7566,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             high_heel=high_state,
             hybrid=BodyLegFootHybridState(
                 tuple(nodes), tuple(connections), tuple(targets),
-                tuple(handles), tuple(shapes)))
+                tuple(handles), tuple(shapes), tuple(control_axes)))
 
     def _canonical_plug(self, plug: str) -> str:
         node, attribute = plug.split(".", 1)

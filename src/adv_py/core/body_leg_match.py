@@ -26,6 +26,7 @@ class BodyLegFkToIkPlan:
     pole_position: Vector3
     body_joint_paths: tuple[str, str, str]
     body_joint_positions: tuple[Vector3, Vector3, Vector3]
+    body_ankle_axes: AxisFrame
     toe_body_path: str
     ankle_ik_driver_path: str
     toe_ik_driver_path: str
@@ -41,6 +42,10 @@ class BodyLegFkToIkPlan:
     toe_end_ik_driver_path: str | None = None
     toe_end_body_position: Vector3 | None = None
     toe_end_body_axes: AxisFrame | None = None
+    hybrid_control_targets: tuple[tuple[str, str, AxisFrame], ...] = ()
+    hybrid_joint_poses: tuple[tuple[str, Vector3, AxisFrame], ...] = ()
+    reverse_roll_control_path: str | None = None
+    reverse_roll_handle_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +59,7 @@ class BodyLegFkToIkSceneState:
     foot_attribute_values: tuple[tuple[str, float], ...]
     roll_rotation_values: tuple[tuple[str, float], ...] = ()
     toe_end_body_axes: tuple[Vector3, ...] = ()
+    hybrid_joint_poses: tuple[tuple[str, Vector3, AxisFrame], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,8 +114,6 @@ def plan_body_leg_fk_to_ik(
     if len(foot_sides) != 1:
         raise ValueError("Leg FK→IK 匹配要求唯一的目标侧 Foot")
     foot_side = foot_sides[0]
-    if foot_side.hybrid is not None:
-        raise ValueError("Leg FK→IK 匹配的 IKHybrid 控制对齐尚未接入")
     by_path = {joint.path: joint for joint in body.joints}
     by_name = {joint.name: joint for joint in body.joints}
     wanted_names = tuple(
@@ -141,6 +145,33 @@ def plan_body_leg_fk_to_ik(
     toe_end_blend = next(
         (joint for joint in blend_side.joints
          if toe_end is not None and joint.body_joint == toe_end.path), None)
+    hybrid = foot_side.hybrid
+    hybrid_targets = tuple(
+        (segment.control_path, segment.source_path,
+         by_path[segment.source_path].world_axes)
+        for segment in hybrid.segments) if hybrid is not None else ()
+    hybrid_poses = tuple(
+        (segment.source_path, by_path[segment.source_path].world_position,
+         by_path[segment.source_path].world_axes)
+        for segment in hybrid.segments) if hybrid is not None else ()
+    if hybrid is not None:
+        if len(hybrid.segments) < 2:
+            raise ValueError("IKHybrid 缺少 QToes 中间关节")
+        proximal = hybrid.segments[0]
+        distal = hybrid.segments[-2]
+        reverse_roll = next((pivot.roll_control_path
+                             for pivot in foot_side.pivots
+                             if pivot.roll_control_name and
+                             pivot.roll_control_name ==
+                             f"AdvPy_Roll{proximal.marker_name}_{side.value}"), None)
+        if reverse_roll is None:
+            raise ValueError("IKHybrid 缺少近端 Roll 控制器")
+        ankle_target_position = by_path[proximal.source_path].world_position
+        ankle_target_axes = by_path[distal.source_path].world_axes
+    else:
+        reverse_roll = None
+        ankle_target_position = joints[2].world_position
+        ankle_target_axes = joints[2].world_axes
     line = tuple(
         end - start
         for start, end in zip(joints[0].world_position, joints[2].world_position)
@@ -193,7 +224,10 @@ def plan_body_leg_fk_to_ik(
         )
         for channel in channels
     ) + tuple(
-        f"{foot_side.toe_control_path}.rotate{axis}" for axis in "XYZ"
+        f"{path}.rotate{axis}"
+        for path in ((foot_side.toe_control_path,) if hybrid is None
+                     else (target[0] for target in hybrid_targets))
+        for axis in "XYZ"
     ) + foot_plugs + roll_rotation_plugs + (blend_plug,) + (
         tuple(f"{toe_end_blend.ik_driver}.rotate{axis}" for axis in "XYZ")
         if toe_end_blend is not None else ())
@@ -202,24 +236,29 @@ def plan_body_leg_fk_to_ik(
         blend_plug=blend_plug,
         ankle_control_path=limb.ankle_control_path,
         pole_control_path=limb.pole_control_path,
-        ankle_position=joints[2].world_position,
-        ankle_axes=joints[2].world_axes,
+        ankle_position=ankle_target_position,
+        ankle_axes=ankle_target_axes,
         pole_position=pole,
         body_joint_paths=paths,
         body_joint_positions=tuple(joint.world_position for joint in joints),
+        body_ankle_axes=joints[2].world_axes,
         toe_body_path=toe.path,
         ankle_ik_driver_path=limb.chain[2],
         toe_ik_driver_path=toe_blend.ik_driver,
         toe_body_position=toe.world_position,
         toe_body_axes=toe.world_axes,
-        toe_control_path=foot_side.toe_control_path,
+        toe_control_path=(foot_side.toe_control_path if hybrid is None else ""),
         foot_attribute_plugs=foot_plugs,
         foot_reset_values=foot_reset_values,
         roll_rotation_plugs=roll_rotation_plugs,
         required_paths=(
             limb.ankle_control_path,
             limb.pole_control_path,
-            foot_side.toe_control_path,
+            *((foot_side.toe_control_path,) if hybrid is None else ()),
+            *(path for path, _, _ in hybrid_targets),
+            *(source for _, source, _ in hybrid_targets),
+            *((foot_side.handle_name, reverse_roll)
+              if reverse_roll is not None else ()),
             *(pivot.roll_control_path for pivot in foot_side.pivots
               if pivot.roll_control_path),
             *(manual.control_path for manual in foot_side.manual_pivots),
@@ -238,6 +277,11 @@ def plan_body_leg_fk_to_ik(
                                if toe_end_blend is not None else None),
         toe_end_body_axes=(toe_end.world_axes
                            if toe_end_blend is not None else None),
+        hybrid_control_targets=hybrid_targets,
+        hybrid_joint_poses=hybrid_poses,
+        reverse_roll_control_path=reverse_roll,
+        reverse_roll_handle_name=(foot_side.handle_name
+                                  if reverse_roll is not None else None),
     )
 
 
@@ -290,7 +334,7 @@ def audit_body_leg_fk_to_ik_preflight(
         or len(state.ankle_axes) != 3
         or any(
             not _close(actual, expected, tolerance)
-            for actual, expected in zip(state.ankle_axes, plan.ankle_axes)
+            for actual, expected in zip(state.ankle_axes, plan.body_ankle_axes)
         )
     ):
         issues.append(BodyLegMatchIssue(
@@ -318,6 +362,19 @@ def audit_body_leg_fk_to_ik_preflight(
                        plan.toe_end_body_axes)))):
         issues.append(BodyLegMatchIssue(
             "pose_drift", "Leg FK→IK 匹配 ToesEnd 姿态已变化",
+            plan.side.value))
+    if (len(state.hybrid_joint_poses) != len(plan.hybrid_joint_poses)
+            or any(actual_path != expected_path
+                   or not _close(actual_position, expected_position, tolerance)
+                   or any(not _close(actual_axis, expected_axis, tolerance)
+                          for actual_axis, expected_axis in zip(
+                              actual_axes, expected_axes))
+                   for (actual_path, actual_position, actual_axes),
+                       (expected_path, expected_position, expected_axes)
+                   in zip(state.hybrid_joint_poses,
+                          plan.hybrid_joint_poses))):
+        issues.append(BodyLegMatchIssue(
+            "hybrid_pose_drift", "IKHybrid 来源关节姿态已变化",
             plan.side.value))
     return tuple(issues)
 
@@ -347,7 +404,7 @@ def audit_body_leg_fk_to_ik_result(
     ankle = by_path.get(plan.body_joint_paths[2])
     if ankle is None or any(
         not _close(actual, expected, axis_tolerance)
-        for actual, expected in zip(ankle.world_axes, plan.ankle_axes)
+        for actual, expected in zip(ankle.world_axes, plan.body_ankle_axes)
     ):
         issues.append(BodyLegMatchIssue(
             "ankle_orientation_pop",
@@ -388,6 +445,17 @@ def audit_body_leg_fk_to_ik_result(
             issues.append(BodyLegMatchIssue(
                 "toe_end_orientation_pop", "Leg FK→IK 切换后 ToesEnd 朝向跳变",
                 plan.toe_end_body_path))
+    for path, position, axes in plan.hybrid_joint_poses:
+        current = by_path.get(path)
+        if current is None or not _close(
+                current.world_position, position, position_tolerance):
+            issues.append(BodyLegMatchIssue(
+                "hybrid_position_pop", "IKHybrid 切换后关节位置跳变", path))
+        if current is None or any(not _close(actual, expected, axis_tolerance)
+                                  for actual, expected in zip(
+                                      current.world_axes, axes)):
+            issues.append(BodyLegMatchIssue(
+                "hybrid_orientation_pop", "IKHybrid 切换后关节朝向跳变", path))
     return tuple(issues)
 
 
@@ -420,6 +488,7 @@ def audit_body_leg_fk_to_ik_foot_result(
     roll_rotations = tuple(
         component
         for pivot in state.pivots if pivot.roll_control_path
+        and pivot.roll_control_path != plan.reverse_roll_control_path
         for component in (pivot.roll_control_rotation or ())
     ) + tuple(
         component
@@ -427,11 +496,24 @@ def audit_body_leg_fk_to_ik_foot_result(
         for component in (*(manual.local_translation or ()),
                           *(manual.local_rotation or ()))
     )
-    if (len(roll_rotations) != len(plan.roll_rotation_plugs)
+    expected_roll_count = len(plan.roll_rotation_plugs) - (
+        3 if plan.reverse_roll_control_path else 0)
+    if (len(roll_rotations) != expected_roll_count
             or any(abs(value) > tolerance for value in roll_rotations)):
         return (BodyLegMatchIssue(
             "foot_roll_controls", "Leg FK→IK 匹配后 Roll 控制未归零",
             plan.side.value),)
+    if plan.hybrid_control_targets:
+        axes_by_control = (dict(state.hybrid.control_axes)
+                           if state.hybrid is not None else {})
+        if any(path not in axes_by_control or axes_by_control[path] is None
+               or any(not _close(actual, expected, tolerance)
+                      for actual, expected in zip(
+                          axes_by_control[path], wanted))
+               for path, _, wanted in plan.hybrid_control_targets):
+            return (BodyLegMatchIssue(
+                "foot_ik_hybrid_match", "IKHybrid 控制器未对齐 FK 朝向",
+                plan.side.value),)
     return ()
 
 

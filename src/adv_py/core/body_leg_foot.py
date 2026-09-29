@@ -405,6 +405,7 @@ class BodyLegFootHybridState:
     constraint_targets: tuple[tuple[str, str | None], ...]
     handles: tuple[tuple[str, str | None, tuple[str, ...], str | None], ...]
     control_shapes: tuple[tuple[str, str | None], ...]
+    control_axes: tuple[tuple[str, AxisFrame | None], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
