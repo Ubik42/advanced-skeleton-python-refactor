@@ -6,6 +6,7 @@ from math import atan2, degrees, isfinite, sqrt
 
 from .body_leg_ik import BodyLegIkPlan
 from .body_leg_mechanisms import BodyLegMechanismPlan, BodyLegMechanismRole
+from .body_limb_mechanisms import expanded_ik_solver_chain
 from .body_leg_qtoes import plan_leg_qtoes_topology
 from .body_controller_appearance import body_fk_curve_radius
 from .body_controller_layers import (
@@ -224,6 +225,16 @@ class BodyLegFootHybridSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyLegFootSegmentHandleSpec:
+    start_driver_path: str
+    end_driver_path: str
+    handle_name: str
+    effector_name: str
+    parent_path: str
+    solver_joint_list: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BodyLegFootAlignSpec:
     name: str
     path: str
@@ -264,6 +275,7 @@ class BodyLegFootSideSpec:
     toe_control_rotate_order: int = 0
     toe_handle_name: str = ""
     toe_effector_name: str = ""
+    toe_start_driver_path: str = ""
     toe_solver_joint_list: tuple[str, ...] | None = None
     toe_end_driver_path: str = ""
     toe_end_handle_name: str = ""
@@ -274,6 +286,7 @@ class BodyLegFootSideSpec:
     qtoes_effector_name: str = ""
     qtoes_solver_joint_list: tuple[str, ...] | None = None
     hybrid: BodyLegFootHybridSpec | None = None
+    intermediate_handles: tuple[BodyLegFootSegmentHandleSpec, ...] = ()
     align_helpers: tuple[BodyLegFootAlignSpec, ...] = ()
 
     @property
@@ -296,7 +309,8 @@ class BodyLegFootSideSpec:
 
     @property
     def toe_handle_start_path(self) -> str:
-        return self.qtoes_driver_path or self.ankle_driver_path
+        return (self.qtoes_driver_path or self.toe_start_driver_path
+                or self.ankle_driver_path)
 
     @property
     def attributes(self) -> tuple[str, ...]:
@@ -479,6 +493,7 @@ class BodyLegFootSideState:
     qtoes_handle_joint_list: tuple[str, ...] = ()
     qtoes_handle_solver: str | None = None
     hybrid: BodyLegFootHybridState | None = None
+    intermediate_handles: tuple[tuple[str, str | None, tuple[str, ...], str | None], ...] = ()
     align_helpers: tuple[BodyLegFootAlignState, ...] = ()
 
 
@@ -523,6 +538,9 @@ def plan_body_leg_foot(
     fk_by_source = {joint.source_joint: joint.path
                     for joint in mechanisms.joints
                     if joint.role is BodyLegMechanismRole.FK}
+    ik_by_source = {joint.source_joint: joint.path
+                    for joint in mechanisms.joints
+                    if joint.role is BodyLegMechanismRole.IK}
     if len(body_by_name) != len(body.joints):
         raise BodyLegFootValidationError("Body 关节名称必须唯一")
     try:
@@ -571,9 +589,9 @@ def plan_body_leg_foot(
         separate_qtoes = (qtoes_joint is not None
                            and qtoes_joint.path != qtoes_topology.toes_path)
         if (qtoes_topology.intermediate_paths and not separate_qtoes
-                and not qtoes_topology.hybrid):
+                and not qtoes_topology.hybrid and legacy_roll_controls):
             raise BodyLegFootValidationError(
-                f"{suffix} 侧脚趾主链含尚未规划逐段 Foot IK 的中间关节")
+                f"{suffix} 侧多段脚趾链需要新版 Roll 控制层")
         if qtoes_topology.hybrid and legacy_roll_controls:
             raise BodyLegFootValidationError(
                 f"{suffix} 侧 IKHybrid 要求新建 Roll 控制层")
@@ -601,6 +619,13 @@ def plan_body_leg_foot(
             marker_roles += ((BodyLegFootPivotRole.QTOES,
                               qtoes_joint.name.removesuffix("_" + suffix),
                               "", "Y", 1.0),)
+        elif qtoes_topology.intermediate_paths:
+            marker_roles += tuple(
+                ("segment:" + joint.name,
+                 joint.name.removesuffix("_" + suffix), "", "Y", 1.0)
+                for joint in reversed(tuple(
+                    body_by_path[path]
+                    for path in qtoes_topology.intermediate_paths)))
         if manual_enabled and (
                 f"Heel_{suffix}" not in body_by_name
                 or f"BigToe_{suffix}" not in body_by_name
@@ -1088,6 +1113,38 @@ def plan_body_leg_foot(
                 world_axes=(limb.ankle_axes if index == 0 or hybrid is not None
                             else body_by_path[source].world_axes),
             ) for index, source in enumerate(align_sources))
+        intermediate_handles = ()
+        toe_start_driver = ""
+        toe_solver_joints = limb.toe_solver_joint_list
+        if qtoes_topology.intermediate_paths and not (
+                separate_qtoes or qtoes_topology.hybrid):
+            source_chain = (qtoes_topology.ankle_path,
+                            *qtoes_topology.intermediate_paths)
+            if any(path not in ik_by_source for path in source_chain):
+                raise BodyLegFootValidationError(
+                    f"{suffix} 侧逐段脚趾 IK 缺少机制关节")
+            steps = []
+            for start_source, end_source in zip(source_chain,
+                                                 source_chain[1:]):
+                start_driver = ik_by_source[start_source]
+                end_driver = ik_by_source[end_source]
+                marker = body_by_path[end_source].name
+                parent_pivot = next(
+                    pivot.path for pivot in pivots
+                    if pivot.role == "segment:" + marker)
+                start_name = body_by_path[start_source].name.removesuffix(
+                    "_" + suffix)
+                solver_chain = expanded_ik_solver_chain(
+                    mechanisms, (start_driver, end_driver))
+                steps.append(BodyLegFootSegmentHandleSpec(
+                    start_driver, end_driver,
+                    f"AdvPy_LegIK{start_name}Handle_{suffix}",
+                    f"AdvPy_LegIK{start_name}Effector_{suffix}",
+                    parent_pivot, solver_chain[:-1]))
+            intermediate_handles = tuple(steps)
+            toe_start_driver = ik_by_source[source_chain[-1]]
+            toe_solver_joints = expanded_ik_solver_chain(
+                mechanisms, (toe_start_driver, limb.toe_driver_path))[:-1]
         sides.append(BodyLegFootSideSpec(
             side=limb.side,
             legacy_roll_controls=legacy_roll_controls,
@@ -1129,8 +1186,9 @@ def plan_body_leg_foot(
             toe_control_rotate_order=body_by_name[f"Toes_{suffix}"].rotation_order,
             toe_handle_name=f"AdvPy_LegIKToesHandle_{suffix}",
             toe_effector_name=f"AdvPy_LegIKToesEffector_{suffix}",
+            toe_start_driver_path=toe_start_driver,
             toe_solver_joint_list=(None if separate_qtoes
-                                   else limb.toe_solver_joint_list),
+                                   else toe_solver_joints),
             toe_end_driver_path=limb.toe_end_driver_path,
             toe_end_handle_name=f"AdvPy_LegIKToesEndHandle_{suffix}",
             toe_end_effector_name=f"AdvPy_LegIKToesEndEffector_{suffix}",
@@ -1146,6 +1204,7 @@ def plan_body_leg_foot(
             qtoes_solver_joint_list=(limb.toe_solver_joint_list
                                      if separate_qtoes and not hybrid else None),
             hybrid=hybrid,
+            intermediate_handles=intermediate_handles,
             align_helpers=align_helpers,
         ))
     return BodyLegFootPlan(tuple(sides))
@@ -1448,6 +1507,14 @@ def audit_body_leg_foot(
             issues.append(BodyLegFootIssue(
                 "foot_swivel", "Leg IK swivel 驱动来源不一致",
                 spec.side.value))
+        expected_segments = tuple(
+            (step.handle_name, step.parent_path,
+             step.solver_joint_list, "ikSCsolver")
+            for step in spec.intermediate_handles)
+        if state.intermediate_handles != expected_segments:
+            issues.append(BodyLegFootIssue(
+                "foot_segment_ik_handle",
+                "逐段脚趾 IK 求解器结构不一致", spec.side.value))
         if spec.hybrid is None and (state.toe_handle_parent_path != spec.toe_handle_parent_path
                 or state.toe_handle_joint_list != (
                     spec.toe_solver_joint_list

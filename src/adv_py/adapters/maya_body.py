@@ -6544,6 +6544,9 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                 names.extend((side.toe_handle_name, side.toe_effector_name))
                 names.extend((side.toe_end_handle_name,
                               side.toe_end_effector_name))
+                names.extend(name for step in side.intermediate_handles
+                             for name in (step.handle_name,
+                                          step.effector_name))
             if side.qtoes_handle_name:
                 names.extend((side.qtoes_handle_name,
                               side.qtoes_effector_name))
@@ -6570,6 +6573,9 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                 side.ankle_driver_path,
                 side.toe_driver_path,
                 side.toe_end_driver_path,
+                *(driver for step in side.intermediate_handles
+                  for driver in (step.start_driver_path,
+                                 step.end_driver_path)),
                 *((side.qtoes_driver_path,)
                   if side.qtoes_driver_path else ()),
                 *((driver for segment in side.hybrid.segments
@@ -6626,7 +6632,10 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                     side.hybrid.initial_end_driver_path,
                     *(segment.end_driver_path
                       for segment in side.hybrid.segments))))
-                if side.hybrid is not None else (side.toe_driver_path,))
+                if side.hybrid is not None else (
+                    *(step.end_driver_path
+                      for step in side.intermediate_handles),
+                    side.toe_driver_path))
             for driver in rotation_drivers:
                 for axis in "XYZ":
                     plug = f"{driver}.rotate{axis}"
@@ -7025,6 +7034,19 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                     spec.qtoes_handle_name + ".visibility", False)
                 self._cmds.setAttr(
                     spec.qtoes_effector_name + ".visibility", False)
+            for step in spec.intermediate_handles:
+                segment_handle, segment_effector = self._cmds.ikHandle(
+                    name=step.handle_name,
+                    startJoint=step.start_driver_path,
+                    endEffector=step.end_driver_path,
+                    solver="ikSCsolver",
+                    sticky="sticky",
+                )
+                self._cmds.rename(segment_effector, step.effector_name)
+                self._cmds.parent(segment_handle, step.parent_path,
+                                  absolute=True)
+                self._cmds.setAttr(step.handle_name + ".visibility", False)
+                self._cmds.setAttr(step.effector_name + ".visibility", False)
             toe_handle, toe_effector = self._cmds.ikHandle(
                 name=spec.toe_handle_name,
                 startJoint=spec.toe_handle_start_path,
@@ -7591,6 +7613,25 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                 (self._cmds.ls(joint, long=True) or [joint])[0]
                 for joint in (self._cmds.ikHandle(
                     toe_end_handles[0], query=True, jointList=True) or []))
+            intermediate_handles = []
+            for step in spec.intermediate_handles:
+                matches = self._cmds.ls(
+                    step.handle_name, long=True, type="ikHandle") or []
+                if len(matches) != 1:
+                    raise FitSkeletonValidationError(
+                        "逐段脚趾 IK Handle 节点集合无效")
+                handle = matches[0]
+                parents = self._cmds.listRelatives(
+                    handle, parent=True, fullPath=True) or []
+                joint_list = tuple(
+                    (self._cmds.ls(joint, long=True) or [joint])[0]
+                    for joint in (self._cmds.ikHandle(
+                        handle, query=True, jointList=True) or []))
+                intermediate_handles.append((
+                    step.handle_name,
+                    parents[0] if parents else None,
+                    joint_list,
+                    self._cmds.ikHandle(handle, query=True, solver=True)))
             qtoes_parent = None
             qtoes_joint_list = ()
             qtoes_solver = None
@@ -7701,6 +7742,7 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                 qtoes_handle_parent_path=qtoes_parent,
                 qtoes_handle_joint_list=qtoes_joint_list,
                 qtoes_handle_solver=qtoes_solver,
+                intermediate_handles=tuple(intermediate_handles),
             ))
         return BodyLegFootSnapshot(tuple(sides))
 
