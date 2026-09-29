@@ -507,6 +507,11 @@ class BuildRegisteredBodyCharacter:
                         _defer_all_set=_defer_all_set)
                     if original_up_axis == "z":
                         joined.flip_character_scene_up_axis("|Group", "z")
+                        result = replace(
+                            result,
+                            registration=joined.rebase_character_registration_bind_pose(
+                                result.registration),
+                        )
                     return result
                 finally:
                     if joined.scene_up_axis().value != original_up_axis:

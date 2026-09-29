@@ -250,6 +250,24 @@ class MayaCharacterRegistryMixin:
             c.connectAttr(member.path+".message",REGISTRY_NAME+f".members[{index}]")
         c.setAttr(REGISTRY_NAME+".members",lock=True)
 
+    def rebase_character_registration_bind_pose(self, registration):
+        """Record final world bind frames after a Z-up Group rotation."""
+        self._require_transaction()
+        if self.read_character_registration() != registration:
+            raise CharacterRegistryError("场景上方向转换前角色登记已变化")
+        body = self.capture_body_skeleton(registration.body_root)
+        current = {joint.path: joint for joint in body.joints}
+        if set(current) != {joint.path for joint in registration.body}:
+            raise CharacterRegistryError("场景上方向转换后 Body 关节集合变化")
+        updated = replace(registration, body=tuple(
+            CharacterBindJoint(joint.path, joint.parent,
+                               self._spine_world_frame(joint.path)[0])
+            for joint in registration.body))
+        self.write_character_registration_extension(registration, updated)
+        if self.read_character_registration() != updated:
+            raise CharacterRegistryError("场景上方向转换后绑定矩阵登记失败")
+        return updated
+
     def capture_character_registration_node(self, path: str):
         return self._registry_node(path)
 
