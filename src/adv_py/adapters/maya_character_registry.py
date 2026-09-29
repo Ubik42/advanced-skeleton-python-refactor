@@ -169,6 +169,7 @@ class MayaCharacterRegistryMixin:
         bendy_micro_matrix = set()
         bendy_base_twist = set()
         bendy_micro_scale = set()
+        bendy_yz_scale = set()
         for control in bendy_aim_follow:
             stem, side = control.rsplit('_', 1)
             namespace = bendy_namespace(control)
@@ -232,6 +233,24 @@ class MayaCharacterRegistryMixin:
                     raise CharacterRegistryError(
                         'Bendy 微控制缩放节点类型错误：' + control)
                 bendy_micro_scale.add(control)
+            micro_offset = (namespace + 'MicroOffset'
+                            + stem.removeprefix('Bend') + '_' + side)
+            if c.objExists(micro_offset):
+                x_source = c.connectionInfo(
+                    micro_offset + '.scaleX',
+                    sourceFromDestination=True)
+                y_source = c.connectionInfo(
+                    micro_offset + '.scaleY',
+                    sourceFromDestination=True)
+                z_source = c.connectionInfo(
+                    micro_offset + '.scaleZ',
+                    sourceFromDestination=True)
+                expected = (namespace + 'AdvPy_'
+                            + stem.removeprefix('Bend') + '_' + side
+                            + 'BendScaleAdd.output3D')
+                if (not x_source and y_source == expected + 'y'
+                        and z_source == expected + 'z'):
+                    bendy_yz_scale.add(control)
             if side != 'R':
                 continue
             starts = c.ls(namespace + stem + '0_R', long=True,
@@ -265,7 +284,8 @@ class MayaCharacterRegistryMixin:
             frozenset(bendy_micro_matrix),
             frozenset(bendy_base_twist),
             frozenset(bendy_micro_scale),
-            tuple(bendy_counts))
+            tuple(bendy_counts),
+            frozenset(bendy_yz_scale))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

@@ -1642,8 +1642,14 @@ class MayaFitBendyMixin:
                           end_weight, end_weight)
                 c.connectAttr(weight + ".output",
                               scale_add + f".input3D[{len(spec.control_names) + 1}]")
-            c.connectAttr(scale_add + ".output3D",
-                          offset + ".scale")
+            if spec.micro_yz_scale_only:
+                for axis in "YZ":
+                    c.connectAttr(scale_add + ".output3D"
+                                  + axis.lower(),
+                                  offset + ".scale" + axis)
+            else:
+                c.connectAttr(scale_add + ".output3D",
+                              offset + ".scale")
         self._transaction_changed = True
 
     def _capture_fit_bendy_micro_aim(
@@ -1784,9 +1790,10 @@ class MayaFitBendyMixin:
                         else twist_add + ".output1D")
                     or not c.objExists(scale_add)
                     or c.nodeType(scale_add) != "plusMinusAverage"
-                    or c.connectionInfo(offset + ".scale",
-                                        sourceFromDestination=True)
-                    != scale_add + ".output3D"
+                    or (not spec.micro_yz_scale_only
+                        and c.connectionInfo(offset + ".scale",
+                                             sourceFromDestination=True)
+                        != scale_add + ".output3D")
                     or not self._capture_fit_bendy_micro_aim(
                         spec, index, guide, third)
                     or not c.objExists(guide + "MicroFollow")
@@ -1796,6 +1803,15 @@ class MayaFitBendyMixin:
                                         sourceFromDestination=True)
                     != master + ".microVis"):
                 return False
+            if spec.micro_yz_scale_only:
+                if (c.connectionInfo(offset + ".scaleX",
+                                     sourceFromDestination=True)
+                        or any(c.connectionInfo(
+                            offset + ".scale" + axis.upper(),
+                            sourceFromDestination=True)
+                            != scale_add + ".output3D" + axis
+                            for axis in "yz")):
+                    return False
             if spec.micro_matrix_aim:
                 if (c.connectionInfo(second + ".inputRotateX",
                                      sourceFromDestination=True)

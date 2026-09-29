@@ -693,6 +693,12 @@ class BuildRegisteredBodyCharacter:
                         is None
                         or chain.control_names[0] in
                         _generic_fk_policy.bendy_micro_scale_controls),
+                    micro_yz_scale_only=(
+                        _generic_fk_policy is None
+                        or _generic_fk_policy.bendy_yz_scale_controls
+                        is None
+                        or chain.control_names[0] in
+                        _generic_fk_policy.bendy_yz_scale_controls),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None

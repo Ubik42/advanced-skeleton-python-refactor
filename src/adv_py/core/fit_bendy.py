@@ -34,6 +34,7 @@ class FitBendyChainSpec:
     micro_matrix_aim: bool = True
     micro_base_twist: bool = True
     micro_local_scale: bool = True
+    micro_yz_scale_only: bool = True
 
     def __post_init__(self) -> None:
         if (type(self.control_count) is not int
@@ -65,6 +66,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 微控制基础扭转策略无效")
         if type(self.micro_local_scale) is not bool:
             raise ValueError("Bendy 微控制缩放策略无效")
+        if type(self.micro_yz_scale_only) is not bool:
+            raise ValueError("Bendy 纵向缩放策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
