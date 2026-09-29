@@ -706,6 +706,12 @@ class BuildRegisteredBodyCharacter:
                              is None
                              or chain.control_names[0] in
                              _generic_fk_policy.bendy_up_twist_controls)),
+                    micro_blended_up=(
+                        _generic_fk_policy is not None
+                        and _generic_fk_policy.bendy_blended_up_controls
+                        is not None
+                        and chain.control_names[0] in
+                        _generic_fk_policy.bendy_blended_up_controls),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None

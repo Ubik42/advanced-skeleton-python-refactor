@@ -36,6 +36,7 @@ class FitBendyChainSpec:
     micro_local_scale: bool = True
     micro_yz_scale_only: bool = True
     micro_up_twist: bool = False
+    micro_blended_up: bool = False
 
     def __post_init__(self) -> None:
         if (type(self.control_count) is not int
@@ -71,6 +72,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 纵向缩放策略无效")
         if type(self.micro_up_twist) is not bool:
             raise ValueError("Bendy 上行扭转策略无效")
+        if type(self.micro_blended_up) is not bool:
+            raise ValueError("Bendy 微控制朝向兼容策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -387,10 +390,12 @@ class FitBendyChainSpec:
 
     @property
     def micro_matrix_orientation_names(self) -> tuple[
-        tuple[str, str], ...
+        tuple[str, ...], ...
     ]:
-        return tuple(("AdvPy_" + name + "TwistCompose",
-                      "AdvPy_" + name + "TwistWorld")
+        return tuple((("AdvPy_" + name + "UpBlend",)
+                      if self.micro_blended_up else ())
+                     + ("AdvPy_" + name + "TwistCompose",
+                        "AdvPy_" + name + "TwistWorld")
                      for name in self.deform_names)
 
     @property
