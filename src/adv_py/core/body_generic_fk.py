@@ -27,6 +27,7 @@ def plan_body_generic_fk(
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
     state_by_name = {state.name: state for state in body.joints}
     metadata_by_source = {item.joint: item for item in metadata}
+    spec_by_path = {spec.path: spec for spec in specs}
     child_paths = {spec.parent_path for spec in specs}
     first_child: dict[str, str] = {}
     for spec in specs:
@@ -57,9 +58,8 @@ def plan_body_generic_fk(
             if parent_name in control_by_name:
                 parent_control = control_by_name[parent_name]
                 break
-            parent_spec = next(
-                (candidate.parent_path for candidate in specs
-                 if candidate.path == parent_spec), None)
+            parent_spec = (spec_by_path[parent_spec].parent_path
+                           if parent_spec in spec_by_path else None)
         stem = spec.name
         offset_name = "AdvPy_" + stem + "FKOffset"
         extra_name = "AdvPy_" + stem + "FKExtra"

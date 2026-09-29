@@ -17,8 +17,8 @@ class MayaBodyFitWheelMixin:
         if (c.ls(motion, long=True, type="transform") or []) != [motion]:
             raise FitSkeletonValidationError("Wheel 缺少 MotionSystem")
         system = motion + "|WheelSystem"
-        if c.objExists(system):
-            raise FitSkeletonValidationError("WheelSystem 已存在")
+        if c.objExists("WheelSystem"):
+            raise FitSkeletonValidationError("WheelSystem 名称已被占用")
         names: set[str] = {"WheelSystem"}
         for wheel in wheels:
             control = wheel.control
@@ -57,6 +57,9 @@ class MayaBodyFitWheelMixin:
         self._transaction_changed = True
         system = c.createNode("transform", name="WheelSystem",
                               parent=motion, skipSelect=True)
+        system = (c.ls(system, long=True) or [system])[0]
+        if system != motion + "|WheelSystem":
+            raise RuntimeError("WheelSystem 路径漂移")
         c.setAttr(system + ".inheritsTransform", 0, lock=True)
         for wheel in wheels:
             self._create_body_fit_wheel(system, wheel)

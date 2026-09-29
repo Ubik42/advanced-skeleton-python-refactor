@@ -41,7 +41,7 @@ from adv_py.core.body_fit_ik_follow import plan_body_fit_ik_follow
 from adv_py.core.body_fit_aim_at import plan_body_fit_aim_at
 from adv_py.core.body_fit_geo_attach import plan_body_fit_geo_attach
 from adv_py.core.body_fit_proximity_pin import plan_body_fit_proximity_pin
-from adv_py.core.body_fit_wheel import plan_body_fit_wheels
+from adv_py.core.body_fit_wheel import BodyFitWheelSpec, plan_body_fit_wheels
 from adv_py.core.body_generic_fk import plan_body_generic_fk
 from adv_py.core.body_center_between_feet import plan_body_center_between_feet
 from adv_py.core.body_fit_dependency import validate_fit_control_dependencies
@@ -274,6 +274,50 @@ def _with_inbetween_fk_sources(
         if plan.torso is not None else None)
     if matched != set(sources):
         raise ValueError("Inbetween FK 改接缺少原控制计划："
+                         + "、".join(sorted(set(sources) - matched)))
+    return replace(plan, arm=arm, leg=leg, hand=hand, torso=torso)
+
+
+def _with_wheel_fk_sources(
+    plan: BodyCharacterRigBuildPlan,
+    wheels: tuple[BodyFitWheelSpec, ...],
+) -> BodyCharacterRigBuildPlan:
+    sources = {
+        wheel.control.constraint_name: (
+            wheel.control.control_path,
+            (wheel.control.sub_control_path
+             or wheel.control.control_path)
+            + "|AdvPy_WheelFKX"
+            + wheel.control.control_name.removeprefix("AdvPy_"))
+        for wheel in wheels if wheel.control.source_override_path is None
+    }
+    if not sources:
+        return plan
+    matched: set[str] = set()
+
+    def update(controls):
+        specs = []
+        for spec in controls.controls:
+            source = sources.get(spec.constraint_name)
+            if source is None:
+                specs.append(spec)
+                continue
+            if spec.control_path != source[0]:
+                raise ValueError("Wheel FK 约束来源与计划不一致："
+                                 + spec.constraint_name)
+            specs.append(replace(spec, source_override_path=source[1]))
+            matched.add(spec.constraint_name)
+        return replace(controls, controls=tuple(specs))
+
+    arm = replace(plan.arm, fk_controls=update(plan.arm.fk_controls))
+    leg = replace(plan.leg, fk_controls=update(plan.leg.fk_controls))
+    hand = (replace(plan.hand, controls=update(plan.hand.controls))
+            if plan.hand is not None else None)
+    torso = (replace(plan.torso, torso=replace(
+        plan.torso.torso, controls=update(plan.torso.torso.controls)))
+        if plan.torso is not None else None)
+    if matched != set(sources):
+        raise ValueError("Wheel FK 改接缺少原控制计划："
                          + "、".join(sorted(set(sources) - matched)))
     return replace(plan, arm=arm, leg=leg, hand=hand, torso=torso)
 
@@ -1034,6 +1078,45 @@ class BuildRegisteredBodyCharacter:
                                  if fit_part_hierarchy is not None else None))
                 BuildFitTweakers(joined).apply(tweakers)
             joined.create_body_fit_wheels(wheels)
+            wheel_rig_plan = _with_wheel_fk_sources(rig.plan, wheels)
+            if wheel_rig_plan != rig.plan:
+                arm_fk = joined.capture_body_arm_fk_controls(
+                    wheel_rig_plan.arm.fk_controls)
+                leg_fk = joined.capture_body_leg_fk_controls(
+                    wheel_rig_plan.leg.fk_controls)
+                fk_issues = tuple(audit_body_limb_fk_controls(
+                    wheel_rig_plan.arm.fk_controls, arm_fk,
+                    limb_label="Arm")) + tuple(audit_body_limb_fk_controls(
+                        wheel_rig_plan.leg.fk_controls, leg_fk,
+                        limb_label="Leg"))
+                if fk_issues:
+                    raise RuntimeError(
+                        "Wheel FK 改接后控制层不一致："
+                        + "；".join(issue.message for issue in fk_issues))
+                hand_result = rig.hand
+                if wheel_rig_plan.hand is not None and hand_result is not None:
+                    hand_fk = joined.capture_body_hand_fk_controls(
+                        wheel_rig_plan.hand.controls)
+                    if audit_body_hand_fk_controls(
+                            wheel_rig_plan.hand.controls, hand_fk):
+                        raise RuntimeError("Wheel Hand FK 改接后控制层不一致")
+                    hand_result = replace(
+                        hand_result, plan=wheel_rig_plan.hand,
+                        snapshot=hand_fk)
+                torso_result = rig.torso
+                if wheel_rig_plan.torso is not None:
+                    torso_result = joined.capture_body_torso(
+                        wheel_rig_plan.torso.torso)
+                    if audit_body_torso(wheel_rig_plan.torso.torso,
+                                        torso_result):
+                        raise RuntimeError("Wheel Torso FK 改接后控制层不一致")
+                rig = replace(
+                    rig, plan=wheel_rig_plan,
+                    arm=replace(rig.arm, plan=wheel_rig_plan.arm,
+                                fk_controls=arm_fk),
+                    leg=replace(rig.leg, plan=wheel_rig_plan.leg,
+                                fk_controls=leg_fk),
+                    hand=hand_result, torso=torso_result)
             registration = RegisterBodyCharacter(joined).apply(rig)
             registration = RegisterGenericFk(joined).apply(
                 registration, generic_fk)
