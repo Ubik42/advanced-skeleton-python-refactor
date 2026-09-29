@@ -225,6 +225,26 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
             current = ancestor.parent
         return False
 
+    source_leaf_names = {joint.name.rsplit(":", 1)[-1] for joint in source}
+    unpaired_left_roots = {
+        joint.path for joint in source
+        if joint.name.rsplit(":", 1)[-1].endswith("_L")
+        and joint.name.rsplit(":", 1)[-1][:-2] + "_R"
+        not in source_leaf_names}
+    left_authored_paths = {
+        joint.path for joint in source
+        if any(joint.path == root_path
+               or joint.path.startswith(root_path + "|")
+               for root_path in unpaired_left_roots)}
+    right_by_leaf: dict[str, SourceSkeletonJoint] = {}
+    for joint in source:
+        leaf = joint.name.rsplit(":", 1)[-1]
+        if leaf.endswith("_R") and not left_mirror_branch(joint):
+            if leaf in right_by_leaf:
+                raise FitSkeletonValidationError(
+                    "来源骨架右侧关节短名重复：" + leaf)
+            right_by_leaf[leaf] = joint
+
     axial_paths = _axial_source_paths(source, root)
     axial_names = tuple(f"Spine{index}" for index in
                         range(1, len(axial_paths))) + ("Chest",)
@@ -237,6 +257,10 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     optional_aliases = {"Clavicle", "Hand", "Foot", "Toe", "Ball"}
 
     def mapped_name(joint: SourceSkeletonJoint) -> str | None:
+        if joint.path in left_authored_paths:
+            leaf = joint.name.rsplit(":", 1)[-1]
+            base = leaf.removesuffix("_L").removesuffix("_NonSymmetry")
+            return base + "_NonSymmetry"
         if joint.path in name_by_path:
             return name_by_path[joint.path]
         original = _base_name(joint.name)
@@ -253,9 +277,23 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
             return original
         return mapped
 
+    def mapped_parent_name(joint: SourceSkeletonJoint) -> str | None:
+        if joint.path in left_canonical_paths:
+            leaf = joint.name.rsplit(":", 1)[-1]
+            return mapped_name(right_by_leaf[leaf[:-2] + "_R"])
+        mapped = mapped_name(joint)
+        if mapped is not None:
+            return mapped
+        leaf = joint.name.rsplit(":", 1)[-1]
+        if leaf.endswith("_L"):
+            counterpart = right_by_leaf.get(leaf[:-2] + "_R")
+            if counterpart is not None:
+                return mapped_name(counterpart)
+        return None
+
     by_name: dict[str, SourceSkeletonJoint] = {}
     for joint in source:
-        if left_mirror_branch(joint):
+        if left_mirror_branch(joint) and joint.path not in left_authored_paths:
             continue
         name = mapped_name(joint)
         if name is None:
@@ -310,30 +348,28 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     for joint in source:
         mapped = mapped_name(joint)
         if (mapped is not None and mapped not in canonical_names
-                and not left_mirror_branch(joint)
+                and (not left_mirror_branch(joint)
+                     or joint.path in left_authored_paths)
                 and by_name[mapped].path != joint.path):
             raise FitSkeletonValidationError(
                 "附加来源关节映射到相同 Fit 名称：" + mapped)
     canonical_paths = {by_name[name].path for name in canonical_names
                        if by_name[name].path in source_by_path}
+    left_canonical_paths = {
+        joint.path for joint in source
+        if left_mirror_branch(joint)
+        and joint.name.rsplit(":", 1)[-1].endswith("_L")
+        and (counterpart := right_by_leaf.get(
+            joint.name.rsplit(":", 1)[-1][:-2] + "_R")) is not None
+        and mapped_name(counterpart) in canonical_names}
     source_only_intermediates = tuple(sorted(
         joint.path for name, joint in by_name.items()
         if name not in canonical_names
         and joint.path in source_by_path
-        and not left_mirror_branch(joint)
         and any(path.startswith(joint.path + "|")
-                for path in canonical_paths)))
-    right_names = {joint.name.rsplit(":", 1)[-1] for joint in source
-                   if not left_mirror_branch(joint)}
-    left_only_paths = {
-        joint.path for joint in source
-        if joint.name.rsplit(":", 1)[-1].endswith("_L")
-        and joint.name.rsplit(":", 1)[-1][:-2] + "_R"
-        not in right_names}
-    source_only_left_branches = tuple(sorted(
-        path for path in left_only_paths
-        if not any(path.startswith(parent + "|")
-                   for parent in left_only_paths)))
+                for path in (left_canonical_paths if
+                             joint.path in left_authored_paths else
+                             canonical_paths))))
     # Keep side branches such as tails and props. A helper inserted between
     # two canonical limb/spine joints cannot be made a sibling without
     # changing the source hierarchy; the current canonical solver contracts
@@ -342,7 +378,9 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     extra_rows = sorted(((name, joint) for name, joint in by_name.items()
                          if name not in canonical_names
                          and joint.path in source_by_path
-                         and not left_mirror_branch(joint)
+                         and (not left_mirror_branch(joint)
+                              or joint.path in left_authored_paths)
+                         and joint.path not in left_canonical_paths
                          and joint.path not in source_only_intermediates),
                         key=lambda row: (row[1].path.count("|"), row[1].path))
     available_names = set(canonical_names)
@@ -350,7 +388,7 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         parent_path = joint.parent
         parent_name = None
         while parent_path in source_by_path:
-            candidate = mapped_name(source_by_path[parent_path])
+            candidate = mapped_parent_name(source_by_path[parent_path])
             if candidate in available_names:
                 parent_name = candidate
                 break
@@ -358,7 +396,8 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         if parent_name is None:
             raise FitSkeletonValidationError(
                 "附加来源关节无法连接到 Fit 主链：" + joint.name)
-        if by_name[parent_name].path != parent_path:
+        if (by_name[parent_name].path != parent_path
+                and not left_mirror_branch(source_by_path[parent_path])):
             raise FitSkeletonValidationError(
                 "附加来源关节的父关节映射不唯一：" + joint.name)
         parent_position = by_name[parent_name].world_position
@@ -368,6 +407,13 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
             name, parent_name, position,
             joint.label or JointLabel.parse("Other")))
         available_names.add(name)
+    included_left = {joint.path for _, joint in extra_rows}
+    source_only_left_branches = tuple(sorted(
+        path for path in unpaired_left_roots
+        if path not in included_left
+        and path not in source_only_intermediates
+        and not any(path.startswith(parent + "|")
+                    for parent in unpaired_left_roots)))
     if extra_specs:
         reference = FitTemplateSpec(
             reference.name, reference.joints + tuple(extra_specs))
@@ -446,16 +492,26 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
             raise FitSkeletonValidationError(
                 "来源 Fit 元数据与分段设置重复：" + joint.name)
         expected_parent = reference_joint.parent
+        if joint.path in left_authored_paths and expected_parent is not None:
+            parent_source = by_name[expected_parent]
+            if (parent_source.effective_skin_enabled is False
+                    and joint.effective_skin_enabled is True):
+                raise FitSkeletonValidationError(
+                    "仅左侧分支无法覆盖父级继承的 noSkin：" + joint.name)
+            if (source_no_flip(expected_parent)
+                    and joint.effective_no_flip is False):
+                raise FitSkeletonValidationError(
+                    "仅左侧分支无法覆盖父级继承的 noFlip：" + joint.name)
         parent_path = joint.parent
         ancestry_names = (canonical_names if reference_joint.name in
                           canonical_names else reference_names)
         while parent_path and parent_path in source_by_path:
-            parent_name = mapped_name(source_by_path[parent_path])
+            parent_name = mapped_parent_name(source_by_path[parent_path])
             if (parent_name in ancestry_names
                     and parent_name != reference_joint.name):
                 break
             parent_path = source_by_path[parent_path].parent
-        actual_parent = (mapped_name(source_by_path[parent_path])
+        actual_parent = (mapped_parent_name(source_by_path[parent_path])
                          if parent_path in source_by_path else None)
         if actual_parent != expected_parent:
             raise FitSkeletonValidationError(
@@ -482,6 +538,14 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                     and joint.untwister is None):
                 edits.append(FitJointFieldEdit(FitJointField.UNTWISTER, True))
         edits.extend(joint.additional_fit_edits)
+        if joint.path in left_authored_paths:
+            # The Fit source remains under its authored parent, but ADV's
+            # noMirror/noMirrorLeft pair emits only the left Body branch.
+            edits = [edit for edit in edits if edit.field not in (
+                FitJointField.NO_MIRROR, FitJointField.NO_MIRROR_LEFT)]
+            edits.extend((
+                FitJointFieldEdit(FitJointField.NO_MIRROR, True),
+                FitJointFieldEdit(FitJointField.NO_MIRROR_LEFT, True)))
         explicit_no_skin = next((edit.value for edit in edits
                                  if edit.field is FitJointField.NO_SKIN), None)
         if (explicit_no_skin is not None
