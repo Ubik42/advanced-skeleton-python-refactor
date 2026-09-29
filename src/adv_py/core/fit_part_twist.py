@@ -49,6 +49,7 @@ class FitPartRotationInput:
     compensate_start_body: bool = False
     body_constraint_name: str | None = None
     reference_inverse_plug: str | None = None
+    static_parent_body: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +64,7 @@ class FitPartTwistProjection:
     blend_name: str | None = None
     reference_name: str | None = None
     matrix_blend_name: str | None = None
+    static_source_name: str | None = None
 
     @property
     def reference_parent_path(self) -> str | None:
@@ -99,8 +101,8 @@ def plan_standard_fit_part_rotation_inputs(
     Standard Arm/Leg chains blend their independent FK/IK driver matrices.
     Other joints use an independent FK source when the rig exposes one, or
     their Body world matrix. Both are measured against a bind-aligned
-    reference that follows the original parent. Only a dual-twist chain
-    includes its child's twist; that child must use an independent source
+    reference that follows the original parent. A dual-twist child without
+    an independent driver gets a bind-aligned static source under that parent,
     because its Body is reparented below the Part chain.
     """
     starts = {part.start_body: part for part in parts}
@@ -140,9 +142,6 @@ def plan_standard_fit_part_rotation_inputs(
             child_name = child.rsplit("|", 1)[-1]
             child_matrix = independent_world_matrices.get(child)
             child_blend = blended_world_matrices.get(child)
-            if not (child_matrix or child_blend):
-                raise FitPartTwistValidationError(
-                    "双端 Twist 下游缺少独立控制来源：" + child_name)
             up = (f"AdvPy_{child_name}_FitPartTwistProject"
                   ".outputRotateX")
             auxiliary[child] = FitPartRotationInput(
@@ -154,7 +153,9 @@ def plan_standard_fit_part_rotation_inputs(
                 ik_world_matrix_plug=(child_blend[1]
                                       if child_blend else None),
                 ik_fk_blend_plug=(child_blend[2]
-                                  if child_blend else None))
+                                  if child_blend else None),
+                static_parent_body=(start if not (child_matrix or child_blend)
+                                    else None))
         if stem in ("Shoulder", "Elbow", "Hip", "Knee"):
             limb = "Arm" if stem in ("Shoulder", "Elbow") else "Leg"
             blend = blended_world_matrices.get(start)
@@ -203,10 +204,15 @@ def plan_fit_part_twist_projections(
         if (not item.rotate_order_plug
                 or sum(bool(mode) for mode in (
                     item.rotation_plug, item.world_matrix_plug,
-                    blended_matrix)) != 1):
+                    blended_matrix, item.static_parent_body)) != 1):
             raise FitPartTwistValidationError("Part 旋转及旋转顺序来源不能为空")
         if type(item.distribution_source) is not bool:
             raise FitPartTwistValidationError("Part 扭转投影用途无效")
+        if item.static_parent_body and (
+                item.distribution_source
+                or item.static_parent_body != item.start_body.rsplit("|", 1)[0]):
+            raise FitPartTwistValidationError(
+                "静态下游 Twist 来源必须留在原 Body 父级")
         if (type(item.compensate_start_body) is not bool
                 or (item.compensate_start_body
                     and (item.subtract_body_twist
@@ -216,7 +222,8 @@ def plan_fit_part_twist_projections(
                                        item.ik_world_matrix_plug,
                                        item.ik_fk_blend_plug)):
             raise FitPartTwistValidationError("Part FK／IK 矩阵来源不完整")
-        if (item.world_matrix_plug or blended_matrix) and any((
+        if (item.world_matrix_plug or blended_matrix
+                or item.static_parent_body) and any((
                 item.ik_rotation_plug, item.ik_rotate_order_plug)):
             raise FitPartTwistValidationError(
                 "矩阵参照投影不能同时指定 IK/FK 旋转混合")
@@ -226,7 +233,8 @@ def plan_fit_part_twist_projections(
                 not isinstance(item.reference_inverse_plug, str)
                 or not item.reference_inverse_plug.endswith(
                     ".worldInverseMatrix[0]")
-                or not (item.world_matrix_plug or blended_matrix)):
+                or not (item.world_matrix_plug or blended_matrix
+                        or item.static_parent_body)):
             raise FitPartTwistValidationError(
                 "参考逆矩阵要求世界矩阵扭转来源")
         has_ik = bool(item.rotation_plug and (
@@ -246,10 +254,11 @@ def plan_fit_part_twist_projections(
             prefix + "IkProject" if has_ik else None,
             prefix + "Blend" if has_ik else None,
             prefix + "Reference" if ((item.world_matrix_plug
-                                      or blended_matrix)
+                                      or blended_matrix or item.static_parent_body)
                                      and item.reference_inverse_plug is None)
             else None,
             prefix + "WorldBlend" if blended_matrix else None,
+            prefix + "StaticSource" if item.static_parent_body else None,
         )
         names = (projection.compose_name, projection.decompose_name,
                  projection.project_name)
@@ -257,7 +266,8 @@ def plan_fit_part_twist_projections(
             projection.ik_compose_name, projection.ik_decompose_name,
                  projection.ik_project_name, projection.blend_name,
                  projection.reference_name,
-                 projection.matrix_blend_name) if name)
+                 projection.matrix_blend_name,
+                 projection.static_source_name) if name)
         if any(name in used_names for name in names):
             raise FitPartTwistValidationError("Part 投影节点名称重复")
         used_names.update(names)

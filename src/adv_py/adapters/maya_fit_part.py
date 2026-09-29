@@ -644,13 +644,29 @@ class MayaFitPartMixin:
                 and not c.objExists(inputs.reference_inverse_plug)):
             raise ValueError("Fit Part 参考逆矩阵不存在："
                              + inputs.reference_inverse_plug)
-        if inputs.world_matrix_plug or projection.matrix_blend_name:
+        if (inputs.world_matrix_plug or projection.matrix_blend_name
+                or projection.static_source_name):
             if not (projection.reference_name
                     or inputs.reference_inverse_plug):
                 raise ValueError("Fit Part 矩阵投影缺少参考逆矩阵")
             matches = c.ls(inputs.start_body, long=True, type="joint") or []
             if matches != [inputs.start_body]:
                 raise ValueError("Fit Part 矩阵投影起点关节无效")
+            if projection.static_source_name:
+                parent = c.listRelatives(inputs.start_body, parent=True,
+                                         fullPath=True) or []
+                if parent != [inputs.static_parent_body]:
+                    raise ValueError("静态下游 Twist 来源不在原 Body 父级")
+                channels = (kind + suffix
+                            for kind in ("translate", "rotate", "scale")
+                            for suffix in ("", "X", "Y", "Z"))
+                if (any(c.connectionInfo(inputs.start_body + "." + attr,
+                        sourceFromDestination=True) for attr in channels)
+                        or c.connectionInfo(
+                            inputs.start_body + ".offsetParentMatrix",
+                            sourceFromDestination=True)):
+                    raise ValueError("下游 Body 已有驱动，不能使用静态 Twist 来源："
+                                     + inputs.start_body)
             if projection.reference_name:
                 parent = projection.reference_parent_path
                 if parent and (c.ls(parent, long=True) or []) != [parent]:
@@ -680,8 +696,24 @@ class MayaFitPartMixin:
                           project + ".inputQuatW")
             return project + ".outputRotateX"
 
-        if source.world_matrix_plug or projection.matrix_blend_name:
+        if (source.world_matrix_plug or projection.matrix_blend_name
+                or projection.static_source_name):
             matrix_source = source.world_matrix_plug
+            if projection.static_source_name:
+                static = c.createNode("transform",
+                                      name=projection.static_source_name,
+                                      parent=source.static_parent_body,
+                                      skipSelect=True)
+                c.xform(static, worldSpace=True, matrix=c.xform(
+                    source.start_body, query=True, worldSpace=True,
+                    matrix=True))
+                c.addAttr(static, longName="advPyStaticTwistOwner",
+                          dataType="string")
+                c.setAttr(static + ".advPyStaticTwistOwner",
+                          "adv_py.fit_part_twist.static.v1",
+                          type="string", lock=True)
+                c.setAttr(static + ".visibility", False)
+                matrix_source = static + ".worldMatrix[0]"
             if projection.matrix_blend_name:
                 world_blend = c.createNode(
                     "blendMatrix", name=projection.matrix_blend_name)
@@ -773,7 +805,8 @@ class MayaFitPartMixin:
                        for source, target in expected)
 
         source = projection.input
-        if source.world_matrix_plug or projection.matrix_blend_name:
+        if (source.world_matrix_plug or projection.matrix_blend_name
+                or projection.static_source_name):
             reference = projection.reference_name
             matrix = projection.compose_name
             decompose = projection.decompose_name
@@ -782,8 +815,10 @@ class MayaFitPartMixin:
                                      fullPath=True) or []
                       if reference else [])
             matrix_source = (projection.matrix_blend_name + ".outputMatrix"
-                             if projection.matrix_blend_name
-                             else source.world_matrix_plug)
+                             if projection.matrix_blend_name else
+                             projection.static_source_name + ".worldMatrix[0]"
+                             if projection.static_source_name else
+                             source.world_matrix_plug)
             expected = (
                 (matrix_source, matrix + ".matrixIn[0]"),
                 (source.reference_inverse_plug or
@@ -832,6 +867,25 @@ class MayaFitPartMixin:
                                     blend + ".target[0].targetMatrix"),
                                    (source.ik_fk_blend_plug,
                                     blend + ".target[0].weight")))):
+                    return None
+            if projection.static_source_name:
+                static = projection.static_source_name
+                if not c.objExists(static) or c.nodeType(static) != "transform":
+                    return None
+                static_parent = c.listRelatives(
+                    static, parent=True, fullPath=True) or []
+                if (static_parent != [source.static_parent_body]
+                        or not c.objExists(static + ".advPyStaticTwistOwner")
+                        or c.getAttr(static + ".advPyStaticTwistOwner")
+                        != "adv_py.fit_part_twist.static.v1"
+                        or not c.getAttr(static + ".advPyStaticTwistOwner",
+                                         lock=True)
+                        or c.getAttr(static + ".visibility")
+                        or max(abs(float(a) - float(b)) for a, b in zip(
+                            c.xform(static, query=True, worldSpace=True,
+                                    matrix=True),
+                            c.xform(source.start_body, query=True,
+                                    worldSpace=True, matrix=True))) > 1e-4):
                     return None
         elif not has_projection_graph(
                 projection.compose_name, projection.decompose_name,
