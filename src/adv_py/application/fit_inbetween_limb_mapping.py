@@ -314,11 +314,13 @@ def plan_generic_inbetween_fk_bindings(
             grouped.setdefault(part.start_body, []).append(part)
     generic_by_driven = {control.driven_joint: control
                          for control in generic.controls}
-    end_by_name = {
-        (name, control.side.value): control
-        for control in standard_controls + generic.controls
-        for name in control.fit_joint_names
-    }
+    if len(generic_by_driven) != len(generic.controls):
+        raise ValueError("附加 Inbetween 通用 FK 驱动关节重复")
+    end_by_name: dict[tuple[str, str], list[BodyLimbFkControlSpec]] = {}
+    for control in standard_controls + generic.controls:
+        for name in control.fit_joint_names:
+            end_by_name.setdefault((name, control.side.value), []).append(
+                control)
     result = []
     for start_path, chain in grouped.items():
         chain.sort(key=lambda part: part.index)
@@ -340,7 +342,17 @@ def plan_generic_inbetween_fk_bindings(
         if end_side != first.side.value:
             raise ValueError("附加 Inbetween 起终点侧别不同："
                              + first.start_body_name)
-        end = end_by_name.get((end_name, end_side))
+        end_candidates = tuple({control.control_path: control
+                                for control in end_by_name.get(
+                                    (end_name, end_side), ())}.values())
+        if len(end_candidates) > 1:
+            end_candidates = tuple(control for control in end_candidates
+                if control.driven_joint == final_paths.remap_body_reference(
+                    first.end_body))
+            if len(end_candidates) != 1:
+                raise ValueError("附加 Inbetween 下游 FK 映射不唯一："
+                                 + first.end_body_name)
+        end = end_candidates[0] if end_candidates else None
         if end is not None and end.control_path == start.control_path:
             raise ValueError("附加 Inbetween 下游 FK 与起点相同："
                              + first.start_body_name)

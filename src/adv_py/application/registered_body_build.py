@@ -1023,6 +1023,8 @@ class BuildRegisteredBodyCharacter:
                     preview.build.build_options.sub_controllers),
                 extra_controllers=(
                     preview.build.build_options.extra_controllers),
+                use_offset_parent_matrix=(
+                    preview.build.build_options.use_offset_parent_matrix),
                 aim_sources=(_generic_fk_policy.aim_sources
                              if _generic_fk_policy is not None else None),
                 inbetween_start_paths=frozenset(

@@ -271,6 +271,20 @@ class MayaBodySelectionSetsMixin:
                 if parent_leaf in extra_names:
                     return current
 
+        def hidden_fk_extra(node: str) -> bool:
+            # MEL removes both FK and FKExtra from ControlSet for noControl.
+            # Extra curves can have their own registered animation channels,
+            # so filtering only the hidden FK transform is insufficient.
+            if "FKExtra" not in node.rsplit("|", 1)[-1]:
+                return False
+            return any(
+                c.attributeQuery("advPyNoControl", node=child, exists=True)
+                and c.getAttr(child + ".advPyNoControl")
+                and selection_layer(child) == node
+                for child in (c.listRelatives(
+                    node, allDescendents=True, type="transform",
+                    fullPath=True) or []))
+
         for path in dict.fromkeys(channel.node
                                   for channel in registration.channels):
             matches = c.ls(path, long=True) or []
@@ -282,6 +296,8 @@ class MayaBodySelectionSetsMixin:
             if (c.attributeQuery("advPyNoControl", node=node,
                                  exists=True)
                     and c.getAttr(node + ".advPyNoControl")):
+                continue
+            if hidden_fk_extra(node):
                 continue
             shapes = c.listRelatives(node, shapes=True,
                                      type="nurbsCurve") or []

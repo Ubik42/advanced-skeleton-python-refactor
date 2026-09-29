@@ -39,6 +39,7 @@ def plan_body_generic_fk(
     radius: float = 1.5,
     aim_sources: frozenset[str] | None = None,
     inbetween_start_paths: frozenset[str] = frozenset(),
+    use_offset_parent_matrix: bool = False,
 ) -> BodyGenericFkPlan:
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
     state_by_name = {state.name: state for state in body.joints}
@@ -64,7 +65,10 @@ def plan_body_generic_fk(
         if (spec.name in control_by_name
                 or source_name + "_" + spec.side.value in control_by_name):
             continue
-        if spec.path not in child_paths and not item.control:
+        if (spec.path not in child_paths
+                and not item.control
+                and not (use_offset_parent_matrix
+                         and item.tweaker_control)):
             continue
         state = state_by_name.get(spec.name)
         if state is None:

@@ -343,7 +343,7 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                 ancestor_path = ancestor.parent
             first_side = next((ancestor.world_position[0]
                                for ancestor in reversed(ancestry)
-                               if abs(ancestor.world_position[0]) > 1e-6),
+                               if abs(ancestor.world_position[0]) > 0.01),
                               0.0)
             if first_side < 0.0:
                 # Fit inherits its parent's right-side classification.  The
