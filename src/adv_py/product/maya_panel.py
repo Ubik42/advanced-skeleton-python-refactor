@@ -1724,6 +1724,14 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._skin_cage_groin_joint))
             form.addRow(self._button("Delete SkinCurves",
                                      self._skin_cage_delete_curves))
+            form.addRow(QtWidgets.QLabel("Sliders：先选择 SkinCage 截面曲线。"))
+            self.skin_cage_sliders_include_controller = QtWidgets.QCheckBox(
+                "include controller")
+            form.addRow(self.skin_cage_sliders_include_controller)
+            form.addRow(self._button("Create Sliders",
+                                     self._skin_cage_create_sliders))
+            form.addRow(self._button("Delete Sliders",
+                                     self._skin_cage_delete_sliders))
             form.addRow(QtWidgets.QLabel("Re-use：将当前可见 SkinCurves 形状输出到 Script Editor。"))
             self.skin_cage_reuse_xform = QtWidgets.QCheckBox("xform")
             self.skin_cage_reuse_xform.setChecked(True)
@@ -2677,6 +2685,17 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.skin_cage_delete_curves(
                 self._namespace())
             return f"已移除 {count} 个 SkinCage 曲线／管体节点"
+
+        def _skin_cage_create_sliders(self):
+            count = self.controller.skin_cage_create_sliders(
+                self._namespace(), include_controller=(
+                    self.skin_cage_sliders_include_controller.isChecked()))
+            return f"已创建 {count} 组 SkinCage Sliders"
+
+        def _skin_cage_delete_sliders(self):
+            count = self.controller.skin_cage_delete_sliders(
+                self._namespace())
+            return f"已删除 {count} 组 SkinCage Sliders"
 
         def _copy_skin_cage_weights(self):
             count = self.controller.skin_cage_copy_weights(self._namespace())

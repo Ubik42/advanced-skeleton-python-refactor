@@ -1342,6 +1342,20 @@ class MayaPanelController:
 
         return DeleteSkinCageCurves(MayaSkinCageHost(namespace)).execute()
 
+    def skin_cage_create_sliders(self, namespace: str, *,
+                                 include_controller: bool) -> int:
+        from adv_py.adapters.maya_skin_cage_sliders import MayaSkinCageSliderHost
+        from adv_py.application.skin_cage_sliders import CreateSkinCageSliders
+
+        return CreateSkinCageSliders(MayaSkinCageSliderHost(namespace)).execute(
+            include_controller=include_controller)
+
+    def skin_cage_delete_sliders(self, namespace: str) -> int:
+        from adv_py.adapters.maya_skin_cage_sliders import MayaSkinCageSliderHost
+        from adv_py.application.skin_cage_sliders import DeleteSkinCageSliders
+
+        return DeleteSkinCageSliders(MayaSkinCageSliderHost(namespace)).execute()
+
     def skin_cage_print_reuse(self, namespace: str, *, transforms: bool,
                               shapes: bool, catch: bool) -> int:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
