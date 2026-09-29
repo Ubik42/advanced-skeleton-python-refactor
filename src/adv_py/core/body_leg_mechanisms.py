@@ -25,11 +25,12 @@ BodyLegMechanismValidationError = BodyLimbMechanismValidationError
 
 def plan_body_leg_mechanisms(
     body: BodySkeletonSnapshot, *, allow_part_parents: bool = False,
+    joint_names: tuple[str, ...] = ("Hip", "Knee", "Ankle", "Toes", "ToesEnd"),
 ) -> BodyLegMechanismPlan:
     return plan_body_limb_mechanisms(
         body,
         limb_label="Leg",
-        joint_names=("Hip", "Knee", "Ankle", "Toes", "ToesEnd"),
+        joint_names=joint_names,
         allow_part_parents=allow_part_parents,
     )
 

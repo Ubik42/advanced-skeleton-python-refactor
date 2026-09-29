@@ -94,7 +94,8 @@ def plan_body_limb_mechanisms(
     if type(allow_part_parents) is not bool:
         raise BodyLimbMechanismValidationError("Part 父级开关无效")
     if not limb_label.isalpha() or len(joint_names) < 2 or len(set(joint_names)) != len(joint_names) or any(
-        not name.isalpha() for name in joint_names
+        not name or not name[0].isalpha() or not name.isalnum()
+        for name in joint_names
     ):
         raise BodyLimbMechanismValidationError("Limb 机制定义无效")
     by_name = {state.name: state for state in body.joints}

@@ -153,7 +153,8 @@ def plan_body_limb_fk_controls(
         not limb_label.isalpha()
         or len(joint_names) < 2
         or len(set(joint_names)) != len(joint_names)
-        or any(not name.isalpha() for name in joint_names)
+        or any(not name or not name[0].isalpha() or not name.isalnum()
+               for name in joint_names)
     ):
         raise BodyLimbControlValidationError("Limb FK 控制定义无效")
     if (

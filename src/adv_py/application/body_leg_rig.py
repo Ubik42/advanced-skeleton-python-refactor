@@ -212,7 +212,10 @@ class BuildBodyLegRig:
         aim_joint_names: frozenset[str] = frozenset(),
     ) -> BodyLegRigBuildPlan:
         """Plan this module from the character's shared immutable input."""
-        mechanisms = plan_body_leg_mechanisms(safety.body)
+        from adv_py.core.body_leg_qtoes import plan_leg_joint_names
+        joint_names = plan_leg_joint_names(safety.body)
+        mechanisms = plan_body_leg_mechanisms(
+            safety.body, joint_names=joint_names)
         fk_drivers = {
             spec.source_joint: spec.path
             for spec in mechanisms.joints
@@ -232,10 +235,12 @@ class BuildBodyLegRig:
                 safety.symmetry.settings).extra_controllers,
             terminal_toes_end_control=terminal_toes_end_control,
             aim_joint_names=aim_joint_names,
+            joint_names=joint_names,
         )
         blend = plan_body_leg_blend(
             safety.body, mechanisms,
-            terminal_toes_end_control=terminal_toes_end_control)
+            terminal_toes_end_control=terminal_toes_end_control,
+            joint_names=joint_names)
         ik = plan_body_leg_ik(
             safety.body,
             mechanisms,
