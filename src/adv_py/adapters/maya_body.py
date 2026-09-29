@@ -8478,20 +8478,20 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise RuntimeError("通用 FK Body 跟随层路径漂移："
                                    + follower.name)
             if follower.use_offset_parent_matrix:
-                pick = c.createNode("pickMatrix", name=follower.pick_name,
-                                    skipSelect=True)
-                c.connectAttr(follower.source_body_joint
-                              + ".worldMatrix[0]", pick + ".inputMatrix")
-                c.setAttr(pick + ".useScale", follower.inherit_scale)
-                c.setAttr(pick + ".useShear", follower.inherit_scale)
                 matrix = c.createNode("multMatrix",
                                       name=follower.driver_name,
                                       skipSelect=True)
-                c.connectAttr(pick + ".outputMatrix",
-                              matrix + ".matrixIn[0]")
+                c.connectAttr(follower.source_body_joint
+                              + ".worldMatrix[0]", matrix + ".matrixIn[0]")
                 c.connectAttr(node + ".parentInverseMatrix[0]",
                               matrix + ".matrixIn[1]")
+                pick = c.createNode("pickMatrix", name=follower.pick_name,
+                                    skipSelect=True)
                 c.connectAttr(matrix + ".matrixSum",
+                              pick + ".inputMatrix")
+                c.setAttr(pick + ".useScale", follower.inherit_scale)
+                c.setAttr(pick + ".useShear", follower.inherit_scale)
+                c.connectAttr(pick + ".outputMatrix",
                               node + ".offsetParentMatrix")
             elif follower.use_parent_constraint:
                 constraints = c.parentConstraint(
@@ -8547,8 +8547,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         or c.connectionInfo(
                             pick + ".inputMatrix",
                             sourceFromDestination=True)
-                            != follower.source_body_joint
-                               + ".worldMatrix[0]"
+                            != driver + ".matrixSum"
                         or bool(c.getAttr(pick + ".useScale"))
                            != follower.inherit_scale
                         or bool(c.getAttr(pick + ".useShear"))
@@ -8558,7 +8557,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         or c.connectionInfo(
                             driver + ".matrixIn[0]",
                             sourceFromDestination=True)
-                            != pick + ".outputMatrix"
+                            != follower.source_body_joint
+                               + ".worldMatrix[0]"
                         or c.connectionInfo(
                             driver + ".matrixIn[1]",
                             sourceFromDestination=True)
@@ -8566,7 +8566,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         or c.connectionInfo(
                             follower.path + ".offsetParentMatrix",
                             sourceFromDestination=True)
-                            != driver + ".matrixSum"):
+                            != pick + ".outputMatrix"):
                     return False
             elif follower.use_parent_constraint:
                 driver_path = follower.path + "|" + follower.driver_name
