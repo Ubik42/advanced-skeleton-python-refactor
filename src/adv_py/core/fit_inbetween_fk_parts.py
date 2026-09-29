@@ -26,6 +26,7 @@ class InbetweenFkPartSpec:
     source_fit_joint: str
     sub_name: str | None = None
     extra_curve: bool = False
+    segment_scale_compensate: bool = False
 
     @property
     def driver_name(self) -> str:
@@ -91,7 +92,7 @@ def plan_inbetween_fk_parts(
             prefix + "FKX", prefix + "FKMM",
             prefix + "PM", float(radius), part.source_joint,
             prefix + "FKSub" if sub_controllers else None,
-            extra_controllers)
+            extra_controllers, part.segment_scale_compensate)
         result.append(spec)
         previous_fkx = spec.fkx_name
     return InbetweenFkPartsPlan(

@@ -837,7 +837,10 @@ class MayaFitInbetweenMixin:
         for node in layers:
             c.setAttr(node + ".rotateOrder", part.rotate_order)
         c.setAttr(fkx + ".drawStyle", 2)
-        c.setAttr(fkx + ".segmentScaleCompensate", 0)
+        c.setAttr(fkx + ".segmentScaleCompensate",
+                  int(part.segment_scale_compensate))
+        c.connectAttr(part.control_name + ".scale",
+                      fkx + ".inverseScale")
         matrix = c.createNode("multMatrix", name=part.fk_matrix_name)
         pick = c.createNode("pickMatrix", name=part.pick_matrix_name)
         c.connectAttr(part.fkps_name + ".worldMatrix[0]",
@@ -850,7 +853,8 @@ class MayaFitInbetweenMixin:
         # 6.925 的 Part FK 允许控制器覆盖默认缩放继承。
         c.addAttr(part.control_name, longName="inheritScale",
                   attributeType="bool",
-                  defaultValue=True, keyable=False)
+                  defaultValue=not part.segment_scale_compensate,
+                  keyable=False)
         c.connectAttr(part.control_name + ".inheritScale",
                       pick + ".useScale")
 
@@ -892,6 +896,18 @@ class MayaFitInbetweenMixin:
         if audit_body_sub_controller(
                 control_path, sub_path,
                 self._capture_body_ik_sub_control(control_path, sub_path)):
+            return None
+        defaults = c.attributeQuery(
+            "inheritScale", node=part.control_name,
+            listDefault=True) or []
+        if (bool(c.getAttr(part.fkx_name + ".segmentScaleCompensate"))
+                != part.segment_scale_compensate
+                or len(defaults) != 1
+                or bool(defaults[0]) == part.segment_scale_compensate):
+            return None
+        if (c.connectionInfo(part.fkx_name + ".inverseScale",
+                             sourceFromDestination=True)
+                != part.control_name + ".scale"):
             return None
         expected = (
             (part.fk_matrix_name + ".matrixIn[1]",
