@@ -1542,7 +1542,7 @@ class MayaFitJointHost:
     def write_missing_fit_deform_profiles(
         self, container: str, joints: tuple[str, ...],
     ) -> None:
-        """Initialize every generated Fit joint using asEnsureFitJointAttrs defaults."""
+        """Complete old and new Fit volume channels before Body construction."""
         self._require_transaction()
         c = self._cmds
         joint_set = set(joints)
@@ -1589,26 +1589,77 @@ class MayaFitJointHost:
 
         for joint in sorted(joints, key=lambda path: path.count("|")):
             if c.attributeQuery("fat", node=joint, exists=True):
-                # Preserve Fit joints that already carry a volume profile.
-                continue
-            child = matching_child(joint)
-            if child:
-                length = abs(float(c.getAttr(child + ".translate"
-                                             + translate_axis)))
-                fat = length / 4.0
-                if abs(positions[joint][0]) < center_tolerance:
-                    fat *= 2.0
-                if fat < 0.0001:
-                    fat = scale
+                fat = float(c.getAttr(joint + ".fat"))
             else:
-                parent = (c.listRelatives(joint, parent=True, type="joint",
-                                          fullPath=True) or [None])[0]
-                fat = (float(c.getAttr(parent + ".fat"))
-                       if parent in joint_set
-                       and c.attributeQuery("fat", node=parent, exists=True)
-                       else 1.0)
-            self.write_fit_deform_profile(
-                joint, FitDeformProfile(fat, 1.0, 1.0))
+                child = matching_child(joint)
+                if child:
+                    length = abs(float(c.getAttr(child + ".translate"
+                                                 + translate_axis)))
+                    fat = length / 4.0
+                    if abs(positions[joint][0]) < center_tolerance:
+                        fat *= 2.0
+                    if fat < 0.0001:
+                        fat = scale
+                else:
+                    parent = (c.listRelatives(joint, parent=True, type="joint",
+                                              fullPath=True) or [None])[0]
+                    fat = (float(c.getAttr(parent + ".fat"))
+                           if parent in joint_set
+                           and c.attributeQuery("fat", node=parent, exists=True)
+                           else 1.0)
+            front = (float(c.getAttr(joint + ".fatY"))
+                     if c.attributeQuery("fatY", node=joint, exists=True)
+                     else float(c.getAttr(joint + ".fatFront"))
+                     if c.attributeQuery("fatFront", node=joint, exists=True)
+                     else 1.0)
+            width = (float(c.getAttr(joint + ".fatZ"))
+                     if c.attributeQuery("fatZ", node=joint, exists=True)
+                     else float(c.getAttr(joint + ".fatWidth"))
+                     if c.attributeQuery("fatWidth", node=joint, exists=True)
+                     else 1.0)
+            FitDeformProfile(fat, front, width)
+            for attribute, value in (("fat", fat), ("fatFront", front),
+                                     ("fatWidth", width)):
+                if not c.attributeQuery(attribute, node=joint, exists=True):
+                    self._transaction_changed = True
+                    c.addAttr(joint, longName=attribute,
+                              attributeType="double", minValue=0,
+                              defaultValue=value, keyable=True)
+                elif abs(float(c.getAttr(joint + "." + attribute)) - value) > 1e-8:
+                    self._transaction_changed = True
+                    c.setAttr(joint + "." + attribute, value)
+            for old in ("fatY", "fatZ", "fatYAbs", "fatZAbs", "fatZabs"):
+                if c.attributeQuery(old, node=joint, exists=True):
+                    self._transaction_changed = True
+                    c.deleteAttr(joint + "." + old)
+            for attribute in ("fatFrontAbs", "fatWidthAbs"):
+                if not c.attributeQuery(attribute, node=joint, exists=True):
+                    self._transaction_changed = True
+                    c.addAttr(joint, longName=attribute,
+                              attributeType="double", keyable=False)
+            fat_node = joint.rsplit("|", 1)[-1] + "Fat"
+            if c.objExists(fat_node):
+                if c.nodeType(fat_node) != "multiplyDivide":
+                    raise ValueError("Fit 体积节点名称被其他对象占用：" + fat_node)
+            else:
+                self._transaction_changed = True
+                c.createNode("multiplyDivide", name=fat_node)
+            if int(c.getAttr(fat_node + ".operation")) != 1:
+                self._transaction_changed = True
+                c.setAttr(fat_node + ".operation", 1)
+            connections = (
+                (joint + ".fat", fat_node + ".input1Y"),
+                (joint + ".fat", fat_node + ".input1Z"),
+                (joint + ".fatFront", fat_node + ".input2Y"),
+                (joint + ".fatWidth", fat_node + ".input2Z"),
+                (fat_node + ".outputY", joint + ".fatFrontAbs"),
+                (fat_node + ".outputZ", joint + ".fatWidthAbs"),
+            )
+            for source, destination in connections:
+                if c.connectionInfo(destination,
+                                    sourceFromDestination=True) != source:
+                    self._transaction_changed = True
+                    c.connectAttr(source, destination, force=True)
 
     def _require_transaction(self) -> None:
         if not self._transaction_active:
