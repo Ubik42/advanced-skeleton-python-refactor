@@ -146,6 +146,8 @@ class BuildBodyArmRig:
         for spec in ik.limbs:
             if spec.wrist_sub_name is not None:
                 names.append(spec.wrist_sub_name)
+            if spec.wrist_align_name is not None:
+                names.append(spec.wrist_align_name)
             names.extend((spec.wrist_extra_name, spec.pole_extra_name))
             names.extend((spec.wrist_offset_name, spec.wrist_control_name, spec.pole_offset_name, spec.pole_control_name, spec.handle_name, spec.pole_constraint_name, spec.wrist_constraint_name))
         for side in stretch.sides:

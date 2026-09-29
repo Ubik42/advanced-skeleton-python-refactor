@@ -49,6 +49,9 @@ class BodyArmIkSpec:
     pole_extra_path: str | None = None
     pole_extra_name: str | None = None
     wrist_extra_curve: bool = False
+    wrist_align_name: str | None = None
+    wrist_align_path: str | None = None
+    wrist_align_parent_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +87,10 @@ class BodyArmIkState:
     wrist_sub: BodySubControllerState | None = None
     wrist_extra: BodyExtraControllerState | None = None
     pole_extra: BodyExtraControllerState | None = None
+    wrist_align_path: str | None = None
+    wrist_align_parent_path: str | None = None
+    wrist_align_position: Vector3 | None = None
+    wrist_align_axes: AxisFrame | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,8 +114,10 @@ def plan_body_arm_ik(
     pole_distance_scale: float = 0.75,
     sub_controllers: bool = False,
     extra_controllers: bool = False,
+    align_helpers: bool = True,
 ) -> BodyArmIkPlan:
-    if type(sub_controllers) is not bool or type(extra_controllers) is not bool:
+    if (type(sub_controllers) is not bool or type(extra_controllers) is not bool
+            or type(align_helpers) is not bool):
         raise BodyArmIkValidationError("IK 控制器开关必须是布尔值")
     if any(
         isinstance(value, bool)
@@ -119,6 +128,9 @@ def plan_body_arm_ik(
     ):
         raise BodyArmIkValidationError("IK 控制尺寸参数必须是正有限数值")
     body_by_name = {joint.name: joint for joint in body.joints}
+    fk_by_source = {joint.source_joint: joint.path
+                    for joint in mechanisms.joints
+                    if joint.role is BodyArmMechanismRole.FK}
     root_name = "AdvPy_ArmIKControls"
     root_parent = ("|Group|MotionSystem|IKSystem"
                    if body.root.startswith("|Group|DeformationSystem|")
@@ -127,6 +139,8 @@ def plan_body_arm_ik(
     limbs = []
     for side_name, side in (("R", FitBuildSide.RIGHT), ("L", FitBuildSide.LEFT)):
         sources = tuple(body_by_name[f"{name}_{side_name}"] for name in ("Shoulder", "Elbow", "Wrist"))
+        if align_helpers and sources[2].path not in fk_by_source:
+            raise BodyArmIkValidationError("Wrist AlignIKTo 缺少 FK 驱动关节")
         drivers = tuple(
             spec.path
             for spec in mechanisms.joints
@@ -175,6 +189,13 @@ def plan_body_arm_ik(
             pole_extra_path=pole_extra_path,
             pole_extra_name=pole_extra_name,
             wrist_extra_curve=extra_controllers,
+            wrist_align_name=(f"AdvPy_AlignIKToWrist_{side_name}"
+                              if align_helpers else None),
+            wrist_align_path=(f"{fk_by_source[sources[2].path]}|"
+                              f"AdvPy_AlignIKToWrist_{side_name}"
+                              if align_helpers else None),
+            wrist_align_parent_path=(fk_by_source[sources[2].path]
+                                     if align_helpers else None),
         ))
     return BodyArmIkPlan(root_path, root_name, tuple(limbs))
 
@@ -198,12 +219,26 @@ def audit_body_arm_ik(plan: BodyArmIkPlan, snapshot: BodyArmIkSnapshot, *, toler
             (state.joint_list == (spec.solver_joint_list or spec.chain[:2]), "ik_chain_mismatch", "RP IK 求解链不一致"),
             (state.pole_source == spec.pole_control_path, "ik_pole_wiring", "Pole Vector 连线不一致"),
             (state.wrist_shape == "nurbsCurve" and state.pole_shape == "nurbsCurve", "ik_shape_mismatch", "IK 控制缺少 NURBS 曲线"),
+            (state.wrist_align_path == spec.wrist_align_path and
+             state.wrist_align_parent_path == spec.wrist_align_parent_path,
+             "ik_wrist_align_hierarchy", "Wrist AlignIKTo 层级不一致"),
         )
         if check_initial_pose:
             checks += (
                 (_close(state.wrist_position, spec.wrist_position, tolerance) and _close(state.pole_position, spec.pole_position, tolerance), "ik_position_mismatch", "IK 控制初始位置不一致"),
                 (all(_close(value, (0.0, 0.0, 0.0), tolerance) for value in (state.wrist_translation, state.wrist_rotation, state.pole_translation, state.pole_rotation)), "ik_channels_nonzero", "IK 控制本地通道未归零"),
             )
+            if spec.wrist_align_path is not None:
+                checks += ((state.wrist_align_position is not None
+                            and state.wrist_align_axes is not None
+                            and _close(state.wrist_align_position,
+                                       spec.wrist_position, tolerance)
+                            and all(_close(actual, expected, tolerance)
+                                    for actual, expected in zip(
+                                        state.wrist_align_axes,
+                                        spec.wrist_axes)),
+                            "ik_wrist_align_pose",
+                            "Wrist AlignIKTo 初始姿态不一致"),)
         for passed, code, message in checks:
             if not passed:
                 issues.append(BodyArmIkIssue(code, message, spec.side.value))

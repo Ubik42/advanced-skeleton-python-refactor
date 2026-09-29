@@ -20,6 +20,7 @@ from .fit_symmetry import FitSymmetryHost, FitSymmetryPlan, PlanFitSymmetry
 
 
 class BodyArmFkToIkHost(FitSymmetryHost, BodyArmMechanismRecoveryHost, Protocol):
+    def body_arm_align_helper_mode(self, plan: BodyArmIkPlan) -> bool: ...
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot: ...
     def capture_body_arm_ik(self, plan: BodyArmIkPlan) -> BodyArmIkSnapshot: ...
     def capture_body_arm_blend(self, plan: BodyArmBlendPlan) -> BodyArmBlendSnapshot: ...
@@ -74,6 +75,14 @@ class MatchBodyArmFkToIk:
                 symmetry.settings).sub_controllers,
             extra_controllers=BodyBuildOptions.from_fit_settings(
                 symmetry.settings).extra_controllers)
+        if not self._host.body_arm_align_helper_mode(ik):
+            ik = plan_body_arm_ik(
+                body, mechanisms, pole_distance_scale=pole_distance_scale,
+                sub_controllers=BodyBuildOptions.from_fit_settings(
+                    symmetry.settings).sub_controllers,
+                extra_controllers=BodyBuildOptions.from_fit_settings(
+                    symmetry.settings).extra_controllers,
+                align_helpers=False)
         blend = plan_body_arm_blend(body, mechanisms)
         match = plan_body_arm_fk_to_ik(body, ik, blend, side, pole_distance_scale=pole_distance_scale)
         ik_snapshot = self._host.capture_body_arm_ik(ik)

@@ -54,6 +54,7 @@ from adv_py.core.body_arm_match import (
     BodyArmFkToIkSceneState,
     BodyArmIkToFkPlan,
     BodyArmIkToFkSceneState,
+    audit_body_arm_fk_to_ik_preflight,
 )
 from adv_py.core.body_leg_match import (
     BodyLegFkToIkPlan,
@@ -5206,12 +5207,15 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             if self._cmds.objExists(plug) and self._cmds.getAttr(plug, settable=True)
         )
         value = float(self._cmds.getAttr(plan.blend_plug)) if self._cmds.objExists(plan.blend_plug) else float("nan")
-        return BodyArmFkToIkSceneState(existing, writable, value)
+        align_axes = (self._spine_world_frame(plan.wrist_align_path)[1]
+                      if plan.wrist_align_path is not None and
+                      self._cmds.objExists(plan.wrist_align_path) else None)
+        return BodyArmFkToIkSceneState(existing, writable, value, align_axes)
 
     def apply_body_arm_fk_to_ik(self, plan: BodyArmFkToIkPlan) -> None:
         self._require_transaction()
         state = self.capture_body_arm_fk_to_ik_state(plan)
-        if set(state.existing_paths) != set(plan.required_paths) or set(state.writable_plugs) != set(plan.required_writable_plugs) or abs(state.blend_value) > 1e-6:
+        if audit_body_arm_fk_to_ik_preflight(plan, state):
             raise FitSkeletonValidationError("Arm FK→IK 匹配输入在执行前失效")
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
@@ -5221,7 +5225,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             from .maya_limb_orientation import begin_orientation_match, finish_orientation_match
             orientation_state=begin_orientation_match(self,"arm",plan.side.value)
             self._cmds.xform(plan.pole_control_path, worldSpace=True, translation=plan.pole_position)
-            x_axis, y_axis, z_axis = plan.wrist_axes
+            x_axis, y_axis, z_axis = (
+                state.wrist_align_axes or plan.wrist_axes)
             matrix = (*x_axis, 0.0, *y_axis, 0.0, *z_axis, 0.0, *plan.wrist_position, 1.0)
             self._cmds.xform(plan.wrist_control_path, worldSpace=True, translation=plan.wrist_position)
             self._spine_set_world_rotation(plan.wrist_control_path,matrix)
@@ -5793,11 +5798,16 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     spec.handle_name, spec.pole_constraint_name,
                     spec.wrist_constraint_name, spec.wrist_extra_name,
                     spec.pole_extra_name,
-                    *((spec.wrist_sub_name,) if spec.wrist_sub_name else ())):
+                    *((spec.wrist_sub_name,) if spec.wrist_sub_name else ()),
+                    *((spec.wrist_align_name,) if spec.wrist_align_name else ())):
                 if self.find_name_collisions(name):
                     raise FitSkeletonValidationError(f"Arm IK 名称冲突：{name}")
             if any(not self._cmds.objExists(path) for path in spec.chain):
                 raise FitSkeletonValidationError("Arm IK mechanism chain 在执行前失效")
+            if (spec.wrist_align_parent_path is not None and
+                    not self._cmds.objExists(spec.wrist_align_parent_path)):
+                raise FitSkeletonValidationError(
+                    "Wrist AlignIKTo 的 FK 父关节缺失")
             self._transaction_changed = True
             wrist_offset = self._cmds.createNode("transform", name=spec.wrist_offset_name, parent=spec.root_path, skipSelect=True)
             wrist_offset = (self._cmds.ls(wrist_offset, long=True) or [wrist_offset])[0]
@@ -5838,6 +5848,14 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     raise FitSkeletonValidationError("Arm IK Sub 缺少名称")
                 self._create_body_sub_control(
                     wrist, spec.wrist_sub_name, spec.wrist_sub_path)
+            if spec.wrist_align_name is not None:
+                aligned = self._cmds.createNode(
+                    "transform", name=spec.wrist_align_name,
+                    parent=spec.wrist_align_parent_path, skipSelect=True)
+                aligned = (self._cmds.ls(aligned, long=True) or [aligned])[0]
+                if aligned != spec.wrist_align_path:
+                    raise RuntimeError("Wrist AlignIKTo 路径漂移")
+                self._cmds.xform(aligned, worldSpace=True, matrix=matrix)
             handle, _ = self._cmds.ikHandle(name=spec.handle_name, startJoint=spec.chain[0], endEffector=spec.chain[2], solver="ikRPsolver")
             self._cmds.parent(handle, wrist, absolute=True)
             self._cmds.poleVectorConstraint(pole, handle, name=spec.pole_constraint_name)
@@ -5849,6 +5867,17 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             )
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
+
+    def body_arm_align_helper_mode(self, plan: BodyArmIkPlan) -> bool:
+        found = tuple(bool(spec.wrist_align_path and
+                           len(self._cmds.ls(
+                               spec.wrist_align_path, long=True,
+                               type="transform") or []) == 1)
+                      for spec in plan.limbs)
+        if len(found) != 2 or found[0] != found[1]:
+            raise FitSkeletonValidationError(
+                "双侧 Wrist AlignIKTo 辅助层版本不一致")
+        return found[0]
 
     def capture_body_arm_ik(self, plan: BodyArmIkPlan) -> BodyArmIkSnapshot:
         roots = self._cmds.ls(plan.root_path, long=True, type="transform") or []
@@ -5873,6 +5902,15 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             wrist_source = (self._cmds.ls(wrist_targets[0], long=True) or [wrist_targets[0]])[0] if len(wrist_targets) == 1 else None
             wrist_outputs = self._cmds.listConnections(f"{wrist_constraints[0]}.constraintRotateX", source=False, destination=True, plugs=True) or []
             wrist_driven = self._resolve_connected_node(wrist_outputs[0]) if len(wrist_outputs) == 1 else None
+            align_nodes = (self._cmds.ls(
+                spec.wrist_align_path, long=True, type="transform") or []
+                if spec.wrist_align_path else [])
+            aligned = align_nodes[0] if len(align_nodes) == 1 else None
+            align_parents = (self._cmds.listRelatives(
+                aligned, parent=True, fullPath=True) or []
+                if aligned else [])
+            align_matrix, align_axes = (self._spine_world_frame(aligned)
+                                        if aligned else (None, None))
             def shape_type(node):
                 shapes = self._cmds.listRelatives(node, shapes=True, noIntermediate=True, fullPath=True) or []
                 return self._cmds.nodeType(shapes[0]) if len(shapes) == 1 else None
@@ -5890,6 +5928,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     spec.wrist_extra_path, wrist),
                 self._capture_body_extra_layer(
                     spec.pole_extra_path, pole),
+                wrist_align_path=aligned,
+                wrist_align_parent_path=(align_parents[0]
+                                         if align_parents else None),
+                wrist_align_position=(align_matrix[12:15]
+                                      if align_matrix else None),
+                wrist_align_axes=align_axes,
             ))
         return BodyArmIkSnapshot(roots[0], tuple(states))
 

@@ -26,6 +26,7 @@ class BodyArmFkToIkPlan:
     body_joint_positions: tuple[Vector3, Vector3, Vector3]
     required_paths: tuple[str, ...]
     required_writable_plugs: tuple[str, ...]
+    wrist_align_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,7 @@ class BodyArmFkToIkSceneState:
     existing_paths: tuple[str, ...]
     writable_plugs: tuple[str, ...]
     blend_value: float
+    wrist_align_axes: AxisFrame | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,8 +115,10 @@ def plan_body_arm_fk_to_ik(
         pole,
         paths,
         tuple(joint.world_position for joint in joints),
-        (limb.wrist_control_path, limb.pole_control_path, *paths),
+        (limb.wrist_control_path, limb.pole_control_path, *paths,
+         *((limb.wrist_align_path,) if limb.wrist_align_path else ())),
         writable,
+        limb.wrist_align_path,
     )
 
 
@@ -133,6 +137,11 @@ def audit_body_arm_fk_to_ik_preflight(
         issues.append(BodyArmMatchIssue("unwritable_channels", "Arm FK→IK 匹配通道不可写", "、".join(locked)))
     if abs(state.blend_value) > tolerance:
         issues.append(BodyArmMatchIssue("not_in_fk_mode", "目标手臂当前不是 FK 模式", plan.side.value))
+    if (plan.wrist_align_path is not None and
+            state.wrist_align_axes is None):
+        issues.append(BodyArmMatchIssue(
+            "align_pose_missing", "Wrist AlignIKTo 朝向缺失",
+            plan.wrist_align_path))
     return tuple(issues)
 
 

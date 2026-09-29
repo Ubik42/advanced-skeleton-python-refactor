@@ -104,6 +104,8 @@ class BuildBodyArmIkControls:
             names.extend((spec.wrist_extra_name, spec.pole_extra_name))
             if spec.wrist_sub_name is not None:
                 names.append(spec.wrist_sub_name)
+            if spec.wrist_align_name is not None:
+                names.append(spec.wrist_align_name)
         collisions = tuple(
             sorted(
                 {
