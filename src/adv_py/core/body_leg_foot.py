@@ -606,7 +606,8 @@ def plan_body_leg_foot(
         roll_intermediate = tuple(
             path for path in qtoes_topology.intermediate_paths
             if not body_by_path[path].label.text
-            or path == qtoes_topology.qtoes_path)
+            or ("Toes" in body_by_path[path].label.text
+                and "ToesEnd" not in body_by_path[path].label.text))
         marker_roles = tuple(row for row in all_marker_roles
                              if f"{row[1]}_{suffix}" in body_by_name)
         if qtoes_topology.hybrid:
