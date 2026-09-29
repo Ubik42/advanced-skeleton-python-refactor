@@ -254,8 +254,9 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     # unrelated descendants to be claimed by this branch.
     for joint in sorted(source, key=lambda item: item.path.count("|")):
         leaf = joint.name.rsplit(":", 1)[-1]
+        semantic_leaf = leaf.removesuffix("_NonSymmetry")
         if (joint.parent in left_authored_paths
-                and "_" not in leaf):
+                and "_" not in semantic_leaf):
             left_authored_paths.add(joint.path)
     axial_paths = _axial_source_paths(source, root)
     axial_names = tuple(f"Spine{index}" for index in
