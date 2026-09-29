@@ -29,6 +29,9 @@ class FBXRigSourceCapture:
 
     def __post_init__(self) -> None:
         if (type(self.auto_key_enabled) is not bool
+                or (self.detected_application is not None and
+                    (not isinstance(self.detected_application, str)
+                     or not self.detected_application))
                 or len(set(self.bound_meshes)) != len(self.bound_meshes)
                 or any(not mesh for mesh in self.bound_meshes)
                 or any(not isfinite(value) for value in (

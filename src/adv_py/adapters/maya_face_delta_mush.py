@@ -128,6 +128,18 @@ class MayaFaceDeltaMushHost(MayaFacePreHost):
                         mesh, self._deformer(required=True)) !=
                     self._deformer(required=True)):
                 raise RuntimeError("Face DeltaMush 未正确连接到 Face 网格")
+            if (int(c.getAttr(deformer + ".smoothingIterations")) != 10
+                    or abs(float(c.getAttr(deformer + ".smoothingStep"))
+                           - .5) > 1e-6
+                    or not c.getAttr(deformer + ".pinBorderVertices")
+                    or abs(float(c.getAttr(deformer + ".envelope"))
+                           - 1.) > 1e-6):
+                raise RuntimeError("Face DeltaMush 原版参数未正确写入")
+            if source is not None and any(not c.isConnected(
+                    source + ".output" + axis,
+                    deformer + ".s" + axis.lower())
+                    for axis in "XYZ"):
+                raise RuntimeError("Face DeltaMush 主缩放未正确连接")
             c.select(mesh, replace=True)
         return self._deformer(required=True)
 
