@@ -86,7 +86,8 @@ from .finger_mid_deform import BuildFingerMidDeform
 from .fit_part import BuildFitPartHierarchy, FitPartHierarchyResult
 from .fit_bendy import (BuildFitBendyDeform, BuildFitBendyFkScales,
                         BuildFitBendyGuides,
-                        plan_fit_bendy_follow, split_fit_bendy_chains)
+                        fit_bendy_world_sources, plan_fit_bendy_follow,
+                        split_fit_bendy_chains)
 from .fit_bendy_registration import RegisterBendyControls
 from .fit_part_twist import (
     AttachGenericFitPartTwistSources, BuildFitPartTwistDrivers,
@@ -1029,6 +1030,7 @@ class BuildRegisteredBodyCharacter:
             handled_inbetween_starts = frozenset(
                 binding.parts[0].start_body
                 for binding in inbetween_bindings)
+            standard_bendy_sources = fit_bendy_world_sources(rig.plan)
             generic_fk = plan_body_generic_fk(
                 skeleton.snapshot, part_plan.specs,
                 fit_metadata, standard_fk_specs,
@@ -1056,7 +1058,9 @@ class BuildRegisteredBodyCharacter:
                 finger_visibility_plug=(
                     rig.plan.global_control.control_path + ".fingerVis"),
                 bendy_end_paths=frozenset(
-                    chain.end_body for chain in deferred_bendy_chains))
+                    chain.end_body for chain in deferred_bendy_chains
+                    if chain.end_body not in
+                    standard_bendy_sources))
             generic_inbetween_bindings = (
                 plan_generic_inbetween_fk_bindings(
                     inbetween_parts, generic_fk, standard_fk_specs,

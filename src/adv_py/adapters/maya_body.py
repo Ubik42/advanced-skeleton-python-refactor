@@ -8442,10 +8442,12 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         if not plan.controls and not plan.endpoints:
             return
         self._require_transaction()
-        parent = plan.root_path.rsplit("|", 1)[0]
-        name = plan.root_path.rsplit("|", 1)[-1]
-        if self.create_body_control_root(name, parent_path=parent) != plan.root_path:
-            raise RuntimeError("通用 FK 控制根路径漂移")
+        if plan.controls or plan.followers:
+            parent = plan.root_path.rsplit("|", 1)[0]
+            name = plan.root_path.rsplit("|", 1)[-1]
+            if self.create_body_control_root(
+                    name, parent_path=parent) != plan.root_path:
+                raise RuntimeError("通用 FK 控制根路径漂移")
         c = self._cmds
         for follower in plan.followers:
             if (self.find_name_collisions(follower.name)
