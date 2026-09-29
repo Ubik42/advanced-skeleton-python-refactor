@@ -262,7 +262,6 @@ from .body_rebuild import (
     InspectBodyRebuildSafety,
     ReplaceOwnedBodySkeleton,
 )
-from .build_rig import BuildResult, BuildRig
 from .fit_container import (
     CreateFitSkeleton,
     FitContainerCreatePlan,
@@ -501,8 +500,6 @@ __all__ = [
     "BodySkeletonBuildPlan",
     "BodySkeletonBuildResult",
     "BodySkeletonHost",
-    "BuildResult",
-    "BuildRig",
     "BuildBodyArmMechanisms",
     "BuildBodyLegMechanisms",
     "BuildBodyArmIkControls",

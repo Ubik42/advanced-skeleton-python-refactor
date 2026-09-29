@@ -688,7 +688,6 @@ from .fit_template import (
     validate_fit_template,
 )
 from .joint_labels import JointLabel, JointLabelValidationError
-from .model import ConstraintSpec, LimbSpec, NodeSpec, RigPlan
 from .matrix import (
     IDENTITY_MATRIX,
     Matrix44,
@@ -703,7 +702,6 @@ from .matrix import (
     transpose_flat,
     with_translation,
 )
-from .validation import PlanValidationError, validate_plan
 
 from .face_shapes import FaceShapeKind, FaceTarget, FaceMeshSnapshot, validate_face_targets
 from .face_performance import FacePerformance, face_performance_to_json, face_performance_from_json
@@ -1112,7 +1110,6 @@ __all__ = [
     "BodySkeletonProvenance",
     "BodySkeletonProvenanceState",
     "BodySkeletonValidationError",
-    "ConstraintSpec",
     "FitContainerDisplayStyle",
     "FitContainerIssue",
     "FitContainerShape",
@@ -1175,11 +1172,7 @@ __all__ = [
     "JointLabel",
     "JointLabelValidationError",
     "LOCKED_FIT_CHANNELS",
-    "LimbSpec",
     "Matrix44",
-    "NodeSpec",
-    "PlanValidationError",
-    "RigPlan",
     "TRANSLATION_AXES",
     "almost_equal",
     "audit_body_arm_ik",
@@ -1355,7 +1348,6 @@ __all__ = [
     "rows",
     "translation_matrix",
     "transpose_flat",
-    "validate_plan",
     "synthetic_body_source_fit_template",
     "synthetic_body_with_hand_source_fit_template",
     "synthetic_upper_body_fit_template",

@@ -75,19 +75,10 @@ Preparation / Rig 的 Skin／All／左右眼对象记录：`maya_preparation_obj
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation/maya_original_limb_part_smoke.py 'C:\path\to\sam.mb' validation/results/maya2024-original-limb-part.json
 ```
 
-本目录使用自行生成的 `two_joint_plan()` 与 `ik_fk_limb_plan()`，不读取或复制 AdvancedSkeleton 资产。验证过程不打开 Maya/Blender UI，也不连接用户现有会话。
+以下命令使用独立生成或明确给出的场景资产验证 Maya 主线。验证过程不连接用户现有 Maya 会话。
 
 ## 当前验证内容
 
-- 创建两个关节和两个控制对象；
-- 保持 Root -> Tip 层级与世界矩阵；
-- 以非零 aim 与本地 Y-roll 验证 Maya jointOrient 和 Blender bone roll；
-- 创建 parent 与 orient 两种约束；
-- 再次构建同名计划时，在修改场景前由预检拦截；
-- 调用宿主事务的 `rollback_last()` 后不留下节点或 Armature；
-- 测试进程退出后没有新增宿主 PID 存活。
-- 三关节 limb 的 FK 控制可改变末端姿态；切到 IK 后末端到达目标。
-- IK/FK blend 驱动有效，并在回滚后同时清理两套 Blender Armature。
 - Maya 关节标签支持标准类型与自定义文本，输入预检失败不产生部分修改，单次 Undo 可恢复。
 - Maya Fit joint 元数据审计可读取常用动态属性、报告互斥配置，并保持场景未修改。
 - Maya Fit joint 声明式变更支持只读预览、单事务应用、构建后复检和一次 Undo 恢复。
@@ -128,14 +119,6 @@ Preparation / Rig 的 Skin／All／左右眼对象记录：`maya_preparation_obj
 ## 本机命令
 
 ```powershell
-& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_smoke.py validation\results\maya2024.json
-
-& 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' --background --factory-startup --python validation\blender_smoke.py -- validation\results\blender5.2.json
-
-& 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_limb_smoke.py validation\results\maya2024-limb.json
-
-& 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' --background --factory-startup --python-exit-code 1 --python validation\blender_limb_smoke.py -- validation\results\blender5.2-limb.json
-
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_joint_labels_smoke.py validation\results\maya2024-joint-labels.json
 
 & 'C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe' validation\maya_fit_metadata_smoke.py validation\results\maya2024-fit-metadata.json

@@ -8,7 +8,7 @@
 
 > 包版本：`v0.96.0` · Windows · Maya 2024 standalone · Python 3.10 / 3.14
 >
-> Blender 5.2 仅保留早期架构可行性代码，第二阶段尚未开始。
+> Blender 5.2 的早期可行性代码已从当前产品包移除；第二阶段尚未开始。
 
 ## 当前版本
 
@@ -135,7 +135,7 @@ adv-migrate inventory D:\Downloads\AdvancedSkeleton\AdvancedSkeleton.mel --outpu
 src/adv_migration/      MEL 清单与命令行入口
 src/adv_py/core/        DCC 无关的数据、数学、计划与校验
 src/adv_py/application/ 用例编排、事务和结果复检
-src/adv_py/adapters/    Maya、Blender 与内存适配器
+src/adv_py/adapters/    Maya 场景适配器
 tests/                  不依赖 DCC 的快速回归测试
 validation/             自生成场景和宿主 smoke 脚本
 docs/                   架构、路线、调研与阶段说明
