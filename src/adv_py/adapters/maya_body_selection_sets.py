@@ -11,6 +11,24 @@ from adv_py.core.character_registry import CharacterRegistration
 
 
 class MayaBodySelectionSetsMixin:
+    def capture_body_rebuild_selection_mode(self) -> str:
+        """Retain the source character's pre-selection-set layout."""
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        names = ("ControlSet", "DeformSet", "AllSet", "Sets")
+        present = tuple(c.objExists(self._body_selection_set_address(name))
+                        for name in names)
+        pose = self.scene_address("|Group|MotionSystem|buildPose")
+        pose_present = bool(c.objExists(pose))
+        if not any(present) and not pose_present:
+            return "none"
+        if not all(present) or not pose_present:
+            raise RuntimeError("原角色选择集或 buildPose 层级不完整")
+        if any(c.nodeType(self._body_selection_set_address(name)) != "objectSet"
+               for name in names) or c.nodeType(pose) != "transform":
+            raise RuntimeError("原角色选择集或 buildPose 节点类型无效")
+        all_set = self._body_selection_set_address("AllSet")
+        return "populated" if c.sets(all_set, query=True) else "empty"
+
     def capture_body_scene_nodes(self) -> tuple[BodyAllSetNode, ...]:
         c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
         identity = CharacterIdentity(self.namespace or "")

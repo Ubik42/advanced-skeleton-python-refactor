@@ -26,6 +26,13 @@ def promote(host,staged):
         (c.ls(host.scene_address(path),long=True) or
          [host.scene_address(path)])[0]
         for path in retained_paths}
+    retained_mesh_paths={
+        node for skin in staged.original.skins for shape,_,_ in skin.meshes
+        for node in (shape,shape.rsplit('|',1)[0])}
+    retained_mesh_physical={
+        (c.ls(host.scene_address(path),long=True) or
+         [host.scene_address(path)])[0]
+        for path in retained_mesh_paths}
     replacement_by_role={role:new for role,_,new,_ in rows}
     shared={host.scene_address(name).lstrip(':') for name in SHARED_NODES}
     # After handoff, no preserved data may still depend on a deletion candidate.
@@ -36,6 +43,8 @@ def promote(host,staged):
                 physical=host.scene_address(plug.split('.',1)[0])
                 physical=(c.ls(physical,long=True) or [physical])[0]
                 if physical in old_paths or physical==old_fit or physical.startswith(old_fit+'|'):
+                    continue
+                if logical=='AllSet' and physical in retained_mesh_physical:
                     continue
                 if physical.lstrip(':') in shared:continue
                 raise CharacterRegistryError('旧 Rig 仍连接到保留边界之外：'+plug)
@@ -76,6 +85,20 @@ def promote(host,staged):
             raise CharacterRegistryError('保留的非变换 DAG 子节点需要专门迁移：'+logical)
         retained.append((c.ls(matches[0],uuid=True)[0],role,logical))
     host._transaction_changed=True
+    retained_allset_ids=set()
+    old_allset=host.scene_address('AllSet')
+    new_allset=target.scene_address('AllSet')
+    if bool(c.objExists(old_allset)) != bool(c.objExists(new_allset)):
+        raise CharacterRegistryError('重建新旧 AllSet 结构不一致')
+    if c.objExists(old_allset) and c.objExists(new_allset):
+        members=[]
+        for member in c.sets(old_allset,q=True) or []:
+            paths=c.ls(member,long=True) or []
+            if len(paths)==1 and paths[0] in retained_mesh_physical:
+                members.append(paths[0])
+                retained_allset_ids.add(c.ls(paths[0],uuid=True)[0])
+        if members:
+            c.sets(tuple(members),add=new_allset)
     c.delete(target.scene_address(fit))
     for uuid,_,_ in retained:
         c.parent(_by_uuid(c,uuid),world=True)
@@ -112,6 +135,12 @@ def promote(host,staged):
     if remaining:raise CharacterRegistryError('暂存命名空间仍有未归属节点：'+repr(remaining[:5]))
     c.namespace(removeNamespace=staged.namespace)
     promoted=replace(staged,namespace=host.namespace,registration=registration)
+    if retained_allset_ids:
+        final_allset=host.scene_address('AllSet')
+        actual={c.ls(member,uuid=True)[0]
+                for member in c.sets(final_allset,q=True) or []}
+        if not retained_allset_ids<=actual:
+            raise RuntimeError('重建交接丢失 AllSet 中保留的网格成员')
     if host.read_character_registration()!=registration:
         raise RuntimeError('原位替换后的角色登记复检失败')
     host.verify_character_retained_data(promoted)

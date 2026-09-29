@@ -115,6 +115,19 @@ def audit(host,staged):
         for pose in host._cmds.listConnections(skin.node+'.bindPose',s=True,d=False) or []:
             if host._cmds.nodeType(pose)!='dagPose':raise CharacterRegistryError('蒙皮绑定姿态类型无效')
             permitted.update(connections(host,pose))
+    # The replacement stage has no preserved mesh yet. A freshly built
+    # AllSet may own a copied Geometry mesh, whose membership is restored
+    # only when that mesh is handed over to the replacement character.
+    retained_mesh_nodes = {
+        node for skin in original.skins for shape, _, _ in skin.meshes
+        for node in (shape, shape.rsplit('|', 1)[0])
+    }
+    permitted.update(
+        edge for edge in old_edges
+        if any(plug.split('.', 1)[0] == 'AllSet' for plug in edge)
+        and any(plug.split('.', 1)[0] in retained_mesh_nodes
+                for plug in edge)
+    )
     extra=set(old_edges)-set(new_edges)-permitted
     missing=set(new_edges)-set(old_edges)
     if extra or missing:

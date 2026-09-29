@@ -477,7 +477,13 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                            defaultValue=spec.fit_has_deform_profile)
         return path
 
-    def create_body_system_hierarchy(self) -> str:
+    def has_body_dynamic_system(self) -> bool:
+        path = "|Group|MotionSystem|DynamicSystem"
+        return (self._cmds.ls(path, long=True, type="transform") or []) == [path]
+
+    def create_body_system_hierarchy(
+        self, *, include_dynamic: bool = True,
+    ) -> str:
         """Reserve the original rig's Group and DeformationSystem before Body."""
         self._require_transaction()
         if any(self.find_name_collisions(name)
@@ -532,9 +538,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             skipSelect=True)
         self._cmds.setAttr(constraint_system + ".visibility", False)
         self._cmds.setAttr(constraint_system + ".visibility", lock=True)
-        self._cmds.createNode(
-            "transform", name="DynamicSystem", parent=motion,
-            skipSelect=True)
+        if include_dynamic:
+            self._cmds.createNode(
+                "transform", name="DynamicSystem", parent=motion,
+                skipSelect=True)
         self._cmds.createNode(
             "transform", name="DrivingSystem", parent=motion,
             skipSelect=True)
@@ -607,6 +614,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
     def capture_body_system_hierarchy(
         self, body_root_path: str,
         fit_container_path: str = "|Group|FitSkeleton",
+        *, include_dynamic: bool = True,
     ) -> tuple[tuple[str, str | None, str], ...]:
         if bool(self._cmds.getAttr("|Group|Geometry.inheritsTransform")):
             raise FitSkeletonValidationError(
@@ -641,7 +649,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             raise FitSkeletonValidationError(
                 "构建完成的 Fit 容器可见性必须关闭并锁定")
         paths = tuple(path for path, _, _ in expected_body_system_hierarchy(
-            body_root_path, fit_container_path))
+            body_root_path, fit_container_path,
+            include_dynamic=include_dynamic))
         rows = []
         for path in paths:
             matches = self._cmds.ls(path, long=True) or []

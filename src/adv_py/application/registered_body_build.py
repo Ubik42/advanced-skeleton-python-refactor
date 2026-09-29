@@ -51,7 +51,9 @@ from .body_character_rig import (BuildBodyCharacterRig,
 from .body_rig_validation import body_bind_pose_matches
 from adv_py.core.body_skeleton import body_skeleton_unchanged
 from .character_registry import RegisterBodyCharacter
-from .body_selection_sets import BuildBodySelectionSets
+from .body_selection_sets import (
+    BuildBodySelectionSets, unregistered_fk_selection_extras,
+)
 from .body_all_set import PopulateBodyAllSet
 from .body_build_pose import GoToBodyBuildPose
 from .finger_mid_deform import BuildFingerMidDeform
@@ -1034,13 +1036,8 @@ class BuildRegisteredBodyCharacter:
                         BuildFingerMidDeform(joined).apply())
                 for spec in BuildLimbPartDeform(joined).apply():
                     segments.extend((spec.part1, spec.part2))
-            registered_controls = {channel.node
-                                   for channel in registration.channels}
-            locked_selection_extras = tuple(
-                spec.extra_path or spec.control_path
-                for spec in fk_control_specs
-                if spec.control_path not in registered_controls
-                and spec.control_path not in rig.plan.no_control_paths)
+            locked_selection_extras = unregistered_fk_selection_extras(
+                registration, rig.plan)
             BuildBodySelectionSets(joined).apply(
                 registration, tuple(segments),
                 extras=tuple(extra for chain in bendy_chains

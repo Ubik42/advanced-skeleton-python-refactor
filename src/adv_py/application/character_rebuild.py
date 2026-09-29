@@ -10,6 +10,11 @@ from .character_preservation import CaptureBodyCharacterPreservation
 from .fit_skeleton_io import ExportFitSkeleton,CreateAndImportFitSkeleton
 from .oriented_body_skeleton import BuildOrientedBodySkeleton
 from .registered_body_build import _JoinedTransactionHost
+from .body_selection_sets import (
+    BuildBodySelectionSets, unregistered_fk_selection_extras,
+)
+from .body_all_set import PopulateBodyAllSet
+from .body_build_pose import GoToBodyBuildPose
 from .body_character_rig import BuildBodyCharacterRig
 from .character_registry import RegisterBodyCharacter
 from .character_limb_animation import EnableBodyCharacterLimbAnimation
@@ -34,17 +39,24 @@ class StageBodyCharacterRebuild:
         host=self._host
         host.preflight_character_rebuild_namespace(namespace)
         original=CaptureBodyCharacterPreservation(host).execute(extensions=extensions)
+        selection_mode = host.capture_body_rebuild_selection_mode()
+        include_dynamic = host.has_body_dynamic_system()
         with TemporaryDirectory(prefix='adv-py-rebuild-') as directory:
             fit=Path(directory)/'source.fit.json'
             ExportFitSkeleton(host).apply(fit,original.registration.container)
             with host.character_rebuild_transaction('Stage replacement character'):
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('重建暂存前原角色发生变化')
+                if (host.capture_body_rebuild_selection_mode() != selection_mode
+                        or host.has_body_dynamic_system() != include_dynamic):
+                    raise RuntimeError('重建暂存前原角色系统层级或选择集发生变化')
                 stage=host.create_character_rebuild_host(namespace)
                 CreateAndImportFitSkeleton(stage).apply(fit)
+                scene_before = stage.capture_body_scene_nodes()
                 with stage.transaction('Stage Body system hierarchy'):
                     joined = _JoinedTransactionHost(stage)
-                    deformation = joined.create_body_system_hierarchy()
+                    deformation = joined.create_body_system_hierarchy(
+                        include_dynamic=include_dynamic)
                     if deformation != '|Group|DeformationSystem':
                         raise RuntimeError('重建暂存 DeformationSystem 路径漂移')
                     fit_path = joined.parent_fit_skeleton_under_group(
@@ -76,8 +88,11 @@ class StageBodyCharacterRebuild:
                     include_head_aim='head.aim.headAim' in keys,axial_description=description)
                 registration=RegisterBodyCharacter(stage).apply(rig)
                 if stage.capture_body_system_hierarchy(
-                        skeleton.snapshot.root) != expected_body_system_hierarchy(
-                            skeleton.snapshot.root):
+                        skeleton.snapshot.root,
+                        include_dynamic=include_dynamic
+                ) != expected_body_system_hierarchy(
+                        skeleton.snapshot.root,
+                        include_dynamic=include_dynamic):
                     raise RuntimeError('重建暂存角色的 Body 系统层级不一致')
                 if any('.ikOrientation.' in key for key in keys):registration=EnableBodyCharacterLimbAnimation(stage).apply()
                 if any('.ikLengthWeight.' in key for key in keys):registration=EnableBodyCharacterStretchMatching(stage).apply()
@@ -91,6 +106,14 @@ class StageBodyCharacterRebuild:
                     registration=stage.read_character_registration()
                 host.match_character_rebuild_solver(stage,registration)
                 registration=host.preserve_character_rebuild_binding(stage,original.registration,registration)
+                if selection_mode != "none":
+                    BuildBodySelectionSets(stage).apply(
+                        registration, extras=unregistered_fk_selection_extras(
+                            registration, rig.plan))
+                    if stage.has_body_build_pose_overrides():
+                        GoToBodyBuildPose(stage).apply()
+                    if selection_mode == "populated":
+                        PopulateBodyAllSet(stage).apply(scene_before, fit_path)
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('暂存构建改写了原角色，已回滚')
                 properties=host.plan_character_property_transfer(original,namespace)

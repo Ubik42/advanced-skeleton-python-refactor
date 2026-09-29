@@ -13,6 +13,7 @@ BODY_SYSTEM_RESERVED_NAMES = (
 def expected_body_system_hierarchy(
     body_root_path: str,
     fit_container_path: str = "|Group|FitSkeleton",
+    *, include_dynamic: bool = True,
 ) -> tuple[tuple[str, str | None, str], ...]:
     group = "|Group"
     motion = group + "|MotionSystem"
@@ -34,7 +35,9 @@ def expected_body_system_hierarchy(
     rows.append((motion + "|GlobalSystem|GlobalFollowMain",
                  motion + "|GlobalSystem", "transform"))
     rows.extend((motion + "|" + name, motion, "transform") for name in (
-        "AimSystem", "ConstraintSystem", "DynamicSystem", "DrivingSystem",
+        "AimSystem", "ConstraintSystem",
+        *(("DynamicSystem",) if include_dynamic else ()),
+        "DrivingSystem",
     ))
     rows.append((body_root_path, deformation, "joint"))
     return tuple(rows)

@@ -53,3 +53,24 @@ class BuildBodySelectionSets:
                     actual.deform_joints) != set(plan.deform_joints):
                 raise RuntimeError("角色选择集成员读回不一致")
         return plan
+
+
+def unregistered_fk_selection_extras(
+    registration: CharacterRegistration, rig_plan,
+) -> tuple[str, ...]:
+    """Keep locked FK curves selectable even without registered channels."""
+    controls = (
+        rig_plan.arm.fk_controls.controls
+        + rig_plan.leg.fk_controls.controls
+        + (rig_plan.hand.controls.controls
+           if rig_plan.hand is not None else ())
+        + (rig_plan.torso.torso.controls.controls
+           if rig_plan.torso is not None else ())
+    )
+    registered = {channel.node for channel in registration.channels}
+    return tuple(
+        spec.extra_path or spec.control_path
+        for spec in controls
+        if spec.control_path not in registered
+        and spec.control_path not in rig_plan.no_control_paths
+    )
