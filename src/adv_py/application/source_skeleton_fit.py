@@ -325,11 +325,15 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                 for path in canonical_paths)))
     right_names = {joint.name.rsplit(":", 1)[-1] for joint in source
                    if not left_mirror_branch(joint)}
-    source_only_left_branches = tuple(sorted(
+    left_only_paths = {
         joint.path for joint in source
         if joint.name.rsplit(":", 1)[-1].endswith("_L")
         and joint.name.rsplit(":", 1)[-1][:-2] + "_R"
-        not in right_names))
+        not in right_names}
+    source_only_left_branches = tuple(sorted(
+        path for path in left_only_paths
+        if not any(path.startswith(parent + "|")
+                   for parent in left_only_paths)))
     # Keep side branches such as tails and props. A helper inserted between
     # two canonical limb/spine joints cannot be made a sibling without
     # changing the source hierarchy; the current canonical solver contracts
