@@ -301,7 +301,7 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         if (leaf := joint.name.rsplit(":", 1)[-1]).endswith("_L")
         and joint.path not in mirrored_end_left
         and right_counterpart(leaf) is None}
-    def right_only(joint: SourceSkeletonJoint) -> bool:
+    def source_mirror_code(joint: SourceSkeletonJoint) -> int:
         ancestry = []
         current = joint.path
         while current in by_path:
@@ -323,7 +323,10 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                             and edit.field is FitJointField.NO_MIRROR_LEFT
                             and edit.value is True for edit in edits)):
                 mirror_code = 1
-        return mirror_code == -1
+        return mirror_code
+
+    def right_only(joint: SourceSkeletonJoint) -> bool:
+        return source_mirror_code(joint) == -1
 
     # MEL's authored _NonSymmetry chain is a second Fit branch rooted at
     # the same center joint.  Preserve it when the right source explicitly
@@ -716,6 +719,25 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                     and joint.untwister is None):
                 edits.append(FitJointFieldEdit(FitJointField.UNTWISTER, True))
         edits.extend(joint.additional_fit_edits)
+        if (joint.path in source_by_path
+                and joint.path not in left_authored_paths):
+            source_code = source_mirror_code(joint)
+            parent_code = (source_mirror_code(by_name[expected_parent])
+                           if expected_parent is not None
+                           and by_name[expected_parent].path in source_by_path
+                           else 0)
+            if source_code != parent_code and source_code != 0:
+                # A source-only helper between two named Fit joints can
+                # carry noMirror. Keep its effective branch choice when
+                # that helper is collapsed out of the canonical Fit chain.
+                edits = [edit for edit in edits if edit.field not in (
+                    FitJointField.NO_MIRROR,
+                    FitJointField.NO_MIRROR_LEFT)]
+                edits.append(FitJointFieldEdit(
+                    FitJointField.NO_MIRROR, True))
+                if source_code == 1:
+                    edits.append(FitJointFieldEdit(
+                        FitJointField.NO_MIRROR_LEFT, True))
         if joint.path in paired_non_sym_roots:
             edits = [edit for edit in edits if edit.field not in (
                 FitJointField.NO_MIRROR, FitJointField.NO_MIRROR_LEFT)]
