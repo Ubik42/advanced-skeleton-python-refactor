@@ -380,6 +380,14 @@ class BuildRegisteredBodyCharacter:
                                     fit_part_twist_sources)
         else:
             fit_source = self._host.capture_fit_orientation(container_name)
+            omitted_parts = tuple(
+                item.joint for item in fit_source.metadata
+                if (item.twist_joints or 0) > 0
+                or (item.inbetween_joints or 0) > 0)
+            if omitted_parts:
+                raise FitSkeletonValidationError(
+                    "Fit 已标记 Twist／Inbetween，不能在关闭 Fit 分段时构建："
+                    + "、".join(omitted_parts))
             hip_selection = plan_hip_swing_fit_selection(
                 fit_source,
                 allow_missing_child=(axial_description is not None
