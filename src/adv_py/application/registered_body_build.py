@@ -1195,20 +1195,27 @@ class BuildRegisteredBodyCharacter:
                             name.removesuffix("_NonSymmetry"))
                             for name in control.fit_joint_names)),
                     generated_joint_sources=spline_sources)
-                generic_scale_compensations = tuple(
-                    replace(spec, independent_parent=(
+                generic_scale_specs = []
+                for spec in all_fk_scale_compensations:
+                    if (spec.control_path not in generic_control_paths
+                            or (_generic_fk_policy is not None
+                                and _generic_fk_policy.compensated_controls
+                                is not None
+                                and spec.control_path not in
+                                _generic_fk_policy.compensated_controls)):
+                        continue
+                    independent = (
                         preview.build.build_options.use_offset_parent_matrix
                         and (_generic_fk_policy is None
-                             or _generic_fk_policy.independent_controls
-                             is None
+                             or _generic_fk_policy.independent_controls is None
                              or spec.control_path in
-                             _generic_fk_policy.independent_controls)))
-                    for spec in all_fk_scale_compensations
-                    if (spec.control_path in generic_control_paths
-                        and (_generic_fk_policy is None
-                             or _generic_fk_policy.compensated_controls is None
-                             or spec.control_path in
-                             _generic_fk_policy.compensated_controls)))
+                             _generic_fk_policy.independent_controls))
+                    generic_scale_specs.append(replace(
+                        spec, independent_parent=independent,
+                        main_scale_source_path=(
+                            rig.plan.global_control.control_path
+                            if independent else None)))
+                generic_scale_compensations = tuple(generic_scale_specs)
                 BuildBodyFkScaleCompensation(joined).apply(
                     generic_scale_compensations)
             if generic_direct_scales or generic_scale_compensations:

@@ -24,11 +24,23 @@ class BodyFkScaleCompensationSpec:
     relative_matrix_name: str
     decompose_matrix_name: str
     independent_parent: bool = False
+    main_scale_source_path: str | None = None
+
+    @property
+    def main_scale_pick_name(self) -> str:
+        return self.world_matrix_name + "MainScalePick"
+
+    @property
+    def inherit_scale_reverse_name(self) -> str:
+        return self.world_matrix_name + "InheritScaleReverse"
 
     @property
     def node_names(self) -> tuple[str, ...]:
         names = (self.world_matrix_name, self.pick_matrix_name,
                  self.relative_matrix_name)
+        if self.independent_parent:
+            names += (self.main_scale_pick_name,
+                      self.inherit_scale_reverse_name)
         return (names if self.use_offset_parent_matrix
                 else names + (self.decompose_matrix_name,))
 

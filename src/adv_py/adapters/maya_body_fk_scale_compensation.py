@@ -30,6 +30,13 @@ class MayaBodyFkScaleCompensationMixin:
         if spec.independent_parent and not spec.use_offset_parent_matrix:
             raise ValueError("FK 独立父级矩阵只适用于 OPM 控制层："
                              + spec.offset_path)
+        if spec.independent_parent and (
+                spec.main_scale_source_path is None
+                or (c.ls(spec.main_scale_source_path, long=True,
+                         type="transform") or [])
+                != [spec.main_scale_source_path]):
+            raise ValueError("FK 独立父级矩阵缺少 Main 缩放来源："
+                             + spec.offset_path)
         if any(self.find_name_collisions(name)
                for name in spec.node_names):
             raise ValueError("FK 缩放补偿节点名称冲突："
@@ -93,11 +100,28 @@ class MayaBodyFkScaleCompensationMixin:
                       pick + ".useScale")
         c.connectAttr(spec.control_path + ".inheritScale",
                       pick + ".useShear")
-        c.connectAttr(pick + ".outputMatrix",
-                      relative + ".matrixIn[0]")
         if spec.independent_parent:
+            main_scale = c.createNode("pickMatrix",
+                                      name=spec.main_scale_pick_name)
+            reverse = c.createNode("reverse",
+                                   name=spec.inherit_scale_reverse_name)
+            c.connectAttr(spec.main_scale_source_path + ".worldMatrix[0]",
+                          main_scale + ".inputMatrix")
+            c.setAttr(main_scale + ".useTranslate", False)
+            c.setAttr(main_scale + ".useRotate", False)
+            c.setAttr(main_scale + ".useShear", False)
+            c.connectAttr(spec.control_path + ".inheritScale",
+                          reverse + ".inputX")
+            c.connectAttr(reverse + ".outputX",
+                          main_scale + ".useScale")
+            c.connectAttr(main_scale + ".outputMatrix",
+                          relative + ".matrixIn[0]")
+            c.connectAttr(pick + ".outputMatrix",
+                          relative + ".matrixIn[1]")
             c.setAttr(offset + ".inheritsTransform", False)
         else:
+            c.connectAttr(pick + ".outputMatrix",
+                          relative + ".matrixIn[0]")
             c.connectAttr(parent + ".worldInverseMatrix[0]",
                           relative + ".matrixIn[1]")
         c.setAttr(offset + ".translate", 0, 0, 0)
@@ -129,12 +153,17 @@ class MayaBodyFkScaleCompensationMixin:
         world = spec.world_matrix_name
         pick = spec.pick_matrix_name
         relative = spec.relative_matrix_name
+        extra_nodes = (
+            ((spec.main_scale_pick_name, "pickMatrix"),
+             (spec.inherit_scale_reverse_name, "reverse"))
+            if spec.independent_parent else ())
         if any(not c.objExists(name) or c.nodeType(name) != kind
                for name, kind in ((world, "multMatrix"),
                                   (pick, "pickMatrix"),
                                   (relative, "multMatrix"))
                + (((spec.decompose_matrix_name, "decomposeMatrix"),)
-                  if not spec.use_offset_parent_matrix else ())):
+                  if not spec.use_offset_parent_matrix else ())
+               + extra_nodes):
             return False
         links = (
             (spec.scale_source_path + ".worldMatrix[0]",
@@ -142,9 +171,22 @@ class MayaBodyFkScaleCompensationMixin:
             (world + ".matrixSum", pick + ".inputMatrix"),
             (spec.control_path + ".inheritScale", pick + ".useScale"),
             (spec.control_path + ".inheritScale", pick + ".useShear"),
-            (pick + ".outputMatrix", relative + ".matrixIn[0]"),
         )
-        if not spec.independent_parent:
+        if spec.independent_parent:
+            links += (
+                (spec.main_scale_source_path + ".worldMatrix[0]",
+                 spec.main_scale_pick_name + ".inputMatrix"),
+                (spec.control_path + ".inheritScale",
+                 spec.inherit_scale_reverse_name + ".inputX"),
+                (spec.inherit_scale_reverse_name + ".outputX",
+                 spec.main_scale_pick_name + ".useScale"),
+                (spec.main_scale_pick_name + ".outputMatrix",
+                 relative + ".matrixIn[0]"),
+                (pick + ".outputMatrix", relative + ".matrixIn[1]"),
+            )
+        else:
+            links += ((pick + ".outputMatrix",
+                       relative + ".matrixIn[0]"),)
             links += ((spec.parent_control_path + ".worldInverseMatrix[0]",
                        relative + ".matrixIn[1]"),)
         if spec.use_offset_parent_matrix:
@@ -174,16 +216,10 @@ class MayaBodyFkScaleCompensationMixin:
                        for source, target in links)):
             return False
         if spec.independent_parent:
-            identity = (1.0, 0.0, 0.0, 0.0,
-                        0.0, 1.0, 0.0, 0.0,
-                        0.0, 0.0, 1.0, 0.0,
-                        0.0, 0.0, 0.0, 1.0)
             if (bool(c.getAttr(spec.offset_path + ".inheritsTransform"))
-                    or c.connectionInfo(relative + ".matrixIn[1]",
-                                        isDestination=True)
-                    or any(abs(a - b) > 1e-6 for a, b in zip(
-                        _matrix(c.getAttr(relative + ".matrixIn[1]")),
-                        identity))):
+                    or any(bool(c.getAttr(spec.main_scale_pick_name
+                                          + ".use" + attr))
+                           for attr in ("Translate", "Rotate", "Shear"))):
                 return False
         elif not bool(c.getAttr(spec.offset_path + ".inheritsTransform")):
             return False
