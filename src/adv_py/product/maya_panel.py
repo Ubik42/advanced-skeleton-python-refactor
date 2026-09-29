@@ -244,6 +244,7 @@ def create_panel(controller: MayaPanelController | None = None):
                        self._skin_loop_page(),
                        self._geometry_skeleton_page(),
                        self._geometry_muscular_page(),
+                       self._geometry_poly_boxes_page(),
                        self._geometry_cut_up_page(),
                        self._animation_page(), self._face_page(),
                        self._mocap_page(), self._publish_page(),
@@ -291,7 +292,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('Deform / DeltaMush', ('05 · Delta Mush',)),
                     ('Geometry / Skeleton', ('00 · Skeleton',)),
                     ('Geometry / Muscular', ('00 · Muscular',)),
-                    ('Geometry / PolyBoxes', ()),
+                    ('Geometry / PolyBoxes', ('00 · PolyBoxes',)),
                     ('Geometry / Mannequin', ()),
                     ('Geometry / Skin Cut-Up', ('00 · Skin Cut-Up',)),
                     ('Custom Controllers', ('06 · 自定义控制器',)),
@@ -1905,6 +1906,21 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addStretch(1)
             return page
 
+        def _geometry_poly_boxes_page(self):
+            page, stack = self._page()
+            group, form = self._group("00 · PolyBoxes", [])
+            form.addRow(QtWidgets.QLabel(
+                "按 Fit 骨段体积创建跟随 Body 关节的盒体。"))
+            form.addRow(self._button("Create", self._geometry_poly_boxes_create))
+            form.addRow(self._button("Delete", self._geometry_poly_boxes_delete))
+            form.addRow(self._button("Left>Right",
+                                     self._geometry_poly_boxes_mirror_l2r))
+            form.addRow(self._button("Right>Left",
+                                     self._geometry_poly_boxes_mirror_r2l))
+            stack.addWidget(group)
+            stack.addStretch(1)
+            return page
+
         def _display_page(self):
             page, stack = self._page()
             group, form = self._group("00 · Display", [])
@@ -2892,6 +2908,24 @@ def create_panel(controller: MayaPanelController | None = None):
         def _geometry_muscular_delete(self):
             self.controller.geometry_muscular_delete(self._namespace())
             return "已删除 Muscular 几何"
+
+        def _geometry_poly_boxes_create(self):
+            count = self.controller.geometry_poly_boxes_create(self._namespace())
+            return f"已创建 {count} 个 PolyBoxes 盒体"
+
+        def _geometry_poly_boxes_delete(self):
+            self.controller.geometry_poly_boxes_delete(self._namespace())
+            return "已删除 PolyBoxes 几何"
+
+        def _geometry_poly_boxes_mirror_l2r(self):
+            count = self.controller.geometry_poly_boxes_mirror(
+                self._namespace(), "L")
+            return f"已镜像 {count} 对 PolyBoxes 盒体"
+
+        def _geometry_poly_boxes_mirror_r2l(self):
+            count = self.controller.geometry_poly_boxes_mirror(
+                self._namespace(), "R")
+            return f"已镜像 {count} 对 PolyBoxes 盒体"
 
         def _geometry_cut_up_delete(self):
             self.controller.geometry_cut_up_delete(self._namespace())
