@@ -1801,7 +1801,10 @@ class MayaFitBendyMixin:
                                 blend + ".target[0].targetMatrix",
                                 sourceFromDestination=True)
                             != spec.follow_node_names[1]
-                            + ".worldMatrix[0]"):
+                            + ".worldMatrix[0]"
+                            or abs(float(c.getAttr(
+                                blend + ".target[0].weight"))
+                                - index / (len(spec.part_names) + 1)) > 1e-8):
                         return False
                     up_source = blend + ".outputMatrix"
                 else:
@@ -1822,7 +1825,10 @@ class MayaFitBendyMixin:
                             blend + ".target[0].targetMatrix",
                             sourceFromDestination=True)
                         != spec.follow_node_names[1]
-                        + ".worldMatrix[0]"):
+                        + ".worldMatrix[0]"
+                        or abs(float(c.getAttr(
+                            blend + ".target[0].weight"))
+                            - index / (len(spec.part_names) + 1)) > 1e-8):
                     return False
             twist_add, twist_mults = spec.micro_twist_names[index]
             scale_add, delta_names, weight_names = (
@@ -1850,6 +1856,9 @@ class MayaFitBendyMixin:
                         else twist_add + ".output1D")
                     or not c.objExists(scale_add)
                     or c.nodeType(scale_add) != "plusMinusAverage"
+                    or any(abs(float(value) - 1.0) > 1e-8
+                           for value in c.getAttr(
+                               scale_add + ".input3D[0]")[0])
                     or (not spec.micro_yz_scale_only
                         and c.connectionInfo(offset + ".scale",
                                              sourceFromDestination=True)
@@ -1943,20 +1952,25 @@ class MayaFitBendyMixin:
                             sourceFromDestination=True)
                         != up_name + ".output"):
                     return False
-            for projection, mult_name, weight in zip(
+            for control_index, (projection, mult_name, weight) in enumerate(zip(
                     spec.twist_projection_names, twist_mults,
-                    spec.twist_weights(index)):
+                    spec.twist_weights(index))):
                 if (not c.objExists(mult_name)
                         or c.nodeType(mult_name) != "multDoubleLinear"
                         or c.connectionInfo(mult_name + ".input1",
                                             sourceFromDestination=True)
                         != projection[3] + ".outputRotateX"
+                        or c.connectionInfo(
+                            twist_add + f".input1D[{control_index}]",
+                            sourceFromDestination=True)
+                        != mult_name + ".output"
                         or abs(float(c.getAttr(mult_name + ".input2"))
                                - weight) > 1e-8):
                     return False
-            for bend_control, delta_name, weight_name, weight in zip(
+            for control_index, (bend_control, delta_name, weight_name,
+                                weight) in enumerate(zip(
                     spec.control_names, delta_names, weight_names,
-                    spec.control_weights(index)):
+                    spec.control_weights(index)), start=1):
                 if (not c.objExists(delta_name)
                         or c.nodeType(delta_name) != "plusMinusAverage"
                         or c.connectionInfo(delta_name + ".input3D[0]",
@@ -1967,6 +1981,10 @@ class MayaFitBendyMixin:
                         or c.connectionInfo(weight_name + ".input1",
                                             sourceFromDestination=True)
                         != delta_name + ".output3D"
+                        or c.connectionInfo(
+                            scale_add + f".input3D[{control_index}]",
+                            sourceFromDestination=True)
+                        != weight_name + ".output"
                         or abs(float(c.getAttr(weight_name + ".input2X"))
                                - weight) > 1e-8):
                     return False
@@ -1980,13 +1998,26 @@ class MayaFitBendyMixin:
                                             sourceFromDestination=True)
                         != ("AdvPy_" + spec.child_start_control
                             + "TwistQTE.outputRotateX")
+                        or c.connectionInfo(
+                            twist_add + f".input1D[{len(spec.control_names)}]",
+                            sourceFromDestination=True)
+                        != twist_end + ".output"
                         or abs(float(c.getAttr(twist_end + ".input2"))
                                - index / len(spec.part_names)) > 1e-8
                         or not c.objExists(scale_delta)
                         or not c.objExists(scale_weight)
                         or c.connectionInfo(scale_delta + ".input3D[0]",
                                             sourceFromDestination=True)
-                        != spec.child_start_control + ".scale"):
+                        != spec.child_start_control + ".scale"
+                        or c.connectionInfo(scale_weight + ".input1",
+                                            sourceFromDestination=True)
+                        != scale_delta + ".output3D"
+                        or abs(float(c.getAttr(scale_weight + ".input2X"))
+                               - (1.0 - spec.control_weights(index)[1])) > 1e-8
+                        or c.connectionInfo(
+                            scale_add + f".input3D[{len(spec.control_names) + 1}]",
+                            sourceFromDestination=True)
+                        != scale_weight + ".output"):
                     return False
         return True
 
