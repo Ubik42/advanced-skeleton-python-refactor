@@ -7,25 +7,35 @@ from .fit_metadata import FitJointMetadata
 
 def plan_body_fit_ik_follow(
     metadata: tuple[FitJointMetadata, ...], arm_ik: tuple,
-    leg_ik: tuple, body_joints: tuple,
+    leg_ik: tuple, body_joints: tuple, *, spine=None, spline=None,
 ) -> tuple[BodyFitFollowSpec, ...]:
     by_name = {joint.name.rsplit(":", 1)[-1]: joint.path
                for joint in body_joints}
     if len(by_name) != len(body_joints):
         raise ValueError("IK Follow Body 关节短名重复")
-    by_source = {}
+    by_source: dict[str, list[tuple[str, str, str, str]]] = {}
+
+    def add(source_body: str, control: str, offset: str,
+            side: str) -> None:
+        leaf = source_body.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if not leaf.endswith("_" + side):
+            raise ValueError("IK Follow 末端 Body 侧别不一致：" + source_body)
+        source_name = leaf[:-(len(side) + 1)]
+        by_source.setdefault(source_name, []).append(
+            (source_body, side, control, offset))
+
     for limb in arm_ik:
-        by_source.setdefault(
-            limb.chain[-1].rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-            .rsplit("_", 1)[0],
-            []).append((limb, limb.wrist_control_path,
-                        limb.wrist_offset_path))
+        add(limb.chain[-1], limb.wrist_control_path,
+            limb.wrist_offset_path, limb.side.value)
     for limb in leg_ik:
-        by_source.setdefault(
-            limb.chain[-1].rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-            .rsplit("_", 1)[0],
-            []).append((limb, limb.ankle_control_path,
-                        limb.ankle_offset_path))
+        add(limb.chain[-1], limb.ankle_control_path,
+            limb.ankle_offset_path, limb.side.value)
+    if spine is not None:
+        add(spine.body_joints[-1], spine.ik_control, spine.ik_offset, "M")
+    if spline is not None:
+        control = spline.targets[-1]
+        add(spline.body_joints[-1], control,
+            control.rsplit("|", 1)[0], "M")
     result = []
     used = set()
     for item in metadata:
@@ -36,9 +46,7 @@ def plan_body_fit_ik_follow(
         if not limbs:
             raise ValueError("IK Follow 来源尚无已构建的 IK 末端控制器："
                              + source_name)
-        for limb, control, offset in limbs:
-            side = limb.side.value
-            source_body = limb.chain[-1]
+        for source_body, side, control, offset in limbs:
             if source_body not in by_name.values():
                 raise ValueError("IK Follow 来源 Body 末端关节缺失："
                                  + source_body)

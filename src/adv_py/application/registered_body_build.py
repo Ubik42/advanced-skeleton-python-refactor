@@ -740,7 +740,11 @@ class BuildRegisteredBodyCharacter:
                 for spec in named_follow_plan)
             ik_follow_plan = plan_body_fit_ik_follow(
                 fit_metadata, rig.plan.arm.ik.limbs,
-                rig.plan.leg.ik.limbs, pre_constraint_body.joints)
+                rig.plan.leg.ik.limbs, pre_constraint_body.joints,
+                spine=(rig.plan.torso.torso.spine
+                       if rig.plan.torso is not None else None),
+                spline=(rig.plan.torso.torso.spline
+                        if rig.plan.torso is not None else None))
             validate_fit_control_dependencies(
                 plan_body_fit_advanced_constraints(
                     fit_metadata, fk_control_specs, pre_constraint_body.joints),
@@ -793,7 +797,11 @@ class BuildRegisteredBodyCharacter:
                 skeleton.snapshot.root)
             ik_follows = BuildFitIkFollow(joined).apply(
                 fit_metadata, rig.plan.arm.ik.limbs,
-                rig.plan.leg.ik.limbs, pre_ik_follow_body.joints)
+                rig.plan.leg.ik.limbs, pre_ik_follow_body.joints,
+                spine=(rig.plan.torso.torso.spine
+                       if rig.plan.torso is not None else None),
+                spline=(rig.plan.torso.torso.spline
+                        if rig.plan.torso is not None else None))
             if ik_follows and not body_skeleton_unchanged(
                     pre_ik_follow_body,
                     joined.capture_body_skeleton(skeleton.snapshot.root),
