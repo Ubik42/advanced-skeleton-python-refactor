@@ -53,3 +53,27 @@ def set_smooth_bind_options(*, cmds=None, mel=None, show_dialog: bool = True) ->
         if mel is None:
             from maya import mel
         mel.eval("SmoothBindSkinOptions")
+
+
+def open_native_delta_mush_paint(*, mel=None) -> None:
+    """Open Maya's built-in DeltaMush weight painting context."""
+    if mel is None:
+        from maya import mel
+    mel.eval('artAttrToolScript 4 "deltaMush"')
+
+
+def open_native_face_skin_paint(influence: str, *, cmds=None,
+                                mel=None) -> None:
+    """Open Maya's native Skin paint tool on one resolved influence."""
+    if not influence or any(char in influence for char in ('"', '\\', '\n')):
+        raise ValueError("Face Skin 绘制关节名称无效")
+    if cmds is None:
+        from maya import cmds
+    if mel is None:
+        from maya import mel
+    mel.eval("ArtPaintSkinWeightsTool;toolPropertyWindow;")
+    cmds.artAttrSkinPaintCtx("artAttrSkinContext", edit=True,
+                             influence=influence)
+    mel.eval('artSkinInflListChanging "' + influence + '" 1;')
+    mel.eval("artSkinInflListChanged artAttrSkinPaintCtx;")
+    mel.eval("toolPropertyWindow;")

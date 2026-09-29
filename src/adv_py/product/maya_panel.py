@@ -310,7 +310,8 @@ def create_panel(controller: MayaPanelController | None = None):
                              '01 · 目标网格', '02 · 可移植目标资产')),
                     ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit')),
                     ('Build', ('03 · 控制与变形器',)),
-                    ('Build ...', ()), ('Tweaks', ()), ('DeltaMush', ()),
+                    ('Build ...', ()), ('Tweaks', ('03A · Face Tweaks',)),
+                    ('DeltaMush', ('03B · Face DeltaMush',)),
                     ('HeadSquash', ()), ('WrinkleMap', ()),
                     ('BlendShapes', ('04 · 表情与口型动画',
                                      '05 · 面部资产版本',
@@ -1613,6 +1614,44 @@ def create_panel(controller: MayaPanelController | None = None):
                                                  self._face_outer_blink_apply))
             form.addRow(outer_actions)
             form.addRow(self._button("构建面部控制", self._face_build, primary=True))
+            stack.addWidget(group)
+
+            group, form = self._group("03A · Face Tweaks", [])
+            form.addRow(self._button("Paint skin-weights",
+                                     self._face_tweaks_paint))
+            for label, area, subtract in (
+                    ("select eyeBrowArea", "eyeBrowArea", False),
+                    ("select -d eyeBrowLine", "eyeBrowLineArea", True),
+                    ("select eyeLidArea", "eyeLidArea", False),
+                    ("select -d eyeLidMain", "eyeLidMainArea", True),
+                    ("select eyeLidOuter", "eyeLidOuterArea", False),
+                    ("select lipArea", "lipArea", False),
+                    ("select -d lipMain", "lipMainArea", True),
+                    ("select lipFalloffArea", "lipFalloffArea", False)):
+                form.addRow(self._button(label,
+                    lambda area=area, subtract=subtract:
+                    self._face_tweaks_select(area, subtract)))
+            self.face_tweaks_iterations = QtWidgets.QSpinBox()
+            self.face_tweaks_iterations.setRange(1, 100)
+            self.face_tweaks_iterations.setValue(5)
+            form.addRow("Iterations", self.face_tweaks_iterations)
+            form.addRow(self._button("WeightHammerVerts",
+                                     self._face_tweaks_smooth))
+            stack.addWidget(group)
+
+            group, form = self._group("03B · Face DeltaMush", [])
+            form.addRow(self._button("Create DeltaMush",
+                                     self._face_delta_mush_create))
+            form.addRow(self._button("Delete DeltaMush",
+                                     self._face_delta_mush_delete))
+            form.addRow(self._button("Select eyeLidArea",
+                lambda: self._face_delta_mush_select("eyeLidArea")))
+            form.addRow(self._button("Select lipArea",
+                lambda: self._face_delta_mush_select("lipArea")))
+            form.addRow(self._button("zero weight selected",
+                                     self._face_delta_mush_zero_selected))
+            form.addRow(self._button("Paint DeltaMush",
+                                     self._face_delta_mush_paint))
             stack.addWidget(group)
 
             performance, self.face_performance_document = self._file_field("面部动画文档")
@@ -3181,6 +3220,44 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.face_control_name.text().strip(),
                 self.face_deformer_name.text().strip())
             return f"面部控制已构建：{channels} 个通道"
+
+        def _face_delta_mush_create(self):
+            deformer = self.controller.face_delta_mush_create(self._namespace())
+            return "已创建 Face DeltaMush：" + deformer
+
+        def _face_delta_mush_delete(self):
+            removed = self.controller.face_delta_mush_delete(self._namespace())
+            return "已删除 Face DeltaMush" if removed else "当前没有 Face DeltaMush"
+
+        def _face_delta_mush_select(self, area):
+            count = self.controller.face_delta_mush_select_area(
+                self._namespace(), area)
+            return f"已选择 {area}：{count} 项"
+
+        def _face_delta_mush_zero_selected(self):
+            deformer = self.controller.face_delta_mush_zero_selected(
+                self._namespace())
+            return "所选区域 DeltaMush 权重已归零：" + deformer
+
+        def _face_delta_mush_paint(self):
+            deformer = self.controller.face_delta_mush_paint(self._namespace())
+            return "已打开 DeltaMush 权重绘制：" + deformer
+
+        def _face_tweaks_select(self, area, subtract):
+            count = self.controller.face_tweaks_select_area(
+                self._namespace(), area, subtract=subtract)
+            action = "扣除" if subtract else "选择"
+            return f"已{action} {area}；当前选择 {count} 项"
+
+        def _face_tweaks_smooth(self):
+            iterations = self.face_tweaks_iterations.value()
+            skin = self.controller.face_tweaks_smooth_weights(
+                self._namespace(), iterations)
+            return f"已平滑 {skin} 的所选权重：{iterations} 次迭代"
+
+        def _face_tweaks_paint(self):
+            joint = self.controller.face_tweaks_paint_skin(self._namespace())
+            return "已打开 Face Skin 权重绘制：" + joint
 
         def _face_record_right_eye(self):
             path = self.controller.face_eye_selected_mesh(self._namespace())

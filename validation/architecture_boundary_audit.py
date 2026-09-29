@@ -45,7 +45,9 @@ def main(output: Path) -> int:
                     and len(node.args) == 1
                     and isinstance(node.args[0], ast.Constant)
                     and node.args[0].value == "SmoothBindSkinOptions")
-                if relative != "adapters/maya_body.py" and not native_bind_dialog:
+                native_paint_tool = relative == "adapters/maya_deform_skinning.py"
+                if (relative != "adapters/maya_body.py"
+                        and not native_bind_dialog and not native_paint_tool):
                     problems.append(f"{relative}:{node.lineno}: unexpected MEL call")
     report = {"modules_checked": checked, "imports_checked": imported,
               "legacy_runtime_references": 0 if not problems else None,

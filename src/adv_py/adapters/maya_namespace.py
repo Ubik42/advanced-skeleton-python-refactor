@@ -40,6 +40,9 @@ _NODE_ARGS |= {'pointOnPolyConstraint'}
 _NODE_RESULTS |= {'pointOnPolyConstraint'}
 _CREATE |= {'pointOnPolyConstraint'}
 _NODE_ARGS |= {'reorder'}
+_NODE_ARGS |= {'tangentConstraint', 'expression'}
+_NODE_RESULTS |= {'tangentConstraint', 'expression'}
+_CREATE |= {'tangentConstraint', 'expression'}
 
 
 class MayaCharacterCommands:
@@ -105,6 +108,8 @@ class MayaCharacterCommands:
                         kwargs[flag]=address(kwargs[flag])
             if name=='skinCluster' and 'addInfluence' in kwargs:
                 kwargs['addInfluence']=address(kwargs['addInfluence'])
+            if name=='expression' and isinstance(kwargs.get('object'),str):
+                kwargs['object']=address(kwargs['object'])
             if name=='ikHandle' and isinstance(kwargs.get('solver'),str) and kwargs['solver'] not in SHARED_NODES:
                 kwargs['solver']=identity.to_scene(kwargs['solver']).lstrip(':')
             elif name=='ikHandle' and not query and kwargs.get('solver') in SHARED_NODES:

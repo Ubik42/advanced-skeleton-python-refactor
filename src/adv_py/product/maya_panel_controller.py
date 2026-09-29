@@ -1891,6 +1891,65 @@ class MayaPanelController:
         return MayaFaceBuildHost(namespace=None if namespace == ":" else namespace
             ).set_include(FaceInclude(include)).value
 
+    def face_delta_mush_create(self, namespace: str) -> str:
+        from adv_py.adapters.maya_face_delta_mush import MayaFaceDeltaMushHost
+
+        return MayaFaceDeltaMushHost(
+            namespace=None if namespace == ":" else namespace
+        ).create_face_delta_mush()
+
+    def face_delta_mush_delete(self, namespace: str) -> bool:
+        from adv_py.adapters.maya_face_delta_mush import MayaFaceDeltaMushHost
+
+        return MayaFaceDeltaMushHost(
+            namespace=None if namespace == ":" else namespace
+        ).delete_face_delta_mush()
+
+    def face_delta_mush_select_area(self, namespace: str,
+                                    area: str) -> int:
+        from adv_py.adapters.maya_face_delta_mush import MayaFaceDeltaMushHost
+
+        return MayaFaceDeltaMushHost(
+            namespace=None if namespace == ":" else namespace
+        ).select_face_delta_mush_area(area)
+
+    def face_delta_mush_zero_selected(self, namespace: str) -> str:
+        from adv_py.adapters.maya_face_delta_mush import MayaFaceDeltaMushHost
+
+        return MayaFaceDeltaMushHost(
+            namespace=None if namespace == ":" else namespace
+        ).zero_selected_face_delta_mush_weights()
+
+    def face_delta_mush_paint(self, namespace: str) -> str:
+        from adv_py.adapters.maya_face_delta_mush import MayaFaceDeltaMushHost
+
+        return MayaFaceDeltaMushHost(
+            namespace=None if namespace == ":" else namespace
+        ).paint_face_delta_mush_weights()
+
+    def face_tweaks_select_area(self, namespace: str, area: str,
+                                *, subtract: bool = False) -> int:
+        from adv_py.adapters.maya_face_tweaks import MayaFaceTweaksHost
+
+        return MayaFaceTweaksHost(
+            namespace=None if namespace == ":" else namespace
+        ).select_face_area(area, subtract=subtract)
+
+    def face_tweaks_smooth_weights(self, namespace: str,
+                                   iterations: int) -> str:
+        from adv_py.adapters.maya_face_tweaks import MayaFaceTweaksHost
+
+        return MayaFaceTweaksHost(
+            namespace=None if namespace == ":" else namespace
+        ).smooth_selected_skin_weights(iterations)
+
+    def face_tweaks_paint_skin(self, namespace: str) -> str:
+        from adv_py.adapters.maya_face_tweaks import MayaFaceTweaksHost
+
+        return MayaFaceTweaksHost(
+            namespace=None if namespace == ":" else namespace
+        ).paint_face_skin_weights()
+
     def face_build_get_include(self, namespace: str) -> str:
         from adv_py.adapters.maya_face_build import MayaFaceBuildHost
 

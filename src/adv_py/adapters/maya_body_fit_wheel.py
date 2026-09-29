@@ -144,11 +144,15 @@ class MayaBodyFitWheelMixin:
             control, previous, maintainOffset=False,
             aimVector=(0, 1, 0), upVector=(1, 0, 0),
             worldUpType="vector", worldUpVector=(0, 1, 0))
-        fk = spec.control_name
-        fkx = source.rsplit("|", 1)[-1]
-        now_name = "nowPos" + stem
-        prev_name = "prevPosOffset" + stem
-        angler_name = "prevPosAngler" + stem
+        # Expressions are evaluated after the namespace creation context has
+        # ended.  Resolve every referenced node in the script itself.
+        scene = self.scene_address
+        fk = scene(spec.control_name)
+        fkx = scene(source.rsplit("|", 1)[-1])
+        now_name = scene("nowPos" + stem)
+        prev_name = scene("prevPosOffset" + stem)
+        angler_name = scene("prevPosAngler" + stem)
+        scale_plug = scene(wheel.scale_plug)
         # Maya expressions are required here: the original rolls from the
         # previous evaluated position, so an acyclic DG graph cannot carry
         # its time-integrated state.
@@ -157,7 +161,7 @@ class MayaBodyFitWheelMixin:
             f"float $autoRoll={fk}.autoRoll;\n"
             f"float $reset={fk}.reset;\n"
             f"float $sideAngle={angler_name}.rotateX;\n"
-            f"float $scale={wheel.scale_plug};\n"
+            f"float $scale={scale_plug};\n"
             f"float $prevPosX={fk}.prevPosX;\n"
             f"float $prevPosY={fk}.prevPosY;\n"
             f"float $prevPosZ={fk}.prevPosZ;\n"
