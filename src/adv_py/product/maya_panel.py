@@ -243,6 +243,7 @@ def create_panel(controller: MayaPanelController | None = None):
                        self._sub_wrap_page(),
                        self._skin_loop_page(),
                        self._geometry_skeleton_page(),
+                       self._geometry_muscular_page(),
                        self._geometry_cut_up_page(),
                        self._animation_page(), self._face_page(),
                        self._mocap_page(), self._publish_page(),
@@ -289,7 +290,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('Deform Shapers', ()),
                     ('Deform / DeltaMush', ('05 · Delta Mush',)),
                     ('Geometry / Skeleton', ('00 · Skeleton',)),
-                    ('Geometry / Muscular', ()),
+                    ('Geometry / Muscular', ('00 · Muscular',)),
                     ('Geometry / PolyBoxes', ()),
                     ('Geometry / Mannequin', ()),
                     ('Geometry / Skin Cut-Up', ('00 · Skin Cut-Up',)),
@@ -1821,6 +1822,17 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addStretch(1)
             return page
 
+        def _geometry_muscular_page(self):
+            page, stack = self._page()
+            group, form = self._group("00 · Muscular", [])
+            form.addRow(QtWidgets.QLabel(
+                "先创建 Skeleton，再从原版模板创建肌肉曲面。"))
+            form.addRow(self._button("Create", self._geometry_muscular_create))
+            form.addRow(self._button("Delete", self._geometry_muscular_delete))
+            stack.addWidget(group)
+            stack.addStretch(1)
+            return page
+
         def _display_page(self):
             page, stack = self._page()
             group, form = self._group("00 · Display", [])
@@ -2790,6 +2802,15 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.geometry_skeleton_mirror(
                 self._namespace(), "R")
             return f"已镜像 {count} 对骨骼几何"
+
+        def _geometry_muscular_create(self):
+            curves, groups = self.controller.geometry_muscular_create(
+                self._namespace())
+            return f"已创建 {curves} 条肌肉曲线、{groups} 组对侧肌肉"
+
+        def _geometry_muscular_delete(self):
+            self.controller.geometry_muscular_delete(self._namespace())
+            return "已删除 Muscular 几何"
 
         def _geometry_cut_up_delete(self):
             self.controller.geometry_cut_up_delete(self._namespace())

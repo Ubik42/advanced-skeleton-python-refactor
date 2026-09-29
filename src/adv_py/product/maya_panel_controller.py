@@ -1410,6 +1410,18 @@ class MayaPanelController:
         return MirrorSkeletonGeometry(MayaSkeletonGeometryHost(namespace)).execute(
             source_side)
 
+    def geometry_muscular_create(self, namespace: str) -> tuple[int, int]:
+        from adv_py.adapters.maya_geometry_muscular import MayaMuscularHost
+        from adv_py.application.geometry_muscular import CreateMuscular
+
+        return CreateMuscular(MayaMuscularHost(namespace)).execute()
+
+    def geometry_muscular_delete(self, namespace: str) -> None:
+        from adv_py.adapters.maya_geometry_muscular import MayaMuscularHost
+        from adv_py.application.geometry_muscular import DeleteMuscular
+
+        DeleteMuscular(MayaMuscularHost(namespace)).execute()
+
     def geometry_cut_up_delete(self, namespace: str) -> None:
         from adv_py.adapters.maya_geometry_cut_up import MayaGeometryCutUpHost
         from adv_py.application.geometry_cut_up import DeleteGeometryCutUp
