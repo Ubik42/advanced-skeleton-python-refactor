@@ -361,12 +361,17 @@ def create_panel(controller: MayaPanelController | None = None):
                     ("Child Of Part", "child_of_part"),
                     ("Global 权重", "global_weight"),
                     ("Global Translate", "global_translate"),
+                    ("Parent Constraint 目标", "parent_constraint"),
+                    ("Point Constraint 目标", "point_constraint"),
+                    ("Orient Constraint 目标", "orient_constraint"),
+                    ("Scale Constraint 目标", "scale_constraint"),
                     ("World Orient Up", "world_orient_up"),
                     ("World Orient Forward", "world_orient_forward"),
                     ("IK Local Mode", "ik_local_mode")):
                 self.fit_metadata_field.addItem(label, value)
             self.fit_metadata_value = QtWidgets.QLineEdit()
-            self.fit_metadata_value.setPlaceholderText("整数、数值、true/false 或枚举值")
+            self.fit_metadata_value.setPlaceholderText(
+                "整数、数值、true/false、枚举值或目标关节名")
             self.fit_metadata_remove = QtWidgets.QCheckBox("删除所选字段")
             self.fit_orientation_children = QtWidgets.QPlainTextEdit()
             self.fit_orientation_children.setPlaceholderText(

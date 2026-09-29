@@ -95,6 +95,10 @@ _FIT_ATTRIBUTES = {
     FitJointField.CHILD_OF_PART: _MayaFitAttribute("childOfPart", "long", 1, 10),
     FitJointField.GLOBAL_WEIGHT: _MayaFitAttribute("global", "double", 0, 10),
     FitJointField.GLOBAL_TRANSLATE: _MayaFitAttribute("globalTranslate", "bool"),
+    FitJointField.PARENT_CONSTRAINT: _MayaFitAttribute("parentConstraint", "string"),
+    FitJointField.POINT_CONSTRAINT: _MayaFitAttribute("pointConstraint", "string"),
+    FitJointField.ORIENT_CONSTRAINT: _MayaFitAttribute("orientConstraint", "string"),
+    FitJointField.SCALE_CONSTRAINT: _MayaFitAttribute("scaleConstraint", "string"),
     FitJointField.WORLD_ORIENT_UP: _MayaFitAttribute(
         "worldOrientUp",
         "enum",
@@ -860,6 +864,14 @@ class MayaFitJointHost:
             child_of_part=self._optional_number(joint, "childOfPart", int),
             global_weight=self._optional_number(joint, "global", float),
             global_translate=self._optional_bool(joint, "globalTranslate"),
+            parent_constraint=self._optional_constraint_target(
+                joint, "parentConstraint"),
+            point_constraint=self._optional_constraint_target(
+                joint, "pointConstraint"),
+            orient_constraint=self._optional_constraint_target(
+                joint, "orientConstraint"),
+            scale_constraint=self._optional_constraint_target(
+                joint, "scaleConstraint"),
             world_orient_up=self._optional_enum(joint, "worldOrientUp"),
             world_orient_forward=self._optional_enum(joint, "worldOrientForward"),
             ik_local_mode=self._optional_enum(joint, "ikLocal"),
@@ -884,9 +896,12 @@ class MayaFitJointHost:
         if not exists:
             options = {
                 "longName": spec.name,
-                "attributeType": spec.kind,
                 "keyable": True,
             }
+            if spec.kind == "string":
+                options["dataType"] = "string"
+            else:
+                options["attributeType"] = spec.kind
             if spec.minimum is not None:
                 options["minValue"] = spec.minimum
             if spec.maximum is not None:
@@ -901,7 +916,20 @@ class MayaFitJointHost:
             value = spec.enum_names.index(str(edit.value))
         else:
             value = edit.value
-        self._cmds.setAttr(f"{joint}.{spec.name}", value)
+        if spec.kind == "string":
+            plug = f"{joint}.{spec.name}"
+            if self._cmds.getAttr(plug, type=True) == "enum":
+                names = self._cmds.attributeQuery(
+                    spec.name, node=joint, listEnum=True) or []
+                choices = names[0].split(":") if names else []
+                if value not in choices:
+                    raise FitJointValidationError(
+                        f"原版 {plug} 的可选目标中没有 {value}")
+                self._cmds.setAttr(plug, choices.index(value))
+            else:
+                self._cmds.setAttr(plug, value, type="string")
+        else:
+            self._cmds.setAttr(f"{joint}.{spec.name}", value)
 
     def set_fit_joint_world_axes(
         self,
@@ -1064,6 +1092,19 @@ class MayaFitJointHost:
                 f"{joint}.{attribute} 的 enum 值越界：{index}"
             )
         return options[index]
+
+    def _optional_constraint_target(
+        self, joint: str, attribute: str,
+    ) -> str | None:
+        if not self._attribute_exists(joint, attribute):
+            return None
+        plug = f"{joint}.{attribute}"
+        if self._cmds.getAttr(plug, type=True) == "enum":
+            return self._optional_enum(joint, attribute) or None
+        if self._cmds.getAttr(plug, type=True) != "string":
+            raise FitJointValidationError(
+                f"{plug} 需要原版 enum 或 Python 字符串属性")
+        return str(self._cmds.getAttr(plug) or "") or None
 
     def _read_fit_skeleton_value(
         self,

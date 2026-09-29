@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from enum import Enum
+import re
 
 
 class FitJointValidationError(ValueError):
@@ -31,6 +32,10 @@ class FitJointField(str, Enum):
     WORLD_ORIENT_UP = "world_orient_up"
     WORLD_ORIENT_FORWARD = "world_orient_forward"
     IK_LOCAL_MODE = "ik_local_mode"
+    PARENT_CONSTRAINT = "parent_constraint"
+    POINT_CONSTRAINT = "point_constraint"
+    ORIENT_CONSTRAINT = "orient_constraint"
+    SCALE_CONSTRAINT = "scale_constraint"
 
 
 FitJointValue = bool | int | float | str
@@ -99,6 +104,10 @@ class FitJointMetadata:
     cog: bool = False
     aim: bool = False
     foot_pivots: bool = False
+    parent_constraint: str | None = None
+    point_constraint: str | None = None
+    orient_constraint: str | None = None
+    scale_constraint: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +159,11 @@ _ENUM_OPTIONS = {
     },
     FitJointField.IK_LOCAL_MODE: {"addCtrl", "nonZero", "localOrient"},
 }
+_CONSTRAINT_FIELDS = frozenset((
+    FitJointField.PARENT_CONSTRAINT, FitJointField.POINT_CONSTRAINT,
+    FitJointField.ORIENT_CONSTRAINT, FitJointField.SCALE_CONSTRAINT,
+))
+_BUILD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*\Z")
 
 
 def validate_fit_joint_value(
@@ -168,6 +182,10 @@ def validate_fit_joint_value(
     if field in _ENUM_OPTIONS and value not in _ENUM_OPTIONS[field]:
         options = "、".join(sorted(_ENUM_OPTIONS[field]))
         raise FitJointValidationError(f"{field.value} 必须是以下值之一：{options}")
+    if field in _CONSTRAINT_FIELDS and (
+            not isinstance(value, str) or not _BUILD_NAME.fullmatch(value)):
+        raise FitJointValidationError(
+            f"{field.value} 必须是未带侧别的关节名称")
 
 
 def fit_joint_value(
@@ -238,6 +256,13 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
     if type(metadata.foot_pivots) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_foot_pivots", "Foot Pivots 开关必须是布尔值"))
+    for field in _CONSTRAINT_FIELDS:
+        value = getattr(metadata, field.value)
+        if value is not None and (not isinstance(value, str)
+                                  or not _BUILD_NAME.fullmatch(value)):
+            issues.append(FitJointIssue(
+                metadata.joint, "invalid_" + field.value,
+                field.value + " 目标关节名称无效"))
 
     for field_name, value, label in (
         ("twist_joints", metadata.twist_joints, "Twist 关节数量"),
