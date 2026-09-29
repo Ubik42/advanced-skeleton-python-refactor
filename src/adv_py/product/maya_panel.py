@@ -1704,6 +1704,7 @@ def create_panel(controller: MayaPanelController | None = None):
             page, stack = self._page()
             group, form = self._group("00 · SkinCage", [])
             form.addRow(QtWidgets.QLabel("Cage"))
+            form.addRow(self._button("创建 Cage", self._create_skin_cage))
             form.addRow(self._button("删除 Cage", self._delete_skin_cage))
             form.addRow(QtWidgets.QLabel("选择待变形网格或其顶点，然后复制 Cage 权重。"))
             form.addRow(self._button("复制权重", self._copy_skin_cage_weights))
@@ -2625,6 +2626,10 @@ def create_panel(controller: MayaPanelController | None = None):
         def _set_smooth_bind_options(self):
             self.controller.skinning_set_smooth_bind_options()
             return "已设置原版 Smooth Bind 选项，并打开 Maya 绑定选项窗口"
+
+        def _create_skin_cage(self):
+            count = self.controller.skin_cage_create(self._namespace())
+            return f"已生成 SkinCage：{count} 条关节链"
 
         def _delete_skin_cage(self):
             count = self.controller.skin_cage_delete(self._namespace())

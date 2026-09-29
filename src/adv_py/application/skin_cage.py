@@ -4,10 +4,17 @@ from __future__ import annotations
 from contextlib import AbstractContextManager
 from typing import Protocol
 
-from adv_py.core.skin_cage import SkinCageCopyTarget, plan_skin_cage_copy
+from adv_py.core.skin_cage import (
+    SkinCageBuildPlan, SkinCageCopyTarget, plan_skin_cage_build,
+    plan_skin_cage_copy,
+)
 
 
 class SkinCageHost(Protocol):
+    def capture_build_input(self): ...
+    def preflight_build(self, plan: SkinCageBuildPlan) -> None: ...
+    def create_cage(self, plan: SkinCageBuildPlan) -> None: ...
+    def capture_build(self, plan: SkinCageBuildPlan) -> bool: ...
     def capture_copy_input(self) -> tuple[tuple[str, ...], tuple[str, ...]]: ...
     def preflight_copy(self, targets: tuple[SkinCageCopyTarget, ...]) -> None: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
@@ -33,6 +40,20 @@ class CopySkinCageWeights:
                     raise RuntimeError("SkinCage 权重复制后没有可读的目标蒙皮："
                                        + target.mesh)
         return len(targets)
+
+
+class CreateSkinCage:
+    def __init__(self, host: SkinCageHost) -> None:
+        self._host = host
+
+    def execute(self) -> int:
+        plan = plan_skin_cage_build(*self._host.capture_build_input())
+        self._host.preflight_build(plan)
+        with self._host.transaction("创建 SkinCage"):
+            self._host.create_cage(plan)
+            if not self._host.capture_build(plan):
+                raise RuntimeError("SkinCage 创建后缺少笼体、蒙皮或曲线")
+        return len(plan.chains)
 
 
 class DeleteSkinCage:

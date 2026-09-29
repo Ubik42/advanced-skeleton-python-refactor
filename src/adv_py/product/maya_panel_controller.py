@@ -1285,6 +1285,12 @@ class MayaPanelController:
 
         set_smooth_bind_options()
 
+    def skin_cage_create(self, namespace: str) -> int:
+        from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
+        from adv_py.application.skin_cage import CreateSkinCage
+
+        return CreateSkinCage(MayaSkinCageHost(namespace)).execute()
+
     def skin_cage_delete(self, namespace: str) -> int:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
         from adv_py.application.skin_cage import DeleteSkinCage
