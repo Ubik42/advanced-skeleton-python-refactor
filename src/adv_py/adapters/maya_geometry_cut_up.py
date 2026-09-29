@@ -8,7 +8,7 @@ from .maya_skin_cage import MayaSkinCageHost
 class MayaGeometryCutUpHost(MayaSkinCageHost):
     def __init__(self, namespace: str = "") -> None:
         super().__init__(namespace)
-        self._created: list[tuple[str, str]] = []
+        self._created: list[tuple[str, str, int]] = []
 
     def _leaf(self, node: str) -> str:
         return node.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
@@ -29,6 +29,7 @@ class MayaGeometryCutUpHost(MayaSkinCageHost):
 
     def capture_cut_up_inputs(self) -> tuple[tuple, ...]:
         from maya.api import OpenMaya as om
+        from maya.api import OpenMayaAnim as oma
 
         c = self.cmds
         selection = c.ls(selection=True, long=True) or []
@@ -40,10 +41,6 @@ class MayaGeometryCutUpHost(MayaSkinCageHost):
             skin = self._skin(mesh)
             if not skin:
                 raise ValueError("Skin Cut-Up 网格没有 SkinCluster：" + mesh)
-            influences = tuple(c.skinCluster(skin, query=True,
-                                              influence=True) or ())
-            if not influences:
-                raise ValueError("Skin Cut-Up SkinCluster 没有影响关节")
             selection_list = om.MSelectionList()
             selection_list.add(mesh)
             mesh_path = selection_list.getDagPath(0)
@@ -51,17 +48,24 @@ class MayaGeometryCutUpHost(MayaSkinCageHost):
             mesh_fn = om.MFnMesh(mesh_path)
             faces = tuple(tuple(mesh_fn.getPolygonVertices(index))
                           for index in range(mesh_fn.numPolygons))
-            weights = []
-            for index in range(mesh_fn.numVertices):
-                values = c.skinPercent(
-                    skin, mesh + f".vtx[{index}]", query=True,
-                    value=True) or []
-                if len(values) != len(influences):
-                    raise RuntimeError("Skin Cut-Up 顶点影响权重数量不一致："
-                                       + mesh)
-                weights.append(tuple(float(value) for value in values))
+            skin_selection = om.MSelectionList()
+            skin_selection.add(skin)
+            skin_fn = oma.MFnSkinCluster(skin_selection.getDependNode(0))
+            influences = tuple(path.fullPathName()
+                               for path in skin_fn.influenceObjects())
+            if not influences:
+                raise ValueError("Skin Cut-Up SkinCluster 没有影响关节")
+            component_fn = om.MFnSingleIndexedComponent()
+            component = component_fn.create(om.MFn.kMeshVertComponent)
+            component_fn.addElements(list(range(mesh_fn.numVertices)))
+            flat, width = skin_fn.getWeights(mesh_path, component)
+            if width != len(influences):
+                raise RuntimeError("Skin Cut-Up 顶点影响权重数量不一致：" + mesh)
+            weights = tuple(tuple(float(flat[vertex * width + index])
+                                  for index in range(width))
+                            for vertex in range(mesh_fn.numVertices))
             anchors = tuple(self._anchor(joint) for joint in influences)
-            rows.append((mesh, influences, faces, tuple(weights), anchors))
+            rows.append((mesh, influences, faces, weights, anchors))
         return tuple(rows)
 
     def preflight_cut_up(self, plans: tuple[CutUpMeshPlan, ...]) -> None:
@@ -130,7 +134,7 @@ class MayaGeometryCutUpHost(MayaSkinCageHost):
                                      noIntermediate=True, type="mesh") or []
             if len(shapes) != 1:
                 raise RuntimeError("Skin Cut-Up 分片网格丢失：" + piece)
-            self._created.append((piece, group))
+            self._created.append((piece, group, len(spec.faces)))
         return len(plan.pieces)
 
     def capture_cut_up(self, plans: tuple[CutUpMeshPlan, ...]) -> bool:
@@ -138,7 +142,7 @@ class MayaGeometryCutUpHost(MayaSkinCageHost):
         expected = sum(len(plan.pieces) for plan in plans)
         if len(self._created) != expected:
             return False
-        for piece, group in self._created:
+        for piece, group, face_count in self._created:
             if not c.objExists(piece) or not c.objExists(group):
                 return False
             parent = c.listRelatives(piece, parent=True, fullPath=True) or []
@@ -146,6 +150,11 @@ class MayaGeometryCutUpHost(MayaSkinCageHost):
                 return False
             if not c.listRelatives(piece, shapes=True, type="mesh",
                                    noIntermediate=True):
+                return False
+            if int(c.polyEvaluate(piece, face=True)) != face_count:
+                return False
+            if any(c.nodeType(node) == "skinCluster" for node in (
+                    c.listHistory(piece, pruneDagObjects=True) or ())):
                 return False
             if not c.listConnections(group, type="parentConstraint"):
                 return False

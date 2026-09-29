@@ -31,7 +31,8 @@ def plan_cut_up_mesh(mesh: str, influences: tuple[str, ...],
         if not vertices or any(index < 0 or index >= len(weights)
                                for index in vertices):
             raise ValueError("Skin Cut-Up 面顶点索引无效：" + mesh)
-        sums = [sum(weights[index][joint_index] for index in vertices)
+        sums = [sum(weights[index][joint_index] for index in vertices
+                    if weights[index][joint_index] > 0.001)
                 for joint_index in range(len(influences))]
         if max(sums) <= 0:
             raise ValueError("Skin Cut-Up 面没有非零蒙皮权重：" + mesh)
