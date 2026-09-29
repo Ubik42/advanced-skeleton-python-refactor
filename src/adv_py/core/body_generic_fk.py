@@ -101,6 +101,7 @@ class GenericFkFeaturePolicy:
     bendy_aim_follow_controls: frozenset[str] | None = None
     bendy_start_control_sources: frozenset[str] | None = None
     bendy_child_control_sources: frozenset[str] | None = None
+    bendy_untwist_controls: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(

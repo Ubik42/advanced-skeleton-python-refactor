@@ -127,6 +127,7 @@ def plan_fit_bendy_follow(
     untwist_plugs: Mapping[str, str] | None = None,
     start_control_sources: frozenset[str] | None = None,
     child_control_sources: frozenset[str] | None = None,
+    untwist_sources: frozenset[str] | None = None,
 ) -> tuple[FitBendyFollowSpec, ...]:
     """Resolve Bendy endpoints without depending on driven Body matrices."""
     sources = fit_bendy_world_sources(
@@ -156,6 +157,8 @@ def plan_fit_bendy_follow(
             (untwist_plugs or {}).get(chain.start_body)
             if (master_aim_sources is None
                 or chain.control_names[0] in master_aim_sources)
+            and (untwist_sources is None
+                 or chain.control_names[0] in untwist_sources)
             else None,
             start_control_sources is None
             or chain.control_names[0] in start_control_sources))

@@ -859,6 +859,13 @@ class MayaFitBendyMixin:
         c.connectAttr(world + ".matrixSum",
                       frame + ".offsetParentMatrix")
         c.setAttr(frame + ".visibility", False)
+        position = c.xform(frame, query=True, worldSpace=True,
+                           translation=True)
+        if any(abs(float(actual) - expected) > 1e-4
+               for actual, expected in zip(position,
+                                           chain.start_position)):
+            raise RuntimeError("Bendy 去扭转父级改变绑定位置："
+                               + chain.curve_name)
         return frame
 
     def _create_fit_bendy_master_aim_follow(
@@ -1143,6 +1150,8 @@ class MayaFitBendyMixin:
                         (frame, "transform")))
                 and abs(float(c.getAttr(negate + ".input2")) + 1.0)
                 < 1e-6
+                and (c.listRelatives(frame, parent=True) or [])
+                == [_GROUPS[0]]
                 and not bool(c.getAttr(frame + ".visibility"))
                 and c.connectionInfo(negate + ".input1",
                                      sourceFromDestination=True)
