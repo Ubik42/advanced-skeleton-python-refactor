@@ -84,6 +84,25 @@ def create(host,plan):
                   'AdvPy_SplineIKHandle.dWorldUpMatrix')
     c.connectAttr(end_up+'.worldMatrix[0]',
                   'AdvPy_SplineIKHandle.dWorldUpMatrixEnd')
+    c.addAttr(plan.settings,longName='noFlipAxis',attributeType='enum',
+              enumName='180turn:180bend:180side:',defaultValue=0,keyable=False)
+    c.createNode('setRange',name='AdvPy_SplineFlipUpAxis',skipSelect=True)
+    for plug,value in (('minX',3),('maxX',0),('oldMinX',1),('oldMaxX',2)):
+        c.setAttr('AdvPy_SplineFlipUpAxis.'+plug,value)
+    c.connectAttr(plan.settings+'.noFlipAxis','AdvPy_SplineFlipUpAxis.valueX')
+    c.connectAttr('AdvPy_SplineFlipUpAxis.outValueX',
+                  'AdvPy_SplineIKHandle.dWorldUpAxis')
+    c.createNode('setRange',name='AdvPy_SplineFlipVector',skipSelect=True)
+    for axis,minimum,maximum in (('X',0,0),('Y',0,1),('Z',1,0)):
+        c.setAttr('AdvPy_SplineFlipVector.min'+axis,minimum)
+        c.setAttr('AdvPy_SplineFlipVector.max'+axis,maximum)
+        c.setAttr('AdvPy_SplineFlipVector.oldMin'+axis,1)
+        c.setAttr('AdvPy_SplineFlipVector.oldMax'+axis,2)
+        c.connectAttr(plan.settings+'.noFlipAxis',
+                      'AdvPy_SplineFlipVector.value'+axis)
+        for suffix in ('','End'):
+            c.connectAttr('AdvPy_SplineFlipVector.outValue'+axis,
+                          'AdvPy_SplineIKHandle.dWorldUpVector'+suffix+axis)
     c.orientConstraint(plan.targets[-1],ik[-1].path,maintainOffset=True,name='AdvPy_SplineChestOrient')
     c.createNode('curveInfo',name='AdvPy_SplineArc',skipSelect=True)
     c.connectAttr(shape+'.local','AdvPy_SplineArc.inputCurve')
@@ -215,6 +234,7 @@ def audit(host,plan):
     terminal_without_volume=version>=10
     original_volume_graph=version>=12
     end_local_start=version>=14
+    flip_axis_graph=version>=16
     missing=tuple(name for name in plan.node_names
                   if not (version==1 and 'WorldScale' in name)
                   and not (not new_scaling and (name.startswith('AdvPy_SplineIKScale')
@@ -225,6 +245,8 @@ def audit(host,plan):
                   and not (not original_volume_graph and name in (
                       'AdvPy_SplineVolumeRatioClamp','AdvPy_SplineVolumeBlend'))
                   and not (not end_local_start and name=='AdvPy_SplineIKEndLocalStartOrient')
+                  and not (not flip_axis_graph and name in (
+                      'AdvPy_SplineFlipUpAxis','AdvPy_SplineFlipVector'))
                   and not (terminal_without_volume and name in (
                       f'AdvPy_SplineIKScaleWeight{n-1}',
                       f'AdvPy_SplineIKScaleAdd{n-1}'))
@@ -245,6 +267,16 @@ def audit(host,plan):
     else:
         edges += [(plan.targets[0]+'.worldMatrix[0]','AdvPy_SplineIKHandle.dWorldUpMatrix'),
                   (plan.targets[-1]+'.worldMatrix[0]','AdvPy_SplineIKHandle.dWorldUpMatrixEnd')]
+    if flip_axis_graph:
+        edges += [(plan.settings+'.noFlipAxis','AdvPy_SplineFlipUpAxis.valueX'),
+                  ('AdvPy_SplineFlipUpAxis.outValueX',
+                   'AdvPy_SplineIKHandle.dWorldUpAxis')]
+        for axis in 'XYZ':
+            edges.append((plan.settings+'.noFlipAxis',
+                          'AdvPy_SplineFlipVector.value'+axis))
+            for suffix in ('','End'):
+                edges.append(('AdvPy_SplineFlipVector.outValue'+axis,
+                              'AdvPy_SplineIKHandle.dWorldUpVector'+suffix+axis))
     if original_range:
         edges += [(plan.settings+'.stretchy','AdvPy_SplineStretchUnit.input'),
                   ('AdvPy_SplineStretchUnit.output','AdvPy_SplineStretchBlend.blender'),
@@ -352,7 +384,22 @@ def audit(host,plan):
         'AdvPy_SplineStretchBlend.color2R':1.,'AdvPy_SplineClamp.minR':.001,'AdvPy_SplineClamp.maxR':1000.,
         'AdvPy_SplineVolumeExponent.operation':1,'AdvPy_SplineVolume.operation':3,
         'AdvPy_SplineIKHandle.dTwistControlEnable':1,'AdvPy_SplineIKHandle.dWorldUpType':4,
-        'AdvPy_SplineIKHandle.dForwardAxis':0,'AdvPy_SplineIKHandle.dWorldUpAxis':0}
+        'AdvPy_SplineIKHandle.dForwardAxis':0}
+    if flip_axis_graph:
+        if (not c.attributeQuery('noFlipAxis',node=plan.settings,exists=True)
+                or c.getAttr(plan.settings+'.noFlipAxis',type=True)!='enum'):
+            raise FitSkeletonValidationError('Spline noFlipAxis 控制属性缺失')
+        constants.update({'AdvPy_SplineFlipUpAxis.minX':3,
+                          'AdvPy_SplineFlipUpAxis.maxX':0,
+                          'AdvPy_SplineFlipUpAxis.oldMinX':1,
+                          'AdvPy_SplineFlipUpAxis.oldMaxX':2})
+        for axis,minimum,maximum in (('X',0,0),('Y',0,1),('Z',1,0)):
+            constants['AdvPy_SplineFlipVector.min'+axis]=minimum
+            constants['AdvPy_SplineFlipVector.max'+axis]=maximum
+            constants['AdvPy_SplineFlipVector.oldMin'+axis]=1
+            constants['AdvPy_SplineFlipVector.oldMax'+axis]=2
+    else:
+        constants['AdvPy_SplineIKHandle.dWorldUpAxis']=0
     if original_range:
         constants['AdvPy_SplineStretchUnit.conversionFactor']=.1
         constants['AdvPy_SplineVolumeUnit.conversionFactor']=.1
