@@ -23,6 +23,7 @@ class BodyGenericFkFollowerSpec:
     use_offset_parent_matrix: bool
     inherit_scale: bool
     use_parent_constraint: bool = False
+    scale_source_body_joint: str | None = None
 
     @property
     def driver_name(self) -> str:
@@ -139,8 +140,9 @@ def plan_body_generic_fk(
             if source_parent is None:
                 raise ValueError("通用 FK 跟随分支缺少保留的 Body 父级："
                                  + spec.name)
-            body_parent = ((remapped_body_paths or {}).get(
+            body_joint = ((remapped_body_paths or {}).get(
                 source_parent, source_parent))
+            body_parent = body_joint
             use_root_follow = False
             if (source_parent.rsplit("|", 1)[-1] == "Root_M"
                     and root_follow_transform is not None):
@@ -159,7 +161,9 @@ def plan_body_generic_fk(
                     BodyGenericFkFollowerSpec(
                         follower_path, follower_name, body_parent,
                         use_offset_parent_matrix, inherit_scale,
-                        use_parent_constraint=use_root_follow))
+                        use_parent_constraint=use_root_follow,
+                        scale_source_body_joint=(
+                            body_joint if use_root_follow else None)))
                 parent_control = follower_path
         stem = spec.name
         offset_name = "AdvPy_" + stem + "FKOffset"

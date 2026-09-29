@@ -8463,7 +8463,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     or (c.ls(follower.source_body_joint, long=True)
                         or []) != [follower.source_body_joint]
                     or c.nodeType(follower.source_body_joint)
-                       not in ("joint", "transform")):
+                       not in ("joint", "transform")
+                    or (follower.scale_source_body_joint is not None
+                        and (c.ls(follower.scale_source_body_joint,
+                                  long=True, type="joint") or [])
+                            != [follower.scale_source_body_joint])):
                 raise FitSkeletonValidationError(
                     "通用 FK Body 跟随层来源或名称无效："
                     + follower.name)
@@ -8507,8 +8511,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     raise RuntimeError("通用 FK Body 跟随点／方向约束创建失败："
                                        + follower.name)
             if not follower.use_offset_parent_matrix and follower.inherit_scale:
+                scale_source = (follower.scale_source_body_joint
+                                or follower.source_body_joint)
                 for axis in "XYZ":
-                    c.connectAttr(follower.source_body_joint
+                    c.connectAttr(scale_source
                                   + ".scale" + axis,
                                   node + ".scale" + axis)
             if (follower.source_body_joint.rsplit("|", 1)[-1]
@@ -8588,11 +8594,13 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                             follower.source_body_joint]:
                         return False
             if not follower.use_offset_parent_matrix:
+                scale_source = (follower.scale_source_body_joint
+                                or follower.source_body_joint)
                 for axis in "XYZ":
                     if (c.connectionInfo(
                             follower.path + ".scale" + axis,
                             sourceFromDestination=True)
-                            != (follower.source_body_joint + ".scale" + axis
+                            != (scale_source + ".scale" + axis
                                 if follower.inherit_scale else "")):
                         return False
             if (follower.source_body_joint.rsplit("|", 1)[-1]
