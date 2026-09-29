@@ -239,6 +239,7 @@ def create_panel(controller: MayaPanelController | None = None):
             # Reuse the existing operation widgets while arranging their
             # entrances in the order of the 6.925 MEL frame layouts.
             sources = (self._fit_page(), self._skin_page(),
+                       self._skin_loop_page(),
                        self._animation_page(), self._face_page(),
                        self._mocap_page(), self._publish_page(),
                        self._display_page(), self._optimize_page())
@@ -280,7 +281,7 @@ def create_panel(controller: MayaPanelController | None = None):
                                            '04 · 跨拓扑权重转移')),
                     ('Deform / SkinCage', ()),
                     ('Deform / SubWrap', ()),
-                    ('Deform / SkinLoops', ()),
+                    ('Deform / SkinLoops', ('00 · SkinLoops',)),
                     ('Deform Shapers', ()),
                     ('Deform / DeltaMush', ('05 · Delta Mush',)),
                     ('Geometry / Skeleton', ()),
@@ -1698,6 +1699,21 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addStretch(1)
             return page
 
+        def _skin_loop_page(self):
+            page, stack = self._page()
+            self.skin_loop_mirror = QtWidgets.QCheckBox("自动镜像到对侧")
+            self.skin_loop_mirror.setChecked(True)
+            group, form = self._group("00 · SkinLoops", [
+                ("镜像", self.skin_loop_mirror)])
+            form.addRow(QtWidgets.QLabel(
+                "先选择闭合网格边，最后选择对应 FK 控制器。"))
+            form.addRow(self._button("创建 SkinLoop", self._create_skin_loop))
+            form.addRow(self._button("选择全部 SkinLoops",
+                                     self._select_all_skin_loops))
+            stack.addWidget(group)
+            stack.addStretch(1)
+            return page
+
         def _display_page(self):
             page, stack = self._page()
             group, form = self._group("00 · Display", [])
@@ -2574,6 +2590,15 @@ def create_panel(controller: MayaPanelController | None = None):
         def _set_smooth_bind_options(self):
             self.controller.skinning_set_smooth_bind_options()
             return "已设置原版 Smooth Bind 选项，并打开 Maya 绑定选项窗口"
+
+        def _create_skin_loop(self):
+            count = self.controller.skin_loops_create(
+                self._namespace(), mirror=self.skin_loop_mirror.isChecked())
+            return f"已创建 {count} 个 SkinLoop"
+
+        def _select_all_skin_loops(self):
+            count = self.controller.skin_loops_select_all(self._namespace())
+            return f"已选择 {count} 个 SkinLoop 的网格边"
 
         def _apply_delta_mush(self):
             count = self.controller.delta_mush_apply(self._namespace())

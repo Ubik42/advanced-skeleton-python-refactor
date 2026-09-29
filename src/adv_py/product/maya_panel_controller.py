@@ -1285,6 +1285,20 @@ class MayaPanelController:
 
         set_smooth_bind_options()
 
+    def skin_loops_create(self, namespace: str, *, mirror: bool = True) -> int:
+        from adv_py.adapters.maya_skin_loops import MayaSkinLoopsHost
+        from adv_py.application.skin_loops import CreateSkinLoops
+
+        host = MayaSkinLoopsHost("" if namespace == ":" else namespace)
+        return len(CreateSkinLoops(host).execute(mirror=mirror))
+
+    def skin_loops_select_all(self, namespace: str) -> int:
+        from adv_py.adapters.maya_skin_loops import MayaSkinLoopsHost
+        from adv_py.application.skin_loops import SelectAllSkinLoops
+
+        host = MayaSkinLoopsHost("" if namespace == ":" else namespace)
+        return SelectAllSkinLoops(host).execute()
+
     def delta_mush_apply(self, namespace: str = "") -> int:
         from adv_py.adapters.maya_delta_mush import apply_delta_mush_to_selected
 
