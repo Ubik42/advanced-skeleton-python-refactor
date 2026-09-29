@@ -54,6 +54,59 @@ class MayaBodySelectionSetsMixin:
             members.append(identity.to_local(paths[0]))
         return tuple(members)
 
+    def capture_body_control_history(
+        self, plan: BodyAllSetPlan,
+    ) -> tuple[str, ...]:
+        """Match the MEL history/future/shape walk before changing its filter."""
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        control_set = self._body_selection_set_address("ControlSet")
+        if not c.objExists(control_set) or c.nodeType(control_set) != "objectSet":
+            raise RuntimeError("角色 ControlSet 不存在")
+        identity = CharacterIdentity(self.namespace or "")
+        allowed = set(plan.members)
+        candidates = set()
+        for member in c.sets(control_set, query=True) or []:
+            controls = c.ls(member, long=True) or []
+            if len(controls) != 1 or not identity.owns(controls[0]):
+                raise RuntimeError("角色 ControlSet 成员不唯一或越界：" + member)
+            control = controls[0]
+            related = []
+            for future in (False, True):
+                related.extend(c.listHistory(
+                    control, future=future, leaf=False, interestLevel=1,
+                    pruneDagObjects=True) or [])
+            related.extend(c.listRelatives(
+                control, shapes=True, fullPath=True) or [])
+            for node in related:
+                matches = c.ls(node, long=True) or []
+                if len(matches) != 1 or not identity.owns(matches[0]):
+                    continue
+                path = identity.to_local(matches[0])
+                if path in allowed and c.objExists(
+                        matches[0] + ".isHistoricallyInteresting"):
+                    candidates.add(path)
+        return tuple(sorted(candidates))
+
+    def disable_body_control_history(self, nodes: tuple[str, ...]) -> None:
+        self._require_transaction()
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        for path in nodes:
+            plug = self.scene_address(path) + ".isHistoricallyInteresting"
+            if not c.objExists(plug):
+                raise RuntimeError("控制器历史节点已丢失：" + path)
+            if c.getAttr(plug):
+                self._transaction_changed = True
+                c.setAttr(plug, 0)
+
+    def read_body_control_history(
+        self, nodes: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        return tuple(path for path in nodes if not c.objExists(
+            self.scene_address(path) + ".isHistoricallyInteresting")
+            or c.getAttr(self.scene_address(path)
+                         + ".isHistoricallyInteresting"))
+
     def _body_selection_set_address(self, name: str) -> str:
         address = self.scene_address(name)
         return address if address.startswith((":", "|")) else ":" + address
