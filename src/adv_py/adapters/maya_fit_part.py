@@ -13,7 +13,7 @@ from adv_py.core.fit_part_twist import (
     FitPartTwistProjection, FitPartTwistStep,
 )
 from adv_py.core.fit_part_scale import (
-    FitPartInheritedScaleChain, FitPartLimbScaleChain,
+    FitPartEndScale, FitPartInheritedScaleChain, FitPartLimbScaleChain,
     FitPartScaleStep,
 )
 
@@ -22,6 +22,100 @@ _FIT_INBETWEEN_KIND = "fit-inbetween-v1"
 
 
 class MayaFitPartMixin:
+    def preflight_fit_part_end_scale(self, end: FitPartEndScale) -> None:
+        c = self._cmds
+        body = self._unique_fit_part_joint(end.body_name)
+        if any(not c.objExists(plug) for plug in (
+                end.fk_scale_plug, end.ik_scale_plug, end.mode_plug)):
+            raise ValueError("Fit Part 末端缺少 FK／IK 缩放输入："
+                             + end.body_name)
+        if any(c.objExists(name) for name in (
+                end.blend_name, end.scale_compose_name,
+                end.scale_matrix_name) if name):
+            raise ValueError("Fit Part 末端缩放节点名称冲突：" + end.body_name)
+        if end.use_offset_parent_matrix:
+            if (not end.scale_compose_name or not end.scale_matrix_name
+                    or not c.objExists(body + ".offsetParentMatrix")):
+                raise ValueError("Fit Part 末端缺少 OPM 矩阵目标："
+                                 + end.body_name)
+        elif any(not c.getAttr(body + ".scale" + axis,
+                               settable=True) for axis in "XYZ"):
+            raise ValueError("Fit Part 末端 Body 缩放目标不可写："
+                             + end.body_name)
+
+    def connect_fit_part_end_scale(self, end: FitPartEndScale) -> None:
+        self._require_transaction()
+        c = self._cmds
+        body = self._unique_fit_part_joint(end.body_name)
+        blend = c.createNode("blendColors", name=end.blend_name)
+        self._transaction_changed = True
+        for color, source_axis in zip("RGB", end.ik_axes):
+            c.connectAttr(end.ik_scale_plug + source_axis,
+                          blend + ".color1" + color)
+        c.connectAttr(end.fk_scale_plug, blend + ".color2")
+        c.connectAttr(end.mode_plug, blend + ".blender")
+        if end.use_offset_parent_matrix:
+            target = body + ".offsetParentMatrix"
+            old_source = c.connectionInfo(target,
+                                          sourceFromDestination=True)
+            old_matrix = c.getAttr(target)
+            if old_matrix and isinstance(old_matrix[0], (tuple, list)):
+                old_matrix = old_matrix[0]
+            compose = c.createNode("composeMatrix",
+                                   name=end.scale_compose_name)
+            matrix = c.createNode("multMatrix",
+                                  name=end.scale_matrix_name)
+            for axis, color in zip("XYZ", "RGB"):
+                c.connectAttr(blend + ".output" + color,
+                              compose + ".inputScale" + axis)
+            c.connectAttr(compose + ".outputMatrix",
+                          matrix + ".matrixIn[0]")
+            if old_source:
+                c.disconnectAttr(old_source, target)
+                c.connectAttr(old_source, matrix + ".matrixIn[1]")
+            else:
+                c.setAttr(matrix + ".matrixIn[1]", *old_matrix,
+                          type="matrix")
+            c.connectAttr(matrix + ".matrixSum", target)
+        else:
+            c.connectAttr(blend + ".output", body + ".scale")
+
+    def capture_fit_part_end_scale(self, end: FitPartEndScale) -> bool:
+        c = self._cmds
+        body = self._unique_fit_part_joint(end.body_name)
+        if (not c.objExists(end.blend_name)
+                or c.nodeType(end.blend_name) != "blendColors"):
+            return False
+        links = [
+            (end.ik_scale_plug + source_axis,
+             end.blend_name + ".color1" + color)
+            for color, source_axis in zip("RGB", end.ik_axes)
+        ] + [
+            (end.fk_scale_plug, end.blend_name + ".color2"),
+            (end.mode_plug, end.blend_name + ".blender"),
+        ]
+        if any(c.connectionInfo(target, sourceFromDestination=True)
+               != source for source, target in links):
+            return False
+        if not end.use_offset_parent_matrix:
+            return c.connectionInfo(body + ".scale",
+                sourceFromDestination=True) == end.output_plug
+        if (not c.objExists(end.scale_compose_name)
+                or c.nodeType(end.scale_compose_name) != "composeMatrix"
+                or not c.objExists(end.scale_matrix_name)
+                or c.nodeType(end.scale_matrix_name) != "multMatrix"
+                or c.connectionInfo(body + ".offsetParentMatrix",
+                    sourceFromDestination=True)
+                    != end.scale_matrix_name + ".matrixSum"
+                or c.connectionInfo(end.scale_matrix_name + ".matrixIn[0]",
+                    sourceFromDestination=True)
+                    != end.scale_compose_name + ".outputMatrix"):
+            return False
+        return all(c.connectionInfo(end.scale_compose_name
+                   + ".inputScale" + axis, sourceFromDestination=True)
+                   == end.blend_name + ".output" + color
+                   for axis, color in zip("XYZ", "RGB"))
+
     def inspect_fit_part_inherited_scale(
         self, chain: FitPartInheritedScaleChain
     ) -> bool:

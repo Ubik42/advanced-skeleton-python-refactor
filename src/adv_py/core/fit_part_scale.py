@@ -42,15 +42,34 @@ class FitPartLimbScaleChain:
 
 
 @dataclass(frozen=True, slots=True)
+class FitPartEndScale:
+    body_name: str
+    fk_scale_plug: str
+    ik_scale_plug: str
+    mode_plug: str
+    ik_axes: tuple[str, str, str]
+    blend_name: str
+    use_offset_parent_matrix: bool
+    scale_compose_name: str | None
+    scale_matrix_name: str | None
+
+    @property
+    def output_plug(self) -> str:
+        return self.blend_name + ".output"
+
+
+@dataclass(frozen=True, slots=True)
 class FitPartScalePlan:
     direct: tuple[FitPartScaleStep, ...]
     limbs: tuple[FitPartLimbScaleChain, ...]
     inherited: tuple[FitPartInheritedScaleChain, ...] = ()
+    ends: tuple[FitPartEndScale, ...] = ()
 
 
 def plan_fit_part_scale(
     parts: tuple[FitPartJointSpec, ...],
     body_joints: tuple[BodyJointSpec, ...] = (),
+    ik_local_sources: frozenset[str] = frozenset(),
 ) -> FitPartScalePlan:
     """Use FK/IK scale on limb Body even when a segment has no Parts.
 
@@ -74,6 +93,7 @@ def plan_fit_part_scale(
     direct = []
     limbs = []
     inherited = []
+    ends = []
     for start, chain in grouped.items():
         chain.sort(key=lambda part: part.index)
         stem, side = start.rsplit("_", 1)
@@ -109,4 +129,25 @@ def plan_fit_part_scale(
         else:
             inherited.append(FitPartInheritedScaleChain(
                 start, tuple(part.name for part in chain)))
-    return FitPartScalePlan(tuple(direct), tuple(limbs), tuple(inherited))
+    for body in body_joints:
+        stem, _, side = body.name.rpartition("_")
+        if stem not in ("Wrist", "Ankle") or side not in ("R", "L"):
+            continue
+        module = "Arm" if stem == "Wrist" else "Leg"
+        ik_axes = (("X", "Y", "Z")
+                   if body.source_joint in ik_local_sources else
+                   ("X", "Z", "Y") if stem == "Wrist" else
+                   ("Y", "Z", "X"))
+        prefix = f"AdvPy_{stem}_FitPart_{side}"
+        use_opm = not body.segment_scale_compensate
+        ends.append(FitPartEndScale(
+            body.name,
+            f"AdvPy_{stem}FK_{side}.scale",
+            f"AdvPy_{module}IK_{side}.scale",
+            f"AdvPy_{module}Settings.{module.lower()}IkFk_{side}",
+            ik_axes, prefix + "ScaleBlend", use_opm,
+            prefix + "ScaleCompose" if use_opm else None,
+            prefix + "ScaleMatrix" if use_opm else None,
+        ))
+    return FitPartScalePlan(tuple(direct), tuple(limbs),
+                            tuple(inherited), tuple(ends))

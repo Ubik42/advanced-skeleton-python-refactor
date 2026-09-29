@@ -451,7 +451,9 @@ class BuildRegisteredBodyCharacter:
                 twist_steps = BuildFitPartTwistDrivers(joined).apply(
                     ordinary_twist_parts, active_twist_sources)
                 scale_plan = BuildFitPartScaleDrivers(joined).apply(
-                    part_plan.fit_parts, part_plan.specs)
+                    part_plan.fit_parts, part_plan.specs,
+                    frozenset(item.joint for item in fit_source.metadata
+                              if item.ik_local_mode is not None))
                 if bendy_chains:
                     BuildFitBendyDeform(joined).apply(bendy_chains)
                 inbetween_parts = tuple(
