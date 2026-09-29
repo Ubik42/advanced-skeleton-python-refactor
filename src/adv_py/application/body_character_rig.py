@@ -22,6 +22,7 @@ from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.body_direct_fk_scale import (
     BodyDirectFkScaleSpec, plan_body_direct_fk_scales,
 )
+from adv_py.core.fit_bendy import FitBendyFkScaleSpec
 from adv_py.core.body_fk_scale_compensation import (
     BodyFkScaleCompensationSpec, plan_body_fk_scale_compensation,
 )
@@ -141,6 +142,7 @@ class BodyCharacterRigBuildPlan:
     pole_aim: tuple[BodyLegPoleAimSpec, ...] = ()
     fit_tweakers: FitTweakerPlan | None = None
     direct_fk_scales: tuple[BodyDirectFkScaleSpec, ...] = ()
+    bendy_fk_scales: tuple[FitBendyFkScaleSpec, ...] = ()
     fk_scale_compensations: tuple[BodyFkScaleCompensationSpec, ...] = ()
     no_control_paths: tuple[str, ...] = ()
     fk_globals: tuple[BodyFkGlobalSpec, ...] = ()

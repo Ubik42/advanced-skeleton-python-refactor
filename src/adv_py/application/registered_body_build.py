@@ -1196,6 +1196,9 @@ class BuildRegisteredBodyCharacter:
                 bendy_fk_scales = plan_fit_bendy_fk_scales(
                     deferred_bendy_chains, generic_fk.controls)
                 BuildFitBendyFkScales(joined).apply(bendy_fk_scales)
+                if bendy_fk_scales:
+                    rig = replace(rig, plan=replace(
+                        rig.plan, bendy_fk_scales=bendy_fk_scales))
                 if not body_bind_pose_matches(
                         skeleton.snapshot,
                         joined.capture_body_skeleton(skeleton.snapshot.root)):
