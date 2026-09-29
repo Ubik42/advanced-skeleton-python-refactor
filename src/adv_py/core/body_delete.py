@@ -13,5 +13,6 @@ class BodyDeletePlan:
     retained_geometry_ids: tuple[str, ...]
     preserved_animation_ids: tuple[str, ...]
     owned_nodes: tuple[str, ...]
+    owned_ids: tuple[str, ...]
     set_nodes: tuple[str, ...]
     scene_up_axis: str

@@ -43,7 +43,7 @@ class MayaBodyDeleteMixin:
                 raise FitSkeletonValidationError(
                     "Body Group 缺失而 Geometry 仍存在，不能判定删除范围")
             return BodyDeletePlan(fit, self._delete_uuid(fit), None,
-                                  (), (), (), (), (),
+                                  (), (), (), (), (), (),
                                   c.upAxis(query=True, axis=True))
         if not fit.startswith(group + "|"):
             raise FitSkeletonValidationError(
@@ -89,7 +89,8 @@ class MayaBodyDeleteMixin:
                     "Delete Adv 不修改引用节点：" + path)
         return BodyDeletePlan(
             fit, self._delete_uuid(fit), group, geometry_children,
-            retained, preserved_animation, tuple(owned), sets,
+            retained, preserved_animation, tuple(owned),
+            tuple(self._delete_uuid(path) for path in owned), sets,
             c.upAxis(query=True, axis=True))
 
     def delete_body_advanced(self, plan: BodyDeletePlan) -> None:
@@ -125,6 +126,9 @@ class MayaBodyDeleteMixin:
             if len(paths) != 1:
                 raise RuntimeError("Delete Adv AllSet 成员丢失：" + item)
             resolved.append(paths[0])
+        if {self._delete_uuid(path) for path in resolved} != set(
+                plan.owned_ids):
+            raise RuntimeError("Delete Adv 执行期间 AllSet 成员身份变化")
         preserve_curves = set(plan.preserved_animation_ids)
         direct_children = tuple(c.listRelatives(
             group, children=True, fullPath=True) or ())
