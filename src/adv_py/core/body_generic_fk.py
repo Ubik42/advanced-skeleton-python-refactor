@@ -168,7 +168,9 @@ def plan_body_generic_fk(
                     and spec.name not in follower_sources
                     and legacy_source in follower_sources
                     else spec.name)
-                legacy_follower = follower_key == legacy_source
+                legacy_follower = (follower_sources is not None
+                                   and spec.name not in follower_sources
+                                   and follower_key == legacy_source)
                 if legacy_follower:
                     # Earlier registered characters used one follower per
                     # Body parent, with unfiltered OPM scale or no
