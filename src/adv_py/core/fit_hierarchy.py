@@ -122,7 +122,10 @@ def audit_fit_hierarchy(
                     (node.path,),
                 )
             )
-        if active_policy.reject_underscores and "_" in node.short_name:
+        # MEL's build-name check reserves this one suffix for its authored
+        # non-symmetry branch; all other underscores remain unsupported.
+        if (active_policy.reject_underscores
+                and "_" in node.short_name.removesuffix("_NonSymmetry")):
             issues.append(
                 FitHierarchyIssue(
                     "underscore_in_name",

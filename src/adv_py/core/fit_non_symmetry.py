@@ -27,7 +27,7 @@ def plan_fit_non_symmetry(
         raise ValueError("非对称 Fit 比例无效")
     tolerance = 0.01 * max(float(scale), 0.01)
     issues = audit_fit_hierarchy(hierarchy, FitHierarchyPolicy(
-        center_tolerance=tolerance, reject_underscores=False))
+        center_tolerance=tolerance))
     if issues:
         raise ValueError("非对称 Fit 层级无效：" +
                          "；".join(issue.message for issue in issues))

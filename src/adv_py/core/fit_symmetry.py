@@ -5,7 +5,9 @@ from enum import Enum
 from math import isfinite
 from typing import Mapping
 
-from .fit_hierarchy import FitHierarchySnapshot, audit_fit_hierarchy
+from .fit_hierarchy import (
+    FitHierarchyPolicy, FitHierarchySnapshot, audit_fit_hierarchy,
+)
 from .fit_metadata import FitJointMetadata, audit_fit_joint
 
 
@@ -56,7 +58,9 @@ def expand_fit_symmetry(
         or center_tolerance < 0
     ):
         raise FitSymmetryValidationError("镜像中心容差必须是非负有限数值")
-    hierarchy_issues = audit_fit_hierarchy(hierarchy)
+    hierarchy_issues = audit_fit_hierarchy(
+        hierarchy, FitHierarchyPolicy(
+            center_tolerance=center_tolerance))
     if hierarchy_issues:
         raise FitSymmetryValidationError(
             "FitSkeleton 镜像分析失败："

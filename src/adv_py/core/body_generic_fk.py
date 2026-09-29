@@ -42,7 +42,9 @@ def plan_body_generic_fk(
     for spec in sorted(specs, key=lambda item: (item.path.count("|"),
                                                 item.path)):
         item = metadata_by_source[spec.source_joint]
-        source_name = spec.source_joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        source_name = (spec.source_joint.rsplit("|", 1)[-1]
+                       .rsplit(":", 1)[-1]
+                       .removesuffix("_NonSymmetry"))
         if (spec.name in control_by_name
                 or source_name + "_" + spec.side.value in control_by_name):
             continue

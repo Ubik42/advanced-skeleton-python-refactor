@@ -135,9 +135,16 @@ class MayaBodyDeleteMixin:
                     raise RuntimeError("Delete Adv Geometry 仍有未移出的模型")
             elif child not in owned:
                 raise RuntimeError("Delete Adv Group 含未登记子节点：" + child)
-        external = tuple(path for path in resolved
-                         if path != group and not path.startswith(group + "|")
-                         and self._delete_uuid(path) not in preserve_curves)
+        external_candidates = tuple(path for path in resolved
+                                    if path != group
+                                    and not path.startswith(group + "|")
+                                    and self._delete_uuid(path)
+                                    not in preserve_curves)
+        external_set = set(external_candidates)
+        external = tuple(path for path in external_candidates
+                         if not (path.startswith("|") and any(
+                             path.startswith(parent + "|")
+                             for parent in external_set if parent != path)))
         for path in resolved:
             if path == group or path.startswith(group + "|"):
                 continue
