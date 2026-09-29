@@ -192,6 +192,42 @@ class MayaSkinCageHost:
                           constructionHistory=False)
         return bridge
 
+    def _weight_tweaks(self, cage: str, skin: str) -> None:
+        """Match the original Chest_M parent blend at its profile corners."""
+        c = self.cmds
+        chest = self._name("Chest_M")
+        curve = self._name("Chest_M_middleProfile")
+        if not c.objExists(chest) or not c.objExists(curve):
+            return
+        parent = c.listRelatives(chest, parent=True, type="joint",
+                                 fullPath=True) or []
+        if not parent:
+            return
+        influences = c.ls(c.skinCluster(skin, query=True,
+                                        influence=True) or [], long=True) or []
+        if parent[0] not in influences:
+            c.skinCluster(skin, edit=True, addInfluence=parent[0],
+                          weight=0.0, lockWeights=False)
+        shape = (c.listRelatives(cage, shapes=True,
+                                 noIntermediate=True, type="mesh",
+                                 fullPath=True) or [])[0]
+        sampler = c.createNode("closestPointOnMesh",
+                                name=self._name("skinCageClosestSampler"))
+        try:
+            c.connectAttr(shape + ".outMesh", sampler + ".inMesh",
+                          force=True)
+            for index in range(5):
+                point = c.xform(f"{curve}.cv[{index}]", query=True,
+                                worldSpace=True, translation=True)
+                c.setAttr(sampler + ".inPosition", *point,
+                          type="double3")
+                vertex = int(c.getAttr(sampler + ".closestVertexIndex"))
+                c.skinPercent(skin, f"{cage}.vtx[{vertex}]",
+                              transformValue=[(parent[0], 0.5)],
+                              normalize=True)
+        finally:
+            c.delete(sampler)
+
     def create_cage(self, plan: SkinCageBuildPlan) -> None:
         from maya import mel
 
@@ -300,6 +336,7 @@ class MayaSkinCageHost:
         c.select(cage, add=True)
         c.copySkinWeights(noMirror=True, surfaceAssociation="closestPoint",
                           influenceAssociation="closestJoint")
+        self._weight_tweaks(cage, cage_skin)
         for mesh in pieces:
             skin = self._skin(mesh)
             if skin:
