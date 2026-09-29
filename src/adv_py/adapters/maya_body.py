@@ -3078,6 +3078,10 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
             rows.append((mesh[0], data,
                          int(c.getAttr(skin + ".maxInfluences")),
                          bool(c.getAttr(skin + ".maintainMaxInfluences")),
+                         int(c.getAttr(skin + ".skinningMethod")),
+                         int(c.getAttr(skin + ".normalizeWeights")),
+                         float(c.getAttr(skin + ".envelope")),
+                         host.capture_skin_blend_weights(skin),
                          source_names))
         if not rows:
             raise FitSkeletonValidationError("当前角色没有可发布的 Skin 网格")
@@ -3165,7 +3169,9 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
         group = c.createNode("transform",
             name=(":AdvPy_FBXTemporaryMeshGroup" if namespace_free
                   else "AdvPy_FBXTemporaryMeshGroup")) if sources else None
-        for index, (mesh, data, maximum, maintain, mapping) in enumerate(
+        for index, (mesh, data, maximum, maintain, method,
+                    normalization, envelope, blend_weights,
+                    mapping) in enumerate(
                 sources, 1):
             target_paths = tuple(mapping[name.rsplit(":", 1)[-1]]
                                  for name in data.influence_names)
@@ -3213,6 +3219,11 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
             skin_fn.setWeights(dag, component,
                 om.MIntArray(range(width)),
                 om.MDoubleArray(values.tolist()), normalize=False)
+            skin_fn.setBlendWeights(
+                dag, component, om.MDoubleArray(blend_weights.tolist()))
+            c.setAttr(skin + ".skinningMethod", method)
+            c.setAttr(skin + ".normalizeWeights", normalization)
+            c.setAttr(skin + ".envelope", envelope)
             c.setAttr(skin + ".maintainMaxInfluences", maintain)
             copied.append((c.ls(clone, long=True,
                                  type="transform") or [])[0])
