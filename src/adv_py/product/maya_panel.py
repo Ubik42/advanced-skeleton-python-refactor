@@ -242,6 +242,7 @@ def create_panel(controller: MayaPanelController | None = None):
                        self._skin_cage_page(),
                        self._sub_wrap_page(),
                        self._skin_loop_page(),
+                       self._geometry_skeleton_page(),
                        self._geometry_cut_up_page(),
                        self._animation_page(), self._face_page(),
                        self._mocap_page(), self._publish_page(),
@@ -287,7 +288,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('Deform / SkinLoops', ('00 · SkinLoops',)),
                     ('Deform Shapers', ()),
                     ('Deform / DeltaMush', ('05 · Delta Mush',)),
-                    ('Geometry / Skeleton', ()),
+                    ('Geometry / Skeleton', ('00 · Skeleton',)),
                     ('Geometry / Muscular', ()),
                     ('Geometry / PolyBoxes', ()),
                     ('Geometry / Mannequin', ()),
@@ -1805,6 +1806,21 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addStretch(1)
             return page
 
+        def _geometry_skeleton_page(self):
+            page, stack = self._page()
+            group, form = self._group("00 · Skeleton", [])
+            form.addRow(QtWidgets.QLabel(
+                "从本机 ADV 6.925 原版骨形模板生成当前 Body 的骨骼几何。"))
+            form.addRow(self._button("Create", self._geometry_skeleton_create))
+            form.addRow(self._button("Delete", self._geometry_skeleton_delete))
+            form.addRow(self._button("Left>Right",
+                                     self._geometry_skeleton_mirror_l2r))
+            form.addRow(self._button("Right>Left",
+                                     self._geometry_skeleton_mirror_r2l))
+            stack.addWidget(group)
+            stack.addStretch(1)
+            return page
+
         def _display_page(self):
             page, stack = self._page()
             group, form = self._group("00 · Display", [])
@@ -2756,6 +2772,24 @@ def create_panel(controller: MayaPanelController | None = None):
         def _geometry_cut_up_create(self):
             count = self.controller.geometry_cut_up_create(self._namespace())
             return f"已创建 {count} 个 Skin Cut-Up 几何分片"
+
+        def _geometry_skeleton_create(self):
+            count = self.controller.geometry_skeleton_create(self._namespace())
+            return f"已创建 {count} 个原版骨形网格"
+
+        def _geometry_skeleton_delete(self):
+            self.controller.geometry_skeleton_delete(self._namespace())
+            return "已删除骨骼几何"
+
+        def _geometry_skeleton_mirror_l2r(self):
+            count = self.controller.geometry_skeleton_mirror(
+                self._namespace(), "L")
+            return f"已镜像 {count} 对骨骼几何"
+
+        def _geometry_skeleton_mirror_r2l(self):
+            count = self.controller.geometry_skeleton_mirror(
+                self._namespace(), "R")
+            return f"已镜像 {count} 对骨骼几何"
 
         def _geometry_cut_up_delete(self):
             self.controller.geometry_cut_up_delete(self._namespace())

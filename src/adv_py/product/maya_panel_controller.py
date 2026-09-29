@@ -1391,6 +1391,25 @@ class MayaPanelController:
         from adv_py.application.geometry_cut_up import CreateGeometryCutUp
         return CreateGeometryCutUp(MayaGeometryCutUpHost(namespace)).execute()
 
+    def geometry_skeleton_create(self, namespace: str) -> int:
+        from adv_py.adapters.maya_geometry_skeleton import MayaSkeletonGeometryHost
+        from adv_py.application.geometry_skeleton import CreateSkeletonGeometry
+
+        return CreateSkeletonGeometry(MayaSkeletonGeometryHost(namespace)).execute()
+
+    def geometry_skeleton_delete(self, namespace: str) -> None:
+        from adv_py.adapters.maya_geometry_skeleton import MayaSkeletonGeometryHost
+        from adv_py.application.geometry_skeleton import DeleteSkeletonGeometry
+
+        DeleteSkeletonGeometry(MayaSkeletonGeometryHost(namespace)).execute()
+
+    def geometry_skeleton_mirror(self, namespace: str, source_side: str) -> int:
+        from adv_py.adapters.maya_geometry_skeleton import MayaSkeletonGeometryHost
+        from adv_py.application.geometry_skeleton import MirrorSkeletonGeometry
+
+        return MirrorSkeletonGeometry(MayaSkeletonGeometryHost(namespace)).execute(
+            source_side)
+
     def geometry_cut_up_delete(self, namespace: str) -> None:
         from adv_py.adapters.maya_geometry_cut_up import MayaGeometryCutUpHost
         from adv_py.application.geometry_cut_up import DeleteGeometryCutUp
