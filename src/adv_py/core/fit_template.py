@@ -15,7 +15,8 @@ from .joint_labels import JointLabel
 
 
 Vector3 = tuple[float, float, float]
-_SAFE_FIT_JOINT_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")
+_SAFE_FIT_JOINT_NAME = re.compile(
+    r"^[A-Za-z][A-Za-z0-9]*(?:_NonSymmetry)?$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +29,7 @@ class FitJointSpec:
     def __post_init__(self) -> None:
         if not _SAFE_FIT_JOINT_NAME.fullmatch(self.name):
             raise FitSkeletonValidationError(
-                "Fit joint 名称必须以字母开头且只包含字母和数字"
+                "Fit joint 名称只能包含字母数字，或以原版 _NonSymmetry 结尾"
             )
         if self.parent == self.name:
             raise FitSkeletonValidationError("Fit joint 不能以自身为父级")
