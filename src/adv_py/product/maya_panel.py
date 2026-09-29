@@ -1706,6 +1706,11 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(QtWidgets.QLabel("Cage"))
             form.addRow(self._button("创建 Cage", self._create_skin_cage))
             form.addRow(self._button("删除 Cage", self._delete_skin_cage))
+            form.addRow(QtWidgets.QLabel("Mirror"))
+            form.addRow(self._button("Left > Right",
+                                     lambda: self._mirror_skin_cage("L")))
+            form.addRow(self._button("Right > Left",
+                                     lambda: self._mirror_skin_cage("R")))
             form.addRow(QtWidgets.QLabel("选择待变形网格或其顶点，然后复制 Cage 权重。"))
             form.addRow(self._button("复制权重", self._copy_skin_cage_weights))
             form.addRow(QtWidgets.QLabel("Re-use：将当前可见 SkinCurves 形状输出到 Script Editor。"))
@@ -2634,6 +2639,11 @@ def create_panel(controller: MayaPanelController | None = None):
         def _delete_skin_cage(self):
             count = self.controller.skin_cage_delete(self._namespace())
             return f"已删除 {count} 个 SkinCage 节点"
+
+        def _mirror_skin_cage(self, source_side):
+            count = self.controller.skin_cage_mirror(
+                self._namespace(), source_side)
+            return f"已镜像 {count} 对 SkinCage 截面曲线"
 
         def _copy_skin_cage_weights(self):
             count = self.controller.skin_cage_copy_weights(self._namespace())

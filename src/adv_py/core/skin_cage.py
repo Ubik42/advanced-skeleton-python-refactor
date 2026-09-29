@@ -18,6 +18,34 @@ class SkinCageCopyTarget:
     components: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class SkinCageMirrorPair:
+    source: str
+    target: str
+
+
+def plan_skin_cage_mirror(profiles: tuple[str, ...],
+                          source_side: str,
+                          ) -> tuple[SkinCageMirrorPair, ...]:
+    if source_side not in ("L", "R"):
+        raise ValueError("SkinCage 镜像来源侧必须是 L 或 R")
+    source_marker = "_" + source_side + "_"
+    target_marker = "_" + ("R" if source_side == "L" else "L") + "_"
+    available = set(profiles)
+    pairs = []
+    for profile in profiles:
+        leaf = profile.rsplit("|", 1)[-1]
+        if source_marker not in leaf:
+            continue
+        target_leaf = leaf.replace(source_marker, target_marker, 1)
+        target = profile[:-len(leaf)] + target_leaf
+        if target in available:
+            pairs.append(SkinCageMirrorPair(profile, target))
+    if not pairs:
+        raise ValueError("SkinCage 曲线集合没有可镜像的左右截面")
+    return tuple(pairs)
+
+
 _PART = re.compile(r"Part\d+_[RLM]$")
 
 

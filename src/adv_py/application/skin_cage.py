@@ -5,8 +5,8 @@ from contextlib import AbstractContextManager
 from typing import Protocol
 
 from adv_py.core.skin_cage import (
-    SkinCageBuildPlan, SkinCageCopyTarget, plan_skin_cage_build,
-    plan_skin_cage_copy,
+    SkinCageBuildPlan, SkinCageCopyTarget, SkinCageMirrorPair,
+    plan_skin_cage_build, plan_skin_cage_copy, plan_skin_cage_mirror,
 )
 
 
@@ -20,6 +20,10 @@ class SkinCageHost(Protocol):
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
     def copy_weights(self, target: SkinCageCopyTarget) -> None: ...
     def capture_copy(self, target: SkinCageCopyTarget) -> bool: ...
+    def capture_mirror_input(self) -> tuple[str, ...]: ...
+    def preflight_mirror(self, pairs: tuple[SkinCageMirrorPair, ...]) -> None: ...
+    def mirror_profiles(self, pair: SkinCageMirrorPair) -> None: ...
+    def capture_mirror(self, pair: SkinCageMirrorPair) -> bool: ...
     def delete_cage(self) -> tuple[str, ...]: ...
     def print_reuse_commands(self, *, transforms: bool, shapes: bool,
                              catch: bool) -> int: ...
@@ -54,6 +58,24 @@ class CreateSkinCage:
             if not self._host.capture_build(plan):
                 raise RuntimeError("SkinCage 创建后缺少笼体、蒙皮或曲线")
         return len(plan.chains)
+
+
+class MirrorSkinCage:
+    def __init__(self, host: SkinCageHost) -> None:
+        self._host = host
+
+    def execute(self, source_side: str) -> int:
+        pairs = plan_skin_cage_mirror(
+            self._host.capture_mirror_input(), source_side)
+        self._host.preflight_mirror(pairs)
+        with self._host.transaction("镜像 SkinCage 曲线"):
+            for pair in pairs:
+                self._host.mirror_profiles(pair)
+            for pair in pairs:
+                if not self._host.capture_mirror(pair):
+                    raise RuntimeError("SkinCage 镜像后曲线形状不一致：" +
+                                       pair.target)
+        return len(pairs)
 
 
 class DeleteSkinCage:

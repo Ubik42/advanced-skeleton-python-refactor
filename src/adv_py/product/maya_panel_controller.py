@@ -1303,6 +1303,14 @@ class MayaPanelController:
 
         return CopySkinCageWeights(MayaSkinCageHost(namespace)).execute()
 
+    def skin_cage_mirror(self, namespace: str,
+                         source_side: str) -> int:
+        from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
+        from adv_py.application.skin_cage import MirrorSkinCage
+
+        return MirrorSkinCage(MayaSkinCageHost(namespace)).execute(
+            source_side)
+
     def skin_cage_print_reuse(self, namespace: str, *, transforms: bool,
                               shapes: bool, catch: bool) -> int:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost

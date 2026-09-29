@@ -5,7 +5,7 @@ from contextlib import contextmanager
 
 from adv_py.core.skin_cage import (
     SKIN_CAGE_NODES, SkinCageBranchLayout, SkinCageBuildPlan,
-    SkinCageCopyTarget, special_skin_cage_branch,
+    SkinCageCopyTarget, SkinCageMirrorPair, special_skin_cage_branch,
 )
 
 
@@ -18,6 +18,7 @@ class MayaSkinCageHost:
         self._source_mesh = ""
         self._influences: tuple[str, ...] = ()
         self._selection: tuple[str, ...] = ()
+        self._mirror_state = {}
 
     def _name(self, leaf: str) -> str:
         return self.namespace + ":" + leaf if self.namespace else leaf
@@ -504,6 +505,77 @@ class MayaSkinCageHost:
             and bool(c.listRelatives(self._name("MeshCurves"),
                                      allDescendents=True,
                                      type="nurbsCurve")))
+
+    def capture_mirror_input(self) -> tuple[str, ...]:
+        c = self.cmds
+        curve_set = self._name("SkinCageCurvesSet")
+        if not c.objExists(curve_set):
+            raise ValueError("当前角色没有 SkinCage 曲线集合")
+        members = c.sets(curve_set, query=True) or []
+        profiles = []
+        for member in members:
+            matches = c.ls(member, long=True, type="transform") or []
+            if len(matches) == 1 and c.listRelatives(
+                    matches[0], shapes=True, noIntermediate=True,
+                    type="nurbsCurve"):
+                profiles.append(matches[0])
+        return tuple(dict.fromkeys(profiles))
+
+    def preflight_mirror(self,
+                         pairs: tuple[SkinCageMirrorPair, ...]) -> None:
+        c = self.cmds
+        self._mirror_state.clear()
+        cv_map = (2, 3, 0, 1, 2)
+        for pair in pairs:
+            for profile in (pair.source, pair.target):
+                shapes = c.listRelatives(
+                    profile, shapes=True, noIntermediate=True,
+                    type="nurbsCurve", fullPath=True) or []
+                if len(shapes) != 1:
+                    raise ValueError("SkinCage 截面须有唯一曲线 Shape：" + profile)
+            source_points = tuple(tuple(c.xform(
+                f"{pair.source}.cv[{index}]", query=True,
+                worldSpace=True, translation=True)) for index in range(5))
+            target_points = tuple(tuple(c.xform(
+                f"{pair.target}.cv[{index}]", query=True,
+                worldSpace=True, translation=True)) for index in range(5))
+            expected = list(target_points)
+            for source_index, target_index in enumerate(cv_map):
+                pos = source_points[source_index]
+                expected[target_index] = (-pos[0], pos[1], pos[2])
+            pos = source_points[2]
+            expected[4] = (-pos[0], pos[1], pos[2])
+            self._mirror_state[pair.target] = (
+                tuple(expected),
+                tuple(c.xform(pair.source, query=True,
+                              worldSpace=True, translation=True)),
+                tuple(c.getAttr(pair.source + ".scale")[0]))
+
+    def mirror_profiles(self, pair: SkinCageMirrorPair) -> None:
+        c = self.cmds
+        points, source_translation, source_scale = self._mirror_state[pair.target]
+        if c.getAttr(pair.target + ".translateX", settable=True):
+            c.xform(pair.target, worldSpace=True, translation=(
+                -source_translation[0], source_translation[1],
+                source_translation[2]))
+        if all(c.getAttr(pair.target + ".scale" + axis, settable=True)
+               for axis in "XYZ"):
+            c.setAttr(pair.target + ".scale", *source_scale,
+                      type="double3")
+        for index, point in enumerate(points):
+            c.xform(f"{pair.target}.cv[{index}]", worldSpace=True,
+                    translation=point)
+
+    def capture_mirror(self, pair: SkinCageMirrorPair) -> bool:
+        c = self.cmds
+        expected = self._mirror_state[pair.target][0]
+        for index, point in enumerate(expected):
+            actual = c.xform(f"{pair.target}.cv[{index}]", query=True,
+                             worldSpace=True, translation=True)
+            if max(abs(actual[axis] - point[axis])
+                   for axis in range(3)) > 0.0001:
+                return False
+        return True
 
     def _skin(self, mesh: str) -> str:
         c = self.cmds
