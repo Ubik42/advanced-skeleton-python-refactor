@@ -5,7 +5,8 @@ from contextlib import contextmanager
 import re
 
 from adv_py.core.skin_loops import (
-    SkinLoopBindLoop, SkinLoopBindSpec, SkinLoopCopySpec, SkinLoopSpec,
+    SkinLoopBindLoop, SkinLoopBindSpec, SkinLoopCopySpec,
+    SkinLoopCutUpDeletePlan, SkinLoopSpec,
     partition_skin_loop_regions, validate_closed_loop,
 )
 
@@ -319,6 +320,7 @@ class MayaSkinLoopsHost:
         c.copySkinWeights(noMirror=True, surfaceAssociation="closestPoint",
                           influenceAssociation="closestJoint")
         c.setAttr(skin + ".skinningMethod", spec.skinning_method)
+        c.skinCluster(skin, edit=True, removeUnusedInfluence=True)
 
     def capture_skin_loop_copy(self, spec: SkinLoopCopySpec) -> bool:
         c = self.cmds
@@ -327,7 +329,7 @@ class MayaSkinLoopsHost:
             return False
         influences = {self._unique(node, "joint") for node in (
             c.skinCluster(skin, query=True, influence=True) or [])}
-        return (set(spec.source_influences) <= influences
+        return (bool(set(spec.source_influences) & influences)
                 and int(c.getAttr(skin + ".skinningMethod"))
                 == spec.skinning_method)
 
@@ -545,6 +547,7 @@ class MayaSkinLoopsHost:
                     for neighbor in neighbors[vertex]
                     if neighbor not in blocked}
             self._hammer_skin_vertices(spec.mesh, ring)
+        c.skinCluster(skin, edit=True, removeUnusedInfluence=True)
 
     def capture_skin_loop_bind(self, spec: SkinLoopBindSpec) -> bool:
         c = self.cmds
@@ -553,8 +556,11 @@ class MayaSkinLoopsHost:
             return False
         influences = {self._unique(name, "joint") for name in (
             c.skinCluster(skin, query=True, influence=True) or [])}
-        expected_joints = {spec.root_joint}
-        expected_joints.update(loop.deform_joint for loop in spec.loops)
+        expected_joints = {loop.deform_joint for loop in spec.loops}
+        expected_joints.update(loop.parent_joint for loop in spec.loops
+                               if loop.parent_joint and not re.search(
+                                   r"Part\d+_[RLM]$",
+                                   loop.deform_joint.rsplit("|", 1)[-1]))
         if not expected_joints <= influences:
             return False
         for loop in spec.loops:
@@ -575,3 +581,41 @@ class MayaSkinLoopsHost:
                     if abs(parent_weight - 0.5) > 1e-4:
                         return False
         return True
+
+    def capture_skin_loop_cut_up_delete_input(
+        self,
+    ) -> tuple[str | None, str | None]:
+        c = self.cmds
+        layer = self._name("CutUp")
+        group = self._name("CutUpGeometry")
+        if c.objExists(layer) and c.nodeType(layer) != "displayLayer":
+            raise ValueError("CutUp 名称被非显示层节点占用")
+        if c.objExists(group) and c.nodeType(group) != "transform":
+            raise ValueError("CutUpGeometry 名称被非 Transform 占用")
+        for name in (layer, group):
+            if c.objExists(name) and c.referenceQuery(
+                    name, isNodeReferenced=True):
+                raise ValueError("不能删除引用场景中的 CutUp 产物")
+        return (layer if c.objExists(layer) else None,
+                group if c.objExists(group) else None)
+
+    def delete_skin_loop_cut_up(
+        self, plan: SkinLoopCutUpDeletePlan,
+    ) -> None:
+        if not self._in_transaction:
+            raise RuntimeError("CutUp 删除必须位于事务中")
+        c = self.cmds
+        if plan.layer:
+            if not c.objExists(plan.layer):
+                raise ValueError("CutUp 显示层在执行前消失")
+            c.delete(plan.layer)
+        if plan.geometry_group:
+            if not c.objExists(plan.geometry_group):
+                raise ValueError("CutUp 几何组在执行前消失")
+            c.delete(plan.geometry_group)
+
+    def capture_skin_loop_cut_up_deleted(
+        self, plan: SkinLoopCutUpDeletePlan,
+    ) -> bool:
+        return all(not self.cmds.objExists(name)
+                   for name in (plan.layer, plan.geometry_group) if name)

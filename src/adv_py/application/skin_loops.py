@@ -5,8 +5,9 @@ from contextlib import AbstractContextManager
 from typing import Protocol
 
 from adv_py.core.skin_loops import (
-    SkinLoopBindSpec, SkinLoopCopySpec, SkinLoopSpec,
-    plan_skin_loop_bind, plan_skin_loop_copy, plan_skin_loops,
+    SkinLoopBindSpec, SkinLoopCopySpec, SkinLoopCutUpDeletePlan, SkinLoopSpec,
+    plan_skin_loop_bind, plan_skin_loop_copy,
+    plan_skin_loop_cut_up_delete, plan_skin_loops,
 )
 
 
@@ -25,6 +26,11 @@ class SkinLoopsHost(Protocol):
     def preflight_skin_loop_bind(self, spec: SkinLoopBindSpec) -> None: ...
     def bind_skin_loops(self, spec: SkinLoopBindSpec) -> None: ...
     def capture_skin_loop_bind(self, spec: SkinLoopBindSpec) -> bool: ...
+    def capture_skin_loop_cut_up_delete_input(
+        self) -> tuple[str | None, str | None]: ...
+    def delete_skin_loop_cut_up(self, plan: SkinLoopCutUpDeletePlan) -> None: ...
+    def capture_skin_loop_cut_up_deleted(
+        self, plan: SkinLoopCutUpDeletePlan) -> bool: ...
 
 
 class CreateSkinLoops:
@@ -87,3 +93,17 @@ class BindSkinLoops:
                 if not self._host.capture_skin_loop_bind(spec):
                     raise RuntimeError("SkinLoop Bind 输出不一致：" + spec.mesh)
         return specs
+
+
+class DeleteSkinLoopCutUp:
+    def __init__(self, host: SkinLoopsHost) -> None:
+        self._host = host
+
+    def execute(self) -> SkinLoopCutUpDeletePlan:
+        plan = plan_skin_loop_cut_up_delete(
+            *self._host.capture_skin_loop_cut_up_delete_input())
+        with self._host.transaction("删除 SkinLoop CutUp"):
+            self._host.delete_skin_loop_cut_up(plan)
+            if not self._host.capture_skin_loop_cut_up_deleted(plan):
+                raise RuntimeError("SkinLoop CutUp 删除后仍有残留节点")
+        return plan

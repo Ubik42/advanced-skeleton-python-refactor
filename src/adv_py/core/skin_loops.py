@@ -44,6 +44,20 @@ class SkinLoopBindSpec:
     loops: tuple[SkinLoopBindLoop, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class SkinLoopCutUpDeletePlan:
+    layer: str | None
+    geometry_group: str | None
+
+
+def plan_skin_loop_cut_up_delete(
+    layer: str | None, geometry_group: str | None,
+) -> SkinLoopCutUpDeletePlan:
+    if not layer and not geometry_group:
+        raise ValueError("当前角色没有 CutUp 产物")
+    return SkinLoopCutUpDeletePlan(layer, geometry_group)
+
+
 def plan_skin_loop_bind(
     inputs: tuple[SkinLoopBindSpec, ...],
 ) -> tuple[SkinLoopBindSpec, ...]:
