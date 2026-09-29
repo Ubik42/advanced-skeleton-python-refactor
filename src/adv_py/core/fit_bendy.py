@@ -37,6 +37,7 @@ class FitBendyChainSpec:
     micro_yz_scale_only: bool = True
     micro_up_twist: bool = False
     micro_blended_up: bool = False
+    legacy_simple_control: bool = False
 
     def __post_init__(self) -> None:
         if (type(self.control_count) is not int
@@ -74,6 +75,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 上行扭转策略无效")
         if type(self.micro_blended_up) is not bool:
             raise ValueError("Bendy 微控制朝向兼容策略无效")
+        if type(self.legacy_simple_control) is not bool:
+            raise ValueError("Bendy 单控制器布局策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -128,9 +131,18 @@ class FitBendyChainSpec:
 
     @property
     def control_names(self) -> tuple[str, ...]:
+        count = (0 if self.simple_proxy_layout else self.control_count)
         return (f"{self.prefix}_{self.side}",
                 *(f"{self.prefix}{index}_{self.side}"
-                  for index in range(self.control_count + 1)))
+                  for index in range(count + 1)))
+
+    @property
+    def simple_proxy_layout(self) -> bool:
+        return self.control_count == 1 and not self.legacy_simple_control
+
+    @property
+    def simple_proxy_name(self) -> str:
+        return f"BendX{self.stem}1_{self.side}"
 
     @property
     def control_extra_names(self) -> tuple[str, ...]:
@@ -258,6 +270,8 @@ class FitBendyChainSpec:
         return (self.curve_name, self.curve_name + "Shape",
                 self.skin_name, *self.influence_names,
                 *self.control_names,
+                *((self.simple_proxy_name,) if self.simple_proxy_layout
+                  else ()),
                 *(name + "Shape" for name in self.control_names),
                 *("AdvPy_BendGuide" + name
                   for name in self.influence_names),
@@ -366,7 +380,8 @@ class FitBendyChainSpec:
         interior = tuple(max(0.0, 1.0 - dist(point, position)
                              / interior_interval)
                          for position in self.control_positions[1:])
-        return (master, start, *interior)
+        return (master, start, *(() if self.simple_proxy_layout
+                                  else interior))
 
     def twist_weights(self, sample_index: int) -> tuple[float, ...]:
         scale_weights = self.control_weights(sample_index)

@@ -712,6 +712,12 @@ class BuildRegisteredBodyCharacter:
                         is not None
                         and chain.control_names[0] in
                         _generic_fk_policy.bendy_blended_up_controls),
+                    legacy_simple_control=(
+                        _generic_fk_policy is not None
+                        and _generic_fk_policy.bendy_legacy_simple_controls
+                        is not None
+                        and chain.control_names[0] in
+                        _generic_fk_policy.bendy_legacy_simple_controls),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None

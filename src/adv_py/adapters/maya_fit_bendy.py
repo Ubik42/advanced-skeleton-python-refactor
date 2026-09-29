@@ -708,7 +708,7 @@ class MayaFitBendyMixin:
                 spec.control_names, (spec.master_position,
                                      *spec.control_positions))):
             parent = (spec.control_names[0]
-                      if index == 2 and spec.control_count == 1
+                      if index == 2 and spec.legacy_simple_control
                       else _GROUPS[0])
             if index == 0:
                 control = c.curve(
@@ -740,6 +740,14 @@ class MayaFitBendyMixin:
                           keyable=False)
                 c.setAttr(control + ".parametric", channelBox=True)
             controls.append((c.ls(control, long=True) or [control])[0])
+        if spec.simple_proxy_layout:
+            middle = c.createNode(
+                "transform", name=spec.simple_proxy_name,
+                parent=controls[0], skipSelect=True)
+            self._align_bendy_control(
+                middle, spec.control_positions[1],
+                spec.start_world_axes)
+            c.setAttr(middle + ".rotateOrder", spec.rotation_order)
         if spec.parent_bendy:
             junction_offset = c.createNode(
                 "transform", name=spec.junction_offset_name,
@@ -772,7 +780,10 @@ class MayaFitBendyMixin:
         self._align_bendy_control(
             end_proxy, end, spec.start_world_axes)
         drivers = ((spec.junction_output_name if spec.parent_bendy
-                    else controls[1]), *controls[2:], end_proxy)
+                    else controls[1]),
+                   *((spec.simple_proxy_name,) if spec.simple_proxy_layout
+                     else controls[2:]),
+                   end_proxy)
         influences = []
         for name, position, driver in zip(
                 spec.influence_names, positions, drivers):
@@ -883,7 +894,7 @@ class MayaFitBendyMixin:
                     parent_proxy, spec.start_control_blend)
                 continue
             targets = ((chain.control_names[0],)
-                       if chain.control_count == 1 and index == 2 else
+                       if chain.legacy_simple_control and index == 2 else
                        (parent_proxy, end_proxy) if index == 0
                        or index > 1 else (parent_proxy,))
             constraint = c.parentConstraint(
@@ -1221,7 +1232,7 @@ class MayaFitBendyMixin:
             elif (not c.objExists(follow)
                   or c.nodeType(follow) != "parentConstraint"):
                 return False
-            if spec.chain.control_count == 1 and index == 2:
+            if spec.chain.legacy_simple_control and index == 2:
                 targets = c.parentConstraint(
                     follow, query=True, targetList=True) or []
                 if (len(targets) != 1
@@ -2062,14 +2073,35 @@ class MayaFitBendyMixin:
         if {name.rsplit("|", 1)[-1] for name in influences} != set(
                 spec.influence_names):
             return False
-        for name in spec.influence_names:
+        expected_drivers = (
+            spec.junction_output_name if spec.parent_bendy
+            else spec.control_names[1],
+            *((spec.simple_proxy_name,) if spec.simple_proxy_layout
+              else spec.control_names[2:]),
+            spec.end_proxy_name)
+        for name, driver in zip(spec.influence_names, expected_drivers):
             constraint = "AdvPy_BendGuide" + name
             if (not c.objExists(name) or c.nodeType(name) != "joint"
                     or not c.objExists(constraint)
                     or c.nodeType(constraint) != "parentConstraint"):
                 return False
+            targets = c.parentConstraint(
+                constraint, query=True, targetList=True) or []
+            if (len(targets) != 1
+                    or _bendy_dag_name(targets[0]) != driver):
+                return False
         for name in (*spec.control_names, spec.end_proxy_name):
             if not c.objExists(name) or c.nodeType(name) != "transform":
+                return False
+        if spec.simple_proxy_layout:
+            proxy = spec.simple_proxy_name
+            if (not c.objExists(proxy)
+                    or c.nodeType(proxy) != "transform"
+                    or _bendy_parent_name(c, proxy)
+                    != spec.control_names[0]
+                    or int(c.getAttr(proxy + ".rotateOrder"))
+                    != spec.rotation_order
+                    or c.objExists(spec.prefix + "1_" + spec.side)):
                 return False
         master_shapes = c.listRelatives(spec.control_names[0],
                                          shapes=True, fullPath=True) or []

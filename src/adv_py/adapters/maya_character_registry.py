@@ -133,6 +133,7 @@ class MayaCharacterRegistryMixin:
             if channel.key.startswith('bendy.')
             and channel.key.endswith('.microVis')}
         bendy_counts = []
+        bendy_legacy_simple = set()
         for control in bendy_master_paths:
             stem, side = control.rsplit('_', 1)
             pattern = re.compile(
@@ -141,11 +142,26 @@ class MayaCharacterRegistryMixin:
             indices = sorted(int(match.group(1))
                              for channel in registration.channels
                              if (match := pattern.fullmatch(channel.key)))
-            if (not indices or indices != list(range(indices[-1] + 1))
-                    or indices[-1] < 1):
+            if (not indices or indices != list(range(indices[-1] + 1))):
                 raise CharacterRegistryError(
                     'Bendy 控制器编号不连续：' + control)
-            bendy_counts.append((control, indices[-1]))
+            proxy = ('BendX' + stem.removeprefix('Bend')
+                     + '1_' + side)
+            proxy_paths = [path for path in sorted(set(
+                c.ls(proxy, '*:' + proxy, long=True,
+                     type='transform') or []))
+                if (c.listRelatives(path, parent=True,
+                                    fullPath=True) or [])
+                == [bendy_master_paths[control]]]
+            if indices == [0]:
+                if len(proxy_paths) != 1:
+                    raise CharacterRegistryError(
+                        'Bendy 单控制器缺少中点代理：' + control)
+                bendy_counts.append((control, 1))
+            else:
+                bendy_counts.append((control, indices[-1]))
+                if indices == [0, 1] and not proxy_paths:
+                    bendy_legacy_simple.add(control)
         def bendy_namespace(control):
             leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
             return (leaf.rsplit(':', 1)[0] + ':'
@@ -305,7 +321,8 @@ class MayaCharacterRegistryMixin:
             tuple(bendy_counts),
             frozenset(bendy_yz_scale),
             frozenset(bendy_up_twist),
-            frozenset(bendy_blended_up))
+            frozenset(bendy_blended_up),
+            frozenset(bendy_legacy_simple))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext
