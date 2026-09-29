@@ -46,7 +46,7 @@ class MayaBodySpineMixin:
         root = self._cmds.createNode("transform", name=plan.root_path.rsplit("|", 1)[-1],
                                      parent=plan.root_path.rsplit("|", 1)[0], skipSelect=True)
         self._cmds.addAttr(root, longName="advPySpineOwner", dataType="string")
-        self._cmds.setAttr(root + ".advPySpineOwner", "adv_py.spine.v1", type="string", lock=True)
+        self._cmds.setAttr(root + ".advPySpineOwner", "adv_py.spine.v2", type="string", lock=True)
         for spec in plan.joints:
             self.create_body_arm_mechanism_joint(spec)
         chest = plan.joints[2]
@@ -71,6 +71,10 @@ class MayaBodySpineMixin:
                 c.setAttr(control + ".scale" + axis, lock=True, keyable=False)
         c.addAttr(plan.ik_control, longName="spineIkFk", attributeType="double", minValue=0, maxValue=1, defaultValue=0, keyable=True)
         c.addAttr(plan.ik_control, longName="waistRoll", attributeType="doubleAngle", defaultValue=0, keyable=True)
+        c.addAttr(plan.ik_control, longName="stretchy", attributeType="double",
+                  minValue=0, maxValue=10, defaultValue=0, keyable=True)
+        c.addAttr(plan.ik_control, longName="volume", attributeType="double",
+                  minValue=0, maxValue=10, defaultValue=10, keyable=True)
         c.createNode("transform", name=plan.waist_output.rsplit("|", 1)[-1], parent=plan.joints[4].path, skipSelect=True)
         c.connectAttr(plan.roll_plug, plan.waist_output + ".rotateX")
         c.pointConstraint(plan.pelvis_control, plan.joints[0].path, maintainOffset=False, name="AdvPy_SpineFKRootPoint")
@@ -84,6 +88,7 @@ class MayaBodySpineMixin:
         c.setAttr("AdvPy_SpineIKHandle.visibility", False)
         c.poleVectorConstraint(plan.pole_control, "AdvPy_SpineIKHandle", name="AdvPy_SpinePoleConstraint")
         c.orientConstraint(plan.ik_control, plan.joints[5].path, maintainOffset=False, name="AdvPy_SpineIKChestOrient")
+        self._create_body_spine_stretch_volume(plan)
         c.createNode("reverse", name="AdvPy_SpineReverse")
         c.connectAttr(plan.blend_plug, "AdvPy_SpineReverse.inputX")
         for control, joint in zip(plan.fk_controls, plan.joints[:3]):
@@ -108,13 +113,165 @@ class MayaBodySpineMixin:
         c.setAttr(plan.root_path + ".visibility", False)
         self.validate_body_spine(plan)
 
+    def _create_body_spine_stretch_volume(self, plan):
+        """Measure in the spine frame so character scale does not cause stretch."""
+        c = self._cmds
+        start = c.createNode("multMatrix", name="AdvPy_SpineStretchStartMM")
+        target = c.createNode("multMatrix", name="AdvPy_SpineStretchTargetMM")
+        for node, source in ((start, plan.joints[3].path),
+                             (target, plan.ik_control)):
+            c.connectAttr(source + ".worldMatrix[0]", node + ".matrixIn[0]")
+            c.connectAttr(plan.root_path + ".worldInverseMatrix[0]",
+                          node + ".matrixIn[1]")
+        distance = c.createNode("distanceBetween",
+                                name="AdvPy_SpineStretchDistance")
+        c.connectAttr(start + ".matrixSum", distance + ".inMatrix1")
+        c.connectAttr(target + ".matrixSum", distance + ".inMatrix2")
+        ratio = c.createNode("multiplyDivide", name="AdvPy_SpineStretchRatio")
+        c.setAttr(ratio + ".operation", 2)
+        c.setAttr(ratio + ".input2X", sum(plan.lengths))
+        c.connectAttr(distance + ".distance", ratio + ".input1X")
+        clamp = c.createNode("clamp", name="AdvPy_SpineStretchClamp")
+        c.setAttr(clamp + ".minR", 1.0)
+        c.setAttr(clamp + ".maxR", 1000000.0)
+        c.connectAttr(ratio + ".outputX", clamp + ".inputR")
+        weight = c.createNode("unitConversion",
+                              name="AdvPy_SpineStretchWeight")
+        c.setAttr(weight + ".conversionFactor", 0.1)
+        c.connectAttr(plan.stretch_plug, weight + ".input")
+        blend = c.createNode("blendColors", name="AdvPy_SpineStretchBlend")
+        c.connectAttr(clamp + ".outputR", blend + ".color1R")
+        c.setAttr(blend + ".color2R", 1.0)
+        c.connectAttr(weight + ".output", blend + ".blender")
+        segments = c.createNode("multiplyDivide",
+                                name="AdvPy_SpineStretchSegments")
+        for axis, length, joint in zip("XY", plan.lengths, plan.joints[4:6]):
+            c.setAttr(segments + ".input1" + axis, length)
+            c.connectAttr(blend + ".outputR",
+                          segments + ".input2" + axis)
+            c.connectAttr(segments + ".output" + axis,
+                          joint.path + ".translateX")
+        inverse = c.createNode("multiplyDivide",
+                               name="AdvPy_SpineVolumeInverse")
+        c.setAttr(inverse + ".operation", 2)
+        c.setAttr(inverse + ".input1X", 1.0)
+        c.connectAttr(blend + ".outputR", inverse + ".input2X")
+        power = c.createNode("multiplyDivide", name="AdvPy_SpineVolumePower")
+        c.setAttr(power + ".operation", 3)
+        c.setAttr(power + ".input2X", 0.5)
+        c.connectAttr(inverse + ".outputX", power + ".input1X")
+        volume_weight = c.createNode("unitConversion",
+                                     name="AdvPy_SpineVolumeWeight")
+        c.setAttr(volume_weight + ".conversionFactor", 0.1)
+        c.connectAttr(plan.volume_plug, volume_weight + ".input")
+        volume = c.createNode("blendColors", name="AdvPy_SpineVolumeBlend")
+        c.connectAttr(power + ".outputX", volume + ".color1R")
+        c.setAttr(volume + ".color2R", 1.0)
+        c.connectAttr(volume_weight + ".output", volume + ".blender")
+        for axis in "YZ":
+            c.connectAttr(volume + ".outputR",
+                          plan.joints[4].path + ".scale" + axis)
+
+    def _audit_body_spine_stretch_volume(self, plan):
+        c = self._cmds
+        expected_types = {
+            "AdvPy_SpineStretchStartMM": "multMatrix",
+            "AdvPy_SpineStretchTargetMM": "multMatrix",
+            "AdvPy_SpineStretchDistance": "distanceBetween",
+            "AdvPy_SpineStretchRatio": "multiplyDivide",
+            "AdvPy_SpineStretchClamp": "clamp",
+            "AdvPy_SpineStretchWeight": "unitConversion",
+            "AdvPy_SpineStretchBlend": "blendColors",
+            "AdvPy_SpineStretchSegments": "multiplyDivide",
+            "AdvPy_SpineVolumeInverse": "multiplyDivide",
+            "AdvPy_SpineVolumePower": "multiplyDivide",
+            "AdvPy_SpineVolumeWeight": "unitConversion",
+            "AdvPy_SpineVolumeBlend": "blendColors",
+        }
+        if any(c.nodeType(name) != kind for name, kind in
+               expected_types.items()):
+            raise FitSkeletonValidationError("Spine 伸展或体积节点类型变化")
+        for plug in (plan.stretch_plug, plan.volume_plug):
+            if not c.objExists(plug) or not c.getAttr(plug, keyable=True):
+                raise FitSkeletonValidationError("Spine 伸展或体积控制属性缺失")
+        edges = [
+            (plan.joints[3].path + ".worldMatrix[0]",
+             "AdvPy_SpineStretchStartMM.matrixIn[0]"),
+            (plan.ik_control + ".worldMatrix[0]",
+             "AdvPy_SpineStretchTargetMM.matrixIn[0]"),
+            ("AdvPy_SpineStretchStartMM.matrixSum",
+             "AdvPy_SpineStretchDistance.inMatrix1"),
+            ("AdvPy_SpineStretchTargetMM.matrixSum",
+             "AdvPy_SpineStretchDistance.inMatrix2"),
+            ("AdvPy_SpineStretchDistance.distance",
+             "AdvPy_SpineStretchRatio.input1X"),
+            ("AdvPy_SpineStretchRatio.outputX",
+             "AdvPy_SpineStretchClamp.inputR"),
+            (plan.stretch_plug, "AdvPy_SpineStretchWeight.input"),
+            ("AdvPy_SpineStretchWeight.output",
+             "AdvPy_SpineStretchBlend.blender"),
+            ("AdvPy_SpineStretchClamp.outputR",
+             "AdvPy_SpineStretchBlend.color1R"),
+            ("AdvPy_SpineStretchBlend.outputR",
+             "AdvPy_SpineVolumeInverse.input2X"),
+            ("AdvPy_SpineVolumeInverse.outputX",
+             "AdvPy_SpineVolumePower.input1X"),
+            (plan.volume_plug, "AdvPy_SpineVolumeWeight.input"),
+            ("AdvPy_SpineVolumeWeight.output",
+             "AdvPy_SpineVolumeBlend.blender"),
+            ("AdvPy_SpineVolumePower.outputX",
+             "AdvPy_SpineVolumeBlend.color1R"),
+        ]
+        for name in ("Start", "Target"):
+            edges.append((plan.root_path + ".worldInverseMatrix[0]",
+                          "AdvPy_SpineStretch" + name + "MM.matrixIn[1]"))
+        for axis, joint in zip("XY", plan.joints[4:6]):
+            edges.extend((
+                ("AdvPy_SpineStretchBlend.outputR",
+                 "AdvPy_SpineStretchSegments.input2" + axis),
+                ("AdvPy_SpineStretchSegments.output" + axis,
+                 joint.path + ".translateX"),
+            ))
+        for axis in "YZ":
+            edges.append(("AdvPy_SpineVolumeBlend.outputR",
+                          plan.joints[4].path + ".scale" + axis))
+        if any(not c.isConnected(source, target) for source, target in edges):
+            raise FitSkeletonValidationError("Spine 伸展或体积驱动连接变化")
+        constants = (
+            ("AdvPy_SpineStretchRatio.operation", 2.0),
+            ("AdvPy_SpineStretchRatio.input2X", sum(plan.lengths)),
+            ("AdvPy_SpineStretchClamp.minR", 1.0),
+            ("AdvPy_SpineStretchClamp.maxR", 1000000.0),
+            ("AdvPy_SpineStretchWeight.conversionFactor", 0.1),
+            ("AdvPy_SpineStretchBlend.color2R", 1.0),
+            ("AdvPy_SpineVolumeInverse.operation", 2.0),
+            ("AdvPy_SpineVolumeInverse.input1X", 1.0),
+            ("AdvPy_SpineVolumePower.operation", 3.0),
+            ("AdvPy_SpineVolumePower.input2X", 0.5),
+            ("AdvPy_SpineVolumeWeight.conversionFactor", 0.1),
+            ("AdvPy_SpineVolumeBlend.color2R", 1.0),
+            *(("AdvPy_SpineStretchSegments.input1" + axis, length)
+              for axis, length in zip("XY", plan.lengths)),
+        )
+        if any(abs(float(c.getAttr(plug)) - value) > 1e-5
+               for plug, value in constants):
+            raise FitSkeletonValidationError("Spine 伸展或体积绑定参数变化")
+
     def validate_body_spine(self, plan):
         c = self._cmds
-        if (not c.objExists(plan.root_path + ".advPySpineOwner")
-                or c.getAttr(plan.root_path + ".advPySpineOwner") != "adv_py.spine.v1"):
+        if not c.objExists(plan.root_path + ".advPySpineOwner"):
             raise FitSkeletonValidationError("Spine 机制归属标记缺失")
-        if any(len(c.ls(name, long=True) or []) != 1 for name in plan.node_names):
+        owner = c.getAttr(plan.root_path + ".advPySpineOwner")
+        if owner not in ("adv_py.spine.v1", "adv_py.spine.v2"):
+            raise FitSkeletonValidationError("Spine 机制归属标记无效")
+        nodes = (plan.node_names if owner == "adv_py.spine.v2" else
+                 tuple(name for name in plan.node_names
+                       if not name.startswith(("AdvPy_SpineStretch",
+                                               "AdvPy_SpineVolume"))))
+        if any(len(c.ls(name, long=True) or []) != 1 for name in nodes):
             raise FitSkeletonValidationError("Spine 节点集合缺失或名称不唯一")
+        if owner == "adv_py.spine.v2":
+            self._audit_body_spine_stretch_volume(plan)
         solver=c.ikHandle("AdvPy_SpineIKHandle",query=True,solver=True)
         if solver!="ikRPsolver":
             if (solver!="AdvPy_SpineRPSolver" or c.nodeType(solver)!="ikRPsolver"
@@ -233,6 +390,8 @@ class MayaBodySpineMixin:
     def preflight_body_spine_match(self, plan, mode):
         self.validate_body_spine(plan)
         c = self._cmds
+        has_stretch = (c.getAttr(plan.root_path + ".advPySpineOwner")
+                       == "adv_py.spine.v2")
         if mode not in ("fk", "ik"):
             raise FitSkeletonValidationError("Spine 匹配模式必须是 fk 或 ik")
         if c.ls(type="animLayer"):
@@ -247,6 +406,17 @@ class MayaBodySpineMixin:
         for path, kind in targets:
             self._preflight_torso_channels(path, tuple(kind + axis for axis in "XYZ"))
         self._preflight_torso_channels(plan.ik_control, ("spineIkFk", "waistRoll"))
+        if has_stretch:
+            if mode == "ik":
+                self._preflight_torso_channels(plan.ik_control, ("stretchy",))
+            elif (any(abs(float(c.getAttr(joint.path + ".translateX"))
+                          - rest) > 1e-4
+                      for joint, rest in zip(plan.joints[4:6], plan.lengths))
+                  or any(abs(float(c.getAttr(plan.joints[4].path
+                                              + ".scale" + axis)) - 1.0)
+                         > 1e-4 for axis in "YZ")):
+                raise FitSkeletonValidationError(
+                    "Spine IK 已拉伸或改变体积，固定长度 FK 无法保持同一姿态")
         matrix, axes = self._spine_world_frame(plan.root_path)
         scales = tuple(sqrt(sum(v*v for v in matrix[i:i+3])) for i in (0, 4, 8))
         x, y, z = axes
@@ -275,6 +445,8 @@ class MayaBodySpineMixin:
             positions = tuple(frame[0][12:15] for frame in frames)
             pole = solve_limb_pole_position(*positions, frames[0][1][1], limb_label="Spine", distance_scale=0.75)
             self._transaction_changed = True
+            if c.getAttr(plan.root_path + ".advPySpineOwner") == "adv_py.spine.v2":
+                c.setAttr(plan.stretch_plug, 0.0)
             c.xform(plan.ik_control, worldSpace=True, translation=spine_ik_goal_position(*positions))
             self._spine_set_world_rotation(plan.ik_control, frames[2][0])
             c.xform(plan.pole_control, worldSpace=True, translation=pole)

@@ -49,6 +49,14 @@ class BodySpinePlan:
         return self.ik_control + ".waistRoll"
 
     @property
+    def stretch_plug(self) -> str:
+        return self.ik_control + ".stretchy"
+
+    @property
+    def volume_plug(self) -> str:
+        return self.ik_control + ".volume"
+
+    @property
     def node_names(self) -> tuple[str, ...]:
         return tuple(path.rsplit("|", 1)[-1] for path in (
             self.root_path, self.ik_offset, self.ik_control, self.ik_control + "Shape",
@@ -60,6 +68,12 @@ class BodySpinePlan:
             "AdvPy_SpineReverse", "AdvPy_SpineWaistPoint", "AdvPy_SpineWaistOrient",
             "AdvPy_SpineWaistScale", "AdvPy_SpineChestPoint",
             "AdvPy_SpineChestOrient", "AdvPy_SpineChestScale",
+            "AdvPy_SpineStretchStartMM", "AdvPy_SpineStretchTargetMM",
+            "AdvPy_SpineStretchDistance", "AdvPy_SpineStretchRatio",
+            "AdvPy_SpineStretchClamp", "AdvPy_SpineStretchWeight",
+            "AdvPy_SpineStretchBlend", "AdvPy_SpineStretchSegments",
+            "AdvPy_SpineVolumeInverse", "AdvPy_SpineVolumePower",
+            "AdvPy_SpineVolumeWeight", "AdvPy_SpineVolumeBlend",
         ) + (("AdvPy_SpineChestSpaceMM", "AdvPy_SpineChestSpacePM")
              if self.use_offset_parent_matrix else
              ("AdvPy_SpineChestSpaceParent",))
