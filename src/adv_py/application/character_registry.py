@@ -104,6 +104,12 @@ def character_channels(rig):
                     translation+rotation)
         else:
             add("foot.toe."+side.side.value,side.toe_control_path,rotation)
+            if side.toe_sub_path:
+                add("foot.toe.sub." + side.side.value,
+                    side.toe_sub_path, rotation)
+            if side.toe_extra_curve:
+                add("foot.toe.extra." + side.side.value,
+                    side.toe_extra_path, translation + rotation)
     if p.hand:
         for control in p.hand.controls.controls:
             add("hand.fk."+control.control_name.removeprefix("AdvPy_"),control.control_path,rotation)

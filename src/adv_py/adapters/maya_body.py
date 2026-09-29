@@ -5556,6 +5556,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         *z_axis, 0.0, *control_matrix[12:15], 1.0)
                     self._spine_set_world_rotation(path, target_matrix)
             else:
+                if plan.toe_sub_path:
+                    self._cmds.setAttr(plan.toe_sub_path + ".rotate",
+                                       0.0, 0.0, 0.0, type="double3")
                 toe_position = tuple(float(value) for value in self._cmds.xform(
                     plan.toe_control_path,
                     query=True,
@@ -6483,6 +6486,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 names.extend((side.toe_offset_name, side.toe_control_name))
                 if side.toe_extra_name:
                     names.append(side.toe_extra_name)
+                    if side.toe_extra_curve:
+                        names.append(side.toe_extra_name + "Shape")
+                if side.toe_sub_name:
+                    names.extend((side.toe_sub_name,
+                                  side.toe_sub_name + "Shape"))
                 names.extend((side.toe_handle_name, side.toe_effector_name))
                 names.extend((side.toe_end_handle_name,
                               side.toe_end_effector_name))
@@ -6914,6 +6922,12 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     raise RuntimeError("Toe IK 图标曲线不唯一")
                 self._cmds.setAttr(shapes[0] + ".overrideEnabled", True)
                 self._cmds.setAttr(shapes[0] + ".overrideColor", 13)
+                if spec.toe_extra_curve:
+                    self._add_body_extra_curve(toe_parent, toe_control)
+                if spec.toe_sub_path:
+                    self._create_body_sub_control(
+                        toe_control, spec.toe_sub_name,
+                        spec.toe_sub_path)
             handles = self._cmds.ls(spec.handle_name, long=True, type="ikHandle") or []
             if len(handles) != 1:
                 raise FitSkeletonValidationError("Leg IK Handle 在执行前失效")
@@ -6981,7 +6995,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 sticky="sticky",
             )
             self._cmds.rename(toe_end_effector, spec.toe_end_effector_name)
-            self._cmds.parent(toe_end_handle, spec.toe_control_path,
+            self._cmds.parent(toe_end_handle,
+                              spec.toe_end_handle_control_path,
                               absolute=True)
             self._cmds.setAttr(spec.toe_end_handle_name + ".visibility", False)
             self._cmds.setAttr(spec.toe_end_effector_name + ".visibility", False)
@@ -7624,6 +7639,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                     if len(toe_extras) == 1 and self._cmds.attributeQuery(
                         "ikLocal", node=toe_extras[0], exists=True)
                     else None),
+                toe_sub=self._capture_body_ik_sub_control(
+                    toe_controls[0], spec.toe_sub_path or None),
+                toe_extra_visual=self._capture_body_extra_layer(
+                    spec.toe_extra_path or None, toe_controls[0]),
                 swivel_source=swivel_source,
                 rock_pivots=tuple(rock_pivots),
                 manual_pivots=tuple(manual_states),

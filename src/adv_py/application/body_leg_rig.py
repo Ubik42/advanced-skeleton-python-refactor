@@ -374,7 +374,12 @@ class BuildBodyLegRig:
                 names.extend((
                     side.toe_offset_name,
                     side.toe_extra_name,
+                    *((side.toe_extra_name + "Shape",)
+                      if side.toe_extra_curve else ()),
                     side.toe_control_name,
+                    side.toe_sub_name,
+                    *((side.toe_sub_name + "Shape",)
+                      if side.toe_sub_name else ()),
                     side.toe_handle_name,
                     side.toe_effector_name,
                     side.toe_end_handle_name,

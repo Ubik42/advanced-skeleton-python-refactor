@@ -49,6 +49,7 @@ class BodyLegFkToIkPlan:
     toe_match_axis_source: str | None = None
     reverse_roll_control_path: str | None = None
     reverse_roll_handle_name: str | None = None
+    toe_sub_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,7 +239,9 @@ def plan_body_leg_fk_to_ik(
         for channel in channels
     ) + tuple(
         f"{path}.rotate{axis}"
-        for path in ((foot_side.toe_control_path,) if hybrid is None
+        for path in ((foot_side.toe_control_path,
+                      *((foot_side.toe_sub_path,)
+                        if foot_side.toe_sub_path else ())) if hybrid is None
                      else (target[0] for target in hybrid_targets))
         for axis in "XYZ"
     ) + foot_plugs + roll_rotation_plugs + (blend_plug,) + (
@@ -268,6 +271,8 @@ def plan_body_leg_fk_to_ik(
             limb.ankle_control_path,
             limb.pole_control_path,
             *((foot_side.toe_control_path,) if hybrid is None else ()),
+            *((foot_side.toe_sub_path,)
+              if hybrid is None and foot_side.toe_sub_path else ()),
             *(path for path, _ in hybrid_targets),
             *(source for _, source in hybrid_targets),
             *((foot_side.handle_name, reverse_roll)
@@ -304,6 +309,7 @@ def plan_body_leg_fk_to_ik(
         reverse_roll_control_path=reverse_roll,
         reverse_roll_handle_name=(foot_side.handle_name
                                   if reverse_roll is not None else None),
+        toe_sub_path=foot_side.toe_sub_path or None,
     )
 
 

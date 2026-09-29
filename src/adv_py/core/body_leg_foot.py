@@ -8,6 +8,10 @@ from .body_leg_ik import BodyLegIkPlan
 from .body_leg_mechanisms import BodyLegMechanismPlan, BodyLegMechanismRole
 from .body_leg_qtoes import plan_leg_qtoes_topology
 from .body_controller_appearance import body_fk_curve_radius
+from .body_controller_layers import (
+    BodyExtraControllerState, BodySubControllerState,
+    audit_body_extra_controller, audit_body_sub_controller,
+)
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_container import FitUpAxis
 from .fit_metadata import FitJointMetadata
@@ -253,6 +257,9 @@ class BodyLegFootSideSpec:
     high_heel: BodyLegFootHighHeelSpec | None = None
     toe_extra_name: str = ""
     toe_extra_path: str = ""
+    toe_sub_name: str = ""
+    toe_sub_path: str = ""
+    toe_extra_curve: bool = False
     source_toe_icon: bool = False
     toe_control_rotate_order: int = 0
     toe_handle_name: str = ""
@@ -275,6 +282,10 @@ class BodyLegFootSideSpec:
                     if pivot.role is BodyLegFootPivotRole.BALL)
         return next((manual.reverse_path for manual in self.manual_pivots
                      if manual.target_path == ball), ball)
+
+    @property
+    def toe_end_handle_control_path(self) -> str:
+        return self.toe_sub_path or self.toe_control_path
 
     @property
     def qtoes_handle_parent_path(self) -> str:
@@ -458,6 +469,8 @@ class BodyLegFootSideState:
     toe_control_color: int | None = None
     toe_ik_local: bool | None = None
     toe_extra_ik_local: bool | None = None
+    toe_sub: BodySubControllerState | None = None
+    toe_extra_visual: BodyExtraControllerState | None = None
     swivel_source: str | None = None
     rock_pivots: tuple[BodyLegFootRockPivotState, ...] = ()
     manual_pivots: tuple[BodyLegFootManualPivotState, ...] = ()
@@ -924,6 +937,11 @@ def plan_body_leg_foot(
         toe_extra_path = (f"{toe_offset_path}|{toe_extra_name}"
                           if toe_extra_name else "")
         toe_control_name = f"AdvPy_ToeIK_{suffix}"
+        toe_control_path = f"{toe_extra_path or toe_offset_path}|{toe_control_name}"
+        toe_sub_name = (f"AdvPy_ToeIKSub_{suffix}"
+                        if not legacy_toe_controls and limb.ankle_sub_path else "")
+        toe_sub_path = (f"{toe_control_path}|{toe_sub_name}"
+                        if toe_sub_name else "")
         roll_nodes = (
             BodyLegFootRollNodeSpec(
                 heel_clamp,
@@ -1083,7 +1101,7 @@ def plan_body_leg_foot(
             toe_offset_name=toe_offset_name,
             toe_offset_path=toe_offset_path,
             toe_control_name=toe_control_name,
-            toe_control_path=f"{toe_extra_path or toe_offset_path}|{toe_control_name}",
+            toe_control_path=toe_control_path,
             toe_control_position=body_by_name[f"Toes_{suffix}"].world_position,
             toe_control_axes=body_by_name[f"Toes_{suffix}"].world_axes,
             toe_control_radius=(body_fk_curve_radius(
@@ -1103,6 +1121,10 @@ def plan_body_leg_foot(
             high_heel=high_heel,
             toe_extra_name=toe_extra_name,
             toe_extra_path=toe_extra_path,
+            toe_sub_name=toe_sub_name,
+            toe_sub_path=toe_sub_path,
+            toe_extra_curve=(not legacy_toe_controls
+                             and limb.ankle_extra_curve),
             source_toe_icon=not legacy_toe_controls,
             toe_control_rotate_order=body_by_name[f"Toes_{suffix}"].rotation_order,
             toe_handle_name=f"AdvPy_LegIKToesHandle_{suffix}",
@@ -1434,7 +1456,7 @@ def audit_body_leg_foot(
             issues.append(BodyLegFootIssue(
                 "foot_toe_ik_handle", "Toes 单链 IK 求解器结构不一致",
                 spec.side.value))
-        if spec.hybrid is None and (state.toe_end_handle_parent_path != spec.toe_control_path
+        if spec.hybrid is None and (state.toe_end_handle_parent_path != spec.toe_end_handle_control_path
                 or state.toe_end_handle_joint_list != (
                     spec.toe_end_solver_joint_list
                     or (spec.toe_driver_path,))
@@ -1600,6 +1622,19 @@ def audit_body_leg_foot(
                 "Toe IK 图标属性或旋转顺序不一致",
                 spec.side.value,
             ))
+        for message in audit_body_sub_controller(
+                spec.toe_control_path,
+                spec.toe_sub_path or None,
+                state.toe_sub):
+            issues.append(BodyLegFootIssue(
+                "foot_toe_sub_control", message, spec.side.value))
+        if spec.toe_extra_path:
+            for message in audit_body_extra_controller(
+                    spec.toe_offset_path, spec.toe_control_path,
+                    spec.toe_extra_path, state.toe_extra_visual,
+                    extra_curve=spec.toe_extra_curve):
+                issues.append(BodyLegFootIssue(
+                    "foot_toe_extra_control", message, spec.side.value))
         if check_initial_pose and (
             not _close(
                 state.toe_control_position,
