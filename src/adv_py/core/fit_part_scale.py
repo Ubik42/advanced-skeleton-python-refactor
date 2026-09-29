@@ -60,17 +60,34 @@ class FitPartEndScale:
 
 
 @dataclass(frozen=True, slots=True)
+class FitPartToeScale:
+    body_name: str
+    fk_scale_plug: str
+    mode_plug: str
+    blend_name: str
+    use_offset_parent_matrix: bool
+    scale_compose_name: str | None
+    scale_matrix_name: str | None
+
+    @property
+    def output_plug(self) -> str:
+        return self.blend_name + ".output"
+
+
+@dataclass(frozen=True, slots=True)
 class FitPartScalePlan:
     direct: tuple[FitPartScaleStep, ...]
     limbs: tuple[FitPartLimbScaleChain, ...]
     inherited: tuple[FitPartInheritedScaleChain, ...] = ()
     ends: tuple[FitPartEndScale, ...] = ()
+    toes: tuple[FitPartToeScale, ...] = ()
 
 
 def plan_fit_part_scale(
     parts: tuple[FitPartJointSpec, ...],
     body_joints: tuple[BodyJointSpec, ...] = (),
     ik_local_sources: frozenset[str] = frozenset(),
+    leg_fk_control_names: frozenset[str] = frozenset(),
 ) -> FitPartScalePlan:
     """Use FK/IK scale on limb Body even when a segment has no Parts.
 
@@ -95,6 +112,7 @@ def plan_fit_part_scale(
     limbs = []
     inherited = []
     ends = []
+    toes = []
     for start, chain in grouped.items():
         chain.sort(key=lambda part: part.index)
         stem, side = start.rsplit("_", 1)
@@ -151,5 +169,21 @@ def plan_fit_part_scale(
             prefix + "ScaleCompose" if use_opm else None,
             prefix + "ScaleMatrix" if use_opm else None,
         ))
+    for body in body_joints:
+        stem, _, side = body.name.rpartition("_")
+        if stem not in ("Toes", "ToesEnd") or side not in ("R", "L"):
+            continue
+        fk_control = f"AdvPy_{stem}FK_{side}"
+        if fk_control not in leg_fk_control_names:
+            continue
+        prefix = f"AdvPy_{stem}_FitPart_{side}"
+        use_opm = not body.segment_scale_compensate
+        toes.append(FitPartToeScale(
+            body.name, fk_control + ".scale",
+            f"AdvPy_LegSettings.legIkFk_{side}",
+            prefix + "ScaleBlend", use_opm,
+            prefix + "ScaleCompose" if use_opm else None,
+            prefix + "ScaleMatrix" if use_opm else None,
+        ))
     return FitPartScalePlan(tuple(direct), tuple(limbs),
-                            tuple(inherited), tuple(ends))
+                            tuple(inherited), tuple(ends), tuple(toes))

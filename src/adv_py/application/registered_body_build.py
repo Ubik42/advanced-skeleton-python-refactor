@@ -453,7 +453,9 @@ class BuildRegisteredBodyCharacter:
                 scale_plan = BuildFitPartScaleDrivers(joined).apply(
                     part_plan.fit_parts, part_plan.specs,
                     frozenset(item.joint for item in fit_source.metadata
-                              if item.ik_local_mode is not None))
+                              if item.ik_local_mode is not None),
+                    frozenset(control.control_name
+                              for control in rig.plan.leg.fk_controls.controls))
                 if bendy_chains:
                     BuildFitBendyDeform(joined).apply(bendy_chains)
                 inbetween_parts = tuple(

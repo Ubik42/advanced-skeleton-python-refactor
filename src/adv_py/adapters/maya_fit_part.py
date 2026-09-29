@@ -14,7 +14,7 @@ from adv_py.core.fit_part_twist import (
 )
 from adv_py.core.fit_part_scale import (
     FitPartEndScale, FitPartInheritedScaleChain, FitPartLimbScaleChain,
-    FitPartScaleStep,
+    FitPartScaleStep, FitPartToeScale,
 )
 
 _FIT_PART_KIND = "fit-part-v1"
@@ -22,6 +22,94 @@ _FIT_INBETWEEN_KIND = "fit-inbetween-v1"
 
 
 class MayaFitPartMixin:
+    def preflight_fit_part_toe_scale(self, toe: FitPartToeScale) -> None:
+        c = self._cmds
+        body = self._unique_fit_part_joint(toe.body_name)
+        if any(not c.objExists(plug) for plug in
+               (toe.fk_scale_plug, toe.mode_plug)):
+            raise ValueError("Fit Part 脚趾缺少 FK／IK 缩放输入："
+                             + toe.body_name)
+        if any(c.objExists(name) for name in
+               (toe.blend_name, toe.scale_compose_name,
+                toe.scale_matrix_name) if name):
+            raise ValueError("Fit Part 脚趾缩放节点名称冲突："
+                             + toe.body_name)
+        if toe.use_offset_parent_matrix:
+            if (not toe.scale_compose_name or not toe.scale_matrix_name
+                    or not c.objExists(body + ".offsetParentMatrix")):
+                raise ValueError("Fit Part 脚趾缺少 OPM 矩阵目标："
+                                 + toe.body_name)
+        elif any(not c.getAttr(body + ".scale" + axis,
+                               settable=True) for axis in "XYZ"):
+            raise ValueError("Fit Part 脚趾 Body 缩放目标不可写："
+                             + toe.body_name)
+
+    def connect_fit_part_toe_scale(self, toe: FitPartToeScale) -> None:
+        self._require_transaction()
+        c = self._cmds
+        body = self._unique_fit_part_joint(toe.body_name)
+        blend = c.createNode("blendColors", name=toe.blend_name)
+        self._transaction_changed = True
+        c.setAttr(blend + ".color1", 1.0, 1.0, 1.0)
+        c.connectAttr(toe.fk_scale_plug, blend + ".color2")
+        c.connectAttr(toe.mode_plug, blend + ".blender")
+        if toe.use_offset_parent_matrix:
+            target = body + ".offsetParentMatrix"
+            old_source = c.connectionInfo(target,
+                                          sourceFromDestination=True)
+            old_matrix = c.getAttr(target)
+            if old_matrix and isinstance(old_matrix[0], (tuple, list)):
+                old_matrix = old_matrix[0]
+            compose = c.createNode("composeMatrix",
+                                   name=toe.scale_compose_name)
+            matrix = c.createNode("multMatrix",
+                                  name=toe.scale_matrix_name)
+            for axis, color in zip("XYZ", "RGB"):
+                c.connectAttr(blend + ".output" + color,
+                              compose + ".inputScale" + axis)
+            c.connectAttr(compose + ".outputMatrix",
+                          matrix + ".matrixIn[0]")
+            if old_source:
+                c.disconnectAttr(old_source, target)
+                c.connectAttr(old_source, matrix + ".matrixIn[1]")
+            else:
+                c.setAttr(matrix + ".matrixIn[1]", *old_matrix,
+                          type="matrix")
+            c.connectAttr(matrix + ".matrixSum", target)
+        else:
+            c.connectAttr(blend + ".output", body + ".scale")
+
+    def capture_fit_part_toe_scale(self, toe: FitPartToeScale) -> bool:
+        c = self._cmds
+        body = self._unique_fit_part_joint(toe.body_name)
+        if (not c.objExists(toe.blend_name)
+                or c.nodeType(toe.blend_name) != "blendColors"
+                or c.connectionInfo(toe.blend_name + ".color2",
+                    sourceFromDestination=True) != toe.fk_scale_plug
+                or c.connectionInfo(toe.blend_name + ".blender",
+                    sourceFromDestination=True) != toe.mode_plug
+                or any(abs(float(value) - 1.0) > 1e-8 for value in
+                       c.getAttr(toe.blend_name + ".color1")[0])):
+            return False
+        if not toe.use_offset_parent_matrix:
+            return c.connectionInfo(body + ".scale",
+                sourceFromDestination=True) == toe.output_plug
+        if (not c.objExists(toe.scale_compose_name)
+                or c.nodeType(toe.scale_compose_name) != "composeMatrix"
+                or not c.objExists(toe.scale_matrix_name)
+                or c.nodeType(toe.scale_matrix_name) != "multMatrix"
+                or c.connectionInfo(body + ".offsetParentMatrix",
+                    sourceFromDestination=True)
+                    != toe.scale_matrix_name + ".matrixSum"
+                or c.connectionInfo(toe.scale_matrix_name + ".matrixIn[0]",
+                    sourceFromDestination=True)
+                    != toe.scale_compose_name + ".outputMatrix"):
+            return False
+        return all(c.connectionInfo(toe.scale_compose_name
+                   + ".inputScale" + axis, sourceFromDestination=True)
+                   == toe.blend_name + ".output" + color
+                   for axis, color in zip("XYZ", "RGB"))
+
     def preflight_fit_part_end_scale(self, end: FitPartEndScale) -> None:
         c = self._cmds
         body = self._unique_fit_part_joint(end.body_name)

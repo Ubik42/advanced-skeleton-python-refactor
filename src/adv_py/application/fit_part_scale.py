@@ -8,7 +8,7 @@ from adv_py.core.body_skeleton import BodyJointSpec
 from adv_py.core.fit_part import FitPartJointSpec
 from adv_py.core.fit_part_scale import (
     FitPartEndScale, FitPartInheritedScaleChain, FitPartLimbScaleChain,
-    FitPartScalePlan, FitPartScaleStep,
+    FitPartScalePlan, FitPartScaleStep, FitPartToeScale,
     plan_fit_part_scale,
 )
 
@@ -45,6 +45,12 @@ class FitPartScaleHost(Protocol):
 
     def capture_fit_part_end_scale(self, end: FitPartEndScale) -> bool: ...
 
+    def preflight_fit_part_toe_scale(self, toe: FitPartToeScale) -> None: ...
+
+    def connect_fit_part_toe_scale(self, toe: FitPartToeScale) -> None: ...
+
+    def capture_fit_part_toe_scale(self, toe: FitPartToeScale) -> bool: ...
+
 
 class BuildFitPartScaleDrivers:
     def __init__(self, host: FitPartScaleHost) -> None:
@@ -54,14 +60,18 @@ class BuildFitPartScaleDrivers:
         self, parts: tuple[FitPartJointSpec, ...],
         body_joints: tuple[BodyJointSpec, ...] = (),
         ik_local_sources: frozenset[str] = frozenset(),
+        leg_fk_control_names: frozenset[str] = frozenset(),
     ) -> FitPartScalePlan:
-        plan = plan_fit_part_scale(parts, body_joints, ik_local_sources)
+        plan = plan_fit_part_scale(parts, body_joints, ik_local_sources,
+                                   leg_fk_control_names)
         for step in plan.direct:
             self._host.preflight_fit_part_scale(step)
         for chain in plan.limbs:
             self._host.preflight_fit_part_limb_scale(chain)
         for end in plan.ends:
             self._host.preflight_fit_part_end_scale(end)
+        for toe in plan.toes:
+            self._host.preflight_fit_part_toe_scale(toe)
         for chain in plan.inherited:
             if not self._host.inspect_fit_part_inherited_scale(chain):
                 raise ValueError("Fit Part OPM 缩放父链无效："
@@ -73,6 +83,8 @@ class BuildFitPartScaleDrivers:
                 self._host.connect_fit_part_limb_scale(chain)
             for end in plan.ends:
                 self._host.connect_fit_part_end_scale(end)
+            for toe in plan.toes:
+                self._host.connect_fit_part_toe_scale(toe)
             for step in plan.direct:
                 if self._host.capture_fit_part_scale_source(step) != step.source_plug:
                     raise RuntimeError("Fit Part 缩放输出连接不一致：" + step.part_name)
@@ -84,6 +96,10 @@ class BuildFitPartScaleDrivers:
                 if not self._host.capture_fit_part_end_scale(end):
                     raise RuntimeError("Fit Part 末端缩放连接不一致："
                                        + end.body_name)
+            for toe in plan.toes:
+                if not self._host.capture_fit_part_toe_scale(toe):
+                    raise RuntimeError("Fit Part 脚趾缩放连接不一致："
+                                       + toe.body_name)
             for chain in plan.inherited:
                 if not self._host.inspect_fit_part_inherited_scale(chain):
                     raise RuntimeError("Fit Part OPM 缩放父链改变："
