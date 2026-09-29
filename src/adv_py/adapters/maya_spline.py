@@ -9,6 +9,7 @@ from .maya_adv_icons import create_adv_icon
 from . import maya_chest_space
 from . import maya_spline_even
 from . import maya_spline_twist
+from . import maya_spline_follow
 
 
 def prepare(host,plan):
@@ -18,7 +19,8 @@ def prepare(host,plan):
     c.addAttr(plan.root_path,longName='advPySplineOwner',dataType='string')
     c.setAttr(plan.root_path+'.advPySplineOwner',
               current_spline_owner(plan.curved, plan.even_stretch_graph,
-                                   plan.twist_ramp_graph),
+                                   plan.twist_ramp_graph,
+                                   plan.mid_follow_graph),
               type='string',lock=True)
     for joint in plan.joints:host.create_body_arm_mechanism_joint(joint)
     last=plan.joints[len(plan.body_joints)-1]
@@ -115,6 +117,8 @@ def create(host,plan):
                           'AdvPy_SplineIKHandle.dWorldUpVector'+suffix+axis)
     if plan.twist_ramp_graph:
         maya_spline_twist.create(host, plan)
+    if plan.mid_follow_graph:
+        maya_spline_follow.create(host, plan)
     c.orientConstraint(plan.targets[-1],ik[-1].path,maintainOffset=True,name='AdvPy_SplineChestOrient')
     c.createNode('curveInfo',name='AdvPy_SplineArc',skipSelect=True)
     c.connectAttr(shape+'.local','AdvPy_SplineArc.inputCurve')
@@ -248,6 +252,8 @@ def audit(host,plan):
         raise FitSkeletonValidationError('Spline stretchEven 计划与求解图版本不一致')
     if (version>=22)!=plan.twist_ramp_graph:
         raise FitSkeletonValidationError('Spline 中间扭转计划与求解图版本不一致')
+    if (version>=24)!=plan.mid_follow_graph:
+        raise FitSkeletonValidationError('Spline 中间跟随计划与求解图版本不一致')
     new_scaling=version>=4
     oriented_scaling=version>=6
     original_range=version>=8
@@ -305,6 +311,8 @@ def audit(host,plan):
         maya_spline_even.audit(host, plan, shape, plan.joints[n:])
     if plan.twist_ramp_graph:
         maya_spline_twist.audit(host, plan)
+    if plan.mid_follow_graph:
+        maya_spline_follow.audit(host, plan)
     if original_range:
         edges += [(plan.settings+'.stretchy','AdvPy_SplineStretchUnit.input'),
                   ('AdvPy_SplineStretchUnit.output','AdvPy_SplineStretchBlend.blender'),

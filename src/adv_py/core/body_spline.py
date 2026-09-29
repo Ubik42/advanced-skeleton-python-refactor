@@ -9,7 +9,7 @@ from .body_limb_mechanisms import BodyLimbMechanismJointSpec,BodyLimbMechanismRo
 from .fit_settings import FitSkeletonValidationError
 
 
-CURRENT_SPLINE_VERSION = 23
+CURRENT_SPLINE_VERSION = 25
 
 
 def spline_owner_version(marker: str) -> int:
@@ -26,12 +26,16 @@ def spline_owner_version(marker: str) -> int:
 
 
 def current_spline_owner(curved: bool, even_stretch_graph: bool = True,
-                         twist_ramp_graph: bool = False) -> str:
+                         twist_ramp_graph: bool = False,
+                         mid_follow_graph: bool = False) -> str:
     if twist_ramp_graph and not even_stretch_graph:
         raise FitSkeletonValidationError('Spline 中间扭转图要求 stretchEven 双链')
-    newest = (CURRENT_SPLINE_VERSION if twist_ramp_graph else
-              CURRENT_SPLINE_VERSION - 2 if even_stretch_graph else
-              CURRENT_SPLINE_VERSION - 4)
+    if mid_follow_graph and not twist_ramp_graph:
+        raise FitSkeletonValidationError('Spline 中间跟随要求中间扭转控制')
+    newest = (CURRENT_SPLINE_VERSION if mid_follow_graph else
+              CURRENT_SPLINE_VERSION - 2 if twist_ramp_graph else
+              CURRENT_SPLINE_VERSION - 4 if even_stretch_graph else
+              CURRENT_SPLINE_VERSION - 6)
     return f'adv_py.spline.v{newest if curved else newest - 1}'
 
 
@@ -50,6 +54,7 @@ class BodySplinePlan:
     use_offset_parent_matrix: bool = False
     even_stretch_graph: bool = False
     twist_ramp_graph: bool = False
+    mid_follow_graph: bool = False
 
     @property
     def settings(self):return self.targets[-1]
@@ -120,9 +125,17 @@ class BodySplinePlan:
             f'AdvPy_SplineTwist{kind}{i}'
             for i in range(1,len(self.targets)-1)
             for kind in ('Relative','Decompose','QuatToEuler'))
+        follow=('AdvPy_SplineFollowStart','AdvPy_SplineFollowEnd',
+                'AdvPy_SplineFollowStartConstraint',
+                'AdvPy_SplineFollowEndConstraint',
+                'AdvPy_SplineMidFlipAxis')+tuple(
+            f'AdvPy_SplineFollow{kind}{i}'
+            for i in range(1,len(self.targets)-1)
+            for kind in ('Weight','Reverse','Constraint'))
         return (fixed+chest+tuple(j.name for j in self.joints)+targets+outputs+
                 rests+scaling+orientations+(even if self.even_stretch_graph else ())+
-                (twist if self.twist_ramp_graph else ()))
+                (twist if self.twist_ramp_graph else ())+
+                (follow if self.mid_follow_graph else ()))
 
 
 def spline_ik_scale_weights(joint_index: int, joint_count: int,
@@ -271,5 +284,5 @@ def with_spline_ik(body,torso,description):
     positions=(fit_spline_controls(tuple(j.world_position for j in source)) if curved else
                tuple(tuple(a+(b-a)*i/3 for a,b in zip(source[0].world_position,source[-1].world_position)) for i in range(4)))
     targets=tuple(pelvis.control_path+f'|AdvPy_SplineIK{i}Offset|AdvPy_SplineIK{i}' for i in range(len(positions)))
-    plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths),torso.use_offset_parent_matrix,True,len(source)>2)
+    plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths),torso.use_offset_parent_matrix,True,len(source)>2,len(source)>2)
     return replace(torso,controls=replace(torso.controls,controls=tuple(updated)),spline=plan)

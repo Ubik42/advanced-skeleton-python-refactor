@@ -61,6 +61,9 @@ def character_channels(rig):
         add("spine.spline", spline.settings,
             ("spineIkFk", "stretchy", "volume") +
             (("stretchEven",) if spline.even_stretch_graph else ()))
+        if spline.mid_follow_graph:
+            for index, target in enumerate(spline.targets[1:-1], 1):
+                add(f"spine.spline.{index}", target, ("followEnd",))
     if p.torso.torso.head_aim:
         aim=p.torso.torso.head_aim
         add('head.aim.target',aim.target,translation+rotation+('follow',))
