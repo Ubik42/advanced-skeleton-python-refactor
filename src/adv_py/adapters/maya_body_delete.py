@@ -26,7 +26,9 @@ class MayaBodyDeleteMixin:
             raise RuntimeError("Delete Adv 节点身份不唯一：" + path)
         return ids[0]
 
-    def plan_delete_body_advanced(self) -> BodyDeletePlan | None:
+    def plan_delete_body_advanced(self, *,
+                                  face_will_be_deleted: bool = False
+                                  ) -> BodyDeletePlan | None:
         """Resolve ownership and preserved assets before opening Undo."""
         c = self._delete_cmds
         fit = self._delete_unique("FitSkeleton", node_type="transform")
@@ -34,7 +36,8 @@ class MayaBodyDeleteMixin:
             return None
         group = self._delete_unique("Group", node_type="transform")
         face = self._delete_unique("FaceGroup", node_type="transform")
-        if face is not None:
+        if (self._delete_unique("FaceMotionSystem", node_type="transform")
+                is not None and not face_will_be_deleted):
             raise FitSkeletonValidationError(
                 "此角色含 FaceSetup；须先移除 Face 绑定，再删除 Body Adv")
         geometry = self._delete_unique("Geometry", node_type="transform")
@@ -51,6 +54,15 @@ class MayaBodyDeleteMixin:
         if geometry is not None and not geometry.startswith(group + "|"):
             raise FitSkeletonValidationError(
                 "Geometry 不在当前 Body Group 内")
+        if face is not None and face.startswith(group + "|"):
+            if face.rsplit("|", 1)[0] != group:
+                raise FitSkeletonValidationError(
+                    "Face Fit 嵌在 Body 子系统中，不能安全保留")
+            face_fit = self._delete_unique(
+                "FaceFitSkeleton", node_type="transform")
+            if face_fit is None or not face_fit.startswith(face + "|"):
+                raise FitSkeletonValidationError(
+                    "FaceGroup 缺少 FaceFitSkeleton，不能判定保留范围")
         all_set = self._delete_unique("AllSet", node_type="objectSet")
         if all_set is None:
             raise FitSkeletonValidationError(
@@ -70,6 +82,10 @@ class MayaBodyDeleteMixin:
                for path in owned):
             raise FitSkeletonValidationError(
                 "Body AllSet 错误包含需要保留的 FitSkeleton")
+        if face is not None and any(
+                path == face or path.startswith(face + "|") for path in owned):
+            raise FitSkeletonValidationError(
+                "Body AllSet 错误包含需要保留的 Face Fit")
         geometry_children = (tuple(c.listRelatives(
             geometry, children=True, type="transform", fullPath=True) or ())
             if geometry is not None else ())
@@ -83,7 +99,8 @@ class MayaBodyDeleteMixin:
                                             "AllSet", "Sets")
                      if (path := self._delete_unique(
                          name, node_type="objectSet")) is not None)
-        for path in (fit, group, *geometry_children, *owned, *sets):
+        for path in (fit, group, *((face,) if face else ()),
+                     *geometry_children, *owned, *sets):
             if c.referenceQuery(path, isNodeReferenced=True):
                 raise FitSkeletonValidationError(
                     "Delete Adv 不修改引用节点：" + path)
@@ -91,7 +108,8 @@ class MayaBodyDeleteMixin:
             fit, self._delete_uuid(fit), group, geometry_children,
             retained, preserved_animation, tuple(owned),
             tuple(self._delete_uuid(path) for path in owned), sets,
-            c.upAxis(query=True, axis=True))
+            c.upAxis(query=True, axis=True), face,
+            self._delete_uuid(face) if face else None)
 
     def delete_body_advanced(self, plan: BodyDeletePlan) -> None:
         """Port asDeleteAdvanced's unparent, Z-up and Sets removal sequence."""
@@ -103,7 +121,15 @@ class MayaBodyDeleteMixin:
             return
         if not c.objExists(plan.group):
             raise RuntimeError("Delete Adv 执行前 Group 已消失")
+        if plan.face_fit_group is not None and (
+                not c.objExists(plan.face_fit_group) or
+                self._delete_uuid(plan.face_fit_group) !=
+                plan.face_fit_group_id):
+            raise RuntimeError("Delete Adv 执行前 Face Fit 已变化")
         self._transaction_changed = True
+        if (plan.face_fit_group is not None and
+                plan.face_fit_group.startswith(plan.group + "|")):
+            c.parent(plan.face_fit_group, world=True, absolute=True)
         fit = c.parent(plan.fit, world=True, absolute=True)[0]
         if plan.scene_up_axis == "z":
             self.flip_character_scene_up_axis(fit, "z")
@@ -176,3 +202,9 @@ class MayaBodyDeleteMixin:
                             for path in c.ls(type="animCurve") or ()}
         if not set(plan.preserved_animation_ids) <= remaining_curves:
             raise RuntimeError("Delete Adv 丢失了 Fit 驱动曲线")
+        if plan.face_fit_group_id is not None:
+            surviving = self._delete_unique("FaceGroup", node_type="transform")
+            if (surviving is None or not surviving.startswith("|") or
+                    surviving.count("|") != 1 or
+                    self._delete_uuid(surviving) != plan.face_fit_group_id):
+                raise RuntimeError("Delete Adv 丢失了 Face Fit")

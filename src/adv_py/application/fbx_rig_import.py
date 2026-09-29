@@ -12,6 +12,7 @@ from adv_py.core.fbx_rig_import import (
     fbx_fit_display_radius, plan_fbx_control_transfer, plan_fbx_rig_import,
     validate_fbx_source_namespace_paths,
 )
+from adv_py.core.body_all_set import BodyAllSetNode
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +59,7 @@ class FBXRigBuildAudit:
     temporary_bake_links_removed: bool = False
     source_joint_animation_removed: bool = False
     connected_source_paths: tuple[str, ...] = ()
+    ik_limb_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +97,12 @@ class FBXRigHost(Protocol):
     ) -> tuple[FBXRigFitGuideState, ...]: ...
     def capture_fbx_fit_display_radius(self) -> float: ...
     def build_fbx_advanced_skeleton(self, plan: FBXRigImportPlan) -> None: ...
+    def capture_fbx_generated_ownership_start(
+        self,
+    ) -> tuple[BodyAllSetNode, ...]: ...
+    def finalize_fbx_generated_ownership(
+        self, before: tuple[BodyAllSetNode, ...],
+    ) -> None: ...
     def enlarge_small_fbx_fk_controls(
         self, plan: FBXRigImportPlan, bound_meshes: tuple[str, ...],
     ) -> None: ...
@@ -194,6 +202,8 @@ class BuildFBXRig:
                 if fit_issues:
                     raise RuntimeError("FBX rig Fit 创建复检失败："
                                        + "；".join(fit_issues))
+                ownership_start = (
+                    self._host.capture_fbx_generated_ownership_start())
                 self._host.build_fbx_advanced_skeleton(plan)
                 self._host.enlarge_small_fbx_fk_controls(
                     plan, source.bound_meshes)
@@ -211,6 +221,8 @@ class BuildFBXRig:
                     self._host.connect_fbx_game_root_motion(plan, source_paths)
                 self._host.connect_fbx_controls_to_source(
                     transfer, source_paths)
+                self._host.finalize_fbx_generated_ownership(
+                    ownership_start)
                 audit = self._host.capture_fbx_rig_audit(
                     plan, transfer, source_paths)
                 expected_controls = set(transfer.bake_control_names)

@@ -16,3 +16,5 @@ class BodyDeletePlan:
     owned_ids: tuple[str, ...]
     set_nodes: tuple[str, ...]
     scene_up_axis: str
+    face_fit_group: str | None = None
+    face_fit_group_id: str | None = None

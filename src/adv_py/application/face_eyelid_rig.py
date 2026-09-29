@@ -21,6 +21,8 @@ class FaceEyeLidRigHost(FaceLowerOuterAuxiliaryHost, Protocol):
     def mirror_right_eye_fit_to_left(self, mesh: str) -> dict: ...
     def build_prepared_face_eye_lids(self, mode: FaceEyeLidBuildMode) -> dict: ...
     def record_face_build_pose(self, controls: tuple[str, ...]) -> int: ...
+    def capture_face_build_node_ids(self) -> frozenset[str]: ...
+    def register_face_build_nodes(self, before: frozenset[str]) -> None: ...
 
 
 class BuildFaceEyeLids:
@@ -38,6 +40,7 @@ class BuildFaceEyeLids:
                     plan.left_eye_mesh)
             else:
                 mirror = None
+            before = self.host.capture_face_build_node_ids()
             result = self.host.build_prepared_face_eye_lids(mode)
             if mode.simpler_eyelid:
                 auxiliary = BuildFaceLowerOuterAuxiliary(self.host)
@@ -60,6 +63,7 @@ class BuildFaceEyeLids:
             )))
             result["build_pose_channels"] = self.host.record_face_build_pose(
                 controls)
+            self.host.register_face_build_nodes(before)
             if mirror is not None:
                 result["symmetric_mirror"] = mirror
             if (len(result["controls"]) != mode.expected_arc_controls

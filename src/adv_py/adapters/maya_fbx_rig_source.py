@@ -9,12 +9,14 @@ from adv_py.application.oriented_fit_template import BuildOrientedFitTemplate
 from adv_py.application.oriented_body_skeleton import BuildOrientedBodySkeleton
 from adv_py.application.registered_body_build import _JoinedTransactionHost
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
+from adv_py.core.body_all_set import BodyAllSetNode, plan_body_all_set
 from adv_py.core.fbx_rig_import import (FBXRigImportPlan, FBXRigSourceJoint,
                                         detect_fbx_source_application,
                                         plan_fbx_game_root_motion)
 from adv_py.core.fbx_rig_import import (FBXRigControlTransferPlan,
                                         FBXRigFitGuideState)
 from adv_py.core.fbx_rig_fk import plan_fbx_rig_fk_controls
+from adv_py.core.fbx_rig_ik import FBXRigIKLimb, plan_fbx_rig_ik_limbs
 from adv_py.core.fit_orientation import (FitOrientationChildSelection,
                                          FitOrientationRequest)
 from adv_py.core.fit_template import FitJointSpec, FitTemplateSpec
@@ -363,9 +365,14 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
     ) -> tuple[FBXRigFitGuideState, ...]:
         c = self._cmds
         by_name = {guide.name: guide for guide in plan.fit_guides}
+        fit_roots = c.ls("FitSkeleton", long=True, type="transform") or ()
+        if len(fit_roots) != 1:
+            raise RuntimeError("FBX rig Fit 根节点缺失或不唯一")
         result = []
         for guide in plan.fit_guides:
-            path = self._fbx_fit_guide_path(guide.name, by_name)
+            path = (fit_roots[0] +
+                    self._fbx_fit_guide_path(guide.name,
+                                             by_name)[len("|FitSkeleton"):])
             matches = c.ls(path, long=True, type="joint") or ()
             if len(matches) != 1:
                 raise RuntimeError("FBX rig Fit 导向缺失：" + guide.name)
@@ -385,6 +392,7 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         """Build the mirrored deformation hierarchy without moving old Skin."""
         self._require_transaction()
         deformation = self.create_body_system_hierarchy()
+        self.parent_fit_skeleton_under_group("FitSkeleton")
         built = BuildOrientedBodySkeleton(
             _JoinedTransactionHost(self)).apply(
                 "FitSkeleton",
@@ -397,7 +405,7 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         return built.snapshot
 
     def build_fbx_advanced_skeleton(self, plan: FBXRigImportPlan) -> None:
-        """Establish the generic Body/FK branch; IK labels are a later stage."""
+        """Build arbitrary FK plus labeled three-joint arm and leg IK limbs."""
         self._require_transaction()
         c = self._cmds
         if any(c.objExists(name) for name in (
@@ -405,6 +413,9 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             raise ValueError("FBX rig 主控或选择集名称已被占用")
         body = self.build_fbx_body_skeleton(plan)
         controls = plan_fbx_rig_fk_controls(body, plan)
+        ik_limbs = plan_fbx_rig_ik_limbs(body, plan)
+        ik_body_paths = {path for limb in ik_limbs
+                         for path in limb.body_joint_paths}
         main_system = c.createNode("transform", name="MainSystem",
                                    parent="|Group|MotionSystem")
         main = create_adv_icon(c, name="Main", parent=main_system,
@@ -432,22 +443,183 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             c.setAttr(control + ".overrideColor",
                       13 if spec.control_name.endswith("_R") else
                       6 if spec.control_name.endswith("_L") else 17)
-            constraint = c.parentConstraint(control, spec.body_joint_path,
-                maintainOffset=False,
-                name="AdvPy_FBX_" + spec.control_name + "_Parent")
-            if len(constraint) != 1:
-                raise RuntimeError("FBX rig FK 控制约束创建失败："
-                                   + spec.control_name)
-        c.sets(tuple(control_paths.values()) + (main,), name="ControlSet")
+            if spec.body_joint_path not in ik_body_paths:
+                constraint = c.parentConstraint(control, spec.body_joint_path,
+                    maintainOffset=False,
+                    name="AdvPy_FBX_" + spec.control_name + "_Parent")
+                if len(constraint) != 1:
+                    raise RuntimeError("FBX rig FK 控制约束创建失败："
+                                       + spec.control_name)
+        ik_controls = self._build_fbx_ik_limbs(
+            ik_limbs, control_paths, main, plan.scale) if ik_limbs else ()
+        c.sets(tuple(control_paths.values()) + (main, *ik_controls),
+               name="ControlSet")
         c.sets(tuple(joint.path for joint in body.joints), name="DeformSet")
-        c.sets("ControlSet", "DeformSet", name="AllSet")
+        c.sets(empty=True, name="AllSet")
         group = "|Group"
         c.addAttr(group, longName="advPyFbxRigMode", dataType="string")
-        c.setAttr(group + ".advPyFbxRigMode", "generic_fk_v1",
+        c.setAttr(group + ".advPyFbxRigMode",
+                  "labeled_ik_fk_v1" if ik_limbs else "generic_fk_v1",
                   type="string", lock=True)
         if set(control_paths) != {spec.control_name for spec in controls}:
             raise RuntimeError("FBX rig FK 控制器写后数量不符")
+        self._fbx_built_ik_limbs = ik_limbs
         self._transaction_changed = True
+
+    def capture_fbx_generated_ownership_start(
+        self,
+    ) -> tuple[BodyAllSetNode, ...]:
+        """Capture after Fit creation, before Body and transfer nodes exist."""
+        return self.capture_body_scene_nodes()
+
+    def finalize_fbx_generated_ownership(
+        self, before: tuple[BodyAllSetNode, ...],
+    ) -> None:
+        self._require_transaction()
+        after = self.capture_body_scene_nodes()
+        plan = plan_body_all_set(before, after, "FitSkeleton")
+        self.populate_body_all_set(plan)
+        if set(self.capture_body_all_set_members()) != set(plan.members):
+            raise RuntimeError("FBX rig AllSet 登记后成员不完整")
+        # Maya parents a constraint under its constrained source joint.
+        # Those FBXRig namespace ancestors make it appear foreign to the
+        # root-character snapshot even though our build created the node.
+        c = self._cmds
+        outside = tuple(dict.fromkeys((
+            *getattr(self, "_fbx_source_constraints", {}).values(),
+            *((getattr(self, "_fbx_game_root_constraint", None),)
+              if getattr(self, "_fbx_game_root_constraint", None) else ()),
+        )))
+        external = []
+        for name in outside:
+            paths = c.ls(name, long=True, type="parentConstraint") or ()
+            if len(paths) != 1:
+                raise RuntimeError("FBX rig 来源约束缺失或重名：" + name)
+            external.append(paths[0])
+        if external:
+            c.sets(tuple(external), add="AllSet")
+            registered = {identifier
+                          for member in c.sets("AllSet", query=True) or ()
+                          for identifier in (c.ls(member, uuid=True) or ())}
+            expected = {identifier for path in external
+                        for identifier in (c.ls(path, uuid=True) or ())}
+            if not expected <= registered:
+                raise RuntimeError("FBX rig 来源约束未登记到 AllSet")
+
+    def _build_fbx_ik_limbs(
+        self, limbs: tuple[FBXRigIKLimb, ...],
+        fk_controls: dict[str, str], main: str, scale: float,
+    ) -> tuple[str, ...]:
+        c = self._cmds
+        names = ["AdvPy_FBX_IKSystem"]
+        for limb in limbs:
+            label = limb.kind + "_" + limb.side
+            names.extend((limb.ik_control_name, limb.pole_control_name,
+                          limb.ik_control_name + "Offset",
+                          limb.pole_control_name + "Offset",
+                          "AdvPy_FBX_" + label + "_IKHandle",
+                          "AdvPy_FBX_" + label + "_PoleConstraint",
+                          "AdvPy_FBX_" + label + "_Orient",
+                          "AdvPy_FBX_" + label + "_Reverse"))
+            names.extend("AdvPy_FBX_IK_" + name
+                         for name in limb.body_joint_names)
+            names.extend("AdvPy_FBX_" + name + "_Blend"
+                         for name in limb.body_joint_names)
+        if any(c.objExists(name) for name in names):
+            raise ValueError("FBX rig IK 节点名称已被占用")
+        system = c.createNode("transform", name="AdvPy_FBX_IKSystem",
+                              parent=main)
+        controls = []
+        for limb in limbs:
+            label = limb.kind + "_" + limb.side
+            switch = main + "." + limb.switch_attribute
+            c.addAttr(main, longName=limb.switch_attribute,
+                      attributeType="double", minValue=0, maxValue=1,
+                      defaultValue=0, keyable=True)
+            reverse = c.createNode("reverse",
+                                   name="AdvPy_FBX_" + label + "_Reverse")
+            c.connectAttr(switch, reverse + ".inputX")
+            ik_joints = []
+            parent = system
+            for body_path, body_name in zip(limb.body_joint_paths,
+                                            limb.body_joint_names):
+                duplicate = c.duplicate(body_path, parentOnly=True,
+                    name="AdvPy_FBX_IK_" + body_name)[0]
+                duplicate = c.parent(duplicate, parent, absolute=True)[0]
+                c.xform(duplicate, worldSpace=True,
+                        matrix=c.xform(body_path, query=True,
+                                       worldSpace=True, matrix=True))
+                c.setAttr(duplicate + ".drawStyle", 2)
+                ik_joints.append(duplicate)
+                parent = duplicate
+            end_offset = c.createNode("transform",
+                name=limb.ik_control_name + "Offset", parent=main)
+            c.xform(end_offset, worldSpace=True,
+                    matrix=c.xform(limb.body_joint_paths[2], query=True,
+                                   worldSpace=True, matrix=True))
+            end_control = create_adv_icon(c, name=limb.ik_control_name,
+                parent=end_offset, template="IK_icon",
+                radius=max(scale * .8, .01),
+                fallback_normal=(0, 1, 0),
+                mirror_left=limb.side == "L")
+            c.setAttr(end_control + ".overrideEnabled", True)
+            c.setAttr(end_control + ".overrideColor",
+                      13 if limb.side == "R" else 6)
+            pole_offset = c.createNode("transform",
+                name=limb.pole_control_name + "Offset", parent=main)
+            c.xform(pole_offset, worldSpace=True,
+                    translation=limb.pole_position)
+            pole = create_adv_icon(c, name=limb.pole_control_name,
+                parent=pole_offset, template="Pole_icon",
+                radius=max(scale * .25, .01),
+                fallback_normal=(0, 0, 1),
+                mirror_left=limb.side == "L")
+            c.setAttr(pole + ".overrideEnabled", True)
+            c.setAttr(pole + ".overrideColor",
+                      13 if limb.side == "R" else 6)
+            handle = c.ikHandle(startJoint=ik_joints[0],
+                endEffector=ik_joints[2], solver="ikRPsolver",
+                name="AdvPy_FBX_" + label + "_IKHandle")
+            if len(handle) < 2:
+                raise RuntimeError("FBX rig IK Handle 创建失败：" + label)
+            c.parent(handle[0], end_control, absolute=True)
+            c.setAttr(handle[0] + ".visibility", False)
+            c.poleVectorConstraint(pole, handle[0],
+                name="AdvPy_FBX_" + label + "_PoleConstraint")
+            c.orientConstraint(end_control, ik_joints[2],
+                maintainOffset=False,
+                name="AdvPy_FBX_" + label + "_Orient")
+            for body_path, body_name, fk_name, ik_joint in zip(
+                    limb.body_joint_paths, limb.body_joint_names,
+                    limb.fk_control_names, ik_joints):
+                fk = fk_controls.get(fk_name)
+                if fk is None:
+                    raise RuntimeError("FBX rig IK 链缺少 FK 控制：" + fk_name)
+                constraint = c.parentConstraint(
+                    fk, ik_joint, body_path, maintainOffset=False,
+                    name="AdvPy_FBX_" + body_name + "_Blend")
+                if len(constraint) != 1:
+                    raise RuntimeError("FBX rig IK/FK 混合约束创建失败："
+                                       + body_name)
+                aliases = c.parentConstraint(constraint[0], query=True,
+                                              weightAliasList=True) or ()
+                if len(aliases) != 2:
+                    raise RuntimeError("FBX rig IK/FK 混合权重数量无效："
+                                       + body_name)
+                c.connectAttr(reverse + ".outputX",
+                              constraint[0] + "." + aliases[0])
+                c.connectAttr(switch, constraint[0] + "." + aliases[1])
+            fk_root_offset = (c.listRelatives(
+                fk_controls[limb.fk_control_names[0]], parent=True,
+                fullPath=True) or [None])[0]
+            if fk_root_offset is None:
+                raise RuntimeError("FBX rig FK 根控制层缺失：" + label)
+            c.connectAttr(reverse + ".outputX",
+                          fk_root_offset + ".visibility")
+            for offset in (end_offset, pole_offset):
+                c.connectAttr(switch, offset + ".visibility")
+            controls.extend((end_control, pole))
+        return tuple(controls)
 
     def capture_fbx_generated_targets(
         self, plan: FBXRigImportPlan,
@@ -555,6 +727,7 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         c.setAttr(shapes[0] + ".overrideEnabled", True)
         c.setAttr(shapes[0] + ".overrideColor", 17)
         c.sets((control, extra), add="ControlSet")
+        c.sets(root_motion, add="DeformSet")
         driven = c.parentConstraint(control, root_motion,
             maintainOffset=False, name=motion.body_constraint)
         if len(driven) != 1:
@@ -745,4 +918,5 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                 "AdvPy_FBX_Temp_" + link.control_name)
                 for link in transfer.links),
             source_joint_animation_removed=source_animation_removed,
-            connected_source_paths=tuple(connected_sources))
+            connected_source_paths=tuple(connected_sources),
+            ik_limb_count=len(getattr(self, "_fbx_built_ik_limbs", ())))

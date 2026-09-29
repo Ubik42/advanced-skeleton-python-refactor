@@ -2042,6 +2042,15 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)).execute(
                 simpler_eyelid=simpler_eyelid)
 
+    def face_delete_advanced(self, namespace: str, *,
+                             keep_build_pose: bool = False) -> bool:
+        from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
+        from adv_py.application.face_delete import DeleteFaceAdvanced
+
+        return DeleteFaceAdvanced(MayaFaceEyeLidRigHost(
+            namespace=None if namespace == ":" else namespace)).apply(
+                keep_build_pose=keep_build_pose)
+
     def face_built_eye_lid_mode(self, namespace: str) -> bool | None:
         from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost
 

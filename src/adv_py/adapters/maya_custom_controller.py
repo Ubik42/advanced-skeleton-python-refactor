@@ -27,6 +27,49 @@ class MayaCustomControllerHost(MayaFaceHost):
         super().__init__(namespace=namespace)
         self.face = face
 
+    def _capture_face_owned_nodes(self) -> frozenset[str] | None:
+        """Track later custom controls in the FaceSetup ownership boundary."""
+        if not self.face:
+            return None
+        from maya import cmds
+
+        face_set = self.scene_address("FaceAllSet")
+        if not cmds.objExists(face_set):
+            return None
+        return frozenset(identifier for path in cmds.ls(long=True) or ()
+                         for identifier in (cmds.ls(path, uuid=True) or ()))
+
+    def _register_face_owned_nodes(self,
+                                   before: frozenset[str] | None) -> None:
+        if before is None:
+            return
+        from maya import cmds
+
+        face_set = self.scene_address("FaceAllSet")
+        if not cmds.objExists(face_set):
+            raise RuntimeError("创建 Face 自定义控制器时 FaceAllSet 已消失")
+        new_nodes = []
+        for path in cmds.ls(long=True) or ():
+            ids = cmds.ls(path, uuid=True) or ()
+            if (len(ids) != 1 or ids[0] in before or
+                    cmds.nodeType(path) in ("skinCluster", "mesh",
+                                            "objectSet", "shadingEngine",
+                                            "lambert", "blinn", "phong",
+                                            "surfaceShader")):
+                continue
+            if cmds.referenceQuery(path, isNodeReferenced=True):
+                raise RuntimeError("Face 自定义控制产生了引用节点：" + path)
+            new_nodes.append(path)
+        if new_nodes:
+            cmds.sets(tuple(new_nodes), add=face_set)
+            recorded = {identifier
+                        for member in cmds.sets(face_set, query=True) or ()
+                        for identifier in (cmds.ls(member, uuid=True) or ())}
+            expected = {identifier for path in new_nodes
+                        for identifier in (cmds.ls(path, uuid=True) or ())}
+            if not expected <= recorded:
+                raise RuntimeError("Face 自定义控制节点未登记到 FaceAllSet")
+
     def softmod_target_mesh(self, deformer: str) -> str:
         source = self._unique(deformer, "softMod")
         meshes = self._softmod_meshes(source)
@@ -858,13 +901,16 @@ class MayaCustomControllerHost(MayaFaceHost):
 
         self._require_transaction()
         self.preflight_custom_controller(plan)
+        face_before = self._capture_face_owned_nodes()
         self._transaction_changed = True
         self._prepare_custom_source(plan)
         if plan.kind is CustomControlKind.SKIN:
             self._create_skin_controller(plan)
+            self._register_face_owned_nodes(face_before)
             return
         if plan.kind is CustomControlKind.CLUSTER:
             self._create_cluster_controller(plan)
+            self._register_face_owned_nodes(face_before)
             return
         parent = self._unique(plan.parent_joint, "joint")
         mesh = self._mesh(plan.region.mesh)
@@ -986,6 +1032,7 @@ class MayaCustomControllerHost(MayaFaceHost):
             cmds.delete(source)
         self._register_custom_nodes((attach, offset, base, control),
                                     control, base)
+        self._register_face_owned_nodes(face_before)
 
     def _create_skin_controller(self, plan: CustomControllerPlan) -> None:
         from maya import cmds

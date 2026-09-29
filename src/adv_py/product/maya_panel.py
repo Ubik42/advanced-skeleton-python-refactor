@@ -1575,6 +1575,10 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._face_build_inspect_inputs))
             form.addRow(self._button("建立双侧眼睑关节与蒙皮",
                                      self._face_build_eye_lids))
+            self.face_keep_build_pose = QtWidgets.QCheckBox("保留 Face 构建姿态记录")
+            form.addRow("Delete Face", self.face_keep_build_pose)
+            form.addRow(self._button("删除 Face 绑定，保留 Fit 与 Skin",
+                                     self._face_delete_advanced))
             form.addRow(self._button("返回 Face 构建姿态",
                                      self._face_go_to_build_pose))
             form.addRow(self._button("设置 Face 构建姿态",
@@ -2247,8 +2251,9 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _build_fbx_rig(self):
             result = self.controller.preparation_fbx_rig()
-            return (f"FBX rig FK 控制已建立："
-                    f"{len(result.connected_control_names)} 个控制器接回原骨架；"
+            return (f"FBX rig 已建立：{len(result.connected_control_names)} "
+                    f"个 FK 控制器接回原骨架，"
+                    f"{result.ik_limb_count} 条可切换 IK/FK 的手脚链；"
                     "原 Skin 已保留。")
 
         def _load_body_build_options(self):
@@ -3464,6 +3469,13 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace(),
                 simpler_eyelid=self.face_simpler_eye_lid.isChecked())
             return format_face_eye_lid_build_result(result)
+
+        def _face_delete_advanced(self):
+            removed = self.controller.face_delete_advanced(
+                self._namespace(),
+                keep_build_pose=self.face_keep_build_pose.isChecked())
+            return ("已删除 Face 绑定，Fit 和 Skin 已保留" if removed
+                    else "当前没有 Face 绑定")
 
         def _face_go_to_build_pose(self):
             count = self.controller.face_go_to_build_pose(self._namespace())

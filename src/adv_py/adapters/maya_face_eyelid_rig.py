@@ -28,15 +28,67 @@ from .maya_face_build import MayaFaceBuildHost
 from .maya_face_pre import MayaFacePreHost
 from .maya_face_lower_outer_auxiliary import MayaFaceLowerOuterAuxiliaryMixin
 from .maya_face_build_pose import MayaFaceBuildPoseMixin
+from .maya_face_delete import MayaFaceDeleteMixin
 
 
 _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
 _CLOSED_LOWER_UPWARD_FOLLOW = .6
 
 
-class MayaFaceEyeLidRigHost(MayaFaceBuildPoseMixin,
+class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
                             MayaFaceLowerOuterAuxiliaryMixin,
                             MayaDenseSkinHost, MayaFacePreHost):
+    def capture_face_build_node_ids(self) -> frozenset[str]:
+        c = self._cmds
+        return frozenset(identifier for path in c.ls(long=True) or ()
+                         for identifier in (c.ls(path, uuid=True) or ()))
+
+    def register_face_build_nodes(self, before: frozenset[str]) -> None:
+        """Persist the actual Face graph so Delete Face has an exact boundary."""
+        self._require_transaction()
+        c = self._cmds
+        if c.objExists(self.scene_address("FaceAllSet")):
+            raise FitSkeletonValidationError("FaceAllSet 已存在，拒绝覆盖")
+        created = []
+        for path in c.ls(long=True) or ():
+            ids = c.ls(path, uuid=True) or ()
+            if len(ids) != 1 or ids[0] in before:
+                continue
+            if c.nodeType(path) in ("skinCluster", "mesh", "objectSet"):
+                continue
+            if c.referenceQuery(path, isNodeReferenced=True):
+                raise FitSkeletonValidationError(
+                    "Face 构建产生了引用节点：" + path)
+            created.append(path)
+        created_set = set(created)
+        members = tuple(path for path in created if not (
+            path.startswith("|") and any(
+                path.startswith(parent + "|")
+                for parent in created_set if parent != path)))
+        for required in ("FaceJoint_M", "EyeLidJoints_M",
+                         "FaceMotionSystem", "faceBuildPose"):
+            matches = c.ls(required, long=True) or ()
+            if len(matches) != 1 or not any(
+                    matches[0] == member or
+                    matches[0].startswith(member + "|")
+                    for member in members):
+                raise RuntimeError("Face 构建所有权缺少关键节点：" + required)
+        if len(c.ls("FaceControlSet", type="objectSet") or ()) != 1:
+            raise RuntimeError("Face 构建缺少控制器选择集")
+        face_set = c.sets(empty=True, name=self.scene_address("FaceAllSet"))
+        c.sets(tuple(members), add=face_set)
+        self._transaction_changed = True
+        recorded = set()
+        for item in c.sets(face_set, query=True) or ():
+            matches = c.ls(item, long=True) or ()
+            if len(matches) != 1:
+                raise RuntimeError("FaceAllSet 登记成员缺失或重名：" + item)
+            recorded.update(c.ls(matches[0], uuid=True) or ())
+        expected = {identifier for path in members
+                    for identifier in (c.ls(path, uuid=True) or ())}
+        if recorded != expected:
+            raise RuntimeError("FaceAllSet 登记的节点身份不完整")
+
     def read_built_eye_lid_mode(self) -> bool | None:
         matches = self._cmds.ls("FaceMotionSystem", long=True,
                                 type="transform") or []
