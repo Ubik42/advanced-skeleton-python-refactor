@@ -2502,10 +2502,19 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                    != value for key, value in metadata.items()):
             raise FitSkeletonValidationError(
                 "已有发布骨架的所有权或来源不符，拒绝刷新")
-        if any(not c.attributeQuery(_BODY_EXPORT_SOURCE_ATTRIBUTE,
-                                    node=path, exists=True) for path in joints):
+        source_markers = tuple(c.attributeQuery(
+            _BODY_EXPORT_SOURCE_ATTRIBUTE, node=path, exists=True)
+            for path in joints)
+        baked = c.attributeQuery(
+            _BODY_EXPORT_BAKE_ATTRIBUTES["bake_schema_version"],
+            node=export_root, exists=True)
+        if ((baked and any(source_markers))
+                or (not baked and not all(source_markers))
+                or (baked and c.getAttr(export_root + "." +
+                    _BODY_EXPORT_BAKE_ATTRIBUTES["bake_schema_version"])
+                    != BODY_EXPORT_BAKE_SCHEMA_VERSION)):
             raise FitSkeletonValidationError(
-                "已有发布骨架含非工具创建的关节，拒绝刷新")
+                "已有发布骨架的来源标记或烘焙状态不完整，拒绝刷新")
         for skin in c.ls(type="skinCluster") or []:
             for influence in c.skinCluster(skin, query=True,
                                            influence=True) or []:
