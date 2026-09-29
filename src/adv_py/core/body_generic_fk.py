@@ -6,10 +6,13 @@ from typing import Mapping
 
 from .body_controller_appearance import body_fk_curve_radius
 from .body_limb_controls import BodyLimbFkControlSpec
+from .body_hand_fit import (advanced_skeleton_hand_source_joint_names,
+                            body_hand_source_joint_names)
 from .body_skeleton import (
     BodyJointSpec, BodySkeletonSnapshot, plan_body_non_deform_markers,
 )
 from .fit_metadata import FitJointMetadata
+from .fit_scale_compensation import fit_segment_scale_compensate
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,11 +21,24 @@ class BodyGenericFkFollowerSpec:
     name: str
     source_body_joint: str
     use_offset_parent_matrix: bool
+    inherit_scale: bool
 
     @property
     def driver_name(self) -> str:
         return self.name + ("MM" if self.use_offset_parent_matrix
                             else "Constraint")
+
+    @property
+    def pick_name(self) -> str:
+        return self.name + "Pick"
+
+    @property
+    def point_name(self) -> str:
+        return self.name + "Point"
+
+    @property
+    def orient_name(self) -> str:
+        return self.name + "Orient"
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +97,8 @@ def plan_body_generic_fk(
     controls: list[BodyLimbFkControlSpec] = []
     hidden: list[str] = []
     followers: dict[str, BodyGenericFkFollowerSpec] = {}
+    finger_names = frozenset(body_hand_source_joint_names()) | frozenset(
+        advanced_skeleton_hand_source_joint_names())
     for spec in sorted(specs, key=lambda item: (item.path.count("|"),
                                                 item.path)):
         item = metadata_by_source[spec.source_joint]
@@ -119,15 +137,19 @@ def plan_body_generic_fk(
                                  + spec.name)
             body_parent = ((remapped_body_paths or {}).get(
                 source_parent, source_parent))
-            if (follower_sources is None
-                    or body_parent.rsplit("|", 1)[-1] in follower_sources):
+            if follower_sources is None or spec.name in follower_sources:
                 follower_name = ("AdvPy_GenericFKFollow_"
-                                 + body_parent.rsplit("|", 1)[-1])
+                                 + spec.name)
                 follower_path = root_path + "|" + follower_name
+                inherit_scale = not fit_segment_scale_compensate(
+                    item, spec.name,
+                    spec.parent_path.rsplit("|", 1)[-1],
+                    use_offset_parent_matrix=use_offset_parent_matrix,
+                    is_finger=source_name in finger_names)
                 followers.setdefault(follower_path,
                     BodyGenericFkFollowerSpec(
                         follower_path, follower_name, body_parent,
-                        use_offset_parent_matrix))
+                        use_offset_parent_matrix, inherit_scale))
                 parent_control = follower_path
         stem = spec.name
         offset_name = "AdvPy_" + stem + "FKOffset"

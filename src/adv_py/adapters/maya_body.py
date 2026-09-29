@@ -8449,7 +8449,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         c = self._cmds
         for follower in plan.followers:
             if (self.find_name_collisions(follower.name)
-                    or self.find_name_collisions(follower.driver_name)
+                    or (follower.use_offset_parent_matrix
+                        and self.find_name_collisions(follower.driver_name))
+                    or (follower.use_offset_parent_matrix
+                        and self.find_name_collisions(follower.pick_name))
+                    or (not follower.use_offset_parent_matrix
+                        and (self.find_name_collisions(follower.point_name)
+                             or self.find_name_collisions(
+                                 follower.orient_name)))
                     or (c.ls(follower.source_body_joint, long=True,
                              type="joint") or []) != [
                                  follower.source_body_joint]):
@@ -8463,22 +8470,36 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise RuntimeError("通用 FK Body 跟随层路径漂移："
                                    + follower.name)
             if follower.use_offset_parent_matrix:
+                pick = c.createNode("pickMatrix", name=follower.pick_name,
+                                    skipSelect=True)
+                c.connectAttr(follower.source_body_joint
+                              + ".worldMatrix[0]", pick + ".inputMatrix")
+                c.setAttr(pick + ".useScale", follower.inherit_scale)
+                c.setAttr(pick + ".useShear", follower.inherit_scale)
                 matrix = c.createNode("multMatrix",
                                       name=follower.driver_name,
                                       skipSelect=True)
-                c.connectAttr(follower.source_body_joint
-                              + ".worldMatrix[0]", matrix + ".matrixIn[0]")
+                c.connectAttr(pick + ".outputMatrix",
+                              matrix + ".matrixIn[0]")
                 c.connectAttr(node + ".parentInverseMatrix[0]",
                               matrix + ".matrixIn[1]")
                 c.connectAttr(matrix + ".matrixSum",
                               node + ".offsetParentMatrix")
             else:
-                constraints = c.parentConstraint(
+                point = c.pointConstraint(
                     follower.source_body_joint, node,
-                    maintainOffset=False, name=follower.driver_name)
-                if len(constraints) != 1:
-                    raise RuntimeError("通用 FK Body 跟随约束创建失败："
+                    maintainOffset=False, name=follower.point_name)
+                orient = c.orientConstraint(
+                    follower.source_body_joint, node,
+                    maintainOffset=False, name=follower.orient_name)
+                if len(point) != 1 or len(orient) != 1:
+                    raise RuntimeError("通用 FK Body 跟随点／方向约束创建失败："
                                        + follower.name)
+                if follower.inherit_scale:
+                    for axis in "XYZ":
+                        c.connectAttr(follower.source_body_joint
+                                      + ".scale" + axis,
+                                      node + ".scale" + axis)
             if (follower.source_body_joint.rsplit("|", 1)[-1]
                     .startswith("Wrist_")
                     and plan.finger_visibility_plug is not None):
@@ -8502,13 +8523,24 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 return False
             if follower.use_offset_parent_matrix:
                 driver = follower.driver_name
-                if (not c.objExists(driver)
+                pick = follower.pick_name
+                if (not c.objExists(pick)
+                        or c.nodeType(pick) != "pickMatrix"
+                        or c.connectionInfo(
+                            pick + ".inputMatrix",
+                            sourceFromDestination=True)
+                            != follower.source_body_joint
+                               + ".worldMatrix[0]"
+                        or bool(c.getAttr(pick + ".useScale"))
+                           != follower.inherit_scale
+                        or bool(c.getAttr(pick + ".useShear"))
+                           != follower.inherit_scale
+                        or not c.objExists(driver)
                         or c.nodeType(driver) != "multMatrix"
                         or c.connectionInfo(
                             driver + ".matrixIn[0]",
                             sourceFromDestination=True)
-                            != follower.source_body_joint
-                               + ".worldMatrix[0]"
+                            != pick + ".outputMatrix"
                         or c.connectionInfo(
                             driver + ".matrixIn[1]",
                             sourceFromDestination=True)
@@ -8519,15 +8551,28 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                             != driver + ".matrixSum"):
                     return False
             else:
-                driver_path = follower.path + "|" + follower.driver_name
-                if (c.ls(driver_path, long=True,
-                         type="parentConstraint") or []) != [driver_path]:
-                    return False
-                targets = (c.parentConstraint(driver_path, query=True,
-                                              targetList=True) or [])
-                if c.ls(targets, long=True) != [
-                        follower.source_body_joint]:
-                    return False
+                for constraint_name, constraint_type, query in (
+                    (follower.point_name, "pointConstraint",
+                     c.pointConstraint),
+                    (follower.orient_name, "orientConstraint",
+                     c.orientConstraint),
+                ):
+                    driver_path = follower.path + "|" + constraint_name
+                    if (c.ls(driver_path, long=True,
+                             type=constraint_type) or []) != [driver_path]:
+                        return False
+                    targets = (query(driver_path, query=True,
+                                     targetList=True) or [])
+                    if c.ls(targets, long=True) != [
+                            follower.source_body_joint]:
+                        return False
+                for axis in "XYZ":
+                    if (c.connectionInfo(
+                            follower.path + ".scale" + axis,
+                            sourceFromDestination=True)
+                            != (follower.source_body_joint + ".scale" + axis
+                                if follower.inherit_scale else "")):
+                        return False
             if (follower.source_body_joint.rsplit("|", 1)[-1]
                     .startswith("Wrist_")
                     and plan.finger_visibility_plug is not None
