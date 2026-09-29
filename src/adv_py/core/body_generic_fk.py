@@ -104,8 +104,8 @@ def plan_body_generic_fk(
         advanced_skeleton_hand_source_joint_names())
     for spec in sorted(specs, key=lambda item: (item.path.count("|"),
                                                 item.path)):
-        if ((remapped_body_paths or {}).get(spec.path, spec.path)
-                in removable_body_paths):
+        final_path = (remapped_body_paths or {}).get(spec.path, spec.path)
+        if final_path in removable_body_paths:
             continue
         item = metadata_by_source[spec.source_joint]
         source_leaf = (spec.source_joint.rsplit("|", 1)[-1]
@@ -120,8 +120,8 @@ def plan_body_generic_fk(
                          and item.tweaker_control)):
             continue
         state = state_by_name.get(spec.name)
-        if state is None:
-            raise ValueError("通用 FK 缺少 Body 关节：" + spec.name)
+        if state is None or state.path != final_path:
+            raise ValueError("通用 FK 缺少最终 Body 关节：" + spec.name)
         parent_control = root_path
         parent_spec = spec.parent_path
         standard_parent = False
@@ -133,7 +133,6 @@ def plan_body_generic_fk(
                 break
             parent_spec = (spec_by_path[parent_spec].parent_path
                            if parent_spec in spec_by_path else None)
-        final_path = ((remapped_body_paths or {}).get(spec.path, spec.path))
         final_parent = ((remapped_body_paths or {}).get(
             spec.parent_path, spec.parent_path)
             if spec.parent_path is not None else None)
