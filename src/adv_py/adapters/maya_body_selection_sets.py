@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from adv_py.core.body_selection_sets import BodySelectionSetsPlan
 from adv_py.core.body_all_set import BodyAllSetNode, BodyAllSetPlan
@@ -36,6 +37,34 @@ class MayaBodySelectionSetsMixin:
                     continue
                 sources.add(identity.to_local(matches[0]))
         return tuple(sorted(sources))
+
+    def name_body_unit_conversions(self, plan: BodyAllSetPlan) -> None:
+        self._require_transaction()
+        c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        for path in plan.members:
+            if not path.rsplit("|", 1)[-1].startswith("unitConversion"):
+                continue
+            node = self.scene_address(path)
+            if c.nodeType(node) != "unitConversion":
+                continue
+            sources = c.listConnections(
+                node, source=True, destination=False, plugs=True) or []
+            if not sources:
+                continue
+            source_node, separator, attribute = sources[0].rpartition(".")
+            if not separator:
+                continue
+            source_leaf = source_node.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            target_leaf = re.sub(
+                r"[^A-Za-z_0-9]", "_", source_leaf + "_" + attribute
+            ) + "UC"
+            if not target_leaf or target_leaf[0].isdigit():
+                continue
+            target = self._body_selection_set_address(target_leaf)
+            self._transaction_changed = True
+            renamed = c.rename(node, target)
+            if not c.objExists(renamed) or c.nodeType(renamed) != "unitConversion":
+                raise RuntimeError("自动生成的单位转换节点重命名失败：" + path)
 
     def populate_body_all_set(self, plan: BodyAllSetPlan) -> None:
         self._require_transaction()
