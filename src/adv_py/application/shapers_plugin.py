@@ -17,6 +17,14 @@ class ShapersSetupResult:
     autoload: bool
 
 
+@dataclass(frozen=True, slots=True)
+class ShapersPluginStatus:
+    root: Path | None
+    loaded_file: Path | None
+    mode: str
+    autoload: bool
+
+
 class ShapersSetupHost(Protocol):
     def make_plan(self, root: Path, mode: str,
                   autoload: bool) -> ShapersPluginPlan: ...

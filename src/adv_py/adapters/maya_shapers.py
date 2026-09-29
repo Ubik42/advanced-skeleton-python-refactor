@@ -8,7 +8,8 @@ from pathlib import Path
 import sys
 import tempfile
 
-from adv_py.application.shapers_plugin import ShapersSetupResult
+from adv_py.application.shapers_plugin import (ShapersPluginStatus,
+                                               ShapersSetupResult)
 from adv_py.core.shapers_plugin import ShapersPluginPlan
 
 
@@ -60,6 +61,24 @@ class MayaShapersSetupHost:
                                      "shapers.bundle", "shapers.so"):
                 return name, path.resolve()
         return None
+
+    def status(self) -> ShapersPluginStatus:
+        current = self._loaded_plugin()
+        if current is None:
+            return ShapersPluginStatus(discover_shapers_root(), None,
+                                       "automatic", False)
+        name, path = current
+        native = path.suffix.lower() != ".py"
+        root = path.parent
+        if native:
+            root = path.parents[3] if len(path.parents) > 3 else None
+        if (root is None or root.name.lower() != "shapers"
+                or root.parent.name.lower() != "div"
+                or root.parent.parent.name.lower() != "advancedskeletonfiles"):
+            root = discover_shapers_root()
+        return ShapersPluginStatus(
+            root, path, "native" if native else "python",
+            bool(self.cmds.pluginInfo(name, query=True, autoload=True)))
 
     def _module_path(self) -> Path:
         app = os.environ.get("MAYA_APP_DIR", "").strip()

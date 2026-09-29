@@ -1259,8 +1259,9 @@ def create_panel(controller: MayaPanelController | None = None):
             self.surface_mode.currentIndexChanged.connect(self._surface_mode_changed)
             self._surface_mode_changed()
             group, form = self._group("05 · Shapers", [])
+            shapers_status = self.controller.shapers_plugin_status()
             self.shapers_plugin_root = QtWidgets.QLineEdit(
-                self.controller.shapers_plugin_root())
+                str(shapers_status.root) if shapers_status.root else "")
             self.shapers_plugin_root.setPlaceholderText(
                 "AdvancedSkeletonFiles/div/shapers")
             root_row = QtWidgets.QHBoxLayout()
@@ -1274,11 +1275,16 @@ def create_panel(controller: MayaPanelController | None = None):
                                  ("原生 C++", "native"),
                                  ("Python", "python")):
                 self.shapers_plugin_mode.addItem(label, value)
+            self.shapers_plugin_mode.setCurrentIndex(
+                self.shapers_plugin_mode.findData(shapers_status.mode))
             form.addRow("实现方式", self.shapers_plugin_mode)
             self.shapers_plugin_autoload = QtWidgets.QCheckBox(
                 "Maya 启动时自动加载")
-            self.shapers_plugin_autoload.setChecked(True)
+            self.shapers_plugin_autoload.setChecked(shapers_status.autoload)
+            self.shapers_plugin_status_label = QtWidgets.QLabel()
+            self._refresh_shapers_plugin_status(shapers_status)
             form.addRow(self.shapers_plugin_autoload)
+            form.addRow("当前状态", self.shapers_plugin_status_label)
             form.addRow(self._button("设置并加载插件", self._setup_shapers_plugin))
             form.addRow(QtWidgets.QLabel("选择或重绑当前角色已有的 Shapers 变形器。"))
             shapers_select = self._button("选择", self._select_shapers)
@@ -2929,10 +2935,22 @@ def create_panel(controller: MayaPanelController | None = None):
             result = self.controller.shapers_setup(
                 Path(root), mode=self.shapers_plugin_mode.currentData(),
                 autoload=self.shapers_plugin_autoload.isChecked())
+            self._refresh_shapers_plugin_status()
             if result.restart_required:
                 return ("已配置插件；当前 Maya 已加载另一种 Shapers 实现。"
                         "保存场景并重启 Maya 后生效：" + str(result.selected_file))
             return "Shapers 插件已加载：" + str(result.selected_file)
+
+        def _refresh_shapers_plugin_status(self, status=None):
+            status = status or self.controller.shapers_plugin_status()
+            if status.loaded_file:
+                mode = "原生 C++" if status.mode == "native" else "Python"
+                loading = "自动加载" if status.autoload else "手动加载"
+                self.shapers_plugin_status_label.setText(f"已加载 {mode} · {loading}")
+                self.shapers_plugin_status_label.setToolTip(str(status.loaded_file))
+            else:
+                self.shapers_plugin_status_label.setText("未加载")
+                self.shapers_plugin_status_label.setToolTip("")
 
         def _rebind_shapers(self, node=None):
             count = self.controller.shapers_rebind(self._namespace(), node)

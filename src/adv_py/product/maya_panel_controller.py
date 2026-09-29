@@ -1511,6 +1511,11 @@ class MayaPanelController:
         return SetupShapersPlugin(MayaShapersSetupHost()).apply(
             root, mode=mode, autoload=autoload)
 
+    def shapers_plugin_status(self):
+        from adv_py.adapters.maya_shapers import MayaShapersSetupHost
+
+        return MayaShapersSetupHost().status()
+
     def shapers_select(self, namespace: str, node: str | None = None) -> int:
         from adv_py.adapters.maya_shapers import select_shapers
 
