@@ -8,6 +8,7 @@ from .body_fit_follow import BodyFitFollowSpec
 def validate_fit_control_dependencies(
     constraints: tuple[BodyFitAdvancedConstraintSpec, ...],
     follows: tuple[BodyFitFollowSpec, ...],
+    named_edges: tuple[tuple[str, tuple[str, ...]], ...] = (),
 ) -> None:
     """A driven Body joint cannot depend on itself through Fit target links."""
     targets: dict[str, set[str]] = {}
@@ -18,6 +19,8 @@ def validate_fit_control_dependencies(
         outgoing.add(spec.primary_target)
         if spec.opposite_target is not None:
             outgoing.add(spec.opposite_target)
+    for source_body, target_paths in named_edges:
+        targets.setdefault(source_body, set()).update(target_paths)
 
     # Targets with no Fit controller cannot close a cycle in this graph.
     sources = set(targets)

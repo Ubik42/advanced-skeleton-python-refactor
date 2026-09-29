@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum
 import re
+from math import isfinite
 
 
 class FitJointValidationError(ValueError):
@@ -39,9 +40,10 @@ class FitJointField(str, Enum):
     FOLLOW = "follow"
     FOLLOW_LEFT_RIGHT = "follow_left_right"
     FOLLOW_WORLD = "follow_world"
+    FOLLOW_BY_NAME = "follow_by_name"
 
 
-FitJointValue = bool | int | float | str
+FitJointValue = bool | int | float | str | tuple[tuple[str, float], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +116,7 @@ class FitJointMetadata:
     follow: str | None = None
     follow_left_right: bool = False
     follow_world: bool = False
+    follow_by_name: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,12 +176,35 @@ _CONSTRAINT_FIELDS = frozenset((
 ))
 _TARGET_FIELDS = _CONSTRAINT_FIELDS | {FitJointField.FOLLOW}
 _BUILD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*\Z")
+_FOLLOW_RESERVED = frozenset(("LeftRight", "World", "Spaces"))
+
+
+def validate_follow_by_name(value: object) -> None:
+    if not isinstance(value, tuple):
+        raise FitJointValidationError("follow_by_name 必须是目标与权重的有序列表")
+    names: set[str] = set()
+    for entry in value:
+        if (not isinstance(entry, tuple) or len(entry) != 2
+                or not isinstance(entry[0], str)
+                or not _BUILD_NAME.fullmatch(entry[0])
+                or entry[0] in _FOLLOW_RESERVED):
+            raise FitJointValidationError("Follow* 目标名称无效")
+        name, weight = entry
+        if name in names:
+            raise FitJointValidationError("Follow* 目标名称重复：" + name)
+        names.add(name)
+        if (isinstance(weight, bool) or not isinstance(weight, (int, float))
+                or not isfinite(weight) or weight < 0 or weight > 10):
+            raise FitJointValidationError("Follow* 权重必须在 0–10 之间")
 
 
 def validate_fit_joint_value(
     field: FitJointField, value: FitJointValue | None
 ) -> None:
     if value is None:
+        return
+    if field is FitJointField.FOLLOW_BY_NAME:
+        validate_follow_by_name(value)
         return
     if field in _INTEGER_FIELDS and type(value) is not int:
         raise FitJointValidationError(f"{field.value} 必须是整数")
@@ -209,6 +235,10 @@ def predict_fit_joint_metadata(
     values: dict[str, object] = {}
     present = set(metadata.present_fields)
     for edit in patch.edits:
+        if edit.field is FitJointField.FOLLOW_BY_NAME and edit.value is None:
+            values["follow_by_name"] = ()
+            present.discard(edit.field)
+            continue
         if edit.field is FitJointField.FOLLOW and edit.value is None:
             values["follow_left_right"] = False
             values["follow_world"] = False
@@ -243,6 +273,11 @@ def predict_fit_joint_metadata(
 
 def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
     issues: list[FitJointIssue] = []
+    try:
+        validate_follow_by_name(metadata.follow_by_name)
+    except FitJointValidationError as error:
+        issues.append(FitJointIssue(
+            metadata.joint, "invalid_follow_by_name", str(error)))
     if type(metadata.cog) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_cog", "COG 开关必须是布尔值"))

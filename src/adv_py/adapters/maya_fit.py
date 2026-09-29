@@ -829,6 +829,18 @@ class MayaFitJointHost:
             for field, spec in _FIT_ATTRIBUTES.items()
             if self._attribute_exists(joint, spec.name)
         }
+        follow_names = tuple(
+            attr for attr in (self._cmds.listAttr(
+                joint, userDefined=True) or ())
+            if attr.startswith("follow") and attr not in (
+                "follow", "followLeftRight", "followWorld", "followSpaces",
+                "followTranslate", "followPivot", "followScale"))
+        follow_by_name = tuple(
+            (attr[len("follow"):],
+             float(self._cmds.getAttr(joint + "." + attr)))
+            for attr in follow_names)
+        if follow_by_name:
+            present.add(FitJointField.FOLLOW_BY_NAME)
         twist_joints = self._optional_number(joint, "twistJoints", int)
         bendy_controls = self._optional_number(joint, "bendyCtrls", int)
         if (bendy_controls is None
@@ -878,6 +890,7 @@ class MayaFitJointHost:
             follow=self._optional_constraint_target(joint, "follow"),
             follow_left_right=self._optional_bool(joint, "followLeftRight"),
             follow_world=self._optional_bool(joint, "followWorld"),
+            follow_by_name=follow_by_name,
             world_orient_up=self._optional_enum(joint, "worldOrientUp"),
             world_orient_forward=self._optional_enum(joint, "worldOrientForward"),
             ik_local_mode=self._optional_enum(joint, "ikLocal"),
@@ -886,6 +899,25 @@ class MayaFitJointHost:
 
     def apply_fit_joint_edit(self, joint: str, edit: FitJointFieldEdit) -> None:
         self._require_transaction()
+        if edit.field is FitJointField.FOLLOW_BY_NAME:
+            existing = tuple(
+                attr for attr in (self._cmds.listAttr(
+                    joint, userDefined=True) or ())
+                if attr.startswith("follow") and attr not in (
+                    "follow", "followLeftRight", "followWorld",
+                    "followSpaces", "followTranslate", "followPivot",
+                    "followScale"))
+            for attr in existing:
+                self._transaction_changed = True
+                self._cmds.deleteAttr(joint + "." + attr)
+            for name, weight in edit.value or ():
+                attr = "follow" + name
+                self._transaction_changed = True
+                self._cmds.addAttr(
+                    joint, longName=attr, attributeType="double",
+                    minValue=0, maxValue=10, defaultValue=float(weight),
+                    keyable=True)
+            return
         spec = _FIT_ATTRIBUTES[edit.field]
         exists = self._attribute_exists(joint, spec.name)
         if edit.value is None or (edit.field is FitJointField.AIM

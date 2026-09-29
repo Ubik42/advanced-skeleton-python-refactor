@@ -378,10 +378,17 @@ def fit_skeleton_document_from_json(text: str) -> FitSkeletonDocument:
             )
             try:
                 field = FitJointField(metadata_item["field"])
+                value = metadata_item["value"]
+                if field is FitJointField.FOLLOW_BY_NAME:
+                    if not isinstance(value, list):
+                        raise ValueError("Follow* 文档值必须是数组")
+                    value = tuple(
+                        tuple(entry) if isinstance(entry, list) else entry
+                        for entry in value)
                 values.append(
                     FitSkeletonJointMetadataValue(
                         field,
-                        metadata_item["value"],
+                        value,
                     )
                 )
             except (TypeError, ValueError) as error:

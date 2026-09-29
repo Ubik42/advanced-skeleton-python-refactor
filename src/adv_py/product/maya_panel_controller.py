@@ -130,6 +130,7 @@ _FIT_BOOLEAN_FIELDS = frozenset({
     FitJointField.GLOBAL_TRANSLATE,
     FitJointField.FOLLOW_LEFT_RIGHT,
     FitJointField.FOLLOW_WORLD,
+    FitJointField.FOLLOW_BY_NAME,
 })
 
 
@@ -144,6 +145,21 @@ def parse_fit_metadata_value(field: str, text: str, *, remove: bool = False):
     value = text.strip()
     if not value:
         raise ValueError("请填写 Fit 元数据值，或选择删除字段")
+    if key is FitJointField.FOLLOW_BY_NAME:
+        from adv_py.core.fit_metadata import validate_follow_by_name
+        entries = []
+        for pair in value.split(","):
+            name, separator, weight_text = pair.strip().partition("=")
+            if not separator:
+                raise ValueError("Follow* 格式应为 目标=权重,目标=权重")
+            try:
+                weight = float(weight_text)
+            except ValueError as error:
+                raise ValueError("Follow* 权重必须是数值") from error
+            entries.append((name.strip(), weight))
+        result = tuple(entries)
+        validate_follow_by_name(result)
+        return key, result
     if key in _FIT_INTEGER_FIELDS:
         try:
             return key, int(value)

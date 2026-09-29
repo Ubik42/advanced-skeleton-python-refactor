@@ -368,13 +368,14 @@ def create_panel(controller: MayaPanelController | None = None):
                     ("Follow 目标", "follow"),
                     ("Follow 左右切换", "follow_left_right"),
                     ("Follow 世界空间", "follow_world"),
+                    ("Follow* 命名目标", "follow_by_name"),
                     ("World Orient Up", "world_orient_up"),
                     ("World Orient Forward", "world_orient_forward"),
                     ("IK Local Mode", "ik_local_mode")):
                 self.fit_metadata_field.addItem(label, value)
             self.fit_metadata_value = QtWidgets.QLineEdit()
             self.fit_metadata_value.setPlaceholderText(
-                "整数、数值、true/false、枚举值或目标关节名")
+                "数值、开关、目标名或 Follow* 的 目标=10,目标=0")
             self.fit_metadata_remove = QtWidgets.QCheckBox("删除所选字段")
             self.fit_orientation_children = QtWidgets.QPlainTextEdit()
             self.fit_orientation_children.setPlaceholderText(
