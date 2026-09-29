@@ -22,8 +22,10 @@ def detect_fbx_source_application(node_names: tuple[str, ...]) -> str | None:
         return any(fnmatchcase(name, pattern) for name in bare)
 
     detected = None
-    if has("master") or (has("Hips") and has("RightUpLeg")
-                         and has("RightForeArm")):
+    root_master = any(name in ("|master", "master")
+                      for name in node_names)
+    if root_master or (has("Hips") and has("RightUpLeg")
+                       and has("RightForeArm")):
         detected = "AutodeskCharacterGenerator"
     if has("*BoneRoot"):
         detected = "CharacterCreator"

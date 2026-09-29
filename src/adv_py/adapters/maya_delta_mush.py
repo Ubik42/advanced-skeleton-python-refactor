@@ -221,11 +221,23 @@ def open_delta_mush_bake_tool(*, cmds=None, namespace: str = "") -> str:
     if not meshes:
         raise ValueError("Root_M 后续历史中没有可烘焙的 Body 网格")
     mesh = meshes[0]
-    for key, value in (
+    options = (
             ("performBakeDeformerSrcMesh", mesh),
             ("performBakeDeformerSrcSkeleton", root),
             ("performBakeDeformerDstMesh", mesh),
-            ("performBakeDeformerDstSkeleton", root)):
-        cmds.optionVar(stringValue=(key, value))
-    open_native_bake_deformer()
+            ("performBakeDeformerDstSkeleton", root))
+    previous = {key: (cmds.optionVar(query=key)
+                      if cmds.optionVar(exists=key) else None)
+                for key, _ in options}
+    try:
+        for key, value in options:
+            cmds.optionVar(stringValue=(key, value))
+        open_native_bake_deformer()
+    except Exception:
+        for key, value in previous.items():
+            if value is None:
+                cmds.optionVar(remove=key)
+            else:
+                cmds.optionVar(stringValue=(key, str(value)))
+        raise
     return mesh
