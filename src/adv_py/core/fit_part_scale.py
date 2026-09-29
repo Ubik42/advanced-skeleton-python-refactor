@@ -1,4 +1,4 @@
-"""Plan non-OPM Part scaling from Fit chains and rig control channels."""
+"""Plan Fit Part and starting Body scale from rig control channels."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -50,7 +50,7 @@ class FitPartScalePlan:
 def plan_fit_part_scale(
     parts: tuple[FitPartJointSpec, ...],
 ) -> FitPartScalePlan:
-    """Use explicit FK/IK volume for limbs and Body scale for other chains.
+    """Use FK/IK scale on limb Body and Parts, Body scale on other Parts.
 
     With segment scale compensation enabled, each Part cancels its parent's
     scale and reapplies the segment scale. OPM chains inherit the matrix scale

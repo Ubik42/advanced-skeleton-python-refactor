@@ -104,6 +104,12 @@ class MayaFitPartMixin:
             if not c.objExists(body + ".offsetParentMatrix"):
                 raise ValueError("Fit Part OPM 缺少 Body 矩阵目标："
                                  + chain.start_body_name)
+        else:
+            body = self._unique_fit_part_joint(chain.start_body_name)
+            if any(not c.getAttr(body + ".scale" + axis, settable=True)
+                   for axis in "XYZ"):
+                raise ValueError("Fit Part 四肢 Body 缩放目标不可写："
+                                 + chain.start_body_name)
         for name in chain.part_names:
             part = self._unique_fit_part_joint(name)
             if (bool(c.getAttr(part + ".segmentScaleCompensate"))
@@ -163,6 +169,8 @@ class MayaFitPartMixin:
                           type="matrix")
             c.connectAttr(matrix + ".matrixSum", target)
         else:
+            body = self._unique_fit_part_joint(chain.start_body_name)
+            c.connectAttr(blend + ".output", body + ".scale")
             for name in chain.part_names:
                 part = self._unique_fit_part_joint(name)
                 c.connectAttr(blend + ".output", part + ".scale")
@@ -212,7 +220,8 @@ class MayaFitPartMixin:
                        for axis, color in zip("XYZ", "RGB"))
         return all(c.connectionInfo(self._unique_fit_part_joint(name)
                    + ".scale", sourceFromDestination=True)
-                   == chain.output_plug for name in chain.part_names)
+                   == chain.output_plug
+                   for name in (chain.start_body_name, *chain.part_names))
 
     def preflight_fit_part_scale(self, step: FitPartScaleStep) -> None:
         c = self._cmds
