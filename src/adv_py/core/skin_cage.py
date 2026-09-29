@@ -28,11 +28,17 @@ class SkinCageChain:
 
 
 @dataclass(frozen=True, slots=True)
+class SkinCageBranch:
+    parent: str
+    child: str
+
+
+@dataclass(frozen=True, slots=True)
 class SkinCageBuildPlan:
     root: str
     chains: tuple[SkinCageChain, ...]
     influences: tuple[str, ...]
-    branch_joints: tuple[str, ...]
+    branches: tuple[SkinCageBranch, ...]
 
 
 def plan_skin_cage_build(root: str, children: dict[str, tuple[str, ...]],
@@ -70,7 +76,7 @@ def plan_skin_cage_build(root: str, children: dict[str, tuple[str, ...]],
         return (same_side or list(kids))[0]
 
     chains: list[SkinCageChain] = []
-    branch_joints: list[str] = []
+    branches: list[SkinCageBranch] = []
     visited: set[str] = set()
 
     def walk(start: str) -> None:
@@ -90,11 +96,10 @@ def plan_skin_cage_build(root: str, children: dict[str, tuple[str, ...]],
                 pending_parts.clear()
                 main.append(current)
             kids = children[current]
-            if len(kids) > 1:
-                branch_joints.append(current)
             chosen = primary(current)
             for child in kids:
                 if child != chosen:
+                    branches.append(SkinCageBranch(current, child))
                     walk(child)
             current = chosen
         if main:
@@ -104,7 +109,7 @@ def plan_skin_cage_build(root: str, children: dict[str, tuple[str, ...]],
     if len(visited) != len(positions):
         raise ValueError("变形系统包含未连接的关节")
     return SkinCageBuildPlan(root, tuple(chains), tuple(positions),
-                             tuple(branch_joints))
+                             tuple(branches))
 
 
 def plan_skin_cage_copy(meshes: tuple[str, ...],

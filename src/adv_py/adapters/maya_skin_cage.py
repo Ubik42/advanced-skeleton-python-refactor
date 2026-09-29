@@ -143,6 +143,55 @@ class MayaSkinCageHost:
         c.delete(copy, constructionHistory=True)
         return mesh, copy
 
+    def _branch_profile(self, joint: str, suffix: str) -> str:
+        c = self.cmds
+        current = joint
+        for _ in range(100):
+            leaf = current.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            profile = self._name(leaf + "_" + suffix + "Profile")
+            if c.objExists(profile):
+                return profile
+            middle = self._name(leaf + "_middleProfile")
+            if c.objExists(middle):
+                return middle
+            relatives = (c.listRelatives(current, children=True,
+                                         type="joint", fullPath=True) or ()
+                         if suffix == "start" else
+                         c.listRelatives(current, parent=True,
+                                         type="joint", fullPath=True) or ())
+            if not relatives:
+                break
+            current = relatives[0]
+        raise ValueError("SkinCage 分叉缺少截面曲线：" + joint)
+
+    def _branch_panels(self, parent: str, child: str) -> str:
+        """Connect the four corner spans of a side branch to its parent ring."""
+        c = self.cmds
+        parent_curve = self._branch_profile(parent, "end")
+        child_curve = self._branch_profile(child, "start")
+        parent_points = [c.xform(f"{parent_curve}.cv[{i}]", query=True,
+                                 worldSpace=True, translation=True)
+                         for i in range(4)]
+        child_points = [c.xform(f"{child_curve}.cv[{i}]", query=True,
+                                worldSpace=True, translation=True)
+                        for i in range(4)]
+        parent_leaf = parent.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        child_leaf = child.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        base = self._name(parent_leaf + "_" + child_leaf + "_branch")
+        facets = []
+        for index in range(4):
+            next_index = (index + 1) % 4
+            points = [parent_points[index], parent_points[next_index],
+                      child_points[next_index], child_points[index]]
+            facets.append(c.polyCreateFacet(
+                point=points, constructionHistory=False,
+                name=base + "Face" + str(index))[0])
+        bridge = c.polyUnite(facets, constructionHistory=False,
+                             name=base)[0]
+        c.polyMergeVertex(bridge, distance=0.0001,
+                          constructionHistory=False)
+        return bridge
+
     def create_cage(self, plan: SkinCageBuildPlan) -> None:
         from maya import mel
 
@@ -185,11 +234,16 @@ class MayaSkinCageHost:
                            if joint_leaf.startswith(("Root", "Spine", "Chest"))
                            else 40)
                 radius = height / divisor
-                if index and not chain.parts[index - 1]:
+                if (joint != plan.root and
+                        (index == 0 or not chain.parts[index - 1])):
+                    previous = (chain.joints[index - 1] if index else
+                                (c.listRelatives(joint, parent=True,
+                                                 type="joint",
+                                                 fullPath=True) or [joint])[0])
                     profiles.append(self._profile(
                         joint, "start", radius, groups["MeshCurves"],
                         self._name("SkinCurves2"),
-                        (joint, chain.joints[index - 1])))
+                        (joint, previous)))
                 profiles.append(self._profile(
                     joint, "middle", radius, groups["MeshCurves"],
                     self._name("SkinCurves1")))
@@ -223,8 +277,13 @@ class MayaSkinCageHost:
             copies.append(copy)
         if not pieces:
             raise ValueError("变形系统没有可生成笼体的关节链")
-        cage = c.polyUnite(copies, constructionHistory=False,
-                           name=self._name("skinCage"))[0]
+        for branch in plan.branches:
+            copies.append(self._branch_panels(branch.parent, branch.child))
+        if len(copies) == 1:
+            cage = c.rename(copies[0], self._name("skinCage"))
+        else:
+            cage = c.polyUnite(copies, constructionHistory=False,
+                               name=self._name("skinCage"))[0]
         c.polyMergeVertex(cage, distance=0.0001, constructionHistory=False)
         c.polyAutoProjection(cage, constructionHistory=False,
                              planes=6, percentageSpace=0.2)
