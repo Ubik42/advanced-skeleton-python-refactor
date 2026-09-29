@@ -23,6 +23,7 @@ class MayaSkinCageHost:
         self._influences: tuple[str, ...] = ()
         self._selection: tuple[str, ...] = ()
         self._mirror_state = {}
+        self._mirror_slider_expected = {}
         self._groin_expected_pos = None
 
     def _name(self, leaf: str) -> str:
@@ -716,6 +717,7 @@ class MayaSkinCageHost:
                          pairs: tuple[SkinCageMirrorPair, ...]) -> None:
         c = self.cmds
         self._mirror_state.clear()
+        self._mirror_slider_expected.clear()
         cv_map = (2, 3, 0, 1, 2)
         for pair in pairs:
             for profile in (pair.source, pair.target):
@@ -757,6 +759,75 @@ class MayaSkinCageHost:
             c.xform(f"{pair.target}.cv[{index}]", worldSpace=True,
                     translation=point)
 
+    def _slider_spec_for_profile(self, profile: str):
+        from adv_py.adapters.maya_skin_cage_sliders import MayaSkinCageSliderHost
+        from adv_py.core.skin_cage_sliders import plan_skin_cage_sliders
+
+        c = self.cmds
+        selected = c.ls(selection=True, long=True) or []
+        try:
+            c.select(profile, replace=True)
+            host = MayaSkinCageSliderHost(self.namespace)
+            rows = host.capture_slider_rows()
+            return (host, plan_skin_cage_sliders(rows)[0]) if rows else (
+                host, None)
+        finally:
+            c.select(selected, replace=True) if selected else c.select(clear=True)
+
+    def sync_mirrored_sliders(self, pair: SkinCageMirrorPair) -> None:
+        c = self.cmds
+        _, source = self._slider_spec_for_profile(pair.source)
+        target_host, target = self._slider_spec_for_profile(pair.target)
+        if source is None and target is None:
+            return
+        if source is None or target is None:
+            raise ValueError("SkinCage 左右 Twist 截面结构不一致：" + pair.target)
+        source_present = tuple(c.objExists(self._name(source.joint(index)))
+                               for index in source.indices)
+        target_present = tuple(c.objExists(self._name(target.joint(index)))
+                               for index in target.indices)
+        if any(source_present) and not all(source_present):
+            raise ValueError("SkinCage 来源侧 Sliders 不完整：" + pair.source)
+        if any(target_present) and not all(target_present):
+            raise ValueError("SkinCage 对侧 Sliders 不完整：" + pair.target)
+        flip = (2, 3, 0, 1)
+        if any(source_present):
+            mapped = tuple(flip[index] for index in source.indices)
+            if set(mapped) != set(target.indices):
+                raise ValueError("左右 Sliders 弯曲轴数量不一致：" + pair.target)
+            if not any(target_present):
+                controller_flags = tuple(c.objExists(self._name(
+                    "FKOffset" + source.joint(index)))
+                    for index in source.indices)
+                if any(controller_flags) and not all(controller_flags):
+                    raise ValueError("来源侧 Sliders 控制器不完整：" + pair.source)
+                include_controller = all(controller_flags)
+                target_host.preflight_sliders(
+                    (target,), creating=True,
+                    include_controller=include_controller)
+                target_host.ensure_partial_joints((target,))
+                target_host.create_slider(
+                    target, include_controller=include_controller)
+                if not target_host.capture_sliders(target, present=True):
+                    raise RuntimeError("镜像 Sliders 创建后状态不完整："
+                                       + pair.target)
+            expected = {}
+            for index in source.indices:
+                opposite = flip[index]
+                value = float(c.getAttr(
+                    self._name(source.joint(index)) + ".slide"))
+                target_joint = self._name(target.joint(opposite))
+                c.setAttr(target_joint + ".slide", value)
+                expected[target_joint] = value
+            self._mirror_slider_expected[pair.target] = expected
+        elif any(target_present):
+            target_host.delete_slider(target)
+            if not target_host.capture_sliders(target, present=False):
+                raise RuntimeError("镜像 Sliders 删除后仍有残留：" + pair.target)
+            self._mirror_slider_expected[pair.target] = {
+                self._name(target.joint(index)): None
+                for index in target.indices}
+
     def capture_mirror(self, pair: SkinCageMirrorPair) -> bool:
         c = self.cmds
         expected = self._mirror_state[pair.target][0]
@@ -765,6 +836,15 @@ class MayaSkinCageHost:
                              worldSpace=True, translation=True)
             if max(abs(actual[axis] - point[axis])
                    for axis in range(3)) > 0.0001:
+                return False
+        for joint, expected_slide in self._mirror_slider_expected.get(
+                pair.target, {}).items():
+            if expected_slide is None:
+                if c.objExists(joint):
+                    return False
+            elif (not c.objExists(joint)
+                  or abs(float(c.getAttr(joint + ".slide"))
+                         - expected_slide) > 1e-6):
                 return False
         return True
 
