@@ -85,6 +85,8 @@ class RegisterBendyControls:
                         extra_path, attr)
             add("bendy." + chain.control_names[0] + ".microVis",
                 bend_paths[chain.control_names[0]], "microVis")
+            add("bendy." + chain.control_names[0] + ".parametric",
+                bend_paths[chain.control_names[0]], "parametric")
             if chain.parent_bendy:
                 start_control = chain.control_names[1]
                 extra = chain.junction_extra_name
@@ -107,10 +109,14 @@ class RegisterBendyControls:
             for offset, extra, control in zip(
                     chain.micro_offset_names, chain.micro_extra_names,
                     chain.micro_control_names):
+                extra_path = self._host.capture_bendy_control_path(
+                    extra, (offset, "AdvPy_MicroSystem"))
                 path = self._host.capture_bendy_control_path(
                     control, (extra, offset, "AdvPy_MicroSystem"))
                 for attr in attrs:
                     add("micro." + control + "." + attr, path, attr)
+                    add("micro." + control + ".extra." + attr,
+                        extra_path, attr)
         after = replace(before, channels=tuple(channels), nodes=tuple(nodes))
         encode_registration(after)
         with self._host.transaction("登记 Bendy 控制器"):
