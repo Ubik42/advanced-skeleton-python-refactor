@@ -280,9 +280,23 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         candidates = right_by_semantic.get(semantic, ())
         return candidates[0] if len(candidates) == 1 else None
 
+    terminal_names = {"HeadEnd", "ToesEnd"} | {
+        digit + "End" for digit in
+        ("Thumb", "Index", "Middle", "Ring", "Pinky")}
+    mirrored_end_left = {
+        joint.path for joint in source
+        if (leaf := joint.name.rsplit(":", 1)[-1]).endswith("_L")
+        and _fit_name(leaf[:-2] + "_R") in terminal_names
+        and right_counterpart(leaf) is None
+        and joint.parent in by_path
+        and ((parent_leaf := by_path[joint.parent].name.rsplit(
+            ":", 1)[-1]).removesuffix("_M") == "Head"
+             or right_counterpart(parent_leaf) is not None)}
+
     unpaired_left_roots = {
         joint.path for joint in source
         if (leaf := joint.name.rsplit(":", 1)[-1]).endswith("_L")
+        and joint.path not in mirrored_end_left
         and right_counterpart(leaf) is None}
     def right_only(joint: SourceSkeletonJoint) -> bool:
         ancestry = []
@@ -563,7 +577,8 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     uncovered_left = (affected_left - included_left
                       - left_canonical_paths
                       - set(source_only_intermediates))
-    omitted_left = uncovered_left | unrepresentable_paired_left
+    omitted_left = (uncovered_left | unrepresentable_paired_left
+                    | (mirrored_end_left - paired_non_sym_paths))
     source_only_left_branches = tuple(sorted(
         path for path in omitted_left
         if not any(path.startswith(parent + "|")
