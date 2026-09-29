@@ -106,6 +106,7 @@ _FIT_ATTRIBUTES = {
     FitJointField.IK_FOLLOW: _MayaFitAttribute("ikFollow", "string"),
     FitJointField.AIM_AT: _MayaFitAttribute("aimAt", "string"),
     FitJointField.GEO_ATTACH: _MayaFitAttribute("geoAttach", "string"),
+    FitJointField.PROXIMITY_PIN: _MayaFitAttribute("proximityPin", "string"),
     FitJointField.GEO_ATTACH_MODE: _MayaFitAttribute(
         "geoAttachMode", "enum", enum_names=("point", "orient", "parent")),
     FitJointField.AIM_AXIS: _MayaFitAttribute(
@@ -910,6 +911,7 @@ class MayaFitJointHost:
             aim_up_axis=self._optional_enum(joint, "aimUpAxis") or "y",
             aim_up_object=self._optional_enum(joint, "aimUpObject") or "self",
             geo_attach=self._optional_mesh_target(joint, "geoAttach"),
+            proximity_pin=self._optional_mesh_target(joint, "proximityPin"),
             geo_attach_mode=self._optional_enum(
                 joint, "geoAttachMode") or "parent",
             world_orient_up=self._optional_enum(joint, "worldOrientUp"),
@@ -960,6 +962,10 @@ class MayaFitJointHost:
                     and self._attribute_exists(joint, "geoAttachMode")):
                 self._transaction_changed = True
                 self._cmds.deleteAttr(f"{joint}.geoAttachMode")
+            if (edit.field is FitJointField.PROXIMITY_PIN
+                    and self._attribute_exists(joint, "proximityPinMode")):
+                self._transaction_changed = True
+                self._cmds.deleteAttr(f"{joint}.proximityPinMode")
             if (edit.field is FitJointField.BENDY_CONTROLS
                     and self._attribute_exists(joint, "bendyJoints")):
                 self._transaction_changed = True
@@ -996,7 +1002,8 @@ class MayaFitJointHost:
                     spec.name, node=joint, listEnum=True) or []
                 choices = names[0].split(":") if names else []
                 enum_value = (str(value).replace(":", "__")
-                              if edit.field is FitJointField.GEO_ATTACH
+                              if edit.field in (FitJointField.GEO_ATTACH,
+                                                FitJointField.PROXIMITY_PIN)
                               else value)
                 if enum_value not in choices:
                     raise FitJointValidationError(

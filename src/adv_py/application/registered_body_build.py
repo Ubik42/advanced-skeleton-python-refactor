@@ -37,6 +37,7 @@ from adv_py.core.body_fit_follow_spaces import plan_body_fit_follow_spaces
 from adv_py.core.body_fit_ik_follow import plan_body_fit_ik_follow
 from adv_py.core.body_fit_aim_at import plan_body_fit_aim_at
 from adv_py.core.body_fit_geo_attach import plan_body_fit_geo_attach
+from adv_py.core.body_fit_proximity_pin import plan_body_fit_proximity_pin
 from adv_py.core.body_fit_dependency import validate_fit_control_dependencies
 
 from .axial_part_deform import BuildAxialPartDeform
@@ -68,6 +69,9 @@ from .body_fit_follow_spaces import BuildFitFollowSpaces, RegisterFitFollowSpace
 from .body_fit_ik_follow import BuildFitIkFollow, RegisterFitIkFollow
 from .body_fit_aim_at import BuildFitAimAt, RegisterFitAimAt
 from .body_fit_geo_attach import BuildFitGeoAttach, RegisterFitGeoAttach
+from .body_fit_proximity_pin import (
+    BuildFitProximityPin, RegisterFitProximityPin,
+)
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
 from .fit_inbetween_body import plan_combined_part_hierarchy
@@ -753,6 +757,8 @@ class BuildRegisteredBodyCharacter:
                 fit_metadata, fk_control_specs, pre_constraint_body.joints)
             plan_body_fit_geo_attach(
                 fit_metadata, fk_control_specs, pre_constraint_body.joints)
+            plan_body_fit_proximity_pin(
+                fit_metadata, fk_control_specs, pre_constraint_body.joints)
             validate_fit_control_dependencies(
                 plan_body_fit_advanced_constraints(
                     fit_metadata, fk_control_specs, pre_constraint_body.joints),
@@ -835,6 +841,16 @@ class BuildRegisteredBodyCharacter:
                     joined.capture_body_skeleton(skeleton.snapshot.root),
                     tolerance=1e-4):
                 raise RuntimeError("Fit Geo Attach 改变了 Body 绑定姿态")
+            pre_proximity_pin_body = joined.capture_body_skeleton(
+                skeleton.snapshot.root)
+            proximity_pin_specs = BuildFitProximityPin(joined).apply(
+                fit_metadata, fk_control_specs,
+                pre_proximity_pin_body.joints)
+            if proximity_pin_specs and not body_skeleton_unchanged(
+                    pre_proximity_pin_body,
+                    joined.capture_body_skeleton(skeleton.snapshot.root),
+                    tolerance=1e-4):
+                raise RuntimeError("Fit Proximity Pin 改变了 Body 绑定姿态")
             tweakers = None
             if preview.build.build_options.use_offset_parent_matrix:
                 tweakers = plan_fit_tweakers(
@@ -864,6 +880,8 @@ class BuildRegisteredBodyCharacter:
                 registration, aim_at_specs)
             registration = RegisterFitGeoAttach(joined).apply(
                 registration, geo_attach_specs)
+            registration = RegisterFitProximityPin(joined).apply(
+                registration, proximity_pin_specs)
             if tweakers is not None:
                 registration = RegisterFitTweakers(joined).apply(
                     registration, tweakers)

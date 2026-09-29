@@ -49,6 +49,7 @@ class FitJointField(str, Enum):
     AIM_UP_OBJECT = "aim_up_object"
     GEO_ATTACH = "geo_attach"
     GEO_ATTACH_MODE = "geo_attach_mode"
+    PROXIMITY_PIN = "proximity_pin"
 
 
 FitJointValue = bool | int | float | str | tuple[tuple[str, float], ...]
@@ -147,6 +148,7 @@ class FitJointMetadata:
     aim_up_object: str = "self"
     geo_attach: str | None = None
     geo_attach_mode: str = "parent"
+    proximity_pin: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,9 +262,11 @@ def validate_fit_joint_value(
             not isinstance(value, str) or not _BUILD_NAME.fullmatch(value)):
         raise FitJointValidationError(
             f"{field.value} 必须是未带侧别的关节名称")
-    if field is FitJointField.GEO_ATTACH and (
+    if field in (FitJointField.GEO_ATTACH,
+                 FitJointField.PROXIMITY_PIN) and (
             not isinstance(value, str) or not _MESH_NAME.fullmatch(value)):
-        raise FitJointValidationError("geo_attach 必须是网格变换或形状名称")
+        raise FitJointValidationError(
+            f"{field.value} 必须是网格变换或形状名称")
 
 
 def fit_joint_value(
@@ -420,6 +424,11 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
             and not _MESH_NAME.fullmatch(metadata.geo_attach)):
         issues.append(FitJointIssue(
             metadata.joint, "invalid_geo_attach", "Geo Attach 网格名称无效"))
+    if (metadata.proximity_pin is not None
+            and not _MESH_NAME.fullmatch(metadata.proximity_pin)):
+        issues.append(FitJointIssue(
+            metadata.joint, "invalid_proximity_pin",
+            "Proximity Pin 网格名称无效"))
     if (metadata.geo_attach_mode not in _ENUM_OPTIONS[
             FitJointField.GEO_ATTACH_MODE]):
         issues.append(FitJointIssue(
