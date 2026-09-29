@@ -240,6 +240,7 @@ def create_panel(controller: MayaPanelController | None = None):
             # entrances in the order of the 6.925 MEL frame layouts.
             sources = (self._fit_page(), self._skin_page(),
                        self._skin_cage_page(),
+                       self._sub_wrap_page(),
                        self._skin_loop_page(),
                        self._animation_page(), self._face_page(),
                        self._mocap_page(), self._publish_page(),
@@ -281,7 +282,7 @@ def create_panel(controller: MayaPanelController | None = None):
                                            '03 · 跨场景源资产',
                                            '04 · 跨拓扑权重转移')),
                     ('Deform / SkinCage', ('00 · SkinCage',)),
-                    ('Deform / SubWrap', ()),
+                    ('Deform / SubWrap', ('00 · SubWrap',)),
                     ('Deform / SkinLoops', ('00 · SkinLoops',)),
                     ('Deform Shapers', ()),
                     ('Deform / DeltaMush', ('05 · Delta Mush',)),
@@ -1748,6 +1749,24 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addStretch(1)
             return page
 
+        def _sub_wrap_page(self):
+            page, stack = self._page()
+            group, form = self._group("00 · SubWrap", [])
+            form.addRow(QtWidgets.QLabel("SubWrap"))
+            form.addRow(self._button("Create Cage", self._sub_wrap_create_cage))
+            form.addRow(self._button("Delete Cage", self._sub_wrap_delete_cage))
+            form.addRow(QtWidgets.QLabel("选择待变形网格对象，然后建立包裹。"))
+            form.addRow(self._button("Wrap selected mesh",
+                                     self._sub_wrap_wrap_selected))
+            form.addRow(self._button("Detach", self._sub_wrap_detach))
+            form.addRow(self._button("Attach", self._sub_wrap_attach))
+            form.addRow(QtWidgets.QLabel("选择网格顶点，从 Wrap 中排除并交给 Skin。"))
+            form.addRow(self._button("Exclude selected vertices",
+                                     self._sub_wrap_exclude_selected))
+            stack.addWidget(group)
+            stack.addStretch(1)
+            return page
+
         def _skin_loop_page(self):
             page, stack = self._page()
             self.skin_loop_mirror = QtWidgets.QCheckBox("自动镜像到对侧")
@@ -2696,6 +2715,31 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.skin_cage_delete_sliders(
                 self._namespace())
             return f"已删除 {count} 组 SkinCage Sliders"
+
+        def _sub_wrap_create_cage(self):
+            self.controller.sub_wrap_create_cage(self._namespace())
+            return "已创建 SubWrap 笼体"
+
+        def _sub_wrap_delete_cage(self):
+            self.controller.sub_wrap_delete_cage(self._namespace())
+            return "已删除 SubWrap 笼体"
+
+        def _sub_wrap_wrap_selected(self):
+            count = self.controller.sub_wrap_wrap_selected(self._namespace())
+            return f"已包裹 {count} 个网格"
+
+        def _sub_wrap_detach(self):
+            count = self.controller.sub_wrap_detach(self._namespace())
+            return f"已解除 {count} 个 SubWrap 网格"
+
+        def _sub_wrap_attach(self):
+            count = self.controller.sub_wrap_attach(self._namespace())
+            return f"已恢复 {count} 个 SubWrap 网格"
+
+        def _sub_wrap_exclude_selected(self):
+            count = self.controller.sub_wrap_exclude_selected(
+                self._namespace())
+            return f"已排除 {count} 个 Wrap 顶点"
 
         def _copy_skin_cage_weights(self):
             count = self.controller.skin_cage_copy_weights(self._namespace())

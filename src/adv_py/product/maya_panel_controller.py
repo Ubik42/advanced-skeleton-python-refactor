@@ -1356,6 +1356,36 @@ class MayaPanelController:
 
         return DeleteSkinCageSliders(MayaSkinCageSliderHost(namespace)).execute()
 
+    def sub_wrap_create_cage(self, namespace: str) -> None:
+        from adv_py.adapters.maya_sub_wrap import MayaSubWrapHost
+        from adv_py.application.sub_wrap import SubWrapOperations
+        SubWrapOperations(MayaSubWrapHost(namespace)).create_cage()
+
+    def sub_wrap_delete_cage(self, namespace: str) -> None:
+        from adv_py.adapters.maya_sub_wrap import MayaSubWrapHost
+        from adv_py.application.sub_wrap import SubWrapOperations
+        SubWrapOperations(MayaSubWrapHost(namespace)).delete_cage()
+
+    def sub_wrap_wrap_selected(self, namespace: str) -> int:
+        from adv_py.adapters.maya_sub_wrap import MayaSubWrapHost
+        from adv_py.application.sub_wrap import SubWrapOperations
+        return SubWrapOperations(MayaSubWrapHost(namespace)).wrap_selected()
+
+    def sub_wrap_detach(self, namespace: str) -> int:
+        from adv_py.adapters.maya_sub_wrap import MayaSubWrapHost
+        from adv_py.application.sub_wrap import SubWrapOperations
+        return SubWrapOperations(MayaSubWrapHost(namespace)).detach()
+
+    def sub_wrap_attach(self, namespace: str) -> int:
+        from adv_py.adapters.maya_sub_wrap import MayaSubWrapHost
+        from adv_py.application.sub_wrap import SubWrapOperations
+        return SubWrapOperations(MayaSubWrapHost(namespace)).attach()
+
+    def sub_wrap_exclude_selected(self, namespace: str) -> int:
+        from adv_py.adapters.maya_sub_wrap import MayaSubWrapHost
+        from adv_py.application.sub_wrap import SubWrapOperations
+        return SubWrapOperations(MayaSubWrapHost(namespace)).exclude_selected()
+
     def skin_cage_print_reuse(self, namespace: str, *, transforms: bool,
                               shapes: bool, catch: bool) -> int:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
