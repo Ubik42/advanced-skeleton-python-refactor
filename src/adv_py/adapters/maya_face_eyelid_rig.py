@@ -664,7 +664,7 @@ class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
             vertical_follow_radii[side] = min(eye_radii[side],
                                                aperture_height)
         names = ["FaceJoint_M", "EyeLidJoints_M", "FaceMotionSystem",
-                 "FaceControlSet", "faceBuildPose"]
+                 "FaceControlSet", "FaceAllSet", "faceBuildPose"]
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
             names.extend(("ctrlEye" + suffix,

@@ -87,6 +87,13 @@ def plan_fbx_rig_ik_limbs(
             chain.reverse()
             positions = tuple(tuple(float(value) for value in joint.world_position)
                               for joint in chain)
+            if any(sqrt(sum((positions[index + 1][axis] -
+                             positions[index][axis]) ** 2
+                            for axis in range(3))) <
+                   max(source.scale * .001, 1e-5)
+                   for index in (0, 1)):
+                pair = []
+                break
             pair.append(FBXRigIKLimb(
                 kind, side, tuple(joint.path for joint in chain),
                 tuple(joint.name for joint in chain),

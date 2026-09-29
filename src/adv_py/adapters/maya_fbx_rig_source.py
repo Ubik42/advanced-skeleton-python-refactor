@@ -804,6 +804,46 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                            influence_ids))
         return tuple(sorted(result))
 
+    def _audit_fbx_ik_limbs(self) -> int:
+        c = self._cmds
+        limbs = tuple(getattr(self, "_fbx_built_ik_limbs", ()))
+        main = "|Group|MotionSystem|MainSystem|Main"
+        for limb in limbs:
+            label = limb.kind + "_" + limb.side
+            switch = main + "." + limb.switch_attribute
+            reverse = "AdvPy_FBX_" + label + "_Reverse"
+            handle = "AdvPy_FBX_" + label + "_IKHandle"
+            if (not c.objExists(switch) or not c.objExists(reverse)
+                    or not c.objExists(handle)
+                    or not c.objExists(limb.ik_control_name)
+                    or not c.objExists(limb.pole_control_name)
+                    or abs(float(c.getAttr(switch))) > 1e-6):
+                raise RuntimeError("FBX rig IK 主控或求解器不完整：" + label)
+            if not c.isConnected(switch, reverse + ".inputX"):
+                raise RuntimeError("FBX rig IK/FK 反向权重未连接：" + label)
+            for body_name, fk_name in zip(limb.body_joint_names,
+                                          limb.fk_control_names):
+                constraint = "AdvPy_FBX_" + body_name + "_Blend"
+                aliases = c.parentConstraint(constraint, query=True,
+                                              weightAliasList=True) or ()
+                targets = c.parentConstraint(constraint, query=True,
+                                              targetList=True) or ()
+                resolved = tuple((c.ls(path, long=True) or [None])[0]
+                                 for path in targets)
+                ik_joint = (c.ls("AdvPy_FBX_IK_" + body_name,
+                                 long=True, type="joint") or [None])[0]
+                fk_control = (c.ls(fk_name, long=True,
+                                    type="transform") or [None])[0]
+                if (len(aliases) != 2 or resolved !=
+                        (fk_control, ik_joint)
+                        or not c.isConnected(reverse + ".outputX",
+                                             constraint + "." + aliases[0])
+                        or not c.isConnected(switch,
+                                             constraint + "." + aliases[1])):
+                    raise RuntimeError("FBX rig IK/FK 关节混合不完整："
+                                       + body_name)
+        return len(limbs)
+
     def capture_fbx_rig_audit(
         self, plan: FBXRigImportPlan,
         transfer: FBXRigControlTransferPlan,
@@ -900,6 +940,7 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                         for axis, alias in zip("XY", aliases))
                     and not bool(c.getAttr(motion.joint_path
                                            + ".segmentScaleCompensate")))
+        ik_limb_count = self._audit_fbx_ik_limbs()
         return FBXRigBuildAudit(
             fit_guide_count=len(self.capture_fbx_fit_guides(plan)),
             paired_side_count=sum(
@@ -919,4 +960,4 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                 for link in transfer.links),
             source_joint_animation_removed=source_animation_removed,
             connected_source_paths=tuple(connected_sources),
-            ik_limb_count=len(getattr(self, "_fbx_built_ik_limbs", ())))
+            ik_limb_count=ik_limb_count)
