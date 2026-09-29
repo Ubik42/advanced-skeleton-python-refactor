@@ -248,6 +248,15 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         and _fit_name(joint.name.rsplit(":", 1)[-1][:-2] + "_R")
         not in right_semantic_names}
     left_authored_paths = set(unpaired_left_roots)
+    # A left-only branch can contain children named without a side suffix.
+    # They inherit their parent's left-only Body emission in the MEL build.
+    # Walk the actual source parent chain so a paired _L child cannot cause
+    # unrelated descendants to be claimed by this branch.
+    for joint in sorted(source, key=lambda item: item.path.count("|")):
+        leaf = joint.name.rsplit(":", 1)[-1]
+        if (joint.parent in left_authored_paths
+                and "_" not in leaf):
+            left_authored_paths.add(joint.path)
     axial_paths = _axial_source_paths(source, root)
     axial_names = tuple(f"Spine{index}" for index in
                         range(1, len(axial_paths))) + ("Chest",)
