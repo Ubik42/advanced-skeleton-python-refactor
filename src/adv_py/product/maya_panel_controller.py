@@ -188,6 +188,24 @@ class MayaPanelController:
     def __init__(self, host_factory=MayaFaceHost):
         self._host_factory = host_factory
 
+    def hide_help_buttons(self) -> bool:
+        from maya import cmds
+
+        key = "asSettingsHideHelpButtons"
+        return (bool(cmds.optionVar(query=key))
+                if cmds.optionVar(exists=key) else False)
+
+    def set_hide_help_buttons(self, hidden: bool) -> bool:
+        from maya import cmds
+
+        if type(hidden) is not bool:
+            raise ValueError("隐藏帮助按钮开关无效")
+        cmds.optionVar(intValue=("asSettingsHideHelpButtons", int(hidden)))
+        actual = self.hide_help_buttons()
+        if actual != hidden:
+            raise RuntimeError("隐藏帮助按钮开关保存失败")
+        return actual
+
     def panel_palette(self):
         from maya import cmds
         from adv_py.core.panel_preferences import (

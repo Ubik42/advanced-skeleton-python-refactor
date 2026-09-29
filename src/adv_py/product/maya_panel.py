@@ -8,6 +8,15 @@ from .maya_panel_controller import MayaPanelController
 
 _OPEN_PANELS = []
 
+_HELP_PAGES = {
+    '00 · Model Clean': 'asPreModelCleaner.html',
+    '00 · 模型检查': 'asPreModelChecker.html',
+    '02 · One Joint Prop': 'asOneJointProp.html',
+    '02B · FBX rig': 'asFBXRig.html',
+    '01 · Fit 数据': 'asFitSkeletons.html',
+    '02 · Fit 编辑': 'asFitAttributes.html',
+}
+
 
 def format_face_eye_lid_build_result(result: dict) -> str:
     mode = "简化眼睑；" if result.get("simpler_eyelid") else ""
@@ -61,6 +70,8 @@ def create_panel(controller: MayaPanelController | None = None):
             self.setMinimumSize(790, 590)
             self.resize(950, 710)
             self._busy = False
+            self._help_buttons = []
+            self._help_hidden = self.controller.hide_help_buttons()
             self._build_ui()
             self._base_style = self.styleSheet()
             self._apply_panel_palette(self.controller.panel_palette())
@@ -179,7 +190,25 @@ def create_panel(controller: MayaPanelController | None = None):
             layout.setVerticalSpacing(10)
             for label, widget in rows:
                 layout.addRow(label, widget)
+            help_page = _HELP_PAGES.get(title)
+            if help_page:
+                button = QtWidgets.QToolButton()
+                button.setText('帮助')
+                button.setObjectName('AdvPyHelpButton')
+                button.setAccessibleName(title + ' 原版帮助')
+                button.clicked.connect(lambda _, page=help_page:
+                    self._open_help_page(page))
+                button.setVisible(not self._help_hidden)
+                layout.addRow(button)
+                self._help_buttons.append(button)
             return group, layout
+
+        def _open_help_page(self, page):
+            from PySide2 import QtGui
+
+            url = QtCore.QUrl('https://animationstudios.com.au/help/' + page)
+            if not QtGui.QDesktopServices.openUrl(url):
+                self.status.setPlainText('无法打开原版帮助页面：' + url.toString())
 
         def _fold(self, parent, title, *, opened=False, category=False):
             button = QtWidgets.QToolButton()
@@ -325,6 +354,12 @@ def create_panel(controller: MayaPanelController | None = None):
 
             palette = self.controller.panel_palette()
             group, form = self._group('GUI Colors', [])
+            self.hide_help_enabled = QtWidgets.QCheckBox('隐藏帮助按钮')
+            self.hide_help_enabled.setChecked(self._help_hidden)
+            self.hide_help_enabled.toggled.connect(lambda hidden:
+                self._run_panel_preference('隐藏帮助按钮',
+                    lambda: self._set_hide_help_buttons(hidden)))
+            form.addRow(self.hide_help_enabled)
             self.palette_enabled = QtWidgets.QCheckBox('使用自定义颜色')
             self.palette_enabled.setChecked(palette.enabled)
             self.palette_enabled.toggled.connect(lambda active: self._run_panel_preference(
@@ -396,6 +431,12 @@ def create_panel(controller: MayaPanelController | None = None):
             palette = self.controller.set_panel_palette_enabled(bool(active))
             self._apply_panel_palette(palette)
             return '已保存自定义颜色开关'
+
+        def _set_hide_help_buttons(self, hidden):
+            self._help_hidden = self.controller.set_hide_help_buttons(bool(hidden))
+            for button in self._help_buttons:
+                button.setVisible(not self._help_hidden)
+            return '已保存帮助按钮显示设置'
 
         def _choose_palette_color(self, kind):
             from PySide2 import QtGui
