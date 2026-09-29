@@ -99,6 +99,8 @@ class GenericFkFeaturePolicy:
     twist_rewired_sources: frozenset[str] | None = None
     bendy_scale_controls: frozenset[str] | None = None
     bendy_aim_follow_controls: frozenset[str] | None = None
+    bendy_start_control_sources: frozenset[str] | None = None
+    bendy_child_control_sources: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(

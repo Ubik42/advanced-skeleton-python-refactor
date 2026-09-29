@@ -136,12 +136,36 @@ class MayaCharacterRegistryMixin:
             if c.objExists('AdvPy_' + control.rsplit('_', 1)[0]
                            + 'MasterFollow_'
                            + control.rsplit('_', 1)[-1] + 'Aim'))
+        bendy_start_names = frozenset(
+            key.split('.', 2)[1] for key in keys
+            if re.fullmatch(r'bendy\.Bend.+0_[RLM]\.rotateX', key))
+        bendy_start_control = set()
+        bendy_child_control = set()
+        for control in bendy_aim_follow:
+            stem, side = control.rsplit('_', 1)
+            blend = ('AdvPy_' + stem + 'MasterFollow_'
+                     + side + 'Blend')
+            source = c.connectionInfo(blend + '.inputMatrix',
+                                      sourceFromDestination=True)
+            start = stem + '0_' + side
+            if (source and source.split('.', 1)[0].rsplit('|', 1)[-1]
+                    .rsplit(':', 1)[-1] == start):
+                bendy_start_control.add(control)
+            end_world = 'AdvPy_' + stem + 'EndWorld_' + side
+            end_source = c.connectionInfo(end_world + '.matrixIn[0]',
+                                          sourceFromDestination=True)
+            end_leaf = (end_source.split('.', 1)[0].rsplit('|', 1)[-1]
+                        .rsplit(':', 1)[-1]
+                        if end_source else '')
+            if end_leaf in bendy_start_names:
+                bendy_child_control.add(control)
         return GenericFkFeaturePolicy(
             frozenset(scale), frozenset(compensated),
             frozenset(globally_driven), aim_sources,
             follower_sources, frozenset(independent),
             frozenset(twist_rewired), frozenset(bendy_scales),
-            bendy_aim_follow)
+            bendy_aim_follow, frozenset(bendy_start_control),
+            frozenset(bendy_child_control))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

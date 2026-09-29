@@ -32,6 +32,7 @@ class FitBendyFollowSpec:
     end: FitBendyWorldSource
     master_aim_follow: bool = True
     untwist_plug: str | None = None
+    start_control_blend: bool = True
 
     def __post_init__(self) -> None:
         if self.untwist_plug is not None and not self.master_aim_follow:
@@ -124,14 +125,24 @@ def plan_fit_bendy_follow(
     generic_endpoints: tuple[BodyGenericFkEndpointSpec, ...] = (),
     master_aim_sources: frozenset[str] | None = None,
     untwist_plugs: Mapping[str, str] | None = None,
+    start_control_sources: frozenset[str] | None = None,
+    child_control_sources: frozenset[str] | None = None,
 ) -> tuple[FitBendyFollowSpec, ...]:
     """Resolve Bendy endpoints without depending on driven Body matrices."""
     sources = fit_bendy_world_sources(
         rig, generic_controls, generic_endpoints)
+    child_chains = {chain.start_body: chain for chain in chains}
     result = []
     for chain in chains:
         start = sources.get(chain.start_body)
         end = sources.get(chain.end_body)
+        if (chain.end_body in child_chains
+                and (child_control_sources is None
+                     or chain.control_names[0]
+                     in child_control_sources)):
+            child = child_chains[chain.end_body]
+            end = FitBendyWorldSource(
+                child.control_names[1] + ".worldMatrix[0]")
         if start is None or end is None:
             raise ValueError("Bendy 端点缺少独立 Rig 来源："
                              + chain.start_body + " → " + chain.end_body)
@@ -145,7 +156,9 @@ def plan_fit_bendy_follow(
             (untwist_plugs or {}).get(chain.start_body)
             if (master_aim_sources is None
                 or chain.control_names[0] in master_aim_sources)
-            else None))
+            else None,
+            start_control_sources is None
+            or chain.control_names[0] in start_control_sources))
     return tuple(result)
 
 
@@ -158,7 +171,9 @@ class FitBendyGuideHost(Protocol):
     def capture_fit_bendy_guides(
         self, spec: FitBendyChainSpec) -> bool: ...
     def preflight_fit_bendy_follow(
-        self, spec: FitBendyFollowSpec) -> None: ...
+        self, spec: FitBendyFollowSpec,
+        planned_sources: frozenset[str] = frozenset(),
+    ) -> None: ...
     def create_fit_bendy_follow(
         self, spec: FitBendyFollowSpec) -> None: ...
     def capture_fit_bendy_follow(
@@ -199,12 +214,16 @@ class BuildFitBendyGuides:
                 raise ValueError("Fit Bendy 导向节点名称重复")
             used.update(names)
             self._host.preflight_fit_bendy_guides(chain)
+        planned_sources = frozenset(
+            chain.control_names[1] + ".worldMatrix[0]"
+            for chain in chains)
         for follow in follows:
             names = set(follow.node_names)
             if names & used:
                 raise ValueError("Fit Bendy 跟随节点名称重复")
             used.update(names)
-            self._host.preflight_fit_bendy_follow(follow)
+            self._host.preflight_fit_bendy_follow(
+                follow, planned_sources)
             micro_names = set(follow.chain.micro_node_names)
             if micro_names & used:
                 raise ValueError("Fit Bendy 微控制节点名称重复")

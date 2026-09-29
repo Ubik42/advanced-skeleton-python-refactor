@@ -528,7 +528,9 @@ class MayaFitBendyMixin:
             if not c.objExists(marker) or c.getAttr(marker) != _OWNER:
                 raise ValueError("Bendy 微控制组不属于当前构建")
 
-    def preflight_fit_bendy_follow(self, spec: "FitBendyFollowSpec") -> None:
+    def preflight_fit_bendy_follow(
+            self, spec: "FitBendyFollowSpec",
+            planned_sources: frozenset[str] = frozenset()) -> None:
         c = self._cmds
         if any(c.objExists(name) for name in spec.node_names):
             raise ValueError("Bendy 跟随节点名称已占用：" + spec.chain.curve_name)
@@ -540,7 +542,8 @@ class MayaFitBendyMixin:
                              + spec.untwist_plug)
         for source in (spec.start, spec.end):
             for plug in (source.fk_matrix, source.ik_matrix, source.blend_plug):
-                if plug is not None and not c.objExists(plug):
+                if (plug is not None and not c.objExists(plug)
+                        and plug not in planned_sources):
                     raise ValueError("Bendy 独立驱动插口不存在：" + plug)
 
     def preflight_fit_bendy_guides(
@@ -775,7 +778,7 @@ class MayaFitBendyMixin:
             if index == 0 and spec.master_aim_follow:
                 self._create_fit_bendy_master_aim_follow(
                     chain, offset, start_proxy, end_proxy,
-                    parent_proxy)
+                    parent_proxy, spec.start_control_blend)
                 continue
             targets = ((parent_proxy, end_proxy) if index == 0
                        or index > 1 else (parent_proxy,))
@@ -861,7 +864,8 @@ class MayaFitBendyMixin:
     def _create_fit_bendy_master_aim_follow(
             self, chain: FitBendyChainSpec, offset: str,
             start_proxy: str, end_proxy: str,
-            parent_proxy: str) -> None:
+            parent_proxy: str,
+            start_control_blend: bool) -> None:
         """Mirror MEL's translated blend and half-strength aimed BendOffset."""
         from maya.api import OpenMaya as om
 
@@ -870,7 +874,9 @@ class MayaFitBendyMixin:
          bind_name, world_name, pick_name) = chain.master_follow_matrix_names
         blend = c.createNode("blendMatrix", name=blend_name,
                              skipSelect=True)
-        c.connectAttr(start_proxy + ".worldMatrix[0]",
+        bend_start = (chain.control_names[1]
+                      if start_control_blend else start_proxy)
+        c.connectAttr(bend_start + ".worldMatrix[0]",
                       blend + ".inputMatrix")
         c.connectAttr(end_proxy + ".worldMatrix[0]",
                       blend + ".target[0].targetMatrix")
@@ -1079,7 +1085,7 @@ class MayaFitBendyMixin:
             if index == 0 and spec.master_aim_follow:
                 if not self._capture_fit_bendy_master_aim_follow(
                         spec.chain, offset, names[0], names[1],
-                        parent_proxy):
+                        parent_proxy, spec.start_control_blend):
                     return False
             elif (not c.objExists(follow)
                   or c.nodeType(follow) != "parentConstraint"):
@@ -1160,7 +1166,8 @@ class MayaFitBendyMixin:
     def _capture_fit_bendy_master_aim_follow(
             self, chain: FitBendyChainSpec, offset: str,
             start_proxy: str, end_proxy: str,
-            parent_proxy: str) -> bool:
+            parent_proxy: str,
+            start_control_blend: bool) -> bool:
         c = self._cmds
         (blend, translate, rotate, mix, aim, bind,
          world, pick) = chain.master_follow_matrix_names
@@ -1171,8 +1178,10 @@ class MayaFitBendyMixin:
         if any(not c.objExists(name) or c.nodeType(name) != kind
                for name, kind in nodes):
             return False
+        bend_start = (chain.control_names[1]
+                      if start_control_blend else start_proxy)
         connections = (
-            (blend + ".inputMatrix", start_proxy + ".worldMatrix[0]"),
+            (blend + ".inputMatrix", bend_start + ".worldMatrix[0]"),
             (blend + ".target[0].targetMatrix",
              end_proxy + ".worldMatrix[0]"),
             (translate + ".inputMatrix", blend + ".outputMatrix"),

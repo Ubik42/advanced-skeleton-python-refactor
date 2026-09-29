@@ -674,6 +674,12 @@ class BuildRegisteredBodyCharacter:
                     early_bendy_chains, rig.plan,
                     master_aim_sources=(
                         _generic_fk_policy.bendy_aim_follow_controls
+                        if _generic_fk_policy is not None else None),
+                    start_control_sources=(
+                        _generic_fk_policy.bendy_start_control_sources
+                        if _generic_fk_policy is not None else None),
+                    child_control_sources=(
+                        _generic_fk_policy.bendy_child_control_sources
                         if _generic_fk_policy is not None else None))
                 BuildFitBendyGuides(joined).apply(
                     early_bendy_chains, follows=early_bendy_follows)
@@ -755,7 +761,13 @@ class BuildRegisteredBodyCharacter:
                         master_aim_sources=(
                             _generic_fk_policy.bendy_aim_follow_controls
                             if _generic_fk_policy is not None else None),
-                        untwist_plugs=bendy_untwist_plugs)
+                        untwist_plugs=bendy_untwist_plugs,
+                        start_control_sources=(
+                            _generic_fk_policy.bendy_start_control_sources
+                            if _generic_fk_policy is not None else None),
+                        child_control_sources=(
+                            _generic_fk_policy.bendy_child_control_sources
+                            if _generic_fk_policy is not None else None))
                     BuildFitBendyGuides(joined).apply(
                         early_bendy_chains, follows=early_bendy_follows)
                     BuildFitBendyDeform(joined).apply(early_bendy_chains)
@@ -1212,7 +1224,13 @@ class BuildRegisteredBodyCharacter:
                     master_aim_sources=(
                         _generic_fk_policy.bendy_aim_follow_controls
                         if _generic_fk_policy is not None else None),
-                    untwist_plugs=bendy_untwist_plugs)
+                    untwist_plugs=bendy_untwist_plugs,
+                    start_control_sources=(
+                        _generic_fk_policy.bendy_start_control_sources
+                        if _generic_fk_policy is not None else None),
+                    child_control_sources=(
+                        _generic_fk_policy.bendy_child_control_sources
+                        if _generic_fk_policy is not None else None))
                 BuildFitBendyGuides(joined).apply(
                     deferred_bendy_chains, follows=bendy_follows)
                 BuildFitBendyDeform(joined).apply(deferred_bendy_chains)
