@@ -7,6 +7,9 @@ from dataclasses import dataclass, replace
 from adv_py.core.character_registry import CharacterRegistration
 from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from adv_py.core.fit_orientation import (
+    FitOrientationRequest, select_fit_orientation_child,
+)
 from adv_py.core.fit_part import (
     rebase_plan_paths_after_parts, semantic_body_snapshot_after_parts,
 )
@@ -93,6 +96,7 @@ from .fit_curve_guide_registration import RegisterFitCurveGuides
 from .generic_fk_registration import RegisterGenericFk
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
+from .fit_orientation_auto import OrientFitJoints
 from .fit_inbetween_body import plan_combined_part_hierarchy
 from .fit_inbetween_limb_mapping import (
     InbetweenFkBinding, InbetweenLimbBinding,
@@ -350,6 +354,20 @@ def preflight_registered_fit_parts(
             + "、".join(omitted))
 
 
+def _refresh_fit_orientations_before_body(host, container_name: str) -> None:
+    """Run MEL's pre-build Fit aim pass before copying Body joint frames."""
+    snapshot = host.capture_fit_orientation(container_name)
+    targets = tuple(
+        node.path for node in snapshot.hierarchy.joints
+        if select_fit_orientation_child(snapshot, node.path) is not None
+    )
+    if targets:
+        editor = OrientFitJoints(host)
+        plan = editor.plan(FitOrientationRequest(targets), container_name)
+        if plan.changes:
+            editor.apply_plan_in_transaction(plan)
+
+
 @dataclass(frozen=True, slots=True)
 class RegisteredBodyBuildResult:
     skeleton: OrientedBodySkeletonBuildResult
@@ -410,6 +428,7 @@ class BuildRegisteredBodyCharacter:
                     + "、".join(hierarchy_collisions))
             with self._host.transaction("构建并登记完整 Body 角色"):
                 joined = _JoinedTransactionHost(self._host)
+                _refresh_fit_orientations_before_body(joined, container_name)
                 if joined.create_body_system_hierarchy(
                         include_dynamic=_include_dynamic) != _DEFORMATION_SYSTEM_PATH:
                     raise RuntimeError("Body 变形系统层级创建路径漂移")

@@ -341,18 +341,29 @@ def plan_world_fit_orientations(
                 )[next_index],
             )
         direct_children = children[path]
-        if len(direct_children) != 1:
+        if not direct_children:
             raise FitOrientationValidationError(
-                f"{node.short_name} 必须有且只有一个直接 joint 子级"
+                f"{node.short_name} 必须有直接 joint 子级"
+            )
+        child_path = select_fit_orientation_child(snapshot, path)
+        if child_path is None:
+            raise FitOrientationValidationError(
+                f"{node.short_name} 没有符合原版 asRlaChild 规则的子关节"
             )
         _validate_orientation_target(
             snapshot,
             path,
-            direct_children[0],
+            child_path,
             tolerance=tolerance,
         )
+        for direct_child in direct_children:
+            if (orientations[direct_child].writable_joint_orient_axes
+                    != TRANSLATION_AXES):
+                raise FitOrientationValidationError(
+                    f"{hierarchy[direct_child].short_name} 的 jointOrient 无法恢复"
+                )
         if policy.forward_local_direction is None:
-            child_position = hierarchy[direct_children[0]].world_position
+            child_position = hierarchy[child_path].world_position
             direction = _subtract(child_position, node.world_position)
             horizontal = (direction[0], 0.0, direction[2])
             desired = world_axes_from_orientation_policy(
@@ -370,15 +381,15 @@ def plan_world_fit_orientations(
             for current, wanted in zip(state.world_axes, desired)
         ):
             continue
-        child_path = direct_children[0]
         descendant_paths = _descendant_paths(hierarchy, path)
         changes.append(
             FitWorldOrientationChange(
                 joint=path,
                 child=child_path,
                 before_joint_orient=state.joint_orient,
-                preserved_child_joint_orients=(
-                    (child_path, orientations[child_path].joint_orient),
+                preserved_child_joint_orients=tuple(
+                    (child, orientations[child].joint_orient)
+                    for child in direct_children
                 ),
                 descendant_world_positions=tuple(
                     (descendant, hierarchy[descendant].world_position)
