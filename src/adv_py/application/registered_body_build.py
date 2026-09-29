@@ -30,6 +30,9 @@ from adv_py.core.body_leg_foot import audit_body_leg_foot
 from adv_py.core.body_arm_mechanisms import audit_body_arm_mechanisms
 from adv_py.core.body_leg_mechanisms import audit_body_leg_mechanisms
 from adv_py.core.fit_inbetween_ik_rebase import rebase_inbetween_ik_reference
+from adv_py.core.body_fit_advanced_constraint import plan_body_fit_advanced_constraints
+from adv_py.core.body_fit_follow import plan_body_fit_follow
+from adv_py.core.body_fit_dependency import validate_fit_control_dependencies
 
 from .axial_part_deform import BuildAxialPartDeform
 from .body_character_rig import (BuildBodyCharacterRig,
@@ -701,8 +704,14 @@ class BuildRegisteredBodyCharacter:
                    if rig.plan.torso is not None else ()))
             pre_constraint_body = joined.capture_body_skeleton(
                 skeleton.snapshot.root)
+            fit_metadata = rig.plan.arm.safety.symmetry.source.metadata
+            validate_fit_control_dependencies(
+                plan_body_fit_advanced_constraints(
+                    fit_metadata, fk_control_specs, pre_constraint_body.joints),
+                plan_body_fit_follow(
+                    fit_metadata, fk_control_specs, pre_constraint_body.joints))
             advanced_constraints = BuildFitAdvancedConstraints(joined).apply(
-                rig.plan.arm.safety.symmetry.source.metadata,
+                fit_metadata,
                 fk_control_specs,
                 pre_constraint_body.joints)
             if advanced_constraints and not body_skeleton_unchanged(
@@ -714,7 +723,7 @@ class BuildRegisteredBodyCharacter:
             pre_follow_body = joined.capture_body_skeleton(
                 skeleton.snapshot.root)
             fit_follows = BuildFitFollow(joined).apply(
-                rig.plan.arm.safety.symmetry.source.metadata,
+                fit_metadata,
                 fk_control_specs, pre_follow_body.joints)
             if fit_follows and not body_skeleton_unchanged(
                     pre_follow_body,

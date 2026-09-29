@@ -13,6 +13,7 @@ _KINDS = ("parent", "point", "orient", "scale")
 class BodyFitAdvancedConstraintSpec:
     kind: str
     source_joint: str
+    source_body: str
     target_joints: tuple[str, ...]
     fk_control: str
     fk_offset: str
@@ -93,7 +94,8 @@ def plan_body_fit_advanced_constraints(
                 stem = prefix + "AdvPy_" + kind.title() + "Constrain" \
                     + source_name + "_" + side
                 result.append(BodyFitAdvancedConstraintSpec(
-                    kind, item.joint, target_paths, control.control_path,
+                    kind, item.joint, driven_body, target_paths,
+                    control.control_path,
                     control.offset_path, stem + "Static",
                     stem + "Weight", stem + "Reverse",
                     stem + "Constraint",

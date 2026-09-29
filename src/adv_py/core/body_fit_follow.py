@@ -9,6 +9,7 @@ from .fit_metadata import FitJointMetadata
 @dataclass(frozen=True, slots=True)
 class BodyFitFollowSpec:
     source_joint: str
+    source_body: str
     fk_control: str
     fk_offset: str
     receiver: str
@@ -117,7 +118,8 @@ def plan_body_fit_follow(
                     raise ValueError("Fit Follow 祖先目标缺少当前关节父级："
                                      + driven_body)
             result.append(BodyFitFollowSpec(
-                item.joint, control.control_path, control.offset_path,
+                item.joint, driven_body, control.control_path,
+                control.offset_path,
                 receiver, primary, opposite, item.follow_world,
                 stem + "PrimaryMM",
                 stem + "OppositeMM" if opposite is not None else None,
