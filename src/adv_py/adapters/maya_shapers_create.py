@@ -767,6 +767,73 @@ class MayaShapersCreateHost:
             mirrored.append(mirror[0])
         return tuple(mirrored)
 
+    def _mirror_mesh(self, mesh: str) -> str:
+        leaf = mesh.rsplit("|", 1)[-1]
+        if leaf.endswith("_R"):
+            counterpart = leaf[:-2] + "_L"
+        elif leaf.endswith("_L"):
+            counterpart = leaf[:-2] + "_R"
+        else:
+            return mesh
+        matches = self.cmds.ls(counterpart, long=True) or []
+        return matches[0] if len(matches) == 1 else mesh
+
+    def _mirrored_other_mesh_packs(
+        self, source_mesh: str, target_mesh: str,
+        packs: tuple[ShapersEdgePack, ...],
+    ) -> tuple[ShapersEdgePack, ...]:
+        """Match reflected edge centers as asMS_closestComponent does."""
+        c = self.cmds
+        source_vertices = {}
+        target_vertices = {}
+
+        def vertex_position(mesh: str, index: int,
+                            cache: dict[int, tuple[float, float, float]]):
+            if index not in cache:
+                cache[index] = tuple(c.xform(
+                    f"{mesh}.vtx[{index}]", query=True,
+                    worldSpace=True, translation=True))
+            return cache[index]
+
+        def edge_vertices(mesh: str, index: int) -> tuple[int, int]:
+            info = c.polyInfo(f"{mesh}.e[{index}]", edgeToVertex=True) or []
+            numbers = [int(value) for value in re.findall(r"\d+", info[0])]
+            if len(numbers) < 3:
+                raise ValueError("无法读取 Shapers 镜像边：" + str(index))
+            return numbers[-2], numbers[-1]
+
+        target_edges = []
+        for index in range(int(c.polyEvaluate(target_mesh, edge=True))):
+            a, b = edge_vertices(target_mesh, index)
+            pa = vertex_position(target_mesh, a, target_vertices)
+            pb = vertex_position(target_mesh, b, target_vertices)
+            target_edges.append((index, a, b,
+                                 tuple((pa[axis] + pb[axis]) / 2
+                                       for axis in range(3))))
+        if not target_edges:
+            raise ValueError("Shapers 镜像网格没有可用边")
+        reflected = []
+        positions = {}
+        selected = set()
+        for pack in packs:
+            for source_index in pack.edges:
+                a, b = edge_vertices(source_mesh, source_index)
+                pa = vertex_position(source_mesh, a, source_vertices)
+                pb = vertex_position(source_mesh, b, source_vertices)
+                center = (-(pa[0] + pb[0]) / 2,
+                          (pa[1] + pb[1]) / 2,
+                          (pa[2] + pb[2]) / 2)
+                index, va, vb, _ = min(target_edges, key=lambda edge: sum(
+                    (edge[3][axis] - center[axis]) ** 2
+                    for axis in range(3)))
+                if index in selected:
+                    continue
+                selected.add(index)
+                reflected.append(ShapersEdge(index, va, vb))
+                positions[va] = target_vertices[va]
+                positions[vb] = target_vertices[vb]
+        return plan_shapers_edge_packs(tuple(reflected), positions)
+
     def create_edge_packs(self, mesh: str,
                           packs: tuple[ShapersEdgePack, ...],
                           options: ShapersFkLoopOptions) -> int:
@@ -776,44 +843,57 @@ class MayaShapersCreateHost:
         failed = False
         try:
             mesh = self._one(mesh)
-            skin = self._ensure_skin(mesh)
+            mirror_mesh = self._mirror_mesh(mesh) if options.mirror else mesh
+            targets = [(mesh, list(packs))]
+            if options.mirror and mirror_mesh != mesh:
+                mirror_packs = self._mirrored_other_mesh_packs(
+                    mesh, mirror_mesh, packs)
+                self.preflight_edge_packs(mirror_mesh, mirror_packs)
+                targets.append((mirror_mesh, list(mirror_packs)))
             root = self._controls_root()
-            sampler = c.createNode("closestPointOnMesh",
-                                   name=self.prefix + "AdvPy_ShaperSampler#")
-            shape = (c.listRelatives(mesh, shapes=True,
-                                     noIntermediate=True, fullPath=True,
-                                     type="mesh") or [])[0]
-            c.connectAttr(shape + ".outMesh", sampler + ".inMesh")
-            all_packs = list(packs)
-            if options.mirror:
-                all_packs.extend(self._mirrored_edge_packs(
-                    mesh, packs, sampler))
-            curves = []
-            created_on_side: dict[str, int] = {}
-            for pack in all_packs:
-                positions = {vertex: tuple(c.xform(
-                    f"{mesh}.vtx[{vertex}]", query=True, worldSpace=True,
-                    translation=True)) for vertex in pack.vertices}
-                source = self._edge_source(mesh, pack, skin)
-                curve = self._add_loop(
-                    source, mesh, options, root, sampler, skin,
-                    edge_pack=pack, positions_by_vertex=positions)
-                curves.append(curve)
-                if pack.closed and len(packs) > 1:
-                    group = (c.listRelatives(curve, parent=True,
-                                             fullPath=True) or [])[0]
-                    if created_on_side.get(source.side, 0):
-                        curves.extend(self._automatic_bridges(
-                            source, group, mesh, options, root, sampler, skin))
-                    curves.extend(self._end_joint_bridges(
-                        source, group, mesh, options, root, sampler, skin))
-                if pack.closed:
-                    created_on_side[source.side] = (
-                        created_on_side.get(source.side, 0) + 1)
-            c.delete(sampler)
-            self._share_intersection_controls(root, mesh)
-            self._bind_curves(mesh, curves)
-            return len(curves)
+            total = 0
+            for target_mesh, target_packs in targets:
+                skin = self._ensure_skin(target_mesh)
+                sampler = c.createNode(
+                    "closestPointOnMesh",
+                    name=self.prefix + "AdvPy_ShaperSampler#")
+                shape = (c.listRelatives(target_mesh, shapes=True,
+                                         noIntermediate=True, fullPath=True,
+                                         type="mesh") or [])[0]
+                c.connectAttr(shape + ".outMesh", sampler + ".inMesh")
+                if options.mirror and mirror_mesh == mesh:
+                    target_packs.extend(self._mirrored_edge_packs(
+                        target_mesh, packs, sampler))
+                curves = []
+                created_on_side: dict[str, int] = {}
+                for pack in target_packs:
+                    positions = {vertex: tuple(c.xform(
+                        f"{target_mesh}.vtx[{vertex}]", query=True,
+                        worldSpace=True, translation=True))
+                        for vertex in pack.vertices}
+                    source = self._edge_source(target_mesh, pack, skin)
+                    curve = self._add_loop(
+                        source, target_mesh, options, root, sampler, skin,
+                        edge_pack=pack, positions_by_vertex=positions)
+                    curves.append(curve)
+                    if pack.closed and len(packs) > 1:
+                        group = (c.listRelatives(curve, parent=True,
+                                                 fullPath=True) or [])[0]
+                        if created_on_side.get(source.side, 0):
+                            curves.extend(self._automatic_bridges(
+                                source, group, target_mesh, options, root,
+                                sampler, skin))
+                        curves.extend(self._end_joint_bridges(
+                            source, group, target_mesh, options, root,
+                            sampler, skin))
+                    if pack.closed:
+                        created_on_side[source.side] = (
+                            created_on_side.get(source.side, 0) + 1)
+                c.delete(sampler)
+                self._share_intersection_controls(root, target_mesh)
+                self._bind_curves(target_mesh, curves)
+                total += len(curves)
+            return total
         except Exception:
             failed = True
             raise
