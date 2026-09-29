@@ -43,7 +43,7 @@ class MayaBodyDeleteMixin:
                 raise FitSkeletonValidationError(
                     "Body Group 缺失而 Geometry 仍存在，不能判定删除范围")
             return BodyDeletePlan(fit, self._delete_uuid(fit), None,
-                                  (), (), (), (),
+                                  (), (), (), (), (),
                                   c.upAxis(query=True, axis=True))
         if not fit.startswith(group + "|"):
             raise FitSkeletonValidationError(
@@ -75,6 +75,10 @@ class MayaBodyDeleteMixin:
             if geometry is not None else ())
         retained = tuple(self._delete_uuid(path) for path in geometry_children
                          if path not in owned)
+        fit_curves = tuple(dict.fromkeys(c.listConnections(
+            fit, type="animCurve") or ()))
+        preserved_animation = tuple(self._delete_uuid(curve)
+                                    for curve in fit_curves)
         sets = tuple(path for name in ("ControlSet", "DeformSet",
                                             "AllSet", "Sets")
                      if (path := self._delete_unique(
@@ -85,7 +89,7 @@ class MayaBodyDeleteMixin:
                     "Delete Adv 不修改引用节点：" + path)
         return BodyDeletePlan(
             fit, self._delete_uuid(fit), group, geometry_children,
-            retained, tuple(owned), sets,
+            retained, preserved_animation, tuple(owned), sets,
             c.upAxis(query=True, axis=True))
 
     def delete_body_advanced(self, plan: BodyDeletePlan) -> None:
@@ -121,6 +125,7 @@ class MayaBodyDeleteMixin:
             if len(paths) != 1:
                 raise RuntimeError("Delete Adv AllSet 成员丢失：" + item)
             resolved.append(paths[0])
+        preserve_curves = set(plan.preserved_animation_ids)
         direct_children = tuple(c.listRelatives(
             group, children=True, fullPath=True) or ())
         owned = set(resolved)
@@ -131,7 +136,15 @@ class MayaBodyDeleteMixin:
             elif child not in owned:
                 raise RuntimeError("Delete Adv Group 含未登记子节点：" + child)
         external = tuple(path for path in resolved
-                         if path != group and not path.startswith(group + "|"))
+                         if path != group and not path.startswith(group + "|")
+                         and self._delete_uuid(path) not in preserve_curves)
+        for path in resolved:
+            if path == group or path.startswith(group + "|"):
+                continue
+            if c.nodeType(path) == "multiplyDivide":
+                plug = path + ".operation"
+                if c.getAttr(plug, settable=True):
+                    c.setAttr(plug, 0)
         if external:
             c.delete(external)
         if c.objExists(group):
@@ -148,3 +161,7 @@ class MayaBodyDeleteMixin:
             for identifier in (c.ls(path, uuid=True) or ())}
         if not set(plan.retained_geometry_ids) <= remaining_geometry:
             raise RuntimeError("Delete Adv 丢失了应保留的模型")
+        remaining_curves = {self._delete_uuid(path)
+                            for path in c.ls(type="animCurve") or ()}
+        if not set(plan.preserved_animation_ids) <= remaining_curves:
+            raise RuntimeError("Delete Adv 丢失了 Fit 驱动曲线")

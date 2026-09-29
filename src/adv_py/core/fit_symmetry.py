@@ -108,7 +108,8 @@ def expand_fit_symmetry(
         mirror_code = inherited_mirror_code.get(parent, 0)
         if item.no_mirror:
             mirror_code = -1
-        if item.no_mirror_left and mirror_code == -1:
+        if (item.no_mirror_left and mirror_code == -1
+                and not node.short_name.endswith("_NonSymmetry")):
             mirror_code = 1
         inherited_mirror_code[node.path] = mirror_code
         no_mirror = mirror_code != 0
