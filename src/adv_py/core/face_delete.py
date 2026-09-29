@@ -9,6 +9,7 @@ class FaceDeleteSkin:
     path: str
     identifier: str
     face_influences: tuple[str, ...]
+    face_influence_ids: tuple[str, ...]
     add_head_before_removal: bool
     geometry: tuple[str, ...]
 

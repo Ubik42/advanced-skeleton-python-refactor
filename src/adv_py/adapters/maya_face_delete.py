@@ -117,6 +117,7 @@ class MayaFaceDeleteMixin:
                     "Face Skin 缺少几何体：" + skin_path)
             skin_plans.append(FaceDeleteSkin(
                 skin_path, self._face_delete_id(skin_path), generated,
+                tuple(self._face_delete_id(path) for path in generated),
                 len(generated) == len(influences), tuple(geometry)))
         deletable = tuple(path for path in owned
                           if c.nodeType(path) not in (
@@ -163,6 +164,12 @@ class MayaFaceDeleteMixin:
             if (not c.objExists(skin.path) or
                     self._face_delete_id(skin.path) != skin.identifier):
                 raise RuntimeError("Face Skin 在删除前已变化：" + skin.path)
+            if any(not c.objExists(path) or
+                   self._face_delete_id(path) != identifier
+                   for path, identifier in zip(skin.face_influences,
+                                               skin.face_influence_ids)):
+                raise RuntimeError("Face Skin 影响关节在删除前已变化："
+                                   + skin.path)
             if skin.add_head_before_removal:
                 c.skinCluster(skin.path, edit=True,
                               addInfluence=plan.head, weight=1.0,
