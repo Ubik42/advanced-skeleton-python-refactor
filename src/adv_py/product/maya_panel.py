@@ -694,6 +694,13 @@ def create_panel(controller: MayaPanelController | None = None):
             self.fit_orientation_mode = QtWidgets.QComboBox()
             self.fit_orientation_mode.addItem("按指定子级 Aim", "child")
             self.fit_orientation_mode.addItem("按 World Orient 元数据", "world")
+            self.fit_resample_start = QtWidgets.QLineEdit()
+            self.fit_resample_start.setPlaceholderText("例如 Root")
+            self.fit_resample_end = QtWidgets.QLineEdit()
+            self.fit_resample_end.setPlaceholderText("例如 Chest")
+            self.fit_resample_count = QtWidgets.QSpinBox()
+            self.fit_resample_count.setRange(2, 99)
+            self.fit_resample_count.setValue(3)
             group, form = self._group("02 · Fit 编辑", [
                 ("位置批量编辑", self.fit_position_edits),
                 ("目标关节", self.fit_edit_joints),
@@ -701,12 +708,16 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("字段值", self.fit_metadata_value),
                 ("字段操作", self.fit_metadata_remove),
                 ("朝向模式", self.fit_orientation_mode),
-                ("分支子级映射", self.fit_orientation_children)])
+                ("分支子级映射", self.fit_orientation_children),
+                ("重采样起点", self.fit_resample_start),
+                ("重采样终点", self.fit_resample_end),
+                ("重采样关节总数", self.fit_resample_count)])
             position_row = QtWidgets.QHBoxLayout()
             position_row.addWidget(self._button("更新 Fit 位置", self._edit_fit_positions))
             position_row.addWidget(self._button("重新定向 Fit", self._orient_fit))
             form.addRow(position_row)
             form.addRow(self._button("更新 Fit 元数据", self._edit_fit_metadata))
+            form.addRow(self._button("重采样 Fit 关节链", self._resample_fit))
             stack.addWidget(group)
 
             self.spine_segments = QtWidgets.QSpinBox()
@@ -2146,6 +2157,15 @@ def create_panel(controller: MayaPanelController | None = None):
                 world=self.fit_orientation_mode.currentData() == "world")
             mode = "World Orient" if self.fit_orientation_mode.currentData() == "world" else "子级 Aim"
             return f"已按 {mode} 重新定向 {count} 个 Fit joint"
+
+        def _resample_fit(self):
+            start = self.fit_resample_start.text().strip()
+            end = self.fit_resample_end.text().strip()
+            count = self.fit_resample_count.value()
+            created = self.controller.fit_resample(
+                self._namespace(), start, end, count,
+                self.fit_container.text().strip())
+            return f"Fit 关节链已重采样为 {created + 2} 节"
 
         def _export_skin(self):
             count = self.controller.skin_export(self._namespace(),

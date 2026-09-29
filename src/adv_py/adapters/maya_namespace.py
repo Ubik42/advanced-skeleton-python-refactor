@@ -39,6 +39,7 @@ _CREATE |= {'sets'}
 _NODE_ARGS |= {'pointOnPolyConstraint'}
 _NODE_RESULTS |= {'pointOnPolyConstraint'}
 _CREATE |= {'pointOnPolyConstraint'}
+_NODE_ARGS |= {'reorder'}
 
 
 class MayaCharacterCommands:

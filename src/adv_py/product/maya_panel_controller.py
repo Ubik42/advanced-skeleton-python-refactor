@@ -538,6 +538,17 @@ class MayaPanelController:
         result = use_case(self._host(namespace)).apply(request, container)
         return len(result.plan.changes)
 
+    def fit_resample(self, namespace: str, start: str, end: str,
+                     joint_count: int, container: str = "FitSkeleton") -> int:
+        from adv_py.adapters.maya_fit_resample import MayaFitResampleHost
+        from adv_py.application.fit_resample import ResampleFitChain
+
+        host = MayaFitResampleHost(
+            namespace=None if namespace == ":" else namespace)
+        result = ResampleFitChain(host).apply(
+            start, end, joint_count, container)
+        return len(result.created)
+
     def body_build(self, namespace: str, container: str = "FitSkeleton", *,
                    spine_segments: int | None = None,
                    head_aim: bool = False,
