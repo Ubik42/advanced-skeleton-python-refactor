@@ -8,6 +8,7 @@ from .body_skeleton import (
     BodyJointState,
 )
 from .fit_metadata import FitJointMetadata
+from .fit_hierarchy import FitHierarchySnapshot
 from .fit_symmetry import FitBuildSide, FitSymmetryInstance
 
 
@@ -308,6 +309,7 @@ def plan_fit_part_joints(
     instances: tuple[FitSymmetryInstance, ...],
     metadata: tuple[FitJointMetadata, ...],
     body_specs: tuple[BodyJointSpec, ...],
+    hierarchy: FitHierarchySnapshot,
 ) -> tuple[FitPartJointSpec, ...]:
     """Expand each Fit twistJoints value into a side-specific Part chain.
 
@@ -320,10 +322,20 @@ def plan_fit_part_joints(
         raise FitPartValidationError("Fit 元数据或 Body 关节路径重复")
     if set(by_path) != {item.output_path for item in instances}:
         raise FitPartValidationError("Part 计划需要完整的 Body 对称展开规格")
+    source_nodes = {node.path: node for node in hierarchy.joints}
+    if set(source_nodes) != set(by_source):
+        raise FitPartValidationError("Part 计划需要完整的来源 Fit 层级")
+    source_children: dict[str, list] = {}
+    for node in hierarchy.joints:
+        source_children.setdefault(node.dag_parent, []).append(node)
+    for siblings in source_children.values():
+        siblings.sort(key=lambda node: node.sibling_index)
     children: dict[str, list[FitSymmetryInstance]] = {}
     for instance in instances:
         if instance.parent_output_path is not None:
             children.setdefault(instance.parent_output_path, []).append(instance)
+    for siblings in children.values():
+        siblings.sort(key=lambda item: source_nodes[item.source_joint].sibling_index)
 
     parts: list[FitPartJointSpec] = []
     used_paths: set[str] = set(by_path)
@@ -347,15 +359,17 @@ def plan_fit_part_joints(
             continue
         start_body = by_path[start.output_path]
         end_body = by_path[end.output_path]
-        end_metadata = by_source.get(end.source_joint)
-        if end_metadata is None:
-            raise FitPartValidationError("Part 下游 Fit 关节缺少元数据："
-                                         + end.source_joint)
-        end_children = [child for child in children.get(end.output_path, ())
-                        if child.side is end.side]
-        dual_twist_child = (end_metadata.twist_joints is None
-                            and _select_downstream(end, end_children)
-                            is not None)
+        # MEL's dual-twist test uses fitJointChild (the first X-down child),
+        # which can differ from the named asRlaChild used for the Part chain.
+        direct = source_children.get(start.source_joint, ())
+        dual_child = next((node for node in direct
+                           if abs(node.local_position[1]) < 0.01
+                           and abs(node.local_position[2]) < 0.01),
+                          direct[0] if direct else None)
+        dual_twist_child = False
+        if dual_child is not None and by_source[dual_child.path].twist_joints is None:
+            dual_twist_child = _source_rla_child(
+                dual_child, source_children.get(dual_child.path, ())) is not None
         parent = start.output_path
         stem = start.output_name.rsplit("_", 1)[0]
         for index in range(1, count + 1):
@@ -433,13 +447,27 @@ def _select_downstream(
 ) -> FitSymmetryInstance | None:
     if not candidates:
         return None
-    # asRlaChild in 6.925 takes the first same-side child, then applies
-    # these named branch preferences. Preserve input hierarchy order.
+    # asRlaChild in 6.925 takes the first same-side child, then overwrites
+    # it with each matching named child. The last preferred child wins.
     preference = next((target for key, target in (
         ("Head", "Head"), ("Ankle", "Toes"), ("Toes", "Toes"),
         ("Root", "Spine")) if key in start.output_name), None)
     if preference is not None:
-        for child in candidates:
+        for child in reversed(candidates):
             if preference in child.output_name:
                 return child
     return candidates[0]
+
+
+def _source_rla_child(parent, children):
+    """Select a source Fit child with MEL asRlaChild's branch precedence."""
+    center = abs(parent.world_position[0]) < 0.01
+    selected = next((child for child in children
+                     if (abs(child.world_position[0]) < 0.01) == center), None)
+    name = parent.short_name
+    for marker, preferred in (("Head", "Head"), ("Ankle", "Toes"),
+                              ("Toes", "Toes"), ("Root", "Spine")):
+        if marker in name:
+            selected = next((child for child in reversed(children)
+                             if preferred in child.short_name), selected)
+    return selected
