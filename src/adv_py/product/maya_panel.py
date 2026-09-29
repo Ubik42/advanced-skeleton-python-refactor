@@ -96,7 +96,15 @@ def create_panel(controller: MayaPanelController | None = None):
                 QPushButton#PrimaryAction { background: #DA9346; color: #171A20;
                     border-color: #E5AA6B; font-weight: 700; }
                 QPushButton#PrimaryAction:hover { background: #F2B76F; }
-                QTabWidget::pane { border: none; }
+                QToolButton#AdvPyCategory { background: #334960; color: #FFFFFF;
+                    border: 1px solid #60758A; border-left: 5px solid #D79552;
+                    text-align: left; font-size: 15px; font-weight: 700;
+                    padding: 9px 12px; }
+                QToolButton#AdvPySection { background: #213444; color: #E4ECF3;
+                    border: 1px solid #476174; border-left: 3px solid #6E9F90;
+                    text-align: left; font-weight: 600; padding: 7px 10px; }
+                QToolButton#AdvPyCategory:hover,
+                QToolButton#AdvPySection:hover { background: #3C546B; }
                 QScrollArea { border: none; background: transparent; }
                 QWidget#PageContent, QWidget#qt_scrollarea_viewport {
                     background: #131923; }
@@ -105,10 +113,6 @@ def create_panel(controller: MayaPanelController | None = None):
                     border-radius: 5px; min-height: 28px; }
                 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
                     height: 0; }
-                QTabBar::tab { background: #1D2936; color: #B8C7D7;
-                    padding: 10px 10px; margin-right: 2px; }
-                QTabBar::tab:selected { background: #334960; color: #FFFFFF;
-                    border-bottom: 3px solid #F3BE6E; }
                 QListWidget { background: transparent; border: none; color: #D5E0EA; }
                 QListWidget::item { padding: 10px 8px; border-radius: 6px; }
                 QListWidget::item:selected { background: #3B526C; color: #FFFFFF; }
@@ -123,9 +127,9 @@ def create_panel(controller: MayaPanelController | None = None):
             rail.setMaximumWidth(190)
             rail_layout = QtWidgets.QVBoxLayout(rail)
             rail_layout.setContentsMargins(18, 24, 14, 18)
-            title = QtWidgets.QLabel("角色工作台", objectName="Title")
+            title = QtWidgets.QLabel("AdvancedSkeleton", objectName="Title")
             title.setWordWrap(True)
-            subtitle = QtWidgets.QLabel("Fit → 控制 → 蒙皮\n姿态 → 动画\n面部 · 动捕 · 发布", objectName="Subtitle")
+            subtitle = QtWidgets.QLabel("Python", objectName="Subtitle")
             subtitle.setWordWrap(True)
             rail_layout.addWidget(title)
             rail_layout.addWidget(subtitle)
@@ -145,16 +149,7 @@ def create_panel(controller: MayaPanelController | None = None):
             layout.setSpacing(12)
             self.current = QtWidgets.QLabel(objectName="CurrentRole")
             layout.addWidget(self.current)
-            self.tabs = QtWidgets.QTabWidget()
-            self.tabs.addTab(self._fit_page(), "Fit 与构建")
-            self.tabs.addTab(self._skin_page(), "蒙皮")
-            self.tabs.addTab(self._animation_page(), "姿态与动画")
-            self.tabs.addTab(self._face_page(), "面部")
-            self.tabs.addTab(self._mocap_page(), "动捕")
-            self.tabs.addTab(self._publish_page(), "发布")
-            self.tabs.addTab(self._display_page(), "显示")
-            self.tabs.addTab(self._optimize_page(), "优化")
-            layout.addWidget(self.tabs, 1)
+            layout.addWidget(self._advanced_skeleton_page(), 1)
             layout.addWidget(QtWidgets.QLabel("最近操作"))
             self.status = QtWidgets.QPlainTextEdit()
             self.status.setReadOnly(True)
@@ -183,6 +178,143 @@ def create_panel(controller: MayaPanelController | None = None):
             for label, widget in rows:
                 layout.addRow(label, widget)
             return group, layout
+
+        def _fold(self, parent, title, *, opened=False, category=False):
+            button = QtWidgets.QToolButton()
+            button.setObjectName('AdvPyCategory' if category
+                                 else 'AdvPySection')
+            button.setText(title)
+            button.setCheckable(True)
+            button.setChecked(opened)
+            button.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+            button.setArrowType(QtCore.Qt.DownArrow if opened
+                                else QtCore.Qt.RightArrow)
+            button.setSizePolicy(QtWidgets.QSizePolicy.Expanding,
+                                 QtWidgets.QSizePolicy.Fixed)
+            body = QtWidgets.QWidget()
+            body.setVisible(opened)
+            inner = QtWidgets.QVBoxLayout(body)
+            inner.setContentsMargins(14, 4, 0, 10)
+            inner.setSpacing(8)
+            button.toggled.connect(body.setVisible)
+            button.toggled.connect(lambda active, control=button:
+                control.setArrowType(QtCore.Qt.DownArrow if active
+                                     else QtCore.Qt.RightArrow))
+            parent.addWidget(button)
+            parent.addWidget(body)
+            return inner
+
+        def _advanced_skeleton_page(self):
+            # Reuse the existing operation widgets while arranging their
+            # entrances in the order of the 6.925 MEL frame layouts.
+            sources = (self._fit_page(), self._skin_page(),
+                       self._animation_page(), self._face_page(),
+                       self._mocap_page(), self._publish_page(),
+                       self._display_page(), self._optimize_page())
+            groups = {}
+            for page in sources:
+                source_layout = page.widget().layout()
+                previous = None
+                while source_layout.count():
+                    item = source_layout.takeAt(0)
+                    widget = item.widget()
+                    if isinstance(widget, QtWidgets.QGroupBox):
+                        title = widget.title()
+                        if title in groups:
+                            raise RuntimeError('Maya 面板栏目标题重复：' + title)
+                        widget.setParent(None)
+                        groups[title] = widget
+                        previous = widget
+                    elif widget is not None and previous is not None:
+                        widget.setParent(previous)
+                        previous.layout().addRow(widget)
+                page.deleteLater()
+
+            sections = (
+                ('Preparation', (
+                    ('Model', ('00 · Model Clean', '00 · 模型检查')),
+                    ('Rig', ('00 · 绑定场景', '01 · 模型对象',
+                             '02 · One Joint Prop', '02B · FBX rig',
+                             '02A · Body 构建选项')),
+                    ('Settings', ()))),
+                ('Body', (
+                    ('Fit', ('01 · Fit 数据',)),
+                    ('Edit', ('02 · Fit 编辑',)),
+                    ('Build', ('03 · 完整角色', '原版角色迁移',
+                               '04 · 保留数据重建',
+                               '05 · 跨段数脊柱角色替换')),
+                    ('Deform / Skinning', ('00 · 原版 Skinning',
+                                           '01 · 建立 Skin', '02 · 权重文档',
+                                           '03 · 跨场景源资产',
+                                           '04 · 跨拓扑权重转移')),
+                    ('Deform / SkinCage', ()),
+                    ('Deform / SubWrap', ()),
+                    ('Deform / SkinLoops', ()),
+                    ('Deform Shapers', ()),
+                    ('Deform / DeltaMush', ('05 · Delta Mush',)),
+                    ('Geometry / Skeleton', ()),
+                    ('Geometry / Muscular', ()),
+                    ('Geometry / PolyBoxes', ()),
+                    ('Geometry / Mannequin', ()),
+                    ('Geometry / Skin Cut-Up', ()),
+                    ('Custom Controllers', ('06 · 自定义控制器',)),
+                    ('Squash Controller', ('07 · Squash Controller',)),
+                    ('Motion System', ('08 · Motion System',)),
+                    ('Control Curves', ('09 · Control Curves',)),
+                    ('Control Orient', ('10 · Control Orient',)),
+                    ('Control Mesh', ('10A · Control Mesh',)),
+                    ('Game Engine', ('10B · Game Engine',)),
+                    ('Unreal Joints', ('11 · Unreal Joints',)),
+                    ('Partial Joints', ('12 · Partial Joints',)))),
+                ('Face', (
+                    ('Pre', ('00 · 面部输入', '00 · 眼球输入与控制',
+                             '01 · 目标网格', '02 · 可移植目标资产')),
+                    ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit')),
+                    ('Build', ('03 · 控制与变形器',)),
+                    ('Build ...', ()), ('Tweaks', ()), ('DeltaMush', ()),
+                    ('HeadSquash', ()), ('WrinkleMap', ()),
+                    ('BlendShapes', ('04 · 表情与口型动画',
+                                     '05 · 面部资产版本',
+                                     '06 · 合并同一目标的三个版本')),
+                    ('EditBlendShapes', ()), ('NewBlendShapes', ()),
+                    ('Custom Controllers', ('07 · 自定义控制器',)))),
+                ('Pose', (
+                    ('Driving Systems', ('03 · 动画通道',
+                                         '04 · 区间模式转换',
+                                         '05 · 控制空间事件')),
+                    ('Corrective Shapes', ()),
+                    ('Pose Functions', ('01 · 当前姿态',
+                                        '02 · 全身动画',
+                                        '06 · 角色预设')))),
+                ('Tools', (('Tools', ('01 · 外部 FBX 驱动角色',)),)),
+                ('Display', (('Display', ('00 · Display',)),)),
+                ('Optimize', (('Optimize', ('00 · Optimize',)),)),
+                ('Updates', (('Updates', ()),)),
+                ('Publish', (('Publish', ('01 · 导出迁移后的完整角色',)),)),
+                ('Export', (('Export', ('02 · 烘焙并发布独立骨架',)),)),
+                ('Demo', (('Demo', ()),)),
+                ('About', (('About', ()),)),
+            )
+            page, stack = self._page()
+            for category, children in sections:
+                category_layout = self._fold(
+                    stack, category, opened=category == 'Body', category=True)
+                for title, names in children:
+                    section_layout = self._fold(
+                        category_layout, title,
+                        opened=category == 'Body' and title == 'Build')
+                    if names:
+                        for name in names:
+                            group = groups.pop(name)
+                            group.setTitle(name.split(' · ', 1)[-1])
+                            section_layout.addWidget(group)
+                    else:
+                        section_layout.addWidget(QtWidgets.QLabel('尚未实现'))
+            if groups:
+                raise RuntimeError('Maya 面板操作未归入原版栏目：'
+                                   + '、'.join(sorted(groups)))
+            stack.addStretch(1)
+            return page
 
         def _file_field(self, caption, *, save=False, filter_text="JSON 文件 (*.json)"):
             holder = QtWidgets.QWidget()
