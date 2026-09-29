@@ -12,15 +12,15 @@
 
 ## 当前版本
 
-| 范围 | 已完成 |
+| 范围 | 已有实现或历史基线 |
 | --- | --- |
 | Maya 重构 | Fit、Body、Arm / Leg / Hand FK/IK、Skin、Root Motion、FBX、MoCap 控制重定向与基础 Face 工作流；真实覆盖与缺口见开发计划 |
 | 角色结构 | 30 关节基础 Body、70 关节五指 Body、31 关节独立导出骨架 |
 | 数据合同 | FitSkeleton、Hand Pose 与 Skin Weight 使用路径无关的 JSON 文档和 SHA-256 内容摘要 |
 | 写入边界 | 修改前预检；单一 Maya Undo 事务提交；执行后从场景读回复检 |
-| 自动验证 | 455 项纯 Python 回归测试；Maya 2024 后台场景与独立进程验收命令见 `validation/README.md` |
+| 自动验证 | 历史基线曾通过 455 项纯 Python 回归；当前代码尚未集中复验。Maya 2024 验收入口见 `validation/README.md` |
 
-v0.96.0 加入躯干 / 颈头 FK、独立脊柱 IK/FK、双向姿态匹配、头部 / 手脚空间切换，以及不同脊柱段数角色的受控替换。调用方式见 [核心绑定架构](docs/核心绑定架构.md)，完整 Fit → Body → 控制 → 显式蒙皮入口见 [全身示例](examples/README.md)。当前仍是阶段版本，尚未完成 AdvancedSkeleton 全量复刻。
+v0.96.0 加入躯干 / 颈头 FK、独立脊柱 IK/FK、双向姿态匹配、头部 / 手脚空间切换，以及不同脊柱段数角色的受控替换。调用方式见 [核心绑定架构](docs/核心绑定架构.md)，完整 Fit → Body → 控制 → 显式蒙皮入口见 [全身示例](examples/README.md)。当前仍是阶段版本，尚未完成 AdvancedSkeleton 全量复刻；主链未验收部分和剩余工作见[开发计划与当前缺口](docs/开发计划.md)。
 
 来源骨架构建的当前应用层编排已改为纯数据计划与宿主接口，输入形态与阶段边界见[来源骨架构建合同](docs/来源骨架构建合同.md)。该次内部调整尚未重新运行 Maya 验收，下述 Maya 结果是调整前的基线，统一宿主验收完成后再更新结论。
 
