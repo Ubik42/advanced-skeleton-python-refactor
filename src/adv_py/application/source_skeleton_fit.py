@@ -152,8 +152,11 @@ def _add_optional_end_markers(by_name: dict[str, SourceSkeletonJoint]) -> None:
     """Fill Fit-only end and foot guides absent from many export skeletons."""
     def add(name: str, parent: str, position: tuple[float, float, float]):
         if name not in by_name and parent in by_name:
+            parent_path = by_name[parent].path
             by_name[name] = SourceSkeletonJoint(
-                "@fit-guide:" + name, name, by_name[parent].path, position)
+                parent_path + "|@fit-guide:" + name,
+                name, parent_path, position,
+                label=JointLabel.parse(name))
 
     if {"Neck", "Head"} <= by_name.keys():
         neck = by_name["Neck"].world_position
