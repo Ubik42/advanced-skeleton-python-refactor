@@ -121,18 +121,25 @@ class OrientFitJoints:
         with self._host.transaction(
             f"更新 {len(plan.changes)} 个 Fit joint 朝向"
         ):
-            for change in plan.changes:
-                if isinstance(change, FitWorldOrientationChange):
-                    self._host.orient_world_fit_joint(change)
-                else:
-                    self._host.orient_fit_joint(change)
-            verified = self._host.capture_fit_orientation(
-                plan.before.hierarchy.container
-            )
-            settings = self._host.read_fit_skeleton_settings(
-                plan.before.hierarchy.container
-            )
-            self._verify(plan, verified, settings)
+            result = self.apply_plan_in_transaction(plan)
+        return result
+
+    def apply_plan_in_transaction(
+        self,
+        plan: FitOrientationAutoPlan,
+    ) -> FitOrientationAutoResult:
+        for change in plan.changes:
+            if isinstance(change, FitWorldOrientationChange):
+                self._host.orient_world_fit_joint(change)
+            else:
+                self._host.orient_fit_joint(change)
+        verified = self._host.capture_fit_orientation(
+            plan.before.hierarchy.container
+        )
+        settings = self._host.read_fit_skeleton_settings(
+            plan.before.hierarchy.container
+        )
+        self._verify(plan, verified, settings)
         return FitOrientationAutoResult(plan, verified)
 
     @staticmethod

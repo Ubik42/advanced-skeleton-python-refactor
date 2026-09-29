@@ -456,8 +456,14 @@ class MayaFitJointHost:
         ) or []
         joint_paths = sorted(set(joint_paths), key=lambda path: (path.count("|"), path))
         nodes: list[FitHierarchyNode] = []
+        sibling_orders: dict[str, tuple[str, ...]] = {}
         for path in joint_paths:
             parents = self._cmds.listRelatives(path, parent=True, fullPath=True) or []
+            parent = parents[0] if parents else None
+            if parent is not None and parent not in sibling_orders:
+                sibling_orders[parent] = tuple(self._cmds.listRelatives(
+                    parent, children=True, type="joint", fullPath=True
+                ) or ())
             local = self._cmds.getAttr(f"{path}.translate")[0]
             world = self._cmds.xform(
                 path, query=True, worldSpace=True, translation=True
@@ -477,11 +483,13 @@ class MayaFitJointHost:
                 FitHierarchyNode(
                     path=path,
                     short_name=leaf.rsplit(":", 1)[-1],
-                    dag_parent=parents[0] if parents else None,
+                    dag_parent=parent,
                     local_position=tuple(float(value) for value in local),
                     world_position=tuple(float(value) for value in world),
                     locked_translation_axes=locked_axes,
                     writable_translation_axes=writable_axes,
+                    sibling_index=(sibling_orders[parent].index(path)
+                                   if parent is not None else 0),
                 )
             )
         return FitHierarchySnapshot(container=container, joints=tuple(nodes))

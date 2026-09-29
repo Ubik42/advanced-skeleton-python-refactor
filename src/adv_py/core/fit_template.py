@@ -275,6 +275,7 @@ def predict_fit_template_hierarchy(
     paths: dict[str, str] = {}
     world_positions: dict[str, Vector3] = {}
     nodes: list[FitHierarchyNode] = []
+    sibling_counts: dict[str, int] = {}
     for spec in ordered_fit_joints(template):
         parent_path = container_path
         parent_world = (0.0, 0.0, 0.0)
@@ -289,6 +290,8 @@ def predict_fit_template_hierarchy(
         )
         paths[spec.name] = path
         world_positions[spec.name] = world
+        sibling_index = sibling_counts.get(parent_path, 0)
+        sibling_counts[parent_path] = sibling_index + 1
         nodes.append(
             FitHierarchyNode(
                 path=path,
@@ -296,6 +299,7 @@ def predict_fit_template_hierarchy(
                 dag_parent=parent_path,
                 local_position=spec.local_position,
                 world_position=world,
+                sibling_index=sibling_index,
             )
         )
     return FitHierarchySnapshot(container_path, tuple(nodes))

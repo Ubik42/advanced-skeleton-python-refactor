@@ -22,6 +22,7 @@ class FitHierarchyNode:
     world_position: Vector3
     locked_translation_axes: frozenset[str] = frozenset()
     writable_translation_axes: frozenset[str] = TRANSLATION_AXES
+    sibling_index: int = 0
 
 
 @dataclass(frozen=True, slots=True)

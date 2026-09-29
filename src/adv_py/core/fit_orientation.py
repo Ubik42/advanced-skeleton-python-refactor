@@ -471,13 +471,12 @@ def plan_simple_fit_orientations(
                 f"{hierarchy[path].short_name} 必须至少有一个直接 joint 子级"
             )
         child_path = child_selections.get(path)
-        if len(direct_children) > 1 and child_path is None:
-            raise FitOrientationValidationError(
-                f"{hierarchy[path].short_name} 有多个直接 joint 子级，"
-                "必须显式指定朝向子级"
-            )
         if child_path is None:
-            child_path = direct_children[0]
+            child_path = select_fit_orientation_child(snapshot, path)
+        if child_path is None:
+            raise FitOrientationValidationError(
+                f"{hierarchy[path].short_name} 没有符合原版 asRlaChild 规则的子关节"
+            )
         if any(abs(value) > tolerance for value in state.rotation):
             raise FitOrientationValidationError(
                 f"{hierarchy[path].short_name} 的 rotate 必须先归零"
@@ -663,12 +662,46 @@ def _validate_orientation_snapshot(
 
 def _joint_children(snapshot: FitHierarchySnapshot) -> dict[str, list[str]]:
     children: dict[str, list[str]] = {node.path: [] for node in snapshot.joints}
+    nodes = {node.path: node for node in snapshot.joints}
     for node in snapshot.joints:
         if node.dag_parent in children:
             children[node.dag_parent].append(node.path)
     for paths in children.values():
-        paths.sort()
+        paths.sort(key=lambda path: (nodes[path].sibling_index, path))
     return children
+
+
+def select_fit_orientation_child(
+    snapshot: FitOrientationSnapshot,
+    joint: str,
+) -> str | None:
+    """Reproduce the preferred-child choice of MEL asRlaChild."""
+    nodes = {node.path: node for node in snapshot.hierarchy.joints}
+    node = nodes.get(joint)
+    if node is None:
+        raise FitOrientationValidationError(f"Fit joint 不在目标层级中：{joint}")
+    children = _joint_children(snapshot.hierarchy)[joint]
+    if not children:
+        return None
+    tolerance = 0.01 * snapshot.fit_scale
+    center = abs(node.world_position[0]) < tolerance
+    chosen = next((
+        path for path in children
+        if (abs(nodes[path].world_position[0]) < tolerance) == center
+    ), None)
+    preferred = (
+        ("Head", "Head"),
+        ("Ankle", "Toes"),
+        ("Toes", "Toes"),
+        ("Root", "Spine"),
+    )
+    for parent_word, child_word in preferred:
+        if parent_word in node.short_name:
+            matches = [path for path in children
+                       if child_word in nodes[path].short_name]
+            if matches:
+                chosen = matches[-1]
+    return chosen
 
 
 def _rp_fit_chains(

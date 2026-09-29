@@ -24,7 +24,8 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     SetControlOrientationWorldAxisMatch,
     SetControlOrientationWorldMatch,
     DetachCustomControlOrientations, AttachCustomControlOrientations,
-    CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
+    CreateAndImportFitSkeleton, EditFitJointMetadata,
+    EditAndOrientFitJointPositions,
     ExportFitSkeleton, ExportExternalFitSkeleton, ExportSkinWeights,
     OrientFitJoints,
     OrientWorldFitJoints,
@@ -522,7 +523,8 @@ class MayaPanelController:
                            container: str = "FitSkeleton") -> int:
         patch = FitJointPositionPatch(tuple(
             FitJointPositionEdit(joint, position) for joint, position in edits))
-        result = EditFitJointPositions(self._host(namespace)).apply(patch, container)
+        result = EditAndOrientFitJointPositions(
+            self._host(namespace)).apply(patch, container)
         return len(result.plan.changes)
 
     def fit_edit_metadata(self, namespace: str, joints: tuple[str, ...],

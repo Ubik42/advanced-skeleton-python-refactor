@@ -301,6 +301,11 @@ from .fit_position import (
     FitPositionEditResult,
     FitPositionHost,
 )
+from .fit_position_oriented import (
+    EditAndOrientFitJointPositions,
+    OrientedFitPositionHost,
+    OrientedFitPositionResult,
+)
 from .fit_settings import (
     EnsureFitSkeletonSettings,
     FitSkeletonEnsurePlan,
@@ -665,6 +670,9 @@ __all__ = [
     "JointLabelResult",
     "OrientSimpleFitChain",
     "OrientFitJoints",
+    "EditAndOrientFitJointPositions",
+    "OrientedFitPositionHost",
+    "OrientedFitPositionResult",
     "OrientBodySkeleton",
     "OrientWorldFitJoints",
     "FitOrientationAutoHost",
