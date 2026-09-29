@@ -33,7 +33,8 @@ def match_ik(host, registration, before):
             parameters.extend((control+'.rotate'+axis,180./pi,None,None) for axis in 'XYZ')
     original_range=c.getAttr(plan.root_path+'.advPySplineOwner') in (
         'adv_py.spline.v8','adv_py.spline.v9',
-        'adv_py.spline.v10','adv_py.spline.v11')
+        'adv_py.spline.v10','adv_py.spline.v11',
+        'adv_py.spline.v12','adv_py.spline.v13')
     parameters.extend((plan.settings+'.'+attribute,10. if original_range else 1.,0.,1.)
                       for attribute in (('stretchy','volume') if original_range
                                         else ('stretch','volume')))

@@ -12,7 +12,7 @@ def prepare(host,plan):
     c=host._cmds
     c.createNode('transform',name='AdvPy_SplineMechanisms',parent=plan.root_path.rsplit('|',1)[0],skipSelect=True)
     c.addAttr(plan.root_path,longName='advPySplineOwner',dataType='string')
-    c.setAttr(plan.root_path+'.advPySplineOwner','adv_py.spline.v11' if plan.curved else 'adv_py.spline.v10',type='string',lock=True)
+    c.setAttr(plan.root_path+'.advPySplineOwner','adv_py.spline.v13' if plan.curved else 'adv_py.spline.v12',type='string',lock=True)
     for joint in plan.joints:host.create_body_arm_mechanism_joint(joint)
     last=plan.joints[len(plan.body_joints)-1]
     host._spine_frame('AdvPy_SplineChestSpace',plan.chest_space.rsplit('|',1)[0],last.world_position,last.world_axes)
@@ -94,11 +94,20 @@ def create(host,plan):
     c.setAttr('AdvPy_SplineClamp.minR',.001);c.setAttr('AdvPy_SplineClamp.maxR',1000.)
     c.connectAttr('AdvPy_SplineStretchBlend.outputR','AdvPy_SplineClamp.inputR')
     c.createNode('multiplyDivide',name='AdvPy_SplineVolumeExponent',skipSelect=True)
-    c.connectAttr('AdvPy_SplineVolumeUnit.output','AdvPy_SplineVolumeExponent.input1X');c.setAttr('AdvPy_SplineVolumeExponent.input2X',-.5)
+    c.connectAttr('AdvPy_SplineVolumeUnit.output','AdvPy_SplineVolumeExponent.input1X')
+    c.connectAttr('AdvPy_SplineStretchUnit.output','AdvPy_SplineVolumeExponent.input2X')
+    c.createNode('clamp',name='AdvPy_SplineVolumeRatioClamp',skipSelect=True)
+    c.setAttr('AdvPy_SplineVolumeRatioClamp.minR',.001);c.setAttr('AdvPy_SplineVolumeRatioClamp.maxR',1000.)
+    c.connectAttr('AdvPy_SplineRatio.outputX','AdvPy_SplineVolumeRatioClamp.inputR')
     c.createNode('multiplyDivide',name='AdvPy_SplineVolume',skipSelect=True);c.setAttr('AdvPy_SplineVolume.operation',3)
-    c.connectAttr('AdvPy_SplineClamp.outputR','AdvPy_SplineVolume.input1X');c.connectAttr('AdvPy_SplineVolumeExponent.outputX','AdvPy_SplineVolume.input2X')
+    c.connectAttr('AdvPy_SplineVolumeRatioClamp.outputR','AdvPy_SplineVolume.input1X')
+    c.setAttr('AdvPy_SplineVolume.input2X',-.5)
+    c.createNode('blendTwoAttr',name='AdvPy_SplineVolumeBlend',skipSelect=True)
+    c.setAttr('AdvPy_SplineVolumeBlend.input[0]',1.)
+    c.connectAttr('AdvPy_SplineVolume.outputX','AdvPy_SplineVolumeBlend.input[1]')
+    c.connectAttr('AdvPy_SplineVolumeExponent.outputX','AdvPy_SplineVolumeBlend.attributesBlender')
     c.createNode('addDoubleLinear',name='AdvPy_SplineVolumeDelta',skipSelect=True)
-    c.connectAttr('AdvPy_SplineVolume.outputX','AdvPy_SplineVolumeDelta.input1')
+    c.connectAttr('AdvPy_SplineVolumeBlend.output','AdvPy_SplineVolumeDelta.input1')
     c.setAttr('AdvPy_SplineVolumeDelta.input2',-1.)
     for i,joint in enumerate(ik):
         blend=f'AdvPy_SplineIKScaleBlend{i}'
@@ -189,19 +198,26 @@ def audit(host,plan):
                      'adv_py.spline.v4','adv_py.spline.v5',
                      'adv_py.spline.v6','adv_py.spline.v7',
                      'adv_py.spline.v8','adv_py.spline.v9',
-                     'adv_py.spline.v10','adv_py.spline.v11'):raise FitSkeletonValidationError('Spline 所有权标记无效')
+                     'adv_py.spline.v10','adv_py.spline.v11',
+                     'adv_py.spline.v12','adv_py.spline.v13'):raise FitSkeletonValidationError('Spline 所有权标记无效')
     if (owner in ('adv_py.spline.v3','adv_py.spline.v5','adv_py.spline.v7',
-                  'adv_py.spline.v9','adv_py.spline.v11'))!=plan.curved:raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
+                  'adv_py.spline.v9','adv_py.spline.v11',
+                  'adv_py.spline.v13'))!=plan.curved:raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
     new_scaling=owner in ('adv_py.spline.v4','adv_py.spline.v5',
                           'adv_py.spline.v6','adv_py.spline.v7',
                           'adv_py.spline.v8','adv_py.spline.v9',
-                          'adv_py.spline.v10','adv_py.spline.v11')
+                          'adv_py.spline.v10','adv_py.spline.v11',
+                          'adv_py.spline.v12','adv_py.spline.v13')
     oriented_scaling=owner in ('adv_py.spline.v6','adv_py.spline.v7',
                                'adv_py.spline.v8','adv_py.spline.v9',
-                               'adv_py.spline.v10','adv_py.spline.v11')
+                               'adv_py.spline.v10','adv_py.spline.v11',
+                               'adv_py.spline.v12','adv_py.spline.v13')
     original_range=owner in ('adv_py.spline.v8','adv_py.spline.v9',
-                             'adv_py.spline.v10','adv_py.spline.v11')
-    terminal_without_volume=owner in ('adv_py.spline.v10','adv_py.spline.v11')
+                             'adv_py.spline.v10','adv_py.spline.v11',
+                             'adv_py.spline.v12','adv_py.spline.v13')
+    terminal_without_volume=owner in ('adv_py.spline.v10','adv_py.spline.v11',
+                                      'adv_py.spline.v12','adv_py.spline.v13')
+    original_volume_graph=owner in ('adv_py.spline.v12','adv_py.spline.v13')
     missing=tuple(name for name in plan.node_names
                   if not (owner=='adv_py.spline.v1' and 'WorldScale' in name)
                   and not (not new_scaling and (name.startswith('AdvPy_SplineIKScale')
@@ -209,6 +225,8 @@ def audit(host,plan):
                   and not (not oriented_scaling and name.startswith('AdvPy_SplineIKLocalOrient'))
                   and not (not original_range and name in (
                       'AdvPy_SplineStretchUnit','AdvPy_SplineVolumeUnit'))
+                  and not (not original_volume_graph and name in (
+                      'AdvPy_SplineVolumeRatioClamp','AdvPy_SplineVolumeBlend'))
                   and not (terminal_without_volume and name in (
                       f'AdvPy_SplineIKScaleWeight{n-1}',
                       f'AdvPy_SplineIKScaleAdd{n-1}'))
@@ -219,8 +237,7 @@ def audit(host,plan):
     edges=[(shape+'.worldSpace[0]','AdvPy_SplineIKHandle.inCurve'),(shape+'.local','AdvPy_SplineArc.inputCurve'),
         ('AdvPy_SplineArc.arcLength','AdvPy_SplineRatio.input1X'),('AdvPy_SplineRatio.outputX','AdvPy_SplineStretchBlend.color1R'),
         ('AdvPy_SplineStretchBlend.outputR','AdvPy_SplineClamp.inputR'),
-        ('AdvPy_SplineVolumeExponent.outputX','AdvPy_SplineVolume.input2X'),
-        ('AdvPy_SplineClamp.outputR','AdvPy_SplineVolume.input1X'),(plan.settings+'.spineIkFk','AdvPy_SplineReverse.inputX'),
+        (plan.settings+'.spineIkFk','AdvPy_SplineReverse.inputX'),
         (plan.targets[0]+'.worldMatrix[0]','AdvPy_SplineIKHandle.dWorldUpMatrix'),(plan.targets[-1]+'.worldMatrix[0]','AdvPy_SplineIKHandle.dWorldUpMatrixEnd')]
     if original_range:
         edges += [(plan.settings+'.stretchy','AdvPy_SplineStretchUnit.input'),
@@ -230,6 +247,16 @@ def audit(host,plan):
     else:
         edges += [(plan.settings+'.stretch','AdvPy_SplineStretchBlend.blender'),
                   (plan.settings+'.volume','AdvPy_SplineVolumeExponent.input1X')]
+    if original_volume_graph:
+        edges += [('AdvPy_SplineStretchUnit.output','AdvPy_SplineVolumeExponent.input2X'),
+                  ('AdvPy_SplineRatio.outputX','AdvPy_SplineVolumeRatioClamp.inputR'),
+                  ('AdvPy_SplineVolumeRatioClamp.outputR','AdvPy_SplineVolume.input1X'),
+                  ('AdvPy_SplineVolume.outputX','AdvPy_SplineVolumeBlend.input[1]'),
+                  ('AdvPy_SplineVolumeExponent.outputX','AdvPy_SplineVolumeBlend.attributesBlender'),
+                  ('AdvPy_SplineVolumeBlend.output','AdvPy_SplineVolumeDelta.input1')]
+    else:
+        edges += [('AdvPy_SplineVolumeExponent.outputX','AdvPy_SplineVolume.input2X'),
+                  ('AdvPy_SplineClamp.outputR','AdvPy_SplineVolume.input1X')]
     for i,target in enumerate(plan.targets):
         edges += [(target+'.worldMatrix[0]',f'AdvPy_SplineIK{i}Matrix.matrixIn[0]'),
             (plan.curve+'.worldInverseMatrix[0]',f'AdvPy_SplineIK{i}Matrix.matrixIn[1]'),
@@ -271,8 +298,9 @@ def audit(host,plan):
         if i:edges += [('AdvPy_SplineClamp.outputR',f'AdvPy_SplineLength{i}.input2X'),
             (f'AdvPy_SplineLength{i}.outputX',joint.path+'.translateX'),(plan.joints[n+i-1].path+'.scale',joint.path+'.inverseScale')]
     if new_scaling:
-        edges.append(('AdvPy_SplineVolume.outputX',
-                      'AdvPy_SplineVolumeDelta.input1'))
+        if not original_volume_graph:
+            edges.append(('AdvPy_SplineVolume.outputX',
+                          'AdvPy_SplineVolumeDelta.input1'))
     bad=[(a,b) for a,b in edges if not c.isConnected(a,b)]
     if bad:raise FitSkeletonValidationError('Spline 曲线或伸展连接被替换：'+repr(bad[:2]))
     if new_scaling and any(
@@ -302,12 +330,19 @@ def audit(host,plan):
     if rest_arc<=0:raise FitSkeletonValidationError('Spline 绑定曲线长度无效')
     constants={'AdvPy_SplineRatio.operation':2,'AdvPy_SplineRatio.input2X':rest_arc,
         'AdvPy_SplineStretchBlend.color2R':1.,'AdvPy_SplineClamp.minR':.001,'AdvPy_SplineClamp.maxR':1000.,
-        'AdvPy_SplineVolumeExponent.operation':1,'AdvPy_SplineVolumeExponent.input2X':-.5,'AdvPy_SplineVolume.operation':3,
+        'AdvPy_SplineVolumeExponent.operation':1,'AdvPy_SplineVolume.operation':3,
         'AdvPy_SplineIKHandle.dTwistControlEnable':1,'AdvPy_SplineIKHandle.dWorldUpType':4,
         'AdvPy_SplineIKHandle.dForwardAxis':0,'AdvPy_SplineIKHandle.dWorldUpAxis':0}
     if original_range:
         constants['AdvPy_SplineStretchUnit.conversionFactor']=.1
         constants['AdvPy_SplineVolumeUnit.conversionFactor']=.1
+    if original_volume_graph:
+        constants.update({'AdvPy_SplineVolumeRatioClamp.minR':.001,
+                          'AdvPy_SplineVolumeRatioClamp.maxR':1000.,
+                          'AdvPy_SplineVolume.input2X':-.5,
+                          'AdvPy_SplineVolumeBlend.input[0]':1.})
+    else:
+        constants['AdvPy_SplineVolumeExponent.input2X']=-.5
     if new_scaling:
         constants['AdvPy_SplineVolumeDelta.input2']=-1.
         for i in range(n):
@@ -331,7 +366,8 @@ def audit(host,plan):
                  'adv_py.spline.v4','adv_py.spline.v5',
                  'adv_py.spline.v6','adv_py.spline.v7',
                  'adv_py.spline.v8','adv_py.spline.v9',
-                 'adv_py.spline.v10','adv_py.spline.v11'):
+                 'adv_py.spline.v10','adv_py.spline.v11',
+                 'adv_py.spline.v12','adv_py.spline.v13'):
         identity=(1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.)
         for i in range(1,n):
             node=f'AdvPy_SplineScale{i}'

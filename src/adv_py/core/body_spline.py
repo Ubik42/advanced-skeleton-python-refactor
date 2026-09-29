@@ -53,7 +53,8 @@ class BodySplinePlan:
         fixed=('AdvPy_SplineMechanisms','AdvPy_SplineChestSpace','AdvPy_SplineCurve','AdvPy_SplineCurveShape',
             'AdvPy_SplineIKHandle','AdvPy_SplineIKEffector','AdvPy_SplineFKRootPoint','AdvPy_SplineIKRootPoint',
             'AdvPy_SplineChestOrient','AdvPy_SplineReverse','AdvPy_SplineArc',
-            'AdvPy_SplineRatio','AdvPy_SplineStretchBlend','AdvPy_SplineClamp','AdvPy_SplineVolumeExponent','AdvPy_SplineVolume')
+            'AdvPy_SplineRatio','AdvPy_SplineStretchBlend','AdvPy_SplineClamp','AdvPy_SplineVolumeExponent','AdvPy_SplineVolume',
+            'AdvPy_SplineVolumeRatioClamp','AdvPy_SplineVolumeBlend')
         targets=tuple(f'AdvPy_SplineIK{i}{suffix}' for i in range(len(self.targets)) for suffix in ('Offset','','Shape','Matrix','Position'))
         outputs=tuple(f'AdvPy_Spline{kind}{i}' for i in range(1,len(self.body_joints)) for kind in ('Point','Orient','Scale','Length','FKWorldScale','IKWorldScale'))
         rests=tuple(f'AdvPy_SplineIKRest{i}' for i in range(1,len(self.body_joints))) if self.curved else ()
