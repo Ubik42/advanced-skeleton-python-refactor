@@ -36,6 +36,7 @@ from .body_character_rig import (BuildBodyCharacterRig,
                                  BodyCharacterRigBuildPlan,
                                  BodyCharacterRigBuildResult)
 from .body_rig_validation import body_bind_pose_matches
+from adv_py.core.body_skeleton import body_skeleton_unchanged
 from .character_registry import RegisterBodyCharacter
 from .body_selection_sets import BuildBodySelectionSets
 from .body_build_pose import GoToBodyBuildPose
@@ -50,6 +51,9 @@ from .fit_part_twist import (
 from .fit_part_registration import RegisterFitPartChannels
 from .fit_tweaker import BuildFitTweakers
 from .fit_tweaker_registration import RegisterFitTweakers
+from .body_fit_advanced_constraint import (
+    BuildFitAdvancedConstraints, RegisterFitAdvancedConstraints,
+)
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
 from .fit_inbetween_body import plan_combined_part_hierarchy
@@ -687,6 +691,25 @@ class BuildRegisteredBodyCharacter:
                         "无分段 HipSwinger 接线后 Torso 复检失败："
                         + "；".join(torso_issues))
                 rig = replace(rig, plan=rig_plan, torso=torso_snapshot)
+            fk_control_specs = (
+                rig.plan.arm.fk_controls.controls
+                + rig.plan.leg.fk_controls.controls
+                + (rig.plan.hand.controls.controls
+                   if rig.plan.hand is not None else ())
+                + (rig.plan.torso.torso.controls.controls
+                   if rig.plan.torso is not None else ()))
+            pre_constraint_body = joined.capture_body_skeleton(
+                skeleton.snapshot.root)
+            advanced_constraints = BuildFitAdvancedConstraints(joined).apply(
+                rig.plan.arm.safety.symmetry.source.metadata,
+                fk_control_specs,
+                pre_constraint_body.joints)
+            if advanced_constraints and not body_skeleton_unchanged(
+                    pre_constraint_body,
+                    joined.capture_body_skeleton(skeleton.snapshot.root),
+                    tolerance=1e-4):
+                raise RuntimeError(
+                    "Advanced Constraint 改变了 Body 绑定姿态")
             tweakers = None
             if preview.build.build_options.use_offset_parent_matrix:
                 tweakers = plan_fit_tweakers(
@@ -702,6 +725,8 @@ class BuildRegisteredBodyCharacter:
                                  if fit_part_hierarchy is not None else None))
                 BuildFitTweakers(joined).apply(tweakers)
             registration = RegisterBodyCharacter(joined).apply(rig)
+            registration = RegisterFitAdvancedConstraints(joined).apply(
+                registration, advanced_constraints)
             if tweakers is not None:
                 registration = RegisterFitTweakers(joined).apply(
                     registration, tweakers)
@@ -762,13 +787,6 @@ class BuildRegisteredBodyCharacter:
                     segments.extend((spec.part1, spec.part2))
             registered_controls = {channel.node
                                    for channel in registration.channels}
-            fk_control_specs = (
-                rig.plan.arm.fk_controls.controls
-                + rig.plan.leg.fk_controls.controls
-                + (rig.plan.hand.controls.controls
-                   if rig.plan.hand is not None else ())
-                + (rig.plan.torso.torso.controls.controls
-                   if rig.plan.torso is not None else ()))
             locked_selection_extras = tuple(
                 spec.extra_path or spec.control_path
                 for spec in fk_control_specs
