@@ -110,10 +110,6 @@ def plan_fit_inbetween(
     reparents: list[FitInbetweenReparent] = []
     for start in hierarchy.joints:
         metadata_item = source[start.path]
-        if (metadata_item.inbetween_joints is not None
-                and metadata_item.twist_joints is not None):
-            raise FitInbetweenValidationError(
-                "Fit joint 不能同时设置 Twist 和 Inbetween：" + start.path)
         count = metadata_item.inbetween_joints or 0
         if count < 0:
             raise FitInbetweenValidationError(
@@ -123,9 +119,13 @@ def plan_fit_inbetween(
         end = _rla_child(start, children.get(start.path, ()),
                          center_tolerance)
         if end is None:
+            # asBuildAdvancedSkeleton only reads inbetweenJoints inside its
+            # asRlaChild guard; a terminal marker creates no Part chain.
+            continue
+        if (metadata_item.inbetween_joints is not None
+                and metadata_item.twist_joints is not None):
             raise FitInbetweenValidationError(
-                "Inbetween 关节缺少同侧下游关节：" + start.path
-            )
+                "Fit joint 不能同时设置 Twist 和 Inbetween：" + start.path)
         parent_name = start.short_name
         for index in range(1, count + 1):
             name = start.short_name + "Part" + str(index)
