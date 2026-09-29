@@ -20,6 +20,28 @@ class MayaMannequinHost(MayaSkeletonGeometryHost):
         super().__init__(namespace)
         self._mannequin_created: list[tuple[str, str]] = []
 
+    def _fit_heel(self, joint: str) -> tuple[float, float, float] | None:
+        c = self.cmds
+        stem = self._leaf(joint)[:-2]
+        if not stem.startswith("Ankle"):
+            return None
+        fit_joint = self._name(stem)
+        if not c.objExists(fit_joint):
+            return None
+        children = c.listRelatives(fit_joint, children=True,
+                                   type="joint", fullPath=True) or []
+        for child in children:
+            label = (str(c.getAttr(child + ".otherType") or "")
+                     if c.getAttr(child + ".drawLabel")
+                     and int(c.getAttr(child + ".type")) == 18 else "")
+            if "Heel" not in label and "Heel" not in self._leaf(child):
+                continue
+            position = tuple(float(value) for value in c.xform(
+                child, query=True, worldSpace=True, translation=True))
+            side_factor = -1 if self._leaf(joint).endswith("_L") else 1
+            return (position[0] * side_factor, position[1], position[2])
+        return None
+
     def _rla_child(self, joint: str, center_tolerance: float) -> str:
         c = self.cmds
         children = c.listRelatives(joint, children=True,
@@ -81,7 +103,7 @@ class MayaMannequinHost(MayaSkeletonGeometryHost):
             end = tuple(float(value) for value in c.xform(
                 child, query=True, worldSpace=True, translation=True))
             segments.append(MannequinSegment(self._leaf(joint),
-                                             self._leaf(child), position, end))
+                self._leaf(child), position, end, self._fit_heel(joint)))
         return tuple(segments), max(all_y) - min(all_y)
 
     def preflight_mannequin(self,

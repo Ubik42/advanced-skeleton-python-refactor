@@ -54,12 +54,31 @@ class MayaPolyBoxesHost(MayaSkinCageHost):
             values.append(float(c.getAttr(joint + "." + attribute)))
         return 1.75 * values[0], 1.75 * values[1]
 
+    def _fit_heel(self, joint: str, side: str):
+        c = self.cmds
+        for child in c.listRelatives(joint, children=True,
+                                     type="joint", fullPath=True) or ():
+            label = (str(c.getAttr(child + ".otherType") or "")
+                     if c.getAttr(child + ".drawLabel")
+                     and int(c.getAttr(child + ".type")) == 18 else "")
+            if "Heel" not in label and "Heel" not in self._leaf(child):
+                continue
+            position = c.xform(child, query=True,
+                               worldSpace=True, translation=True)
+            return ((-1 if side == "_L" else 1) * float(position[0]),
+                    float(position[1]), float(position[2]))
+        return None
+
     def capture_sources(self) -> tuple[PolyBoxSource, ...]:
         c = self.cmds
         fit = self._name("FitSkeleton")
         deform = self._name("DeformSet")
         if not c.objExists(fit) or not c.objExists(deform):
             raise ValueError("PolyBoxes 需要已构建的 FitSkeleton 和 DeformSet")
+        template = (str(c.getAttr(fit + ".fitSkeletonTemplate") or "")
+                    if c.attributeQuery("fitSkeletonTemplate", node=fit,
+                                        exists=True) else "")
+        biped = template.lower().startswith("biped")
         members = {self._leaf(node) for node in c.sets(deform, query=True) or []
                    if c.objExists(node) and c.nodeType(node) == "joint"}
         sources = []
@@ -110,7 +129,9 @@ class MayaPolyBoxesHost(MayaSkinCageHost):
                              for axis in range(3)))
                 sources.append(PolyBoxSource(
                     stem, side, start_name, end_name, start, end,
-                    start_front, start_width, end_front, end_width, parts))
+                    start_front, start_width, end_front, end_width, parts,
+                    biped and ("Ankle" in stem or "Toes" in stem),
+                    self._fit_heel(joint, side) if "Ankle" in stem else None))
         return tuple(sources)
 
     def preflight_create(self, plan: tuple[PolyBoxSpec, ...]) -> None:
@@ -163,6 +184,40 @@ class MayaPolyBoxesHost(MayaSkinCageHost):
         c.parentConstraint(self._name(spec.driver), holder,
                            maintainOffset=True)
 
+    def _drop_foot(self, spec: PolyBoxSpec) -> None:
+        if not spec.floor_foot:
+            return
+        c = self.cmds
+        box = self._name(spec.name)
+        vertices = c.ls(box + ".vtx[*]", flatten=True) or []
+        if len(vertices) < 4:
+            raise ValueError("足部 PolyBox 缺少四个底面顶点：" + spec.name)
+        if spec.heel is not None:
+            closest = sorted(vertices, key=lambda vertex: dist(
+                c.xform(vertex, query=True, worldSpace=True,
+                        translation=True), spec.heel))[:2]
+            positions = [c.xform(vertex, query=True, worldSpace=True,
+                                 translation=True) for vertex in closest]
+            offset = tuple(spec.heel[axis] -
+                           (positions[0][axis] + positions[1][axis]) / 2
+                           for axis in range(3))
+            for vertex, position in zip(closest, positions):
+                c.xform(vertex, worldSpace=True, translation=tuple(
+                    position[axis] + offset[axis] for axis in range(3)))
+        height = float(c.getAttr(box + ".scaleY"))
+        try:
+            c.setAttr(box + ".scaleY", 10.0)
+            bottom = sorted(vertices, key=lambda vertex: float(
+                c.xform(vertex, query=True, worldSpace=True,
+                        translation=True)[1]))[:4]
+        finally:
+            c.setAttr(box + ".scaleY", height)
+        for vertex in bottom:
+            position = c.xform(vertex, query=True,
+                               worldSpace=True, translation=True)
+            c.xform(vertex, worldSpace=True,
+                    translation=(position[0], 0.0, position[2]))
+
     def create(self, plan: tuple[PolyBoxSpec, ...]) -> None:
         c = self.cmds
         parent = c.createNode("transform", name=self._name("BoxesGeometry"),
@@ -174,6 +229,7 @@ class MayaPolyBoxesHost(MayaSkinCageHost):
         c.setAttr(layer + ".color", 14)
         for spec in plan:
             self._create_box(spec, parent)
+            self._drop_foot(spec)
         c.editDisplayLayerMembers(layer, parent, noRecurse=False)
         c.sets(parent, edit=True, forceElement="initialShadingGroup")
 
@@ -196,6 +252,12 @@ class MayaPolyBoxesHost(MayaSkinCageHost):
                     or not c.objExists(holder)
                     or holder not in (c.listRelatives(box, parent=True) or [])):
                 return False
+            if spec.floor_foot:
+                heights = tuple(float(c.xform(vertex, query=True,
+                    worldSpace=True, translation=True)[1]) for vertex in
+                    c.ls(box + ".vtx[*]", flatten=True) or ())
+                if sum(abs(value) <= 1e-4 for value in heights) < 4:
+                    return False
         return True
 
     def exists(self) -> bool:

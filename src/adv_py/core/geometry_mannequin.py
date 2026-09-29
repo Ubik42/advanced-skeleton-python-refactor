@@ -14,6 +14,7 @@ class MannequinSegment:
     child: str
     start: Vec3
     end: Vec3
+    heel: Vec3 | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +58,14 @@ def plan_mannequin(segments: tuple[MannequinSegment, ...],
         foot = stem.startswith(("Ankle", "Toes"))
         if foot:
             source, suffix = "Mannequin_Foot", "_Sphere"
-            scale = (length, length, length)
+            foot_start = (segment.heel if stem.startswith("Ankle")
+                          and segment.heel is not None else segment.start)
+            foot_length = dist(foot_start, segment.end)
+            if foot_length < 1e-5:
+                raise ValueError("Mannequin 足跟至脚趾长度无效：" + joint)
+            if stem.startswith("Ankle") and segment.heel is not None:
+                foot_length *= 0.87
+            scale = (foot_length, foot_length, foot_length)
         else:
             source, suffix = "Mannequin_Limb", "_Limb"
             scale = (length, length / 2, length / 2)
@@ -70,7 +78,8 @@ def plan_mannequin(segments: tuple[MannequinSegment, ...],
                 scale = (length * 1.1, character_height / 10,
                          character_height / 10)
         pieces.append(MannequinPiece(joint, segment.child, source,
-            joint + suffix, scale, segment.start, segment.end))
+            joint + suffix, scale,
+            foot_start if foot else segment.start, segment.end))
         sphere = length / 2
         if stem.startswith("Finger"):
             sphere = character_height / 50

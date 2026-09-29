@@ -21,6 +21,8 @@ class PolyBoxSource:
     end_front: float
     end_width: float
     parts: int
+    floor_foot: bool = False
+    heel: Vec3 | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +35,8 @@ class PolyBoxSpec:
     width_start: float
     front_end: float
     width_end: float
+    floor_foot: bool = False
+    heel: Vec3 | None = None
 
 
 def plan_poly_boxes(sources: tuple[PolyBoxSource, ...]) -> tuple[PolyBoxSpec, ...]:
@@ -63,7 +67,9 @@ def plan_poly_boxes(sources: tuple[PolyBoxSource, ...]) -> tuple[PolyBoxSpec, ..
             boxes.append(PolyBoxSpec(
                 stem + "Box" + source.side,
                 (stem + source.side if index else source.start_joint),
-                start, end, front_a, width_a, front_b, width_b))
+                start, end, front_a, width_a, front_b, width_b,
+                source.floor_foot and index == 0,
+                source.heel if index == 0 else None))
     if len({box.name for box in boxes}) != len(boxes):
         raise ValueError("PolyBoxes 目标名称重复")
     return tuple(boxes)
