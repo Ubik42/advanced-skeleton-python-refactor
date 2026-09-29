@@ -108,19 +108,23 @@ class MayaBodyFitAimMixin:
             c.connectAttr(decompose + ".outputRotate", spec.follow + ".rotate")
 
         for side in spec.sides:
-            c.createNode("transform",
-                         name=side.target_offset.rsplit("|", 1)[-1],
-                         parent=center, skipSelect=True)
-            c.xform(side.target_offset, worldSpace=True,
-                    translation=side.bind_position)
-            c.setAttr(side.target_offset + ".scale", 0.2, 0.2, 0.2)
-            c.setAttr(side.target_offset + ".translateZ", 0.0)
-            target, shape = _cross(
-                c, side.target_control.rsplit("|", 1)[-1],
-                side.target_offset, spec.control_radius, 17)
-            if target != side.target_control:
-                raise RuntimeError("Aim 侧控制路径漂移")
-            c.connectAttr(global_control + ".aimLRVis", shape + ".visibility")
+            if side.suffix == "M":
+                target = center
+            else:
+                c.createNode("transform",
+                             name=side.target_offset.rsplit("|", 1)[-1],
+                             parent=center, skipSelect=True)
+                c.xform(side.target_offset, worldSpace=True,
+                        translation=side.bind_position)
+                c.setAttr(side.target_offset + ".scale", 0.2, 0.2, 0.2)
+                c.setAttr(side.target_offset + ".translateZ", 0.0)
+                target, shape = _cross(
+                    c, side.target_control.rsplit("|", 1)[-1],
+                    side.target_offset, spec.control_radius, 17)
+                if target != side.target_control:
+                    raise RuntimeError("Aim 侧控制路径漂移")
+                c.connectAttr(global_control + ".aimLRVis",
+                              shape + ".visibility")
             c.createNode("aimMatrix", name=side.aim_matrix_name,
                          skipSelect=True)
             c.setAttr(side.aim_matrix_name + ".secondaryInputAxis",
@@ -214,7 +218,8 @@ class MayaBodyFitAimMixin:
                                             "DM.inputMatrix")):
             return False
         for side in spec.sides:
-            for path in (side.target_offset, side.target_control,
+            for path in ((side.target_offset,) if side.suffix != "M" else ()) + (
+                         side.target_control,
                          side.fk_offset, side.fk_aim, side.fk_control):
                 if (c.ls(path, long=True) or []) != [path]:
                     return False
@@ -235,18 +240,21 @@ class MayaBodyFitAimMixin:
                      side.local_matrix_name + ".matrixIn[2]")):
                 if not c.isConnected(source, target):
                     return False
-            target_shapes = c.listRelatives(
-                side.target_control, shapes=True, fullPath=True,
-                type="nurbsCurve") or []
             fk_shapes = c.listRelatives(
                 side.fk_control, shapes=True, fullPath=True,
                 type="nurbsCurve") or []
-            if (len(target_shapes) != 1 or len(fk_shapes) != 1
-                    or not c.isConnected(global_control + ".aimLRVis",
-                                         target_shapes[0] + ".visibility")
+            if (len(fk_shapes) != 1
                     or not c.isConnected(global_control + ".aimFKVis",
                                          fk_shapes[0] + ".visibility")):
                 return False
+            if side.suffix != "M":
+                target_shapes = c.listRelatives(
+                    side.target_control, shapes=True, fullPath=True,
+                    type="nurbsCurve") or []
+                if (len(target_shapes) != 1
+                        or not c.isConnected(global_control + ".aimLRVis",
+                                             target_shapes[0] + ".visibility")):
+                    return False
             output = (side.fk_aim + ".offsetParentMatrix" if
                       use_offset_parent_matrix else
                       side.local_matrix_name + "DM.inputMatrix")

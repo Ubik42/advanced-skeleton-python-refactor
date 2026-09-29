@@ -55,8 +55,9 @@ def character_channels(rig):
         add("fit.aim." + aim.stem + ".center", aim.center_control,
             translation + rotation + ("follow",))
         for side in aim.sides:
-            add("fit.aim." + aim.stem + "." + side.suffix,
-                side.target_control, translation + rotation)
+            if side.suffix != "M":
+                add("fit.aim." + aim.stem + "." + side.suffix,
+                    side.target_control, translation + rotation)
     for label,module in (("arm",p.arm),("leg",p.leg)):
         for control in module.fk_controls.controls:
             add(label+".fk."+control.control_name.removeprefix("AdvPy_"),control.control_path,rotation)

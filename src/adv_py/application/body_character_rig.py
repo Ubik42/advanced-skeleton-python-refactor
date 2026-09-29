@@ -252,11 +252,6 @@ class BuildBodyCharacterRig:
         arm_aim = aim_source_names & frozenset(("Shoulder", "Elbow", "Wrist"))
         leg_aim = aim_source_names & frozenset(("Hip", "Knee", "Ankle",
                                                 "Toes", "ToesEnd"))
-        unsupported_aim = tuple(sorted(aim_source_names - arm_aim - leg_aim))
-        if unsupported_aim:
-            raise FitSkeletonValidationError(
-                "通用 Fit Aim 来源尚未接入对应 FK 控制层："
-                + "、".join(unsupported_aim))
         conflicting_aim = tuple(
             item.joint for item in safety.symmetry.source.metadata
             if (FitJointField.AIM in item.present_fields
@@ -309,6 +304,7 @@ class BuildBodyCharacterRig:
             hand = self._hand.plan_from_safety(
                 arm.safety,
                 control_radius=hand_control_radius,
+                aim_joint_names=aim_source_names,
             )
         elif present_hand_names or present_original_names:
             expected = (original_hand_names if present_original_names
@@ -320,7 +316,7 @@ class BuildBodyCharacterRig:
                 f"缺少 {len(missing)} 个关节：" + "、".join(missing),
             )
         torso = (
-            self._torso.plan_from_safety(safety, arm, leg, radius=torso_control_radius, spine_ik=include_spine_ik,description=axial_description,head_aim=include_head_aim)
+            self._torso.plan_from_safety(safety, arm, leg, radius=torso_control_radius, spine_ik=include_spine_ik,description=axial_description,head_aim=include_head_aim,aim_joint_names=aim_source_names)
             if include_torso else None
         )
         root_follow_main_path = (
@@ -453,7 +449,7 @@ class BuildBodyCharacterRig:
             safety.symmetry.source.hierarchy,
             safety.symmetry.source.metadata,
             safety.body,
-            arm.fk_controls.controls + leg.fk_controls.controls)
+            fk_controls)
         no_control_paths = plan_body_no_control(
             safety.symmetry.source.metadata,
             fk_controls)

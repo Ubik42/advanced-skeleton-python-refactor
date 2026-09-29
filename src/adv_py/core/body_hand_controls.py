@@ -92,6 +92,8 @@ class BodyHandFkControlPlan:
                 values.append(control.extra_name)
                 if control.extra_curve:
                     values.append(control.extra_name + "Shape")
+            if control.aim_name is not None:
+                values.append(control.aim_name)
             if control.sub_control_name is not None:
                 values.extend((control.sub_control_name,
                                control.sub_control_name + "Shape"))
@@ -245,11 +247,14 @@ def plan_body_hand_fk_controls(
     build_options: BodyBuildOptions = BodyBuildOptions(),
     source_icon_size: bool = True,
     fit_metadata: tuple[FitJointMetadata, ...] = (),
+    aim_joint_names: frozenset[str] = frozenset(),
 ) -> BodyHandFkControlPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise BodyHandControlValidationError("Hand 构建选项类型无效")
     if type(source_icon_size) is not bool:
         raise BodyHandControlValidationError("Hand FK 曲线尺寸规则无效")
+    if not isinstance(aim_joint_names, frozenset):
+        raise BodyHandControlValidationError("Hand Aim 来源集合无效")
     if (not isinstance(fit_metadata, tuple)
             or any(not isinstance(item, FitJointMetadata)
                    for item in fit_metadata)):
@@ -357,7 +362,11 @@ def plan_body_hand_fk_controls(
                 offset_path = f"{parent_path}|{offset_name}"
                 extra_name = (
                     f"{prefix}AdvPy_{digit.value}{index}FKExtra_{suffix}")
-                extra_path = f"{offset_path}|{extra_name}"
+                aim_name = (f"{prefix}AdvPy_{digit.value}{index}FKAim_{suffix}"
+                            if name in aim_joint_names else None)
+                aim_path = (f"{offset_path}|{aim_name}"
+                            if aim_name is not None else None)
+                extra_path = f"{aim_path or offset_path}|{extra_name}"
                 pose_name = (
                     f"{prefix}AdvPy_{digit.value}{index}Pose_{suffix}"
                 )
@@ -395,6 +404,8 @@ def plan_body_hand_fk_controls(
                     extra_path=extra_path,
                     extra_name=extra_name,
                     extra_curve=build_options.extra_controllers,
+                    aim_path=aim_path,
+                    aim_name=aim_name,
                     fit_joint_names=(f"{digit.value}{index}" if index <= 3
                                      else f"{digit.value}End",
                                      f"{digit.value}Finger{index}"),

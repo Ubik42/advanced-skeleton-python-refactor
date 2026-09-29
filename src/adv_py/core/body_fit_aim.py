@@ -67,18 +67,17 @@ class BodyFitAimSpec:
 
     @property
     def node_names(self) -> tuple[str, ...]:
-        return tuple(path.rsplit("|", 1)[-1] for path in (
-            self.root, self.offset, self.follow, self.center_control,
-            *(path for side in self.sides for path in (
-                side.target_offset, side.target_control)))) + tuple(
-                    name for side in self.sides for name in (
-                        side.aim_matrix_name, side.local_matrix_name,
-                        side.local_matrix_name + "DM")) + (
-                            self.follow_blend_name, self.follow_target_name,
-                            self.follow_static_name,
-                            self.follow_local_name,
-                            self.follow_local_name + "DM",
-                            self.follow_weight_name)
+        paths = (self.root, self.offset, self.follow, self.center_control)
+        paths += tuple(path for side in self.sides if side.suffix != "M"
+                       for path in (side.target_offset, side.target_control))
+        matrix_nodes = tuple(name for side in self.sides for name in (
+            side.aim_matrix_name, side.local_matrix_name,
+            side.local_matrix_name + "DM"))
+        follow_nodes = (self.follow_blend_name, self.follow_target_name,
+                        self.follow_static_name, self.follow_local_name,
+                        self.follow_local_name + "DM", self.follow_weight_name)
+        return (tuple(path.rsplit("|", 1)[-1] for path in paths)
+                + matrix_nodes + follow_nodes)
 
 
 def plan_body_fit_aim(
@@ -102,13 +101,16 @@ def plan_body_fit_aim(
         if FitJointField.AIM in item.present_fields
         and item.joint in children
     }
+    marked_names = {nodes[path].short_name.rsplit(":", 1)[-1]
+                    for path in marked if path in nodes}
     by_stem: dict[str, list[BodyLimbFkControlSpec]] = {}
     for control in controls:
         if control.aim_path is None:
             continue
-        if len(control.fit_joint_names) != 1:
-            raise ValueError("Fit Aim 控制必须有唯一来源关节")
-        by_stem.setdefault(control.fit_joint_names[0], []).append(control)
+        matched = set(control.fit_joint_names) & marked_names
+        if len(matched) != 1:
+            raise ValueError("Fit Aim 控制必须有唯一已标记的来源关节")
+        by_stem.setdefault(next(iter(matched)), []).append(control)
     scale = max(0.01, max((node.world_position[1]
                            for node in hierarchy.joints), default=0.0)
                 / 17.176163)
@@ -139,9 +141,11 @@ def plan_body_fit_aim(
         center = follow_path + "|AdvPy_Aim" + stem + "_M"
         sides = tuple(BodyFitAimSideSpec(
             suffix=item.side.value,
-            target_offset=center + "|AdvPy_AimOffset" + stem + "_" + item.side.value,
-            target_control=center + "|AdvPy_AimOffset" + stem + "_" + item.side.value
-                           + "|AdvPy_Aim" + stem + "_" + item.side.value,
+            target_offset=(center + "|AdvPy_AimOffset" + stem + "_" + item.side.value
+                           if item.side.value != "M" else ""),
+            target_control=(center + "|AdvPy_AimOffset" + stem + "_" + item.side.value
+                            + "|AdvPy_Aim" + stem + "_" + item.side.value
+                            if item.side.value != "M" else center),
             fk_offset=item.offset_path,
             fk_aim=item.aim_path or "",
             fk_control=item.control_path,

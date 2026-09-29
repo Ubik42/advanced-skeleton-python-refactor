@@ -148,6 +148,7 @@ class BodyTorsoPlan:
             for name in (control.offset_name, control.control_name,
                          control.control_name + "Shape", control.constraint_name,
                          *((control.extra_name,) if control.extra_name else ()),
+                         *((control.aim_name,) if control.aim_name else ()),
                          *((control.extra_name + "Shape",)
                            if control.extra_curve and control.extra_name else ()),
                          *((control.sub_control_name,
@@ -175,10 +176,12 @@ class BodyTorsoSnapshot:
 
 def plan_body_torso(
     body: BodySkeletonSnapshot, arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan,
-    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (),
+    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (), aim_joint_names: frozenset[str] = frozenset(),
 ) -> BodyTorsoPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise FitSkeletonValidationError("Torso 构建选项类型无效")
+    if not isinstance(aim_joint_names, frozenset):
+        raise FitSkeletonValidationError("Torso Aim 来源集合无效")
     if isinstance(radius, bool) or not isinstance(radius, (int, float)) or not isfinite(radius) or radius <= 0:
         raise FitSkeletonValidationError("Torso 控制半径必须是正有限数")
     description=BodyAxialDescription() if description is None else description
@@ -235,7 +238,11 @@ def plan_body_torso(
         extra_name = f"AdvPy_Torso{name}FKExtra"
         control_name = f"AdvPy_Torso{name}FK"
         offset_path = f"{parent}|{offset_name}"
-        extra_path = f"{offset_path}|{extra_name}"
+        aim_name = (f"AdvPy_Torso{name}FKAim"
+                    if name.rsplit("_", 1)[0] in aim_joint_names else None)
+        aim_path = (f"{offset_path}|{aim_name}"
+                    if aim_name is not None else None)
+        extra_path = f"{aim_path or offset_path}|{extra_name}"
         control_path = f"{extra_path}|{control_name}"
         sub_name = (f"AdvPy_Torso{name}FKSub"
                     if build_options.sub_controllers else None)
@@ -260,6 +267,8 @@ def plan_body_torso(
             extra_path=extra_path,
             extra_name=extra_name,
             extra_curve=build_options.extra_controllers,
+            aim_path=aim_path,
+            aim_name=aim_name,
             fit_joint_names=(name.rsplit("_", 1)[0],),
         )
         by_joint[name] = spec
