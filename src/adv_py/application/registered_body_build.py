@@ -606,6 +606,14 @@ class BuildRegisteredBodyCharacter:
                                 if part.kind == "twist")
             bendy_chains = plan_fit_bendy_chains(
                 twist_parts, fit_source.metadata, part_plan.specs)
+            if (_generic_fk_policy is not None
+                    and _generic_fk_policy.bendy_control_counts is not None):
+                saved_bendy_counts = dict(
+                    _generic_fk_policy.bendy_control_counts)
+                bendy_chains = tuple(replace(
+                    chain, control_count=saved_bendy_counts.get(
+                        chain.control_names[0], chain.control_count))
+                    for chain in bendy_chains)
             bendy_part_names = {name for chain in bendy_chains
                                 for name in chain.part_names}
             ordinary_twist_parts = tuple(

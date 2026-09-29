@@ -36,7 +36,9 @@ class FitBendyChainSpec:
     micro_local_scale: bool = True
 
     def __post_init__(self) -> None:
-        if (type(self.rotation_order) is not int
+        if (type(self.control_count) is not int
+                or self.control_count < 1
+                or type(self.rotation_order) is not int
                 or not 0 <= self.rotation_order <= 5
                 or not isfinite(self.master_icon_scale)
                 or self.master_icon_scale <= 0
@@ -226,6 +228,8 @@ class FitBendyChainSpec:
 
     @property
     def secondary_node_names(self) -> tuple[str, ...]:
+        if self.control_count == 1:
+            return ()
         constrained = (self.secondary_influence_names[:2]
                        if self.child_start_control
                        else self.secondary_influence_names)
@@ -455,8 +459,9 @@ def plan_fit_bendy_chains(
         requested_controls = setting.bendy_controls or 0
         if requested_controls <= 0:
             continue
-        # MEL adds one base controller before constructing the Bendy chain.
-        count = requested_controls + 1
+        # The historical +1 block in 6.925 MEL is commented out. The stored
+        # bendyCtrls value already counts the interior Bend controllers.
+        count = requested_controls
         if (len(chain) != first.count
                 or tuple(part.index for part in chain)
                 != tuple(range(1, first.count + 1))

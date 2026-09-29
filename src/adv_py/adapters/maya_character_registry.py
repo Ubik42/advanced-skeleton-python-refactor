@@ -132,6 +132,20 @@ class MayaCharacterRegistryMixin:
             for channel in registration.channels
             if channel.key.startswith('bendy.')
             and channel.key.endswith('.microVis')}
+        bendy_counts = []
+        for control in bendy_master_paths:
+            stem, side = control.rsplit('_', 1)
+            pattern = re.compile(
+                r'bendy\.' + re.escape(stem)
+                + r'(\d+)_' + re.escape(side) + r'\.rotateX')
+            indices = sorted(int(match.group(1))
+                             for channel in registration.channels
+                             if (match := pattern.fullmatch(channel.key)))
+            if (not indices or indices != list(range(indices[-1] + 1))
+                    or indices[-1] < 1):
+                raise CharacterRegistryError(
+                    'Bendy 控制器编号不连续：' + control)
+            bendy_counts.append((control, indices[-1]))
         def bendy_namespace(control):
             leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
             return (leaf.rsplit(':', 1)[0] + ':'
@@ -250,7 +264,8 @@ class MayaCharacterRegistryMixin:
             frozenset(bendy_negative_right),
             frozenset(bendy_micro_matrix),
             frozenset(bendy_base_twist),
-            frozenset(bendy_micro_scale))
+            frozenset(bendy_micro_scale),
+            tuple(bendy_counts))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

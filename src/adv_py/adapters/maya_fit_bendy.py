@@ -132,6 +132,8 @@ class MayaFitBendyMixin:
 
     def preflight_fit_bendy_secondary(self,
                                       spec: FitBendyChainSpec) -> None:
+        if spec.control_count == 1:
+            return
         c = self._cmds
         if any(c.objExists(name) for name in spec.secondary_node_names):
             raise ValueError("Bendy 第二曲线节点名称已占用："
@@ -147,6 +149,8 @@ class MayaFitBendyMixin:
     def create_fit_bendy_secondary(self,
                                    spec: FitBendyChainSpec) -> None:
         """A three-influence follow curve positions interior Bend controls."""
+        if spec.control_count == 1:
+            return
         self._require_transaction()
         c = self._cmds
         for group in _SECONDARY_GROUPS:
@@ -269,6 +273,8 @@ class MayaFitBendyMixin:
 
     def capture_fit_bendy_secondary(self,
                                      spec: FitBendyChainSpec) -> bool:
+        if spec.control_count == 1:
+            return True
         c = self._cmds
         curves = c.ls(spec.secondary_curve_name, long=True,
                       type="transform") or []
@@ -873,7 +879,9 @@ class MayaFitBendyMixin:
                     chain, offset, start_proxy, end_proxy,
                     parent_proxy, spec.start_control_blend)
                 continue
-            targets = ((parent_proxy, end_proxy) if index == 0
+            targets = ((chain.control_names[0],)
+                       if chain.control_count == 1 and index == 2 else
+                       (parent_proxy, end_proxy) if index == 0
                        or index > 1 else (parent_proxy,))
             constraint = c.parentConstraint(
                 *targets, offset, maintainOffset=True,
@@ -1210,6 +1218,13 @@ class MayaFitBendyMixin:
             elif (not c.objExists(follow)
                   or c.nodeType(follow) != "parentConstraint"):
                 return False
+            if spec.chain.control_count == 1 and index == 2:
+                targets = c.parentConstraint(
+                    follow, query=True, targetList=True) or []
+                if (len(targets) != 1
+                        or _bendy_dag_name(targets[0])
+                        != spec.chain.control_names[0]):
+                    return False
         chain = spec.chain
         end_position = c.xform(chain.end_proxy_name, query=True,
                                worldSpace=True, translation=True)
