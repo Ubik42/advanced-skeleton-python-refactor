@@ -336,9 +336,16 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         while ancestor_path in by_path and ancestor_path in left_authored_paths:
             ancestor_path = by_path[ancestor_path].parent
         if ancestor_path in by_path:
-            ancestor = by_path[ancestor_path]
-            leaf = ancestor.name.rsplit(":", 1)[-1]
-            if leaf.endswith("_R") or ancestor.world_position[0] < -1e-6:
+            ancestry = []
+            while ancestor_path in by_path:
+                ancestor = by_path[ancestor_path]
+                ancestry.append(ancestor)
+                ancestor_path = ancestor.parent
+            first_side = next((ancestor.world_position[0]
+                               for ancestor in reversed(ancestry)
+                               if abs(ancestor.world_position[0]) > 1e-6),
+                              0.0)
+            if first_side < 0.0:
                 # Fit inherits its parent's right-side classification.  The
                 # Body symmetry pass will flip this authored source back to
                 # the requested left-side world position.
