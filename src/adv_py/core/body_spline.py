@@ -45,6 +45,10 @@ class BodySplinePlan:
         n=len(self.body_joints)
         return tuple(self.joints[n+i].path+(f'|AdvPy_SplineIKRest{i}' if self.curved and i else '') for i in range(n))
     @property
+    def scale_reference(self):
+        follow='|Group|MotionSystem|RootSystem|RootFollowMain'
+        return follow if self.root_path.startswith(follow+'|') else self.pelvis_control
+    @property
     def node_names(self):
         fixed=('AdvPy_SplineMechanisms','AdvPy_SplineChestSpace','AdvPy_SplineCurve','AdvPy_SplineCurveShape',
             'AdvPy_SplineIKHandle','AdvPy_SplineIKEffector','AdvPy_SplineFKRootPoint','AdvPy_SplineIKRootPoint',
@@ -65,7 +69,9 @@ class BodySplinePlan:
             for i in range(1,len(self.body_joints))
             for kind in ('Weight','Add')
         )
-        return fixed+chest+tuple(j.name for j in self.joints)+targets+outputs+rests+scaling
+        orientations=tuple(f'AdvPy_SplineIKLocalOrient{i}'
+                           for i in range(len(self.targets)))
+        return fixed+chest+tuple(j.name for j in self.joints)+targets+outputs+rests+scaling+orientations
 
 
 def spline_ik_scale_weights(joint_index: int, joint_count: int,

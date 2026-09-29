@@ -17,14 +17,14 @@ def match_ik(host, registration, before):
     scale = sqrt(sum(value*value for value in root_matrix[:3]))
     length = sum(plan.lengths)
     if scale<1e-8:raise CharacterRegistryError('曲线脊柱机制组缩放无效')
-    # Native IK has a single longitudinal stretch ratio and no independent X scale.
-    # Reject incompatible FK lengths before running an expensive numerical fit.
+    # This pose solver only fits one longitudinal stretch ratio. The rig's new
+    # per-control scale channels need a separate scale-aware matching strategy.
     ratios = tuple(sqrt(sum((a-b)**2 for a,b in zip(left[12:15],right[12:15])))/(rest*scale)
                    for left,right,rest in zip(matrices,matrices[1:],plan.lengths))
     if max(ratios)-min(ratios)>1e-5:
-        raise CharacterRegistryError('当前 FK 骨段伸展比不一致，曲线 IK 无法无跳变表达')
+        raise CharacterRegistryError('当前 FK 骨段伸展比不一致，此版曲线 IK 匹配尚未求解逐控制器缩放')
     if any(abs(sqrt(sum(value*value for value in matrix[:3]))-scale)>1e-5 for matrix in matrices[1:]):
-        raise CharacterRegistryError('当前 FK 含独立纵向缩放，原生曲线 IK 无法无跳变表达')
+        raise CharacterRegistryError('当前 FK 含独立纵向缩放，此版曲线 IK 匹配尚未求解逐控制器缩放')
     parameters = []
     for index,control in enumerate(plan.targets):
         if index:
