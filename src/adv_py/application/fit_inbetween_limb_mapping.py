@@ -345,12 +345,12 @@ def plan_generic_inbetween_fk_bindings(
         end_candidates = tuple({control.control_path: control
                                 for control in end_by_name.get(
                                     (end_name, end_side), ())}.values())
-        if len(end_candidates) > 1:
+        if end_candidates:
             end_candidates = tuple(control for control in end_candidates
                 if control.driven_joint == final_paths.remap_body_reference(
                     first.end_body))
             if len(end_candidates) != 1:
-                raise ValueError("附加 Inbetween 下游 FK 映射不唯一："
+                raise ValueError("附加 Inbetween 下游 FK 映射缺失或不唯一："
                                  + first.end_body_name)
         end = end_candidates[0] if end_candidates else None
         if end is not None and end.control_path == start.control_path:

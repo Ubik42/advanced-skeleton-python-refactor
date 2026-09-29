@@ -1016,6 +1016,9 @@ class BuildRegisteredBodyCharacter:
                    if rig.plan.hand is not None else ())
                 + (rig.plan.torso.torso.controls.controls
                    if rig.plan.torso is not None else ()))
+            handled_inbetween_starts = frozenset(
+                binding.parts[0].start_body
+                for binding in inbetween_bindings)
             generic_fk = plan_body_generic_fk(
                 skeleton.snapshot, part_plan.specs,
                 fit_metadata, standard_fk_specs,
@@ -1029,16 +1032,12 @@ class BuildRegisteredBodyCharacter:
                              if _generic_fk_policy is not None else None),
                 inbetween_start_paths=frozenset(
                     part.start_body for part in inbetween_parts
-                    if part.start_body not in {
-                        binding.parts[0].start_body
-                        for binding in inbetween_bindings}))
+                    if part.start_body not in handled_inbetween_starts))
             generic_inbetween_bindings = (
                 plan_generic_inbetween_fk_bindings(
                     inbetween_parts, generic_fk, standard_fk_specs,
                     final_paths=final_paths,
-                    handled_start_paths=frozenset(
-                        binding.parts[0].start_body
-                        for binding in inbetween_bindings))
+                    handled_start_paths=handled_inbetween_starts)
                 if inbetween_parts and final_paths is not None else ())
             fit_hierarchy = rig.plan.arm.safety.symmetry.source.hierarchy
             fit_parents = {joint.dag_parent
