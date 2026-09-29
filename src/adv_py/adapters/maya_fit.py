@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Iterator, Sequence
 
+from adv_py.core.body_skeleton import FitDeformProfile
 from adv_py.core.fit_container import (
     FitContainerDisplayStyle,
     FitContainerShape,
@@ -1326,6 +1327,136 @@ class MayaFitJointHost:
             scale=False,
             normal=False,
         )
+
+    def write_fit_deform_profile(self, joint: str,
+                                 profile: FitDeformProfile) -> None:
+        self._require_transaction()
+        if not isinstance(profile, FitDeformProfile):
+            raise ValueError("Fit 体积参数无效")
+        fat_node = joint.rsplit("|", 1)[-1] + "Fat"
+        existing = self._cmds.objExists(fat_node)
+        if existing and (self._cmds.nodeType(fat_node) != "multiplyDivide"
+                         or any(not self._cmds.attributeQuery(
+                             attribute, node=joint, exists=True)
+                             for attribute in ("fatFrontAbs", "fatWidthAbs"))):
+            raise ValueError("Fit 派生体积节点被其他对象占用：" + fat_node)
+        if not existing and any(self._cmds.attributeQuery(
+                attribute, node=joint, exists=True)
+                for attribute in ("fatFrontAbs", "fatWidthAbs")):
+            raise ValueError("Fit 派生体积属性已存在但缺少节点：" + joint)
+        self._transaction_changed = True
+        for name, value in (("fat", profile.fat),
+                            ("fatFront", profile.fat_front),
+                            ("fatWidth", profile.fat_width)):
+            if not self._cmds.attributeQuery(name, node=joint, exists=True):
+                self._cmds.addAttr(joint, longName=name,
+                                   attributeType="double", minValue=0,
+                                   defaultValue=value, keyable=True)
+            else:
+                self._cmds.addAttr(joint + "." + name, edit=True,
+                                   defaultValue=value)
+            self._cmds.setAttr(joint + "." + name, value)
+        if not existing:
+            for attribute in ("fatFrontAbs", "fatWidthAbs"):
+                self._cmds.addAttr(joint, longName=attribute,
+                                   attributeType="double", keyable=False)
+            self._cmds.createNode("multiplyDivide", name=fat_node)
+        connections = (
+            (joint + ".fat", fat_node + ".input1Y"),
+            (joint + ".fat", fat_node + ".input1Z"),
+            (joint + ".fatFront", fat_node + ".input2Y"),
+            (joint + ".fatWidth", fat_node + ".input2Z"),
+            (fat_node + ".outputY", joint + ".fatFrontAbs"),
+            (fat_node + ".outputZ", joint + ".fatWidthAbs"),
+        )
+        if not existing:
+            for source, target in connections:
+                self._cmds.connectAttr(source, target)
+        if (int(self._cmds.getAttr(fat_node + ".operation")) != 1
+                or any(abs(float(self._cmds.attributeQuery(
+                    name, node=joint, listDefault=True)[0]) - value) > 1e-6
+                    for name, value in (("fat", profile.fat),
+                                        ("fatFront", profile.fat_front),
+                                        ("fatWidth", profile.fat_width)))
+                or any(self._cmds.connectionInfo(target,
+                sourceFromDestination=True) != source
+                for source, target in connections)
+                or abs(float(self._cmds.getAttr(joint + ".fatFrontAbs"))
+                       - profile.fat * profile.fat_front) > 1e-6
+                or abs(float(self._cmds.getAttr(joint + ".fatWidthAbs"))
+                       - profile.fat * profile.fat_width) > 1e-6):
+            raise RuntimeError("Fit 派生体积节点写后回读不一致：" + joint)
+
+    def write_missing_fit_deform_profiles(
+        self, container: str, joints: tuple[str, ...],
+    ) -> None:
+        """Initialize every generated Fit joint using asEnsureFitJointAttrs defaults."""
+        self._require_transaction()
+        c = self._cmds
+        joint_set = set(joints)
+        if len(joint_set) != len(joints) or any(
+            (c.ls(joint, long=True, type="joint") or []) != [joint]
+            for joint in joints
+        ):
+            raise ValueError("Fit 默认体积需要唯一且已创建的关节路径")
+        fit = c.ls(container, long=True, type="transform") or []
+        if len(fit) != 1:
+            raise ValueError("Fit 默认体积需要唯一的 Fit 容器")
+        axis = "X"
+        if c.attributeQuery("primaryAxis", node=fit[0], exists=True):
+            axis = c.getAttr(fit[0] + ".primaryAxis", asString=True).upper()
+        if axis not in ("X", "Y", "Z", "-X", "-Y", "-Z"):
+            raise ValueError("Fit 主轴无效")
+        translate_axis = axis[-1]
+        positions = {joint: tuple(float(value) for value in c.xform(
+            joint, query=True, worldSpace=True, translation=True))
+            for joint in joints}
+        maximum_y = max((position[1] for position in positions.values()),
+                        default=0.0)
+        scale = max(0.01, maximum_y / 17.176163) if maximum_y > 0 else 1.0
+        child_tolerance = 0.01 * float(c.getAttr(fit[0] + ".scaleX"))
+        center_tolerance = 0.01 * scale
+
+        def matching_child(joint: str) -> str | None:
+            children = [child for child in (c.listRelatives(
+                joint, children=True, type="joint", fullPath=True) or [])
+                if child in joint_set]
+            center = abs(positions[joint][0]) < child_tolerance
+            selected = next((child for child in children
+                             if (abs(positions[child][0]) < child_tolerance)
+                             == center), None)
+            name = joint.rsplit("|", 1)[-1]
+            preferred = (("Head", "Head"), ("Ankle", "Toes"),
+                         ("Toes", "Toes"), ("Root", "Spine"))
+            for marker, child_marker in preferred:
+                if marker in name:
+                    selected = next((child for child in reversed(children)
+                                     if child_marker in child.rsplit("|", 1)[-1]),
+                                    selected)
+            return selected
+
+        for joint in sorted(joints, key=lambda path: path.count("|")):
+            if c.attributeQuery("fat", node=joint, exists=True):
+                # Preserve Fit joints that already carry a volume profile.
+                continue
+            child = matching_child(joint)
+            if child:
+                length = abs(float(c.getAttr(child + ".translate"
+                                             + translate_axis)))
+                fat = length / 4.0
+                if abs(positions[joint][0]) < center_tolerance:
+                    fat *= 2.0
+                if fat < 0.0001:
+                    fat = scale
+            else:
+                parent = (c.listRelatives(joint, parent=True, type="joint",
+                                          fullPath=True) or [None])[0]
+                fat = (float(c.getAttr(parent + ".fat"))
+                       if parent in joint_set
+                       and c.attributeQuery("fat", node=parent, exists=True)
+                       else 1.0)
+            self.write_fit_deform_profile(
+                joint, FitDeformProfile(fat, 1.0, 1.0))
 
     def _require_transaction(self) -> None:
         if not self._transaction_active:

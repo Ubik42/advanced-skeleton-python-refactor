@@ -128,6 +128,11 @@ class BuildOrientedFitTemplate:
             orientation_result = self._orientation_editor.apply_plan_in_transaction(
                 actual_orientation_plan
             )
+            initialize_profiles = getattr(
+                self._host, "write_missing_fit_deform_profiles", None)
+            if initialize_profiles is not None:
+                initialize_profiles(container_name,
+                                    template_result.joint_paths)
         return OrientedFitTemplateBuildResult(
             plan,
             template_result,

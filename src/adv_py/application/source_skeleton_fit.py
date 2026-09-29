@@ -469,8 +469,6 @@ class BuildFitFromSourceSkeleton:
                             + "." + edit.field.value)
             for name, profile in plan.deform_profiles:
                 joined.write_fit_deform_profile(paths[name], profile)
-            joined.write_missing_fit_deform_profiles(
-                container, result.template.joint_paths)
             for name, order in plan.rotation_orders:
                 joined.write_fit_rotation_order(paths[name], order)
             for name in plan.skin_disabled:
