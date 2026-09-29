@@ -1,5 +1,6 @@
 """Native cubic spline IK, local curve length stretch and volume scaling."""
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from adv_py.core.body_spline import spline_ik_scale_weights
 from .maya_adv_icons import create_adv_icon
 from . import maya_chest_space
 
@@ -9,7 +10,7 @@ def prepare(host,plan):
     c=host._cmds
     c.createNode('transform',name='AdvPy_SplineMechanisms',parent=plan.root_path.rsplit('|',1)[0],skipSelect=True)
     c.addAttr(plan.root_path,longName='advPySplineOwner',dataType='string')
-    c.setAttr(plan.root_path+'.advPySplineOwner','adv_py.spline.v3' if plan.curved else 'adv_py.spline.v2',type='string',lock=True)
+    c.setAttr(plan.root_path+'.advPySplineOwner','adv_py.spline.v5' if plan.curved else 'adv_py.spline.v4',type='string',lock=True)
     for joint in plan.joints:host.create_body_arm_mechanism_joint(joint)
     last=plan.joints[len(plan.body_joints)-1]
     host._spine_frame('AdvPy_SplineChestSpace',plan.chest_space.rsplit('|',1)[0],last.world_position,last.world_axes)
@@ -26,7 +27,7 @@ def create(host,plan):
         create_adv_icon(c,name=f'AdvPy_SplineIK{i}',parent=offset,
                         template='IK_icon',radius=1.5,
                         fallback_normal=(1.,0.,0.))
-        locked=['scale'+a for a in 'XYZ']+(['translate'+a for a in 'XYZ'] if i==0 else [])+(['rotate'+a for a in 'XYZ'] if 0<i<len(plan.targets)-1 else [])
+        locked=(['translate'+a for a in 'XYZ'] if i==0 else [])+(['rotate'+a for a in 'XYZ'] if 0<i<len(plan.targets)-1 else [])
         for attr in locked:c.setAttr(target+'.'+attr,lock=True,keyable=False)
     for attribute,default,label in (('spineIkFk',0.,'脊柱 IK 权重'),('stretch',1.,'脊柱伸展'),('volume',1.,'体积保持')):
         c.addAttr(plan.settings,longName=attribute,niceName=label,attributeType='double',minValue=0.,maxValue=1.,defaultValue=default,keyable=True)
@@ -72,8 +73,39 @@ def create(host,plan):
     c.connectAttr(plan.settings+'.volume','AdvPy_SplineVolumeExponent.input1X');c.setAttr('AdvPy_SplineVolumeExponent.input2X',-.5)
     c.createNode('multiplyDivide',name='AdvPy_SplineVolume',skipSelect=True);c.setAttr('AdvPy_SplineVolume.operation',3)
     c.connectAttr('AdvPy_SplineClamp.outputR','AdvPy_SplineVolume.input1X');c.connectAttr('AdvPy_SplineVolumeExponent.outputX','AdvPy_SplineVolume.input2X')
+    c.createNode('addDoubleLinear',name='AdvPy_SplineVolumeDelta',skipSelect=True)
+    c.connectAttr('AdvPy_SplineVolume.outputX','AdvPy_SplineVolumeDelta.input1')
+    c.setAttr('AdvPy_SplineVolumeDelta.input2',-1.)
     for i,joint in enumerate(ik):
-        for axis in 'YZ':c.connectAttr('AdvPy_SplineVolume.outputX',joint.path+'.scale'+axis)
+        blend=f'AdvPy_SplineIKScaleBlend{i}'
+        relative=f'AdvPy_SplineIKScaleRelative{i}'
+        decompose=f'AdvPy_SplineIKScaleDecompose{i}'
+        volume=f'AdvPy_SplineIKScaleVolume{i}'
+        c.createNode('blendMatrix',name=blend,skipSelect=True)
+        c.createNode('multMatrix',name=relative,skipSelect=True)
+        c.createNode('decomposeMatrix',name=decompose,skipSelect=True)
+        c.createNode('multiplyDivide',name=volume,skipSelect=True)
+        c.connectAttr(plan.pelvis_control+'.worldMatrix[0]',blend+'.inputMatrix')
+        for index,weight in enumerate(spline_ik_scale_weights(i,n,len(plan.targets))):
+            if weight:
+                c.connectAttr(plan.targets[index]+'.worldMatrix[0]',blend+f'.target[{index}].targetMatrix')
+                c.setAttr(blend+f'.target[{index}].weight',weight)
+        c.connectAttr(blend+'.outputMatrix',relative+'.matrixIn[0]')
+        c.connectAttr(plan.pelvis_control+'.worldInverseMatrix[0]',relative+'.matrixIn[1]')
+        c.connectAttr(relative+'.matrixSum',decompose+'.inputMatrix')
+        c.connectAttr(decompose+'.outputScale',volume+'.input1')
+        if i:
+            weight=f'AdvPy_SplineIKScaleWeight{i}'
+            addition=f'AdvPy_SplineIKScaleAdd{i}'
+            c.createNode('multiplyDivide',name=weight,skipSelect=True)
+            c.createNode('addDoubleLinear',name=addition,skipSelect=True)
+            fraction=2.0*(i+1)/(n+1)
+            c.setAttr(weight+'.input2X',min(fraction,2.0-fraction))
+            c.connectAttr('AdvPy_SplineVolumeDelta.output',weight+'.input1X')
+            c.connectAttr(weight+'.outputX',addition+'.input1')
+            c.setAttr(addition+'.input2',1.)
+            for axis in 'XYZ':c.connectAttr(addition+'.output',volume+'.input2'+axis)
+        for axis in 'XYZ':c.connectAttr(volume+'.output'+axis,joint.path+'.scale'+axis)
         if i:
             c.connectAttr(ik[i-1].path+'.scale',joint.path+'.inverseScale',force=True)
             c.createNode('multiplyDivide',name=f'AdvPy_SplineLength{i}',skipSelect=True)
@@ -129,9 +161,15 @@ def audit(host,plan):
                           'AdvPy_SplineChestSpaceParent',
                           plan.use_offset_parent_matrix)
     owner=c.getAttr(plan.root_path+'.advPySplineOwner')
-    if owner not in ('adv_py.spline.v1','adv_py.spline.v2','adv_py.spline.v3'):raise FitSkeletonValidationError('Spline 所有权标记无效')
-    if (owner=='adv_py.spline.v3')!=plan.curved:raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
-    missing=tuple(name for name in plan.node_names if not (owner=='adv_py.spline.v1' and 'WorldScale' in name) and len(c.ls(name,long=True) or [])!=1)
+    if owner not in ('adv_py.spline.v1','adv_py.spline.v2','adv_py.spline.v3',
+                     'adv_py.spline.v4','adv_py.spline.v5'):raise FitSkeletonValidationError('Spline 所有权标记无效')
+    if (owner in ('adv_py.spline.v3','adv_py.spline.v5'))!=plan.curved:raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
+    new_scaling=owner in ('adv_py.spline.v4','adv_py.spline.v5')
+    missing=tuple(name for name in plan.node_names
+                  if not (owner=='adv_py.spline.v1' and 'WorldScale' in name)
+                  and not (not new_scaling and (name.startswith('AdvPy_SplineIKScale')
+                                                or name=='AdvPy_SplineVolumeDelta'))
+                  and len(c.ls(name,long=True) or [])!=1)
     if missing:raise FitSkeletonValidationError('Spline 节点缺失或名称不唯一：'+repr(missing))
     if c.ikHandle('AdvPy_SplineIKHandle',q=True,solver=True)!='ikSplineSolver':raise FitSkeletonValidationError('Spline 求解器被替换')
     shape=plan.curve+'|AdvPy_SplineCurveShape'
@@ -149,11 +187,44 @@ def audit(host,plan):
     edges += [(control+'.scale',joint.path+'.scale')
               for control,joint in zip(plan.fk_controls,plan.joints[:n])]
     for i,joint in enumerate(plan.joints[n:]):
-        edges += [('AdvPy_SplineVolume.outputX',joint.path+'.scale'+axis) for axis in 'YZ']
+        if new_scaling:
+            blend=f'AdvPy_SplineIKScaleBlend{i}'
+            relative=f'AdvPy_SplineIKScaleRelative{i}'
+            decompose=f'AdvPy_SplineIKScaleDecompose{i}'
+            volume=f'AdvPy_SplineIKScaleVolume{i}'
+            edges += [(plan.pelvis_control+'.worldMatrix[0]',blend+'.inputMatrix'),
+                      (blend+'.outputMatrix',relative+'.matrixIn[0]'),
+                      (plan.pelvis_control+'.worldInverseMatrix[0]',relative+'.matrixIn[1]'),
+                      (relative+'.matrixSum',decompose+'.inputMatrix'),
+                      (decompose+'.outputScale',volume+'.input1')]
+            edges += [(volume+'.output'+axis,joint.path+'.scale'+axis)
+                      for axis in 'XYZ']
+            for index,weight in enumerate(spline_ik_scale_weights(i,n,len(plan.targets))):
+                if weight:
+                    edges.append((plan.targets[index]+'.worldMatrix[0]',
+                                  blend+f'.target[{index}].targetMatrix'))
+            if i:
+                weight=f'AdvPy_SplineIKScaleWeight{i}'
+                addition=f'AdvPy_SplineIKScaleAdd{i}'
+                edges += [('AdvPy_SplineVolumeDelta.output',weight+'.input1X'),
+                          (weight+'.outputX',addition+'.input1')]
+                edges += [(addition+'.output',volume+'.input2'+axis)
+                          for axis in 'XYZ']
+        else:
+            edges += [('AdvPy_SplineVolume.outputX',joint.path+'.scale'+axis)
+                      for axis in 'YZ']
         if i:edges += [('AdvPy_SplineClamp.outputR',f'AdvPy_SplineLength{i}.input2X'),
             (f'AdvPy_SplineLength{i}.outputX',joint.path+'.translateX'),(plan.joints[n+i-1].path+'.scale',joint.path+'.inverseScale')]
+    if new_scaling:
+        edges.append(('AdvPy_SplineVolume.outputX',
+                      'AdvPy_SplineVolumeDelta.input1'))
     bad=[(a,b) for a,b in edges if not c.isConnected(a,b)]
     if bad:raise FitSkeletonValidationError('Spline 曲线或伸展连接被替换：'+repr(bad[:2]))
+    if new_scaling and any(
+            c.getAttr(target+'.scale'+axis,lock=True)
+            or not c.getAttr(target+'.scale'+axis,keyable=True)
+            for target in plan.targets for axis in 'XYZ'):
+        raise FitSkeletonValidationError('Spline IK 缩放控制通道不可动画')
     if plan.curved and (not c.attributeQuery('advPySplineRestArc',node=plan.root_path,exists=True)
                         or not c.getAttr(plan.root_path+'.advPySplineRestArc',lock=True)):
         raise FitSkeletonValidationError('Spline 绑定曲线长度标记缺失或可写')
@@ -164,11 +235,27 @@ def audit(host,plan):
         'AdvPy_SplineVolumeExponent.operation':1,'AdvPy_SplineVolumeExponent.input2X':-.5,'AdvPy_SplineVolume.operation':3,
         'AdvPy_SplineIKHandle.dTwistControlEnable':1,'AdvPy_SplineIKHandle.dWorldUpType':4,
         'AdvPy_SplineIKHandle.dForwardAxis':0,'AdvPy_SplineIKHandle.dWorldUpAxis':0}
+    if new_scaling:
+        constants['AdvPy_SplineVolumeDelta.input2']=-1.
+        for i in range(n):
+            blend=f'AdvPy_SplineIKScaleBlend{i}'
+            volume=f'AdvPy_SplineIKScaleVolume{i}'
+            constants[volume+'.operation']=1
+            for index,weight in enumerate(spline_ik_scale_weights(i,n,len(plan.targets))):
+                if weight:
+                    constants[blend+f'.target[{index}].weight']=weight
+            if i:
+                fraction=2.0*(i+1)/(n+1)
+                constants[f'AdvPy_SplineIKScaleWeight{i}.input2X']=min(fraction,2.0-fraction)
+                constants[f'AdvPy_SplineIKScaleAdd{i}.input2']=1.
+            else:
+                for axis in 'XYZ':constants[volume+'.input2'+axis]=1.
     if n==2:constants.pop('AdvPy_SplineIKHandle.dTwistControlEnable')
     constants.update({f'AdvPy_SplineLength{i}.input1X':length for i,length in enumerate(plan.lengths,1)})
     changed=[(plug,c.getAttr(plug),value) for plug,value in constants.items() if abs(c.getAttr(plug)-value)>1e-6*max(1.,abs(value))]
     if changed:raise FitSkeletonValidationError('Spline 求解常量被修改：'+repr(changed[:3]))
-    if owner in ('adv_py.spline.v2','adv_py.spline.v3'):
+    if owner in ('adv_py.spline.v2','adv_py.spline.v3',
+                 'adv_py.spline.v4','adv_py.spline.v5'):
         identity=(1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.)
         for i in range(1,n):
             node=f'AdvPy_SplineScale{i}'

@@ -56,7 +56,33 @@ class BodySplinePlan:
         chest = (('AdvPy_SplineChestSpaceMM', 'AdvPy_SplineChestSpacePM')
                  if self.use_offset_parent_matrix else
                  ('AdvPy_SplineChestSpaceParent',))
-        return fixed+chest+tuple(j.name for j in self.joints)+targets+outputs+rests
+        scaling=('AdvPy_SplineVolumeDelta',)+tuple(
+            f'AdvPy_SplineIKScale{kind}{i}'
+            for i in range(len(self.body_joints))
+            for kind in ('Blend','Relative','Decompose','Volume')
+        )+tuple(
+            f'AdvPy_SplineIKScale{kind}{i}'
+            for i in range(1,len(self.body_joints))
+            for kind in ('Weight','Add')
+        )
+        return fixed+chest+tuple(j.name for j in self.joints)+targets+outputs+rests+scaling
+
+
+def spline_ik_scale_weights(joint_index: int, joint_count: int,
+                            target_count: int) -> tuple[float, ...]:
+    if not (2 <= joint_count <= 64 and target_count >= 2
+            and 0 <= joint_index < joint_count):
+        raise FitSkeletonValidationError('Spline IK 缩放权重输入无效')
+    position = joint_index / (joint_count - 1)
+    weights = []
+    for index in range(target_count):
+        value = 1.0 - abs(position - index / (target_count - 1))
+        factor = max(0.0, min(1.0, (value - 0.5) / 0.5))
+        weight = factor * factor * (3.0 - 2.0 * factor)
+        if joint_index in (0, joint_count - 1) and index not in (0, target_count - 1):
+            weight = 0.0
+        weights.append(weight)
+    return tuple(weights)
 
 
 def _basis(count, parameter):
