@@ -8450,6 +8450,16 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         for path in plan.hidden_controls:
             self.hide_body_fk_control(path)
 
+    def capture_body_generic_fk_controls(self, plan):
+        if not plan.controls:
+            raise ValueError("通用 FK 回读需要至少一个控制器")
+        return self._capture_body_limb_fk_controls(
+            BodyArmFkControlPlan(
+                plan.root_path,
+                plan.root_path.rsplit("|", 1)[-1],
+                plan.controls),
+            "Generic")
+
     def capture_body_hand_fk_input(
         self,
         plan: BodyHandFkControlPlan,

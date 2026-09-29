@@ -1040,6 +1040,19 @@ class BuildRegisteredBodyCharacter:
                             control.control_path, source_joint, attributes))
             generic_fk_locks = tuple(generic_fk_locks)
             joined.create_body_generic_fk(generic_fk)
+            if generic_fk.controls:
+                generic_fk_state = joined.capture_body_generic_fk_controls(
+                    generic_fk)
+                generic_fk_issues = audit_body_limb_fk_controls(
+                    generic_fk, generic_fk_state,
+                    limb_label="Generic")
+                if generic_fk_issues:
+                    raise RuntimeError(
+                        "通用 FK 控制层不一致：" + "；".join(
+                            issue.message for issue in generic_fk_issues))
+                if any(not joined.capture_hidden_body_fk_control(path)
+                       for path in generic_fk.hidden_controls):
+                    raise RuntimeError("通用 FK noControl 隐藏状态不一致")
             scale_controls = tuple(
                 control for control in generic_fk.controls
                 if (_generic_fk_policy is None
