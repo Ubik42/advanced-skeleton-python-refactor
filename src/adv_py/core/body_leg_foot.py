@@ -5,6 +5,7 @@ from enum import Enum
 from math import atan2, degrees, isfinite, sqrt
 
 from .body_leg_ik import BodyLegIkPlan
+from .body_leg_qtoes import plan_leg_qtoes_topology
 from .body_controller_appearance import body_fk_curve_radius
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_container import FitUpAxis
@@ -398,6 +399,11 @@ def plan_body_leg_foot(
     body_by_name = {joint.name: joint for joint in body.joints}
     if len(body_by_name) != len(body.joints):
         raise BodyLegFootValidationError("Body 关节名称必须唯一")
+    try:
+        qtoes_by_suffix = {side.suffix: side for side in
+                           plan_leg_qtoes_topology(body).sides}
+    except ValueError as exc:
+        raise BodyLegFootValidationError(str(exc)) from exc
 
     all_marker_roles = (
         (BodyLegFootPivotRole.HEEL, "Heel", "heelRoll", "Y", 1.0),
@@ -448,20 +454,13 @@ def plan_body_leg_foot(
         if any(body_by_name[f"{marker}_{suffix}"].side is not limb.side
                for _, marker, *_ in marker_roles):
             raise BodyLegFootValidationError(f"Foot 标记侧向与名称不一致：{suffix}")
-        ankle_joint = body_by_name[f"Ankle_{suffix}"]
-        qtoes = tuple(joint for joint in body.joints
-                      if joint.side is limb.side
-                      and joint.path.startswith(ankle_joint.path + "|")
-                      and "QToes" in joint.label.text)
-        if len(qtoes) > 1:
-            raise BodyLegFootValidationError(
-                f"{suffix} 侧存在多个 QToes 标记，无法确定脚趾主链")
-        if qtoes and qtoes[0].path.rsplit("|", 1)[0] != ankle_joint.path:
+        qtoes_topology = qtoes_by_suffix[suffix]
+        if qtoes_topology.hybrid:
             raise BodyLegFootValidationError(
                 f"{suffix} 侧 QToes 与 Ankle 之间有中间关节；"
                 "Leg 机制／FK／混合链已规划中间关节，"
                 "Foot 仍缺 IKHybrid Roll／Sampler 和逐段 IK Handle")
-        if qtoes and up_axis is not FitUpAxis.Y:
+        if qtoes_topology.qtoes_path and up_axis is not FitUpAxis.Y:
             raise BodyLegFootValidationError(
                 "原版 QToes Roll 局部朝向要求 Y-up 场景")
 
@@ -561,7 +560,7 @@ def plan_body_leg_foot(
         pivots = []
         for role, marker, attribute, axis, multiplier in marker_roles:
             marker_joint = body_by_name[f"{marker}_{suffix}"]
-            above_qtoes = bool(qtoes) and any(
+            above_qtoes = bool(qtoes_topology.qtoes_path) and any(
                 joint.path.startswith(marker_joint.path + "|")
                 and "Toes" in joint.label.text
                 and "ToesEnd" not in joint.label.text
