@@ -393,6 +393,8 @@ def plan_simple_fit_orientations(
         request,
         frozenset(resolved),
     )
+    rp_chains = _rp_fit_chains(hierarchy)
+    planned_world_axes: dict[str, tuple[Vector3, Vector3, Vector3]] = {}
 
     changes: list[FitOrientationChange] = []
     for path in sorted(resolved, key=lambda item: (item.count("|"), item)):
@@ -465,14 +467,35 @@ def plan_simple_fit_orientations(
         # self-up helper on the joint's current local up axis.  Projecting
         # that axis after aiming at the child preserves its roll.  In this
         # self-up branch flipOrient reverses both the local up vector and
-        # helper offset, so its two signs cancel; the IK-plane branch needs
-        # its own solver and must not be approximated here.
+        # helper offset, so its two signs cancel. The RP branch below uses
+        # the accumulated flip parity instead.
         reference = (state.world_axes[1]
                      if free_orient else default_reference)
+        rp_role = rp_chains.get(path)
+        if rp_role is not None and not free_orient:
+            if snapshot.axis_configuration != FitOrientationAxisConfiguration():
+                raise FitOrientationValidationError(
+                    "双骨 IK 朝向当前要求 FitSkeleton 使用 +X primary / +Y secondary"
+                )
+            start, end, role = rp_role
+            if role == "start":
+                reference = _subtract(
+                    hierarchy[end].world_position, hierarchy[start].world_position
+                )
+                if "Hip" in hierarchy[start].short_name:
+                    reference = _scale(reference, -1.0)
+            else:
+                start_axes = planned_world_axes.get(start, orientations[start].world_axes)
+                # MEL aims the middle joint's local tertiary axis at the
+                # start joint's tertiary axis (objectrotation world-up).
+                reference = _cross(start_axes[2], primary)
+            if _inherited_flip_orient(path, hierarchy, metadata):
+                reference = _scale(reference, -1.0)
         secondary = _normalize(
             _subtract(reference, _scale(primary, _dot(reference, primary))),
             "无法建立稳定的 secondary axis",
         )
+        planned_world_axes[path] = (primary, secondary, _cross(primary, secondary))
         if (
             _dot(_normalize(state.world_axes[0], "当前 X 轴无效"), primary)
             >= 1.0 - tolerance
@@ -496,7 +519,7 @@ def plan_simple_fit_orientations(
                 desired_primary_world=primary,
                 desired_secondary_world=secondary,
                 secondary_world_axis=secondary_axis,
-                use_explicit_world_axes=free_orient,
+                use_explicit_world_axes=free_orient or rp_role is not None,
             )
         )
     return tuple(changes)
@@ -564,6 +587,70 @@ def _joint_children(snapshot: FitHierarchySnapshot) -> dict[str, list[str]]:
     for paths in children.values():
         paths.sort()
     return children
+
+
+def _rp_fit_chains(
+    hierarchy: dict[str, FitHierarchyNode],
+) -> dict[str, tuple[str, str, str]]:
+    """Identify the RP start and intermediate joints from MEL IK labels."""
+    result: dict[str, tuple[str, str, str]] = {}
+    for start, node in hierarchy.items():
+        label = node.short_name
+        if "Shoulder" in label:
+            end_labels = ("Hand",)
+        elif "Hip" in label:
+            end_labels = ("Foot", "Toes")
+        else:
+            continue
+        endpoints = [
+            path for path, candidate in hierarchy.items()
+            if path.startswith(start + "|")
+            and any(word in candidate.short_name for word in end_labels)
+            and not any(
+                "Chest" in hierarchy[ancestor].short_name
+                or "Hand" in hierarchy[ancestor].short_name
+                for ancestor in _path_between(start, path, hierarchy)[1:-1]
+            )
+        ]
+        if not endpoints:
+            continue
+        end = min(endpoints, key=lambda path: (path.count("|"), path))
+        chain = _path_between(start, end, hierarchy)
+        if len(chain) < 3:
+            continue
+        result[start] = (start, end, "start")
+        for intermediate in chain[1:-1]:
+            result[intermediate] = (start, end, "middle")
+    return result
+
+
+def _path_between(
+    ancestor: str,
+    descendant: str,
+    hierarchy: dict[str, FitHierarchyNode],
+) -> tuple[str, ...]:
+    path = [descendant]
+    while path[-1] != ancestor:
+        parent = hierarchy[path[-1]].dag_parent
+        if parent not in hierarchy:
+            raise FitOrientationValidationError("双骨 IK 链不在同一 Fit 层级内")
+        path.append(parent)
+    return tuple(reversed(path))
+
+
+def _inherited_flip_orient(
+    path: str,
+    hierarchy: dict[str, FitHierarchyNode],
+    metadata: dict[str, FitJointMetadata],
+) -> bool:
+    flipped = False
+    current: str | None = path
+    while current in hierarchy:
+        item = metadata.get(current)
+        if item is not None and item.flip_orient:
+            flipped = not flipped
+        current = hierarchy[current].dag_parent
+    return flipped
 
 
 def _resolve_orientation_targets(
