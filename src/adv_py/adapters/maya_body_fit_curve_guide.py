@@ -100,6 +100,10 @@ class MayaBodyFitCurveGuideMixin:
             if group[0].side == "L":
                 c.scale(-1, 1, 1, curve + ".cv[*]", relative=True,
                         objectSpace=True, pivot=(0, 0, 0))
+            for kind in ("translate", "rotate", "scale"):
+                for axis in "XYZ":
+                    c.setAttr(curve + "." + kind + axis,
+                              keyable=False, lock=True)
             c.setAttr(shape + ".overrideEnabled", 1)
             c.setAttr(shape + ".overrideColor", 17)
             if not c.attributeQuery("blend", node=curve, exists=True):
@@ -249,9 +253,9 @@ class MayaBodyFitCurveGuideMixin:
                                       parent=global_follow, skipSelect=True)
             for target in (follow_on, follow_off):
                 c.xform(target, worldSpace=True, translation=point)
-            nearest = min(guides, key=lambda guide: sum(
-                (left - right) ** 2 for left, right in zip(
-                    point, guide.control.world_position)))
+            nearest = min(guides, key=lambda guide: min(
+                sum((left - right) ** 2 for left, right in zip(
+                    point, position)) for position in guide.follow_positions))
             c.parentConstraint(nearest.parent_body, follow_on,
                                maintainOffset=True)
             blend = c.parentConstraint(follow_on, follow_off, offset,

@@ -19,6 +19,7 @@ class BodyFitCurveGuideSpec:
     control: BodyLimbFkControlSpec
     parent_body: str
     tangent_sign: int
+    follow_positions: tuple[tuple[float, float, float], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,5 +85,11 @@ def plan_body_fit_curve_guides(
             control=control,
             parent_body=parent,
             tangent_sign=-1 if instance.side.value == "L" else 1,
+            follow_positions=tuple(
+                joint.world_position for joint in instances
+                if joint.side is instance.side
+                and (joint.output_path == instance.output_path
+                     or joint.output_path.startswith(
+                         instance.output_path + "|"))),
         ))
     return tuple(guides)
