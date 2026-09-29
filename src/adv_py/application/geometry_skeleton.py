@@ -4,6 +4,8 @@ from __future__ import annotations
 from typing import Protocol
 
 from adv_py.core.geometry_skeleton import (BoneCopy, plan_finger_bones,
+                                           plan_generic_bones,
+                                           plan_metacarpal_bones,
                                            plan_skeleton_bones,
                                            plan_skeleton_mirror)
 
@@ -27,7 +29,11 @@ class CreateSkeletonGeometry:
 
     def execute(self) -> int:
         joints, template = self.host.capture_skeleton_input()
-        plan = plan_skeleton_bones(joints, template) + plan_finger_bones(joints, template)
+        named = plan_skeleton_bones(joints, template)
+        fingers = plan_finger_bones(joints, template)
+        metacarpals = plan_metacarpal_bones(joints, template)
+        plan = (named + fingers + metacarpals
+                + plan_generic_bones(joints, named + fingers))
         self.host.preflight_skeleton_create(plan)
         with self.host.transaction("创建原版骨骼几何"):
             count = self.host.create_skeleton_geometry(plan)

@@ -115,6 +115,12 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
 
     def _influences(self, spec: BoneCopy) -> list[str]:
         c = self.cmds
+        if spec.source == "Metacarpal":
+            parent = c.listRelatives(self._name(spec.joint), parent=True,
+                                     type="joint", fullPath=True) or []
+            if len(parent) != 1:
+                raise ValueError("Metacarpal 缺少手掌父关节：" + spec.joint)
+            return [parent[0]]
         result = [self._name(spec.joint)]
         child = self._child_joint(spec)
         seen = set(result)
@@ -136,11 +142,45 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
     def _place_bone(self, bone: str, spec: BoneCopy) -> None:
         c = self.cmds
         joint = self._name(spec.joint)
-        constraint = c.parentConstraint(joint, bone, maintainOffset=False)[0]
-        offset = self._orient_offset(joint)
+        anchor = joint
+        if spec.source == "Metacarpal":
+            parent = c.listRelatives(joint, parent=True, type="joint",
+                                     fullPath=True) or []
+            if len(parent) != 1:
+                raise ValueError("Metacarpal 缺少手掌父关节：" + spec.joint)
+            anchor = parent[0]
+        constraint = c.parentConstraint(anchor, bone, maintainOffset=False)[0]
+        offset = self._orient_offset(anchor)
         c.setAttr(constraint + ".target[0].targetOffsetRotate",
                   *offset, type="double3")
         c.delete(constraint)
+        if spec.source == "Metacarpal":
+            c.delete(c.aimConstraint(joint, bone, aimVector=(1, 0, 0),
+                                     upVector=(0, 1, 0),
+                                     worldUpType="objectrotation",
+                                     worldUpObject=anchor))
+            start = c.xform(anchor, query=True, worldSpace=True,
+                            translation=True)
+            end = c.xform(joint, query=True, worldSpace=True,
+                          translation=True)
+            length = dist(start, end)
+            side = spec.side
+            landmark = self._landmark(self._name("CarpalBBone" + side),
+                                      "CarpalBone" + spec.joint[:-2])
+            if c.objExists(landmark):
+                marker = c.xform(landmark, query=True, worldSpace=True,
+                                 translation=True)
+                length = dist(marker, end)
+            fat = float(c.getAttr(joint + ".fat"))
+            front = fat * float(c.getAttr(joint + ".fatFront"))
+            width = fat * float(c.getAttr(joint + ".fatWidth"))
+            c.xform(bone, objectSpace=True, absolute=True,
+                    scale=(length, front, width))
+            if c.objExists(landmark):
+                c.move(dist(start, marker), 0, 0, bone + ".vtx[0:9999]",
+                       relative=True, objectSpace=True,
+                       worldSpaceDistance=True)
+            return
         child = self._child_joint(spec)
         if child:
             start = c.xform(joint, query=True, worldSpace=True, translation=True)
@@ -154,9 +194,113 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
                     width = fat * float(c.getAttr(joint + ".fatWidth"))
                 c.xform(bone, objectSpace=True, absolute=True,
                         scale=(length, front, width))
-        if spec.side == "_L" and spec.source != "Phalanges":
+        if spec.side == "_L" and spec.source not in {"Phalanges", "Generic"}:
             pivot = c.xform(joint, query=True, worldSpace=True, translation=True)
             c.scale(-1, -1, -1, bone, relative=True, pivot=pivot)
+        elif spec.side == "_L":
+            pivot = c.xform(joint, query=True, worldSpace=True, translation=True)
+            c.scale(-1, -1, -1, bone + ".vtx[0:9999]",
+                    relative=True, pivot=pivot)
+            c.polyNormal(bone, normalMode=0, userNormalMode=0,
+                         constructionHistory=False)
+
+    def _landmark(self, bone: str, leaf: str) -> str:
+        if not self.cmds.objExists(bone):
+            return ""
+        matches = [node for node in (self.cmds.listRelatives(
+            bone, allDescendents=True, fullPath=True,
+            type="transform") or ()) if self._leaf(node) == leaf]
+        return matches[0] if len(matches) == 1 else ""
+
+    def _take_ownership(self, bone: str, temporary: str) -> None:
+        """Keep copied descendants when the imported namespace is removed."""
+        c = self.cmds
+        descendants = c.listRelatives(bone, allDescendents=True,
+                                      fullPath=True) or []
+        for node in sorted(descendants, key=lambda item: item.count("|"),
+                           reverse=True):
+            if node.rsplit("|", 1)[-1].startswith(temporary + ":"):
+                c.rename(node, self._name(self._leaf(node)))
+
+    def _uniform_scale(self, bone: str, value: float) -> None:
+        self.cmds.setAttr(bone + ".scale", value, value, value, type="double3")
+
+    def _adjust_anatomy(self, bone: str, spec: BoneCopy) -> None:
+        """Apply original bone-landmark proportions before Skin binding."""
+        c = self.cmds
+        if spec.source == "Pelvis" and spec.side == "_M":
+            root = self._name("Root_M")
+            children = c.listRelatives(root, children=True, type="joint",
+                                       fullPath=True) or []
+            right = next((child for child in children
+                          if self._leaf(child).endswith("_R")), "")
+            marker = self._landmark(bone, "PelvisBoneFemur")
+            if right and c.objExists(marker):
+                c.xform(bone, worldSpace=True, rotation=(0, 0, 0))
+                hip = c.xform(right, query=True, worldSpace=True, translation=True)
+                c.xform(bone, worldSpace=True, translation=(0, hip[1], hip[2]))
+                femur = c.xform(marker, query=True, worldSpace=True,
+                                translation=True)
+                if abs(femur[0]) > 1e-8:
+                    ratio = hip[0] / femur[0]
+                    c.scale(ratio, ratio, ratio, bone, relative=True)
+                    self._uniform_scale(bone, c.getAttr(bone + ".scaleX"))
+        elif spec.source == "Cranium" and spec.side == "_M":
+            eye = self._name("Eye_R")
+            marker = self._landmark(bone, "CraniumBoneEye")
+            if c.objExists(eye) and c.objExists(marker):
+                target = c.xform(eye, query=True, worldSpace=True,
+                                 translation=True)
+                current = c.xform(marker, query=True, worldSpace=True,
+                                  translation=True)
+                if abs(current[0]) > 1e-8:
+                    ratio = target[0] / current[0]
+                    c.scale(ratio, ratio, ratio, bone, relative=True)
+                    self._uniform_scale(bone, c.getAttr(bone + ".scaleZ"))
+                    current = c.xform(marker, query=True, worldSpace=True,
+                                      translation=True)
+                    c.move(0, target[1] - current[1], 0, bone,
+                           relative=True, worldSpace=True)
+        elif spec.source == "Mandible" and spec.side == "_M":
+            cranium = self._name("CraniumBone_M")
+            if c.objExists(cranium):
+                c.delete(c.parentConstraint(cranium, bone,
+                                            maintainOffset=False))
+                c.setAttr(bone + ".scale",
+                          *c.getAttr(cranium + ".scale")[0], type="double3")
+        elif spec.source == "Calcaneus" and spec.side in {"_L", "_R"}:
+            ankle = self._name("Ankle" + spec.side)
+            heel = self._name("Heel" + spec.side)
+            first = self._landmark(bone, "CalcaneusBoneLoc1")
+            second = self._landmark(bone, "CalcaneusBoneLoc2")
+            if all(c.objExists(node) for node in (ankle, heel, first, second)):
+                ankle_pos = c.xform(ankle, query=True, worldSpace=True,
+                                   translation=True)
+                first_pos = c.xform(first, query=True, worldSpace=True,
+                                   translation=True)
+                height = ankle_pos[1] - first_pos[1]
+                if abs(height) > 1e-8:
+                    ratio = ankle_pos[1] / height * 0.95
+                    c.scale(ratio, 1, ratio, bone, relative=True)
+                second_pos = c.xform(second, query=True, worldSpace=True,
+                                    translation=True)
+                heel_pos = c.xform(heel, query=True, worldSpace=True,
+                                  translation=True)
+                depth = ankle_pos[2] - second_pos[2]
+                if abs(depth) > 1e-8:
+                    ratio = (ankle_pos[2] - heel_pos[2]) / depth * 0.9
+                    c.scale(1, ratio, 1, bone, relative=True)
+                    c.setAttr(bone + ".scaleZ", c.getAttr(bone + ".scaleY"))
+        elif spec.source == "Talus":
+            heel_bone = self._name("CalcaneusBone" + spec.side)
+            if c.objExists(heel_bone):
+                self._uniform_scale(bone, c.getAttr(heel_bone + ".scaleY"))
+        elif spec.source in {"Metatarsals", "Phalanxs"}:
+            talus = self._name("TalusBone" + spec.side)
+            if c.objExists(talus):
+                width = c.getAttr(talus + ".scaleX")
+                c.setAttr(bone + ".scaleY", width)
+                c.setAttr(bone + ".scaleZ", width)
 
     def _cleanup_landmarks(self, bone: str) -> None:
         c = self.cmds
@@ -189,7 +333,7 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
                 fit_template = c.getAttr(fit + ".fitSkeletonTemplate") or ""
             for spec in plan:
                 child = self._child_joint(spec)
-                if spec.source == "Phalanges" and not child:
+                if spec.source in {"Phalanges", "Generic"} and not child:
                     continue
                 source_leaf = spec.template
                 special = fit_template + source_leaf
@@ -201,7 +345,9 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
                 bone = c.duplicate(source, name=self._name(spec.target),
                                    returnRootsOnly=True)[0]
                 bone = c.parent(bone, root)[0]
+                self._take_ownership(bone, temporary)
                 self._place_bone(bone, spec)
+                self._adjust_anatomy(bone, spec)
                 c.setAttr(bone + ".visibility", True)
                 c.editDisplayLayerMembers(layer, bone, noRecurse=True)
                 influences = self._influences(spec)
@@ -209,8 +355,11 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
                                      toSelectedBones=True, maximumInfluences=3,
                                      dropoffRate=4,
                                      name=self._name(spec.target + "SC"))[0]
-                self._cleanup_landmarks(bone)
                 self._created.append((bone, skin))
+            # Bone landmarks are consumed by later anatomical pieces. The
+            # original procedure removes them only after every bone is built.
+            for bone, _ in self._created:
+                self._cleanup_landmarks(bone)
             return len(self._created)
         finally:
             if c.namespace(exists=temporary):

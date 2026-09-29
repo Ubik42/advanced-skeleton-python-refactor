@@ -80,3 +80,32 @@ def plan_skeleton_mirror(names: set[str], source_side: str
     return tuple((name, name[:-2] + "_" + target_side)
                  for name in sorted(names) if name.endswith(suffix)
                  and name[:-2] + "_" + target_side in names)
+
+
+def plan_metacarpal_bones(joints: set[str] | frozenset[str],
+                          fit_template: str = "") -> tuple[BoneCopy, ...]:
+    if fit_template in {"horse", "cat"}:
+        return ()
+    result = []
+    for joint in sorted(joints):
+        if ("Finger1" not in joint or "ThumbFinger1" in joint
+                or not joint.endswith(("_L", "_R"))):
+            continue
+        stem, side = joint.rsplit("_", 1)
+        result.append(BoneCopy("Metacarpal", joint, "_" + side,
+                               name=stem + "MetacarpalBone_" + side))
+    return tuple(result)
+
+
+def plan_generic_bones(joints: set[str] | frozenset[str],
+                       named: tuple[BoneCopy, ...]) -> tuple[BoneCopy, ...]:
+    """Cover each remaining DeformSet joint with a real GenericBone mesh."""
+    covered = {spec.joint for spec in named}
+    result = []
+    for joint in sorted(joints - covered):
+        if not joint.endswith(("_M", "_L", "_R")):
+            continue
+        stem, side = joint.rsplit("_", 1)
+        result.append(BoneCopy("Generic", joint, "_" + side,
+                               name=stem + "Bone_" + side))
+    return tuple(result)
