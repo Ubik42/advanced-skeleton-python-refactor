@@ -44,30 +44,28 @@ def plan_leg_qtoes_topology(body: BodySkeletonSnapshot) -> LegQToesTopology:
             raise ValueError("同侧存在多个 QToes 标记：" + suffix)
         qtoes = marked[0] if marked else None
         hybrid = qtoes is not None and qtoes.parent_path != ankle.path
-        intermediate = ()
-        if hybrid:
-            chain = []
-            current = toes
-            visited = set()
-            while current.path != ankle.path:
-                if current.path in visited or current.parent_path is None:
-                    raise ValueError("QToes 脚趾链存在循环或未连接到 Ankle：" + suffix)
-                visited.add(current.path)
-                chain.append(current)
-                current = by_path.get(current.parent_path)
-                if current is None:
-                    raise ValueError("QToes 脚趾链缺少 Body 父关节：" + suffix)
-            chain.reverse()
-            if qtoes not in chain:
-                raise ValueError("QToes 标记不在 Ankle→Toes 主链：" + suffix)
-            if toes_end.parent_path != toes.path:
-                raise ValueError("QToes 主链要求 ToesEnd 紧接 Toes：" + suffix)
-            intermediate = tuple(chain[:-1])
+        chain = []
+        current = toes
+        visited = set()
+        while current.path != ankle.path:
+            if current.path in visited or current.parent_path is None:
+                raise ValueError("脚趾主链存在循环或未连接到 Ankle：" + suffix)
+            visited.add(current.path)
+            chain.append(current)
+            current = by_path.get(current.parent_path)
+            if current is None:
+                raise ValueError("脚趾主链缺少 Body 父关节：" + suffix)
+        chain.reverse()
+        if qtoes is not None and qtoes not in chain:
+            raise ValueError("QToes 标记不在 Ankle→Toes 主链：" + suffix)
+        if toes_end.parent_path != toes.path:
+            raise ValueError("脚趾主链要求 ToesEnd 紧接 Toes：" + suffix)
+        intermediate = tuple(chain[:-1])
         names = tuple(joint.name.removesuffix("_" + suffix)
                       for joint in intermediate)
-        if hybrid and (not names or any(not name or not name[0].isalpha()
-                                         or not name.isalnum() for name in names)):
-            raise ValueError("QToes 中间关节名称不适合 Leg 机制链：" + suffix)
+        if any(not name or not name[0].isalpha() or not name.isalnum()
+               for name in names):
+            raise ValueError("脚趾中间关节名称不适合 Leg 机制链：" + suffix)
         sides.append(LegQToesSideTopology(
             suffix=suffix,
             ankle_path=ankle.path,
