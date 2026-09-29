@@ -148,6 +148,27 @@ class MayaFitNonSymmetryMixin:
                         self._non_symmetry_write_root_attributes(
                             renamed_root)
                         result.append(renamed_root)
+                    if result:
+                        from adv_py.application.fit_orientation_auto import (
+                            OrientFitJoints,
+                        )
+                        from adv_py.core.fit_orientation import (
+                            FitOrientationRequest,
+                            select_fit_orientation_child,
+                        )
+
+                        self.normalize_fit_ik_labels("FitSkeleton")
+                        snapshot = self.capture_fit_orientation("FitSkeleton")
+                        targets = tuple(
+                            joint.path for joint in snapshot.hierarchy.joints
+                            if select_fit_orientation_child(
+                                snapshot, joint.path) is not None)
+                        if targets:
+                            editor = OrientFitJoints(self)
+                            orient = editor.plan(
+                                FitOrientationRequest(targets),
+                                "FitSkeleton")
+                            editor.apply_plan_in_transaction(orient)
             finally:
                 remaining = tuple(item for item in selection if
                                   c.objExists(item))

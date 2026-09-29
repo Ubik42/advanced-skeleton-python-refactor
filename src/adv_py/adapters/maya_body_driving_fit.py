@@ -152,6 +152,7 @@ class MayaBodyDrivingFitMixin:
                 candidates.append(path)
         controls = []
         used_fit_attributes = set()
+        curve_attributes: dict[tuple[str, str], str] = {}
         for driver in candidates:
             ordinary = driver in direct
             face = bool(face_set and c.sets(driver, isMember=face_set))
@@ -167,6 +168,13 @@ class MayaBodyDrivingFitMixin:
                 if not ordinary and not curves:
                     continue
                 for curve in curves:
+                    key = (curve, name)
+                    previous = curve_attributes.get(key)
+                    if previous is not None and previous != driver:
+                        raise FitSkeletonValidationError(
+                            "多个 DrivingSystem 控制器共用同一 SDK 属性："
+                            + curve + "." + name)
+                    curve_attributes[key] = driver
                     if (c.referenceQuery(curve, isNodeReferenced=True)
                             or any(c.lockNode(curve, query=True,
                                               lock=True) or ())):
@@ -236,6 +244,12 @@ class MayaBodyDrivingFitMixin:
                     c.connectAttr(
                         f"{fit}.{control.fit_attribute}[{index}]",
                         curve + "." + attribute.name, force=True)
+                    if not c.isConnected(
+                            f"{fit}.{control.fit_attribute}[{index}]",
+                            curve + "." + attribute.name):
+                        raise RuntimeError(
+                            "Fit 驱动属性未连接 SDK：" + curve + "."
+                            + attribute.name)
                     if curve not in linked_curves:
                         if not c.attributeQuery("drivingSystemOut",
                                                 node=curve, exists=True):
