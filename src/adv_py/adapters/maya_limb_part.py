@@ -72,10 +72,6 @@ class MayaLimbPartHost(MayaBodyBuildHost):
         c.connectAttr(f"{settings}.{mode}_{spec.side}", scale_blend + ".blender")
         c.connectAttr(control + ".scale", scale_blend + ".color2")
         c.connectAttr(scale_blend + ".output", spec.start + ".scale")
-        first_translation = c.createNode("multiplyDivide",
-                                         name=spec.first_translation_name)
-        c.connectAttr(translation + ".output", first_translation + ".input1")
-        c.connectAttr(scale_blend + ".output", first_translation + ".input2")
 
         compose = c.createNode("composeMatrix", name=spec.twist_compose_name)
         twist_decompose = c.createNode("decomposeMatrix",
@@ -157,8 +153,7 @@ class MayaLimbPartHost(MayaBodyBuildHost):
                                 ("fatWidth", profile.fat_width)):
                 c.addAttr(joint, longName=attr, attributeType="double",
                           minValue=0.0, defaultValue=value, keyable=False)
-            c.connectAttr((first_translation if amount < 0.5 else translation)
-                          + ".output", joint + ".translate")
+            c.connectAttr(translation + ".output", joint + ".translate")
             c.connectAttr(parent + ".scale", joint + ".inverseScale")
             for axis, color in (("X", "R"), ("Y", "G"), ("Z", "B")):
                 c.connectAttr(scale_blend + ".output" + color,

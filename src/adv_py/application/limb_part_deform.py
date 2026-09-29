@@ -31,7 +31,6 @@ class BuildLimbPartDeform:
             self._host.preflight_limb_part_source(spec)
             for name in (spec.part1_name, spec.part2_name,
                          spec.translation_name,
-                         spec.first_translation_name,
                          spec.scale_blend_name,
                          spec.fatness_add_name,
                          spec.twist_compose_name, spec.twist_decompose_name,

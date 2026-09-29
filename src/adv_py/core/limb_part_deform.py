@@ -17,7 +17,6 @@ class LimbPartSegmentSpec:
     part1_name: str
     part2_name: str
     translation_name: str
-    first_translation_name: str
     scale_blend_name: str
     fatness_control: str
     fatness_attribute: str
@@ -76,7 +75,7 @@ def plan_limb_parts(body: BodySkeletonSnapshot, *,
                 for fraction in (1.0 / 3.0, 2.0 / 3.0))
             result.append(LimbPartSegmentSpec(stem, side, start.path, end.path,
                 path1, path1 + "|" + name2, name1, name2,
-                prefix + "TranslateThird", prefix + "TranslateFirst",
+                prefix + "TranslateThird",
                 prefix + "ScaleBlend",
                 f"AdvPy_{ik_limb}IK_{side}", fatness_attribute,
                 prefix + "FatnessAdd",
