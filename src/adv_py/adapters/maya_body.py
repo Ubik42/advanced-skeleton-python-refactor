@@ -117,13 +117,13 @@ from adv_py.core.body_export_skeleton import (
     BODY_EXPORT_SCHEMA_VERSION,
     BodyExportBakedJointState,
     BodyExportJointSample,
+    BodyExportSourceJoint,
     BodyExportJointState,
     BodyExportSkeletonBakePlan,
     BodyExportSkeletonBakedSnapshot,
     BodyExportSkeletonPlan,
     BodyExportSkeletonSample,
     BodyExportSkeletonSnapshot,
-    plan_body_export_skeleton,
 )
 from adv_py.core.body_controller_layers import (
     BodyExtraControllerState, BodySubControllerState,
@@ -827,6 +827,41 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
         return BodySkeletonSnapshot(
             root, tuple(states), provenance, fit_height,
         )
+
+    def capture_body_export_source_joints(
+        self, root_name: str,
+    ) -> tuple[BodyExportSourceJoint, ...]:
+        """Read the actual deformation hierarchy, including inserted Part joints."""
+        body = self.capture_body_skeleton(root_name)
+        c = self._cmds
+        paths = c.listRelatives(body.root, allDescendents=True,
+                                type="joint", fullPath=True) or []
+        paths.append(body.root)
+        result = []
+        for path in sorted(set(paths), key=lambda value: (value.count("|"), value)):
+            parents = c.listRelatives(path, parent=True, fullPath=True) or []
+            matrix = c.xform(path, query=True, worldSpace=True, matrix=True)
+            side_code = int(c.getAttr(path + ".side"))
+            side = _CORE_SIDE_FROM_MAYA.get(side_code)
+            if side is None:
+                raise FitSkeletonValidationError(
+                    f"导出关节侧向值无效：{path}.side={side_code}")
+            result.append(BodyExportSourceJoint(
+                path=path,
+                name=path.rsplit("|", 1)[-1].rsplit(":", 1)[-1],
+                parent_path=parents[0] if parents else None,
+                side=side,
+                label=self.read_joint_label(path),
+                joint_orient=tuple(float(value) for value in
+                                   c.getAttr(path + ".jointOrient")[0]),
+                world_position=tuple(float(value) for value in
+                                     c.xform(path, query=True,
+                                             worldSpace=True, translation=True)),
+                world_axes=tuple(self._normalized_vector(tuple(float(value)
+                    for value in matrix[index:index + 3]))
+                    for index in (0, 4, 8)),
+            ))
+        return tuple(result)
 
     def write_body_provenance(
         self,
@@ -2434,35 +2469,41 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
         root = root_motion.output_path
         if not (c.ls(root, long=True, type="joint") or []):
             return False
-        export = plan_body_export_skeleton(body, root_motion)
-        expected_joints = {joint.output_path for joint in export.joints}
         descendants = set(c.listRelatives(root, allDescendents=True,
                                           fullPath=True) or [])
-        if descendants != expected_joints:
+        joints = set(c.listRelatives(root, allDescendents=True,
+                                    fullPath=True, type="joint") or [])
+        children = c.listRelatives(root, children=True,
+                                   fullPath=True, type="joint") or []
+        if not joints or descendants != joints or len(children) != 1:
             raise FitSkeletonValidationError(
-                "已有发布层含额外或缺失节点，拒绝刷新")
-        export_root = export.root.output_path
+                "已有发布层含额外节点或骨架根不唯一，拒绝刷新")
+        export_root = children[0]
         metadata = {
             "owner": BODY_EXPORT_OWNER,
             "artifact_kind": BODY_EXPORT_KIND,
             "schema_version": BODY_EXPORT_SCHEMA_VERSION,
             "source_body_root": body.root,
-            "joint_count": len(export.joints),
+            "joint_count": len(joints),
         }
         if any(not c.objExists(f"{export_root}.{_BODY_EXPORT_PROVENANCE_ATTRIBUTES[key]}")
                or c.getAttr(f"{export_root}.{_BODY_EXPORT_PROVENANCE_ATTRIBUTES[key]}")
                    != value for key, value in metadata.items()):
             raise FitSkeletonValidationError(
                 "已有发布骨架的所有权或来源不符，拒绝刷新")
+        if any(not c.attributeQuery(_BODY_EXPORT_SOURCE_ATTRIBUTE,
+                                    node=path, exists=True) for path in joints):
+            raise FitSkeletonValidationError(
+                "已有发布骨架含非工具创建的关节，拒绝刷新")
         for skin in c.ls(type="skinCluster") or []:
             for influence in c.skinCluster(skin, query=True,
                                            influence=True) or []:
                 paths = c.ls(influence, long=True, type="joint") or []
-                if any(path in expected_joints or path == root for path in paths):
+                if any(path in joints or path == root for path in paths):
                     raise FitSkeletonValidationError(
                         "已有发布骨架被 Skin 使用，拒绝刷新：" + skin)
         if any(c.listConnections(path, source=False, destination=True)
-               for path in (root, *expected_joints)):
+               for path in (root, *joints)):
             raise FitSkeletonValidationError(
                 "已有发布骨架被其他节点依赖，拒绝刷新")
         with self.transaction("刷新已有游戏发布层"):

@@ -9,6 +9,7 @@ from typing import Protocol
 from adv_py.core.body_export_skeleton import (
     BodyExportSkeletonBakePlan,
     BodyExportSkeletonBakedSnapshot,
+    BodyExportSourceJoint,
     plan_body_export_skeleton,
     plan_body_export_skeleton_bake,
 )
@@ -37,12 +38,16 @@ from adv_py.core.body_skeleton import (
 )
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from .body_export_skeleton import _capture_export_source_joints
 
 
 class BodyFbxExportHost(Protocol):
     def scene_up_axis(self) -> FitUpAxis: ...
     def scene_linear_unit(self) -> BodyFbxLinearUnit: ...
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot: ...
+    def capture_body_export_source_joints(
+        self, root_name: str,
+    ) -> tuple[BodyExportSourceJoint, ...]: ...
     def capture_baked_body_export_skeleton(
         self, plan: BodyExportSkeletonBakePlan
     ) -> BodyExportSkeletonBakedSnapshot: ...
@@ -65,6 +70,7 @@ class BodyFbxExportHost(Protocol):
 class BodyFbxExportPlan:
     destination: Path
     body: BodySkeletonSnapshot
+    source_joints: tuple[BodyExportSourceJoint, ...] | None
     source_linear_unit: BodyFbxLinearUnit
     profile: BodyFbxExportProfile
     bake: BodyExportSkeletonBakePlan
@@ -131,13 +137,16 @@ class ExportBodyFbx:
             encoding=BodyFbxEncoding.BINARY,
         )
         body = self._host.capture_body_skeleton(body_root_name)
+        source_joints = _capture_export_source_joints(self._host, body_root_name)
         provenance = expected_body_provenance(body, source_container)
         root_motion = plan_body_root_motion(
             source_root_path=body.root,
             up_axis=up_axis,
             output_basename=root_motion_basename,
         )
-        export = plan_body_export_skeleton(body, root_motion, output_prefix=output_prefix)
+        export = plan_body_export_skeleton(
+            body, root_motion, output_prefix=output_prefix,
+            source_joints=source_joints)
         bake = plan_body_export_skeleton_bake(
             export,
             root_motion,
@@ -158,6 +167,7 @@ class ExportBodyFbx:
         return BodyFbxExportPlan(
             destination=path,
             body=body,
+            source_joints=source_joints,
             source_linear_unit=source_linear_unit,
             profile=selected_profile,
             bake=bake,
@@ -200,6 +210,9 @@ class ExportBodyFbx:
                 or not body_skeleton_unchanged(plan.body,
                     self._host.capture_body_skeleton(
                         kwargs.get("body_root_name", "Root_M")))
+                or _capture_export_source_joints(
+                    self._host, kwargs.get("body_root_name", "Root_M"))
+                    != plan.source_joints
                 or self._host.capture_baked_body_export_skeleton(plan.bake) != plan.baked
                 or self._host.capture_body_export_dependency_plugs(
                     plan.body.root, plan.selection.node_paths

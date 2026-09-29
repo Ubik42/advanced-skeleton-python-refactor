@@ -33,6 +33,20 @@ class BodyExportSkeletonValidationError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class BodyExportSourceJoint:
+    """One physical source joint, including Part joints between Body joints."""
+
+    path: str
+    name: str
+    parent_path: str | None
+    side: FitBuildSide
+    label: JointLabel | None
+    joint_orient: Vector3
+    world_position: Vector3
+    world_axes: AxisFrame
+
+
+@dataclass(frozen=True, slots=True)
 class BodyExportJointSpec:
     source_path: str
     source_parent_path: str | None
@@ -186,6 +200,7 @@ def plan_body_export_skeleton(
     root_motion: BodyRootMotionPlan,
     *,
     output_prefix: str = "AdvPy_EXP_",
+    source_joints: tuple[BodyExportSourceJoint, ...] | None = None,
 ) -> BodyExportSkeletonPlan:
     if body.root != root_motion.source_root_path or not body.joints:
         raise BodyExportSkeletonValidationError(
@@ -201,7 +216,15 @@ def plan_body_export_skeleton(
         raise BodyExportSkeletonValidationError(
             "Export Skeleton 输出前缀无效"
         )
-    states = sorted(body.joints, key=lambda item: (item.path.count("|"), item.path))
+    states = sorted(source_joints if source_joints is not None else body.joints,
+                    key=lambda item: (item.path.count("|"), item.path))
+    if not states:
+        raise BodyExportSkeletonValidationError("Export Skeleton 来源关节为空")
+    body_paths = {joint.path for joint in body.joints}
+    if source_joints is not None and not body_paths.issubset(
+            {joint.path for joint in states}):
+        raise BodyExportSkeletonValidationError(
+            "Export Skeleton 物理层级缺少 Body 关节")
     if (states[0].path != body.root
             or states[0].parent_path != (body.root.rsplit("|", 1)[0] or None)):
         raise BodyExportSkeletonValidationError("Body root 拓扑无效")

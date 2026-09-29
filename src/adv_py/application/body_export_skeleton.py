@@ -10,6 +10,7 @@ from adv_py.core.body_export_skeleton import (
     BodyExportSkeletonPlan,
     BodyExportSkeletonSample,
     BodyExportSkeletonSnapshot,
+    BodyExportSourceJoint,
     audit_baked_body_export_skeleton,
     audit_body_export_skeleton,
     audit_body_export_skeleton_samples,
@@ -32,9 +33,18 @@ from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 
+def _capture_export_source_joints(host, root_name: str):
+    """Older host doubles retain their Body-only publication behavior."""
+    capture = getattr(host, "capture_body_export_source_joints", None)
+    return capture(root_name) if capture is not None else None
+
+
 class BodyExportSkeletonHost(Protocol):
     def scene_up_axis(self) -> FitUpAxis: ...
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot: ...
+    def capture_body_export_source_joints(
+        self, root_name: str,
+    ) -> tuple[BodyExportSourceJoint, ...]: ...
     def capture_body_root_motion(
         self,
         plan: BodyRootMotionPlan,
@@ -64,6 +74,7 @@ class BodyExportSkeletonHost(Protocol):
 @dataclass(frozen=True, slots=True)
 class BodyExportSkeletonBuildPlan:
     body: BodySkeletonSnapshot
+    source_joints: tuple[BodyExportSourceJoint, ...] | None
     root_motion: BodyRootMotionPlan
     root_motion_snapshot: BodyRootMotionSnapshot
     export_skeleton: BodyExportSkeletonPlan
@@ -95,6 +106,7 @@ class BodyExportSkeletonBuildResult:
 @dataclass(frozen=True, slots=True)
 class BodyExportSkeletonBakeBuildPlan:
     body: BodySkeletonSnapshot
+    source_joints: tuple[BodyExportSourceJoint, ...] | None
     root_motion_snapshot: BodyRootMotionSnapshot
     export_snapshot: BodyExportSkeletonSnapshot
     bake: BodyExportSkeletonBakePlan
@@ -128,6 +140,7 @@ class BuildBodyExportSkeleton:
         output_prefix: str = "AdvPy_EXP_",
     ) -> BodyExportSkeletonBuildPlan:
         body = self._host.capture_body_skeleton(body_root_name)
+        source_joints = _capture_export_source_joints(self._host, body_root_name)
         expected = expected_body_provenance(body, source_container)
         provenance_issues = audit_body_provenance(expected, body.provenance)
         root_motion = plan_body_root_motion(
@@ -144,6 +157,7 @@ class BuildBodyExportSkeleton:
             body,
             root_motion,
             output_prefix=output_prefix,
+            source_joints=source_joints,
         )
         collisions = tuple(sorted({
             path
@@ -152,6 +166,7 @@ class BuildBodyExportSkeleton:
         }))
         return BodyExportSkeletonBuildPlan(
             body=body,
+            source_joints=source_joints,
             root_motion=root_motion,
             root_motion_snapshot=root_motion_snapshot,
             export_skeleton=export_skeleton,
@@ -186,6 +201,8 @@ class BuildBodyExportSkeleton:
             if not body_skeleton_unchanged(plan.body,
                 self._host.capture_body_skeleton(body_root_name)):
                 raise RuntimeError("Export Skeleton 执行前 Body 输入发生变化")
+            if _capture_export_source_joints(self._host, body_root_name) != plan.source_joints:
+                raise RuntimeError("Export Skeleton 执行前物理关节层级发生变化")
             if (
                 self._host.capture_body_root_motion(plan.root_motion)
                 != plan.root_motion_snapshot
@@ -242,6 +259,7 @@ class BakeBodyExportSkeleton:
         output_prefix: str = "AdvPy_EXP_",
     ) -> BodyExportSkeletonBakeBuildPlan:
         body = self._host.capture_body_skeleton(body_root_name)
+        source_joints = _capture_export_source_joints(self._host, body_root_name)
         expected = expected_body_provenance(body, source_container)
         provenance_issues = audit_body_provenance(expected, body.provenance)
         root_motion = plan_body_root_motion(
@@ -258,6 +276,7 @@ class BakeBodyExportSkeleton:
             body,
             root_motion,
             output_prefix=output_prefix,
+            source_joints=source_joints,
         )
         export_snapshot = self._host.capture_body_export_skeleton(export)
         export_issues = audit_body_export_skeleton(export, export_snapshot)
@@ -270,6 +289,7 @@ class BakeBodyExportSkeleton:
         )
         return BodyExportSkeletonBakeBuildPlan(
             body=body,
+            source_joints=source_joints,
             root_motion_snapshot=root_motion_snapshot,
             export_snapshot=export_snapshot,
             bake=bake,
@@ -312,6 +332,8 @@ class BakeBodyExportSkeleton:
             if not body_skeleton_unchanged(plan.body,
                 self._host.capture_body_skeleton(body_root_name)):
                 raise RuntimeError("Export Skeleton bake 前 Body 输入发生变化")
+            if _capture_export_source_joints(self._host, body_root_name) != plan.source_joints:
+                raise RuntimeError("Export Skeleton bake 前物理关节层级发生变化")
             if (
                 self._host.capture_body_root_motion(root_motion)
                 != plan.root_motion_snapshot

@@ -8,6 +8,7 @@ from adv_py.core.fit_part import (
     FitPartReparentSpec,
 )
 from adv_py.core.body_skeleton import FitDeformProfile
+from adv_py.core.fit_symmetry import FitBuildSide
 from adv_py.core.body_direct_fk_scale import BodyDirectFkScaleSpec
 from adv_py.core.fit_part_twist import (
     FitPartTwistProjection, FitPartTwistStep,
@@ -520,6 +521,11 @@ class MayaFitPartMixin:
         joint = self._unique_fit_part_joint(spec.name)
         self._transaction_changed = True
         c.setAttr(joint + ".rotateOrder", spec.rotation_order)
+        c.setAttr(joint + ".side", {
+            FitBuildSide.MIDDLE: 0,
+            FitBuildSide.LEFT: 1,
+            FitBuildSide.RIGHT: 2,
+        }[spec.side])
         c.setAttr(joint + ".segmentScaleCompensate",
                   spec.segment_scale_compensate)
         c.xform(joint, worldSpace=True, translation=spec.world_position)
