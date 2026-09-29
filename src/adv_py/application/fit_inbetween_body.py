@@ -18,7 +18,8 @@ def plan_combined_part_hierarchy(
     if not body.ready:
         raise ValueError("Inbetween Body 需要完整的标准骨架计划")
     addition = plan_fit_inbetween_body(
-        inbetween, body.symmetry.instances, body.specs)
+        inbetween, body.symmetry.instances, body.specs,
+        use_offset_parent_matrix=body.build_options.use_offset_parent_matrix)
     parts = body.fit_parts + addition.parts
     names = [part.name for part in parts]
     if len(set(names)) != len(names):

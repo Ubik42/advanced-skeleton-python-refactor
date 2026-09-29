@@ -175,7 +175,8 @@ class BuildBodySkeleton:
             plan_fit_part_joints(
                 symmetry.instances, symmetry.source.metadata, specs,
                 symmetry.source.hierarchy,
-                center_tolerance=0.01 * symmetry.source.fit_scale)
+                center_tolerance=0.01 * symmetry.source.fit_scale,
+                use_offset_parent_matrix=build_options.use_offset_parent_matrix)
             if not missing_labels else ()
         )
         fit_part_reparents = (

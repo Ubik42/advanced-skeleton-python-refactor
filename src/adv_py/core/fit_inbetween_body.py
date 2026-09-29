@@ -18,6 +18,8 @@ def plan_fit_inbetween_body(
     guides: FitInbetweenPlan,
     instances: tuple[FitSymmetryInstance, ...],
     body_specs: tuple[BodyJointSpec, ...],
+    *,
+    use_offset_parent_matrix: bool = False,
 ) -> FitInbetweenBodyPlan:
     """Insert Inbetween influences after the standard Body rig is planned.
 
@@ -65,6 +67,6 @@ def plan_fit_inbetween_body(
                 parent_path + "|" + name, name, parent_path,
                 position, guide.deform_profile,
                 start_spec.skin_enabled, guide.rotation_order,
-                False, "inbetween",
+                not use_offset_parent_matrix, "inbetween",
             ))
     return FitInbetweenBodyPlan(tuple(parts))

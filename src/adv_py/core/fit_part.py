@@ -312,6 +312,7 @@ def plan_fit_part_joints(
     hierarchy: FitHierarchySnapshot,
     *,
     center_tolerance: float = 0.01,
+    use_offset_parent_matrix: bool = False,
 ) -> tuple[FitPartJointSpec, ...]:
     """Expand each Fit twistJoints value into a side-specific Part chain.
 
@@ -400,7 +401,7 @@ def plan_fit_part_joints(
                     profile_body.deform_profile, fraction),
                 start_body.skin_enabled,
                 start_body.rotation_order,
-                start_body.segment_scale_compensate,
+                not use_offset_parent_matrix,
                 dual_twist_child=dual_twist_child))
             parent = path
     return tuple(parts)
