@@ -64,6 +64,8 @@ def character_channels(rig):
         if spine.ik_sub_path:
             add("spine.ik.sub", spine.ik_sub_path, transform)
         add("spine.pole",spine.pole_control,translation+("lock",))
+        if spine.pole_extra_path:
+            add("spine.pole.extra", spine.pole_extra_path, transform)
     else:
         spline = p.torso.torso.spline
         for index, target in enumerate(spline.targets):

@@ -70,6 +70,10 @@ class MayaBodySpineMixin:
                 parent = self._create_body_extra_layer(
                     offset, plan.ik_extra_path.rsplit("|", 1)[-1],
                     plan.ik_extra_path)
+            elif control == plan.pole_control and plan.pole_extra_path:
+                parent = self._create_body_extra_layer(
+                    offset, plan.pole_extra_path.rsplit("|", 1)[-1],
+                    plan.pole_extra_path)
             create_adv_icon(
                 c, name=control.rsplit("|", 1)[-1], parent=parent,
                 template=("IK_icon" if control == plan.ik_control
@@ -566,6 +570,20 @@ class MayaBodySpineMixin:
                 raise FitSkeletonValidationError("Spine IK 控制器父层改变")
         elif plan.ik_extra_curve:
             raise FitSkeletonValidationError("旧版 Spine IK 无 Extra 曲线层")
+        if plan.pole_extra_path:
+            issues = audit_body_extra_controller(
+                plan.pole_offset, plan.pole_control,
+                plan.pole_extra_path,
+                self._capture_body_extra_layer(
+                    plan.pole_extra_path, plan.pole_control),
+                extra_curve=False)
+            if issues:
+                raise FitSkeletonValidationError(
+                    "Spine Pole Extra 层复检失败：" + "；".join(issues))
+        pole_parent = c.listRelatives(
+            plan.pole_control, parent=True, fullPath=True) or []
+        if pole_parent != [plan.pole_extra_path or plan.pole_offset]:
+            raise FitSkeletonValidationError("Spine Pole 控制器父层改变")
         sub_state = self._capture_body_ik_sub_control(
             plan.ik_control, plan.ik_sub_path)
         issues = audit_body_sub_controller(

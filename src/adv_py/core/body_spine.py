@@ -54,6 +54,12 @@ class BodySpinePlan:
         return self.ik_sub_path or self.ik_control
 
     @property
+    def pole_extra_path(self) -> str | None:
+        parent = self.pole_control.rsplit("|", 1)[0]
+        name = parent.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        return parent if name == "AdvPy_SpinePoleExtra" else None
+
+    @property
     def blend_plug(self) -> str:
         return self.ik_control + ".spineIkFk"
 
@@ -84,6 +90,7 @@ class BodySpinePlan:
             self.pole_offset, self.pole_control, self.pole_control + "Shape",
             self.waist_output, self.chest_space,
             *((self.ik_extra_path,) if self.ik_extra_path else ()),
+            *((self.pole_extra_path,) if self.pole_extra_path else ()),
             *((self.ik_extra_path + "|AdvPy_SpineIKExtraShape",)
               if self.ik_extra_path and self.ik_extra_curve else ()),
             *((self.ik_sub_path, self.ik_sub_path + "Shape")
@@ -186,11 +193,12 @@ def with_spine_ik(body, torso, build_options: BodyBuildOptions = BodyBuildOption
     ik_extra = ik_offset + "|AdvPy_SpineIKExtra"
     ik_control = ik_extra + "|AdvPy_SpineIK"
     pole_offset = torso.controls.root_path + "|AdvPy_SpinePoleOffset"
+    pole_extra = pole_offset + "|AdvPy_SpinePoleExtra"
     plan = BodySpinePlan(
         root, tuple(specs), pelvis.control_path,
         (base.control_path, waist.control_path, chest.control_path),
         tuple(j.path for j in source), ik_offset, ik_control,
-        pole_offset, pole_offset+"|AdvPy_SpinePole",
+        pole_offset, pole_extra+"|AdvPy_SpinePole",
         solve_limb_pole_position(*(j.world_position for j in source), source[0].world_axes[1],
                                 limb_label="Spine", distance_scale=0.75),
         specs[4].path+"|AdvPy_SpineWaistOutput", space, tuple(lengths),
