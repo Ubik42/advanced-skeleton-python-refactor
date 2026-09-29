@@ -41,6 +41,7 @@ class FitJointField(str, Enum):
     FOLLOW_LEFT_RIGHT = "follow_left_right"
     FOLLOW_WORLD = "follow_world"
     FOLLOW_BY_NAME = "follow_by_name"
+    FOLLOW_SPACES = "follow_spaces"
 
 
 FitJointValue = bool | int | float | str | tuple[tuple[str, float], ...]
@@ -117,6 +118,7 @@ class FitJointMetadata:
     follow_left_right: bool = False
     follow_world: bool = False
     follow_by_name: tuple[tuple[str, float], ...] = ()
+    follow_spaces: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +151,7 @@ _BOOLEAN_FIELDS = {
     FitJointField.GLOBAL_TRANSLATE,
     FitJointField.FOLLOW_LEFT_RIGHT,
     FitJointField.FOLLOW_WORLD,
+    FitJointField.FOLLOW_SPACES,
 }
 _ENUM_OPTIONS = {
     FitJointField.WORLD_ORIENT_UP: {
@@ -305,6 +308,10 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
     if type(metadata.foot_pivots) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_foot_pivots", "Foot Pivots 开关必须是布尔值"))
+    if type(metadata.follow_spaces) is not bool:
+        issues.append(FitJointIssue(
+            metadata.joint, "invalid_follow_spaces",
+            "Follow Spaces 开关必须是布尔值"))
     for field in _TARGET_FIELDS:
         value = getattr(metadata, field.value)
         if value is not None and (not isinstance(value, str)
@@ -316,6 +323,12 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
         issues.append(FitJointIssue(
             metadata.joint, "follow_options_without_target",
             "Follow 左右／世界选项需要 Follow 目标关节"))
+    if (metadata.follow_spaces and any(
+            name in {"Main", "Root", "Chest", "Parent"}
+            for name, _ in metadata.follow_by_name)):
+        issues.append(FitJointIssue(
+            metadata.joint, "follow_space_name_conflict",
+            "Follow* 命名目标与 Follow Spaces 权重属性冲突"))
 
     for field_name, value, label in (
         ("twist_joints", metadata.twist_joints, "Twist 关节数量"),

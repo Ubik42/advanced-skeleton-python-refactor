@@ -33,6 +33,7 @@ from adv_py.core.fit_inbetween_ik_rebase import rebase_inbetween_ik_reference
 from adv_py.core.body_fit_advanced_constraint import plan_body_fit_advanced_constraints
 from adv_py.core.body_fit_follow import plan_body_fit_follow
 from adv_py.core.body_fit_named_follow import plan_body_fit_named_follow
+from adv_py.core.body_fit_follow_spaces import plan_body_fit_follow_spaces
 from adv_py.core.body_fit_dependency import validate_fit_control_dependencies
 
 from .axial_part_deform import BuildAxialPartDeform
@@ -60,6 +61,7 @@ from .body_fit_advanced_constraint import (
 )
 from .body_fit_follow import BuildFitFollow, RegisterFitFollow
 from .body_fit_named_follow import BuildFitNamedFollow, RegisterFitNamedFollow
+from .body_fit_follow_spaces import BuildFitFollowSpaces, RegisterFitFollowSpaces
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
 from .fit_inbetween_body import plan_combined_part_hierarchy
@@ -707,6 +709,27 @@ class BuildRegisteredBodyCharacter:
             pre_constraint_body = joined.capture_body_skeleton(
                 skeleton.snapshot.root)
             fit_metadata = rig.plan.arm.safety.symmetry.source.metadata
+            root_x = (rig.plan.torso.torso.root_x
+                      if rig.plan.torso is not None else None)
+            if root_x is None and any(item.follow_spaces
+                                      for item in fit_metadata):
+                raise ValueError("Follow Spaces 需要 RootX 控制层")
+            follow_spaces_plan = plan_body_fit_follow_spaces(
+                fit_metadata, fk_control_specs, pre_constraint_body.joints,
+                main_path=rig.plan.global_control.control_path,
+                root_path=root_x.control_path if root_x is not None else "")
+            fk_drivers = {
+                path: control.driven_joint
+                for control in fk_control_specs
+                for path in (control.control_path,
+                             control.source_override_path)
+                if path is not None
+            }
+            follow_space_edges = tuple(
+                (spec.source_body, tuple(
+                    fk_drivers.get(target.source, target.source)
+                    for target in spec.targets))
+                for spec in follow_spaces_plan)
             named_follow_plan = plan_body_fit_named_follow(
                 fit_metadata, fk_control_specs, pre_constraint_body.joints)
             named_follow_edges = tuple(
@@ -718,7 +741,7 @@ class BuildRegisteredBodyCharacter:
                     fit_metadata, fk_control_specs, pre_constraint_body.joints),
                 plan_body_fit_follow(
                     fit_metadata, fk_control_specs, pre_constraint_body.joints),
-                named_follow_edges)
+                named_follow_edges + follow_space_edges)
             advanced_constraints = BuildFitAdvancedConstraints(joined).apply(
                 fit_metadata,
                 fk_control_specs,
@@ -748,6 +771,18 @@ class BuildRegisteredBodyCharacter:
                     joined.capture_body_skeleton(skeleton.snapshot.root),
                     tolerance=1e-4):
                 raise RuntimeError("Fit Follow* 改变了 Body 绑定姿态")
+            pre_follow_spaces_body = joined.capture_body_skeleton(
+                skeleton.snapshot.root)
+            follow_spaces = BuildFitFollowSpaces(joined).apply(
+                fit_metadata, fk_control_specs,
+                pre_follow_spaces_body.joints,
+                main_path=rig.plan.global_control.control_path,
+                root_path=root_x.control_path if root_x is not None else "")
+            if follow_spaces and not body_skeleton_unchanged(
+                    pre_follow_spaces_body,
+                    joined.capture_body_skeleton(skeleton.snapshot.root),
+                    tolerance=1e-4):
+                raise RuntimeError("Fit Follow Spaces 改变了 Body 绑定姿态")
             tweakers = None
             if preview.build.build_options.use_offset_parent_matrix:
                 tweakers = plan_fit_tweakers(
@@ -769,6 +804,8 @@ class BuildRegisteredBodyCharacter:
                 registration, fit_follows)
             registration = RegisterFitNamedFollow(joined).apply(
                 registration, named_follows)
+            registration = RegisterFitFollowSpaces(joined).apply(
+                registration, follow_spaces)
             if tweakers is not None:
                 registration = RegisterFitTweakers(joined).apply(
                     registration, tweakers)
