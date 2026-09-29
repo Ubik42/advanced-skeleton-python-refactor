@@ -5,7 +5,8 @@ from contextlib import contextmanager
 
 from adv_py.core.skin_cage import (
     SKIN_CAGE_NODES, SkinCageBranchLayout, SkinCageBuildPlan,
-    SkinCageCopyTarget, SkinCageMirrorPair, special_skin_cage_branch,
+    SkinCageCopyTarget, SkinCageMirrorPair, SkinCageWidthInput,
+    SkinCageWidthSpec, special_skin_cage_branch,
 )
 
 
@@ -107,15 +108,34 @@ class MayaSkinCageHost:
         c.setAttr(profile + ".scaleZ", radius * 1.2 * fat * width)
         c.setAttr(profile + ".scaleX", radius * 1.2)
         if anchors:
+            offset_name = self._name(
+                leaf + ("_twistCurve" + suffix[5:] + "Offset"
+                        if suffix.startswith("twist") else
+                        "_" + suffix + "CurveOffset"))
+            offset = c.group(empty=True, name=offset_name, parent=parent)
+            c.xform(offset, worldSpace=True, matrix=c.xform(
+                joint, query=True, worldSpace=True, matrix=True))
+            c.parent(profile, offset)
             constraints = c.pointConstraint(
-                *anchors, profile, maintainOffset=False) or []
+                *anchors, offset, maintainOffset=False) or []
+            scale_constraints = c.scaleConstraint(
+                *anchors, offset, maintainOffset=True) or []
             if len(anchors) == 2 and constraints:
                 aliases = c.pointConstraint(constraints[0], query=True,
                                             weightAliasList=True) or []
                 if len(aliases) == 2:
                     c.setAttr(constraints[0] + "." + aliases[0], 0.75)
                     c.setAttr(constraints[0] + "." + aliases[1], 0.25)
-            c.orientConstraint(joint, profile, maintainOffset=True)
+                if scale_constraints:
+                    aliases = c.scaleConstraint(
+                        scale_constraints[0], query=True,
+                        weightAliasList=True) or []
+                    if len(aliases) == 2:
+                        c.setAttr(scale_constraints[0] + "." + aliases[0],
+                                  0.75)
+                        c.setAttr(scale_constraints[0] + "." + aliases[1],
+                                  0.25)
+            c.orientConstraint(joint, offset, maintainOffset=True)
         else:
             c.parentConstraint(joint, profile, maintainOffset=True)
         hidden = c.duplicate(profile,
@@ -576,6 +596,136 @@ class MayaSkinCageHost:
                    for axis in range(3)) > 0.0001:
                 return False
         return True
+
+    def capture_width_input(self) -> tuple[SkinCageWidthInput, ...]:
+        from math import dist
+
+        c = self.cmds
+        if not all(c.objExists(self._name(leaf)) for leaf in (
+                "skinCage", "SkinCurves1", "SkinCurves2")):
+            raise ValueError("请先创建当前角色的 SkinCage 和 SkinCurves")
+        rows = []
+        for main in self.capture_mirror_input():
+            leaf = main.rsplit("|", 1)[-1]
+            if not leaf.endswith("_middleProfile"):
+                continue
+            joint_name = leaf[:-len("_middleProfile")]
+            joint = (c.ls(joint_name, long=True, type="joint") or [])
+            if len(joint) != 1:
+                continue
+            cv = [tuple(c.xform(f"{main}.cv[{index}]", query=True,
+                                worldSpace=True, translation=True))
+                  for index in range(3)]
+            edge_a = dist(cv[0], cv[1])
+            edge_b = dist(cv[1], cv[2])
+            for suffix in ("start", "end"):
+                if joint_name.rsplit(":", 1)[-1].startswith("Neck"):
+                    continue
+                profile_name = joint_name + "_" + suffix + "Profile"
+                profile = c.ls(profile_name, long=True,
+                               type="transform") or []
+                if len(profile) != 1:
+                    continue
+                offset = c.listRelatives(profile[0], parent=True,
+                                         fullPath=True) or []
+                if len(offset) != 1:
+                    continue
+                points = (c.listConnections(
+                    offset[0] + ".translate", source=True,
+                    destination=False, type="pointConstraint") or
+                    c.listConnections(
+                        offset[0] + ".translateX", source=True,
+                        destination=False, type="pointConstraint") or [])
+                scales = (c.listConnections(
+                    offset[0] + ".scale", source=True,
+                    destination=False, type="scaleConstraint") or
+                    c.listConnections(
+                        offset[0] + ".scaleX", source=True,
+                        destination=False, type="scaleConstraint") or [])
+                if len(points) != 1 or len(scales) != 1:
+                    continue
+                pc, sc = points[0], scales[0]
+                point_targets = c.pointConstraint(
+                    pc, query=True, targetList=True) or []
+                scale_targets = c.scaleConstraint(
+                    sc, query=True, targetList=True) or []
+                if len(point_targets) != 2 or len(scale_targets) != 2:
+                    continue
+                canonical = lambda name: (c.ls(name, long=True) or [name])[0]
+                main_path = canonical(joint[0])
+                point_paths = tuple(map(canonical, point_targets))
+                scale_paths = tuple(map(canonical, scale_targets))
+                if main_path not in point_paths or main_path not in scale_paths:
+                    continue
+                pi = point_paths.index(main_path)
+                si = scale_paths.index(main_path)
+                point_aliases = c.pointConstraint(
+                    pc, query=True, weightAliasList=True) or []
+                scale_aliases = c.scaleConstraint(
+                    sc, query=True, weightAliasList=True) or []
+                if len(point_aliases) != 2 or len(scale_aliases) != 2:
+                    continue
+                other = point_paths[1 - pi]
+                main_pos = c.xform(main, query=True, worldSpace=True,
+                                   translation=True)
+                other_pos = c.xform(other, query=True, worldSpace=True,
+                                    translation=True)
+                rows.append(SkinCageWidthInput(
+                    profile[0], pc, sc,
+                    point_aliases[pi], point_aliases[1 - pi],
+                    scale_aliases[si], scale_aliases[1 - si],
+                    edge_a, edge_b, dist(main_pos, other_pos)))
+        return tuple(rows)
+
+    def preflight_width(self,
+                        specs: tuple[SkinCageWidthSpec, ...]) -> None:
+        c = self.cmds
+        for spec in specs:
+            row = spec.source
+            for constraint, aliases in (
+                    (row.point_constraint, (row.main_point_alias,
+                                            row.other_point_alias)),
+                    (row.scale_constraint, (row.main_scale_alias,
+                                            row.other_scale_alias))):
+                if not c.objExists(constraint) or any(
+                        not c.getAttr(constraint + "." + alias,
+                                      settable=True) for alias in aliases):
+                    raise ValueError("SkinCage 截面约束不可写：" + row.profile)
+
+    def set_width(self, spec: SkinCageWidthSpec) -> None:
+        c = self.cmds
+        row = spec.source
+        for constraint, main, other in (
+                (row.point_constraint, row.main_point_alias,
+                 row.other_point_alias),
+                (row.scale_constraint, row.main_scale_alias,
+                 row.other_scale_alias)):
+            c.setAttr(constraint + "." + main,
+                      1.0 - spec.other_weight)
+            c.setAttr(constraint + "." + other,
+                      spec.other_weight)
+        cage = self._name("skinCage")
+        if not c.attributeQuery("deformationWidth", node=cage,
+                                exists=True):
+            c.addAttr(cage, longName="deformationWidth",
+                      attributeType="bool", defaultValue=True)
+
+    def capture_width(self, spec: SkinCageWidthSpec) -> bool:
+        c = self.cmds
+        row = spec.source
+        for constraint, main, other in (
+                (row.point_constraint, row.main_point_alias,
+                 row.other_point_alias),
+                (row.scale_constraint, row.main_scale_alias,
+                 row.other_scale_alias)):
+            if abs(c.getAttr(constraint + "." + main) -
+                   (1.0 - spec.other_weight)) > 1e-5:
+                return False
+            if abs(c.getAttr(constraint + "." + other) -
+                   spec.other_weight) > 1e-5:
+                return False
+        return c.attributeQuery(
+            "deformationWidth", node=self._name("skinCage"), exists=True)
 
     def _skin(self, mesh: str) -> str:
         c = self.cmds

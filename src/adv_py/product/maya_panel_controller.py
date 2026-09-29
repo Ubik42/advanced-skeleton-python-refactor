@@ -1311,6 +1311,13 @@ class MayaPanelController:
         return MirrorSkinCage(MayaSkinCageHost(namespace)).execute(
             source_side)
 
+    def skin_cage_deformation_width(self, namespace: str) -> int:
+        from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
+        from adv_py.application.skin_cage import SetSkinCageDeformationWidth
+
+        return SetSkinCageDeformationWidth(
+            MayaSkinCageHost(namespace)).execute()
+
     def skin_cage_print_reuse(self, namespace: str, *, transforms: bool,
                               shapes: bool, catch: bool) -> int:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost

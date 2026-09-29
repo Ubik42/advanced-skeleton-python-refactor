@@ -1713,6 +1713,9 @@ def create_panel(controller: MayaPanelController | None = None):
                                      lambda: self._mirror_skin_cage("R")))
             form.addRow(QtWidgets.QLabel("选择待变形网格或其顶点，然后复制 Cage 权重。"))
             form.addRow(self._button("复制权重", self._copy_skin_cage_weights))
+            form.addRow(QtWidgets.QLabel("Adjust"))
+            form.addRow(self._button('"DeformationWidth"',
+                                     self._skin_cage_deformation_width))
             form.addRow(QtWidgets.QLabel("Re-use：将当前可见 SkinCurves 形状输出到 Script Editor。"))
             self.skin_cage_reuse_xform = QtWidgets.QCheckBox("xform")
             self.skin_cage_reuse_xform.setChecked(True)
@@ -2644,6 +2647,11 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.skin_cage_mirror(
                 self._namespace(), source_side)
             return f"已镜像 {count} 对 SkinCage 截面曲线"
+
+        def _skin_cage_deformation_width(self):
+            count = self.controller.skin_cage_deformation_width(
+                self._namespace())
+            return f"已调整 {count} 个 SkinCage 起始／末端截面的变形宽度"
 
         def _copy_skin_cage_weights(self):
             count = self.controller.skin_cage_copy_weights(self._namespace())

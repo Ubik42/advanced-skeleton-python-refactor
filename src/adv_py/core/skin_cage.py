@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 import re
 
 
@@ -22,6 +23,46 @@ class SkinCageCopyTarget:
 class SkinCageMirrorPair:
     source: str
     target: str
+
+
+@dataclass(frozen=True, slots=True)
+class SkinCageWidthInput:
+    profile: str
+    point_constraint: str
+    scale_constraint: str
+    main_point_alias: str
+    other_point_alias: str
+    main_scale_alias: str
+    other_scale_alias: str
+    edge_a: float
+    edge_b: float
+    target_distance: float
+
+
+@dataclass(frozen=True, slots=True)
+class SkinCageWidthSpec:
+    source: SkinCageWidthInput
+    other_weight: float
+
+
+def plan_skin_cage_width(rows: tuple[SkinCageWidthInput, ...]
+                         ) -> tuple[SkinCageWidthSpec, ...]:
+    if not rows:
+        raise ValueError("没有可调整宽度的 SkinCage 起始或末端截面")
+    result = []
+    seen = set()
+    for row in rows:
+        if row.profile in seen:
+            raise ValueError("SkinCage 宽度截面重复：" + row.profile)
+        seen.add(row.profile)
+        values = (row.edge_a, row.edge_b, row.target_distance)
+        if any(not isfinite(value) or value <= 0 for value in values):
+            raise ValueError("SkinCage 截面尺寸或关节距离无效：" + row.profile)
+        # MEL: ((curveHeight + curveWidth) / 2 / 2) / toParentDist.
+        weight = min((row.edge_a + row.edge_b) /
+                     (4.0 * row.target_distance), 0.45)
+        result.append(SkinCageWidthSpec(row, weight))
+    return tuple(result)
 
 
 def plan_skin_cage_mirror(profiles: tuple[str, ...],

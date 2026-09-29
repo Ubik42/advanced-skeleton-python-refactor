@@ -6,7 +6,9 @@ from typing import Protocol
 
 from adv_py.core.skin_cage import (
     SkinCageBuildPlan, SkinCageCopyTarget, SkinCageMirrorPair,
+    SkinCageWidthInput, SkinCageWidthSpec,
     plan_skin_cage_build, plan_skin_cage_copy, plan_skin_cage_mirror,
+    plan_skin_cage_width,
 )
 
 
@@ -24,6 +26,10 @@ class SkinCageHost(Protocol):
     def preflight_mirror(self, pairs: tuple[SkinCageMirrorPair, ...]) -> None: ...
     def mirror_profiles(self, pair: SkinCageMirrorPair) -> None: ...
     def capture_mirror(self, pair: SkinCageMirrorPair) -> bool: ...
+    def capture_width_input(self) -> tuple[SkinCageWidthInput, ...]: ...
+    def preflight_width(self, specs: tuple[SkinCageWidthSpec, ...]) -> None: ...
+    def set_width(self, spec: SkinCageWidthSpec) -> None: ...
+    def capture_width(self, spec: SkinCageWidthSpec) -> bool: ...
     def delete_cage(self) -> tuple[str, ...]: ...
     def print_reuse_commands(self, *, transforms: bool, shapes: bool,
                              catch: bool) -> int: ...
@@ -76,6 +82,23 @@ class MirrorSkinCage:
                     raise RuntimeError("SkinCage 镜像后曲线形状不一致：" +
                                        pair.target)
         return len(pairs)
+
+
+class SetSkinCageDeformationWidth:
+    def __init__(self, host: SkinCageHost) -> None:
+        self._host = host
+
+    def execute(self) -> int:
+        specs = plan_skin_cage_width(self._host.capture_width_input())
+        self._host.preflight_width(specs)
+        with self._host.transaction("调整 SkinCage DeformationWidth"):
+            for spec in specs:
+                self._host.set_width(spec)
+            for spec in specs:
+                if not self._host.capture_width(spec):
+                    raise RuntimeError("SkinCage 宽度权重写入后读回不一致：" +
+                                       spec.source.profile)
+        return len(specs)
 
 
 class DeleteSkinCage:
