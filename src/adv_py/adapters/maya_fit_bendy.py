@@ -525,7 +525,8 @@ class MayaFitBendyMixin:
             else:
                 control = create_adv_icon(
                     c, name=name, parent=parent, template="Bend_icon",
-                    radius=0.25, fallback_normal=(1.0, 0.0, 0.0),
+                    radius=spec.master_icon_scale,
+                    fallback_normal=(1.0, 0.0, 0.0),
                     axis_offset=axis_offset, mirror_left=spec.side == "L")
                 if index == 1:
                     c.move(spec.start_icon_offset, 0, 0,
@@ -556,7 +557,8 @@ class MayaFitBendyMixin:
                       spec.rotation_order)
             junction = create_adv_icon(
                 c, name=spec.junction_name, parent=junction_extra,
-                template="BendMid_icon", radius=0.18,
+                template="BendMid_icon",
+                radius=spec.master_icon_scale,
                 fallback_normal=(1.0, 0.0, 0.0),
                 axis_offset=axis_offset, mirror_left=spec.side == "L")
             c.xform(junction, worldSpace=True, translation=start)
@@ -940,11 +942,12 @@ class MayaFitBendyMixin:
         c.setAttr(master + ".microVis", channelBox=True)
         positions = (spec.start_position, *spec.part_positions)
         for index, (offset_name, extra_name, control_name, output_name,
-                    guide_name, position) in enumerate(zip(
+                    guide_name, position, radius) in enumerate(zip(
                         spec.micro_offset_names, spec.micro_extra_names,
                         spec.micro_control_names,
                         spec.micro_output_names,
-                        spec.motion_transform_names, positions)):
+                        spec.motion_transform_names, positions,
+                        spec.micro_radii)):
             offset = c.createNode("transform", name=offset_name,
                                   parent=_MICRO_GROUP, skipSelect=True)
             c.xform(offset, worldSpace=True, translation=position)
@@ -952,7 +955,7 @@ class MayaFitBendyMixin:
                                  parent=offset, skipSelect=True)
             control = create_adv_icon(
                 c, name=control_name, parent=extra,
-                template="Micro_icon", radius=0.15,
+                template="Micro_icon", radius=radius,
                 fallback_normal=(1.0, 0.0, 0.0),
                 mirror_left=spec.side == "L")
             c.xform(control, worldSpace=True, translation=position)

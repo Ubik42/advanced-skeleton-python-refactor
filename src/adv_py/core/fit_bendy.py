@@ -22,6 +22,7 @@ class FitBendyChainSpec:
     part_positions: tuple[tuple[float, float, float], ...]
     rotation_order: int = 0
     master_icon_scale: float = 1.5
+    micro_icon_scales: tuple[float, ...] = ()
     child_start_control: str | None = None
     child_start_influence: str | None = None
     parent_bendy: bool = False
@@ -32,7 +33,11 @@ class FitBendyChainSpec:
         if (type(self.rotation_order) is not int
                 or not 0 <= self.rotation_order <= 5
                 or not isfinite(self.master_icon_scale)
-                or self.master_icon_scale <= 0):
+                or self.master_icon_scale <= 0
+                or (self.micro_icon_scales and (
+                    len(self.micro_icon_scales) != len(self.part_names) + 1
+                    or any(not isfinite(scale) or scale <= 0
+                           for scale in self.micro_icon_scales)))):
             raise ValueError("Bendy 控制器朝向或图标尺寸无效")
         if bool(self.child_start_control) != bool(self.child_start_influence):
             raise ValueError("Bendy 相邻段缺少起点控制或影响关节")
@@ -46,6 +51,11 @@ class FitBendyChainSpec:
             a + (b - a) * index / (self.control_count + 1)
             for a, b in zip(self.start_position, self.end_position))
             for index in range(1, self.control_count + 1)))
+
+    @property
+    def micro_radii(self) -> tuple[float, ...]:
+        return (self.micro_icon_scales or
+                (0.15,) * (len(self.part_names) + 1))
 
     @property
     def master_position(self) -> tuple[float, float, float]:
@@ -390,7 +400,12 @@ def plan_fit_bendy_chains(
             master_icon_scale=max(
                 0.1,
                 1.5 * by_body[first.start_body].deform_profile.fat
-                * by_body[first.start_body].deform_profile.fat_front)))
+                * by_body[first.start_body].deform_profile.fat_front),
+            micro_icon_scales=tuple(max(
+                0.1, 1.5 * profile.fat * profile.fat_front)
+                for profile in (
+                    by_body[first.start_body].deform_profile,
+                    *(part.deform_profile for part in chain)))))
     # An enabled Bendy joint without a same-side child cannot be constructed.
     planned_sources = {item.source_joint for item in result}
     missing = [item.joint for item in metadata
