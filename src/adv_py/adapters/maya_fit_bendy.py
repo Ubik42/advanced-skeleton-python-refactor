@@ -2010,7 +2010,9 @@ class MayaFitBendyMixin:
                         or abs(float(c.getAttr(twist_end + ".input2"))
                                - index / len(spec.part_names)) > 1e-8
                         or not c.objExists(scale_delta)
+                        or c.nodeType(scale_delta) != "plusMinusAverage"
                         or not c.objExists(scale_weight)
+                        or c.nodeType(scale_weight) != "multiplyDivide"
                         or c.connectionInfo(scale_delta + ".input3D[0]",
                                             sourceFromDestination=True)
                         != spec.child_start_control + ".scale"
