@@ -11,6 +11,14 @@ class FitPartTwistValidationError(ValueError):
     pass
 
 
+def _plug_reads_body(plug: str | None, body: str) -> bool:
+    if not plug:
+        return False
+    node = plug.split(".", 1)[0]
+    return (node == body
+            or node.rsplit("|", 1)[-1] == body.rsplit("|", 1)[-1])
+
+
 @dataclass(frozen=True, slots=True)
 class FitPartTwistSource:
     start_body: str
@@ -206,6 +214,10 @@ def plan_fit_part_twist_projections(
                     item.rotation_plug, item.world_matrix_plug,
                     blended_matrix, item.static_parent_body)) != 1):
             raise FitPartTwistValidationError("Part 旋转及旋转顺序来源不能为空")
+        if _plug_reads_body(item.world_matrix_plug, item.start_body):
+            raise FitPartTwistValidationError(
+                "Part 改挂后不能从起点 Body 世界矩阵读取扭转："
+                + item.start_body)
         if type(item.distribution_source) is not bool:
             raise FitPartTwistValidationError("Part 扭转投影用途无效")
         if item.static_parent_body and (
@@ -334,6 +346,10 @@ def plan_fit_part_twist(
     part_names = {part.name for part in parts}
     for source in sources:
         for plug in (source.down_twist_plug, source.up_twist_plug):
+            if _plug_reads_body(plug, source.start_body):
+                raise FitPartTwistValidationError(
+                    "Part 扭转来源不能读取改挂后的起点 Body："
+                    + source.start_body)
             if plug and plug.split(".", 1)[0].rsplit("|", 1)[-1] in part_names:
                 raise FitPartTwistValidationError(
                     "Part 扭转来源不能由同一批 Part 关节输出")
@@ -348,6 +364,11 @@ def plan_fit_part_twist(
             raise FitPartTwistValidationError("Part 链编号或数量不连续："
                                               + start_body)
         source = by_source[start_body]
+        if any(_plug_reads_body(plug, chain[0].end_body)
+               for plug in (source.down_twist_plug, source.up_twist_plug)):
+            raise FitPartTwistValidationError(
+                "Part 扭转来源不能读取改挂后的下游 Body："
+                + chain[0].end_body)
         previous_target = (source.down_twist_plug
                            if source.subtract_body_twist else None)
         for part in chain:
