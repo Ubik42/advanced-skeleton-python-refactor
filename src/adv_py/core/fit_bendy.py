@@ -30,6 +30,7 @@ class FitBendyChainSpec:
     child_junction_control: str | None = None
     child_source_proxy: str | None = None
     start_world_axes: tuple[tuple[float, float, float], ...] | None = None
+    honor_non_symmetry_axis: bool = True
 
     def __post_init__(self) -> None:
         if (type(self.rotation_order) is not int
@@ -74,7 +75,14 @@ class FitBendyChainSpec:
     def start_icon_offset(self) -> float:
         """ADV moves only Bend0's CVs by one fifth of the segment length."""
         return (dist(self.start_position, self.end_position) / 5.0
-                * (-1 if self.side == "L" else 1))
+                * self.aim_axis_sign)
+
+    @property
+    def aim_axis_sign(self) -> int:
+        source = self.source_joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        return -1 if (self.side == "L"
+                      or (self.honor_non_symmetry_axis
+                          and source.endswith("_NonSymmetry"))) else 1
 
     @property
     def stem(self) -> str:

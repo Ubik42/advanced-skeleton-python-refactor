@@ -151,6 +151,7 @@ class MayaCharacterRegistryMixin:
         bendy_untwist = set()
         bendy_end_matrix = set()
         bendy_oriented = set()
+        bendy_negative_right = set()
         for control in bendy_aim_follow:
             stem, side = control.rsplit('_', 1)
             namespace = bendy_namespace(control)
@@ -188,6 +189,30 @@ class MayaCharacterRegistryMixin:
                         if end_source else '')
             if end_leaf in bendy_start_names:
                 bendy_child_control.add(control)
+        for control in bendy_master_paths:
+            stem, side = control.rsplit('_', 1)
+            if side != 'R':
+                continue
+            namespace = bendy_namespace(control)
+            starts = c.ls(namespace + stem + '0_R', long=True,
+                          type='transform') or []
+            if len(starts) != 1:
+                raise CharacterRegistryError(
+                    'Bendy 起点控制器无法唯一定位：' + control)
+            shapes = c.listRelatives(starts[0], shapes=True,
+                                     fullPath=True) or []
+            if len(shapes) != 1:
+                raise CharacterRegistryError(
+                    'Bendy 起点控制器曲线无法唯一定位：' + control)
+            count = int(c.getAttr(shapes[0] + '.controlPoints', size=True))
+            if count < 4:
+                raise CharacterRegistryError(
+                    'Bendy 起点控制器曲线无效：' + control)
+            center_x = sum(float(c.getAttr(
+                shapes[0] + f'.controlPoints[{index}].xValue'))
+                for index in range(count)) / count
+            if center_x < -1e-6:
+                bendy_negative_right.add(control)
         return GenericFkFeaturePolicy(
             frozenset(scale), frozenset(compensated),
             frozenset(globally_driven), aim_sources,
@@ -195,7 +220,8 @@ class MayaCharacterRegistryMixin:
             frozenset(twist_rewired), frozenset(bendy_scales),
             bendy_aim_follow, frozenset(bendy_start_control),
             frozenset(bendy_child_control), frozenset(bendy_untwist),
-            frozenset(bendy_end_matrix), frozenset(bendy_oriented))
+            frozenset(bendy_end_matrix), frozenset(bendy_oriented),
+            frozenset(bendy_negative_right))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

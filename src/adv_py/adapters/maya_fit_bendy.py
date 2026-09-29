@@ -929,7 +929,7 @@ class MayaFitBendyMixin:
         c.connectAttr(translate + ".outputMatrix", mix + ".matrixIn[1]")
         aim = c.createNode("aimMatrix", name=aim_name,
                            skipSelect=True)
-        side = -1 if chain.side == "L" else 1
+        side = chain.aim_axis_sign
         c.setAttr(aim + ".envelope", 0.5)
         c.setAttr(aim + ".primaryInputAxis", side, 0, 0)
         c.setAttr(aim + ".secondaryInputAxis", 0, 0, side)
@@ -1264,7 +1264,7 @@ class MayaFitBendyMixin:
             if any(c.getAttr(node + "." + attribute)
                    for attribute in disabled):
                 return False
-        side = -1 if chain.side == "L" else 1
+        side = chain.aim_axis_sign
         axes = (("primaryInputAxis", (side, 0, 0)),
                 ("secondaryInputAxis", (0, 0, side)),
                 ("secondaryTargetVector", (0, 0, side)))
@@ -1374,8 +1374,8 @@ class MayaFitBendyMixin:
             c.connectAttr(decompose + ".outputRotate",
                           up + ".rotate")
             c.aimConstraint(target, guide_name,
-                            aimVector=((-1 if spec.side == "L" else 1),
-                                       0, 0), upVector=(0, 0, 1),
+                            aimVector=(spec.aim_axis_sign, 0, 0),
+                            upVector=(0, 0, 1),
                             worldUpType="objectrotation",
                             worldUpObject=up,
                             name=guide_name + "Aim")
