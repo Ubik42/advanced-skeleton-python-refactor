@@ -63,6 +63,8 @@ class BodyFbxExportHost(Protocol):
         destination: Path,
         selection: BodyFbxExportSelection,
         profile: BodyFbxExportProfile,
+        *,
+        skin_influence_map: tuple[tuple[str, str], ...] = (),
     ) -> BodyFbxAppliedProfile: ...
 
 

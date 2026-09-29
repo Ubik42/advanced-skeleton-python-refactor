@@ -123,6 +123,8 @@ class StageBodyCharacterRebuild:
             host.capture_body_skeleton(original.registration.body_root),
             require_leaf=False)
         selection_mode = host.capture_body_rebuild_selection_mode()
+        generic_fk_policy = host.capture_body_generic_fk_feature_policy(
+            original.registration)
         segment_mode = _rebuild_segment_mode(host,
             original.registration.body_root)
         include_dynamic = host.has_body_dynamic_system()
@@ -153,6 +155,7 @@ class StageBodyCharacterRebuild:
                     use_fit_part_hierarchy=segment_mode == 'fit_part',
                     _include_dynamic=include_dynamic,
                     _retain_non_deform_markers=bool(retained_markers),
+                    _generic_fk_policy=generic_fk_policy,
                     _defer_selection_sets=True,
                     _scene_before=scene_before)
                 fit_path = '|Group|FitSkeleton'

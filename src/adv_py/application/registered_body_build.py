@@ -49,7 +49,9 @@ from adv_py.core.body_fit_wheel import BodyFitWheelSpec, plan_body_fit_wheels
 from adv_py.core.body_fit_curve_guide import (
     BodyFitCurveGuideBuilt, plan_body_fit_curve_guides,
 )
-from adv_py.core.body_generic_fk import plan_body_generic_fk
+from adv_py.core.body_generic_fk import (
+    GenericFkFeaturePolicy, plan_body_generic_fk,
+)
 from adv_py.core.body_fk_channel_locks import BodyFkChannelLockSpec
 from adv_py.core.body_fk_global import plan_body_fk_global, audit_body_fk_global
 from adv_py.core.body_fit_aim import plan_body_fit_aim
@@ -452,7 +454,11 @@ class BuildRegisteredBodyCharacter:
               _defer_selection_sets: bool = False,
               _defer_all_set: bool = False,
               _retain_non_deform_markers: bool = False,
+              _generic_fk_policy: GenericFkFeaturePolicy | None = None,
               ) -> RegisteredBodyBuildResult:
+        if (_generic_fk_policy is not None and
+                not isinstance(_generic_fk_policy, GenericFkFeaturePolicy)):
+            raise ValueError("通用 FK 重建图策略无效")
         if _scene_before is None:
             capture_nodes = getattr(self._host,
                                     "capture_body_scene_nodes", None)
@@ -519,7 +525,8 @@ class BuildRegisteredBodyCharacter:
                         _defer_selection_sets=_defer_selection_sets,
                         _defer_all_set=_defer_all_set,
                         _retain_non_deform_markers=(
-                            _retain_non_deform_markers))
+                            _retain_non_deform_markers),
+                        _generic_fk_policy=_generic_fk_policy)
                     if original_up_axis == "z":
                         joined.flip_character_scene_up_axis("|Group", "z")
                         result = replace(
@@ -1009,7 +1016,9 @@ class BuildRegisteredBodyCharacter:
                 sub_controllers=(
                     preview.build.build_options.sub_controllers),
                 extra_controllers=(
-                    preview.build.build_options.extra_controllers))
+                    preview.build.build_options.extra_controllers),
+                aim_sources=(_generic_fk_policy.aim_sources
+                             if _generic_fk_policy is not None else None))
             fit_hierarchy = rig.plan.arm.safety.symmetry.source.hierarchy
             fit_parents = {joint.dag_parent
                            for joint in fit_hierarchy.joints}
@@ -1031,8 +1040,14 @@ class BuildRegisteredBodyCharacter:
                             control.control_path, source_joint, attributes))
             generic_fk_locks = tuple(generic_fk_locks)
             joined.create_body_generic_fk(generic_fk)
+            scale_controls = tuple(
+                control for control in generic_fk.controls
+                if (_generic_fk_policy is None
+                    or _generic_fk_policy.scale_controls is None
+                    or control.control_path in
+                    _generic_fk_policy.scale_controls))
             generic_direct_scales = plan_body_direct_fk_scales(
-                skeleton.snapshot, generic_fk.controls)
+                skeleton.snapshot, scale_controls)
             for scale_spec in generic_direct_scales:
                 joined.preflight_body_direct_fk_scale(scale_spec)
             for scale_spec in generic_direct_scales:
@@ -1041,7 +1056,10 @@ class BuildRegisteredBodyCharacter:
                    for scale_spec in generic_direct_scales):
                 raise RuntimeError("通用 FK 缩放未连接到 Body 关节")
             generic_scale_compensations = ()
-            if generic_fk.controls:
+            if (generic_fk.controls and
+                    (_generic_fk_policy is None
+                     or _generic_fk_policy.compensated_controls is None
+                     or _generic_fk_policy.compensated_controls)):
                 symmetry_instances = (
                     rebase_plan_paths_after_parts(
                         part_plan.symmetry.instances, final_paths)
@@ -1071,7 +1089,11 @@ class BuildRegisteredBodyCharacter:
                     generated_joint_sources=spline_sources)
                 generic_scale_compensations = tuple(
                     spec for spec in all_fk_scale_compensations
-                    if spec.control_path in generic_control_paths)
+                    if (spec.control_path in generic_control_paths
+                        and (_generic_fk_policy is None
+                             or _generic_fk_policy.compensated_controls is None
+                             or spec.control_path in
+                             _generic_fk_policy.compensated_controls)))
                 BuildBodyFkScaleCompensation(joined).apply(
                     generic_scale_compensations)
             if generic_direct_scales or generic_scale_compensations:
@@ -1081,7 +1103,12 @@ class BuildRegisteredBodyCharacter:
                     fk_scale_compensations=(rig.plan.fk_scale_compensations
                                             + generic_scale_compensations)))
             generic_fk_globals = plan_body_fk_global(
-                fit_metadata, generic_fk.controls)
+                fit_metadata, tuple(control for control in
+                    generic_fk.controls
+                    if (_generic_fk_policy is None
+                        or _generic_fk_policy.global_controls is None
+                        or control.control_path in
+                        _generic_fk_policy.global_controls)))
             for global_spec in generic_fk_globals:
                 joined.create_body_fk_global(global_spec)
             generic_global_states = tuple(
@@ -1106,7 +1133,12 @@ class BuildRegisteredBodyCharacter:
                 if (FitJointField.AIM in item.present_fields
                     and item.joint in fit_parents
                     and item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-                    in generic_aim_names))
+                    in generic_aim_names
+                    and (_generic_fk_policy is None
+                         or _generic_fk_policy.aim_sources is None
+                         or item.joint.rsplit("|", 1)[-1]
+                         .rsplit(":", 1)[-1] in
+                         _generic_fk_policy.aim_sources)))
             marked_generic_names = {
                 item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
                 for item in generic_aim_metadata}

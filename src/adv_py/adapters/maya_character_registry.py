@@ -1,4 +1,5 @@
 from dataclasses import replace
+import re
 
 from adv_py.core.character_registry import (
     FORMAT, REGISTRY_NAME, CharacterRegistryError, CharacterNode, CharacterBindJoint,
@@ -9,6 +10,51 @@ from adv_py.core.body_skeleton import audit_body_provenance, oriented_body_prove
 
 
 class MayaCharacterRegistryMixin:
+    def capture_body_generic_fk_feature_policy(self, registration):
+        """Keep a rebuild's generic FK graph aligned with the saved rig."""
+        from adv_py.core.body_generic_fk import GenericFkFeaturePolicy
+        c = self._cmds
+        stems = {
+            channel.key[len('generic.fk.'):].split('.', 1)[0]
+            for channel in registration.channels
+            if channel.key.startswith('generic.fk.')}
+        by_leaf = {}
+        for node in registration.nodes:
+            by_leaf.setdefault(node.path.rsplit('|', 1)[-1], []).append(
+                node.path)
+        body_by_leaf = {joint.path.rsplit('|', 1)[-1]: joint.path
+                        for joint in registration.body}
+        scale = set()
+        compensated = set()
+        globally_driven = set()
+        keys = {channel.key for channel in registration.channels}
+        for stem in stems:
+            controls = by_leaf.get('AdvPy_' + stem, ())
+            body = body_by_leaf.get(stem.removesuffix('FK'))
+            if len(controls) != 1 or body is None:
+                raise CharacterRegistryError(
+                    '旧通用 FK 控制器或 Body 关节无法唯一定位：' + stem)
+            control = controls[0]
+            sources = tuple(c.connectionInfo(
+                body + '.scale' + axis, sourceFromDestination=True)
+                for axis in 'XYZ')
+            expected = tuple(control + '.scale' + axis for axis in 'XYZ')
+            if sources == expected:
+                scale.add(control)
+            elif any(sources):
+                raise CharacterRegistryError(
+                    '旧通用 FK 缩放连接不是完整的直驱图：' + stem)
+            if c.attributeQuery('inheritScale', node=control, exists=True):
+                compensated.add(control)
+            if 'fk.global.AdvPy_' + stem + '.Global' in keys:
+                globally_driven.add(control)
+        aim_sources = frozenset(match.group(1) for key in keys
+            if (match := re.fullmatch(
+                r'fit\.aim\.([A-Za-z_][A-Za-z_0-9]*)\.center\..+', key)))
+        return GenericFkFeaturePolicy(
+            frozenset(scale), frozenset(compensated),
+            frozenset(globally_driven), aim_sources)
+
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext
         return nullcontext() if self._transaction_active else self.transaction(label)

@@ -16,6 +16,20 @@ class BodyGenericFkPlan:
     hidden_controls: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class GenericFkFeaturePolicy:
+    """Retain the generated graph of a saved character during rebuilding.
+
+    None enables the current behavior for fresh characters. A set limits a
+    feature to controls already carrying that feature in the saved rig.
+    """
+
+    scale_controls: frozenset[str] | None = None
+    compensated_controls: frozenset[str] | None = None
+    global_controls: frozenset[str] | None = None
+    aim_sources: frozenset[str] | None = None
+
+
 def plan_body_generic_fk(
     body: BodySkeletonSnapshot,
     specs: tuple[BodyJointSpec, ...],
@@ -23,6 +37,7 @@ def plan_body_generic_fk(
     existing: tuple[BodyLimbFkControlSpec, ...],
     *, sub_controllers: bool, extra_controllers: bool,
     radius: float = 1.5,
+    aim_sources: frozenset[str] | None = None,
 ) -> BodyGenericFkPlan:
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
     state_by_name = {state.name: state for state in body.joints}
@@ -70,7 +85,9 @@ def plan_body_generic_fk(
         aim_name = (("AdvPy_" + stem + "FKGuideAim")
                     if item.curve_guide is not None else
                     ("AdvPy_" + stem + "FKAim")
-                    if item.aim and spec.path in child_paths else None)
+                    if (item.aim and spec.path in child_paths
+                        and (aim_sources is None
+                             or source_leaf in aim_sources)) else None)
         aim_path = (offset_path + "|" + aim_name
                     if aim_name is not None else None)
         extra_path = (aim_path or offset_path) + "|" + extra_name
