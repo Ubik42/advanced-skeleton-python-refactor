@@ -155,7 +155,9 @@ class MayaBodyDrivingFitMixin:
         curve_attributes: dict[tuple[str, str], str] = {}
         for driver in candidates:
             ordinary = driver in direct
-            face = bool(face_set and c.sets(driver, isMember=face_set))
+            face = bool(face_set and not c.objExists(
+                self.scene_address("asFaceBS"))
+                and c.sets(driver, isMember=face_set))
             source_attrs = self._driving_source_attributes(
                 driver, ordinary=ordinary, face=face)
             attributes = []
@@ -165,7 +167,7 @@ class MayaBodyDrivingFitMixin:
                     raise FitSkeletonValidationError(
                         "DrivingSystem 属性名不支持迁移：" + name)
                 curves = self._driving_sdk_curves(driver + "." + name)
-                if not ordinary and not curves:
+                if not ordinary and not face and not curves:
                     continue
                 for curve in curves:
                     key = (curve, name)
@@ -184,7 +186,8 @@ class MayaBodyDrivingFitMixin:
                                               user_defined=name in user)
                 attributes.append(DrivingFitAttribute(
                     name, curves, *limits))
-            if not ordinary and not attributes:
+            if (not ordinary and (not attributes or
+                    (face and not any(item.curves for item in attributes)))):
                 continue
             leaf = self._driving_leaf(driver)
             fit_attribute = "drivingSystem_" + leaf
