@@ -8719,6 +8719,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         or c.nodeType(driver) != "multMatrix"
                         or bool(c.getAttr(endpoint.path
                                           + ".inheritsTransform"))
+                        or bool(c.connectionInfo(
+                            driver + ".matrixIn[0]",
+                            sourceFromDestination=True))
                         or c.connectionInfo(driver + ".matrixIn[1]",
                                             sourceFromDestination=True)
                         != source
