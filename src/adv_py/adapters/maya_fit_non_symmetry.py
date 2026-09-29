@@ -68,15 +68,15 @@ class MayaFitNonSymmetryMixin:
         result = []
         with self.transaction("切换 Fit 非对称关节"):
             try:
-                # asFitModeManualUpdate flattens generated transforms before
-                # mirrorJoint reads the authored joint positions.
-                self.collapse_fit_generated_transforms("FitSkeleton")
                 hierarchy = self.capture_fit_hierarchy("FitSkeleton")
                 max_y = max((joint.world_position[1]
                              for joint in hierarchy.joints), default=0.0)
                 scale = max(max_y / 17.176163, .01) if max_y > 0 else 1.0
-                plan = plan_fit_non_symmetry(hierarchy, scale=scale)
-                if plan.remove_existing:
+                has_generated = any(
+                    joint.short_name.endswith("_NonSymmetry")
+                    for joint in hierarchy.joints)
+                if has_generated:
+                    plan = plan_fit_non_symmetry(hierarchy, scale=scale)
                     generated = set(plan.generated_joints)
                     roots = tuple(path for path in generated if not any(
                         path.startswith(parent + "|")
@@ -97,6 +97,13 @@ class MayaFitNonSymmetryMixin:
                                 c.deleteAttr(joint.path + "." + attribute)
                     result.extend(roots)
                 else:
+                    # asFitModeManualUpdate runs before mirrorJoint only on
+                    # the creation path; its delete path returns immediately.
+                    self.collapse_fit_generated_transforms("FitSkeleton")
+                    self.normalize_fit_joint_names("FitSkeleton")
+                    self.normalize_fit_ik_labels("FitSkeleton")
+                    hierarchy = self.capture_fit_hierarchy("FitSkeleton")
+                    plan = plan_fit_non_symmetry(hierarchy, scale=scale)
                     reserved = set()
                     for branch in plan.branch_roots:
                         for joint in self._non_symmetry_joint_tree(branch):

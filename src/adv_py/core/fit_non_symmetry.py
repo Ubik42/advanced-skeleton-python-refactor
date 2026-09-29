@@ -26,16 +26,16 @@ def plan_fit_non_symmetry(
             or not isfinite(scale) or scale <= 0):
         raise ValueError("非对称 Fit 比例无效")
     tolerance = 0.01 * max(float(scale), 0.01)
+    generated = tuple(joint.path for joint in hierarchy.joints
+                      if joint.short_name.endswith("_NonSymmetry"))
+    if generated:
+        return FitNonSymmetryPlan(True, (), generated, tolerance)
     issues = audit_fit_hierarchy(hierarchy, FitHierarchyPolicy(
         center_tolerance=tolerance))
     if issues:
         raise ValueError("非对称 Fit 层级无效：" +
                          "；".join(issue.message for issue in issues))
     nodes = {joint.path: joint for joint in hierarchy.joints}
-    generated = tuple(joint.path for joint in hierarchy.joints
-                      if joint.short_name.endswith("_NonSymmetry"))
-    if generated:
-        return FitNonSymmetryPlan(True, (), generated, tolerance)
     branches = []
     for joint in hierarchy.joints:
         parent = nodes.get(joint.dag_parent)
