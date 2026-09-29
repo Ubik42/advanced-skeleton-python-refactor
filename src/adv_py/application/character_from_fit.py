@@ -20,7 +20,8 @@ from .limb_part_deform import LimbPartHost
 from .oriented_body_skeleton import OrientedBodySkeletonHost
 from .registered_body_build import (BuildRegisteredBodyCharacter,
                                     RegisteredBodyBuildResult,
-                                    _JoinedTransactionHost)
+                                    _JoinedTransactionHost,
+                                    preflight_registered_fit_parts)
 from .registered_skinned_body_build import BuildRegisteredSkinnedBodyCharacter
 from .skin_bind import SkinBindHost
 from .skin_bind import SkinBindBuildResult
@@ -82,8 +83,10 @@ class BuildCharacterFromFit:
                 or not isinstance(maximum_influences, int)
                 or not 1 <= maximum_influences <= 256):
             raise ValueError("最大影响关节数须为 1..256 的整数")
-        if use_fit_part_hierarchy and not include_segment_influences:
-            raise ValueError("Fit Part／Inbetween 需要启用分段 Skin 影响")
+        preflight_registered_fit_parts(
+            self._host, container,
+            include_segment_influences=include_segment_influences,
+            use_fit_part_hierarchy=use_fit_part_hierarchy)
         description = axial_description_from_fit(
             self._host.capture_fit_hierarchy(container), spine_segments)
         return CharacterFromFitPlan(container, meshes, description,

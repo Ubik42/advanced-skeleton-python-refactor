@@ -249,6 +249,30 @@ def _with_inbetween_fk_sources(
     return replace(plan, arm=arm, leg=leg, hand=hand, torso=torso)
 
 
+def preflight_registered_fit_parts(
+    host, container_name: str, *,
+    include_segment_influences: bool,
+    use_fit_part_hierarchy: bool,
+    fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
+) -> None:
+    """Reject an incomplete Fit Part build before any scene hierarchy is made."""
+    if use_fit_part_hierarchy and not include_segment_influences:
+        raise ValueError("通用 Fit Part 构建需要启用分段 Skin 影响")
+    if not use_fit_part_hierarchy and fit_part_twist_sources:
+        raise ValueError("扭转来源只能随通用 Fit Part 构建提供")
+    if use_fit_part_hierarchy:
+        PrepareFitInbetween(host).plan(container_name)
+        return
+    source = host.capture_fit_orientation(container_name)
+    omitted = tuple(item.joint for item in source.metadata
+                    if (item.twist_joints or 0) > 0
+                    or (item.inbetween_joints or 0) > 0)
+    if omitted:
+        raise FitSkeletonValidationError(
+            "Fit 已标记 Twist／Inbetween，不能在关闭 Fit 分段时构建："
+            + "、".join(omitted))
+
+
 @dataclass(frozen=True, slots=True)
 class RegisteredBodyBuildResult:
     skeleton: OrientedBodySkeletonBuildResult
@@ -277,9 +301,15 @@ class BuildRegisteredBodyCharacter:
               fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
               _hierarchy_prepared: bool = False,
               ) -> RegisteredBodyBuildResult:
-        if use_fit_part_hierarchy and not include_segment_influences:
+        if not _hierarchy_prepared:
+            preflight_registered_fit_parts(
+                self._host, container_name,
+                include_segment_influences=include_segment_influences,
+                use_fit_part_hierarchy=use_fit_part_hierarchy,
+                fit_part_twist_sources=fit_part_twist_sources)
+        elif use_fit_part_hierarchy and not include_segment_influences:
             raise ValueError("通用 Fit Part 构建需要启用分段 Skin 影响")
-        if not use_fit_part_hierarchy and fit_part_twist_sources:
+        elif not use_fit_part_hierarchy and fit_part_twist_sources:
             raise ValueError("扭转来源只能随通用 Fit Part 构建提供")
         if not _hierarchy_prepared:
             hierarchy_collisions = tuple(
