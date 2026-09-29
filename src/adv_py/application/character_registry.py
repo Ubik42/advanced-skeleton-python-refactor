@@ -27,6 +27,13 @@ def character_channels(rig):
                     if attr not in locked.get(node, ()))
     translation = tuple("translate"+axis for axis in "XYZ")
     rotation = tuple("rotate"+axis for axis in "XYZ")
+    scale = tuple("scale"+axis for axis in "XYZ")
+    transform = translation + rotation + scale
+    def add_layers(key, control):
+        if control.sub_control_path:
+            add(key + ".sub", control.sub_control_path, transform)
+        if control.extra_path:
+            add(key + ".extra", control.extra_path, transform)
     add("global",p.global_control.control_path,translation+rotation+(p.global_control.scale_attribute,))
     for index, path in enumerate(p.global_control.extra_control_paths, 1):
         add(f"global.extra.{index}", path,
@@ -38,8 +45,11 @@ def character_channels(rig):
         add("root.cog." + cog.control_name, cog.control_path,
             translation + rotation + tuple("scale" + axis for axis in "XYZ"))
     for control in p.torso.torso.controls.controls:
-        add("torso."+control.control_name.removeprefix("AdvPy_"),control.control_path,
-            (translation if control.control_path==p.torso.torso.pelvis_translation.source else ())+rotation)
+        key = "torso." + control.control_name.removeprefix("AdvPy_")
+        add(key, control.control_path,
+            (translation if control.control_path == p.torso.torso.pelvis_translation.source else ())
+            + rotation + scale)
+        add_layers(key, control)
     lock = p.torso.torso.leg_lock
     if lock.static_source is not None and lock.enabled:
         add("root.leg_lock", lock.weight_control, ("legLock",))
@@ -77,11 +87,23 @@ def character_channels(rig):
                     side.target_control, translation + rotation)
     for label,module in (("arm",p.arm),("leg",p.leg)):
         for control in module.fk_controls.controls:
-            add(label+".fk."+control.control_name.removeprefix("AdvPy_"),control.control_path,rotation)
+            key = label + ".fk." + control.control_name.removeprefix("AdvPy_")
+            add(key, control.control_path, rotation + scale)
+            add_layers(key, control)
         for limb in module.ik.limbs:
             target = limb.wrist_control_path if label=="arm" else limb.ankle_control_path
-            add(label+".ik."+limb.side.value,target,translation+rotation)
+            key = label + ".ik." + limb.side.value
+            add(key, target, transform)
+            sub = limb.wrist_sub_path if label == "arm" else limb.ankle_sub_path
+            extra = limb.wrist_extra_path if label == "arm" else limb.ankle_extra_path
+            if sub:
+                add(key + ".sub", sub, transform)
+            if extra:
+                add(key + ".extra", extra, transform)
             add(label+".pole."+limb.side.value,limb.pole_control_path,translation)
+            if limb.pole_extra_path:
+                add(label + ".pole.extra." + limb.side.value,
+                    limb.pole_extra_path, transform)
         for settings in (module.blend,module.stretch,module.volume):
             add(label+".settings",settings.settings_path,tuple(s.attribute for s in settings.sides))
     for settings in (p.leg.stretch_bias,p.leg.knee_pin):
@@ -103,16 +125,19 @@ def character_channels(rig):
                     +side.side.value,segment.control_path,
                     translation+rotation)
         else:
-            add("foot.toe."+side.side.value,side.toe_control_path,rotation)
+            add("foot.toe."+side.side.value,
+                side.toe_control_path, rotation + scale)
             if side.toe_sub_path:
                 add("foot.toe.sub." + side.side.value,
-                    side.toe_sub_path, rotation)
+                    side.toe_sub_path, transform)
             if side.toe_extra_curve:
                 add("foot.toe.extra." + side.side.value,
-                    side.toe_extra_path, translation + rotation)
+                    side.toe_extra_path, transform)
     if p.hand:
         for control in p.hand.controls.controls:
-            add("hand.fk."+control.control_name.removeprefix("AdvPy_"),control.control_path,rotation)
+            key = "hand.fk." + control.control_name.removeprefix("AdvPy_")
+            add(key, control.control_path, rotation + scale)
+            add_layers(key, control)
         for attr in p.hand.pose.attributes:
             add("hand."+attr.side.value,attr.root_path,(attr.name,))
     for spec in p.fk_globals:

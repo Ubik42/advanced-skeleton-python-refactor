@@ -39,7 +39,17 @@ class MayaCharacterRegistryMixin:
                 channel for channel in replacement.channels
                 if channel.key != follow_key))
             by_key = {channel.key:channel for channel in replacement.channels}
-        if set(by_key)=={channel.key for channel in original.channels}:
+        additions = set(by_key) - old_keys
+        def additive_controller_channel(key):
+            channel = by_key[key]
+            return (key.startswith(("torso.", "arm.fk.", "leg.fk.",
+                                    "hand.fk.", "arm.ik.", "leg.ik.",
+                                    "arm.pole.extra.", "leg.pole.extra.",
+                                    "foot.toe."))
+                    and (channel.attribute in ("scaleX", "scaleY", "scaleZ")
+                         or ".sub." in key or ".extra." in key))
+        if old_keys <= set(by_key) and all(
+                additive_controller_channel(key) for key in additions):
             replacement=replace(replacement,channels=tuple(by_key[channel.key] for channel in original.channels))
         validate_rebuild_layout(original,replacement)
         if (type(original.spine) is not type(replacement.spine)
