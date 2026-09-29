@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from adv_py.core.character_registry import CharacterRegistration
+from adv_py.core.body_system_hierarchy import expected_body_system_hierarchy
 from adv_py.core.character_preservation import CharacterPreservation,RebuildOwnership,validate_rebuild_layout,character_transfer_error
 from .character_preservation import CaptureBodyCharacterPreservation
 from .fit_skeleton_io import ExportFitSkeleton,CreateAndImportFitSkeleton
@@ -74,34 +75,9 @@ class StageBodyCharacterRebuild:
                 rig=BuildBodyCharacterRig(stage).apply(include_torso=True,include_spine_ik=True,include_control_spaces=True,
                     include_head_aim='head.aim.headAim' in keys,axial_description=description)
                 registration=RegisterBodyCharacter(stage).apply(rig)
-                if stage.capture_body_system_hierarchy(skeleton.snapshot.root) != (
-                    ('|Group', None, 'transform'),
-                    ('|Group|FitSkeleton', '|Group', 'transform'),
-                    ('|Group|DeformationSystem', '|Group', 'transform'),
-                    ('|Group|Geometry', '|Group', 'transform'),
-                    ('|Group|MotionSystem', '|Group', 'transform'),
-                    ('|Group|MotionSystem|FKSystem',
-                     '|Group|MotionSystem', 'transform'),
-                    ('|Group|MotionSystem|IKSystem',
-                     '|Group|MotionSystem', 'transform'),
-                    ('|Group|MotionSystem|FKIKSystem',
-                     '|Group|MotionSystem', 'transform'),
-                    ('|Group|MotionSystem|TwistSystem',
-                     '|Group|MotionSystem', 'transform'),
-                    ('|Group|MotionSystem|BendSystem',
-                     '|Group|MotionSystem', 'transform'),
-                    ('|Group|MotionSystem|RootSystem',
-                     '|Group|MotionSystem', 'transform'),
-                    ('|Group|MotionSystem|RootSystem|RootFollowMain',
-                     '|Group|MotionSystem|RootSystem', 'transform'),
-                    ('|Group|MotionSystem|AimSystem',
-                     '|Group|MotionSystem', 'transform'),
-                    ('|Group|MotionSystem|ConstraintSystem',
-                     '|Group|MotionSystem', 'transform'),
-                    ('|Group|MotionSystem|DrivingSystem',
-                     '|Group|MotionSystem', 'transform'),
-                    (skeleton.snapshot.root, '|Group|DeformationSystem', 'joint'),
-                ):
+                if stage.capture_body_system_hierarchy(
+                        skeleton.snapshot.root) != expected_body_system_hierarchy(
+                            skeleton.snapshot.root):
                     raise RuntimeError('重建暂存角色的 Body 系统层级不一致')
                 if any('.ikOrientation.' in key for key in keys):registration=EnableBodyCharacterLimbAnimation(stage).apply()
                 if any('.ikLengthWeight.' in key for key in keys):registration=EnableBodyCharacterStretchMatching(stage).apply()

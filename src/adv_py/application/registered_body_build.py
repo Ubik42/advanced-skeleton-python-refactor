@@ -40,6 +40,9 @@ from adv_py.core.body_fit_geo_attach import plan_body_fit_geo_attach
 from adv_py.core.body_fit_proximity_pin import plan_body_fit_proximity_pin
 from adv_py.core.body_center_between_feet import plan_body_center_between_feet
 from adv_py.core.body_fit_dependency import validate_fit_control_dependencies
+from adv_py.core.body_system_hierarchy import (
+    BODY_SYSTEM_RESERVED_NAMES, expected_body_system_hierarchy,
+)
 
 from .axial_part_deform import BuildAxialPartDeform
 from .body_character_rig import (BuildBodyCharacterRig,
@@ -320,13 +323,7 @@ class BuildRegisteredBodyCharacter:
             raise ValueError("扭转来源只能随通用 Fit Part 构建提供")
         if not _hierarchy_prepared:
             hierarchy_collisions = tuple(
-                path for name in ("Group", "DeformationSystem", "Geometry",
-                                  "MotionSystem", "FKSystem", "IKSystem",
-                                  "FKIKSystem", "TwistSystem",
-                                  "BendSystem", "RootSystem",
-                                  "RootFollowMain", "GlobalSystem",
-                                  "GlobalFollowMain", "AimSystem",
-                                  "ConstraintSystem", "DrivingSystem")
+                path for name in BODY_SYSTEM_RESERVED_NAMES
                 for path in self._host.find_name_collisions(name))
             if hierarchy_collisions:
                 raise FitSkeletonValidationError(
@@ -1054,38 +1051,8 @@ class BuildRegisteredBodyCharacter:
             joined.finalize_fit_skeleton_visibility(container_name)
             hierarchy = joined.capture_body_system_hierarchy(
                 skeleton.snapshot.root, container_name)
-            if hierarchy != (
-                ("|Group", None, "transform"),
-                (container_name, "|Group", "transform"),
-                (_DEFORMATION_SYSTEM_PATH, "|Group", "transform"),
-                ("|Group|Geometry", "|Group", "transform"),
-                ("|Group|MotionSystem", "|Group", "transform"),
-                ("|Group|MotionSystem|FKSystem",
-                 "|Group|MotionSystem", "transform"),
-                ("|Group|MotionSystem|IKSystem",
-                 "|Group|MotionSystem", "transform"),
-                ("|Group|MotionSystem|FKIKSystem",
-                 "|Group|MotionSystem", "transform"),
-                ("|Group|MotionSystem|TwistSystem",
-                 "|Group|MotionSystem", "transform"),
-                ("|Group|MotionSystem|BendSystem",
-                 "|Group|MotionSystem", "transform"),
-                ("|Group|MotionSystem|RootSystem",
-                 "|Group|MotionSystem", "transform"),
-                ("|Group|MotionSystem|RootSystem|RootFollowMain",
-                 "|Group|MotionSystem|RootSystem", "transform"),
-                ("|Group|MotionSystem|GlobalSystem",
-                 "|Group|MotionSystem", "transform"),
-                ("|Group|MotionSystem|GlobalSystem|GlobalFollowMain",
-                 "|Group|MotionSystem|GlobalSystem", "transform"),
-                ("|Group|MotionSystem|AimSystem",
-                 "|Group|MotionSystem", "transform"),
-                ("|Group|MotionSystem|ConstraintSystem",
-                 "|Group|MotionSystem", "transform"),
-                ("|Group|MotionSystem|DrivingSystem",
-                 "|Group|MotionSystem", "transform"),
-                (skeleton.snapshot.root, _DEFORMATION_SYSTEM_PATH, "joint"),
-            ):
+            if hierarchy != expected_body_system_hierarchy(
+                    skeleton.snapshot.root, container_name):
                 raise RuntimeError("角色主构建结束时 Body 变形系统层级不一致")
             if _scene_before is not None:
                 PopulateBodyAllSet(joined).apply(

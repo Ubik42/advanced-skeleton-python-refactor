@@ -22,6 +22,9 @@ from adv_py.core.body_arm_mechanisms import (
     BodyArmMechanismPlan,
     BodyArmMechanismSnapshot,
 )
+from adv_py.core.body_system_hierarchy import (
+    BODY_SYSTEM_RESERVED_NAMES, expected_body_system_hierarchy,
+)
 from adv_py.core.body_arm_ik import (
     BodyArmIkPlan,
     BodyArmIkSnapshot,
@@ -478,12 +481,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
         """Reserve the original rig's Group and DeformationSystem before Body."""
         self._require_transaction()
         if any(self.find_name_collisions(name)
-               for name in ("Group", "DeformationSystem", "Geometry",
-                            "MotionSystem", "FKSystem", "IKSystem",
-                            "FKIKSystem", "TwistSystem", "BendSystem",
-                            "RootSystem", "RootFollowMain", "GlobalSystem",
-                            "GlobalFollowMain", "AimSystem",
-                            "ConstraintSystem", "DrivingSystem")):
+               for name in BODY_SYSTEM_RESERVED_NAMES):
             raise FitSkeletonValidationError(
                 "角色系统层级名称已被占用")
         group = self._cmds.createNode(
@@ -534,6 +532,9 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             skipSelect=True)
         self._cmds.setAttr(constraint_system + ".visibility", False)
         self._cmds.setAttr(constraint_system + ".visibility", lock=True)
+        self._cmds.createNode(
+            "transform", name="DynamicSystem", parent=motion,
+            skipSelect=True)
         self._cmds.createNode(
             "transform", name="DrivingSystem", parent=motion,
             skipSelect=True)
@@ -639,21 +640,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                 or not bool(self._cmds.getAttr(fit_visibility, lock=True))):
             raise FitSkeletonValidationError(
                 "构建完成的 Fit 容器可见性必须关闭并锁定")
-        paths = ("|Group", fit_container_path,
-                 "|Group|DeformationSystem", "|Group|Geometry",
-                 "|Group|MotionSystem", "|Group|MotionSystem|FKSystem",
-                 "|Group|MotionSystem|IKSystem",
-                 "|Group|MotionSystem|FKIKSystem",
-                 "|Group|MotionSystem|TwistSystem",
-                 "|Group|MotionSystem|BendSystem",
-                 "|Group|MotionSystem|RootSystem",
-                 "|Group|MotionSystem|RootSystem|RootFollowMain",
-                 "|Group|MotionSystem|GlobalSystem",
-                 "|Group|MotionSystem|GlobalSystem|GlobalFollowMain",
-                 "|Group|MotionSystem|AimSystem",
-                 "|Group|MotionSystem|ConstraintSystem",
-                 "|Group|MotionSystem|DrivingSystem",
-                 body_root_path)
+        paths = tuple(path for path, _, _ in expected_body_system_hierarchy(
+            body_root_path, fit_container_path))
         rows = []
         for path in paths:
             matches = self._cmds.ls(path, long=True) or []
