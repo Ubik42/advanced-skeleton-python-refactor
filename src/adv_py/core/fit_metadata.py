@@ -36,6 +36,9 @@ class FitJointField(str, Enum):
     POINT_CONSTRAINT = "point_constraint"
     ORIENT_CONSTRAINT = "orient_constraint"
     SCALE_CONSTRAINT = "scale_constraint"
+    FOLLOW = "follow"
+    FOLLOW_LEFT_RIGHT = "follow_left_right"
+    FOLLOW_WORLD = "follow_world"
 
 
 FitJointValue = bool | int | float | str
@@ -108,6 +111,9 @@ class FitJointMetadata:
     point_constraint: str | None = None
     orient_constraint: str | None = None
     scale_constraint: str | None = None
+    follow: str | None = None
+    follow_left_right: bool = False
+    follow_world: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +144,8 @@ _BOOLEAN_FIELDS = {
     FitJointField.NO_MIRROR_LEFT,
     FitJointField.NO_FLIP,
     FitJointField.GLOBAL_TRANSLATE,
+    FitJointField.FOLLOW_LEFT_RIGHT,
+    FitJointField.FOLLOW_WORLD,
 }
 _ENUM_OPTIONS = {
     FitJointField.WORLD_ORIENT_UP: {
@@ -163,6 +171,7 @@ _CONSTRAINT_FIELDS = frozenset((
     FitJointField.PARENT_CONSTRAINT, FitJointField.POINT_CONSTRAINT,
     FitJointField.ORIENT_CONSTRAINT, FitJointField.SCALE_CONSTRAINT,
 ))
+_TARGET_FIELDS = _CONSTRAINT_FIELDS | {FitJointField.FOLLOW}
 _BUILD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*\Z")
 
 
@@ -182,7 +191,7 @@ def validate_fit_joint_value(
     if field in _ENUM_OPTIONS and value not in _ENUM_OPTIONS[field]:
         options = "、".join(sorted(_ENUM_OPTIONS[field]))
         raise FitJointValidationError(f"{field.value} 必须是以下值之一：{options}")
-    if field in _CONSTRAINT_FIELDS and (
+    if field in _TARGET_FIELDS and (
             not isinstance(value, str) or not _BUILD_NAME.fullmatch(value)):
         raise FitJointValidationError(
             f"{field.value} 必须是未带侧别的关节名称")
@@ -200,6 +209,11 @@ def predict_fit_joint_metadata(
     values: dict[str, object] = {}
     present = set(metadata.present_fields)
     for edit in patch.edits:
+        if edit.field is FitJointField.FOLLOW and edit.value is None:
+            values["follow_left_right"] = False
+            values["follow_world"] = False
+            present.discard(FitJointField.FOLLOW_LEFT_RIGHT)
+            present.discard(FitJointField.FOLLOW_WORLD)
         if edit.field is FitJointField.NO_FLIP:
             values["local_no_flip"] = edit.value
             values["no_flip"] = (
@@ -256,13 +270,17 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
     if type(metadata.foot_pivots) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_foot_pivots", "Foot Pivots 开关必须是布尔值"))
-    for field in _CONSTRAINT_FIELDS:
+    for field in _TARGET_FIELDS:
         value = getattr(metadata, field.value)
         if value is not None and (not isinstance(value, str)
                                   or not _BUILD_NAME.fullmatch(value)):
             issues.append(FitJointIssue(
                 metadata.joint, "invalid_" + field.value,
                 field.value + " 目标关节名称无效"))
+    if (metadata.follow_left_right or metadata.follow_world) and not metadata.follow:
+        issues.append(FitJointIssue(
+            metadata.joint, "follow_options_without_target",
+            "Follow 左右／世界选项需要 Follow 目标关节"))
 
     for field_name, value, label in (
         ("twist_joints", metadata.twist_joints, "Twist 关节数量"),

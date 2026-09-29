@@ -365,6 +365,9 @@ def create_panel(controller: MayaPanelController | None = None):
                     ("Point Constraint 目标", "point_constraint"),
                     ("Orient Constraint 目标", "orient_constraint"),
                     ("Scale Constraint 目标", "scale_constraint"),
+                    ("Follow 目标", "follow"),
+                    ("Follow 左右切换", "follow_left_right"),
+                    ("Follow 世界空间", "follow_world"),
                     ("World Orient Up", "world_orient_up"),
                     ("World Orient Forward", "world_orient_forward"),
                     ("IK Local Mode", "ik_local_mode")):

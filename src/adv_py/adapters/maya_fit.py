@@ -99,6 +99,9 @@ _FIT_ATTRIBUTES = {
     FitJointField.POINT_CONSTRAINT: _MayaFitAttribute("pointConstraint", "string"),
     FitJointField.ORIENT_CONSTRAINT: _MayaFitAttribute("orientConstraint", "string"),
     FitJointField.SCALE_CONSTRAINT: _MayaFitAttribute("scaleConstraint", "string"),
+    FitJointField.FOLLOW: _MayaFitAttribute("follow", "string"),
+    FitJointField.FOLLOW_LEFT_RIGHT: _MayaFitAttribute("followLeftRight", "bool"),
+    FitJointField.FOLLOW_WORLD: _MayaFitAttribute("followWorld", "bool"),
     FitJointField.WORLD_ORIENT_UP: _MayaFitAttribute(
         "worldOrientUp",
         "enum",
@@ -872,6 +875,9 @@ class MayaFitJointHost:
                 joint, "orientConstraint"),
             scale_constraint=self._optional_constraint_target(
                 joint, "scaleConstraint"),
+            follow=self._optional_constraint_target(joint, "follow"),
+            follow_left_right=self._optional_bool(joint, "followLeftRight"),
+            follow_world=self._optional_bool(joint, "followWorld"),
             world_orient_up=self._optional_enum(joint, "worldOrientUp"),
             world_orient_forward=self._optional_enum(joint, "worldOrientForward"),
             ik_local_mode=self._optional_enum(joint, "ikLocal"),
@@ -887,6 +893,11 @@ class MayaFitJointHost:
             if exists:
                 self._transaction_changed = True
                 self._cmds.deleteAttr(f"{joint}.{spec.name}")
+            if edit.field is FitJointField.FOLLOW:
+                for companion in ("followLeftRight", "followWorld"):
+                    if self._attribute_exists(joint, companion):
+                        self._transaction_changed = True
+                        self._cmds.deleteAttr(f"{joint}.{companion}")
             if (edit.field is FitJointField.BENDY_CONTROLS
                     and self._attribute_exists(joint, "bendyJoints")):
                 self._transaction_changed = True

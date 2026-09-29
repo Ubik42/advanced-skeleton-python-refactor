@@ -54,6 +54,7 @@ from .fit_tweaker_registration import RegisterFitTweakers
 from .body_fit_advanced_constraint import (
     BuildFitAdvancedConstraints, RegisterFitAdvancedConstraints,
 )
+from .body_fit_follow import BuildFitFollow, RegisterFitFollow
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
 from .fit_inbetween_body import plan_combined_part_hierarchy
@@ -710,6 +711,16 @@ class BuildRegisteredBodyCharacter:
                     tolerance=1e-4):
                 raise RuntimeError(
                     "Advanced Constraint 改变了 Body 绑定姿态")
+            pre_follow_body = joined.capture_body_skeleton(
+                skeleton.snapshot.root)
+            fit_follows = BuildFitFollow(joined).apply(
+                rig.plan.arm.safety.symmetry.source.metadata,
+                fk_control_specs, pre_follow_body.joints)
+            if fit_follows and not body_skeleton_unchanged(
+                    pre_follow_body,
+                    joined.capture_body_skeleton(skeleton.snapshot.root),
+                    tolerance=1e-4):
+                raise RuntimeError("Fit Follow 改变了 Body 绑定姿态")
             tweakers = None
             if preview.build.build_options.use_offset_parent_matrix:
                 tweakers = plan_fit_tweakers(
@@ -727,6 +738,8 @@ class BuildRegisteredBodyCharacter:
             registration = RegisterBodyCharacter(joined).apply(rig)
             registration = RegisterFitAdvancedConstraints(joined).apply(
                 registration, advanced_constraints)
+            registration = RegisterFitFollow(joined).apply(
+                registration, fit_follows)
             if tweakers is not None:
                 registration = RegisterFitTweakers(joined).apply(
                     registration, tweakers)
