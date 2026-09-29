@@ -23,30 +23,36 @@ class SkinCageSlider:
 
 
 def plan_skin_cage_sliders(
-        rows: tuple[tuple[str, str, str, int], ...]
+        rows: tuple[tuple[str, str, str, int, str], ...]
         ) -> tuple[SkinCageSlider, ...]:
-    """Rows contain profile, resolved deform joint, restore joint, bend axis."""
+    """Rows contain profile, resolved joint, restore joint, bend axis, segment."""
     if not rows:
         raise ValueError("请选择 SkinCage 截面曲线")
     result = []
     seen = set()
-    for profile, deform_joint, restore_joint, bend_axis in rows:
+    for profile, deform_joint, restore_joint, bend_axis, segment in rows:
         leaf = profile.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
         match = _PROFILE.fullmatch(leaf)
         if match is None or not deform_joint or not restore_joint:
             raise ValueError("无效的 SkinCage 滑块截面：" + leaf)
-        stem, side, kind, ordinal = match.groups()
-        segment = "end" if kind == "twist" else kind
+        profile_stem, side, kind, ordinal = match.groups()
         if kind == "twist" and not ordinal:
             raise ValueError("扭转截面缺少编号：" + leaf)
+        if segment not in ("start", "middle", "end") or (
+                kind != "twist" and kind != segment):
+            raise ValueError("截面和滑块位置不匹配：" + leaf)
+        joint_leaf = deform_joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        joint_stem, separator, joint_side = joint_leaf.rpartition("_")
+        if not separator or joint_side != side or not joint_stem:
+            raise ValueError("截面与关节左右侧不匹配：" + leaf)
         indices = ((1, 3) if bend_axis == 1 else (0, 2)
                    if bend_axis == 2 else (0, 1, 2, 3))
         if bend_axis not in (0, 1, 2):
             raise ValueError("SkinCage 弯曲轴无效：" + leaf)
-        key = (stem, side, segment)
+        key = (joint_stem, side, segment)
         if key in seen:
             raise ValueError("多个截面会写入同名 Sliders：" + leaf)
         seen.add(key)
         result.append(SkinCageSlider(profile, deform_joint, segment,
-                                     stem, side, restore_joint, indices))
+                                     joint_stem, side, restore_joint, indices))
     return tuple(result)
