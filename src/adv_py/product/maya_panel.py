@@ -2464,11 +2464,14 @@ def create_panel(controller: MayaPanelController | None = None):
         def _build_from_source(self):
             meshes = self._build_mesh_paths()
             selected_namespace = self._namespace()
+            segments = self.spine_segments.value()
             result = self.controller.body_build_from_source(
                 selected_namespace, self.build_source_root.text().strip(),
                 self.fit_container.text().strip(), meshes=meshes,
                 maximum_influences=self.build_max_influences.value(),
                 head_aim=self.head_aim.isChecked(),
+                spine_segments=segments if segments else None,
+                infer_missing_labels=self.infer_missing_fit_labels.isChecked(),
                 segment_influences=self.build_segment_influences.isChecked(),
                 fit_parts=(self.build_segment_influences.isChecked()
                            and self.build_source_fit_parts.isChecked()))

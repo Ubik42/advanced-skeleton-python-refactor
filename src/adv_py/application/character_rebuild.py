@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory, TemporaryFile
 
 from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.body_spline import BodySplinePlan
+from adv_py.core.body_skeleton import plan_body_non_deform_markers
 from adv_py.core.character_registry import (
     CharacterRegistration, CharacterRegistryError,
 )
@@ -115,6 +116,12 @@ class StageBodyCharacterRebuild:
         host=self._host
         host.preflight_character_rebuild_namespace(namespace)
         original=CaptureBodyCharacterPreservation(host).execute(extensions=extensions)
+        # Older Python builds retained MEL's temporary Foot pivot markers in
+        # the registered Body. Preserve that saved topology during a rebuild;
+        # new characters remove those joints before Skin and registration.
+        retained_markers = plan_body_non_deform_markers(
+            host.capture_body_skeleton(original.registration.body_root),
+            require_leaf=False)
         selection_mode = host.capture_body_rebuild_selection_mode()
         segment_mode = _rebuild_segment_mode(host,
             original.registration.body_root)
@@ -145,6 +152,7 @@ class StageBodyCharacterRebuild:
                     include_head_aim='head.aim.headAim' in keys,
                     use_fit_part_hierarchy=segment_mode == 'fit_part',
                     _include_dynamic=include_dynamic,
+                    _retain_non_deform_markers=bool(retained_markers),
                     _defer_selection_sets=True,
                     _scene_before=scene_before)
                 fit_path = '|Group|FitSkeleton'

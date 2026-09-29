@@ -8,7 +8,9 @@ from adv_py.application.fit_container import CreateFitSkeleton
 from adv_py.application.oriented_fit_template import BuildOrientedFitTemplate
 from adv_py.application.oriented_body_skeleton import BuildOrientedBodySkeleton
 from adv_py.application.registered_body_build import _JoinedTransactionHost
-from adv_py.core.body_skeleton import BodySkeletonSnapshot
+from adv_py.core.body_skeleton import (
+    BodySkeletonSnapshot, plan_body_non_deform_markers,
+)
 from adv_py.core.body_all_set import BodyAllSetNode, plan_body_all_set
 from adv_py.core.fbx_rig_import import (FBXRigImportPlan, FBXRigSourceJoint,
                                         detect_fbx_source_application,
@@ -458,6 +460,35 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                          for name in control_paths}
         if None in control_paths.values():
             raise RuntimeError("FBX rig FK 控制器在 IK 改挂后丢失")
+        temporary_markers = plan_body_non_deform_markers(body)
+        temporary_paths = set(temporary_markers)
+        self._fbx_removed_non_deform_names = frozenset(
+            joint.name for joint in body.joints
+            if joint.path in temporary_paths)
+        if temporary_markers:
+            body = self.remove_body_non_deform_markers(
+                body.root, temporary_markers)
+            for joint_name in self._fbx_removed_non_deform_names:
+                control_name = "FK" + joint_name
+                control = control_paths.pop(control_name, None)
+                if control is None:
+                    continue
+                offset = (c.listRelatives(control, parent=True,
+                                          fullPath=True) or (None,))[0]
+                if offset is None or not offset.endswith(
+                        "|" + control_name + "Offset"):
+                    raise RuntimeError("FBX rig 临时 FK 控制层无效："
+                                       + control_name)
+                children = c.listRelatives(offset, children=True,
+                                           type="transform",
+                                           fullPath=True) or ()
+                descendants = c.listRelatives(
+                    control, allDescendents=True, type="transform",
+                    fullPath=True) or ()
+                if tuple(children) != (control,) or descendants:
+                    raise RuntimeError("FBX rig 临时 FK 控制层仍有其他控制器："
+                                       + control_name)
+                c.delete(offset)
         c.sets(tuple(control_paths.values()) + (main, *ik_controls),
                name="ControlSet")
         c.sets(tuple(joint.path for joint in body.joints), name="DeformSet")
@@ -467,7 +498,10 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         c.setAttr(group + ".advPyFbxRigMode",
                   "labeled_ik_fk_v1" if ik_limbs else "generic_fk_v1",
                   type="string", lock=True)
-        if set(control_paths) != {spec.control_name for spec in controls}:
+        if set(control_paths) != {
+                spec.control_name for spec in controls
+                if spec.control_name.removeprefix("FK") not in
+                self._fbx_removed_non_deform_names}:
             raise RuntimeError("FBX rig FK 控制器写后数量不符")
         self._fbx_built_ik_limbs = ik_limbs
         self._transaction_changed = True
@@ -547,6 +581,21 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             reverse = c.createNode("reverse",
                                    name="AdvPy_FBX_" + label + "_Reverse")
             c.connectAttr(switch, reverse + ".inputX")
+            for fk_name in limb.fk_control_names:
+                fk = fk_controls.get(fk_name)
+                if fk is None:
+                    raise RuntimeError("FBX rig IK 链缺少 FK 控制：" + fk_name)
+                shapes = c.listRelatives(
+                    fk, shapes=True, noIntermediate=True,
+                    type="nurbsCurve", fullPath=True) or ()
+                if not shapes:
+                    raise RuntimeError("FBX rig FK 控制曲线缺失：" + fk_name)
+                for shape in shapes:
+                    plug = shape + ".visibility"
+                    if c.connectionInfo(plug, sourceFromDestination=True):
+                        raise RuntimeError("FBX rig FK 曲线显隐已被占用："
+                                           + shape)
+                    c.connectAttr(reverse + ".outputX", plug)
             ik_joints = []
             parent = system
             for body_path, body_name in zip(limb.body_joint_paths,
@@ -648,14 +697,21 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         self, plan: FBXRigImportPlan,
     ) -> FBXRigGeneratedTargets:
         c = self._cmds
-        candidates = tuple(link.control_name
-                           for link in plan.candidate_control_links)
-        controls = tuple(name for name in candidates
-                         if len(c.ls(name, long=True, type="transform") or ()) == 1)
+        removed = getattr(self, "_fbx_removed_non_deform_names", frozenset())
         deformation = "|Group|DeformationSystem"
         joints = c.listRelatives(deformation, allDescendents=True,
                                  type="joint", fullPath=True) or ()
-        deform_names = tuple(path.rsplit("|", 1)[-1] for path in joints)
+        deform_names = tuple(path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                             for path in joints)
+        if removed.intersection(deform_names):
+            raise RuntimeError("FBX rig 临时脚部关节仍留在变形骨架中")
+        if any(c.objExists("FK" + name) for name in removed):
+            raise RuntimeError("FBX rig 临时脚部 FK 控制器仍留在场景中")
+        candidates = tuple(link.control_name
+                           for link in plan.candidate_control_links
+                           if link.control_name.removeprefix("FK") not in removed)
+        controls = tuple(name for name in candidates
+                         if len(c.ls(name, long=True, type="transform") or ()) == 1)
         return FBXRigGeneratedTargets(controls, deform_names)
 
     def enlarge_small_fbx_fk_controls(
@@ -673,8 +729,10 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         current_meshes = self._current_fbx_bound_mesh_paths()
         if len(current_meshes) != len(bound_meshes):
             raise RuntimeError("FBX rig 来源蒙皮网格在命名空间迁移后数量改变")
-        project_fbx_fk_controls(
-            c, tuple(link.control_name for link in plan.candidate_control_links),
+        removed = getattr(self, "_fbx_removed_non_deform_names", frozenset())
+        project_fbx_fk_controls(c,
+            tuple(link.control_name for link in plan.candidate_control_links
+                  if link.control_name.removeprefix("FK") not in removed),
             current_meshes)
         self._transaction_changed = True
 
@@ -844,6 +902,17 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                 raise RuntimeError("FBX rig IK 主控或求解器不完整：" + label)
             if not c.isConnected(switch, reverse + ".inputX"):
                 raise RuntimeError("FBX rig IK/FK 反向权重未连接：" + label)
+            for fk_name in limb.fk_control_names:
+                fk = (c.ls(fk_name, long=True,
+                           type="transform") or [None])[0]
+                shapes = (c.listRelatives(
+                    fk, shapes=True, noIntermediate=True,
+                    type="nurbsCurve", fullPath=True) or ()) if fk else ()
+                if (not shapes or any(not c.isConnected(
+                        reverse + ".outputX", shape + ".visibility")
+                        for shape in shapes)):
+                    raise RuntimeError("FBX rig FK 控制曲线显隐未切换："
+                                       + fk_name)
             for body_name, fk_name in zip(limb.body_joint_names,
                                           limb.fk_control_names):
                 constraint = "AdvPy_FBX_" + body_name + "_Blend"

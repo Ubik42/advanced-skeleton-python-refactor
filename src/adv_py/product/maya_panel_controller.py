@@ -86,6 +86,28 @@ class PanelSkinSurfaceResult:
     max_discarded_weight: float
 
 
+def _ensure_body_build_centimeters() -> None:
+    """Mirror asReBuildAdvancedSkeleton's public cm scene-unit gate."""
+    from maya import cmds
+
+    current = str(cmds.currentUnit(query=True, linear=True))
+    if current in ("cm", "centimeter"):
+        return
+    answer = cmds.confirmDialog(
+        title="确认场景单位",
+        message=(f"当前线性单位为 {current}。AdvancedSkeleton 构建要求厘米。"
+                 "\n切换到厘米并继续吗？"),
+        button=("切换并继续", "取消"),
+        defaultButton="切换并继续", cancelButton="取消",
+        dismissString="取消")
+    if answer != "切换并继续":
+        raise ValueError("已取消：角色构建需要厘米场景单位")
+    cmds.currentUnit(linear="cm")
+    if str(cmds.currentUnit(query=True, linear=True)) not in (
+            "cm", "centimeter"):
+        raise RuntimeError("场景线性单位切换到厘米失败")
+
+
 def _target_for_source_skeleton(cmds, namespace: str,
                                 source_root: str) -> tuple[str, str | None]:
     matches = cmds.ls(source_root, long=True, type="joint") or []
@@ -567,6 +589,24 @@ class MayaPanelController:
         from adv_py.application.character_from_fit import BuildCharacterFromFit
 
         host = self._host(namespace)
+        if not host.find_name_collisions(container):
+            from maya import cmds
+
+            selected = cmds.ls(selection=True, long=True,
+                               type="joint") or ()
+            if len(selected) == 1:
+                return self.body_build_from_source(
+                    namespace, selected[0], container,
+                    meshes=meshes,
+                    maximum_influences=maximum_influences,
+                    head_aim=head_aim,
+                    spine_segments=spine_segments,
+                    infer_missing_labels=infer_missing_labels,
+                    segment_influences=segment_influences,
+                    fit_parts=fit_parts)
+            raise ValueError(
+                "未找到 Fit 骨架；请只选中一个来源根关节后构建")
+        _ensure_body_build_centimeters()
         result = BuildCharacterFromFit(host).apply(
             container, meshes=meshes, spine_segments=spine_segments,
             maximum_influences=maximum_influences,
@@ -595,6 +635,8 @@ class MayaPanelController:
                                meshes: tuple[str, ...] = (),
                                maximum_influences: int = 3,
                                head_aim: bool = False,
+                               spine_segments: int | None = None,
+                               infer_missing_labels: bool = False,
                                segment_influences: bool = True,
                                fit_parts: bool = True) -> PanelCharacter:
         from adv_py.adapters.maya_source_skeleton_fit import (
@@ -605,6 +647,7 @@ class MayaPanelController:
 
         if not source_root.strip():
             raise ValueError("请填写来源骨架根关节路径")
+        _ensure_body_build_centimeters()
         target_namespace, created_namespace = _target_for_source_skeleton(
             cmds, namespace, source_root)
         try:
@@ -614,6 +657,8 @@ class MayaPanelController:
                 source_root, container, meshes=meshes,
                 maximum_influences=maximum_influences,
                 include_head_aim=head_aim,
+                spine_segments=spine_segments,
+                infer_missing_labels=infer_missing_labels,
                 include_segment_influences=segment_influences,
                 use_fit_part_hierarchy=fit_parts)
         except Exception:
@@ -638,6 +683,7 @@ class MayaPanelController:
                      progress: Callable[[str], None] | None = None) -> PanelCharacter:
         if not isinstance(replacement, str) or not replacement.strip():
             raise ValueError("请填写尚未占用的重建暂存命名空间")
+        _ensure_body_build_centimeters()
         host = self._host_factory(namespace="" if namespace == ":" else namespace)
         if progress:
             progress("暂存替换角色并核对需保留的数据")

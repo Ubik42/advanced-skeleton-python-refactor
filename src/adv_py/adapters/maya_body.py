@@ -750,6 +750,72 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 "FBX Profile 当前只支持 Maya centimeter 或 meter 场景单位"
             ) from error
 
+    def remove_body_non_deform_markers(
+        self, root_name: str, markers: tuple[str, ...],
+    ) -> BodySkeletonSnapshot:
+        """Discard MEL's temporary Heel/BigToe/PinkyToe Body joints."""
+        self._require_transaction()
+        from adv_py.core.body_skeleton import plan_body_non_deform_markers
+
+        c = self._cmds
+        before = self.capture_body_skeleton(root_name)
+        if tuple(markers) != plan_body_non_deform_markers(before):
+            raise FitSkeletonValidationError(
+                "非变形脚部标记与当前 Body 骨架不一致")
+        if not markers:
+            return before
+        if before.provenance is None:
+            raise FitSkeletonValidationError("Body 脚部标记缺少归属记录")
+        for path in markers:
+            matches = c.ls(path, long=True, type="joint") or []
+            if matches != [path]:
+                raise FitSkeletonValidationError(
+                    "非变形脚部标记已缺失或重名：" + path)
+            if c.listRelatives(path, allDescendents=True,
+                               type="joint", fullPath=True):
+                raise FitSkeletonValidationError(
+                    "非变形脚部标记下仍有变形关节：" + path)
+        # A user may call the adapter on an already skinned character.
+        # The original build removes these markers before Skin exists; do
+        # not silently invalidate an existing skinCluster influence here.
+        raw = c.raw if hasattr(c, "raw") else c
+        marker_paths = {self.scene_address(path) for path in markers}
+        for skin in raw.ls(type="skinCluster") or ():
+            influences = raw.skinCluster(skin, query=True,
+                                         influence=True) or ()
+            if any(marker in (raw.ls(influence, long=True,
+                                     type="joint") or ())
+                   for influence in influences
+                   for marker in marker_paths):
+                raise FitSkeletonValidationError(
+                    "脚部标记已被 Skin 使用，不能当作临时关节删除：" + skin)
+        count_plug = root_name + "." + _BODY_PROVENANCE_ATTRIBUTES[
+            "body_joint_count"]
+        if not c.objExists(count_plug):
+            raise FitSkeletonValidationError("Body 归属计数属性缺失")
+        self._transaction_changed = True
+        c.delete(tuple(markers))
+        c.setAttr(count_plug, lock=False)
+        try:
+            c.setAttr(count_plug, len(before.joints) - len(markers))
+        finally:
+            c.setAttr(count_plug, lock=True)
+        after = self.capture_body_skeleton(root_name)
+        if ({joint.path for joint in before.joints}
+                - {joint.path for joint in after.joints}) != set(markers):
+            raise RuntimeError("非变形脚部标记删除超出了计划范围")
+        from adv_py.application.body_rig_validation import body_bind_pose_matches
+
+        expected = replace(
+            before,
+            joints=tuple(joint for joint in before.joints
+                         if joint.path not in set(markers)),
+            provenance=replace(before.provenance,
+                               body_joint_count=len(after.joints)))
+        if not body_bind_pose_matches(expected, after):
+            raise RuntimeError("删除脚部标记改变了其余 Body 绑定姿态")
+        return after
+
     def capture_body_skeleton(self, root_name: str) -> BodySkeletonSnapshot:
         roots = self._cmds.ls(root_name, long=True, type="joint") or []
         if len(roots) != 1:

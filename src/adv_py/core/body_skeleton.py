@@ -182,6 +182,29 @@ class BodySkeletonSnapshot:
     fit_height: float | None = None
 
 
+def plan_body_non_deform_markers(
+    body: BodySkeletonSnapshot,
+    *, require_leaf: bool = True,
+) -> tuple[str, ...]:
+    """Original 6.925 foot pivot markers are temporary Body joints.
+
+    They remain available while Foot Roll and Rock sample their positions,
+    then leave the deformation hierarchy before registration and Skin.
+    """
+    markers = tuple(joint.path for joint in body.joints
+                    if joint.label is not None and any(
+                        token in joint.label.text
+                        for token in ("Heel", "BigToe", "PinkyToe")))
+    if require_leaf:
+        for marker in markers:
+            if any(joint.path != marker and
+                   joint.path.startswith(marker + "|")
+                   for joint in body.joints):
+                raise BodySkeletonValidationError(
+                    "非变形脚部标记不能包含 Body 子关节：" + marker)
+    return markers
+
+
 def body_skeleton_unchanged(before: BodySkeletonSnapshot,
                             after: BodySkeletonSnapshot, *,
                             tolerance: float = 1e-8) -> bool:

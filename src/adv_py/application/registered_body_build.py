@@ -60,7 +60,10 @@ from .body_character_rig import (BuildBodyCharacterRig,
                                  BodyCharacterRigBuildPlan,
                                  BodyCharacterRigBuildResult)
 from .body_rig_validation import body_bind_pose_matches
-from adv_py.core.body_skeleton import body_skeleton_unchanged
+from adv_py.core.body_skeleton import (
+    body_skeleton_unchanged, oriented_body_provenance,
+    plan_body_non_deform_markers,
+)
 from .character_registry import RegisterBodyCharacter
 from .body_selection_sets import (
     finalize_body_character_sets,
@@ -439,6 +442,7 @@ class BuildRegisteredBodyCharacter:
               _include_dynamic: bool = True,
               _defer_selection_sets: bool = False,
               _defer_all_set: bool = False,
+              _retain_non_deform_markers: bool = False,
               ) -> RegisteredBodyBuildResult:
         if _scene_before is None:
             capture_nodes = getattr(self._host,
@@ -504,7 +508,9 @@ class BuildRegisteredBodyCharacter:
                         _scene_before=_scene_before,
                         _include_dynamic=_include_dynamic,
                         _defer_selection_sets=_defer_selection_sets,
-                        _defer_all_set=_defer_all_set)
+                        _defer_all_set=_defer_all_set,
+                        _retain_non_deform_markers=(
+                            _retain_non_deform_markers))
                     if original_up_axis == "z":
                         joined.flip_character_scene_up_axis("|Group", "z")
                         result = replace(
@@ -1220,6 +1226,27 @@ class BuildRegisteredBodyCharacter:
                     leg=replace(rig.leg, plan=wheel_rig_plan.leg,
                                 fk_controls=leg_fk),
                     hand=hand_result, torso=torso_result)
+            # 6.925 builds Heel/BigToe/PinkyToe as temporary Body joints so
+            # Foot Roll and Rock can read their frames, then removes them
+            # before DeformSet, buildPose and the final character registry.
+            non_deform = (() if _retain_non_deform_markers else
+                          plan_body_non_deform_markers(rig.body))
+            if non_deform:
+                final_marker_body = joined.remove_body_non_deform_markers(
+                    skeleton.snapshot.root, non_deform)
+                provenance = oriented_body_provenance(
+                    skeleton.plan.provenance.source_container,
+                    len(final_marker_body.joints))
+                skeleton = replace(
+                    skeleton,
+                    plan=replace(skeleton.plan, provenance=provenance),
+                    snapshot=final_marker_body)
+                rig = replace(
+                    rig, body=final_marker_body,
+                    arm=replace(rig.arm, body=final_marker_body),
+                    leg=replace(rig.leg, body=final_marker_body),
+                    hand=(replace(rig.hand, body=final_marker_body)
+                          if rig.hand is not None else None))
             registration = RegisterBodyCharacter(joined).apply(rig)
             registration = RegisterGenericFk(joined).apply(
                 registration, generic_fk)
