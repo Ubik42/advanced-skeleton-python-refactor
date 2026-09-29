@@ -375,11 +375,13 @@ def plan_world_fit_orientations(
             )
         else:
             desired = world_axes_from_orientation_policy(policy)
-        if not world_match and all(
+        axes_match = all(
             _dot(_normalize(current, "当前世界轴无效"), wanted)
             >= 1.0 - tolerance
             for current, wanted in zip(state.world_axes, desired)
-        ):
+        )
+        if (not world_match and axes_match
+                and all(abs(value) <= tolerance for value in state.rotation)):
             continue
         descendant_paths = _descendant_paths(hierarchy, path)
         changes.append(
@@ -488,10 +490,6 @@ def plan_simple_fit_orientations(
             raise FitOrientationValidationError(
                 f"{hierarchy[path].short_name} 没有符合原版 asRlaChild 规则的子关节"
             )
-        if any(abs(value) > tolerance for value in state.rotation):
-            raise FitOrientationValidationError(
-                f"{hierarchy[path].short_name} 的 rotate 必须先归零"
-            )
         if state.writable_joint_orient_axes != TRANSLATION_AXES:
             raise FitOrientationValidationError(
                 f"{hierarchy[path].short_name} 的 jointOrient 不可完整写入"
@@ -582,10 +580,12 @@ def plan_simple_fit_orientations(
             primary_axis, secondary_local_axis, primary, secondary
         )
         planned_world_axes[path] = desired_axes
-        if not axis_config.world_match and all(
+        axes_match = all(
             _dot(_normalize(current, "当前世界轴无效"), desired) >= 1.0 - tolerance
             for current, desired in zip(state.world_axes, desired_axes)
-        ):
+        )
+        if (not axis_config.world_match and axes_match
+                and all(abs(value) <= tolerance for value in state.rotation)):
             continue
         changes.append(
             FitOrientationChange(
@@ -857,10 +857,6 @@ def _validate_orientation_target(
     orientations = {state.joint: state for state in snapshot.joints}
     node = hierarchy[path]
     state = orientations[path]
-    if any(abs(value) > tolerance for value in state.rotation):
-        raise FitOrientationValidationError(
-            f"{node.short_name} 的 rotate 必须先归零"
-        )
     if state.writable_joint_orient_axes != TRANSLATION_AXES:
         raise FitOrientationValidationError(
             f"{node.short_name} 的 jointOrient 不可完整写入"
