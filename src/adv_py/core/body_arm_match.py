@@ -51,6 +51,7 @@ class BodyArmIkToFkPlan:
     required_paths: tuple[str, ...]
     required_writable_plugs: tuple[str, ...]
     ik_source_paths: tuple[str, ...] = ()
+    fk_driver_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +198,7 @@ def plan_body_arm_ik_to_fk(
         (*control_paths, *driver_paths, *paths, *ik_source_paths),
         writable,
         ik_source_paths,
+        driver_paths,
     )
 
 
@@ -226,7 +228,8 @@ def audit_body_arm_ik_to_fk_preflight(
         for actual, expected in zip(state.body_joint_axes, plan.body_joint_axes)
     ):
         issues.append(BodyArmMatchIssue("pose_drift", "Arm IK→FK 匹配姿态已变化", plan.side.value))
-    if len(state.ik_source_axes) != len(plan.ik_source_paths):
+    if (len(state.ik_source_axes) != len(plan.ik_source_paths)
+            or len(plan.fk_driver_paths) != len(plan.fk_control_paths)):
         issues.append(BodyArmMatchIssue(
             "ik_source_missing", "Arm IK→FK 缺少 IKX 朝向",
             plan.side.value))

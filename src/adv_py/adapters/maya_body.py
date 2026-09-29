@@ -5509,6 +5509,26 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             ik_axes,
         )
 
+    def _match_limb_fk_driver_axes(self, control: str, driver: str,
+                                   target_axes) -> None:
+        """Preserve the live control-to-FK-driver orientation offset."""
+        from maya.api import OpenMaya as om
+
+        control_axes = self._spine_world_frame(control)[1]
+        driver_axes = self._spine_world_frame(driver)[1]
+
+        def rotation(axes):
+            return om.MMatrix((
+                *axes[0], 0.0, *axes[1], 0.0,
+                *axes[2], 0.0, 0.0, 0.0, 0.0, 1.0,
+            ))
+
+        matched = rotation(control_axes) * rotation(driver_axes).inverse() * rotation(target_axes)
+        position = self._spine_world_frame(control)[0][12:15]
+        self._spine_set_world_rotation(
+            control, (*(matched[index] for index in range(12)),
+                      *position, 1.0))
+
     def apply_body_leg_ik_to_fk(self, plan: BodyLegIkToFkPlan) -> None:
         self._require_transaction()
         state = self.capture_body_leg_ik_to_fk_state(plan)
@@ -5519,20 +5539,11 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             self._transaction_changed = True
             from .maya_limb_shape import begin_optional_match, finish_match
             shape_state=begin_optional_match(self,"leg",plan.side.value,"fk")
-            for path, target_axes in zip(
-                plan.fk_control_paths, state.ik_source_axes
+            for path, driver, target_axes in zip(
+                plan.fk_control_paths, plan.fk_driver_paths,
+                state.ik_source_axes,
             ):
-                position = self._cmds.xform(
-                    path, query=True, worldSpace=True, translation=True
-                )
-                x_axis, y_axis, z_axis = target_axes
-                matrix = (
-                    *x_axis, 0.0,
-                    *y_axis, 0.0,
-                    *z_axis, 0.0,
-                    *position, 1.0,
-                )
-                self._spine_set_world_rotation(path,matrix)
+                self._match_limb_fk_driver_axes(path, driver, target_axes)
             for plug, value in zip(
                 plan.fk_segment_plugs,
                 plan.fk_segment_translations,
@@ -5603,12 +5614,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             self._transaction_changed = True
             from .maya_limb_shape import begin_optional_match, finish_match
             shape_state=begin_optional_match(self,"arm",plan.side.value,"fk")
-            for path, target_axes in zip(
-                    plan.fk_control_paths, state.ik_source_axes):
-                position = self._cmds.xform(path, query=True, worldSpace=True, translation=True)
-                x_axis, y_axis, z_axis = target_axes
-                matrix = (*x_axis, 0.0, *y_axis, 0.0, *z_axis, 0.0, *position, 1.0)
-                self._spine_set_world_rotation(path,matrix)
+            for path, driver, target_axes in zip(
+                    plan.fk_control_paths, plan.fk_driver_paths,
+                    state.ik_source_axes):
+                self._match_limb_fk_driver_axes(path, driver, target_axes)
             for plug, value in zip(
                 plan.fk_segment_plugs,
                 plan.fk_segment_translations,

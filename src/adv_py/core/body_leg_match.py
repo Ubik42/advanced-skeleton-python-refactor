@@ -80,6 +80,7 @@ class BodyLegIkToFkPlan:
     required_paths: tuple[str, ...]
     required_writable_plugs: tuple[str, ...]
     ik_source_paths: tuple[str, ...] = ()
+    fk_driver_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -623,6 +624,7 @@ def plan_body_leg_ik_to_fk(
         (*control_paths, *driver_paths, *paths, *ik_source_paths),
         writable,
         ik_source_paths,
+        driver_paths,
     )
 
 
@@ -671,7 +673,8 @@ def audit_body_leg_ik_to_fk_preflight(
         issues.append(BodyLegMatchIssue(
             "pose_drift", "Leg IK→FK 匹配姿态已变化", plan.side.value
         ))
-    if len(state.ik_source_axes) != len(plan.ik_source_paths):
+    if (len(state.ik_source_axes) != len(plan.ik_source_paths)
+            or len(plan.fk_driver_paths) != len(plan.fk_control_paths)):
         issues.append(BodyLegMatchIssue(
             "ik_source_missing", "Leg IK→FK 缺少 IKX 朝向",
             plan.side.value))
