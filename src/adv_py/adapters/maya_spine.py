@@ -86,11 +86,15 @@ class MayaBodySpineMixin:
         c.orientConstraint(plan.ik_control, plan.joints[5].path, maintainOffset=False, name="AdvPy_SpineIKChestOrient")
         c.createNode("reverse", name="AdvPy_SpineReverse")
         c.connectAttr(plan.blend_plug, "AdvPy_SpineReverse.inputX")
+        for control, joint in zip(plan.fk_controls, plan.joints[:3]):
+            c.connectAttr(control + ".scale", joint.path + ".scale")
         for label, body, fk, ik in (
             ("Waist", plan.body_joints[1], plan.joints[1].path, plan.waist_output),
             ("Chest", plan.body_joints[2], plan.joints[2].path, plan.joints[5].path),
         ):
-            for suffix, command in (("Point", c.pointConstraint), ("Orient", c.orientConstraint)):
+            for suffix, command in (("Point", c.pointConstraint),
+                                    ("Orient", c.orientConstraint),
+                                    ("Scale", c.scaleConstraint)):
                 node = command(fk, ik, body, maintainOffset=False, name=f"AdvPy_Spine{label}{suffix}")[0]
                 weights = command(node, query=True, weightAliasList=True)
                 c.connectAttr("AdvPy_SpineReverse.outputX", node + "." + weights[0])
@@ -136,7 +140,10 @@ class MayaBodySpineMixin:
             ("Waist", plan.body_joints[1], plan.joints[1].path, plan.waist_output),
             ("Chest", plan.body_joints[2], plan.joints[2].path, plan.joints[5].path),
         ):
-            for suffix, kind, command in (("Point", "translate", c.pointConstraint), ("Orient", "rotate", c.orientConstraint)):
+            for suffix, kind, command in (
+                    ("Point", "translate", c.pointConstraint),
+                    ("Orient", "rotate", c.orientConstraint),
+                    ("Scale", "scale", c.scaleConstraint)):
                 name = f"AdvPy_Spine{label}{suffix}"
                 targets(name, command, (fk, ik))
                 weights = command(name, query=True, weightAliasList=True)
@@ -197,6 +204,8 @@ class MayaBodySpineMixin:
             targets(name, c.orientConstraint, (source,))
             if any(not c.isConnected(name + ".constraintRotate" + axis, joint.path + ".rotate" + axis) for axis in "XYZ"):
                 raise FitSkeletonValidationError("Spine FK 驱动输出改变")
+            if not c.isConnected(control + ".scale", joint.path + ".scale"):
+                raise FitSkeletonValidationError("Spine FK 驱动缩放来源改变")
         handle = "AdvPy_SpineIKHandle"
         chain = tuple(self._resolve_connected_node(node) for node in c.ikHandle(handle, query=True, jointList=True))
         if (chain != (plan.solver_joint_list or

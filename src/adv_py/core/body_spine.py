@@ -58,7 +58,8 @@ class BodySpinePlan:
             "AdvPy_SpineIKHandle", "AdvPy_SpineIKEffector", "AdvPy_SpinePoleConstraint",
             "AdvPy_SpineFKRootPoint", "AdvPy_SpineIKRootPoint", "AdvPy_SpineIKChestOrient",
             "AdvPy_SpineReverse", "AdvPy_SpineWaistPoint", "AdvPy_SpineWaistOrient",
-            "AdvPy_SpineChestPoint", "AdvPy_SpineChestOrient",
+            "AdvPy_SpineWaistScale", "AdvPy_SpineChestPoint",
+            "AdvPy_SpineChestOrient", "AdvPy_SpineChestScale",
         ) + (("AdvPy_SpineChestSpaceMM", "AdvPy_SpineChestSpacePM")
              if self.use_offset_parent_matrix else
              ("AdvPy_SpineChestSpaceParent",))

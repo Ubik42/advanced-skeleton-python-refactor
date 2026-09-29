@@ -18,6 +18,8 @@ def prepare(host,plan):
 def create(host,plan):
     host._require_transaction();host._transaction_changed=True
     c=host._cmds;n=len(plan.body_joints);fk=plan.joints[:n];ik=plan.joints[n:]
+    for control,joint in zip(plan.fk_controls,fk):
+        c.connectAttr(control+'.scale',joint.path+'.scale')
     for i,(target,position) in enumerate(zip(plan.targets,plan.positions)):
         offset=target.rsplit('|',1)[0]
         host._spine_frame(f'AdvPy_SplineIK{i}Offset',plan.pelvis_control,position,plan.axes)
@@ -144,6 +146,8 @@ def audit(host,plan):
             (plan.curve+'.worldInverseMatrix[0]',f'AdvPy_SplineIK{i}Matrix.matrixIn[1]'),
             (f'AdvPy_SplineIK{i}Matrix.matrixSum',f'AdvPy_SplineIK{i}Position.inputMatrix'),
             (f'AdvPy_SplineIK{i}Position.outputTranslate',shape+f'.controlPoints[{i}]')]
+    edges += [(control+'.scale',joint.path+'.scale')
+              for control,joint in zip(plan.fk_controls,plan.joints[:n])]
     for i,joint in enumerate(plan.joints[n:]):
         edges += [('AdvPy_SplineVolume.outputX',joint.path+'.scale'+axis) for axis in 'YZ']
         if i:edges += [('AdvPy_SplineClamp.outputR',f'AdvPy_SplineLength{i}.input2X'),
