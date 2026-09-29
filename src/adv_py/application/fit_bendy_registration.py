@@ -23,6 +23,8 @@ class BendyRegistrationHost(Protocol):
         self, name: str, ancestors: tuple[str, ...],
     ) -> str: ...
 
+    def capture_bendy_deform_path(self, name: str) -> str: ...
+
     def write_character_registration_extension(
         self, before: CharacterRegistration,
         after: CharacterRegistration,
@@ -48,10 +50,13 @@ class RegisterBendyControls:
         plugs = {(item.node, item.attribute) for item in channels}
         known = {item.path for item in nodes}
 
-        def add(key: str, path: str, attribute: str) -> None:
+        def add(key: str, path: str, attribute: str,
+                minimum: float | None = None,
+                maximum: float | None = None) -> None:
             if key in keys or (path, attribute) in plugs:
                 raise ValueError("Bendy 登记通道冲突：" + key)
-            channels.append(CharacterChannel(key, path, attribute))
+            channels.append(CharacterChannel(
+                key, path, attribute, minimum, maximum))
             keys.add(key)
             plugs.add((path, attribute))
             missing = []
@@ -67,6 +72,13 @@ class RegisterBendyControls:
         attrs = tuple(prefix + axis for prefix in
                       ("translate", "rotate", "scale") for axis in "XYZ")
         for chain in chains:
+            if chain.micro_base_twist:
+                for name in chain.deform_names:
+                    path = self._host.capture_bendy_deform_path(name)
+                    add("fitpart." + name + ".twistAmount",
+                        path, "twistAmount", 0.0, 1.0)
+                    add("fitpart." + name + ".twistAddition",
+                        path, "twistAddition")
             bend_paths = {}
             for control in chain.control_names:
                 ancestors = (control + "Offset", "AdvPy_BendSystem")

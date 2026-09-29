@@ -673,6 +673,12 @@ class BuildRegisteredBodyCharacter:
                         is None
                         or chain.control_names[0] in
                         _generic_fk_policy.bendy_micro_matrix_controls),
+                    micro_base_twist=(
+                        _generic_fk_policy is None
+                        or _generic_fk_policy.bendy_base_twist_controls
+                        is None
+                        or chain.control_names[0] in
+                        _generic_fk_policy.bendy_base_twist_controls),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None
@@ -731,6 +737,13 @@ class BuildRegisteredBodyCharacter:
             twist_projections = ()
             bendy_untwist_plugs = {}
             if use_fit_part_hierarchy:
+                active_all_twist_parts = tuple(replace(
+                    part,
+                    start_body=final_paths.remap_body_reference(
+                        part.start_body),
+                    end_body=final_paths.remap_body_reference(
+                        part.end_body),
+                ) for part in twist_parts)
                 active_twist_parts = tuple(replace(
                     part,
                     start_body=final_paths.remap_body_reference(
@@ -741,35 +754,57 @@ class BuildRegisteredBodyCharacter:
                 (control_matrices, body_constraints,
                  blended_matrices, root_child_offsets) = (
                     _independent_rig_twist_sources(rig.plan))
+                rotation_inputs = plan_standard_fit_part_rotation_inputs(
+                    active_all_twist_parts,
+                    independent_world_matrices=control_matrices,
+                    independent_body_constraints=body_constraints,
+                    blended_world_matrices=blended_matrices,
+                    reference_inverse_matrices={
+                        part.start_body: root_child_offsets[part.start_body]
+                        for part in active_all_twist_parts
+                        if part.start_body in root_child_offsets},
+                    semantic_parent_by_body={
+                        final_paths.remap_body_reference(spec.path):
+                        final_paths.remap_body_reference(spec.parent_path)
+                        for spec in part_plan.specs
+                        if spec.parent_path is not None},
+                )
                 if fit_part_twist_sources is None:
-                    rotation_inputs = plan_standard_fit_part_rotation_inputs(
-                        active_twist_parts,
-                        independent_world_matrices=control_matrices,
-                        independent_body_constraints=body_constraints,
-                        blended_world_matrices=blended_matrices,
-                        reference_inverse_matrices={
-                            part.start_body: root_child_offsets[part.start_body]
-                            for part in active_twist_parts
-                            if part.start_body in root_child_offsets},
-                        semantic_parent_by_body={
-                            final_paths.remap_body_reference(spec.path):
-                            final_paths.remap_body_reference(spec.parent_path)
-                            for spec in part_plan.specs
-                            if spec.parent_path is not None},
-                    )
-                    projections = plan_fit_part_twist_projections(
-                        rotation_inputs)
-                    twist_projections = projections
+                    projection_inputs = rotation_inputs
+                else:
+                    bendy_starts = {chain.start_body
+                                    for chain in bendy_chains}
+                    bendy_inputs = tuple(item for item in rotation_inputs
+                                         if item.start_body in bendy_starts)
+                    up_sources = {item.up_twist_plug
+                                  for item in bendy_inputs
+                                  if item.up_twist_plug}
+                    projection_inputs = tuple(
+                        item for item in rotation_inputs
+                        if (item.start_body in bendy_starts
+                            or (not item.distribution_source
+                                and ("AdvPy_" + item.start_body.rsplit(
+                                    "|", 1)[-1]
+                                     + "_FitPartTwistProject.outputRotateX")
+                                in up_sources)))
+                projections = plan_fit_part_twist_projections(
+                    projection_inputs)
+                twist_projections = projections
+                if fit_part_twist_sources is None:
+                    ordinary_starts = {
+                        part.start_body for part in active_twist_parts}
                     plan_fit_part_twist(
                         active_twist_parts,
                         tuple(item.source() for item in projections
-                              if item.input.distribution_source))
-                twist_sources = (
-                    PrepareFitPartTwistSources(joined).apply(rotation_inputs)
-                    if fit_part_twist_sources is None
-                    else fit_part_twist_sources
-                )
-                if fit_part_twist_sources is None:
+                              if (item.input.distribution_source
+                                  and item.input.start_body
+                                  in ordinary_starts)))
+                projected_sources = PrepareFitPartTwistSources(joined).apply(
+                    projection_inputs)
+                twist_sources = (projected_sources
+                                 if fit_part_twist_sources is None else
+                                 (*fit_part_twist_sources, *projected_sources))
+                if projections:
                     PrepareFitPartTwistSources(joined).assert_reparented_static_sources(
                         projections, final_paths)
                 active_twist_sources = tuple(replace(
@@ -784,8 +819,12 @@ class BuildRegisteredBodyCharacter:
                 bendy_untwist_plugs = {
                     source.start_body: source.down_twist_plug
                     for source in active_twist_sources}
+                ordinary_starts = {
+                    part.start_body for part in active_twist_parts}
                 twist_steps = BuildFitPartTwistDrivers(joined).apply(
-                    active_twist_parts, active_twist_sources)
+                    active_twist_parts,
+                    tuple(source for source in active_twist_sources
+                          if source.start_body in ordinary_starts))
                 scale_plan = BuildFitPartScaleDrivers(joined).apply(
                     part_plan.fit_parts, part_plan.specs,
                     frozenset(item.joint for item in fit_source.metadata

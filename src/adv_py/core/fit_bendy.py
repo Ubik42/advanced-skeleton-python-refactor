@@ -32,6 +32,7 @@ class FitBendyChainSpec:
     start_world_axes: tuple[tuple[float, float, float], ...] | None = None
     honor_non_symmetry_axis: bool = True
     micro_matrix_aim: bool = True
+    micro_base_twist: bool = True
 
     def __post_init__(self) -> None:
         if (type(self.rotation_order) is not int
@@ -57,6 +58,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 非对称瞄准策略无效")
         if type(self.micro_matrix_aim) is not bool:
             raise ValueError("Bendy 微控制矩阵瞄准策略无效")
+        if type(self.micro_base_twist) is not bool:
+            raise ValueError("Bendy 微控制基础扭转策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -295,6 +298,8 @@ class FitBendyChainSpec:
                   for node in row),
                 *(node for add, mults in self.micro_twist_names
                   for node in (add, *mults)),
+                *((node for row in self.micro_base_twist_names
+                   for node in row) if self.micro_base_twist else ()),
                 *(node for add, deltas, weights in self.micro_scale_names
                   for node in (add, *deltas, *weights)),
                 *(node for row in self.twist_projection_names
@@ -371,6 +376,12 @@ class FitBendyChainSpec:
         return tuple(("AdvPy_" + name + "BendTwistAdd",
                       tuple("AdvPy_" + name + "BendTwist" + str(index)
                             for index in range(len(self.control_names))))
+                     for name in self.deform_names)
+
+    @property
+    def micro_base_twist_names(self) -> tuple[tuple[str, str], ...]:
+        return tuple(("AdvPy_" + name + "BaseTwistOffset",
+                      "AdvPy_" + name + "BaseTwistMultiply")
                      for name in self.deform_names)
 
     @property

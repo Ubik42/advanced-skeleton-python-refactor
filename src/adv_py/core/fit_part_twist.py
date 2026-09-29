@@ -155,7 +155,7 @@ def plan_standard_fit_part_rotation_inputs(
     reference_inverse_matrices: Mapping[str, str] | None = None,
     semantic_parent_by_body: Mapping[str, str] | None = None,
 ) -> tuple[FitPartRotationInput, ...]:
-    """Resolve twist channels for every non-bendy Fit Part chain.
+    """Resolve independent twist channels for ordinary and Bendy Part chains.
 
     Standard Arm/Leg chains blend their independent FK/IK driver matrices.
     Other joints use an independent FK source when the rig exposes one.
@@ -252,7 +252,11 @@ def plan_standard_fit_part_rotation_inputs(
                     start, start.rsplit("|", 1)[0])
                                     if not (blend or independent) else None),
                 reference_parent_body=semantic_parent_by_body.get(start)))
-    return tuple(result) + tuple(auxiliary.values())
+    # An up-twist child may itself start a Part chain. Its primary projection
+    # already supplies the child channel; a second auxiliary projection would
+    # duplicate both the start key and the Maya node names.
+    return tuple(result) + tuple(
+        input for child, input in auxiliary.items() if child not in starts)
 
 
 def plan_fit_part_twist_projections(

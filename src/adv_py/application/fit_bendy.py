@@ -220,9 +220,11 @@ class FitBendyGuideHost(Protocol):
     def preflight_fit_bendy_micro(
         self, spec: FitBendyChainSpec) -> None: ...
     def create_fit_bendy_micro(
-        self, spec: FitBendyChainSpec) -> None: ...
+        self, spec: FitBendyChainSpec,
+        base_twist_plug: str | None = None) -> None: ...
     def capture_fit_bendy_micro(
-        self, spec: FitBendyChainSpec) -> bool: ...
+        self, spec: FitBendyChainSpec,
+        base_twist_plug: str | None = None) -> bool: ...
     def preflight_fit_bendy_secondary(
         self, spec: FitBendyChainSpec) -> None: ...
     def create_fit_bendy_secondary(
@@ -253,6 +255,9 @@ class BuildFitBendyGuides:
             chain.control_names[1] + ".worldMatrix[0]"
             for chain in chains)
         for follow in follows:
+            if follow.chain.micro_base_twist and not follow.untwist_plug:
+                raise ValueError("Bendy 微控制缺少独立基础扭转来源："
+                                 + follow.chain.curve_name)
             names = set(follow.node_names)
             if names & used:
                 raise ValueError("Fit Bendy 跟随节点名称重复")
@@ -281,7 +286,8 @@ class BuildFitBendyGuides:
             for follow in follows:
                 self._host.create_fit_bendy_twist_projections(follow.chain)
             for follow in follows:
-                self._host.create_fit_bendy_micro(follow.chain)
+                self._host.create_fit_bendy_micro(
+                    follow.chain, follow.untwist_plug)
             for chain in chains:
                 if not self._host.capture_fit_bendy_guides(chain):
                     raise RuntimeError("Bendy 曲线导向接线不一致："
@@ -290,7 +296,8 @@ class BuildFitBendyGuides:
                 if not self._host.capture_fit_bendy_follow(follow):
                     raise RuntimeError("Bendy 独立驱动接线不一致："
                                        + follow.chain.curve_name)
-                if not self._host.capture_fit_bendy_micro(follow.chain):
+                if not self._host.capture_fit_bendy_micro(
+                        follow.chain, follow.untwist_plug):
                     raise RuntimeError("Bendy 微控制接线不一致："
                                        + follow.chain.curve_name)
                 if not self._host.capture_fit_bendy_secondary(follow.chain):
