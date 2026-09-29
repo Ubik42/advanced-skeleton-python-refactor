@@ -57,6 +57,10 @@ def plan_body_fit_advanced_constraints(
         # MEL skips Fit joints without an FK control, including most ends.
         for control in matches:
             side = control.side.value
+            driven_body = by_name.get(source_name + "_" + side)
+            if driven_body is None:
+                raise ValueError("Advanced Constraint 来源 Body 关节缺失："
+                                 + source_name + "_" + side)
             for kind, target_name in targets:
                 central = by_name.get(target_name + "_M")
                 if side == "M" and central is None:
@@ -74,8 +78,8 @@ def plan_body_fit_advanced_constraints(
                 if not target_paths:
                     raise ValueError("Advanced Constraint 目标 Body 关节缺失："
                                      + target_name + "_" + side)
-                if any(target == control.driven_joint
-                       or target.startswith(control.driven_joint + "|")
+                if any(target == driven_body
+                       or target.startswith(driven_body + "|")
                        for target in target_paths):
                     raise ValueError("Advanced Constraint 目标依赖自身 FK："
                                      + "、".join(target_paths))
