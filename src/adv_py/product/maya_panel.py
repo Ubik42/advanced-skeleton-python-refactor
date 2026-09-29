@@ -287,7 +287,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('Deform / SkinCage', ('00 · SkinCage',)),
                     ('Deform / SubWrap', ('00 · SubWrap',)),
                     ('Deform / SkinLoops', ('00 · SkinLoops',)),
-                    ('Deform Shapers', ()),
+                    ('Deform Shapers', ('05 · Shapers',)),
                     ('Deform / DeltaMush', ('05 · Delta Mush',)),
                     ('Geometry / Skeleton', ('00 · Skeleton',)),
                     ('Geometry / Muscular', ('00 · Muscular',)),
@@ -1258,6 +1258,18 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
             self.surface_mode.currentIndexChanged.connect(self._surface_mode_changed)
             self._surface_mode_changed()
+            group, form = self._group("05 · Shapers", [])
+            form.addRow(QtWidgets.QLabel("选择或重绑当前角色已有的 Shapers 变形器。"))
+            shapers_select = self._button("选择", self._select_shapers)
+            shapers_rebind = self._button("重新绑定", self._rebind_shapers)
+            for button, operation in ((shapers_select, "select"),
+                                      (shapers_rebind, "rebind")):
+                button.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+                button.customContextMenuRequested.connect(
+                    lambda point, b=button, op=operation:
+                    self._shapers_context_menu(b, point, op))
+                form.addRow(button)
+            stack.addWidget(group)
             group, form = self._group("05 · Delta Mush", [])
             form.addRow(QtWidgets.QLabel("选择已蒙皮的多边形网格。"))
             form.addRow(self._button("硬化权重", self._harden_delta_mush_weights))
@@ -2876,6 +2888,31 @@ def create_panel(controller: MayaPanelController | None = None):
         def _apply_delta_mush(self):
             count = self.controller.delta_mush_apply(self._namespace())
             return f"已为 {count} 个网格应用 Delta Mush"
+
+        def _select_shapers(self, node=None):
+            count = self.controller.shapers_select(self._namespace(), node)
+            return f"已选择 {count} 个 Shapers 变形器"
+
+        def _rebind_shapers(self, node=None):
+            count = self.controller.shapers_rebind(self._namespace(), node)
+            return f"已重新绑定 {count} 个 Shapers 变形器"
+
+        def _shapers_context_menu(self, button, point, operation):
+            nodes = self.controller.shapers_list(self._namespace())
+            menu = QtWidgets.QMenu(button)
+            if not nodes:
+                empty = menu.addAction("当前角色没有 Shapers 变形器")
+                empty.setEnabled(False)
+            else:
+                callback = (self._select_shapers if operation == "select"
+                            else self._rebind_shapers)
+                label = "选择" if operation == "select" else "重新绑定"
+                for node in nodes:
+                    action = menu.addAction(node)
+                    action.triggered.connect(
+                        lambda checked=False, target=node:
+                        self._run(label, lambda: callback(target)))
+            menu.exec_(button.mapToGlobal(point))
 
         def _harden_delta_mush_weights(self):
             count = self.controller.delta_mush_harden_weights(self._namespace())

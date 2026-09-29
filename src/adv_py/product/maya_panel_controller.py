@@ -1492,6 +1492,21 @@ class MayaPanelController:
 
         return len(apply_delta_mush_to_selected(namespace=namespace))
 
+    def shapers_list(self, namespace: str) -> tuple[str, ...]:
+        from adv_py.adapters.maya_shapers import list_shapers
+
+        return list_shapers(namespace)
+
+    def shapers_select(self, namespace: str, node: str | None = None) -> int:
+        from adv_py.adapters.maya_shapers import select_shapers
+
+        return select_shapers(namespace, node)
+
+    def shapers_rebind(self, namespace: str, node: str | None = None) -> int:
+        from adv_py.adapters.maya_shapers import rebind_shapers
+
+        return rebind_shapers(namespace, node)
+
     def delta_mush_harden_weights(self, namespace: str = "") -> int:
         from adv_py.adapters.maya_delta_mush import harden_weights_on_selected
 
