@@ -293,6 +293,7 @@ from .maya_body_fit_wheel import MayaBodyFitWheelMixin
 from .maya_body_center_between_feet import MayaBodyCenterBetweenFeetMixin
 from .maya_body_game_root_motion import MayaBodyGameRootMotionMixin
 from .maya_body_game_scaling import MayaBodyGameScalingMixin
+from .maya_body_driving_fit import MayaBodyDrivingFitMixin
 
 
 _MAYA_SIDE_FROM_CORE = {
@@ -325,7 +326,7 @@ _BODY_EXPORT_BAKE_ATTRIBUTES = {
 }
 
 
-class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, MayaBodyFkScaleCompensationMixin, MayaBodyFitFollowMixin, MayaBodyFitNamedFollowMixin, MayaBodyFitFollowSpacesMixin, MayaBodyFitAimAtMixin, MayaBodyFitGeoAttachMixin, MayaBodyFitProximityPinMixin, MayaBodyCenterBetweenFeetMixin, MayaBodyFitAdvancedConstraintMixin, MayaBodyParentConstraintMixin, MayaBodyGameRootMotionMixin, MayaBodyGameScalingMixin, MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitBendyMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyFitAimMixin, MayaBodyPoleAimMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
+class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, MayaBodyFkScaleCompensationMixin, MayaBodyFitFollowMixin, MayaBodyFitNamedFollowMixin, MayaBodyFitFollowSpacesMixin, MayaBodyFitAimAtMixin, MayaBodyFitGeoAttachMixin, MayaBodyFitProximityPinMixin, MayaBodyCenterBetweenFeetMixin, MayaBodyFitAdvancedConstraintMixin, MayaBodyParentConstraintMixin, MayaBodyGameRootMotionMixin, MayaBodyGameScalingMixin, MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitBendyMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyFitAimMixin, MayaBodyPoleAimMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
     """Maya scene adapter for the first materialized Body skeleton stage."""
 
     def copy_external_mesh_for_character(self, mesh_path: str) -> str:
@@ -661,9 +662,8 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                 "Toggle Fit/Adv 需要完整且唯一的 Body 系统层级")
         fit, motion, deformation = (found[name][0] for name in names)
         was_visible = bool(c.getAttr(fit + ".visibility"))
-        if (not was_visible and c.objExists("DrivingSystem")):
-            raise FitSkeletonValidationError(
-                "已有 DrivingSystem 的角色需要先同步驱动到 Fit；此分支尚未迁移")
+        driving_plan = (self.plan_body_driving_fit_sync(fit)
+                        if not was_visible else None)
         for path in (fit, motion, deformation):
             if c.referenceQuery(path, isNodeReferenced=True):
                 raise FitSkeletonValidationError(
@@ -677,6 +677,8 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
             c.setAttr(fit_plug, lock=True)
             c.setAttr(motion + ".visibility", was_visible)
             c.setAttr(deformation + ".visibility", was_visible)
+            if driving_plan is not None:
+                self.apply_body_driving_fit_sync(driving_plan)
             if (bool(c.getAttr(fit_plug)) == was_visible
                     or bool(c.getAttr(motion + ".visibility")) != was_visible
                     or bool(c.getAttr(deformation + ".visibility"))
