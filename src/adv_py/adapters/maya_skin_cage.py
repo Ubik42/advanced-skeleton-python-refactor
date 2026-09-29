@@ -4,7 +4,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 
 from adv_py.core.skin_cage import (
-    SKIN_CAGE_NODES, SkinCageBuildPlan, SkinCageCopyTarget,
+    SKIN_CAGE_NODES, SkinCageBranchLayout, SkinCageBuildPlan,
+    SkinCageCopyTarget, special_skin_cage_branch,
 )
 
 
@@ -79,8 +80,8 @@ class MayaSkinCageHost:
         hidden_tail = tail.replace("Profile", "Curve")
         name = self._name(leaf + tail)
         profile = c.curve(name=name, degree=1, point=[
-            (0, -1, 1), (0, 1, 1), (0, 1, -1),
-            (0, -1, -1), (0, -1, 1)])
+            (0, -1, 1), (0, -1, -1), (0, 1, -1),
+            (0, 1, 1), (0, -1, 1)])
         c.parent(profile, parent)
         c.xform(profile, worldSpace=True, matrix=c.xform(
             joint, query=True, worldSpace=True, matrix=True))
@@ -190,6 +191,36 @@ class MayaSkinCageHost:
                              name=base)[0]
         c.polyMergeVertex(bridge, distance=0.0001,
                           constructionHistory=False)
+        return bridge
+
+    def _special_branch_panels(self, parent: str,
+                               layout: SkinCageBranchLayout) -> str:
+        c = self.cmds
+        leaf = parent.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        base = self._name(leaf + "_branch")
+        facets = []
+        for index, face in enumerate(layout.faces):
+            points = []
+            for curve, cv in face:
+                profile = self._name(curve + "Profile")
+                if not c.objExists(profile):
+                    raise ValueError("SkinCage 专用分叉缺少截面：" + profile)
+                points.append(c.xform(f"{profile}.cv[{cv}]", query=True,
+                                      worldSpace=True, translation=True))
+            facet = c.polyCreateFacet(
+                point=points, constructionHistory=False,
+                name=base + "Face" + str(index))[0]
+            if index in layout.reverse_faces:
+                c.polyNormal(facet, normalMode=0, userNormalMode=0,
+                             constructionHistory=False)
+            facets.append(facet)
+        bridge = c.polyUnite(facets, constructionHistory=False,
+                             name=base)[0]
+        c.polyMergeVertex(bridge, distance=0.0001,
+                          constructionHistory=False)
+        if leaf == "Wrist_L":
+            c.polyNormal(bridge, normalMode=0, userNormalMode=0,
+                         constructionHistory=False)
         return bridge
 
     def _weight_tweaks(self, cage: str, skin: str) -> None:
@@ -313,8 +344,23 @@ class MayaSkinCageHost:
             copies.append(copy)
         if not pieces:
             raise ValueError("变形系统没有可生成笼体的关节链")
+        branches_by_parent = {}
         for branch in plan.branches:
-            copies.append(self._branch_panels(branch.parent, branch.child))
+            branches_by_parent.setdefault(branch.parent, []).append(
+                branch.child)
+        for parent, side_children in branches_by_parent.items():
+            all_children = c.listRelatives(parent, children=True,
+                                           type="joint", fullPath=True) or []
+            parent_leaf = parent.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            child_leaves = tuple(child.rsplit("|", 1)[-1]
+                                 .rsplit(":", 1)[-1]
+                                 for child in all_children)
+            layout = special_skin_cage_branch(parent_leaf, child_leaves)
+            if layout:
+                copies.append(self._special_branch_panels(parent, layout))
+            else:
+                for child in side_children:
+                    copies.append(self._branch_panels(parent, child))
         if len(copies) == 1:
             cage = c.rename(copies[0], self._name("skinCage"))
         else:

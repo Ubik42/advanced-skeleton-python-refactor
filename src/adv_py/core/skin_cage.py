@@ -41,6 +41,79 @@ class SkinCageBuildPlan:
     branches: tuple[SkinCageBranch, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class SkinCageBranchLayout:
+    faces: tuple[tuple[tuple[str, int], ...], ...]
+    reverse_faces: tuple[int, ...] = ()
+
+
+def special_skin_cage_branch(parent: str,
+                             children: tuple[str, ...],
+                             ) -> SkinCageBranchLayout | None:
+    """Original 6.925 facet connectivity for its three named branch cases.
+
+    Curve tokens omit Profile and use ``Joint_side_start`` notation. The
+    repeated Chest CV in the MEL source is collapsed to one vertex.
+    """
+    raw: tuple[str, ...]
+    reversed_faces: tuple[int, ...] = ()
+    if parent == "Root_M" and {
+            "RootPart1_M", "Hip_R", "Hip_L"}.issubset(children):
+        raw = (
+            "Hip_R_start:3 Hip_R_start:2 Hip_L_start:0 Hip_L_start:1 Root_M_middle:3 Root_M_middle:2",
+            "Hip_R_start:0 Hip_R_start:1 Hip_L_start:3 Hip_L_start:2 Root_M_middle:0 Root_M_middle:1",
+            "Hip_R_start:0 Hip_R_start:3 Root_M_middle:2 Root_M_middle:1",
+            "Hip_L_start:1 Hip_L_start:2 Root_M_middle:4 Root_M_middle:3",
+        )
+        reversed_faces = (1,)
+    elif parent == "Chest_M" and {
+            "Neck_M", "Shoulder_R", "Shoulder_L"}.issubset(children):
+        raw = (
+            "Chest_M_middle:3 Shoulder_L_start:0 Shoulder_L_start:1 Neck_M_start:3",
+            "Neck_M_start:3 Neck_M_start:2 Chest_M_middle:2 Chest_M_middle:3",
+            "Chest_M_middle:2 Neck_M_start:2 Shoulder_R_start:3 Shoulder_R_start:2",
+            "Chest_M_middle:1 Shoulder_R_start:1 Shoulder_R_start:0 Neck_M_start:1",
+            "Neck_M_start:1 Neck_M_start:0 Chest_M_middle:0 Chest_M_middle:1",
+            "Chest_M_middle:0 Neck_M_start:0 Shoulder_L_start:2 Shoulder_L_start:3",
+            "Shoulder_R_start:2 Shoulder_R_start:1 Chest_M_middle:1 Chest_M_middle:2",
+            "Shoulder_L_start:3 Shoulder_L_start:0 Chest_M_middle:3 Chest_M_middle:0",
+            "Neck_M_start:2 Neck_M_start:1 Shoulder_R_start:0 Shoulder_R_start:3",
+            "Neck_M_start:0 Neck_M_start:3 Shoulder_L_start:1 Shoulder_L_start:2",
+        )
+    elif parent in ("Wrist_R", "Wrist_L"):
+        side = parent[-2:]
+        expected = {prefix + side for prefix in (
+            "IndexFinger1", "MiddleFinger1", "RingFinger1",
+            "PinkyFinger1", "ThumbFinger2")}
+        if not expected.issubset(children):
+            return None
+        raw = (
+            "Wrist_end:3 Wrist_end:0 MiddleFinger1_start:0 MiddleFinger1_start:3",
+            "Wrist_end:1 Wrist_end:2 MiddleFinger1_start:2 MiddleFinger1_start:1",
+            "Wrist_end:0 Wrist_end:1 PinkyFinger1_start:1 PinkyFinger1_start:0",
+            "Wrist_end:0 MiddleFinger1_start:0 RingFinger1_start:3 RingFinger1_start:0 PinkyFinger1_start:3 PinkyFinger1_start:0",
+            "Wrist_end:1 MiddleFinger1_start:1 RingFinger1_start:2 RingFinger1_start:1 PinkyFinger1_start:2 PinkyFinger1_start:1",
+            "Wrist_end:2 Wrist_end:3 ThumbFinger2_start:0 ThumbFinger2_start:3",
+            "Wrist_end:3 ThumbFinger2_start:0 IndexFinger1_start:3 IndexFinger1_start:0 MiddleFinger1_start:3",
+            "Wrist_end:2 ThumbFinger2_start:3 ThumbFinger2_start:2",
+            "IndexFinger1_start:3 IndexFinger1_start:2 ThumbFinger2_start:1 ThumbFinger2_start:0",
+            "Wrist_end:2 ThumbFinger2_start:2 ThumbFinger2_start:1",
+            "Wrist_end:2 IndexFinger1_start:2 IndexFinger1_start:1 MiddleFinger1_start:2",
+        )
+        reversed_faces = (3, 6)
+        raw = tuple(" ".join(
+            name.rsplit(":", 1)[0].replace("_end", side + "_end")
+            .replace("_start", side + "_start") + ":" +
+            name.rsplit(":", 1)[1] for name in face.split())
+                    for face in raw)
+    else:
+        return None
+    faces = tuple(tuple((token.rsplit(":", 1)[0],
+                         int(token.rsplit(":", 1)[1]))
+                        for token in face.split()) for face in raw)
+    return SkinCageBranchLayout(faces, reversed_faces)
+
+
 def plan_skin_cage_build(root: str, children: dict[str, tuple[str, ...]],
                          positions: dict[str, tuple[float, float, float]],
                          ) -> SkinCageBuildPlan:
