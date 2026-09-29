@@ -918,6 +918,41 @@ class MayaFitPartMixin:
                 return None
         return output
 
+    def capture_reparented_fit_part_static_source(
+        self, projection: FitPartTwistProjection,
+        parent_path: str, child_path: str,
+    ) -> bool:
+        c = self._cmds
+        static = projection.static_source_name
+        reference = projection.reference_name
+        if (not static or not reference
+                or any(not c.objExists(name) or c.nodeType(name) != "transform"
+                       for name in (static, reference))
+                or (c.ls(child_path, long=True, type="joint") or [])
+                != [child_path]
+                or not child_path.startswith(parent_path + "|")
+                or (c.listRelatives(child_path, parent=True,
+                                    fullPath=True) or []) == [parent_path]):
+            return False
+        if any((c.listRelatives(name, parent=True,
+                                fullPath=True) or []) != [parent_path]
+               for name in (static, reference)):
+            return False
+        if (c.connectionInfo(projection.compose_name + ".matrixIn[0]",
+                             sourceFromDestination=True)
+                != static + ".worldMatrix[0]"
+                or c.connectionInfo(projection.compose_name + ".matrixIn[1]",
+                                    sourceFromDestination=True)
+                != reference + ".worldInverseMatrix[0]"):
+            return False
+        child_matrix = c.xform(child_path, query=True, worldSpace=True,
+                               matrix=True)
+        return all(
+            max(abs(float(a) - float(b)) for a, b in zip(
+                c.xform(name, query=True, worldSpace=True, matrix=True),
+                child_matrix)) <= 1e-4
+            for name in (static, reference))
+
     def preflight_fit_part_twist_step(self, step: FitPartTwistStep) -> None:
         c = self._cmds
         part = self._unique_fit_part_joint(step.part_name)

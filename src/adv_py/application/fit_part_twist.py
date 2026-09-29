@@ -4,7 +4,7 @@ from __future__ import annotations
 from contextlib import AbstractContextManager
 from typing import Protocol
 
-from adv_py.core.fit_part import FitPartJointSpec
+from adv_py.core.fit_part import FitPartFinalPaths, FitPartJointSpec
 from adv_py.core.fit_part_twist import (
     FitPartRotationInput, FitPartTwistProjection, FitPartTwistSource,
     FitPartTwistStep, plan_fit_part_twist, plan_fit_part_twist_projections,
@@ -36,6 +36,11 @@ class FitPartTwistHost(Protocol):
     def capture_fit_part_projection_output(
         self, projection: FitPartTwistProjection
     ) -> str | None: ...
+
+    def capture_reparented_fit_part_static_source(
+        self, projection: FitPartTwistProjection,
+        parent_path: str, child_path: str,
+    ) -> bool: ...
 
 
 class PrepareFitPartTwistSources:
@@ -73,6 +78,22 @@ class PrepareFitPartTwistSources:
                                        + projection.input.start_body)
         return tuple(projection.source() for projection in projections
                      if projection.input.distribution_source)
+
+    def assert_reparented_static_sources(
+        self, projections: tuple[FitPartTwistProjection, ...],
+        final_paths: FitPartFinalPaths,
+    ) -> None:
+        for projection in projections:
+            if not projection.static_source_name:
+                continue
+            parent = final_paths.remap_body_reference(
+                projection.input.static_parent_body)
+            child = final_paths.remap_body_reference(
+                projection.input.start_body)
+            if not self._host.capture_reparented_fit_part_static_source(
+                    projection, parent, child):
+                raise RuntimeError("改挂后 Fit Part 静态来源脱离原 Body 父链："
+                                   + child)
 
 
 class BuildFitPartTwistDrivers:

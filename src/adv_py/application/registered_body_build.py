@@ -449,6 +449,9 @@ class BuildRegisteredBodyCharacter:
                 fit_part_hierarchy = BuildFitPartHierarchy(joined).apply(
                     part_plan)
                 final_paths = fit_part_hierarchy.final_paths
+                if fit_part_twist_sources is None:
+                    PrepareFitPartTwistSources(joined).assert_reparented_static_sources(
+                        projections, final_paths)
                 active_twist_sources = tuple(replace(
                     source,
                     down_twist_plug=final_paths.remap_body_reference(

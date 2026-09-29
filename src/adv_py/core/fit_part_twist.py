@@ -210,9 +210,10 @@ def plan_fit_part_twist_projections(
             raise FitPartTwistValidationError("Part 扭转投影用途无效")
         if item.static_parent_body and (
                 item.distribution_source
-                or item.static_parent_body != item.start_body.rsplit("|", 1)[0]):
+                or item.static_parent_body != item.start_body.rsplit("|", 1)[0]
+                or item.reference_inverse_plug is not None):
             raise FitPartTwistValidationError(
-                "静态下游 Twist 来源必须留在原 Body 父级")
+                "静态下游 Twist 来源必须使用原 Body 父级的绑定参考")
         if (type(item.compensate_start_body) is not bool
                 or (item.compensate_start_body
                     and (item.subtract_body_twist
