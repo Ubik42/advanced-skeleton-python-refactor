@@ -1622,6 +1622,7 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
 
             group, form = self._group("03a · Face Skin Layers", [])
+            self.face_skin_layers_group = group
             form.addRow(self._button("Normal",
                 lambda: self._face_skin_layers_show("Normal")))
             form.addRow(self._button("刷新 SkinLayer 列表",
@@ -3315,6 +3316,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     widget.deleteLater()
             layers = self.controller.face_skin_layers_available(
                 self._namespace())
+            self.face_skin_layers_group.setVisible(bool(layers))
             for layer in layers:
                 layout.addWidget(self._button(layer,
                     lambda layer=layer: self._face_skin_layers_show(layer)))

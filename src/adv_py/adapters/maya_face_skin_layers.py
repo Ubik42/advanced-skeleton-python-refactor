@@ -25,16 +25,25 @@ class MayaFaceSkinLayersHost(MayaFacePreHost):
                                          type="transform", fullPath=True) or ())
         return group, children
 
+    def _mode_allows_layers(self) -> bool:
+        c = self._maya
+        fit = self._name("FaceFitSkeleton")
+        if not c.objExists(fit):
+            return False
+        if (c.attributeQuery("RigType", node=fit, exists=True)
+                and int(c.getAttr(fit + ".RigType")) != 2):
+            return False
+        if (c.attributeQuery("GameEngine", node=fit, exists=True)
+                and bool(c.getAttr(fit + ".GameEngine"))):
+            return False
+        return True
+
     @staticmethod
     def _leaf(path: str) -> str:
         return path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
 
-    def available_face_skin_layers(self) -> tuple[str, ...]:
-        """Reproduce the dynamic buttons populated by asUpdateButtonEnables."""
-        c = self._maya
-        if not c.objExists(self._name("DeformationLayers")):
-            return ()
-        _, children = self._group_and_children()
+    def _layers_from_children(self, children: tuple[str, ...]
+                              ) -> tuple[str, ...]:
         layers = []
         for path in children:
             name = self._leaf(path).replace("Layer", "", 1)
@@ -44,13 +53,22 @@ class MayaFaceSkinLayersHost(MayaFacePreHost):
                 layers.append(name)
         return tuple(layers)
 
+    def available_face_skin_layers(self) -> tuple[str, ...]:
+        """Reproduce the dynamic buttons populated by asUpdateButtonEnables."""
+        c = self._maya
+        if (not self._mode_allows_layers()
+                or not c.objExists(self._name("DeformationLayers"))):
+            return ()
+        _, children = self._group_and_children()
+        return self._layers_from_children(children)
+
     def show_face_skin_layer(self, layer: str) -> tuple[str, ...]:
         """Switch mesh and layer visibility exactly as asShowLayer does."""
         if not isinstance(layer, str) or not layer:
             raise ValueError("Face SkinLayer 名称无效")
         c = self._maya
         group, children = self._group_and_children()
-        available = self.available_face_skin_layers()
+        available = self._layers_from_children(children)
         if layer != "Normal" and layer not in available:
             raise FitSkeletonValidationError("Face SkinLayer 不存在：" + layer)
         normal = layer == "Normal"
