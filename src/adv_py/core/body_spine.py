@@ -53,6 +53,10 @@ class BodySpinePlan:
         return self.ik_control + ".stretchy"
 
     @property
+    def anti_pop_plug(self) -> str:
+        return self.ik_control + ".antiPop"
+
+    @property
     def volume_plug(self) -> str:
         return self.ik_control + ".volume"
 
@@ -83,6 +87,8 @@ class BodySpinePlan:
             "AdvPy_SpinePoleLocalMM", "AdvPy_SpinePoleDistance1",
             "AdvPy_SpinePoleDistance2", "AdvPy_SpinePoleLockWeight",
             "AdvPy_SpinePoleLockBlend1", "AdvPy_SpinePoleLockBlend2",
+            "AdvPy_SpineAntiPopNormal", "AdvPy_SpineAntiPopCurve",
+            "AdvPy_SpineAntiPopWeight", "AdvPy_SpineAntiPopBlend",
         ) + (("AdvPy_SpineChestSpaceMM", "AdvPy_SpineChestSpacePM")
              if self.use_offset_parent_matrix else
              ("AdvPy_SpineChestSpaceParent",))

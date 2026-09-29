@@ -46,7 +46,7 @@ class MayaBodySpineMixin:
         root = self._cmds.createNode("transform", name=plan.root_path.rsplit("|", 1)[-1],
                                      parent=plan.root_path.rsplit("|", 1)[0], skipSelect=True)
         self._cmds.addAttr(root, longName="advPySpineOwner", dataType="string")
-        self._cmds.setAttr(root + ".advPySpineOwner", "adv_py.spine.v4", type="string", lock=True)
+        self._cmds.setAttr(root + ".advPySpineOwner", "adv_py.spine.v5", type="string", lock=True)
         for spec in plan.joints:
             self.create_body_arm_mechanism_joint(spec)
         chest = plan.joints[2]
@@ -72,6 +72,8 @@ class MayaBodySpineMixin:
         c.addAttr(plan.ik_control, longName="spineIkFk", attributeType="double", minValue=0, maxValue=1, defaultValue=0, keyable=True)
         c.addAttr(plan.ik_control, longName="waistRoll", attributeType="doubleAngle", defaultValue=0, keyable=True)
         c.addAttr(plan.ik_control, longName="stretchy", attributeType="double",
+                  minValue=0, maxValue=10, defaultValue=0, keyable=True)
+        c.addAttr(plan.ik_control, longName="antiPop", attributeType="double",
                   minValue=0, maxValue=10, defaultValue=0, keyable=True)
         c.addAttr(plan.ik_control, longName="volume", attributeType="double",
                   minValue=0, maxValue=10, defaultValue=10, keyable=True)
@@ -136,6 +138,39 @@ class MayaBodySpineMixin:
                                 name="AdvPy_SpineStretchDistance")
         c.connectAttr(start + ".matrixSum", distance + ".inMatrix1")
         c.connectAttr(target + ".matrixSum", distance + ".inMatrix2")
+        rest_length = sum(plan.lengths)
+        normal = c.createNode("animCurveUU",
+                              name="AdvPy_SpineAntiPopNormal")
+        anti_pop = c.createNode("animCurveUU",
+                                name="AdvPy_SpineAntiPopCurve")
+        curves = (
+            (normal, ((1.0, 1.0, "spline", "linear"),
+                      (1.2, 1.2, "spline", "spline"))),
+            (anti_pop, ((0.1, 1.0, "spline", "spline"),
+                        (0.7, 1.0, "linear", "spline"),
+                        (0.85, 0.9, "spline", "spline"),
+                        (1.0, 1.0, "spline", "linear"),
+                        (1.2, 1.2, "spline", "spline"))),
+        )
+        for curve, keys in curves:
+            for index, (position, value, tangent_in, tangent_out) in enumerate(keys):
+                c.setKeyframe(curve, float=rest_length * position,
+                              value=rest_length * value)
+                c.keyTangent(curve, edit=True, index=(index, index),
+                             inTangentType=tangent_in,
+                             outTangentType=tangent_out)
+            c.setAttr(curve + ".postInfinity", 1)
+            c.connectAttr(distance + ".distance", curve + ".input")
+        anti_weight = c.createNode("unitConversion",
+                                   name="AdvPy_SpineAntiPopWeight")
+        c.setAttr(anti_weight + ".conversionFactor", 0.1)
+        c.connectAttr(plan.anti_pop_plug, anti_weight + ".input")
+        anti_blend = c.createNode("blendTwoAttr",
+                                  name="AdvPy_SpineAntiPopBlend")
+        c.connectAttr(normal + ".output", anti_blend + ".input[0]")
+        c.connectAttr(anti_pop + ".output", anti_blend + ".input[1]")
+        c.connectAttr(anti_weight + ".output",
+                      anti_blend + ".attributesBlender")
         pole = c.createNode("multMatrix", name="AdvPy_SpinePoleLocalMM")
         c.connectAttr(plan.pole_control + ".worldMatrix[0]",
                       pole + ".matrixIn[0]")
@@ -147,19 +182,19 @@ class MayaBodySpineMixin:
         c.connectAttr(plan.pole_lock_plug, pole_weight + ".input")
         ratio = c.createNode("multiplyDivide", name="AdvPy_SpineStretchRatio")
         c.setAttr(ratio + ".operation", 2)
-        c.setAttr(ratio + ".input2X", sum(plan.lengths))
-        c.connectAttr(distance + ".distance", ratio + ".input1X")
+        c.setAttr(ratio + ".input2X", rest_length)
+        c.connectAttr(anti_blend + ".output", ratio + ".input1X")
         clamp = c.createNode("clamp", name="AdvPy_SpineStretchClamp")
-        c.setAttr(clamp + ".minR", 1.0)
-        c.setAttr(clamp + ".maxR", 1000000.0)
+        c.setAttr(clamp + ".minR", 0.0)
+        c.setAttr(clamp + ".maxR", 1.0)
         c.connectAttr(ratio + ".outputX", clamp + ".inputR")
         weight = c.createNode("unitConversion",
                               name="AdvPy_SpineStretchWeight")
         c.setAttr(weight + ".conversionFactor", 0.1)
         c.connectAttr(plan.stretch_plug, weight + ".input")
         blend = c.createNode("blendColors", name="AdvPy_SpineStretchBlend")
-        c.connectAttr(clamp + ".outputR", blend + ".color1R")
-        c.setAttr(blend + ".color2R", 1.0)
+        c.connectAttr(ratio + ".outputX", blend + ".color1R")
+        c.connectAttr(clamp + ".outputR", blend + ".color2R")
         c.connectAttr(weight + ".output", blend + ".blender")
         segments = c.createNode("multiplyDivide",
                                 name="AdvPy_SpineStretchSegments")
@@ -237,14 +272,15 @@ class MayaBodySpineMixin:
             "AdvPy_SpineVolumeWeight": "unitConversion",
             "AdvPy_SpineVolumeBlend": "blendColors",
         }
-        if owner in ("adv_py.spine.v3", "adv_py.spine.v4"):
+        if owner in ("adv_py.spine.v3", "adv_py.spine.v4",
+                     "adv_py.spine.v5"):
             expected_types.update({
                 "AdvPy_SpineLength1": "multiplyDivide",
                 "AdvPy_SpineLength2": "multiplyDivide",
                 "AdvPy_SpineFatness1": "plusMinusAverage",
                 "AdvPy_SpineFatness2": "plusMinusAverage",
             })
-        if owner == "adv_py.spine.v4":
+        if owner in ("adv_py.spine.v4", "adv_py.spine.v5"):
             expected_types.update({
                 "AdvPy_SpinePoleLocalMM": "multMatrix",
                 "AdvPy_SpinePoleDistance1": "distanceBetween",
@@ -253,23 +289,35 @@ class MayaBodySpineMixin:
                 "AdvPy_SpinePoleLockBlend1": "blendTwoAttr",
                 "AdvPy_SpinePoleLockBlend2": "blendTwoAttr",
             })
+        if owner == "adv_py.spine.v5":
+            expected_types.update({
+                "AdvPy_SpineAntiPopNormal": "animCurveUU",
+                "AdvPy_SpineAntiPopCurve": "animCurveUU",
+                "AdvPy_SpineAntiPopWeight": "unitConversion",
+                "AdvPy_SpineAntiPopBlend": "blendTwoAttr",
+            })
         if any(c.nodeType(name) != kind for name, kind in
                expected_types.items()):
             raise FitSkeletonValidationError("Spine 伸展或体积节点类型变化")
         for plug in (plan.stretch_plug, plan.volume_plug):
             if not c.objExists(plug) or not c.getAttr(plug, keyable=True):
                 raise FitSkeletonValidationError("Spine 伸展或体积控制属性缺失")
-        if owner in ("adv_py.spine.v3", "adv_py.spine.v4") and any(
+        if owner in ("adv_py.spine.v3", "adv_py.spine.v4",
+                     "adv_py.spine.v5") and any(
                 not c.objExists(plan.ik_control + "." + name)
                 or not c.getAttr(plan.ik_control + "." + name,
                                  keyable=True)
                 for name in ("Lenght1", "Lenght2", "Fatness1",
                              "Fatness2")):
             raise FitSkeletonValidationError("Spine 逐段长度或粗细属性缺失")
-        if owner == "adv_py.spine.v4" and (
+        if owner in ("adv_py.spine.v4", "adv_py.spine.v5") and (
                 not c.objExists(plan.pole_lock_plug)
                 or not c.getAttr(plan.pole_lock_plug, keyable=True)):
             raise FitSkeletonValidationError("Spine Pole Lock 控制属性缺失")
+        if owner == "adv_py.spine.v5" and (
+                not c.objExists(plan.anti_pop_plug)
+                or not c.getAttr(plan.anti_pop_plug, keyable=True)):
+            raise FitSkeletonValidationError("Spine AntiPop 控制属性缺失")
         edges = [
             (plan.joints[3].path + ".worldMatrix[0]",
              "AdvPy_SpineStretchStartMM.matrixIn[0]"),
@@ -279,15 +327,11 @@ class MayaBodySpineMixin:
              "AdvPy_SpineStretchDistance.inMatrix1"),
             ("AdvPy_SpineStretchTargetMM.matrixSum",
              "AdvPy_SpineStretchDistance.inMatrix2"),
-            ("AdvPy_SpineStretchDistance.distance",
-             "AdvPy_SpineStretchRatio.input1X"),
             ("AdvPy_SpineStretchRatio.outputX",
              "AdvPy_SpineStretchClamp.inputR"),
             (plan.stretch_plug, "AdvPy_SpineStretchWeight.input"),
             ("AdvPy_SpineStretchWeight.output",
              "AdvPy_SpineStretchBlend.blender"),
-            ("AdvPy_SpineStretchClamp.outputR",
-             "AdvPy_SpineStretchBlend.color1R"),
             ("AdvPy_SpineStretchBlend.outputR",
              "AdvPy_SpineVolumeInverse.input2X"),
             ("AdvPy_SpineVolumeInverse.outputX",
@@ -301,18 +345,47 @@ class MayaBodySpineMixin:
         for name in ("Start", "Target"):
             edges.append((plan.root_path + ".worldInverseMatrix[0]",
                           "AdvPy_SpineStretch" + name + "MM.matrixIn[1]"))
+        if owner == "adv_py.spine.v5":
+            edges.extend((
+                ("AdvPy_SpineStretchDistance.distance",
+                 "AdvPy_SpineAntiPopNormal.input"),
+                ("AdvPy_SpineStretchDistance.distance",
+                 "AdvPy_SpineAntiPopCurve.input"),
+                ("AdvPy_SpineAntiPopNormal.output",
+                 "AdvPy_SpineAntiPopBlend.input[0]"),
+                ("AdvPy_SpineAntiPopCurve.output",
+                 "AdvPy_SpineAntiPopBlend.input[1]"),
+                (plan.anti_pop_plug,
+                 "AdvPy_SpineAntiPopWeight.input"),
+                ("AdvPy_SpineAntiPopWeight.output",
+                 "AdvPy_SpineAntiPopBlend.attributesBlender"),
+                ("AdvPy_SpineAntiPopBlend.output",
+                 "AdvPy_SpineStretchRatio.input1X"),
+                ("AdvPy_SpineStretchRatio.outputX",
+                 "AdvPy_SpineStretchBlend.color1R"),
+                ("AdvPy_SpineStretchClamp.outputR",
+                 "AdvPy_SpineStretchBlend.color2R"),
+            ))
+        else:
+            edges.extend((
+                ("AdvPy_SpineStretchDistance.distance",
+                 "AdvPy_SpineStretchRatio.input1X"),
+                ("AdvPy_SpineStretchClamp.outputR",
+                 "AdvPy_SpineStretchBlend.color1R"),
+            ))
         for index, (axis, joint) in enumerate(
                 zip("XY", plan.joints[4:6]), 1):
             edges.append(("AdvPy_SpineStretchBlend.outputR",
                           "AdvPy_SpineStretchSegments.input2" + axis))
-            if owner in ("adv_py.spine.v3", "adv_py.spine.v4"):
+            if owner in ("adv_py.spine.v3", "adv_py.spine.v4",
+                         "adv_py.spine.v5"):
                 edges.extend((
                     ("AdvPy_SpineStretchSegments.output" + axis,
                      f"AdvPy_SpineLength{index}.input1X"),
                     (plan.ik_control + f".Lenght{index}",
                      f"AdvPy_SpineLength{index}.input2X"),
                 ))
-                if owner == "adv_py.spine.v4":
+                if owner in ("adv_py.spine.v4", "adv_py.spine.v5"):
                     edges.extend((
                         (f"AdvPy_SpineLength{index}.outputX",
                          f"AdvPy_SpinePoleLockBlend{index}.input[0]"),
@@ -334,7 +407,8 @@ class MayaBodySpineMixin:
             else:
                 edges.append(("AdvPy_SpineStretchSegments.output" + axis,
                               joint.path + ".translateX"))
-        if owner in ("adv_py.spine.v3", "adv_py.spine.v4"):
+        if owner in ("adv_py.spine.v3", "adv_py.spine.v4",
+                     "adv_py.spine.v5"):
             edges.append(("AdvPy_SpineVolumeBlend.outputR",
                           "AdvPy_SpineFatness2.input1D[0]"))
             for index, joint in enumerate(plan.joints[3:5], 1):
@@ -347,7 +421,7 @@ class MayaBodySpineMixin:
             for axis in "YZ":
                 edges.append(("AdvPy_SpineVolumeBlend.outputR",
                               plan.joints[4].path + ".scale" + axis))
-        if owner == "adv_py.spine.v4":
+        if owner in ("adv_py.spine.v4", "adv_py.spine.v5"):
             edges.extend((
                 (plan.pole_control + ".worldMatrix[0]",
                  "AdvPy_SpinePoleLocalMM.matrixIn[0]"),
@@ -361,10 +435,11 @@ class MayaBodySpineMixin:
         constants = (
             ("AdvPy_SpineStretchRatio.operation", 2.0),
             ("AdvPy_SpineStretchRatio.input2X", sum(plan.lengths)),
-            ("AdvPy_SpineStretchClamp.minR", 1.0),
-            ("AdvPy_SpineStretchClamp.maxR", 1000000.0),
+            ("AdvPy_SpineStretchClamp.minR",
+             0.0 if owner == "adv_py.spine.v5" else 1.0),
+            ("AdvPy_SpineStretchClamp.maxR",
+             1.0 if owner == "adv_py.spine.v5" else 1000000.0),
             ("AdvPy_SpineStretchWeight.conversionFactor", 0.1),
-            ("AdvPy_SpineStretchBlend.color2R", 1.0),
             ("AdvPy_SpineVolumeInverse.operation", 2.0),
             ("AdvPy_SpineVolumeInverse.input1X", 1.0),
             ("AdvPy_SpineVolumePower.operation", 3.0),
@@ -374,14 +449,53 @@ class MayaBodySpineMixin:
             *(("AdvPy_SpineStretchSegments.input1" + axis, length)
               for axis, length in zip("XY", plan.lengths)),
         )
-        if owner in ("adv_py.spine.v3", "adv_py.spine.v4"):
+        if owner != "adv_py.spine.v5":
+            constants += (("AdvPy_SpineStretchBlend.color2R", 1.0),)
+        if owner in ("adv_py.spine.v3", "adv_py.spine.v4",
+                     "adv_py.spine.v5"):
             constants += (("AdvPy_SpineFatness1.input1D[0]", 1.0),)
-        if owner == "adv_py.spine.v4":
+        if owner in ("adv_py.spine.v4", "adv_py.spine.v5"):
             constants += (("AdvPy_SpinePoleLockWeight.conversionFactor",
+                           0.1),)
+        if owner == "adv_py.spine.v5":
+            constants += (("AdvPy_SpineAntiPopWeight.conversionFactor",
                            0.1),)
         if any(abs(float(c.getAttr(plug)) - value) > 1e-5
                for plug, value in constants):
             raise FitSkeletonValidationError("Spine 伸展或体积绑定参数变化")
+        if owner == "adv_py.spine.v5":
+            rest = sum(plan.lengths)
+            profiles = (
+                ("AdvPy_SpineAntiPopNormal",
+                 ((1.0, 1.0, "spline", "linear"),
+                  (1.2, 1.2, "spline", "spline"))),
+                ("AdvPy_SpineAntiPopCurve",
+                 ((0.1, 1.0, "spline", "spline"),
+                  (0.7, 1.0, "linear", "spline"),
+                  (0.85, 0.9, "spline", "spline"),
+                  (1.0, 1.0, "spline", "linear"),
+                  (1.2, 1.2, "spline", "spline"))),
+            )
+            for curve, profile in profiles:
+                positions = c.keyframe(curve, query=True,
+                                       floatChange=True) or []
+                values = c.keyframe(curve, query=True,
+                                    valueChange=True) or []
+                in_types = c.keyTangent(curve, query=True,
+                                        inTangentType=True) or []
+                out_types = c.keyTangent(curve, query=True,
+                                         outTangentType=True) or []
+                if (len(positions) != len(profile)
+                        or len(values) != len(profile)
+                        or tuple(in_types) != tuple(row[2] for row in profile)
+                        or tuple(out_types) != tuple(row[3] for row in profile)
+                        or c.getAttr(curve + ".postInfinity") != 1
+                        or any(abs(float(position) - rest * expected[0])
+                               > 1e-5 or abs(float(value) - rest * expected[1])
+                               > 1e-5 for position, value, expected in
+                               zip(positions, values, profile))):
+                    raise FitSkeletonValidationError(
+                        "Spine AntiPop 距离曲线或切线变化")
 
     def validate_body_spine(self, plan):
         c = self._cmds
@@ -389,34 +503,41 @@ class MayaBodySpineMixin:
             raise FitSkeletonValidationError("Spine 机制归属标记缺失")
         owner = c.getAttr(plan.root_path + ".advPySpineOwner")
         if owner not in ("adv_py.spine.v1", "adv_py.spine.v2",
-                         "adv_py.spine.v3", "adv_py.spine.v4"):
+                         "adv_py.spine.v3", "adv_py.spine.v4",
+                         "adv_py.spine.v5"):
             raise FitSkeletonValidationError("Spine 机制归属标记无效")
         pole_nodes = frozenset((
             "AdvPy_SpinePoleLocalMM", "AdvPy_SpinePoleDistance1",
             "AdvPy_SpinePoleDistance2", "AdvPy_SpinePoleLockWeight",
             "AdvPy_SpinePoleLockBlend1", "AdvPy_SpinePoleLockBlend2",
         ))
-        if owner == "adv_py.spine.v4":
+        if owner == "adv_py.spine.v5":
             nodes = plan.node_names
+        elif owner == "adv_py.spine.v4":
+            nodes = tuple(name for name in plan.node_names
+                          if not name.startswith("AdvPy_SpineAntiPop"))
         elif owner == "adv_py.spine.v3":
             nodes = tuple(name for name in plan.node_names
-                          if name not in pole_nodes)
+                          if name not in pole_nodes and not
+                          name.startswith("AdvPy_SpineAntiPop"))
         elif owner == "adv_py.spine.v2":
             nodes = tuple(name for name in plan.node_names
                           if name not in pole_nodes and not
                           name.startswith(("AdvPy_SpineLength",
-                                           "AdvPy_SpineFatness")))
+                                           "AdvPy_SpineFatness",
+                                           "AdvPy_SpineAntiPop")))
         else:
             nodes = tuple(name for name in plan.node_names
                           if name not in pole_nodes and not
                           name.startswith(("AdvPy_SpineStretch",
                                            "AdvPy_SpineVolume",
                                            "AdvPy_SpineLength",
-                                           "AdvPy_SpineFatness")))
+                                           "AdvPy_SpineFatness",
+                                           "AdvPy_SpineAntiPop")))
         if any(len(c.ls(name, long=True) or []) != 1 for name in nodes):
             raise FitSkeletonValidationError("Spine 节点集合缺失或名称不唯一")
         if owner in ("adv_py.spine.v2", "adv_py.spine.v3",
-                     "adv_py.spine.v4"):
+                     "adv_py.spine.v4", "adv_py.spine.v5"):
             self._audit_body_spine_stretch_volume(plan, owner)
         solver=c.ikHandle("AdvPy_SpineIKHandle",query=True,solver=True)
         if solver!="ikRPsolver":
@@ -538,7 +659,7 @@ class MayaBodySpineMixin:
         c = self._cmds
         owner = c.getAttr(plan.root_path + ".advPySpineOwner")
         has_stretch = owner in ("adv_py.spine.v2", "adv_py.spine.v3",
-                                "adv_py.spine.v4")
+                                "adv_py.spine.v4", "adv_py.spine.v5")
         if mode not in ("fk", "ik"):
             raise FitSkeletonValidationError("Spine 匹配模式必须是 fk 或 ik")
         if c.ls(type="animLayer"):
@@ -556,13 +677,17 @@ class MayaBodySpineMixin:
         if has_stretch:
             if mode == "ik":
                 self._preflight_torso_channels(plan.ik_control, ("stretchy",))
-                if owner in ("adv_py.spine.v3", "adv_py.spine.v4"):
+                if owner in ("adv_py.spine.v3", "adv_py.spine.v4",
+                             "adv_py.spine.v5"):
                     self._preflight_torso_channels(
                         plan.ik_control,
                         ("Lenght1", "Lenght2", "Fatness1", "Fatness2"))
-                if owner == "adv_py.spine.v4":
+                if owner in ("adv_py.spine.v4", "adv_py.spine.v5"):
                     self._preflight_torso_channels(plan.pole_control,
                                                    ("lock",))
+                if owner == "adv_py.spine.v5":
+                    self._preflight_torso_channels(plan.ik_control,
+                                                   ("antiPop",))
             elif (any(abs(float(c.getAttr(joint.path + ".translateX"))
                           - rest) > 1e-4
                       for joint, rest in zip(plan.joints[4:6], plan.lengths))
@@ -602,14 +727,17 @@ class MayaBodySpineMixin:
             self._transaction_changed = True
             owner = c.getAttr(plan.root_path + ".advPySpineOwner")
             if owner in ("adv_py.spine.v2", "adv_py.spine.v3",
-                         "adv_py.spine.v4"):
+                         "adv_py.spine.v4", "adv_py.spine.v5"):
                 c.setAttr(plan.stretch_plug, 0.0)
-            if owner in ("adv_py.spine.v3", "adv_py.spine.v4"):
+            if owner in ("adv_py.spine.v3", "adv_py.spine.v4",
+                         "adv_py.spine.v5"):
                 for index in (1, 2):
                     c.setAttr(plan.ik_control + f".Lenght{index}", 1.0)
                     c.setAttr(plan.ik_control + f".Fatness{index}", 0.0)
-            if owner == "adv_py.spine.v4":
+            if owner in ("adv_py.spine.v4", "adv_py.spine.v5"):
                 c.setAttr(plan.pole_lock_plug, 0.0)
+            if owner == "adv_py.spine.v5":
+                c.setAttr(plan.anti_pop_plug, 0.0)
             c.xform(plan.ik_control, worldSpace=True, translation=spine_ik_goal_position(*positions))
             self._spine_set_world_rotation(plan.ik_control, frames[2][0])
             c.xform(plan.pole_control, worldSpace=True, translation=pole)
