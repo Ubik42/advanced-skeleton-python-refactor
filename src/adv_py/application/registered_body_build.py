@@ -35,6 +35,7 @@ from adv_py.core.body_fit_follow import plan_body_fit_follow
 from adv_py.core.body_fit_named_follow import plan_body_fit_named_follow
 from adv_py.core.body_fit_follow_spaces import plan_body_fit_follow_spaces
 from adv_py.core.body_fit_ik_follow import plan_body_fit_ik_follow
+from adv_py.core.body_fit_aim_at import plan_body_fit_aim_at
 from adv_py.core.body_fit_dependency import validate_fit_control_dependencies
 
 from .axial_part_deform import BuildAxialPartDeform
@@ -64,6 +65,7 @@ from .body_fit_follow import BuildFitFollow, RegisterFitFollow
 from .body_fit_named_follow import BuildFitNamedFollow, RegisterFitNamedFollow
 from .body_fit_follow_spaces import BuildFitFollowSpaces, RegisterFitFollowSpaces
 from .body_fit_ik_follow import BuildFitIkFollow, RegisterFitIkFollow
+from .body_fit_aim_at import BuildFitAimAt, RegisterFitAimAt
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
 from .fit_inbetween_body import plan_combined_part_hierarchy
@@ -745,13 +747,17 @@ class BuildRegisteredBodyCharacter:
                        if rig.plan.torso is not None else None),
                 spline=(rig.plan.torso.torso.spline
                         if rig.plan.torso is not None else None))
+            aim_at_plan = plan_body_fit_aim_at(
+                fit_metadata, fk_control_specs, pre_constraint_body.joints)
             validate_fit_control_dependencies(
                 plan_body_fit_advanced_constraints(
                     fit_metadata, fk_control_specs, pre_constraint_body.joints),
                 plan_body_fit_follow(
                     fit_metadata, fk_control_specs,
                     pre_constraint_body.joints) + ik_follow_plan,
-                named_follow_edges + follow_space_edges)
+                named_follow_edges + follow_space_edges + tuple(
+                    (spec.source_body, (spec.target_body,))
+                    for spec in aim_at_plan))
             advanced_constraints = BuildFitAdvancedConstraints(joined).apply(
                 fit_metadata,
                 fk_control_specs,
@@ -807,6 +813,15 @@ class BuildRegisteredBodyCharacter:
                     joined.capture_body_skeleton(skeleton.snapshot.root),
                     tolerance=1e-4):
                 raise RuntimeError("Fit IK Follow 改变了 Body 绑定姿态")
+            pre_aim_at_body = joined.capture_body_skeleton(
+                skeleton.snapshot.root)
+            aim_at_specs = BuildFitAimAt(joined).apply(
+                fit_metadata, fk_control_specs, pre_aim_at_body.joints)
+            if aim_at_specs and not body_skeleton_unchanged(
+                    pre_aim_at_body,
+                    joined.capture_body_skeleton(skeleton.snapshot.root),
+                    tolerance=1e-4):
+                raise RuntimeError("Fit AimAt 改变了 Body 绑定姿态")
             tweakers = None
             if preview.build.build_options.use_offset_parent_matrix:
                 tweakers = plan_fit_tweakers(
@@ -832,6 +847,8 @@ class BuildRegisteredBodyCharacter:
                 registration, follow_spaces)
             registration = RegisterFitIkFollow(joined).apply(
                 registration, ik_follows)
+            registration = RegisterFitAimAt(joined).apply(
+                registration, aim_at_specs)
             if tweakers is not None:
                 registration = RegisterFitTweakers(joined).apply(
                     registration, tweakers)

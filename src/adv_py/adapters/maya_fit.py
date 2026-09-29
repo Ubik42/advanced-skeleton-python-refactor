@@ -104,6 +104,13 @@ _FIT_ATTRIBUTES = {
     FitJointField.FOLLOW_WORLD: _MayaFitAttribute("followWorld", "bool"),
     FitJointField.FOLLOW_SPACES: _MayaFitAttribute("followSpaces", "bool"),
     FitJointField.IK_FOLLOW: _MayaFitAttribute("ikFollow", "string"),
+    FitJointField.AIM_AT: _MayaFitAttribute("aimAt", "string"),
+    FitJointField.AIM_AXIS: _MayaFitAttribute(
+        "aimAxis", "enum", enum_names=("x", "y", "z")),
+    FitJointField.AIM_UP_AXIS: _MayaFitAttribute(
+        "aimUpAxis", "enum", enum_names=("x", "y", "z")),
+    FitJointField.AIM_UP_OBJECT: _MayaFitAttribute(
+        "aimUpObject", "enum", enum_names=("self", "target")),
     FitJointField.WORLD_ORIENT_UP: _MayaFitAttribute(
         "worldOrientUp",
         "enum",
@@ -895,6 +902,10 @@ class MayaFitJointHost:
             follow_by_name=follow_by_name,
             follow_spaces=self._optional_bool(joint, "followSpaces"),
             ik_follow=self._optional_constraint_target(joint, "ikFollow"),
+            aim_at=self._optional_constraint_target(joint, "aimAt"),
+            aim_axis=self._optional_enum(joint, "aimAxis") or "x",
+            aim_up_axis=self._optional_enum(joint, "aimUpAxis") or "y",
+            aim_up_object=self._optional_enum(joint, "aimUpObject") or "self",
             world_orient_up=self._optional_enum(joint, "worldOrientUp"),
             world_orient_forward=self._optional_enum(joint, "worldOrientForward"),
             ik_local_mode=self._optional_enum(joint, "ikLocal"),
@@ -931,6 +942,11 @@ class MayaFitJointHost:
                 self._cmds.deleteAttr(f"{joint}.{spec.name}")
             if edit.field is FitJointField.FOLLOW:
                 for companion in ("followLeftRight", "followWorld"):
+                    if self._attribute_exists(joint, companion):
+                        self._transaction_changed = True
+                        self._cmds.deleteAttr(f"{joint}.{companion}")
+            if edit.field is FitJointField.AIM_AT:
+                for companion in ("aimAxis", "aimUpAxis", "aimUpObject"):
                     if self._attribute_exists(joint, companion):
                         self._transaction_changed = True
                         self._cmds.deleteAttr(f"{joint}.{companion}")
@@ -977,6 +993,18 @@ class MayaFitJointHost:
                 self._cmds.setAttr(plug, value, type="string")
         else:
             self._cmds.setAttr(f"{joint}.{spec.name}", value)
+        if edit.field is FitJointField.AIM_AT:
+            for field, default in (
+                    (FitJointField.AIM_AXIS, 0),
+                    (FitJointField.AIM_UP_AXIS, 1),
+                    (FitJointField.AIM_UP_OBJECT, 0)):
+                companion = _FIT_ATTRIBUTES[field]
+                if not self._attribute_exists(joint, companion.name):
+                    self._cmds.addAttr(
+                        joint, longName=companion.name,
+                        attributeType="enum",
+                        enumName=":".join(companion.enum_names),
+                        defaultValue=default, keyable=True)
 
     def set_fit_joint_world_axes(
         self,

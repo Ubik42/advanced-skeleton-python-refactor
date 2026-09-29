@@ -43,6 +43,10 @@ class FitJointField(str, Enum):
     FOLLOW_BY_NAME = "follow_by_name"
     FOLLOW_SPACES = "follow_spaces"
     IK_FOLLOW = "ik_follow"
+    AIM_AT = "aim_at"
+    AIM_AXIS = "aim_axis"
+    AIM_UP_AXIS = "aim_up_axis"
+    AIM_UP_OBJECT = "aim_up_object"
 
 
 FitJointValue = bool | int | float | str | tuple[tuple[str, float], ...]
@@ -79,6 +83,14 @@ class FitJointPatch:
             raise FitJointValidationError("Fit joint 变更不能包含重复字段")
         for edit in self.edits:
             validate_fit_joint_value(edit.field, edit.value)
+        if (any(edit.field is FitJointField.AIM_AT and edit.value is None
+                for edit in self.edits)
+                and any(edit.field in (FitJointField.AIM_AXIS,
+                                       FitJointField.AIM_UP_AXIS,
+                                       FitJointField.AIM_UP_OBJECT)
+                        for edit in self.edits)):
+            raise FitJointValidationError(
+                "删除 AimAt 时不能同时设置其轴向属性")
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +133,10 @@ class FitJointMetadata:
     follow_by_name: tuple[tuple[str, float], ...] = ()
     follow_spaces: bool = False
     ik_follow: str | None = None
+    aim_at: str | None = None
+    aim_axis: str = "x"
+    aim_up_axis: str = "y"
+    aim_up_object: str = "self"
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +172,9 @@ _BOOLEAN_FIELDS = {
     FitJointField.FOLLOW_SPACES,
 }
 _ENUM_OPTIONS = {
+    FitJointField.AIM_AXIS: {"x", "y", "z"},
+    FitJointField.AIM_UP_AXIS: {"x", "y", "z"},
+    FitJointField.AIM_UP_OBJECT: {"self", "target"},
     FitJointField.WORLD_ORIENT_UP: {
         "xUp",
         "yUp",
@@ -180,7 +199,7 @@ _CONSTRAINT_FIELDS = frozenset((
     FitJointField.ORIENT_CONSTRAINT, FitJointField.SCALE_CONSTRAINT,
 ))
 _TARGET_FIELDS = _CONSTRAINT_FIELDS | {
-    FitJointField.FOLLOW, FitJointField.IK_FOLLOW}
+    FitJointField.FOLLOW, FitJointField.IK_FOLLOW, FitJointField.AIM_AT}
 _BUILD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*\Z")
 _FOLLOW_RESERVED = frozenset(("LeftRight", "World", "Spaces"))
 
@@ -220,7 +239,9 @@ def validate_fit_joint_value(
         isinstance(value, bool) or not isinstance(value, (int, float))
     ):
         raise FitJointValidationError("global_weight 必须是数值")
-    if field in _ENUM_OPTIONS and value not in _ENUM_OPTIONS[field]:
+    if field in _ENUM_OPTIONS and (
+            not isinstance(value, str)
+            or value not in _ENUM_OPTIONS[field]):
         options = "、".join(sorted(_ENUM_OPTIONS[field]))
         raise FitJointValidationError(f"{field.value} 必须是以下值之一：{options}")
     if field in _TARGET_FIELDS and (
@@ -241,6 +262,26 @@ def predict_fit_joint_metadata(
     values: dict[str, object] = {}
     present = set(metadata.present_fields)
     for edit in patch.edits:
+        if edit.field in (FitJointField.AIM_AXIS,
+                          FitJointField.AIM_UP_AXIS,
+                          FitJointField.AIM_UP_OBJECT) and edit.value is None:
+            present.discard(edit.field)
+            values[edit.field.value] = {
+                FitJointField.AIM_AXIS: "x",
+                FitJointField.AIM_UP_AXIS: "y",
+                FitJointField.AIM_UP_OBJECT: "self",
+            }[edit.field]
+            continue
+        if edit.field is FitJointField.AIM_AT and edit.value is None:
+            values.update(aim_axis="x", aim_up_axis="y",
+                          aim_up_object="self")
+            present.difference_update((
+                FitJointField.AIM_AXIS, FitJointField.AIM_UP_AXIS,
+                FitJointField.AIM_UP_OBJECT))
+        elif edit.field is FitJointField.AIM_AT:
+            present.update((FitJointField.AIM_AXIS,
+                            FitJointField.AIM_UP_AXIS,
+                            FitJointField.AIM_UP_OBJECT))
         if edit.field is FitJointField.FOLLOW_BY_NAME and edit.value is None:
             values["follow_by_name"] = ()
             present.discard(edit.field)
@@ -332,6 +373,31 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
         issues.append(FitJointIssue(
             metadata.joint, "follow_space_name_conflict",
             "Follow* 命名目标与 Follow Spaces 权重属性冲突"))
+    if (metadata.aim_at is None and any(field in metadata.present_fields
+            for field in (FitJointField.AIM_AXIS,
+                          FitJointField.AIM_UP_AXIS,
+                          FitJointField.AIM_UP_OBJECT))):
+        issues.append(FitJointIssue(
+            metadata.joint, "aim_options_without_target",
+            "AimAt 轴向与 Up 选项需要 AimAt 目标"))
+    if (metadata.aim_at is not None and not {
+            FitJointField.AIM_AT, FitJointField.AIM_AXIS,
+            FitJointField.AIM_UP_AXIS,
+            FitJointField.AIM_UP_OBJECT} <= metadata.present_fields):
+        issues.append(FitJointIssue(
+            metadata.joint, "aim_options_missing",
+            "AimAt 需要主轴、Up 轴和 Up 来源字段"))
+    if metadata.aim_axis == metadata.aim_up_axis:
+        issues.append(FitJointIssue(
+            metadata.joint, "aim_axes_collinear",
+            "AimAt 主轴和 Up 轴不能相同"))
+    for field in (FitJointField.AIM_AXIS, FitJointField.AIM_UP_AXIS,
+                  FitJointField.AIM_UP_OBJECT):
+        if (not isinstance(getattr(metadata, field.value), str)
+                or getattr(metadata, field.value) not in _ENUM_OPTIONS[field]):
+            issues.append(FitJointIssue(
+                metadata.joint, "invalid_" + field.value,
+                field.value + " 选项无效"))
 
     for field_name, value, label in (
         ("twist_joints", metadata.twist_joints, "Twist 关节数量"),
