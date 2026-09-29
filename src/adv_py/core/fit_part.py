@@ -350,31 +350,37 @@ def plan_fit_part_joints(
                                          + start.source_joint)
         if count == 0:
             continue
-        source_end = _source_rla_child(
+        profile_child = _source_rla_child(
             source_nodes[start.source_joint],
             source_children.get(start.source_joint, ()),
             center_tolerance)
+        # MEL creates the Part chain only when asRlaChild exists, but uses
+        # fitJointChild (first X-down child) for its spacing and reparenting.
+        if profile_child is None:
+            continue
+        direct = source_children.get(start.source_joint, ())
+        chain_child = next((node for node in direct
+                            if abs(node.local_position[1]) < 0.01
+                            and abs(node.local_position[2]) < 0.01),
+                           direct[0] if direct else None)
         end = next((child for child in children.get(start.output_path, ())
-                    if source_end is not None
-                    and child.source_joint == source_end.path
+                    if chain_child is not None
+                    and child.source_joint == chain_child.path
                     and child.side is start.side), None)
         if end is None:
-            # The original asRlaChild skips a terminal joint with no
-            # same-side child even when twistJoints is present.
+            # The MEL side pass has no corresponding Body child to reparent.
             continue
         start_body = by_path[start.output_path]
         end_body = by_path[end.output_path]
-        # MEL's dual-twist test uses fitJointChild (the first X-down child),
-        # which can differ from the named asRlaChild used for the Part chain.
-        direct = source_children.get(start.source_joint, ())
-        dual_child = next((node for node in direct
-                           if abs(node.local_position[1]) < 0.01
-                           and abs(node.local_position[2]) < 0.01),
-                          direct[0] if direct else None)
+        profile_body = next((spec for spec in body_specs
+                             if spec.source_joint == profile_child.path), None)
+        if profile_body is None:
+            raise FitPartValidationError(
+                "Part 体积来源缺少 Body 关节：" + profile_child.path)
         dual_twist_child = False
-        if dual_child is not None and by_source[dual_child.path].twist_joints is None:
+        if by_source[chain_child.path].twist_joints is None:
             dual_twist_child = _source_rla_child(
-                dual_child, source_children.get(dual_child.path, ()),
+                chain_child, source_children.get(chain_child.path, ()),
                 center_tolerance) is not None
         parent = start.output_path
         stem = start.output_name.rsplit("_", 1)[0]
@@ -391,7 +397,7 @@ def plan_fit_part_joints(
                 start.source_joint, start.output_path, end.output_path,
                 start.side, index, count, path, name, parent, position,
                 start_body.deform_profile.interpolate(
-                    end_body.deform_profile, fraction),
+                    profile_body.deform_profile, fraction),
                 start_body.skin_enabled,
                 start_body.rotation_order,
                 start_body.segment_scale_compensate,
