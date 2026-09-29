@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import json
 from math import dist
+import re
 
-from adv_py.core.shapers_create import ShapersFkLoop, ShapersFkLoopOptions
+from adv_py.core.shapers_create import (
+    ShapersEdge, ShapersEdgePack, ShapersFkLoop, ShapersFkLoopOptions,
+    plan_shapers_edge_packs,
+)
 from .maya_shapers import _cmds, _python_shapers
 
 
@@ -16,6 +20,58 @@ class MayaShapersCreateHost:
     def selected_fk_controls(self) -> tuple[str, ...]:
         return tuple(self.cmds.ls(selection=True, long=True,
                                   transforms=True) or ())
+
+    def capture_edge_input(self) -> tuple[
+        str, tuple[ShapersEdge, ...],
+        dict[int, tuple[float, float, float]], int | None,
+    ]:
+        c = self.cmds
+        selection = c.ls(selection=True, flatten=True, long=True) or []
+        pattern = re.compile(r"(.+)\.e\[(\d+)\]$")
+        vertex_pattern = re.compile(r"(.+)\.vtx\[(\d+)\]$")
+        edges = []
+        start_vertex = None
+        mesh = None
+        positions = {}
+        for item in selection:
+            edge_match = pattern.fullmatch(item)
+            vertex_match = vertex_pattern.fullmatch(item)
+            if not edge_match and not vertex_match:
+                raise ValueError("Shapers 边模式只能选择同一网格的边和起点顶点")
+            item_mesh = (edge_match or vertex_match).group(1)
+            if mesh is None:
+                mesh = item_mesh
+            elif item_mesh != mesh:
+                raise ValueError("Shapers 选边必须属于同一网格")
+            if vertex_match:
+                if start_vertex is not None:
+                    raise ValueError("Shapers 起点顶点最多选择一个")
+                start_vertex = int(vertex_match.group(2))
+                continue
+            info = c.polyInfo(item, edgeToVertex=True) or []
+            numbers = [int(value) for value in re.findall(r"\d+", info[0])]
+            if len(numbers) < 3:
+                raise ValueError("无法读取 Shapers 网格边端点：" + item)
+            index = int(edge_match.group(2))
+            start, end = numbers[-2:]
+            edges.append(ShapersEdge(index, start, end))
+            for vertex in (start, end):
+                if vertex not in positions:
+                    positions[vertex] = tuple(c.xform(
+                        f"{mesh}.vtx[{vertex}]", query=True,
+                        worldSpace=True, translation=True))
+        if mesh is None or not edges:
+            raise ValueError("请选择网格边以创建 Shapers")
+        return mesh, tuple(edges), positions, start_vertex
+
+    def preflight_edge_packs(self, mesh: str,
+                             packs: tuple[ShapersEdgePack, ...]) -> None:
+        self.preflight_fk_loops((), mesh)
+        if not packs:
+            raise ValueError("Shapers 选边没有形成可用路径")
+        for pack in packs:
+            if len(pack.edges) < (3 if pack.closed else 2):
+                raise ValueError("Shapers 闭环至少三条边，桥接至少两条边")
 
     def _one(self, name: str) -> str:
         matches = self.cmds.ls(name, long=True) or []
@@ -114,6 +170,81 @@ class MayaShapersCreateHost:
                                worldSpace=True, translation=True))
         return index, vertex
 
+    def _edge_source(self, mesh: str, pack: ShapersEdgePack,
+                     skin: str) -> ShapersFkLoop:
+        c = self.cmds
+        influences = c.skinCluster(skin, query=True, influence=True) or []
+        if not influences:
+            raise ValueError("Shapers 网格没有 Skin 影响关节")
+        totals = {joint: 0.0 for joint in influences}
+        for vertex in pack.vertices:
+            weights = c.skinPercent(skin, f"{mesh}.vtx[{vertex}]",
+                                    query=True, value=True) or []
+            if len(weights) != len(influences):
+                raise RuntimeError("Shapers 顶点权重与影响关节数量不一致")
+            for joint, weight in zip(influences, weights):
+                totals[joint] += weight
+        joint = max(influences, key=lambda name: totals[name])
+        current = joint
+        fit_stem = ""
+        while current:
+            leaf = current.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            stem = re.sub(r"_[MRL]$", "", leaf)
+            if c.objExists(self.prefix + stem):
+                fit_stem = stem
+                break
+            parents = c.listRelatives(current, parent=True,
+                                      fullPath=True, type="joint") or []
+            current = parents[0] if parents else ""
+        if not fit_stem:
+            fit_stem = re.sub(r"_[MRL]$", "", joint.rsplit("|", 1)[-1]
+                              .rsplit(":", 1)[-1])
+        leaf = joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        side_match = re.search(r"_([MRL])$", leaf)
+        if side_match:
+            side = "_" + side_match.group(1)
+        else:
+            x = c.xform(joint, query=True, worldSpace=True,
+                        translation=True)[0]
+            side = "_M" if abs(x) < 1e-5 else "_L" if x > 0 else "_R"
+        return ShapersFkLoop("", joint, fit_stem, side)
+
+    def _make_edge_curve(self, mesh: str, pack: ShapersEdgePack,
+                         options: ShapersFkLoopOptions, parent: str,
+                         positions: dict[int, tuple[float, float, float]],
+                         ) -> tuple[str, float, int]:
+        c = self.cmds
+        points = [positions[vertex] for vertex in pack.vertices]
+        scale = max(dist(a, b) for a in points for b in points) / 2.0
+        if pack.closed:
+            points.append(points[0])
+        curve = c.curve(name=self.prefix + "AdvPy_ShaperTemp#",
+                        degree=1, point=points)
+        c.rebuildCurve(curve, constructionHistory=False,
+                       replaceOriginal=True, rebuildType=0,
+                       endKnots=1, keepRange=0, keepControlPoints=False,
+                       keepEndPoints=True, keepTangents=False,
+                       spans=(options.loop_controls if pack.closed else
+                              options.bridge_controls - 1), degree=3,
+                       tolerance=0.01)
+        from maya import mel
+        c.select(curve, replace=True)
+        mel.eval("nurbsCurveToBezier")
+        curve_name = parent.rsplit("|", 1)[-1].replace(
+            "Shaper", "ShaperCurve", 1)
+        curve = c.rename(curve, curve_name)
+        c.parent(curve, parent)
+        for attribute, value in (("displayCV", 1),
+                                 ("overrideEnabled", 1),
+                                 ("overrideColor", 16),
+                                 ("overrideDisplayType", 2)):
+            c.setAttr(curve + "." + attribute, value)
+        shape = (c.listRelatives(curve, shapes=True, fullPath=True) or [])[0]
+        count = int(c.getAttr(shape + ".spans")) + int(c.getAttr(shape + ".degree"))
+        if pack.closed:
+            count -= 1
+        return curve, max(scale, 1e-4), count
+
     def _make_curve(self, loop: ShapersFkLoop, mesh: str,
                     options: ShapersFkLoopOptions, parent: str,
                     sampler: str) -> tuple[str, float, int]:
@@ -167,7 +298,10 @@ class MayaShapersCreateHost:
 
     def _add_loop(self, loop: ShapersFkLoop, mesh: str,
                   options: ShapersFkLoopOptions, root: str,
-                  sampler: str, skin: str) -> str:
+                  sampler: str, skin: str,
+                  edge_pack: ShapersEdgePack | None = None,
+                  positions_by_vertex: dict[int, tuple[float, float, float]] | None = None,
+                  ) -> str:
         c = self.cmds
         group_name, letter = self._unique_name(loop)
         group = c.createNode("transform", name=group_name, parent=root)
@@ -179,28 +313,30 @@ class MayaShapersCreateHost:
             c.addAttr(group, longName=attribute, dataType="string")
             c.setAttr(group + "." + attribute, value, type="string")
         c.addAttr(group, longName="loop", attributeType="bool",
-                  defaultValue=True)
-        curve, radius, count = self._make_curve(loop, mesh, options,
-                                                group, sampler)
-        if count < 9 or count % 3:
-            raise RuntimeError("Shapers Bezier 闭环控制点数无效")
+                  defaultValue=edge_pack is None or edge_pack.closed)
+        if edge_pack is None:
+            curve, radius, count = self._make_curve(loop, mesh, options,
+                                                    group, sampler)
+        else:
+            curve, radius, count = self._make_edge_curve(
+                mesh, edge_pack, options, group, positions_by_vertex or {})
+        closed = edge_pack is None or edge_pack.closed
+        if count < (9 if closed else 7) or (count % 3 if closed else (count - 1) % 3):
+            raise RuntimeError("Shapers Bezier 控制点数无效")
         positions = [tuple(c.xform(curve + f".cv[{index}]", query=True,
                                    worldSpace=True, translation=True))
                      for index in range(count)]
         vertices: list[int] = []
         for index, position in enumerate(positions):
-            if index % 3:
+            if closed and index % 3:
                 vertices.append(-1)
                 continue
             vertex, snap = self._nearest_vertex(sampler, mesh, position)
             vertices.append(vertex)
-            if options.snap_vertices:
+            if options.snap_vertices if closed else options.bridge_snap_vertices:
                 c.xform(curve + f".cv[{index}]", worldSpace=True,
                         translation=snap)
                 positions[index] = snap
-        os_curve = c.duplicate(curve, name=curve.replace(
-            "ShaperCurve", "ShaperOSCurve", 1))[0]
-        c.setAttr(os_curve + ".visibility", 0, lock=True)
         controls = []
         offsets = []
         for index, position in enumerate(positions):
@@ -223,9 +359,9 @@ class MayaShapersCreateHost:
                                   "Shaper" + str(index) + "Offset" +
                                   loop.fit_stem + letter + loop.side,
                                   parent=attach)
-            c.xform(offset, worldSpace=True, translation=position)
             c.parent(control, offset)
-            if vertices[index] >= 0:
+            c.xform(offset, worldSpace=True, translation=position)
+            if index % 3 == 0:
                 weights = c.skinPercent(skin,
                                         f"{mesh}.vtx[{vertices[index]}]",
                                         query=True, value=True) or []
@@ -243,16 +379,20 @@ class MayaShapersCreateHost:
             control_set = self.prefix + "ControlSet"
             if c.objExists(control_set):
                 c.sets(control, add=control_set)
+        c.xform(curve, worldSpace=True, translation=(0, 0, 0),
+                rotation=(0, 0, 0))
         for index, (control, dm) in enumerate(controls):
             if index % 3:
                 anchor = index - 1 if index % 3 == 1 else (index + 1) % count
                 c.parent(offsets[index], controls[anchor][0])
             c.connectAttr(dm + ".outputTranslate",
                           curve + f".cv[{index}]", force=True)
-        c.connectAttr(controls[0][1] + ".outputTranslate",
-                      curve + f".cv[{count}]", force=True)
-        c.xform(curve, worldSpace=True, translation=(0, 0, 0),
-                rotation=(0, 0, 0))
+        if closed:
+            c.connectAttr(controls[0][1] + ".outputTranslate",
+                          curve + f".cv[{count}]", force=True)
+        os_curve = c.duplicate(curve, name=curve.replace(
+            "ShaperCurve", "ShaperOSCurve", 1))[0]
+        c.setAttr(os_curve + ".visibility", 0, lock=True)
         for index, (control, _) in enumerate(controls):
             anchor = index if index % 3 == 0 else (
                 index - 1 if index % 3 == 1 else (index + 1) % count)
@@ -270,7 +410,7 @@ class MayaShapersCreateHost:
             c.connectAttr(mm + ".matrixSum", dm2 + ".inputMatrix")
             c.connectAttr(dm2 + ".outputTranslate",
                           os_curve + f".cv[{index}]", force=True)
-            if index == 0:
+            if index == 0 and closed:
                 c.connectAttr(dm2 + ".outputTranslate",
                               os_curve + f".cv[{count}]", force=True)
         pose = self.prefix + "buildPose"
@@ -301,6 +441,35 @@ class MayaShapersCreateHost:
             c.setAttr(plug, script, type="string")
         return os_curve
 
+    def _bind_curves(self, mesh: str, curves: list[str]) -> None:
+        c = self.cmds
+        existing = [node for node in c.listHistory(mesh) or []
+                    if c.nodeType(node) == "shapersDeformer"]
+        c.select([mesh, *curves], replace=True)
+        native = getattr(c, "shapersAddCurve" if existing else
+                         "shapersCreate", None)
+        if native:
+            native()
+        else:
+            module = _python_shapers(c)
+            (module.add_curve if existing else module.create)()
+        deformers = [node for node in c.listHistory(mesh) or []
+                     if c.nodeType(node) == "shapersDeformer"]
+        if not deformers:
+            raise RuntimeError("Shapers 插件未创建变形器")
+        for curve in curves:
+            connected = c.listConnections(
+                curve + ".worldSpace[0]", source=False,
+                destination=True, type="shapersDeformer") or []
+            if not set(connected).intersection(deformers):
+                raise RuntimeError("Shapers 插件未绑定控制曲线：" + curve)
+        main = self.prefix + "Main"
+        for node in deformers:
+            if not c.isConnected(main + ".shaperDisable",
+                                 node + ".nodeState"):
+                c.connectAttr(main + ".shaperDisable",
+                              node + ".nodeState", force=True)
+
     def create_fk_loops(self, loops: tuple[ShapersFkLoop, ...],
                         mesh: str, options: ShapersFkLoopOptions) -> int:
         c = self.cmds
@@ -320,32 +489,97 @@ class MayaShapersCreateHost:
             curves = [self._add_loop(loop, mesh, options, root, sampler, skin)
                       for loop in loops]
             c.delete(sampler)
-            existing = [node for node in c.listHistory(mesh) or []
-                        if c.nodeType(node) == "shapersDeformer"]
-            c.select([mesh, *curves], replace=True)
-            native = getattr(c, "shapersAddCurve" if existing else
-                             "shapersCreate", None)
-            if native:
-                native()
+            self._bind_curves(mesh, curves)
+            return len(curves)
+        except Exception:
+            failed = True
+            raise
+        finally:
+            c.undoInfo(closeChunk=True)
+            if failed:
+                c.undo()
             else:
-                module = _python_shapers(c)
-                (module.add_curve if existing else module.create)()
-            deformers = [node for node in c.listHistory(mesh) or []
-                         if c.nodeType(node) == "shapersDeformer"]
-            if not deformers:
-                raise RuntimeError("Shapers 插件未创建变形器")
-            for curve in curves:
-                connected = c.listConnections(
-                    curve + ".worldSpace[0]", source=False,
-                    destination=True, type="shapersDeformer") or []
-                if not set(connected).intersection(deformers):
-                    raise RuntimeError("Shapers 插件未绑定控制曲线：" + curve)
-            main = self.prefix + "Main"
-            for node in deformers:
-                if not c.isConnected(main + ".shaperDisable",
-                                     node + ".nodeState"):
-                    c.connectAttr(main + ".shaperDisable",
-                                  node + ".nodeState", force=True)
+                existing = [node for node in selection if c.objExists(node)]
+                c.select(existing, replace=True) if existing else c.select(clear=True)
+
+    def _mirrored_edge_packs(
+        self, mesh: str, packs: tuple[ShapersEdgePack, ...],
+        sampler: str,
+    ) -> tuple[ShapersEdgePack, ...]:
+        c = self.cmds
+        source_edges = {edge for pack in packs for edge in pack.edges}
+        mirrored = []
+        for pack in packs:
+            vertex_map = {}
+            positions = {}
+            for vertex in pack.vertices:
+                source = tuple(c.xform(f"{mesh}.vtx[{vertex}]", query=True,
+                                       worldSpace=True, translation=True))
+                target, position = self._nearest_vertex(
+                    sampler, mesh, (-source[0], source[1], source[2]))
+                vertex_map[vertex] = target
+                positions[target] = position
+            if len(positions) != len(pack.vertices):
+                raise ValueError("Shapers 镜像顶点不是一一对应")
+            edges = []
+            ordered = pack.vertices + ((pack.vertices[0],) if pack.closed else ())
+            for start, end in zip(ordered, ordered[1:]):
+                a, b = vertex_map[start], vertex_map[end]
+                info = c.polyInfo(f"{mesh}.vtx[{a}]",
+                                  vertexToEdge=True) or []
+                candidates = [int(value) for value in re.findall(r"\d+", info[0])][1:]
+                matching = []
+                for index in candidates:
+                    edge_info = c.polyInfo(f"{mesh}.e[{index}]",
+                                           edgeToVertex=True) or []
+                    pair = [int(value) for value in re.findall(
+                        r"\d+", edge_info[0])][-2:]
+                    if set(pair) == {a, b}:
+                        matching.append(index)
+                if len(matching) != 1:
+                    raise ValueError("Shapers 镜像边无法唯一对应")
+                edges.append(ShapersEdge(matching[0], a, b))
+            if set(edges_item.index for edges_item in edges) <= source_edges:
+                continue
+            mirror = plan_shapers_edge_packs(
+                tuple(edges), positions, vertex_map[pack.vertices[0]])
+            if len(mirror) != 1:
+                raise RuntimeError("Shapers 镜像选边未形成单条路径")
+            mirrored.append(mirror[0])
+        return tuple(mirrored)
+
+    def create_edge_packs(self, mesh: str,
+                          packs: tuple[ShapersEdgePack, ...],
+                          options: ShapersFkLoopOptions) -> int:
+        c = self.cmds
+        selection = c.ls(selection=True, long=True) or []
+        c.undoInfo(openChunk=True, chunkName="创建 Shapers 边控制")
+        failed = False
+        try:
+            mesh = self._one(mesh)
+            skin = self._ensure_skin(mesh)
+            root = self._controls_root()
+            sampler = c.createNode("closestPointOnMesh",
+                                   name=self.prefix + "AdvPy_ShaperSampler#")
+            shape = (c.listRelatives(mesh, shapes=True,
+                                     noIntermediate=True, fullPath=True,
+                                     type="mesh") or [])[0]
+            c.connectAttr(shape + ".outMesh", sampler + ".inMesh")
+            all_packs = list(packs)
+            if options.mirror:
+                all_packs.extend(self._mirrored_edge_packs(
+                    mesh, packs, sampler))
+            curves = []
+            for pack in all_packs:
+                positions = {vertex: tuple(c.xform(
+                    f"{mesh}.vtx[{vertex}]", query=True, worldSpace=True,
+                    translation=True)) for vertex in pack.vertices}
+                source = self._edge_source(mesh, pack, skin)
+                curves.append(self._add_loop(
+                    source, mesh, options, root, sampler, skin,
+                    edge_pack=pack, positions_by_vertex=positions))
+            c.delete(sampler)
+            self._bind_curves(mesh, curves)
             return len(curves)
         except Exception:
             failed = True
