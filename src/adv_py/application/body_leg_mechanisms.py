@@ -11,6 +11,7 @@ from adv_py.core.body_leg_mechanisms import (
     audit_body_leg_mechanisms,
     plan_body_leg_mechanisms,
 )
+from adv_py.core.body_leg_qtoes import plan_leg_joint_names
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
@@ -76,7 +77,8 @@ class BuildBodyLegMechanisms:
             root_name=body_root_name,
             center_tolerance=center_tolerance,
         )
-        mechanisms = plan_body_leg_mechanisms(safety.body)
+        mechanisms = plan_body_leg_mechanisms(
+            safety.body, joint_names=plan_leg_joint_names(safety.body))
         names = (mechanisms.root_name,) + tuple(spec.name for spec in mechanisms.joints)
         collisions = tuple(sorted({
             path

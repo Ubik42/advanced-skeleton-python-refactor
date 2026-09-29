@@ -539,9 +539,6 @@ def plan_body_leg_foot(
         if qtoes_topology.hybrid and legacy_roll_controls:
             raise BodyLegFootValidationError(
                 f"{suffix} 侧 IKHybrid 要求新建 Roll 控制层")
-        if qtoes_topology.hybrid and manual_enabled:
-            raise BodyLegFootValidationError(
-                f"{suffix} 侧 IKHybrid 与 Foot Pivots 的组合尚未接入")
         if separate_qtoes and not qtoes_topology.hybrid and (legacy_roll_controls or
                 qtoes_topology.intermediate_paths != (qtoes_joint.path,)):
             raise BodyLegFootValidationError(
