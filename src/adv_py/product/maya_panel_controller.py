@@ -1507,6 +1507,23 @@ class MayaPanelController:
 
         return rebind_shapers(namespace, node)
 
+    def shapers_delete(self, namespace: str):
+        from maya import cmds
+        from adv_py.adapters.maya_shapers import (
+            ShapersDeleteResult, delete_shapers)
+
+        result = delete_shapers(namespace)
+        prefix = ("" if namespace in ("", ":")
+                  else namespace.strip(":") + ":")
+        if cmds.objExists(prefix + "buildPose.advPyPoseData"):
+            try:
+                self.pose_to_build(namespace)
+            except (ValueError, RuntimeError) as error:
+                return ShapersDeleteResult(
+                    result.deformers, result.collapsed_shapes,
+                    result.cleanup_errors + ("构建姿态未恢复：" + str(error),))
+        return result
+
     def delta_mush_harden_weights(self, namespace: str = "") -> int:
         from adv_py.adapters.maya_delta_mush import harden_weights_on_selected
 

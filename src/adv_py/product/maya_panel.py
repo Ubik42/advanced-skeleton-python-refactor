@@ -1269,6 +1269,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     lambda point, b=button, op=operation:
                     self._shapers_context_menu(b, point, op))
                 form.addRow(button)
+            form.addRow(self._button("删除", self._delete_shapers))
             stack.addWidget(group)
             group, form = self._group("05 · Delta Mush", [])
             form.addRow(QtWidgets.QLabel("选择已蒙皮的多边形网格。"))
@@ -2896,6 +2897,14 @@ def create_panel(controller: MayaPanelController | None = None):
         def _rebind_shapers(self, node=None):
             count = self.controller.shapers_rebind(self._namespace(), node)
             return f"已重新绑定 {count} 个 Shapers 变形器"
+
+        def _delete_shapers(self):
+            result = self.controller.shapers_delete(self._namespace())
+            message = (f"已删除 {result.deformers} 个 Shapers 变形器，"
+                       f"清理 {result.collapsed_shapes} 个生成形状层")
+            if result.cleanup_errors:
+                message += "；未清理完成：" + "；".join(result.cleanup_errors)
+            return message
 
         def _shapers_context_menu(self, button, point, operation):
             nodes = self.controller.shapers_list(self._namespace())
