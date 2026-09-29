@@ -464,6 +464,7 @@ class BuildRegisteredBodyCharacter:
                 joined.normalize_fit_joint_names(container_name)
                 joined.normalize_fit_ik_labels(container_name)
                 joined.bake_fit_container_scale(container_name)
+                _refresh_fit_orientations_before_body(joined, container_name)
                 fit_hierarchy = joined.capture_fit_hierarchy(container_name)
                 _preflight_centered_root_spine(joined, fit_hierarchy)
                 joined.write_missing_fit_deform_profiles(
@@ -475,7 +476,6 @@ class BuildRegisteredBodyCharacter:
                     include_segment_influences=include_segment_influences,
                     use_fit_part_hierarchy=use_fit_part_hierarchy,
                     fit_part_twist_sources=fit_part_twist_sources)
-                _refresh_fit_orientations_before_body(joined, container_name)
                 if joined.create_body_system_hierarchy(
                         include_dynamic=_include_dynamic) != _DEFORMATION_SYSTEM_PATH:
                     raise RuntimeError("Body 变形系统层级创建路径漂移")
