@@ -275,7 +275,6 @@ class BodyLegFootSideSpec:
     toe_control_rotate_order: int = 0
     toe_handle_name: str = ""
     toe_effector_name: str = ""
-    toe_start_driver_path: str = ""
     toe_solver_joint_list: tuple[str, ...] | None = None
     toe_end_driver_path: str = ""
     toe_end_handle_name: str = ""
@@ -286,8 +285,9 @@ class BodyLegFootSideSpec:
     qtoes_effector_name: str = ""
     qtoes_solver_joint_list: tuple[str, ...] | None = None
     hybrid: BodyLegFootHybridSpec | None = None
-    intermediate_handles: tuple[BodyLegFootSegmentHandleSpec, ...] = ()
     align_helpers: tuple[BodyLegFootAlignSpec, ...] = ()
+    intermediate_handles: tuple[BodyLegFootSegmentHandleSpec, ...] = ()
+    toe_start_driver_path: str = ""
 
     @property
     def toe_handle_parent_path(self) -> str:
@@ -493,8 +493,8 @@ class BodyLegFootSideState:
     qtoes_handle_joint_list: tuple[str, ...] = ()
     qtoes_handle_solver: str | None = None
     hybrid: BodyLegFootHybridState | None = None
-    intermediate_handles: tuple[tuple[str, str | None, tuple[str, ...], str | None], ...] = ()
     align_helpers: tuple[BodyLegFootAlignState, ...] = ()
+    intermediate_handles: tuple[tuple[str, str | None, tuple[str, ...], str | None], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
