@@ -38,6 +38,7 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
         super().__init__(namespace)
         self._created: list[tuple[str, str]] = []
         self._asset: Path | None = None
+        self._fit_template = ""
 
     @staticmethod
     def _leaf(node: str) -> str:
@@ -58,6 +59,7 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
         if c.objExists(fit) and c.attributeQuery("fitSkeletonTemplate",
                                                  node=fit, exists=True):
             template = c.getAttr(fit + ".fitSkeletonTemplate") or ""
+        self._fit_template = template
         return joints, template
 
     def preflight_skeleton_create(self, plan: tuple[BoneCopy, ...]) -> None:
@@ -74,11 +76,16 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
         targets = [spec.target for spec in plan]
         if len(set(targets)) != len(targets):
             raise ValueError("骨骼几何目标名称重复")
+        skins = [spec.skin_name for spec in plan]
+        if len(set(skins)) != len(skins):
+            raise ValueError("骨骼蒙皮节点名称重复")
         for spec in plan:
             if not c.objExists(self._name(spec.joint)):
                 raise ValueError("缺少 Body 关节：" + spec.joint)
             if c.objExists(self._name(spec.target)):
                 raise ValueError("骨骼几何名称已占用：" + spec.target)
+            if c.objExists(self._name(spec.skin_name)):
+                raise ValueError("骨骼蒙皮节点名称已占用：" + spec.skin_name)
         self._asset = geometry_asset()
 
     def _axis(self, node: str, attribute: str, default: str) -> str:
@@ -124,6 +131,8 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
 
     def _influences(self, spec: BoneCopy) -> list[str]:
         c = self.cmds
+        if spec.source == "horseCoffin":
+            return [self._name(spec.joint)]
         if spec.source == "Metacarpal":
             parent = c.listRelatives(self._name(spec.joint), parent=True,
                                      type="joint", fullPath=True) or []
@@ -151,6 +160,13 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
     def _place_bone(self, bone: str, spec: BoneCopy) -> None:
         c = self.cmds
         joint = self._name(spec.joint)
+        if spec.source == "horseCoffin":
+            c.delete(c.pointConstraint(joint, bone,
+                                       maintainOffset=False))
+            size = c.getAttr(bone + ".translateY")
+            c.setAttr(bone + ".translateY", 0)
+            self._uniform_scale(bone, size)
+            return
         anchor = joint
         if spec.source == "Metacarpal":
             parent = c.listRelatives(joint, parent=True, type="joint",
@@ -399,9 +415,44 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
             worldUpVector=self._secondary_vector(chest),
             worldUpObject=chest, maintainOffset=False))
 
+    def _metatarsals_adjust(self, bone: str, spec: BoneCopy) -> None:
+        c = self.cmds
+        ankle = self._name("Ankle" + spec.side)
+        toes = self._name("Toes" + spec.side)
+        talus = self._name("TalusBone" + spec.side)
+        if not all(c.objExists(node) for node in (ankle, toes, talus)):
+            return
+        holder = self._landmark(bone, "MetatarsalsBoneLattice")
+        from_toes = self._landmark(bone, "MetatarsalsBoneToes")
+        to_toes = self._landmark(talus, "TalusBoneToes")
+        if not holder or not from_toes or not to_toes:
+            return
+        result = c.lattice(bone, divisions=(2, 2, 2),
+                           objectCentered=True, ldivisions=(2, 2, 2))
+        if len(result) != 3:
+            raise RuntimeError("足掌晶格没有返回变形器与双晶格")
+        lattice, base = c.parent(result[1], result[2], holder)
+        for node in (lattice, base):
+            c.xform(node, objectSpace=True, translation=(0, 0, 0),
+                    rotation=(0, 0, 0), scale=(1, 1, 1))
+        start = c.xform(from_toes, query=True, worldSpace=True,
+                        translation=True)
+        end = c.xform(to_toes, query=True, worldSpace=True,
+                      translation=True)
+        offset = tuple(end[index] - start[index] for index in range(3))
+        c.move(*offset, lattice + ".pt[0][0:1][0]",
+               lattice + ".pt[0][0:1][1]", relative=True)
+        c.delete(bone, constructionHistory=True)
+
     def _adjust_anatomy(self, bone: str, spec: BoneCopy) -> None:
         """Apply original bone-landmark proportions before Skin binding."""
         c = self.cmds
+        if (self._fit_template == "horse" and spec.source == "Generic"
+                and spec.joint.startswith(("Fingers", "Toes"))):
+            point = c.xform(self._name(spec.joint), query=True,
+                            worldSpace=True, translation=True)
+            c.scale(1, 2, 2, bone + ".vtx[0:9999]",
+                    relative=True, pivot=point)
         if spec.source == "SpineVertebras" and spec.side == "_M":
             self._spine_adjust(bone, spec)
         elif spec.source == "Scapula":
@@ -481,6 +532,8 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
                 width = c.getAttr(talus + ".scaleX")
                 c.setAttr(bone + ".scaleY", width)
                 c.setAttr(bone + ".scaleZ", width)
+            if spec.source == "Metatarsals":
+                self._metatarsals_adjust(bone, spec)
 
     def _skin_tweaks(self, bone: str, skin: str, spec: BoneCopy) -> None:
         c = self.cmds
@@ -559,7 +612,7 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
                 skin = c.skinCluster(*(influences + [bone]),
                                      toSelectedBones=True, maximumInfluences=3,
                                      dropoffRate=4,
-                                     name=self._name(spec.target + "SC"))[0]
+                                     name=self._name(spec.skin_name))[0]
                 self._skin_tweaks(bone, skin, spec)
                 self._created.append((bone, skin))
             # Bone landmarks are consumed by later anatomical pieces. The

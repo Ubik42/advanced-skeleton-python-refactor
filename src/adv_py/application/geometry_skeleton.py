@@ -5,6 +5,7 @@ from typing import Protocol
 
 from adv_py.core.geometry_skeleton import (BoneCopy, plan_finger_bones,
                                            plan_generic_bones,
+                                           plan_horse_coffin_bones,
                                            plan_metacarpal_bones,
                                            plan_skeleton_bones,
                                            plan_skeleton_mirror)
@@ -33,7 +34,8 @@ class CreateSkeletonGeometry:
         fingers = plan_finger_bones(joints, template)
         metacarpals = plan_metacarpal_bones(joints, template)
         plan = (named + fingers + metacarpals
-                + plan_generic_bones(joints, named + fingers))
+                + plan_generic_bones(joints, named + fingers, template)
+                + plan_horse_coffin_bones(joints, template))
         self.host.preflight_skeleton_create(plan)
         with self.host.transaction("创建原版骨骼几何"):
             count = self.host.create_skeleton_geometry(plan)

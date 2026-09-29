@@ -20,6 +20,12 @@ class BoneCopy:
     def template(self) -> str:
         return self.source + "Bone"
 
+    @property
+    def skin_name(self) -> str:
+        if self.source in {"Phalanges", "Metacarpal", "Generic", "horseCoffin"}:
+            return self.target[:-2] + "BoneSC" + self.side
+        return self.source + "BoneSC" + self.side
+
 
 # The order matches asCreateSkeleton: later bones may use earlier landmarks.
 _BONES = (
@@ -98,7 +104,8 @@ def plan_metacarpal_bones(joints: set[str] | frozenset[str],
 
 
 def plan_generic_bones(joints: set[str] | frozenset[str],
-                       named: tuple[BoneCopy, ...]) -> tuple[BoneCopy, ...]:
+                       named: tuple[BoneCopy, ...],
+                       fit_template: str = "") -> tuple[BoneCopy, ...]:
     """Cover each remaining DeformSet joint with a real GenericBone mesh."""
     covered = {spec.joint for spec in named}
     result = []
@@ -106,6 +113,26 @@ def plan_generic_bones(joints: set[str] | frozenset[str],
         if not joint.endswith(("_M", "_L", "_R")):
             continue
         stem, side = joint.rsplit("_", 1)
+        if fit_template == "cat" and stem == "Toes1":
+            continue
+        if (fit_template == "horse" and
+                stem.endswith(("Fingers3", "Toes3"))):
+            continue
         result.append(BoneCopy("Generic", joint, "_" + side,
                                name=stem + "Bone_" + side))
+    return tuple(result)
+
+
+def plan_horse_coffin_bones(joints: set[str] | frozenset[str],
+                            fit_template: str) -> tuple[BoneCopy, ...]:
+    if fit_template != "horse":
+        return ()
+    result = []
+    for joint in sorted(joints):
+        if not joint.endswith(("_L", "_R")):
+            continue
+        stem, side = joint.rsplit("_", 1)
+        if stem.endswith(("Fingers3", "Toes3")):
+            result.append(BoneCopy("horseCoffin", joint, "_" + side,
+                                   name=stem + "Bone_" + side))
     return tuple(result)
