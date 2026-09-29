@@ -376,10 +376,9 @@ class FitBendyChainSpec:
 
     @property
     def micro_matrix_orientation_names(self) -> tuple[
-        tuple[str, str, str], ...
+        tuple[str, str], ...
     ]:
-        return tuple(("AdvPy_" + name + "UpBlend",
-                      "AdvPy_" + name + "TwistCompose",
+        return tuple(("AdvPy_" + name + "TwistCompose",
                       "AdvPy_" + name + "TwistWorld")
                      for name in self.deform_names)
 

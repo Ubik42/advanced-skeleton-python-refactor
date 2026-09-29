@@ -1439,13 +1439,9 @@ class MayaFitBendyMixin:
             target = (spec.motion_transform_names[index + 1]
                       if index + 1 < len(spec.motion_transform_names)
                       else spec.end_proxy_name)
-            blend_name, second_name, third_name = (
-                spec.micro_matrix_orientation_names[index]
-                if spec.micro_matrix_aim else
-                spec.micro_orientation_names[index])
-            blend = c.createNode("blendMatrix", name=blend_name,
-                                 skipSelect=True)
             if spec.micro_matrix_aim:
+                second_name, third_name = (
+                    spec.micro_matrix_orientation_names[index])
                 twist_compose = c.createNode(
                     "composeMatrix", name=second_name,
                     skipSelect=True)
@@ -1454,10 +1450,14 @@ class MayaFitBendyMixin:
                     skipSelect=True)
                 c.connectAttr(twist_compose + ".outputMatrix",
                               twist_world + ".matrixIn[0]")
-                c.connectAttr(blend + ".outputMatrix",
+                c.connectAttr(spec.follow_node_names[0]
+                              + ".worldMatrix[0]",
                               twist_world + ".matrixIn[1]")
-                start_frame = spec.follow_node_names[0]
             else:
+                blend_name, second_name, third_name = (
+                    spec.micro_orientation_names[index])
+                blend = c.createNode("blendMatrix", name=blend_name,
+                                     skipSelect=True)
                 decompose = c.createNode("decomposeMatrix",
                                          name=second_name,
                                          skipSelect=True)
@@ -1466,13 +1466,13 @@ class MayaFitBendyMixin:
                 start_frame = (spec.parent_untwist_names[3]
                                if c.objExists(spec.parent_untwist_names[3])
                                else spec.follow_node_names[0])
-            c.connectAttr(start_frame + ".worldMatrix[0]",
-                          blend + ".inputMatrix")
-            c.connectAttr(spec.follow_node_names[1] + ".worldMatrix[0]",
-                          blend + ".target[0].targetMatrix")
-            c.setAttr(blend + ".target[0].weight",
-                      index / (len(spec.part_names) + 1))
-            if not spec.micro_matrix_aim:
+                c.connectAttr(start_frame + ".worldMatrix[0]",
+                              blend + ".inputMatrix")
+                c.connectAttr(spec.follow_node_names[1]
+                              + ".worldMatrix[0]",
+                              blend + ".target[0].targetMatrix")
+                c.setAttr(blend + ".target[0].weight",
+                          index / (len(spec.part_names) + 1))
                 c.connectAttr(blend + ".outputMatrix",
                               decompose + ".inputMatrix")
                 c.connectAttr(decompose + ".outputRotate",
@@ -1723,14 +1723,26 @@ class MayaFitBendyMixin:
                 spec.micro_offset_names, spec.micro_extra_names,
                 spec.micro_control_names,
                 spec.micro_output_names, spec.motion_transform_names)):
-            blend, second, third = (
-                spec.micro_matrix_orientation_names[index]
-                if spec.micro_matrix_aim else
-                spec.micro_orientation_names[index])
-            start_frame = (spec.parent_untwist_names[3]
-                           if (not spec.micro_matrix_aim
-                               and c.objExists(spec.parent_untwist_names[3]))
-                           else spec.follow_node_names[0])
+            if spec.micro_matrix_aim:
+                second, third = (
+                    spec.micro_matrix_orientation_names[index])
+            else:
+                blend, second, third = (
+                    spec.micro_orientation_names[index])
+                start_frame = (spec.parent_untwist_names[3]
+                               if c.objExists(spec.parent_untwist_names[3])
+                               else spec.follow_node_names[0])
+                if (not c.objExists(blend)
+                        or c.nodeType(blend) != "blendMatrix"
+                        or c.connectionInfo(blend + ".inputMatrix",
+                                            sourceFromDestination=True)
+                        != start_frame + ".worldMatrix[0]"
+                        or c.connectionInfo(
+                            blend + ".target[0].targetMatrix",
+                            sourceFromDestination=True)
+                        != spec.follow_node_names[1]
+                        + ".worldMatrix[0]"):
+                    return False
             twist_add, twist_mults = spec.micro_twist_names[index]
             scale_add, delta_names, weight_names = (
                 spec.micro_scale_names[index])
@@ -1741,15 +1753,6 @@ class MayaFitBendyMixin:
                     or _bendy_parent_name(c, control) != extra
                     or not c.objExists(output)
                     or _bendy_parent_name(c, output) != control
-                    or not c.objExists(blend)
-                    or c.nodeType(blend) != "blendMatrix"
-                    or c.connectionInfo(blend + ".inputMatrix",
-                                        sourceFromDestination=True)
-                    != start_frame + ".worldMatrix[0]"
-                    or c.connectionInfo(
-                        blend + ".target[0].targetMatrix",
-                        sourceFromDestination=True)
-                    != spec.follow_node_names[1] + ".worldMatrix[0]"
                     or not c.objExists(second)
                     or c.nodeType(second) != (
                         "composeMatrix" if spec.micro_matrix_aim
@@ -1787,7 +1790,8 @@ class MayaFitBendyMixin:
                         != second + ".outputMatrix"
                         or c.connectionInfo(third + ".matrixIn[1]",
                                             sourceFromDestination=True)
-                        != blend + ".outputMatrix"):
+                        != spec.follow_node_names[0]
+                        + ".worldMatrix[0]"):
                     return False
             elif (c.connectionInfo(second + ".inputMatrix",
                                    sourceFromDestination=True)
