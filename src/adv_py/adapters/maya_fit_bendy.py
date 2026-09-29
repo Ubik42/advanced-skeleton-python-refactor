@@ -1334,7 +1334,8 @@ class MayaFitBendyMixin:
                         spec.micro_radii)):
             offset = c.createNode("transform", name=offset_name,
                                   parent=_MICRO_GROUP, skipSelect=True)
-            c.xform(offset, worldSpace=True, translation=position)
+            self._align_bendy_control(
+                offset, position, spec.start_world_axes)
             extra = c.createNode("transform", name=extra_name,
                                  parent=offset, skipSelect=True)
             control = create_adv_icon(
@@ -1342,7 +1343,8 @@ class MayaFitBendyMixin:
                 template="Micro_icon", radius=radius,
                 fallback_normal=(1.0, 0.0, 0.0),
                 mirror_left=spec.side == "L")
-            c.xform(control, worldSpace=True, translation=position)
+            self._align_bendy_control(
+                control, position, spec.start_world_axes)
             c.createNode("transform", name=output_name,
                          parent=control, skipSelect=True)
             c.connectAttr(master + ".microVis", offset + ".visibility")
