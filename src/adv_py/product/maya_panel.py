@@ -2465,7 +2465,8 @@ def create_panel(controller: MayaPanelController | None = None):
             return (f"角色已登记：{result.joint_count} 个关节、"
                     f"{result.segment_joint_count} 个分段变形关节、"
                     f"{result.channel_count} 个通道、{len(meshes)} 套 Skin"
-                    f"{destination}")
+                    f"{destination}"
+                    + ("；" + result.issue if result.issue else ""))
 
         def _build_from_source(self):
             meshes = self._build_mesh_paths()
@@ -2487,7 +2488,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 if result.namespace != selected_namespace else "")
             return (f"已从来源骨架构建：{result.joint_count} 个 Body 关节、"
                     f"{result.segment_joint_count} 个分段变形关节、"
-                    f"{len(meshes)} 套 Skin{destination}")
+                    f"{len(meshes)} 套 Skin{destination}"
+                    + ("；" + result.issue if result.issue else ""))
 
         def _migrate_original_skin(self):
             source_namespace = self._namespace()

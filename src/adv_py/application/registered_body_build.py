@@ -49,6 +49,11 @@ from adv_py.core.body_fit_curve_guide import (
     BodyFitCurveGuideBuilt, plan_body_fit_curve_guides,
 )
 from adv_py.core.body_generic_fk import plan_body_generic_fk
+from adv_py.core.body_fk_channel_locks import BodyFkChannelLockSpec
+from adv_py.core.body_fk_global import plan_body_fk_global, audit_body_fk_global
+from adv_py.core.body_fit_aim import plan_body_fit_aim
+from adv_py.core.body_build_options import BodyBuildOptions
+from adv_py.core.fit_metadata import FitJointField
 from adv_py.core.body_center_between_feet import plan_body_center_between_feet
 from adv_py.core.body_fit_dependency import validate_fit_control_dependencies
 from adv_py.core.body_system_hierarchy import (
@@ -1001,7 +1006,82 @@ class BuildRegisteredBodyCharacter:
                     preview.build.build_options.sub_controllers),
                 extra_controllers=(
                     preview.build.build_options.extra_controllers))
+            fit_hierarchy = rig.plan.arm.safety.symmetry.source.hierarchy
+            fit_parents = {joint.dag_parent
+                           for joint in fit_hierarchy.joints}
+            source_by_body = {
+                (final_paths.remap_body_reference(spec.path)
+                 if final_paths is not None else spec.path): spec.source_joint
+                for spec in part_plan.specs}
+            generic_fk_locks = []
+            for control in generic_fk.controls:
+                source_joint = source_by_body.get(control.driven_joint)
+                if source_joint is None:
+                    raise RuntimeError("通用 FK 缺少精确 Fit 来源："
+                                       + control.control_name)
+                if source_joint in fit_parents:
+                    attributes = joined.read_fit_fk_lock_channels(
+                        source_joint)
+                    if attributes:
+                        generic_fk_locks.append(BodyFkChannelLockSpec(
+                            control.control_path, source_joint, attributes))
+            generic_fk_locks = tuple(generic_fk_locks)
             joined.create_body_generic_fk(generic_fk)
+            generic_fk_globals = plan_body_fk_global(
+                fit_metadata, generic_fk.controls)
+            for global_spec in generic_fk_globals:
+                joined.create_body_fk_global(global_spec)
+            generic_global_states = tuple(
+                joined.capture_body_fk_global(global_spec)
+                for global_spec in generic_fk_globals)
+            if any(audit_body_fk_global(global_spec, state)
+                   for global_spec, state in zip(generic_fk_globals,
+                                                 generic_global_states)):
+                raise RuntimeError("通用 FK Global 矩阵层构建后复检失败")
+            if generic_fk_globals:
+                rig = replace(rig,
+                    plan=replace(rig.plan,
+                        fk_globals=rig.plan.fk_globals
+                                   + generic_fk_globals),
+                    fk_globals=rig.fk_globals + generic_global_states)
+            generic_aim_names = {
+                name for control in generic_fk.controls
+                if control.aim_path is not None
+                for name in control.fit_joint_names}
+            generic_aim_metadata = tuple(
+                item for item in fit_metadata
+                if (FitJointField.AIM in item.present_fields
+                    and item.joint in fit_parents
+                    and item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                    in generic_aim_names))
+            marked_generic_names = {
+                item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                for item in generic_aim_metadata}
+            generic_aim_controls = tuple(
+                control for control in generic_fk.controls
+                if (control.aim_path is not None
+                    and marked_generic_names.intersection(
+                        control.fit_joint_names)))
+            generic_fit_aim = plan_body_fit_aim(
+                fit_hierarchy, generic_aim_metadata,
+                skeleton.snapshot, generic_aim_controls)
+            aim_use_opm = BodyBuildOptions.from_fit_settings(
+                rig.plan.arm.safety.symmetry.settings
+            ).use_offset_parent_matrix
+            for aim_spec in generic_fit_aim:
+                joined.create_body_fit_aim(
+                    aim_spec,
+                    global_control=rig.plan.global_control.control_path,
+                    use_offset_parent_matrix=aim_use_opm)
+            if any(not joined.capture_body_fit_aim(
+                    aim_spec,
+                    global_control=rig.plan.global_control.control_path,
+                    use_offset_parent_matrix=aim_use_opm)
+                   for aim_spec in generic_fit_aim):
+                raise RuntimeError("通用 FK Fit Aim 构建后复检失败")
+            if generic_fit_aim:
+                rig = replace(rig, plan=replace(rig.plan,
+                    fit_aim=rig.plan.fit_aim + generic_fit_aim))
             fk_control_specs = (standard_fk_specs
                                 + generic_fk.controls)
             pre_constraint_body = joined.capture_body_skeleton(
@@ -1227,6 +1307,15 @@ class BuildRegisteredBodyCharacter:
                     leg=replace(rig.leg, plan=wheel_rig_plan.leg,
                                 fk_controls=leg_fk),
                     hand=hand_result, torso=torso_result)
+            for lock_spec in generic_fk_locks:
+                joined.apply_body_fk_channel_locks(lock_spec)
+            if any(not joined.capture_body_fk_channel_locks(lock_spec)
+                   for lock_spec in generic_fk_locks):
+                raise RuntimeError("通用 FK 的来源通道锁定未生效")
+            if generic_fk_locks:
+                rig = replace(rig, plan=replace(rig.plan,
+                    fk_channel_locks=(rig.plan.fk_channel_locks
+                                      + generic_fk_locks)))
             # 6.925 builds Heel/BigToe/PinkyToe as temporary Body joints so
             # Foot Roll and Rock can read their frames, then removes them
             # before DeformSet, buildPose and the final character registry.
@@ -1250,7 +1339,7 @@ class BuildRegisteredBodyCharacter:
                           if rig.hand is not None else None))
             registration = RegisterBodyCharacter(joined).apply(rig)
             registration = RegisterGenericFk(joined).apply(
-                registration, generic_fk)
+                registration, generic_fk, generic_fk_locks)
             registration = RegisterFitCurveGuides(joined).apply(
                 registration, built_curve_guides,
                 main_control=rig.plan.global_control.control_path)
@@ -1348,7 +1437,10 @@ class BuildRegisteredBodyCharacter:
                           body=final_body)
             selection_extras = tuple(
                 extra for chain in bendy_chains
-                for extra in chain.micro_extra_names)
+                for extra in chain.micro_extra_names) + tuple(
+                    control.extra_path or control.control_path
+                    for control in generic_fk.controls
+                    if control.control_path not in generic_fk.hidden_controls)
             if not _defer_selection_sets:
                 finalize_body_character_sets(
                     joined, registration, rig.plan,

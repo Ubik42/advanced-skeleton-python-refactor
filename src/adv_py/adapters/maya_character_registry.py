@@ -39,6 +39,29 @@ class MayaCharacterRegistryMixin:
                 channel for channel in replacement.channels
                 if channel.key != follow_key))
             by_key = {channel.key:channel for channel in replacement.channels}
+        legacy_generic = tuple(channel for channel in original.channels
+                               if channel.key not in by_key
+                               and channel.key.startswith('generic.fk.'))
+        if legacy_generic:
+            from adv_py.core.body_fk_channel_locks import FK_LOCK_ATTRIBUTES
+            c=stage._cmds
+            for channel in legacy_generic:
+                plug=channel.node+'.'+channel.attribute
+                if (channel.attribute not in FK_LOCK_ATTRIBUTES
+                        or not c.objExists(plug)
+                        or not c.getAttr(plug,lock=True)
+                        or c.listConnections(plug,source=True,
+                                             destination=False)):
+                    raise CharacterRegistryError(
+                        '旧通用 FK 通道无法安全恢复：'+channel.key)
+            with stage.transaction('Preserve legacy generic FK channels'):
+                stage._transaction_changed=True
+                for channel in legacy_generic:
+                    c.setAttr(channel.node+'.'+channel.attribute,
+                              lock=False,keyable=True)
+            replacement=replace(replacement,channels=(
+                replacement.channels+legacy_generic))
+            by_key={channel.key:channel for channel in replacement.channels}
         additions = set(by_key) - old_keys
         def additive_controller_channel(key):
             channel = by_key[key]

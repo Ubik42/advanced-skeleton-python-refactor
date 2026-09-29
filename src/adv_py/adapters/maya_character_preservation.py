@@ -114,6 +114,8 @@ def capture_extension(host,node):
         plug=node+'.'+attr
         datatype=(c.attributeQuery(attr,node=node,attributeType=True)
                   if children else c.getAttr(plug,type=True))
+        if children and datatype=='TdataCompound':
+            datatype='compound'
         if c.attributeQuery(attr,node=node,multi=True):
             raise CharacterRegistryError('用户扩展数组需要专用保留协议：'+plug)
         if children:

@@ -46,6 +46,7 @@ class SourceSkeletonJoint:
 class SourceSkeletonFitResult:
     joint_count: int
     spine_segments: int
+    source_only_intermediates: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +58,7 @@ class SourceSkeletonFitPlan:
     deform_profiles: tuple[tuple[str, FitDeformProfile], ...] = ()
     rotation_orders: tuple[tuple[str, int], ...] = ()
     skin_disabled: tuple[str, ...] = ()
+    source_only_intermediates: tuple[str, ...] = ()
 
 
 class SourceSkeletonFitHost(FitContainerHost, OrientedFitTemplateHost,
@@ -132,9 +134,9 @@ def _axial_source_paths(source: tuple[SourceSkeletonJoint, ...],
         if name and (name in {"Chest", "UpperChest", "Spine"}
                      or re.fullmatch(r"Spine\d+", name)):
             paths.append(parent)
-        elif _fit_name(joint.name) != "Root":
-            raise FitSkeletonValidationError(
-                "Neck 与 Root 之间存在非脊柱关节：" + joint.name)
+        # Imported skeletons may insert helper joints between named spine
+        # joints.  The canonical solver consumes only the named spine chain;
+        # the helpers remain on the source and are reported by the planner.
         parent = joint.parent
     if parent != root.path or not paths:
         raise FitSkeletonValidationError("来源骨架缺少 Root 到 Neck 的脊柱链")
@@ -290,14 +292,25 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                 and by_name[mapped].path != joint.path):
             raise FitSkeletonValidationError(
                 "附加来源关节映射到相同 Fit 名称：" + mapped)
-    # MEL's selected-joint build keeps non-template branches. Preserve every
-    # uniquely mapped right/center branch in the editable Fit instead of
-    # silently dropping tails, props and additional deform chains.
+    canonical_paths = {by_name[name].path for name in canonical_names
+                       if by_name[name].path in source_by_path}
+    source_only_intermediates = tuple(sorted(
+        joint.path for name, joint in by_name.items()
+        if name not in canonical_names
+        and joint.path in source_by_path
+        and not left_mirror_branch(joint)
+        and any(path.startswith(joint.path + "|")
+                for path in canonical_paths)))
+    # Keep side branches such as tails and props. A helper inserted between
+    # two canonical limb/spine joints cannot be made a sibling without
+    # changing the source hierarchy; the current canonical solver contracts
+    # still collapse those intermediary helpers as they did before.
     extra_specs = []
     extra_rows = sorted(((name, joint) for name, joint in by_name.items()
                          if name not in canonical_names
                          and joint.path in source_by_path
-                         and not left_mirror_branch(joint)),
+                         and not left_mirror_branch(joint)
+                         and joint.path not in source_only_intermediates),
                         key=lambda row: (row[1].path.count("|"), row[1].path))
     available_names = set(canonical_names)
     for name, joint in extra_rows:
@@ -482,7 +495,8 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                                  tuple(part_metadata),
                                  tuple(deform_profiles),
                                  tuple(rotation_orders),
-                                 tuple(skin_disabled))
+                                 tuple(skin_disabled),
+                                 source_only_intermediates)
 
 
 class BuildFitFromSourceSkeleton:
@@ -532,4 +546,5 @@ class BuildFitFromSourceSkeleton:
                 if joined.read_fit_skin_enabled(paths[name]):
                     raise RuntimeError("来源 noSkin 写后复检失败：" + name)
         return SourceSkeletonFitResult(len(result.template.joint_paths),
-                                       plan.spine_segments)
+                                       plan.spine_segments,
+                                       plan.source_only_intermediates)

@@ -42,9 +42,9 @@ def plan_body_generic_fk(
     for spec in sorted(specs, key=lambda item: (item.path.count("|"),
                                                 item.path)):
         item = metadata_by_source[spec.source_joint]
-        source_name = (spec.source_joint.rsplit("|", 1)[-1]
-                       .rsplit(":", 1)[-1]
-                       .removesuffix("_NonSymmetry"))
+        source_leaf = (spec.source_joint.rsplit("|", 1)[-1]
+                       .rsplit(":", 1)[-1])
+        source_name = source_leaf.removesuffix("_NonSymmetry")
         if (spec.name in control_by_name
                 or source_name + "_" + spec.side.value in control_by_name):
             continue
@@ -67,8 +67,9 @@ def plan_body_generic_fk(
         extra_name = "AdvPy_" + stem + "FKExtra"
         control_name = "AdvPy_" + stem + "FK"
         offset_path = parent_control + "|" + offset_name
-        aim_name = ("AdvPy_" + stem + "FKGuideAim"
-                    if item.curve_guide is not None else None)
+        aim_name = (("AdvPy_" + stem + "FKGuideAim")
+                    if item.curve_guide is not None else
+                    ("AdvPy_" + stem + "FKAim") if item.aim else None)
         aim_path = (offset_path + "|" + aim_name
                     if aim_name is not None else None)
         extra_path = (aim_path or offset_path) + "|" + extra_name
@@ -99,7 +100,7 @@ def plan_body_generic_fk(
             extra_path=extra_path,
             extra_name=extra_name,
             extra_curve=extra_controllers,
-            fit_joint_names=(source_name,),
+            fit_joint_names=tuple(dict.fromkeys((source_leaf, source_name))),
             aim_path=aim_path,
             aim_name=aim_name,
         )

@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from adv_py.core.body_generic_fk import BodyGenericFkPlan
+from adv_py.core.body_fk_channel_locks import BodyFkChannelLockSpec
 from adv_py.core.character_registry import (
     CharacterChannel, CharacterRegistration, encode_registration,
 )
@@ -14,7 +15,9 @@ class RegisterGenericFk:
         self._host = host
 
     def apply(self, before: CharacterRegistration,
-              plan: BodyGenericFkPlan) -> CharacterRegistration:
+              plan: BodyGenericFkPlan,
+              locks: tuple[BodyFkChannelLockSpec, ...] = (),
+              ) -> CharacterRegistration:
         if not plan.controls:
             return before
         if self._host.read_character_registration() != before:
@@ -24,6 +27,12 @@ class RegisterGenericFk:
         channels = []
         nodes = list(before.nodes)
         known = {node.path for node in nodes}
+        locked = {item.control: frozenset(item.attributes)
+                  for item in locks}
+        if (len(locked) != len(locks)
+                or not set(locked) <= {
+                    item.control_path for item in plan.controls}):
+            raise ValueError("通用 FK 控制器锁定计划无效")
         for control in plan.controls:
             stem = control.control_name.removeprefix("AdvPy_")
             entries = [("", control.control_path,
@@ -38,6 +47,8 @@ class RegisterGenericFk:
                                           for axis in "XYZ")))
             for suffix, path, attrs in entries:
                 for attr in attrs:
+                    if attr in locked.get(path, ()):
+                        continue
                     channel = CharacterChannel(
                         "generic.fk." + stem + suffix + "." + attr,
                         path, attr)

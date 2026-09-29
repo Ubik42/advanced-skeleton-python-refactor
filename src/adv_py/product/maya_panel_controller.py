@@ -665,8 +665,15 @@ class MayaPanelController:
             _remove_empty_source_target(cmds, created_namespace)
             raise
         character = built.character.body
+        omitted = built.fit.source_only_intermediates
+        names = "、".join(path.rsplit("|", 1)[-1]
+                         for path in omitted[:3])
+        issue = (f"来源骨架有 {len(omitted)} 个主链中间关节未进入新角色："
+                 f"{names}{'等' if len(omitted) > 3 else ''}"
+                 if omitted else "")
         return PanelCharacter(target_namespace, True, len(character.registration.body),
                               len(character.registration.channels),
+                              issue=issue,
                               segment_joint_count=len(character.segment_influences))
 
     def original_skin_migrate(self, namespace: str,
