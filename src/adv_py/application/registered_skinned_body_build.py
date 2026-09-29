@@ -59,8 +59,8 @@ class BuildRegisteredSkinnedBodyCharacter:
               axial_description=None,
               include_head_aim: bool = False,
               infer_missing_labels: bool = False,
-              include_segment_influences: bool = False,
-              use_fit_part_hierarchy: bool = False,
+              include_segment_influences: bool = True,
+              use_fit_part_hierarchy: bool = True,
               fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
               on_stage=None) -> RegisteredSkinnedBodyBuildResult:
         plan = self.plan(meshes, skin_prefix=skin_prefix,

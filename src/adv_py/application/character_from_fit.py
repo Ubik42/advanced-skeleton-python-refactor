@@ -70,8 +70,8 @@ class BuildCharacterFromFit:
              maximum_influences: int = 4,
              include_head_aim: bool = False,
              infer_missing_labels: bool = False,
-             include_segment_influences: bool = False,
-             use_fit_part_hierarchy: bool = False,
+             include_segment_influences: bool = True,
+             use_fit_part_hierarchy: bool = True,
              ) -> CharacterFromFitPlan:
         if not container.strip():
             raise ValueError("Fit 容器名称不能为空")
@@ -96,8 +96,8 @@ class BuildCharacterFromFit:
               maximum_influences: int = 4,
               include_head_aim: bool = False,
               infer_missing_labels: bool = False,
-              include_segment_influences: bool = False,
-              use_fit_part_hierarchy: bool = False,
+              include_segment_influences: bool = True,
+              use_fit_part_hierarchy: bool = True,
               ) -> CharacterFromFitResult:
         plan = self.plan(container, meshes=meshes,
             spine_segments=spine_segments,
