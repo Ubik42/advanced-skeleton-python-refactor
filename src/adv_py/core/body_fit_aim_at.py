@@ -100,7 +100,7 @@ def plan_body_fit_aim_at(
                 raise ValueError("Fit AimAt 控制器不在 FK Offset 下")
             receiver = prefix + control.control_path[len(prefix):].split("|", 1)[0]
             leaf = control.control_path.rsplit("|", 1)[-1]
-            namespace = leaf.split(":", 1)[0] + ":" if ":" in leaf else ""
+            namespace = leaf.rsplit(":", 1)[0] + ":" if ":" in leaf else ""
             stem = namespace + "AdvPy_AimAt" + source_name + "_" + side
             result.append(BodyFitAimAtSpec(
                 source_body, target_body, control.control_path,

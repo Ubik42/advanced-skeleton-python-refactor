@@ -75,7 +75,7 @@ def plan_body_fit_geo_attach(
             if not parent:
                 raise ValueError("Geo Attach FK Offset 缺少父层")
             leaf = control.control_path.rsplit("|", 1)[-1]
-            namespace = leaf.split(":", 1)[0] + ":" if ":" in leaf else ""
+            namespace = leaf.rsplit(":", 1)[0] + ":" if ":" in leaf else ""
             stem = namespace + "AdvPy_GeoAttach" + name + "_" + side
             result.append(BodyFitGeoAttachSpec(
                 source_body, control.control_path, control.offset_path,

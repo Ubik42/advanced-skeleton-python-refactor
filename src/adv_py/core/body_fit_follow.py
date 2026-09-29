@@ -109,7 +109,7 @@ def plan_body_fit_follow(
                 raise ValueError("Fit Follow 控制器不在 FK Offset 下")
             receiver = prefix + control.control_path[len(prefix):].split("|", 1)[0]
             leaf = control.control_path.rsplit("|", 1)[-1]
-            ns = leaf.split(":", 1)[0] + ":" if ":" in leaf else ""
+            ns = leaf.rsplit(":", 1)[0] + ":" if ":" in leaf else ""
             stem = ns + "AdvPy_Follow" + source_name + "_" + side
             ancestor_parent = None
             if driven_body.startswith(primary + "|"):

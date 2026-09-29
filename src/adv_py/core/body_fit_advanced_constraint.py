@@ -90,7 +90,7 @@ def plan_body_fit_advanced_constraints(
                                      + control.control_path)
                 used.add(key)
                 leaf = control.control_path.rsplit("|", 1)[-1]
-                prefix = leaf.split(":", 1)[0] + ":" if ":" in leaf else ""
+                prefix = leaf.rsplit(":", 1)[0] + ":" if ":" in leaf else ""
                 stem = prefix + "AdvPy_" + kind.title() + "Constrain" \
                     + source_name + "_" + side
                 result.append(BodyFitAdvancedConstraintSpec(

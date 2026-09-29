@@ -65,7 +65,7 @@ def plan_body_fit_ik_follow(
                 raise ValueError("IK Follow 控制器不在 IK Offset 下")
             receiver = prefix + control[len(prefix):].split("|", 1)[0]
             leaf = control.rsplit("|", 1)[-1]
-            namespace = leaf.split(":", 1)[0] + ":" if ":" in leaf else ""
+            namespace = leaf.rsplit(":", 1)[0] + ":" if ":" in leaf else ""
             stem = namespace + "AdvPy_IkFollow" + source_name + "_" + side
             result.append(BodyFitFollowSpec(
                 source_joint=item.joint, source_body=source_body,

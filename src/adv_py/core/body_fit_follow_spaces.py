@@ -108,7 +108,7 @@ def plan_body_fit_follow_spaces(
                 raise ValueError("Follow Spaces 目标依赖自身 FK："
                                  + source_body)
             leaf = control.control_path.rsplit("|", 1)[-1]
-            namespace = leaf.split(":", 1)[0] + ":" if ":" in leaf else ""
+            namespace = leaf.rsplit(":", 1)[0] + ":" if ":" in leaf else ""
             stem = namespace + "AdvPy_FollowSpaces" + source_name + "_" + side
             targets = tuple(BodyFitFollowSpaceTarget(
                 label, source, 10.0 if label == "Parent" else 0.0,
