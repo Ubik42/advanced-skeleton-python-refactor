@@ -3215,6 +3215,10 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                 bindMethod=0, normalizeWeights=1,
                 maximumInfluences=maximum,
                 obeyMaxInfluences=False, name=name)[0]
+            # Preserve raw source weights before restoring the source's
+            # normalization and influence-limit policy.
+            c.setAttr(skin + ".maintainMaxInfluences", False)
+            c.setAttr(skin + ".normalizeWeights", 0)
             selection = om.MSelectionList()
             selection.add(skin if namespace_free else self.scene_address(skin))
             skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
