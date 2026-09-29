@@ -579,6 +579,9 @@ class MayaPanelController:
                               len(character.registration.channels),
                               segment_joint_count=len(character.segment_influences))
 
+    def body_toggle_fit_advanced(self, namespace: str) -> bool:
+        return self._host(namespace).toggle_fit_advanced_visibility()
+
     def body_build_from_source(self, namespace: str, source_root: str,
                                container: str = "FitSkeleton", *,
                                meshes: tuple[str, ...] = (),

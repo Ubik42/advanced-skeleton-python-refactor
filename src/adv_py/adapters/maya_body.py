@@ -650,6 +650,40 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
         self._cmds.setAttr(plug, False)
         self._cmds.setAttr(plug, lock=True)
 
+    def toggle_fit_advanced_visibility(self) -> bool:
+        """Switch an existing Body between Fit and generated rig display."""
+        c = self._cmds
+        names = ("FitSkeleton", "MotionSystem", "DeformationSystem")
+        found = {name: c.ls(name, long=True, type="transform") or ()
+                 for name in names}
+        if any(len(paths) != 1 for paths in found.values()):
+            raise FitSkeletonValidationError(
+                "Toggle Fit/Adv 需要完整且唯一的 Body 系统层级")
+        fit, motion, deformation = (found[name][0] for name in names)
+        was_visible = bool(c.getAttr(fit + ".visibility"))
+        if (not was_visible and c.objExists("DrivingSystem")):
+            raise FitSkeletonValidationError(
+                "已有 DrivingSystem 的角色需要先同步驱动到 Fit；此分支尚未迁移")
+        for path in (fit, motion, deformation):
+            if c.referenceQuery(path, isNodeReferenced=True):
+                raise FitSkeletonValidationError(
+                    "不能切换引用中的 Body 系统可见性")
+        with self.transaction("切换 Body Fit／Advanced 显示"):
+            self._transaction_changed = True
+            fit_plug = fit + ".visibility"
+            if c.getAttr(fit_plug, lock=True):
+                c.setAttr(fit_plug, lock=False)
+            c.setAttr(fit_plug, not was_visible)
+            c.setAttr(fit_plug, lock=True)
+            c.setAttr(motion + ".visibility", was_visible)
+            c.setAttr(deformation + ".visibility", was_visible)
+            if (bool(c.getAttr(fit_plug)) == was_visible
+                    or bool(c.getAttr(motion + ".visibility")) != was_visible
+                    or bool(c.getAttr(deformation + ".visibility"))
+                        != was_visible):
+                raise RuntimeError("Body Fit／Advanced 显示切换未生效")
+        return not was_visible
+
     def capture_body_system_hierarchy(
         self, body_root_path: str,
         fit_container_path: str = "|Group|FitSkeleton",

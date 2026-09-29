@@ -775,6 +775,8 @@ def create_panel(controller: MayaPanelController | None = None):
                                       self._fill_selected_build_meshes))
             form.addRow(self._button("记录当前选中的骨架根关节",
                                       self._fill_selected_source_root))
+            form.addRow(self._button("Toggle Fit/Adv",
+                                     self._body_toggle_fit_advanced))
             form.addRow(self._button("构建并登记角色", self._build_character,
                                       primary=True))
             form.addRow(self._button("从来源骨架直接构建角色",
@@ -3331,6 +3333,11 @@ def create_panel(controller: MayaPanelController | None = None):
             fit_visible = self.controller.face_build_toggle_fit_advanced(
                 self._namespace())
             return "已显示 Face Fit" if fit_visible else "已显示 Face 绑定控制"
+
+        def _body_toggle_fit_advanced(self):
+            fit_visible = self.controller.body_toggle_fit_advanced(
+                self._namespace())
+            return "已显示 Body Fit" if fit_visible else "已显示 Body 绑定控制"
 
         def _face_tweaks_detach_controllers(self):
             skins = self.controller.face_tweaks_detach_controllers(
