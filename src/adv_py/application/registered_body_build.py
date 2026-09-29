@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+import re
 
 from adv_py.core.character_registry import CharacterRegistration
 from adv_py.core.body_description import BodyAxialDescription
@@ -54,6 +55,8 @@ from adv_py.core.body_fk_global import plan_body_fk_global, audit_body_fk_global
 from adv_py.core.body_fit_aim import plan_body_fit_aim
 from adv_py.core.body_build_options import BodyBuildOptions
 from adv_py.core.fit_metadata import FitJointField
+from adv_py.core.body_direct_fk_scale import plan_body_direct_fk_scales
+from adv_py.core.body_fk_scale_compensation import plan_body_fk_scale_compensation
 from adv_py.core.body_center_between_feet import plan_body_center_between_feet
 from adv_py.core.body_fit_dependency import validate_fit_control_dependencies
 from adv_py.core.body_system_hierarchy import (
@@ -64,6 +67,7 @@ from .axial_part_deform import BuildAxialPartDeform
 from .body_character_rig import (BuildBodyCharacterRig,
                                  BodyCharacterRigBuildPlan,
                                  BodyCharacterRigBuildResult)
+from .body_fk_scale_compensation import BuildBodyFkScaleCompensation
 from .body_rig_validation import body_bind_pose_matches
 from adv_py.core.body_skeleton import (
     body_skeleton_unchanged, oriented_body_provenance,
@@ -1027,6 +1031,55 @@ class BuildRegisteredBodyCharacter:
                             control.control_path, source_joint, attributes))
             generic_fk_locks = tuple(generic_fk_locks)
             joined.create_body_generic_fk(generic_fk)
+            generic_direct_scales = plan_body_direct_fk_scales(
+                skeleton.snapshot, generic_fk.controls)
+            for scale_spec in generic_direct_scales:
+                joined.preflight_body_direct_fk_scale(scale_spec)
+            for scale_spec in generic_direct_scales:
+                joined.connect_body_direct_fk_scale(scale_spec)
+            if any(not joined.capture_body_direct_fk_scale(scale_spec)
+                   for scale_spec in generic_direct_scales):
+                raise RuntimeError("通用 FK 缩放未连接到 Body 关节")
+            generic_scale_compensations = ()
+            if generic_fk.controls:
+                symmetry_instances = (
+                    rebase_plan_paths_after_parts(
+                        part_plan.symmetry.instances, final_paths)
+                    if final_paths is not None else
+                    part_plan.symmetry.instances)
+                spline = (rig.plan.torso.torso.spline
+                          if rig.plan.torso is not None else None)
+                spline_sources = tuple(
+                    (joint.path, joint.source_joint)
+                    for joint in spline.joints[:len(spline.body_joints)]
+                ) if spline is not None else ()
+                generic_control_paths = {
+                    control.control_path for control in generic_fk.controls}
+                all_fk_scale_compensations = plan_body_fk_scale_compensation(
+                    standard_fk_specs + generic_fk.controls,
+                    symmetry_instances, fit_metadata,
+                    use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
+                        rig.plan.arm.safety.symmetry.settings
+                    ).use_offset_parent_matrix,
+                    finger_control_paths=frozenset(
+                        control.control_path for control in
+                        standard_fk_specs + generic_fk.controls
+                        if any(re.fullmatch(
+                            r"(?:Thumb|Index|Middle|Ring|Pinky)(?:[1-4]|End)",
+                            name.removesuffix("_NonSymmetry"))
+                            for name in control.fit_joint_names)),
+                    generated_joint_sources=spline_sources)
+                generic_scale_compensations = tuple(
+                    spec for spec in all_fk_scale_compensations
+                    if spec.control_path in generic_control_paths)
+                BuildBodyFkScaleCompensation(joined).apply(
+                    generic_scale_compensations)
+            if generic_direct_scales or generic_scale_compensations:
+                rig = replace(rig, plan=replace(rig.plan,
+                    direct_fk_scales=(rig.plan.direct_fk_scales
+                                      + generic_direct_scales),
+                    fk_scale_compensations=(rig.plan.fk_scale_compensations
+                                            + generic_scale_compensations)))
             generic_fk_globals = plan_body_fk_global(
                 fit_metadata, generic_fk.controls)
             for global_spec in generic_fk_globals:
