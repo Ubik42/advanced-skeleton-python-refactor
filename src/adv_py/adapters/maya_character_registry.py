@@ -20,12 +20,14 @@ class MayaCharacterRegistryMixin:
             if channel.key.startswith('generic.fk.')}
         by_leaf = {}
         for node in registration.nodes:
-            by_leaf.setdefault(node.path.rsplit('|', 1)[-1], []).append(
-                node.path)
-        body_by_leaf = {joint.path.rsplit('|', 1)[-1]: joint.path
+            by_leaf.setdefault(node.path.rsplit('|', 1)[-1]
+                               .rsplit(':', 1)[-1], []).append(node.path)
+        body_by_leaf = {joint.path.rsplit('|', 1)[-1]
+                        .rsplit(':', 1)[-1]: joint.path
                         for joint in registration.body}
         scale = set()
         compensated = set()
+        independent = set()
         globally_driven = set()
         keys = {channel.key for channel in registration.channels}
         for stem in stems:
@@ -46,6 +48,12 @@ class MayaCharacterRegistryMixin:
                     '旧通用 FK 缩放连接不是完整的直驱图：' + stem)
             if c.attributeQuery('inheritScale', node=control, exists=True):
                 compensated.add(control)
+                offsets = by_leaf.get('AdvPy_' + stem + 'Offset', ())
+                if len(offsets) != 1:
+                    raise CharacterRegistryError(
+                        '旧通用 FK 补偿层无法唯一定位：' + stem)
+                if not bool(c.getAttr(offsets[0] + '.inheritsTransform')):
+                    independent.add(control)
             if 'fk.global.AdvPy_' + stem + '.Global' in keys:
                 globally_driven.add(control)
         aim_sources = frozenset(match.group(1) for key in keys
@@ -63,7 +71,7 @@ class MayaCharacterRegistryMixin:
         return GenericFkFeaturePolicy(
             frozenset(scale), frozenset(compensated),
             frozenset(globally_driven), aim_sources,
-            follower_sources)
+            follower_sources, frozenset(independent))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

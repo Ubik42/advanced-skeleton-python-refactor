@@ -23,6 +23,7 @@ class BodyFkScaleCompensationSpec:
     pick_matrix_name: str
     relative_matrix_name: str
     decompose_matrix_name: str
+    independent_parent: bool = False
 
     @property
     def node_names(self) -> tuple[str, ...]:

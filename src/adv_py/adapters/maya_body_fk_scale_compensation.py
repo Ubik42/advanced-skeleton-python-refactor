@@ -27,6 +27,9 @@ class MayaBodyFkScaleCompensationMixin:
                                     fullPath=True) or []) != parent):
             raise ValueError("FK 缩放补偿父子控制层无效："
                              + spec.offset_path)
+        if spec.independent_parent and not spec.use_offset_parent_matrix:
+            raise ValueError("FK 独立父级矩阵只适用于 OPM 控制层："
+                             + spec.offset_path)
         if any(self.find_name_collisions(name)
                for name in spec.node_names):
             raise ValueError("FK 缩放补偿节点名称冲突："
@@ -92,8 +95,11 @@ class MayaBodyFkScaleCompensationMixin:
                       pick + ".useShear")
         c.connectAttr(pick + ".outputMatrix",
                       relative + ".matrixIn[0]")
-        c.connectAttr(parent + ".worldInverseMatrix[0]",
-                      relative + ".matrixIn[1]")
+        if spec.independent_parent:
+            c.setAttr(offset + ".inheritsTransform", False)
+        else:
+            c.connectAttr(parent + ".worldInverseMatrix[0]",
+                          relative + ".matrixIn[1]")
         c.setAttr(offset + ".translate", 0, 0, 0)
         c.setAttr(offset + ".rotate", 0, 0, 0)
         c.setAttr(offset + ".scale", 1, 1, 1)
@@ -137,9 +143,10 @@ class MayaBodyFkScaleCompensationMixin:
             (spec.control_path + ".inheritScale", pick + ".useScale"),
             (spec.control_path + ".inheritScale", pick + ".useShear"),
             (pick + ".outputMatrix", relative + ".matrixIn[0]"),
-            (spec.parent_control_path + ".worldInverseMatrix[0]",
-             relative + ".matrixIn[1]"),
         )
+        if not spec.independent_parent:
+            links += ((spec.parent_control_path + ".worldInverseMatrix[0]",
+                       relative + ".matrixIn[1]"),)
         if spec.use_offset_parent_matrix:
             links += ((relative + ".matrixSum",
                        spec.offset_path + ".offsetParentMatrix"),)
@@ -165,6 +172,20 @@ class MayaBodyFkScaleCompensationMixin:
                 or any(c.connectionInfo(target,
                        sourceFromDestination=True) != source
                        for source, target in links)):
+            return False
+        if spec.independent_parent:
+            identity = (1.0, 0.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0, 0.0,
+                        0.0, 0.0, 1.0, 0.0,
+                        0.0, 0.0, 0.0, 1.0)
+            if (bool(c.getAttr(spec.offset_path + ".inheritsTransform"))
+                    or c.connectionInfo(relative + ".matrixIn[1]",
+                                        isDestination=True)
+                    or any(abs(a - b) > 1e-6 for a, b in zip(
+                        _matrix(c.getAttr(relative + ".matrixIn[1]")),
+                        identity))):
+                return False
+        elif not bool(c.getAttr(spec.offset_path + ".inheritsTransform")):
             return False
         if spec.use_offset_parent_matrix:
             for attr, expected in (("translate", (0.0, 0.0, 0.0)),

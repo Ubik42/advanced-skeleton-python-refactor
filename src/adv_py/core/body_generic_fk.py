@@ -65,6 +65,7 @@ class GenericFkFeaturePolicy:
     global_controls: frozenset[str] | None = None
     aim_sources: frozenset[str] | None = None
     follower_sources: frozenset[str] | None = None
+    independent_controls: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(

@@ -1196,7 +1196,14 @@ class BuildRegisteredBodyCharacter:
                             for name in control.fit_joint_names)),
                     generated_joint_sources=spline_sources)
                 generic_scale_compensations = tuple(
-                    spec for spec in all_fk_scale_compensations
+                    replace(spec, independent_parent=(
+                        preview.build.build_options.use_offset_parent_matrix
+                        and (_generic_fk_policy is None
+                             or _generic_fk_policy.independent_controls
+                             is None
+                             or spec.control_path in
+                             _generic_fk_policy.independent_controls)))
+                    for spec in all_fk_scale_compensations
                     if (spec.control_path in generic_control_paths
                         and (_generic_fk_policy is None
                              or _generic_fk_policy.compensated_controls is None
