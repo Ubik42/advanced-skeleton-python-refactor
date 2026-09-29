@@ -32,24 +32,30 @@ class MayaBodyFitGeoAttachMixin:
             raise ValueError("Geo Attach FK 控制器 attach 通道已存在")
         if spec.mode not in ("point", "orient", "parent"):
             raise ValueError("Geo Attach 模式无效")
+        raw = getattr(c, "raw", c)
         mesh_name = spec.mesh
         if spec.side == "L" and mesh_name.endswith("_R"):
             left_name = mesh_name[:-2] + "_L"
-            if c.objExists(left_name):
+            left_lookup = (left_name if ":" in left_name
+                           else ":" + left_name)
+            if raw.objExists(left_lookup):
                 mesh_name = left_name
-        matches = c.ls(mesh_name, long=True) or []
+        # ADV stores the selected mesh's name, including a namespace when
+        # present. An unqualified name belongs to Maya's root namespace.
+        lookup = mesh_name if ":" in mesh_name else ":" + mesh_name
+        matches = raw.ls(lookup, long=True) or []
         if len(matches) != 1:
             raise ValueError("Geo Attach 网格目标不存在或不唯一：" + mesh_name)
         mesh = matches[0]
-        if c.nodeType(mesh) == "mesh":
+        if raw.nodeType(mesh) == "mesh":
             shape = mesh
-            parents = c.listRelatives(shape, parent=True, fullPath=True) or []
+            parents = raw.listRelatives(shape, parent=True, fullPath=True) or []
             if len(parents) != 1:
                 raise ValueError("Geo Attach 网格形状缺少唯一父级")
             mesh = parents[0]
-        elif c.nodeType(mesh) == "transform":
-            shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
-                                     fullPath=True, type="mesh") or []
+        elif raw.nodeType(mesh) == "transform":
+            shapes = raw.listRelatives(mesh, shapes=True, noIntermediate=True,
+                                       fullPath=True, type="mesh") or []
             if len(shapes) != 1:
                 raise ValueError("Geo Attach 目标需要唯一可见网格形状")
             shape = shapes[0]
@@ -72,6 +78,7 @@ class MayaBodyFitGeoAttachMixin:
                             worldSpace=True, matrix=True)),
             upstream, _matrix(c.getAttr(plug)))
         if (len(state.source_position) != 3
+                or not all(isfinite(v) for v in state.source_position)
                 or any(len(m) != 16 or not all(isfinite(v) for v in m)
                        for m in (state.offset_world, state.parent_world,
                                  state.opm_value))):
@@ -86,6 +93,7 @@ class MayaBodyFitGeoAttachMixin:
         from maya.api import OpenMaya as om
 
         c = self._cmds
+        raw = getattr(c, "raw", c)
         plug = spec.fk_offset + ".offsetParentMatrix"
         if (c.connectionInfo(plug, sourceFromDestination=True) or None
                 ) != state.opm_source:
@@ -93,10 +101,10 @@ class MayaBodyFitGeoAttachMixin:
         self._transaction_changed = True
         sampler = c.createNode("closestPointOnMesh")
         try:
-            c.connectAttr(state.mesh_shape + ".outMesh",
-                          sampler + ".inMesh")
-            c.connectAttr(state.mesh_shape + ".worldMatrix[0]",
-                          sampler + ".inputMatrix")
+            raw.connectAttr(state.mesh_shape + ".outMesh",
+                            self.scene_address(sampler + ".inMesh"))
+            raw.connectAttr(state.mesh_shape + ".worldMatrix[0]",
+                            self.scene_address(sampler + ".inputMatrix"))
             c.setAttr(sampler + ".inPosition", *state.source_position,
                       type="double3")
             face = int(c.getAttr(sampler + ".closestFaceIndex"))
@@ -104,8 +112,8 @@ class MayaBodyFitGeoAttachMixin:
             c.delete(sampler)
         if face < 0:
             raise ValueError("Geo Attach 无法确定最近网格面")
-        mesh = (c.listRelatives(state.mesh_shape, parent=True,
-                                fullPath=True) or [])[0]
+        mesh = (raw.listRelatives(state.mesh_shape, parent=True,
+                                  fullPath=True) or [])[0]
         surface = c.createNode(
             "transform", name=spec.surface,
             parent="|Group|MotionSystem|ConstraintSystem")
@@ -173,6 +181,7 @@ class MayaBodyFitGeoAttachMixin:
         state: BodyFitGeoAttachState,
     ) -> bool:
         c = self._cmds
+        raw = getattr(c, "raw", c)
         expected = (
             (spec.surface, "transform"),
             (spec.constraint, "pointOnPolyConstraint"),
@@ -211,9 +220,12 @@ class MayaBodyFitGeoAttachMixin:
             if bool(c.getAttr(spec.blend_matrix
                               + ".target[0]." + attr)) != enabled:
                 return False
-        constraint_sources = c.listConnections(
-            spec.constraint, source=True, destination=False) or []
-        return (state.mesh_shape in constraint_sources
+        constraint_sources = raw.listConnections(
+            self.scene_address(spec.constraint), source=True,
+            destination=False, type="mesh") or []
+        connected_shapes = {path for source in constraint_sources
+                            for path in (raw.ls(source, long=True) or [])}
+        return (state.mesh_shape in connected_shapes
                 and all(c.connectionInfo(dst, sourceFromDestination=True) == src
                     for src, dst in links)
                 and abs(float(c.getAttr(spec.fk_control + ".attach")) - 10)

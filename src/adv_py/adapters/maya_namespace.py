@@ -89,6 +89,11 @@ class MayaCharacterCommands:
                 pass  # First positional argument is an attribute identifier.
             elif name=='createNode':
                 pass  # First positional argument is a node type.
+            elif name=='pointOnPolyConstraint':
+                # A selected mesh may live outside the character namespace.
+                # The first argument identifies a polygon face target;
+                # constrained objects and named new nodes remain owned.
+                args=[args[0]]+[address(a) for a in args[1:]]
             elif name in _NODE_ARGS or name in ('select','listAttr'):
                 args=[address(a) for a in args]
             for flag in ('name','n','parent','p','node','startJoint','sj','endEffector','ee','worldUpObject','curve'):
