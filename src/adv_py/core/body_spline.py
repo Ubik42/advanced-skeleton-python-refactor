@@ -9,6 +9,26 @@ from .body_limb_mechanisms import BodyLimbMechanismJointSpec,BodyLimbMechanismRo
 from .fit_settings import FitSkeletonValidationError
 
 
+CURRENT_SPLINE_VERSION = 15
+
+
+def spline_owner_version(marker: str) -> int:
+    prefix = 'adv_py.spline.v'
+    if not isinstance(marker, str) or not marker.startswith(prefix):
+        raise FitSkeletonValidationError('Spline 所有权标记无效')
+    suffix = marker[len(prefix):]
+    if not suffix.isdecimal():
+        raise FitSkeletonValidationError('Spline 所有权标记无效')
+    version = int(suffix)
+    if not 1 <= version <= CURRENT_SPLINE_VERSION or marker != prefix + str(version):
+        raise FitSkeletonValidationError('Spline 所有权标记无效')
+    return version
+
+
+def current_spline_owner(curved: bool) -> str:
+    return f'adv_py.spline.v{CURRENT_SPLINE_VERSION if curved else CURRENT_SPLINE_VERSION - 1}'
+
+
 @dataclass(frozen=True)
 class BodySplinePlan:
     root_path: str

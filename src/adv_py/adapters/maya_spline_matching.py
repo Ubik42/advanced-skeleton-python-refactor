@@ -2,7 +2,8 @@
 from dataclasses import replace
 from math import sqrt
 
-from adv_py.core.body_spline import BodySplinePlan
+from adv_py.core.body_spline import BodySplinePlan, spline_owner_version
+from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.character_registry import CharacterChannel, CharacterRegistryError
 
 PREFIX = 'spine.fkMatch.'
@@ -40,14 +41,12 @@ def install(host, registration):
         return registration
     c = host._cmds
     plan = registration.spine
-    if c.getAttr(plan.root_path+'.advPySplineOwner') not in (
-            'adv_py.spline.v2','adv_py.spline.v3',
-            'adv_py.spline.v4','adv_py.spline.v5',
-            'adv_py.spline.v6','adv_py.spline.v7',
-            'adv_py.spline.v8','adv_py.spline.v9',
-            'adv_py.spline.v10','adv_py.spline.v11',
-            'adv_py.spline.v12','adv_py.spline.v13',
-            'adv_py.spline.v14','adv_py.spline.v15'):
+    try:
+        version = spline_owner_version(c.getAttr(
+            plan.root_path+'.advPySplineOwner'))
+    except FitSkeletonValidationError as exc:
+        raise CharacterRegistryError('曲线脊柱求解图所有权无效') from exc
+    if version < 2:
         raise CharacterRegistryError('曲线脊柱匹配要求受支持的求解图；旧实验角色需要显式迁移')
     count = len(plan.body_joints)
     for index, control in enumerate(plan.fk_controls):

@@ -2,6 +2,8 @@
 from math import pi,sqrt
 
 from adv_py.core.character_registry import CharacterRegistryError
+from adv_py.core.body_spline import spline_owner_version
+from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.least_squares import least_squares
 
 
@@ -31,11 +33,11 @@ def match_ik(host, registration, before):
             parameters.extend((control+'.translate'+axis,length,None,None) for axis in 'XYZ')
         if index in (0,len(plan.targets)-1):
             parameters.extend((control+'.rotate'+axis,180./pi,None,None) for axis in 'XYZ')
-    original_range=c.getAttr(plan.root_path+'.advPySplineOwner') in (
-        'adv_py.spline.v8','adv_py.spline.v9',
-        'adv_py.spline.v10','adv_py.spline.v11',
-        'adv_py.spline.v12','adv_py.spline.v13',
-        'adv_py.spline.v14','adv_py.spline.v15')
+    try:
+        original_range=spline_owner_version(c.getAttr(
+            plan.root_path+'.advPySplineOwner'))>=8
+    except FitSkeletonValidationError as exc:
+        raise CharacterRegistryError('曲线脊柱求解图所有权无效') from exc
     parameters.extend((plan.settings+'.'+attribute,10. if original_range else 1.,0.,1.)
                       for attribute in (('stretchy','volume') if original_range
                                         else ('stretch','volume')))

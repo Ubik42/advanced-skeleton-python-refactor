@@ -2,7 +2,9 @@
 import json
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
-from adv_py.core.body_spline import spline_ik_scale_weights
+from adv_py.core.body_spline import (
+    current_spline_owner, spline_ik_scale_weights, spline_owner_version,
+)
 from .maya_adv_icons import create_adv_icon
 from . import maya_chest_space
 
@@ -12,7 +14,7 @@ def prepare(host,plan):
     c=host._cmds
     c.createNode('transform',name='AdvPy_SplineMechanisms',parent=plan.root_path.rsplit('|',1)[0],skipSelect=True)
     c.addAttr(plan.root_path,longName='advPySplineOwner',dataType='string')
-    c.setAttr(plan.root_path+'.advPySplineOwner','adv_py.spline.v15' if plan.curved else 'adv_py.spline.v14',type='string',lock=True)
+    c.setAttr(plan.root_path+'.advPySplineOwner',current_spline_owner(plan.curved),type='string',lock=True)
     for joint in plan.joints:host.create_body_arm_mechanism_joint(joint)
     last=plan.joints[len(plan.body_joints)-1]
     host._spine_frame('AdvPy_SplineChestSpace',plan.chest_space.rsplit('|',1)[0],last.world_position,last.world_axes)
@@ -204,40 +206,17 @@ def audit(host,plan):
     maya_chest_space.audit(host, plan.body_joints[-1], plan.chest_space,
                           'AdvPy_SplineChestSpaceParent',
                           plan.use_offset_parent_matrix)
-    owner=c.getAttr(plan.root_path+'.advPySplineOwner')
-    if owner not in ('adv_py.spline.v1','adv_py.spline.v2','adv_py.spline.v3',
-                     'adv_py.spline.v4','adv_py.spline.v5',
-                     'adv_py.spline.v6','adv_py.spline.v7',
-                     'adv_py.spline.v8','adv_py.spline.v9',
-                     'adv_py.spline.v10','adv_py.spline.v11',
-                     'adv_py.spline.v12','adv_py.spline.v13',
-                     'adv_py.spline.v14','adv_py.spline.v15'):raise FitSkeletonValidationError('Spline 所有权标记无效')
-    if (owner in ('adv_py.spline.v3','adv_py.spline.v5','adv_py.spline.v7',
-                  'adv_py.spline.v9','adv_py.spline.v11',
-                  'adv_py.spline.v13','adv_py.spline.v15'))!=plan.curved:raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
-    new_scaling=owner in ('adv_py.spline.v4','adv_py.spline.v5',
-                          'adv_py.spline.v6','adv_py.spline.v7',
-                          'adv_py.spline.v8','adv_py.spline.v9',
-                          'adv_py.spline.v10','adv_py.spline.v11',
-                          'adv_py.spline.v12','adv_py.spline.v13',
-                          'adv_py.spline.v14','adv_py.spline.v15')
-    oriented_scaling=owner in ('adv_py.spline.v6','adv_py.spline.v7',
-                               'adv_py.spline.v8','adv_py.spline.v9',
-                               'adv_py.spline.v10','adv_py.spline.v11',
-                               'adv_py.spline.v12','adv_py.spline.v13',
-                               'adv_py.spline.v14','adv_py.spline.v15')
-    original_range=owner in ('adv_py.spline.v8','adv_py.spline.v9',
-                             'adv_py.spline.v10','adv_py.spline.v11',
-                             'adv_py.spline.v12','adv_py.spline.v13',
-                             'adv_py.spline.v14','adv_py.spline.v15')
-    terminal_without_volume=owner in ('adv_py.spline.v10','adv_py.spline.v11',
-                                      'adv_py.spline.v12','adv_py.spline.v13',
-                                      'adv_py.spline.v14','adv_py.spline.v15')
-    original_volume_graph=owner in ('adv_py.spline.v12','adv_py.spline.v13',
-                                    'adv_py.spline.v14','adv_py.spline.v15')
-    end_local_start=owner in ('adv_py.spline.v14','adv_py.spline.v15')
+    version=spline_owner_version(c.getAttr(plan.root_path+'.advPySplineOwner'))
+    if (version>=3 and bool(version%2))!=plan.curved:
+        raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
+    new_scaling=version>=4
+    oriented_scaling=version>=6
+    original_range=version>=8
+    terminal_without_volume=version>=10
+    original_volume_graph=version>=12
+    end_local_start=version>=14
     missing=tuple(name for name in plan.node_names
-                  if not (owner=='adv_py.spline.v1' and 'WorldScale' in name)
+                  if not (version==1 and 'WorldScale' in name)
                   and not (not new_scaling and (name.startswith('AdvPy_SplineIKScale')
                                                 or name=='AdvPy_SplineVolumeDelta'))
                   and not (not oriented_scaling and name.startswith('AdvPy_SplineIKLocalOrient'))
@@ -403,13 +382,7 @@ def audit(host,plan):
     constants.update({f'AdvPy_SplineLength{i}.input1X':length for i,length in enumerate(plan.lengths,1)})
     changed=[(plug,c.getAttr(plug),value) for plug,value in constants.items() if abs(c.getAttr(plug)-value)>1e-6*max(1.,abs(value))]
     if changed:raise FitSkeletonValidationError('Spline 求解常量被修改：'+repr(changed[:3]))
-    if owner in ('adv_py.spline.v2','adv_py.spline.v3',
-                 'adv_py.spline.v4','adv_py.spline.v5',
-                 'adv_py.spline.v6','adv_py.spline.v7',
-                 'adv_py.spline.v8','adv_py.spline.v9',
-                 'adv_py.spline.v10','adv_py.spline.v11',
-                 'adv_py.spline.v12','adv_py.spline.v13',
-                 'adv_py.spline.v14','adv_py.spline.v15'):
+    if version>=2:
         identity=(1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.)
         for i in range(1,n):
             node=f'AdvPy_SplineScale{i}'
@@ -428,10 +401,10 @@ def audit(host,plan):
     for i in range(1,n):
         for label,command,kind in (('Point',c.pointConstraint,'translate'),('Orient',c.orientConstraint,'rotate'),('Scale',c.scaleConstraint,'scale')):
             node=f'AdvPy_Spline{label}{i}'
-            if label!='Scale' or owner=='adv_py.spline.v1':
+            if label!='Scale' or version==1:
                 sources=tuple(host._resolve_connected_node(p) for p in command(node,q=True,targetList=True))
                 if sources!=(plan.joints[i].path,plan.ik_outputs[i]):raise FitSkeletonValidationError('Spline FK/IK 输出目标被替换')
-            aliases=("target[0].targetWeight","target[1].targetWeight") if label=="Scale" and owner!='adv_py.spline.v1' else command(node,q=True,weightAliasList=True)
+            aliases=("target[0].targetWeight","target[1].targetWeight") if label=="Scale" and version!=1 else command(node,q=True,weightAliasList=True)
             if not c.isConnected('AdvPy_SplineReverse.outputX',node+'.'+aliases[0]) or not c.isConnected(plan.settings+'.spineIkFk',node+'.'+aliases[1]):
                 raise FitSkeletonValidationError('Spline 混合权重连接无效')
             for axis in 'XYZ':
