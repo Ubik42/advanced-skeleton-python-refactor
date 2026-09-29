@@ -547,6 +547,49 @@ class MayaFitJointHost:
         self._cmds.parent(first, root, absolute=True)
         return root
 
+    def normalize_fit_ik_labels(self, container_name: str) -> None:
+        """Disambiguate the IK-start labels adjusted by asFitModeManualUpdate."""
+        self._require_transaction()
+        container = self._resolve_transform(
+            container_name, FitHierarchyValidationError
+        )
+        joints = self._cmds.listRelatives(
+            container, allDescendents=True, type="joint", fullPath=True
+        ) or []
+        labels = {joint: self.read_joint_label(joint) for joint in joints}
+        counts: dict[str, int] = {}
+        used: set[str] = set()
+        for label in labels.values():
+            if label is not None:
+                counts[label.text] = counts.get(label.text, 0) + 1
+                used.add(label.text)
+        for joint in joints:
+            label = labels[joint]
+            if label is None or not (
+                    "Shoulder" in label.text or "Hip" in label.text
+                    or "Root" in label.text or label.text.startswith("0")):
+                continue
+            if counts[label.text] <= 1:
+                continue
+            candidate = None
+            for index in range(1, 99):
+                suffix = (chr(ord("A") + index - 1)
+                          if label.text.startswith("0") and index <= 26
+                          else str(index) if not label.text.startswith("0")
+                          else "")
+                if not suffix:
+                    break
+                proposed = label.text + suffix
+                if proposed not in used:
+                    candidate = proposed
+                    break
+            if candidate is None:
+                raise FitSkeletonValidationError(
+                    "无法给重复的 Fit IK 标签分配唯一名称：" + label.text
+                )
+            self.set_joint_label(joint, JointLabel.parse(candidate))
+            used.add(candidate)
+
     def set_fit_joint_local_position(
         self,
         joint: str,
