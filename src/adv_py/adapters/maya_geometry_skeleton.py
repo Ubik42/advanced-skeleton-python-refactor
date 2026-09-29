@@ -102,6 +102,15 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
 
     def _child_joint(self, spec: BoneCopy) -> str:
         c = self.cmds
+        if spec.source == "SpineVertebras":
+            if c.objExists(self._name("Head_M")):
+                neck = self._landmark(self._name("CraniumBone_M"),
+                                      "CraniumBoneNeck")
+                if neck:
+                    return neck
+            for leaf in ("Neck_M", "Neck0_M", "Chest_M"):
+                if c.objExists(self._name(leaf)):
+                    return self._name(leaf)
         if spec.child and c.objExists(self._name(spec.child)):
             return self._name(spec.child)
         joint = self._name(spec.joint)
@@ -225,10 +234,181 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
     def _uniform_scale(self, bone: str, value: float) -> None:
         self.cmds.setAttr(bone + ".scale", value, value, value, type="double3")
 
+    def _secondary_vector(self, joint: str) -> tuple[int, int, int]:
+        axis = self._axis(self._name("Main"), "secondaryAxis", "Y")
+        fit = self._name("FitSkeleton")
+        if self.cmds.objExists(fit) and self.cmds.attributeQuery(
+                "worldmatch", node=fit, exists=True):
+            if self.cmds.getAttr(fit + ".worldmatch"):
+                axis = self._axis(joint, "secondaryAxis", axis)
+        sign = -1 if axis.startswith("-") else 1
+        return tuple(sign if name == axis[-1] else 0 for name in "XYZ")
+
+    def _soft_mod(self, mesh: str, center: tuple[float, ...],
+                  radius: float, name: str) -> tuple[str, str]:
+        c = self.cmds
+        deform, handle = c.softMod(mesh, name=self._name(name))[:2]
+        shapes = c.listRelatives(handle, shapes=True, fullPath=True) or []
+        if len(shapes) != 1:
+            raise RuntimeError("骨形 SoftMod 缺少唯一手柄形状：" + mesh)
+        c.setAttr(shapes[0] + ".origin", *center, type="double3")
+        c.setAttr(deform + ".falloffCenter", *center, type="double3")
+        c.setAttr(deform + ".falloffRadius", radius)
+        c.setAttr(deform + ".falloffMode", 0)
+        return deform, handle
+
+    def _spine_adjust(self, bone: str, spec: BoneCopy) -> None:
+        c = self.cmds
+        root = self._name("Root_M")
+        child = self._child_joint(spec)
+        if c.objExists(root) and child:
+            c.delete(c.aimConstraint(
+                child, bone, aimVector=(1, 0, 0), upVector=(0, 1, 0),
+                worldUpType="objectrotation",
+                worldUpVector=self._secondary_vector(root),
+                worldUpObject=root, maintainOffset=False))
+        self._uniform_scale(bone, c.getAttr(bone + ".scaleX"))
+        coccyx = self._landmark(bone, "SpineVertebrasCoccyx")
+        femur = self._landmark(self._name("PelvisBone_M"), "PelvisBoneFemur")
+        if coccyx and femur and c.objExists(root):
+            start = c.xform(coccyx, query=True, worldSpace=True,
+                            translation=True)
+            pivot = c.xform(root, query=True, worldSpace=True,
+                            translation=True)
+            reference = c.xform(femur, query=True, worldSpace=True,
+                                translation=True)
+            radius = dist(pivot, start)
+            if radius > 1e-8:
+                _, handle = self._soft_mod(
+                    bone, tuple(start), radius,
+                    spec.target + "CoccyxSoftMod")
+                c.xform(handle, worldSpace=True, pivots=pivot)
+                factor = dist(pivot, reference) / radius
+                c.setAttr(handle + ".scale", factor, factor, factor,
+                          type="double3")
+                c.delete(bone, constructionHistory=True)
+        chest = self._name("Chest_M")
+        head = self._name("Head_M")
+        curve = self._landmark(bone, "SpineVertebrasCurve")
+        if not (c.objExists(root) and c.objExists(chest)
+                and c.objExists(head) and curve):
+            return
+        start = c.xform(root, query=True, worldSpace=True, translation=True)
+        middle = c.xform(chest, query=True, worldSpace=True,
+                         translation=True)
+        end = c.xform(head, query=True, worldSpace=True, translation=True)
+        total = dist(start, end)
+        if total <= 1e-8:
+            return
+        shape = c.listRelatives(curve, shapes=True, type="nurbsCurve",
+                                fullPath=True) or []
+        if len(shape) != 1:
+            raise RuntimeError("脊柱骨形缺少原版曲线标记")
+        path = c.createNode("motionPath",
+                            name=self._name(spec.target + "ChestPath"))
+        try:
+            c.setAttr(path + ".fractionMode", True)
+            c.connectAttr(shape[0] + ".worldSpace[0]",
+                          path + ".geometryPath")
+            c.setAttr(path + ".uValue", dist(start, middle) / total)
+            center = c.getAttr(path + ".allCoordinates")[0]
+        finally:
+            c.delete(path)
+        radius = dist(middle, end) / 2.0
+        if radius > 1e-8:
+            _, handle = self._soft_mod(
+                bone, tuple(center), radius,
+                spec.target + "ChestSoftMod")
+            c.delete(c.pointConstraint(chest, handle,
+                                       maintainOffset=False))
+            c.delete(bone, constructionHistory=True)
+
+    def _scapula_adjust(self, bone: str, spec: BoneCopy) -> None:
+        c = self.cmds
+        humerus = self._name("HumerusBone" + spec.side)
+        ribs = self._name("RibsBone_M")
+        if not c.objExists(humerus) or not c.objExists(ribs):
+            return
+        fit = self._name("FitSkeleton")
+        if c.objExists(fit) and c.attributeQuery(
+                "fitSkeletonTemplate", node=fit, exists=True):
+            if c.getAttr(fit + ".fitSkeletonTemplate") in {"horse", "cat"}:
+                return
+        self._uniform_scale(bone, c.getAttr(humerus + ".scaleX"))
+        near = self._landmark(bone, "ScapulaBoneLoc1")
+        far = self._landmark(bone, "ScapulaBoneLoc2")
+        rib = self._landmark(ribs, "RibsBoneLoc1")
+        if not near or not far or not rib:
+            return
+        copy = c.duplicate(bone, name=self._name(spec.target + "_Copy"),
+                           returnRootsOnly=True)[0]
+        try:
+            copy = c.parent(copy, world=True)[0]
+            c.makeIdentity(copy, apply=True, translate=True,
+                           rotate=True, scale=True)
+            start = c.xform(near, query=True, worldSpace=True,
+                            translation=True)
+            end = c.xform(far, query=True, worldSpace=True,
+                          translation=True)
+            rib_pos = c.xform(rib, query=True, worldSpace=True,
+                              translation=True)
+            radius = dist(start, end)
+            if radius <= 1e-8:
+                return
+            deform, handle = self._soft_mod(
+                copy, tuple(start), radius,
+                spec.target + "ScapulaSoftMod")
+            c.xform(handle, worldSpace=True, pivots=start)
+            c.setAttr(deform + ".falloffInY", 0)
+            c.move(0, 0, (rib_pos[2] - start[2]) * 1.2, handle,
+                   relative=True, worldSpace=True)
+            shape = c.blendShape(copy, bone,
+                                 name=self._name(spec.target + "ShapeBlend"))[0]
+            c.setAttr(shape + ".origin", 0)
+            c.setAttr(shape + ".weight[0]", 1)
+            c.delete(bone, constructionHistory=True)
+        finally:
+            if c.objExists(copy):
+                c.delete(copy)
+
+    def _clavicle_adjust(self, bone: str, spec: BoneCopy) -> None:
+        c = self.cmds
+        scapula = self._name("ScapulaBone" + spec.side)
+        ribs = self._name("RibsBone_M")
+        chest = self._name("Chest_M")
+        if not all(c.objExists(node) for node in (scapula, ribs, chest)):
+            return
+        rib_marker = self._landmark(ribs, "RibsBoneClavicle")
+        scap_marker = self._landmark(scapula, "ScapulaBoneClavicle")
+        if not rib_marker or not scap_marker:
+            return
+        sign = -1 if spec.side == "_L" else 1
+        start = c.xform(rib_marker, query=True, worldSpace=True,
+                        translation=True)
+        end = c.xform(scap_marker, query=True, worldSpace=True,
+                      translation=True)
+        c.xform(bone, worldSpace=True,
+                translation=(start[0] * sign, start[1], start[2]))
+        reflected = (end[0] * sign, end[1], end[2])
+        length = dist(start, reflected) * sign
+        c.xform(bone, objectSpace=True, absolute=True,
+                scale=(length, length, length))
+        c.delete(c.aimConstraint(
+            scap_marker, bone, aimVector=(sign, 0, 0),
+            upVector=(0, sign, 0), worldUpType="objectrotation",
+            worldUpVector=self._secondary_vector(chest),
+            worldUpObject=chest, maintainOffset=False))
+
     def _adjust_anatomy(self, bone: str, spec: BoneCopy) -> None:
         """Apply original bone-landmark proportions before Skin binding."""
         c = self.cmds
-        if spec.source == "Pelvis" and spec.side == "_M":
+        if spec.source == "SpineVertebras" and spec.side == "_M":
+            self._spine_adjust(bone, spec)
+        elif spec.source == "Scapula":
+            self._scapula_adjust(bone, spec)
+        elif spec.source == "Clavicle":
+            self._clavicle_adjust(bone, spec)
+        elif spec.source == "Pelvis" and spec.side == "_M":
             root = self._name("Root_M")
             children = c.listRelatives(root, children=True, type="joint",
                                        fullPath=True) or []
@@ -302,6 +482,31 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
                 c.setAttr(bone + ".scaleY", width)
                 c.setAttr(bone + ".scaleZ", width)
 
+    def _skin_tweaks(self, bone: str, skin: str, spec: BoneCopy) -> None:
+        c = self.cmds
+        joint = self._name(spec.joint)
+        if spec.source == "CarpalA":
+            parents = c.listRelatives(joint, parent=True, type="joint",
+                                      fullPath=True) or []
+            if len(parents) == 1:
+                c.skinCluster(skin, edit=True, addInfluence=parents[0],
+                              dropoffRate=4)
+                c.skinPercent(skin, bone + ".vtx[*]",
+                              transformValue=(joint, 0.5))
+        elif spec.source == "Mandible":
+            parents = c.listRelatives(joint, parent=True, type="joint",
+                                      fullPath=True) or []
+            head = self._name("Head_M")
+            if (len(parents) == 1 and self._leaf(parents[0]) == "FaceJoint_M"
+                    and c.objExists(head)):
+                deform, handle = c.cluster(
+                    bone, name=self._name(spec.target + "Cluster"),
+                    envelope=1)
+                handle = c.parent(handle, bone)[0]
+                c.setAttr(handle + ".visibility", False)
+                c.parentConstraint(head, handle, maintainOffset=True)
+                c.scaleConstraint(head, handle, maintainOffset=True)
+
     def _cleanup_landmarks(self, bone: str) -> None:
         c = self.cmds
         shapes = c.listRelatives(bone, allDescendents=True, fullPath=True,
@@ -355,6 +560,7 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
                                      toSelectedBones=True, maximumInfluences=3,
                                      dropoffRate=4,
                                      name=self._name(spec.target + "SC"))[0]
+                self._skin_tweaks(bone, skin, spec)
                 self._created.append((bone, skin))
             # Bone landmarks are consumed by later anatomical pieces. The
             # original procedure removes them only after every bone is built.
