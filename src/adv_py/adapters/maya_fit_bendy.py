@@ -794,19 +794,23 @@ class MayaFitBendyMixin:
                     raise RuntimeError("Bendy 跟随约束权重数量不正确")
                 c.setAttr(constraint + "." + weights[0], 1.0 - fraction)
                 c.setAttr(constraint + "." + weights[1], fraction)
-        if chain.child_start_influence:
+        if chain.child_start_influence or spec.end_matrix_follow:
             translate_name, rotate_name, world_name = (
                 chain.end_follow_matrix_names)
             translation = c.createNode("pickMatrix",
                                        name=translate_name)
             rotation = c.createNode("pickMatrix", name=rotate_name)
             world = c.createNode("multMatrix", name=world_name)
-            c.connectAttr(chain.child_start_influence + ".worldMatrix[0]",
+            end_translation = (chain.child_start_influence
+                               if chain.child_start_influence else end_proxy)
+            c.connectAttr(end_translation + ".worldMatrix[0]",
                           translation + ".inputMatrix")
             c.connectAttr(parent_proxy + ".worldMatrix[0]",
                           rotation + ".inputMatrix")
             for attribute in ("useRotate", "useShear"):
                 c.setAttr(translation + "." + attribute, False)
+            if not chain.child_start_influence:
+                c.setAttr(translation + ".useScale", False)
             for attribute in ("useTranslate", "useScale", "useShear"):
                 c.setAttr(rotation + "." + attribute, False)
             c.connectAttr(rotation + ".outputMatrix",
@@ -1098,7 +1102,7 @@ class MayaFitBendyMixin:
                   or c.nodeType(follow) != "parentConstraint"):
                 return False
         chain = spec.chain
-        if chain.child_start_influence:
+        if chain.child_start_influence or spec.end_matrix_follow:
             translation, rotation, world = chain.end_follow_matrix_names
             end = chain.end_proxy_name
             if (not c.objExists(translation)
@@ -1109,7 +1113,8 @@ class MayaFitBendyMixin:
                     or c.nodeType(world) != "multMatrix"
                     or c.connectionInfo(translation + ".inputMatrix",
                                         sourceFromDestination=True)
-                    != chain.child_start_influence + ".worldMatrix[0]"
+                    != ((chain.child_start_influence or names[1])
+                        + ".worldMatrix[0]")
                     or c.connectionInfo(rotation + ".inputMatrix",
                                         sourceFromDestination=True)
                     != parent_proxy + ".worldMatrix[0]"
@@ -1132,6 +1137,9 @@ class MayaFitBendyMixin:
                 if any(c.getAttr(node + "." + attribute)
                        for attribute in disabled):
                     return False
+            if (not chain.child_start_influence
+                    and bool(c.getAttr(translation + ".useScale"))):
+                return False
             return True
         end_follow = f"AdvPy_{chain.end_proxy_name}Follow"
         return (c.objExists(end_follow)

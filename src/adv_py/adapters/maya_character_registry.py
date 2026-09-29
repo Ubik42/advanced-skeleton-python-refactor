@@ -149,6 +149,7 @@ class MayaCharacterRegistryMixin:
         bendy_start_control = set()
         bendy_child_control = set()
         bendy_untwist = set()
+        bendy_end_matrix = set()
         for control in bendy_aim_follow:
             stem, side = control.rsplit('_', 1)
             namespace = bendy_namespace(control)
@@ -156,6 +157,11 @@ class MayaCharacterRegistryMixin:
                      + 'ParentUntwist_' + side + 'Frame')
             if c.objExists(frame):
                 bendy_untwist.add(control)
+            end_matrix_pattern = (namespace + 'AdvPy_BendX'
+                                  + stem.removeprefix('Bend')
+                                  + '*_' + side + 'World')
+            if c.ls(end_matrix_pattern, type='multMatrix'):
+                bendy_end_matrix.add(control)
             blend = (namespace + 'AdvPy_' + stem + 'MasterFollow_'
                      + side + 'Blend')
             source = c.connectionInfo(blend + '.inputMatrix',
@@ -179,7 +185,8 @@ class MayaCharacterRegistryMixin:
             follower_sources, frozenset(independent),
             frozenset(twist_rewired), frozenset(bendy_scales),
             bendy_aim_follow, frozenset(bendy_start_control),
-            frozenset(bendy_child_control), frozenset(bendy_untwist))
+            frozenset(bendy_child_control), frozenset(bendy_untwist),
+            frozenset(bendy_end_matrix))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

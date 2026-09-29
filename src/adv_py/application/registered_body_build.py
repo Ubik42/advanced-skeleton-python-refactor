@@ -683,6 +683,9 @@ class BuildRegisteredBodyCharacter:
                         if _generic_fk_policy is not None else None),
                     untwist_sources=(
                         _generic_fk_policy.bendy_untwist_controls
+                        if _generic_fk_policy is not None else None),
+                    end_matrix_sources=(
+                        _generic_fk_policy.bendy_end_matrix_controls
                         if _generic_fk_policy is not None else None))
                 BuildFitBendyGuides(joined).apply(
                     early_bendy_chains, follows=early_bendy_follows)
@@ -773,6 +776,9 @@ class BuildRegisteredBodyCharacter:
                             if _generic_fk_policy is not None else None),
                         untwist_sources=(
                             _generic_fk_policy.bendy_untwist_controls
+                            if _generic_fk_policy is not None else None),
+                        end_matrix_sources=(
+                            _generic_fk_policy.bendy_end_matrix_controls
                             if _generic_fk_policy is not None else None))
                     BuildFitBendyGuides(joined).apply(
                         early_bendy_chains, follows=early_bendy_follows)
@@ -1239,6 +1245,9 @@ class BuildRegisteredBodyCharacter:
                         if _generic_fk_policy is not None else None),
                     untwist_sources=(
                         _generic_fk_policy.bendy_untwist_controls
+                        if _generic_fk_policy is not None else None),
+                    end_matrix_sources=(
+                        _generic_fk_policy.bendy_end_matrix_controls
                         if _generic_fk_policy is not None else None))
                 BuildFitBendyGuides(joined).apply(
                     deferred_bendy_chains, follows=bendy_follows)

@@ -33,10 +33,14 @@ class FitBendyFollowSpec:
     master_aim_follow: bool = True
     untwist_plug: str | None = None
     start_control_blend: bool = True
+    end_matrix_follow: bool = True
 
     def __post_init__(self) -> None:
         if self.untwist_plug is not None and not self.master_aim_follow:
             raise ValueError("旧版 Bendy 约束跟随不能接入新去扭转矩阵")
+        if (self.end_matrix_follow and not self.master_aim_follow
+                and not self.chain.child_start_influence):
+            raise ValueError("旧版 Bendy 主控与新版末端矩阵不能混搭")
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -45,11 +49,19 @@ class FitBendyFollowSpec:
             return names
         master_constraint = ("AdvPy_" + self.chain.control_names[0]
                              + "Follow")
+        end_constraint = ("AdvPy_" + self.chain.end_proxy_name
+                          + "Follow")
         return (tuple(name for name in names
-                      if name != master_constraint)
+                      if name != master_constraint
+                      and (not self.end_matrix_follow
+                           or name != end_constraint))
                 + self.chain.master_follow_matrix_names
                 + (self.chain.parent_untwist_names
-                   if self.untwist_plug else ()))
+                   if self.untwist_plug else ())
+                + (self.chain.end_follow_matrix_names
+                   if (self.end_matrix_follow
+                       and not self.chain.child_start_influence)
+                   else ()))
 
 
 def fit_bendy_world_sources(
@@ -128,6 +140,7 @@ def plan_fit_bendy_follow(
     start_control_sources: frozenset[str] | None = None,
     child_control_sources: frozenset[str] | None = None,
     untwist_sources: frozenset[str] | None = None,
+    end_matrix_sources: frozenset[str] | None = None,
 ) -> tuple[FitBendyFollowSpec, ...]:
     """Resolve Bendy endpoints without depending on driven Body matrices."""
     sources = fit_bendy_world_sources(
@@ -147,9 +160,26 @@ def plan_fit_bendy_follow(
         if start is None or end is None:
             raise ValueError("Bendy 端点缺少独立 Rig 来源："
                              + chain.start_body + " → " + chain.end_body)
+        driven_names = frozenset(
+            path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            for path in (chain.start_body, *chain.part_names,
+                         chain.end_body))
         for source in (start, end):
             if (source.ik_matrix is None) != (source.blend_plug is None):
                 raise ValueError("Bendy IK/FK 来源不完整：" + chain.curve_name)
+            for plug in (source.fk_matrix, source.ik_matrix):
+                if plug is None:
+                    continue
+                node = plug.split(".", 1)[0].rsplit("|", 1)[-1]
+                if node.rsplit(":", 1)[-1] in driven_names:
+                    raise ValueError("Bendy 端点不能回读受驱动 Body／Part："
+                                     + plug)
+        twist_plug = (untwist_plugs or {}).get(chain.start_body)
+        if twist_plug:
+            node = twist_plug.split(".", 1)[0].rsplit("|", 1)[-1]
+            if node.rsplit(":", 1)[-1] in driven_names:
+                raise ValueError("Bendy 去扭转不能回读受驱动 Body／Part："
+                                 + twist_plug)
         result.append(FitBendyFollowSpec(
             chain, start, end,
             master_aim_sources is None
@@ -161,7 +191,9 @@ def plan_fit_bendy_follow(
                  or chain.control_names[0] in untwist_sources)
             else None,
             start_control_sources is None
-            or chain.control_names[0] in start_control_sources))
+            or chain.control_names[0] in start_control_sources,
+            end_matrix_sources is None
+            or chain.control_names[0] in end_matrix_sources))
     return tuple(result)
 
 
