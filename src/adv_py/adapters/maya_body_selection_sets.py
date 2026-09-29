@@ -165,6 +165,13 @@ class MayaBodySelectionSetsMixin:
                 or (c.listRelatives(main[0], parent=True,
                                     fullPath=True) or []) != motion):
             raise ValueError("角色 Group、MotionSystem、MainSystem 层级无效")
+        for control in plan.controls:
+            nodes = c.ls(control, long=True, type="transform") or []
+            if len(nodes) != 1 or nodes[0] != control:
+                raise ValueError("角色选择集控制层缺失：" + control)
+            plug = control + ".selectionChildHighlighting"
+            if c.objExists(plug) and not c.getAttr(plug, settable=True):
+                raise ValueError("控制器子级高亮属性不可写：" + control)
 
     def create_body_selection_sets(
         self, plan: BodySelectionSetsPlan,
@@ -179,6 +186,10 @@ class MayaBodySelectionSetsMixin:
             c.sets(empty=True, name=scene_set)
             c.sets(tuple(self.scene_address(path) for path in members),
                    add=scene_set)
+        for control in plan.controls:
+            plug = self.scene_address(control) + ".selectionChildHighlighting"
+            if c.objExists(plug):
+                c.setAttr(plug, False)
         c.sets(empty=True, name=all_set)
         c.sets(empty=True, name=root_set)
         c.sets((self._body_selection_set_address(plan.control_set),
@@ -274,6 +285,10 @@ class MayaBodySelectionSetsMixin:
                 != [list(row) for row in self._body_build_pose_values(
                     plan.controls, plan.pose_channels)]):
             raise RuntimeError("角色 buildPose 初始复位记录不一致")
+        for control in plan.controls:
+            plug = self.scene_address(control) + ".selectionChildHighlighting"
+            if c.objExists(plug) and c.getAttr(plug):
+                raise RuntimeError("控制器子级高亮未关闭：" + control)
         return BodySelectionSetsPlan(members(plan.control_set),
                                      members(plan.deform_set),
                                      plan.pose_channels)
