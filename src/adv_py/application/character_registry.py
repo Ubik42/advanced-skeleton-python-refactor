@@ -49,7 +49,7 @@ def character_channels(rig):
             translation+rotation+("waistRoll","spineIkFk","stretchy",
                                   "volume","Lenght1","Lenght2",
                                   "Fatness1","Fatness2"))
-        add("spine.pole",spine.pole_control,translation)
+        add("spine.pole",spine.pole_control,translation+("lock",))
     else:
         spline = p.torso.torso.spline
         for index, target in enumerate(spline.targets):

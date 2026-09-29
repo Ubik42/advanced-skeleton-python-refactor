@@ -57,6 +57,10 @@ class BodySpinePlan:
         return self.ik_control + ".volume"
 
     @property
+    def pole_lock_plug(self) -> str:
+        return self.pole_control + ".lock"
+
+    @property
     def node_names(self) -> tuple[str, ...]:
         return tuple(path.rsplit("|", 1)[-1] for path in (
             self.root_path, self.ik_offset, self.ik_control, self.ik_control + "Shape",
@@ -76,6 +80,9 @@ class BodySpinePlan:
             "AdvPy_SpineVolumeWeight", "AdvPy_SpineVolumeBlend",
             "AdvPy_SpineLength1", "AdvPy_SpineLength2",
             "AdvPy_SpineFatness1", "AdvPy_SpineFatness2",
+            "AdvPy_SpinePoleLocalMM", "AdvPy_SpinePoleDistance1",
+            "AdvPy_SpinePoleDistance2", "AdvPy_SpinePoleLockWeight",
+            "AdvPy_SpinePoleLockBlend1", "AdvPy_SpinePoleLockBlend2",
         ) + (("AdvPy_SpineChestSpaceMM", "AdvPy_SpineChestSpacePM")
              if self.use_offset_parent_matrix else
              ("AdvPy_SpineChestSpaceParent",))
