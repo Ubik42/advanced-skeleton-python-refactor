@@ -44,6 +44,8 @@ class BodyLimbFkControlSpec:
     extra_name: str | None = None
     extra_curve: bool = False
     fit_joint_names: tuple[str, ...] = ()
+    aim_path: str | None = None
+    aim_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +118,7 @@ def reparent_body_fk_control(
 
     return replace(
         spec, parent_path=parent_path, offset_path=new_offset,
+        aim_path=moved(spec.aim_path),
         extra_path=moved(spec.extra_path),
         control_parent_path=moved(spec.control_parent_path),
         control_path=moved(spec.control_path),
@@ -137,9 +140,13 @@ def plan_body_limb_fk_controls(
     extra_controllers: bool = False,
     root_parent_path: str | None = None,
     allow_part_parents: bool = False,
+    aim_joint_names: frozenset[str] = frozenset(),
 ) -> BodyLimbFkControlPlan:
     if type(allow_part_parents) is not bool:
         raise BodyLimbControlValidationError("FK Part 父级开关无效")
+    if (not isinstance(aim_joint_names, frozenset)
+            or not aim_joint_names.issubset(set(joint_names))):
+        raise BodyLimbControlValidationError("FK Aim 关节集合无效")
     if type(sub_controllers) is not bool or type(extra_controllers) is not bool:
         raise BodyLimbControlValidationError("FK 控制器开关必须是布尔值")
     if (
@@ -223,7 +230,11 @@ def plan_body_limb_fk_controls(
             extra_name = f"AdvPy_{joint_name}FKExtra_{suffix}"
             control_name = f"AdvPy_{joint_name}FK_{suffix}"
             offset_path = f"{parent_path}|{offset_name}"
-            extra_path = f"{offset_path}|{extra_name}"
+            aim_name = (f"AdvPy_{joint_name}FKAim_{suffix}"
+                        if joint_name in aim_joint_names else None)
+            aim_path = (f"{offset_path}|{aim_name}"
+                        if aim_name is not None else None)
+            extra_path = f"{aim_path or offset_path}|{extra_name}"
             control_path = f"{extra_path}|{control_name}"
             controls.append(BodyLimbFkControlSpec(
                 side=side,
@@ -254,6 +265,8 @@ def plan_body_limb_fk_controls(
                 extra_name=extra_name,
                 extra_curve=extra_controllers,
                 fit_joint_names=(joint_name,),
+                aim_path=aim_path,
+                aim_name=aim_name,
             ))
             parent_path = control_path
             previous_joint = state.path
@@ -336,6 +349,8 @@ def audit_body_limb_fk_controls(
             }
             if spec.extra_path is not None:
                 expected_orders[spec.extra_path] = spec.rotate_order
+            if spec.aim_path is not None:
+                expected_orders[spec.aim_path] = spec.rotate_order
             if (len(state.rotate_orders) != len(expected_orders)
                     or dict(state.rotate_orders) != expected_orders):
                 issues.append(BodyLimbControlIssue(
@@ -357,7 +372,8 @@ def audit_body_limb_fk_controls(
                 "sub_control_mismatch", "FK Sub 控制器与计划不一致", path))
         if spec.extra_path is not None:
             for message in audit_body_extra_controller(
-                    spec.offset_path, spec.control_path, spec.extra_path,
+                    spec.aim_path or spec.offset_path,
+                    spec.control_path, spec.extra_path,
                     state.extra, extra_curve=spec.extra_curve,
                     tolerance=tolerance):
                 issues.append(BodyLimbControlIssue(

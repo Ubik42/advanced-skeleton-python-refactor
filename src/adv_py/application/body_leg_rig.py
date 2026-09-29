@@ -286,6 +286,8 @@ class BuildBodyLegRig:
             if spec.extra_name is not None:
                 names.append(spec.extra_name)
             names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
+            if spec.aim_name is not None:
+                names.append(spec.aim_name)
         for side in blend.sides:
             names.append(side.reverse_name)
             names.extend(joint.constraint_name for joint in side.joints)

@@ -135,6 +135,8 @@ class BuildBodyArmRig:
                 names.append(spec.sub_control_name)
             if spec.extra_name is not None:
                 names.append(spec.extra_name)
+            if spec.aim_name is not None:
+                names.append(spec.aim_name)
         for side in blend.sides:
             names.append(side.reverse_name)
             names.extend(j.constraint_name for j in side.joints)

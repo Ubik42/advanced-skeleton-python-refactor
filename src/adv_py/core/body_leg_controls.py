@@ -54,6 +54,7 @@ def plan_body_leg_fk_controls(
     extra_controllers: bool = False,
     terminal_toes_end_control: bool = False,
     allow_part_parents: bool = False,
+    aim_joint_names: frozenset[str] = frozenset(),
 ) -> BodyLegFkControlPlan:
     if type(terminal_toes_end_control) is not bool:
         raise BodyLegControlValidationError("ToesEnd Control 开关无效")
@@ -71,6 +72,7 @@ def plan_body_leg_fk_controls(
                           if body.root.startswith("|Group|DeformationSystem|")
                           else None),
         allow_part_parents=allow_part_parents,
+        aim_joint_names=aim_joint_names,
     )
 
 

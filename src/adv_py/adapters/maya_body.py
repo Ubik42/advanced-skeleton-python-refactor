@@ -7913,6 +7913,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             spec.offset_name,
             *((pose_name,) if pose_name is not None else ()),
             *((spec.extra_name,) if spec.extra_name is not None else ()),
+            *((spec.aim_name,) if spec.aim_name is not None else ()),
             spec.control_name,
             spec.constraint_name,
             *((spec.sub_control_name,) if spec.sub_control_name is not None else ()),
@@ -7950,11 +7951,23 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             )
             self._cmds.xform(offset, worldSpace=True, matrix=matrix)
             control_parent = offset
+            if spec.aim_path is not None:
+                if spec.aim_name is None:
+                    raise FitSkeletonValidationError("FK Aim 层缺少名称")
+                control_parent = self._cmds.createNode(
+                    "transform", name=spec.aim_name, parent=offset,
+                    skipSelect=True)
+                control_parent = (self._cmds.ls(
+                    control_parent, long=True) or [control_parent])[0]
+                if control_parent != spec.aim_path:
+                    raise RuntimeError("FK Aim 层路径漂移")
+                self._cmds.setAttr(
+                    control_parent + ".rotateOrder", spec.rotate_order)
             if spec.extra_path is not None:
                 if spec.extra_name is None:
                     raise FitSkeletonValidationError("FK Extra 层缺少名称")
                 control_parent = self._create_body_extra_layer(
-                    offset, spec.extra_name, spec.extra_path)
+                    control_parent, spec.extra_name, spec.extra_path)
                 self._cmds.setAttr(
                     control_parent + ".rotateOrder", spec.rotate_order)
             if pose_name is not None:
@@ -8566,6 +8579,8 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
                         (path, int(self._cmds.getAttr(
                             path + ".rotateOrder")))
                         for path in (spec.offset_path,
+                                     *((spec.aim_path,)
+                                       if spec.aim_path else ()),
                                      *((spec.extra_path,)
                                        if spec.extra_path else ()),
                                      spec.control_path)),
