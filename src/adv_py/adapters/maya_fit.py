@@ -90,6 +90,9 @@ _FIT_ATTRIBUTES = {
     FitJointField.COG: _MayaFitAttribute("cog", "bool"),
     FitJointField.AIM: _MayaFitAttribute("aim", "bool"),
     FitJointField.FOOT_PIVOTS: _MayaFitAttribute("footPivots", "bool"),
+    FitJointField.WHEEL: _MayaFitAttribute("wheel", "bool"),
+    FitJointField.ROLLING_BALL: _MayaFitAttribute("rollingBall", "bool"),
+    FitJointField.CURVE_GUIDE: _MayaFitAttribute("curveGuide", "string"),
     FitJointField.NO_MIRROR: _MayaFitAttribute("noMirror", "bool"),
     FitJointField.NO_MIRROR_LEFT: _MayaFitAttribute("noMirrorLeft", "bool"),
     FitJointField.NO_FLIP: _MayaFitAttribute("noFlip", "bool"),
@@ -890,6 +893,9 @@ class MayaFitJointHost:
             cog=self._optional_bool(joint, "cog"),
             aim=self._optional_bool(joint, "aim"),
             foot_pivots=self._optional_bool(joint, "footPivots"),
+            wheel=FitJointField.WHEEL in present,
+            rolling_ball=FitJointField.ROLLING_BALL in present,
+            curve_guide=self._optional_mesh_target(joint, "curveGuide"),
             no_mirror=self._optional_bool(joint, "noMirror"),
             no_mirror_left=self._optional_bool(joint, "noMirrorLeft"),
             no_flip=no_flip,
@@ -963,8 +969,11 @@ class MayaFitJointHost:
             return
         spec = _FIT_ATTRIBUTES[edit.field]
         exists = self._attribute_exists(joint, spec.name)
-        if edit.value is None or (edit.field is FitJointField.AIM
-                                  and edit.value is False):
+        if (edit.value is None
+                or (edit.field is FitJointField.AIM and edit.value is False)
+                or (edit.field in (FitJointField.WHEEL,
+                                   FitJointField.ROLLING_BALL)
+                    and edit.value is False)):
             if exists:
                 self._transaction_changed = True
                 self._cmds.deleteAttr(f"{joint}.{spec.name}")
@@ -982,6 +991,10 @@ class MayaFitJointHost:
                     and self._attribute_exists(joint, "geoAttachMode")):
                 self._transaction_changed = True
                 self._cmds.deleteAttr(f"{joint}.geoAttachMode")
+            if (edit.field is FitJointField.CURVE_GUIDE
+                    and self._attribute_exists(joint, "curveGuideMode")):
+                self._transaction_changed = True
+                self._cmds.deleteAttr(f"{joint}.curveGuideMode")
             if (edit.field is FitJointField.PROXIMITY_PIN
                     and self._attribute_exists(joint, "proximityPinMode")):
                 self._transaction_changed = True
@@ -1023,7 +1036,8 @@ class MayaFitJointHost:
                 choices = names[0].split(":") if names else []
                 enum_value = (str(value).replace(":", "__")
                               if edit.field in (FitJointField.GEO_ATTACH,
-                                                FitJointField.PROXIMITY_PIN)
+                                                FitJointField.PROXIMITY_PIN,
+                                                FitJointField.CURVE_GUIDE)
                               else value)
                 if enum_value not in choices:
                     raise FitJointValidationError(
@@ -1050,6 +1064,12 @@ class MayaFitJointHost:
             self._cmds.addAttr(
                 joint, longName="geoAttachMode", attributeType="enum",
                 enumName="point:orient:parent", defaultValue=2,
+                keyable=True)
+        if (edit.field is FitJointField.CURVE_GUIDE
+                and not self._attribute_exists(joint, "curveGuideMode")):
+            self._cmds.addAttr(
+                joint, longName="curveGuideMode", attributeType="enum",
+                enumName="point:aim", defaultValue=1,
                 keyable=True)
 
     def set_fit_joint_world_axes(

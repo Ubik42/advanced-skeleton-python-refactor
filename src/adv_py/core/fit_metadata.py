@@ -24,6 +24,9 @@ class FitJointField(str, Enum):
     COG = "cog"
     AIM = "aim"
     FOOT_PIVOTS = "foot_pivots"
+    WHEEL = "wheel"
+    ROLLING_BALL = "rolling_ball"
+    CURVE_GUIDE = "curve_guide"
     NO_MIRROR = "no_mirror"
     NO_MIRROR_LEFT = "no_mirror_left"
     NO_FLIP = "no_flip"
@@ -136,6 +139,9 @@ class FitJointMetadata:
     cog: bool = False
     aim: bool = False
     foot_pivots: bool = False
+    wheel: bool = False
+    rolling_ball: bool = False
+    curve_guide: str | None = None
     parent_constraint: str | None = None
     point_constraint: str | None = None
     orient_constraint: str | None = None
@@ -184,6 +190,8 @@ _BOOLEAN_FIELDS = {
     FitJointField.COG,
     FitJointField.AIM,
     FitJointField.FOOT_PIVOTS,
+    FitJointField.WHEEL,
+    FitJointField.ROLLING_BALL,
     FitJointField.NO_MIRROR,
     FitJointField.NO_MIRROR_LEFT,
     FitJointField.NO_FLIP,
@@ -281,6 +289,9 @@ def validate_fit_joint_value(
             not isinstance(value, str) or not _MESH_NAME.fullmatch(value)):
         raise FitJointValidationError(
             f"{field.value} 必须是网格变换或形状名称")
+    if field is FitJointField.CURVE_GUIDE and (
+            not isinstance(value, str) or not _MESH_NAME.fullmatch(value)):
+        raise FitJointValidationError("curve_guide 必须是曲线变换名称")
 
 
 def fit_joint_value(
@@ -344,6 +355,13 @@ def predict_fit_joint_metadata(
             else:
                 present.add(edit.field)
             continue
+        if edit.field in (FitJointField.WHEEL, FitJointField.ROLLING_BALL):
+            values[edit.field.value] = bool(edit.value)
+            if edit.value:
+                present.add(edit.field)
+            else:
+                present.discard(edit.field)
+            continue
         if edit.value is None or (edit.field is FitJointField.AIM
                                   and edit.value is False):
             present.discard(edit.field)
@@ -397,6 +415,15 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
     if type(metadata.foot_pivots) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_foot_pivots", "Foot Pivots 开关必须是布尔值"))
+    for field in (FitJointField.WHEEL, FitJointField.ROLLING_BALL):
+        if type(getattr(metadata, field.value)) is not bool:
+            issues.append(FitJointIssue(metadata.joint,
+                                        "invalid_" + field.value,
+                                        field.value + " 标记必须是布尔值"))
+    if metadata.curve_guide is not None and not _MESH_NAME.fullmatch(
+            metadata.curve_guide):
+        issues.append(FitJointIssue(metadata.joint, "invalid_curve_guide",
+                                    "Curve Guide 曲线名称无效"))
     if type(metadata.follow_spaces) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_follow_spaces",
