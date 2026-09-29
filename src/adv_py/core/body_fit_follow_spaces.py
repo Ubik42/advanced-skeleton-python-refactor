@@ -44,7 +44,17 @@ class BodyFitFollowSpacesState:
 def plan_body_fit_follow_spaces(
     metadata: tuple[FitJointMetadata, ...], controls: tuple,
     body_joints: tuple, *, main_path: str, root_path: str,
+    main_extra_paths: tuple[str, ...] = (),
 ) -> tuple[BodyFitFollowSpacesSpec, ...]:
+    if (not isinstance(main_extra_paths, tuple)
+            or any(not isinstance(path, str) or not path.startswith("|")
+                   or not main_path.startswith(path + "|")
+                   for path in main_extra_paths)
+            or len(set(main_extra_paths)) != len(main_extra_paths)
+            or any(main_extra_paths[index].rsplit("|", 1)[0]
+                   != main_extra_paths[index + 1]
+                   for index in range(len(main_extra_paths) - 1))):
+        raise ValueError("Follow Spaces MainExtra 路径无效")
     by_name = {joint.name.rsplit(":", 1)[-1]: joint.path
                for joint in body_joints}
     by_path = {joint.path: joint for joint in body_joints}
@@ -83,7 +93,10 @@ def plan_body_fit_follow_spaces(
                 if parent_control is not None else
                 (root_path if parent_body == by_name.get("Root_M") else
                  parent_body or root_path))
-            sources = [("Main", main_path), ("Root", root_path)]
+            sources = [
+                ("MainExtra" + str(index), main_extra_paths[index - 1])
+                for index in range(len(main_extra_paths), 0, -1)
+            ] + [("Main", main_path), ("Root", root_path)]
             if chest is not None and source_body.startswith(chest + "|"):
                 sources.append(("Chest", chest))
             sources.append(("Parent", parent_source))

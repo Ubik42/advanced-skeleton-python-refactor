@@ -37,10 +37,12 @@ class BuildFitFollowSpaces:
     def __init__(self, host: FitFollowSpacesHost) -> None:
         self._host = host
 
-    def apply(self, metadata, controls, body_joints, *, main_path, root_path):
+    def apply(self, metadata, controls, body_joints, *, main_path, root_path,
+              main_extra_paths=()):
         specs = plan_body_fit_follow_spaces(
             tuple(metadata), tuple(controls), tuple(body_joints),
-            main_path=main_path, root_path=root_path)
+            main_path=main_path, root_path=root_path,
+            main_extra_paths=tuple(main_extra_paths))
         states = tuple(self._host.preflight_body_fit_follow_spaces(spec)
                        for spec in specs)
         if not specs:

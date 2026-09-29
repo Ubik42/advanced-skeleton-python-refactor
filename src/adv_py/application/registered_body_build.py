@@ -747,6 +747,7 @@ class BuildRegisteredBodyCharacter:
             follow_spaces_plan = plan_body_fit_follow_spaces(
                 fit_metadata, fk_control_specs, pre_constraint_body.joints,
                 main_path=rig.plan.global_control.control_path,
+                main_extra_paths=rig.plan.global_control.extra_control_paths,
                 root_path=root_x.control_path if root_x is not None else "")
             fk_drivers = {
                 path: control.driven_joint
@@ -823,6 +824,7 @@ class BuildRegisteredBodyCharacter:
                 fit_metadata, fk_control_specs,
                 pre_follow_spaces_body.joints,
                 main_path=rig.plan.global_control.control_path,
+                main_extra_paths=rig.plan.global_control.extra_control_paths,
                 root_path=root_x.control_path if root_x is not None else "")
             if follow_spaces and not body_skeleton_unchanged(
                     pre_follow_spaces_body,
