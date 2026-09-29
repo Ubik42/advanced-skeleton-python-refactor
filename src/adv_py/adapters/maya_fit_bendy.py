@@ -164,8 +164,10 @@ class MayaFitBendyMixin:
                 world = c.createNode("multMatrix", name=world_name)
                 c.connectAttr(driver + ".worldMatrix[0]",
                               translation + ".inputMatrix")
-                c.connectAttr(spec.follow_node_names[0]
-                              + ".worldMatrix[0]",
+                parent_frame = (spec.parent_untwist_names[3]
+                                if c.objExists(spec.parent_untwist_names[3])
+                                else spec.follow_node_names[0])
+                c.connectAttr(parent_frame + ".worldMatrix[0]",
                               rotation + ".inputMatrix")
                 for attribute in ("useRotate", "useScale", "useShear"):
                     c.setAttr(translation + "." + attribute, False)
@@ -272,7 +274,10 @@ class MayaFitBendyMixin:
                     != spec.child_start_control + ".worldMatrix[0]"
                     or c.connectionInfo(rotation + ".inputMatrix",
                                         sourceFromDestination=True)
-                    != spec.follow_node_names[0] + ".worldMatrix[0]"
+                    != ((spec.parent_untwist_names[3]
+                         if c.objExists(spec.parent_untwist_names[3])
+                         else spec.follow_node_names[0])
+                        + ".worldMatrix[0]")
                     or c.connectionInfo(world + ".matrixIn[0]",
                                         sourceFromDestination=True)
                     != rotation + ".outputMatrix"
@@ -530,6 +535,9 @@ class MayaFitBendyMixin:
         if (spec.master_aim_follow
                 and "aimMatrix" not in (c.allNodeTypes() or [])):
             raise ValueError("Bendy 主控制跟随需要 aimMatrix 节点")
+        if spec.untwist_plug and not c.objExists(spec.untwist_plug):
+            raise ValueError("Bendy 去扭转来源不存在："
+                             + spec.untwist_plug)
         for source in (spec.start, spec.end):
             for plug in (source.fk_matrix, source.ik_matrix, source.blend_plug):
                 if plug is not None and not c.objExists(plug):
@@ -750,6 +758,9 @@ class MayaFitBendyMixin:
 
         source_proxy(start_proxy, names[2], names[4], spec.start)
         source_proxy(end_proxy, names[3], names[5], spec.end)
+        parent_proxy = (self._create_fit_bendy_parent_untwist(
+            chain, start_proxy, spec.untwist_plug)
+            if spec.untwist_plug else start_proxy)
         for index, control in enumerate(chain.control_names):
             position = (chain.master_position if index == 0
                         else chain.control_positions[index - 1])
@@ -763,10 +774,11 @@ class MayaFitBendyMixin:
             c.parent(control, extra, absolute=True)
             if index == 0 and spec.master_aim_follow:
                 self._create_fit_bendy_master_aim_follow(
-                    chain, offset, start_proxy, end_proxy)
+                    chain, offset, start_proxy, end_proxy,
+                    parent_proxy)
                 continue
-            targets = ((start_proxy, end_proxy) if index == 0
-                       or index > 1 else (start_proxy,))
+            targets = ((parent_proxy, end_proxy) if index == 0
+                       or index > 1 else (parent_proxy,))
             constraint = c.parentConstraint(
                 *targets, offset, maintainOffset=True,
                 name=f"AdvPy_{control}Follow")[0]
@@ -788,7 +800,7 @@ class MayaFitBendyMixin:
             world = c.createNode("multMatrix", name=world_name)
             c.connectAttr(chain.child_start_influence + ".worldMatrix[0]",
                           translation + ".inputMatrix")
-            c.connectAttr(start_proxy + ".worldMatrix[0]",
+            c.connectAttr(parent_proxy + ".worldMatrix[0]",
                           rotation + ".inputMatrix")
             for attribute in ("useRotate", "useShear"):
                 c.setAttr(translation + "." + attribute, False)
@@ -816,9 +828,40 @@ class MayaFitBendyMixin:
                                name=f"AdvPy_{chain.end_proxy_name}Follow")
         self._transaction_changed = True
 
+    def _create_fit_bendy_parent_untwist(
+            self, chain: FitBendyChainSpec, start_proxy: str,
+            twist_plug: str) -> str:
+        """Remove the source axial twist from the Bend parent frame."""
+        c = self._cmds
+        negate_name, compose_name, world_name, frame_name = (
+            chain.parent_untwist_names)
+        frame = c.createNode("transform", name=frame_name,
+                             parent=_GROUPS[0], skipSelect=True)
+        negate = c.createNode("multDoubleLinear", name=negate_name,
+                              skipSelect=True)
+        c.connectAttr(twist_plug, negate + ".input1")
+        c.setAttr(negate + ".input2", -1.0)
+        compose = c.createNode("composeMatrix", name=compose_name,
+                               skipSelect=True)
+        c.connectAttr(negate + ".output",
+                      compose + ".inputRotateX")
+        world = c.createNode("multMatrix", name=world_name,
+                             skipSelect=True)
+        c.connectAttr(compose + ".outputMatrix",
+                      world + ".matrixIn[0]")
+        c.connectAttr(start_proxy + ".worldMatrix[0]",
+                      world + ".matrixIn[1]")
+        c.connectAttr(frame + ".parentInverseMatrix[0]",
+                      world + ".matrixIn[2]")
+        c.connectAttr(world + ".matrixSum",
+                      frame + ".offsetParentMatrix")
+        c.setAttr(frame + ".visibility", False)
+        return frame
+
     def _create_fit_bendy_master_aim_follow(
             self, chain: FitBendyChainSpec, offset: str,
-            start_proxy: str, end_proxy: str) -> None:
+            start_proxy: str, end_proxy: str,
+            parent_proxy: str) -> None:
         """Mirror MEL's translated blend and half-strength aimed BendOffset."""
         from maya.api import OpenMaya as om
 
@@ -840,7 +883,7 @@ class MayaFitBendyMixin:
             c.setAttr(translate + "." + attribute, False)
         rotate = c.createNode("pickMatrix", name=rotate_name,
                               skipSelect=True)
-        c.connectAttr(start_proxy + ".worldMatrix[0]",
+        c.connectAttr(parent_proxy + ".worldMatrix[0]",
                       rotate + ".inputMatrix")
         for attribute in ("useTranslate", "useScale", "useShear"):
             c.setAttr(rotate + "." + attribute, False)
@@ -858,7 +901,7 @@ class MayaFitBendyMixin:
         c.connectAttr(mix + ".matrixSum", aim + ".inputMatrix")
         c.connectAttr(end_proxy + ".worldMatrix[0]",
                       aim + ".primaryTargetMatrix")
-        c.connectAttr(start_proxy + ".worldMatrix[0]",
+        c.connectAttr(parent_proxy + ".worldMatrix[0]",
                       aim + ".secondaryTargetMatrix")
         rest = om.MMatrix(c.xform(
             offset, query=True, worldSpace=True, matrix=True))
@@ -1010,6 +1053,12 @@ class MayaFitBendyMixin:
             if c.connectionInfo(world + ".matrixIn[0]",
                                 sourceFromDestination=True) != expected:
                 return False
+        parent_proxy = (spec.chain.parent_untwist_names[3]
+                        if spec.untwist_plug else names[0])
+        if (spec.untwist_plug
+                and not self._capture_fit_bendy_parent_untwist(
+                    spec.chain, names[0], spec.untwist_plug)):
+            return False
         for index, control in enumerate(spec.chain.control_names):
             offset = control + "Offset"
             extra = control + "Extra"
@@ -1029,7 +1078,8 @@ class MayaFitBendyMixin:
                 return False
             if index == 0 and spec.master_aim_follow:
                 if not self._capture_fit_bendy_master_aim_follow(
-                        spec.chain, offset, names[0], names[1]):
+                        spec.chain, offset, names[0], names[1],
+                        parent_proxy):
                     return False
             elif (not c.objExists(follow)
                   or c.nodeType(follow) != "parentConstraint"):
@@ -1049,7 +1099,7 @@ class MayaFitBendyMixin:
                     != chain.child_start_influence + ".worldMatrix[0]"
                     or c.connectionInfo(rotation + ".inputMatrix",
                                         sourceFromDestination=True)
-                    != names[0] + ".worldMatrix[0]"
+                    != parent_proxy + ".worldMatrix[0]"
                     or c.connectionInfo(world + ".matrixIn[0]",
                                         sourceFromDestination=True)
                     != rotation + ".outputMatrix"
@@ -1074,9 +1124,43 @@ class MayaFitBendyMixin:
         return (c.objExists(end_follow)
                 and c.nodeType(end_follow) == "parentConstraint")
 
+    def _capture_fit_bendy_parent_untwist(
+            self, chain: FitBendyChainSpec, start_proxy: str,
+            twist_plug: str) -> bool:
+        c = self._cmds
+        negate, compose, world, frame = chain.parent_untwist_names
+        return (all(c.objExists(name) and c.nodeType(name) == kind
+                    for name, kind in (
+                        (negate, "multDoubleLinear"),
+                        (compose, "composeMatrix"),
+                        (world, "multMatrix"),
+                        (frame, "transform")))
+                and abs(float(c.getAttr(negate + ".input2")) + 1.0)
+                < 1e-6
+                and not bool(c.getAttr(frame + ".visibility"))
+                and c.connectionInfo(negate + ".input1",
+                                     sourceFromDestination=True)
+                == twist_plug
+                and c.connectionInfo(compose + ".inputRotateX",
+                                     sourceFromDestination=True)
+                == negate + ".output"
+                and c.connectionInfo(world + ".matrixIn[0]",
+                                     sourceFromDestination=True)
+                == compose + ".outputMatrix"
+                and c.connectionInfo(world + ".matrixIn[1]",
+                                     sourceFromDestination=True)
+                == start_proxy + ".worldMatrix[0]"
+                and c.connectionInfo(world + ".matrixIn[2]",
+                                     sourceFromDestination=True)
+                == frame + ".parentInverseMatrix[0]"
+                and c.connectionInfo(frame + ".offsetParentMatrix",
+                                     sourceFromDestination=True)
+                == world + ".matrixSum")
+
     def _capture_fit_bendy_master_aim_follow(
             self, chain: FitBendyChainSpec, offset: str,
-            start_proxy: str, end_proxy: str) -> bool:
+            start_proxy: str, end_proxy: str,
+            parent_proxy: str) -> bool:
         c = self._cmds
         (blend, translate, rotate, mix, aim, bind,
          world, pick) = chain.master_follow_matrix_names
@@ -1092,14 +1176,14 @@ class MayaFitBendyMixin:
             (blend + ".target[0].targetMatrix",
              end_proxy + ".worldMatrix[0]"),
             (translate + ".inputMatrix", blend + ".outputMatrix"),
-            (rotate + ".inputMatrix", start_proxy + ".worldMatrix[0]"),
+            (rotate + ".inputMatrix", parent_proxy + ".worldMatrix[0]"),
             (mix + ".matrixIn[0]", rotate + ".outputMatrix"),
             (mix + ".matrixIn[1]", translate + ".outputMatrix"),
             (aim + ".inputMatrix", mix + ".matrixSum"),
             (aim + ".primaryTargetMatrix",
              end_proxy + ".worldMatrix[0]"),
             (aim + ".secondaryTargetMatrix",
-             start_proxy + ".worldMatrix[0]"),
+             parent_proxy + ".worldMatrix[0]"),
             (bind + ".matrixIn[1]", aim + ".outputMatrix"),
             (world + ".matrixIn[0]", bind + ".matrixSum"),
             (world + ".matrixIn[1]",
@@ -1220,7 +1304,10 @@ class MayaFitBendyMixin:
                                      skipSelect=True)
             up = c.createNode("transform", name=up_name,
                               parent=_GROUPS[0], skipSelect=True)
-            c.connectAttr(spec.follow_node_names[0] + ".worldMatrix[0]",
+            start_frame = (spec.parent_untwist_names[3]
+                           if c.objExists(spec.parent_untwist_names[3])
+                           else spec.follow_node_names[0])
+            c.connectAttr(start_frame + ".worldMatrix[0]",
                           blend + ".inputMatrix")
             c.connectAttr(spec.follow_node_names[1] + ".worldMatrix[0]",
                           blend + ".target[0].targetMatrix")
@@ -1360,6 +1447,9 @@ class MayaFitBendyMixin:
                 spec.micro_control_names,
                 spec.micro_output_names, spec.motion_transform_names)):
             blend, decompose, up = spec.micro_orientation_names[index]
+            start_frame = (spec.parent_untwist_names[3]
+                           if c.objExists(spec.parent_untwist_names[3])
+                           else spec.follow_node_names[0])
             twist_add, twist_mults = spec.micro_twist_names[index]
             scale_add, delta_names, weight_names = (
                 spec.micro_scale_names[index])
@@ -1372,6 +1462,13 @@ class MayaFitBendyMixin:
                     or (c.listRelatives(output, parent=True) or []) != [control]
                     or not c.objExists(blend)
                     or c.nodeType(blend) != "blendMatrix"
+                    or c.connectionInfo(blend + ".inputMatrix",
+                                        sourceFromDestination=True)
+                    != start_frame + ".worldMatrix[0]"
+                    or c.connectionInfo(
+                        blend + ".target[0].targetMatrix",
+                        sourceFromDestination=True)
+                    != spec.follow_node_names[1] + ".worldMatrix[0]"
                     or not c.objExists(decompose)
                     or c.nodeType(decompose) != "decomposeMatrix"
                     or not c.objExists(up)

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Mapping, Protocol
 
 from adv_py.core.fit_bendy import FitBendyChainSpec, FitBendyFkScaleSpec
 from adv_py.core.body_limb_controls import BodyLimbFkControlSpec
@@ -31,6 +31,11 @@ class FitBendyFollowSpec:
     start: FitBendyWorldSource
     end: FitBendyWorldSource
     master_aim_follow: bool = True
+    untwist_plug: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.untwist_plug is not None and not self.master_aim_follow:
+            raise ValueError("旧版 Bendy 约束跟随不能接入新去扭转矩阵")
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -39,9 +44,11 @@ class FitBendyFollowSpec:
             return names
         master_constraint = ("AdvPy_" + self.chain.control_names[0]
                              + "Follow")
-        return tuple(name for name in names
-                     if name != master_constraint) + (
-                         self.chain.master_follow_matrix_names)
+        return (tuple(name for name in names
+                      if name != master_constraint)
+                + self.chain.master_follow_matrix_names
+                + (self.chain.parent_untwist_names
+                   if self.untwist_plug else ()))
 
 
 def fit_bendy_world_sources(
@@ -116,6 +123,7 @@ def plan_fit_bendy_follow(
     generic_controls: tuple[BodyLimbFkControlSpec, ...] = (),
     generic_endpoints: tuple[BodyGenericFkEndpointSpec, ...] = (),
     master_aim_sources: frozenset[str] | None = None,
+    untwist_plugs: Mapping[str, str] | None = None,
 ) -> tuple[FitBendyFollowSpec, ...]:
     """Resolve Bendy endpoints without depending on driven Body matrices."""
     sources = fit_bendy_world_sources(
@@ -133,7 +141,11 @@ def plan_fit_bendy_follow(
         result.append(FitBendyFollowSpec(
             chain, start, end,
             master_aim_sources is None
-            or chain.control_names[0] in master_aim_sources))
+            or chain.control_names[0] in master_aim_sources,
+            (untwist_plugs or {}).get(chain.start_body)
+            if (master_aim_sources is None
+                or chain.control_names[0] in master_aim_sources)
+            else None))
     return tuple(result)
 
 

@@ -669,7 +669,7 @@ class BuildRegisteredBodyCharacter:
                               for control in rig.plan.leg.fk_controls.controls))
             early_bendy_chains, deferred_bendy_chains = (
                 split_fit_bendy_chains(bendy_chains, rig.plan))
-            if early_bendy_chains:
+            if early_bendy_chains and not use_fit_part_hierarchy:
                 early_bendy_follows = plan_fit_bendy_follow(
                     early_bendy_chains, rig.plan,
                     master_aim_sources=(
@@ -686,6 +686,7 @@ class BuildRegisteredBodyCharacter:
             inbetween_untwisters = ()
             hip_swing_reverse = None
             twist_projections = ()
+            bendy_untwist_plugs = {}
             if use_fit_part_hierarchy:
                 active_twist_parts = tuple(replace(
                     part,
@@ -737,6 +738,9 @@ class BuildRegisteredBodyCharacter:
                     up_twist_plug=(final_paths.remap_body_reference(
                         source.up_twist_plug) if source.up_twist_plug else None),
                 ) for source in twist_sources)
+                bendy_untwist_plugs = {
+                    source.start_body: source.down_twist_plug
+                    for source in active_twist_sources}
                 twist_steps = BuildFitPartTwistDrivers(joined).apply(
                     active_twist_parts, active_twist_sources)
                 scale_plan = BuildFitPartScaleDrivers(joined).apply(
@@ -746,6 +750,14 @@ class BuildRegisteredBodyCharacter:
                     frozenset(control.control_name
                               for control in rig.plan.leg.fk_controls.controls))
                 if early_bendy_chains:
+                    early_bendy_follows = plan_fit_bendy_follow(
+                        early_bendy_chains, rig.plan,
+                        master_aim_sources=(
+                            _generic_fk_policy.bendy_aim_follow_controls
+                            if _generic_fk_policy is not None else None),
+                        untwist_plugs=bendy_untwist_plugs)
+                    BuildFitBendyGuides(joined).apply(
+                        early_bendy_chains, follows=early_bendy_follows)
                     BuildFitBendyDeform(joined).apply(early_bendy_chains)
                 inbetween_parts = tuple(
                     part for part in part_plan.fit_parts
@@ -1199,7 +1211,8 @@ class BuildRegisteredBodyCharacter:
                     generic_fk.endpoints,
                     master_aim_sources=(
                         _generic_fk_policy.bendy_aim_follow_controls
-                        if _generic_fk_policy is not None else None))
+                        if _generic_fk_policy is not None else None),
+                    untwist_plugs=bendy_untwist_plugs)
                 BuildFitBendyGuides(joined).apply(
                     deferred_bendy_chains, follows=bendy_follows)
                 BuildFitBendyDeform(joined).apply(deferred_bendy_chains)

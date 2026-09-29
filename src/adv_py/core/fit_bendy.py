@@ -144,6 +144,12 @@ class FitBendyChainSpec:
             prefix + "Offset", prefix + "World", prefix + "Pick")
 
     @property
+    def parent_untwist_names(self) -> tuple[str, str, str, str]:
+        prefix = f"AdvPy_{self.prefix}ParentUntwist_{self.side}"
+        return (prefix + "Negate", prefix + "Compose",
+                prefix + "World", prefix + "Frame")
+
+    @property
     def circular_name(self) -> str:
         return f"BendCircular{self.stem}_{self.side}"
 
