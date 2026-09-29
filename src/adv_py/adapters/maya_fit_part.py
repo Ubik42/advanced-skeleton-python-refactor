@@ -25,10 +25,15 @@ class MayaFitPartMixin:
     def preflight_fit_part_end_scale(self, end: FitPartEndScale) -> None:
         c = self._cmds
         body = self._unique_fit_part_joint(end.body_name)
+        ik_driver = self._unique_fit_part_joint(end.ik_driver_name)
         if any(not c.objExists(plug) for plug in (
                 end.fk_scale_plug, end.ik_scale_plug, end.mode_plug)):
             raise ValueError("Fit Part 末端缺少 FK／IK 缩放输入："
                              + end.body_name)
+        if any(not c.getAttr(ik_driver + ".scale" + axis,
+                             settable=True) for axis in "XYZ"):
+            raise ValueError("Fit Part 末端 IK 驱动缩放目标不可写："
+                             + end.ik_driver_name)
         if any(c.objExists(name) for name in (
                 end.blend_name, end.scale_compose_name,
                 end.scale_matrix_name) if name):
@@ -47,8 +52,10 @@ class MayaFitPartMixin:
         self._require_transaction()
         c = self._cmds
         body = self._unique_fit_part_joint(end.body_name)
+        ik_driver = self._unique_fit_part_joint(end.ik_driver_name)
         blend = c.createNode("blendColors", name=end.blend_name)
         self._transaction_changed = True
+        c.connectAttr(end.ik_scale_plug, ik_driver + ".scale")
         for color, source_axis in zip("RGB", end.ik_axes):
             c.connectAttr(end.ik_scale_plug + source_axis,
                           blend + ".color1" + color)
@@ -83,8 +90,11 @@ class MayaFitPartMixin:
     def capture_fit_part_end_scale(self, end: FitPartEndScale) -> bool:
         c = self._cmds
         body = self._unique_fit_part_joint(end.body_name)
+        ik_driver = self._unique_fit_part_joint(end.ik_driver_name)
         if (not c.objExists(end.blend_name)
-                or c.nodeType(end.blend_name) != "blendColors"):
+                or c.nodeType(end.blend_name) != "blendColors"
+                or c.connectionInfo(ik_driver + ".scale",
+                    sourceFromDestination=True) != end.ik_scale_plug):
             return False
         links = [
             (end.ik_scale_plug + source_axis,

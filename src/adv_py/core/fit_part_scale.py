@@ -44,6 +44,7 @@ class FitPartLimbScaleChain:
 @dataclass(frozen=True, slots=True)
 class FitPartEndScale:
     body_name: str
+    ik_driver_name: str
     fk_scale_plug: str
     ik_scale_plug: str
     mode_plug: str
@@ -142,6 +143,7 @@ def plan_fit_part_scale(
         use_opm = not body.segment_scale_compensate
         ends.append(FitPartEndScale(
             body.name,
+            f"AdvPy_{stem}IKDriver_{side}",
             f"AdvPy_{stem}FK_{side}.scale",
             f"AdvPy_{module}IK_{side}.scale",
             f"AdvPy_{module}Settings.{module.lower()}IkFk_{side}",
