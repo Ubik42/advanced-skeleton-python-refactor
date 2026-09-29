@@ -245,6 +245,7 @@ def create_panel(controller: MayaPanelController | None = None):
                        self._geometry_skeleton_page(),
                        self._geometry_muscular_page(),
                        self._geometry_poly_boxes_page(),
+                       self._geometry_mannequin_page(),
                        self._geometry_cut_up_page(),
                        self._animation_page(), self._face_page(),
                        self._mocap_page(), self._publish_page(),
@@ -293,7 +294,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('Geometry / Skeleton', ('00 · Skeleton',)),
                     ('Geometry / Muscular', ('00 · Muscular',)),
                     ('Geometry / PolyBoxes', ('00 · PolyBoxes',)),
-                    ('Geometry / Mannequin', ()),
+                    ('Geometry / Mannequin', ('00 · Mannequin',)),
                     ('Geometry / Skin Cut-Up', ('00 · Skin Cut-Up',)),
                     ('Custom Controllers', ('06 · 自定义控制器',)),
                     ('Squash Controller', ('07 · Squash Controller',)),
@@ -1930,6 +1931,17 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addStretch(1)
             return page
 
+        def _geometry_mannequin_page(self):
+            page, stack = self._page()
+            group, form = self._group("00 · Mannequin", [])
+            form.addRow(QtWidgets.QLabel(
+                "使用原版 asGeometry 模板创建 Body Mannequin。"))
+            form.addRow(self._button("Create", self._geometry_mannequin_create))
+            form.addRow(self._button("Delete", self._geometry_mannequin_delete))
+            stack.addWidget(group)
+            stack.addStretch(1)
+            return page
+
         def _display_page(self):
             page, stack = self._page()
             group, form = self._group("00 · Display", [])
@@ -2959,6 +2971,14 @@ def create_panel(controller: MayaPanelController | None = None):
         def _geometry_warp_delete(self):
             self.controller.geometry_warp_delete(self._namespace())
             return "已删除 Warp 几何体"
+
+        def _geometry_mannequin_create(self):
+            count = self.controller.geometry_mannequin_create(self._namespace())
+            return f"已创建 {count} 个 Mannequin 网格"
+
+        def _geometry_mannequin_delete(self):
+            self.controller.geometry_mannequin_delete(self._namespace())
+            return "已删除 Mannequin 几何"
 
         def _geometry_cut_up_delete(self):
             self.controller.geometry_cut_up_delete(self._namespace())

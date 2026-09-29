@@ -1487,6 +1487,18 @@ class MayaPanelController:
 
         DeleteWarp(MayaWarpHost(namespace)).execute()
 
+    def geometry_mannequin_create(self, namespace: str) -> int:
+        from adv_py.adapters.maya_geometry_mannequin import MayaMannequinHost
+        from adv_py.application.geometry_mannequin import CreateMannequin
+
+        return CreateMannequin(MayaMannequinHost(namespace)).execute()
+
+    def geometry_mannequin_delete(self, namespace: str) -> None:
+        from adv_py.adapters.maya_geometry_mannequin import MayaMannequinHost
+        from adv_py.application.geometry_mannequin import DeleteMannequin
+
+        DeleteMannequin(MayaMannequinHost(namespace)).execute()
+
     def geometry_cut_up_delete(self, namespace: str) -> None:
         from adv_py.adapters.maya_geometry_cut_up import MayaGeometryCutUpHost
         from adv_py.application.geometry_cut_up import DeleteGeometryCutUp
