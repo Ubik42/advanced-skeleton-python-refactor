@@ -27,4 +27,5 @@ class FaceDeletePlan:
     owned_ids: tuple[str, ...]
     skins: tuple[FaceDeleteSkin, ...]
     extra_nodes: tuple[str, ...]
+    extra_ids: tuple[str, ...]
     keep_build_pose: bool = False

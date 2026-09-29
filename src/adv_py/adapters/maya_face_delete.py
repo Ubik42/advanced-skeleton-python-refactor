@@ -139,7 +139,9 @@ class MayaFaceDeleteMixin:
             self._face_delete_id(face_set), fit, self._face_delete_id(fit),
             head, self._face_delete_id(head), deletable,
             tuple(self._face_delete_id(path) for path in deletable),
-            tuple(skin_plans), extra, keep_build_pose)
+            tuple(skin_plans), extra,
+            tuple(self._face_delete_id(path) for path in extra),
+            keep_build_pose)
 
     def delete_face_advanced(self, plan: FaceDeletePlan) -> None:
         self._require_transaction()
@@ -147,7 +149,8 @@ class MayaFaceDeleteMixin:
         for path, identifier in ((plan.motion, plan.motion_id),
                                  (plan.face_set, plan.face_set_id),
                                  (plan.fit, plan.fit_id),
-                                 (plan.head, plan.head_id)):
+                                 (plan.head, plan.head_id),
+                                 *zip(plan.extra_nodes, plan.extra_ids)):
             if not c.objExists(path) or self._face_delete_id(path) != identifier:
                 raise RuntimeError("Face 删除前关键节点已变化：" + path)
         current = tuple((c.ls(member, long=True) or [None])[0]
