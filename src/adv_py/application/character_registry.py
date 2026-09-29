@@ -57,7 +57,9 @@ def character_channels(rig):
                 (() if index == 0 else translation)
                 + (rotation if index in (0, len(spline.targets)-1) else ())
                 + tuple("scale" + axis for axis in "XYZ"))
-        add("spine.spline", spline.settings, ("spineIkFk", "stretchy", "volume"))
+        add("spine.spline", spline.settings,
+            ("spineIkFk", "stretchy", "volume") +
+            (("stretchEven",) if spline.even_stretch_graph else ()))
     if p.torso.torso.head_aim:
         aim=p.torso.torso.head_aim
         add('head.aim.target',aim.target,translation+rotation+('follow',))

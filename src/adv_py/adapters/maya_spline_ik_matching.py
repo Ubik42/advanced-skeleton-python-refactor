@@ -38,9 +38,12 @@ def match_ik(host, registration, before):
             plan.root_path+'.advPySplineOwner'))>=8
     except FitSkeletonValidationError as exc:
         raise CharacterRegistryError('曲线脊柱求解图所有权无效') from exc
+    settings_attributes = (('stretchy','volume') if original_range
+                           else ('stretch','volume'))
+    if plan.even_stretch_graph:
+        settings_attributes += ('stretchEven',)
     parameters.extend((plan.settings+'.'+attribute,10. if original_range else 1.,0.,1.)
-                      for attribute in (('stretchy','volume') if original_range
-                                        else ('stretch','volume')))
+                      for attribute in settings_attributes)
     initial = tuple(c.getAttr(plug)/unit for plug,unit,_,_ in parameters)
     bounds = tuple((low,high) for _,_,low,high in parameters)
     c.setAttr(plan.settings+'.spineIkFk',1.)

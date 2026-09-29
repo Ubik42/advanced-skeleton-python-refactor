@@ -7,6 +7,7 @@ from adv_py.core.body_spline import (
 )
 from .maya_adv_icons import create_adv_icon
 from . import maya_chest_space
+from . import maya_spline_even
 
 
 def prepare(host,plan):
@@ -14,7 +15,9 @@ def prepare(host,plan):
     c=host._cmds
     c.createNode('transform',name='AdvPy_SplineMechanisms',parent=plan.root_path.rsplit('|',1)[0],skipSelect=True)
     c.addAttr(plan.root_path,longName='advPySplineOwner',dataType='string')
-    c.setAttr(plan.root_path+'.advPySplineOwner',current_spline_owner(plan.curved),type='string',lock=True)
+    c.setAttr(plan.root_path+'.advPySplineOwner',
+              current_spline_owner(plan.curved, plan.even_stretch_graph),
+              type='string',lock=True)
     for joint in plan.joints:host.create_body_arm_mechanism_joint(joint)
     last=plan.joints[len(plan.body_joints)-1]
     host._spine_frame('AdvPy_SplineChestSpace',plan.chest_space.rsplit('|',1)[0],last.world_position,last.world_axes)
@@ -179,10 +182,14 @@ def create(host,plan):
             c.createNode('multiplyDivide',name=f'AdvPy_SplineLength{i}',skipSelect=True)
             c.setAttr(f'AdvPy_SplineLength{i}.input1X',plan.lengths[i-1]);c.connectAttr('AdvPy_SplineClamp.outputR',f'AdvPy_SplineLength{i}.input2X')
             c.connectAttr(f'AdvPy_SplineLength{i}.outputX',joint.path+'.translateX')
+    if plan.even_stretch_graph:
+        maya_spline_even.create(host, plan, shape, ik)
     if plan.curved:
         import json
         for i in range(1,n):
-            rest=c.createNode('transform',name=f'AdvPy_SplineIKRest{i}',parent=ik[i].path,skipSelect=True)
+            rest=c.createNode('transform',name=f'AdvPy_SplineIKRest{i}',
+                              parent=plan.ik_outputs[i].rsplit('|',1)[0],
+                              skipSelect=True)
             bind=c.xform(plan.body_joints[i],q=True,ws=True,matrix=True)
             c.xform(rest,ws=True,matrix=bind)
             local=tuple(c.getAttr(rest+'.matrix'))
@@ -231,6 +238,8 @@ def audit(host,plan):
     version=spline_owner_version(c.getAttr(plan.root_path+'.advPySplineOwner'))
     if (version>=3 and bool(version%2))!=plan.curved:
         raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
+    if (version>=20)!=plan.even_stretch_graph:
+        raise FitSkeletonValidationError('Spline stretchEven 计划与求解图版本不一致')
     new_scaling=version>=4
     oriented_scaling=version>=6
     original_range=version>=8
@@ -284,6 +293,8 @@ def audit(host,plan):
             for suffix in ('','End'):
                 edges.append(('AdvPy_SplineFlipVector.outValue'+axis,
                               'AdvPy_SplineIKHandle.dWorldUpVector'+suffix+axis))
+    if plan.even_stretch_graph:
+        maya_spline_even.audit(host, plan, shape, plan.joints[n:])
     if original_range:
         edges += [(plan.settings+'.stretchy','AdvPy_SplineStretchUnit.input'),
                   ('AdvPy_SplineStretchUnit.output','AdvPy_SplineStretchBlend.blender'),
@@ -470,7 +481,7 @@ def audit(host,plan):
         import json
         for i in range(1,n):
             rest=plan.ik_outputs[i]
-            if (c.nodeType(rest)!='transform' or (c.listRelatives(rest,parent=True,fullPath=True) or [])!=[plan.joints[n+i].path]
+            if (c.nodeType(rest)!='transform' or (c.listRelatives(rest,parent=True,fullPath=True) or [])!=[rest.rsplit('|',1)[0]]
                     or not c.getAttr(rest+'.advPySplineRestLocal',lock=True)):
                 raise FitSkeletonValidationError('Spline 中性姿态补偿层归属无效')
             recorded=json.loads(c.getAttr(rest+'.advPySplineRestLocal'))

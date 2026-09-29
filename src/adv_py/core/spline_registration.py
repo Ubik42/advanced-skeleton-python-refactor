@@ -11,9 +11,13 @@ def decode_spline(raw, body):
 
     if isinstance(raw, dict) and 'use_offset_parent_matrix' not in raw:
         raw = {**raw, 'use_offset_parent_matrix': False}
+    if isinstance(raw, dict) and 'even_stretch_graph' not in raw:
+        raw = {**raw, 'even_stretch_graph': False}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
     if type(raw['use_offset_parent_matrix']) is not bool:
         raise CharacterRegistryError('Spline OPM 开关无效')
+    if type(raw['even_stretch_graph']) is not bool:
+        raise CharacterRegistryError('Spline stretchEven 图标记无效')
     body_paths = tuple(path(p) for p in raw['body_joints'])
     count = len(body_paths)
     if not 2 <= count <= 64 or len(set(body_paths)) != count:
@@ -57,4 +61,5 @@ def decode_spline(raw, body):
         raise CharacterRegistryError('曲线脊柱机制链不完整')
     return BodySplinePlan(root, tuple(joints), body_paths, controls, path(raw['pelvis_control']),
                           path(raw['chest_space']), targets, positions, axes,
-                          lengths, raw['use_offset_parent_matrix'])
+                          lengths, raw['use_offset_parent_matrix'],
+                          raw['even_stretch_graph'])

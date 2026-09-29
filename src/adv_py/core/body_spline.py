@@ -9,7 +9,7 @@ from .body_limb_mechanisms import BodyLimbMechanismJointSpec,BodyLimbMechanismRo
 from .fit_settings import FitSkeletonValidationError
 
 
-CURRENT_SPLINE_VERSION = 19
+CURRENT_SPLINE_VERSION = 21
 
 
 def spline_owner_version(marker: str) -> int:
@@ -25,8 +25,9 @@ def spline_owner_version(marker: str) -> int:
     return version
 
 
-def current_spline_owner(curved: bool) -> str:
-    return f'adv_py.spline.v{CURRENT_SPLINE_VERSION if curved else CURRENT_SPLINE_VERSION - 1}'
+def current_spline_owner(curved: bool, even_stretch_graph: bool = True) -> str:
+    newest = CURRENT_SPLINE_VERSION if even_stretch_graph else CURRENT_SPLINE_VERSION - 2
+    return f'adv_py.spline.v{newest if curved else newest - 1}'
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class BodySplinePlan:
     axes: tuple
     lengths: tuple[float,...]
     use_offset_parent_matrix: bool = False
+    even_stretch_graph: bool = False
 
     @property
     def settings(self):return self.targets[-1]
@@ -63,7 +65,10 @@ class BodySplinePlan:
     @property
     def ik_outputs(self):
         n=len(self.body_joints)
-        return tuple(self.joints[n+i].path+(f'|AdvPy_SplineIKRest{i}' if self.curved and i else '') for i in range(n))
+        return tuple((self.root_path+f'|AdvPy_SplineIKOutput{i}'
+                      if self.even_stretch_graph else self.joints[n+i].path)
+                     +(f'|AdvPy_SplineIKRest{i}' if self.curved and i else '')
+                     for i in range(n))
     @property
     def scale_reference(self):
         follow='|Group|MotionSystem|RootSystem|RootFollowMain'
@@ -96,7 +101,17 @@ class BodySplinePlan:
         )
         orientations=tuple(f'AdvPy_SplineIKLocalOrient{i}'
                            for i in range(len(self.targets)))
-        return fixed+chest+tuple(j.name for j in self.joints)+targets+outputs+rests+scaling+orientations
+        even=('AdvPy_SplineStretchEvenUnit','AdvPy_SplineStretchEvenReverse',
+              'AdvPy_SplineStretchEvenWeight')+tuple(
+            f'AdvPy_SplineIK{kind}{i}'
+            for i in range(len(self.body_joints))
+            for kind in ('ArcSample','ArcFrame','Output','OutputPoint',
+                         'OutputOrient','OutputScale','OutputReverse'))+tuple(
+            f'AdvPy_SplineIKArcAim{i}'
+            for i in range(len(self.body_joints)-1))+(
+            f'AdvPy_SplineIKArcEndOrient{len(self.body_joints)-1}',)
+        return (fixed+chest+tuple(j.name for j in self.joints)+targets+outputs+
+                rests+scaling+orientations+(even if self.even_stretch_graph else ()))
 
 
 def spline_ik_scale_weights(joint_index: int, joint_count: int,
@@ -245,5 +260,5 @@ def with_spline_ik(body,torso,description):
     positions=(fit_spline_controls(tuple(j.world_position for j in source)) if curved else
                tuple(tuple(a+(b-a)*i/3 for a,b in zip(source[0].world_position,source[-1].world_position)) for i in range(4)))
     targets=tuple(pelvis.control_path+f'|AdvPy_SplineIK{i}Offset|AdvPy_SplineIK{i}' for i in range(len(positions)))
-    plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths),torso.use_offset_parent_matrix)
+    plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths),torso.use_offset_parent_matrix,True)
     return replace(torso,controls=replace(torso.controls,controls=tuple(updated)),spline=plan)
