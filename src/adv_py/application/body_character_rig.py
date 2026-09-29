@@ -33,6 +33,7 @@ from adv_py.core.body_fk_channel_locks import (
     BodyFkChannelLockSpec, plan_body_fk_channel_locks,
 )
 from adv_py.core.fit_container import FitUpAxis
+from adv_py.core.fit_metadata import FitJointField
 from adv_py.core.fit_tweaker import FitTweakerPlan, plan_fit_tweakers
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
@@ -412,6 +413,13 @@ class BuildBodyCharacterRig:
             arm.fk_controls.controls + leg.fk_controls.controls
             + (hand.controls.controls if hand else ())
             + (torso.torso.controls.controls if torso else ()))
+        unsupported_aim = tuple(
+            item.joint for item in safety.symmetry.source.metadata
+            if FitJointField.AIM in item.present_fields)
+        if unsupported_aim:
+            raise FitSkeletonValidationError(
+                "通用 Fit Aim 尚未接入 FK 控制层与 AimSystem："
+                + "、".join(unsupported_aim))
         no_control_paths = plan_body_no_control(
             safety.symmetry.source.metadata,
             fk_controls)

@@ -354,6 +354,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ("不参与 Skin", "no_skin"),
                     ("FK 分段缩放补偿", "seg_scale_comp"),
                     ("COG", "cog"),
+                    ("Aim", "aim"),
                     ("Foot Pivots", "foot_pivots"),
                     ("禁止镜像", "no_mirror"),
                     ("左侧禁止镜像", "no_mirror_left"),

@@ -87,6 +87,7 @@ _FIT_ATTRIBUTES = {
     FitJointField.SEG_SCALE_COMP: _MayaFitAttribute("segScaleComp", "bool"),
     FitJointField.HIP_SWINGER: _MayaFitAttribute("hipSwinger", "bool"),
     FitJointField.COG: _MayaFitAttribute("cog", "bool"),
+    FitJointField.AIM: _MayaFitAttribute("aim", "bool"),
     FitJointField.FOOT_PIVOTS: _MayaFitAttribute("footPivots", "bool"),
     FitJointField.NO_MIRROR: _MayaFitAttribute("noMirror", "bool"),
     FitJointField.NO_MIRROR_LEFT: _MayaFitAttribute("noMirrorLeft", "bool"),
@@ -848,6 +849,7 @@ class MayaFitJointHost:
                          if self._attribute_exists(joint, "hipSwinger")
                          else None),
             cog=self._optional_bool(joint, "cog"),
+            aim=self._optional_bool(joint, "aim"),
             foot_pivots=self._optional_bool(joint, "footPivots"),
             no_mirror=self._optional_bool(joint, "noMirror"),
             no_mirror_left=self._optional_bool(joint, "noMirrorLeft"),
@@ -868,7 +870,8 @@ class MayaFitJointHost:
         self._require_transaction()
         spec = _FIT_ATTRIBUTES[edit.field]
         exists = self._attribute_exists(joint, spec.name)
-        if edit.value is None:
+        if edit.value is None or (edit.field is FitJointField.AIM
+                                  and edit.value is False):
             if exists:
                 self._transaction_changed = True
                 self._cmds.deleteAttr(f"{joint}.{spec.name}")

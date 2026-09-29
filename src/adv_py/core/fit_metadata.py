@@ -20,6 +20,7 @@ class FitJointField(str, Enum):
     SEG_SCALE_COMP = "seg_scale_comp"
     HIP_SWINGER = "hip_swinger"
     COG = "cog"
+    AIM = "aim"
     FOOT_PIVOTS = "foot_pivots"
     NO_MIRROR = "no_mirror"
     NO_MIRROR_LEFT = "no_mirror_left"
@@ -96,6 +97,7 @@ class FitJointMetadata:
     ik_local_mode: str | None = None
     present_fields: frozenset[FitJointField] = frozenset()
     cog: bool = False
+    aim: bool = False
     foot_pivots: bool = False
 
 
@@ -121,6 +123,7 @@ _BOOLEAN_FIELDS = {
     FitJointField.SEG_SCALE_COMP,
     FitJointField.HIP_SWINGER,
     FitJointField.COG,
+    FitJointField.AIM,
     FitJointField.FOOT_PIVOTS,
     FitJointField.NO_MIRROR,
     FitJointField.NO_MIRROR_LEFT,
@@ -189,7 +192,8 @@ def predict_fit_joint_metadata(
             else:
                 present.add(edit.field)
             continue
-        if edit.value is None:
+        if edit.value is None or (edit.field is FitJointField.AIM
+                                  and edit.value is False):
             present.discard(edit.field)
             values[edit.field.value] = (
                 False if (edit.field in _BOOLEAN_FIELDS
@@ -210,6 +214,9 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
     if type(metadata.cog) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_cog", "COG 开关必须是布尔值"))
+    if type(metadata.aim) is not bool:
+        issues.append(FitJointIssue(
+            metadata.joint, "invalid_aim", "Aim 标记必须是布尔值"))
     if type(metadata.control) is not bool:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_control", "Control 开关必须是布尔值"))

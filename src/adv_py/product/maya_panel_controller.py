@@ -123,6 +123,7 @@ _FIT_BOOLEAN_FIELDS = frozenset({
     FitJointField.NO_SKIN,
     FitJointField.SEG_SCALE_COMP,
     FitJointField.COG,
+    FitJointField.AIM,
     FitJointField.FOOT_PIVOTS,
     FitJointField.NO_MIRROR,
     FitJointField.NO_MIRROR_LEFT,
