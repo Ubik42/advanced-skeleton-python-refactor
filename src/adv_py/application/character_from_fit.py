@@ -20,8 +20,7 @@ from .limb_part_deform import LimbPartHost
 from .oriented_body_skeleton import OrientedBodySkeletonHost
 from .registered_body_build import (BuildRegisteredBodyCharacter,
                                     RegisteredBodyBuildResult,
-                                    _JoinedTransactionHost,
-                                    preflight_registered_fit_parts)
+                                    _JoinedTransactionHost)
 from .registered_skinned_body_build import BuildRegisteredSkinnedBodyCharacter
 from .skin_bind import SkinBindHost
 from .skin_bind import SkinBindBuildResult
@@ -84,20 +83,15 @@ class BuildCharacterFromFit:
                 or not 1 <= maximum_influences <= 256):
             raise ValueError("最大影响关节数须为 1..256 的整数")
         hierarchy = self._host.capture_fit_hierarchy(container)
+        joint_paths = {node.path for node in hierarchy.joints}
         roots = [node for node in hierarchy.joints
-                 if node.dag_parent == hierarchy.container]
+                 if node.dag_parent not in joint_paths]
         if len(roots) != 1:
-            raise ValueError("FitSkeleton 必须恰有一个顶层 joint")
+            raise ValueError("FitSkeleton 必须恰有一条顶层 joint 链")
         if use_fit_part_hierarchy and not include_segment_influences:
             raise ValueError("通用 Fit Part 构建需要启用分段 Skin 影响")
-        # The build transaction may rename or insert Root first. Part
-        # preflight runs there against the resulting Fit hierarchy.
-        if roots[0].short_name == "Root" and abs(
-                roots[0].local_position[0]) <= 0.01:
-            preflight_registered_fit_parts(
-                self._host, container,
-                include_segment_influences=include_segment_influences,
-                use_fit_part_hierarchy=use_fit_part_hierarchy)
+        # The main build checks Parts after Root, names and scale have been
+        # prepared in its rollback-capable transaction.
         description = axial_description_from_fit(hierarchy, spine_segments)
         return CharacterFromFitPlan(container, meshes, description,
             maximum_influences, include_head_aim, infer_missing_labels,

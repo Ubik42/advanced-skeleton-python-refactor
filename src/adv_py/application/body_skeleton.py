@@ -153,7 +153,8 @@ class BuildBodySkeleton:
                 profiles[instance.source_joint],
                 skin_enabled[instance.source_joint],
                 rotation_orders[instance.source_joint],
-                (not build_options.use_offset_parent_matrix
+                (instance.output_name != "Root_M"
+                 and not build_options.use_offset_parent_matrix
                  and fit_segment_scale_compensate(
                      metadata_by_joint[instance.source_joint],
                      instance.output_name,
