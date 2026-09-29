@@ -70,13 +70,16 @@ class BodyFitAimSpec:
         paths = (self.root, self.offset, self.follow, self.center_control)
         paths += tuple(path for side in self.sides if side.suffix != "M"
                        for path in (side.target_offset, side.target_control))
+        shapes = (self.center_control.rsplit("|", 1)[-1] + "Shape",)
+        shapes += tuple(side.target_control.rsplit("|", 1)[-1] + "Shape"
+                        for side in self.sides if side.suffix != "M")
         matrix_nodes = tuple(name for side in self.sides for name in (
             side.aim_matrix_name, side.local_matrix_name,
             side.local_matrix_name + "DM"))
         follow_nodes = (self.follow_blend_name, self.follow_target_name,
                         self.follow_static_name, self.follow_local_name,
                         self.follow_local_name + "DM", self.follow_weight_name)
-        return (tuple(path.rsplit("|", 1)[-1] for path in paths)
+        return (tuple(path.rsplit("|", 1)[-1] for path in paths) + shapes
                 + matrix_nodes + follow_nodes)
 
 

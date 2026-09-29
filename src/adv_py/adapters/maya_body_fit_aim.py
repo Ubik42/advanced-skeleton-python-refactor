@@ -22,6 +22,8 @@ def _cross(cmds, name, parent, radius, color):
     curve = cmds.parent(curve, parent, relative=True)[0]
     curve = (cmds.ls(curve, long=True) or [curve])[0]
     shape = (cmds.listRelatives(curve, shapes=True, fullPath=True) or [])[0]
+    if shape != curve + "|" + name + "Shape":
+        raise FitSkeletonValidationError("Aim 曲线 Shape 名称漂移：" + name)
     cmds.setAttr(shape + ".overrideEnabled", True)
     cmds.setAttr(shape + ".overrideColor", color)
     return curve, shape
@@ -187,6 +189,15 @@ class MayaBodyFitAimMixin:
             return False
         if any(c.nodeType(name) != kind for name, kind in expected):
             return False
+        center_shapes = c.listRelatives(
+            spec.center_control, shapes=True, fullPath=True,
+            type="nurbsCurve") or []
+        if (center_shapes != [spec.center_control + "|"
+                              + spec.center_control.rsplit("|", 1)[-1]
+                              + "Shape"]
+                or not c.getAttr(center_shapes[0] + ".overrideEnabled")
+                or c.getAttr(center_shapes[0] + ".overrideColor") != 17):
+            return False
         if not c.isConnected(spec.follow_joint + ".worldMatrix[0]",
                              spec.follow_target_name + ".matrixIn[1]"):
             return False
@@ -252,6 +263,10 @@ class MayaBodyFitAimMixin:
                     side.target_control, shapes=True, fullPath=True,
                     type="nurbsCurve") or []
                 if (len(target_shapes) != 1
+                        or target_shapes[0] != side.target_control + "|"
+                        + side.target_control.rsplit("|", 1)[-1] + "Shape"
+                        or not c.getAttr(target_shapes[0] + ".overrideEnabled")
+                        or c.getAttr(target_shapes[0] + ".overrideColor") != 17
                         or not c.isConnected(global_control + ".aimLRVis",
                                              target_shapes[0] + ".visibility")):
                     return False
