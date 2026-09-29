@@ -126,7 +126,8 @@ def plan_body_generic_fk(
         parent_spec = spec.parent_path
         standard_parent = False
         while parent_spec is not None:
-            parent_name = parent_spec.rsplit("|", 1)[-1]
+            parent_name = (parent_spec.rsplit("|", 1)[-1]
+                           .rsplit(":", 1)[-1])
             if parent_name in control_by_name:
                 parent_control = control_by_name[parent_name]
                 standard_parent = parent_name in standard_names
