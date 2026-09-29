@@ -3222,6 +3222,15 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
             selection = om.MSelectionList()
             selection.add(skin if namespace_free else self.scene_address(skin))
             skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
+            present = {path.fullPathName().rsplit("|", 1)[-1]
+                       .rsplit(":", 1)[-1]
+                       for path in skin_fn.influenceObjects()}
+            for path in target_paths:
+                name = path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                if name not in present:
+                    c.skinCluster(skin, edit=True, addInfluence=path,
+                                  weight=0.0, lockWeights=False)
+                    present.add(name)
             shapes = c.skinCluster(skin, query=True, geometry=True) or []
             shape = (c.ls(shapes[0], long=True, type="mesh") or [])[0]
             selection = om.MSelectionList()
@@ -3237,6 +3246,11 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
             target_influences = skin_fn.influenceObjects()
             target_names = tuple(path.fullPathName().rsplit("|", 1)[-1]
                 .rsplit(":", 1)[-1] for path in target_influences)
+            if set(target_names) != {
+                    mapping[name].rsplit("|", 1)[-1]
+                    for name in source_indices}:
+                raise FitSkeletonValidationError(
+                    "FBX 临时 Skin 未保留全部原始影响关节：" + data.skin_name)
             order = tuple(source_indices[published_to_source[name]]
                           for name in target_names)
             for influence, source_index in zip(target_influences, order):
