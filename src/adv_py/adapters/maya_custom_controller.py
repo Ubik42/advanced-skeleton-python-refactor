@@ -60,6 +60,11 @@ class MayaCustomControllerHost(MayaFaceHost):
             if cmds.referenceQuery(path, isNodeReferenced=True):
                 raise RuntimeError("Face 自定义控制产生了引用节点：" + path)
             new_nodes.append(path)
+        created = set(new_nodes)
+        new_nodes = [path for path in new_nodes if not (
+            path.startswith("|") and any(
+                path.startswith(parent + "|")
+                for parent in created if parent != path))]
         if new_nodes:
             cmds.sets(tuple(new_nodes), add=face_set)
             recorded = {identifier

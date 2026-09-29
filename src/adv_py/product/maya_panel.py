@@ -1569,16 +1569,20 @@ def create_panel(controller: MayaPanelController | None = None):
             group, form = self._group("03 · 控制与变形器", [
                 ("构建文档", specification), ("控制名称", self.face_control_name),
                 ("变形器名称", self.face_deformer_name)])
+            delete_row = QtWidgets.QHBoxLayout()
+            delete_row.addWidget(self._button("Delete Adv",
+                                             self._face_delete_advanced))
+            self.face_keep_build_pose = QtWidgets.QCheckBox(
+                "保留 Face 构建姿态记录")
+            self.face_keep_build_pose.setChecked(True)
+            delete_row.addWidget(self.face_keep_build_pose)
+            form.addRow(delete_row)
             form.addRow(self._button("Toggle Fit/Adv",
                                      self._face_build_toggle_fit_advanced))
             form.addRow(self._button("检查 FaceSetup 输入",
                                      self._face_build_inspect_inputs))
             form.addRow(self._button("建立双侧眼睑关节与蒙皮",
                                      self._face_build_eye_lids))
-            self.face_keep_build_pose = QtWidgets.QCheckBox("保留 Face 构建姿态记录")
-            form.addRow("Delete Face", self.face_keep_build_pose)
-            form.addRow(self._button("删除 Face 绑定，保留 Fit 与 Skin",
-                                     self._face_delete_advanced))
             form.addRow(self._button("返回 Face 构建姿态",
                                      self._face_go_to_build_pose))
             form.addRow(self._button("设置 Face 构建姿态",

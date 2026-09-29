@@ -451,7 +451,13 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                     raise RuntimeError("FBX rig FK 控制约束创建失败："
                                        + spec.control_name)
         ik_controls = self._build_fbx_ik_limbs(
-            ik_limbs, control_paths, main, plan.scale) if ik_limbs else ()
+            ik_limbs, controls, control_paths, main,
+            plan.scale) if ik_limbs else ()
+        control_paths = {name: (c.ls(name, long=True,
+                                     type="transform") or [None])[0]
+                         for name in control_paths}
+        if None in control_paths.values():
+            raise RuntimeError("FBX rig FK 控制器在 IK 改挂后丢失")
         c.sets(tuple(control_paths.values()) + (main, *ik_controls),
                name="ControlSet")
         c.sets(tuple(joint.path for joint in body.joints), name="DeformSet")
@@ -508,7 +514,7 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
 
     def _build_fbx_ik_limbs(
         self, limbs: tuple[FBXRigIKLimb, ...],
-        fk_controls: dict[str, str], main: str, scale: float,
+        specs, fk_controls: dict[str, str], main: str, scale: float,
     ) -> tuple[str, ...]:
         c = self._cmds
         names = ["AdvPy_FBX_IKSystem"]
@@ -520,7 +526,9 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                           "AdvPy_FBX_" + label + "_IKHandle",
                           "AdvPy_FBX_" + label + "_PoleConstraint",
                           "AdvPy_FBX_" + label + "_Orient",
-                          "AdvPy_FBX_" + label + "_Reverse"))
+                          "AdvPy_FBX_" + label + "_Reverse",
+                          "AdvPy_FBX_" + label + "_EndFollow",
+                          "AdvPy_FBX_" + label + "_EndFollowConstraint"))
             names.extend("AdvPy_FBX_IK_" + name
                          for name in limb.body_joint_names)
             names.extend("AdvPy_FBX_" + name + "_Blend"
@@ -609,13 +617,28 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                 c.connectAttr(reverse + ".outputX",
                               constraint[0] + "." + aliases[0])
                 c.connectAttr(switch, constraint[0] + "." + aliases[1])
-            fk_root_offset = (c.listRelatives(
-                fk_controls[limb.fk_control_names[0]], parent=True,
-                fullPath=True) or [None])[0]
-            if fk_root_offset is None:
-                raise RuntimeError("FBX rig FK 根控制层缺失：" + label)
-            c.connectAttr(reverse + ".outputX",
-                          fk_root_offset + ".visibility")
+            # Toes and fingers are still FK. Parent their control offsets to
+            # the blended end joint so they follow either IK or FK wrist/foot.
+            children = tuple(spec for spec in specs
+                             if spec.parent_control_name ==
+                             limb.fk_control_names[2])
+            if children:
+                follow = c.createNode("transform",
+                    name="AdvPy_FBX_" + label + "_EndFollow", parent=main)
+                c.xform(follow, worldSpace=True,
+                        matrix=c.xform(limb.body_joint_paths[2], query=True,
+                                       worldSpace=True, matrix=True))
+                c.parentConstraint(limb.body_joint_paths[2], follow,
+                    maintainOffset=False,
+                    name="AdvPy_FBX_" + label + "_EndFollowConstraint")
+                for child in children:
+                    control = fk_controls[child.control_name]
+                    offset = (c.listRelatives(control, parent=True,
+                                              fullPath=True) or [None])[0]
+                    if offset is None:
+                        raise RuntimeError("FBX rig 末端 FK 子控制层缺失："
+                                           + child.control_name)
+                    c.parent(offset, follow, absolute=True)
             for offset in (end_offset, pole_offset):
                 c.connectAttr(switch, offset + ".visibility")
             controls.extend((end_control, pole))
