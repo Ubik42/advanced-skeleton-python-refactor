@@ -107,6 +107,7 @@ class GenericFkFeaturePolicy:
     bendy_negative_right_axes: frozenset[str] | None = None
     bendy_micro_matrix_controls: frozenset[str] | None = None
     bendy_base_twist_controls: frozenset[str] | None = None
+    bendy_micro_scale_controls: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(

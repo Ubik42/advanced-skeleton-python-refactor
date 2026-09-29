@@ -154,6 +154,7 @@ class MayaCharacterRegistryMixin:
         bendy_negative_right = set()
         bendy_micro_matrix = set()
         bendy_base_twist = set()
+        bendy_micro_scale = set()
         for control in bendy_aim_follow:
             stem, side = control.rsplit('_', 1)
             namespace = bendy_namespace(control)
@@ -210,6 +211,13 @@ class MayaCharacterRegistryMixin:
                     raise CharacterRegistryError(
                         'Bendy 基础扭转节点类型错误：' + control)
                 bendy_base_twist.add(control)
+            micro_scale = (namespace + 'AdvPy_BendyMicroScaleCombine'
+                           + stem.removeprefix('Bend') + '_' + side)
+            if c.objExists(micro_scale):
+                if c.nodeType(micro_scale) != 'multiplyDivide':
+                    raise CharacterRegistryError(
+                        'Bendy 微控制缩放节点类型错误：' + control)
+                bendy_micro_scale.add(control)
             if side != 'R':
                 continue
             starts = c.ls(namespace + stem + '0_R', long=True,
@@ -241,7 +249,8 @@ class MayaCharacterRegistryMixin:
             frozenset(bendy_end_matrix), frozenset(bendy_oriented),
             frozenset(bendy_negative_right),
             frozenset(bendy_micro_matrix),
-            frozenset(bendy_base_twist))
+            frozenset(bendy_base_twist),
+            frozenset(bendy_micro_scale))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

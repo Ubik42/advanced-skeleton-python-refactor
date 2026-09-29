@@ -33,6 +33,7 @@ class FitBendyChainSpec:
     honor_non_symmetry_axis: bool = True
     micro_matrix_aim: bool = True
     micro_base_twist: bool = True
+    micro_local_scale: bool = True
 
     def __post_init__(self) -> None:
         if (type(self.rotation_order) is not int
@@ -60,6 +61,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 微控制矩阵瞄准策略无效")
         if type(self.micro_base_twist) is not bool:
             raise ValueError("Bendy 微控制基础扭转策略无效")
+        if type(self.micro_local_scale) is not bool:
+            raise ValueError("Bendy 微控制缩放策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -322,6 +325,15 @@ class FitBendyChainSpec:
     @property
     def deform_scale_mult_names(self) -> tuple[str, ...]:
         return tuple("AdvPy_BendyDeformScale" + name
+                     for name in self.deform_names)
+
+    @property
+    def deform_micro_scale_names(self) -> tuple[
+        tuple[str, str, str], ...
+    ]:
+        return tuple(("AdvPy_BendyMicroScaleRelative" + name,
+                      "AdvPy_BendyMicroScaleDecompose" + name,
+                      "AdvPy_BendyMicroScaleCombine" + name)
                      for name in self.deform_names)
 
     def control_weights(self, sample_index: int) -> tuple[float, ...]:

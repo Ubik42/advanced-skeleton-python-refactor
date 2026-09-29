@@ -353,11 +353,12 @@ class MayaFitBendyMixin:
     def preflight_fit_bendy_deform(self, spec: FitBendyChainSpec) -> None:
         c = self._cmds
         for index, (name, output, constraint, scale_pick,
-                    scale_mult) in enumerate(zip(
+                    scale_mult, micro_scale_names) in enumerate(zip(
                 spec.deform_names, spec.micro_output_names,
                 spec.deform_constraint_names,
                 spec.deform_scale_pick_names,
-                spec.deform_scale_mult_names)):
+                spec.deform_scale_mult_names,
+                spec.deform_micro_scale_names)):
             joints = c.ls(name, long=True, type="joint") or []
             drivers = c.ls(output, long=True, type="transform") or []
             if len(joints) != 1 or len(drivers) != 1:
@@ -369,7 +370,9 @@ class MayaFitBendyMixin:
             if index and c.getAttr(joints[0] + "." + marker) != "fit-part-v1":
                 raise ValueError("Bendy 需要 Twist Part 关节：" + name)
             if (c.objExists(constraint) or c.objExists(scale_pick)
-                    or c.objExists(scale_mult)):
+                    or c.objExists(scale_mult)
+                    or (spec.micro_local_scale and any(
+                        c.objExists(node) for node in micro_scale_names))):
                 raise ValueError("Bendy 变形节点名称已占用：" + name)
             if c.listConnections(joints[0], type="skinCluster"):
                 raise ValueError("Bendy 接管必须在 Skin 绑定前执行：" + name)
@@ -379,12 +382,13 @@ class MayaFitBendyMixin:
         c = self._cmds
         poses = {}
         for (name, output, offset, constraint, scale_pick,
-             scale_mult_name) in zip(
+             scale_mult_name, micro_scale_names) in zip(
                 spec.deform_names, spec.micro_output_names,
                 spec.micro_offset_names,
                 spec.deform_constraint_names,
                 spec.deform_scale_pick_names,
-                spec.deform_scale_mult_names):
+                spec.deform_scale_mult_names,
+                spec.deform_micro_scale_names):
             joint = (c.ls(name, long=True, type="joint") or [])[0]
             poses[name] = tuple(float(value) for value in c.xform(
                 joint, query=True, worldSpace=True, matrix=True))
@@ -409,7 +413,33 @@ class MayaFitBendyMixin:
                     else:
                         c.setAttr(scale_mult + ".input1" + axis,
                                   float(value))
-            c.connectAttr(offset + ".scale", scale_mult + ".input2")
+            if spec.micro_local_scale:
+                relative_name, decompose_name, combine_name = (
+                    micro_scale_names)
+                relative = c.createNode(
+                    "multMatrix", name=relative_name,
+                    skipSelect=True)
+                decompose = c.createNode(
+                    "decomposeMatrix", name=decompose_name,
+                    skipSelect=True)
+                combine = c.createNode(
+                    "multiplyDivide", name=combine_name,
+                    skipSelect=True)
+                c.connectAttr(output + ".worldMatrix[0]",
+                              relative + ".matrixIn[0]")
+                c.connectAttr(offset + ".worldInverseMatrix[0]",
+                              relative + ".matrixIn[1]")
+                c.connectAttr(relative + ".matrixSum",
+                              decompose + ".inputMatrix")
+                c.connectAttr(offset + ".scale",
+                              combine + ".input1")
+                c.connectAttr(decompose + ".outputScale",
+                              combine + ".input2")
+                c.connectAttr(combine + ".output",
+                              scale_mult + ".input2")
+            else:
+                c.connectAttr(offset + ".scale",
+                              scale_mult + ".input2")
             c.connectAttr(scale_mult + ".output", joint + ".scale")
             for attribute in ("translate", "rotate", "offsetParentMatrix"):
                 destination = joint + "." + attribute
@@ -453,12 +483,13 @@ class MayaFitBendyMixin:
     def capture_fit_bendy_deform(self, spec: FitBendyChainSpec) -> bool:
         c = self._cmds
         for (name, output, offset, constraint, scale_pick,
-             scale_mult) in zip(
+             scale_mult, micro_scale_names) in zip(
                 spec.deform_names, spec.micro_output_names,
                 spec.micro_offset_names,
                 spec.deform_constraint_names,
                 spec.deform_scale_pick_names,
-                spec.deform_scale_mult_names):
+                spec.deform_scale_mult_names,
+                spec.deform_micro_scale_names):
             joints = c.ls(name, long=True, type="joint") or []
             drivers = c.ls(output, long=True, type="transform") or []
             if (len(joints) != 1 or len(drivers) != 1
@@ -476,8 +507,34 @@ class MayaFitBendyMixin:
                     != scale_mult + ".output"
                     or c.connectionInfo(scale_mult + ".input2",
                                         sourceFromDestination=True)
-                    != offset + ".scale"):
+                    != ((micro_scale_names[2] + ".output")
+                        if spec.micro_local_scale else
+                        offset + ".scale")):
                 return False
+            if spec.micro_local_scale:
+                relative, decompose, combine = micro_scale_names
+                if (not c.objExists(relative)
+                        or c.nodeType(relative) != "multMatrix"
+                        or not c.objExists(decompose)
+                        or c.nodeType(decompose) != "decomposeMatrix"
+                        or not c.objExists(combine)
+                        or c.nodeType(combine) != "multiplyDivide"
+                        or c.connectionInfo(relative + ".matrixIn[0]",
+                                            sourceFromDestination=True)
+                        != output + ".worldMatrix[0]"
+                        or c.connectionInfo(relative + ".matrixIn[1]",
+                                            sourceFromDestination=True)
+                        != offset + ".worldInverseMatrix[0]"
+                        or c.connectionInfo(decompose + ".inputMatrix",
+                                            sourceFromDestination=True)
+                        != relative + ".matrixSum"
+                        or c.connectionInfo(combine + ".input1",
+                                            sourceFromDestination=True)
+                        != offset + ".scale"
+                        or c.connectionInfo(combine + ".input2",
+                                            sourceFromDestination=True)
+                        != decompose + ".outputScale"):
+                    return False
             targets = c.parentConstraint(constraint, query=True,
                                          targetList=True) or []
             if len(targets) != 1 or targets[0].rsplit("|", 1)[-1] != output:
