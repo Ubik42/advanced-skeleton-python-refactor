@@ -148,22 +148,34 @@ def plan_body_generic_fk(
                     and root_follow_transform is not None):
                 body_parent = root_follow_transform
                 use_root_follow = True
-            if follower_sources is None or spec.name in follower_sources:
-                follower_name = ("AdvPy_GenericFKFollow_"
-                                 + spec.name)
+            legacy_source = source_parent.rsplit("|", 1)[-1]
+            if (follower_sources is None
+                    or spec.name in follower_sources
+                    or legacy_source in follower_sources):
+                follower_key = (
+                    legacy_source
+                    if follower_sources is not None
+                    and spec.name not in follower_sources
+                    and legacy_source in follower_sources
+                    else spec.name)
+                follower_name = "AdvPy_GenericFKFollow_" + follower_key
                 follower_path = root_path + "|" + follower_name
                 inherit_scale = not fit_segment_scale_compensate(
                     item, spec.name,
                     spec.parent_path.rsplit("|", 1)[-1],
                     use_offset_parent_matrix=use_offset_parent_matrix,
                     is_finger=source_name in finger_names)
-                followers.setdefault(follower_path,
-                    BodyGenericFkFollowerSpec(
-                        follower_path, follower_name, body_parent,
-                        use_offset_parent_matrix, inherit_scale,
-                        use_parent_constraint=use_root_follow,
-                        scale_source_body_joint=(
-                            body_joint if use_root_follow else None)))
+                follower = BodyGenericFkFollowerSpec(
+                    follower_path, follower_name, body_parent,
+                    use_offset_parent_matrix, inherit_scale,
+                    use_parent_constraint=use_root_follow,
+                    scale_source_body_joint=(
+                        body_joint if use_root_follow else None))
+                if (follower_path in followers
+                        and followers[follower_path] != follower):
+                    raise ValueError("旧通用 FK 共享跟随层有冲突的父级或缩放设置："
+                                     + follower_name)
+                followers[follower_path] = follower
                 parent_control = follower_path
         stem = spec.name
         offset_name = "AdvPy_" + stem + "FKOffset"
