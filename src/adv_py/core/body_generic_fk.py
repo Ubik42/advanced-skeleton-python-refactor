@@ -69,7 +69,8 @@ def plan_body_generic_fk(
         offset_path = parent_control + "|" + offset_name
         aim_name = (("AdvPy_" + stem + "FKGuideAim")
                     if item.curve_guide is not None else
-                    ("AdvPy_" + stem + "FKAim") if item.aim else None)
+                    ("AdvPy_" + stem + "FKAim")
+                    if item.aim and spec.path in child_paths else None)
         aim_path = (offset_path + "|" + aim_name
                     if aim_name is not None else None)
         extra_path = (aim_path or offset_path) + "|" + extra_name

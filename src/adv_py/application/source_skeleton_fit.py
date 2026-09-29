@@ -227,9 +227,29 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     axial_names = tuple(f"Spine{index}" for index in
                         range(1, len(axial_paths))) + ("Chest",)
     name_by_path = dict(zip(axial_paths, axial_names))
+    explicit_names = {_base_name(joint.name) for joint in source
+                      if not left_mirror_branch(joint)}
+    # An alias is only a substitute when the standard joint is absent.
+    # A skeleton containing both Ankle and Foot must retain its actual Foot
+    # branch instead of silently letting Ankle win the duplicate mapping.
+    optional_aliases = {"Clavicle", "Hand", "Foot", "Toe", "Ball"}
 
     def mapped_name(joint: SourceSkeletonJoint) -> str | None:
-        return name_by_path.get(joint.path) or _fit_name(joint.name)
+        if joint.path in name_by_path:
+            return name_by_path[joint.path]
+        original = _base_name(joint.name)
+        mapped = _fit_name(joint.name)
+        if (original == "Toe" and "Ball" in explicit_names
+                and "Toes" not in explicit_names):
+            ancestor = joint.parent
+            while ancestor in by_path:
+                if _base_name(by_path[ancestor].name) == "Ball":
+                    return ("Toe" if "ToesEnd" in explicit_names
+                            else "ToesEnd")
+                ancestor = by_path[ancestor].parent
+        if (original in optional_aliases and mapped in explicit_names):
+            return original
+        return mapped
 
     by_name: dict[str, SourceSkeletonJoint] = {}
     for joint in source:
