@@ -83,12 +83,22 @@ class BuildCharacterFromFit:
                 or not isinstance(maximum_influences, int)
                 or not 1 <= maximum_influences <= 256):
             raise ValueError("最大影响关节数须为 1..256 的整数")
-        preflight_registered_fit_parts(
-            self._host, container,
-            include_segment_influences=include_segment_influences,
-            use_fit_part_hierarchy=use_fit_part_hierarchy)
-        description = axial_description_from_fit(
-            self._host.capture_fit_hierarchy(container), spine_segments)
+        hierarchy = self._host.capture_fit_hierarchy(container)
+        roots = [node for node in hierarchy.joints
+                 if node.dag_parent == hierarchy.container]
+        if len(roots) != 1:
+            raise ValueError("FitSkeleton 必须恰有一个顶层 joint")
+        if use_fit_part_hierarchy and not include_segment_influences:
+            raise ValueError("通用 Fit Part 构建需要启用分段 Skin 影响")
+        # The build transaction may rename or insert Root first. Part
+        # preflight runs there against the resulting Fit hierarchy.
+        if roots[0].short_name == "Root" and abs(
+                roots[0].local_position[0]) <= 0.01:
+            preflight_registered_fit_parts(
+                self._host, container,
+                include_segment_influences=include_segment_influences,
+                use_fit_part_hierarchy=use_fit_part_hierarchy)
+        description = axial_description_from_fit(hierarchy, spine_segments)
         return CharacterFromFitPlan(container, meshes, description,
             maximum_influences, include_head_aim, infer_missing_labels,
             include_segment_influences, use_fit_part_hierarchy)

@@ -494,6 +494,59 @@ class MayaFitJointHost:
             )
         return FitHierarchySnapshot(container=container, joints=tuple(nodes))
 
+    def prepare_fit_root(self, container_name: str) -> str:
+        """Apply the root naming/insertion pass from asBuildAdvancedSkeleton."""
+        self._require_transaction()
+        container = self._resolve_transform(
+            container_name, FitHierarchyValidationError
+        )
+        roots = self._cmds.listRelatives(
+            container, children=True, type="joint", fullPath=True
+        ) or []
+        if len(roots) != 1:
+            raise FitSkeletonValidationError(
+                "FitSkeleton 必须恰有一个顶层 joint 才能准备 Root"
+            )
+        first = roots[0]
+        name = first.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        position = tuple(float(value) for value in self._cmds.xform(
+            first, query=True, worldSpace=True, translation=True
+        ))
+        scale = float(self._cmds.getAttr(f"{container}.scaleX"))
+        if scale <= 0:
+            raise FitSkeletonValidationError("FitSkeleton.scaleX 必须大于零")
+        if abs(position[0]) <= 0.01 * scale:
+            if name == "Root":
+                return first
+            if self.find_name_collisions("Root"):
+                raise FitSkeletonValidationError("场景中已有 Root，无法重命名顶层 Fit joint")
+            self._transaction_changed = True
+            renamed = self._cmds.rename(first, "Root")
+            return (self._cmds.ls(renamed, long=True, type="joint") or [renamed])[0]
+        if name == "Root":
+            root_matches = self.find_name_collisions("Root")
+            if set(root_matches) != {first}:
+                raise FitSkeletonValidationError("Root 名称不唯一，无法准备 Fit 根关节")
+            if self.find_name_collisions("RootSide"):
+                raise FitSkeletonValidationError("RootSide 名称已被占用")
+            self._transaction_changed = True
+            renamed = self._cmds.rename(first, "RootSide")
+            first = (self._cmds.ls(renamed, long=True, type="joint") or [renamed])[0]
+        elif self.find_name_collisions("Root"):
+            raise FitSkeletonValidationError("场景中已有 Root，无法插入中心根关节")
+        self._transaction_changed = True
+        root = self._cmds.createNode(
+            "joint", name="Root", parent=container, skipSelect=True
+        )
+        root = (self._cmds.ls(root, long=True, type="joint") or [root])[0]
+        self._cmds.xform(
+            root, worldSpace=True,
+            translation=(0.0, position[1], position[2]),
+        )
+        self.set_joint_label(root, JointLabel.parse("Root"))
+        self._cmds.parent(first, root, absolute=True)
+        return root
+
     def set_fit_joint_local_position(
         self,
         joint: str,
