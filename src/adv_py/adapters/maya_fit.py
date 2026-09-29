@@ -565,6 +565,11 @@ class MayaFitJointHost:
         scale = max(0.01, maximum_y / 17.176163) if maximum_y > 0 else 1.0
         if abs(position[0]) <= 0.01 * scale:
             if name == "Root":
+                if any(path != first and not path.startswith(container + "|")
+                       for path in self.find_name_collisions("Root")):
+                    raise FitSkeletonValidationError(
+                        "场景中有其他 Root，无法保留顶层 Fit 根关节名称"
+                    )
                 return first
             if self.find_name_collisions("Root"):
                 raise FitSkeletonValidationError("场景中已有 Root，无法重命名顶层 Fit joint")
