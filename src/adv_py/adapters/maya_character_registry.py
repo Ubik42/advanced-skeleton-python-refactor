@@ -56,7 +56,10 @@ class MayaCharacterRegistryMixin:
             for node in registration.nodes
             if (leaf := node.path.rsplit('|', 1)[-1]
                 .rsplit(':', 1)[-1]).startswith(
-                    'AdvPy_GenericFKFollow_'))
+                    'AdvPy_GenericFKFollow_')
+            and node.path.rsplit('|', 1)[0].rsplit('|', 1)[-1]
+                .rsplit(':', 1)[-1]
+                == 'AdvPy_GenericFKControls')
         return GenericFkFeaturePolicy(
             frozenset(scale), frozenset(compensated),
             frozenset(globally_driven), aim_sources,
