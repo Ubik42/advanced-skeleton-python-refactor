@@ -74,6 +74,7 @@ class MayaCharacterRegistryMixin:
                 if (not bendy_source.endswith('.output')
                         or not bendy_node.rsplit(':', 1)[-1].startswith(
                             'AdvPy_BendyDeformScale')
+                        or not c.objExists(bendy_node)
                         or c.nodeType(bendy_node) != 'multiplyDivide'):
                     raise CharacterRegistryError(
                         '旧通用 FK 缩放连接不是完整的直驱图：' + stem)
