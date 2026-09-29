@@ -627,6 +627,45 @@ class MayaFitJointHost:
                     "Fit 重名关节没有可用的数字后缀：" + short
                 )
 
+    def bake_fit_container_scale(self, container_name: str) -> None:
+        """Freeze Fit scale into its shape and joints before Body is copied."""
+        self._require_transaction()
+        container = self._resolve_transform(
+            container_name, FitHierarchyValidationError
+        )
+        scale = tuple(float(value) for value in self._cmds.getAttr(
+            container + ".scale"
+        )[0])
+        if all(abs(value - 1.0) <= 1e-8 for value in scale):
+            return
+        joints = self._cmds.listRelatives(
+            container, allDescendents=True, type="joint", fullPath=True
+        ) or []
+        positions = {joint: tuple(float(value) for value in self._cmds.xform(
+            joint, query=True, worldSpace=True, translation=True
+        )) for joint in joints}
+        self._transaction_changed = True
+        self._cmds.makeIdentity(
+            container, apply=True, translate=False, rotate=False,
+            scale=True, normal=False,
+        )
+        if any(abs(float(value) - 1.0) > 1e-6 for value in self._cmds.getAttr(
+                container + ".scale")[0]):
+            raise RuntimeError("Fit 缩放烘焙后容器未恢复单位缩放")
+        for joint, expected in positions.items():
+            actual = self._cmds.ls(joint, long=True, type="joint") or []
+            if len(actual) != 1:
+                raise RuntimeError("Fit 缩放烘焙改变了关节层级：" + joint)
+            location = self._cmds.xform(
+                actual[0], query=True, worldSpace=True, translation=True
+            )
+            if any(abs(float(value) - target) > 1e-5 * max(1.0, abs(target))
+                   for value, target in zip(location, expected)):
+                raise RuntimeError("Fit 缩放烘焙改变了关节世界位置：" + joint)
+            if self._cmds.attributeQuery("fat", node=actual[0], exists=True):
+                plug = actual[0] + ".fat"
+                self._cmds.setAttr(plug, float(self._cmds.getAttr(plug)) * scale[1])
+
     def set_fit_joint_local_position(
         self,
         joint: str,
