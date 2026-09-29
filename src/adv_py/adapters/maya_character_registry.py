@@ -127,13 +127,20 @@ class MayaCharacterRegistryMixin:
             and node.path.rsplit('|', 1)[0].rsplit('|', 1)[-1]
                 .rsplit(':', 1)[-1]
                 == 'AdvPy_GenericFKControls')
-        bendy_masters = frozenset(
-            key.split('.', 2)[1] for key in keys
-            if key.startswith('bendy.')
-            and key.endswith('.microVis'))
+        bendy_master_paths = {
+            channel.key.split('.', 2)[1]: channel.node
+            for channel in registration.channels
+            if channel.key.startswith('bendy.')
+            and channel.key.endswith('.microVis')}
+        def bendy_namespace(control):
+            leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
+            return (leaf.rsplit(':', 1)[0] + ':'
+                    if ':' in leaf else '')
+
         bendy_aim_follow = frozenset(
-            control for control in bendy_masters
-            if c.objExists('AdvPy_' + control.rsplit('_', 1)[0]
+            control for control in bendy_master_paths
+            if c.objExists(bendy_namespace(control) + 'AdvPy_'
+                           + control.rsplit('_', 1)[0]
                            + 'MasterFollow_'
                            + control.rsplit('_', 1)[-1] + 'Aim'))
         bendy_start_names = frozenset(
@@ -143,7 +150,8 @@ class MayaCharacterRegistryMixin:
         bendy_child_control = set()
         for control in bendy_aim_follow:
             stem, side = control.rsplit('_', 1)
-            blend = ('AdvPy_' + stem + 'MasterFollow_'
+            namespace = bendy_namespace(control)
+            blend = (namespace + 'AdvPy_' + stem + 'MasterFollow_'
                      + side + 'Blend')
             source = c.connectionInfo(blend + '.inputMatrix',
                                       sourceFromDestination=True)
@@ -151,7 +159,8 @@ class MayaCharacterRegistryMixin:
             if (source and source.split('.', 1)[0].rsplit('|', 1)[-1]
                     .rsplit(':', 1)[-1] == start):
                 bendy_start_control.add(control)
-            end_world = 'AdvPy_' + stem + 'EndWorld_' + side
+            end_world = (namespace + 'AdvPy_' + stem
+                         + 'EndWorld_' + side)
             end_source = c.connectionInfo(end_world + '.matrixIn[0]',
                                           sourceFromDestination=True)
             end_leaf = (end_source.split('.', 1)[0].rsplit('|', 1)[-1]
