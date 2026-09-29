@@ -252,15 +252,6 @@ class BuildBodyCharacterRig:
         arm_aim = aim_source_names & frozenset(("Shoulder", "Elbow", "Wrist"))
         leg_aim = aim_source_names & frozenset(("Hip", "Knee", "Ankle",
                                                 "Toes", "ToesEnd"))
-        conflicting_aim = tuple(
-            item.joint for item in safety.symmetry.source.metadata
-            if (FitJointField.AIM in item.present_fields
-                and item.joint in fit_parents
-                and item.global_weight is not None))
-        if conflicting_aim:
-            raise FitSkeletonValidationError(
-                "同一 FK Extra 暂不能同时使用 Aim 与 Global："
-                + "、".join(conflicting_aim))
         fit_height = fit_character_height(tuple(
             node.world_position for node in
             safety.symmetry.source.hierarchy.joints))

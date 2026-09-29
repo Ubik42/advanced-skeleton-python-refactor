@@ -24,6 +24,7 @@ class BodyFkGlobalSpec:
     translate: bool
     stem: str
     bind_world_matrix: tuple[float, ...]
+    extra_parent: str | None = None
 
     @property
     def matrix_name(self) -> str:
@@ -107,7 +108,7 @@ def plan_body_fk_global(
             continue
         if (control.extra_path is None
                 or control.extra_path.rsplit("|", 1)[0]
-                != control.offset_path
+                != (control.aim_path or control.offset_path)
                 or not 0 <= source.global_weight <= 10):
             raise ValueError("Global 目标缺少有效 FK Extra 层："
                              + control.control_path)
@@ -118,7 +119,8 @@ def plan_body_fk_global(
             source.global_translate, stem,
             tuple(value for axis in control.world_axes
                   for value in (*axis, 0.0))
-            + (*control.world_position, 1.0))
+            + (*control.world_position, 1.0),
+            extra_parent=control.aim_path or control.offset_path)
         if spec.control in names:
             raise ValueError("Global FK 控制重复：" + spec.control)
         names.add(spec.control)
@@ -132,7 +134,7 @@ def audit_body_fk_global(
 ) -> tuple[str, ...]:
     errors: list[str] = []
     if (state.control != spec.control or state.extra != spec.extra
-            or state.extra_parent != spec.offset
+            or state.extra_parent != (spec.extra_parent or spec.offset)
             or state.weight != spec.default_weight
             or state.translate_weight != (
                 spec.default_weight if spec.translate else None)):
