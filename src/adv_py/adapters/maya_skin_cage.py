@@ -5,8 +5,10 @@ from contextlib import contextmanager
 
 from adv_py.core.skin_cage import (
     SKIN_CAGE_NODES, SkinCageBranchLayout, SkinCageBuildPlan,
-    SkinCageCopyTarget, SkinCageGroinAdjustment,
-    SkinCageGroinLocators, SkinCageMirrorPair, SkinCageWidthInput,
+    SkinCageCopyTarget, SkinCageCurveDeletePlan,
+    SkinCageGroinAdjustment,
+    SkinCageGroinLocators, SkinCageMirrorPair, SkinCageProfileShape,
+    SkinCageWidthInput,
     SkinCageWidthSpec, special_skin_cage_branch,
 )
 
@@ -77,6 +79,172 @@ class MayaSkinCageHost:
         if occupied:
             raise ValueError("SkinCage 已存在或有残留节点，请先删除：" +
                              ", ".join(occupied))
+
+    def cage_exists(self) -> bool:
+        c = self.cmds
+        return c.objExists(self._name("MeshGeometry")) or c.objExists(
+            self._name("skinCage"))
+
+    def preflight_rebuild(self, plan: SkinCageBuildPlan) -> None:
+        c = self.cmds
+        for leaf in ("Geometry", "MeshGeometry", "MeshCurves",
+                     "skinCage", "skinClusterSkinCage"):
+            if not c.objExists(self._name(leaf)):
+                raise ValueError("SkinCage 重建缺少原版节点：" + leaf)
+        if len(plan.influences) < 2:
+            raise ValueError("变形系统至少需要两个关节")
+
+    def capture_profile_shapes(self) -> tuple[SkinCageProfileShape, ...]:
+        c = self.cmds
+        profiles = []
+        for node in c.listRelatives(
+                self._name("MeshCurves"), allDescendents=True,
+                type="transform", fullPath=True) or ():
+            leaf = node.rsplit("|", 1)[-1]
+            if not leaf.endswith("Profile"):
+                continue
+            shape = c.listRelatives(node, shapes=True,
+                                    noIntermediate=True,
+                                    type="nurbsCurve") or []
+            if len(shape) != 1:
+                continue
+            spans = int(c.getAttr(shape[0] + ".spans"))
+            degree = int(c.getAttr(shape[0] + ".degree"))
+            form = int(c.getAttr(shape[0] + ".form"))
+            count = spans if form == 2 else spans + degree
+            points = tuple(tuple(c.xform(
+                f"{node}.cv[{index}]", query=True, worldSpace=True,
+                translation=True)) for index in range(count))
+            profiles.append(SkinCageProfileShape(leaf, points))
+        return tuple(profiles)
+
+    def restore_profile_shapes(
+            self, profiles: tuple[SkinCageProfileShape, ...]) -> None:
+        c = self.cmds
+        restored = 0
+        for profile in profiles:
+            matches = c.ls(profile.name, long=True, type="transform") or []
+            if not matches:
+                continue
+            if len(matches) != 1:
+                raise ValueError("重建后的 SkinCage 截面名称不唯一：" +
+                                 profile.name)
+            node = matches[0]
+            shape = c.listRelatives(node, shapes=True,
+                                    noIntermediate=True,
+                                    type="nurbsCurve") or []
+            if len(shape) != 1:
+                raise ValueError("重建后的 SkinCage 截面曲线无效：" +
+                                 profile.name)
+            count = int(c.getAttr(shape[0] + ".spans")) + int(
+                c.getAttr(shape[0] + ".degree"))
+            if count != len(profile.points):
+                raise ValueError("SkinCage 重建前后截面控制点数不同：" +
+                                 profile.name)
+            for index, point in enumerate(profile.points):
+                c.xform(f"{node}.cv[{index}]", worldSpace=True,
+                        translation=point)
+            restored += 1
+        if not restored:
+            raise RuntimeError("SkinCage 重建后没有可恢复的同名截面")
+
+    def capture_restored_profiles(
+            self, profiles: tuple[SkinCageProfileShape, ...]) -> bool:
+        c = self.cmds
+        count = 0
+        for profile in profiles:
+            matches = c.ls(profile.name, long=True, type="transform") or []
+            if not matches:
+                continue
+            if len(matches) != 1:
+                return False
+            for index, expected in enumerate(profile.points):
+                actual = c.xform(f"{matches[0]}.cv[{index}]",
+                                 query=True, worldSpace=True,
+                                 translation=True)
+                if max(abs(actual[i] - expected[i]) for i in range(3)) > 1e-4:
+                    return False
+            count += 1
+        return count > 0
+
+    def capture_curve_delete_input(self) -> tuple[str, ...]:
+        c = self.cmds
+        leaves = ("SkinCurves1", "SkinCurves2", "MeshGeometry",
+                  "MeshCurves", "NurbsGeometry")
+        return tuple(leaf for leaf in leaves
+                     if c.objExists(self._name(leaf)))
+
+    def preflight_curve_delete(
+            self, plan: SkinCageCurveDeletePlan) -> None:
+        c = self.cmds
+        cage = self._name("skinCage")
+        skin = self._name("skinClusterSkinCage")
+        if not c.objExists(cage) or not c.objExists(skin):
+            raise ValueError("请先创建带蒙皮的 SkinCage")
+        if self._skin(cage) != skin:
+            raise ValueError("SkinCage 笼体没有原版 skinCluster 连接")
+        if c.objExists(self._name("skinCageFrozenInput")):
+            raise ValueError("SkinCage 已有冻结输入，请先检查旧曲线删除状态")
+
+    def delete_curves(self, plan: SkinCageCurveDeletePlan) -> None:
+        c = self.cmds
+        cage = self._name("skinCage")
+        skin = self._name("skinClusterSkinCage")
+        envelope = c.getAttr(skin + ".envelope")
+        c.setAttr(skin + ".envelope", 0)
+        try:
+            frozen = c.duplicate(
+                cage, name=self._name("skinCageFrozenInput"),
+                upstreamNodes=False)[0]
+            c.delete(frozen, constructionHistory=True)
+        finally:
+            c.setAttr(skin + ".envelope", envelope)
+        frozen_shape = (c.listRelatives(
+            frozen, shapes=True, noIntermediate=True,
+            type="mesh", fullPath=True) or [])[0]
+        frozen_shape = c.parent(frozen_shape, cage, shape=True,
+                                relative=True)[0]
+        c.setAttr(frozen_shape + ".intermediateObject", 1)
+        c.delete(frozen)
+        wraps = tuple(node for node in c.listHistory(cage) or ()
+                      if c.nodeType(node) == "wrap")
+        if wraps:
+            c.delete(wraps)
+        input_shapes = c.listConnections(
+            skin + ".input[0].inputGeometry", source=True,
+            destination=False, shapes=True) or []
+        input_shape = next((shape for shape in input_shapes
+                            if c.nodeType(shape) == "mesh" and
+                            (c.ls(shape, long=True) or [shape])[0] !=
+                            frozen_shape), None)
+        if input_shape is None:
+            all_shapes = c.listRelatives(cage, shapes=True,
+                                         type="mesh", fullPath=True) or []
+            input_shape = next((shape for shape in all_shapes
+                                if shape != frozen_shape and
+                                c.getAttr(shape + ".intermediateObject")),
+                               None)
+        if input_shape is None:
+            raise RuntimeError("SkinCage 缺少可冻结的蒙皮输入网格")
+        c.connectAttr(frozen_shape + ".outMesh",
+                      input_shape + ".inMesh", force=True)
+        existing = [self._name(leaf) for leaf in plan.nodes
+                    if c.objExists(self._name(leaf))]
+        if existing:
+            c.delete(existing)
+
+    def capture_curves_deleted(
+            self, plan: SkinCageCurveDeletePlan) -> bool:
+        c = self.cmds
+        cage = self._name("skinCage")
+        skin = self._name("skinClusterSkinCage")
+        shapes = c.listRelatives(cage, shapes=True, type="mesh",
+                                 fullPath=True) or []
+        return (all(not c.objExists(self._name(leaf))
+                    for leaf in plan.nodes)
+                and c.objExists(cage) and c.objExists(skin)
+                and self._skin(cage) == skin
+                and any("skinCageFrozenInput" in shape for shape in shapes))
 
     def _profile(self, joint: str, suffix: str, radius: float,
                  parent: str, layer: str,
@@ -515,7 +683,8 @@ class MayaSkinCageHost:
             c.select(mesh, add=True)
             mel.eval("AddWrapInfluence")
         c.reorderDeformers(cage_skin, wrap, cage)
-        c.select(selection, replace=True) if selection else c.select(clear=True)
+        surviving = [node for node in selection if c.objExists(node)]
+        c.select(surviving, replace=True) if surviving else c.select(clear=True)
 
     def capture_build(self, plan: SkinCageBuildPlan) -> bool:
         c = self.cmds

@@ -1722,6 +1722,8 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._skin_cage_adjust_groin))
             form.addRow(self._button("Create Groin joint",
                                      self._skin_cage_groin_joint))
+            form.addRow(self._button("Delete SkinCurves",
+                                     self._skin_cage_delete_curves))
             form.addRow(QtWidgets.QLabel("Re-use：将当前可见 SkinCurves 形状输出到 Script Editor。"))
             self.skin_cage_reuse_xform = QtWidgets.QCheckBox("xform")
             self.skin_cage_reuse_xform.setChecked(True)
@@ -2670,6 +2672,11 @@ def create_panel(controller: MayaPanelController | None = None):
         def _skin_cage_groin_joint(self):
             self.controller.skin_cage_groin_joint(self._namespace())
             return "已创建 Groin_M 并加入 SkinCage 蒙皮"
+
+        def _skin_cage_delete_curves(self):
+            count = self.controller.skin_cage_delete_curves(
+                self._namespace())
+            return f"已移除 {count} 个 SkinCage 曲线／管体节点"
 
         def _copy_skin_cage_weights(self):
             count = self.controller.skin_cage_copy_weights(self._namespace())

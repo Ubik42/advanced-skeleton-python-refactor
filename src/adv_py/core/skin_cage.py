@@ -68,6 +68,45 @@ class SkinCageGroinAdjustment:
     side_y: float
 
 
+@dataclass(frozen=True, slots=True)
+class SkinCageProfileShape:
+    name: str
+    points: tuple[tuple[float, float, float], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SkinCageCurveDeletePlan:
+    nodes: tuple[str, ...]
+
+
+def plan_skin_cage_curve_delete(
+        existing: tuple[str, ...]) -> SkinCageCurveDeletePlan:
+    if "MeshCurves" not in existing or "MeshGeometry" not in existing:
+        raise ValueError("SkinCage 编辑曲线或管体组不存在")
+    allowed = ("SkinCurves1", "SkinCurves2", "MeshGeometry",
+               "MeshCurves", "NurbsGeometry")
+    return SkinCageCurveDeletePlan(tuple(node for node in allowed
+                                          if node in existing))
+
+
+def plan_skin_cage_profile_restore(
+        profiles: tuple[SkinCageProfileShape, ...],
+        ) -> tuple[SkinCageProfileShape, ...]:
+    if not profiles:
+        raise ValueError("已有 SkinCage 缺少可恢复的截面曲线")
+    names = set()
+    for profile in profiles:
+        if profile.name in names or not profile.name.endswith("Profile"):
+            raise ValueError("SkinCage 截面名称重复或无效：" + profile.name)
+        names.add(profile.name)
+        if len(profile.points) < 4 or any(
+                len(point) != 3 or not all(isfinite(value)
+                                           for value in point)
+                for point in profile.points):
+            raise ValueError("SkinCage 截面控制点无效：" + profile.name)
+    return profiles
+
+
 def plan_groin_adjustment(start: tuple[float, float, float],
                           side: tuple[float, float, float],
                           ) -> SkinCageGroinAdjustment:

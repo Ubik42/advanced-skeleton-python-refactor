@@ -1336,6 +1336,12 @@ class MayaPanelController:
 
         CreateSkinCageGroinJoint(MayaSkinCageHost(namespace)).execute()
 
+    def skin_cage_delete_curves(self, namespace: str) -> int:
+        from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
+        from adv_py.application.skin_cage import DeleteSkinCageCurves
+
+        return DeleteSkinCageCurves(MayaSkinCageHost(namespace)).execute()
+
     def skin_cage_print_reuse(self, namespace: str, *, transforms: bool,
                               shapes: bool, catch: bool) -> int:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost

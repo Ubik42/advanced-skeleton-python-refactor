@@ -6,10 +6,13 @@ from typing import Protocol
 
 from adv_py.core.skin_cage import (
     SkinCageBuildPlan, SkinCageCopyTarget, SkinCageMirrorPair,
+    SkinCageCurveDeletePlan,
     SkinCageGroinAdjustment, SkinCageGroinLocators,
+    SkinCageProfileShape,
     SkinCageWidthInput, SkinCageWidthSpec,
     plan_groin_adjustment, plan_groin_locators, plan_skin_cage_build,
     plan_skin_cage_copy, plan_skin_cage_mirror, plan_skin_cage_width,
+    plan_skin_cage_curve_delete, plan_skin_cage_profile_restore,
 )
 
 
@@ -18,6 +21,18 @@ class SkinCageHost(Protocol):
     def preflight_build(self, plan: SkinCageBuildPlan) -> None: ...
     def create_cage(self, plan: SkinCageBuildPlan) -> None: ...
     def capture_build(self, plan: SkinCageBuildPlan) -> bool: ...
+    def cage_exists(self) -> bool: ...
+    def preflight_rebuild(self, plan: SkinCageBuildPlan) -> None: ...
+    def capture_profile_shapes(self) -> tuple[SkinCageProfileShape, ...]: ...
+    def restore_profile_shapes(
+        self, profiles: tuple[SkinCageProfileShape, ...]) -> None: ...
+    def capture_restored_profiles(
+        self, profiles: tuple[SkinCageProfileShape, ...]) -> bool: ...
+    def capture_curve_delete_input(self) -> tuple[str, ...]: ...
+    def preflight_curve_delete(self, plan: SkinCageCurveDeletePlan) -> None: ...
+    def delete_curves(self, plan: SkinCageCurveDeletePlan) -> None: ...
+    def capture_curves_deleted(self,
+                               plan: SkinCageCurveDeletePlan) -> bool: ...
     def capture_copy_input(self) -> tuple[tuple[str, ...], tuple[str, ...]]: ...
     def preflight_copy(self, targets: tuple[SkinCageCopyTarget, ...]) -> None: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
@@ -69,11 +84,25 @@ class CreateSkinCage:
 
     def execute(self) -> int:
         plan = plan_skin_cage_build(*self._host.capture_build_input())
-        self._host.preflight_build(plan)
-        with self._host.transaction("创建 SkinCage"):
+        rebuilding = self._host.cage_exists()
+        saved = ()
+        if rebuilding:
+            self._host.preflight_rebuild(plan)
+            saved = plan_skin_cage_profile_restore(
+                self._host.capture_profile_shapes())
+        else:
+            self._host.preflight_build(plan)
+        with self._host.transaction(
+                "重建 SkinCage" if rebuilding else "创建 SkinCage"):
+            if rebuilding:
+                self._host.delete_cage()
             self._host.create_cage(plan)
+            if saved:
+                self._host.restore_profile_shapes(saved)
             if not self._host.capture_build(plan):
                 raise RuntimeError("SkinCage 创建后缺少笼体、蒙皮或曲线")
+            if saved and not self._host.capture_restored_profiles(saved):
+                raise RuntimeError("SkinCage 重建后截面形状未恢复")
         return len(plan.chains)
 
 
@@ -164,3 +193,18 @@ class DeleteSkinCage:
     def execute(self) -> int:
         with self._host.transaction("删除 SkinCage"):
             return len(self._host.delete_cage())
+
+
+class DeleteSkinCageCurves:
+    def __init__(self, host: SkinCageHost) -> None:
+        self._host = host
+
+    def execute(self) -> int:
+        plan = plan_skin_cage_curve_delete(
+            self._host.capture_curve_delete_input())
+        self._host.preflight_curve_delete(plan)
+        with self._host.transaction("删除 SkinCage 编辑曲线"):
+            self._host.delete_curves(plan)
+            if not self._host.capture_curves_deleted(plan):
+                raise RuntimeError("SkinCage 曲线删除后笼体蒙皮未保留")
+        return len(plan.nodes)
