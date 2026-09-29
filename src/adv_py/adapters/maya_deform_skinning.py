@@ -77,3 +77,10 @@ def open_native_face_skin_paint(influence: str, *, cmds=None,
     mel.eval('artSkinInflListChanging "' + influence + '" 1;')
     mel.eval("artSkinInflListChanged artAttrSkinPaintCtx;")
     mel.eval("toolPropertyWindow;")
+
+
+def open_native_bake_deformer(*, mel=None) -> None:
+    """Open the Maya Bake Deformer tool after its optionVars are populated."""
+    if mel is None:
+        from maya import mel
+    mel.eval("BakeDeformerTool")

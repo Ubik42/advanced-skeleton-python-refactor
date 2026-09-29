@@ -132,3 +132,46 @@ class MayaFaceTweaksHost(MayaFacePreHost):
             c.select(layer, replace=True)
         open_native_face_skin_paint(resolved[0], cmds=c)
         return resolved[0]
+
+    def set_face_joints_visible(self, visible: bool) -> int:
+        """Apply asJointsVisibility, including old Fit drawStyle recovery."""
+        if type(visible) is not bool:
+            raise ValueError("Face 关节显示状态无效")
+        c = self._maya
+        main = self._name("Main")
+        legacy_root = self._name("root")
+        fit = self._name("FitSkeleton")
+        main_plug = (main + ".jointVis"
+                     if c.objExists(main) and c.attributeQuery(
+                         "jointVis", node=main, exists=True) else None)
+        has_root = c.objExists(legacy_root)
+        fit_paths = c.ls(fit, long=True, type="transform") or ()
+        if not main_plug and not has_root and not fit_paths:
+            raise FitSkeletonValidationError(
+                "Face 场景中没有可切换显示的角色关节")
+        restored = 0
+        with self.transaction("Face Tweaks 显示关节" if visible
+                              else "Face Tweaks 隐藏关节"):
+            if main_plug:
+                self._transaction_changed = True
+                c.setAttr(main_plug, visible)
+            if has_root and not c.getAttr(legacy_root + ".visibility",
+                                          lock=True):
+                try:
+                    c.setAttr(legacy_root + ".visibility", visible)
+                except RuntimeError:
+                    pass  # The MEL branch also ignores locked legacy roots.
+                else:
+                    self._transaction_changed = True
+            if visible:
+                for fit_path in fit_paths:
+                    joints = c.listRelatives(
+                        fit_path, allDescendents=True, type="joint",
+                        fullPath=True) or ()
+                    for joint in joints:
+                        if int(c.getAttr(joint + ".drawStyle")) != 2:
+                            continue
+                        self._transaction_changed = True
+                        c.setAttr(joint + ".drawStyle", 0)
+                        restored += 1
+        return restored

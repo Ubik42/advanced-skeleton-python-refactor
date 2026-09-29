@@ -10,6 +10,7 @@ from adv_py.application.oriented_body_skeleton import BuildOrientedBodySkeleton
 from adv_py.application.registered_body_build import _JoinedTransactionHost
 from adv_py.core.body_skeleton import BodySkeletonSnapshot
 from adv_py.core.fbx_rig_import import (FBXRigImportPlan, FBXRigSourceJoint,
+                                        detect_fbx_source_application,
                                         plan_fbx_game_root_motion)
 from adv_py.core.fbx_rig_import import (FBXRigControlTransferPlan,
                                         FBXRigFitGuideState)
@@ -106,7 +107,9 @@ class MayaFBXRigSourceReader:
         bound_skin_upper_y = (float(c.exactWorldBoundingBox(meshes[0])[4])
                               if meshes else None)
         return FBXRigSourceCapture(
-            joints, times, highest_y, None, tuple(meshes),
+            joints, times, highest_y,
+            detect_fbx_source_application(tuple(
+                c.ls(dagObjects=True, long=True) or ())), tuple(meshes),
             float(c.currentTime(query=True)),
             float(c.playbackOptions(query=True, minTime=True)),
             float(c.playbackOptions(query=True, maxTime=True)),

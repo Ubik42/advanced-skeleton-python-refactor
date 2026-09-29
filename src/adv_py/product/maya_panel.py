@@ -1326,6 +1326,7 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(QtWidgets.QLabel("选择已蒙皮的多边形网格。"))
             form.addRow(self._button("硬化权重", self._harden_delta_mush_weights))
             form.addRow(self._button("应用 Delta Mush", self._apply_delta_mush))
+            form.addRow(self._button("Bake DeltaMush", self._bake_delta_mush))
             stack.addWidget(group)
             stack.addStretch(1)
             return page
@@ -1619,6 +1620,12 @@ def create_panel(controller: MayaPanelController | None = None):
             group, form = self._group("03A · Face Tweaks", [])
             form.addRow(self._button("Paint skin-weights",
                                      self._face_tweaks_paint))
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("Hide Joints",
+                lambda: self._face_tweaks_joints_visible(False)))
+            row.addWidget(self._button("Show Joints",
+                lambda: self._face_tweaks_joints_visible(True)))
+            form.addRow(row)
             for label, area, subtract in (
                     ("select eyeBrowArea", "eyeBrowArea", False),
                     ("select -d eyeBrowLine", "eyeBrowLineArea", True),
@@ -3064,6 +3071,10 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.delta_mush_apply(self._namespace())
             return f"已为 {count} 个网格应用 Delta Mush"
 
+        def _bake_delta_mush(self):
+            mesh = self.controller.delta_mush_bake(self._namespace())
+            return "已为 Body 网格打开 Maya Bake Deformer 工具：" + mesh
+
         def _select_shapers(self, node=None):
             count = self.controller.shapers_select(self._namespace(), node)
             return f"已选择 {count} 个 Shapers 变形器"
@@ -3258,6 +3269,13 @@ def create_panel(controller: MayaPanelController | None = None):
         def _face_tweaks_paint(self):
             joint = self.controller.face_tweaks_paint_skin(self._namespace())
             return "已打开 Face Skin 权重绘制：" + joint
+
+        def _face_tweaks_joints_visible(self, visible):
+            restored = self.controller.face_tweaks_set_joints_visible(
+                self._namespace(), visible)
+            if visible:
+                return f"已显示角色关节；恢复 {restored} 个旧 Fit 关节的绘制样式"
+            return "已隐藏角色关节"
 
         def _face_record_right_eye(self):
             path = self.controller.face_eye_selected_mesh(self._namespace())

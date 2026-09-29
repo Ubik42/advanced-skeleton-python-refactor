@@ -15,6 +15,15 @@ class MayaFaceDeltaMushHost(MayaFacePreHost):
     def _name(self, leaf: str) -> str:
         return ":" + ((self.namespace + ":") if self.namespace else "") + leaf
 
+    def _require_supported_mode(self) -> None:
+        fit = self._name("FaceFitSkeleton")
+        c = self._maya
+        if (c.objExists(fit)
+                and c.attributeQuery("GameEngine", node=fit, exists=True)
+                and c.getAttr(fit + ".GameEngine")):
+            raise FitSkeletonValidationError(
+                "Face Game Engine 模式下原版禁用 DeltaMush")
+
     def _face_mesh(self) -> str:
         meshes = self.read_face_objects(FacePreRole.FACE)
         if len(meshes) != 1:
@@ -74,6 +83,7 @@ class MayaFaceDeltaMushHost(MayaFacePreHost):
 
     def create_face_delta_mush(self) -> str:
         c = self._maya
+        self._require_supported_mode()
         mesh = self._face_mesh()
         if self._deformer(required=False) is not None:
             raise FitSkeletonValidationError("asFaceDeltaMush 已存在")
@@ -123,6 +133,7 @@ class MayaFaceDeltaMushHost(MayaFacePreHost):
 
     def delete_face_delta_mush(self) -> bool:
         c = self._maya
+        self._require_supported_mode()
         deformer = self._deformer(required=False)
         if deformer is None:
             return False
@@ -137,6 +148,7 @@ class MayaFaceDeltaMushHost(MayaFacePreHost):
 
     def zero_selected_face_delta_mush_weights(self) -> str:
         c = self._maya
+        self._require_supported_mode()
         mesh = self._face_mesh()
         deformer = self._deformer(required=False)
         deformer = self._face_history_deformer(mesh, deformer)
@@ -162,6 +174,7 @@ class MayaFaceDeltaMushHost(MayaFacePreHost):
     def paint_face_delta_mush_weights(self) -> str:
         from .maya_deform_skinning import open_native_delta_mush_paint
 
+        self._require_supported_mode()
         deformer = self._deformer(required=True)
         self._face_history_deformer(self._face_mesh(), deformer)
         open_native_delta_mush_paint()

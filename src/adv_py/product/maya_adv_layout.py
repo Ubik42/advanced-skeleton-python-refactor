@@ -63,7 +63,8 @@ ADV_OPERATIONS = {
         ("引用模型改拓扑后重绑并转移", 1, "04 · 跨拓扑权重转移")),
     ("Body", "Deform DeltaMush"): (
         ("硬化权重", 1, "05 · Delta Mush"),
-        ("应用 Delta Mush", 1, "05 · Delta Mush"),),
+        ("应用 Delta Mush", 1, "05 · Delta Mush"),
+        ("Bake DeltaMush", 1, "05 · Delta Mush"),),
     ("Body", "Custom Controllers"): (
         ("SoftMod Tool", 0, "06 · Custom Controllers"),
         ("Create Skin Control", 0, "06 · Custom Controllers"),
@@ -155,6 +156,8 @@ ADV_OPERATIONS = {
         ("Paint DeltaMush", 3, "03B · Face DeltaMush")),
     ("Face", "Tweaks"): (
         ("Paint skin-weights", 3, "03A · Face Tweaks"),
+        ("Hide Joints", 3, "03A · Face Tweaks"),
+        ("Show Joints", 3, "03A · Face Tweaks"),
         ("select eyeBrowArea", 3, "03A · Face Tweaks"),
         ("select -d eyeBrowLine", 3, "03A · Face Tweaks"),
         ("select eyeLidArea", 3, "03A · Face Tweaks"),

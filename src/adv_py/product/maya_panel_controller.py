@@ -1565,6 +1565,11 @@ class MayaPanelController:
 
         return len(apply_delta_mush_to_selected(namespace=namespace))
 
+    def delta_mush_bake(self, namespace: str = "") -> str:
+        from adv_py.adapters.maya_delta_mush import open_delta_mush_bake_tool
+
+        return open_delta_mush_bake_tool(namespace=namespace)
+
     def shapers_list(self, namespace: str) -> tuple[str, ...]:
         from adv_py.adapters.maya_shapers import list_shapers
 
@@ -1949,6 +1954,14 @@ class MayaPanelController:
         return MayaFaceTweaksHost(
             namespace=None if namespace == ":" else namespace
         ).paint_face_skin_weights()
+
+    def face_tweaks_set_joints_visible(self, namespace: str,
+                                       visible: bool) -> int:
+        from adv_py.adapters.maya_face_tweaks import MayaFaceTweaksHost
+
+        return MayaFaceTweaksHost(
+            namespace=None if namespace == ":" else namespace
+        ).set_face_joints_visible(visible)
 
     def face_build_get_include(self, namespace: str) -> str:
         from adv_py.adapters.maya_face_build import MayaFaceBuildHost

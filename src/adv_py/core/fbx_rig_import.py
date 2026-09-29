@@ -2,11 +2,52 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from math import dist, isfinite
 from typing import Mapping
 
 
 Vector3 = tuple[float, float, float]
+
+
+def detect_fbx_source_application(node_names: tuple[str, ...]) -> str | None:
+    """Mirror asAutoDetecedApp's ordered scene-name probes."""
+    if any(not isinstance(name, str) or not name for name in node_names):
+        raise ValueError("FBX rig 场景节点名称无效")
+    leaves = tuple(name.rsplit("|", 1)[-1].lstrip(":")
+                   for name in node_names)
+    bare = tuple(name.rsplit(":", 1)[-1] for name in leaves)
+
+    def has(pattern: str) -> bool:
+        return any(fnmatchcase(name, pattern) for name in bare)
+
+    detected = None
+    if has("master") or (has("Hips") and has("RightUpLeg")
+                         and has("RightForeArm")):
+        detected = "AutodeskCharacterGenerator"
+    if has("*BoneRoot"):
+        detected = "CharacterCreator"
+        if has("*_Thumb1"):
+            detected = "CharacterCreator3"
+            if has("*_BigToe1"):
+                detected = "CharacterCreator4"
+    if has("ik_foot_root"):
+        detected = "Unreal5" if has("spine_05") else "Unreal"
+    if has("Abdomen"):
+        detected = "Poser"
+    if has("abdomenLower"):
+        detected = "Daz3d"
+    if has("RightFinger5Proximal"):
+        detected = "Rokoko"
+    if has("wrist_inner_l"):
+        detected = "MetaHuman"
+    if has("wrist_innerOff_l_drv"):
+        detected = "MetaHuman_old"
+    if has("Armature"):
+        detected = "ReadyPlayerMe"
+    if any("mixamorig" in name.split(":")[:-1] for name in leaves):
+        detected = "Mixamo"
+    return detected
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,6 +371,7 @@ def plan_fbx_rig_import(
     collapsed = frozenset(
         joint.path for joint in kept
         if joint.parent == root.path
+        and children[joint.path]
         and dist(joint.world_position, root.world_position) < threshold
     )
     names = {}

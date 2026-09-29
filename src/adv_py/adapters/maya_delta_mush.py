@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from adv_py.core.body_game_engine import BodyGameEnginePolicy, BodyOperation
 
+from .maya_deform_skinning import open_native_bake_deformer
+
 
 def _require_delta_mush_available(cmds, namespace: str) -> None:
     if not isinstance(namespace, str):
@@ -191,3 +193,39 @@ def apply_delta_mush_to_selected(*, cmds=None,
     else:
         cmds.undoInfo(closeChunk=True)
         return tuple(created)
+
+
+def open_delta_mush_bake_tool(*, cmds=None, namespace: str = "") -> str:
+    """Select the original Body mesh and skeleton for Maya BakeDeformerTool."""
+    if cmds is None:
+        from maya import cmds
+    if not isinstance(namespace, str):
+        raise ValueError("角色命名空间无效")
+    prefix = ":" + (namespace.strip(":") + ":" if namespace.strip(":")
+                    else "")
+    roots = cmds.ls(prefix + "Root_M", long=True, type="joint") or ()
+    if len(roots) != 1:
+        raise ValueError("Bake DeltaMush 需要唯一 Root_M 关节")
+    root = roots[0]
+    omitted = {"skinCageShape", "skinSubShape", "BoxSkinMeshShape"}
+    future = cmds.listHistory(root, future=True) or ()
+    meshes = []
+    for node in future:
+        if cmds.nodeType(node) != "mesh":
+            continue
+        if node.rsplit("|", 1)[-1].rsplit(":", 1)[-1] in omitted:
+            continue
+        parents = cmds.listRelatives(node, parent=True, fullPath=True) or ()
+        if len(parents) == 1 and parents[0] not in meshes:
+            meshes.append(parents[0])
+    if not meshes:
+        raise ValueError("Root_M 后续历史中没有可烘焙的 Body 网格")
+    mesh = meshes[0]
+    for key, value in (
+            ("performBakeDeformerSrcMesh", mesh),
+            ("performBakeDeformerSrcSkeleton", root),
+            ("performBakeDeformerDstMesh", mesh),
+            ("performBakeDeformerDstSkeleton", root)):
+        cmds.optionVar(stringValue=(key, value))
+    open_native_bake_deformer()
+    return mesh
