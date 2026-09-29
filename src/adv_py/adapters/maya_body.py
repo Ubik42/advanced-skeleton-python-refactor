@@ -8441,14 +8441,102 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
     def create_body_generic_fk(self, plan) -> None:
         if not plan.controls:
             return
+        self._require_transaction()
         parent = plan.root_path.rsplit("|", 1)[0]
         name = plan.root_path.rsplit("|", 1)[-1]
         if self.create_body_control_root(name, parent_path=parent) != plan.root_path:
             raise RuntimeError("通用 FK 控制根路径漂移")
+        c = self._cmds
+        for follower in plan.followers:
+            if (self.find_name_collisions(follower.name)
+                    or self.find_name_collisions(follower.driver_name)
+                    or (c.ls(follower.source_body_joint, long=True,
+                             type="joint") or []) != [
+                                 follower.source_body_joint]):
+                raise FitSkeletonValidationError(
+                    "通用 FK Body 跟随层来源或名称无效："
+                    + follower.name)
+            node = c.createNode("transform", name=follower.name,
+                                parent=plan.root_path, skipSelect=True)
+            node = (c.ls(node, long=True) or [node])[0]
+            if node != follower.path:
+                raise RuntimeError("通用 FK Body 跟随层路径漂移："
+                                   + follower.name)
+            if follower.use_offset_parent_matrix:
+                matrix = c.createNode("multMatrix",
+                                      name=follower.driver_name,
+                                      skipSelect=True)
+                c.connectAttr(follower.source_body_joint
+                              + ".worldMatrix[0]", matrix + ".matrixIn[0]")
+                c.connectAttr(node + ".parentInverseMatrix[0]",
+                              matrix + ".matrixIn[1]")
+                c.connectAttr(matrix + ".matrixSum",
+                              node + ".offsetParentMatrix")
+            else:
+                constraints = c.parentConstraint(
+                    follower.source_body_joint, node,
+                    maintainOffset=False, name=follower.driver_name)
+                if len(constraints) != 1:
+                    raise RuntimeError("通用 FK Body 跟随约束创建失败："
+                                       + follower.name)
+            if (follower.source_body_joint.rsplit("|", 1)[-1]
+                    .startswith("Wrist_")
+                    and plan.finger_visibility_plug is not None):
+                c.connectAttr(plan.finger_visibility_plug,
+                              node + ".visibility")
         for spec in plan.controls:
             self._create_body_limb_fk_control(spec, "Generic")
         for path in plan.hidden_controls:
             self.hide_body_fk_control(path)
+
+    def capture_body_generic_fk_followers(self, plan) -> bool:
+        c = self._cmds
+        if not plan.controls:
+            return not plan.followers
+        for follower in plan.followers:
+            if (c.ls(follower.path, long=True,
+                     type="transform") or []) != [follower.path]:
+                return False
+            if (c.listRelatives(follower.path, parent=True,
+                                fullPath=True) or []) != [plan.root_path]:
+                return False
+            if follower.use_offset_parent_matrix:
+                driver = follower.driver_name
+                if (not c.objExists(driver)
+                        or c.nodeType(driver) != "multMatrix"
+                        or c.connectionInfo(
+                            driver + ".matrixIn[0]",
+                            sourceFromDestination=True)
+                            != follower.source_body_joint
+                               + ".worldMatrix[0]"
+                        or c.connectionInfo(
+                            driver + ".matrixIn[1]",
+                            sourceFromDestination=True)
+                            != follower.path + ".parentInverseMatrix[0]"
+                        or c.connectionInfo(
+                            follower.path + ".offsetParentMatrix",
+                            sourceFromDestination=True)
+                            != driver + ".matrixSum"):
+                    return False
+            else:
+                driver_path = follower.path + "|" + follower.driver_name
+                if (c.ls(driver_path, long=True,
+                         type="parentConstraint") or []) != [driver_path]:
+                    return False
+                targets = (c.parentConstraint(driver_path, query=True,
+                                              targetList=True) or [])
+                if c.ls(targets, long=True) != [
+                        follower.source_body_joint]:
+                    return False
+            if (follower.source_body_joint.rsplit("|", 1)[-1]
+                    .startswith("Wrist_")
+                    and plan.finger_visibility_plug is not None
+                    and c.connectionInfo(
+                        follower.path + ".visibility",
+                        sourceFromDestination=True)
+                        != plan.finger_visibility_plug):
+                return False
+        return True
 
     def capture_body_generic_fk_controls(self, plan):
         if not plan.controls:

@@ -2,11 +2,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
 from .body_controller_appearance import body_fk_curve_radius
 from .body_limb_controls import BodyLimbFkControlSpec
-from .body_skeleton import BodyJointSpec, BodySkeletonSnapshot
+from .body_skeleton import (
+    BodyJointSpec, BodySkeletonSnapshot, plan_body_non_deform_markers,
+)
 from .fit_metadata import FitJointMetadata
+
+
+@dataclass(frozen=True, slots=True)
+class BodyGenericFkFollowerSpec:
+    path: str
+    name: str
+    source_body_joint: str
+    use_offset_parent_matrix: bool
+
+    @property
+    def driver_name(self) -> str:
+        return self.name + ("MM" if self.use_offset_parent_matrix
+                            else "Constraint")
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,6 +30,8 @@ class BodyGenericFkPlan:
     root_path: str
     controls: tuple[BodyLimbFkControlSpec, ...]
     hidden_controls: tuple[str, ...]
+    followers: tuple[BodyGenericFkFollowerSpec, ...] = ()
+    finger_visibility_plug: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +46,7 @@ class GenericFkFeaturePolicy:
     compensated_controls: frozenset[str] | None = None
     global_controls: frozenset[str] | None = None
     aim_sources: frozenset[str] | None = None
+    follower_sources: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(
@@ -40,11 +59,15 @@ def plan_body_generic_fk(
     aim_sources: frozenset[str] | None = None,
     inbetween_start_paths: frozenset[str] = frozenset(),
     use_offset_parent_matrix: bool = False,
+    remapped_body_paths: Mapping[str, str] | None = None,
+    follower_sources: frozenset[str] | None = None,
+    finger_visibility_plug: str | None = None,
 ) -> BodyGenericFkPlan:
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
     state_by_name = {state.name: state for state in body.joints}
     metadata_by_source = {item.joint: item for item in metadata}
     spec_by_path = {spec.path: spec for spec in specs}
+    removable_body_paths = frozenset(plan_body_non_deform_markers(body))
     child_paths = {spec.parent_path for spec in specs}
     first_child: dict[str, str] = {}
     for spec in specs:
@@ -54,8 +77,10 @@ def plan_body_generic_fk(
         name + "_" + control.side.value: control.control_path
         for control in existing for name in control.fit_joint_names
     }
+    standard_names = frozenset(control_by_name)
     controls: list[BodyLimbFkControlSpec] = []
     hidden: list[str] = []
+    followers: dict[str, BodyGenericFkFollowerSpec] = {}
     for spec in sorted(specs, key=lambda item: (item.path.count("|"),
                                                 item.path)):
         item = metadata_by_source[spec.source_joint]
@@ -75,13 +100,35 @@ def plan_body_generic_fk(
             raise ValueError("通用 FK 缺少 Body 关节：" + spec.name)
         parent_control = root_path
         parent_spec = spec.parent_path
+        standard_parent = False
         while parent_spec is not None:
             parent_name = parent_spec.rsplit("|", 1)[-1]
             if parent_name in control_by_name:
                 parent_control = control_by_name[parent_name]
+                standard_parent = parent_name in standard_names
                 break
             parent_spec = (spec_by_path[parent_spec].parent_path
                            if parent_spec in spec_by_path else None)
+        if standard_parent and spec.parent_path is not None:
+            source_parent = spec.parent_path
+            while (source_parent in removable_body_paths
+                   and source_parent in spec_by_path):
+                source_parent = spec_by_path[source_parent].parent_path
+            if source_parent is None:
+                raise ValueError("通用 FK 跟随分支缺少保留的 Body 父级："
+                                 + spec.name)
+            body_parent = ((remapped_body_paths or {}).get(
+                source_parent, source_parent))
+            if (follower_sources is None
+                    or body_parent.rsplit("|", 1)[-1] in follower_sources):
+                follower_name = ("AdvPy_GenericFKFollow_"
+                                 + body_parent.rsplit("|", 1)[-1])
+                follower_path = root_path + "|" + follower_name
+                followers.setdefault(follower_path,
+                    BodyGenericFkFollowerSpec(
+                        follower_path, follower_name, body_parent,
+                        use_offset_parent_matrix))
+                parent_control = follower_path
         stem = spec.name
         offset_name = "AdvPy_" + stem + "FKOffset"
         extra_name = "AdvPy_" + stem + "FKExtra"
@@ -132,4 +179,6 @@ def plan_body_generic_fk(
         control_by_name[spec.name] = control_path
         if item.no_control:
             hidden.append(control_path)
-    return BodyGenericFkPlan(root_path, tuple(controls), tuple(hidden))
+    return BodyGenericFkPlan(root_path, tuple(controls), tuple(hidden),
+                             tuple(followers.values()),
+                             finger_visibility_plug)

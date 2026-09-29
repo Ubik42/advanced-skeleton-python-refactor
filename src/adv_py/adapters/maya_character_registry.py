@@ -51,9 +51,16 @@ class MayaCharacterRegistryMixin:
         aim_sources = frozenset(match.group(1) for key in keys
             if (match := re.fullmatch(
                 r'fit\.aim\.([A-Za-z_][A-Za-z_0-9]*)\.center\..+', key)))
+        follower_sources = frozenset(
+            leaf[len('AdvPy_GenericFKFollow_'):]
+            for node in registration.nodes
+            if (leaf := node.path.rsplit('|', 1)[-1]
+                .rsplit(':', 1)[-1]).startswith(
+                    'AdvPy_GenericFKFollow_'))
         return GenericFkFeaturePolicy(
             frozenset(scale), frozenset(compensated),
-            frozenset(globally_driven), aim_sources)
+            frozenset(globally_driven), aim_sources,
+            follower_sources)
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

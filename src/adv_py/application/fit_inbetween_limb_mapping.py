@@ -316,7 +316,11 @@ def plan_generic_inbetween_fk_bindings(
                          for control in generic.controls}
     if len(generic_by_driven) != len(generic.controls):
         raise ValueError("附加 Inbetween 通用 FK 驱动关节重复")
-    downstream_controls = standard_controls + generic.controls
+    standard_by_fit: dict[tuple[str, str], list[BodyLimbFkControlSpec]] = {}
+    for control in standard_controls:
+        for name in control.fit_joint_names:
+            standard_by_fit.setdefault((name, control.side.value), []).append(
+                control)
     result = []
     for start_path, chain in grouped.items():
         chain.sort(key=lambda part: part.index)
@@ -334,15 +338,19 @@ def plan_generic_inbetween_fk_bindings(
         if start is None:
             raise ValueError("附加 Inbetween 缺少通用 FK 起点："
                              + first.start_body_name)
-        _, end_side = first.end_body_name.rsplit("_", 1)
+        end_name, end_side = first.end_body_name.rsplit("_", 1)
         if end_side != first.side.value:
             raise ValueError("附加 Inbetween 起终点侧别不同："
                              + first.start_body_name)
         end_joint = final_paths.remap_body_reference(first.end_body)
-        end_candidates = tuple({control.control_path: control
-                                for control in downstream_controls
-                                if control.driven_joint == end_joint
-                                and control.side == first.side}.values())
+        candidates = {control.control_path: control
+                      for control in generic.controls
+                      if control.driven_joint == end_joint
+                      and control.side == first.side}
+        candidates.update({control.control_path: control
+                           for control in standard_by_fit.get(
+                               (end_name, end_side), ())})
+        end_candidates = tuple(candidates.values())
         if len(end_candidates) > 1:
             raise ValueError("附加 Inbetween 下游 FK 映射不唯一："
                              + first.end_body_name)

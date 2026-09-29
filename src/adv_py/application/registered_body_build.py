@@ -1032,7 +1032,16 @@ class BuildRegisteredBodyCharacter:
                              if _generic_fk_policy is not None else None),
                 inbetween_start_paths=frozenset(
                     part.start_body for part in inbetween_parts
-                    if part.start_body not in handled_inbetween_starts))
+                    if part.start_body not in handled_inbetween_starts),
+                remapped_body_paths=(
+                    {spec.path: final_paths.remap_body_reference(spec.path)
+                     for spec in part_plan.specs}
+                    if final_paths is not None else None),
+                follower_sources=(
+                    _generic_fk_policy.follower_sources
+                    if _generic_fk_policy is not None else None),
+                finger_visibility_plug=(
+                    rig.plan.global_control.control_path + ".fingerVis"))
             generic_inbetween_bindings = (
                 plan_generic_inbetween_fk_bindings(
                     inbetween_parts, generic_fk, standard_fk_specs,
@@ -1060,6 +1069,8 @@ class BuildRegisteredBodyCharacter:
                             control.control_path, source_joint, attributes))
             generic_fk_locks = tuple(generic_fk_locks)
             joined.create_body_generic_fk(generic_fk)
+            if not joined.capture_body_generic_fk_followers(generic_fk):
+                raise RuntimeError("通用 FK 从混合 Body 父链分出的跟随层不一致")
             if generic_fk.controls:
                 generic_fk_state = joined.capture_body_generic_fk_controls(
                     generic_fk)
