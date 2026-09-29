@@ -20,7 +20,8 @@ def prepare(host,plan):
     c.setAttr(plan.root_path+'.advPySplineOwner',
               current_spline_owner(plan.curved, plan.even_stretch_graph,
                                    plan.twist_ramp_graph,
-                                   plan.mid_follow_graph),
+                                   plan.mid_follow_graph,
+                                   plan.isolated_mid_follow_graph),
               type='string',lock=True)
     for joint in plan.joints:host.create_body_arm_mechanism_joint(joint)
     last=plan.joints[len(plan.body_joints)-1]
@@ -32,9 +33,18 @@ def create(host,plan):
     c=host._cmds;n=len(plan.body_joints);fk=plan.joints[:n];ik=plan.joints[n:]
     for control,joint in zip(plan.fk_controls,fk):
         c.connectAttr(control+'.scale',joint.path+'.scale')
+    if plan.isolated_mid_follow_graph:
+        follow_parent=c.createNode('transform',name='AdvPy_SplineIKFollowMain',
+                                   parent=plan.pelvis_control,skipSelect=True)
+        c.setAttr(follow_parent+'.inheritsTransform',False,lock=True)
+        for kind in ('translate','rotate','scale','shear'):
+            for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ')):
+                c.setAttr(follow_parent+'.'+kind+axis,lock=True,keyable=False)
     for i,(target,position) in enumerate(zip(plan.targets,plan.positions)):
         offset=target.rsplit('|',1)[0]
-        host._spine_frame(f'AdvPy_SplineIK{i}Offset',plan.pelvis_control,position,plan.axes)
+        parent=(plan.mid_follow_parent if plan.isolated_mid_follow_graph
+                and 0<i<len(plan.targets)-1 else plan.pelvis_control)
+        host._spine_frame(f'AdvPy_SplineIK{i}Offset',parent,position,plan.axes)
         create_adv_icon(c,name=f'AdvPy_SplineIK{i}',parent=offset,
                         template='IK_icon',radius=1.5,
                         fallback_normal=(1.,0.,0.))
@@ -254,6 +264,8 @@ def audit(host,plan):
         raise FitSkeletonValidationError('Spline 中间扭转计划与求解图版本不一致')
     if (version>=24)!=plan.mid_follow_graph:
         raise FitSkeletonValidationError('Spline 中间跟随计划与求解图版本不一致')
+    if (version>=26)!=plan.isolated_mid_follow_graph:
+        raise FitSkeletonValidationError('Spline 独立跟随层计划与求解图版本不一致')
     new_scaling=version>=4
     oriented_scaling=version>=6
     original_range=version>=8

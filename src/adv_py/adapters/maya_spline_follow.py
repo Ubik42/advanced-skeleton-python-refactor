@@ -58,6 +58,20 @@ def create(host, plan):
 
 def audit(host, plan):
     c = host._cmds
+    if plan.isolated_mid_follow_graph:
+        parent = plan.mid_follow_parent
+        if ((c.listRelatives(parent, parent=True, fullPath=True) or [])
+                != [plan.pelvis_control]
+                or c.getAttr(parent+'.inheritsTransform')
+                or not c.getAttr(parent+'.inheritsTransform', lock=True)):
+            raise FitSkeletonValidationError('Spline 独立跟随层归属或缩放隔离失效')
+        identity = (1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.)
+        if any(abs(a-b)>1e-8 for a,b in zip(c.getAttr(parent+'.matrix'), identity)):
+            raise FitSkeletonValidationError('Spline 独立跟随层局部矩阵被修改')
+        if any(not c.getAttr(parent+'.'+kind+axis, lock=True)
+               for kind in ('translate','rotate','scale','shear')
+               for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ'))):
+            raise FitSkeletonValidationError('Spline 独立跟随层变换未锁定')
     start = plan.root_path+'|AdvPy_SplineFollowStart'
     end = plan.root_path+'|AdvPy_SplineFollowEnd'
     edges = [(plan.settings+'.noFlipAxis',
@@ -86,6 +100,10 @@ def audit(host, plan):
                 or c.getAttr(target+'.followEnd', type=True)!='double'):
             raise FitSkeletonValidationError('Spline 中间跟随权重属性缺失')
         offset = target.rsplit('|', 1)[0]
+        expected_parent = (plan.mid_follow_parent if plan.isolated_mid_follow_graph
+                           else plan.pelvis_control)
+        if (c.listRelatives(offset, parent=True, fullPath=True) or []) != [expected_parent]:
+            raise FitSkeletonValidationError('Spline 中间控制器跟随父级被替换')
         weight = f'AdvPy_SplineFollowWeight{index}'
         reverse = f'AdvPy_SplineFollowReverse{index}'
         name = f'AdvPy_SplineFollowConstraint{index}'
