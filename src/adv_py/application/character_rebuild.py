@@ -4,19 +4,15 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from adv_py.core.character_registry import CharacterRegistration
-from adv_py.core.body_system_hierarchy import expected_body_system_hierarchy
 from adv_py.core.character_preservation import CharacterPreservation,RebuildOwnership,validate_rebuild_layout,character_transfer_error
 from .character_preservation import CaptureBodyCharacterPreservation
 from .fit_skeleton_io import ExportFitSkeleton,CreateAndImportFitSkeleton
-from .oriented_body_skeleton import BuildOrientedBodySkeleton
-from .registered_body_build import _JoinedTransactionHost
+from .registered_body_build import BuildRegisteredBodyCharacter
 from .body_selection_sets import (
     BuildBodySelectionSets, unregistered_fk_selection_extras,
 )
 from .body_all_set import PopulateBodyAllSet
 from .body_build_pose import GoToBodyBuildPose
-from .body_character_rig import BuildBodyCharacterRig
-from .character_registry import RegisterBodyCharacter
 from .character_limb_animation import EnableBodyCharacterLimbAnimation
 from .character_stretch_matching import EnableBodyCharacterStretchMatching
 from .character_spaces import EnableBodyCharacterSpaceAnimation
@@ -53,18 +49,6 @@ class StageBodyCharacterRebuild:
                 stage=host.create_character_rebuild_host(namespace)
                 CreateAndImportFitSkeleton(stage).apply(fit)
                 scene_before = stage.capture_body_scene_nodes()
-                with stage.transaction('Stage Body system hierarchy'):
-                    joined = _JoinedTransactionHost(stage)
-                    deformation = joined.create_body_system_hierarchy(
-                        include_dynamic=include_dynamic)
-                    if deformation != '|Group|DeformationSystem':
-                        raise RuntimeError('重建暂存 DeformationSystem 路径漂移')
-                    fit_path = joined.parent_fit_skeleton_under_group(
-                        'FitSkeleton')
-                    skeleton = BuildOrientedBodySkeleton(joined).apply(
-                        fit_path,
-                        root_parent_path=deformation)
-                    joined.finalize_fit_skeleton_visibility(fit_path)
                 keys={channel.key for channel in original.registration.channels}
                 from adv_py.core.body_spline import BodySplinePlan
                 from adv_py.core.body_description import BodyAxialDescription
@@ -84,16 +68,17 @@ class StageBodyCharacterRebuild:
                         joint = by_path[joint.parent]
                     description = BodyAxialDescription(
                         spine=tuple(p.rsplit('|',1)[-1] for p in source.spine.body_joints), neck=tuple(reversed(neck)))
-                rig=BuildBodyCharacterRig(stage).apply(include_torso=True,include_spine_ik=True,include_control_spaces=True,
-                    include_head_aim='head.aim.headAim' in keys,axial_description=description)
-                registration=RegisterBodyCharacter(stage).apply(rig)
-                if stage.capture_body_system_hierarchy(
-                        skeleton.snapshot.root,
-                        include_dynamic=include_dynamic
-                ) != expected_body_system_hierarchy(
-                        skeleton.snapshot.root,
-                        include_dynamic=include_dynamic):
-                    raise RuntimeError('重建暂存角色的 Body 系统层级不一致')
+                # Rebuild the same Body/Part/control graph as a fresh
+                # character. Selection sets wait until legacy channel
+                # compatibility and animation registration are resolved.
+                built = BuildRegisteredBodyCharacter(stage).apply(
+                    'FitSkeleton',
+                    axial_description=description,
+                    include_head_aim='head.aim.headAim' in keys,
+                    _include_dynamic=include_dynamic,
+                    _defer_selection_sets=True)
+                fit_path = '|Group|FitSkeleton'
+                registration = built.registration
                 if any('.ikOrientation.' in key for key in keys):registration=EnableBodyCharacterLimbAnimation(stage).apply()
                 if any('.ikLengthWeight.' in key for key in keys):registration=EnableBodyCharacterStretchMatching(stage).apply()
                 if any(key.startswith('space.') for key in keys):registration=EnableBodyCharacterSpaceAnimation(stage).apply()
@@ -108,8 +93,10 @@ class StageBodyCharacterRebuild:
                 registration=host.preserve_character_rebuild_binding(stage,original.registration,registration)
                 if selection_mode != "none":
                     BuildBodySelectionSets(stage).apply(
-                        registration, extras=unregistered_fk_selection_extras(
-                            registration, rig.plan))
+                        registration, built.segment_influences,
+                        extras=(built.selection_extras
+                                + unregistered_fk_selection_extras(
+                                    registration, built.rig.plan)))
                     if stage.has_body_build_pose_overrides():
                         GoToBodyBuildPose(stage).apply()
                     if selection_mode == "populated":

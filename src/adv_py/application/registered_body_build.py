@@ -291,6 +291,7 @@ class RegisteredBodyBuildResult:
     inbetween_untwisters: tuple[InbetweenUnTwisterPlan, ...] = ()
     hip_swing_reverse: HipSwingReversePlan | HipSwingNoPartsPlan | None = None
     ik_solver_mapping: InbetweenIkSolverMapping | None = None
+    selection_extras: tuple[str, ...] = ()
 
 
 class BuildRegisteredBodyCharacter:
@@ -307,6 +308,8 @@ class BuildRegisteredBodyCharacter:
               fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
               _hierarchy_prepared: bool = False,
               _scene_before=None,
+              _include_dynamic: bool = True,
+              _defer_selection_sets: bool = False,
               ) -> RegisteredBodyBuildResult:
         if _scene_before is None:
             capture_nodes = getattr(self._host,
@@ -333,7 +336,8 @@ class BuildRegisteredBodyCharacter:
                     + "、".join(hierarchy_collisions))
             with self._host.transaction("构建并登记完整 Body 角色"):
                 joined = _JoinedTransactionHost(self._host)
-                if joined.create_body_system_hierarchy() != _DEFORMATION_SYSTEM_PATH:
+                if joined.create_body_system_hierarchy(
+                        include_dynamic=_include_dynamic) != _DEFORMATION_SYSTEM_PATH:
                     raise RuntimeError("Body 变形系统层级创建路径漂移")
                 fit_path = joined.parent_fit_skeleton_under_group(container_name)
                 return BuildRegisteredBodyCharacter(joined).apply(
@@ -344,7 +348,9 @@ class BuildRegisteredBodyCharacter:
                     use_fit_part_hierarchy=use_fit_part_hierarchy,
                     fit_part_twist_sources=fit_part_twist_sources,
                     _hierarchy_prepared=True,
-                    _scene_before=_scene_before)
+                    _scene_before=_scene_before,
+                    _include_dynamic=_include_dynamic,
+                    _defer_selection_sets=_defer_selection_sets)
         preview = BuildOrientedBodySkeleton(self._host).plan(
             container_name, infer_missing_labels=infer_missing_labels,
             root_parent_path=_DEFORMATION_SYSTEM_PATH)
@@ -1036,26 +1042,30 @@ class BuildRegisteredBodyCharacter:
                         BuildFingerMidDeform(joined).apply())
                 for spec in BuildLimbPartDeform(joined).apply():
                     segments.extend((spec.part1, spec.part2))
-            locked_selection_extras = unregistered_fk_selection_extras(
-                registration, rig.plan)
-            BuildBodySelectionSets(joined).apply(
-                registration, tuple(segments),
-                extras=tuple(extra for chain in bendy_chains
-                             for extra in chain.micro_extra_names)
-                + locked_selection_extras)
-            if joined.has_body_build_pose_overrides():
-                GoToBodyBuildPose(joined).apply()
+            selection_extras = tuple(
+                extra for chain in bendy_chains
+                for extra in chain.micro_extra_names)
+            if not _defer_selection_sets:
+                BuildBodySelectionSets(joined).apply(
+                    registration, tuple(segments),
+                    extras=(selection_extras
+                            + unregistered_fk_selection_extras(
+                                registration, rig.plan)))
+                if joined.has_body_build_pose_overrides():
+                    GoToBodyBuildPose(joined).apply()
             joined.finalize_fit_skeleton_visibility(container_name)
             hierarchy = joined.capture_body_system_hierarchy(
-                skeleton.snapshot.root, container_name)
+                skeleton.snapshot.root, container_name,
+                include_dynamic=_include_dynamic)
             if hierarchy != expected_body_system_hierarchy(
-                    skeleton.snapshot.root, container_name):
+                    skeleton.snapshot.root, container_name,
+                    include_dynamic=_include_dynamic):
                 raise RuntimeError("角色主构建结束时 Body 变形系统层级不一致")
-            if _scene_before is not None:
+            if _scene_before is not None and not _defer_selection_sets:
                 PopulateBodyAllSet(joined).apply(
                     _scene_before, container_name)
         return RegisteredBodyBuildResult(
             skeleton, rig, registration, tuple(segments),
             fit_part_hierarchy, inbetween_segments,
             inbetween_untwisters, hip_swing_reverse,
-            solver_mapping)
+            solver_mapping, selection_extras)
