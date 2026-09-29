@@ -671,6 +671,13 @@ class MayaPanelController:
         issue = (f"来源骨架有 {len(omitted)} 个主链中间关节未进入新角色："
                  f"{names}{'等' if len(omitted) > 3 else ''}"
                  if omitted else "")
+        left_only = built.fit.source_only_left_branches
+        if left_only:
+            left_names = "、".join(path.rsplit("|", 1)[-1]
+                                  for path in left_only[:3])
+            issue += ("；" if issue else "") + (
+                f"{len(left_only)} 个仅左侧来源分支未进入新角色："
+                f"{left_names}{'等' if len(left_only) > 3 else ''}")
         return PanelCharacter(target_namespace, True, len(character.registration.body),
                               len(character.registration.channels),
                               issue=issue,

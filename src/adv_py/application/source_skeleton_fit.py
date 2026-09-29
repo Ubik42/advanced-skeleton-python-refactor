@@ -47,6 +47,7 @@ class SourceSkeletonFitResult:
     joint_count: int
     spine_segments: int
     source_only_intermediates: tuple[str, ...] = ()
+    source_only_left_branches: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +60,7 @@ class SourceSkeletonFitPlan:
     rotation_orders: tuple[tuple[str, int], ...] = ()
     skin_disabled: tuple[str, ...] = ()
     source_only_intermediates: tuple[str, ...] = ()
+    source_only_left_branches: tuple[str, ...] = ()
 
 
 class SourceSkeletonFitHost(FitContainerHost, OrientedFitTemplateHost,
@@ -321,6 +323,13 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         and not left_mirror_branch(joint)
         and any(path.startswith(joint.path + "|")
                 for path in canonical_paths)))
+    right_names = {joint.name.rsplit(":", 1)[-1] for joint in source
+                   if not left_mirror_branch(joint)}
+    source_only_left_branches = tuple(sorted(
+        joint.path for joint in source
+        if joint.name.rsplit(":", 1)[-1].endswith("_L")
+        and joint.name.rsplit(":", 1)[-1][:-2] + "_R"
+        not in right_names))
     # Keep side branches such as tails and props. A helper inserted between
     # two canonical limb/spine joints cannot be made a sibling without
     # changing the source hierarchy; the current canonical solver contracts
@@ -516,7 +525,8 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                                  tuple(deform_profiles),
                                  tuple(rotation_orders),
                                  tuple(skin_disabled),
-                                 source_only_intermediates)
+                                 source_only_intermediates,
+                                 source_only_left_branches)
 
 
 class BuildFitFromSourceSkeleton:
@@ -567,4 +577,5 @@ class BuildFitFromSourceSkeleton:
                     raise RuntimeError("来源 noSkin 写后复检失败：" + name)
         return SourceSkeletonFitResult(len(result.template.joint_paths),
                                        plan.spine_segments,
-                                       plan.source_only_intermediates)
+                                       plan.source_only_intermediates,
+                                       plan.source_only_left_branches)
