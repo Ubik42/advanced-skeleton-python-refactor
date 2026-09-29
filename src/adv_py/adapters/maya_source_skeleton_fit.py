@@ -116,7 +116,7 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
             if not self._cmds.attributeQuery(name, node=joint, exists=True):
                 self._cmds.addAttr(joint, longName=name,
                                    attributeType="double", minValue=0,
-                                   keyable=True)
+                                   defaultValue=value, keyable=True)
             self._cmds.setAttr(joint + "." + name, value)
         for attribute in ("fatFrontAbs", "fatWidthAbs"):
             self._cmds.addAttr(joint, longName=attribute,
@@ -133,6 +133,11 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
         for source, target in connections:
             self._cmds.connectAttr(source, target)
         if (int(self._cmds.getAttr(fat_node + ".operation")) != 1
+                or any(abs(float(self._cmds.attributeQuery(
+                    name, node=joint, listDefault=True)[0]) - value) > 1e-6
+                    for name, value in (("fat", profile.fat),
+                                        ("fatFront", profile.fat_front),
+                                        ("fatWidth", profile.fat_width)))
                 or any(self._cmds.connectionInfo(target,
                 sourceFromDestination=True) != source
                 for source, target in connections)
@@ -141,3 +146,73 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                 or abs(float(self._cmds.getAttr(joint + ".fatWidthAbs"))
                        - profile.fat * profile.fat_width) > 1e-6):
             raise RuntimeError("Fit 派生体积节点写后回读不一致：" + joint)
+
+    def write_missing_fit_deform_profiles(
+        self, container: str, joints: tuple[str, ...],
+    ) -> None:
+        """Initialize every generated Fit joint using asEnsureFitJointAttrs defaults."""
+        self._require_transaction()
+        c = self._cmds
+        joint_set = set(joints)
+        if len(joint_set) != len(joints) or any(
+            (c.ls(joint, long=True, type="joint") or []) != [joint]
+            for joint in joints
+        ):
+            raise ValueError("Fit 默认体积需要唯一且已创建的关节路径")
+        fit = c.ls(container, long=True, type="transform") or []
+        if len(fit) != 1:
+            raise ValueError("Fit 默认体积需要唯一的 Fit 容器")
+        axis = "X"
+        if c.attributeQuery("primaryAxis", node=fit[0], exists=True):
+            axis = c.getAttr(fit[0] + ".primaryAxis", asString=True).upper()
+        if axis not in ("X", "Y", "Z"):
+            raise ValueError("Fit 主轴无效")
+        positions = {joint: tuple(float(value) for value in c.xform(
+            joint, query=True, worldSpace=True, translation=True))
+            for joint in joints}
+        maximum_y = max((position[1] for position in positions.values()),
+                        default=0.0)
+        scale = max(0.01, maximum_y / 17.176163) if maximum_y > 0 else 1.0
+        child_tolerance = 0.01 * float(c.getAttr(fit[0] + ".scaleX"))
+        center_tolerance = 0.01 * scale
+
+        def matching_child(joint: str) -> str | None:
+            children = [child for child in (c.listRelatives(
+                joint, children=True, type="joint", fullPath=True) or [])
+                if child in joint_set]
+            center = abs(positions[joint][0]) < child_tolerance
+            selected = next((child for child in children
+                             if (abs(positions[child][0]) < child_tolerance)
+                             == center), None)
+            name = joint.rsplit("|", 1)[-1]
+            preferred = (("Head", "Head"), ("Ankle", "Toes"),
+                         ("Toes", "Toes"), ("Root", "Spine"))
+            for marker, child_marker in preferred:
+                if marker in name:
+                    selected = next((child for child in reversed(children)
+                                     if child_marker in child.rsplit("|", 1)[-1]),
+                                    selected)
+            return selected
+
+        for joint in sorted(joints, key=lambda path: path.count("|")):
+            if c.attributeQuery("fat", node=joint, exists=True):
+                # Explicit source values were written first. Their derivation
+                # graph is already checked by write_fit_deform_profile.
+                continue
+            child = matching_child(joint)
+            if child:
+                length = abs(float(c.getAttr(child + ".translate" + axis)))
+                fat = length / 4.0
+                if abs(positions[joint][0]) < center_tolerance:
+                    fat *= 2.0
+                if fat < 0.0001:
+                    fat = scale
+            else:
+                parent = (c.listRelatives(joint, parent=True, type="joint",
+                                          fullPath=True) or [None])[0]
+                fat = (float(c.getAttr(parent + ".fat"))
+                       if parent in joint_set
+                       and c.attributeQuery("fat", node=parent, exists=True)
+                       else 1.0)
+            self.write_fit_deform_profile(
+                joint, FitDeformProfile(fat, 1.0, 1.0))
