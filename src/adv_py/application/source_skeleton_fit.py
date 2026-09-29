@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 import re
 from typing import Protocol
@@ -40,6 +40,7 @@ class SourceSkeletonJoint:
     effective_no_flip: bool | None = None
     effective_skin_enabled: bool | None = None
     label: JointLabel | None = None
+    sibling_index: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +196,10 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                        or not isfinite(value) for value in position)):
             raise FitSkeletonValidationError(
                 "来源骨架关节世界坐标无效：" + joint.name)
+        if (type(joint.sibling_index) is not int
+                or joint.sibling_index < 0):
+            raise FitSkeletonValidationError(
+                "来源骨架同级顺序无效：" + joint.name)
     by_path = {joint.path: joint for joint in source}
     if len(by_path) != len(source):
         raise FitSkeletonValidationError("来源骨架包含重复的关节路径")
@@ -387,7 +392,10 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                               or joint.path in left_authored_paths)
                          and joint.path not in left_canonical_paths
                          and joint.path not in source_only_intermediates),
-                        key=lambda row: (row[1].path.count("|"), row[1].path))
+                        key=lambda row: (row[1].path.count("|"),
+                                         row[1].parent or "",
+                                         row[1].sibling_index,
+                                         row[1].path))
     available_names = set(canonical_names)
     for name, joint in extra_rows:
         parent_path = joint.parent
@@ -429,6 +437,12 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     if extra_specs:
         reference = FitTemplateSpec(
             reference.name, reference.joints + tuple(extra_specs))
+        oriented_extra = tuple(
+            spec.name for spec in extra_specs
+            if any(child.parent == spec.name for child in extra_specs))
+        if oriented_extra:
+            request = replace(
+                request, joints=request.joints + oriented_extra)
     reference_names = {spec.name for spec in reference.joints}
     reference_parents = {spec.name: spec.parent for spec in reference.joints}
 

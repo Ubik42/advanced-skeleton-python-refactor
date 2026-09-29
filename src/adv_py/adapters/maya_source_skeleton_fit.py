@@ -64,8 +64,13 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                 if field in metadata.present_fields and field not in primary_fields)
 
         for path in paths:
-            parent = (cmds.listRelatives(path, parent=True,
-                                        fullPath=True) or [None])[0]
+            immediate_parent = (cmds.listRelatives(
+                path, parent=True, fullPath=True) or [None])[0]
+            siblings = (cmds.listRelatives(
+                immediate_parent, children=True, type="joint",
+                fullPath=True) or [] if immediate_parent else [path])
+            sibling_index = siblings.index(path) if path in siblings else 0
+            parent = immediate_parent
             while parent and parent not in path_set:
                 parent = (cmds.listRelatives(parent, parent=True,
                                             fullPath=True) or [None])[0]
@@ -82,7 +87,8 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                 additional_fit_edits(metadata),
                 metadata.no_flip,
                 source_reader.read_fit_skin_enabled(path),
-                source_reader.read_joint_label(path)))
+                source_reader.read_joint_label(path),
+                sibling_index))
         return tuple(joints)
 
     def write_fit_no_skin(self, joint: str) -> None:
