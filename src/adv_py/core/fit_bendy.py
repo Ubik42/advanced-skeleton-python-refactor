@@ -52,6 +52,8 @@ class FitBendyChainSpec:
                             for value in axis)
                             for axis in self.start_world_axes))):
             raise ValueError("Bendy 起点世界朝向无效")
+        if type(self.honor_non_symmetry_axis) is not bool:
+            raise ValueError("Bendy 非对称瞄准策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
