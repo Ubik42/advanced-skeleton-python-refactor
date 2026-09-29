@@ -19,6 +19,11 @@ class FitBendyWorldSource:
     ik_matrix: str | None = None
     blend_plug: str | None = None
 
+    def __post_init__(self) -> None:
+        if not self.fk_matrix or ((self.ik_matrix is None)
+                                  != (self.blend_plug is None)):
+            raise ValueError("Bendy 独立矩阵来源不完整")
+
 
 @dataclass(frozen=True, slots=True)
 class FitBendyFollowSpec:
