@@ -174,7 +174,8 @@ class BuildBodySkeleton:
         fit_parts = (
             plan_fit_part_joints(
                 symmetry.instances, symmetry.source.metadata, specs,
-                symmetry.source.hierarchy)
+                symmetry.source.hierarchy,
+                center_tolerance=0.01 * symmetry.source.fit_scale)
             if not missing_labels else ()
         )
         fit_part_reparents = (

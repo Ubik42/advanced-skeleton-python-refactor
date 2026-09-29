@@ -310,6 +310,8 @@ def plan_fit_part_joints(
     metadata: tuple[FitJointMetadata, ...],
     body_specs: tuple[BodyJointSpec, ...],
     hierarchy: FitHierarchySnapshot,
+    *,
+    center_tolerance: float = 0.01,
 ) -> tuple[FitPartJointSpec, ...]:
     """Expand each Fit twistJoints value into a side-specific Part chain.
 
@@ -334,8 +336,6 @@ def plan_fit_part_joints(
     for instance in instances:
         if instance.parent_output_path is not None:
             children.setdefault(instance.parent_output_path, []).append(instance)
-    for siblings in children.values():
-        siblings.sort(key=lambda item: source_nodes[item.source_joint].sibling_index)
 
     parts: list[FitPartJointSpec] = []
     used_paths: set[str] = set(by_path)
@@ -350,9 +350,14 @@ def plan_fit_part_joints(
                                          + start.source_joint)
         if count == 0:
             continue
-        candidates = [child for child in children.get(start.output_path, ())
-                      if child.side is start.side]
-        end = _select_downstream(start, candidates)
+        source_end = _source_rla_child(
+            source_nodes[start.source_joint],
+            source_children.get(start.source_joint, ()),
+            center_tolerance)
+        end = next((child for child in children.get(start.output_path, ())
+                    if source_end is not None
+                    and child.source_joint == source_end.path
+                    and child.side is start.side), None)
         if end is None:
             # The original asRlaChild skips a terminal joint with no
             # same-side child even when twistJoints is present.
@@ -369,7 +374,8 @@ def plan_fit_part_joints(
         dual_twist_child = False
         if dual_child is not None and by_source[dual_child.path].twist_joints is None:
             dual_twist_child = _source_rla_child(
-                dual_child, source_children.get(dual_child.path, ())) is not None
+                dual_child, source_children.get(dual_child.path, ()),
+                center_tolerance) is not None
         parent = start.output_path
         stem = start.output_name.rsplit("_", 1)[0]
         for index in range(1, count + 1):
@@ -441,29 +447,12 @@ def plan_fit_part_reparents(
     return tuple(assignments)
 
 
-def _select_downstream(
-    start: FitSymmetryInstance,
-    candidates: list[FitSymmetryInstance],
-) -> FitSymmetryInstance | None:
-    if not candidates:
-        return None
-    # asRlaChild in 6.925 takes the first same-side child, then overwrites
-    # it with each matching named child. The last preferred child wins.
-    preference = next((target for key, target in (
-        ("Head", "Head"), ("Ankle", "Toes"), ("Toes", "Toes"),
-        ("Root", "Spine")) if key in start.output_name), None)
-    if preference is not None:
-        for child in reversed(candidates):
-            if preference in child.output_name:
-                return child
-    return candidates[0]
-
-
-def _source_rla_child(parent, children):
+def _source_rla_child(parent, children, center_tolerance):
     """Select a source Fit child with MEL asRlaChild's branch precedence."""
-    center = abs(parent.world_position[0]) < 0.01
+    center = abs(parent.world_position[0]) < center_tolerance
     selected = next((child for child in children
-                     if (abs(child.world_position[0]) < 0.01) == center), None)
+                     if (abs(child.world_position[0]) < center_tolerance)
+                     == center), None)
     name = parent.short_name
     for marker, preferred in (("Head", "Head"), ("Ankle", "Toes"),
                               ("Toes", "Toes"), ("Root", "Spine")):
