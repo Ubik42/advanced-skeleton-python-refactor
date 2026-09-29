@@ -1716,6 +1716,12 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(QtWidgets.QLabel("Adjust"))
             form.addRow(self._button('"DeformationWidth"',
                                      self._skin_cage_deformation_width))
+            form.addRow(self._button("Create Groin Locators",
+                                     self._skin_cage_groin_locators))
+            form.addRow(self._button("Adjust Groin area",
+                                     self._skin_cage_adjust_groin))
+            form.addRow(self._button("Create Groin joint",
+                                     self._skin_cage_groin_joint))
             form.addRow(QtWidgets.QLabel("Re-use：将当前可见 SkinCurves 形状输出到 Script Editor。"))
             self.skin_cage_reuse_xform = QtWidgets.QCheckBox("xform")
             self.skin_cage_reuse_xform.setChecked(True)
@@ -2652,6 +2658,18 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.skin_cage_deformation_width(
                 self._namespace())
             return f"已调整 {count} 个 SkinCage 起始／末端截面的变形宽度"
+
+        def _skin_cage_groin_locators(self):
+            self.controller.skin_cage_groin_locators(self._namespace())
+            return "已创建 GroinStart 和 GroinSide 定位器"
+
+        def _skin_cage_adjust_groin(self):
+            count = self.controller.skin_cage_adjust_groin(self._namespace())
+            return f"已调整右髋截面并镜像 {count} 对 SkinCage 曲线"
+
+        def _skin_cage_groin_joint(self):
+            self.controller.skin_cage_groin_joint(self._namespace())
+            return "已创建 Groin_M 并加入 SkinCage 蒙皮"
 
         def _copy_skin_cage_weights(self):
             count = self.controller.skin_cage_copy_weights(self._namespace())

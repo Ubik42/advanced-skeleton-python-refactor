@@ -1318,6 +1318,24 @@ class MayaPanelController:
         return SetSkinCageDeformationWidth(
             MayaSkinCageHost(namespace)).execute()
 
+    def skin_cage_groin_locators(self, namespace: str) -> None:
+        from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
+        from adv_py.application.skin_cage import CreateSkinCageGroinLocators
+
+        CreateSkinCageGroinLocators(MayaSkinCageHost(namespace)).execute()
+
+    def skin_cage_adjust_groin(self, namespace: str) -> int:
+        from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
+        from adv_py.application.skin_cage import AdjustSkinCageGroin
+
+        return AdjustSkinCageGroin(MayaSkinCageHost(namespace)).execute()
+
+    def skin_cage_groin_joint(self, namespace: str) -> None:
+        from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
+        from adv_py.application.skin_cage import CreateSkinCageGroinJoint
+
+        CreateSkinCageGroinJoint(MayaSkinCageHost(namespace)).execute()
+
     def skin_cage_print_reuse(self, namespace: str, *, transforms: bool,
                               shapes: bool, catch: bool) -> int:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost

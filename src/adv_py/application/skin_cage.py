@@ -6,9 +6,10 @@ from typing import Protocol
 
 from adv_py.core.skin_cage import (
     SkinCageBuildPlan, SkinCageCopyTarget, SkinCageMirrorPair,
+    SkinCageGroinAdjustment, SkinCageGroinLocators,
     SkinCageWidthInput, SkinCageWidthSpec,
-    plan_skin_cage_build, plan_skin_cage_copy, plan_skin_cage_mirror,
-    plan_skin_cage_width,
+    plan_groin_adjustment, plan_groin_locators, plan_skin_cage_build,
+    plan_skin_cage_copy, plan_skin_cage_mirror, plan_skin_cage_width,
 )
 
 
@@ -30,6 +31,16 @@ class SkinCageHost(Protocol):
     def preflight_width(self, specs: tuple[SkinCageWidthSpec, ...]) -> None: ...
     def set_width(self, spec: SkinCageWidthSpec) -> None: ...
     def capture_width(self, spec: SkinCageWidthSpec) -> bool: ...
+    def capture_groin_locator_input(self): ...
+    def create_groin_locators(self, plan: SkinCageGroinLocators) -> None: ...
+    def capture_groin_locators(self, plan: SkinCageGroinLocators) -> bool: ...
+    def capture_groin_adjustment_input(self): ...
+    def preflight_groin_adjustment(self) -> None: ...
+    def adjust_groin(self, plan: SkinCageGroinAdjustment) -> None: ...
+    def capture_groin_adjustment(self) -> bool: ...
+    def preflight_groin_joint(self) -> None: ...
+    def create_groin_joint(self) -> None: ...
+    def capture_groin_joint(self) -> bool: ...
     def delete_cage(self) -> tuple[str, ...]: ...
     def print_reuse_commands(self, *, transforms: bool, shapes: bool,
                              catch: bool) -> int: ...
@@ -99,6 +110,51 @@ class SetSkinCageDeformationWidth:
                     raise RuntimeError("SkinCage 宽度权重写入后读回不一致：" +
                                        spec.source.profile)
         return len(specs)
+
+
+class CreateSkinCageGroinLocators:
+    def __init__(self, host: SkinCageHost) -> None:
+        self._host = host
+
+    def execute(self) -> None:
+        plan = plan_groin_locators(*self._host.capture_groin_locator_input())
+        with self._host.transaction("创建腹股沟定位器"):
+            self._host.create_groin_locators(plan)
+            if not self._host.capture_groin_locators(plan):
+                raise RuntimeError("腹股沟定位器创建后位置不一致")
+
+
+class AdjustSkinCageGroin:
+    def __init__(self, host: SkinCageHost) -> None:
+        self._host = host
+
+    def execute(self) -> int:
+        plan = plan_groin_adjustment(
+            *self._host.capture_groin_adjustment_input())
+        self._host.preflight_groin_adjustment()
+        with self._host.transaction("调整 SkinCage 腹股沟"):
+            self._host.adjust_groin(plan)
+            pairs = plan_skin_cage_mirror(
+                self._host.capture_mirror_input(), "R")
+            self._host.preflight_mirror(pairs)
+            for pair in pairs:
+                self._host.mirror_profiles(pair)
+            if not self._host.capture_groin_adjustment() or any(
+                    not self._host.capture_mirror(pair) for pair in pairs):
+                raise RuntimeError("腹股沟调整或对侧镜像后状态不一致")
+        return len(pairs)
+
+
+class CreateSkinCageGroinJoint:
+    def __init__(self, host: SkinCageHost) -> None:
+        self._host = host
+
+    def execute(self) -> None:
+        self._host.preflight_groin_joint()
+        with self._host.transaction("创建腹股沟辅助关节"):
+            self._host.create_groin_joint()
+            if not self._host.capture_groin_joint():
+                raise RuntimeError("腹股沟辅助关节创建后缺少蒙皮影响")
 
 
 class DeleteSkinCage:

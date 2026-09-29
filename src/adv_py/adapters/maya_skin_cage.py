@@ -5,7 +5,8 @@ from contextlib import contextmanager
 
 from adv_py.core.skin_cage import (
     SKIN_CAGE_NODES, SkinCageBranchLayout, SkinCageBuildPlan,
-    SkinCageCopyTarget, SkinCageMirrorPair, SkinCageWidthInput,
+    SkinCageCopyTarget, SkinCageGroinAdjustment,
+    SkinCageGroinLocators, SkinCageMirrorPair, SkinCageWidthInput,
     SkinCageWidthSpec, special_skin_cage_branch,
 )
 
@@ -20,6 +21,7 @@ class MayaSkinCageHost:
         self._influences: tuple[str, ...] = ()
         self._selection: tuple[str, ...] = ()
         self._mirror_state = {}
+        self._groin_expected_pos = None
 
     def _name(self, leaf: str) -> str:
         return self.namespace + ":" + leaf if self.namespace else leaf
@@ -726,6 +728,223 @@ class MayaSkinCageHost:
                 return False
         return c.attributeQuery(
             "deformationWidth", node=self._name("skinCage"), exists=True)
+
+    def capture_groin_locator_input(self):
+        c = self.cmds
+        fit_root = self._name("Root")
+        cage_root = self._name("Root_M_middleProfile")
+        if not c.objExists(fit_root) or not c.objExists(cage_root):
+            raise ValueError("创建腹股沟定位器需要 Root 和 SkinCage 根截面")
+        return (tuple(c.xform(fit_root, query=True, worldSpace=True,
+                              translation=True)),
+                tuple(c.xform(cage_root + ".cv[2]", query=True,
+                              worldSpace=True, translation=True)))
+
+    def create_groin_locators(self,
+                              plan: SkinCageGroinLocators) -> None:
+        c = self.cmds
+        for leaf, pos in (("GroinStart", plan.start),
+                          ("GroinSide", plan.side)):
+            name = self._name(leaf)
+            if c.objExists(name):
+                c.delete(name)
+            locator = c.spaceLocator(name=name)[0]
+            c.xform(locator, worldSpace=True, translation=pos)
+        c.select(clear=True)
+
+    def capture_groin_locators(self,
+                               plan: SkinCageGroinLocators) -> bool:
+        c = self.cmds
+        for leaf, expected in (("GroinStart", plan.start),
+                               ("GroinSide", plan.side)):
+            node = self._name(leaf)
+            if not c.objExists(node):
+                return False
+            actual = c.xform(node, query=True, worldSpace=True,
+                             translation=True)
+            if max(abs(actual[i] - expected[i]) for i in range(3)) > 1e-5:
+                return False
+        return True
+
+    def capture_groin_adjustment_input(self):
+        c = self.cmds
+        start, side = self._name("GroinStart"), self._name("GroinSide")
+        if not c.objExists(start) or not c.objExists(side):
+            raise ValueError("请先创建并调整 GroinStart、GroinSide 定位器")
+        return (tuple(c.xform(start, query=True, worldSpace=True,
+                              translation=True)),
+                tuple(c.xform(side, query=True, worldSpace=True,
+                              translation=True)))
+
+    def preflight_groin_adjustment(self) -> None:
+        c = self.cmds
+        for leaf in ("Root_M_middleProfile", "Hip_R_startProfile",
+                     "Hip_R_middleProfile"):
+            if not c.objExists(self._name(leaf)):
+                raise ValueError("腹股沟调整缺少 SkinCage 截面：" + leaf)
+        if not c.objExists(self._name("SkinCageCurvesSet")):
+            raise ValueError("腹股沟调整需要 SkinCage 曲线集合")
+
+    def _groin_set_cv(self, leaf: str, index: int, *, x: float | None = None,
+                      y: float | None = None,
+                      source: tuple[float, float, float] | None = None) -> None:
+        c = self.cmds
+        cv = f"{self._name(leaf)}.cv[{index}]"
+        pos = source or c.xform(cv, query=True, worldSpace=True,
+                                translation=True)
+        c.xform(cv, worldSpace=True, translation=(
+            pos[0] if x is None else x,
+            pos[1] if y is None else y, pos[2]))
+
+    def adjust_groin(self, plan: SkinCageGroinAdjustment) -> None:
+        c = self.cmds
+        root = self._name("Root_M_middleProfile")
+        root_y = c.xform(root, query=True, worldSpace=True,
+                         translation=True)[1]
+        for index in range(5):
+            cv = f"{root}.cv[{index}]"
+            pos = c.xform(cv, query=True, worldSpace=True,
+                          translation=True)
+            c.xform(cv, worldSpace=True, translation=(
+                pos[0], pos[1] + plan.side_y - root_y, pos[2]))
+        for source_index, target_indices, target_leaf, factor in (
+                (2, (3,), "Hip_R_startProfile", 1.0),
+                (2, (3,), "Hip_R_middleProfile", 0.95),
+                (1, (0, 4), "Hip_R_startProfile", 1.0),
+                (1, (0, 4), "Hip_R_middleProfile", 0.95)):
+            point = c.xform(f"{root}.cv[{source_index}]", query=True,
+                            worldSpace=True, translation=True)
+            for index in target_indices:
+                self._groin_set_cv(target_leaf, index,
+                                   source=(point[0], point[1] * factor,
+                                           point[2]))
+        for index in (1, 2):
+            self._groin_set_cv("Hip_R_middleProfile", index,
+                               y=plan.start_y * 0.95)
+            self._groin_set_cv("Hip_R_startProfile", index,
+                               x=0.0, y=plan.start_y)
+        hip_start = self._name("Hip_R_startProfile")
+        current = c.getAttr(hip_start + ".scale")[0]
+        c.setAttr(hip_start + ".scale",
+                  *(value * 1.2 for value in current), type="double3")
+        index = 1
+        while c.objExists(self._name(f"Hip_R_twistProfile{index}")):
+            curve = self._name(f"Hip_R_twistProfile{index}")
+            pos = c.xform(f"{curve}.cv[1]", query=True,
+                          worldSpace=True, translation=True)
+            if pos[1] > plan.start_y:
+                delta = (pos[1] - plan.start_y) * -1.2
+                for cv_index in (1, 2):
+                    cv = f"{curve}.cv[{cv_index}]"
+                    cv_pos = c.xform(cv, query=True, worldSpace=True,
+                                     translation=True)
+                    c.xform(cv, worldSpace=True, translation=(
+                        cv_pos[0], cv_pos[1] + delta, cv_pos[2]))
+            index += 1
+        c.delete([self._name("GroinStart"), self._name("GroinSide")])
+        self._groin_expected_pos = tuple(c.xform(
+            hip_start + ".cv[1]", query=True, worldSpace=True,
+            translation=True))
+
+    def capture_groin_adjustment(self) -> bool:
+        c = self.cmds
+        if self._groin_expected_pos is None or any(c.objExists(
+                self._name(leaf)) for leaf in ("GroinStart", "GroinSide")):
+            return False
+        cv = self._name("Hip_R_startProfile") + ".cv[1]"
+        pos = c.xform(cv, query=True, worldSpace=True, translation=True)
+        return max(abs(pos[i] - self._groin_expected_pos[i])
+                   for i in range(3)) < 1e-4
+
+    def preflight_groin_joint(self) -> None:
+        c = self.cmds
+        for leaf in ("Root_M", "skinCage", "skinClusterSkinCage"):
+            if not c.objExists(self._name(leaf)):
+                raise ValueError("创建 Groin_M 前需要完整 SkinCage：" + leaf)
+        if c.objExists(self._name("Groin_M")):
+            raise ValueError("当前角色已有 Groin_M")
+
+    def create_groin_joint(self) -> None:
+        c = self.cmds
+        selection = c.ls(selection=True, long=True) or []
+        root = self._name("Root_M")
+        root_pos = c.xform(root, query=True, worldSpace=True,
+                           translation=True)
+        c.select(root, replace=True)
+        groin = c.joint(name=self._name("Groin_M"))
+        y = root_pos[1] * 0.95
+        hip_start = self._name("Hip_R_startProfile")
+        if c.objExists(hip_start):
+            y = c.xform(hip_start + ".cv[1]", query=True,
+                        worldSpace=True, translation=True)[1]
+        c.xform(groin, worldSpace=True,
+                translation=(0.0, y, root_pos[2]))
+        skin = self._name("skinClusterSkinCage")
+        c.skinCluster(skin, edit=True, addInfluence=groin,
+                      weight=0.0, lockWeights=False)
+        cage = self._name("skinCage")
+        shape = (c.listRelatives(cage, shapes=True, noIntermediate=True,
+                                 type="mesh", fullPath=True) or [])[0]
+        sampler = c.createNode("closestPointOnMesh",
+                                name=self._name("groinClosestSampler"))
+        try:
+            c.connectAttr(shape + ".outMesh", sampler + ".inMesh",
+                          force=True)
+            for side, indices in (("R", (1, 2)), ("L", (0, 3))):
+                for kind in ("start", "middle"):
+                    profile = self._name(f"Hip_{side}_{kind}Profile")
+                    if not c.objExists(profile):
+                        continue
+                    original_z = None
+                    if kind == "start":
+                        original_z = c.getAttr(profile + ".translateZ")
+                        c.setAttr(profile + ".translateZ",
+                                  root_pos[1] / 50.0)
+                    try:
+                        for index in indices:
+                            point = c.xform(
+                                f"{profile}.cv[{index}]", query=True,
+                                worldSpace=True, translation=True)
+                            c.setAttr(sampler + ".inPosition", *point,
+                                      type="double3")
+                            vertex = int(c.getAttr(
+                                sampler + ".closestVertexIndex"))
+                            component = f"{cage}.vtx[{vertex}]"
+                            c.skinPercent(skin, component,
+                                          transformValue=[(groin, 1.0)],
+                                          normalize=True)
+                            if kind == "middle":
+                                c.skinPercent(skin, component,
+                                              transformValue=[(
+                                                  self._name("Hip_" + side),
+                                                  0.5)], normalize=True)
+                    finally:
+                        if original_z is not None:
+                            c.setAttr(profile + ".translateZ", original_z)
+        finally:
+            c.delete(sampler)
+        leg_lock = self._name("LegLockConstrained")
+        if c.objExists(leg_lock):
+            constraints = (c.parentConstraint(
+                leg_lock, groin, maintainOffset=True) or []) + (
+                c.scaleConstraint(leg_lock, groin,
+                                  maintainOffset=True) or [])
+            system = self._name("ConstraintSystem")
+            if c.objExists(system):
+                for constraint in constraints:
+                    c.parent(constraint, system)
+        c.select(selection, replace=True) if selection else c.select(clear=True)
+
+    def capture_groin_joint(self) -> bool:
+        c = self.cmds
+        groin = self._name("Groin_M")
+        if not c.objExists(groin):
+            return False
+        influences = c.ls(c.skinCluster(
+            self._name("skinClusterSkinCage"), query=True,
+            influence=True) or [], long=True) or []
+        path = (c.ls(groin, long=True) or [groin])[0]
+        return path in influences
 
     def _skin(self, mesh: str) -> str:
         c = self.cmds

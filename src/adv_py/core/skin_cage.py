@@ -45,6 +45,38 @@ class SkinCageWidthSpec:
     other_weight: float
 
 
+@dataclass(frozen=True, slots=True)
+class SkinCageGroinLocators:
+    start: tuple[float, float, float]
+    side: tuple[float, float, float]
+
+
+def plan_groin_locators(root: tuple[float, float, float],
+                        cage_corner: tuple[float, float, float],
+                        ) -> SkinCageGroinLocators:
+    if len(root) != 3 or len(cage_corner) != 3 or not all(
+            isfinite(value) for value in (*root, *cage_corner)):
+        raise ValueError("Root 和 SkinCage 截面位置必须是有效三维坐标")
+    return SkinCageGroinLocators(
+        (0.0, root[1] * 0.9, root[2]),
+        (cage_corner[0], cage_corner[1] * 1.03, root[2]))
+
+
+@dataclass(frozen=True, slots=True)
+class SkinCageGroinAdjustment:
+    start_y: float
+    side_y: float
+
+
+def plan_groin_adjustment(start: tuple[float, float, float],
+                          side: tuple[float, float, float],
+                          ) -> SkinCageGroinAdjustment:
+    if len(start) != 3 or len(side) != 3 or not all(
+            isfinite(value) for value in (*start, *side)):
+        raise ValueError("腹股沟定位器位置无效")
+    return SkinCageGroinAdjustment(start[1], side[1])
+
+
 def plan_skin_cage_width(rows: tuple[SkinCageWidthInput, ...]
                          ) -> tuple[SkinCageWidthSpec, ...]:
     if not rows:
