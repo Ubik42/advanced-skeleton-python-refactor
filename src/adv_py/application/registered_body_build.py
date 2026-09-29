@@ -1037,6 +1037,9 @@ class BuildRegisteredBodyCharacter:
                     {spec.path: final_paths.remap_body_reference(spec.path)
                      for spec in part_plan.specs}
                     if final_paths is not None else None),
+                root_follow_transform=(
+                    rig.plan.torso.torso.leg_lock.path
+                    if rig.plan.torso is not None else None),
                 follower_sources=(
                     _generic_fk_policy.follower_sources
                     if _generic_fk_policy is not None else None),

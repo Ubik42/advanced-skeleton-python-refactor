@@ -8449,17 +8449,21 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         c = self._cmds
         for follower in plan.followers:
             if (self.find_name_collisions(follower.name)
-                    or (follower.use_offset_parent_matrix
-                        and self.find_name_collisions(follower.driver_name))
+                    or ((follower.use_offset_parent_matrix
+                         or follower.use_parent_constraint)
+                        and self.find_name_collisions(
+                            follower.driver_name))
                     or (follower.use_offset_parent_matrix
                         and self.find_name_collisions(follower.pick_name))
                     or (not follower.use_offset_parent_matrix
+                        and not follower.use_parent_constraint
                         and (self.find_name_collisions(follower.point_name)
                              or self.find_name_collisions(
                                  follower.orient_name)))
-                    or (c.ls(follower.source_body_joint, long=True,
-                             type="joint") or []) != [
-                                 follower.source_body_joint]):
+                    or (c.ls(follower.source_body_joint, long=True)
+                        or []) != [follower.source_body_joint]
+                    or c.nodeType(follower.source_body_joint)
+                       not in ("joint", "transform")):
                 raise FitSkeletonValidationError(
                     "通用 FK Body 跟随层来源或名称无效："
                     + follower.name)
@@ -8485,6 +8489,13 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                               matrix + ".matrixIn[1]")
                 c.connectAttr(matrix + ".matrixSum",
                               node + ".offsetParentMatrix")
+            elif follower.use_parent_constraint:
+                constraints = c.parentConstraint(
+                    follower.source_body_joint, node,
+                    maintainOffset=False, name=follower.driver_name)
+                if len(constraints) != 1:
+                    raise RuntimeError("通用 FK Root 跟随约束创建失败："
+                                       + follower.name)
             else:
                 point = c.pointConstraint(
                     follower.source_body_joint, node,
@@ -8495,11 +8506,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 if len(point) != 1 or len(orient) != 1:
                     raise RuntimeError("通用 FK Body 跟随点／方向约束创建失败："
                                        + follower.name)
-                if follower.inherit_scale:
-                    for axis in "XYZ":
-                        c.connectAttr(follower.source_body_joint
-                                      + ".scale" + axis,
-                                      node + ".scale" + axis)
+            if not follower.use_offset_parent_matrix and follower.inherit_scale:
+                for axis in "XYZ":
+                    c.connectAttr(follower.source_body_joint
+                                  + ".scale" + axis,
+                                  node + ".scale" + axis)
             if (follower.source_body_joint.rsplit("|", 1)[-1]
                     .startswith("Wrist_")
                     and plan.finger_visibility_plug is not None):
@@ -8550,6 +8561,16 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                             sourceFromDestination=True)
                             != driver + ".matrixSum"):
                     return False
+            elif follower.use_parent_constraint:
+                driver_path = follower.path + "|" + follower.driver_name
+                if (c.ls(driver_path, long=True,
+                         type="parentConstraint") or []) != [driver_path]:
+                    return False
+                targets = (c.parentConstraint(driver_path, query=True,
+                                              targetList=True) or [])
+                if c.ls(targets, long=True) != [
+                        follower.source_body_joint]:
+                    return False
             else:
                 for constraint_name, constraint_type, query in (
                     (follower.point_name, "pointConstraint",
@@ -8566,6 +8587,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     if c.ls(targets, long=True) != [
                             follower.source_body_joint]:
                         return False
+            if not follower.use_offset_parent_matrix:
                 for axis in "XYZ":
                     if (c.connectionInfo(
                             follower.path + ".scale" + axis,

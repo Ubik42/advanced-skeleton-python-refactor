@@ -22,6 +22,7 @@ class BodyGenericFkFollowerSpec:
     source_body_joint: str
     use_offset_parent_matrix: bool
     inherit_scale: bool
+    use_parent_constraint: bool = False
 
     @property
     def driver_name(self) -> str:
@@ -76,6 +77,7 @@ def plan_body_generic_fk(
     inbetween_start_paths: frozenset[str] = frozenset(),
     use_offset_parent_matrix: bool = False,
     remapped_body_paths: Mapping[str, str] | None = None,
+    root_follow_transform: str | None = None,
     follower_sources: frozenset[str] | None = None,
     finger_visibility_plug: str | None = None,
 ) -> BodyGenericFkPlan:
@@ -127,7 +129,9 @@ def plan_body_generic_fk(
                 break
             parent_spec = (spec_by_path[parent_spec].parent_path
                            if parent_spec in spec_by_path else None)
-        if standard_parent and spec.parent_path is not None:
+        if (spec.parent_path is not None
+                and (standard_parent
+                     or item.child_of_part not in (None, 0))):
             source_parent = spec.parent_path
             while (source_parent in removable_body_paths
                    and source_parent in spec_by_path):
@@ -137,6 +141,11 @@ def plan_body_generic_fk(
                                  + spec.name)
             body_parent = ((remapped_body_paths or {}).get(
                 source_parent, source_parent))
+            use_root_follow = False
+            if (source_parent.rsplit("|", 1)[-1] == "Root_M"
+                    and root_follow_transform is not None):
+                body_parent = root_follow_transform
+                use_root_follow = True
             if follower_sources is None or spec.name in follower_sources:
                 follower_name = ("AdvPy_GenericFKFollow_"
                                  + spec.name)
@@ -149,7 +158,8 @@ def plan_body_generic_fk(
                 followers.setdefault(follower_path,
                     BodyGenericFkFollowerSpec(
                         follower_path, follower_name, body_parent,
-                        use_offset_parent_matrix, inherit_scale))
+                        use_offset_parent_matrix, inherit_scale,
+                        use_parent_constraint=use_root_follow))
                 parent_control = follower_path
         stem = spec.name
         offset_name = "AdvPy_" + stem + "FKOffset"
