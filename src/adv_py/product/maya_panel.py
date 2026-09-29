@@ -1717,6 +1717,9 @@ def create_panel(controller: MayaPanelController | None = None):
                 "选择待复制权重的网格或其组件，再复制已绑定 SkinLoop 网格的权重。"))
             form.addRow(self._button("复制 SkinLoop 权重",
                                      self._copy_skin_loop_weights))
+            form.addRow(QtWidgets.QLabel(
+                "选择带 SkinLoop 的网格对象，创建随关节运动的 CutUp 分片。"))
+            form.addRow(self._button("创建 CutUp", self._create_skin_loop_cut_up))
             form.addRow(self._button("删除 CutUp", self._delete_skin_loop_cut_up))
             stack.addWidget(group)
             stack.addStretch(1)
@@ -2619,6 +2622,10 @@ def create_panel(controller: MayaPanelController | None = None):
         def _delete_skin_loop_cut_up(self):
             self.controller.skin_loops_delete_cut_up(self._namespace())
             return "已删除当前角色的 CutUp 几何组和显示层"
+
+        def _create_skin_loop_cut_up(self):
+            count = self.controller.skin_loops_create_cut_up(self._namespace())
+            return f"已创建 {count} 个 CutUp 分片"
 
         def _apply_delta_mush(self):
             count = self.controller.delta_mush_apply(self._namespace())

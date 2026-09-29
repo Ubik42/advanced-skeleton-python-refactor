@@ -1320,6 +1320,13 @@ class MayaPanelController:
         host = MayaSkinLoopsHost("" if namespace == ":" else namespace)
         DeleteSkinLoopCutUp(host).execute()
 
+    def skin_loops_create_cut_up(self, namespace: str) -> int:
+        from adv_py.adapters.maya_skin_loops import MayaSkinLoopsHost
+        from adv_py.application.skin_loops import CreateSkinLoopCutUp
+
+        host = MayaSkinLoopsHost("" if namespace == ":" else namespace)
+        return len(CreateSkinLoopCutUp(host).execute())
+
     def delta_mush_apply(self, namespace: str = "") -> int:
         from adv_py.adapters.maya_delta_mush import apply_delta_mush_to_selected
 

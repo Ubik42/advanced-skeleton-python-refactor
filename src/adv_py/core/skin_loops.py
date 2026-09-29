@@ -50,6 +50,64 @@ class SkinLoopCutUpDeletePlan:
     geometry_group: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class SkinLoopCutUpPlan:
+    layer: str
+    geometry_group: str
+    bindings: tuple[SkinLoopBindSpec, ...]
+
+
+def plan_skin_loop_cut_up(
+    layer: str, geometry_group: str,
+    bindings: tuple[SkinLoopBindSpec, ...],
+) -> SkinLoopCutUpPlan:
+    if not layer or not geometry_group or layer == geometry_group:
+        raise ValueError("SkinLoop CutUp 系统名称无效")
+    planned = plan_skin_loop_bind(bindings)
+    leaves = [item.mesh.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+              for item in planned]
+    if len(set(leaves)) != len(leaves):
+        raise ValueError("CutUp 多个网格的短名重复")
+    return SkinLoopCutUpPlan(layer, geometry_group, planned)
+
+
+def partition_skin_loop_face_regions(
+    face_edges: tuple[tuple[int, ...], ...],
+    blocked_edges: frozenset[int],
+) -> tuple[frozenset[int], ...]:
+    """Split polygon faces at the selected SkinLoop edges."""
+    if not face_edges or any(not edges for edges in face_edges):
+        raise ValueError("CutUp 需要有效的多边形面拓扑")
+    by_edge: dict[int, list[int]] = {}
+    for face, edges in enumerate(face_edges):
+        for edge in edges:
+            if edge < 0:
+                raise ValueError("CutUp 存在无效面边索引")
+            by_edge.setdefault(edge, []).append(face)
+    if not blocked_edges <= set(by_edge):
+        raise ValueError("CutUp 边环不属于目标网格")
+    neighbors = [set() for _ in face_edges]
+    for edge, faces in by_edge.items():
+        if edge in blocked_edges:
+            continue
+        for face in faces:
+            neighbors[face].update(other for other in faces if other != face)
+    remaining = set(range(len(face_edges)))
+    regions = []
+    while remaining:
+        seed = remaining.pop()
+        region = {seed}
+        stack = [seed]
+        while stack:
+            for neighbor in neighbors[stack.pop()]:
+                if neighbor in remaining:
+                    remaining.remove(neighbor)
+                    region.add(neighbor)
+                    stack.append(neighbor)
+        regions.append(frozenset(region))
+    return tuple(regions)
+
+
 def plan_skin_loop_cut_up_delete(
     layer: str | None, geometry_group: str | None,
 ) -> SkinLoopCutUpDeletePlan:

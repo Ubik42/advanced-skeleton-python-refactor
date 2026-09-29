@@ -5,9 +5,10 @@ from contextlib import AbstractContextManager
 from typing import Protocol
 
 from adv_py.core.skin_loops import (
-    SkinLoopBindSpec, SkinLoopCopySpec, SkinLoopCutUpDeletePlan, SkinLoopSpec,
+    SkinLoopBindSpec, SkinLoopCopySpec, SkinLoopCutUpDeletePlan,
+    SkinLoopCutUpPlan, SkinLoopSpec,
     plan_skin_loop_bind, plan_skin_loop_copy,
-    plan_skin_loop_cut_up_delete, plan_skin_loops,
+    plan_skin_loop_cut_up, plan_skin_loop_cut_up_delete, plan_skin_loops,
 )
 
 
@@ -31,6 +32,16 @@ class SkinLoopsHost(Protocol):
     def delete_skin_loop_cut_up(self, plan: SkinLoopCutUpDeletePlan) -> None: ...
     def capture_skin_loop_cut_up_deleted(
         self, plan: SkinLoopCutUpDeletePlan) -> bool: ...
+    def capture_skin_loop_cut_up_input(
+        self,
+    ) -> tuple[str, str, tuple[SkinLoopBindSpec, ...]]: ...
+    def preflight_skin_loop_cut_up(self, plan: SkinLoopCutUpPlan) -> None: ...
+    def create_skin_loop_cut_up(
+        self, plan: SkinLoopCutUpPlan,
+    ) -> tuple[str, ...]: ...
+    def capture_skin_loop_cut_up(
+        self, plan: SkinLoopCutUpPlan, pieces: tuple[str, ...],
+    ) -> bool: ...
 
 
 class CreateSkinLoops:
@@ -107,3 +118,18 @@ class DeleteSkinLoopCutUp:
             if not self._host.capture_skin_loop_cut_up_deleted(plan):
                 raise RuntimeError("SkinLoop CutUp 删除后仍有残留节点")
         return plan
+
+
+class CreateSkinLoopCutUp:
+    def __init__(self, host: SkinLoopsHost) -> None:
+        self._host = host
+
+    def execute(self) -> tuple[str, ...]:
+        plan = plan_skin_loop_cut_up(
+            *self._host.capture_skin_loop_cut_up_input())
+        self._host.preflight_skin_loop_cut_up(plan)
+        with self._host.transaction("创建 SkinLoop CutUp"):
+            pieces = self._host.create_skin_loop_cut_up(plan)
+            if not self._host.capture_skin_loop_cut_up(plan, pieces):
+                raise RuntimeError("SkinLoop CutUp 分片创建后结构不一致")
+        return pieces

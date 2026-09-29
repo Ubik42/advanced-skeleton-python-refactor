@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from math import pi, sqrt
 import re
 
 from adv_py.core.skin_loops import (
     SkinLoopBindLoop, SkinLoopBindSpec, SkinLoopCopySpec,
-    SkinLoopCutUpDeletePlan, SkinLoopSpec,
-    partition_skin_loop_regions, validate_closed_loop,
+    SkinLoopCutUpDeletePlan, SkinLoopCutUpPlan, SkinLoopSpec,
+    partition_skin_loop_face_regions, partition_skin_loop_regions,
+    validate_closed_loop,
 )
 
 
@@ -619,3 +621,341 @@ class MayaSkinLoopsHost:
     ) -> bool:
         return all(not self.cmds.objExists(name)
                    for name in (plan.layer, plan.geometry_group) if name)
+
+    def capture_skin_loop_cut_up_input(
+        self,
+    ) -> tuple[str, str, tuple[SkinLoopBindSpec, ...]]:
+        return (self._name("CutUp"), self._name("CutUpGeometry"),
+                self.capture_skin_loop_bind_input())
+
+    def preflight_skin_loop_cut_up(self, plan: SkinLoopCutUpPlan) -> None:
+        c = self.cmds
+        if c.objExists(plan.layer) or c.objExists(plan.geometry_group):
+            raise ValueError("CutUp 已存在；重建前先使用删除入口")
+        self._unique(self._name("Geometry"), "transform")
+        for spec in plan.bindings:
+            if self._mesh_transform(spec.mesh) != spec.mesh:
+                raise ValueError("CutUp 来源网格已改变")
+            for loop in spec.loops:
+                if (self._bind_loop_vertices(
+                        loop.set_name, spec.mesh,
+                        spec.edge_vertices) != loop.vertices
+                        or self._unique(loop.deform_joint, "joint")
+                        != loop.deform_joint):
+                    raise ValueError("CutUp 边环或关节已改变："
+                                     + loop.set_name)
+            leaf = spec.mesh.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            for name in ("AdvPy_SkinLoopCutUpTemp_" + leaf,
+                         "AdvPy_SkinLoopCutUpTempSkin_" + leaf):
+                if c.objExists(self._name(name)):
+                    raise ValueError("CutUp 临时名称已被占用：" + name)
+            shape = c.listRelatives(spec.mesh, shapes=True,
+                                    noIntermediate=True, fullPath=True,
+                                    type="mesh")[0]
+            fn = self.om.MFnMesh(
+                self.om.MSelectionList().add(shape).getDagPath(0))
+            if (fn.numVertices != spec.vertex_count
+                    or tuple(fn.getEdgeVertices(index)
+                             for index in range(fn.numEdges))
+                    != spec.edge_vertices):
+                raise ValueError("CutUp 来源网格拓扑已改变")
+            blocked = self._cut_up_loop_edges(spec)
+            regions = partition_skin_loop_face_regions(
+                tuple(tuple(fn.getPolygonEdges(index))
+                      for index in range(fn.numPolygons)), blocked)
+            if len(regions) < 2:
+                raise ValueError("SkinLoop 边环未把网格面分为至少两块："
+                                 + spec.mesh)
+            for index in range(len(regions)):
+                name = self._name(f"AdvPy_{leaf}_SkinLoopCut{index + 1}")
+                if c.objExists(name):
+                    raise ValueError("CutUp 分片名称已被占用：" + name)
+
+    def _cut_up_loop_edges(self, spec: SkinLoopBindSpec) -> frozenset[int]:
+        c = self.cmds
+        indices = set()
+        for loop in spec.loops:
+            members = c.ls(c.sets(loop.set_name, query=True) or [],
+                           flatten=True, long=True) or []
+            for item in members:
+                match = _EDGE.fullmatch(item)
+                if not match or match.group(1) != spec.mesh:
+                    raise ValueError("CutUp 边环成员不属于目标网格")
+                indices.add(int(match.group(2)))
+        return frozenset(indices)
+
+    def _cut_up_region_joint(
+        self, skin: str, mesh: str, vertices: set[int],
+        candidates: tuple[str, ...],
+    ) -> str:
+        from maya.api import OpenMayaAnim
+
+        c = self.cmds
+        shape = c.listRelatives(mesh, shapes=True,
+                                noIntermediate=True, fullPath=True,
+                                type="mesh")[0]
+        dag = self.om.MSelectionList().add(shape).getDagPath(0)
+        skin_node = self.om.MSelectionList().add(skin).getDependNode(0)
+        fn = OpenMayaAnim.MFnSkinCluster(skin_node)
+        order = {path.fullPathName(): index
+                 for index, path in enumerate(fn.influenceObjects())}
+        candidates = tuple(joint for joint in candidates if joint in order)
+        if not candidates:
+            raise RuntimeError("CutUp 临时 Skin 缺少有效关节")
+        component_fn = self.om.MFnSingleIndexedComponent()
+        component = component_fn.create(self.om.MFn.kMeshVertComponent)
+        component_fn.addElements(sorted(vertices))
+        values, width = fn.getWeights(dag, component)
+        if width != len(order) or len(values) != len(vertices) * width:
+            raise RuntimeError("CutUp 临时 Skin 权重维度无效")
+        totals = {joint: 0.0 for joint in candidates}
+        for offset in range(len(vertices)):
+            for joint in candidates:
+                totals[joint] += float(values[offset * width + order[joint]])
+        return max(candidates, key=lambda joint: totals[joint])
+
+    def _cut_up_border_loops(
+        self, piece: str,
+    ) -> tuple[tuple[tuple[int, int, int], ...], ...]:
+        c = self.cmds
+        shape = c.listRelatives(piece, shapes=True,
+                                noIntermediate=True, fullPath=True,
+                                type="mesh") or []
+        if len(shape) != 1:
+            raise RuntimeError("CutUp 分片缺少唯一 Mesh Shape")
+        fn = self.om.MFnMesh(
+            self.om.MSelectionList().add(shape[0]).getDagPath(0))
+        counts: dict[int, int] = {}
+        for face in range(fn.numPolygons):
+            for edge in fn.getPolygonEdges(face):
+                counts[edge] = counts.get(edge, 0) + 1
+        border = {edge: fn.getEdgeVertices(edge)
+                  for edge, count in counts.items() if count == 1}
+        if not border:
+            return ()
+        by_vertex: dict[int, set[int]] = {}
+        for edge, (a, b) in border.items():
+            by_vertex.setdefault(a, set()).add(edge)
+            by_vertex.setdefault(b, set()).add(edge)
+        remaining = set(border)
+        loops = []
+        while remaining:
+            first = remaining.pop()
+            component = {first}
+            stack = [first]
+            while stack:
+                a, b = border[stack.pop()]
+                for vertex in (a, b):
+                    for neighbor in by_vertex[vertex] & remaining:
+                        remaining.remove(neighbor)
+                        component.add(neighbor)
+                        stack.append(neighbor)
+            rows = tuple((index, *border[index])
+                         for index in sorted(component))
+            validate_closed_loop(rows)
+            loops.append(rows)
+        return tuple(loops)
+
+    def _cap_skin_loop_cut_piece(self, piece: str) -> None:
+        c = self.cmds
+        loops = self._cut_up_border_loops(piece)
+        if not loops:
+            return
+        shape = c.listRelatives(piece, shapes=True,
+                                noIntermediate=True, fullPath=True,
+                                type="mesh")[0]
+        fn = self.om.MFnMesh(
+            self.om.MSelectionList().add(shape).getDagPath(0))
+        points = fn.getPoints(self.om.MSpace.kWorld)
+        original_count = fn.numVertices
+        region_vertices = {vertex for face in range(fn.numPolygons)
+                           for vertex in fn.getPolygonVertices(face)}
+        center = tuple(sum(float(points[index][axis])
+                           for index in region_vertices)
+                       / len(region_vertices) for axis in range(3))
+        loop_info = []
+        for loop in loops:
+            vertices = {vertex for _, a, b in loop for vertex in (a, b)}
+            midpoint = tuple(sum(float(points[index][axis])
+                                 for index in vertices) / len(vertices)
+                             for axis in range(3))
+            circumference = sum(sqrt(sum(
+                (float(points[a][axis]) - float(points[b][axis])) ** 2
+                for axis in range(3))) for _, a, b in loop)
+            loop_info.append((vertices, midpoint,
+                              circumference / (2.0 * pi)))
+        c.polyExtrudeEdge(
+            [f"{piece}.e[{index}]" for loop in loops
+             for index, _, _ in loop],
+            constructionHistory=False, keepFacesTogether=True)
+        shape = c.listRelatives(piece, shapes=True,
+                                noIntermediate=True, fullPath=True,
+                                type="mesh")[0]
+        fn = self.om.MFnMesh(
+            self.om.MSelectionList().add(shape).getDagPath(0))
+        after = fn.getPoints(self.om.MSpace.kWorld)
+        if fn.numVertices <= original_count:
+            raise RuntimeError("CutUp 边环挤出没有产生新顶点")
+        assigned: list[list[int]] = [[] for _ in loops]
+        for vertex in range(original_count, fn.numVertices):
+            point = after[vertex]
+            closest = min(range(len(loops)), key=lambda index:
+                min(sum((float(point[axis])
+                         - float(points[original][axis])) ** 2
+                        for axis in range(3))
+                    for original in loop_info[index][0]))
+            assigned[closest].append(vertex)
+        for indices, (_, midpoint, radius) in zip(assigned, loop_info):
+            if not indices:
+                raise RuntimeError("CutUp 边环挤出顶点未映射到对应切口")
+            components = [f"{piece}.vtx[{index}]" for index in indices]
+            c.scale(0.25, 0.25, 0.25, components,
+                    pivot=midpoint, relative=True, worldSpace=True)
+            direction = tuple(midpoint[axis] - center[axis]
+                              for axis in range(3))
+            length = sqrt(sum(value * value for value in direction))
+            if length > 1e-8:
+                c.move(*(value * radius * 0.5 / length
+                         for value in direction),
+                       components, relative=True, worldSpace=True)
+        while True:
+            borders = self._cut_up_border_loops(piece)
+            if not borders:
+                break
+            c.polyCloseBorder(
+                [f"{piece}.e[{index}]"
+                 for index, _, _ in borders[0]],
+                constructionHistory=False)
+            if len(self._cut_up_border_loops(piece)) >= len(borders):
+                raise RuntimeError("CutUp 切口封口后仍存在同数边界")
+
+    def create_skin_loop_cut_up(
+        self, plan: SkinLoopCutUpPlan,
+    ) -> tuple[str, ...]:
+        if not self._in_transaction:
+            raise RuntimeError("CutUp 创建必须位于事务中")
+        c = self.cmds
+        c.createDisplayLayer(empty=True, name=plan.layer)
+        c.setAttr(plan.layer + ".color", 29)
+        c.setAttr(plan.layer + ".displayType", 2)
+        group = c.createNode("transform", name=plan.geometry_group,
+                             parent=self._unique(
+                                 self._name("Geometry"), "transform"))
+        pieces = []
+        for spec in plan.bindings:
+            leaf = spec.mesh.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            temp_name = self._name("AdvPy_SkinLoopCutUpTemp_" + leaf)
+            temp = c.duplicate(spec.mesh, name=temp_name,
+                               returnRootsOnly=True)[0]
+            c.delete(temp, constructionHistory=True)
+            temp = self._unique(temp_name, "transform")
+            temp_bind = SkinLoopBindSpec(
+                temp, spec.vertex_count, spec.edge_vertices,
+                spec.root_joint, None,
+                self._name("AdvPy_SkinLoopCutUpTempSkin_" + leaf),
+                spec.loops)
+            self.bind_skin_loops(temp_bind)
+            temp_skin = self._skin(temp)
+            source_shape = c.listRelatives(spec.mesh, shapes=True,
+                                           noIntermediate=True,
+                                           fullPath=True, type="mesh")[0]
+            source_fn = self.om.MFnMesh(
+                self.om.MSelectionList().add(source_shape).getDagPath(0))
+            face_edges = tuple(tuple(source_fn.getPolygonEdges(index))
+                               for index in range(source_fn.numPolygons))
+            regions = partition_skin_loop_face_regions(
+                face_edges, self._cut_up_loop_edges(spec))
+            candidates = tuple(dict.fromkeys((
+                spec.root_joint, *(loop.deform_joint for loop in spec.loops))))
+            for index, region in enumerate(regions, 1):
+                vertices = {vertex for face in region
+                            for vertex in source_fn.getPolygonVertices(face)}
+                joint = self._cut_up_region_joint(
+                    temp_skin, temp, vertices, candidates)
+                name = self._name(f"AdvPy_{leaf}_SkinLoopCut{index}")
+                piece = c.duplicate(temp, name=name,
+                                    returnRootsOnly=True)[0]
+                c.delete(piece, constructionHistory=True)
+                piece = self._unique(name, "transform")
+                remove = [f"{piece}.f[{face}]"
+                          for face in range(source_fn.numPolygons)
+                          if face not in region]
+                if remove:
+                    c.delete(remove)
+                self._cap_skin_loop_cut_piece(piece)
+                c.delete(piece, constructionHistory=True)
+                piece = c.parent(piece, group, absolute=True)[0]
+                piece = self._unique(name, "transform")
+                c.addAttr(piece, longName="advPySkinLoopCutUpOwner",
+                          dataType="string")
+                c.setAttr(piece + ".advPySkinLoopCutUpOwner",
+                          spec.mesh, type="string", lock=True)
+                c.parentConstraint(joint, piece, maintainOffset=True,
+                                   name=name + "ParentConstraint")
+                c.scaleConstraint(joint, piece, maintainOffset=True,
+                                  name=name + "ScaleConstraint")
+                c.editDisplayLayerMembers(plan.layer, piece,
+                                          noRecurse=True)
+                pieces.append(piece)
+            c.delete(temp)
+            if c.objExists(temp_skin):
+                c.delete(temp_skin)
+        return tuple(pieces)
+
+    def capture_skin_loop_cut_up(
+        self, plan: SkinLoopCutUpPlan, pieces: tuple[str, ...],
+    ) -> bool:
+        c = self.cmds
+        if (not pieces or not c.objExists(plan.layer)
+                or c.nodeType(plan.layer) != "displayLayer"
+                or int(c.getAttr(plan.layer + ".color")) != 29
+                or int(c.getAttr(plan.layer + ".displayType")) != 2
+                or (c.ls(plan.geometry_group, long=True,
+                         type="transform") or []) == []):
+            return False
+        group = self._unique(plan.geometry_group, "transform")
+        geometry = self._unique(self._name("Geometry"), "transform")
+        if (c.listRelatives(group, parent=True, fullPath=True) or []) != [geometry]:
+            return False
+        expected_count = 0
+        for spec in plan.bindings:
+            shape = c.listRelatives(spec.mesh, shapes=True,
+                                    noIntermediate=True, fullPath=True,
+                                    type="mesh") or []
+            if len(shape) != 1:
+                return False
+            fn = self.om.MFnMesh(
+                self.om.MSelectionList().add(shape[0]).getDagPath(0))
+            expected_count += len(partition_skin_loop_face_regions(
+                tuple(tuple(fn.getPolygonEdges(index))
+                      for index in range(fn.numPolygons)),
+                self._cut_up_loop_edges(spec)))
+        if len(pieces) != expected_count:
+            return False
+        owners = {spec.mesh for spec in plan.bindings}
+        if any(c.objExists(self._name(prefix
+                                      + spec.mesh.rsplit("|", 1)[-1].rsplit(
+                                          ":", 1)[-1]))
+               for spec in plan.bindings
+               for prefix in ("AdvPy_SkinLoopCutUpTemp_",
+                              "AdvPy_SkinLoopCutUpTempSkin_")):
+            return False
+        for piece in pieces:
+            if (not c.objExists(piece)
+                    or (c.listRelatives(piece, parent=True,
+                                        fullPath=True) or []) != [group]
+                    or not c.objExists(piece + ".advPySkinLoopCutUpOwner")
+                    or c.getAttr(piece + ".advPySkinLoopCutUpOwner") not in owners
+                    or not (c.listRelatives(piece, shapes=True,
+                                            noIntermediate=True,
+                                            type="mesh") or [])
+                    or int(c.polyEvaluate(piece, face=True)) < 1
+                    or self._cut_up_border_loops(piece)
+                    or not (c.listConnections(piece, source=True,
+                                              destination=False,
+                                              type="parentConstraint") or [])
+                    or not (c.listConnections(piece, source=True,
+                                              destination=False,
+                                              type="scaleConstraint") or [])):
+                return False
+        return True
