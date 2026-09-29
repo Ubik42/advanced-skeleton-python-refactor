@@ -631,6 +631,9 @@ class MayaFitBendyMixin:
         if spec.untwist_plug and not c.objExists(spec.untwist_plug):
             raise ValueError("Bendy 去扭转来源不存在："
                              + spec.untwist_plug)
+        if spec.up_twist_plug and not c.objExists(spec.up_twist_plug):
+            raise ValueError("Bendy 上行扭转来源不存在："
+                             + spec.up_twist_plug)
         for source in (spec.start, spec.end):
             for plug in (source.fk_matrix, source.ik_matrix, source.blend_plug):
                 if (plug is not None and not c.objExists(plug)
@@ -1407,7 +1410,8 @@ class MayaFitBendyMixin:
 
     def create_fit_bendy_micro(
             self, spec: FitBendyChainSpec,
-            base_twist_plug: str | None = None) -> None:
+            base_twist_plug: str | None = None,
+            up_twist_plug: str | None = None) -> None:
         """Place animator micro controls on the curve's sampled frames."""
         self._require_transaction()
         c = self._cmds
@@ -1594,6 +1598,25 @@ class MayaFitBendyMixin:
                               twist_add + f".input1D[{next_index}]")
                 c.connectAttr(addition_plug,
                               twist_add + f".input1D[{next_index + 1}]")
+            if spec.micro_up_twist and index > 0:
+                if not up_twist_plug or not c.objExists(up_twist_plug):
+                    raise ValueError("Bendy 上行扭转来源不存在："
+                                     + str(up_twist_plug))
+                amount_plug = (spec.deform_names[index]
+                               + ".twistAmount")
+                if not c.objExists(amount_plug):
+                    raise ValueError("Bendy Part 缺少扭转比例："
+                                     + amount_plug)
+                up_name = spec.micro_up_twist_names[index - 1]
+                up = c.createNode("multDoubleLinear", name=up_name,
+                                  skipSelect=True)
+                c.connectAttr(up_twist_plug, up + ".input1")
+                c.connectAttr(amount_plug, up + ".input2")
+                up_index = (len(spec.control_names)
+                            + int(bool(spec.child_start_control))
+                            + 2 * int(spec.micro_base_twist))
+                c.connectAttr(up + ".output",
+                              twist_add + f".input1D[{up_index}]")
             c.connectAttr(twist_add + ".output1D",
                           (twist_compose + ".inputRotateX"
                            if spec.micro_matrix_aim else
@@ -1702,7 +1725,8 @@ class MayaFitBendyMixin:
 
     def capture_fit_bendy_micro(
             self, spec: FitBendyChainSpec,
-            base_twist_plug: str | None = None) -> bool:
+            base_twist_plug: str | None = None,
+            up_twist_plug: str | None = None) -> bool:
         c = self._cmds
         master = spec.control_names[0]
         if (not c.objExists(_MICRO_GROUP)
@@ -1864,6 +1888,25 @@ class MayaFitBendyMixin:
                         or c.connectionInfo(
                             twist_add + f".input1D[{next_index + 1}]",
                             sourceFromDestination=True) != addition):
+                    return False
+            if spec.micro_up_twist and index > 0:
+                up_name = spec.micro_up_twist_names[index - 1]
+                up_index = (len(spec.control_names)
+                            + int(bool(spec.child_start_control))
+                            + 2 * int(spec.micro_base_twist))
+                if (not up_twist_plug
+                        or not c.objExists(up_name)
+                        or c.nodeType(up_name) != "multDoubleLinear"
+                        or c.connectionInfo(up_name + ".input1",
+                                            sourceFromDestination=True)
+                        != up_twist_plug
+                        or c.connectionInfo(up_name + ".input2",
+                                            sourceFromDestination=True)
+                        != spec.deform_names[index] + ".twistAmount"
+                        or c.connectionInfo(
+                            twist_add + f".input1D[{up_index}]",
+                            sourceFromDestination=True)
+                        != up_name + ".output"):
                     return False
             for projection, mult_name, weight in zip(
                     spec.twist_projection_names, twist_mults,

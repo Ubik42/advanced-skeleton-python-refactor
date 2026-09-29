@@ -35,6 +35,7 @@ class FitBendyChainSpec:
     micro_base_twist: bool = True
     micro_local_scale: bool = True
     micro_yz_scale_only: bool = True
+    micro_up_twist: bool = False
 
     def __post_init__(self) -> None:
         if (type(self.control_count) is not int
@@ -68,6 +69,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 微控制缩放策略无效")
         if type(self.micro_yz_scale_only) is not bool:
             raise ValueError("Bendy 纵向缩放策略无效")
+        if type(self.micro_up_twist) is not bool:
+            raise ValueError("Bendy 上行扭转策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -310,6 +313,7 @@ class FitBendyChainSpec:
                   for node in (add, *mults)),
                 *((node for row in self.micro_base_twist_names
                    for node in row) if self.micro_base_twist else ()),
+                *(self.micro_up_twist_names if self.micro_up_twist else ()),
                 *(node for add, deltas, weights in self.micro_scale_names
                   for node in (add, *deltas, *weights)),
                 *(node for row in self.twist_projection_names
@@ -403,6 +407,11 @@ class FitBendyChainSpec:
                      for name in self.deform_names)
 
     @property
+    def micro_up_twist_names(self) -> tuple[str, ...]:
+        return tuple("AdvPy_" + name + "UpTwistMultiply"
+                     for name in self.part_names)
+
+    @property
     def twist_projection_names(self) -> tuple[
         tuple[str, str, str, str], ...
     ]:
@@ -490,7 +499,8 @@ def plan_fit_bendy_chains(
                 0.1, 1.5 * profile.fat * profile.fat_front)
                 for profile in (
                     by_body[first.start_body].deform_profile,
-                    *(part.deform_profile for part in chain)))))
+                    *(part.deform_profile for part in chain))),
+            micro_up_twist=bool(first.dual_twist_child)))
     # An enabled Bendy joint without a same-side child cannot be constructed.
     planned_sources = {item.source_joint for item in result}
     missing = [item.joint for item in metadata

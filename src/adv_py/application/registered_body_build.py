@@ -699,6 +699,13 @@ class BuildRegisteredBodyCharacter:
                         is None
                         or chain.control_names[0] in
                         _generic_fk_policy.bendy_yz_scale_controls),
+                    micro_up_twist=(
+                        chain.micro_up_twist
+                        and (_generic_fk_policy is None
+                             or _generic_fk_policy.bendy_up_twist_controls
+                             is None
+                             or chain.control_names[0] in
+                             _generic_fk_policy.bendy_up_twist_controls)),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None
@@ -756,6 +763,7 @@ class BuildRegisteredBodyCharacter:
             hip_swing_reverse = None
             twist_projections = ()
             bendy_untwist_plugs = {}
+            bendy_up_twist_plugs = {}
             if use_fit_part_hierarchy:
                 active_all_twist_parts = tuple(replace(
                     part,
@@ -839,6 +847,10 @@ class BuildRegisteredBodyCharacter:
                 bendy_untwist_plugs = {
                     source.start_body: source.down_twist_plug
                     for source in active_twist_sources}
+                bendy_up_twist_plugs = {
+                    source.start_body: source.up_twist_plug
+                    for source in active_twist_sources
+                    if source.up_twist_plug}
                 ordinary_starts = {
                     part.start_body for part in active_twist_parts}
                 twist_steps = BuildFitPartTwistDrivers(joined).apply(
@@ -858,6 +870,7 @@ class BuildRegisteredBodyCharacter:
                             _generic_fk_policy.bendy_aim_follow_controls
                             if _generic_fk_policy is not None else None),
                         untwist_plugs=bendy_untwist_plugs,
+                        up_twist_plugs=bendy_up_twist_plugs,
                         start_control_sources=(
                             _generic_fk_policy.bendy_start_control_sources
                             if _generic_fk_policy is not None else None),
@@ -1327,6 +1340,7 @@ class BuildRegisteredBodyCharacter:
                         _generic_fk_policy.bendy_aim_follow_controls
                         if _generic_fk_policy is not None else None),
                     untwist_plugs=bendy_untwist_plugs,
+                    up_twist_plugs=bendy_up_twist_plugs,
                     start_control_sources=(
                         _generic_fk_policy.bendy_start_control_sources
                         if _generic_fk_policy is not None else None),
