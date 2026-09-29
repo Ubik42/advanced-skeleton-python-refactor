@@ -676,7 +676,7 @@ class MayaPanelController:
             left_names = "、".join(path.rsplit("|", 1)[-1]
                                   for path in left_only[:3])
             issue += ("；" if issue else "") + (
-                f"{len(left_only)} 个仅左侧来源分支未进入新角色："
+                f"{len(left_only)} 个仅左侧来源分支未按原层级映射："
                 f"{left_names}{'等' if len(left_only) > 3 else ''}")
         return PanelCharacter(target_namespace, True, len(character.registration.body),
                               len(character.registration.channels),

@@ -225,17 +225,6 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
             current = ancestor.parent
         return False
 
-    source_leaf_names = {joint.name.rsplit(":", 1)[-1] for joint in source}
-    unpaired_left_roots = {
-        joint.path for joint in source
-        if joint.name.rsplit(":", 1)[-1].endswith("_L")
-        and joint.name.rsplit(":", 1)[-1][:-2] + "_R"
-        not in source_leaf_names}
-    left_authored_paths = {
-        joint.path for joint in source
-        if any(joint.path == root_path
-               or joint.path.startswith(root_path + "|")
-               for root_path in unpaired_left_roots)}
     right_by_leaf: dict[str, SourceSkeletonJoint] = {}
     for joint in source:
         leaf = joint.name.rsplit(":", 1)[-1]
@@ -244,7 +233,16 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                 raise FitSkeletonValidationError(
                     "来源骨架右侧关节短名重复：" + leaf)
             right_by_leaf[leaf] = joint
-
+    right_semantic_names = {
+        _fit_name(joint.name) for joint in right_by_leaf.values()}
+    unpaired_left_roots = {
+        joint.path for joint in source
+        if joint.name.rsplit(":", 1)[-1].endswith("_L")
+        and joint.name.rsplit(":", 1)[-1][:-2] + "_R"
+        not in right_by_leaf
+        and _fit_name(joint.name.rsplit(":", 1)[-1][:-2] + "_R")
+        not in right_semantic_names}
+    left_authored_paths = set(unpaired_left_roots)
     axial_paths = _axial_source_paths(source, root)
     axial_names = tuple(f"Spine{index}" for index in
                         range(1, len(axial_paths))) + ("Chest",)
@@ -260,7 +258,7 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         if joint.path in left_authored_paths:
             leaf = joint.name.rsplit(":", 1)[-1]
             base = leaf.removesuffix("_L").removesuffix("_NonSymmetry")
-            return base + "_NonSymmetry"
+            return base
         if joint.path in name_by_path:
             return name_by_path[joint.path]
         original = _base_name(joint.name)
@@ -289,6 +287,9 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
             counterpart = right_by_leaf.get(leaf[:-2] + "_R")
             if counterpart is not None:
                 return mapped_name(counterpart)
+            alias = _fit_name(leaf[:-2] + "_R")
+            if alias in by_name:
+                return alias
         return None
 
     by_name: dict[str, SourceSkeletonJoint] = {}
@@ -316,10 +317,14 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         axis, len(axial_paths), 1.0, False)
     hand, hand_request = variable_body_source_inputs(
         axis, len(axial_paths), 1.0, True)
-    if all(spec.name in by_name for spec in hand.joints):
+    def has_standard(name: str) -> bool:
+        return (name in by_name
+                and by_name[name].path not in left_authored_paths)
+
+    if all(has_standard(spec.name) for spec in hand.joints):
         reference = hand
         request = hand_request
-    elif all(spec.name in by_name for spec in body.joints):
+    elif all(has_standard(spec.name) for spec in body.joints):
         # Incomplete or non-five-finger hands are ordinary Fit branches in
         # the MEL build. The common torso/body template stays authoritative;
         # present digits join the extra-branch path below.
@@ -327,7 +332,7 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         request = body_request
     else:
         missing = [spec.name for spec in body.joints
-                   if spec.name not in by_name]
+                   if not has_standard(spec.name)]
         raise FitSkeletonValidationError(
             "来源骨架缺少标准身体关节：" + "、".join(missing))
 
@@ -338,7 +343,7 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                      ("PinkyToe", "Toes", "PinkyToe"))
     present_foot = tuple(FitJointSpec(
         name, parent, (0.0, 0.0, 0.0), JointLabel.parse(label))
-        for name, parent, label in optional_foot if name in by_name)
+        for name, parent, label in optional_foot if has_standard(name))
     if present_foot:
         reference = FitTemplateSpec(
             reference.name, reference.joints + present_foot)
@@ -408,12 +413,19 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
             joint.label or JointLabel.parse("Other")))
         available_names.add(name)
     included_left = {joint.path for _, joint in extra_rows}
+    affected_left = {
+        joint.path for joint in source
+        if left_mirror_branch(joint)
+        and any(joint.path == root_path
+                or joint.path.startswith(root_path + "|")
+                for root_path in unpaired_left_roots)}
+    uncovered_left = (affected_left - included_left
+                      - left_canonical_paths
+                      - set(source_only_intermediates))
     source_only_left_branches = tuple(sorted(
-        path for path in unpaired_left_roots
-        if path not in included_left
-        and path not in source_only_intermediates
-        and not any(path.startswith(parent + "|")
-                    for parent in unpaired_left_roots)))
+        path for path in uncovered_left
+        if not any(path.startswith(parent + "|")
+                   for parent in uncovered_left)))
     if extra_specs:
         reference = FitTemplateSpec(
             reference.name, reference.joints + tuple(extra_specs))
