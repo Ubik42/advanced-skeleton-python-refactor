@@ -1,6 +1,8 @@
 """Build Fit parent/point/orient/scale FK constraint channels in Maya."""
 from __future__ import annotations
 
+from math import isfinite
+
 from adv_py.core.body_fit_advanced_constraint import (
     BodyFitAdvancedConstraintSpec,
 )
@@ -20,6 +22,28 @@ _AFFECTED = {
 }
 
 
+def _matrix(values):
+    if len(values) == 1 and isinstance(values[0], (tuple, list)):
+        values = values[0]
+    return tuple(float(value) for value in values)
+
+
+def _reoffset_reaches_root(c, source, root):
+    current = c.connectionInfo(root + ".offsetParentMatrix",
+                               sourceFromDestination=True)
+    visited = set()
+    while current and current != source:
+        node = current.rsplit(".", 1)[0]
+        if (node in visited or c.nodeType(node) != "multMatrix"
+                or not node.rsplit("|", 1)[-1].endswith("ReOffset")
+                or current != node + ".matrixSum"):
+            return False
+        visited.add(node)
+        current = c.connectionInfo(node + ".matrixIn[0]",
+                                   sourceFromDestination=True)
+    return current == source
+
+
 class MayaBodyFitAdvancedConstraintMixin:
     def preflight_body_fit_advanced_constraint(
         self, spec: BodyFitAdvancedConstraintSpec,
@@ -31,6 +55,8 @@ class MayaBodyFitAdvancedConstraintMixin:
             raise ValueError("Fit Advanced Constraint 目标数量无效")
         if (spec.split_name is None) != (len(spec.target_joints) == 1):
             raise ValueError("Fit Advanced Constraint 双目标权重规划不完整")
+        if (spec.reoffset_name is None) != (not spec.align_target):
+            raise ValueError("Fit Advanced Constraint 对齐补偿计划不完整")
         for path, kind in ((spec.fk_control, "transform"),
                            (spec.fk_offset, "transform"),
                            *((target, "joint")
@@ -50,6 +76,19 @@ class MayaBodyFitAdvancedConstraintMixin:
                                  fullPath=True) or []
         if len(parent) != 1:
             raise ValueError("FK Offset 缺少唯一父级：" + spec.fk_offset)
+        if spec.align_target:
+            root = spec.fk_root
+            opm = root + ".offsetParentMatrix"
+            upstream = c.connectionInfo(opm, sourceFromDestination=True)
+            children = c.listRelatives(spec.fk_offset, children=True,
+                                       type="transform", fullPath=True) or []
+            if ((c.ls(root, long=True, type="transform") or []) != [root]
+                    or (c.listRelatives(root, parent=True,
+                                        fullPath=True) or []) != [spec.fk_offset]
+                    or children != [root]
+                    or c.getAttr(opm, lock=True)
+                    or (not upstream and not c.getAttr(opm, settable=True))):
+                raise ValueError("FK 控制根层矩阵不可补偿：" + root)
         for channel in _AFFECTED[spec.kind]:
             for axis in "XYZ":
                 plug = spec.fk_offset + "." + channel + axis
@@ -66,6 +105,9 @@ class MayaBodyFitAdvancedConstraintMixin:
             spec.fk_offset, parent=True, fullPath=True)[0]
         world = tuple(float(v) for v in c.xform(
             spec.fk_offset, query=True, worldSpace=True, matrix=True))
+        root_world = (tuple(float(v) for v in c.xform(
+            spec.fk_root, query=True, worldSpace=True, matrix=True))
+                      if spec.align_target else None)
         self._transaction_changed = True
         static = c.createNode("transform", name=spec.static_name,
                               parent=offset_parent, skipSelect=True)
@@ -76,7 +118,8 @@ class MayaBodyFitAdvancedConstraintMixin:
             raise RuntimeError("Fit Advanced Constraint 静态参考路径漂移")
         command = getattr(c, _COMMANDS[spec.kind])
         created = command(static, *spec.target_joints, spec.fk_offset,
-                          maintainOffset=True, name=spec.constraint_name)
+                          maintainOffset=not spec.align_target,
+                          name=spec.constraint_name)
         if len(created) != 1 or created[0].rsplit("|", 1)[-1] != spec.constraint_name:
             raise RuntimeError("Fit Advanced Constraint 节点名称漂移")
         constraint = created[0]
@@ -108,9 +151,43 @@ class MayaBodyFitAdvancedConstraintMixin:
             dynamic_weight = split + ".output"
         for alias in aliases[1:]:
             c.connectAttr(dynamic_weight, constraint + "." + alias)
+        if spec.align_target:
+            from maya.api import OpenMaya as om
+
+            root = spec.fk_root
+            destination = root + ".offsetParentMatrix"
+            old_source = c.connectionInfo(destination,
+                                          sourceFromDestination=True)
+            old_matrix = _matrix(c.getAttr(destination))
+            current = tuple(float(v) for v in c.xform(
+                spec.fk_offset, query=True, worldSpace=True, matrix=True))
+            correction = tuple(om.MMatrix(world) *
+                               om.MMatrix(current).inverse())
+            if len(correction) != 16 or not all(map(isfinite, correction)):
+                raise RuntimeError("Fit Advanced Constraint 绑定补偿矩阵无效")
+            reoffset = c.createNode("multMatrix", name=spec.reoffset_name)
+            c.addAttr(reoffset, longName="advPyPriorMatrixSource",
+                      dataType="string")
+            c.setAttr(reoffset + ".advPyPriorMatrixSource",
+                      old_source or "", type="string", lock=True)
+            if old_source:
+                c.disconnectAttr(old_source, destination)
+                c.connectAttr(old_source, reoffset + ".matrixIn[0]")
+            else:
+                c.setAttr(reoffset + ".matrixIn[0]", *old_matrix,
+                          type="matrix")
+            c.setAttr(reoffset + ".matrixIn[1]", *correction,
+                      type="matrix")
+            c.setAttr(reoffset + ".matrixIn[1]", lock=True)
+            c.connectAttr(reoffset + ".matrixSum", destination)
+            restored = tuple(float(v) for v in c.xform(
+                root, query=True, worldSpace=True, matrix=True))
+            if any(abs(a-b)>1e-4 for a,b in zip(root_world, restored)):
+                raise RuntimeError("Fit Advanced Constraint 控制根层绑定姿态未恢复")
         after = tuple(float(v) for v in c.xform(
             spec.fk_offset, query=True, worldSpace=True, matrix=True))
-        if any(abs(a - b) > 1e-4 for a, b in zip(world, after)):
+        if not spec.align_target and any(
+                abs(a - b) > 1e-4 for a, b in zip(world, after)):
             raise RuntimeError("Fit Advanced Constraint 改变了 FK 绑定姿态")
 
     def capture_body_fit_advanced_constraint(
@@ -123,7 +200,9 @@ class MayaBodyFitAdvancedConstraintMixin:
                 or c.nodeType(spec.weight_name) != "multDoubleLinear"
                 or c.nodeType(spec.reverse_name) != "reverse"
                 or (spec.split_name is not None and
-                    c.nodeType(spec.split_name) != "multDoubleLinear")):
+                    c.nodeType(spec.split_name) != "multDoubleLinear")
+                or (spec.align_target and
+                    c.nodeType(spec.reoffset_name) != "multMatrix")):
             return False
         if not c.attributeQuery(spec.attribute, node=spec.fk_control,
                                 exists=True):
@@ -164,6 +243,20 @@ class MayaBodyFitAdvancedConstraintMixin:
         ) + split_links + tuple(
             (dynamic_weight, spec.constraint_name + "." + alias)
             for alias in aliases[1:])
+        if spec.align_target:
+            reoffset = spec.reoffset_name
+            root = spec.fk_root
+            original = c.getAttr(reoffset + ".advPyPriorMatrixSource")
+            incoming = c.connectionInfo(reoffset + ".matrixIn[0]",
+                                        sourceFromDestination=True) or ""
+            if (not _reoffset_reaches_root(
+                        c, reoffset + ".matrixSum", root)
+                    or not c.getAttr(reoffset + ".matrixIn[1]", lock=True)
+                    or not c.getAttr(reoffset + ".advPyPriorMatrixSource",
+                                     lock=True)
+                    or incoming != original
+                    or len(_matrix(c.getAttr(reoffset + ".matrixIn[1]"))) != 16):
+                return False
         return (all(c.connectionInfo(destination,
                                      sourceFromDestination=True) == source
                     for source, destination in links)

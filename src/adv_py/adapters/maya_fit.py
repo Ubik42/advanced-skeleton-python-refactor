@@ -98,6 +98,8 @@ _FIT_ATTRIBUTES = {
     FitJointField.PARENT_CONSTRAINT: _MayaFitAttribute("parentConstraint", "string"),
     FitJointField.POINT_CONSTRAINT: _MayaFitAttribute("pointConstraint", "string"),
     FitJointField.ORIENT_CONSTRAINT: _MayaFitAttribute("orientConstraint", "string"),
+    FitJointField.ORIENT_CONSTRAINT_MAINTAIN_OFFSET: _MayaFitAttribute(
+        "orientConstraintMaintainOffset", "bool"),
     FitJointField.SCALE_CONSTRAINT: _MayaFitAttribute("scaleConstraint", "string"),
     FitJointField.FOLLOW: _MayaFitAttribute("follow", "string"),
     FitJointField.FOLLOW_LEFT_RIGHT: _MayaFitAttribute("followLeftRight", "bool"),
@@ -902,6 +904,8 @@ class MayaFitJointHost:
                 joint, "pointConstraint"),
             orient_constraint=self._optional_constraint_target(
                 joint, "orientConstraint"),
+            orient_constraint_maintain_offset=self._optional_bool(
+                joint, "orientConstraintMaintainOffset"),
             scale_constraint=self._optional_constraint_target(
                 joint, "scaleConstraint"),
             follow=self._optional_constraint_target(joint, "follow"),

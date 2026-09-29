@@ -655,6 +655,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ("Parent Constraint 目标", "parent_constraint"),
                     ("Point Constraint 目标", "point_constraint"),
                     ("Orient Constraint 目标", "orient_constraint"),
+                    ("Constraint 保持控制器朝向", "orient_constraint_maintain_offset"),
                     ("Scale Constraint 目标", "scale_constraint"),
                     ("Follow 目标", "follow"),
                     ("Follow 左右切换", "follow_left_right"),

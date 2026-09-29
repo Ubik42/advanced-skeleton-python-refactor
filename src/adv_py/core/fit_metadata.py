@@ -36,6 +36,7 @@ class FitJointField(str, Enum):
     PARENT_CONSTRAINT = "parent_constraint"
     POINT_CONSTRAINT = "point_constraint"
     ORIENT_CONSTRAINT = "orient_constraint"
+    ORIENT_CONSTRAINT_MAINTAIN_OFFSET = "orient_constraint_maintain_offset"
     SCALE_CONSTRAINT = "scale_constraint"
     FOLLOW = "follow"
     FOLLOW_LEFT_RIGHT = "follow_left_right"
@@ -138,6 +139,7 @@ class FitJointMetadata:
     parent_constraint: str | None = None
     point_constraint: str | None = None
     orient_constraint: str | None = None
+    orient_constraint_maintain_offset: bool = False
     scale_constraint: str | None = None
     follow: str | None = None
     follow_left_right: bool = False
@@ -189,6 +191,7 @@ _BOOLEAN_FIELDS = {
     FitJointField.FOLLOW_LEFT_RIGHT,
     FitJointField.FOLLOW_WORLD,
     FitJointField.FOLLOW_SPACES,
+    FitJointField.ORIENT_CONSTRAINT_MAINTAIN_OFFSET,
     FitJointField.LEG_LOCK,
     FitJointField.CENTER_BETWEEN_FEET,
 }
@@ -398,6 +401,10 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
         issues.append(FitJointIssue(
             metadata.joint, "invalid_follow_spaces",
             "Follow Spaces 开关必须是布尔值"))
+    if type(metadata.orient_constraint_maintain_offset) is not bool:
+        issues.append(FitJointIssue(
+            metadata.joint, "invalid_constraint_maintain_offset",
+            "Constraint 保持控制器朝向开关必须是布尔值"))
     for field in _TARGET_FIELDS:
         value = getattr(metadata, field.value)
         if value is not None and (not isinstance(value, str)
@@ -409,6 +416,12 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
         issues.append(FitJointIssue(
             metadata.joint, "follow_options_without_target",
             "Follow 左右／世界选项需要 Follow 目标关节"))
+    if (metadata.orient_constraint_maintain_offset
+            and not any((metadata.parent_constraint, metadata.point_constraint,
+                         metadata.orient_constraint, metadata.scale_constraint))):
+        issues.append(FitJointIssue(
+            metadata.joint, "maintain_offset_without_constraint",
+            "Orient Constraint Maintain Offset 需要 Advanced Constraint 目标"))
     if (metadata.follow_spaces and any(
             name in {"Main", "Root", "Chest", "Parent"}
             for name, _ in metadata.follow_by_name)):

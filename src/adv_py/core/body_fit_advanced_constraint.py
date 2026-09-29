@@ -22,16 +22,26 @@ class BodyFitAdvancedConstraintSpec:
     reverse_name: str
     constraint_name: str
     split_name: str | None = None
+    align_target: bool = False
+    reoffset_name: str | None = None
 
     @property
     def attribute(self) -> str:
         return self.kind + "Constraint"
 
     @property
+    def fk_root(self) -> str:
+        prefix = self.fk_offset + "|"
+        if not self.fk_control.startswith(prefix):
+            raise ValueError("Advanced Constraint FK 控制器不在 Offset 层下")
+        return prefix + self.fk_control[len(prefix):].split("|", 1)[0]
+
+    @property
     def node_names(self) -> tuple[str, ...]:
         return (self.static_name, self.weight_name,
                 self.reverse_name, self.constraint_name) + (
-                    (self.split_name,) if self.split_name is not None else ())
+                    (self.split_name,) if self.split_name is not None else ()) + (
+                    (self.reoffset_name,) if self.reoffset_name is not None else ())
 
 
 def plan_body_fit_advanced_constraints(
@@ -50,6 +60,8 @@ def plan_body_fit_advanced_constraints(
         targets = tuple((kind, getattr(item, kind + "_constraint"))
                         for kind in _KINDS
                         if getattr(item, kind + "_constraint") is not None)
+        if item.orient_constraint_maintain_offset and not targets:
+            raise ValueError("Constraint 保持控制器朝向需要约束目标："+item.joint)
         if not targets:
             continue
         source_name = item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
@@ -99,7 +111,10 @@ def plan_body_fit_advanced_constraints(
                     control.offset_path, stem + "Static",
                     stem + "Weight", stem + "Reverse",
                     stem + "Constraint",
-                    stem + "Split" if len(target_paths) == 2 else None))
+                    stem + "Split" if len(target_paths) == 2 else None,
+                    item.orient_constraint_maintain_offset,
+                    (stem + "ReOffset"
+                     if item.orient_constraint_maintain_offset else None)))
     names = tuple(name for spec in result for name in spec.node_names)
     if len(names) != len(set(names)):
         raise ValueError("Advanced Constraint 生成节点名称重复")
