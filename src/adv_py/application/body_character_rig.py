@@ -343,6 +343,25 @@ class BuildBodyCharacterRig:
             leg.ik.root_path,
             leg.twist.root_path,
         )
+        root_scale_spec = None
+        if torso is not None:
+            if torso.torso.spine is not None:
+                spine = torso.torso.spine
+                root_scale_spec = BodySpineRootScaleSpec(
+                    body_root=safety.body.root,
+                    fk_scale_plug=spine.fk_controls[0] + ".scale",
+                    ik_scale_plug=spine.joints[3].path + ".scale",
+                    mode_plug=spine.blend_plug,
+                )
+            elif torso.torso.spline is not None:
+                spline = torso.torso.spline
+                root_scale_spec = BodySpineRootScaleSpec(
+                    body_root=safety.body.root,
+                    fk_scale_plug=spline.fk_controls[0] + ".scale",
+                    ik_scale_plug=(spline.joints[len(spline.body_joints)].path
+                                   + ".scale"),
+                    mode_plug=spline.settings + ".spineIkFk",
+                )
         global_control = plan_body_character_global(
             up_axis=self._host.scene_up_axis(),
             num_main_extras=next(
@@ -360,15 +379,7 @@ class BuildBodyCharacterRig:
                 f"{leg.stretch.global_scale_attribute}",
                 *(tuple(f"{safety.body.root}.scale{axis}" for axis in "XYZ") if torso else ()),
             ),
-            spine_root_scale=(
-                BodySpineRootScaleSpec(
-                    body_root=safety.body.root,
-                    fk_scale_plug=torso.torso.spine.fk_controls[0] + ".scale",
-                    ik_scale_plug=torso.torso.spine.joints[3].path + ".scale",
-                    mode_plug=torso.torso.spine.blend_plug,
-                )
-                if torso is not None and torso.torso.spine is not None else None
-            ),
+            spine_root_scale=root_scale_spec,
             radius=global_control_radius,
             body_root_via_controls=include_torso,
             root_follow_main_path=root_follow_main_path,
