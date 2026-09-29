@@ -134,6 +134,12 @@ class MayaFitNonSymmetryMixin:
                             if self._non_symmetry_leaf(renamed) != target:
                                 raise RuntimeError(
                                     "Fit 非对称关节改名失败：" + target)
+                            label = self.read_joint_label(right)
+                            if label is not None:
+                                c.setAttr(renamed + ".type", 18)
+                                c.setAttr(renamed + ".otherType",
+                                          label.text + "_NonSymmetry",
+                                          type="string")
                             if right == branch:
                                 renamed_root = renamed
                         if renamed_root is None:

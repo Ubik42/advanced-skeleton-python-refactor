@@ -89,6 +89,7 @@ def expand_fit_symmetry(
     inherited_mirror_code: dict[str, int] = {}
     inherited_no_flip: dict[str, bool] = {}
     output_paths: dict[tuple[str, FitBuildSide], str] = {}
+    used_output_paths: set[str] = set()
     instances: list[FitSymmetryInstance] = []
 
     ordered = sorted(hierarchy.joints, key=lambda node: (node.path.count("|"), node.path))
@@ -154,12 +155,20 @@ def expand_fit_symmetry(
                         f"{node.short_name} 的 noMirror 侧别与父关节不一致"
                     )
                 parent_output = output_paths[parent_key]
-            output_name = f"{node.short_name}_{target_side.value}"
+            # asCreateNonSymmetryJoints duplicates authored side branches with
+            # this suffix; the generated Body joints still use the original
+            # semantic name on their own side.
+            base_name = node.short_name.removesuffix("_NonSymmetry")
+            output_name = f"{base_name}_{target_side.value}"
             output_path = (
                 f"{parent_output}|{output_name}"
                 if parent_output is not None
                 else f"|{output_name}"
             )
+            if output_path in used_output_paths:
+                raise FitSymmetryValidationError(
+                    "非对称 Fit 分支产生重复 Body 关节：" + output_path)
+            used_output_paths.add(output_path)
             output_paths[(node.path, target_side)] = output_path
             instances.append(
                 FitSymmetryInstance(
