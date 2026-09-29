@@ -137,7 +137,7 @@ def plan_body_generic_fk(
             spec.parent_path, spec.parent_path)
             if spec.parent_path is not None else None)
         child_of_part = (final_parent is not None
-                         and final_path != final_parent + "|" + spec.name)
+                         and final_path.rsplit("|", 1)[0] != final_parent)
         if (spec.parent_path is not None
                 and (standard_parent or child_of_part
                      or item.child_of_part not in (None, 0))):
