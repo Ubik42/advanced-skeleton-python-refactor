@@ -84,13 +84,17 @@ def plan_inbetween_fk_parts(
     previous_fkx = anchor.fkx_name
     for part in ordered:
         prefix = "AdvPy_" + part.name + "_Inbetween"
+        profile = part.deform_profile
+        profile_radius = 1.5 * profile.fat * profile.fat_front
         spec = InbetweenFkPartSpec(
             part.name, part.index, part.world_position,
             part.rotation_order, previous_fkx,
             prefix + "FKPS", prefix + "FKOffset",
             prefix + "FKExtra", prefix + "FK",
             prefix + "FKX", prefix + "FKMM",
-            prefix + "PM", float(radius), part.source_joint,
+            prefix + "PM",
+            profile_radius if profile_radius > 0 else float(radius),
+            part.source_joint,
             prefix + "FKSub" if sub_controllers else None,
             extra_controllers, part.segment_scale_compensate)
         result.append(spec)
