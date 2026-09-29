@@ -385,6 +385,10 @@ def plan_fit_part_joints(
                 center_tolerance) is not None
         parent = start.output_path
         stem = start.output_name.rsplit("_", 1)[0]
+        axis = start.world_axes[0]
+        displacement = tuple(b - a for a, b in zip(
+            start_body.world_position, end_body.world_position))
+        axial_distance = sum(a * b for a, b in zip(displacement, axis))
         for index in range(1, count + 1):
             fraction = index / (count + 1)
             name = f"{stem}Part{index}_{start.side.value}"
@@ -392,8 +396,9 @@ def plan_fit_part_joints(
             if path in used_paths:
                 raise FitPartValidationError("Part 关节路径重复：" + path)
             used_paths.add(path)
-            position = tuple(a + (b - a) * fraction for a, b in zip(
-                start_body.world_position, end_body.world_position))
+            position = tuple(value + direction * axial_distance * fraction
+                             for value, direction in zip(
+                                 start_body.world_position, axis))
             parts.append(FitPartJointSpec(
                 start.source_joint, start.output_path, end.output_path,
                 start.side, index, count, path, name, parent, position,
