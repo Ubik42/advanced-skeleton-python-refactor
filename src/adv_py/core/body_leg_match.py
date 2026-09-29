@@ -79,6 +79,7 @@ class BodyLegIkToFkPlan:
     body_joint_axes: tuple[AxisFrame, ...]
     required_paths: tuple[str, ...]
     required_writable_plugs: tuple[str, ...]
+    ik_source_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +90,7 @@ class BodyLegIkToFkSceneState:
     body_joint_positions: tuple[Vector3, ...]
     body_joint_axes: tuple[AxisFrame, ...]
     fk_segment_translations: tuple[float, float]
+    ik_source_axes: tuple[AxisFrame, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -589,6 +591,8 @@ def plan_body_leg_ik_to_fk(
     joints = tuple(by_path[path] for path in paths)
     control_paths = tuple(control.control_path for control in controls)
     driver_paths = tuple(control.driven_joint for control in controls)
+    ik_source_paths = tuple(
+        blend_by_fk[driver].ik_driver for driver in driver_paths)
     segment_axes_and_values = tuple(
         _signed_local_axis_distance(parent, child)
         for parent, child in zip(joints, joints[1:3])
@@ -616,8 +620,9 @@ def plan_body_leg_ik_to_fk(
         paths,
         tuple(joint.world_position for joint in joints),
         tuple(joint.world_axes for joint in joints),
-        (*control_paths, *driver_paths, *paths),
+        (*control_paths, *driver_paths, *paths, *ik_source_paths),
         writable,
+        ik_source_paths,
     )
 
 
@@ -666,6 +671,10 @@ def audit_body_leg_ik_to_fk_preflight(
         issues.append(BodyLegMatchIssue(
             "pose_drift", "Leg IK→FK 匹配姿态已变化", plan.side.value
         ))
+    if len(state.ik_source_axes) != len(plan.ik_source_paths):
+        issues.append(BodyLegMatchIssue(
+            "ik_source_missing", "Leg IK→FK 缺少 IKX 朝向",
+            plan.side.value))
     return tuple(issues)
 
 

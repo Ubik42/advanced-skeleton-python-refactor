@@ -50,6 +50,7 @@ class BodyArmIkToFkPlan:
     body_joint_axes: tuple[AxisFrame, AxisFrame, AxisFrame]
     required_paths: tuple[str, ...]
     required_writable_plugs: tuple[str, ...]
+    ik_source_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +61,7 @@ class BodyArmIkToFkSceneState:
     body_joint_positions: tuple[Vector3, Vector3, Vector3]
     body_joint_axes: tuple[AxisFrame, AxisFrame, AxisFrame]
     fk_segment_translations: tuple[float, float]
+    ik_source_axes: tuple[AxisFrame, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +166,13 @@ def plan_body_arm_ik_to_fk(
     joints = tuple(by_path[path] for path in paths)
     control_paths = tuple(control.control_path for control in controls)
     driver_paths = tuple(control.driven_joint for control in controls)
+    blend_by_fk = {joint.fk_driver: joint
+                   for joint in blend_sides[0].joints}
+    if (len(blend_by_fk) != len(blend_sides[0].joints)
+            or any(driver not in blend_by_fk for driver in driver_paths)):
+        raise ValueError("Arm IK→FK 的 FK 控制与混合机制不一致")
+    ik_source_paths = tuple(
+        blend_by_fk[driver].ik_driver for driver in driver_paths)
     segment_plugs = tuple(f"{path}.translateX" for path in driver_paths[1:])
     segment_translations = tuple(
         _signed_local_x_distance(parent, child)
@@ -185,8 +194,9 @@ def plan_body_arm_ik_to_fk(
         paths,
         tuple(joint.world_position for joint in joints),
         tuple(joint.world_axes for joint in joints),
-        (*control_paths, *driver_paths, *paths),
+        (*control_paths, *driver_paths, *paths, *ik_source_paths),
         writable,
+        ik_source_paths,
     )
 
 
@@ -216,6 +226,10 @@ def audit_body_arm_ik_to_fk_preflight(
         for actual, expected in zip(state.body_joint_axes, plan.body_joint_axes)
     ):
         issues.append(BodyArmMatchIssue("pose_drift", "Arm IK→FK 匹配姿态已变化", plan.side.value))
+    if len(state.ik_source_axes) != len(plan.ik_source_paths):
+        issues.append(BodyArmMatchIssue(
+            "ik_source_missing", "Arm IK→FK 缺少 IKX 朝向",
+            plan.side.value))
     return tuple(issues)
 
 

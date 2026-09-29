@@ -55,6 +55,7 @@ from adv_py.core.body_arm_match import (
     BodyArmIkToFkPlan,
     BodyArmIkToFkSceneState,
     audit_body_arm_fk_to_ik_preflight,
+    audit_body_arm_ik_to_fk_preflight,
 )
 from adv_py.core.body_leg_match import (
     BodyLegFkToIkPlan,
@@ -5494,6 +5495,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             for plug in plan.fk_segment_plugs
             if self._cmds.objExists(plug)
         )
+        ik_axes = tuple(
+            self._spine_world_frame(path)[1]
+            for path in plan.ik_source_paths
+            if self._cmds.objExists(path))
         return BodyLegIkToFkSceneState(
             existing,
             writable,
@@ -5501,6 +5506,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             tuple(positions),
             tuple(axes),
             segment_translations,
+            ik_axes,
         )
 
     def apply_body_leg_ik_to_fk(self, plan: BodyLegIkToFkPlan) -> None:
@@ -5514,7 +5520,7 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             from .maya_limb_shape import begin_optional_match, finish_match
             shape_state=begin_optional_match(self,"leg",plan.side.value,"fk")
             for path, target_axes in zip(
-                plan.fk_control_paths, plan.fk_control_axes
+                plan.fk_control_paths, state.ik_source_axes
             ):
                 position = self._cmds.xform(
                     path, query=True, worldSpace=True, translation=True
@@ -5573,6 +5579,10 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             for plug in plan.fk_segment_plugs
             if self._cmds.objExists(plug)
         )
+        ik_axes = tuple(
+            self._spine_world_frame(path)[1]
+            for path in plan.ik_source_paths
+            if self._cmds.objExists(path))
         return BodyArmIkToFkSceneState(
             existing,
             writable,
@@ -5580,19 +5590,21 @@ class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, Maya
             tuple(positions),
             tuple(axes),
             segment_translations,
+            ik_axes,
         )
 
     def apply_body_arm_ik_to_fk(self, plan: BodyArmIkToFkPlan) -> None:
         self._require_transaction()
         state = self.capture_body_arm_ik_to_fk_state(plan)
-        if set(state.existing_paths) != set(plan.required_paths) or set(state.writable_plugs) != set(plan.required_writable_plugs) or abs(state.blend_value - 1.0) > 1e-6:
+        if audit_body_arm_ik_to_fk_preflight(plan, state):
             raise FitSkeletonValidationError("Arm IK→FK 匹配输入在执行前失效")
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self._transaction_changed = True
             from .maya_limb_shape import begin_optional_match, finish_match
             shape_state=begin_optional_match(self,"arm",plan.side.value,"fk")
-            for path, target_axes in zip(plan.fk_control_paths, plan.fk_control_axes):
+            for path, target_axes in zip(
+                    plan.fk_control_paths, state.ik_source_axes):
                 position = self._cmds.xform(path, query=True, worldSpace=True, translation=True)
                 x_axis, y_axis, z_axis = target_axes
                 matrix = (*x_axis, 0.0, *y_axis, 0.0, *z_axis, 0.0, *position, 1.0)
