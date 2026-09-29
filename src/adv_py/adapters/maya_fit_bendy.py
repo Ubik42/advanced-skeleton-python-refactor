@@ -46,6 +46,17 @@ def _bendy_dag_name(path: str) -> str:
 
 
 class MayaFitBendyMixin:
+    def _align_bendy_control(
+            self, node: str, position: tuple[float, float, float],
+            axes: tuple[tuple[float, float, float], ...] | None) -> None:
+        c = self._cmds
+        if axes is None:
+            c.xform(node, worldSpace=True, translation=position)
+            return
+        matrix = tuple(value for axis in axes
+                       for value in (*axis, 0.0)) + (*position, 1.0)
+        c.xform(node, worldSpace=True, matrix=matrix)
+
     def _bendy_bind_parameter(self, shape: str,
                               position: tuple[float, ...]) -> float:
         c = self._cmds
@@ -637,7 +648,8 @@ class MayaFitBendyMixin:
                            objectSpace=True, worldSpaceDistance=True)
             if index == 0:
                 control = c.parent(control, parent)[0]
-            c.xform(control, worldSpace=True, translation=position)
+            self._align_bendy_control(
+                control, position, spec.start_world_axes)
             c.setAttr(control + ".rotateOrder", spec.rotation_order)
             if index == 0:
                 c.addAttr(control, longName="parametric",
@@ -674,7 +686,8 @@ class MayaFitBendyMixin:
                          parent=junction, skipSelect=True)
         end_proxy = c.createNode("transform", name=spec.end_proxy_name,
                                  parent=_GROUPS[0], skipSelect=True)
-        c.xform(end_proxy, worldSpace=True, translation=end)
+        self._align_bendy_control(
+            end_proxy, end, spec.start_world_axes)
         drivers = ((spec.junction_output_name if spec.parent_bendy
                     else controls[1]), *controls[2:], end_proxy)
         influences = []
@@ -769,8 +782,14 @@ class MayaFitBendyMixin:
                         else chain.control_positions[index - 1])
             offset = c.createNode("transform", name=control + "Offset",
                                   parent=_GROUPS[0], skipSelect=True)
-            c.xform(offset, worldSpace=True, translation=position)
+            self._align_bendy_control(
+                offset, position, chain.start_world_axes)
             c.setAttr(offset + ".rotateOrder", chain.rotation_order)
+            if index == 0 and chain.start_world_axes is not None:
+                c.addAttr(offset, longName="advPyBendyOrientedBind",
+                          attributeType="bool", defaultValue=True)
+                c.setAttr(offset + ".advPyBendyOrientedBind",
+                          lock=True)
             extra = c.createNode("transform", name=control + "Extra",
                                   parent=offset, skipSelect=True)
             c.setAttr(extra + ".rotateOrder", chain.rotation_order)
@@ -1093,6 +1112,15 @@ class MayaFitBendyMixin:
                     or (c.listRelatives(control, parent=True) or [])
                     != [extra]):
                 return False
+            if index == 0:
+                marker = offset + ".advPyBendyOrientedBind"
+                if (bool(c.objExists(marker))
+                        != (spec.chain.start_world_axes is not None)):
+                    return False
+                if (spec.chain.start_world_axes is not None
+                        and (not c.getAttr(marker)
+                             or not c.getAttr(marker, lock=True))):
+                    return False
             if index == 0 and spec.master_aim_follow:
                 if not self._capture_fit_bendy_master_aim_follow(
                         spec.chain, offset, names[0], names[1],

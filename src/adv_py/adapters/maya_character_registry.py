@@ -150,9 +150,18 @@ class MayaCharacterRegistryMixin:
         bendy_child_control = set()
         bendy_untwist = set()
         bendy_end_matrix = set()
+        bendy_oriented = set()
         for control in bendy_aim_follow:
             stem, side = control.rsplit('_', 1)
             namespace = bendy_namespace(control)
+            offset_marker = (namespace + control
+                             + 'Offset.advPyBendyOrientedBind')
+            if c.objExists(offset_marker):
+                if (not bool(c.getAttr(offset_marker))
+                        or not c.getAttr(offset_marker, lock=True)):
+                    raise CharacterRegistryError(
+                        'Bendy 朝向绑定标记已损坏：' + control)
+                bendy_oriented.add(control)
             frame = (namespace + 'AdvPy_' + stem
                      + 'ParentUntwist_' + side + 'Frame')
             if c.objExists(frame):
@@ -186,7 +195,7 @@ class MayaCharacterRegistryMixin:
             frozenset(twist_rewired), frozenset(bendy_scales),
             bendy_aim_follow, frozenset(bendy_start_control),
             frozenset(bendy_child_control), frozenset(bendy_untwist),
-            frozenset(bendy_end_matrix))
+            frozenset(bendy_end_matrix), frozenset(bendy_oriented))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

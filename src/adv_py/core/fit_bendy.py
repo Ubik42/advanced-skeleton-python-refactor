@@ -29,6 +29,7 @@ class FitBendyChainSpec:
     parent_bendy: bool = False
     child_junction_control: str | None = None
     child_source_proxy: str | None = None
+    start_world_axes: tuple[tuple[float, float, float], ...] | None = None
 
     def __post_init__(self) -> None:
         if (type(self.rotation_order) is not int
@@ -44,6 +45,12 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 相邻段缺少起点控制或影响关节")
         if bool(self.child_junction_control) != bool(self.child_source_proxy):
             raise ValueError("Bendy Circular 缺少相邻段控制或驱动来源")
+        if (self.start_world_axes is not None
+                and (len(self.start_world_axes) != 3
+                     or any(len(axis) != 3 or any(not isfinite(value)
+                            for value in axis)
+                            for axis in self.start_world_axes))):
+            raise ValueError("Bendy 起点世界朝向无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:

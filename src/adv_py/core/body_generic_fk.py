@@ -103,6 +103,7 @@ class GenericFkFeaturePolicy:
     bendy_child_control_sources: frozenset[str] | None = None
     bendy_untwist_controls: frozenset[str] | None = None
     bendy_end_matrix_controls: frozenset[str] | None = None
+    bendy_oriented_controls: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(

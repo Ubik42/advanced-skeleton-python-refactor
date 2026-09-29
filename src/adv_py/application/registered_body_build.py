@@ -650,6 +650,25 @@ class BuildRegisteredBodyCharacter:
             if final_paths is not None and bendy_chains:
                 bendy_chains = rebase_plan_paths_after_parts(
                     bendy_chains, final_paths)
+            if bendy_chains:
+                oriented_body_axes = {
+                    (final_paths.remap_body_reference(joint.path)
+                     if final_paths is not None else joint.path):
+                    joint.world_axes
+                    for joint in skeleton.snapshot.joints}
+                if any(chain.start_body not in oriented_body_axes
+                       for chain in bendy_chains):
+                    raise RuntimeError("Bendy 起点无法对应已朝向 Body 关节")
+                bendy_chains = tuple(replace(
+                    chain,
+                    start_world_axes=oriented_body_axes.get(
+                        chain.start_body)
+                    if (_generic_fk_policy is None
+                        or _generic_fk_policy.bendy_oriented_controls
+                        is None
+                        or chain.control_names[0] in
+                        _generic_fk_policy.bendy_oriented_controls)
+                    else None) for chain in bendy_chains)
             rig_host = (_PartAwareRigHost(joined, final_paths)
                         if final_paths is not None else joined)
             rig = BuildBodyCharacterRig(rig_host).apply(container_name,
