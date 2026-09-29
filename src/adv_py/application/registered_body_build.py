@@ -42,6 +42,9 @@ from adv_py.core.body_fit_aim_at import plan_body_fit_aim_at
 from adv_py.core.body_fit_geo_attach import plan_body_fit_geo_attach
 from adv_py.core.body_fit_proximity_pin import plan_body_fit_proximity_pin
 from adv_py.core.body_fit_wheel import BodyFitWheelSpec, plan_body_fit_wheels
+from adv_py.core.body_fit_curve_guide import (
+    BodyFitCurveGuideBuilt, plan_body_fit_curve_guides,
+)
 from adv_py.core.body_generic_fk import plan_body_generic_fk
 from adv_py.core.body_center_between_feet import plan_body_center_between_feet
 from adv_py.core.body_fit_dependency import validate_fit_control_dependencies
@@ -86,6 +89,7 @@ from .body_center_between_feet import (
     BuildCenterBetweenFeet, RegisterCenterBetweenFeet,
 )
 from .fit_wheel_registration import RegisterFitWheels
+from .fit_curve_guide_registration import RegisterFitCurveGuides
 from .generic_fk_registration import RegisterGenericFk
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
@@ -359,6 +363,8 @@ class RegisteredBodyBuildResult:
     hip_swing_reverse: HipSwingReversePlan | HipSwingNoPartsPlan | None = None
     ik_solver_mapping: InbetweenIkSolverMapping | None = None
     selection_extras: tuple[str, ...] = ()
+    curve_guides: tuple[BodyFitCurveGuideBuilt, ...] = ()
+    wheels: tuple[BodyFitWheelSpec, ...] = ()
 
 
 class BuildRegisteredBodyCharacter:
@@ -513,13 +519,6 @@ class BuildRegisteredBodyCharacter:
                 != hip_selection.child_name + "_M"):
             raise FitSkeletonValidationError(
                 "无 Root Part 的自定义 HipSwinger 须标记脊柱首节")
-        unsupported_guides = tuple(
-            item.joint for item in fit_source.metadata
-            if item.curve_guide is not None)
-        if unsupported_guides:
-            raise FitSkeletonValidationError(
-                "Curve Guide 曲线驱动尚未接入 Body 构建："
-                + "、".join(unsupported_guides))
         with self._host.transaction("构建并登记完整 Body 角色"):
             joined = _JoinedTransactionHost(self._host)
             skeleton = BuildOrientedBodySkeleton(joined).apply(
@@ -539,7 +538,9 @@ class BuildRegisteredBodyCharacter:
                 include_torso=True, include_spine_ik=True,
                 include_control_spaces=True, axial_description=axial_description,
                 include_head_aim=include_head_aim,
-                defer_fit_tweakers=True, part_paths=final_paths)
+                defer_fit_tweakers=True,
+                defer_curve_guides=True,
+                part_paths=final_paths)
             if not use_fit_part_hierarchy:
                 BuildFitPartScaleDrivers(joined).apply_terminal_only(
                     part_plan.specs,
@@ -913,6 +914,10 @@ class BuildRegisteredBodyCharacter:
                 fk_control_specs,
                 scale_plug=(rig.plan.global_control.scale_node_name
                             + ".input1Y"))
+            curve_guides = plan_body_fit_curve_guides(
+                fit_metadata, part_plan.symmetry.instances,
+                part_plan.specs, fk_control_specs,
+                final_paths=final_paths)
             root_x = (rig.plan.torso.torso.root_x
                       if rig.plan.torso is not None else None)
             center_plan = plan_body_center_between_feet(
@@ -1077,7 +1082,15 @@ class BuildRegisteredBodyCharacter:
                     final_paths=(fit_part_hierarchy.final_paths
                                  if fit_part_hierarchy is not None else None))
                 BuildFitTweakers(joined).apply(tweakers)
-            joined.create_body_fit_wheels(wheels)
+            built_curve_guides = (
+                joined.create_body_fit_curve_guides(
+                    curve_guides,
+                    main_control=rig.plan.global_control.control_path,
+                    fit_container=(rig.plan.arm.safety.symmetry.source
+                                   .hierarchy.container))
+                if curve_guides else ())
+            if wheels:
+                joined.create_body_fit_wheels(wheels)
             wheel_rig_plan = _with_wheel_fk_sources(rig.plan, wheels)
             if wheel_rig_plan != rig.plan:
                 arm_fk = joined.capture_body_arm_fk_controls(
@@ -1120,6 +1133,9 @@ class BuildRegisteredBodyCharacter:
             registration = RegisterBodyCharacter(joined).apply(rig)
             registration = RegisterGenericFk(joined).apply(
                 registration, generic_fk)
+            registration = RegisterFitCurveGuides(joined).apply(
+                registration, built_curve_guides,
+                main_control=rig.plan.global_control.control_path)
             registration = RegisterFitWheels(joined).apply(
                 registration, wheels)
             registration = RegisterFitAdvancedConstraints(joined).apply(
@@ -1238,4 +1254,5 @@ class BuildRegisteredBodyCharacter:
             skeleton, rig, registration, tuple(segments),
             fit_part_hierarchy, inbetween_segments,
             inbetween_untwisters, hip_swing_reverse,
-            solver_mapping, selection_extras)
+            solver_mapping, selection_extras,
+            curve_guides=built_curve_guides, wheels=wheels)

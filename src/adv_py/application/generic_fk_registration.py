@@ -48,6 +48,7 @@ class RegisterGenericFk:
                     plugs.add((channel.node, channel.attribute))
                     channels.append(channel)
             for path in (plan.root_path, control.offset_path,
+                         control.aim_path,
                          control.extra_path, control.control_path,
                          control.sub_control_path,
                          control.source_override_path):

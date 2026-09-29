@@ -65,7 +65,11 @@ def plan_body_generic_fk(
         extra_name = "AdvPy_" + stem + "FKExtra"
         control_name = "AdvPy_" + stem + "FK"
         offset_path = parent_control + "|" + offset_name
-        extra_path = offset_path + "|" + extra_name
+        aim_name = ("AdvPy_" + stem + "FKGuideAim"
+                    if item.curve_guide is not None else None)
+        aim_path = (offset_path + "|" + aim_name
+                    if aim_name is not None else None)
+        extra_path = (aim_path or offset_path) + "|" + extra_name
         control_path = extra_path + "|" + control_name
         sub_name = ("AdvPy_" + stem + "FKSub"
                     if sub_controllers else None)
@@ -94,6 +98,8 @@ def plan_body_generic_fk(
             extra_name=extra_name,
             extra_curve=extra_controllers,
             fit_joint_names=(source_name,),
+            aim_path=aim_path,
+            aim_name=aim_name,
         )
         controls.append(control)
         control_by_name[spec.name] = control_path

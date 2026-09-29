@@ -226,6 +226,7 @@ class BuildBodyCharacterRig:
         axial_description=None,
         include_head_aim: bool = False,
         defer_fit_tweakers: bool = False,
+        defer_curve_guides: bool = False,
         part_paths: FitPartFinalPaths | None = None,
     ) -> BodyCharacterRigBuildPlan:
         if type(defer_fit_tweakers) is not bool:
@@ -247,9 +248,9 @@ class BuildBodyCharacterRig:
         curve_guides = tuple(item.joint for item in
                              safety.symmetry.source.metadata
                              if item.curve_guide is not None)
-        if curve_guides:
+        if curve_guides and not defer_curve_guides:
             raise FitSkeletonValidationError(
-                "Curve Guide 曲线驱动尚未接入 Body 构建："
+                "独立 Body Rig 构建不包含 Curve Guide；请使用完整角色构建："
                 + "、".join(curve_guides))
         # ADV 6.925 ignores aim on terminal Fit joints; only a joint with a
         # direct child enters the generic FKAim/AimSystem construction loop.
@@ -258,8 +259,9 @@ class BuildBodyCharacterRig:
         aim_source_names = frozenset(
             item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
             for item in safety.symmetry.source.metadata
-            if FitJointField.AIM in item.present_fields
-            and item.joint in fit_parents)
+            if ((FitJointField.AIM in item.present_fields
+                 and item.joint in fit_parents)
+                or (defer_curve_guides and item.curve_guide is not None)))
         arm_aim = aim_source_names & frozenset(("Shoulder", "Elbow", "Wrist"))
         leg_aim = aim_source_names & frozenset(("Hip", "Knee", "Ankle",
                                                 "Toes", "ToesEnd"))
@@ -550,6 +552,7 @@ class BuildBodyCharacterRig:
         axial_description=None,
         include_head_aim: bool = False,
         defer_fit_tweakers: bool = False,
+        defer_curve_guides: bool = False,
         part_paths: FitPartFinalPaths | None = None,
     ) -> BodyCharacterRigBuildResult:
         plan = self.plan(
@@ -566,6 +569,7 @@ class BuildBodyCharacterRig:
             axial_description=axial_description,
             include_head_aim=include_head_aim,
             defer_fit_tweakers=defer_fit_tweakers,
+            defer_curve_guides=defer_curve_guides,
             part_paths=part_paths,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
