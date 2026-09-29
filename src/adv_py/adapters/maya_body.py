@@ -3075,6 +3075,20 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
             if len({name.rsplit(":", 1)[-1]
                     for name in data.influence_names}) != len(data.influence_names):
                 raise FitSkeletonValidationError("Skin 影响关节名称不唯一：" + skin)
+            skin_fn, _, _, api_names, _ = host._skin_api(skin)
+            if api_names != data.influence_names:
+                raise RuntimeError("FBX Skin 影响关节顺序在捕获期间变化：" + skin)
+            bind_matrices = []
+            for influence in skin_fn.influenceObjects():
+                logical = skin_fn.indexForInfluenceObject(influence)
+                values = c.getAttr(f"{skin}.bindPreMatrix[{logical}]")
+                if len(values) == 1 and isinstance(values[0], (tuple, list)):
+                    values = values[0]
+                bind_matrices.append(tuple(float(value) for value in values))
+            bind_matrices = tuple(bind_matrices)
+            if any(len(matrix) != 16 for matrix in bind_matrices):
+                raise FitSkeletonValidationError(
+                    "FBX Skin 绑定逆矩阵不完整：" + skin)
             rows.append((mesh[0], data,
                          int(c.getAttr(skin + ".maxInfluences")),
                          bool(c.getAttr(skin + ".maintainMaxInfluences")),
@@ -3082,6 +3096,7 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                          int(c.getAttr(skin + ".normalizeWeights")),
                          float(c.getAttr(skin + ".envelope")),
                          host.capture_skin_blend_weights(skin),
+                         bind_matrices,
                          source_names))
         if not rows:
             raise FitSkeletonValidationError("当前角色没有可发布的 Skin 网格")
@@ -3171,13 +3186,22 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                   else "AdvPy_FBXTemporaryMeshGroup")) if sources else None
         for index, (mesh, data, maximum, maintain, method,
                     normalization, envelope, blend_weights,
-                    mapping) in enumerate(
+                    bind_matrices, mapping) in enumerate(
                 sources, 1):
             target_paths = tuple(mapping[name.rsplit(":", 1)[-1]]
                                  for name in data.influence_names)
-            clone = c.duplicate(self.scene_address(mesh) if namespace_free
-                                else mesh, returnRootsOnly=True,
-                                renameChildren=True)[0]
+            source_envelope = data.skin_name + ".envelope"
+            if not c.getAttr(source_envelope, settable=True):
+                raise FitSkeletonValidationError(
+                    "FBX Skin 的 envelope 被外部输入占用，无法取得原始网格："
+                    + data.skin_name)
+            c.setAttr(source_envelope, 0.0)
+            try:
+                clone = c.duplicate(self.scene_address(mesh)
+                    if namespace_free else mesh, returnRootsOnly=True,
+                    renameChildren=True)[0]
+            finally:
+                c.setAttr(source_envelope, envelope)
             clone = c.parent(clone, group)[0]
             mesh_name = mesh.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
             clone = c.rename(clone, (":" if namespace_free else "")
@@ -3206,10 +3230,15 @@ class MayaBodyBuildHost(MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaB
                               for offset, name in enumerate(data.influence_names)}
             published_to_source = {target.rsplit("|", 1)[-1]: source
                 for source, target in mapping.items()}
+            target_influences = skin_fn.influenceObjects()
             target_names = tuple(path.fullPathName().rsplit("|", 1)[-1]
-                .rsplit(":", 1)[-1] for path in skin_fn.influenceObjects())
+                .rsplit(":", 1)[-1] for path in target_influences)
             order = tuple(source_indices[published_to_source[name]]
                           for name in target_names)
+            for influence, source_index in zip(target_influences, order):
+                logical = skin_fn.indexForInfluenceObject(influence)
+                c.setAttr(f"{skin}.bindPreMatrix[{logical}]",
+                          *bind_matrices[source_index], type="matrix")
             original = array("d")
             original.frombytes(data.values)
             width = len(order)
