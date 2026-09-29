@@ -178,7 +178,21 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
                               worldSpace=True, translation=True))
         sample = tuple(joint[axis] + factor * (point[axis] - joint[axis])
                        for axis in range(3))
-        return self._closest_vertex(sample)
+        # The original builder moves the opposite profile out of the cage
+        # during closest-vertex lookup when both sides overlap closely.
+        if spec.side not in ("L", "R"):
+            return self._closest_vertex(sample)
+        other_side = "R" if spec.side == "L" else "L"
+        opposite_leaf = self._leaf(spec.profile).replace(
+            f"_{spec.side}_", f"_{other_side}_", 1)
+        opposite = self._name(opposite_leaf)
+        if not c.objExists(opposite):
+            return self._closest_vertex(sample)
+        c.move(0, 0, -999, opposite, relative=True, worldSpace=True)
+        try:
+            return self._closest_vertex(sample)
+        finally:
+            c.move(0, 0, 999, opposite, relative=True, worldSpace=True)
 
     def _distance_driver(self, spec: SkinCageSlider, index: int,
                          slider: str, parent: str, system: str,
