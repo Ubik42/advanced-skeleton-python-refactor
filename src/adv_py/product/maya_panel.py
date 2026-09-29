@@ -310,7 +310,9 @@ def create_panel(controller: MayaPanelController | None = None):
                              '01 · 目标网格', '02 · 可移植目标资产')),
                     ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit')),
                     ('Build', ('03 · 控制与变形器',)),
-                    ('Build ...', ()), ('Tweaks', ('03A · Face Tweaks',)),
+                    ('Build ...', ()),
+                    ('Skin Layers', ('03a · Face Skin Layers',)),
+                    ('Tweaks', ('03A · Face Tweaks',)),
                     ('DeltaMush', ('03B · Face DeltaMush',)),
                     ('HeadSquash', ()), ('WrinkleMap', ()),
                     ('BlendShapes', ('04 · 表情与口型动画',
@@ -1615,6 +1617,17 @@ def create_panel(controller: MayaPanelController | None = None):
                                                  self._face_outer_blink_apply))
             form.addRow(outer_actions)
             form.addRow(self._button("构建面部控制", self._face_build, primary=True))
+            stack.addWidget(group)
+
+            group, form = self._group("03a · Face Skin Layers", [])
+            form.addRow(self._button("Normal",
+                lambda: self._face_skin_layers_show("Normal")))
+            form.addRow(self._button("刷新 SkinLayer 列表",
+                                     self._face_skin_layers_refresh))
+            self.face_skin_layers_buttons = QtWidgets.QWidget()
+            self.face_skin_layers_layout = QtWidgets.QVBoxLayout(
+                self.face_skin_layers_buttons)
+            form.addRow(self.face_skin_layers_buttons)
             stack.addWidget(group)
 
             group, form = self._group("03A · Face Tweaks", [])
@@ -3291,6 +3304,25 @@ def create_panel(controller: MayaPanelController | None = None):
                 keep_offset=self.face_tweaks_keep_offset.isChecked())
             return f"已替换 {len(controls)} 个 Face 控制器形状"
 
+        def _face_skin_layers_refresh(self):
+            layout = self.face_skin_layers_layout
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+            layers = self.controller.face_skin_layers_available(
+                self._namespace())
+            for layer in layers:
+                layout.addWidget(self._button(layer,
+                    lambda layer=layer: self._face_skin_layers_show(layer)))
+            return f"已读取 {len(layers)} 个 Face SkinLayer"
+
+        def _face_skin_layers_show(self, layer):
+            targets = self.controller.face_skin_layers_show(
+                self._namespace(), layer)
+            return f"已显示 Face SkinLayer：{layer}（{len(targets)} 个层对象）"
+
         def _face_tweaks_detach_controllers(self):
             skins = self.controller.face_tweaks_detach_controllers(
                 self._namespace())
@@ -3561,6 +3593,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 return
             detail = current.data(QtCore.Qt.UserRole + 1)
             self.current.setText("当前角色：" + detail)
+            if hasattr(self, "face_skin_layers_layout"):
+                self._face_skin_layers_refresh()
             if hasattr(self, "body_option_fields"):
                 try:
                     self._load_body_build_options()

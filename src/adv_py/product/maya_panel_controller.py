@@ -1988,6 +1988,21 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace
         ).attach_face_controllers()
 
+    def face_skin_layers_available(self, namespace: str) -> tuple[str, ...]:
+        from adv_py.adapters.maya_face_skin_layers import MayaFaceSkinLayersHost
+
+        return MayaFaceSkinLayersHost(
+            namespace=None if namespace == ":" else namespace
+        ).available_face_skin_layers()
+
+    def face_skin_layers_show(self, namespace: str,
+                              layer: str) -> tuple[str, ...]:
+        from adv_py.adapters.maya_face_skin_layers import MayaFaceSkinLayersHost
+
+        return MayaFaceSkinLayersHost(
+            namespace=None if namespace == ":" else namespace
+        ).show_face_skin_layer(layer)
+
     def face_build_get_include(self, namespace: str) -> str:
         from adv_py.adapters.maya_face_build import MayaFaceBuildHost
 
