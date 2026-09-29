@@ -1618,6 +1618,10 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
 
             group, form = self._group("03A · Face Tweaks", [])
+            self.face_tweaks_keep_offset = QtWidgets.QCheckBox("keep offset")
+            form.addRow("Swap controllers to Spheres",
+                        self.face_tweaks_keep_offset)
+            form.addRow(self._button("Swap", self._face_tweaks_swap_spheres))
             form.addRow(self._button("Paint skin-weights",
                                      self._face_tweaks_paint))
             row = QtWidgets.QHBoxLayout()
@@ -1626,6 +1630,10 @@ def create_panel(controller: MayaPanelController | None = None):
             row.addWidget(self._button("Show Joints",
                 lambda: self._face_tweaks_joints_visible(True)))
             form.addRow(row)
+            form.addRow(self._button("Detach controllers",
+                                     self._face_tweaks_detach_controllers))
+            form.addRow(self._button("Attach controllers",
+                                     self._face_tweaks_attach_controllers))
             for label, area, subtract in (
                     ("select eyeBrowArea", "eyeBrowArea", False),
                     ("select -d eyeBrowLine", "eyeBrowLineArea", True),
@@ -3276,6 +3284,22 @@ def create_panel(controller: MayaPanelController | None = None):
             if visible:
                 return f"已显示角色关节；恢复 {restored} 个旧 Fit 关节的绘制样式"
             return "已隐藏角色关节"
+
+        def _face_tweaks_swap_spheres(self):
+            controls = self.controller.face_tweaks_swap_spheres(
+                self._namespace(),
+                keep_offset=self.face_tweaks_keep_offset.isChecked())
+            return f"已替换 {len(controls)} 个 Face 控制器形状"
+
+        def _face_tweaks_detach_controllers(self):
+            skins = self.controller.face_tweaks_detach_controllers(
+                self._namespace())
+            return f"已分离 {len(skins)} 个 Face SkinCluster"
+
+        def _face_tweaks_attach_controllers(self):
+            controls = self.controller.face_tweaks_attach_controllers(
+                self._namespace())
+            return f"已重新附着 Face 控制器；调整 {len(controls)} 个朝向层"
 
         def _face_record_right_eye(self):
             path = self.controller.face_eye_selected_mesh(self._namespace())

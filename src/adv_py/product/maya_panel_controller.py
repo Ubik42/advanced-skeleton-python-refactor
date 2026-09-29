@@ -1963,6 +1963,31 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace
         ).set_face_joints_visible(visible)
 
+    def face_tweaks_swap_spheres(self, namespace: str, *,
+                                 keep_offset: bool = False
+                                 ) -> tuple[str, ...]:
+        from adv_py.adapters.maya_face_tweak_controls import MayaFaceTweakControlsHost
+
+        return MayaFaceTweakControlsHost(
+            namespace=None if namespace == ":" else namespace
+        ).swap_face_controls_to_spheres(keep_offset=keep_offset)
+
+    def face_tweaks_detach_controllers(self, namespace: str
+                                       ) -> tuple[str, ...]:
+        from adv_py.adapters.maya_face_tweak_controls import MayaFaceTweakControlsHost
+
+        return MayaFaceTweakControlsHost(
+            namespace=None if namespace == ":" else namespace
+        ).detach_face_controllers()
+
+    def face_tweaks_attach_controllers(self, namespace: str
+                                       ) -> tuple[str, ...]:
+        from adv_py.adapters.maya_face_tweak_controls import MayaFaceTweakControlsHost
+
+        return MayaFaceTweakControlsHost(
+            namespace=None if namespace == ":" else namespace
+        ).attach_face_controllers()
+
     def face_build_get_include(self, namespace: str) -> str:
         from adv_py.adapters.maya_face_build import MayaFaceBuildHost
 

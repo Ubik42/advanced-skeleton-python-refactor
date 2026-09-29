@@ -1,6 +1,8 @@
 """Maya selection and preference actions from the original Skinning panel."""
 from __future__ import annotations
 
+import re
+
 
 SMOOTH_BIND_OPTIONS = (
     ("multipleBindPosesOpt", 1),
@@ -84,3 +86,12 @@ def open_native_bake_deformer(*, mel=None) -> None:
     if mel is None:
         from maya import mel
     mel.eval("BakeDeformerTool")
+
+
+def freeze_native_skin_cluster(skin: str, *, mel=None) -> None:
+    """Call Maya's built-in bind-matrix freeze used by Face Attach."""
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9:|]*", skin):
+        raise ValueError("SkinCluster 名称不能安全传给 Maya 原生命令")
+    if mel is None:
+        from maya import mel
+    mel.eval('freezeSkinCluster "' + skin + '";')
