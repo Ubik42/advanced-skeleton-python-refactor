@@ -18,9 +18,13 @@ class MayaBodySelectionSetsMixin:
         for path in c.ls(long=True) or []:
             if not identity.owns(path):
                 continue
+            uuids = c.ls(path, uuid=True) or []
+            if len(uuids) != 1:
+                raise RuntimeError("角色节点身份不唯一：" + path)
             nodes.append(BodyAllSetNode(
                 identity.to_local(path), c.nodeType(path),
-                bool(c.referenceQuery(path, isNodeReferenced=True))))
+                bool(c.referenceQuery(path, isNodeReferenced=True)),
+                uuids[0]))
         return tuple(sorted(nodes, key=lambda node: node.path))
 
     def capture_body_proximity_pin_sources(self) -> tuple[str, ...]:

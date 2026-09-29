@@ -9,6 +9,7 @@ class BodyAllSetNode:
     path: str
     node_type: str
     referenced: bool = False
+    node_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +32,8 @@ def plan_body_all_set(
             raise ValueError("AllSet " + label + "节点清单包含重复路径")
         if any(not node.path or not node.node_type for node in nodes):
             raise ValueError("AllSet " + label + "节点清单无效")
-    old = {node.path for node in before}
+    old_paths = {node.path for node in before}
+    old_ids = {node.node_id for node in before if node.node_id}
     fit_root = "|Group|" + fit_name
     geometry = "|Group|Geometry"
     current = {node.path for node in after}
@@ -43,12 +45,13 @@ def plan_body_all_set(
         path = node.path
         if (node.referenced or node.node_type in ("ikSolver", "ikSystem")
                 or path in excluded
-                or path == fit_root or path.startswith(fit_root + "|")
-                or path.startswith(geometry + "|")):
+                or path == fit_root or path.startswith(fit_root + "|")):
             continue
-        # Group is created by the same outer build even when this use case
-        # enters after its hierarchy has been prepared by the caller.
-        if path not in old or path == "|Group" or path.startswith("|Group|"):
+        # A previous Fit/mesh node may have acquired a new DAG path when the
+        # build parented it under Group. UUIDs distinguish moves from creation.
+        was_present = (node.node_id in old_ids if node.node_id
+                       else path in old_paths)
+        if not was_present:
             members.append(path)
     if not members:
         raise ValueError("AllSet 没有可登记的角色节点")
