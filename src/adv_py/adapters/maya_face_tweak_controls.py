@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from math import dist
+import re
 
 from adv_py.application.face_pre import FacePreRole
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -189,6 +190,11 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
                 members.append(paths[0])
         if not members:
             raise FitSkeletonValidationError("FaceControlSet 没有控制器")
+        leaves = tuple(path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                       for path in members)
+        if len(set(leaves)) != len(leaves):
+            raise FitSkeletonValidationError(
+                "FaceControlSet 控制器短名不唯一，不能执行镜像或 Attach")
         return tuple(sorted(members))
 
     def _mirror_face_control_values(self, controls: tuple[str, ...]) -> None:
@@ -197,11 +203,14 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
         by_leaf = {path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]: path
                    for path in controls}
         for leaf, source in sorted(by_leaf.items()):
-            if not leaf.endswith("_R"):
+            if not leaf.endswith("_R") or leaf.startswith("Aim"):
                 continue
-            destination = by_leaf.get(leaf[:-2] + "_L")
-            if destination is None:
+            target_leaf = leaf[:-2] + "_L"
+            targets = c.ls(self._name(target_leaf), long=True,
+                           type="transform") or ()
+            if len(targets) != 1:
                 continue
+            destination = targets[0]
             for attribute in c.listAttr(source, keyable=True) or ():
                 if attribute == "visibility":
                     continue
@@ -269,7 +278,7 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
         control = self._resolve_face_control(leaf)
         c.xform(control, objectSpace=True,
                 translation=(0, 0, 0), rotation=(0, 0, 0))
-        if (("Lip" in name and name[-1:].isupper())
+        if (re.search(r"Lip[A-Z]$", name)
                 or name == "cornerLip"):
             ribbon = self._name(name + "RibbonJointOffset" + suffix)
             if c.objExists(ribbon):
