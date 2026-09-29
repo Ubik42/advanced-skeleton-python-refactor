@@ -1215,6 +1215,16 @@ class MayaFitInbetweenMixin:
                              parent=parent, skipSelect=True)
         self._transaction_changed = True
         joint = self._one_inbetween_joint(guide.name)
+        if guide.index == 1:
+            c.reorder(joint, front=True)
+            siblings = c.listRelatives(
+                parent, children=True, type="joint", fullPath=True
+            ) or []
+            if not siblings or siblings[0] != joint:
+                raise RuntimeError(
+                    "Inbetween 第一节未成为 Fit 父关节的首个子关节："
+                    + guide.name
+                )
         c.setAttr(joint + ".rotateOrder", guide.rotation_order)
         c.xform(joint, worldSpace=True,
                 translation=guide.world_position)
