@@ -15,6 +15,8 @@ class LimbPartHost(Protocol):
     def create_limb_part_segment(self, spec: LimbPartSegmentSpec) -> None: ...
     def capture_limb_part_segment(self, spec: LimbPartSegmentSpec
                                   ) -> tuple[tuple[str, str, tuple[float, float, float]], ...]: ...
+    def capture_limb_part_body_scale_source(
+        self, spec: LimbPartSegmentSpec) -> str | None: ...
 
 
 class BuildLimbPartDeform:
@@ -68,4 +70,8 @@ class BuildLimbPartDeform:
                     if path != wanted_path or parent != wanted_parent or any(
                             abs(a - b) > 1e-4 for a, b in zip(position, wanted_position)):
                         raise RuntimeError("四肢分段关节写后复检失败：" + path)
+                if (self._host.capture_limb_part_body_scale_source(spec)
+                        != spec.scale_blend_name + ".output"):
+                    raise RuntimeError("四肢分段 Body 缩放连接不一致："
+                                       + spec.start)
         return specs

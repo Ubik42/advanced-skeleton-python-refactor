@@ -42,6 +42,9 @@ class MayaLimbPartHost(MayaBodyBuildHost):
                              spec.fatness_control + "." + spec.fatness_attribute)
         if not self._cmds.objExists(spec.volume_source):
             raise ValueError("四肢分段缺少体积驱动：" + spec.volume_source)
+        if any(not self._cmds.getAttr(spec.start + ".scale" + axis,
+                                      settable=True) for axis in "XYZ"):
+            raise ValueError("四肢分段 Body 缩放目标不可写：" + spec.start)
 
     def create_limb_part_segment(self, spec: LimbPartSegmentSpec) -> None:
         self._require_transaction()
@@ -68,6 +71,7 @@ class MayaLimbPartHost(MayaBodyBuildHost):
         mode = "armIkFk" if spec.stem in ("Shoulder", "Elbow") else "legIkFk"
         c.connectAttr(f"{settings}.{mode}_{spec.side}", scale_blend + ".blender")
         c.connectAttr(control + ".scale", scale_blend + ".color2")
+        c.connectAttr(scale_blend + ".output", spec.start + ".scale")
         first_translation = c.createNode("multiplyDivide",
                                          name=spec.first_translation_name)
         c.connectAttr(translation + ".output", first_translation + ".input1")
@@ -246,3 +250,9 @@ class MayaLimbPartHost(MayaBodyBuildHost):
                 query=True, worldSpace=True, translation=True))
             result.append((path, parent, position))
         return tuple(result)
+
+    def capture_limb_part_body_scale_source(
+        self, spec: LimbPartSegmentSpec) -> str | None:
+        source = self._cmds.connectionInfo(
+            spec.start + ".scale", sourceFromDestination=True)
+        return source or None
