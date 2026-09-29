@@ -694,7 +694,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 "分支关节每行：目标关节  指定直接子级\n例如：Root  Spine1")
             self.fit_orientation_children.setMaximumHeight(66)
             self.fit_orientation_mode = QtWidgets.QComboBox()
-            self.fit_orientation_mode.addItem("按指定子级 Aim", "child")
+            self.fit_orientation_mode.addItem("按 Fit 规则自动朝向", "child")
             self.fit_orientation_mode.addItem("按 World Orient 元数据", "world")
             self.fit_resample_start = QtWidgets.QLineEdit()
             self.fit_resample_start.setPlaceholderText("例如 Root")
@@ -2253,7 +2253,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._fit_joint_lines(), self.fit_container.text().strip(),
                 child_selections=tuple(selections),
                 world=self.fit_orientation_mode.currentData() == "world")
-            mode = "World Orient" if self.fit_orientation_mode.currentData() == "world" else "子级 Aim"
+            mode = "World Orient" if self.fit_orientation_mode.currentData() == "world" else "Fit 规则"
             return f"已按 {mode} 重新定向 {count} 个 Fit joint"
 
         def _resample_fit(self):

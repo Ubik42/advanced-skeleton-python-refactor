@@ -26,7 +26,7 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     DetachCustomControlOrientations, AttachCustomControlOrientations,
     CreateAndImportFitSkeleton, EditFitJointMetadata, EditFitJointPositions,
     ExportFitSkeleton, ExportExternalFitSkeleton, ExportSkinWeights,
-    OrientSimpleFitChain,
+    OrientFitJoints,
     OrientWorldFitJoints,
     ExportBodyFbx, ExportFaceTargetAsset, GenerateFaceTarget, ImportFaceTargetAsset,
     FaceAssetLibrary, ImportSkinWeights, InspectBodyCharacterPresets,
@@ -539,7 +539,7 @@ class MayaPanelController:
         request = FitOrientationRequest(joints, tuple(
             FitOrientationChildSelection(joint, child)
             for joint, child in child_selections))
-        use_case = OrientWorldFitJoints if world else OrientSimpleFitChain
+        use_case = OrientWorldFitJoints if world else OrientFitJoints
         result = use_case(self._host(namespace)).apply(request, container)
         return len(result.plan.changes)
 
