@@ -13,13 +13,14 @@ _KINDS = ("parent", "point", "orient", "scale")
 class BodyFitAdvancedConstraintSpec:
     kind: str
     source_joint: str
-    target_joint: str
+    target_joints: tuple[str, ...]
     fk_control: str
     fk_offset: str
     static_name: str
     weight_name: str
     reverse_name: str
     constraint_name: str
+    split_name: str | None = None
 
     @property
     def attribute(self) -> str:
@@ -28,7 +29,8 @@ class BodyFitAdvancedConstraintSpec:
     @property
     def node_names(self) -> tuple[str, ...]:
         return (self.static_name, self.weight_name,
-                self.reverse_name, self.constraint_name)
+                self.reverse_name, self.constraint_name) + (
+                    (self.split_name,) if self.split_name is not None else ())
 
 
 def plan_body_fit_advanced_constraints(
@@ -56,22 +58,27 @@ def plan_body_fit_advanced_constraints(
         for control in matches:
             side = control.side.value
             for kind, target_name in targets:
-                lateral = by_name.get(target_name + "_" + side)
                 central = by_name.get(target_name + "_M")
-                if side == "M" and lateral is None and central is None and (
-                        by_name.get(target_name + "_R") is not None or
-                        by_name.get(target_name + "_L") is not None):
-                    raise ValueError(
-                        "中央 FK 约束到双侧关节需要原版左右平均分支："
-                        + source_name)
-                target = lateral or central
-                if target is None:
+                if side == "M" and central is None:
+                    right = by_name.get(target_name + "_R")
+                    left = by_name.get(target_name + "_L")
+                    if right is None or left is None:
+                        raise ValueError(
+                            "中央 FK 约束目标需要完整的左右 Body 关节："
+                            + target_name)
+                    target_paths = (right, left)
+                else:
+                    lateral = by_name.get(target_name + "_" + side)
+                    target = lateral or central
+                    target_paths = (target,) if target is not None else ()
+                if not target_paths:
                     raise ValueError("Advanced Constraint 目标 Body 关节缺失："
                                      + target_name + "_" + side)
-                if (target == control.driven_joint
-                        or target.startswith(control.driven_joint + "|")):
+                if any(target == control.driven_joint
+                       or target.startswith(control.driven_joint + "|")
+                       for target in target_paths):
                     raise ValueError("Advanced Constraint 目标依赖自身 FK："
-                                     + target)
+                                     + "、".join(target_paths))
                 key = (control.control_path, kind)
                 if key in used:
                     raise ValueError("Advanced Constraint FK 控制重复："
@@ -82,10 +89,11 @@ def plan_body_fit_advanced_constraints(
                 stem = prefix + "AdvPy_" + kind.title() + "Constrain" \
                     + source_name + "_" + side
                 result.append(BodyFitAdvancedConstraintSpec(
-                    kind, item.joint, target, control.control_path,
+                    kind, item.joint, target_paths, control.control_path,
                     control.offset_path, stem + "Static",
                     stem + "Weight", stem + "Reverse",
-                    stem + "Constraint"))
+                    stem + "Constraint",
+                    stem + "Split" if len(target_paths) == 2 else None))
     names = tuple(name for spec in result for name in spec.node_names)
     if len(names) != len(set(names)):
         raise ValueError("Advanced Constraint 生成节点名称重复")

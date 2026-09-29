@@ -27,9 +27,14 @@ class MayaBodyFitAdvancedConstraintMixin:
         c = self._cmds
         if spec.kind not in _COMMANDS:
             raise ValueError("Fit Advanced Constraint 类型无效")
+        if len(spec.target_joints) not in (1, 2):
+            raise ValueError("Fit Advanced Constraint 目标数量无效")
+        if (spec.split_name is None) != (len(spec.target_joints) == 1):
+            raise ValueError("Fit Advanced Constraint 双目标权重规划不完整")
         for path, kind in ((spec.fk_control, "transform"),
                            (spec.fk_offset, "transform"),
-                           (spec.target_joint, "joint")):
+                           *((target, "joint")
+                             for target in spec.target_joints)):
             if (c.ls(path, long=True, type=kind) or []) != [path]:
                 raise ValueError("Fit Advanced Constraint 节点缺失：" + path)
         if any(self.find_name_collisions(name) for name in spec.node_names):
@@ -37,8 +42,9 @@ class MayaBodyFitAdvancedConstraintMixin:
         if c.attributeQuery(spec.attribute, node=spec.fk_control,
                             exists=True):
             raise ValueError("FK 控制器已有约束权重属性：" + spec.fk_control)
-        if (spec.target_joint == spec.fk_offset
-                or spec.target_joint.startswith(spec.fk_offset + "|")):
+        if any(target == spec.fk_offset
+               or target.startswith(spec.fk_offset + "|")
+               for target in spec.target_joints):
             raise ValueError("Fit Advanced Constraint 存在 DAG 循环")
         parent = c.listRelatives(spec.fk_offset, parent=True,
                                  fullPath=True) or []
@@ -69,18 +75,18 @@ class MayaBodyFitAdvancedConstraintMixin:
                 offset_parent + "|" + spec.static_name]:
             raise RuntimeError("Fit Advanced Constraint 静态参考路径漂移")
         command = getattr(c, _COMMANDS[spec.kind])
-        created = command(static, spec.target_joint, spec.fk_offset,
+        created = command(static, *spec.target_joints, spec.fk_offset,
                           maintainOffset=True, name=spec.constraint_name)
         if len(created) != 1 or created[0].rsplit("|", 1)[-1] != spec.constraint_name:
             raise RuntimeError("Fit Advanced Constraint 节点名称漂移")
         constraint = created[0]
         targets = command(constraint, query=True, targetList=True) or []
         aliases = command(constraint, query=True, weightAliasList=True) or []
-        if len(targets) != 2 or len(aliases) != 2:
+        if len(targets) != 1 + len(spec.target_joints) or len(aliases) != len(targets):
             raise RuntimeError("Fit Advanced Constraint 目标权重不完整")
         resolved = tuple((c.ls(target, long=True) or [target])[0]
                          for target in targets)
-        if resolved != (static, spec.target_joint):
+        if resolved != (static, *spec.target_joints):
             raise RuntimeError("Fit Advanced Constraint 目标顺序改变")
         if spec.kind in ("parent", "orient"):
             c.setAttr(constraint + ".interpType", 2)
@@ -94,7 +100,14 @@ class MayaBodyFitAdvancedConstraintMixin:
                       weight + ".input1")
         c.connectAttr(weight + ".output", reverse + ".inputX")
         c.connectAttr(reverse + ".outputX", constraint + "." + aliases[0])
-        c.connectAttr(weight + ".output", constraint + "." + aliases[1])
+        dynamic_weight = weight + ".output"
+        if spec.split_name is not None:
+            split = c.createNode("multDoubleLinear", name=spec.split_name)
+            c.setAttr(split + ".input2", 0.5)
+            c.connectAttr(dynamic_weight, split + ".input1")
+            dynamic_weight = split + ".output"
+        for alias in aliases[1:]:
+            c.connectAttr(dynamic_weight, constraint + "." + alias)
         after = tuple(float(v) for v in c.xform(
             spec.fk_offset, query=True, worldSpace=True, matrix=True))
         if any(abs(a - b) > 1e-4 for a, b in zip(world, after)):
@@ -108,7 +121,9 @@ class MayaBodyFitAdvancedConstraintMixin:
             return False
         if (c.nodeType(spec.constraint_name) != _COMMANDS[spec.kind]
                 or c.nodeType(spec.weight_name) != "multDoubleLinear"
-                or c.nodeType(spec.reverse_name) != "reverse"):
+                or c.nodeType(spec.reverse_name) != "reverse"
+                or (spec.split_name is not None and
+                    c.nodeType(spec.split_name) != "multDoubleLinear")):
             return False
         if not c.attributeQuery(spec.attribute, node=spec.fk_control,
                                 exists=True):
@@ -118,14 +133,14 @@ class MayaBodyFitAdvancedConstraintMixin:
                           targetList=True) or []
         aliases = command(spec.constraint_name, query=True,
                           weightAliasList=True) or []
-        if len(targets) != 2 or len(aliases) != 2:
+        if len(targets) != 1 + len(spec.target_joints) or len(aliases) != len(targets):
             return False
         resolved = tuple((c.ls(target, long=True) or [target])[0]
                          for target in targets)
         parent = c.listRelatives(spec.fk_offset, parent=True,
                                  fullPath=True) or []
         static = parent[0] + "|" + spec.static_name if parent else ""
-        if resolved != (static, spec.target_joint):
+        if resolved != (static, *spec.target_joints):
             return False
         if spec.constraint_name not in tuple(
                 node.rsplit("|", 1)[-1] for node in (
@@ -133,6 +148,12 @@ class MayaBodyFitAdvancedConstraintMixin:
                                       destination=False,
                                       type=_COMMANDS[spec.kind]) or [])):
             return False
+        dynamic_weight = spec.weight_name + ".output"
+        split_links = ()
+        if spec.split_name is not None:
+            split_links = ((dynamic_weight,
+                            spec.split_name + ".input1"),)
+            dynamic_weight = spec.split_name + ".output"
         links = (
             (spec.fk_control + "." + spec.attribute,
              spec.weight_name + ".input1"),
@@ -140,13 +161,15 @@ class MayaBodyFitAdvancedConstraintMixin:
              spec.reverse_name + ".inputX"),
             (spec.reverse_name + ".outputX",
              spec.constraint_name + "." + aliases[0]),
-            (spec.weight_name + ".output",
-             spec.constraint_name + "." + aliases[1]),
-        )
+        ) + split_links + tuple(
+            (dynamic_weight, spec.constraint_name + "." + alias)
+            for alias in aliases[1:])
         return (all(c.connectionInfo(destination,
                                      sourceFromDestination=True) == source
                     for source, destination in links)
                 and abs(float(c.getAttr(spec.weight_name + ".input2"))
                         - 0.1) <= 1e-8
+                and (spec.split_name is None or abs(float(c.getAttr(
+                    spec.split_name + ".input2")) - 0.5) <= 1e-8)
                 and abs(float(c.getAttr(
                     spec.fk_control + "." + spec.attribute)) - 10.0) <= 1e-8)
