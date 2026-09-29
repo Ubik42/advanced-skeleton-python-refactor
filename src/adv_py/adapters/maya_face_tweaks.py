@@ -128,10 +128,47 @@ class MayaFaceTweaksHost(MayaFacePreHost):
         c.select(mesh, replace=True)
         layer = self._name("FaceJointsLayer")
         if c.objExists(layer) and not c.getAttr(layer + ".visibility"):
-            c.setAttr(layer + ".visibility", True)
+            self._show_face_joints_layer(mesh)
+        if c.objExists(layer):
             c.select(layer, replace=True)
         open_native_face_skin_paint(resolved[0], cmds=c)
         return resolved[0]
+
+    def _show_face_joints_layer(self, face_mesh: str) -> None:
+        """Mirror asShowLayer FaceJoints when Skin Layers are present."""
+        c = self._maya
+        group = self._name("DeformationLayers")
+        if not c.objExists(group):
+            return
+        children = c.listRelatives(group, children=True,
+                                   fullPath=True) or ()
+        if not children:
+            raise FitSkeletonValidationError(
+                "DeformationLayers 没有 FaceJoints 变形层")
+        joints = tuple(path for path in children if path.rsplit("|", 1)[-1]
+                       .rsplit(":", 1)[-1].startswith("FaceJointsLayer"))
+        if not joints:
+            raise FitSkeletonValidationError(
+                "DeformationLayers 没有 FaceJoints 变形层")
+        meshes = set(self.scene_address(item) for item in
+                     self.read_face_objects(FacePreRole.ALL_HEAD))
+        meshes.add(face_mesh)
+        for path in meshes:
+            if c.objExists(path):
+                c.setAttr(path + ".visibility", False)
+        for path in children:
+            plug = path + ".visibility"
+            if c.getAttr(plug, lock=True):
+                c.setAttr(plug, lock=False)
+            c.setAttr(plug, False)
+        c.select(clear=True)
+        group_plug = group + ".visibility"
+        if c.getAttr(group_plug, lock=True):
+            c.setAttr(group_plug, lock=False)
+        c.setAttr(group_plug, True)
+        for path in joints:
+            c.setAttr(path + ".visibility", True)
+            c.select(path, add=True)
 
     def set_face_joints_visible(self, visible: bool) -> int:
         """Apply asJointsVisibility, including old Fit drawStyle recovery."""
