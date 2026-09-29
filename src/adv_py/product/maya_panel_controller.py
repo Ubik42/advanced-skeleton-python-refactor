@@ -1451,6 +1451,18 @@ class MayaPanelController:
 
         return MirrorPolyBoxes(MayaPolyBoxesHost(namespace)).execute(source_side)
 
+    def geometry_box_skin_create(self, namespace: str) -> int:
+        from adv_py.adapters.maya_geometry_box_skin import MayaBoxSkinHost
+        from adv_py.application.geometry_box_skin import CreateBoxSkin
+
+        return CreateBoxSkin(MayaBoxSkinHost(namespace)).execute()
+
+    def geometry_box_skin_delete(self, namespace: str) -> None:
+        from adv_py.adapters.maya_geometry_box_skin import MayaBoxSkinHost
+        from adv_py.application.geometry_box_skin import DeleteBoxSkin
+
+        DeleteBoxSkin(MayaBoxSkinHost(namespace)).execute()
+
     def geometry_cut_up_delete(self, namespace: str) -> None:
         from adv_py.adapters.maya_geometry_cut_up import MayaGeometryCutUpHost
         from adv_py.application.geometry_cut_up import DeleteGeometryCutUp

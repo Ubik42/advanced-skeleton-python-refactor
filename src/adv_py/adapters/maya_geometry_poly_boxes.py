@@ -210,6 +210,10 @@ class MayaPolyBoxesHost(MayaSkinCageHost):
                 c.delete(self._name(leaf))
 
     def box_names(self) -> tuple[str, ...]:
+        return tuple(name for name in self.all_box_names()
+                     if name.endswith(("Box_L", "Box_R")))
+
+    def all_box_names(self) -> tuple[str, ...]:
         c = self.cmds
         group = self._name("BoxesGeometry")
         if not c.objExists(group):
@@ -218,7 +222,8 @@ class MayaPolyBoxesHost(MayaSkinCageHost):
                             for node in c.listRelatives(
                                 group, allDescendents=True,
                                 type="transform", fullPath=True) or []
-                            if self._leaf(node).endswith(("Box_L", "Box_R"))
+                            if self._leaf(node).endswith((
+                                "Box_M", "Box_L", "Box_R"))
                             and c.listRelatives(node, shapes=True,
                                                 type="mesh")))
 

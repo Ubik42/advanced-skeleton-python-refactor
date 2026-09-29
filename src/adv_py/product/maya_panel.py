@@ -1917,6 +1917,9 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._geometry_poly_boxes_mirror_l2r))
             form.addRow(self._button("Right>Left",
                                      self._geometry_poly_boxes_mirror_r2l))
+            form.addRow("BoxSkin", self._button(
+                "Create", self._geometry_box_skin_create))
+            form.addRow(self._button("Delete", self._geometry_box_skin_delete))
             stack.addWidget(group)
             stack.addStretch(1)
             return page
@@ -2926,6 +2929,14 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.geometry_poly_boxes_mirror(
                 self._namespace(), "R")
             return f"已镜像 {count} 对 PolyBoxes 盒体"
+
+        def _geometry_box_skin_create(self):
+            count = self.controller.geometry_box_skin_create(self._namespace())
+            return f"已创建 {count} 顶点的 BoxSkin 网格"
+
+        def _geometry_box_skin_delete(self):
+            self.controller.geometry_box_skin_delete(self._namespace())
+            return "已删除 BoxSkin"
 
         def _geometry_cut_up_delete(self):
             self.controller.geometry_cut_up_delete(self._namespace())
