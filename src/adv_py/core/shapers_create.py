@@ -145,23 +145,37 @@ def plan_shapers_edge_packs(
 def plan_shapers_fk_loops(
     controls: tuple[str, ...], options: ShapersFkLoopOptions,
 ) -> tuple[ShapersFkLoop, ...]:
-    if len(controls) != 1:
-        raise ValueError("当前 FK 闭环路径一次选择一个 FK 控制器")
-    control = controls[0]
-    leaf = control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-    match = _PYTHON_FK.fullmatch(leaf) or _ORIGINAL_FK.fullmatch(leaf)
-    if match is None:
+    if not controls:
         raise ValueError("请选择 Body FK 控制器")
-    stem, side = match.groups()
-    if not stem or stem.endswith("Offset") or stem.endswith("Extra"):
-        raise ValueError("请选择 FK 控制曲线，而非接收层")
-    prefix = control.rsplit("|", 1)[-1].removesuffix(leaf)
-    loops = [ShapersFkLoop(control, prefix + stem + "_" + side, stem,
-                           "_" + side)]
-    if options.mirror and side in ("R", "L"):
-        opposite = "L" if side == "R" else "R"
-        mirror_leaf = leaf[:-1] + opposite
-        loops.append(ShapersFkLoop(prefix + mirror_leaf,
-                                   prefix + stem + "_" + opposite,
-                                   stem, "_" + opposite))
+    loops = []
+    seen = set()
+    for control in controls:
+        leaf = control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        match = _PYTHON_FK.fullmatch(leaf) or _ORIGINAL_FK.fullmatch(leaf)
+        if match is None:
+            raise ValueError("请选择 Body FK 控制器：" + control)
+        stem, side = match.groups()
+        if not stem or stem.endswith("Offset") or stem.endswith("Extra"):
+            raise ValueError("请选择 FK 控制曲线，而非接收层")
+        prefix = control.rsplit("|", 1)[-1].removesuffix(leaf)
+        key = prefix + leaf
+        if key in seen:
+            raise ValueError("FK 控制器重复选择：" + key)
+        seen.add(key)
+        loops.append(ShapersFkLoop(control, prefix + stem + "_" + side,
+                                   stem, "_" + side))
+    if options.mirror:
+        for source in tuple(loops):
+            if source.side not in ("_R", "_L"):
+                continue
+            leaf = source.control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            prefix = source.control.rsplit("|", 1)[-1].removesuffix(leaf)
+            opposite = "L" if source.side == "_R" else "R"
+            mirror_leaf = leaf[:-1] + opposite
+            key = prefix + mirror_leaf
+            if key not in seen:
+                seen.add(key)
+                loops.append(ShapersFkLoop(
+                    key, prefix + source.fit_stem + "_" + opposite,
+                    source.fit_stem, "_" + opposite))
     return tuple(loops)

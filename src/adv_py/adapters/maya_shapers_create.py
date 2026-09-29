@@ -470,6 +470,210 @@ class MayaShapersCreateHost:
                 c.connectAttr(main + ".shaperDisable",
                               node + ".nodeState", force=True)
 
+    def _loop_anchors(self, group: str) -> tuple[tuple[str, int], ...]:
+        c = self.cmds
+        anchors = []
+        for node in c.listRelatives(group, allDescendents=True,
+                                    type="transform", fullPath=True) or []:
+            leaf = node.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            match = re.match(r"Shaper(\d+)(?!Attach|Offset|DM)", leaf)
+            if (not match or int(match.group(1)) % 3
+                    or not c.attributeQuery("vtxNr", node=node,
+                                            exists=True)):
+                continue
+            anchors.append((node, int(c.getAttr(node + ".vtxNr"))))
+        return tuple(sorted(anchors, key=lambda item: int(re.match(
+            r"Shaper(\d+)", item[0].rsplit("|", 1)[-1]
+            .rsplit(":", 1)[-1]).group(1))))
+
+    def _related_fit_joints(self, loop: ShapersFkLoop) -> set[str]:
+        c = self.cmds
+        fit = self.prefix + loop.fit_stem
+        if not c.objExists(fit):
+            return set()
+        relatives = set()
+        parents = c.listRelatives(fit, parent=True, type="joint") or []
+        if parents:
+            relatives.add(parents[0].rsplit(":", 1)[-1] + loop.side)
+        children = c.listRelatives(fit, children=True, type="joint") or []
+        controlled = []
+        for child in children:
+            stem = child.rsplit(":", 1)[-1]
+            side = loop.side
+            if (c.objExists(self.prefix + "FK" + stem + side)
+                    or c.objExists(self.prefix + "AdvPy_" + stem +
+                                   "FK" + side)):
+                controlled.append(stem + side)
+        if len(controlled) == 1:
+            relatives.add(controlled[0])
+        return relatives
+
+    def _shortest_edge_pack(self, mesh: str, start: int,
+                            end: int) -> ShapersEdgePack | None:
+        c = self.cmds
+        if start == end:
+            return None
+        components = c.polySelect(mesh, query=True, asSelectString=True,
+                                  shortestEdgePath=(start, end)) or []
+        if isinstance(components, str):
+            components = [components]
+        edges = []
+        positions = {}
+        for component in components:
+            match = re.search(r"\.e\[(\d+)\]$", str(component))
+            if match is None:
+                raise RuntimeError("Maya 最短边路径返回了非边组件")
+            index = int(match.group(1))
+            info = c.polyInfo(f"{mesh}.e[{index}]",
+                              edgeToVertex=True) or []
+            numbers = [int(value) for value in re.findall(r"\d+", info[0])]
+            if len(numbers) < 3:
+                raise RuntimeError("无法读取 Shapers 桥接边拓扑")
+            a, b = numbers[-2:]
+            edges.append(ShapersEdge(index, a, b))
+            for vertex in (a, b):
+                if vertex not in positions:
+                    positions[vertex] = tuple(c.xform(
+                        f"{mesh}.vtx[{vertex}]", query=True,
+                        worldSpace=True, translation=True))
+        if len(edges) < 2:
+            return None
+        packs = plan_shapers_edge_packs(tuple(edges), positions, start)
+        if len(packs) != 1 or packs[0].closed:
+            raise RuntimeError("Shapers 最短边路径未形成单条开放桥接")
+        return packs[0]
+
+    def _automatic_bridges(
+        self, loop: ShapersFkLoop, group: str, mesh: str,
+        options: ShapersFkLoopOptions, root: str, sampler: str,
+        skin: str,
+    ) -> list[str]:
+        c = self.cmds
+        related = self._related_fit_joints(loop)
+        if not related:
+            return []
+        other_anchors = []
+        for candidate in c.listRelatives(root, children=True,
+                                         type="transform", fullPath=True) or []:
+            if (candidate == group
+                    or not c.objExists(candidate + ".deformJoint")
+                    or not c.objExists(candidate + ".skin")
+                    or not c.objExists(candidate + ".loop")
+                    or not c.getAttr(candidate + ".loop")):
+                continue
+            other = c.getAttr(candidate + ".deformJoint") or ""
+            if (c.getAttr(candidate + ".skin") or "") != mesh:
+                continue
+            if other.rsplit("|", 1)[-1].rsplit(":", 1)[-1] not in related:
+                continue
+            other_anchors.extend(self._loop_anchors(candidate))
+        curves = []
+        made = set()
+        for control, start in self._loop_anchors(group):
+            position = tuple(c.xform(control, query=True,
+                                     worldSpace=True, translation=True))
+            nearest = sorted(other_anchors, key=lambda item: dist(
+                position, c.xform(item[0], query=True,
+                                  worldSpace=True, translation=True)))[:2]
+            for _, end in nearest:
+                pair = tuple(sorted((start, end)))
+                if pair in made:
+                    continue
+                made.add(pair)
+                pack = self._shortest_edge_pack(mesh, start, end)
+                if pack is None:
+                    continue
+                positions = {vertex: tuple(c.xform(
+                    f"{mesh}.vtx[{vertex}]", query=True,
+                    worldSpace=True, translation=True))
+                    for vertex in pack.vertices}
+                source = self._edge_source(mesh, pack, skin)
+                curves.append(self._add_loop(
+                    source, mesh, options, root, sampler, skin,
+                    edge_pack=pack, positions_by_vertex=positions))
+        return curves
+
+    def _end_joint_bridges(
+        self, loop: ShapersFkLoop, group: str, mesh: str,
+        options: ShapersFkLoopOptions, root: str, sampler: str,
+        skin: str,
+    ) -> list[str]:
+        c = self.cmds
+        fit = self.prefix + loop.fit_stem
+        if not c.objExists(fit):
+            return []
+        children = c.listRelatives(fit, children=True,
+                                   type="joint", fullPath=True) or []
+        if len(children) != 1:
+            return []
+        child = children[0]
+        stem = child.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if (c.listRelatives(child, children=True, type="joint")
+                or c.objExists(self.prefix + "FK" + stem + loop.side)
+                or c.objExists(self.prefix + "AdvPy_" + stem +
+                               "FK" + loop.side)):
+            return []
+        position = c.xform(child, query=True, worldSpace=True,
+                           translation=True)
+        target = (-position[0], position[1], position[2]) if loop.side == "_L" else tuple(position)
+        end, _ = self._nearest_vertex(sampler, mesh, target)
+        curves = []
+        made = set()
+        for _, start in self._loop_anchors(group):
+            pair = tuple(sorted((start, end)))
+            if pair in made:
+                continue
+            made.add(pair)
+            pack = self._shortest_edge_pack(mesh, start, end)
+            if pack is None:
+                continue
+            positions = {vertex: tuple(c.xform(
+                f"{mesh}.vtx[{vertex}]", query=True,
+                worldSpace=True, translation=True))
+                for vertex in pack.vertices}
+            source = self._edge_source(mesh, pack, skin)
+            curves.append(self._add_loop(
+                source, mesh, options, root, sampler, skin,
+                edge_pack=pack, positions_by_vertex=positions))
+        return curves
+
+    def _share_intersection_controls(self, root: str,
+                                     mesh: str) -> None:
+        c = self.cmds
+        by_vertex: dict[int, list[tuple[str, bool]]] = {}
+        for group in c.listRelatives(root, children=True,
+                                     type="transform", fullPath=True) or []:
+            if (not c.objExists(group + ".skin")
+                    or c.getAttr(group + ".skin") != mesh
+                    or not c.objExists(group + ".loop")):
+                continue
+            loop = bool(c.getAttr(group + ".loop"))
+            for control, vertex in self._loop_anchors(group):
+                by_vertex.setdefault(vertex, []).append((control, loop))
+        for controls in by_vertex.values():
+            if len(controls) < 2:
+                continue
+            controls.sort(key=lambda item: (
+                not item[1],
+                "IntersectDriven" in ((c.listRelatives(
+                    item[0], parent=True, fullPath=True) or [""])[0]),
+                item[0]))
+            master = controls[0][0]
+            for slave, _ in controls[1:]:
+                offset = (c.listRelatives(slave, parent=True,
+                                          fullPath=True) or [])[0]
+                if "IntersectDriven" in offset:
+                    continue
+                name = offset.rsplit("|", 1)[-1].replace(
+                    "Offset", "IntersectDriven", 1)
+                driven = c.createNode("transform", name=name,
+                                      parent=offset)
+                c.parent(slave, driven)
+                c.parentConstraint(master, driven, maintainOffset=False)
+                for shape in c.listRelatives(slave, shapes=True,
+                                             fullPath=True) or []:
+                    c.setAttr(shape + ".visibility", 0, lock=False)
+
     def create_fk_loops(self, loops: tuple[ShapersFkLoop, ...],
                         mesh: str, options: ShapersFkLoopOptions) -> int:
         c = self.cmds
@@ -486,9 +690,24 @@ class MayaShapersCreateHost:
                                      noIntermediate=True, fullPath=True,
                                      type="mesh") or [])[0]
             c.connectAttr(shape + ".outMesh", sampler + ".inMesh")
-            curves = [self._add_loop(loop, mesh, options, root, sampler, skin)
-                      for loop in loops]
+            curves = []
+            auto_bridge = len({loop.fit_stem for loop in loops}) > 1
+            created_on_side: dict[str, int] = {}
+            for loop in loops:
+                curve = self._add_loop(loop, mesh, options,
+                                       root, sampler, skin)
+                curves.append(curve)
+                if auto_bridge:
+                    group = (c.listRelatives(curve, parent=True,
+                                             fullPath=True) or [])[0]
+                    if created_on_side.get(loop.side, 0):
+                        curves.extend(self._automatic_bridges(
+                            loop, group, mesh, options, root, sampler, skin))
+                    curves.extend(self._end_joint_bridges(
+                        loop, group, mesh, options, root, sampler, skin))
+                created_on_side[loop.side] = created_on_side.get(loop.side, 0) + 1
             c.delete(sampler)
+            self._share_intersection_controls(root, mesh)
             self._bind_curves(mesh, curves)
             return len(curves)
         except Exception:
@@ -570,15 +789,29 @@ class MayaShapersCreateHost:
                 all_packs.extend(self._mirrored_edge_packs(
                     mesh, packs, sampler))
             curves = []
+            created_on_side: dict[str, int] = {}
             for pack in all_packs:
                 positions = {vertex: tuple(c.xform(
                     f"{mesh}.vtx[{vertex}]", query=True, worldSpace=True,
                     translation=True)) for vertex in pack.vertices}
                 source = self._edge_source(mesh, pack, skin)
-                curves.append(self._add_loop(
+                curve = self._add_loop(
                     source, mesh, options, root, sampler, skin,
-                    edge_pack=pack, positions_by_vertex=positions))
+                    edge_pack=pack, positions_by_vertex=positions)
+                curves.append(curve)
+                if pack.closed and len(packs) > 1:
+                    group = (c.listRelatives(curve, parent=True,
+                                             fullPath=True) or [])[0]
+                    if created_on_side.get(source.side, 0):
+                        curves.extend(self._automatic_bridges(
+                            source, group, mesh, options, root, sampler, skin))
+                    curves.extend(self._end_joint_bridges(
+                        source, group, mesh, options, root, sampler, skin))
+                if pack.closed:
+                    created_on_side[source.side] = (
+                        created_on_side.get(source.side, 0) + 1)
             c.delete(sampler)
+            self._share_intersection_controls(root, mesh)
             self._bind_curves(mesh, curves)
             return len(curves)
         except Exception:
