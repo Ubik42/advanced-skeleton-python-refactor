@@ -47,12 +47,22 @@ class MayaPolyBoxesHost(MayaSkinCageHost):
 
     def _fit_size(self, joint: str) -> tuple[float, float]:
         c = self.cmds
-        values = []
-        for attribute in ("fatFrontAbs", "fatWidthAbs"):
-            if not c.attributeQuery(attribute, node=joint, exists=True):
-                raise ValueError("Fit 关节缺少体积属性：" + self._leaf(joint))
-            values.append(float(c.getAttr(joint + "." + attribute)))
-        return 1.75 * values[0], 1.75 * values[1]
+        def value(names: tuple[str, ...]) -> float:
+            for attribute in names:
+                if c.attributeQuery(attribute, node=joint, exists=True):
+                    return float(c.getAttr(joint + "." + attribute))
+            return 1.0
+
+        fat = value(("fat",))
+        front = (value(("fatFrontAbs",))
+                 if c.attributeQuery("fatFrontAbs", node=joint,
+                                     exists=True) else
+                 fat * value(("fatFront", "fatY")))
+        width = (value(("fatWidthAbs",))
+                 if c.attributeQuery("fatWidthAbs", node=joint,
+                                     exists=True) else
+                 fat * value(("fatWidth", "fatZ")))
+        return 1.75 * front, 1.75 * width
 
     def _fit_heel(self, joint: str, side: str):
         c = self.cmds

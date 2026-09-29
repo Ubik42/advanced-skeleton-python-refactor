@@ -103,6 +103,13 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
         self._require_transaction()
         if not isinstance(profile, FitDeformProfile):
             raise ValueError("Fit 体积参数无效")
+        fat_node = joint.rsplit("|", 1)[-1] + "Fat"
+        if self._cmds.objExists(fat_node):
+            raise ValueError("Fit 派生体积节点名称已占用：" + fat_node)
+        for attribute in ("fatFrontAbs", "fatWidthAbs"):
+            if self._cmds.attributeQuery(attribute, node=joint, exists=True):
+                raise ValueError("Fit 派生体积属性已存在：" + joint)
+        self._transaction_changed = True
         for name, value in (("fat", profile.fat),
                             ("fatFront", profile.fat_front),
                             ("fatWidth", profile.fat_width)):
@@ -111,4 +118,26 @@ class MayaSourceSkeletonFitHost(MayaFaceHost):
                                    attributeType="double", minValue=0,
                                    keyable=True)
             self._cmds.setAttr(joint + "." + name, value)
-        self._transaction_changed = True
+        for attribute in ("fatFrontAbs", "fatWidthAbs"):
+            self._cmds.addAttr(joint, longName=attribute,
+                               attributeType="double", keyable=False)
+        self._cmds.createNode("multiplyDivide", name=fat_node)
+        connections = (
+            (joint + ".fat", fat_node + ".input1Y"),
+            (joint + ".fat", fat_node + ".input1Z"),
+            (joint + ".fatFront", fat_node + ".input2Y"),
+            (joint + ".fatWidth", fat_node + ".input2Z"),
+            (fat_node + ".outputY", joint + ".fatFrontAbs"),
+            (fat_node + ".outputZ", joint + ".fatWidthAbs"),
+        )
+        for source, target in connections:
+            self._cmds.connectAttr(source, target)
+        if (int(self._cmds.getAttr(fat_node + ".operation")) != 1
+                or any(self._cmds.connectionInfo(target,
+                sourceFromDestination=True) != source
+                for source, target in connections)
+                or abs(float(self._cmds.getAttr(joint + ".fatFrontAbs"))
+                       - profile.fat * profile.fat_front) > 1e-6
+                or abs(float(self._cmds.getAttr(joint + ".fatWidthAbs"))
+                       - profile.fat * profile.fat_width) > 1e-6):
+            raise RuntimeError("Fit 派生体积节点写后回读不一致：" + joint)
