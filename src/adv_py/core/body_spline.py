@@ -60,7 +60,8 @@ class BodySplinePlan:
         chest = (('AdvPy_SplineChestSpaceMM', 'AdvPy_SplineChestSpacePM')
                  if self.use_offset_parent_matrix else
                  ('AdvPy_SplineChestSpaceParent',))
-        scaling=('AdvPy_SplineVolumeDelta',)+tuple(
+        scaling=('AdvPy_SplineVolumeDelta',
+                 'AdvPy_SplineStretchUnit','AdvPy_SplineVolumeUnit')+tuple(
             f'AdvPy_SplineIKScale{kind}{i}'
             for i in range(len(self.body_joints))
             for kind in ('Blend','Relative','Decompose','Volume')

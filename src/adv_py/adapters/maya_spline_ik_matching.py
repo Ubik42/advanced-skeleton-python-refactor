@@ -31,7 +31,11 @@ def match_ik(host, registration, before):
             parameters.extend((control+'.translate'+axis,length,None,None) for axis in 'XYZ')
         if index in (0,len(plan.targets)-1):
             parameters.extend((control+'.rotate'+axis,180./pi,None,None) for axis in 'XYZ')
-    parameters.extend((plan.settings+'.'+attribute,1.,0.,1.) for attribute in ('stretch','volume'))
+    original_range=c.getAttr(plan.root_path+'.advPySplineOwner') in (
+        'adv_py.spline.v8','adv_py.spline.v9')
+    parameters.extend((plan.settings+'.'+attribute,10. if original_range else 1.,0.,1.)
+                      for attribute in (('stretchy','volume') if original_range
+                                        else ('stretch','volume')))
     initial = tuple(c.getAttr(plug)/unit for plug,unit,_,_ in parameters)
     bounds = tuple((low,high) for _,_,low,high in parameters)
     c.setAttr(plan.settings+'.spineIkFk',1.)
