@@ -455,11 +455,13 @@ def plan_body_leg_foot(
                for _, marker, *_ in marker_roles):
             raise BodyLegFootValidationError(f"Foot 标记侧向与名称不一致：{suffix}")
         qtoes_topology = qtoes_by_suffix[suffix]
-        if qtoes_topology.hybrid:
+        if (qtoes_topology.hybrid or
+                (qtoes_topology.qtoes_path and
+                 qtoes_topology.qtoes_path != qtoes_topology.toes_path)):
             raise BodyLegFootValidationError(
-                f"{suffix} 侧 QToes 与 Ankle 之间有中间关节；"
-                "Leg 机制／FK／混合链已规划中间关节，"
-                "Foot 仍缺 IKHybrid Roll／Sampler 和逐段 IK Handle")
+                f"{suffix} 侧存在独立 QToes 关节；"
+                "Leg 机制／FK／混合链已规划该关节，"
+                "Foot 仍缺 QToes Roll 与逐段 IK Handle")
         if qtoes_topology.qtoes_path and up_axis is not FitUpAxis.Y:
             raise BodyLegFootValidationError(
                 "原版 QToes Roll 局部朝向要求 Y-up 场景")
