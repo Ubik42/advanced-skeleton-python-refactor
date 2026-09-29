@@ -36,6 +36,7 @@ from adv_py.core.body_fit_named_follow import plan_body_fit_named_follow
 from adv_py.core.body_fit_follow_spaces import plan_body_fit_follow_spaces
 from adv_py.core.body_fit_ik_follow import plan_body_fit_ik_follow
 from adv_py.core.body_fit_aim_at import plan_body_fit_aim_at
+from adv_py.core.body_fit_geo_attach import plan_body_fit_geo_attach
 from adv_py.core.body_fit_dependency import validate_fit_control_dependencies
 
 from .axial_part_deform import BuildAxialPartDeform
@@ -66,6 +67,7 @@ from .body_fit_named_follow import BuildFitNamedFollow, RegisterFitNamedFollow
 from .body_fit_follow_spaces import BuildFitFollowSpaces, RegisterFitFollowSpaces
 from .body_fit_ik_follow import BuildFitIkFollow, RegisterFitIkFollow
 from .body_fit_aim_at import BuildFitAimAt, RegisterFitAimAt
+from .body_fit_geo_attach import BuildFitGeoAttach, RegisterFitGeoAttach
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
 from .fit_inbetween_body import plan_combined_part_hierarchy
@@ -749,6 +751,8 @@ class BuildRegisteredBodyCharacter:
                         if rig.plan.torso is not None else None))
             aim_at_plan = plan_body_fit_aim_at(
                 fit_metadata, fk_control_specs, pre_constraint_body.joints)
+            plan_body_fit_geo_attach(
+                fit_metadata, fk_control_specs, pre_constraint_body.joints)
             validate_fit_control_dependencies(
                 plan_body_fit_advanced_constraints(
                     fit_metadata, fk_control_specs, pre_constraint_body.joints),
@@ -822,6 +826,15 @@ class BuildRegisteredBodyCharacter:
                     joined.capture_body_skeleton(skeleton.snapshot.root),
                     tolerance=1e-4):
                 raise RuntimeError("Fit AimAt 改变了 Body 绑定姿态")
+            pre_geo_attach_body = joined.capture_body_skeleton(
+                skeleton.snapshot.root)
+            geo_attach_specs = BuildFitGeoAttach(joined).apply(
+                fit_metadata, fk_control_specs, pre_geo_attach_body.joints)
+            if geo_attach_specs and not body_skeleton_unchanged(
+                    pre_geo_attach_body,
+                    joined.capture_body_skeleton(skeleton.snapshot.root),
+                    tolerance=1e-4):
+                raise RuntimeError("Fit Geo Attach 改变了 Body 绑定姿态")
             tweakers = None
             if preview.build.build_options.use_offset_parent_matrix:
                 tweakers = plan_fit_tweakers(
@@ -849,6 +862,8 @@ class BuildRegisteredBodyCharacter:
                 registration, ik_follows)
             registration = RegisterFitAimAt(joined).apply(
                 registration, aim_at_specs)
+            registration = RegisterFitGeoAttach(joined).apply(
+                registration, geo_attach_specs)
             if tweakers is not None:
                 registration = RegisterFitTweakers(joined).apply(
                     registration, tweakers)

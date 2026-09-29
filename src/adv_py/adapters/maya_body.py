@@ -282,6 +282,7 @@ from .maya_body_fit_follow import MayaBodyFitFollowMixin
 from .maya_body_fit_named_follow import MayaBodyFitNamedFollowMixin
 from .maya_body_fit_follow_spaces import MayaBodyFitFollowSpacesMixin
 from .maya_body_fit_aim_at import MayaBodyFitAimAtMixin
+from .maya_body_fit_geo_attach import MayaBodyFitGeoAttachMixin
 from .maya_body_game_root_motion import MayaBodyGameRootMotionMixin
 from .maya_body_game_scaling import MayaBodyGameScalingMixin
 
@@ -316,7 +317,7 @@ _BODY_EXPORT_BAKE_ATTRIBUTES = {
 }
 
 
-class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, MayaBodyFkScaleCompensationMixin, MayaBodyFitFollowMixin, MayaBodyFitNamedFollowMixin, MayaBodyFitFollowSpacesMixin, MayaBodyFitAimAtMixin, MayaBodyFitAdvancedConstraintMixin, MayaBodyParentConstraintMixin, MayaBodyGameRootMotionMixin, MayaBodyGameScalingMixin, MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitBendyMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyFitAimMixin, MayaBodyPoleAimMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
+class MayaBodyBuildHost(MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, MayaBodyFkScaleCompensationMixin, MayaBodyFitFollowMixin, MayaBodyFitNamedFollowMixin, MayaBodyFitFollowSpacesMixin, MayaBodyFitAimAtMixin, MayaBodyFitGeoAttachMixin, MayaBodyFitAdvancedConstraintMixin, MayaBodyParentConstraintMixin, MayaBodyGameRootMotionMixin, MayaBodyGameScalingMixin, MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitBendyMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyFitAimMixin, MayaBodyPoleAimMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
     """Maya scene adapter for the first materialized Body skeleton stage."""
 
     def copy_external_mesh_for_character(self, mesh_path: str) -> str:

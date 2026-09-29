@@ -36,6 +36,9 @@ _CREATE |= {'spaceLocator'}
 _NODE_ARGS |= {'sets'}
 _NODE_RESULTS |= {'sets'}
 _CREATE |= {'sets'}
+_NODE_ARGS |= {'pointOnPolyConstraint'}
+_NODE_RESULTS |= {'pointOnPolyConstraint'}
+_CREATE |= {'pointOnPolyConstraint'}
 
 
 class MayaCharacterCommands:

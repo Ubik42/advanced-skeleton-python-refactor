@@ -105,6 +105,9 @@ _FIT_ATTRIBUTES = {
     FitJointField.FOLLOW_SPACES: _MayaFitAttribute("followSpaces", "bool"),
     FitJointField.IK_FOLLOW: _MayaFitAttribute("ikFollow", "string"),
     FitJointField.AIM_AT: _MayaFitAttribute("aimAt", "string"),
+    FitJointField.GEO_ATTACH: _MayaFitAttribute("geoAttach", "string"),
+    FitJointField.GEO_ATTACH_MODE: _MayaFitAttribute(
+        "geoAttachMode", "enum", enum_names=("point", "orient", "parent")),
     FitJointField.AIM_AXIS: _MayaFitAttribute(
         "aimAxis", "enum", enum_names=("x", "y", "z")),
     FitJointField.AIM_UP_AXIS: _MayaFitAttribute(
@@ -906,6 +909,9 @@ class MayaFitJointHost:
             aim_axis=self._optional_enum(joint, "aimAxis") or "x",
             aim_up_axis=self._optional_enum(joint, "aimUpAxis") or "y",
             aim_up_object=self._optional_enum(joint, "aimUpObject") or "self",
+            geo_attach=self._optional_mesh_target(joint, "geoAttach"),
+            geo_attach_mode=self._optional_enum(
+                joint, "geoAttachMode") or "parent",
             world_orient_up=self._optional_enum(joint, "worldOrientUp"),
             world_orient_forward=self._optional_enum(joint, "worldOrientForward"),
             ik_local_mode=self._optional_enum(joint, "ikLocal"),
@@ -950,6 +956,10 @@ class MayaFitJointHost:
                     if self._attribute_exists(joint, companion):
                         self._transaction_changed = True
                         self._cmds.deleteAttr(f"{joint}.{companion}")
+            if (edit.field is FitJointField.GEO_ATTACH
+                    and self._attribute_exists(joint, "geoAttachMode")):
+                self._transaction_changed = True
+                self._cmds.deleteAttr(f"{joint}.geoAttachMode")
             if (edit.field is FitJointField.BENDY_CONTROLS
                     and self._attribute_exists(joint, "bendyJoints")):
                 self._transaction_changed = True
@@ -985,10 +995,13 @@ class MayaFitJointHost:
                 names = self._cmds.attributeQuery(
                     spec.name, node=joint, listEnum=True) or []
                 choices = names[0].split(":") if names else []
-                if value not in choices:
+                enum_value = (str(value).replace(":", "__")
+                              if edit.field is FitJointField.GEO_ATTACH
+                              else value)
+                if enum_value not in choices:
                     raise FitJointValidationError(
                         f"原版 {plug} 的可选目标中没有 {value}")
-                self._cmds.setAttr(plug, choices.index(value))
+                self._cmds.setAttr(plug, choices.index(enum_value))
             else:
                 self._cmds.setAttr(plug, value, type="string")
         else:
@@ -1005,6 +1018,12 @@ class MayaFitJointHost:
                         attributeType="enum",
                         enumName=":".join(companion.enum_names),
                         defaultValue=default, keyable=True)
+        if (edit.field is FitJointField.GEO_ATTACH
+                and not self._attribute_exists(joint, "geoAttachMode")):
+            self._cmds.addAttr(
+                joint, longName="geoAttachMode", attributeType="enum",
+                enumName="point:orient:parent", defaultValue=2,
+                keyable=True)
 
     def set_fit_joint_world_axes(
         self,
@@ -1180,6 +1199,13 @@ class MayaFitJointHost:
             raise FitJointValidationError(
                 f"{plug} 需要原版 enum 或 Python 字符串属性")
         return str(self._cmds.getAttr(plug) or "") or None
+
+    def _optional_mesh_target(self, joint: str, attribute: str) -> str | None:
+        value = self._optional_constraint_target(joint, attribute)
+        if value is None:
+            return None
+        decoded = value.replace("__", ":")
+        return decoded if decoded != value and self._cmds.objExists(decoded) else value
 
     def _read_fit_skeleton_value(
         self,

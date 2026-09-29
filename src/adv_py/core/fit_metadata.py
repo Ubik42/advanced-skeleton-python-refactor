@@ -47,6 +47,8 @@ class FitJointField(str, Enum):
     AIM_AXIS = "aim_axis"
     AIM_UP_AXIS = "aim_up_axis"
     AIM_UP_OBJECT = "aim_up_object"
+    GEO_ATTACH = "geo_attach"
+    GEO_ATTACH_MODE = "geo_attach_mode"
 
 
 FitJointValue = bool | int | float | str | tuple[tuple[str, float], ...]
@@ -91,6 +93,12 @@ class FitJointPatch:
                         for edit in self.edits)):
             raise FitJointValidationError(
                 "删除 AimAt 时不能同时设置其轴向属性")
+        if (any(edit.field is FitJointField.GEO_ATTACH and edit.value is None
+                for edit in self.edits)
+                and any(edit.field is FitJointField.GEO_ATTACH_MODE
+                        for edit in self.edits)):
+            raise FitJointValidationError(
+                "删除 Geo Attach 时不能同时设置附着模式")
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +145,8 @@ class FitJointMetadata:
     aim_axis: str = "x"
     aim_up_axis: str = "y"
     aim_up_object: str = "self"
+    geo_attach: str | None = None
+    geo_attach_mode: str = "parent"
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +185,7 @@ _ENUM_OPTIONS = {
     FitJointField.AIM_AXIS: {"x", "y", "z"},
     FitJointField.AIM_UP_AXIS: {"x", "y", "z"},
     FitJointField.AIM_UP_OBJECT: {"self", "target"},
+    FitJointField.GEO_ATTACH_MODE: {"point", "orient", "parent"},
     FitJointField.WORLD_ORIENT_UP: {
         "xUp",
         "yUp",
@@ -201,6 +212,7 @@ _CONSTRAINT_FIELDS = frozenset((
 _TARGET_FIELDS = _CONSTRAINT_FIELDS | {
     FitJointField.FOLLOW, FitJointField.IK_FOLLOW, FitJointField.AIM_AT}
 _BUILD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*\Z")
+_MESH_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_:]*\Z")
 _FOLLOW_RESERVED = frozenset(("LeftRight", "World", "Spaces"))
 
 
@@ -248,6 +260,9 @@ def validate_fit_joint_value(
             not isinstance(value, str) or not _BUILD_NAME.fullmatch(value)):
         raise FitJointValidationError(
             f"{field.value} 必须是未带侧别的关节名称")
+    if field is FitJointField.GEO_ATTACH and (
+            not isinstance(value, str) or not _MESH_NAME.fullmatch(value)):
+        raise FitJointValidationError("geo_attach 必须是网格变换或形状名称")
 
 
 def fit_joint_value(
@@ -282,6 +297,16 @@ def predict_fit_joint_metadata(
             present.update((FitJointField.AIM_AXIS,
                             FitJointField.AIM_UP_AXIS,
                             FitJointField.AIM_UP_OBJECT))
+        if edit.field is FitJointField.GEO_ATTACH and edit.value is None:
+            values["geo_attach_mode"] = "parent"
+            present.discard(FitJointField.GEO_ATTACH_MODE)
+        elif edit.field is FitJointField.GEO_ATTACH:
+            present.add(FitJointField.GEO_ATTACH_MODE)
+        if (edit.field is FitJointField.GEO_ATTACH_MODE
+                and edit.value is None):
+            values["geo_attach_mode"] = "parent"
+            present.discard(edit.field)
+            continue
         if edit.field is FitJointField.FOLLOW_BY_NAME and edit.value is None:
             values["follow_by_name"] = ()
             present.discard(edit.field)
@@ -391,6 +416,19 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
         issues.append(FitJointIssue(
             metadata.joint, "aim_axes_collinear",
             "AimAt 主轴和 Up 轴不能相同"))
+    if (metadata.geo_attach is not None
+            and not _MESH_NAME.fullmatch(metadata.geo_attach)):
+        issues.append(FitJointIssue(
+            metadata.joint, "invalid_geo_attach", "Geo Attach 网格名称无效"))
+    if (metadata.geo_attach_mode not in _ENUM_OPTIONS[
+            FitJointField.GEO_ATTACH_MODE]):
+        issues.append(FitJointIssue(
+            metadata.joint, "invalid_geo_attach_mode", "Geo Attach 模式无效"))
+    if (metadata.geo_attach is None and FitJointField.GEO_ATTACH_MODE
+            in metadata.present_fields):
+        issues.append(FitJointIssue(
+            metadata.joint, "geo_attach_mode_without_target",
+            "Geo Attach 模式需要网格目标"))
     for field in (FitJointField.AIM_AXIS, FitJointField.AIM_UP_AXIS,
                   FitJointField.AIM_UP_OBJECT):
         if (not isinstance(getattr(metadata, field.value), str)
