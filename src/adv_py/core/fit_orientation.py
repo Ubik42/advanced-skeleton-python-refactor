@@ -155,6 +155,16 @@ class FitOrientationSnapshot:
     axis_configuration: FitOrientationAxisConfiguration = (
         FitOrientationAxisConfiguration()
     )
+    fit_scale: float = 1.0
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.fit_scale, bool)
+            or not isinstance(self.fit_scale, (int, float))
+            or not isfinite(float(self.fit_scale))
+            or self.fit_scale <= 0
+        ):
+            raise FitOrientationValidationError("FitSkeleton 缩放必须是正有限数值")
 
 
 @dataclass(frozen=True, slots=True)
@@ -461,16 +471,16 @@ def plan_simple_fit_orientations(
             f"{hierarchy[path].short_name} 与子级位置重合",
         )
         free_orient = bool(item_metadata and item_metadata.free_orient)
-        secondary_axis, default_reference = _secondary_reference(
-            snapshot.up_axis, primary)
-        # MEL's freeOrient bypasses the IK-plane up target and places the
-        # self-up helper on the joint's current local up axis.  Projecting
-        # that axis after aiming at the child preserves its roll.  In this
-        # self-up branch flipOrient reverses both the local up vector and
-        # helper offset, so its two signs cancel. The RP branch below uses
-        # the accumulated flip parity instead.
-        reference = (state.world_axes[1]
-                     if free_orient else default_reference)
+        secondary_axis, _ = _secondary_reference(snapshot.up_axis, primary)
+        # MEL's ordinary off-centre branch uses a helper on the joint's
+        # existing local secondary axis. Its flipOrient signs cancel here.
+        reference = state.world_axes[1]
+        if abs(hierarchy[path].world_position[0]) <= 0.01 * snapshot.fit_scale:
+            # A centre joint uses world +X as the tertiary-axis up target.
+            tertiary_up = (1.0, 0.0, 0.0)
+            if _inherited_flip_orient(path, hierarchy, metadata):
+                tertiary_up = _scale(tertiary_up, -1.0)
+            reference = _cross(tertiary_up, primary)
         rp_role = rp_chains.get(path)
         if rp_role is not None and not free_orient:
             if snapshot.axis_configuration != FitOrientationAxisConfiguration():
@@ -519,7 +529,7 @@ def plan_simple_fit_orientations(
                 desired_primary_world=primary,
                 desired_secondary_world=secondary,
                 secondary_world_axis=secondary_axis,
-                use_explicit_world_axes=free_orient or rp_role is not None,
+                use_explicit_world_axes=True,
             )
         )
     return tuple(changes)
