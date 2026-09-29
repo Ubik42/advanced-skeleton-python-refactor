@@ -46,7 +46,8 @@ def install(host, registration):
             'adv_py.spline.v6','adv_py.spline.v7',
             'adv_py.spline.v8','adv_py.spline.v9',
             'adv_py.spline.v10','adv_py.spline.v11',
-            'adv_py.spline.v12','adv_py.spline.v13'):
+            'adv_py.spline.v12','adv_py.spline.v13',
+            'adv_py.spline.v14','adv_py.spline.v15'):
         raise CharacterRegistryError('曲线脊柱匹配要求受支持的求解图；旧实验角色需要显式迁移')
     count = len(plan.body_joints)
     for index, control in enumerate(plan.fk_controls):
