@@ -105,3 +105,30 @@ class BuildFitPartScaleDrivers:
                     raise RuntimeError("Fit Part OPM 缩放父链改变："
                                        + chain.start_body_name)
         return plan
+
+    def apply_terminal_only(
+        self,
+        body_joints: tuple[BodyJointSpec, ...],
+        ik_local_sources: frozenset[str],
+        leg_fk_control_names: frozenset[str],
+    ) -> None:
+        """Connect shared wrist, ankle and toe scales in the legacy Part build."""
+        plan = plan_fit_part_scale((), body_joints, ik_local_sources,
+                                   leg_fk_control_names)
+        for end in plan.ends:
+            self._host.preflight_fit_part_end_scale(end)
+        for toe in plan.toes:
+            self._host.preflight_fit_part_toe_scale(toe)
+        with self._host.transaction("构建 Body 末端缩放驱动"):
+            for end in plan.ends:
+                self._host.connect_fit_part_end_scale(end)
+            for toe in plan.toes:
+                self._host.connect_fit_part_toe_scale(toe)
+            for end in plan.ends:
+                if not self._host.capture_fit_part_end_scale(end):
+                    raise RuntimeError("Body 末端缩放连接不一致："
+                                       + end.body_name)
+            for toe in plan.toes:
+                if not self._host.capture_fit_part_toe_scale(toe):
+                    raise RuntimeError("Body 脚趾缩放连接不一致："
+                                       + toe.body_name)

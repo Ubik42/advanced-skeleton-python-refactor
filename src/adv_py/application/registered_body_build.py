@@ -379,8 +379,9 @@ class BuildRegisteredBodyCharacter:
                 plan_fit_part_twist(ordinary_twist_parts,
                                     fit_part_twist_sources)
         else:
+            fit_source = self._host.capture_fit_orientation(container_name)
             hip_selection = plan_hip_swing_fit_selection(
-                self._host.capture_fit_orientation(container_name),
+                fit_source,
                 allow_missing_child=(axial_description is not None
                                      and axial_description
                                      != BodyAxialDescription()))
@@ -402,6 +403,13 @@ class BuildRegisteredBodyCharacter:
                 include_control_spaces=True, axial_description=axial_description,
                 include_head_aim=include_head_aim,
                 defer_fit_tweakers=True)
+            if not use_fit_part_hierarchy:
+                BuildFitPartScaleDrivers(joined).apply_terminal_only(
+                    part_plan.specs,
+                    frozenset(item.joint for item in fit_source.metadata
+                              if item.ik_local_mode is not None),
+                    frozenset(control.control_name
+                              for control in rig.plan.leg.fk_controls.controls))
             if bendy_chains:
                 follows = plan_fit_bendy_follow(bendy_chains, rig.plan)
                 BuildFitBendyGuides(joined).apply(bendy_chains,
