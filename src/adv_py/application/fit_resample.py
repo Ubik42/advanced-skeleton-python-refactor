@@ -6,10 +6,13 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from adv_py.core.fit_hierarchy import FitHierarchySnapshot
-from adv_py.core.fit_orientation import FitOrientationRequest
+from adv_py.core.fit_orientation import (
+    FitOrientationRequest,
+    select_fit_orientation_child,
+)
 from adv_py.core.fit_resample import FitResamplePlan, plan_fit_resample
 
-from .fit_orientation import OrientSimpleFitChain
+from .fit_orientation_auto import OrientFitJoints
 
 
 class FitResampleHost(Protocol):
@@ -50,10 +53,18 @@ class ResampleFitChain:
             self._host.preflight_fit_resample(plan)
             created = self._host.resample_fit_chain(plan)
             if created:
-                orient = OrientSimpleFitChain(self._host)
-                orientation = orient.plan(FitOrientationRequest(created),
-                                          container)
-                orient.apply_plan_in_transaction(orientation)
+                snapshot = self._host.capture_fit_orientation(container)
+                end_name = plan.end.rsplit("|", 1)[-1]
+                chain = (plan.start, *created,
+                         created[-1] + "|" + end_name)
+                targets = tuple(parent for parent, child in zip(
+                    chain, chain[1:]
+                ) if select_fit_orientation_child(snapshot, parent) == child)
+                if targets:
+                    orient = OrientFitJoints(self._host)
+                    orientation = orient.plan(FitOrientationRequest(targets),
+                                              container)
+                    orient.apply_plan_in_transaction(orientation)
             self._host.finalize_fit_resample(plan, created)
             verified = self._host.capture_fit_hierarchy(container)
             paths = {node.path: node for node in verified.joints}
