@@ -1973,9 +1973,13 @@ class MayaFitBendyMixin:
                     spec.control_weights(index)), start=1):
                 if (not c.objExists(delta_name)
                         or c.nodeType(delta_name) != "plusMinusAverage"
+                        or int(c.getAttr(delta_name + ".operation")) != 2
                         or c.connectionInfo(delta_name + ".input3D[0]",
                                             sourceFromDestination=True)
                         != bend_control + ".scale"
+                        or any(abs(float(value) - 1.0) > 1e-8
+                               for value in c.getAttr(
+                                   delta_name + ".input3D[1]")[0])
                         or not c.objExists(weight_name)
                         or c.nodeType(weight_name) != "multiplyDivide"
                         or c.connectionInfo(weight_name + ".input1",
@@ -1985,8 +1989,9 @@ class MayaFitBendyMixin:
                             scale_add + f".input3D[{control_index}]",
                             sourceFromDestination=True)
                         != weight_name + ".output"
-                        or abs(float(c.getAttr(weight_name + ".input2X"))
-                               - weight) > 1e-8):
+                        or any(abs(float(value) - weight) > 1e-8
+                               for value in c.getAttr(
+                                   weight_name + ".input2")[0])):
                     return False
             if spec.child_start_control:
                 twist_end = spec.micro_end_twist_names[index]
@@ -2009,11 +2014,17 @@ class MayaFitBendyMixin:
                         or c.connectionInfo(scale_delta + ".input3D[0]",
                                             sourceFromDestination=True)
                         != spec.child_start_control + ".scale"
+                        or int(c.getAttr(scale_delta + ".operation")) != 2
+                        or any(abs(float(value) - 1.0) > 1e-8
+                               for value in c.getAttr(
+                                   scale_delta + ".input3D[1]")[0])
                         or c.connectionInfo(scale_weight + ".input1",
                                             sourceFromDestination=True)
                         != scale_delta + ".output3D"
-                        or abs(float(c.getAttr(scale_weight + ".input2X"))
-                               - (1.0 - spec.control_weights(index)[1])) > 1e-8
+                        or any(abs(float(value)
+                                   - (1.0 - spec.control_weights(index)[1]))
+                               > 1e-8 for value in c.getAttr(
+                                   scale_weight + ".input2")[0])
                         or c.connectionInfo(
                             scale_add + f".input3D[{len(spec.control_names) + 1}]",
                             sourceFromDestination=True)
