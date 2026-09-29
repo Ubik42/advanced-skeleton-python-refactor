@@ -131,6 +131,8 @@ def _independent_rig_twist_sources(
 ]:
     """Read control or mechanism matrices outside the driven Part hierarchy."""
     controls = []
+    controls.extend(plan.arm.fk_controls.controls)
+    controls.extend(plan.leg.fk_controls.controls)
     if plan.torso is not None:
         controls.extend(plan.torso.torso.controls.controls)
     if plan.hand is not None:
@@ -138,6 +140,8 @@ def _independent_rig_twist_sources(
     body_paths = {joint.path for joint in plan.arm.safety.body.joints}
     controls = [control for control in controls
                 if control.driven_joint in body_paths]
+    if len({control.driven_joint for control in controls}) != len(controls):
+        raise ValueError("Part Twist 同一 Body 关节存在多个 FK 控制来源")
     root_child_offsets = {
         control.driven_joint: control.offset_path + ".worldInverseMatrix[0]"
         for control in (plan.torso.torso.controls.controls
@@ -179,7 +183,7 @@ def _independent_rig_twist_sources(
                 if joint.body_joint not in body_paths:
                     raise ValueError("Part Twist 机制来源不属于当前 Body："
                                      + joint.body_joint)
-                if joint.body_joint in matrices or joint.body_joint in blended_matrices:
+                if joint.body_joint in blended_matrices:
                     raise ValueError("Part Twist 混合来源重复："
                                      + joint.body_joint)
                 blended_matrices[joint.body_joint] = (
