@@ -667,6 +667,12 @@ class BuildRegisteredBodyCharacter:
                         is None
                         or chain.control_names[0] in
                         _generic_fk_policy.bendy_negative_right_axes),
+                    micro_matrix_aim=(
+                        _generic_fk_policy is None
+                        or _generic_fk_policy.bendy_micro_matrix_controls
+                        is None
+                        or chain.control_names[0] in
+                        _generic_fk_policy.bendy_micro_matrix_controls),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None

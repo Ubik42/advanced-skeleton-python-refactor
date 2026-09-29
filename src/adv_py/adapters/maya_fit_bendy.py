@@ -540,6 +540,9 @@ class MayaFitBendyMixin:
         c = self._cmds
         if any(c.objExists(name) for name in spec.micro_node_names):
             raise ValueError("Bendy 微控制节点名称已占用：" + spec.curve_name)
+        if (spec.micro_matrix_aim
+                and "aimMatrix" not in (c.allNodeTypes() or [])):
+            raise ValueError("Bendy 微控制朝向需要 aimMatrix 节点")
         if c.objExists(_MICRO_GROUP):
             marker = _MICRO_GROUP + ".advPyBendyGuideOwner"
             if not c.objExists(marker) or c.getAttr(marker) != _OWNER:
@@ -1369,34 +1372,79 @@ class MayaFitBendyMixin:
             target = (spec.motion_transform_names[index + 1]
                       if index + 1 < len(spec.motion_transform_names)
                       else spec.end_proxy_name)
-            blend_name, decompose_name, up_name = (
+            blend_name, second_name, third_name = (
+                spec.micro_matrix_orientation_names[index]
+                if spec.micro_matrix_aim else
                 spec.micro_orientation_names[index])
             blend = c.createNode("blendMatrix", name=blend_name,
                                  skipSelect=True)
-            decompose = c.createNode("decomposeMatrix",
-                                     name=decompose_name,
-                                     skipSelect=True)
-            up = c.createNode("transform", name=up_name,
-                              parent=_GROUPS[0], skipSelect=True)
-            start_frame = (spec.parent_untwist_names[3]
-                           if c.objExists(spec.parent_untwist_names[3])
-                           else spec.follow_node_names[0])
+            if spec.micro_matrix_aim:
+                twist_compose = c.createNode(
+                    "composeMatrix", name=second_name,
+                    skipSelect=True)
+                twist_world = c.createNode(
+                    "multMatrix", name=third_name,
+                    skipSelect=True)
+                c.connectAttr(twist_compose + ".outputMatrix",
+                              twist_world + ".matrixIn[0]")
+                c.connectAttr(blend + ".outputMatrix",
+                              twist_world + ".matrixIn[1]")
+                start_frame = spec.follow_node_names[0]
+            else:
+                decompose = c.createNode("decomposeMatrix",
+                                         name=second_name,
+                                         skipSelect=True)
+                up = c.createNode("transform", name=third_name,
+                                  parent=_GROUPS[0], skipSelect=True)
+                start_frame = (spec.parent_untwist_names[3]
+                               if c.objExists(spec.parent_untwist_names[3])
+                               else spec.follow_node_names[0])
             c.connectAttr(start_frame + ".worldMatrix[0]",
                           blend + ".inputMatrix")
             c.connectAttr(spec.follow_node_names[1] + ".worldMatrix[0]",
                           blend + ".target[0].targetMatrix")
             c.setAttr(blend + ".target[0].weight",
                       index / (len(spec.part_names) + 1))
-            c.connectAttr(blend + ".outputMatrix",
-                          decompose + ".inputMatrix")
-            c.connectAttr(decompose + ".outputRotate",
-                          up + ".rotate")
-            c.aimConstraint(target, guide_name,
-                            aimVector=(spec.aim_axis_sign, 0, 0),
-                            upVector=(0, 0, 1),
-                            worldUpType="objectrotation",
-                            worldUpObject=up,
-                            name=guide_name + "Aim")
+            if not spec.micro_matrix_aim:
+                c.connectAttr(blend + ".outputMatrix",
+                              decompose + ".inputMatrix")
+                c.connectAttr(decompose + ".outputRotate",
+                              up + ".rotate")
+            if spec.micro_matrix_aim:
+                compose_name, aim_name, aim_decompose_name = (
+                    spec.micro_aim_matrix_names[index])
+                compose = c.createNode("composeMatrix", name=compose_name,
+                                       skipSelect=True)
+                aim = c.createNode("aimMatrix", name=aim_name,
+                                   skipSelect=True)
+                aim_decompose = c.createNode(
+                    "decomposeMatrix", name=aim_decompose_name,
+                    skipSelect=True)
+                c.connectAttr(spec.motion_path_names[index]
+                              + ".allCoordinates",
+                              compose + ".inputTranslate")
+                c.connectAttr(compose + ".outputMatrix",
+                              aim + ".inputMatrix")
+                c.connectAttr(target + ".worldMatrix[0]",
+                              aim + ".primaryTargetMatrix")
+                c.connectAttr(twist_world + ".matrixSum",
+                              aim + ".secondaryTargetMatrix")
+                c.setAttr(aim + ".primaryInputAxis",
+                          spec.aim_axis_sign, 0, 0)
+                c.setAttr(aim + ".secondaryMode", 2)
+                c.setAttr(aim + ".secondaryInputAxis", 0, 0, 1)
+                c.setAttr(aim + ".secondaryTargetVector", 0, 0, 1)
+                c.connectAttr(aim + ".outputMatrix",
+                              aim_decompose + ".inputMatrix")
+                c.connectAttr(aim_decompose + ".outputRotate",
+                              guide_name + ".rotate")
+            else:
+                c.aimConstraint(target, guide_name,
+                                aimVector=(spec.aim_axis_sign, 0, 0),
+                                upVector=(0, 0, 1),
+                                worldUpType="objectrotation",
+                                worldUpObject=up,
+                                name=guide_name + "Aim")
             c.parentConstraint(guide_name, offset, maintainOffset=True,
                                name=guide_name + "MicroFollow")
             twist_add_name, twist_mult_names = spec.micro_twist_names[index]
@@ -1429,7 +1477,9 @@ class MayaFitBendyMixin:
                 c.connectAttr(end_twist + ".output",
                               twist_add + f".input1D[{len(spec.control_names)}]")
             c.connectAttr(twist_add + ".output1D",
-                          output_name + ".rotateX")
+                          (twist_compose + ".inputRotateX"
+                           if spec.micro_matrix_aim else
+                           output_name + ".rotateX"))
             scale_add_name, delta_names, weight_names = (
                 spec.micro_scale_names[index])
             scale_add = c.createNode("plusMinusAverage",
@@ -1478,6 +1528,54 @@ class MayaFitBendyMixin:
                           offset + ".scale")
         self._transaction_changed = True
 
+    def _capture_fit_bendy_micro_aim(
+            self, spec: FitBendyChainSpec, index: int,
+            guide: str, up_matrix: str) -> bool:
+        c = self._cmds
+        if not spec.micro_matrix_aim:
+            constraint = guide + "Aim"
+            return (c.objExists(constraint)
+                    and c.nodeType(constraint) == "aimConstraint")
+        compose, aim, decompose = spec.micro_aim_matrix_names[index]
+        target = (spec.motion_transform_names[index + 1]
+                  if index + 1 < len(spec.motion_transform_names)
+                  else spec.end_proxy_name)
+        if (not c.objExists(compose)
+                or c.nodeType(compose) != "composeMatrix"
+                or not c.objExists(aim)
+                or c.nodeType(aim) != "aimMatrix"
+                or not c.objExists(decompose)
+                or c.nodeType(decompose) != "decomposeMatrix"
+                or c.connectionInfo(compose + ".inputTranslate",
+                                    sourceFromDestination=True)
+                != spec.motion_path_names[index] + ".allCoordinates"
+                or c.connectionInfo(aim + ".inputMatrix",
+                                    sourceFromDestination=True)
+                != compose + ".outputMatrix"
+                or c.connectionInfo(aim + ".primaryTargetMatrix",
+                                    sourceFromDestination=True)
+                != target + ".worldMatrix[0]"
+                or c.connectionInfo(aim + ".secondaryTargetMatrix",
+                                    sourceFromDestination=True)
+                != up_matrix + ".matrixSum"
+                or c.connectionInfo(decompose + ".inputMatrix",
+                                    sourceFromDestination=True)
+                != aim + ".outputMatrix"
+                or c.connectionInfo(guide + ".rotate",
+                                    sourceFromDestination=True)
+                != decompose + ".outputRotate"
+                or int(c.getAttr(aim + ".secondaryMode")) != 2):
+            return False
+        for attribute, expected in (
+                ("primaryInputAxis", (spec.aim_axis_sign, 0, 0)),
+                ("secondaryInputAxis", (0, 0, 1)),
+                ("secondaryTargetVector", (0, 0, 1))):
+            values = c.getAttr(aim + "." + attribute)[0]
+            if any(abs(float(a) - b) > 1e-6
+                   for a, b in zip(values, expected)):
+                return False
+        return True
+
     def capture_fit_bendy_micro(self, spec: FitBendyChainSpec) -> bool:
         c = self._cmds
         master = spec.control_names[0]
@@ -1520,9 +1618,13 @@ class MayaFitBendyMixin:
                 spec.micro_offset_names, spec.micro_extra_names,
                 spec.micro_control_names,
                 spec.micro_output_names, spec.motion_transform_names)):
-            blend, decompose, up = spec.micro_orientation_names[index]
+            blend, second, third = (
+                spec.micro_matrix_orientation_names[index]
+                if spec.micro_matrix_aim else
+                spec.micro_orientation_names[index])
             start_frame = (spec.parent_untwist_names[3]
-                           if c.objExists(spec.parent_untwist_names[3])
+                           if (not spec.micro_matrix_aim
+                               and c.objExists(spec.parent_untwist_names[3]))
                            else spec.follow_node_names[0])
             twist_add, twist_mults = spec.micro_twist_names[index]
             scale_add, delta_names, weight_names = (
@@ -1543,27 +1645,51 @@ class MayaFitBendyMixin:
                         blend + ".target[0].targetMatrix",
                         sourceFromDestination=True)
                     != spec.follow_node_names[1] + ".worldMatrix[0]"
-                    or not c.objExists(decompose)
-                    or c.nodeType(decompose) != "decomposeMatrix"
-                    or not c.objExists(up)
+                    or not c.objExists(second)
+                    or c.nodeType(second) != (
+                        "composeMatrix" if spec.micro_matrix_aim
+                        else "decomposeMatrix")
+                    or not c.objExists(third)
+                    or c.nodeType(third) != (
+                        "multMatrix" if spec.micro_matrix_aim
+                        else "transform")
                     or not c.objExists(twist_add)
                     or c.nodeType(twist_add) != "plusMinusAverage"
                     or c.connectionInfo(output + ".rotateX",
                                         sourceFromDestination=True)
-                    != twist_add + ".output1D"
+                    != ("" if spec.micro_matrix_aim
+                        else twist_add + ".output1D")
                     or not c.objExists(scale_add)
                     or c.nodeType(scale_add) != "plusMinusAverage"
                     or c.connectionInfo(offset + ".scale",
                                         sourceFromDestination=True)
                     != scale_add + ".output3D"
-                    or not c.objExists(guide + "Aim")
-                    or c.nodeType(guide + "Aim") != "aimConstraint"
+                    or not self._capture_fit_bendy_micro_aim(
+                        spec, index, guide, third)
                     or not c.objExists(guide + "MicroFollow")
                     or c.nodeType(guide + "MicroFollow")
                     != "parentConstraint"
                     or c.connectionInfo(offset + ".visibility",
                                         sourceFromDestination=True)
                     != master + ".microVis"):
+                return False
+            if spec.micro_matrix_aim:
+                if (c.connectionInfo(second + ".inputRotateX",
+                                     sourceFromDestination=True)
+                        != twist_add + ".output1D"
+                        or c.connectionInfo(third + ".matrixIn[0]",
+                                            sourceFromDestination=True)
+                        != second + ".outputMatrix"
+                        or c.connectionInfo(third + ".matrixIn[1]",
+                                            sourceFromDestination=True)
+                        != blend + ".outputMatrix"):
+                    return False
+            elif (c.connectionInfo(second + ".inputMatrix",
+                                   sourceFromDestination=True)
+                  != blend + ".outputMatrix"
+                  or c.connectionInfo(third + ".rotate",
+                                      sourceFromDestination=True)
+                  != second + ".outputRotate"):
                 return False
             for projection, mult_name, weight in zip(
                     spec.twist_projection_names, twist_mults,

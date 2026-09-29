@@ -152,6 +152,7 @@ class MayaCharacterRegistryMixin:
         bendy_end_matrix = set()
         bendy_oriented = set()
         bendy_negative_right = set()
+        bendy_micro_matrix = set()
         for control in bendy_aim_follow:
             stem, side = control.rsplit('_', 1)
             namespace = bendy_namespace(control)
@@ -191,9 +192,17 @@ class MayaCharacterRegistryMixin:
                 bendy_child_control.add(control)
         for control in bendy_master_paths:
             stem, side = control.rsplit('_', 1)
+            namespace = bendy_namespace(control)
+            micro_aim = (namespace + 'AdvPy_'
+                         + stem.removeprefix('Bend') + '_' + side
+                         + 'AimMatrix')
+            if c.objExists(micro_aim):
+                if c.nodeType(micro_aim) != 'aimMatrix':
+                    raise CharacterRegistryError(
+                        'Bendy 微控制矩阵节点类型错误：' + control)
+                bendy_micro_matrix.add(control)
             if side != 'R':
                 continue
-            namespace = bendy_namespace(control)
             starts = c.ls(namespace + stem + '0_R', long=True,
                           type='transform') or []
             if len(starts) != 1:
@@ -221,7 +230,8 @@ class MayaCharacterRegistryMixin:
             bendy_aim_follow, frozenset(bendy_start_control),
             frozenset(bendy_child_control), frozenset(bendy_untwist),
             frozenset(bendy_end_matrix), frozenset(bendy_oriented),
-            frozenset(bendy_negative_right))
+            frozenset(bendy_negative_right),
+            frozenset(bendy_micro_matrix))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

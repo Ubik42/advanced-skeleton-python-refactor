@@ -31,6 +31,7 @@ class FitBendyChainSpec:
     child_source_proxy: str | None = None
     start_world_axes: tuple[tuple[float, float, float], ...] | None = None
     honor_non_symmetry_axis: bool = True
+    micro_matrix_aim: bool = True
 
     def __post_init__(self) -> None:
         if (type(self.rotation_order) is not int
@@ -54,6 +55,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 起点世界朝向无效")
         if type(self.honor_non_symmetry_axis) is not bool:
             raise ValueError("Bendy 非对称瞄准策略无效")
+        if type(self.micro_matrix_aim) is not bool:
+            raise ValueError("Bendy 微控制矩阵瞄准策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -282,9 +285,13 @@ class FitBendyChainSpec:
                 *self.micro_control_names,
                 *(name + "Shape" for name in self.micro_control_names),
                 *self.micro_output_names,
-                *(name + "Aim" for name in self.motion_transform_names),
+                *((node for row in self.micro_aim_matrix_names
+                   for node in row) if self.micro_matrix_aim else
+                  (name + "Aim" for name in self.motion_transform_names)),
                 *(name + "MicroFollow" for name in self.motion_transform_names),
-                *(node for row in self.micro_orientation_names
+                *(node for row in (self.micro_matrix_orientation_names
+                                   if self.micro_matrix_aim else
+                                   self.micro_orientation_names)
                   for node in row),
                 *(node for add, mults in self.micro_twist_names
                   for node in (add, *mults)),
@@ -341,6 +348,22 @@ class FitBendyChainSpec:
         return tuple(("AdvPy_" + name + "UpBlend",
                       "AdvPy_" + name + "UpDecompose",
                       "AdvPy_" + name + "Up")
+                     for name in self.deform_names)
+
+    @property
+    def micro_aim_matrix_names(self) -> tuple[tuple[str, str, str], ...]:
+        return tuple(("AdvPy_" + name + "AimCompose",
+                      "AdvPy_" + name + "AimMatrix",
+                      "AdvPy_" + name + "AimDecompose")
+                     for name in self.deform_names)
+
+    @property
+    def micro_matrix_orientation_names(self) -> tuple[
+        tuple[str, str, str], ...
+    ]:
+        return tuple(("AdvPy_" + name + "UpBlend",
+                      "AdvPy_" + name + "TwistCompose",
+                      "AdvPy_" + name + "TwistWorld")
                      for name in self.deform_names)
 
     @property
