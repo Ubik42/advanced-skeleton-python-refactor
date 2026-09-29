@@ -1,6 +1,8 @@
 """Build the 6.925 CurveGuide sampling, target and CV-control graph."""
 from __future__ import annotations
 
+from math import sqrt
+
 from adv_py.core.body_fit_curve_guide import (
     BodyFitCurveGuideBuilt, BodyFitCurveGuideSpec,
 )
@@ -132,6 +134,17 @@ class MayaBodyFitCurveGuideMixin:
                                   near + ".inputCurve")
                     c.setAttr(near + ".inPosition",
                               *spec.control.world_position, type="double3")
+                    closest = c.getAttr(near + ".position")[0]
+                    distance = sqrt(sum(
+                        (left - right) ** 2 for left, right in zip(
+                            spec.control.world_position, closest)))
+                    sample = tuple(
+                        point + spec.tangent_sign * distance * axis
+                        for point, axis in zip(
+                            spec.control.world_position,
+                            spec.control.world_axes[0]))
+                    c.setAttr(near + ".inPosition", *sample,
+                              type="double3")
                     parameter = float(c.getAttr(near + ".parameter"))
                 finally:
                     c.delete(near)
