@@ -9,6 +9,35 @@ from .maya_face_pre import MayaFacePreHost
 
 
 class MayaFaceBuildHost(MayaFacePreHost):
+    def toggle_fit_advanced_visibility(self) -> bool:
+        """asToggleFitFace switches Fit and generated Face motion display."""
+        c = self._cmds
+        fit = self._fit(required=True)
+        motion = c.ls("FaceMotionSystem", long=True,
+                      type="transform") or ()
+        if len(motion) > 1:
+            raise FitSkeletonValidationError(
+                "FaceMotionSystem 名称不唯一")
+        if c.referenceQuery(fit, isNodeReferenced=True):
+            raise FitSkeletonValidationError(
+                "不能切换引用中的 FaceFitSkeleton 可见性")
+        was_visible = bool(c.getAttr(fit + ".visibility"))
+        with self.transaction("切换 Face Fit／Advanced 显示"):
+            self._transaction_changed = True
+            plug = fit + ".visibility"
+            if c.getAttr(plug, lock=True):
+                c.setAttr(plug, lock=False)
+            c.setAttr(plug, not was_visible)
+            c.setAttr(plug, lock=True)
+            if motion:
+                try:
+                    c.setAttr(motion[0] + ".visibility", was_visible)
+                except RuntimeError:
+                    pass  # Original catchQuiet ignores an unavailable motion display.
+            if bool(c.getAttr(plug)) == was_visible:
+                raise RuntimeError("Face Fit 可见性切换未生效")
+        return not was_visible
+
     def set_include(self, include: FaceInclude) -> FaceInclude:
         if not isinstance(include, FaceInclude):
             raise ValueError("Face Include 选项无效")

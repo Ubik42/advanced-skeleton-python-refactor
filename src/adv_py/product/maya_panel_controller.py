@@ -2009,6 +2009,13 @@ class MayaPanelController:
         return MayaFaceBuildHost(namespace=None if namespace == ":" else namespace
             ).read_include().value
 
+    def face_build_toggle_fit_advanced(self, namespace: str) -> bool:
+        from adv_py.adapters.maya_face_build import MayaFaceBuildHost
+
+        return MayaFaceBuildHost(
+            namespace=None if namespace == ":" else namespace
+        ).toggle_fit_advanced_visibility()
+
     def face_build_inspect_inputs(self, namespace: str) -> dict:
         from adv_py.adapters.maya_face_build import MayaFaceBuildHost
 

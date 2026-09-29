@@ -281,6 +281,7 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             for original, mapped in tuple(paths.items()):
                 if mapped.startswith(current + "|"):
                     paths[original] = resolved[0] + mapped[len(current):]
+        self._fbx_source_transform_paths = tuple(sorted(set(paths.values())))
         return {joint.path: paths[joint.path]
                 for joint in plan.bind_pose_joints}
 
@@ -639,7 +640,8 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             if resolved == (driver,) and connected:
                 connected_controls.append(link.control_name)
                 connected_sources.append(source)
-        source_nodes = tuple(source_paths.values())
+        source_nodes = tuple(getattr(
+            self, "_fbx_source_transform_paths", source_paths.values()))
         source_animation_removed = not any(
             c.listConnections(path, source=True, destination=False,
                               type="animCurve") for path in source_nodes)

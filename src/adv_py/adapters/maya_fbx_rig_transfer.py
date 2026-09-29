@@ -80,8 +80,12 @@ class MayaFBXRigTransferMixin:
         if any(c.objExists(name) for name in constraints):
             raise RuntimeError("FBX rig 临时约束未清除")
         self._fbx_temporary_constraints = ()
-        source_nodes = {self._only_fbx_node(path, "joint")
-                        for path in source_paths.values()}
+        source_nodes = set(getattr(self, "_fbx_source_transform_paths", ()))
+        if not source_nodes:
+            source_nodes = {self._only_fbx_node(path, "joint")
+                            for path in source_paths.values()}
+        if not set(source_paths.values()) <= source_nodes:
+            raise RuntimeError("FBX rig 来源 transform 路径记录缺少关节")
         curves = set()
         for joint in source_nodes:
             curves.update(c.listConnections(joint, source=True,
