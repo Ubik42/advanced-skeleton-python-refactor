@@ -1286,6 +1286,29 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self.shapers_plugin_autoload)
             form.addRow("当前状态", self.shapers_plugin_status_label)
             form.addRow(self._button("设置并加载插件", self._setup_shapers_plugin))
+            self.shapers_loop_controls = QtWidgets.QSpinBox()
+            self.shapers_loop_controls.setRange(3, 99)
+            self.shapers_loop_controls.setValue(4)
+            self.shapers_loop_snap = QtWidgets.QCheckBox("顶点吸附")
+            self.shapers_loop_snap.setChecked(True)
+            loop_row = QtWidgets.QHBoxLayout()
+            loop_row.addWidget(self.shapers_loop_controls)
+            loop_row.addWidget(self.shapers_loop_snap)
+            form.addRow("闭环", loop_row)
+            bridge_count = QtWidgets.QSpinBox()
+            bridge_count.setRange(3, 99)
+            bridge_count.setValue(3)
+            bridge_snap = QtWidgets.QCheckBox("顶点吸附")
+            bridge_count.setEnabled(False)
+            bridge_snap.setEnabled(False)
+            bridge_row = QtWidgets.QHBoxLayout()
+            bridge_row.addWidget(bridge_count)
+            bridge_row.addWidget(bridge_snap)
+            form.addRow("桥接（待接入）", bridge_row)
+            self.shapers_mirror = QtWidgets.QCheckBox("镜像")
+            self.shapers_mirror.setChecked(True)
+            form.addRow(self.shapers_mirror)
+            form.addRow(self._button("创建 Shapers", self._create_shapers_fk_loop))
             form.addRow(QtWidgets.QLabel("选择或重绑当前角色已有的 Shapers 变形器。"))
             shapers_select = self._button("选择", self._select_shapers)
             shapers_rebind = self._button("重新绑定", self._rebind_shapers)
@@ -2951,6 +2974,14 @@ def create_panel(controller: MayaPanelController | None = None):
             else:
                 self.shapers_plugin_status_label.setText("未加载")
                 self.shapers_plugin_status_label.setToolTip("")
+
+        def _create_shapers_fk_loop(self):
+            count = self.controller.shapers_create_fk_loop(
+                self._namespace(),
+                loop_controls=self.shapers_loop_controls.value(),
+                snap_vertices=self.shapers_loop_snap.isChecked(),
+                mirror=self.shapers_mirror.isChecked())
+            return f"已创建 {count} 个 Shapers FK 闭环"
 
         def _rebind_shapers(self, node=None):
             count = self.controller.shapers_rebind(self._namespace(), node)

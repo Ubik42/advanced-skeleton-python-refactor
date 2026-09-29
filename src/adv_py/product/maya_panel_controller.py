@@ -1516,6 +1516,20 @@ class MayaPanelController:
 
         return MayaShapersSetupHost().status()
 
+    def shapers_create_fk_loop(self, namespace: str, *,
+                               loop_controls: int, snap_vertices: bool,
+                               mirror: bool) -> int:
+        from adv_py.adapters.maya_shapers_create import MayaShapersCreateHost
+        from adv_py.application.shapers_create import CreateShapersFkLoops
+        from adv_py.core.shapers_create import ShapersFkLoopOptions
+
+        meshes = self.preparation_read_objects(namespace, "Skin")
+        if len(meshes) != 1:
+            raise ValueError("Shapers FK 闭环需要 Preparation / Rig 中唯一的 Skin 网格")
+        return CreateShapersFkLoops(MayaShapersCreateHost(namespace)).execute(
+            meshes[0], ShapersFkLoopOptions(loop_controls,
+                                           snap_vertices, mirror))
+
     def shapers_select(self, namespace: str, node: str | None = None) -> int:
         from adv_py.adapters.maya_shapers import select_shapers
 
