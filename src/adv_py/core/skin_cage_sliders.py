@@ -17,6 +17,7 @@ class SkinCageSlider:
     side: str
     restore_joint: str
     indices: tuple[int, ...]
+    bend_axis: int
 
     def joint(self, index: int) -> str:
         return f"{self.stem}{self.segment}Slider{index}_{self.side}"
@@ -54,5 +55,6 @@ def plan_skin_cage_sliders(
             raise ValueError("多个截面会写入同名 Sliders：" + leaf)
         seen.add(key)
         result.append(SkinCageSlider(profile, deform_joint, segment,
-                                     joint_stem, side, restore_joint, indices))
+                                     joint_stem, side, restore_joint, indices,
+                                     bend_axis))
     return tuple(result)

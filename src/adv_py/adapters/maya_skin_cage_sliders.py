@@ -7,6 +7,10 @@ from .maya_skin_cage import MayaSkinCageHost
 
 
 class MayaSkinCageSliderHost(MayaSkinCageHost):
+    def __init__(self, namespace: str = "") -> None:
+        super().__init__(namespace)
+        self._include_controller = False
+
     def _leaf(self, node: str) -> str:
         return node.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
 
@@ -88,12 +92,13 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
     def preflight_sliders(self, plan: tuple[SkinCageSlider, ...], *,
                           creating: bool, include_controller: bool) -> None:
         c = self.cmds
+        self._include_controller = creating and include_controller
         for leaf in ("skinCage", "skinClusterSkinCage", "MotionSystem",
                      "DeformSet"):
             if not c.objExists(self._name(leaf)):
                 raise ValueError("SkinCage Sliders 缺少原版节点：" + leaf)
         if include_controller:
-            for leaf in ("ControlSet", "Main"):
+            for leaf in ("ControlSet", "Main", "buildPose"):
                 if not c.objExists(self._name(leaf)):
                     raise ValueError("带控制器的 Sliders 缺少：" + leaf)
             for spec in plan:
@@ -280,20 +285,82 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
         c.sets(control, add=self._name("ControlSet"))
         c.sets(extra, add=self._name("ControlSet"))
         c.parentConstraint(parent, offset, maintainOffset=True)
-        c.parentConstraint(control, slider, maintainOffset=True)
+        fkx = c.createNode("transform", name=self._name("FKX" + leaf),
+                           parent=control, skipSelect=True)
+        c.parentConstraint(fkx, slider, maintainOffset=True)
+        marker = c.createNode("transform", parent=slider, skipSelect=True)
+        marker = c.parent(marker, spec.deform_joint)[0]
+        local = c.getAttr(marker + ".translate")[0]
+        c.delete(marker)
         driver = self._name("FK" + self._leaf(spec.deform_joint))
-        rotate = "rotateZ" if index in (0, 2) else "rotateY"
+        rotate = ("rotateZ" if spec.bend_axis or index in (0, 2)
+                  else "rotateY")
         axis = "translateX" if spec.segment != "middle" else (
             "translateY" if index in (0, 2) else "translateZ")
         rest = float(c.getAttr(control + "." + axis))
-        span = abs(float(c.getAttr(slider + ".translateY")) if index in (0, 2)
-                   else float(c.getAttr(slider + ".translateZ"))) / 4.0
-        for angle, displacement in ((-90, -span), (0, 0), (90, span)):
+        c.setDrivenKeyframe(control + "." + axis,
+                            currentDriver=driver + "." + rotate,
+                            driverValue=0, value=rest)
+        for alternate in (False, True):
+            angle = -90 if index in (1, 2) else 90
+            if alternate:
+                angle *= -1
+            if spec.segment == "end":
+                angle *= -1
+            displacement = (local[1] if index in (0, 2) else local[2]) / 4.0
+            if alternate and spec.segment != "middle":
+                displacement *= -1
+            if spec.segment != "middle" and index in (0, 1):
+                displacement *= -1
             c.setDrivenKeyframe(control + "." + axis,
                                 currentDriver=driver + "." + rotate,
                                 driverValue=angle,
                                 value=rest + displacement)
+        curves = c.listConnections(control + "." + axis,
+                                   source=True, destination=False,
+                                   type="animCurve") or []
+        if len(curves) != 1:
+            raise RuntimeError("Slider 控制器 SDK 曲线创建失败：" + leaf)
+        sdk_name = self._name("SDKFK" + leaf + "_" + axis)
+        curve = c.rename(curves[0], sdk_name)
+        if spec.bend_axis:
+            c.setAttr(curve + ".preInfinity", 1)
+            c.setAttr(curve + ".postInfinity", 1)
+            c.keyTangent(curve, index=(0, 0),
+                         inTangentType="spline", outTangentType="spline")
+            c.keyTangent(curve, index=(2, 2),
+                         inTangentType="spline", outTangentType="spline")
+        self._record_slider_build_pose(leaf)
         c.setAttr(slider + ".segmentScaleCompensate", False)
+
+    def _slider_pose_commands(self, leaf: str) -> tuple[str, str]:
+        return tuple('xform -os -t 0 0 0 -ro 0 0 0 -s 1 1 1 "%s";'
+                     % self._name(prefix + leaf)
+                     for prefix in ("FKExtra", "FK"))
+
+    def _record_slider_build_pose(self, leaf: str) -> None:
+        c = self.cmds
+        pose = self._name("buildPose")
+        if not c.attributeQuery("udExtraAttr", node=pose, exists=True):
+            c.addAttr(pose, longName="udExtraAttr", dataType="string")
+        plug = pose + ".udExtraAttr"
+        existing = c.getAttr(plug) or ""
+        c.setAttr(plug, existing + "".join(
+            self._slider_pose_commands(leaf)), type="string")
+
+    def _remove_slider_build_pose(self, leaf: str) -> None:
+        c = self.cmds
+        pose = self._name("buildPose")
+        if not c.objExists(pose) or not c.attributeQuery(
+                "udExtraAttr", node=pose, exists=True):
+            return
+        plug = pose + ".udExtraAttr"
+        existing = c.getAttr(plug) or ""
+        updated = existing
+        for command in self._slider_pose_commands(leaf):
+            updated = updated.replace(command, "")
+        if updated != existing:
+            c.setAttr(plug, updated, type="string")
 
     def create_slider(self, spec: SkinCageSlider, *,
                       include_controller: bool) -> None:
@@ -380,7 +447,13 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
                 c.delete(joint)
             control = self._name("FKOffset" + leaf)
             if c.objExists(control):
+                self._remove_slider_build_pose(leaf)
                 c.delete(control)
+            sdk = self._name("SDKFK" + leaf + "_" + (
+                "translateX" if spec.segment != "middle" else
+                "translateY" if index in (0, 2) else "translateZ"))
+            if c.objExists(sdk):
+                c.delete(sdk)
             prefix = f"{spec.stem}{spec.segment}Slide"
             suffix = f"{index}_{spec.side}"
             for part in ("Reducer", "Multiply", "PlusOffset", "MinusOne",
@@ -406,6 +479,37 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
         influences = {self._leaf(node) for node in (c.skinCluster(
             self._name("skinClusterSkinCage"), query=True,
             influence=True) or [])}
-        return all((c.objExists(self._name(spec.joint(index))) and
-                    spec.joint(index) in influences) == present
-                   for index in spec.indices)
+        pose = self._name("buildPose")
+        pose_script = (c.getAttr(pose + ".udExtraAttr") or ""
+                       if c.objExists(pose + ".udExtraAttr") else "")
+        for index in spec.indices:
+            leaf = spec.joint(index)
+            joint = self._name(leaf)
+            if (c.objExists(joint) and leaf in influences) != present:
+                return False
+            control_names = tuple(self._name(prefix + leaf) for prefix in (
+                "FKOffset", "FKExtra", "FK", "FKX"))
+            axis = ("translateX" if spec.segment != "middle" else
+                    "translateY" if index in (0, 2) else "translateZ")
+            sdk = self._name("SDKFK" + leaf + "_" + axis)
+            prefix = f"{spec.stem}{spec.segment}Slide"
+            suffix = f"{index}_{spec.side}"
+            distance_nodes = tuple(self._name(prefix + part + suffix)
+                                   for part in ("Reducer", "Multiply",
+                                                "PlusOffset"))
+            if present and self._include_controller:
+                if (not all(c.objExists(node) for node in control_names)
+                        or not c.objExists(sdk)
+                        or not all(command in pose_script for command in
+                                   self._slider_pose_commands(leaf))):
+                    return False
+            elif present:
+                if not all(c.objExists(node) for node in distance_nodes):
+                    return False
+            elif (any(c.objExists(node) for node in control_names)
+                  or c.objExists(sdk)
+                  or any(c.objExists(node) for node in distance_nodes)
+                  or any(command in pose_script for command in
+                         self._slider_pose_commands(leaf))):
+                return False
+        return True
