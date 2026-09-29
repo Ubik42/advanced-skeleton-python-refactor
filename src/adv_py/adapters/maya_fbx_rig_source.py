@@ -941,6 +941,24 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                     and not bool(c.getAttr(motion.joint_path
                                            + ".segmentScaleCompensate")))
         ik_limb_count = self._audit_fbx_ik_limbs()
+        owned_ids = {identifier
+                     for member in c.sets("AllSet", query=True) or ()
+                     for identifier in (c.ls(member, uuid=True) or ())}
+        required_owned = (
+            "|Group",
+            *getattr(self, "_fbx_source_constraints", {}).values(),
+            *((getattr(self, "_fbx_game_root_constraint", None),)
+              if getattr(self, "_fbx_game_root_constraint", None) else ()),
+        )
+        ownership_complete = (
+            (c.ls("FitSkeleton", long=True,
+                  type="transform") or ()) == ["|Group|FitSkeleton"]
+            and all((c.ls(name, uuid=True) or [None])[0] in owned_ids
+                    for name in required_owned)
+            and not any(path.startswith("|FBXRig:")
+                        for member in c.sets("AllSet", query=True) or ()
+                        for path in (c.ls(member, long=True,
+                                          type="joint") or ())))
         return FBXRigBuildAudit(
             fit_guide_count=len(self.capture_fbx_fit_guides(plan)),
             paired_side_count=sum(
@@ -960,4 +978,5 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                 for link in transfer.links),
             source_joint_animation_removed=source_animation_removed,
             connected_source_paths=tuple(connected_sources),
-            ik_limb_count=ik_limb_count)
+            ik_limb_count=ik_limb_count,
+            ownership_complete=ownership_complete)

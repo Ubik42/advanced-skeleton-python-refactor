@@ -60,6 +60,7 @@ class FBXRigBuildAudit:
     source_joint_animation_removed: bool = False
     connected_source_paths: tuple[str, ...] = ()
     ik_limb_count: int = 0
+    ownership_complete: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,6 +241,7 @@ class BuildFBXRig:
                             expected_sources
                         or not audit.original_skeleton_constrained
                         or not audit.bound_meshes_preserved
+                        or not audit.ownership_complete
                         or audit.control_animation_baked !=
                             (plan.last_bake_frame is not None)
                         or (plan.last_bake_frame is not None
