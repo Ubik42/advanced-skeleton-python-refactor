@@ -133,6 +133,7 @@ _FIT_BOOLEAN_FIELDS = frozenset({
     FitJointField.FOLLOW_WORLD,
     FitJointField.FOLLOW_SPACES,
     FitJointField.LEG_LOCK,
+    FitJointField.CENTER_BETWEEN_FEET,
 })
 
 

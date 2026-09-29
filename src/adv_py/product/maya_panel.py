@@ -379,6 +379,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ("Geo Attach 模式", "geo_attach_mode"),
                     ("Proximity Pin 网格", "proximity_pin"),
                     ("Root Leg Lock", "leg_lock"),
+                    ("Root Center Between Feet", "center_between_feet"),
                     ("World Orient Up", "world_orient_up"),
                     ("World Orient Forward", "world_orient_forward"),
                     ("IK Local Mode", "ik_local_mode")):

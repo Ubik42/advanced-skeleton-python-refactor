@@ -38,6 +38,7 @@ from adv_py.core.body_fit_ik_follow import plan_body_fit_ik_follow
 from adv_py.core.body_fit_aim_at import plan_body_fit_aim_at
 from adv_py.core.body_fit_geo_attach import plan_body_fit_geo_attach
 from adv_py.core.body_fit_proximity_pin import plan_body_fit_proximity_pin
+from adv_py.core.body_center_between_feet import plan_body_center_between_feet
 from adv_py.core.body_fit_dependency import validate_fit_control_dependencies
 
 from .axial_part_deform import BuildAxialPartDeform
@@ -71,6 +72,9 @@ from .body_fit_aim_at import BuildFitAimAt, RegisterFitAimAt
 from .body_fit_geo_attach import BuildFitGeoAttach, RegisterFitGeoAttach
 from .body_fit_proximity_pin import (
     BuildFitProximityPin, RegisterFitProximityPin,
+)
+from .body_center_between_feet import (
+    BuildCenterBetweenFeet, RegisterCenterBetweenFeet,
 )
 from .fit_part_scale import BuildFitPartScaleDrivers
 from .fit_inbetween import PrepareFitInbetween
@@ -721,6 +725,22 @@ class BuildRegisteredBodyCharacter:
             fit_metadata = rig.plan.arm.safety.symmetry.source.metadata
             root_x = (rig.plan.torso.torso.root_x
                       if rig.plan.torso is not None else None)
+            center_plan = plan_body_center_between_feet(
+                fit_metadata, root_x, rig.plan.leg.ik.limbs)
+            if center_plan is not None and any(
+                    item.ik_follow is not None
+                    and item.joint.rsplit("|", 1)[-1].rsplit(
+                        ":", 1)[-1] in {"Ankle", "Toes", "ToesEnd"}
+                    for item in fit_metadata):
+                raise ValueError(
+                    "Center Between Feet 与脚部 IK Follow 不能同时启用")
+            center_between_feet = BuildCenterBetweenFeet(joined).apply(
+                fit_metadata, root_x, rig.plan.leg.ik.limbs)
+            if center_between_feet is not None and not body_skeleton_unchanged(
+                    pre_constraint_body,
+                    joined.capture_body_skeleton(skeleton.snapshot.root),
+                    tolerance=1e-4):
+                raise RuntimeError("Center Between Feet 改变了 Body 绑定姿态")
             if root_x is None and any(item.follow_spaces
                                       for item in fit_metadata):
                 raise ValueError("Follow Spaces 需要 RootX 控制层")
@@ -882,6 +902,8 @@ class BuildRegisteredBodyCharacter:
                 registration, geo_attach_specs)
             registration = RegisterFitProximityPin(joined).apply(
                 registration, proximity_pin_specs)
+            registration = RegisterCenterBetweenFeet(joined).apply(
+                registration, center_between_feet)
             if tweakers is not None:
                 registration = RegisterFitTweakers(joined).apply(
                     registration, tweakers)
