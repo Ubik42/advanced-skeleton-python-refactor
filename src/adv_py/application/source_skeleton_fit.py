@@ -263,15 +263,26 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                 raise FitSkeletonValidationError(
                     "来源骨架右侧关节短名重复：" + leaf)
             right_by_leaf[leaf] = joint
-    right_semantic_names = {
-        _fit_name(joint.name) for joint in right_by_leaf.values()}
+    right_by_semantic: dict[str, list[SourceSkeletonJoint]] = {}
+    for right in right_by_leaf.values():
+        semantic = _fit_name(right.name)
+        if semantic is not None:
+            right_by_semantic.setdefault(semantic, []).append(right)
+
+    def right_counterpart(left_leaf: str) -> SourceSkeletonJoint | None:
+        if not left_leaf.endswith("_L"):
+            return None
+        exact = right_by_leaf.get(left_leaf[:-2] + "_R")
+        if exact is not None:
+            return exact
+        semantic = _fit_name(left_leaf[:-2] + "_R")
+        candidates = right_by_semantic.get(semantic, ())
+        return candidates[0] if len(candidates) == 1 else None
+
     unpaired_left_roots = {
         joint.path for joint in source
-        if joint.name.rsplit(":", 1)[-1].endswith("_L")
-        and joint.name.rsplit(":", 1)[-1][:-2] + "_R"
-        not in right_by_leaf
-        and _fit_name(joint.name.rsplit(":", 1)[-1][:-2] + "_R")
-        not in right_semantic_names}
+        if (leaf := joint.name.rsplit(":", 1)[-1]).endswith("_L")
+        and right_counterpart(leaf) is None}
     def right_only(joint: SourceSkeletonJoint) -> bool:
         ancestry = []
         current = joint.path
@@ -302,7 +313,7 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     paired_non_sym_roots = {
         joint.path for joint in source
         if (leaf := joint.name.rsplit(":", 1)[-1]).endswith("_L")
-        and (right := right_by_leaf.get(leaf[:-2] + "_R")) is not None
+        and (right := right_counterpart(leaf)) is not None
         and right_only(right)
         and joint.parent == right.parent
         and joint.parent in by_path
@@ -325,7 +336,7 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     unrepresentable_paired_left = {
         joint.path for joint in source
         if (leaf := joint.name.rsplit(":", 1)[-1]).endswith("_L")
-        and (right := right_by_leaf.get(leaf[:-2] + "_R")) is not None
+        and (right := right_counterpart(leaf)) is not None
         and right_only(right)
         and joint.path not in paired_non_sym_paths}
     axial_paths = _axial_source_paths(source, root)
@@ -342,7 +353,7 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     def mapped_name(joint: SourceSkeletonJoint) -> str | None:
         if joint.path in paired_non_sym_paths:
             leaf = joint.name.rsplit(":", 1)[-1]
-            counterpart = (right_by_leaf.get(leaf[:-2] + "_R")
+            counterpart = (right_counterpart(leaf)
                            if leaf.endswith("_L") else None)
             base = (mapped_name(counterpart) if counterpart is not None
                     else leaf.removesuffix("_L")
@@ -371,7 +382,8 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     def mapped_parent_name(joint: SourceSkeletonJoint) -> str | None:
         if joint.path in left_canonical_paths:
             leaf = joint.name.rsplit(":", 1)[-1]
-            return mapped_name(right_by_leaf[leaf[:-2] + "_R"])
+            counterpart = right_counterpart(leaf)
+            return mapped_name(counterpart) if counterpart is not None else None
         mapped = mapped_name(joint)
         if mapped is not None:
             return mapped
@@ -483,8 +495,8 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         if left_mirror_branch(joint)
         and joint.path not in left_authored_paths
         and joint.name.rsplit(":", 1)[-1].endswith("_L")
-        and (counterpart := right_by_leaf.get(
-            joint.name.rsplit(":", 1)[-1][:-2] + "_R")) is not None
+        and (counterpart := right_counterpart(
+            joint.name.rsplit(":", 1)[-1])) is not None
         and mapped_name(counterpart) in canonical_names}
     source_only_intermediates = tuple(sorted(
         joint.path for name, joint in by_name.items()
