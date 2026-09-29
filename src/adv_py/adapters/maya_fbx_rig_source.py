@@ -176,6 +176,15 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
     def route_to_fbx_name_matcher(self) -> None:
         raise NotImplementedError("NameMatcher 构建宿主尚未实现")
 
+    def _source_transform_paths(self, top_joint: str) -> tuple[str, ...]:
+        """Capture all transform descendants renamed by asFBXRig."""
+        c = self._cmds
+        descendants = tuple(c.listRelatives(
+            top_joint, allDescendents=True, fullPath=True) or ())
+        paths = tuple(path for path in descendants
+                      if c.nodeType(path) in ("joint", "transform"))
+        return (*paths, top_joint)
+
     def preflight_fbx_rig_import(
         self, plan: FBXRigImportPlan, source: FBXRigSourceCapture,
     ) -> None:
@@ -198,6 +207,21 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
                          else leaf.replace("_", ""))
         if len(set(names)) != len(names):
             raise ValueError("FBX rig 清除下划线后来源关节名称冲突")
+        source_transforms = self._source_transform_paths(plan.top_joint)
+        if not set(joint.path for joint in source.joints) <= set(
+                source_transforms):
+            raise ValueError("FBX rig 来源骨架与 transform 层级不一致")
+        planned_names = []
+        for path in source_transforms:
+            if (c.referenceQuery(path, isNodeReferenced=True)
+                    or any(c.lockNode(path, query=True, lock=True) or ())):
+                raise ValueError("FBX rig 来源 transform 被引用或锁定：" + path)
+            leaf = path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            planned_names.append((path.rsplit("|", 1)[0],
+                leaf if path == plan.top_joint else leaf.replace("_", "")))
+        if len(set(planned_names)) != len(planned_names):
+            raise ValueError(
+                "FBX rig 来源同级 transform 清除下划线后名称冲突")
         for mesh in source.bound_meshes:
             if not c.objExists(mesh):
                 raise ValueError("FBX rig 来源蒙皮网格已丢失：" + mesh)
@@ -237,26 +261,28 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             c.namespace(addNamespace="FBXRig")
         finally:
             c.namespace(setNamespace=previous_namespace)
-        paths = {joint.path: joint.path for joint in plan.bind_pose_joints}
-        for joint in sorted(plan.bind_pose_joints,
-                            key=lambda item: item.path.count("|"),
-                            reverse=True):
-            current = paths[joint.path]
-            leaf = joint.name.rsplit(":", 1)[-1]
-            target = (leaf if joint.path == plan.top_joint
+        all_paths = self._source_transform_paths(plan.top_joint)
+        paths = {path: path for path in all_paths}
+        for original in sorted(all_paths,
+                               key=lambda path: path.count("|"),
+                               reverse=True):
+            current = paths[original]
+            leaf = original.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            target = (leaf if original == plan.top_joint
                       else leaf.replace("_", ""))
             before_parent = current.rsplit("|", 1)[0]
             renamed = c.rename(current, ":FBXRig:" + target)
             new_path = before_parent + "|" + renamed.rsplit("|", 1)[-1]
-            resolved = c.ls(new_path, long=True, type="joint") or ()
+            resolved = c.ls(new_path, long=True) or ()
             if len(resolved) != 1:
-                raise RuntimeError("FBX rig 来源关节迁入命名空间失败："
-                                   + joint.path)
-            paths[joint.path] = resolved[0]
+                raise RuntimeError("FBX rig 来源 transform 迁入命名空间失败："
+                                   + original)
+            paths[original] = resolved[0]
             for original, mapped in tuple(paths.items()):
                 if mapped.startswith(current + "|"):
                     paths[original] = resolved[0] + mapped[len(current):]
-        return paths
+        return {joint.path: paths[joint.path]
+                for joint in plan.bind_pose_joints}
 
     def create_fbx_fit_guides(self, plan: FBXRigImportPlan) -> None:
         self._require_transaction()
@@ -428,10 +454,36 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             cancelButton="否", dismissString="否")
         if answer != "是":
             return
+        current_meshes = self._current_fbx_bound_mesh_paths()
+        if len(current_meshes) != len(bound_meshes):
+            raise RuntimeError("FBX rig 来源蒙皮网格在命名空间迁移后数量改变")
         project_fbx_fk_controls(
             c, tuple(link.control_name for link in plan.candidate_control_links),
-            bound_meshes)
+            current_meshes)
         self._transaction_changed = True
+
+    def _current_fbx_bound_mesh_paths(self) -> tuple[str, ...]:
+        """Find originally bound meshes after optional hierarchy renaming."""
+        c = self._cmds
+        expected = getattr(self, "_fbx_skin_boundary", ())
+        skin_ids = {row[0] for row in expected}
+        mesh_ids = {identifier for row in expected
+                    for identifier in row[1]}
+        paths = {}
+        for skin in c.ls(type="skinCluster") or ():
+            if (c.ls(skin, uuid=True) or (None,))[0] not in skin_ids:
+                continue
+            for shape in c.skinCluster(skin, query=True, geometry=True) or ():
+                parents = c.listRelatives(shape, parent=True,
+                                          fullPath=True) or ()
+                if len(parents) != 1:
+                    raise RuntimeError("FBX rig 蒙皮网格父级在迁移后无效")
+                identifier = (c.ls(parents[0], uuid=True) or (None,))[0]
+                if identifier in mesh_ids:
+                    paths[identifier] = parents[0]
+        if set(paths) != mesh_ids:
+            raise RuntimeError("FBX rig 来源蒙皮网格在迁移后缺失")
+        return tuple(paths[identifier] for identifier in sorted(paths))
 
     def connect_fbx_game_root_motion(
         self, plan: FBXRigImportPlan, source_paths: dict[str, str],
