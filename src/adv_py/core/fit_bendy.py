@@ -85,6 +85,10 @@ class FitBendyChainSpec:
                   for index in range(self.control_count + 1)))
 
     @property
+    def control_extra_names(self) -> tuple[str, ...]:
+        return tuple(name + "Extra" for name in self.control_names)
+
+    @property
     def end_proxy_name(self) -> str:
         return f"BendX{self.stem}{self.control_count + 1}_{self.side}"
 
@@ -95,6 +99,10 @@ class FitBendyChainSpec:
     @property
     def junction_offset_name(self) -> str:
         return f"BendMidOffset{self.stem}_{self.side}"
+
+    @property
+    def junction_extra_name(self) -> str:
+        return self.junction_name + "Extra"
 
     @property
     def junction_output_name(self) -> str:
@@ -110,6 +118,7 @@ class FitBendyChainSpec:
                 f"AdvPy_{self.prefix}EndBlend_{self.side}",
                 *(f"AdvPy_{name}Follow" for name in self.control_names),
                 *(name + "Offset" for name in self.control_names),
+                *self.control_extra_names,
                 *(self.end_follow_matrix_names if self.child_start_influence
                   else (f"AdvPy_{self.end_proxy_name}Follow",)),
                 *((self.circular_name, *self.circular_graph_names)
@@ -191,7 +200,8 @@ class FitBendyChainSpec:
                 self.end_proxy_name, *self.motion_path_names,
                 *self.motion_transform_names,
                 *((self.junction_name, self.junction_name + "Shape",
-                   self.junction_offset_name, self.junction_output_name)
+                   self.junction_offset_name, self.junction_extra_name,
+                   self.junction_output_name)
                   if self.parent_bendy else ()))
 
     @property

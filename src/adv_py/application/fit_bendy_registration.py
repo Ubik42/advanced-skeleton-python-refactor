@@ -73,22 +73,35 @@ class RegisterBendyControls:
                 if (control == chain.control_names[0]
                         and chain.child_junction_control):
                     ancestors = (chain.circular_name, *ancestors)
+                extra = control + "Extra"
+                extra_path = self._host.capture_bendy_control_path(
+                    extra, ancestors)
                 path = self._host.capture_bendy_control_path(
-                    control, ancestors)
+                    control, (extra, *ancestors))
                 bend_paths[control] = path
                 for attr in attrs:
                     add("bendy." + control + "." + attr, path, attr)
+                    add("bendy." + control + ".extra." + attr,
+                        extra_path, attr)
             add("bendy." + chain.control_names[0] + ".microVis",
                 bend_paths[chain.control_names[0]], "microVis")
             if chain.parent_bendy:
                 start_control = chain.control_names[1]
+                extra = chain.junction_extra_name
+                ancestors = (
+                    chain.junction_offset_name, start_control,
+                    start_control + "Extra",
+                    start_control + "Offset", "AdvPy_BendSystem")
+                extra_path = self._host.capture_bendy_control_path(
+                    extra, ancestors)
                 path = self._host.capture_bendy_control_path(
                     chain.junction_name,
-                    (chain.junction_offset_name, start_control,
-                     start_control + "Offset", "AdvPy_BendSystem"))
+                    (extra, *ancestors))
                 for attr in attrs:
                     add("bendy." + chain.junction_name + "." + attr,
                         path, attr)
+                    add("bendy." + chain.junction_name + ".extra."
+                        + attr, extra_path, attr)
                 add("bendy." + chain.junction_name + ".circular",
                     path, "circular")
             for offset, extra, control in zip(
