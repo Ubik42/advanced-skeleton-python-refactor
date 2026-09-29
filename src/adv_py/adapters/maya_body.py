@@ -8529,12 +8529,23 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             self._create_body_limb_fk_control(spec, "Generic")
         for endpoint in plan.endpoints:
             if (self.find_name_collisions(endpoint.name)
+                    or (endpoint.follow_fk_matrix is not None
+                        and (self.find_name_collisions(endpoint.matrix_name)
+                             or (endpoint.follow_ik_matrix is not None
+                                 and self.find_name_collisions(
+                                     endpoint.blend_name))))
                     or (c.ls(endpoint.parent_path, long=True,
                              type="transform") or []) != [
                                  endpoint.parent_path]
                     or (c.ls(endpoint.driven_joint, long=True,
                              type="joint") or []) != [
-                                 endpoint.driven_joint]):
+                                 endpoint.driven_joint]
+                    or (endpoint.follow_fk_matrix is not None
+                        and not c.objExists(endpoint.follow_fk_matrix))
+                    or (endpoint.follow_ik_matrix is not None
+                        and (not c.objExists(endpoint.follow_ik_matrix)
+                             or not c.objExists(
+                                 endpoint.follow_blend_plug)))):
                 raise FitSkeletonValidationError(
                     "Bendy 末端 FK 参照父级或名称无效：" + endpoint.name)
             node = c.createNode("transform", name=endpoint.name,
@@ -8549,6 +8560,44 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 value for axis in endpoint.world_axes
                 for value in (*axis, 0.0))
                 + (*endpoint.world_position, 1.0))
+            if endpoint.follow_fk_matrix is not None:
+                from maya.api import OpenMaya as om
+
+                def matrix_values(matrix):
+                    return tuple(float(matrix[row][column])
+                                 for row in range(4) for column in range(4))
+
+                source_plug = endpoint.follow_fk_matrix
+                if endpoint.follow_ik_matrix is not None:
+                    blend = c.createNode("blendMatrix",
+                                         name=endpoint.blend_name,
+                                         skipSelect=True)
+                    c.connectAttr(source_plug, blend + ".inputMatrix")
+                    c.connectAttr(endpoint.follow_ik_matrix,
+                                  blend + ".target[0].targetMatrix")
+                    c.connectAttr(endpoint.follow_blend_plug,
+                                  blend + ".target[0].weight")
+                    source_plug = blend + ".outputMatrix"
+                source_value = c.getAttr(source_plug)
+                if (len(source_value) == 1
+                        and isinstance(source_value[0], (tuple, list))):
+                    source_value = source_value[0]
+                rest = om.MMatrix(c.xform(
+                    node, query=True, worldSpace=True, matrix=True))
+                offset = rest * om.MMatrix(source_value).inverse()
+                driver = c.createNode("multMatrix",
+                                      name=endpoint.matrix_name,
+                                      skipSelect=True)
+                c.setAttr(driver + ".matrixIn[0]",
+                          *matrix_values(offset), type="matrix")
+                c.connectAttr(source_plug, driver + ".matrixIn[1]")
+                c.setAttr(node + ".inheritsTransform", False)
+                c.setAttr(node + ".translate", 0, 0, 0)
+                c.setAttr(node + ".rotate", 0, 0, 0)
+                c.setAttr(node + ".scale", 1, 1, 1)
+                c.setAttr(node + ".shear", 0, 0, 0)
+                c.connectAttr(driver + ".matrixSum",
+                              node + ".offsetParentMatrix")
             c.setAttr(node + ".visibility", False)
         for path in plan.hidden_controls:
             self.hide_body_fk_control(path)
@@ -8661,6 +8710,39 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     abs(float(a) - b) > 1e-4
                     for a, b in zip(actual, expected))):
                 return False
+            if endpoint.follow_fk_matrix is not None:
+                driver = endpoint.matrix_name
+                source = (endpoint.blend_name + ".outputMatrix"
+                          if endpoint.follow_ik_matrix is not None
+                          else endpoint.follow_fk_matrix)
+                if (not c.objExists(driver)
+                        or c.nodeType(driver) != "multMatrix"
+                        or bool(c.getAttr(endpoint.path
+                                          + ".inheritsTransform"))
+                        or c.connectionInfo(driver + ".matrixIn[1]",
+                                            sourceFromDestination=True)
+                        != source
+                        or c.connectionInfo(endpoint.path
+                                            + ".offsetParentMatrix",
+                                            sourceFromDestination=True)
+                        != driver + ".matrixSum"):
+                    return False
+                if endpoint.follow_ik_matrix is not None:
+                    blend = endpoint.blend_name
+                    if (not c.objExists(blend)
+                            or c.nodeType(blend) != "blendMatrix"
+                            or c.connectionInfo(blend + ".inputMatrix",
+                                                sourceFromDestination=True)
+                            != endpoint.follow_fk_matrix
+                            or c.connectionInfo(
+                                blend + ".target[0].targetMatrix",
+                                sourceFromDestination=True)
+                            != endpoint.follow_ik_matrix
+                            or c.connectionInfo(
+                                blend + ".target[0].weight",
+                                sourceFromDestination=True)
+                            != endpoint.follow_blend_plug):
+                        return False
         return True
 
     def capture_body_generic_fk_controls(self, plan):

@@ -1060,7 +1060,11 @@ class BuildRegisteredBodyCharacter:
                 bendy_end_paths=frozenset(
                     chain.end_body for chain in deferred_bendy_chains
                     if chain.end_body not in
-                    standard_bendy_sources))
+                    standard_bendy_sources),
+                bendy_parent_sources={
+                    body: (source.fk_matrix, source.ik_matrix,
+                           source.blend_plug)
+                    for body, source in standard_bendy_sources.items()})
             generic_inbetween_bindings = (
                 plan_generic_inbetween_fk_bindings(
                     inbetween_parts, generic_fk, standard_fk_specs,

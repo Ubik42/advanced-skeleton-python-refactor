@@ -52,6 +52,24 @@ class BodyGenericFkEndpointSpec:
     world_position: tuple[float, float, float]
     world_axes: tuple[tuple[float, float, float], ...]
     rotate_order: int
+    follow_fk_matrix: str | None = None
+    follow_ik_matrix: str | None = None
+    follow_blend_plug: str | None = None
+
+    def __post_init__(self) -> None:
+        if ((self.follow_ik_matrix is None)
+                != (self.follow_blend_plug is None)
+                or (self.follow_ik_matrix is not None
+                    and self.follow_fk_matrix is None)):
+            raise ValueError("Bendy 末端 FK／IK 矩阵来源不完整：" + self.name)
+
+    @property
+    def matrix_name(self) -> str:
+        return self.name + "MM"
+
+    @property
+    def blend_name(self) -> str:
+        return self.name + "Blend"
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +114,8 @@ def plan_body_generic_fk(
     follower_sources: frozenset[str] | None = None,
     finger_visibility_plug: str | None = None,
     bendy_end_paths: frozenset[str] = frozenset(),
+    bendy_parent_sources: Mapping[
+        str, tuple[str, str | None, str | None]] | None = None,
 ) -> BodyGenericFkPlan:
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
     state_by_name = {state.name.rsplit(":", 1)[-1]: state
@@ -230,11 +250,21 @@ def plan_body_generic_fk(
                 raise ValueError("Bendy 末端缺少独立的上游 FK 控制："
                                  + spec.name)
             endpoint_name = "AdvPy_" + spec.name + "BendyEndFKX"
+            follow_source = None
+            if standard_parent:
+                ancestor_body = ((remapped_body_paths or {}).get(
+                    parent_spec, parent_spec))
+                follow_source = (bendy_parent_sources or {}).get(
+                    ancestor_body)
+                if follow_source is None:
+                    raise ValueError("Bendy 末端缺少标准父骨段的独立矩阵："
+                                     + spec.name)
             endpoints.append(BodyGenericFkEndpointSpec(
                 parent_control + "|" + endpoint_name,
                 endpoint_name, parent_control, state.path,
                 state.world_position, state.world_axes,
-                state.rotation_order))
+                state.rotation_order,
+                *(follow_source or (None, None, None))))
             continue
         stem = spec.name
         offset_name = "AdvPy_" + stem + "FKOffset"
