@@ -328,6 +328,23 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         by_name[name] = joint
 
     _add_optional_end_markers(by_name)
+    def fit_world_position(joint: SourceSkeletonJoint) -> tuple[float, float, float]:
+        position = joint.world_position
+        if joint.path not in left_authored_paths:
+            return position
+        ancestor_path = joint.parent
+        while ancestor_path in by_path and ancestor_path in left_authored_paths:
+            ancestor_path = by_path[ancestor_path].parent
+        if ancestor_path in by_path:
+            ancestor = by_path[ancestor_path]
+            leaf = ancestor.name.rsplit(":", 1)[-1]
+            if leaf.endswith("_R") or ancestor.world_position[0] < -1e-6:
+                # Fit inherits its parent's right-side classification.  The
+                # Body symmetry pass will flip this authored source back to
+                # the requested left-side world position.
+                return (-position[0], position[1], position[2])
+        return position
+
     body, body_request = variable_body_source_inputs(
         axis, len(axial_paths), 1.0, False)
     hand, hand_request = variable_body_source_inputs(
@@ -423,9 +440,9 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                 and not left_mirror_branch(source_by_path[parent_path])):
             raise FitSkeletonValidationError(
                 "附加来源关节的父关节映射不唯一：" + joint.name)
-        parent_position = by_name[parent_name].world_position
+        parent_position = fit_world_position(by_name[parent_name])
         position = tuple(value - parent for value, parent in zip(
-            joint.world_position, parent_position))
+            fit_world_position(joint), parent_position))
         extra_specs.append(FitJointSpec(
             name, parent_name, position,
             joint.label or JointLabel.parse("Other")))
@@ -554,9 +571,9 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
                 f"来源骨架层级不符：{reference_joint.name} 需要父关节 "
                 f"{expected_parent or '无'}")
         parent_position = ((0.0, 0.0, 0.0) if expected_parent is None
-                           else by_name[expected_parent].world_position)
+                           else fit_world_position(by_name[expected_parent]))
         position = tuple(value - parent for value, parent in zip(
-            joint.world_position, parent_position))
+            fit_world_position(joint), parent_position))
         specs.append(FitJointSpec(reference_joint.name, expected_parent,
                                   position,
                                   joint.label or reference_joint.label))
