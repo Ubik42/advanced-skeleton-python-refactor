@@ -210,6 +210,8 @@ class FitOrientationChange:
     desired_secondary_world: Vector3
     secondary_world_axis: FitWorldAxis
     use_explicit_world_axes: bool = False
+    desired_world_axes: tuple[Vector3, Vector3, Vector3] | None = None
+    world_match_axes: tuple[FitLocalDirection, FitLocalDirection] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -405,6 +407,7 @@ def plan_simple_fit_orientations(
     )
     rp_chains = _rp_fit_chains(hierarchy)
     planned_world_axes: dict[str, tuple[Vector3, Vector3, Vector3]] = {}
+    planned_axis_configs: dict[str, FitOrientationAxisConfiguration] = {}
 
     changes: list[FitOrientationChange] = []
     for path in sorted(resolved, key=lambda item: (item.count("|"), item)):
@@ -470,11 +473,20 @@ def plan_simple_fit_orientations(
             _subtract(child.world_position, hierarchy[path].world_position),
             f"{hierarchy[path].short_name} 与子级位置重合",
         )
+        axis_config = snapshot.axis_configuration
+        if axis_config.world_match:
+            axis_config = _world_match_axes(primary)
+        planned_axis_configs[path] = axis_config
+        primary_axis = axis_config.primary
+        secondary_local_axis = axis_config.secondary
         free_orient = bool(item_metadata and item_metadata.free_orient)
         secondary_axis, _ = _secondary_reference(snapshot.up_axis, primary)
         # MEL's ordinary off-centre branch uses a helper on the joint's
         # existing local secondary axis. Its flipOrient signs cancel here.
-        reference = state.world_axes[1]
+        reference = _signed_world_direction(
+            secondary_local_axis,
+            state.world_axes[_axis_index(secondary_local_axis)],
+        )
         if abs(hierarchy[path].world_position[0]) <= 0.01 * snapshot.fit_scale:
             # A centre joint uses world +X as the tertiary-axis up target.
             tertiary_up = (1.0, 0.0, 0.0)
@@ -483,10 +495,6 @@ def plan_simple_fit_orientations(
             reference = _cross(tertiary_up, primary)
         rp_role = rp_chains.get(path)
         if rp_role is not None and not free_orient:
-            if snapshot.axis_configuration != FitOrientationAxisConfiguration():
-                raise FitOrientationValidationError(
-                    "双骨 IK 朝向当前要求 FitSkeleton 使用 +X primary / +Y secondary"
-                )
             start, end, role = rp_role
             if role == "start":
                 reference = _subtract(
@@ -498,19 +506,36 @@ def plan_simple_fit_orientations(
                 start_axes = planned_world_axes.get(start, orientations[start].world_axes)
                 # MEL aims the middle joint's local tertiary axis at the
                 # start joint's tertiary axis (objectrotation world-up).
-                reference = _cross(start_axes[2], primary)
+                start_config = planned_axis_configs.get(start)
+                if start_config is None:
+                    start_chain = _path_between(start, end, hierarchy)
+                    start_direction = _normalize(
+                        _subtract(
+                            hierarchy[start_chain[1]].world_position,
+                            hierarchy[start].world_position,
+                        ),
+                        "双骨 IK 起点与子级位置重合",
+                    )
+                    start_config = (
+                        _world_match_axes(start_direction)
+                        if snapshot.axis_configuration.world_match
+                        else snapshot.axis_configuration
+                    )
+                start_tertiary = _signed_tertiary_world_axis(start_axes, start_config)
+                reference = _cross(start_tertiary, primary)
             if _inherited_flip_orient(path, hierarchy, metadata):
                 reference = _scale(reference, -1.0)
         secondary = _normalize(
             _subtract(reference, _scale(primary, _dot(reference, primary))),
             "无法建立稳定的 secondary axis",
         )
-        planned_world_axes[path] = (primary, secondary, _cross(primary, secondary))
-        if (
-            _dot(_normalize(state.world_axes[0], "当前 X 轴无效"), primary)
-            >= 1.0 - tolerance
-            and _dot(_normalize(state.world_axes[1], "当前 Y 轴无效"), secondary)
-            >= 1.0 - tolerance
+        desired_axes = _world_axes_from_aim_up(
+            primary_axis, secondary_local_axis, primary, secondary
+        )
+        planned_world_axes[path] = desired_axes
+        if not axis_config.world_match and all(
+            _dot(_normalize(current, "当前世界轴无效"), desired) >= 1.0 - tolerance
+            for current, desired in zip(state.world_axes, desired_axes)
         ):
             continue
         changes.append(
@@ -530,6 +555,9 @@ def plan_simple_fit_orientations(
                 desired_secondary_world=secondary,
                 secondary_world_axis=secondary_axis,
                 use_explicit_world_axes=True,
+                desired_world_axes=desired_axes,
+                world_match_axes=(axis_config.primary, axis_config.secondary)
+                if axis_config.world_match else None,
             )
         )
     return tuple(changes)
@@ -541,6 +569,11 @@ def orientation_matches(
     *,
     tolerance: float = 1e-4,
 ) -> bool:
+    if change.desired_world_axes is not None:
+        return all(
+            _dot(_normalize(current, "复检世界轴无效"), desired) >= 1.0 - tolerance
+            for current, desired in zip(state.world_axes, change.desired_world_axes)
+        ) and all(abs(value) <= tolerance for value in state.rotation)
     primary = _normalize(state.world_axes[0], "复检 X 轴无效")
     secondary = _normalize(state.world_axes[1], "复检 Y 轴无效")
     return (
@@ -777,6 +810,55 @@ def _secondary_reference(
         if abs(_dot(primary, vectors[axis])) < 0.95:
             return axis, vectors[axis]
     raise FitOrientationValidationError("无法选择 secondary world axis")
+
+
+def _axis_index(direction: FitLocalDirection) -> int:
+    return "xyz".index(direction.value[-1])
+
+
+def _world_match_axes(primary_world: Vector3) -> FitOrientationAxisConfiguration:
+    # MEL chooses the dominant component in X/Y/Z order, then writes the
+    # selected primary/secondary enums back to the Fit joint.
+    index = max(range(3), key=lambda item: abs(primary_world[item]))
+    primary = (
+        (FitLocalDirection.POSITIVE_X, FitLocalDirection.NEGATIVE_X),
+        (FitLocalDirection.POSITIVE_Y, FitLocalDirection.NEGATIVE_Y),
+        (FitLocalDirection.POSITIVE_Z, FitLocalDirection.NEGATIVE_Z),
+    )[index][primary_world[index] < 0]
+    secondary = {
+        FitLocalDirection.POSITIVE_Z: FitLocalDirection.NEGATIVE_Y,
+        FitLocalDirection.NEGATIVE_Z: FitLocalDirection.POSITIVE_Y,
+    }.get(primary, FitLocalDirection.POSITIVE_Z)
+    return FitOrientationAxisConfiguration(primary, secondary, world_match=True)
+
+
+def _signed_tertiary_world_axis(
+    axes: tuple[Vector3, Vector3, Vector3],
+    config: FitOrientationAxisConfiguration,
+) -> Vector3:
+    primary = _signed_world_direction(config.primary, axes[_axis_index(config.primary)])
+    secondary = _signed_world_direction(config.secondary, axes[_axis_index(config.secondary)])
+    return _cross(primary, secondary)
+
+
+def _world_axes_from_aim_up(
+    primary_local: FitLocalDirection,
+    secondary_local: FitLocalDirection,
+    primary_world: Vector3,
+    secondary_world: Vector3,
+) -> tuple[Vector3, Vector3, Vector3]:
+    primary_index = _axis_index(primary_local)
+    secondary_index = _axis_index(secondary_local)
+    axes: list[Vector3 | None] = [None, None, None]
+    axes[primary_index] = _signed_world_direction(primary_local, primary_world)
+    axes[secondary_index] = _signed_world_direction(secondary_local, secondary_world)
+    if axes[0] is None:
+        axes[0] = _cross(axes[1], axes[2])
+    elif axes[1] is None:
+        axes[1] = _cross(axes[2], axes[0])
+    else:
+        axes[2] = _cross(axes[0], axes[1])
+    return axes[0], axes[1], axes[2]
 
 
 def _subtract(a: Vector3, b: Vector3) -> Vector3:

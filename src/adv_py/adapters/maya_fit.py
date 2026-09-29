@@ -24,6 +24,7 @@ from adv_py.core.fit_metadata import (
     FitJointValidationError,
 )
 from adv_py.core.fit_orientation import (
+    FitLocalDirection,
     FitJointOrientationState,
     FitOrientationAxisConfiguration,
     FitOrientationChange,
@@ -629,17 +630,18 @@ class MayaFitJointHost:
         self._transaction_changed = True
         if (len(preserved_children) > 1
                 or change.use_explicit_world_axes):
-            primary = change.desired_primary_world
-            secondary = change.desired_secondary_world
-            tertiary = (
-                primary[1] * secondary[2] - primary[2] * secondary[1],
-                primary[2] * secondary[0] - primary[0] * secondary[2],
-                primary[0] * secondary[1] - primary[1] * secondary[0],
-            )
-            self._set_joint_world_axes(
-                joint,
-                (primary, secondary, tertiary),
-            )
+            if change.desired_world_axes is not None:
+                axes = change.desired_world_axes
+            else:
+                primary = change.desired_primary_world
+                secondary = change.desired_secondary_world
+                tertiary = (
+                    primary[1] * secondary[2] - primary[2] * secondary[1],
+                    primary[2] * secondary[0] - primary[0] * secondary[2],
+                    primary[0] * secondary[1] - primary[1] * secondary[0],
+                )
+                axes = (primary, secondary, tertiary)
+            self._set_joint_world_axes(joint, axes)
         else:
             self._cmds.joint(
                 joint,
@@ -657,6 +659,27 @@ class MayaFitJointHost:
                 worldSpace=True,
                 translation=position,
             )
+        if change.world_match_axes is not None:
+            self._write_fit_axis_enums(joint, change.world_match_axes)
+            if not (self._cmds.listRelatives(
+                child, children=True, type="joint", fullPath=True
+            ) or []):
+                self._write_fit_axis_enums(child, change.world_match_axes)
+
+    def _write_fit_axis_enums(
+        self,
+        joint: str,
+        axes: tuple[FitLocalDirection, FitLocalDirection],
+    ) -> None:
+        values = {"+x": 0, "+y": 1, "+z": 2,
+                  "-x": 3, "-y": 4, "-z": 5}
+        for attribute, direction in zip(("primaryAxis", "secondaryAxis"), axes):
+            if not self._cmds.attributeQuery(attribute, node=joint, exists=True):
+                self._cmds.addAttr(
+                    joint, longName=attribute, attributeType="enum",
+                    enumName="X:Y:Z:-X:-Y:-Z:",
+                )
+            self._cmds.setAttr(f"{joint}.{attribute}", values[direction.value])
 
     def orient_world_fit_joint(self, change: FitWorldOrientationChange) -> None:
         self._require_transaction()
