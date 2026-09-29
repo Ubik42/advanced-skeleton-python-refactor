@@ -192,7 +192,8 @@ def _add_non_symmetry_end_markers(
         parent_path = by_name[parent].path
         by_name[name] = SourceSkeletonJoint(
             parent_path + "|@fit-guide:" + name,
-            name, parent_path, position)
+            name, parent_path, position,
+            label=JointLabel.parse(name.removesuffix(suffix)))
 
     for digit in ("Thumb", "Index", "Middle", "Ring", "Pinky"):
         add(digit + "End" + suffix,
@@ -350,19 +351,23 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
     # branch instead of silently letting Ankle win the duplicate mapping.
     optional_aliases = {"Clavicle", "Hand", "Foot", "Toe", "Ball"}
 
+    def left_semantic_name(leaf: str) -> str:
+        probe = leaf[:-2] + "_R" if leaf.endswith("_L") else leaf
+        mapped = _fit_name(probe)
+        return (mapped or leaf.removesuffix("_L")).removesuffix(
+            "_NonSymmetry")
+
     def mapped_name(joint: SourceSkeletonJoint) -> str | None:
         if joint.path in paired_non_sym_paths:
             leaf = joint.name.rsplit(":", 1)[-1]
             counterpart = (right_counterpart(leaf)
                            if leaf.endswith("_L") else None)
             base = (mapped_name(counterpart) if counterpart is not None
-                    else leaf.removesuffix("_L")
-                    .removesuffix("_NonSymmetry"))
+                    else left_semantic_name(leaf))
             return base + "_NonSymmetry"
         if joint.path in left_authored_paths:
             leaf = joint.name.rsplit(":", 1)[-1]
-            base = leaf.removesuffix("_L").removesuffix("_NonSymmetry")
-            return base
+            return left_semantic_name(leaf)
         if joint.path in name_by_path:
             return name_by_path[joint.path]
         original = _base_name(joint.name)
