@@ -7,6 +7,7 @@ from math import dist, isfinite
 from .fit_metadata import FitJointMetadata
 from .fit_part import FitPartJointSpec
 from .body_skeleton import BodyJointSpec
+from .body_limb_controls import BodyLimbFkControlSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -434,3 +435,35 @@ def plan_fit_bendy_chains(
         child_source_proxy=by_bendy_start[item.end_body].follow_node_names[0]
         if item.end_body in by_bendy_start else None,
     ) for item in result)
+
+
+@dataclass(frozen=True, slots=True)
+class FitBendyFkScaleSpec:
+    body_joint: str
+    control_path: str
+    bendy_scale_name: str
+    multiply_name: str
+
+
+def plan_fit_bendy_fk_scales(
+    chains: tuple[FitBendyChainSpec, ...],
+    controls: tuple[BodyLimbFkControlSpec, ...],
+) -> tuple[FitBendyFkScaleSpec, ...]:
+    """Compose generic FK scale with Bendy's Body scale driver."""
+    by_body = {control.driven_joint: control for control in controls}
+    if len(by_body) != len(controls):
+        raise ValueError("Bendy FK 缩放控制的 Body 来源重复")
+    result = []
+    for chain in chains:
+        control = by_body.get(chain.start_body)
+        if control is None:
+            continue
+        result.append(FitBendyFkScaleSpec(
+            chain.start_body, control.control_path,
+            chain.deform_scale_mult_names[0],
+            "AdvPy_" + chain.start_body.rsplit("|", 1)[-1]
+            .rsplit(":", 1)[-1]
+            + "BendyFKScale"))
+    if len({item.multiply_name for item in result}) != len(result):
+        raise ValueError("Bendy FK 缩放节点名称重复")
+    return tuple(result)

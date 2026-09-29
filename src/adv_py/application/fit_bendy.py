@@ -5,7 +5,8 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
-from adv_py.core.fit_bendy import FitBendyChainSpec
+from adv_py.core.fit_bendy import FitBendyChainSpec, FitBendyFkScaleSpec
+from adv_py.core.body_limb_controls import BodyLimbFkControlSpec
 from .body_character_rig import BodyCharacterRigBuildPlan
 
 
@@ -28,6 +29,7 @@ class FitBendyFollowSpec:
 def plan_fit_bendy_follow(
     chains: tuple[FitBendyChainSpec, ...],
     rig: BodyCharacterRigBuildPlan,
+    generic_controls: tuple[BodyLimbFkControlSpec, ...] = (),
 ) -> tuple[FitBendyFollowSpec, ...]:
     """Resolve Bendy endpoints without depending on driven Body matrices."""
     # The same direct-control and spine mechanism map drives ordinary Part twist.
@@ -47,6 +49,14 @@ def plan_fit_bendy_follow(
                 sources[joint.body_joint] = FitBendyWorldSource(
                     joint.fk_driver + ".worldMatrix[0]",
                     joint.ik_driver + ".worldMatrix[0]", blend)
+    for control in generic_controls:
+        if control.driven_joint in sources:
+            raise ValueError("Bendy 通用 FK 来源与标准来源重复："
+                             + control.driven_joint)
+        source = (control.source_override_path
+                  or control.sub_control_path or control.control_path)
+        sources[control.driven_joint] = FitBendyWorldSource(
+            source + ".worldMatrix[0]")
     result = []
     for chain in chains:
         start = sources.get(chain.start_body)
@@ -196,3 +206,31 @@ class BuildFitBendyDeform:
                     raise RuntimeError("Bendy 变形关节未由 Micro 驱动："
                                        + chain.curve_name)
         return chains
+
+
+class FitBendyFkScaleHost(Protocol):
+    def transaction(self, label: str) -> AbstractContextManager[None]: ...
+    def preflight_fit_bendy_fk_scale(
+        self, spec: FitBendyFkScaleSpec) -> None: ...
+    def connect_fit_bendy_fk_scale(
+        self, spec: FitBendyFkScaleSpec) -> None: ...
+    def capture_fit_bendy_fk_scale(
+        self, spec: FitBendyFkScaleSpec) -> bool: ...
+
+
+class BuildFitBendyFkScales:
+    def __init__(self, host: FitBendyFkScaleHost) -> None:
+        self._host = host
+
+    def apply(self, specs: tuple[FitBendyFkScaleSpec, ...]
+              ) -> tuple[FitBendyFkScaleSpec, ...]:
+        for spec in specs:
+            self._host.preflight_fit_bendy_fk_scale(spec)
+        with self._host.transaction("连接通用 Bendy 的 FK 缩放"):
+            for spec in specs:
+                self._host.connect_fit_bendy_fk_scale(spec)
+            for spec in specs:
+                if not self._host.capture_fit_bendy_fk_scale(spec):
+                    raise RuntimeError("通用 Bendy FK 缩放接线不一致："
+                                       + spec.body_joint)
+        return specs

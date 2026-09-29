@@ -4,7 +4,7 @@ from __future__ import annotations
 from math import isfinite
 from typing import TYPE_CHECKING
 
-from adv_py.core.fit_bendy import FitBendyChainSpec
+from adv_py.core.fit_bendy import FitBendyChainSpec, FitBendyFkScaleSpec
 from .maya_adv_icons import create_adv_icon, original_fit_icon_axis_offset
 
 if TYPE_CHECKING:
@@ -460,6 +460,59 @@ class MayaFitBendyMixin:
                     if not source or source.rsplit("|", 1)[-1].split(".")[0] != constraint:
                         return False
         return True
+
+    def preflight_fit_bendy_fk_scale(
+        self, spec: FitBendyFkScaleSpec,
+    ) -> None:
+        c = self._cmds
+        if ((c.ls(spec.body_joint, long=True, type="joint") or [])
+                != [spec.body_joint]
+                or (c.ls(spec.control_path, long=True,
+                         type="transform") or [])
+                != [spec.control_path]
+                or not c.objExists(spec.bendy_scale_name)
+                or c.nodeType(spec.bendy_scale_name) != "multiplyDivide"
+                or c.objExists(spec.multiply_name)
+                or c.connectionInfo(spec.body_joint + ".scale",
+                                    sourceFromDestination=True)
+                != spec.bendy_scale_name + ".output"):
+            raise ValueError("通用 Bendy FK 缩放的 Body 或来源无效："
+                             + spec.body_joint)
+
+    def connect_fit_bendy_fk_scale(
+        self, spec: FitBendyFkScaleSpec,
+    ) -> None:
+        self._require_transaction()
+        c = self._cmds
+        node = c.createNode("multiplyDivide", name=spec.multiply_name,
+                            skipSelect=True)
+        c.setAttr(node + ".operation", 1)
+        c.disconnectAttr(spec.bendy_scale_name + ".output",
+                         spec.body_joint + ".scale")
+        c.connectAttr(spec.bendy_scale_name + ".output",
+                      node + ".input1")
+        c.connectAttr(spec.control_path + ".scale",
+                      node + ".input2")
+        c.connectAttr(node + ".output", spec.body_joint + ".scale")
+        self._transaction_changed = True
+
+    def capture_fit_bendy_fk_scale(
+        self, spec: FitBendyFkScaleSpec,
+    ) -> bool:
+        c = self._cmds
+        node = spec.multiply_name
+        return (c.objExists(node)
+                and c.nodeType(node) == "multiplyDivide"
+                and int(c.getAttr(node + ".operation")) == 1
+                and c.connectionInfo(node + ".input1",
+                                     sourceFromDestination=True)
+                == spec.bendy_scale_name + ".output"
+                and c.connectionInfo(node + ".input2",
+                                     sourceFromDestination=True)
+                == spec.control_path + ".scale"
+                and c.connectionInfo(spec.body_joint + ".scale",
+                                     sourceFromDestination=True)
+                == node + ".output")
 
     def preflight_fit_bendy_micro(self, spec: FitBendyChainSpec) -> None:
         c = self._cmds

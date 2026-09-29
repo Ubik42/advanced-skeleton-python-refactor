@@ -15,7 +15,9 @@ from adv_py.core.fit_part import (
     rebase_plan_paths_after_parts, semantic_body_snapshot_after_parts,
 )
 from adv_py.core.fit_tweaker import plan_fit_tweakers
-from adv_py.core.fit_bendy import plan_fit_bendy_chains
+from adv_py.core.fit_bendy import (
+    plan_fit_bendy_chains, plan_fit_bendy_fk_scales,
+)
 from adv_py.core.fit_inbetween_untwister import InbetweenUnTwisterPlan
 from adv_py.core.fit_inbetween_hip_swing import (
     HipSwingReversePlan, plan_hip_swing_fit_selection,
@@ -82,7 +84,8 @@ from .body_selection_sets import (
 )
 from .finger_mid_deform import BuildFingerMidDeform
 from .fit_part import BuildFitPartHierarchy, FitPartHierarchyResult
-from .fit_bendy import (BuildFitBendyDeform, BuildFitBendyGuides,
+from .fit_bendy import (BuildFitBendyDeform, BuildFitBendyFkScales,
+                        BuildFitBendyGuides,
                         plan_fit_bendy_follow)
 from .fit_bendy_registration import RegisterBendyControls
 from .fit_part_twist import (
@@ -663,10 +666,6 @@ class BuildRegisteredBodyCharacter:
                               if item.ik_local_mode is not None),
                     frozenset(control.control_name
                               for control in rig.plan.leg.fk_controls.controls))
-            if bendy_chains:
-                follows = plan_fit_bendy_follow(bendy_chains, rig.plan)
-                BuildFitBendyGuides(joined).apply(bendy_chains,
-                                                  follows=follows)
             twist_steps = ()
             scale_plan = None
             inbetween_segments = ()
@@ -735,8 +734,6 @@ class BuildRegisteredBodyCharacter:
                               if item.ik_local_mode is not None),
                     frozenset(control.control_name
                               for control in rig.plan.leg.fk_controls.controls))
-                if bendy_chains:
-                    BuildFitBendyDeform(joined).apply(bendy_chains)
                 inbetween_parts = tuple(
                     part for part in part_plan.fit_parts
                     if part.kind == "inbetween")
@@ -1172,8 +1169,23 @@ class BuildRegisteredBodyCharacter:
                         tolerance=1e-4):
                     raise RuntimeError(
                         "通用 FK Twist 来源改接改变 Body 绑定姿态")
+            if bendy_chains:
+                bendy_follows = plan_fit_bendy_follow(
+                    bendy_chains, rig.plan, generic_fk.controls)
+                BuildFitBendyGuides(joined).apply(
+                    bendy_chains, follows=bendy_follows)
+                BuildFitBendyDeform(joined).apply(bendy_chains)
+                bendy_fk_scales = plan_fit_bendy_fk_scales(
+                    bendy_chains, generic_fk.controls)
+                BuildFitBendyFkScales(joined).apply(bendy_fk_scales)
+                if not body_bind_pose_matches(
+                        skeleton.snapshot,
+                        joined.capture_body_skeleton(skeleton.snapshot.root)):
+                    raise RuntimeError("Bendy 接管改变 Body 绑定姿态")
             scale_controls = tuple(
                 control for control in generic_fk.controls
+                if control.driven_joint not in {
+                    chain.start_body for chain in bendy_chains}
                 if (_generic_fk_policy is None
                     or _generic_fk_policy.scale_controls is None
                     or control.control_path in

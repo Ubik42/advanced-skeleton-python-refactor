@@ -998,7 +998,11 @@ class MayaFitPartMixin:
                 or c.nodeType(spec.compose_name) != "multMatrix"
                 or c.connectionInfo(spec.matrix_input,
                                     sourceFromDestination=True)
-                != spec.static_source_name + ".worldMatrix[0]"):
+                != spec.static_source_name + ".worldMatrix[0]"
+                or (c.listConnections(
+                        spec.static_source_name + ".worldMatrix[0]",
+                        source=False, destination=True, plugs=True) or [])
+                != [spec.matrix_input]):
             raise ValueError("通用 Twist 静态来源无法改接 FK："
                              + spec.start_body)
         old = c.xform(spec.static_source_name, query=True,
