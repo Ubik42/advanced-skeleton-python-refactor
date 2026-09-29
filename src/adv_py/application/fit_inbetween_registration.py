@@ -81,12 +81,18 @@ class RegisterInbetweenControls:
             add(f"inbetween.{start}.visibility", control,
                 "inbetweenVis")
             for part in parts.parts:
-                path = (parts.fk_system_path + "|" + part.offset_name
-                        + "|" + part.extra_name + "|"
-                        + part.control_name)
-                for axis in "XYZ":
-                    add(f"inbetween.{part.part_name}.rotate{axis}",
-                        path, "rotate" + axis)
+                extra = (parts.fk_system_path + "|" + part.offset_name
+                         + "|" + part.extra_name)
+                control = extra + "|" + part.control_name
+                layers = (("", control), ("extra.", extra))
+                if part.sub_name is not None:
+                    layers += (("sub.", control + "|" + part.sub_name),)
+                for label, path in layers:
+                    for attribute in ("translate", "rotate", "scale"):
+                        for axis in "XYZ":
+                            add(f"inbetween.{part.part_name}.{label}"
+                                f"{attribute}{axis}", path,
+                                attribute + axis)
         if hip_swing is not None:
             for axis in "XYZ":
                 add("torso.HipSwinger.rotate" + axis,

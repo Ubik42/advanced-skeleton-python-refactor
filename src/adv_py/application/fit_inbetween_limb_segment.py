@@ -87,6 +87,9 @@ class BuildInbetweenLimbSegments:
         self,
         bindings: tuple[InbetweenLimbBinding, ...],
         rig: BodyCharacterRigBuildPlan,
+        *,
+        sub_controllers: bool = False,
+        extra_controllers: bool = False,
     ) -> InbetweenLimbSegmentsResult:
         if any(not binding.parts for binding in bindings):
             raise ValueError("Inbetween 骨段缺少 Body Part")
@@ -114,7 +117,9 @@ class BuildInbetweenLimbSegments:
                     fk_control_path=binding.fk_control_path,
                     fk_system_path=binding.fk_system_path,
                     rotate_order=binding.rotate_order,
-                    part_control_radius=binding.part_control_radius)
+                    part_control_radius=binding.part_control_radius,
+                    sub_controllers=sub_controllers,
+                    extra_controllers=extra_controllers)
                 rewire = BuildInbetweenFkRewire(joined).apply(
                     fk, start_fk_driver_path=binding.start_fk_driver_path,
                     start_fk_constraint_name=binding.start_fk_constraint_name,
@@ -176,6 +181,8 @@ class BuildInbetweenLimbSegment:
         ik_weight_plug: str,
         rotate_order: int,
         part_control_radius: float,
+        sub_controllers: bool = False,
+        extra_controllers: bool = False,
     ) -> InbetweenLimbSegmentResult:
         if not body_parts:
             raise ValueError("Inbetween 四肢段缺少 Body Part")
@@ -187,7 +194,9 @@ class BuildInbetweenLimbSegment:
                 fk_control_path=fk_control_path,
                 fk_system_path=fk_system_path,
                 rotate_order=rotate_order,
-                part_control_radius=part_control_radius)
+                part_control_radius=part_control_radius,
+                sub_controllers=sub_controllers,
+                extra_controllers=extra_controllers)
             rewire = BuildInbetweenFkRewire(joined).apply(
                 fk, start_fk_driver_path=start_fk_driver_path,
                 start_fk_constraint_name=start_fk_constraint_name,

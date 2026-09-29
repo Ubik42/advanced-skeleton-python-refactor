@@ -518,7 +518,11 @@ class BuildRegisteredBodyCharacter:
                         binding for binding in bindings
                         if isinstance(binding, InbetweenLimbBinding))
                     bulk = BuildInbetweenLimbSegments(joined).apply(
-                        limb_bindings, rig.plan)
+                        limb_bindings, rig.plan,
+                        sub_controllers=(
+                            preview.build.build_options.sub_controllers),
+                        extra_controllers=(
+                            preview.build.build_options.extra_controllers))
                     solver_mapping = bulk.solver_mapping
                     limb_results = iter(bulk.segments)
                     built_segments = []
@@ -542,6 +546,10 @@ class BuildRegisteredBodyCharacter:
                                     rotate_order=binding.rotate_order,
                                     part_control_radius=(
                                         binding.part_control_radius),
+                                    sub_controllers=(
+                                        preview.build.build_options.sub_controllers),
+                                    extra_controllers=(
+                                        preview.build.build_options.extra_controllers),
                                 ))
                             continue
                         built_segments.append(next(limb_results))

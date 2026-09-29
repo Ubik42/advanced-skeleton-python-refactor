@@ -79,6 +79,8 @@ class BuildInbetweenFkGraph:
         fk_system_path: str,
         rotate_order: int,
         part_control_radius: float,
+        sub_controllers: bool = False,
+        extra_controllers: bool = False,
     ) -> InbetweenFkGraphResult:
         """Create every Part receiver and connect the FK graph atomically."""
         anchor = plan_inbetween_fk_anchor(
@@ -86,7 +88,9 @@ class BuildInbetweenFkGraph:
             fk_control_path=fk_control_path, rotate_order=rotate_order)
         parts = plan_inbetween_fk_parts(
             anchor, body_parts, fk_system_path=fk_system_path,
-            radius=part_control_radius)
+            radius=part_control_radius,
+            sub_controllers=sub_controllers,
+            extra_controllers=extra_controllers)
         opm_modes = {not part.segment_scale_compensate
                      for part in body_parts}
         if len(opm_modes) != 1:

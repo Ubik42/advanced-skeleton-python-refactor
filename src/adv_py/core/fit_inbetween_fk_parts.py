@@ -24,6 +24,12 @@ class InbetweenFkPartSpec:
     pick_matrix_name: str
     radius: float
     source_fit_joint: str
+    sub_name: str | None = None
+    extra_curve: bool = False
+
+    @property
+    def driver_name(self) -> str:
+        return self.sub_name or self.control_name
 
     @property
     def receiver_plug(self) -> str:
@@ -47,6 +53,8 @@ def plan_inbetween_fk_parts(
     body_parts: tuple[FitPartJointSpec, ...], *,
     fk_system_path: str,
     radius: float,
+    sub_controllers: bool = False,
+    extra_controllers: bool = False,
 ) -> InbetweenFkPartsPlan:
     """Describe the original OPM Part path with a point source per segment.
 
@@ -54,7 +62,9 @@ def plan_inbetween_fk_parts(
     FKMM combines the Inbetween local rotation, FKPS world matrix and the
     FK system inverse. PM feeds the Part FK Offset without inherited scale.
     """
-    if (not fk_system_path.startswith("|")
+    if (type(sub_controllers) is not bool
+            or type(extra_controllers) is not bool
+            or not fk_system_path.startswith("|")
             or isinstance(radius, bool)
             or not isinstance(radius, (int, float))
             or not isfinite(radius) or radius <= 0 or not body_parts):
@@ -79,7 +89,9 @@ def plan_inbetween_fk_parts(
             prefix + "FKPS", prefix + "FKOffset",
             prefix + "FKExtra", prefix + "FK",
             prefix + "FKX", prefix + "FKMM",
-            prefix + "PM", float(radius), part.source_joint)
+            prefix + "PM", float(radius), part.source_joint,
+            prefix + "FKSub" if sub_controllers else None,
+            extra_controllers)
         result.append(spec)
         previous_fkx = spec.fkx_name
     return InbetweenFkPartsPlan(

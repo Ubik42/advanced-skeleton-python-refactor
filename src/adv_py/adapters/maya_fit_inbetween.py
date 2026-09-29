@@ -6,6 +6,9 @@ from dataclasses import replace
 from adv_py.core.body_parent_constraint import (
     audit_body_parent_constraint, plan_body_parent_constraint,
 )
+from adv_py.core.body_controller_layers import (
+    audit_body_extra_controller, audit_body_sub_controller,
+)
 
 from adv_py.core.body_skeleton import FitDeformProfile
 from adv_py.core.fit_inbetween import (
@@ -774,6 +777,8 @@ class MayaFitInbetweenMixin:
                                   part.extra_name, part.control_name,
                                   part.fkx_name, part.fk_matrix_name,
                                   part.pick_matrix_name))
+            if part.sub_name is not None:
+                planned_names.append(part.sub_name)
         if len(set(planned_names)) != len(planned_names) or any(
                 c.objExists(name) for name in planned_names):
             raise ValueError("Inbetween Part FK 节点名称冲突")
@@ -799,6 +804,7 @@ class MayaFitInbetweenMixin:
                               parent=plan.fk_system_path, skipSelect=True)
         extra = c.createNode("transform", name=part.extra_name,
                              parent=offset, skipSelect=True)
+        extra = (c.ls(extra, long=True) or [extra])[0]
         selection = c.ls(selection=True, long=True) or []
         try:
             control = create_adv_icon(
@@ -815,9 +821,20 @@ class MayaFitInbetweenMixin:
                 c.select(selection, replace=True)
             else:
                 c.select(clear=True)
+        if part.extra_curve:
+            self._add_body_extra_curve(extra, control)
+        if part.sub_name is not None:
+            self._create_body_sub_control(
+                control, part.sub_name, control + "|" + part.sub_name)
         fkx = c.createNode("joint", name=part.fkx_name,
-                           parent=control, skipSelect=True)
-        for node in (offset, extra, control, fkx):
+                           parent=(control + "|" + part.driver_name
+                                   if part.sub_name is not None else control),
+                           skipSelect=True)
+        layers = [offset, extra, control]
+        if part.sub_name is not None:
+            layers.append(control + "|" + part.sub_name)
+        layers.append(fkx)
+        for node in layers:
             c.setAttr(node + ".rotateOrder", part.rotate_order)
         c.setAttr(fkx + ".drawStyle", 2)
         c.setAttr(fkx + ".segmentScaleCompensate", 0)
@@ -842,14 +859,16 @@ class MayaFitInbetweenMixin:
         part: InbetweenFkPartSpec,
     ) -> str | None:
         c = self._cmds
-        hierarchy = (
+        hierarchy = [
             (part.fkps_name, part.parent_fkx_name),
             (part.offset_name,
              plan.fk_system_path.rsplit("|", 1)[-1]),
             (part.extra_name, part.offset_name),
             (part.control_name, part.extra_name),
-            (part.fkx_name, part.control_name),
-        )
+        ]
+        if part.sub_name is not None:
+            hierarchy.append((part.sub_name, part.control_name))
+        hierarchy.append((part.fkx_name, part.driver_name))
         for name, parent_name in hierarchy:
             nodes = c.ls(name, long=True) or []
             if len(nodes) != 1:
@@ -859,6 +878,21 @@ class MayaFitInbetweenMixin:
             if (len(parent) != 1
                     or parent[0].rsplit("|", 1)[-1] != parent_name):
                 return None
+        extra_path = (plan.fk_system_path + "|" + part.offset_name
+                      + "|" + part.extra_name)
+        control_path = extra_path + "|" + part.control_name
+        if audit_body_extra_controller(
+                plan.fk_system_path + "|" + part.offset_name,
+                control_path, extra_path,
+                self._capture_body_extra_layer(extra_path, control_path),
+                extra_curve=part.extra_curve):
+            return None
+        sub_path = (control_path + "|" + part.sub_name
+                    if part.sub_name is not None else None)
+        if audit_body_sub_controller(
+                control_path, sub_path,
+                self._capture_body_ik_sub_control(control_path, sub_path)):
+            return None
         expected = (
             (part.fk_matrix_name + ".matrixIn[1]",
              part.fkps_name + ".worldMatrix[0]"),

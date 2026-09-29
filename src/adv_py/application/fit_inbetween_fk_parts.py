@@ -47,10 +47,13 @@ class BuildInbetweenFkParts:
         body_parts: tuple[FitPartJointSpec, ...], *,
         fk_system_path: str,
         radius: float,
+        sub_controllers: bool = False,
+        extra_controllers: bool = False,
     ) -> InbetweenFkPartsPlan:
         plan = plan_inbetween_fk_parts(
             anchor, body_parts, fk_system_path=fk_system_path,
-            radius=radius)
+            radius=radius, sub_controllers=sub_controllers,
+            extra_controllers=extra_controllers)
         self._host.preflight_inbetween_fk_parts(plan)
         with self._host.transaction("构建 Inbetween Part FK 接收层"):
             for part in plan.parts:
