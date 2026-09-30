@@ -6234,6 +6234,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         return manager, preferences, members
 
     def capture_skin_rebind_state(self, skin: str, mesh: str):
+        from maya.api import OpenMaya as om
+        from maya.api import OpenMayaAnim as oma
         from adv_py.application.skin_rebind import SkinRebindState
         from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
 
@@ -6261,6 +6263,17 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         parents = c.listRelatives(bound[0], parent=True, fullPath=True) if bound else []
         if parents != [mesh]:
             raise FitSkeletonValidationError("Skin 与重绑目标网格不匹配")
+        selection = om.MSelectionList()
+        selection.add(self.scene_address(skin))
+        skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
+        current_vertices = int(c.polyEvaluate(shapes[0], vertex=True))
+        affected = self._skin_vertex_members(skin_fn,
+            self.scene_address(shapes[0]), self.scene_address(mesh),
+            current_vertices)
+        if len(affected) != current_vertices:
+            raise FitSkeletonValidationError(
+                '局部 Skin 变形集需要随拓扑映射的顶点成员资产；'
+                '当前来源仅含权重，不能安全重绑：' + skin)
         history = c.listHistory(shapes[0], pruneDagObjects=True) or []
         skin_history = {node for node in history if c.nodeType(node) == "skinCluster"}
         if skin_history != {skin}:
@@ -6481,6 +6494,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             raise RuntimeError("Skin 重绑没有恢复影响关节锁定状态")
 
     def capture_skin_bind(self, plan: SkinBindPlan) -> SkinBindSnapshot:
+        from maya.api import OpenMaya as om
+        from maya.api import OpenMayaAnim as oma
+
         clusters = self._cmds.ls(plan.skin_name, type="skinCluster") or []
         if len(clusters) != 1:
             raise FitSkeletonValidationError("Skin Bind 结果节点无效")
@@ -6537,6 +6553,19 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         geodesic = None
         if bind_method is SkinBindMethod.GEODESIC_VOXEL:
             _, geodesic, _ = self._skin_geodesic_state(skin)
+        complete_membership = False
+        if len(geometry) == 1:
+            shapes = self._cmds.listRelatives(
+                geometry[0], shapes=True, noIntermediate=True,
+                fullPath=True, type='mesh') or []
+            if len(shapes) == 1:
+                count = int(self._cmds.polyEvaluate(shapes[0], vertex=True))
+                selection = om.MSelectionList()
+                selection.add(self.scene_address(skin))
+                skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
+                complete_membership = len(self._skin_vertex_members(
+                    skin_fn, self.scene_address(shapes[0]),
+                    self.scene_address(geometry[0]), count)) == count
         return SkinBindSnapshot(
             skin,
             tuple(geometry),
@@ -6551,6 +6580,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 plugs=True) or [None])[0]),
             weight_distribution,
             geodesic,
+            complete_membership,
         )
 
     def capture_skin_weight_input(

@@ -115,6 +115,7 @@ class SkinBindSnapshot:
     geodesic_source: str | None = None
     weight_distribution: SkinWeightDistribution | None = SkinWeightDistribution.DISTANCE
     geodesic: GeodesicBindPreferences | None = None
+    component_membership_complete: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,6 +251,11 @@ def audit_skin_bind_result(
             snapshot.geometry_paths == (plan.mesh_path,),
             "geometry_mismatch",
             "skinCluster 几何体不一致",
+        ),
+        (
+            snapshot.component_membership_complete,
+            "component_membership_incomplete",
+            "新建 Skin 没有覆盖网格全部顶点",
         ),
         (
             ((bool(snapshot.influence_paths)
