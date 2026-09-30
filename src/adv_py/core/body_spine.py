@@ -42,6 +42,7 @@ class BodySpinePlan:
     use_offset_parent_matrix: bool = False
     ik_sub_path: str | None = None
     ik_extra_curve: bool = False
+    fk_sources: tuple[str, str, str] | None = None
 
     @property
     def ik_extra_path(self) -> str | None:
@@ -225,6 +226,9 @@ def with_spine_ik(body, torso, build_options: BodyBuildOptions = BodyBuildOption
         ik_sub_path=(ik_control + "|AdvPy_SpineIKSub"
                      if build_options.sub_controllers else None),
         ik_extra_curve=build_options.extra_controllers,
+        fk_sources=tuple(
+            control.source_override_path or control.sub_control_path
+            or control.control_path for control in (base, waist, chest)),
     )
     return replace(torso, controls=replace(torso.controls, controls=(pelvis, base, waist, chest, *updated_upper)), spine=plan)
 

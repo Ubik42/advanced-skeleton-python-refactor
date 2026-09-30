@@ -645,11 +645,12 @@ class MayaBodySpineMixin:
             for axis in "XYZ":
                 if not c.isConnected(name + ".constraintTranslate" + axis, plan.joints[index].path + ".translate" + axis):
                     raise FitSkeletonValidationError("Spine 起点约束输出改变")
-        for name, control, joint in zip(
+        for name, control, base_source, joint in zip(
             ("AdvPy_SpineBaseFKOrient", "AdvPy_TorsoSpine1_MOrient", "AdvPy_TorsoChest_MOrient"),
-            plan.fk_controls, plan.joints[:3],
+            plan.fk_controls, plan.fk_sources or plan.fk_controls,
+            plan.joints[:3],
         ):
-            source = control
+            source = base_source
             start = {"AdvPy_SpineBaseFKOrient": "Root_M",
                      "AdvPy_TorsoSpine1_MOrient": "Spine1_M"}.get(name)
             if start:
@@ -669,7 +670,7 @@ class MayaBodySpineMixin:
                     source = proxy[0]
             if name == "AdvPy_TorsoSpine1_MOrient" and c.objExists(
                     "AdvPy_AxialFKXSpine1_M.advPyAxialBodyOwner"):
-                if source != control:
+                if source != base_source:
                     raise FitSkeletonValidationError(
                         "脊柱存在两个轴向 FKX 来源")
                 marker = "AdvPy_AxialFKXSpine1_M.advPyAxialBodyOwner"
