@@ -50,6 +50,10 @@ class MayaBodyFkScaleCompensationMixin:
         if spec.mel_non_opm_fkx:
             if (spec.use_offset_parent_matrix
                     or c.nodeType(spec.parent_control_path) != "joint"
+                    or spec.parent_fk_control_path is None
+                    or (c.ls(spec.parent_fk_control_path, long=True,
+                             type="transform") or [])
+                    != [spec.parent_fk_control_path]
                     or spec.driven_joint_path is None
                     or (c.ls(spec.driven_joint_path, long=True,
                              type="joint") or [])
@@ -292,7 +296,7 @@ class MayaBodyFkScaleCompensationMixin:
         if not spec.mel_non_opm_fkps_enabled:
             return
         ps1 = c.createNode("transform", name=spec.fkps1_name,
-                           parent=spec.scale_source_path,
+                           parent=spec.parent_fk_control_path,
                            skipSelect=True)
         ps2 = c.createNode("transform", name=spec.fkps2_name,
                            parent=spec.control_path,
@@ -345,7 +349,17 @@ class MayaBodyFkScaleCompensationMixin:
                      type="scaleConstraint") or []
         point = c.ls(spec.fkps_point_constraint_name,
                      type="pointConstraint") or []
-        return (len(scale) == 1 and len(point) == 1
+        if len(scale) != 1 or len(point) != 1:
+            return False
+        scale_targets = c.scaleConstraint(
+            scale[0], query=True, targetList=True) or []
+        point_targets = c.pointConstraint(
+            point[0], query=True, targetList=True) or []
+        return (len(scale_targets) == 1
+                and (c.ls(scale_targets[0], long=True) or [])
+                == [spec.scale_source_path]
+                and len(point_targets) == 1
+                and (c.ls(point_targets[0], long=True) or []) == [ps2[0]]
                 and scale[0] in (c.listConnections(
                     ps1[0], source=True, destination=False,
                     type="scaleConstraint") or [])
