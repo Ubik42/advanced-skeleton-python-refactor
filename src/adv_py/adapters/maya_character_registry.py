@@ -192,6 +192,10 @@ class MayaCharacterRegistryMixin:
                     raise CharacterRegistryError(
                         'Bendy Micro 加法缩放标记已损坏：' + control)
                 bendy_additive_micro.add(control)
+            if (control in bendy_opm_offset_scale
+                    and control in bendy_additive_micro):
+                raise CharacterRegistryError(
+                    'Bendy OPM 与非 OPM 缩放标记同时存在：' + control)
             if not c.objExists(falloff_marker):
                 bendy_legacy_full_span.add(control)
             elif (not bool(c.getAttr(falloff_marker))
