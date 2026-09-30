@@ -51,6 +51,12 @@ def _bendy_parent_name(cmds, node: str) -> str | None:
     return _bendy_dag_name(parents[0]) if len(parents) == 1 else None
 
 
+def _bendy_main_scale_source(source: str | None) -> bool:
+    return (bool(source) and source.rsplit("|", 1)[-1]
+            .rsplit(":", 1)[-1]
+            == "MainScaleMultiplyDivide.output")
+
+
 class MayaFitBendyMixin:
     def capture_fit_bendy_end_local_length(self, end_body: str) -> float:
         c = self._cmds
@@ -715,6 +721,9 @@ class MayaFitBendyMixin:
         self, spec: FitBendyChainSpec
     ) -> None:
         c = self._cmds
+        if (spec.scale_guide_group and
+                not c.objExists("MainScaleMultiplyDivide.output")):
+            raise ValueError("Bendy 导向关节组缺少 Main 缩放来源")
         if any(c.objExists(name) for name in spec.guide_node_names):
             raise ValueError("Bendy 节点名称已占用：" + spec.curve_name)
         for group in _GROUPS:
@@ -723,6 +732,13 @@ class MayaFitBendyMixin:
                 if (not c.objExists(marker)
                         or c.getAttr(marker) != _OWNER):
                     raise ValueError("Bendy 系统组不属于当前构建：" + group)
+        if c.objExists(_GROUPS[2]):
+            source = (c.connectionInfo(
+                _GROUPS[2] + ".scale",
+                sourceFromDestination=True) or "")
+            if (bool(source) != spec.scale_guide_group or
+                    (source and not _bendy_main_scale_source(source))):
+                raise ValueError("Bendy 导向关节组缩放策略与现有组不一致")
         for name in (spec.start_body, spec.end_body):
             matches = c.ls(name, long=True, type="joint") or []
             if matches != [name]:
@@ -2187,10 +2203,11 @@ class MayaFitBendyMixin:
             if (c.listRelatives(_GROUPS[0], parent=True,
                                 fullPath=True) or []) != [bend_path]:
                 return False
-            actual_scale = c.connectionInfo(
-                _GROUPS[2] + ".scale", sourceFromDestination=True)
-            if actual_scale != ("MainScaleMultiplyDivide.output"
-                                if spec.scale_guide_group else ""):
+            actual_scale = (c.connectionInfo(
+                _GROUPS[2] + ".scale", sourceFromDestination=True) or "")
+            if (bool(actual_scale) != spec.scale_guide_group or
+                    (actual_scale and not _bendy_main_scale_source(
+                        actual_scale))):
                 return False
         curve = c.ls(spec.curve_name, long=True,
                      type="transform") or []

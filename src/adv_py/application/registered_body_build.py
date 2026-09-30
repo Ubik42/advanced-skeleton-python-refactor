@@ -748,8 +748,15 @@ class BuildRegisteredBodyCharacter:
                         is not None
                         and chain.control_names[0] in
                         _generic_fk_policy.bendy_legacy_circular_controls),
-                    falloff_span=joined.capture_fit_bendy_end_local_length(
-                        chain.end_body),
+                    falloff_span=(
+                        joined.capture_fit_bendy_end_local_length(
+                            chain.end_body)
+                        if _generic_fk_policy is None
+                        or _generic_fk_policy.bendy_legacy_full_span_controls
+                        is None
+                        or chain.control_names[0] not in
+                        _generic_fk_policy.bendy_legacy_full_span_controls
+                        else None),
                     legacy_full_span_weights=(
                         _generic_fk_policy is not None
                         and _generic_fk_policy.bendy_legacy_full_span_controls
