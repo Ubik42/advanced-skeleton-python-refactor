@@ -97,6 +97,8 @@ class BodyHandFkControlPlan:
             if control.sub_control_name is not None:
                 values.extend((control.sub_control_name,
                                control.sub_control_name + "Shape"))
+            if control.source_override_path is not None:
+                values.append(control.source_override_path.rsplit("|", 1)[-1])
             if (
                 control.control_parent_path is not None
                 and control.control_parent_path != control.offset_path
@@ -248,6 +250,7 @@ def plan_body_hand_fk_controls(
     source_icon_size: bool = True,
     fit_metadata: tuple[FitJointMetadata, ...] = (),
     aim_joint_names: frozenset[str] = frozenset(),
+    fkx_joint_names: frozenset[str] | None = None,
 ) -> BodyHandFkControlPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise BodyHandControlValidationError("Hand 构建选项类型无效")
@@ -255,6 +258,8 @@ def plan_body_hand_fk_controls(
         raise BodyHandControlValidationError("Hand FK 曲线尺寸规则无效")
     if not isinstance(aim_joint_names, frozenset):
         raise BodyHandControlValidationError("Hand Aim 来源集合无效")
+    if fkx_joint_names is not None and not isinstance(fkx_joint_names, frozenset):
+        raise BodyHandControlValidationError("Hand FKX 关节集合无效")
     if (not isinstance(fit_metadata, tuple)
             or any(not isinstance(item, FitJointMetadata)
                    for item in fit_metadata)):
@@ -375,6 +380,12 @@ def plan_body_hand_fk_controls(
                 sub_name = (
                     f"{prefix}AdvPy_{digit.value}{index}FKSub_{suffix}"
                     if build_options.sub_controllers else None)
+                sub_path = f"{control_path}|{sub_name}" if sub_name else None
+                fkx_joint = (fkx_joint_names is None
+                             or control_name in fkx_joint_names)
+                fkx_path = ((sub_path or control_path) + "|"
+                            + f"{prefix}AdvPy_{digit.value}{index}FKX_{suffix}"
+                            if fkx_joint else None)
                 controls.append(BodyHandFkControlSpec(
                     side=side,
                     driven_joint=state.path,
@@ -398,9 +409,12 @@ def plan_body_hand_fk_controls(
                                          legacy_radius_factors[-1])),
                     rotate_order=state.rotation_order,
                     control_parent_path=pose_path,
-                    sub_control_path=(
-                        f"{control_path}|{sub_name}" if sub_name else None),
+                    sub_control_path=sub_path,
                     sub_control_name=sub_name,
+                    source_override_path=fkx_path,
+                    source_override_joint=fkx_joint,
+                    source_override_segment_scale_compensate=(
+                        not build_options.use_offset_parent_matrix),
                     extra_path=extra_path,
                     extra_name=extra_name,
                     extra_curve=build_options.extra_controllers,
@@ -410,7 +424,9 @@ def plan_body_hand_fk_controls(
                                      else f"{digit.value}End",
                                      f"{digit.value}Finger{index}"),
                 ))
-                parent_path = control_path
+                parent_path = (fkx_path if fkx_joint
+                               and not build_options.use_offset_parent_matrix
+                               else control_path)
     return BodyHandFkControlPlan(tuple(roots), tuple(controls))
 
 

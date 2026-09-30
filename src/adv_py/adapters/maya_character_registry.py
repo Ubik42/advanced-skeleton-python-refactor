@@ -23,6 +23,7 @@ class MayaCharacterRegistryMixin:
             by_leaf.setdefault(node.path.rsplit('|', 1)[-1]
                                .rsplit(':', 1)[-1], []).append(node.path)
         standard_fkx_joints = set()
+        hand_fkx_joints = set()
         for side in ('R', 'L'):
             for joint in ('Shoulder', 'Elbow', 'Wrist', 'Hip', 'Knee',
                           'Ankle', 'Toes', 'ToesEnd'):
@@ -33,6 +34,16 @@ class MayaCharacterRegistryMixin:
                         '旧标准 FKX 节点名称不唯一：' + leaf)
                 if matches and c.nodeType(matches[0]) == 'joint':
                     standard_fkx_joints.add('AdvPy_' + joint + 'FK_' + side)
+            for digit in ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky'):
+                for index in range(1, 5):
+                    leaf = f'AdvPy_{digit}{index}FKX_{side}'
+                    matches = by_leaf.get(leaf, ())
+                    if len(matches) > 1:
+                        raise CharacterRegistryError(
+                            '旧 Hand FKX 节点名称不唯一：' + leaf)
+                    if matches and c.nodeType(matches[0]) == 'joint':
+                        hand_fkx_joints.add(
+                            f'AdvPy_{digit}{index}FK_{side}')
         body_by_leaf = {joint.path.rsplit('|', 1)[-1]
                         .rsplit(':', 1)[-1]: joint.path
                         for joint in registration.body}
@@ -490,6 +501,7 @@ class MayaCharacterRegistryMixin:
             bendy_scale_controls=frozenset(bendy_scales),
             fkx_joint_controls=frozenset(fkx_joints),
             standard_fkx_joint_names=frozenset(standard_fkx_joints),
+            hand_fkx_joint_names=frozenset(hand_fkx_joints),
             bendy_aim_follow_controls=bendy_aim_follow,
             bendy_start_control_sources=frozenset(bendy_start_control),
             bendy_child_control_sources=frozenset(bendy_child_control),
@@ -874,6 +886,11 @@ class MayaCharacterRegistryMixin:
             for module in (rig.plan.arm, rig.plan.leg)
             for control in module.fk_controls.controls
             if control.source_override_path is not None)
+        if rig.plan.hand is not None:
+            paths.update(
+                control.source_override_path
+                for control in rig.plan.hand.controls.controls
+                if control.source_override_path is not None)
         paths.update((spine.root_path,spine.pelvis_control,*spine.fk_controls,*spine.body_joints,
                       spine.chest_space,*(j.path for j in spine.joints)))
         from adv_py.core.body_spline import BodySplinePlan

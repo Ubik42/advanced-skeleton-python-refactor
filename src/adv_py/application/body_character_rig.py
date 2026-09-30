@@ -232,6 +232,7 @@ class BuildBodyCharacterRig:
         defer_partial_hand_to_generic: bool = False,
         part_paths: FitPartFinalPaths | None = None,
         standard_fkx_joint_names: frozenset[str] | None = None,
+        hand_fkx_joint_names: frozenset[str] | None = None,
     ) -> BodyCharacterRigBuildPlan:
         if type(defer_fit_tweakers) is not bool:
             raise FitSkeletonValidationError("Tweaker 延后构建选项必须是布尔值")
@@ -287,6 +288,14 @@ class BuildBodyCharacterRig:
                                              "Toes", "ToesEnd")
                                for side in ("R", "L")
                                if joint not in inbetween_starts))
+        fresh_hand_fkx_names = frozenset(
+            f"AdvPy_{digit}{index}FK_{side}"
+            for digit in ("Thumb", "Index", "Middle", "Ring", "Pinky")
+            for index in range(1, 5)
+            for side in ("R", "L")
+            if (f"{digit}Finger{index}" not in inbetween_starts
+                and f"{digit}{index}" not in inbetween_starts
+                and (index != 4 or f"{digit}End" not in inbetween_starts)))
         fit_height = fit_character_height(tuple(
             node.world_position for node in
             safety.symmetry.source.hierarchy.joints))
@@ -333,6 +342,9 @@ class BuildBodyCharacterRig:
                 arm.safety,
                 control_radius=hand_control_radius,
                 aim_joint_names=aim_source_names,
+                fkx_joint_names=(hand_fkx_joint_names
+                                 if hand_fkx_joint_names is not None
+                                 else fresh_hand_fkx_names),
             )
         elif present_hand_names or present_original_names:
             if not defer_partial_hand_to_generic:
@@ -585,6 +597,7 @@ class BuildBodyCharacterRig:
         defer_partial_hand_to_generic: bool = False,
         part_paths: FitPartFinalPaths | None = None,
         standard_fkx_joint_names: frozenset[str] | None = None,
+        hand_fkx_joint_names: frozenset[str] | None = None,
     ) -> BodyCharacterRigBuildResult:
         plan = self.plan(
             container_name,
@@ -604,6 +617,7 @@ class BuildBodyCharacterRig:
             defer_partial_hand_to_generic=defer_partial_hand_to_generic,
             part_paths=part_paths,
             standard_fkx_joint_names=standard_fkx_joint_names,
+            hand_fkx_joint_names=hand_fkx_joint_names,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
             center_tolerance=center_tolerance,
