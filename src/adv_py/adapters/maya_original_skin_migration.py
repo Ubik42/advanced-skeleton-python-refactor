@@ -405,10 +405,12 @@ class MayaOriginalSkinMigration:
                 with blend_host.transaction("迁移原版 Skin 混合权重"):
                     blend_host.apply_skin_blend_weights(
                         item.target_skin, item.blend_weights)
-                if any(abs(actual - expected) > 1e-7
-                       for actual, expected in zip(
-                           blend_host.capture_skin_blend_weights(
-                               item.target_skin), item.blend_weights)):
+                actual_blend = blend_host.capture_skin_blend_weights(
+                    item.target_skin)
+                if (len(actual_blend) != len(item.blend_weights)
+                        or any(abs(actual - expected) > 1e-7
+                               for actual, expected in zip(
+                                   actual_blend, item.blend_weights))):
                     raise RuntimeError("迁移后的 Skin 混合权重变化："
                                        + item.target_skin)
                 c.setAttr(item.target_skin + ".maintainMaxInfluences",
@@ -420,8 +422,13 @@ class MayaOriginalSkinMigration:
                     item.target_skin)
                 if (result.vertex_count != item.source.vertex_count
                         or result.normalization_mode
-                        != item.source.normalization_mode):
-                    raise RuntimeError("迁移后的 Skin 维度或归一化模式变化："
+                        != item.source.normalization_mode
+                        or abs(float(c.getAttr(item.target_skin + ".envelope"))
+                               - item.envelope) > 1e-7
+                        or any(not c.getAttr(paths[name][0]
+                            + ".lockInfluenceWeights")
+                            for name in item.locked_influences)):
+                    raise RuntimeError("迁移后的 Skin 属性或维度变化："
                                        + item.target_skin)
                 results.append(result)
             connect_original_control_animation(c, animation_clones)
