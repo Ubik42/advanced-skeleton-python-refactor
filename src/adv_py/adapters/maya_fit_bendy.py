@@ -528,7 +528,7 @@ class MayaFitBendyMixin:
             elif (spec.non_opm_additive_micro_scale
                   or spec.opm_offset_only_scale):
                 c.setAttr(scale_mult + ".input2X", 1.0)
-                scale_add = spec.micro_scale_names[index][0]
+                guide = spec.motion_transform_names[index]
                 for axis in "YZ":
                     old_source = c.connectionInfo(
                         offset + ".scale" + axis,
@@ -536,7 +536,7 @@ class MayaFitBendyMixin:
                     if old_source:
                         c.disconnectAttr(old_source,
                                          offset + ".scale" + axis)
-                    c.connectAttr(scale_add + ".output3D" + axis.lower(),
+                    c.connectAttr(guide + ".scale" + axis,
                                   scale_mult + ".input2" + axis)
                 c.connectAttr(scale_mult + ".output",
                               offset + ".scale")
@@ -621,7 +621,7 @@ class MayaFitBendyMixin:
                 return False
             if (spec.non_opm_additive_micro_scale
                     or spec.opm_offset_only_scale):
-                scale_add = spec.micro_scale_names[index][0]
+                guide = spec.motion_transform_names[index]
                 if (c.connectionInfo(offset + ".scale",
                                      sourceFromDestination=True)
                         != scale_mult + ".output"
@@ -637,7 +637,7 @@ class MayaFitBendyMixin:
                         or any(c.connectionInfo(
                             scale_mult + ".input2" + axis,
                             sourceFromDestination=True)
-                            != scale_add + ".output3D" + axis.lower()
+                            != guide + ".scale" + axis
                             for axis in "YZ")):
                     return False
                 if spec.opm_offset_only_scale:
@@ -1922,10 +1922,13 @@ class MayaFitBendyMixin:
                 c.connectAttr(weight + ".output",
                               scale_add + f".input3D[{len(spec.control_names) + 1}]")
             if spec.micro_yz_scale_only:
+                scale_target = (guide_name if (
+                    spec.non_opm_additive_micro_scale
+                    or spec.opm_offset_only_scale) else offset)
                 for axis in "YZ":
                     c.connectAttr(scale_add + ".output3D"
                                   + axis.lower(),
-                                  offset + ".scale" + axis)
+                                  scale_target + ".scale" + axis)
             else:
                 c.connectAttr(scale_add + ".output3D",
                               offset + ".scale")
@@ -2123,12 +2126,19 @@ class MayaFitBendyMixin:
                     if (c.connectionInfo(offset + ".scale",
                                          sourceFromDestination=True)
                             != (spec.deform_scale_mult_names[index]
-                                + ".output")):
+                                + ".output")
+                            or any(c.connectionInfo(
+                                guide + ".scale" + axis.upper(),
+                                sourceFromDestination=True)
+                                != scale_add + ".output3D" + axis
+                                for axis in "yz")):
                         return False
                 elif (c.connectionInfo(offset + ".scaleX",
                                        sourceFromDestination=True)
                       or any(c.connectionInfo(
-                          offset + ".scale" + axis.upper(),
+                          ((guide if (spec.non_opm_additive_micro_scale
+                                      or spec.opm_offset_only_scale)
+                            else offset) + ".scale" + axis.upper()),
                           sourceFromDestination=True)
                           != scale_add + ".output3D" + axis
                           for axis in "yz")):
