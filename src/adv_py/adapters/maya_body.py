@@ -230,6 +230,7 @@ from adv_py.core.skin_bind import (
     SkinBindMethod,
     SkinBindPlan,
     SkinBindSnapshot,
+    SmoothBindPreferences,
     SkinWeightNormalization,
     SkinningMethod,
 )
@@ -5389,6 +5390,55 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             skin_clusters,
         )
 
+    def read_body_smooth_bind_options(self) -> SmoothBindPreferences:
+        """Read the native Smooth Bind choices used by the original panel."""
+        c = self._cmds
+
+        def option(name: str, default: int) -> int:
+            if not c.optionVar(exists=name):
+                return default
+            value = c.optionVar(query=name)
+            if (isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or int(value) != value):
+                raise FitSkeletonValidationError(
+                    "Maya Smooth Bind 选项无效：" + name)
+            return int(value)
+
+        bind = {
+            0: SkinBindMethod.CLOSEST_DISTANCE,
+            1: SkinBindMethod.CLOSEST_IN_HIERARCHY,
+            2: SkinBindMethod.HEAT_MAP,
+            3: SkinBindMethod.GEODESIC_VOXEL,
+        }.get(option("bindMethod", 1))
+        normalization = {
+            0: SkinWeightNormalization.NONE,
+            1: SkinWeightNormalization.INTERACTIVE,
+            2: SkinWeightNormalization.POST,
+        }.get(option("normalizeWeights", 2))
+        skinning = {
+            0: SkinningMethod.CLASSIC_LINEAR,
+            1: SkinningMethod.DUAL_QUATERNION,
+            2: SkinningMethod.WEIGHT_BLENDED,
+        }.get(option("skinMethod", 1))
+        obey = option("obeyMaxInfl", 0)
+        bind_to = option("bindTo", 2)
+        if bind is None or normalization is None or skinning is None or obey not in (0, 1):
+            raise FitSkeletonValidationError(
+                "Maya Smooth Bind 选项超出当前支持范围")
+        if bind_to != 2:
+            raise FitSkeletonValidationError(
+                "自动 Body Skin 需要 Smooth Bind 的选定关节绑定范围")
+        if bind is SkinBindMethod.GEODESIC_VOXEL and c.about(batch=True):
+            raise FitSkeletonValidationError(
+                "Geodesic Voxel 绑定需要 Maya 图形会话")
+        remove = option("removeUnusedInfluences", 0)
+        if remove not in (0, 1):
+            raise FitSkeletonValidationError(
+                "Maya Smooth Bind 未使用影响关节选项无效")
+        return SmoothBindPreferences(bind, normalization, skinning,
+                                     bool(obey), bool(remove))
+
     def create_skin_bind(self, plan: SkinBindPlan) -> None:
         self._require_transaction()
         from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
@@ -5400,6 +5450,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             fullPath=True, type="mesh") or []
         if len(mesh_shapes) != 1:
             raise FitSkeletonValidationError("Skin Bind 需要唯一可见网格")
+        if (plan.bind_method is SkinBindMethod.GEODESIC_VOXEL
+                and self._cmds.about(batch=True)):
+            raise FitSkeletonValidationError(
+                "Geodesic Voxel 绑定需要 Maya 图形会话")
         topology = mesh_topology_digest(mesh_shapes[0])
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
@@ -5411,22 +5465,30 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 bindMethod={
                     SkinBindMethod.CLOSEST_DISTANCE: 0,
                     SkinBindMethod.CLOSEST_IN_HIERARCHY: 1,
+                    SkinBindMethod.HEAT_MAP: 2,
+                    SkinBindMethod.GEODESIC_VOXEL: 3,
                 }[plan.bind_method],
                 normalizeWeights={
+                    SkinWeightNormalization.NONE: 0,
                     SkinWeightNormalization.INTERACTIVE: 1,
                     SkinWeightNormalization.POST: 2,
                 }[plan.normalization],
                 maximumInfluences=plan.maximum_influences,
                 obeyMaxInfluences=plan.maintain_maximum_influences,
-                removeUnusedInfluence=False,
+                removeUnusedInfluence=plan.remove_unused_influences,
                 name=plan.skin_name,
             )
             if not created or created[0] != plan.skin_name:
                 raise RuntimeError("Maya 未按计划创建 skinCluster")
+            if plan.bind_method is SkinBindMethod.GEODESIC_VOXEL:
+                self._cmds.geomBind(
+                    created[0], bindMethod=3,
+                    maxInfluences=plan.maximum_influences)
             self._cmds.setAttr(
                 created[0] + ".skinningMethod",
                 {SkinningMethod.CLASSIC_LINEAR: 0,
-                 SkinningMethod.DUAL_QUATERNION: 1}[plan.skinning_method])
+                 SkinningMethod.DUAL_QUATERNION: 1,
+                 SkinningMethod.WEIGHT_BLENDED: 2}[plan.skinning_method])
             self._cmds.addAttr(created[0], longName=TOPOLOGY_ATTRIBUTE,
                                dataType="string")
             self._cmds.setAttr(f"{created[0]}.{TOPOLOGY_ATTRIBUTE}",
@@ -5477,8 +5539,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         bind_method = {
             0: SkinBindMethod.CLOSEST_DISTANCE,
             1: SkinBindMethod.CLOSEST_IN_HIERARCHY,
+            2: SkinBindMethod.HEAT_MAP,
+            3: SkinBindMethod.GEODESIC_VOXEL,
         }.get(int(c.getAttr(f"{skin}.bindMethod")))
         normalization = {
+            0: SkinWeightNormalization.NONE,
             1: SkinWeightNormalization.INTERACTIVE,
             2: SkinWeightNormalization.POST,
         }.get(int(c.getAttr(f"{skin}.normalizeWeights")))
@@ -5490,6 +5555,15 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 or skinning_method is None):
             raise FitSkeletonValidationError(
                 "旧 Skin 的绑定、归一化或蒙皮算法无法安全重建")
+        if bind_method is SkinBindMethod.GEODESIC_VOXEL:
+            raise FitSkeletonValidationError(
+                "Geodesic Voxel Skin 带独立 geomBind 节点，当前不能安全自动重绑")
+        if skinning_method is SkinningMethod.WEIGHT_BLENDED:
+            raise FitSkeletonValidationError(
+                "Weight Blended Skin 的逐顶点 blendWeights 尚不能安全跨拓扑转移")
+        if normalization is SkinWeightNormalization.NONE:
+            raise FitSkeletonValidationError(
+                "非归一化 Skin 权重尚不能安全跨拓扑转移")
         envelope_source = c.connectionInfo(
             f"{skin}.envelope", sourceFromDestination=True) or None
         set_memberships = tuple(sorted(set(
@@ -5585,10 +5659,13 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         bind_method = {
             0: SkinBindMethod.CLOSEST_DISTANCE,
             1: SkinBindMethod.CLOSEST_IN_HIERARCHY,
+            2: SkinBindMethod.HEAT_MAP,
+            3: SkinBindMethod.GEODESIC_VOXEL,
         }.get(
             int(self._cmds.getAttr(f"{skin}.bindMethod"))
         )
         normalization = {
+            0: SkinWeightNormalization.NONE,
             1: SkinWeightNormalization.INTERACTIVE,
             2: SkinWeightNormalization.POST,
         }.get(
@@ -5597,6 +5674,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         skinning_method = {
             0: SkinningMethod.CLASSIC_LINEAR,
             1: SkinningMethod.DUAL_QUATERNION,
+            2: SkinningMethod.WEIGHT_BLENDED,
         }.get(int(self._cmds.getAttr(f"{skin}.skinningMethod")))
         return SkinBindSnapshot(
             skin,
@@ -5607,6 +5685,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             bind_method,
             normalization,
             skinning_method,
+            self._cmds.connectionInfo(
+                skin + ".geomBind", sourceFromDestination=True) or None,
         )
 
     def capture_skin_weight_input(

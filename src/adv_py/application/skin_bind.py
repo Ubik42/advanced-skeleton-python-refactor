@@ -75,6 +75,7 @@ class BindSkin:
         bind_method: SkinBindMethod = SkinBindMethod.CLOSEST_DISTANCE,
         normalization: SkinWeightNormalization = SkinWeightNormalization.INTERACTIVE,
         skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR,
+        remove_unused_influences: bool = False,
     ) -> SkinBindBuildPlan:
         bind = plan_skin_bind(
             mesh_path,
@@ -85,6 +86,7 @@ class BindSkin:
             bind_method=bind_method,
             normalization=normalization,
             skinning_method=skinning_method,
+            remove_unused_influences=remove_unused_influences,
         )
         state = self._host.capture_skin_bind_input(bind)
         return SkinBindBuildPlan(
@@ -105,6 +107,7 @@ class BindSkin:
         bind_method: SkinBindMethod = SkinBindMethod.CLOSEST_DISTANCE,
         normalization: SkinWeightNormalization = SkinWeightNormalization.INTERACTIVE,
         skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR,
+        remove_unused_influences: bool = False,
     ) -> SkinBindBuildResult:
         plan = self.plan(
             mesh_path,
@@ -115,6 +118,7 @@ class BindSkin:
             bind_method=bind_method,
             normalization=normalization,
             skinning_method=skinning_method,
+            remove_unused_influences=remove_unused_influences,
         )
         if not plan.ready:
             raise FitSkeletonValidationError(

@@ -7,9 +7,12 @@ from enum import Enum
 class SkinBindMethod(str, Enum):
     CLOSEST_DISTANCE = "closest_distance"
     CLOSEST_IN_HIERARCHY = "closest_in_hierarchy"
+    HEAT_MAP = "heat_map"
+    GEODESIC_VOXEL = "geodesic_voxel"
 
 
 class SkinWeightNormalization(str, Enum):
+    NONE = "none"
     INTERACTIVE = "interactive"
     POST = "post"
 
@@ -17,10 +20,28 @@ class SkinWeightNormalization(str, Enum):
 class SkinningMethod(str, Enum):
     CLASSIC_LINEAR = "classic_linear"
     DUAL_QUATERNION = "dual_quaternion"
+    WEIGHT_BLENDED = "weight_blended"
 
 
 class SkinBindValidationError(ValueError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class SmoothBindPreferences:
+    bind_method: SkinBindMethod = SkinBindMethod.CLOSEST_IN_HIERARCHY
+    normalization: SkinWeightNormalization = SkinWeightNormalization.POST
+    skinning_method: SkinningMethod = SkinningMethod.DUAL_QUATERNION
+    maintain_maximum_influences: bool = False
+    remove_unused_influences: bool = False
+
+    def __post_init__(self) -> None:
+        if (not isinstance(self.bind_method, SkinBindMethod)
+                or not isinstance(self.normalization, SkinWeightNormalization)
+                or not isinstance(self.skinning_method, SkinningMethod)
+                or type(self.maintain_maximum_influences) is not bool
+                or type(self.remove_unused_influences) is not bool):
+            raise SkinBindValidationError("Smooth Bind 选项无效")
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +54,7 @@ class SkinBindPlan:
     bind_method: SkinBindMethod
     normalization: SkinWeightNormalization
     skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR
+    remove_unused_influences: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +76,7 @@ class SkinBindSnapshot:
     bind_method: SkinBindMethod | None
     normalization: SkinWeightNormalization | None
     skinning_method: SkinningMethod | None = SkinningMethod.CLASSIC_LINEAR
+    geodesic_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +96,7 @@ def plan_skin_bind(
     bind_method: SkinBindMethod = SkinBindMethod.CLOSEST_DISTANCE,
     normalization: SkinWeightNormalization = SkinWeightNormalization.INTERACTIVE,
     skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR,
+    remove_unused_influences: bool = False,
 ) -> SkinBindPlan:
     if not isinstance(mesh_path, str) or not mesh_path.strip():
         raise SkinBindValidationError("Skin Bind 需要显式 mesh 路径")
@@ -103,6 +127,8 @@ def plan_skin_bind(
         raise SkinBindValidationError("Skin Bind 权重归一化模式无效")
     if not isinstance(skinning_method, SkinningMethod):
         raise SkinBindValidationError("Skin Bind 蒙皮计算方法无效")
+    if type(remove_unused_influences) is not bool:
+        raise SkinBindValidationError("Skin Bind 未使用影响关节选项无效")
     return SkinBindPlan(
         mesh_path.strip(),
         tuple(path.strip() for path in influence_paths),
@@ -112,6 +138,7 @@ def plan_skin_bind(
         bind_method,
         normalization,
         skinning_method,
+        remove_unused_influences,
     )
 
 
@@ -176,8 +203,12 @@ def audit_skin_bind_result(
             "skinCluster 几何体不一致",
         ),
         (
-            set(snapshot.influence_paths) == set(plan.influence_paths)
-            and len(snapshot.influence_paths) == len(plan.influence_paths),
+            ((bool(snapshot.influence_paths)
+              and set(snapshot.influence_paths).issubset(
+                  set(plan.influence_paths)))
+             if plan.remove_unused_influences else
+             (set(snapshot.influence_paths) == set(plan.influence_paths)
+              and len(snapshot.influence_paths) == len(plan.influence_paths))),
             "influence_mismatch",
             "skinCluster influence 集合不一致",
         ),
@@ -202,6 +233,12 @@ def audit_skin_bind_result(
             snapshot.skinning_method is plan.skinning_method,
             "skinning_method_mismatch",
             "蒙皮计算方法不一致",
+        ),
+        (
+            plan.bind_method is not SkinBindMethod.GEODESIC_VOXEL
+            or snapshot.geodesic_source is not None,
+            "geodesic_bind_missing",
+            "Geodesic Voxel 权重求解节点缺失",
         ),
     )
     for passed, code, message in checks:

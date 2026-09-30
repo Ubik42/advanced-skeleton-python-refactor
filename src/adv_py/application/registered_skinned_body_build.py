@@ -5,9 +5,7 @@ from dataclasses import dataclass
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_part_twist import FitPartTwistSource
-from adv_py.core.skin_bind import (
-    SkinBindMethod, SkinWeightNormalization, SkinningMethod,
-)
+from adv_py.core.skin_bind import SmoothBindPreferences
 
 from .registered_body_build import (BuildRegisteredBodyCharacter,
                                     RegisteredBodyBuildResult,
@@ -27,6 +25,7 @@ class RegisteredSkinnedBodyBuildPlan:
     meshes: tuple[str, ...]
     skin_names: tuple[str, ...]
     maximum_influences: int
+    smooth_bind: SmoothBindPreferences
 
 
 class BuildRegisteredSkinnedBodyCharacter:
@@ -53,8 +52,15 @@ class BuildRegisteredSkinnedBodyCharacter:
         for name in skin_names:
             if self._host.find_name_collisions(name):
                 raise FitSkeletonValidationError("Skin 名称已被占用：" + name)
+        read_options = getattr(self._host,
+                               "read_body_smooth_bind_options", None)
+        options = (read_options() if read_options is not None
+                   else SmoothBindPreferences())
+        if not isinstance(options, SmoothBindPreferences):
+            raise FitSkeletonValidationError(
+                "Maya Smooth Bind 选项快照无效")
         return RegisteredSkinnedBodyBuildPlan(
-            meshes, skin_names, maximum_influences)
+            meshes, skin_names, maximum_influences, options)
 
     def apply(self, meshes: tuple[str, ...], *,
               container_name: str = "FitSkeleton",
@@ -100,10 +106,13 @@ class BuildRegisteredSkinnedBodyCharacter:
                 for mesh in plan.meshes)
             skins = tuple(BindSkin(joined).apply(mesh, influences,
                 skin_name=name, maximum_influences=plan.maximum_influences,
-                maintain_maximum_influences=False,
-                bind_method=SkinBindMethod.CLOSEST_IN_HIERARCHY,
-                normalization=SkinWeightNormalization.POST,
-                skinning_method=SkinningMethod.DUAL_QUATERNION)
+                maintain_maximum_influences=(
+                    plan.smooth_bind.maintain_maximum_influences),
+                bind_method=plan.smooth_bind.bind_method,
+                normalization=plan.smooth_bind.normalization,
+                skinning_method=plan.smooth_bind.skinning_method,
+                remove_unused_influences=(
+                    plan.smooth_bind.remove_unused_influences))
                 for mesh, name in zip(geometry_meshes, plan.skin_names))
             finalize_body_character_sets(
                 joined, character.registration, character.rig.plan,
