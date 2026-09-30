@@ -72,6 +72,8 @@ class FitPartJointState:
     rotation_order: int = 0
     segment_scale_compensate: bool = True
     path: str = ""
+    inverse_scale_source: str | None = None
+    inverse_scale_captured: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +81,8 @@ class FitPartChildState:
     name: str
     parent_name: str
     path: str = ""
+    segment_scale_compensate: bool | None = None
+    inverse_scale_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -285,6 +289,11 @@ def audit_fit_part_hierarchy(
             issues.append("Part 旋转顺序不一致：" + spec.name)
         if state.segment_scale_compensate != spec.segment_scale_compensate:
             issues.append("Part 分段缩放补偿不一致：" + spec.name)
+        if state.inverse_scale_captured and spec.segment_scale_compensate:
+            source = (state.inverse_scale_source.rsplit("|", 1)[-1]
+                      if state.inverse_scale_source else None)
+            if source != spec.parent_name + ".scale":
+                issues.append("Part 逆缩放来源不一致：" + spec.name)
         if any(abs(a - b) > tolerance for a, b in zip(
                 state.world_position, spec.world_position)):
             issues.append("Part 世界位置不一致：" + spec.name)
@@ -299,6 +308,11 @@ def audit_fit_part_hierarchy(
         state = children.get(spec.child_name)
         if state is not None and state.parent_name != spec.parent_part_name:
             issues.append("Part 下游关节父级不一致：" + spec.child_name)
+        if (state is not None and state.segment_scale_compensate
+                and (state.inverse_scale_source.rsplit("|", 1)[-1]
+                     if state.inverse_scale_source else None)
+                    != spec.parent_part_name + ".scale"):
+            issues.append("Part 下游关节逆缩放来源不一致：" + spec.child_name)
         if (final_paths and state is not None
                 and state.path != expected_body_paths[spec.child_name]):
             issues.append("Part 下游关节最终路径不一致：" + spec.child_name)

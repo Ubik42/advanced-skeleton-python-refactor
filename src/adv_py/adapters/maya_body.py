@@ -460,11 +460,6 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         joint = self._cmds.createNode("joint", **options)
         self._transaction_changed = True
         path = (self._cmds.ls(joint, long=True) or [joint])[0]
-        self._cmds.xform(
-            path,
-            worldSpace=True,
-            translation=spec.world_position,
-        )
         self.set_joint_label(path, spec.label)
         self._cmds.setAttr(f"{path}.side", _MAYA_SIDE_FROM_CORE[spec.side])
         self._cmds.setAttr(f"{path}.rotateOrder", spec.rotation_order)
@@ -479,6 +474,13 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             # createNode does not guarantee the joint-command side effect.
             self._cmds.connectAttr(parent + ".scale",
                                    path + ".inverseScale")
+        # Set the world position after the joint's scale-compensation graph
+        # exists; connecting inverseScale can otherwise move a scaled child.
+        self._cmds.xform(
+            path,
+            worldSpace=True,
+            translation=spec.world_position,
+        )
         for name, value in (
             ("fat", spec.deform_profile.fat),
             ("fatFront", spec.deform_profile.fat_front),
@@ -922,6 +924,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         if self._cmds.attributeQuery(
                             "advPyFitHasDeformProfile", node=path,
                             exists=True) else False),
+                    inverse_scale_source=(
+                        self._cmds.connectionInfo(
+                            path + ".inverseScale",
+                            sourceFromDestination=True) or None),
+                    inverse_scale_captured=True,
                 )
             )
         provenance = self._capture_body_provenance(root)
@@ -1006,6 +1013,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 world_axes=tuple(self._normalized_vector(tuple(float(value)
                     for value in matrix[index:index + 3]))
                     for index in (0, 4, 8)),
+                segment_scale_compensate=bool(c.getAttr(
+                    path + ".segmentScaleCompensate")),
             ))
         return tuple(result)
 
@@ -2512,6 +2521,12 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     raise FitSkeletonValidationError(
                         f"Export Skeleton joint 输入失效：{spec.source_path}"
                     )
+                if (bool(self._cmds.getAttr(
+                        spec.source_path + ".segmentScaleCompensate"))
+                        != spec.segment_scale_compensate):
+                    raise FitSkeletonValidationError(
+                        "Export Skeleton 来源关节段缩放设置在规划后变化："
+                        + spec.source_path)
                 output = self._cmds.createNode(
                     "joint",
                     name=spec.output_name,
@@ -2534,11 +2549,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 )
                 self._cmds.setAttr(
                     f"{output}.segmentScaleCompensate",
-                    bool(self._cmds.getAttr(
-                        f"{spec.source_path}.segmentScaleCompensate"
-                    )),
+                    spec.segment_scale_compensate,
                 )
-                if (self._cmds.getAttr(output + ".segmentScaleCompensate")
+                if (not spec.is_root
+                        and spec.segment_scale_compensate
                         and not self._cmds.connectionInfo(
                             output + ".inverseScale",
                             sourceFromDestination=True)):

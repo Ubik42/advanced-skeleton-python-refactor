@@ -667,6 +667,9 @@ class MayaFitPartMixin:
                 int(c.getAttr(joint + ".rotateOrder")),
                 bool(c.getAttr(joint + ".segmentScaleCompensate")),
                 joint,
+                c.connectionInfo(joint + ".inverseScale",
+                                 sourceFromDestination=True) or None,
+                True,
             ))
         return tuple(result)
 
@@ -680,7 +683,10 @@ class MayaFitPartMixin:
             parent = c.listRelatives(child, parent=True, fullPath=True) or []
             result.append(FitPartChildState(
                 name, parent[0].rsplit("|", 1)[-1] if parent else "",
-                child))
+                child,
+                bool(c.getAttr(child + ".segmentScaleCompensate")),
+                c.connectionInfo(child + ".inverseScale",
+                                 sourceFromDestination=True) or None))
         return tuple(result)
 
     def capture_fit_part_body_paths(

@@ -44,6 +44,7 @@ class BodyExportSourceJoint:
     joint_orient: Vector3
     world_position: Vector3
     world_axes: AxisFrame
+    segment_scale_compensate: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +60,7 @@ class BodyExportJointSpec:
     world_position: Vector3
     world_axes: AxisFrame
     root_constraint_name: str | None = None
+    segment_scale_compensate: bool = True
 
     @property
     def is_root(self) -> bool:
@@ -236,6 +238,10 @@ def plan_body_export_skeleton(
         raise BodyExportSkeletonValidationError(
             "Export Skeleton 当前要求 Body joint 短名唯一"
         )
+    if any(type(state.segment_scale_compensate) is not bool
+           for state in states):
+        raise BodyExportSkeletonValidationError(
+            "Export Skeleton 来源关节的段缩放补偿值无效")
 
     source_name = body.root.rsplit("|", 1)[-1]
     namespace = source_name.rsplit(":", 1)[0] + ":" if ":" in source_name else ""
@@ -270,6 +276,7 @@ def plan_body_export_skeleton(
                 if state.path == body.root
                 else None
             ),
+            segment_scale_compensate=state.segment_scale_compensate,
         ))
     return BodyExportSkeletonPlan(
         source_body_root=body.root,
@@ -534,6 +541,9 @@ def audit_body_export_skeleton(
             and state.side is spec.side
             and state.label == spec.label
             and _close(state.joint_orient, spec.joint_orient, tolerance)
+            and (state.segment_scale_compensate is None
+                 or state.segment_scale_compensate
+                    == spec.segment_scale_compensate)
         ):
             issues.append(BodyExportSkeletonIssue(
                 "joint_structure_mismatch",

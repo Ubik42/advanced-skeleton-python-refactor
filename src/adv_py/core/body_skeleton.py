@@ -128,6 +128,8 @@ class BodyJointState:
     rotation_order: int = 0
     segment_scale_compensate: bool = True
     fit_has_deform_profile: bool = False
+    inverse_scale_source: str | None = None
+    inverse_scale_captured: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -359,6 +361,16 @@ def audit_body_skeleton(
         if state.segment_scale_compensate != spec.segment_scale_compensate:
             issues.append(BodySkeletonIssue(
                 "segment_scale_mismatch", "分段缩放补偿不一致", path))
+        if (state.inverse_scale_captured
+                and spec.segment_scale_compensate
+                and spec.parent_path in expected):
+            source = (state.inverse_scale_source.rsplit("|", 1)[-1]
+                      if state.inverse_scale_source else None)
+            wanted = spec.parent_path.rsplit("|", 1)[-1] + ".scale"
+            if source != wanted:
+                issues.append(BodySkeletonIssue(
+                    "inverse_scale_mismatch",
+                    "关节未从实际父关节补偿缩放", path))
         if state.fit_has_deform_profile != spec.fit_has_deform_profile:
             issues.append(BodySkeletonIssue(
                 "fit_volume_presence_mismatch", "Fit 体积属性来源标记不一致", path))
