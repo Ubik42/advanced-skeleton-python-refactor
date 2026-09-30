@@ -48,6 +48,8 @@ class ConnectNameMatchedSkeleton:
 class NameMatcherSkinTransferResult:
     skins: int
     matrix_links: int
+    retained_branches: int
+    preserved_transforms: int
     missing: tuple[str, ...]
 
 
@@ -65,15 +67,28 @@ class TransferNameMatchedSkinInfluences:
         plan = plan_name_matcher_constraints(advanced,
             tuple((joint.path, joint.name) for joint in source), rows, rules)
         links = host.capture_name_matcher_skin_links(plan)
+        handoff = host.capture_name_matcher_source_handoff(
+            source, plan, links)
+        payload = host.capture_name_matcher_skin_payload(links)
         with host.transaction('NameMatcher Skin 影响关节转接'):
             if (host.capture_source_skeleton(source_root) != source
                     or host.capture_name_matcher_advanced_joints()
                     != advanced
-                    or host.capture_name_matcher_skin_links(plan) != links):
+                    or host.capture_name_matcher_skin_links(plan) != links
+                    or host.capture_name_matcher_source_handoff(
+                        source, plan, links) != handoff
+                    or host.capture_name_matcher_skin_payload(links)
+                    != payload):
                 raise FitSkeletonValidationError(
                     'NameMatcher Skin 来源或 Body 骨架在执行前变化')
             host.apply_name_matcher_skin_links(links)
             host.verify_name_matcher_skin_links(links)
+            retained, geometry = host.apply_name_matcher_source_handoff(
+                handoff)
+            host.normalize_name_matcher_skins(links)
+            host.verify_name_matcher_skin_links(links)
+            host.verify_name_matcher_skin_payload(payload,
+                host.capture_name_matcher_skin_payload(links))
         return NameMatcherSkinTransferResult(
             len({link.skin_uuid for link in links}),
-            len(links), plan.missing)
+            len(links), retained, geometry, plan.missing)

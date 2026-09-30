@@ -41,6 +41,7 @@ def character_channels(rig):
     if p.torso.torso.root_x is not None:
         add("root.x", p.torso.torso.root_x.control_path,
             translation + rotation + tuple("scale" + axis for axis in "XYZ"))
+        add("root.x.extra", p.torso.torso.root_x.extra_path, transform)
     for cog in p.torso.torso.cogs:
         add("root.cog." + cog.control_name, cog.control_path,
             translation + rotation + tuple("scale" + axis for axis in "XYZ"))

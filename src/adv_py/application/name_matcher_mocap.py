@@ -21,14 +21,16 @@ class ConnectNameMatchedMocap:
         self._host = host
 
     def apply(self, source_root: str, rows: tuple[NameMatcherRow, ...],
-              rules: NameMatcherRules) -> NameMatcherMocapResult:
+              rules: NameMatcherRules, *,
+              use_extra: bool = False) -> NameMatcherMocapResult:
         host = self._host
         source = host.capture_source_skeleton(source_root)
         advanced = host.capture_name_matcher_advanced_joints()
         registration = host.read_character_registration()
         mapping = plan_name_matcher_constraints(advanced,
             tuple((joint.path, joint.name) for joint in source), rows, rules)
-        plan = plan_name_matcher_mocap(mapping, registration)
+        plan = plan_name_matcher_mocap(mapping, registration,
+                                      use_extra=use_extra)
         skin_boundary = host.capture_name_matcher_skin_boundary(source_root)
         host.preflight_name_matcher_mocap(plan)
         with host.transaction('NameMatcher 动捕连接'):

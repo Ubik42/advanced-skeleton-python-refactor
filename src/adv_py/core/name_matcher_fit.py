@@ -57,8 +57,56 @@ class NameMatcherSkinMatrixLink:
     destination: str
     original_source: str
     bind_pre_matrix: tuple[float, ...]
+    target_bind_pre_matrix: tuple[float, ...]
     bind_pre_source: str | None
     skin_uuid: str
+
+
+@dataclass(frozen=True, slots=True)
+class NameMatcherSourceHandoffPlan:
+    source_root: str
+    retained_branches: tuple[tuple[str, str], ...]
+    preserved_transforms: tuple[str, ...]
+
+
+def plan_name_matcher_source_handoff(
+        source: tuple[tuple[str, str | None], ...],
+        mapping: NameMatcherConstraintPlan,
+        live_unmapped: tuple[str, ...],
+        preserved_transforms: tuple[str, ...],
+        ) -> NameMatcherSourceHandoffPlan:
+    """Keep useful unmatched branches, then remove the mapped source tree."""
+    parents = dict(source)
+    if (not source or len(parents) != len(source)
+            or len({path for path, parent in source if parent is None}) != 1):
+        raise FitSkeletonValidationError(
+            'NameMatcher 来源骨架必须有唯一根关节')
+    root = next(path for path, parent in source if parent is None)
+    mapped = {pair.external_joint: pair.advanced_joint
+              for pair in mapping.pairs}
+    if root not in mapped:
+        raise FitSkeletonValidationError(
+            'NameMatcher 来源根关节未映射，不能安全删除来源骨架')
+    if (not set(mapped) <= set(parents)
+            or not set(live_unmapped) <= set(parents)-set(mapped)
+            or len(set(preserved_transforms)) != len(preserved_transforms)):
+        raise FitSkeletonValidationError(
+            'NameMatcher 来源骨架保留计划引用了无效节点')
+    retained = set(live_unmapped)
+    for path in tuple(retained):
+        parent = parents[path]
+        seen = {path}
+        while parent not in mapped:
+            if parent not in parents or parent in seen:
+                raise FitSkeletonValidationError(
+                    'NameMatcher 未映射关节不属于已映射来源根')
+            retained.add(parent)
+            seen.add(parent)
+            parent = parents[parent]
+    reparent = tuple(sorted((path, mapped[parents[path]])
+        for path in retained if parents[path] in mapped))
+    return NameMatcherSourceHandoffPlan(
+        root, reparent, tuple(sorted(preserved_transforms)))
 
 
 def _external_name(base: str, side: str, rules: NameMatcherRules) -> str:

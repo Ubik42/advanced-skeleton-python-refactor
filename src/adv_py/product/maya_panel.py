@@ -587,6 +587,8 @@ def create_panel(controller: MayaPanelController | None = None):
             self.name_matcher_prefix = QtWidgets.QCheckBox('侧别在名称前')
             self.name_matcher_underscore = QtWidgets.QCheckBox('侧别用下划线分隔')
             self.name_matcher_underscore.setChecked(True)
+            self.name_matcher_extra = QtWidgets.QCheckBox(
+                '动捕连接 Extra 控制层')
             group, form = self._group('02 · NameMatcher', [
                 ('Fit／来源名称映射', self.name_matcher_rows),
                 ('右侧标记', self.name_matcher_right),
@@ -594,6 +596,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 ('中间标记', self.name_matcher_middle),
                 ('命名位置', self.name_matcher_prefix),
                 ('分隔符', self.name_matcher_underscore),
+                ('动捕控制层', self.name_matcher_extra),
                 ('外部骨架根', self.name_matcher_source_root)])
             form.addRow(self._button('创建并放置 FitSkeleton',
                                      self._build_name_matcher_fit))
@@ -601,8 +604,14 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._connect_name_matcher_skeleton))
             form.addRow(self._button('原 Skin 转接至 Body 关节',
                                      self._transfer_name_matcher_skin))
+            form.addRow(self._button('动捕来源关节旋转归零',
+                                     self._zero_out_name_matcher_mocap))
             form.addRow(self._button('连接外部动捕到角色控制器',
                                      self._connect_name_matcher_mocap))
+            form.addRow(self._button('断开动捕骨架',
+                                     self._disconnect_name_matcher_mocap))
+            form.addRow(self._button('烘焙动捕到控制器',
+                                     self._bake_name_matcher_mocap))
             stack.addWidget(group)
 
             self.body_option_fields = {}
@@ -2350,6 +2359,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 **self._name_matcher_rule_kwargs())
             return (f'NameMatcher 已将 {result.skins} 套 Skin 的'
                     f'{result.matrix_links} 条影响矩阵转接到 Body；'
+                    f'保留 {result.retained_branches} 条未映射关节分支、'
+                    f'{result.preserved_transforms} 个模型层级；'
                     + (('未找到：' + '、'.join(result.missing))
                        if result.missing else '全部映射目标均已找到。'))
 
@@ -2359,10 +2370,33 @@ def create_panel(controller: MayaPanelController | None = None):
                 raise ValueError('请填写 NameMatcher 动捕骨架根路径')
             result = self.controller.tools_name_matcher_mocap(
                 self._namespace(), root, self._name_matcher_mapping_rows(),
-                **self._name_matcher_rule_kwargs())
+                **self._name_matcher_rule_kwargs(),
+                use_extra=self.name_matcher_extra.isChecked())
             return (f'NameMatcher 已连接 {result.connected_controls} 个控制器；'
                     + (('未匹配：' + '、'.join(result.missing))
                        if result.missing else '全部可用映射已连接。'))
+
+        def _zero_out_name_matcher_mocap(self):
+            root = self.name_matcher_source_root.text().strip()
+            if not root:
+                raise ValueError('请填写 NameMatcher 动捕骨架根路径')
+            result = self.controller.tools_name_matcher_zero_out(
+                self._namespace(), root, self._name_matcher_mapping_rows(),
+                **self._name_matcher_rule_kwargs())
+            return (f'NameMatcher 已归零 {result.joints} 个动捕关节；'
+                    + (('未匹配：' + '、'.join(result.missing))
+                       if result.missing else '全部可用映射已处理。'))
+
+        def _disconnect_name_matcher_mocap(self):
+            count = self.controller.tools_name_matcher_disconnect(
+                self._namespace())
+            return f'NameMatcher 已断开 {count} 条动捕约束。'
+
+        def _bake_name_matcher_mocap(self):
+            result = self.controller.tools_name_matcher_bake(
+                self._namespace())
+            return (f'NameMatcher 已烘焙 {result.controls} 个控制器，'
+                    f'范围 {result.first_frame:g}–{result.last_frame:g} 帧。')
 
         def _load_body_build_options(self):
             options = self.controller.body_build_options(

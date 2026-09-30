@@ -505,7 +505,8 @@ class MayaPanelController:
             source_root: str, rows: tuple[tuple[str, str], ...], *,
             right: str = 'R', left: str = 'L', middle: str = '',
             side_before_name: bool = False,
-            side_underscore: bool = True):
+            side_underscore: bool = True,
+            use_extra: bool = False):
         from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
         from adv_py.application.name_matcher_mocap import ConnectNameMatchedMocap
         from adv_py.core.name_matcher_fit import NameMatcherRow, NameMatcherRules
@@ -515,7 +516,43 @@ class MayaPanelController:
         return ConnectNameMatchedMocap(host).apply(source_root,
             tuple(NameMatcherRow(*row) for row in rows),
             NameMatcherRules(right, left, middle,
+                             side_before_name, side_underscore),
+            use_extra=use_extra)
+
+    def tools_name_matcher_zero_out(self, namespace: str,
+            source_root: str, rows: tuple[tuple[str, str], ...], *,
+            right: str = 'R', left: str = 'L', middle: str = '',
+            side_before_name: bool = False,
+            side_underscore: bool = True):
+        from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
+        from adv_py.application.name_matcher_mocap_operations import (
+            ZeroOutNameMatchedMocap)
+        from adv_py.core.name_matcher_fit import NameMatcherRow, NameMatcherRules
+
+        host = MayaNameMatcherHost(
+            namespace=None if namespace == ':' else namespace)
+        return ZeroOutNameMatchedMocap(host).apply(source_root,
+            tuple(NameMatcherRow(*row) for row in rows),
+            NameMatcherRules(right, left, middle,
                              side_before_name, side_underscore))
+
+    def tools_name_matcher_bake(self, namespace: str):
+        from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
+        from adv_py.application.name_matcher_mocap_operations import (
+            BakeNameMatchedMocap)
+
+        host = MayaNameMatcherHost(
+            namespace=None if namespace == ':' else namespace)
+        return BakeNameMatchedMocap(host).apply()
+
+    def tools_name_matcher_disconnect(self, namespace: str):
+        from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
+        from adv_py.application.name_matcher_mocap_operations import (
+            DisconnectNameMatchedMocap)
+
+        host = MayaNameMatcherHost(
+            namespace=None if namespace == ':' else namespace)
+        return DisconnectNameMatchedMocap(host).apply()
 
     def characters(self) -> tuple[PanelCharacter, ...]:
         from adv_py.adapters.maya_scene_gateway import MayaSceneGateway
