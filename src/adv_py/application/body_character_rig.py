@@ -232,6 +232,7 @@ class BuildBodyCharacterRig:
         defer_partial_hand_to_generic: bool = False,
         part_paths: FitPartFinalPaths | None = None,
         standard_fkx_joint_names: frozenset[str] | None = None,
+        standard_point_control_names: frozenset[str] | None = None,
         hand_fkx_joint_names: frozenset[str] | None = None,
         hand_point_control_names: frozenset[str] | None = None,
         standard_fk_independent_controls: frozenset[str] | None = None,
@@ -313,6 +314,7 @@ class BuildBodyCharacterRig:
             twist_joints_per_segment=twist_joints_per_segment,
             aim_joint_names=arm_aim,
             fkx_joint_names=fkx_joint_names,
+            point_control_names=standard_point_control_names,
         )
         leg = self._leg.plan_from_safety(
             safety,
@@ -322,6 +324,7 @@ class BuildBodyCharacterRig:
             defer_pole_aim=include_control_spaces,
             aim_joint_names=leg_aim,
             fkx_joint_names=fkx_joint_names,
+            point_control_names=standard_point_control_names,
         )
         expected_hand_names = {
             f"{source_name}_{suffix}"
@@ -615,6 +618,7 @@ class BuildBodyCharacterRig:
         defer_partial_hand_to_generic: bool = False,
         part_paths: FitPartFinalPaths | None = None,
         standard_fkx_joint_names: frozenset[str] | None = None,
+        standard_point_control_names: frozenset[str] | None = None,
         hand_fkx_joint_names: frozenset[str] | None = None,
         hand_point_control_names: frozenset[str] | None = None,
         standard_fk_independent_controls: frozenset[str] | None = None,
@@ -638,6 +642,7 @@ class BuildBodyCharacterRig:
             defer_partial_hand_to_generic=defer_partial_hand_to_generic,
             part_paths=part_paths,
             standard_fkx_joint_names=standard_fkx_joint_names,
+            standard_point_control_names=standard_point_control_names,
             hand_fkx_joint_names=hand_fkx_joint_names,
             hand_point_control_names=hand_point_control_names,
             standard_fk_independent_controls=(

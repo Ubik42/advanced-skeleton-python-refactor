@@ -152,6 +152,7 @@ def plan_body_limb_fk_controls(
     aim_joint_names: frozenset[str] = frozenset(),
     use_offset_parent_matrix: bool = False,
     fkx_joint_names: frozenset[str] | None = None,
+    point_control_names: frozenset[str] | None = None,
 ) -> BodyLimbFkControlPlan:
     if type(allow_part_parents) is not bool:
         raise BodyLimbControlValidationError("FK Part 父级开关无效")
@@ -164,6 +165,9 @@ def plan_body_limb_fk_controls(
         raise BodyLimbControlValidationError("FK OPM 开关必须是布尔值")
     if fkx_joint_names is not None and not isinstance(fkx_joint_names, frozenset):
         raise BodyLimbControlValidationError("FKX 关节集合无效")
+    if (point_control_names is not None
+            and not isinstance(point_control_names, frozenset)):
+        raise BodyLimbControlValidationError("FK 位置约束集合无效")
     if (
         not limb_label.isalpha()
         or len(joint_names) < 2
@@ -291,6 +295,10 @@ def plan_body_limb_fk_controls(
                 fit_joint_names=(joint_name,),
                 aim_path=aim_path,
                 aim_name=aim_name,
+                translation_constraint_name=(
+                    f"AdvPy_{joint_name}FKPoint_{suffix}"
+                    if point_control_names is None
+                    or control_name in point_control_names else None),
             ))
             parent_path = (fkx_path if fkx_joint and not use_offset_parent_matrix
                            else control_path)

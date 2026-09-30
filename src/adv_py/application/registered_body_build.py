@@ -839,6 +839,9 @@ class BuildRegisteredBodyCharacter:
                 standard_fkx_joint_names=(
                     _generic_fk_policy.standard_fkx_joint_names
                     if _generic_fk_policy is not None else None),
+                standard_point_control_names=(
+                    _generic_fk_policy.standard_point_control_names
+                    if _generic_fk_policy is not None else None),
                 hand_fkx_joint_names=(
                     _generic_fk_policy.hand_fkx_joint_names
                     if _generic_fk_policy is not None else None),
@@ -1051,6 +1054,8 @@ class BuildRegisteredBodyCharacter:
                                         binding.start_fk_constraint_name),
                                     start_fk_source_path=(
                                         binding.start_fk_source_path),
+                                    start_fk_point_constraint_name=(
+                                        binding.start_fk_point_constraint_name),
                                     downstream_fk_offset_path=(
                                         binding.downstream_fk_offset_path),
                                     rotate_order=binding.rotate_order,

@@ -34,6 +34,7 @@ def plan_body_arm_fk_controls(
     aim_joint_names: frozenset[str] = frozenset(),
     use_offset_parent_matrix: bool = False,
     fkx_joint_names: frozenset[str] | None = None,
+    point_control_names: frozenset[str] | None = None,
 ) -> BodyArmFkControlPlan:
     return plan_body_limb_fk_controls(
         body,
@@ -50,6 +51,7 @@ def plan_body_arm_fk_controls(
         aim_joint_names=aim_joint_names,
         use_offset_parent_matrix=use_offset_parent_matrix,
         fkx_joint_names=fkx_joint_names,
+        point_control_names=point_control_names,
     )
 
 

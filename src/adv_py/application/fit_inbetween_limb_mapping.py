@@ -55,6 +55,7 @@ class InbetweenLimbBinding:
     part_control_radius: float
     spline_root_path: str | None = None
     start_fk_source_path: str | None = None
+    start_fk_point_constraint_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,6 +300,8 @@ def plan_inbetween_limb_bindings(
                 start_control.source_override_path
                 or start_control.sub_control_path
                 or start_control.control_path),
+            start_fk_point_constraint_name=(
+                start_control.translation_constraint_name),
         ))
     return tuple(bindings)
 

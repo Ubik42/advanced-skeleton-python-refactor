@@ -106,6 +106,7 @@ class BuildBodyArmRig:
         pole_distance_scale: float = 0.75, twist_joints_per_segment: int = 2,
         aim_joint_names: frozenset[str] = frozenset(),
         fkx_joint_names: frozenset[str] | None = None,
+        point_control_names: frozenset[str] | None = None,
     ) -> BodyArmRigBuildPlan:
         """Plan this module from the character's shared immutable input."""
         mechanisms = plan_body_arm_mechanisms(safety.body)
@@ -120,7 +121,8 @@ class BuildBodyArmRig:
             aim_joint_names=aim_joint_names,
             use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
                 safety.symmetry.settings).use_offset_parent_matrix,
-            fkx_joint_names=fkx_joint_names)
+            fkx_joint_names=fkx_joint_names,
+            point_control_names=point_control_names)
         blend = plan_body_arm_blend(safety.body, mechanisms)
         ik = plan_body_arm_ik(
             safety.body, mechanisms, radius=control_radius,
@@ -137,6 +139,8 @@ class BuildBodyArmRig:
         names.extend(spec.name for spec in mechanisms.joints)
         for spec in fk_controls.controls:
             names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
+            if spec.translation_constraint_name is not None:
+                names.append(spec.translation_constraint_name)
             if spec.sub_control_name is not None:
                 names.append(spec.sub_control_name)
             if spec.extra_name is not None:
