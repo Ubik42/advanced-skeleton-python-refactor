@@ -653,11 +653,8 @@ def plan_source_skeleton_fit(source: tuple[SourceSkeletonJoint, ...],
         use_default_part = (default_part is not None
                             and joint.twist_joints is None
                             and joint.inbetween_joints is None)
-        if (joint.untwister and not joint.inbetween_joints
-                and not (use_default_part
-                         and default_part[0] is FitJointField.INBETWEEN_JOINTS)):
-            raise FitSkeletonValidationError(
-                "来源 UnTwister 需要 Inbetween 分段：" + joint.name)
+        # Preserve an authored unTwister flag with zero subdivisions. The
+        # shared build activates it only for a positive Inbetween count.
         if (not isinstance(joint.additional_fit_edits, tuple)
                 or any(not isinstance(edit, FitJointFieldEdit)
                        for edit in joint.additional_fit_edits)):

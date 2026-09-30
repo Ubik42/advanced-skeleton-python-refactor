@@ -562,14 +562,9 @@ def audit_fit_joint(metadata: FitJointMetadata) -> tuple[FitJointIssue, ...]:
                 "Bendy 控制器设置需要 Twist 模式",
             )
         )
-    if metadata.untwister and not metadata.inbetween_joints:
-        issues.append(
-            FitJointIssue(
-                metadata.joint,
-                "untwister_without_inbetween",
-                "UnTwister 设置需要至少一段 Inbetween 关节",
-            )
-        )
+    # asBuildAdvancedSkeleton reads unTwister only when inbetweenJoints > 0.
+    # Keep the authored flag for Fit round trips; a zero/absent subdivision
+    # count makes it inactive rather than making the entire Fit invalid.
     if metadata.child_of_part is not None and not 1 <= metadata.child_of_part <= 10:
         issues.append(
             FitJointIssue(
