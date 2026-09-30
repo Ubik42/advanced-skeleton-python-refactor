@@ -2759,6 +2759,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 scale_sources=tuple(
                     source(f"{output}.scale{axis}") for axis in "XYZ"
                 ),
+                segment_scale_compensate=bool(self._cmds.getAttr(
+                    output + ".segmentScaleCompensate")),
+                inverse_scale_source=(self._cmds.connectionInfo(
+                    output + ".inverseScale",
+                    sourceFromDestination=True) or None),
             ))
 
         root = plan.root.output_path

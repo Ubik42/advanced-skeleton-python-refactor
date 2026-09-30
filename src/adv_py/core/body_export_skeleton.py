@@ -98,6 +98,8 @@ class BodyExportJointState:
     translation_sources: tuple[str | None, str | None, str | None]
     rotation_sources: tuple[str | None, str | None, str | None]
     scale_sources: tuple[str | None, str | None, str | None]
+    segment_scale_compensate: bool | None = None
+    inverse_scale_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -555,6 +557,17 @@ def audit_body_export_skeleton(
             issues.append(BodyExportSkeletonIssue(
                 "joint_wiring_mismatch",
                 "Export Skeleton joint 实时接线不一致",
+                spec.output_path,
+            ))
+        inverse_source = (state.inverse_scale_source.rsplit("|", 1)[-1]
+                          if state.inverse_scale_source else None)
+        expected_inverse_source = (spec.output_parent_path.rsplit("|", 1)[-1]
+                                   + ".scale")
+        if (not spec.is_root and state.segment_scale_compensate
+                and inverse_source != expected_inverse_source):
+            issues.append(BodyExportSkeletonIssue(
+                "joint_inverse_scale_mismatch",
+                "Export Skeleton joint 未从实际父关节补偿缩放",
                 spec.output_path,
             ))
     return tuple(issues)
