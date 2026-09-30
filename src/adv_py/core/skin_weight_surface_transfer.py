@@ -91,27 +91,35 @@ def transfer_skin_weights_by_surface(
                                              projected.barycentric):
             for entry in source_rows[source_index]:
                 values[entry.influence_path] = values.get(entry.influence_path, 0.0) + coefficient * entry.weight
-        ranked = sorted(((path, weight) for path, weight in values.items() if weight > 1e-12),
+        threshold = 1e-12 if source.normalized else 0.0
+        ranked = sorted(((path, weight) for path, weight in values.items()
+                         if weight > threshold),
                         key=lambda item: (-item[1], item[0]))
-        if not ranked:
+        if not ranked and source.normalized:
             raise SkinWeightValidationError(f"目标顶点 {target_index} 没有可转移权重")
         if target_state.maintain_maximum_influences:
             retained = ranked[:target_state.maximum_influences]
             discarded = sum(weight for _, weight in ranked[target_state.maximum_influences:])
         else:
             retained, discarded = ranked, 0.0
-        greatest_discard = max(greatest_discard, discarded)
-        if discarded > max_discarded_weight + 1e-12:
+        source_total = sum(weight for _, weight in ranked)
+        discarded_fraction = (discarded / source_total
+                              if source_total > 0.0 else 0.0)
+        greatest_discard = max(greatest_discard, discarded_fraction)
+        if discarded_fraction > max_discarded_weight + 1e-12:
             raise SkinWeightValidationError(
-                f"目标顶点 {target_index} 的影响数裁剪损失 {discarded:.6g} 超过上限")
+                f"目标顶点 {target_index} 的影响数裁剪损失 {discarded_fraction:.6g} 超过上限")
         total = sum(weight for _, weight in retained)
         vertices.append(SkinVertexWeights(target_index, tuple(
-            SkinInfluenceWeight(path, weight / total) for path, weight in retained)))
+            SkinInfluenceWeight(path, weight / total *
+                (1.0 if source.normalized else source_total))
+            for path, weight in retained) if total else ()))
     state = SkinWeightInputState(target_state.skin_name, target_state.geometry_path,
         target_state.vertex_count, target_state.influence_paths, (),
         target_state.maximum_influences, target_state.maintain_maximum_influences,
         tuple(vertices))
-    document = skin_weight_document_from_state(state)
+    document = skin_weight_document_from_state(state,
+        preserve_raw=not source.normalized)
     return SkinWeightSurfaceTransferResult(document, len(source_triangles),
                                            projection.max_distance, greatest_discard,
                                            tuple(blend_weights)

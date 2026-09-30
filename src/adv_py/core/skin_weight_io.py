@@ -30,6 +30,7 @@ class SkinWeightDocument:
     content_sha256: str
     schema_version: int = SKIN_WEIGHT_DOCUMENT_SCHEMA_VERSION
     format_name: str = SKIN_WEIGHT_DOCUMENT_FORMAT
+    normalized: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +48,7 @@ class SkinWeightPathMapping:
 
 def skin_weight_document_from_state(
     state: SkinWeightInputState,
+    *, preserve_raw: bool | None = None,
 ) -> SkinWeightDocument:
     if state.skin_name is None or state.geometry_path is None:
         raise SkinWeightValidationError("无法从缺失的 skinCluster 或 mesh 导出权重")
@@ -69,10 +71,17 @@ def skin_weight_document_from_state(
         raise SkinWeightValidationError("导出权重的最大影响数无效")
     if not isinstance(state.maintain_maximum_influences, bool):
         raise SkinWeightValidationError("导出权重的最大影响数开关无效")
+    if preserve_raw is not None and type(preserve_raw) is not bool:
+        raise SkinWeightValidationError("原始权重保留选项无效")
+    raw = ((state.normalization_mode in (0, 2)) or
+        any(not vertex.weights or abs(sum(entry.weight for entry in
+            vertex.weights) - 1.0) > 1e-6 for vertex in state.vertices)
+        if preserve_raw is None else preserve_raw)
     request = skin_weight_request(
         state.skin_name,
         state.geometry_path,
         state.vertices,
+        normalized=not raw,
     )
     expected_indices = tuple(range(state.vertex_count))
     actual_indices = tuple(vertex.vertex_index for vertex in request.vertices)
@@ -99,12 +108,18 @@ def skin_weight_document_from_state(
         state.maintain_maximum_influences,
         request.vertices,
         "",
+        2 if raw else 1,
+        SKIN_WEIGHT_DOCUMENT_FORMAT,
+        not raw,
     )
     return replace(document, content_sha256=_document_digest(document))
 
 
 def skin_weight_document_to_json(document: SkinWeightDocument) -> str:
-    if document.schema_version != SKIN_WEIGHT_DOCUMENT_SCHEMA_VERSION:
+    if (document.schema_version not in (1, 2)
+            or type(document.normalized) is not bool
+            or (document.schema_version == 1 and not document.normalized)
+            or (document.schema_version == 2 and document.normalized)):
         raise SkinWeightValidationError("不支持的权重文档 schema 版本")
     if document.format_name != SKIN_WEIGHT_DOCUMENT_FORMAT:
         raise SkinWeightValidationError("不支持的权重文档格式")
@@ -132,13 +147,17 @@ def skin_weight_document_from_json(text: str) -> SkinWeightDocument:
         "vertices",
         "content_sha256",
     }
-    _require_object(data, root_keys, "权重文档根对象")
+    if not isinstance(data, dict):
+        raise SkinWeightValidationError("权重文档根对象无效")
+    version = data.get("schema_version")
+    _require_object(data, root_keys | ({"normalized"} if version == 2 else set()),
+                    "权重文档根对象")
     if data["format"] != SKIN_WEIGHT_DOCUMENT_FORMAT:
         raise SkinWeightValidationError("不支持的权重文档格式")
     if (
         isinstance(data["schema_version"], bool)
         or not isinstance(data["schema_version"], int)
-        or data["schema_version"] != SKIN_WEIGHT_DOCUMENT_SCHEMA_VERSION
+        or data["schema_version"] not in (1, 2)
     ):
         raise SkinWeightValidationError("不支持的权重文档 schema 版本")
     if not isinstance(data["vertices"], list):
@@ -173,6 +192,9 @@ def skin_weight_document_from_json(text: str) -> SkinWeightDocument:
         or data["maximum_influences"] < 1
     ):
         raise SkinWeightValidationError("权重文档 maximum_influences 必须是正整数")
+    normalized = data["normalized"] if version == 2 else True
+    if type(normalized) is not bool or (version == 2 and normalized):
+        raise SkinWeightValidationError("权重文档归一化声明无效")
     state = SkinWeightInputState(
         data["skin_name"],
         data["mesh_path"],
@@ -183,7 +205,8 @@ def skin_weight_document_from_json(text: str) -> SkinWeightDocument:
         data["maintain_maximum_influences"],
         tuple(vertices),
     )
-    document = skin_weight_document_from_state(state)
+    document = skin_weight_document_from_state(state,
+        preserve_raw=not normalized)
     if not isinstance(data["content_sha256"], str) or (
         data["content_sha256"] != document.content_sha256
     ):
@@ -234,6 +257,12 @@ def audit_skin_weight_document_target(
     for passed, code, message, subject in checks:
         if not passed:
             issues.append(SkinWeightIssue(code, message, subject))
+    if not document.normalized and state.normalization_mode == 1:
+        issues.append(SkinWeightIssue(
+            "interactive_normalization_mismatch",
+            "Interactive Normalize Skin 不能写入原始权重总量",
+            document.skin_name,
+        ))
     locked = set(state.locked_influences) & set(document.influence_paths)
     for path in sorted(locked):
         issues.append(
@@ -244,6 +273,31 @@ def audit_skin_weight_document_target(
             )
         )
     return tuple(issues)
+
+
+def raw_skin_document_changed_vertices(
+    document: SkinWeightDocument, state: SkinWeightInputState,
+    *, tolerance: float = 1e-7,
+) -> int:
+    """Count vertices whose complete raw influence vector would change."""
+    if (document.normalized or state.skin_name != document.skin_name
+            or state.geometry_path != document.mesh_path
+            or state.vertex_count != document.vertex_count
+            or not set(document.influence_paths).issubset(state.influence_paths)):
+        raise SkinWeightValidationError("原始 Skin 权重比较目标无效")
+    current = {vertex.vertex_index: {
+        entry.influence_path: entry.weight for entry in vertex.weights}
+        for vertex in state.vertices}
+    if len(current) != document.vertex_count:
+        raise SkinWeightValidationError("原始 Skin 权重目标快照不完整")
+    changed = 0
+    for vertex in document.vertices:
+        wanted = {entry.influence_path: entry.weight
+                  for entry in vertex.weights}
+        actual = current[vertex.vertex_index]
+        changed += any(abs(actual.get(path, 0.0) - wanted.get(path, 0.0))
+                       > tolerance for path in state.influence_paths)
+    return changed
 
 
 def remap_skin_weight_document(
@@ -318,11 +372,12 @@ def remap_skin_weight_document(
         document.maintain_maximum_influences,
         target_vertices,
     )
-    return skin_weight_document_from_state(target_state)
+    return skin_weight_document_from_state(target_state,
+        preserve_raw=not document.normalized)
 
 
 def _document_payload(document: SkinWeightDocument) -> dict:
-    return {
+    payload = {
         "format": document.format_name,
         "schema_version": document.schema_version,
         "skin_name": document.skin_name,
@@ -345,6 +400,9 @@ def _document_payload(document: SkinWeightDocument) -> dict:
             for vertex in document.vertices
         ],
     }
+    if document.schema_version >= 2:
+        payload["normalized"] = document.normalized
+    return payload
 
 
 def _document_digest(document: SkinWeightDocument) -> str:

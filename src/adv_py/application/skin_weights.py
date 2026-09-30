@@ -53,6 +53,11 @@ class SkinWeightEditResult:
         return len(self.plan.changes)
 
 
+@dataclass(frozen=True, slots=True)
+class RawSkinWeightEditResult:
+    changed_vertex_count: int
+
+
 class EditSkinWeights:
     """Replace complete non-zero influence weights on explicit vertices."""
 

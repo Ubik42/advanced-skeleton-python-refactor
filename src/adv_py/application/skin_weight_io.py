@@ -12,6 +12,7 @@ from adv_py.core.skin_weight_io import (
     SkinWeightPathMapping,
     audit_skin_weight_document_target,
     remap_skin_weight_document,
+    raw_skin_document_changed_vertices,
     skin_weight_document_from_json,
     skin_weight_document_from_state,
     skin_weight_document_to_json,
@@ -23,6 +24,7 @@ from .skin_weights import (
     SkinWeightEditPlan,
     SkinWeightEditResult,
     SkinWeightHost,
+    RawSkinWeightEditResult,
 )
 
 
@@ -32,6 +34,8 @@ class SkinWeightDocumentHost(SkinWeightHost, Protocol):
         skin_name: str,
         mesh_path: str,
     ) -> SkinWeightInputState: ...
+    def preflight_raw_skin_document(self, document: SkinWeightDocument) -> None: ...
+    def apply_raw_skin_document(self, document: SkinWeightDocument) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,17 +56,17 @@ class SkinWeightImportPlan:
     document: SkinWeightDocument
     target_document: SkinWeightDocument
     target_state: SkinWeightInputState
-    edit_plan: SkinWeightEditPlan
+    edit_plan: SkinWeightEditPlan | None
 
     @property
     def ready(self) -> bool:
-        return self.edit_plan.ready
+        return self.edit_plan is None or self.edit_plan.ready
 
 
 @dataclass(frozen=True, slots=True)
 class SkinWeightImportResult:
     plan: SkinWeightImportPlan
-    edit_result: SkinWeightEditResult
+    edit_result: SkinWeightEditResult | RawSkinWeightEditResult
 
 
 class ExportSkinWeights:
@@ -158,11 +162,15 @@ class ImportSkinWeights:
                 "权重导入目标预检失败，场景未修改："
                 + "；".join(issue.message for issue in issues)
             )
-        edit_plan = self._editor.plan(
-            target_document.skin_name,
-            target_document.mesh_path,
-            target_document.vertices,
-        )
+        if target_document.normalized:
+            edit_plan = self._editor.plan(
+                target_document.skin_name,
+                target_document.mesh_path,
+                target_document.vertices,
+            )
+        else:
+            self._host.preflight_raw_skin_document(target_document)
+            edit_plan = None
         return SkinWeightImportPlan(
             path,
             document,
@@ -190,11 +198,18 @@ class ImportSkinWeights:
         )
         if current_state != plan.target_state:
             raise FitSkeletonValidationError("权重导入场景在执行前发生变化")
-        result = self._editor.apply(
-            plan.target_document.skin_name,
-            plan.target_document.mesh_path,
-            plan.target_document.vertices,
-        )
+        if plan.target_document.normalized:
+            result = self._editor.apply(
+                plan.target_document.skin_name,
+                plan.target_document.mesh_path,
+                plan.target_document.vertices,
+            )
+        else:
+            changed = raw_skin_document_changed_vertices(
+                plan.target_document, current_state)
+            with self._host.transaction("导入原始 Skin 权重"):
+                self._host.apply_raw_skin_document(plan.target_document)
+            result = RawSkinWeightEditResult(changed)
         return SkinWeightImportResult(plan, result)
 
 

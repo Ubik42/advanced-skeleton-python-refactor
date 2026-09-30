@@ -5630,9 +5630,6 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         if bind_method is SkinBindMethod.GEODESIC_VOXEL:
             raise FitSkeletonValidationError(
                 "Geodesic Voxel Skin 带独立 geomBind 节点，当前不能安全自动重绑")
-        if normalization is SkinWeightNormalization.NONE:
-            raise FitSkeletonValidationError(
-                "非归一化 Skin 权重尚不能安全跨拓扑转移")
         envelope_source = c.connectionInfo(
             f"{skin}.envelope", sourceFromDestination=True) or None
         set_memberships = tuple(sorted(set(
@@ -5676,6 +5673,69 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
     def apply_skin_blend_weights(self, skin_name: str, values) -> None:
         from .maya_dense_skin import MayaDenseSkinHost
         MayaDenseSkinHost.apply_skin_blend_weights(self, skin_name, values)
+
+    def preflight_raw_skin_document(self, document) -> None:
+        """Check that a complete raw document can be written without normalization."""
+        from adv_py.core.skin_weight_io import skin_weight_document_to_json
+
+        if document.normalized:
+            raise FitSkeletonValidationError(
+                "原始权重写入要求非归一化来源文档")
+        skin_weight_document_to_json(document)
+        state = self.capture_all_skin_weights(
+            document.skin_name, document.mesh_path)
+        if (state.skin_name != document.skin_name
+                or state.geometry_path != document.mesh_path
+                or state.vertex_count != document.vertex_count
+                or not set(document.influence_paths).issubset(
+                    state.influence_paths)
+                or state.locked_influences
+                or (state.maintain_maximum_influences and any(
+                    len(vertex.weights) > state.maximum_influences
+                    for vertex in document.vertices))):
+            raise FitSkeletonValidationError(
+                "原始 Skin 权重目标、影响关节或锁定状态不一致")
+        if int(self._cmds.getAttr(document.skin_name +
+                                  ".normalizeWeights")) == 1:
+            raise FitSkeletonValidationError(
+                "Interactive Normalize Skin 不能保留原始权重总量")
+
+    def apply_raw_skin_document(self, document) -> None:
+        """Write complete, non-normalized Skin weights through the undoable plugin."""
+        from array import array
+        from pathlib import Path
+        import tempfile
+
+        self._require_transaction()
+        self.preflight_raw_skin_document(document)
+        skin_fn, dag, component, _, count = self._skin_api(
+            document.skin_name)
+        influences = tuple(path.fullPathName()
+                           for path in skin_fn.influenceObjects())
+        actual_paths = tuple(self.scene_address(path)
+                             for path in document.influence_paths)
+        if count != document.vertex_count or not set(actual_paths).issubset(influences):
+            raise FitSkeletonValidationError(
+                "原始 Skin 文档的影响关节与目标不一致")
+        values_by_vertex = ({self.scene_address(entry.influence_path):
+            entry.weight for entry in vertex.weights}
+            for vertex in document.vertices)
+        values = array("d", (row.get(path, 0.0)
+            for row in values_by_vertex for path in influences))
+        plugin = (Path(__file__).resolve().parents[1] /
+                  "maya_plugins" / "skin_bulk.py")
+        self._cmds.loadPlugin(str(plugin), quiet=True)
+        with tempfile.TemporaryDirectory(prefix="advpy-raw-skin-") as directory:
+            path = Path(directory) / "weights.bin"
+            path.write_bytes(values.tobytes())
+            self._transaction_changed = True
+            getattr(self._cmds, "raw", self._cmds).advPySetSkinWeights(
+                self.scene_address(document.skin_name), dag.fullPathName(),
+                str(path), count, len(influences))
+        actual, width = skin_fn.getWeights(dag, component)
+        if (width != len(influences) or len(actual) != len(values)
+                or any(abs(a - b) > 1e-7 for a, b in zip(actual, values))):
+            raise RuntimeError("原始 Skin 权重未完整写回")
 
     def restore_skin_rebind_deformer_state(self, state) -> None:
         self._require_transaction()
@@ -5890,6 +5950,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             int(self._cmds.getAttr(f"{skin}.maxInfluences")),
             bool(self._cmds.getAttr(f"{skin}.maintainMaxInfluences")),
             tuple(vertices),
+            int(self._cmds.getAttr(f"{skin}.normalizeWeights")),
         )
 
     def _capture_skin_vertices_api(
@@ -5908,6 +5969,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         dag = selection.getDagPath(0)
         influence_order = {path.fullPathName(): index
                            for index, path in enumerate(skin_fn.influenceObjects())}
+        visible_threshold = (SKIN_WEIGHT_VISIBLE_THRESHOLD
+            if int(self._cmds.getAttr(skin + ".normalizeWeights")) == 1
+            else 0.0)
         if any(self.scene_address(path) not in influence_order for path in influences):
             raise RuntimeError("skinCluster API 影响关节集合与场景查询不一致")
         requested = (tuple(range(vertex_count)) if vertex_indices is None
@@ -5930,7 +5994,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 for path in influences:
                     value = float(values[offset * influence_count
                         + influence_order[self.scene_address(path)]])
-                    if value > SKIN_WEIGHT_VISIBLE_THRESHOLD:
+                    if value > visible_threshold:
                         weights.append(SkinInfluenceWeight(path, value))
                 rows.append(SkinVertexWeights(vertex_index, tuple(weights)))
         if vertex_indices is None:

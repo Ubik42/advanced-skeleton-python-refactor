@@ -40,6 +40,7 @@ class SkinWeightInputState:
     maximum_influences: int
     maintain_maximum_influences: bool
     vertices: tuple[SkinVertexWeights, ...]
+    normalization_mode: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +63,10 @@ def skin_weight_request(
     vertices: tuple[SkinVertexWeights, ...],
     *,
     tolerance: float = 1e-6,
+    normalized: bool = True,
 ) -> SkinWeightEditRequest:
+    if type(normalized) is not bool:
+        raise SkinWeightValidationError("权重归一化声明必须是布尔值")
     if (
         not isinstance(skin_name, str)
         or not skin_name.strip()
@@ -84,7 +88,7 @@ def skin_weight_request(
             or vertex.vertex_index < 0
         ):
             raise SkinWeightValidationError("顶点索引必须是非负整数")
-        if not vertex.weights:
+        if normalized and not vertex.weights:
             raise SkinWeightValidationError("每个顶点至少需要一个非零 influence")
         raw_paths = [entry.influence_path for entry in vertex.weights]
         if any(
@@ -101,11 +105,12 @@ def skin_weight_request(
             or not isinstance(value, (int, float))
             or not isfinite(value)
             or value <= 0.0
-            or value > 1.0
+            or (normalized and value > 1.0)
             for value in values
         ):
-            raise SkinWeightValidationError("Influence 权重必须是大于 0 且不超过 1 的有限数")
-        if abs(sum(values) - 1.0) > tolerance:
+            raise SkinWeightValidationError(
+                "Influence 权重必须是有限正数；归一化权重不能超过 1")
+        if normalized and abs(sum(values) - 1.0) > tolerance:
             raise SkinWeightValidationError("每个顶点的 influence 权重和必须为 1")
         weights = tuple(
             sorted(

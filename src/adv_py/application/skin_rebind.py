@@ -11,6 +11,7 @@ from adv_py.core.skin_bind import (
     audit_skin_bind_result, plan_skin_bind,
 )
 from adv_py.core.skin_weight_surface_source import SkinWeightSurfaceSource
+from adv_py.core.skin_weight_io import raw_skin_document_changed_vertices
 
 from .skin_weight_surface_transfer import TransferSkinWeightsBySurface
 from .skin_weights import EditSkinWeights
@@ -90,9 +91,19 @@ class RebindSkinFromSurfaceSource:
                 max_distance=max_distance,
                 max_discarded_weight=max_discarded_weight,
                 source_blend_weights=source.blend_weights)
-            editor = EditSkinWeights(self._host)
-            edit_plan = editor.plan(skin, mesh, transfer.transfer.document.vertices)
-            edit = editor.apply_plan_in_transaction(edit_plan)
+            projected_weights = transfer.transfer.document
+            if projected_weights.normalized:
+                editor = EditSkinWeights(self._host)
+                edit_plan = editor.plan(skin, mesh,
+                                        projected_weights.vertices)
+                changed_vertices = editor.apply_plan_in_transaction(
+                    edit_plan).changed_vertex_count
+            else:
+                before_weights = self._host.capture_all_skin_weights(
+                    skin, mesh)
+                changed_vertices = raw_skin_document_changed_vertices(
+                    projected_weights, before_weights)
+                self._host.apply_raw_skin_document(projected_weights)
             if state.skinning_method is SkinningMethod.WEIGHT_BLENDED:
                 projected = transfer.transfer.blend_weights
                 if projected is None:
@@ -106,5 +117,5 @@ class RebindSkinFromSurfaceSource:
                     raise RuntimeError(
                         "Weight Blended 重绑混合权重未完整写回")
             return SkinRebindResult(transfer.transfer.document.vertex_count,
-                edit.changed_vertex_count,
+                changed_vertices,
                 transfer.transfer.max_surface_distance)

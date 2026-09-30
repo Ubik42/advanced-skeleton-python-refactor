@@ -15,7 +15,8 @@ from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.body_fbx_export import BodyFbxLinearUnit
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.skin_weight_io import (SkinWeightDocument, SkinWeightPathMapping,
-    remap_skin_weight_document, skin_weight_document_from_state)
+    remap_skin_weight_document, skin_weight_document_from_state,
+    raw_skin_document_changed_vertices)
 from adv_py.core.skin_weight_surface_transfer import (
     SkinWeightSurfaceTransferResult, transfer_skin_weights_by_surface)
 from adv_py.core.skin_weight_surface_source import (SkinWeightSurfaceSource,
@@ -26,7 +27,8 @@ from adv_py.core.skin_weight_redistribution import (SkinWeightRedistribution,
     redistribute_skin_weight_document)
 
 from .skin_weight_io import SkinWeightDocumentHost
-from .skin_weights import EditSkinWeights, SkinWeightEditResult
+from .skin_weights import (EditSkinWeights, SkinWeightEditResult,
+    RawSkinWeightEditResult)
 
 
 class SkinWeightSurfaceHost(SkinWeightDocumentHost, Protocol):
@@ -36,6 +38,8 @@ class SkinWeightSurfaceHost(SkinWeightDocumentHost, Protocol):
     def scene_linear_unit(self) -> BodyFbxLinearUnit: ...
     def capture_skin_blend_weights(self, skin_name: str): ...
     def apply_skin_blend_weights(self, skin_name: str, values) -> None: ...
+    def preflight_raw_skin_document(self, document: SkinWeightDocument) -> None: ...
+    def apply_raw_skin_document(self, document: SkinWeightDocument) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +56,7 @@ class SkinWeightSurfacePlan:
 @dataclass(frozen=True, slots=True)
 class SkinWeightSurfaceResult:
     plan: SkinWeightSurfacePlan
-    edit_result: SkinWeightEditResult
+    edit_result: SkinWeightEditResult | RawSkinWeightEditResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,10 +115,8 @@ class TransferSkinWeightsBySurface:
             max_discarded_weight=max_discarded_weight, alignment=alignment,
             allow_target_extra_influences=allow_target_extra_influences,
             source_blend_weights=blend_weights)
-        edit_plan = self._editor.plan(target_skin, target_mesh, transfer.document.vertices)
-        if not edit_plan.ready:
-            raise FitSkeletonValidationError("表面权重转移目标预检失败，场景未修改："
-                                             + "；".join(edit_plan.blockers))
+        self._preflight_transfer_document(transfer.document,
+            target_skin, target_mesh)
         return SkinWeightSurfacePlan(source_state, target_state, source_geometry,
                                      target_geometry, triangles, transfer,
                                      blend_weights)
@@ -143,9 +145,8 @@ class TransferSkinWeightsBySurface:
                     != plan.source_blend_weights)):
             raise FitSkeletonValidationError("表面权重转移输入在执行前发生变化")
         with self._host.transaction("表面投射 Skin 权重与混合权重"):
-            edit_plan = self._editor.plan(
-                target_skin, target_mesh, plan.transfer.document.vertices)
-            edit = self._editor.apply_plan_in_transaction(edit_plan)
+            edit = self._apply_transfer_document(
+                plan.transfer.document, target_skin, target_mesh)
             self._apply_projected_blend_weights(target_skin,
                 plan.transfer.blend_weights)
             if (self._host.capture_all_skin_weights(source_skin, source_mesh)
@@ -157,6 +158,31 @@ class TransferSkinWeightsBySurface:
                     != plan.source_blend_weights):
                 raise RuntimeError("表面权重转移后源混合权重发生变化")
         return SkinWeightSurfaceResult(plan, edit)
+
+    def _preflight_transfer_document(self, document: SkinWeightDocument,
+            target_skin: str, target_mesh: str) -> None:
+        if not document.normalized:
+            self._host.preflight_raw_skin_document(document)
+            return
+        edit_plan = self._editor.plan(
+            target_skin, target_mesh, document.vertices)
+        if not edit_plan.ready:
+            raise FitSkeletonValidationError(
+                "表面权重转移目标预检失败，场景未修改：" +
+                "；".join(edit_plan.blockers))
+
+    def _apply_transfer_document(self, document: SkinWeightDocument,
+            target_skin: str, target_mesh: str
+            ) -> SkinWeightEditResult | RawSkinWeightEditResult:
+        if not document.normalized:
+            state = self._host.capture_all_skin_weights(target_skin,
+                                                        target_mesh)
+            changed = raw_skin_document_changed_vertices(document, state)
+            self._host.apply_raw_skin_document(document)
+            return RawSkinWeightEditResult(changed)
+        edit_plan = self._editor.plan(target_skin, target_mesh,
+                                      document.vertices)
+        return self._editor.apply_plan_in_transaction(edit_plan)
 
     def _apply_projected_blend_weights(self, skin_name: str,
             values: tuple[float, ...] | None) -> None:
@@ -214,10 +240,8 @@ class TransferSkinWeightsBySurface:
             source_blend_weights=source_blend_weights,
             alignment=alignment,
             allow_target_extra_influences=allow_target_extra_influences)
-        edit_plan = self._editor.plan(target_skin, target_mesh, transfer.document.vertices)
-        if not edit_plan.ready:
-            raise FitSkeletonValidationError("表面权重转移目标预检失败，场景未修改："
-                                             + "；".join(edit_plan.blockers))
+        self._preflight_transfer_document(transfer.document,
+            target_skin, target_mesh)
         return SkinWeightDocumentSurfacePlan(weights, geometry, target_state,
                                               target_geometry, transfer)
 
@@ -230,7 +254,8 @@ class TransferSkinWeightsBySurface:
             alignment: FaceSurfaceAlignment | None = None,
             allow_target_extra_influences: bool = False,
             allow_unweighted_missing: bool = False
-            ) -> tuple[SkinWeightDocumentSurfacePlan, SkinWeightEditResult]:
+            ) -> tuple[SkinWeightDocumentSurfacePlan,
+                       SkinWeightEditResult | RawSkinWeightEditResult]:
         plan = self.plan_from_documents(weights, geometry, target_skin, target_mesh,
             max_distance=max_distance, max_discarded_weight=max_discarded_weight,
             source_blend_weights=source_blend_weights,
@@ -243,9 +268,8 @@ class TransferSkinWeightsBySurface:
                 or self._host.scene_linear_unit().value != geometry.linear_unit):
             raise FitSkeletonValidationError("表面权重转移目标在执行前发生变化")
         with self._host.transaction("从资产投射 Skin 权重与混合权重"):
-            edit_plan = self._editor.plan(
-                target_skin, target_mesh, plan.transfer.document.vertices)
-            edit = self._editor.apply_plan_in_transaction(edit_plan)
+            edit = self._apply_transfer_document(
+                plan.transfer.document, target_skin, target_mesh)
             self._apply_projected_blend_weights(target_skin,
                 plan.transfer.blend_weights)
         return plan, edit

@@ -84,7 +84,8 @@ def redistribute_skin_weight_document(document: SkinWeightDocument,
                 values.setdefault(target.path, []).append(entry.weight * target.fraction)
         weights = tuple(SkinInfluenceWeight(path, fsum(values[path]))
                         for path in targets if path in values and fsum(values[path]) > 0)
-        if abs(fsum(entry.weight for entry in weights) - 1.) > 1e-6:
+        source_total = fsum(entry.weight for entry in vertex.weights)
+        if abs(fsum(entry.weight for entry in weights) - source_total) > 1e-6:
             raise SkinWeightValidationError("重分配后的顶点权重总量发生变化")
         greatest_count = max(greatest_count, len(weights))
         vertices.append(SkinVertexWeights(vertex.vertex_index, weights))
@@ -92,7 +93,8 @@ def redistribute_skin_weight_document(document: SkinWeightDocument,
         mapping.target_mesh_path.strip(), document.vertex_count, targets, (),
         max(document.maximum_influences, greatest_count),
         document.maintain_maximum_influences, tuple(vertices))
-    return skin_weight_document_from_state(state)
+    return skin_weight_document_from_state(state,
+        preserve_raw=not document.normalized)
 
 
 def linear_spine_weight_redistribution(source_chain: tuple[str, ...],

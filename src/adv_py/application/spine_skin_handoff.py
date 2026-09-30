@@ -130,13 +130,16 @@ class HandoffRegisteredSpineSkinCluster:
             if any(abs(values.get(entry.influence_path, 0.) - entry.weight) > 1e-6
                    for entry in old.weights):
                 raise RuntimeError('新增目标影响关节改变了原权重')
-        editor = EditSkinWeights(host)
-        edit = editor.plan(skin_name, mesh_path,
-                           plan.target_document.vertices)
-        if not edit.ready:
-            raise CharacterRegistryError('原 skinCluster 无法写入重分配权重：'
-                                         + '；'.join(edit.blockers))
-        editor.apply_plan_in_transaction(edit)
+        if plan.target_document.normalized:
+            editor = EditSkinWeights(host)
+            edit = editor.plan(skin_name, mesh_path,
+                               plan.target_document.vertices)
+            if not edit.ready:
+                raise CharacterRegistryError('原 skinCluster 无法写入重分配权重：'
+                                             + '；'.join(edit.blockers))
+            editor.apply_plan_in_transaction(edit)
+        else:
+            host.apply_raw_skin_document(plan.target_document)
         host.remove_skin_handoff_influences(skin_name,
                                             plan.source_state.influence_paths)
         if release_bind_pose:
