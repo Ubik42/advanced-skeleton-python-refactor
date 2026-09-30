@@ -19,20 +19,24 @@ def match_ik(host, registration, before):
     scale = sqrt(sum(value*value for value in root_matrix[:3]))
     length = sum(plan.lengths)
     if scale<1e-8:raise CharacterRegistryError('曲线脊柱机制组缩放无效')
-    # This pose solver only fits one longitudinal stretch ratio. The rig's new
-    # per-control scale channels need a separate scale-aware matching strategy.
     ratios = tuple(sqrt(sum((a-b)**2 for a,b in zip(left[12:15],right[12:15])))/(rest*scale)
                    for left,right,rest in zip(matrices,matrices[1:],plan.lengths))
-    if max(ratios)-min(ratios)>1e-5:
-        raise CharacterRegistryError('当前 FK 骨段伸展比不一致，此版曲线 IK 匹配尚未求解逐控制器缩放')
-    if any(abs(sqrt(sum(value*value for value in matrix[:3]))-scale)>1e-5 for matrix in matrices[1:]):
-        raise CharacterRegistryError('当前 FK 含独立纵向缩放，此版曲线 IK 匹配尚未求解逐控制器缩放')
+    scaled_pose = (max(ratios)-min(ratios)>1e-5 or
+        any(abs(sqrt(sum(value*value for value in matrix[start:start+3]))-scale)>1e-5
+            for matrix in matrices[1:] for start in (0,4,8)))
     parameters = []
     for index,control in enumerate(plan.driver_targets):
         if index:
             parameters.extend((control+'.translate'+axis,length,None,None) for axis in 'XYZ')
         if index in (0,len(plan.targets)-1) or plan.twist_ramp_graph:
             parameters.extend((control+'.rotate'+axis,180./pi,None,None) for axis in 'XYZ')
+        if index and scaled_pose:
+            for axis in 'XYZ':
+                plug = control+'.scale'+axis
+                if not c.getAttr(plug, settable=True):
+                    raise CharacterRegistryError(
+                        '曲线 IK 缩放控制通道被占用：'+plug)
+                parameters.append((plug,1.,.001,None))
         if 0<index<len(plan.targets)-1 and plan.mid_follow_graph:
             parameters.append((plan.targets[index]+'.followEnd',10.,0.,1.))
     try:

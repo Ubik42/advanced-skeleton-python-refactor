@@ -336,9 +336,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
 
     def copy_external_mesh_for_character(self, mesh_path: str) -> str:
         """Keep a source mesh intact when building a separate character."""
+        from adv_py.core.character_identity import CharacterIdentity
         self._require_transaction()
-        c = self._cmds.raw
-        identity = self._cmds.identity
+        c = getattr(self._cmds, "raw", self._cmds)
+        identity = CharacterIdentity(self.namespace or "")
         matches = c.ls(mesh_path, long=True, type="transform") or []
         if len(matches) != 1:
             raise FitSkeletonValidationError(
@@ -3197,6 +3198,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
 
     def _capture_fbx_skin_sources(self, influence_map, published_names):
         from .maya_dense_skin import MayaDenseSkinHost
+        from .maya_mesh_topology import mesh_topology_digest
 
         c = self._cmds
         source_paths = {source: target for source, target in influence_map}
@@ -3253,6 +3255,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise FitSkeletonValidationError(
                     "FBX Skin 绑定逆矩阵不完整：" + skin)
             rows.append((mesh[0], data,
+                         mesh_topology_digest(shape[0]),
                          int(c.getAttr(skin + ".maxInfluences")),
                          bool(c.getAttr(skin + ".maintainMaxInfluences")),
                          int(c.getAttr(skin + ".skinningMethod")),
@@ -3348,7 +3351,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         group = c.createNode("transform",
             name=(":AdvPy_FBXTemporaryMeshGroup" if namespace_free
                   else "AdvPy_FBXTemporaryMeshGroup")) if sources else None
-        for index, (mesh, data, maximum, maintain, method,
+        from .maya_mesh_topology import mesh_topology_digest
+        for index, (mesh, data, source_topology, maximum, maintain, method,
                     normalization, distribution, blend_weights,
                     bind_matrices, mapping) in enumerate(
                 sources, 1):
@@ -3399,6 +3403,15 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise FitSkeletonValidationError(
                     "FBX 临时网格未能保留源名称：" + mesh_name)
             c.delete(clone, constructionHistory=True)
+            clone_shapes = c.listRelatives(clone, shapes=True,
+                noIntermediate=True, fullPath=True, type="mesh") or []
+            if (len(clone_shapes) != 1
+                    or int(c.polyEvaluate(clone_shapes[0], vertex=True))
+                    != data.vertex_count
+                    or mesh_topology_digest(clone_shapes[0])
+                    != source_topology):
+                raise FitSkeletonValidationError(
+                    "FBX 临时网格拓扑与源 Skin 权重不一致：" + mesh_name)
             name = (":" if namespace_free else "") + f"AdvPy_FBXExportSkin_{index}"
             skin = c.skinCluster(target_paths, clone, toSelectedBones=True,
                 bindMethod=0, normalizeWeights=1,

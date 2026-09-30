@@ -61,8 +61,8 @@ class MayaDenseSkinHost(MayaBodyBuildHost):
             path = Path(directory) / "weights.bin"
             path.write_bytes(data.values)
             self._transaction_changed = True
-            self._cmds.advPySetSkinWeights(
-                data.skin_name, dag.fullPathName(), str(path),
+            getattr(self._cmds, "raw", self._cmds).advPySetSkinWeights(
+                self.scene_address(data.skin_name), dag.fullPathName(), str(path),
                 data.vertex_count, len(names))
 
     def capture_skin_blend_weights(self, skin_name: str) -> array:
@@ -86,5 +86,5 @@ class MayaDenseSkinHost(MayaBodyBuildHost):
             path = Path(directory) / "blend.bin"
             path.write_bytes(values.tobytes())
             self._transaction_changed = True
-            self._cmds.advPySetSkinBlendWeights(
-                skin_name, dag.fullPathName(), str(path), count)
+            getattr(self._cmds, "raw", self._cmds).advPySetSkinBlendWeights(
+                self.scene_address(skin_name), dag.fullPathName(), str(path), count)

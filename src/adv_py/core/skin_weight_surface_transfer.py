@@ -78,10 +78,14 @@ def transfer_skin_weights_by_surface(
     greatest_discard = 0.0
     for target_index, projected in enumerate(projection.rows):
         if blend_weights is not None:
-            blend_weights.append(sum(source_blend_weights[source_index]
+            value = sum(source_blend_weights[source_index]
                 * coefficient for source_index, coefficient in zip(
                     source_triangles[projected.triangle_index],
-                    projected.barycentric)))
+                    projected.barycentric))
+            if not -1e-8 <= value <= 1.0 + 1e-8:
+                raise SkinWeightValidationError(
+                    f"目标顶点 {target_index} 的混合权重投射超出范围")
+            blend_weights.append(min(1.0, max(0.0, value)))
         values: dict[str, float] = {}
         for source_index, coefficient in zip(source_triangles[projected.triangle_index],
                                              projected.barycentric):

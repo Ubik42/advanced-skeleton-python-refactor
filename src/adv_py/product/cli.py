@@ -842,6 +842,7 @@ def _run(args, gateway) -> dict:
                 source.geometry, target_skin, target_mesh,
                 max_distance=args.max_distance,
                 max_discarded_weight=args.max_discarded_weight, mapping=mapping,
+                source_blend_weights=source.blend_weights,
                 redistribution=redistribution,
                 alignment=alignment,
                 allow_target_extra_influences=args.allow_target_extra_influences,

@@ -45,9 +45,13 @@ class SetSkinWeights(ompx.MPxCommand):
         selection.add(shape_name)
         self._dag = selection.getDagPath(0)
         actual_influences = self._skin.influenceObjects()
+        if om.MFnMesh(self._dag).numVertices != vertex_count:
+            raise ValueError("Skin 权重目标顶点数在执行前发生变化")
         if len(actual_influences) != influence_count:
             raise ValueError("Skin 影响关节数量发生变化")
-        self._indices = om.MIntArray(list(range(influence_count)))
+        self._indices = om.MIntArray(
+            [self._skin.indexForInfluenceObject(path)
+             for path in actual_influences])
         component_fn = om.MFnSingleIndexedComponent()
         self._component = component_fn.create(om.MFn.kMeshVertComponent)
         component_fn.addElements(range(vertex_count))
@@ -105,6 +109,8 @@ class SetSkinBlendWeights(ompx.MPxCommand):
         selection.add(shape_name)
         self._dag = selection.getDagPath(0)
         component_fn = om.MFnSingleIndexedComponent()
+        if om.MFnMesh(self._dag).numVertices != vertex_count:
+            raise ValueError("Skin 混合权重目标顶点数在执行前发生变化")
         self._component = component_fn.create(om.MFn.kMeshVertComponent)
         component_fn.addElements(range(vertex_count))
         values = array("d")
