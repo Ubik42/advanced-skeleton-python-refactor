@@ -118,6 +118,7 @@ class GenericFkFeaturePolicy:
     bendy_legacy_start_icon_controls: frozenset[str] | None = None
     bendy_parented_end_controls: frozenset[str] | None = None
     bendy_legacy_circular_controls: frozenset[str] | None = None
+    bendy_legacy_full_span_controls: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(

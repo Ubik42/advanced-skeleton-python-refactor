@@ -52,6 +52,28 @@ def _bendy_parent_name(cmds, node: str) -> str | None:
 
 
 class MayaFitBendyMixin:
+    def capture_fit_bendy_end_local_length(self, end_body: str) -> float:
+        c = self._cmds
+        if (c.ls(end_body, long=True, type="joint") or []) != [end_body]:
+            raise ValueError("Bendy 下游 Body 关节无法唯一定位：" + end_body)
+        length = abs(float(c.getAttr(end_body + ".translateX")))
+        if not isfinite(length) or length <= 1e-8:
+            raise ValueError("Bendy 下游 Body 局部 X 长度无效：" + end_body)
+        return length
+
+    def _bendy_fraction_mode_supported(self) -> bool:
+        # ADV 6.925 leaves motionPath.fractionMode at its default in Maya
+        # 2020; that release rejects an incoming connection to this plug.
+        return int(self._cmds.about(apiVersion=True)) >= 20210000
+
+    def _bendy_fraction_mode_matches(self, path: str,
+                                     master: str) -> bool:
+        source = self._cmds.connectionInfo(
+            path + ".fractionMode", sourceFromDestination=True)
+        if self._bendy_fraction_mode_supported():
+            return source == master + ".parametric"
+        return not source
+
     def capture_bendy_deform_path(self, name: str) -> str:
         paths = self._cmds.ls(name, long=True, type="joint") or []
         if (len(paths) != 1
@@ -260,8 +282,9 @@ class MayaFitBendyMixin:
             transform = c.createNode("transform", name=transform_name,
                                      parent=_SECONDARY_GROUPS[2],
                                      skipSelect=True)
-            c.connectAttr(spec.control_names[0] + ".parametric",
-                          path + ".fractionMode")
+            if self._bendy_fraction_mode_supported():
+                c.connectAttr(spec.control_names[0] + ".parametric",
+                              path + ".fractionMode")
             c.setAttr(path + ".follow", True)
             c.setAttr(path + ".worldUpType", 2)
             c.setAttr(path + ".frontAxis", 0)
@@ -390,9 +413,8 @@ class MayaFitBendyMixin:
                     or c.connectionInfo(transform + ".rotate",
                                         sourceFromDestination=True)
                     != path + ".rotate"
-                    or c.connectionInfo(path + ".fractionMode",
-                                        sourceFromDestination=True)
-                    != spec.control_names[0] + ".parametric"
+                    or not self._bendy_fraction_mode_matches(
+                        path, spec.control_names[0])
                     or c.connectionInfo(path + ".worldUpMatrix",
                                         sourceFromDestination=True)
                     != ((spec.control_names[0]
@@ -791,11 +813,17 @@ class MayaFitBendyMixin:
                 control, position, spec.start_world_axes)
             c.setAttr(control + ".rotateOrder", spec.rotation_order)
             if index == 0:
-                c.addAttr(control, longName="parametric",
-                          attributeType="bool", defaultValue=True,
-                          keyable=False)
-                c.setAttr(control + ".parametric", channelBox=True)
+                if self._bendy_fraction_mode_supported():
+                    c.addAttr(control, longName="parametric",
+                              attributeType="bool", defaultValue=True,
+                              keyable=False)
+                    c.setAttr(control + ".parametric", channelBox=True)
             controls.append((c.ls(control, long=True) or [control])[0])
+        if not spec.legacy_full_span_weights:
+            c.addAttr(controls[0], longName="advPyBendyResidualFalloff",
+                      attributeType="bool", defaultValue=True)
+            c.setAttr(controls[0] + ".advPyBendyResidualFalloff",
+                      lock=True)
         for control, projection in zip(
                 controls, spec.twist_projection_names):
             c.createNode("transform", name=projection[0],
@@ -889,8 +917,9 @@ class MayaFitBendyMixin:
                                 skipSelect=True)
             transform = c.createNode("transform", name=transform_name,
                                      parent=_GROUPS[3], skipSelect=True)
-            c.connectAttr(spec.control_names[0] + ".parametric",
-                          path + ".fractionMode")
+            if self._bendy_fraction_mode_supported():
+                c.connectAttr(spec.control_names[0] + ".parametric",
+                              path + ".fractionMode")
             self._set_bendy_motion_parameter(path,
                 self._bendy_bind_parameter(shapes[0], position))
             c.connectAttr(shapes[0] + ".worldSpace[0]",
@@ -2258,8 +2287,15 @@ class MayaFitBendyMixin:
                     or not c.getAttr(marker)
                     or not c.getAttr(marker, lock=True)):
                 return False
-        if not c.objExists(spec.control_names[0] + ".parametric"):
+        if (self._bendy_fraction_mode_supported()
+                and not c.objExists(spec.control_names[0]
+                                    + ".parametric")):
             return False
+        if not spec.legacy_full_span_weights:
+            marker = spec.control_names[0] + ".advPyBendyResidualFalloff"
+            if (not c.objExists(marker) or not c.getAttr(marker)
+                    or not c.getAttr(marker, lock=True)):
+                return False
         if spec.parent_bendy and any(
                 not c.objExists(name) or c.nodeType(name) != "transform"
                 for name in (spec.junction_offset_name,
@@ -2292,9 +2328,8 @@ class MayaFitBendyMixin:
                     or c.connectionInfo(transform + ".translate",
                         sourceFromDestination=True)
                     != path + ".allCoordinates"
-                    or c.connectionInfo(path + ".fractionMode",
-                                        sourceFromDestination=True)
-                    != spec.control_names[0] + ".parametric"
+                    or not self._bendy_fraction_mode_matches(
+                        path, spec.control_names[0])
                     or not self._bendy_motion_parameter_matches(path)):
                 return False
         return True

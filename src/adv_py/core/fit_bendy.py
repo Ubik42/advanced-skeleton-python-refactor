@@ -43,6 +43,8 @@ class FitBendyChainSpec:
     legacy_start_icon_offset: bool = False
     end_proxy_parented: bool = True
     legacy_circular_factor: bool = False
+    falloff_span: float | None = None
+    legacy_full_span_weights: bool = False
 
     def __post_init__(self) -> None:
         if (not self.part_names
@@ -104,6 +106,12 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 末端代理父层策略无效")
         if type(self.legacy_circular_factor) is not bool:
             raise ValueError("Bendy Circular 长度系数策略无效")
+        if (self.falloff_span is not None and
+                (not isfinite(self.falloff_span)
+                 or self.falloff_span <= 1e-8)):
+            raise ValueError("Bendy 子骨段局部长度无效")
+        if type(self.legacy_full_span_weights) is not bool:
+            raise ValueError("Bendy 控制权重跨度策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -404,7 +412,13 @@ class FitBendyChainSpec:
         """MEL's start, master and interior distance falloffs at a bind sample."""
         if not 0 <= sample_index <= len(self.part_names):
             raise ValueError("Bendy 采样编号超出 Body／Part 链")
-        total = dist(self.start_position, self.end_position)
+        # MEL samples each control's world distance, but divides by the
+        # downstream Body joint's local translateX after Part reparenting.
+        # That is the final subsegment, not the complete Bendy segment.
+        total = (dist(self.start_position, self.end_position)
+                 if self.legacy_full_span_weights else
+                 self.falloff_span if self.falloff_span is not None else
+                 dist(self.part_positions[-1], self.end_position))
         if total <= 1e-8:
             raise ValueError("Bendy 起止关节不能重合")
         point = (self.start_position if sample_index == 0

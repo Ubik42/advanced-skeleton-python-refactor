@@ -144,6 +144,7 @@ class MayaCharacterRegistryMixin:
         bendy_legacy_start_icon = set()
         bendy_parented_end = set()
         bendy_legacy_circular = set()
+        bendy_legacy_full_span = set()
         for control in bendy_master_paths:
             stem, side = control.rsplit('_', 1)
             master_leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
@@ -156,6 +157,14 @@ class MayaCharacterRegistryMixin:
                         + stem.removeprefix('Bend') + '_' + side)
             start_icon_marker = (namespace + stem + '0_' + side
                                  + '.advPyBendyPartSpanIcon')
+            falloff_marker = (bendy_master_paths[control]
+                              + '.advPyBendyResidualFalloff')
+            if not c.objExists(falloff_marker):
+                bendy_legacy_full_span.add(control)
+            elif (not bool(c.getAttr(falloff_marker))
+                  or not c.getAttr(falloff_marker, lock=True)):
+                raise CharacterRegistryError(
+                    'Bendy 权重跨度标记已损坏：' + control)
             if not c.objExists(start_icon_marker):
                 bendy_legacy_start_icon.add(control)
             elif (not bool(c.getAttr(start_icon_marker))
@@ -427,7 +436,9 @@ class MayaCharacterRegistryMixin:
                 bendy_legacy_start_icon),
             bendy_parented_end_controls=frozenset(bendy_parented_end),
             bendy_legacy_circular_controls=frozenset(
-                bendy_legacy_circular))
+                bendy_legacy_circular),
+            bendy_legacy_full_span_controls=frozenset(
+                bendy_legacy_full_span))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext
