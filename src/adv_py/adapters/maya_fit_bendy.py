@@ -455,6 +455,7 @@ class MayaFitBendyMixin:
             if (c.objExists(constraint) or c.objExists(scale_pick)
                     or c.objExists(scale_mult)
                     or (spec.micro_local_scale
+                        and not spec.opm_offset_only_scale
                         and not spec.non_opm_additive_micro_scale and any(
                         c.objExists(node) for node in micro_scale_names))):
                 raise ValueError("Bendy 变形节点名称已占用：" + name)
@@ -479,7 +480,7 @@ class MayaFitBendyMixin:
             scale_value = c.getAttr(joint + ".scale")[0]
             scale_source = c.connectionInfo(joint + ".scale",
                                             sourceFromDestination=True)
-            if scale_source:
+            if scale_source and not spec.opm_offset_only_scale:
                 c.disconnectAttr(scale_source, joint + ".scale")
             scale_mult = c.createNode("multiplyDivide",
                                       name=scale_mult_name)
@@ -490,14 +491,16 @@ class MayaFitBendyMixin:
                     destination = joint + ".scale" + axis
                     source = c.connectionInfo(destination,
                                               sourceFromDestination=True)
-                    if source:
+                    if source and not spec.opm_offset_only_scale:
                         c.disconnectAttr(source, destination)
+                    if source:
                         c.connectAttr(source,
                                       scale_mult + ".input1" + axis)
                     else:
                         c.setAttr(scale_mult + ".input1" + axis,
                                   float(value))
             if (spec.micro_local_scale
+                    and not spec.opm_offset_only_scale
                     and not spec.non_opm_additive_micro_scale):
                 relative_name, decompose_name, combine_name = (
                     micro_scale_names)
@@ -522,7 +525,8 @@ class MayaFitBendyMixin:
                               combine + ".input2")
                 c.connectAttr(combine + ".output",
                               scale_mult + ".input2")
-            elif spec.non_opm_additive_micro_scale:
+            elif (spec.non_opm_additive_micro_scale
+                  or spec.opm_offset_only_scale):
                 c.setAttr(scale_mult + ".input2X", 1.0)
                 scale_add = spec.micro_scale_names[index][0]
                 for axis in "YZ":
@@ -539,7 +543,8 @@ class MayaFitBendyMixin:
             else:
                 c.connectAttr(offset + ".scale",
                               scale_mult + ".input2")
-            c.connectAttr(scale_mult + ".output", joint + ".scale")
+            if not spec.opm_offset_only_scale:
+                c.connectAttr(scale_mult + ".output", joint + ".scale")
             for attribute in ("translate", "rotate", "offsetParentMatrix"):
                 destination = joint + "." + attribute
                 source = c.connectionInfo(destination,
@@ -601,10 +606,12 @@ class MayaFitBendyMixin:
                     != scale_pick + ".outputMatrix"
                     or not c.objExists(scale_mult)
                     or c.nodeType(scale_mult) != "multiplyDivide"
-                    or c.connectionInfo(joints[0] + ".scale",
-                                        sourceFromDestination=True)
-                    != scale_mult + ".output"
+                    or (not spec.opm_offset_only_scale
+                        and c.connectionInfo(joints[0] + ".scale",
+                                             sourceFromDestination=True)
+                        != scale_mult + ".output")
                     or (not spec.non_opm_additive_micro_scale
+                        and not spec.opm_offset_only_scale
                         and c.connectionInfo(
                             scale_mult + ".input2",
                             sourceFromDestination=True)
@@ -612,11 +619,17 @@ class MayaFitBendyMixin:
                             if spec.micro_local_scale else
                             offset + ".scale"))):
                 return False
-            if spec.non_opm_additive_micro_scale:
+            if (spec.non_opm_additive_micro_scale
+                    or spec.opm_offset_only_scale):
                 scale_add = spec.micro_scale_names[index][0]
                 if (c.connectionInfo(offset + ".scale",
                                      sourceFromDestination=True)
                         != scale_mult + ".output"
+                        or (spec.opm_offset_only_scale
+                            and c.connectionInfo(
+                                joints[0] + ".scale",
+                                sourceFromDestination=True)
+                            == scale_mult + ".output")
                         or c.connectionInfo(scale_mult + ".input2X",
                                             sourceFromDestination=True)
                         or abs(float(c.getAttr(scale_mult + ".input2X"))
@@ -628,6 +641,7 @@ class MayaFitBendyMixin:
                             for axis in "YZ")):
                     return False
             if (spec.micro_local_scale
+                    and not spec.opm_offset_only_scale
                     and not spec.non_opm_additive_micro_scale):
                 relative, decompose, combine = micro_scale_names
                 if (not c.objExists(relative)
@@ -878,6 +892,11 @@ class MayaFitBendyMixin:
             c.addAttr(controls[0], longName="advPyBendyAdditiveMicroScale",
                       attributeType="bool", defaultValue=True)
             c.setAttr(controls[0] + ".advPyBendyAdditiveMicroScale",
+                      lock=True)
+        if spec.opm_offset_only_scale:
+            c.addAttr(controls[0], longName="advPyBendyOpmOffsetScale",
+                      attributeType="bool", defaultValue=True)
+            c.setAttr(controls[0] + ".advPyBendyOpmOffsetScale",
                       lock=True)
         for control, projection in zip(
                 controls, spec.twist_projection_names):
@@ -2080,7 +2099,8 @@ class MayaFitBendyMixin:
                     != master + ".microVis"):
                 return False
             if spec.micro_yz_scale_only:
-                if spec.non_opm_additive_micro_scale and c.objExists(
+                if (spec.non_opm_additive_micro_scale
+                        or spec.opm_offset_only_scale) and c.objExists(
                         spec.deform_scale_mult_names[index]):
                     if (c.connectionInfo(offset + ".scale",
                                          sourceFromDestination=True)
@@ -2371,6 +2391,12 @@ class MayaFitBendyMixin:
         if spec.non_opm_additive_micro_scale:
             marker = (spec.control_names[0]
                       + ".advPyBendyAdditiveMicroScale")
+            if (not c.objExists(marker) or not c.getAttr(marker)
+                    or not c.getAttr(marker, lock=True)):
+                return False
+        if spec.opm_offset_only_scale:
+            marker = (spec.control_names[0]
+                      + ".advPyBendyOpmOffsetScale")
             if (not c.objExists(marker) or not c.getAttr(marker)
                     or not c.getAttr(marker, lock=True)):
                 return False

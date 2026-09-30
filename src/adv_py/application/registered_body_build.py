@@ -777,6 +777,13 @@ class BuildRegisteredBodyCharacter:
                         and _generic_fk_policy.bendy_additive_micro_scale_controls
                         is not None else
                         not preview.build.build_options.use_offset_parent_matrix),
+                    opm_offset_only_scale=(
+                        chain.control_names[0] in
+                        _generic_fk_policy.bendy_opm_offset_scale_controls
+                        if _generic_fk_policy is not None
+                        and _generic_fk_policy.bendy_opm_offset_scale_controls
+                        is not None else
+                        preview.build.build_options.use_offset_parent_matrix),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None

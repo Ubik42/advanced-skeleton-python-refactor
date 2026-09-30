@@ -121,6 +121,7 @@ class GenericFkFeaturePolicy:
     bendy_legacy_full_span_controls: frozenset[str] | None = None
     bendy_scaled_guide_controls: frozenset[str] | None = None
     bendy_additive_micro_scale_controls: frozenset[str] | None = None
+    bendy_opm_offset_scale_controls: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(

@@ -47,6 +47,7 @@ class FitBendyChainSpec:
     legacy_full_span_weights: bool = False
     scale_guide_group: bool = True
     non_opm_additive_micro_scale: bool = False
+    opm_offset_only_scale: bool = False
 
     def __post_init__(self) -> None:
         if (not self.part_names
@@ -118,6 +119,13 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 导向关节组缩放策略无效")
         if type(self.non_opm_additive_micro_scale) is not bool:
             raise ValueError("Bendy Micro 非 OPM 缩放策略无效")
+        if type(self.opm_offset_only_scale) is not bool:
+            raise ValueError("Bendy OPM 缩放策略无效")
+        if self.opm_offset_only_scale and self.non_opm_additive_micro_scale:
+            raise ValueError("Bendy OPM 与非 OPM 缩放策略不能同时启用")
+        if (self.opm_offset_only_scale
+                or self.non_opm_additive_micro_scale) and not self.micro_yz_scale_only:
+            raise ValueError("Bendy 原版缩放要求导向层仅接受 Y/Z 缩放")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:

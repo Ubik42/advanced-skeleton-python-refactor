@@ -147,6 +147,7 @@ class MayaCharacterRegistryMixin:
         bendy_legacy_full_span = set()
         bendy_scaled_guides = set()
         bendy_additive_micro = set()
+        bendy_opm_offset_scale = set()
         for control in bendy_master_paths:
             stem, side = control.rsplit('_', 1)
             master_leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
@@ -177,6 +178,14 @@ class MayaCharacterRegistryMixin:
                               + '.advPyBendyResidualFalloff')
             additive_marker = (bendy_master_paths[control]
                                + '.advPyBendyAdditiveMicroScale')
+            opm_marker = (bendy_master_paths[control]
+                          + '.advPyBendyOpmOffsetScale')
+            if c.objExists(opm_marker):
+                if (not bool(c.getAttr(opm_marker))
+                        or not c.getAttr(opm_marker, lock=True)):
+                    raise CharacterRegistryError(
+                        'Bendy OPM 缩放标记已损坏：' + control)
+                bendy_opm_offset_scale.add(control)
             if c.objExists(additive_marker):
                 if (not bool(c.getAttr(additive_marker))
                         or not c.getAttr(additive_marker, lock=True)):
@@ -466,7 +475,9 @@ class MayaCharacterRegistryMixin:
             bendy_scaled_guide_controls=frozenset(
                 bendy_scaled_guides),
             bendy_additive_micro_scale_controls=frozenset(
-                bendy_additive_micro))
+                bendy_additive_micro),
+            bendy_opm_offset_scale_controls=frozenset(
+                bendy_opm_offset_scale))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext
