@@ -85,6 +85,7 @@ class MayaCharacterRegistryMixin:
         independent = set()
         bendy_scales = set()
         fkx_joints = set()
+        point_controls = set()
         twist_rewired = set()
         globally_driven = set()
         keys = {channel.key for channel in registration.channels}
@@ -95,6 +96,29 @@ class MayaCharacterRegistryMixin:
                 raise CharacterRegistryError(
                     '旧通用 FK 控制器或 Body 关节无法唯一定位：' + stem)
             control = controls[0]
+            control_leaf = control.rsplit('|', 1)[-1]
+            namespace = (control_leaf.rsplit(':', 1)[0] + ':'
+                         if ':' in control_leaf else '')
+            point_name = (namespace + 'AdvPy_'
+                          + stem.removesuffix('FK') + 'FKPoint')
+            points = c.ls(point_name, long=True,
+                          type='pointConstraint') or []
+            if len(points) > 1:
+                raise CharacterRegistryError(
+                    '旧通用 FK 位置约束名称不唯一：' + stem)
+            if points:
+                targets = c.pointConstraint(
+                    points[0], query=True, targetList=True) or []
+                outputs = c.listConnections(
+                    points[0] + '.constraintTranslateX',
+                    source=False, destination=True, plugs=True) or []
+                if (len(targets) != 1 or len(outputs) != 1
+                        or not outputs[0].endswith('.translateX')
+                        or (c.ls(outputs[0].rsplit('.', 1)[0],
+                                 long=True) or []) != [body]):
+                    raise CharacterRegistryError(
+                        '旧通用 FK 位置约束接线无效：' + stem)
+                point_controls.add(control_leaf.rsplit(':', 1)[-1])
             fkx = by_leaf.get('AdvPy_' + stem + 'X', ())
             if len(fkx) > 1:
                 raise CharacterRegistryError(
@@ -559,6 +583,7 @@ class MayaCharacterRegistryMixin:
             twist_rewired_sources=frozenset(twist_rewired),
             bendy_scale_controls=frozenset(bendy_scales),
             fkx_joint_controls=frozenset(fkx_joints),
+            point_controls=frozenset(point_controls),
             standard_fkx_joint_names=frozenset(standard_fkx_joints),
             hand_fkx_joint_names=frozenset(hand_fkx_joints),
             standard_fk_independent_controls=frozenset(

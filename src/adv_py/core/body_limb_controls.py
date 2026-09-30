@@ -48,6 +48,7 @@ class BodyLimbFkControlSpec:
     fit_joint_names: tuple[str, ...] = ()
     aim_path: str | None = None
     aim_name: str | None = None
+    translation_constraint_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +86,9 @@ class BodyLimbFkControlState:
     source_node_type: str | None = None
     source_inverse_scale: str | None = None
     source_segment_scale_compensate: bool | None = None
+    translation_constraint_name: str | None = None
+    translation_source_control: str | None = None
+    translation_driven_joint: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -332,6 +336,15 @@ def audit_body_limb_fk_controls(
             issues.append(BodyLimbControlIssue(
                 "constraint_name_mismatch", "FK 约束名称不一致", path
             ))
+        if spec.translation_constraint_name is not None and (
+                state.translation_constraint_name
+                != spec.translation_constraint_name
+                or state.translation_source_control
+                != (spec.source_override_path or spec.sub_control_path
+                    or spec.control_path)
+                or state.translation_driven_joint != spec.driven_joint):
+            issues.append(BodyLimbControlIssue(
+                "point_constraint_mismatch", "FK 位置约束连接不一致", path))
         if (
             state.source_control
             != (spec.source_override_path or spec.sub_control_path

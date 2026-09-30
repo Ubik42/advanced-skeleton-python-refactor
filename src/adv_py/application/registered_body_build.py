@@ -1333,6 +1333,9 @@ class BuildRegisteredBodyCharacter:
                     for body, source in standard_bendy_sources.items()},
                 fkx_joint_controls=(
                     _generic_fk_policy.fkx_joint_controls
+                    if _generic_fk_policy is not None else None),
+                point_controls=(
+                    _generic_fk_policy.point_controls
                     if _generic_fk_policy is not None else None))
             generic_inbetween_bindings = (
                 plan_generic_inbetween_fk_bindings(
@@ -1390,6 +1393,8 @@ class BuildRegisteredBodyCharacter:
                             binding.start_fk_constraint_name),
                         start_fk_source_path=(
                             binding.start_fk_source_path),
+                        start_fk_point_constraint_name=(
+                            binding.start_fk_point_constraint_name),
                         downstream_fk_offset_path=(
                             binding.downstream_fk_offset_path),
                         rotate_order=binding.rotate_order,

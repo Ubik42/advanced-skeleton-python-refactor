@@ -481,6 +481,26 @@ class MayaFitInbetweenMixin:
             if (not source or source.split(".", 1)[0].rsplit("|", 1)[-1]
                     != plan.start_fk_constraint_name):
                 raise ValueError("Inbetween 起点 FK 机制输入已变化")
+        if plan.start_fk_point_constraint_name is not None:
+            points = c.ls(plan.start_fk_point_constraint_name,
+                          type="pointConstraint") or []
+            if len(points) != 1:
+                raise ValueError("Inbetween 起点 FK 位置约束不唯一")
+            point_targets = c.pointConstraint(
+                points[0], query=True, targetList=True) or []
+            if (len(point_targets) != 1
+                    or (c.ls(point_targets[0], long=True) or [])
+                    != [plan.start_fk_source_path
+                        or plan.start_fk_control_path]):
+                raise ValueError("Inbetween 起点 FK 位置来源已变化")
+            for axis in "XYZ":
+                source = c.connectionInfo(
+                    driver + ".translate" + axis,
+                    sourceFromDestination=True)
+                if (not source or source.split(".", 1)[0]
+                        .rsplit("|", 1)[-1]
+                        != plan.start_fk_point_constraint_name):
+                    raise ValueError("Inbetween 起点 FK 位置输入已变化")
         if plan.follow_constraint_name is not None:
             if c.objExists(plan.follow_constraint_name):
                 raise ValueError("Inbetween 下游 FK 跟随节点名称冲突")
@@ -511,6 +531,12 @@ class MayaFitInbetweenMixin:
                            plan.start_fk_driver_path,
                            maintainOffset=False,
                            name=plan.start_fk_constraint_name)
+        if plan.start_fk_point_constraint_name is not None:
+            c.delete(plan.start_fk_point_constraint_name)
+            c.pointConstraint(plan.start_fkx_name,
+                              plan.start_fk_driver_path,
+                              maintainOffset=False,
+                              name=plan.start_fk_point_constraint_name)
         if plan.downstream_fk_offset_path is not None:
             if plan.use_offset_parent_matrix:
                 self.create_parent_constraint(
@@ -541,6 +567,17 @@ class MayaFitInbetweenMixin:
             return False
         orient_targets = c.orientConstraint(
             orient[0], query=True, targetList=True) or []
+        if plan.start_fk_point_constraint_name is not None:
+            points = c.ls(plan.start_fk_point_constraint_name,
+                          type="pointConstraint") or []
+            if len(points) != 1:
+                return False
+            point_targets = c.pointConstraint(
+                points[0], query=True, targetList=True) or []
+            if (len(point_targets) != 1
+                    or point_targets[0].rsplit("|", 1)[-1]
+                    != plan.start_fkx_name):
+                return False
         if plan.follow_constraint_name is None:
             return (len(orient_targets) == 1
                     and orient_targets[0].rsplit("|", 1)[-1]

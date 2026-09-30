@@ -9383,6 +9383,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             *((spec.aim_name,) if spec.aim_name is not None else ()),
             spec.control_name,
             spec.constraint_name,
+            *((spec.translation_constraint_name,)
+              if spec.translation_constraint_name is not None else ()),
             *((spec.sub_control_name,) if spec.sub_control_name is not None else ()),
             *((spec.source_override_path.rsplit("|", 1)[-1],)
               if spec.source_override_path is not None
@@ -9535,6 +9537,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 maintainOffset=False,
                 name=spec.constraint_name,
             )
+            if spec.translation_constraint_name is not None:
+                self._cmds.pointConstraint(
+                    orientation_source, driven[0],
+                    maintainOffset=False,
+                    name=spec.translation_constraint_name)
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
@@ -10034,6 +10041,28 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             driven_joint = None
             if len(outputs) == 1:
                 driven_joint = self._resolve_connected_node(outputs[0])
+            point_name = None
+            point_source = None
+            point_driven = None
+            if spec.translation_constraint_name is not None:
+                point_nodes = self._cmds.ls(
+                    spec.translation_constraint_name,
+                    type="pointConstraint") or []
+                if len(point_nodes) == 1:
+                    point_name = point_nodes[0]
+                    point_targets = self._cmds.pointConstraint(
+                        point_name, query=True, targetList=True) or []
+                    if len(point_targets) == 1:
+                        point_source = (self._cmds.ls(
+                            point_targets[0], long=True) or [
+                                point_targets[0]])[0]
+                    point_outputs = self._cmds.listConnections(
+                        point_name + ".constraintTranslateX",
+                        source=False, destination=True,
+                        plugs=True) or []
+                    if len(point_outputs) == 1:
+                        point_driven = self._resolve_connected_node(
+                            point_outputs[0])
             states.append(
                 BodyArmFkControlState(
                     offset_path=offset,
@@ -10055,6 +10084,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                             source + ".segmentScaleCompensate"))
                         if source and self._cmds.nodeType(source) == "joint"
                         else None),
+                    translation_constraint_name=point_name,
+                    translation_source_control=point_source,
+                    translation_driven_joint=point_driven,
                     driven_joint=driven_joint,
                     world_position=tuple(float(value) for value in position),
                     world_axes=world_axes,

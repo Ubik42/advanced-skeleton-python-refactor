@@ -129,6 +129,7 @@ class GenericFkFeaturePolicy:
     bendy_secondary_matrix_controls: frozenset[str] | None = None
     bendy_main_influence_controls: frozenset[str] | None = None
     fkx_joint_controls: frozenset[str] | None = None
+    point_controls: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(
@@ -149,6 +150,7 @@ def plan_body_generic_fk(
     bendy_parent_sources: Mapping[
         str, tuple[str, str | None, str | None]] | None = None,
     fkx_joint_controls: frozenset[str] | None = None,
+    point_controls: frozenset[str] | None = None,
 ) -> BodyGenericFkPlan:
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
     state_by_name = {state.name.rsplit(":", 1)[-1]: state
@@ -350,6 +352,10 @@ def plan_body_generic_fk(
             fit_joint_names=tuple(dict.fromkeys((source_leaf, source_name))),
             aim_path=aim_path,
             aim_name=aim_name,
+            translation_constraint_name=(
+                "AdvPy_" + stem + "FKPoint"
+                if point_controls is None or control_name in point_controls
+                else None),
         )
         controls.append(control)
         # The MEL non-OPM FK pass parents ordinary child offsets below the

@@ -40,6 +40,12 @@ class MayaBodyFitWheelMixin:
             if not c.objExists(control.constraint_name):
                 raise FitSkeletonValidationError(
                     "Wheel FK 朝向约束不存在：" + control.constraint_name)
+            if (control.translation_constraint_name is not None
+                    and not c.objExists(
+                        control.translation_constraint_name)):
+                raise FitSkeletonValidationError(
+                    "Wheel FK 位置约束不存在："
+                    + control.translation_constraint_name)
             if control.source_override_path is not None:
                 receiver = control.source_override_path
                 internal = receiver.startswith(control.control_path + "|")
@@ -124,6 +130,11 @@ class MayaBodyFitWheelMixin:
             c.orientConstraint(source, spec.driven_joint,
                                maintainOffset=False,
                                name=spec.constraint_name)
+            if spec.translation_constraint_name is not None:
+                c.delete(spec.translation_constraint_name)
+                c.pointConstraint(source, spec.driven_joint,
+                                  maintainOffset=False,
+                                  name=spec.translation_constraint_name)
         offset = c.createNode("transform", name="prevPosOffset" + stem,
                               parent=system, skipSelect=True)
         previous = c.createNode("transform", name="prevPos" + stem,

@@ -70,6 +70,7 @@ class InbetweenFkBinding:
     rotate_order: int
     part_control_radius: float
     start_fk_source_path: str | None = None
+    start_fk_point_constraint_name: str | None = None
 
 
 def plan_inbetween_limb_bindings(
@@ -367,5 +368,7 @@ def plan_generic_inbetween_fk_bindings(
             start_fk_source_path=(start.source_override_path
                                   or start.sub_control_path
                                   or start.control_path),
+            start_fk_point_constraint_name=(
+                start.translation_constraint_name),
         ))
     return tuple(result)
