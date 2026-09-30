@@ -145,11 +145,26 @@ class MayaCharacterRegistryMixin:
         bendy_parented_end = set()
         bendy_legacy_circular = set()
         bendy_legacy_full_span = set()
+        bendy_scaled_guides = set()
         for control in bendy_master_paths:
             stem, side = control.rsplit('_', 1)
             master_leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
             namespace = (master_leaf.rsplit(':', 1)[0] + ':'
                          if ':' in master_leaf else '')
+            guide_group = namespace + 'AdvPy_BendJoints'
+            if (not c.objExists(guide_group)
+                    or c.nodeType(guide_group) != 'transform'):
+                raise CharacterRegistryError(
+                    'Bendy 导向关节组缺失：' + control)
+            guide_scale = c.connectionInfo(
+                guide_group + '.scale', sourceFromDestination=True)
+            if guide_scale:
+                if (guide_scale.rsplit('|', 1)[-1]
+                        .rsplit(':', 1)[-1]
+                        != 'MainScaleMultiplyDivide.output'):
+                    raise CharacterRegistryError(
+                        'Bendy 导向关节组缩放来源错误：' + control)
+                bendy_scaled_guides.add(control)
             old_output = namespace + 'AdvPy_' + control + 'TwistX'
             new_output = (namespace + 'BendX'
                           + stem.removeprefix('Bend') + '_' + side)
@@ -438,7 +453,9 @@ class MayaCharacterRegistryMixin:
             bendy_legacy_circular_controls=frozenset(
                 bendy_legacy_circular),
             bendy_legacy_full_span_controls=frozenset(
-                bendy_legacy_full_span))
+                bendy_legacy_full_span),
+            bendy_scaled_guide_controls=frozenset(
+                bendy_scaled_guides))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

@@ -756,6 +756,13 @@ class BuildRegisteredBodyCharacter:
                         is not None
                         and chain.control_names[0] in
                         _generic_fk_policy.bendy_legacy_full_span_controls),
+                    scale_guide_group=(
+                        chain.control_names[0] in
+                        _generic_fk_policy.bendy_scaled_guide_controls
+                        if _generic_fk_policy is not None
+                        and _generic_fk_policy.bendy_scaled_guide_controls
+                        is not None else
+                        not preview.build.build_options.use_offset_parent_matrix),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None

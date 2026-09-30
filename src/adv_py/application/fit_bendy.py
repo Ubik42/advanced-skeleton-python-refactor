@@ -257,6 +257,8 @@ class BuildFitBendyGuides:
               ) -> tuple[FitBendyChainSpec, ...]:
         if follows and tuple(item.chain for item in follows) != chains:
             raise ValueError("Bendy 跟随链与曲线链不一致")
+        if len({chain.scale_guide_group for chain in chains}) > 1:
+            raise ValueError("Bendy 导向关节组不能混用缩放策略")
         used = set()
         for chain in chains:
             names = set(chain.guide_node_names)

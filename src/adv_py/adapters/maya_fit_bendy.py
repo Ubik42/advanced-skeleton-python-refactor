@@ -728,7 +728,7 @@ class MayaFitBendyMixin:
             if matches != [name]:
                 raise ValueError("Bendy 两端 Body 不唯一：" + name)
 
-    def _ensure_fit_bendy_groups(self) -> None:
+    def _ensure_fit_bendy_groups(self, scale_joint_group: bool) -> None:
         c = self._cmds
         for index, group in enumerate(_GROUPS):
             if c.objExists(group):
@@ -744,7 +744,7 @@ class MayaFitBendyMixin:
                       dataType="string")
             c.setAttr(node + ".advPyBendyGuideOwner", _OWNER,
                       type="string", lock=True)
-            if index == 2 and c.objExists(
+            if index == 2 and scale_joint_group and c.objExists(
                     "MainScaleMultiplyDivide.output"):
                 c.connectAttr("MainScaleMultiplyDivide.output",
                               node + ".scale")
@@ -755,7 +755,7 @@ class MayaFitBendyMixin:
     ) -> None:
         self._require_transaction()
         c = self._cmds
-        self._ensure_fit_bendy_groups()
+        self._ensure_fit_bendy_groups(spec.scale_guide_group)
         axis_offset = original_fit_icon_axis_offset(
             c, (spec.source_joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1],))
         start, end = spec.start_position, spec.end_position
@@ -2187,9 +2187,10 @@ class MayaFitBendyMixin:
             if (c.listRelatives(_GROUPS[0], parent=True,
                                 fullPath=True) or []) != [bend_path]:
                 return False
-            if (c.connectionInfo(_GROUPS[2] + ".scale",
-                                 sourceFromDestination=True)
-                    != "MainScaleMultiplyDivide.output"):
+            actual_scale = c.connectionInfo(
+                _GROUPS[2] + ".scale", sourceFromDestination=True)
+            if actual_scale != ("MainScaleMultiplyDivide.output"
+                                if spec.scale_guide_group else ""):
                 return False
         curve = c.ls(spec.curve_name, long=True,
                      type="transform") or []
