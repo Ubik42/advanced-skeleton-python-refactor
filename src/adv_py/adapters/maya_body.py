@@ -4029,9 +4029,37 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
     def _verify_fbx_skinned_meshes(self, sources, copied, selection, *,
                                    namespace_free=False):
         """Reject an FBX clone that does not reproduce source deformation."""
+        from maya.api import OpenMaya as om
+        from maya.api import OpenMayaAnim as oma
+
         c = self._cmds.raw if namespace_free else self._cmds
         if len(sources) != len(copied):
             raise RuntimeError('FBX 临时 Skin 网格数量不一致')
+        for index,(source,clone) in enumerate(zip(sources,copied),1):
+            expected_members=source[-2]
+            for skin,mesh in (
+                    (self.scene_address(source[1].skin_name)
+                     if namespace_free else source[1].skin_name,
+                     self.scene_address(source[0])
+                     if namespace_free else source[0]),
+                    ((':' if namespace_free else '')
+                     + f'AdvPy_FBXExportSkin_{index}',clone)):
+                shapes=c.listRelatives(mesh,shapes=True,
+                    noIntermediate=True,fullPath=True,type='mesh') or []
+                if len(shapes)!=1:
+                    raise FitSkeletonValidationError(
+                        'FBX Skin 变形集网格缺失：'+skin)
+                api_skin=om.MSelectionList()
+                api_skin.add(skin if namespace_free
+                    else self.scene_address(skin))
+                skin_fn=oma.MFnSkinCluster(api_skin.getDependNode(0))
+                actual=self._skin_vertex_members(skin_fn,
+                    shapes[0] if namespace_free else self.scene_address(shapes[0]),
+                    mesh if namespace_free else self.scene_address(mesh),
+                    source[1].vertex_count)
+                if actual!=expected_members:
+                    raise FitSkeletonValidationError(
+                        'FBX Skin 变形集在发布期间变化：'+skin)
         for frame in range(selection.start_frame, selection.end_frame + 1,
                            selection.sample_by):
             c.currentTime(frame, edit=True, update=True)
