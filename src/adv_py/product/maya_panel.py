@@ -2307,7 +2307,11 @@ def create_panel(controller: MayaPanelController | None = None):
                     f"{len(result.skins)} 套 Skin；控制器 Main")
 
         def _build_fbx_rig(self):
-            result = self.controller.preparation_fbx_rig()
+            from adv_py.application.fbx_rig_import import FBXRigCancelled
+            try:
+                result = self.controller.preparation_fbx_rig()
+            except FBXRigCancelled as exc:
+                return str(exc)
             return (f"FBX rig 已建立：{len(result.connected_control_names)} "
                     f"个 FK 控制器接回原骨架，"
                     f"{result.ik_limb_count} 条可切换 IK/FK 的手脚链；"
@@ -3950,4 +3954,20 @@ def show_panel(controller: MayaPanelController | None = None):
     panel.destroyed.connect(lambda: _OPEN_PANELS.remove(panel)
                             if panel in _OPEN_PANELS else None)
     panel.show()
+    return panel
+
+
+def show_name_matcher_detail(source_root: str = ""):
+    """Open the original NameMatcher entry after FBX source detection."""
+    from shiboken2 import isValid
+
+    panel = next((item for item in reversed(_OPEN_PANELS)
+                  if isValid(item)), None)
+    if panel is None:
+        panel = show_panel()
+    panel.open_detail(0, "02 · NameMatcher", "Tools", None)
+    if source_root:
+        panel.detail.name_matcher_source_root.setText(source_root)
+    panel.show()
+    panel.raise_()
     return panel

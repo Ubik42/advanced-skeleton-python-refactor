@@ -201,6 +201,7 @@ ADV_OPERATIONS = {
         ("检查兼容性", 2, "06 · 角色预设"),
         ("应用所选预设", 2, "06 · 角色预设")),
     ("Tools", None): (
+        ("NameMatcher", 0, "02 · NameMatcher"),
         ("导入并写入控制", 4, "01 · 外部 FBX 驱动角色"),),
     ("Display", None): (
         ("MotionSystem 显示", 6, "00 · Display"),

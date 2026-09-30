@@ -94,6 +94,29 @@ class SkinBindPlan:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyMeshBindSourceState:
+    """Geometry that must survive Fit-to-Rig creation before Skin binding."""
+
+    mesh_uuid: str
+    shape_uuid: str
+    topology_digest: str
+    object_points_digest: str
+    world_matrix: tuple[float, ...]
+    history_uuids: tuple[str, ...]
+
+    def matches(self, current: "BodyMeshBindSourceState") -> bool:
+        return (self.mesh_uuid == current.mesh_uuid
+            and self.shape_uuid == current.shape_uuid
+            and self.topology_digest == current.topology_digest
+            and self.object_points_digest == current.object_points_digest
+            and self.history_uuids == current.history_uuids
+            and len(self.world_matrix) == len(current.world_matrix) == 16
+            and all(abs(before - after) <= 1e-7
+                for before, after in zip(self.world_matrix,
+                                         current.world_matrix)))
+
+
+@dataclass(frozen=True, slots=True)
 class SkinBindInputState:
     mesh_path: str | None
     mesh_shape_paths: tuple[str, ...]

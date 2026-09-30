@@ -411,6 +411,51 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 "Skin 网格身份缺失或不唯一：" + mesh_path)
         return identifiers[0]
 
+    def capture_body_mesh_bind_source(self, mesh_path: str):
+        """Freeze the unbound model through rig creation and reparenting."""
+        from hashlib import sha256
+        from struct import pack
+        from maya.api import OpenMaya as om
+        from adv_py.core.skin_bind import BodyMeshBindSourceState
+        from .maya_mesh_topology import mesh_topology_digest
+
+        c = self._cmds
+        count = self.preflight_body_mesh(mesh_path)
+        shapes = c.listRelatives(mesh_path, shapes=True,
+            noIntermediate=True, fullPath=True, type="mesh") or []
+        shape = shapes[0]
+        shape_ids = c.ls(shape, uuid=True) or []
+        if len(shape_ids) != 1:
+            raise FitSkeletonValidationError(
+                "Skin 网格 Shape 身份缺失或不唯一：" + mesh_path)
+        selection = om.MSelectionList()
+        selection.add(self.scene_address(shape))
+        points = om.MFnMesh(selection.getDagPath(0)).getPoints(
+            om.MSpace.kObject)
+        if len(points) != count:
+            raise FitSkeletonValidationError(
+                "Skin 网格顶点数量在构建前变化：" + mesh_path)
+        digest = sha256()
+        for point in points:
+            digest.update(pack("<3d", point.x, point.y, point.z))
+        history = c.listHistory(shape, pruneDagObjects=True) or []
+        history_ids = []
+        for node in history:
+            identifiers = c.ls(node, uuid=True) or []
+            if len(identifiers) != 1:
+                raise FitSkeletonValidationError(
+                    "Skin 网格历史节点身份缺失或不唯一：" + node)
+            history_ids.append(identifiers[0])
+        matrix = tuple(float(value) for value in c.xform(
+            mesh_path, query=True, worldSpace=True, matrix=True))
+        if len(matrix) != 16 or not all(isfinite(value) for value in matrix):
+            raise FitSkeletonValidationError(
+                "Skin 网格世界矩阵无效：" + mesh_path)
+        return BodyMeshBindSourceState(
+            self.capture_body_mesh_identity(mesh_path), shape_ids[0],
+            mesh_topology_digest(self.scene_address(shape)),
+            digest.hexdigest(), matrix, tuple(sorted(history_ids)))
+
     def resolve_body_mesh_identity(self, identifier: str) -> str:
         raw = getattr(self._cmds, "raw", self._cmds)
         paths = raw.ls(identifier, long=True) or []
@@ -4073,6 +4118,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         """Reject an FBX clone that does not reproduce source deformation."""
         from maya.api import OpenMaya as om
         from maya.api import OpenMayaAnim as oma
+        from .maya_mesh_topology import mesh_topology_digest
 
         c = self._cmds.raw if namespace_free else self._cmds
         if len(sources) != len(copied):
@@ -4108,6 +4154,22 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             for source, clone in zip(sources, copied):
                 mesh = (self.scene_address(source[0]) if namespace_free
                         else source[0])
+                source_shapes = c.listRelatives(mesh, shapes=True,
+                    noIntermediate=True, fullPath=True, type='mesh') or []
+                clone_shapes = c.listRelatives(clone, shapes=True,
+                    noIntermediate=True, fullPath=True, type='mesh') or []
+                if (len(source_shapes) != 1 or len(clone_shapes) != 1
+                        or mesh_topology_digest(source_shapes[0]
+                            if namespace_free else
+                            self.scene_address(source_shapes[0]))
+                            != source[2]
+                        or mesh_topology_digest(clone_shapes[0]
+                            if namespace_free else
+                            self.scene_address(clone_shapes[0]))
+                            != source[2]):
+                    raise FitSkeletonValidationError(
+                        'FBX 发布范围内网格拓扑变化：'
+                        + source[0] + ' @ ' + str(frame))
                 before = c.xform(mesh + '.vtx[*]', query=True,
                                  worldSpace=True, translation=True) or []
                 after = c.xform(clone + '.vtx[*]', query=True,

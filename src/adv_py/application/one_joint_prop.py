@@ -4,9 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
-from adv_py.core.skin_bind import (
-    SmoothBindPreferences, audit_skin_bind_result, plan_skin_bind,
-)
+from adv_py.core.skin_bind import SmoothBindPreferences
+from .skin_bind import bind_mesh_batch_in_transaction
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,8 +26,8 @@ class BuildOneJointProp:
         if not skin_meshes or len(set(skin_meshes)) != len(skin_meshes):
             raise FitSkeletonValidationError("One Joint Prop 需要不重复的 Skin 模型")
         meshes = tuple(dict.fromkeys((*skin_meshes, *all_meshes)))
-        for mesh in meshes:
-            self._host.preflight_body_mesh(mesh)
+        source_states = tuple(self._host.capture_body_mesh_bind_source(mesh)
+                              for mesh in meshes)
         names = ("FitSkeleton", "Root", "Group", "Rig", "Root_M", "Main")
         for name in names:
             if self._host.find_name_collisions(name):
@@ -49,26 +48,15 @@ class BuildOneJointProp:
         with self._host.transaction("从 Preparation 构建单关节道具"):
             fit, joint, control = self._host.create_one_joint_prop_rig(
                 skin_meshes[0])
+            for mesh, original in zip(meshes, source_states):
+                if not original.matches(
+                        self._host.capture_body_mesh_bind_source(mesh)):
+                    raise FitSkeletonValidationError(
+                        "单关节道具构建改变了待绑定网格：" + mesh)
             if on_stage:
                 on_stage("rig-built")
-            for mesh, skin_name in zip(meshes, skin_names):
-                bind = plan_skin_bind(mesh, (joint,), skin_name=skin_name,
-                                      maximum_influences=(
-                                          options.maximum_influences),
-                                      maintain_maximum_influences=(
-                                          options.maintain_maximum_influences),
-                                      bind_method=options.bind_method,
-                                      normalization=options.normalization,
-                                      skinning_method=options.skinning_method,
-                                      weight_distribution=(
-                                          options.weight_distribution))
-                self._host.create_skin_bind(bind)
-                issues = audit_skin_bind_result(
-                    bind, self._host.capture_skin_bind(bind))
-                if issues:
-                    raise RuntimeError(
-                        "One Joint Prop Skin 结果不符合原绑定设置："
-                        + "；".join(issue.message for issue in issues))
+            bind_mesh_batch_in_transaction(
+                self._host, meshes, (joint,), skin_names, options)
             if on_stage:
                 on_stage("skins-bound")
         return OneJointPropResult(fit, joint, control, meshes, skin_names)

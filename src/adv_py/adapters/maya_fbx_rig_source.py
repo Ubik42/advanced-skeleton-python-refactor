@@ -178,17 +178,27 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
 
     def choose_fbx_rig_route(self,
                              detected_application: str | None) -> str:
-        message = "为场景中的已蒙皮 FBX 骨架创建控制器？"
-        if detected_application:
-            message += "\n检测到 " + detected_application + "；请确认继续 FBX rig。"
         choice = self._cmds.confirmDialog(
-            title="FBX rig", message=message,
+            title="FBX rig", message="为场景中的已蒙皮 FBX 骨架创建控制器？",
             button=("继续", "取消"), defaultButton="取消",
             cancelButton="取消", dismissString="取消")
-        return "fbx_rig" if choice == "继续" else "cancel"
+        if choice != "继续":
+            return "cancel"
+        if detected_application is None:
+            return "fbx_rig"
+        choice = self._cmds.confirmDialog(
+            title="检测到来源骨架",
+            message=("检测到 " + detected_application
+                     + "。原版建议使用 NameMatcher 对齐外部骨架；请选择构建路径。"),
+            button=("NameMatcher", "FBX rig", "取消"),
+            defaultButton="NameMatcher", cancelButton="取消",
+            dismissString="取消")
+        return {"NameMatcher": "name_matcher",
+                "FBX rig": "fbx_rig"}.get(choice, "cancel")
 
-    def route_to_fbx_name_matcher(self) -> None:
-        raise NotImplementedError("NameMatcher 构建宿主尚未实现")
+    def route_to_fbx_name_matcher(self, source_root: str) -> None:
+        from adv_py.product.maya_panel import show_name_matcher_detail
+        show_name_matcher_detail(source_root)
 
     def preflight_fbx_rig_import(
         self, plan: FBXRigImportPlan, source: FBXRigSourceCapture,

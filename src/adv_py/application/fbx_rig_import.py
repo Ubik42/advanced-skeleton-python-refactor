@@ -81,7 +81,7 @@ class FBXRigHost(Protocol):
     def choose_fbx_rig_route(
         self, detected_application: str | None,
     ) -> str: ...  # fbx_rig, name_matcher, cancel
-    def route_to_fbx_name_matcher(self) -> None: ...
+    def route_to_fbx_name_matcher(self, source_root: str) -> None: ...
     def preflight_fbx_rig_import(
         self, plan: FBXRigImportPlan, source: FBXRigSourceCapture,
     ) -> None: ...
@@ -175,7 +175,11 @@ class BuildFBXRig:
         route = self._host.choose_fbx_rig_route(
             source.detected_application)
         if route == "name_matcher":
-            self._host.route_to_fbx_name_matcher()
+            paths = {joint.path for joint in source.joints}
+            roots = tuple(path for path in paths
+                if path.rsplit("|", 1)[0] not in paths)
+            self._host.route_to_fbx_name_matcher(
+                roots[0] if len(roots) == 1 else "")
             raise FBXRigCancelled("FBX rig 已转至 NameMatcher")
         if route != "fbx_rig":
             if route == "cancel":

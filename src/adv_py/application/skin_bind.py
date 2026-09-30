@@ -7,6 +7,7 @@ from typing import Protocol
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.skin_bind import (
     GeodesicBindPreferences,
+    SmoothBindPreferences,
     SkinBindMethod,
     SkinWeightNormalization,
     SkinningMethod,
@@ -25,8 +26,10 @@ class SkinBindHost(Protocol):
     def find_name_collisions(self, name: str) -> tuple[str, ...]: ...
     def transaction(self, label: str) -> AbstractContextManager[None]: ...
     def capture_skin_bind_input(self, plan: SkinBindPlan) -> SkinBindInputState: ...
-    def create_skin_bind(self, plan: SkinBindPlan) -> None: ...
+    def create_skin_bind(self, plan: SkinBindPlan, *,
+                         defer_geodesic: bool = False) -> None: ...
     def capture_skin_bind(self, plan: SkinBindPlan) -> SkinBindSnapshot: ...
+    def solve_geodesic_skin_binds(self, plans: tuple[SkinBindPlan, ...]) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,3 +154,70 @@ class BindSkin:
                     + "；".join(issue.message for issue in issues)
                 )
         return SkinBindBuildResult(plan, snapshot)
+
+
+def bind_mesh_batch_in_transaction(
+    host: SkinBindHost,
+    meshes: tuple[str, ...],
+    influences: tuple[str, ...],
+    skin_names: tuple[str, ...],
+    preferences: SmoothBindPreferences,
+    *,
+    maximum_influences: int | None = None,
+) -> tuple[SkinBindBuildResult, ...]:
+    """Bind every mesh with one preflight and one shared voxel solve."""
+    if (not meshes or len(meshes) != len(skin_names)
+            or len(set(meshes)) != len(meshes)
+            or len(set(skin_names)) != len(skin_names)
+            or not influences
+            or not isinstance(preferences, SmoothBindPreferences)):
+        raise FitSkeletonValidationError("批量 Skin Bind 输入无效")
+    binder = BindSkin(host)
+    options = dict(
+        maximum_influences=(preferences.maximum_influences
+            if maximum_influences is None else maximum_influences),
+        maintain_maximum_influences=preferences.maintain_maximum_influences,
+        bind_method=preferences.bind_method,
+        normalization=preferences.normalization,
+        skinning_method=preferences.skinning_method,
+        remove_unused_influences=preferences.remove_unused_influences,
+        weight_distribution=preferences.weight_distribution,
+    )
+    plans = tuple(binder.plan(mesh, influences, skin_name=name, **options)
+        for mesh, name in zip(meshes, skin_names))
+    for item in plans:
+        if not item.ready:
+            raise FitSkeletonValidationError(
+                "Skin Bind 预检失败：" + "；".join(item.blockers))
+        if host.capture_skin_bind_input(item.bind) != item.input_state:
+            raise FitSkeletonValidationError("Skin Bind 输入在执行前发生变化")
+    shared_voxel = (preferences.bind_method is SkinBindMethod.GEODESIC_VOXEL
+                    and len(plans) > 1)
+    results = []
+    for item in plans:
+        if host.capture_skin_bind_input(item.bind) != item.input_state:
+            raise FitSkeletonValidationError("Skin Bind 输入在执行前发生变化")
+        if shared_voxel:
+            host.create_skin_bind(item.bind, defer_geodesic=True)
+        else:
+            host.create_skin_bind(item.bind)
+            snapshot = host.capture_skin_bind(item.bind)
+            issues = audit_skin_bind_result(item.bind, snapshot)
+            if issues:
+                raise RuntimeError("Skin Bind 构建后复检失败："
+                    + "；".join(issue.message for issue in issues))
+            results.append(SkinBindBuildResult(item, snapshot))
+    if shared_voxel:
+        host.solve_geodesic_skin_binds(tuple(item.bind for item in plans))
+        for item in plans:
+            snapshot = host.capture_skin_bind(item.bind)
+            issues = audit_skin_bind_result(item.bind, snapshot)
+            if issues:
+                raise RuntimeError("批量 Geodesic Skin 结果不符："
+                    + "；".join(issue.message for issue in issues))
+            results.append(SkinBindBuildResult(item, snapshot))
+        sources = {item.snapshot.geodesic_source.split('.', 1)[0]
+                   for item in results}
+        if len(sources) != 1:
+            raise RuntimeError("多网格 Geodesic 没有共享体素求解节点")
+    return tuple(results)
