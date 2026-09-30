@@ -5418,6 +5418,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 }[plan.normalization],
                 maximumInfluences=plan.maximum_influences,
                 obeyMaxInfluences=plan.maintain_maximum_influences,
+                removeUnusedInfluence=False,
                 name=plan.skin_name,
             )
             if not created or created[0] != plan.skin_name:

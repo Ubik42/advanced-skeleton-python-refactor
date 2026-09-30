@@ -340,6 +340,8 @@ class MayaFitBendyMixin:
         skin = c.skinCluster(*(influences + [curve]),
                              name=spec.secondary_skin_name,
                              maximumInfluences=2,
+                             dropoffRate=4.0,
+                             removeUnusedInfluence=False,
                              normalizeWeights=1,
                              toSelectedBones=True)[0]
         if int(c.getAttr(shapes[0] + ".controlPoints", size=True)) != 5:
@@ -1198,6 +1200,8 @@ class MayaFitBendyMixin:
         skin = c.skinCluster(*(influences + [curve]),
                              name=spec.skin_name,
                              maximumInfluences=2,
+                             dropoffRate=4.0,
+                             removeUnusedInfluence=False,
                              normalizeWeights=1,
                              toSelectedBones=True)[0]
         cv_count = int(c.getAttr(shapes[0] + ".controlPoints",
