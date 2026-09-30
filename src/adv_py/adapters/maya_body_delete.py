@@ -87,10 +87,32 @@ class MayaBodyDeleteMixin:
             raise FitSkeletonValidationError(
                 "Body AllSet 错误包含需要保留的 Face Fit")
         geometry_children = (tuple(c.listRelatives(
-            geometry, children=True, type="transform", fullPath=True) or ())
+            geometry, children=True, fullPath=True) or ())
             if geometry is not None else ())
-        retained = tuple(self._delete_uuid(path) for path in geometry_children
-                         if path not in owned)
+        if any(c.nodeType(path) not in ('transform','joint')
+               for path in geometry_children):
+            raise FitSkeletonValidationError(
+                'Delete Adv 的 Geometry 存在无法单独保留的直属 Shape')
+        owned_set = set(owned)
+        nested = []
+        for root in geometry_children:
+            if root not in owned_set:
+                continue
+            descendants = c.listRelatives(root, allDescendents=True,
+                                          fullPath=True) or ()
+            for path in sorted(descendants, key=lambda item:(item.count('|'),item)):
+                if path in owned_set or any(path.startswith(item+'|')
+                                             for item in nested):
+                    continue
+                parent=(c.listRelatives(path,parent=True,fullPath=True) or [None])[0]
+                if parent not in owned_set:
+                    continue
+                if c.nodeType(path) not in ('transform','joint'):
+                    raise FitSkeletonValidationError(
+                        'Delete Adv 无法单独保留 Geometry 下的非变换子节点：'+path)
+                nested.append(path)
+        retained = tuple(self._delete_uuid(path) for path in
+                         (*geometry_children,*nested) if path not in owned_set)
         fit_curves = tuple(dict.fromkeys(c.listConnections(
             fit, type="animCurve") or ()))
         preserved_animation = tuple(self._delete_uuid(curve)
@@ -100,7 +122,7 @@ class MayaBodyDeleteMixin:
                      if (path := self._delete_unique(
                          name, node_type="objectSet")) is not None)
         for path in (fit, group, *((face,) if face else ()),
-                     *geometry_children, *owned, *sets):
+                     *geometry_children, *nested, *owned, *sets):
             if c.referenceQuery(path, isNodeReferenced=True):
                 raise FitSkeletonValidationError(
                     "Delete Adv 不修改引用节点：" + path)
@@ -109,7 +131,8 @@ class MayaBodyDeleteMixin:
             retained, preserved_animation, tuple(owned),
             tuple(self._delete_uuid(path) for path in owned), sets,
             c.upAxis(query=True, axis=True), face,
-            self._delete_uuid(face) if face else None)
+            self._delete_uuid(face) if face else None,
+            tuple(nested),tuple(self._delete_uuid(path) for path in nested))
 
     def delete_body_advanced(self, plan: BodyDeletePlan) -> None:
         """Port asDeleteAdvanced's unparent, Z-up and Sets removal sequence."""
@@ -126,6 +149,13 @@ class MayaBodyDeleteMixin:
                 self._delete_uuid(plan.face_fit_group) !=
                 plan.face_fit_group_id):
             raise RuntimeError("Delete Adv 执行前 Face Fit 已变化")
+        if (len(plan.retained_nested_geometry_paths)
+                != len(plan.retained_nested_geometry_ids)):
+            raise RuntimeError('Delete Adv Geometry 用户子树记录不完整')
+        for path,identifier in zip(plan.retained_nested_geometry_paths,
+                                   plan.retained_nested_geometry_ids):
+            if not c.objExists(path) or self._delete_uuid(path)!=identifier:
+                raise RuntimeError('Delete Adv Geometry 用户子树已变化：'+path)
         self._transaction_changed = True
         if (plan.face_fit_group is not None and
                 plan.face_fit_group.startswith(plan.group + "|")):
@@ -133,6 +163,8 @@ class MayaBodyDeleteMixin:
         fit = c.parent(plan.fit, world=True, absolute=True)[0]
         if plan.scene_up_axis == "z":
             self.flip_character_scene_up_axis(fit, "z")
+        for path in plan.retained_nested_geometry_paths:
+            c.parent(path,world=True,absolute=True)
         if plan.geometry_children:
             c.parent(*plan.geometry_children, world=True, absolute=True)
         # AllSet is the build's authoritative ownership list. Query it again

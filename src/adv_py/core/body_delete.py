@@ -18,3 +18,5 @@ class BodyDeletePlan:
     scene_up_axis: str
     face_fit_group: str | None = None
     face_fit_group_id: str | None = None
+    retained_nested_geometry_paths: tuple[str, ...] = ()
+    retained_nested_geometry_ids: tuple[str, ...] = ()
