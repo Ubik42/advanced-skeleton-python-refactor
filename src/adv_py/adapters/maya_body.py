@@ -5447,6 +5447,12 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             raise FitSkeletonValidationError("不能修改引用来源中的 Skin")
         if not c.attributeQuery(TOPOLOGY_ATTRIBUTE, node=skin, exists=True):
             raise FitSkeletonValidationError("旧 Skin 缺少绑定拓扑记录，不能自动重绑")
+        custom_attrs = set(c.listAttr(skin, userDefined=True) or [])
+        custom_attrs.discard(TOPOLOGY_ATTRIBUTE)
+        if custom_attrs:
+            raise FitSkeletonValidationError(
+                "旧 Skin 带有自定义属性，自动重绑会丢失它们："
+                + "、".join(sorted(custom_attrs)))
         shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
                                  fullPath=True, type="mesh") or []
         if len(shapes) != 1:
