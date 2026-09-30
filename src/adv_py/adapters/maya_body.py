@@ -5527,6 +5527,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         skin = state.skin
         if (c.ls(skin, type="skinCluster") or []) != [skin]:
             raise FitSkeletonValidationError("重绑 Skin 节点不存在或名称不唯一")
+        self._transaction_changed = True
         if state.envelope_source is not None:
             if not c.objExists(state.envelope_source):
                 raise FitSkeletonValidationError("旧 Skin Envelope 驱动来源已不存在")
