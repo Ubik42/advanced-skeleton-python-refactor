@@ -89,19 +89,20 @@ def skin_weight_surface_source_from_json(text: str) -> SkinWeightSurfaceSource:
     try:
         document = json.loads(text, object_pairs_hook=_unique_object,
                               parse_constant=_reject_constant)
+        version = document.get("version") if isinstance(document, dict) else None
+        expected_payloads = {
+            1: ({"weights", "geometry"},),
+            2: ({"weights", "geometry", "bind_topology"},),
+            3: ({"weights", "geometry", "blend_weights"},
+                {"weights", "geometry", "bind_topology", "blend_weights"}),
+        }
         if (not isinstance(document, dict)
                 or set(document) != {"format", "version", "payload", "content_sha256"}
                 or document["format"] != SKIN_WEIGHT_SURFACE_SOURCE_FORMAT
                 or type(document["version"]) is not int
-                or document["version"] not in (1, 2, 3)
+                or version not in expected_payloads
                 or not isinstance(document["payload"], dict)
-                or set(document["payload"]) not in (
-                    ({"weights", "geometry", "blend_weights"},
-                     {"weights", "geometry", "bind_topology", "blend_weights"})
-                    if document["version"] == 3 else
-                    ({"weights", "geometry", "bind_topology"},)
-                    if document["version"] == 2 else
-                    ({"weights", "geometry"},))):
+                or set(document["payload"]) not in expected_payloads[version]):
             raise ValueError("结构不匹配")
         payload = document["payload"]
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"),
