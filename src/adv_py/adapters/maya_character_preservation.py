@@ -184,6 +184,16 @@ def capture(host,registration,extensions):
         row=capture_extension(host,member.path)
         plugs={row.path+'.'+a[0] for a in row.attributes}
         properties.append(replace(row,parent=None,matrix=None,connections=tuple((a,b) for a,b in row.connections if a in plugs or b in plugs)))
+    # MEL retains Geometry itself on rebuild. The Python replacement creates a
+    # new container, so its authored attributes must join the property handoff.
+    geometry='|Group|Geometry'
+    if (geometry not in members and c.objExists(geometry)
+            and c.listAttr(geometry,userDefined=True)):
+        row=capture_extension(host,geometry)
+        plugs={row.path+'.'+a[0] for a in row.attributes}
+        properties.append(replace(row,parent=None,matrix=None,
+            connections=tuple((a,b) for a,b in row.connections
+                              if a in plugs or b in plugs)))
     property_plugs={row.path+'.'+a[0] for row in properties for a in row.attributes}
     for row in (*extension_rows,*properties):
         for source,target in row.connections:

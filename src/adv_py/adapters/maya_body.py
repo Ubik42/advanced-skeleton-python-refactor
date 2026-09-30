@@ -388,14 +388,16 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         return identifiers[0]
 
     def resolve_body_mesh_identity(self, identifier: str) -> str:
-        paths = self._cmds.raw.ls(identifier, long=True) or []
+        raw = getattr(self._cmds, "raw", self._cmds)
+        paths = raw.ls(identifier, long=True) or []
         if len(paths) != 1:
             raise FitSkeletonValidationError(
                 "Body 构建后 Skin 网格身份缺失或不唯一：" + identifier)
-        if not self._cmds.identity.owns(paths[0]):
+        if self.namespace is not None and not self._cmds.identity.owns(paths[0]):
             raise FitSkeletonValidationError(
                 "Body 构建后 Skin 网格跨出当前角色：" + identifier)
-        path = self._cmds.identity.to_local(paths[0])
+        path = (self._cmds.identity.to_local(paths[0])
+                if self.namespace is not None else paths[0])
         self.preflight_body_mesh(path)
         return path
 
@@ -703,6 +705,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             if c.nodeType(root) not in ("transform", "joint"):
                 raise FitSkeletonValidationError(
                     "Geometry 直属非变换节点需要专门保留协议：" + root)
+            if (roots is not None
+                    and (c.referenceQuery(root, isNodeReferenced=True)
+                    or any(c.lockNode(root, query=True, lock=True) or []))):
+                raise FitSkeletonValidationError(
+                    "Geometry 保留根被引用或锁定，无法安全迁移：" + root)
             descendants = c.listRelatives(root, allDescendents=True,
                                           fullPath=True) or []
             identities = tuple(sorted((path[len(root):],
@@ -717,6 +724,61 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                matrix=True)),
                            bool(c.getAttr(root + ".visibility"))))
         return tuple(result)
+
+    def capture_body_geometry_container_state(self):
+        """Capture the authored transform/display state of MEL's Geometry."""
+        c = self._cmds
+        node = "|Group|Geometry"
+        if not c.objExists(node):
+            return None
+        attributes = (
+            "inheritsTransform", "visibility", "rotateOrder",
+            *(axis + suffix for axis in ("translate", "rotate", "scale",
+                "rotatePivot", "scalePivot", "rotatePivotTranslate",
+                "scalePivotTranslate", "rotateAxis") for suffix in "XYZ"),
+            "shearXY", "shearXZ", "shearYZ", "overrideEnabled",
+            "overrideDisplayType", "overrideVisibility", "overrideColor",
+            "overrideRGBColors", "overrideColorR", "overrideColorG",
+            "overrideColorB",
+        )
+        rows = []
+        for attr in attributes:
+            plug = node + "." + attr
+            if not c.objExists(plug):
+                continue
+            if c.connectionInfo(plug, sourceFromDestination=True):
+                raise FitSkeletonValidationError(
+                    "Geometry 容器受驱动属性需要专门迁移：" + plug)
+            rows.append((attr, c.getAttr(plug),
+                         bool(c.getAttr(plug, lock=True)),
+                         bool(c.getAttr(plug, keyable=True)),
+                         bool(c.getAttr(plug, channelBox=True))))
+        return tuple(rows)
+
+    def apply_body_geometry_container_state(self, namespace, state):
+        """Copy the old container's native state to a staged replacement."""
+        self._require_transaction()
+        if state is None:
+            return
+        target = type(self)(namespace=namespace)
+        c = getattr(self._cmds, "raw", self._cmds)
+        node = target.scene_address("|Group|Geometry")
+        if not c.objExists(node):
+            raise FitSkeletonValidationError("暂存 Geometry 容器不存在")
+        self._transaction_changed = True
+        for attr, value, locked, keyable, channel_box in state:
+            plug = node + "." + attr
+            if not c.objExists(plug) or c.connectionInfo(
+                    plug, sourceFromDestination=True):
+                raise FitSkeletonValidationError(
+                    "暂存 Geometry 属性缺失或受驱动：" + plug)
+            c.setAttr(plug, lock=False)
+            c.setAttr(plug, value)
+            c.setAttr(plug, keyable=keyable)
+            c.setAttr(plug, channelBox=channel_box)
+            c.setAttr(plug, lock=locked)
+        if target.capture_body_geometry_container_state() != state:
+            raise RuntimeError("暂存 Geometry 容器状态复制不一致")
 
     def parent_fit_skeleton_under_group(self, container_name: str) -> str:
         self._require_transaction()
@@ -5530,7 +5592,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
 
     def read_body_smooth_bind_options(self) -> SmoothBindPreferences:
         """Read the native Smooth Bind choices used by the original panel."""
-        c = self._cmds
+        c = getattr(self._cmds, "raw", self._cmds)
 
         def option(name: str, default: int) -> int:
             if not c.optionVar(exists=name):

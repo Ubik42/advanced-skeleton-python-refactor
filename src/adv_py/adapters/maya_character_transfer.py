@@ -110,6 +110,9 @@ def transfer(host,staged):
     target=preflight(host,staged)
     old=staged.original
     old_nodes={host.scene_address(n.path):target.scene_address(n.path) for n in old.registration.nodes}
+    geometry='|Group|Geometry'
+    if any(row.path==geometry for row in old.properties):
+        old_nodes[host.scene_address(geometry)]=target.scene_address(geometry)
     # Do not replace the original Fit tree: it remains the editable source.
     old_nodes={p:q for p,q in old_nodes.items() if not (p==host.scene_address(old.registration.container) or p.startswith(host.scene_address(old.registration.container)+'|'))}
     def redirect(plug):
@@ -205,6 +208,8 @@ def verify_retained(host,staged):
     from .maya_character_ownership import verify_shapes
     verify_shapes(target,staged.ownership)
     registered={n.path for n in old.registration.nodes if n.path!=old.registration.container and not n.path.startswith(old.registration.container+'|')}
+    if any(row.path=='|Group|Geometry' for row in old.properties):
+        registered.add('|Group|Geometry')
     retained={row.path:row.uuid for row in old.extensions}
     retained.update({row.node:row.uuid for row in old.curves})
     def physical(plug):

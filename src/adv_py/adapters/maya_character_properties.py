@@ -10,6 +10,15 @@ def plan(host,original,namespace):
     c=target._cmds
     rows=[]
     for row in original.properties:
+        existing={a[0] for a in row.attributes
+                  if c.objExists(row.path+'.'+a[0])
+                  and a[0]!='lockInfluenceWeights'}
+        if existing:
+            actual={a[0]:a for a in capture_extension(target,row.path).attributes}
+            source={a[0]:a for a in row.attributes}
+            if any(actual.get(name)!=source[name] for name in existing):
+                raise CharacterRegistryError(
+                    '目标 Rig 同名用户属性与原角色不同：'+row.path)
         attributes=tuple(a for a in row.attributes if not c.objExists(row.path+'.'+a[0]) and a[0]!='lockInfluenceWeights')
         if not attributes:continue
         pending={item[0] for item in attributes}
