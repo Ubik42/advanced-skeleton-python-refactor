@@ -522,6 +522,13 @@ class MayaFitBendyMixin:
                               combine + ".input2")
                 c.connectAttr(combine + ".output",
                               scale_mult + ".input2")
+            elif spec.non_opm_additive_micro_scale:
+                c.setAttr(scale_mult + ".input2X", 1.0)
+                for axis in "YZ":
+                    c.connectAttr(offset + ".scale" + axis,
+                                  scale_mult + ".input2" + axis)
+                c.connectAttr(scale_mult + ".outputX",
+                              offset + ".scaleX")
             else:
                 c.connectAttr(offset + ".scale",
                               scale_mult + ".input2")
@@ -590,13 +597,28 @@ class MayaFitBendyMixin:
                     or c.connectionInfo(joints[0] + ".scale",
                                         sourceFromDestination=True)
                     != scale_mult + ".output"
-                    or c.connectionInfo(scale_mult + ".input2",
-                                        sourceFromDestination=True)
-                    != ((micro_scale_names[2] + ".output")
-                        if spec.micro_local_scale
-                        and not spec.non_opm_additive_micro_scale else
-                        offset + ".scale")):
+                    or (not spec.non_opm_additive_micro_scale
+                        and c.connectionInfo(
+                            scale_mult + ".input2",
+                            sourceFromDestination=True)
+                        != ((micro_scale_names[2] + ".output")
+                            if spec.micro_local_scale else
+                            offset + ".scale"))):
                 return False
+            if spec.non_opm_additive_micro_scale:
+                if (c.connectionInfo(offset + ".scaleX",
+                                     sourceFromDestination=True)
+                        != scale_mult + ".outputX"
+                        or c.connectionInfo(scale_mult + ".input2X",
+                                            sourceFromDestination=True)
+                        or abs(float(c.getAttr(scale_mult + ".input2X"))
+                               - 1.0) > 1e-8
+                        or any(c.connectionInfo(
+                            scale_mult + ".input2" + axis,
+                            sourceFromDestination=True)
+                            != offset + ".scale" + axis
+                            for axis in "YZ")):
+                    return False
             if (spec.micro_local_scale
                     and not spec.non_opm_additive_micro_scale):
                 relative, decompose, combine = micro_scale_names
