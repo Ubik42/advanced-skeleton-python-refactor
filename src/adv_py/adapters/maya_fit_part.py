@@ -607,6 +607,17 @@ class MayaFitPartMixin:
         child = self._unique_fit_part_joint(spec.child_name)
         parent = self._unique_fit_part_joint(spec.parent_part_name)
         c.parent(child, parent)
+        child = self._unique_fit_part_joint(spec.child_name)
+        if (c.getAttr(child + ".segmentScaleCompensate")
+                and not c.isConnected(parent + ".scale",
+                                      child + ".inverseScale")):
+            # The newly inserted Part is now the compensation parent.
+            # Reparenting may leave an inverseScale link to the old Body.
+            old_scale = c.connectionInfo(child + ".inverseScale",
+                                         sourceFromDestination=True)
+            if old_scale:
+                c.disconnectAttr(old_scale, child + ".inverseScale")
+            c.connectAttr(parent + ".scale", child + ".inverseScale")
         if segment_sources and spec.reason == "end_of_chain":
             divider = c.createNode("multiplyDivide",
                 name="AdvPy_" + spec.parent_part_name + "_SegmentDistance")
