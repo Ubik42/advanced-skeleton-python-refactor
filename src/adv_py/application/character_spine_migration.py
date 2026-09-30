@@ -110,6 +110,13 @@ class MigrateRegisteredSpineCharacter:
                 raise RuntimeError('跨段数迁移改写了来源 Skin 混合权重')
             if host.capture_all_skin_weights(target_skin, target_mesh) != written:
                 raise RuntimeError('跨段数迁移后的目标 Skin 权重变化')
+            if projected_blend is not None:
+                actual_blend = host.capture_skin_blend_weights(target_skin)
+                if (len(actual_blend) != len(projected_blend)
+                        or any(abs(actual - expected) > 1e-6
+                               for actual, expected in zip(
+                                   actual_blend, projected_blend))):
+                    raise RuntimeError('跨段数动画迁移改变了目标 Skin 混合权重')
         return RegisteredSpineMigrationResult(len(roots), len(groups),
                                               changed_vertices)
 

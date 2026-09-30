@@ -5585,6 +5585,15 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         if custom:
             raise FitSkeletonValidationError(
                 "geomBind 含自定义属性，自动重绑会丢失：" + manager)
+        driven = tuple(attribute for attribute in (
+            "falloff", "gvResolution", "gvPostVoxelCheck",
+            "maxInfluences") if c.connectionInfo(
+                manager + "." + attribute,
+                sourceFromDestination=True))
+        if driven:
+            raise FitSkeletonValidationError(
+                "geomBind 参数存在外部驱动，自动重绑会丢失："
+                + "、".join(driven))
         preferences = GeodesicBindPreferences(
             float(c.getAttr(manager + ".falloff")),
             int(c.getAttr(manager + ".gvResolution")),
