@@ -774,7 +774,7 @@ class MayaPanelController:
                    head_aim: bool = False,
                    infer_missing_labels: bool = False,
                    meshes: tuple[str, ...] = (),
-                   maximum_influences: int = 3,
+                   maximum_influences: int | None = None,
                    segment_influences: bool = True,
                    fit_parts: bool = True) -> PanelCharacter:
         from adv_py.application.character_from_fit import BuildCharacterFromFit
@@ -824,7 +824,7 @@ class MayaPanelController:
     def body_build_from_source(self, namespace: str, source_root: str,
                                container: str = "FitSkeleton", *,
                                meshes: tuple[str, ...] = (),
-                               maximum_influences: int = 3,
+                               maximum_influences: int | None = None,
                                head_aim: bool = False,
                                spine_segments: int | None = None,
                                infer_missing_labels: bool = False,
@@ -1543,11 +1543,18 @@ class MayaPanelController:
         return BakeHumanIk(host).apply()
 
     def skin_bind(self, namespace: str, mesh: str,
-                  influences: tuple[str, ...], skin: str, maximum: int, *,
-                  maintain_maximum: bool = True) -> int:
-        result = BindSkin(self._host(namespace)).apply(mesh, influences,
-            skin_name=skin, maximum_influences=maximum,
-            maintain_maximum_influences=maintain_maximum)
+                  influences: tuple[str, ...], skin: str) -> int:
+        host = self._host(namespace)
+        options = host.read_body_smooth_bind_options()
+        result = BindSkin(host).apply(mesh, influences,
+            skin_name=skin,
+            maximum_influences=options.maximum_influences,
+            maintain_maximum_influences=options.maintain_maximum_influences,
+            bind_method=options.bind_method,
+            normalization=options.normalization,
+            skinning_method=options.skinning_method,
+            remove_unused_influences=options.remove_unused_influences,
+            weight_distribution=options.weight_distribution)
         return result.plan.input_state.vertex_count
 
     def skinning_select_deform_joints(self, namespace: str) -> int:

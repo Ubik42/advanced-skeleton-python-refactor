@@ -794,11 +794,8 @@ def create_panel(controller: MayaPanelController | None = None):
             self.build_source_root.setPlaceholderText(
                 "来源骨架根关节完整路径；请先将来源置于绑定姿态")
             self.build_use_preparation_skin = QtWidgets.QCheckBox(
-                "留空时使用 Preparation / Skin 记录")
-            self.build_use_preparation_skin.setChecked(True)
-            self.build_max_influences = QtWidgets.QSpinBox()
-            self.build_max_influences.setRange(1, 256)
-            self.build_max_influences.setValue(3)
+                "将 Preparation / Skin 模型同时绑定")
+            self.build_use_preparation_skin.setChecked(False)
             self.build_segment_influences = QtWidgets.QCheckBox(
                 "构建四肢及可用的标准躯干、手指分段关节")
             self.build_segment_influences.setChecked(True)
@@ -824,8 +821,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("准备输入", self.build_use_preparation_skin),
                 ("分段变形", self.build_segment_influences),
                 ("Fit 分段", self.build_fit_parts),
-                ("来源 Fit 分段", self.build_source_fit_parts),
-                ("最大影响数", self.build_max_influences)])
+                ("来源 Fit 分段", self.build_source_fit_parts)])
             form.addRow(self._button("使用当前选中的网格",
                                       self._fill_selected_build_meshes))
             form.addRow(self._button("记录当前选中的骨架根关节",
@@ -1234,15 +1230,9 @@ def create_panel(controller: MayaPanelController | None = None):
             self.influences = QtWidgets.QPlainTextEdit()
             self.influences.setPlaceholderText("每行一个完整关节路径")
             self.influences.setMaximumHeight(95)
-            self.max_influences = QtWidgets.QSpinBox()
-            self.max_influences.setRange(1, 256)
-            self.max_influences.setValue(4)
-            self.maintain_maximum = QtWidgets.QCheckBox("限制最大影响数")
-            self.maintain_maximum.setChecked(True)
             group, form = self._group("01 · 建立 Skin", [
                 ("网格路径", self.mesh), ("Skin 名称", self.skin),
-                ("影响关节", self.influences), ("最大影响数", self.max_influences),
-                ("绑定设置", self.maintain_maximum)])
+                ("影响关节", self.influences)])
             form.addRow(self._button("绑定当前网格", self._bind_skin,
                                       primary=True))
             stack.addWidget(group)
@@ -2644,7 +2634,6 @@ def create_panel(controller: MayaPanelController | None = None):
                 head_aim=self.head_aim.isChecked(),
                 infer_missing_labels=self.infer_missing_fit_labels.isChecked(),
                 meshes=meshes,
-                maximum_influences=self.build_max_influences.value(),
                 segment_influences=self.build_segment_influences.isChecked(),
                 fit_parts=(self.build_segment_influences.isChecked()
                            and self.build_fit_parts.isChecked()))
@@ -2665,7 +2654,6 @@ def create_panel(controller: MayaPanelController | None = None):
             result = self.controller.body_build_from_source(
                 selected_namespace, self.build_source_root.text().strip(),
                 self.fit_container.text().strip(), meshes=meshes,
-                maximum_influences=self.build_max_influences.value(),
                 head_aim=self.head_aim.isChecked(),
                 spine_segments=segments if segments else None,
                 infer_missing_labels=self.infer_missing_fit_labels.isChecked(),
@@ -3101,9 +3089,7 @@ def create_panel(controller: MayaPanelController | None = None):
             influences = tuple(line.strip() for line in
                 self.influences.toPlainText().splitlines() if line.strip())
             vertices = self.controller.skin_bind(self._namespace(),
-                self.mesh.text().strip(), influences, self.skin.text().strip(),
-                self.max_influences.value(),
-                maintain_maximum=self.maintain_maximum.isChecked())
+                self.mesh.text().strip(), influences, self.skin.text().strip())
             return f"已绑定网格：{vertices} 个顶点"
 
         def _select_deform_joints(self):

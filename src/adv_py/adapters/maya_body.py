@@ -6166,10 +6166,17 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 if self._cmds.nodeType(node) == "skinCluster"
             )
         )
-        history_nodes = tuple(sorted(
-            (node, self._cmds.ls(node, uuid=True)[0])
-            for node in set(history)
-        ))
+        history_nodes = []
+        for node in set(history):
+            paths = self._cmds.ls(node, long=True) or []
+            if len(paths) != 1:
+                raise FitSkeletonValidationError(
+                    "Skin Bind 网格历史节点缺失或不唯一：" + node)
+            identifiers = self._cmds.ls(paths[0], uuid=True) or []
+            if len(identifiers) != 1:
+                raise FitSkeletonValidationError(
+                    "Skin Bind 网格历史节点缺失或不唯一：" + node)
+            history_nodes.append((paths[0], identifiers[0]))
         return SkinBindInputState(
             mesh,
             shapes,
@@ -6181,7 +6188,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             tuple(influence_matrices),
             points_digest,
             topology_digest,
-            history_nodes,
+            tuple(sorted(history_nodes)),
         )
 
     def read_body_smooth_bind_options(self) -> SmoothBindPreferences:
