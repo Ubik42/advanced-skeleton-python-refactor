@@ -45,6 +45,18 @@ class FitBendyChainSpec:
     legacy_circular_factor: bool = False
 
     def __post_init__(self) -> None:
+        if (not self.part_names
+                or len(self.part_positions) != len(self.part_names)
+                or any(len(position) != 3
+                       or any(not isfinite(value) for value in position)
+                       for position in self.part_positions)):
+            raise ValueError("Bendy 需要完整且有限的 Twist Part 链")
+        if (len(self.start_position) != 3
+                or len(self.end_position) != 3
+                or any(not isfinite(value) for value in
+                       (*self.start_position, *self.end_position))
+                or dist(self.start_position, self.end_position) <= 1e-8):
+            raise ValueError("Bendy 起止关节位置无效")
         if (type(self.control_count) is not int
                 or self.control_count < 1
                 or type(self.rotation_order) is not int
