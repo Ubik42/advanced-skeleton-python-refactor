@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from math import isfinite
 
 from adv_py.core.character_registry import CharacterRegistryError
+from adv_py.core.skin_weight_io import raw_skin_document_changed_vertices
 from adv_py.core.skin_weight_redistribution import registered_spine_weight_redistribution
 
 from .character_spine_retarget import RetargetCharacterSpineFk
@@ -51,12 +52,16 @@ class MigrateRegisteredSpineCharacter:
             max_discarded_weight=max_discarded_weight,
             redistribution=redistribution,
             allow_target_extra_influences=allow_target_extra_influences)
-        editor = EditSkinWeights(host)
-        edit_plan = editor.plan(target_skin, target_mesh,
-                                plan.transfer.document.vertices)
-        if not edit_plan.ready:
+        document = plan.transfer.document
+        editor = EditSkinWeights(host) if document.normalized else None
+        edit_plan = (editor.plan(target_skin, target_mesh,
+                                document.vertices)
+                     if editor is not None else None)
+        if edit_plan is not None and not edit_plan.ready:
             raise CharacterRegistryError('目标 Skin 权重不可写：'
                                          + '；'.join(edit_plan.blockers))
+        if not document.normalized:
+            host.preflight_raw_skin_document(document)
         with host.transaction('Migrate registered spine animation and Skin'):
             if (host.read_source_character_registration(source_namespace) != source_reg
                     or host.read_character_registration() != target_reg
@@ -65,16 +70,27 @@ class MigrateRegisteredSpineCharacter:
                     or host.capture_face_triangles(source_mesh) != plan.source_triangles
                     or host.capture_face_mesh(target_mesh) != plan.target_mesh):
                 raise CharacterRegistryError('脊柱动画或 Skin 来源在写入前发生变化')
-            edit = editor.apply_plan_in_transaction(edit_plan)
+            if edit_plan is not None:
+                edit = editor.apply_plan_in_transaction(edit_plan)
+                changed_vertices = edit.changed_vertex_count
+                written = edit.snapshot
+            else:
+                before = host.capture_all_skin_weights(target_skin,
+                                                       target_mesh)
+                changed_vertices = raw_skin_document_changed_vertices(
+                    document, before)
+                host.apply_raw_skin_document(document)
+                written = host.capture_all_skin_weights(target_skin,
+                                                        target_mesh)
             roots, groups = RetargetCharacterSpineFk(host).apply_in_transaction(
                 source_namespace, start_frame=start_frame, end_frame=end_frame,
                 sample_by=sample_by, reference_frame=reference_frame)
             if host.capture_all_skin_weights(source_skin, source_mesh) != source_state:
                 raise RuntimeError('跨段数迁移改写了来源 Skin 权重')
-            if host.capture_all_skin_weights(target_skin, target_mesh) != edit.snapshot:
+            if host.capture_all_skin_weights(target_skin, target_mesh) != written:
                 raise RuntimeError('跨段数迁移后的目标 Skin 权重变化')
         return RegisteredSpineMigrationResult(len(roots), len(groups),
-                                              edit.changed_vertex_count)
+                                              changed_vertices)
 
 
 @dataclass(frozen=True, slots=True)
