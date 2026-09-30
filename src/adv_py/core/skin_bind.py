@@ -117,6 +117,10 @@ class SkinBindSnapshot:
     geodesic: GeodesicBindPreferences | None = None
     component_membership_complete: bool = True
 
+    def __post_init__(self) -> None:
+        if type(self.component_membership_complete) is not bool:
+            raise SkinBindValidationError("Skin 变形集完整性快照无效")
+
 
 @dataclass(frozen=True, slots=True)
 class SkinBindIssue:
