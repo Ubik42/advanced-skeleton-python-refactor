@@ -3521,6 +3521,37 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         }
         return tuple(sorted(collisions))
 
+    @staticmethod
+    def _fbx_skin_vertex_members(skin_fn, shape, mesh, vertex_count):
+        """Read the affected vertex subset from the native deformer set."""
+        from maya.api import OpenMaya as om
+        from maya.api import OpenMayaAnim as oma
+
+        filter_fn = oma.MFnGeometryFilter(skin_fn.object())
+        members = om.MFnSet(filter_fn.deformerSet).getMembers(True)
+        vertices = set()
+        for index in range(members.length()):
+            dag, component = members.getComponent(index)
+            if dag.fullPathName() not in (shape, mesh):
+                raise FitSkeletonValidationError(
+                    'FBX Skin 变形集含其他网格：' + skin_fn.name())
+            if component.isNull():
+                return tuple(range(vertex_count))
+            if not component.hasFn(om.MFn.kMeshVertComponent):
+                raise FitSkeletonValidationError(
+                    'FBX Skin 变形集不是网格顶点：' + skin_fn.name())
+            selection = om.MFnSingleIndexedComponent(component)
+            if selection.isComplete:
+                if selection.getCompleteData() != vertex_count:
+                    raise FitSkeletonValidationError(
+                        'FBX Skin 变形集顶点数不一致：' + skin_fn.name())
+                return tuple(range(vertex_count))
+            vertices.update(int(value) for value in selection.getElements())
+        if any(value < 0 or value >= vertex_count for value in vertices):
+            raise FitSkeletonValidationError(
+                'FBX Skin 变形集顶点索引越界：' + skin_fn.name())
+        return tuple(sorted(vertices))
+
     def _capture_fbx_skin_sources(self, influence_map, published_names):
         from .maya_dense_skin import MayaDenseSkinHost
         from .maya_mesh_topology import mesh_topology_digest
@@ -3568,6 +3599,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             skin_fn, _, _, api_names, _ = host._skin_api(skin)
             if api_names != data.influence_names:
                 raise RuntimeError("FBX Skin 影响关节顺序在捕获期间变化：" + skin)
+            vertex_members = self._fbx_skin_vertex_members(
+                skin_fn, shape[0], mesh[0], data.vertex_count)
             bind_matrices = []
             bind_matrix_drivers = []
             for influence in skin_fn.influenceObjects():
@@ -3597,7 +3630,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                          int(c.getAttr(skin + ".weightDistribution")),
                          host.capture_skin_blend_weights(skin),
                          bind_matrices, tuple(bind_matrix_drivers),
-                         deformer_settings,
+                         deformer_settings, vertex_members,
                          source_names))
         if not rows:
             raise FitSkeletonValidationError("当前角色没有可发布的 Skin 网格")
@@ -3708,7 +3741,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         for index, (mesh, data, source_topology, maximum, maintain, method,
                     normalization, distribution, blend_weights,
                     bind_matrices, bind_matrix_drivers,
-                    deformer_settings, mapping) in enumerate(
+                    deformer_settings, vertex_members, mapping) in enumerate(
                 sources, 1):
             target_paths = tuple(mapping[name.rsplit(":", 1)[-1]]
                                  for name in data.influence_names)
@@ -3941,6 +3974,22 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     raise RuntimeError('FBX Skin 计算选项写回失败：' + attribute)
             c.setAttr(skin + ".envelope", envelope_at_bind)
             c.setAttr(skin + ".maintainMaxInfluences", maintain)
+            if len(vertex_members) != data.vertex_count:
+                # A freshly bound Skin affects the entire clone. The source
+                # may be restricted to painted components, even though its
+                # dense weight array still contains every mesh vertex.
+                deformer_set = om.MFnSet(
+                    oma.MFnGeometryFilter(skin_fn.object()).deformerSet)
+                deformer_set.clear()
+                if vertex_members:
+                    member_fn = om.MFnSingleIndexedComponent()
+                    member = member_fn.create(om.MFn.kMeshVertComponent)
+                    member_fn.addElements(vertex_members)
+                    deformer_set.addMember((dag, member))
+            if self._fbx_skin_vertex_members(skin_fn, shape, clone,
+                    data.vertex_count) != vertex_members:
+                raise FitSkeletonValidationError(
+                    'FBX 临时 Skin 变形集与来源不一致：' + data.skin_name)
             copied.append((c.ls(clone, long=True,
                                  type="transform") or [])[0])
         for frame in range(bind_frame, end_frame + 1, sample_by):

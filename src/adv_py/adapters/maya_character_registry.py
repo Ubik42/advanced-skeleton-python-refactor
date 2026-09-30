@@ -981,39 +981,56 @@ class MayaCharacterRegistryMixin:
         c=self._cmds
         rows=[]
         seen=set()
-        for node in (row.node for row in (*skins,*deformers)):
-            curves=c.listConnections(node,source=True,
-                destination=False,type='animCurve',
-                skipConversionNodes=True) or []
-            for curve in curves:
-                if curve in seen:
-                    continue
-                seen.add(curve)
-                times=tuple(float(value) for value in (
-                    c.keyframe(curve,query=True,timeChange=True) or ()))
-                values=tuple(float(value) for value in (
-                    c.keyframe(curve,query=True,valueChange=True) or ()))
-                if len(times)!=len(values):
-                    raise CharacterRegistryError(
-                        '生产变形器动画曲线关键帧数据不完整：'+curve)
-                tangent_types=(
-                    tuple(c.keyTangent(curve,query=True,
-                        inTangentType=True) or ()),
-                    tuple(c.keyTangent(curve,query=True,
-                        outTangentType=True) or ()))
-                tangent_shape=tuple(tuple(float(value) for value in (
-                    c.keyTangent(curve,query=True,**{flag:True}) or ()))
-                    for flag in ('inAngle','outAngle','inWeight','outWeight'))
-                if any(len(row)!=len(times) for row in
-                       (*tangent_types,*tangent_shape)):
-                    raise CharacterRegistryError(
-                        '生产变形器动画曲线切线数据不完整：'+curve)
-                infinity=(c.getAttr(curve+'.preInfinity'),
-                          c.getAttr(curve+'.postInfinity'),
-                          tuple(c.keyTangent(curve,query=True,
-                              weightedTangents=True) or ()))
-                rows.append((curve,times,values,tangent_types,
-                             tangent_shape,infinity))
+        curves=set()
+        upstream=list(row.node for row in (*skins,*deformers))
+        # Deformer envelopes and painted weights may be animated through
+        # native scalar mixers. Stop at arbitrary rig/geometry nodes: those
+        # have separate ownership and transfer rules.
+        transparent={
+            'unitConversion','blendWeighted','pairBlend','blendTwoAttr',
+            'blendColors','plusMinusAverage','multiplyDivide',
+            'addDoubleLinear','multDoubleLinear','condition','reverse',
+            'clamp','setRange','remapValue','choice',
+        }
+        while upstream:
+            node=upstream.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            for source in c.listConnections(node,source=True,
+                    destination=False) or ():
+                kind=c.nodeType(source)
+                if kind.startswith('animCurve'):
+                    curves.add(source)
+                elif (kind in transparent
+                        or kind.startswith('animBlendNode')):
+                    upstream.append(source)
+        for curve in sorted(curves):
+            times=tuple(float(value) for value in (
+                c.keyframe(curve,query=True,timeChange=True) or ()))
+            values=tuple(float(value) for value in (
+                c.keyframe(curve,query=True,valueChange=True) or ()))
+            if len(times)!=len(values):
+                raise CharacterRegistryError(
+                    '生产变形器动画曲线关键帧数据不完整：'+curve)
+            tangent_types=(
+                tuple(c.keyTangent(curve,query=True,
+                    inTangentType=True) or ()),
+                tuple(c.keyTangent(curve,query=True,
+                    outTangentType=True) or ()))
+            tangent_shape=tuple(tuple(float(value) for value in (
+                c.keyTangent(curve,query=True,**{flag:True}) or ()))
+                for flag in ('inAngle','outAngle','inWeight','outWeight'))
+            if any(len(row)!=len(times) for row in
+                   (*tangent_types,*tangent_shape)):
+                raise CharacterRegistryError(
+                    '生产变形器动画曲线切线数据不完整：'+curve)
+            infinity=(c.getAttr(curve+'.preInfinity'),
+                      c.getAttr(curve+'.postInfinity'),
+                      tuple(c.keyTangent(curve,query=True,
+                          weightedTangents=True) or ()))
+            rows.append((curve,times,values,tangent_types,
+                         tangent_shape,infinity))
         return tuple(sorted(rows))
 
     def plan_character_property_transfer(self,original,namespace):
