@@ -42,7 +42,8 @@ class MayaBodyFitWheelMixin:
                     "Wheel FK 朝向约束不存在：" + control.constraint_name)
             if control.source_override_path is not None and (
                     c.ls(control.source_override_path, long=True,
-                         type="transform") or []) != [
+                         type=("joint" if control.source_override_joint
+                               else "transform")) or []) != [
                              control.source_override_path]:
                 raise FitSkeletonValidationError(
                     "Wheel FKX 接收层不存在："

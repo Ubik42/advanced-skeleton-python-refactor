@@ -1296,7 +1296,10 @@ class BuildRegisteredBodyCharacter:
                 bendy_parent_sources={
                     body: (source.fk_matrix, source.ik_matrix,
                            source.blend_plug)
-                    for body, source in standard_bendy_sources.items()})
+                    for body, source in standard_bendy_sources.items()},
+                fkx_joint_controls=(
+                    _generic_fk_policy.fkx_joint_controls
+                    if _generic_fk_policy is not None else None))
             generic_inbetween_bindings = (
                 plan_generic_inbetween_fk_bindings(
                     inbetween_parts, generic_fk, standard_fk_specs,

@@ -29,6 +29,7 @@ class MayaCharacterRegistryMixin:
         compensated = set()
         independent = set()
         bendy_scales = set()
+        fkx_joints = set()
         twist_rewired = set()
         globally_driven = set()
         keys = {channel.key for channel in registration.channels}
@@ -39,6 +40,13 @@ class MayaCharacterRegistryMixin:
                 raise CharacterRegistryError(
                     '旧通用 FK 控制器或 Body 关节无法唯一定位：' + stem)
             control = controls[0]
+            fkx = by_leaf.get('AdvPy_' + stem + 'X', ())
+            if len(fkx) > 1:
+                raise CharacterRegistryError(
+                    '旧通用 FKX 节点名称不唯一：' + stem)
+            if fkx and c.nodeType(fkx[0]) == 'joint':
+                fkx_joints.add(control.rsplit('|', 1)[-1]
+                               .rsplit(':', 1)[-1])
             sources = tuple(c.connectionInfo(
                 body + '.scale' + axis, sourceFromDestination=True)
                 for axis in 'XYZ')
@@ -469,6 +477,7 @@ class MayaCharacterRegistryMixin:
             independent_controls=frozenset(independent),
             twist_rewired_sources=frozenset(twist_rewired),
             bendy_scale_controls=frozenset(bendy_scales),
+            fkx_joint_controls=frozenset(fkx_joints),
             bendy_aim_follow_controls=bendy_aim_follow,
             bendy_start_control_sources=frozenset(bendy_start_control),
             bendy_child_control_sources=frozenset(bendy_child_control),

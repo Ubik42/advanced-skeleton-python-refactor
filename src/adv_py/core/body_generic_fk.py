@@ -124,6 +124,7 @@ class GenericFkFeaturePolicy:
     bendy_opm_offset_scale_controls: frozenset[str] | None = None
     bendy_secondary_matrix_controls: frozenset[str] | None = None
     bendy_main_influence_controls: frozenset[str] | None = None
+    fkx_joint_controls: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(
@@ -143,6 +144,7 @@ def plan_body_generic_fk(
     bendy_end_paths: frozenset[str] = frozenset(),
     bendy_parent_sources: Mapping[
         str, tuple[str, str | None, str | None]] | None = None,
+    fkx_joint_controls: frozenset[str] | None = None,
 ) -> BodyGenericFkPlan:
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
     state_by_name = {state.name.rsplit(":", 1)[-1]: state
@@ -332,6 +334,12 @@ def plan_body_generic_fk(
             source_override_path=(None if spec.path in inbetween_start_paths
                                   else (sub_path or control_path)
                                   + "|AdvPy_" + stem + "FKX"),
+            source_override_joint=(
+                spec.path not in inbetween_start_paths
+                and (fkx_joint_controls is None
+                     or control_name in fkx_joint_controls)),
+            source_override_segment_scale_compensate=(
+                not use_offset_parent_matrix),
             extra_path=extra_path,
             extra_name=extra_name,
             extra_curve=extra_controllers,

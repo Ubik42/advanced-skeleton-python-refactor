@@ -9367,6 +9367,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         limb_label: str,
     ) -> None:
         self._require_transaction()
+        if spec.source_override_joint and spec.source_override_path is None:
+            raise FitSkeletonValidationError("FKX 关节缺少计划路径")
         selection = self._cmds.ls(selection=True, long=True) or []
         pose_name = (
             spec.control_parent_path.rsplit("|", 1)[-1]
@@ -9382,6 +9384,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             spec.control_name,
             spec.constraint_name,
             *((spec.sub_control_name,) if spec.sub_control_name is not None else ()),
+            *((spec.source_override_path.rsplit("|", 1)[-1],)
+              if spec.source_override_path is not None
+              and spec.source_override_path.startswith(
+                  spec.control_path + "|") else ()),
         ):
             if self.find_name_collisions(name):
                 raise FitSkeletonValidationError(
@@ -9487,7 +9493,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         raise FitSkeletonValidationError(
                             "FK 约束接收层必须直接位于控制器或 Sub 下")
                     orientation_source = self._cmds.createNode(
-                        "transform",
+                        ("joint" if spec.source_override_joint
+                         else "transform"),
                         name=spec.source_override_path.rsplit("|", 1)[-1],
                         parent=source_parent,
                         skipSelect=True,
@@ -9498,6 +9505,21 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     )[0]
                     if orientation_source != spec.source_override_path:
                         raise RuntimeError("FK 约束接收层路径漂移")
+                    if spec.source_override_joint:
+                        self._cmds.setAttr(
+                            orientation_source + ".drawStyle", 2)
+                        self._cmds.setAttr(
+                            orientation_source + ".rotateOrder",
+                            spec.rotate_order)
+                        self._cmds.setAttr(
+                            orientation_source + ".segmentScaleCompensate",
+                            spec.source_override_segment_scale_compensate)
+                        if not self._cmds.connectionInfo(
+                                orientation_source + ".inverseScale",
+                                sourceFromDestination=True):
+                            self._cmds.connectAttr(
+                                control + ".scale",
+                                orientation_source + ".inverseScale")
                 else:
                     matches = self._cmds.ls(
                         spec.source_override_path, long=True,
@@ -10019,6 +10041,19 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     control_parent_path=control_parent[0] if control_parent else None,
                     constraint_name=constraint,
                     source_control=source,
+                    source_node_type=(self._cmds.nodeType(source)
+                                      if source else None),
+                    source_inverse_scale=(
+                        self._cmds.connectionInfo(
+                            source + ".inverseScale",
+                            sourceFromDestination=True) or None
+                        if source and self._cmds.nodeType(source) == "joint"
+                        else None),
+                    source_segment_scale_compensate=(
+                        bool(self._cmds.getAttr(
+                            source + ".segmentScaleCompensate"))
+                        if source and self._cmds.nodeType(source) == "joint"
+                        else None),
                     driven_joint=driven_joint,
                     world_position=tuple(float(value) for value in position),
                     world_axes=world_axes,

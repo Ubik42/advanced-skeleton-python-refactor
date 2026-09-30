@@ -38,6 +38,8 @@ class BodyLimbFkControlSpec:
     rotate_order: int = 0
     control_parent_path: str | None = None
     source_override_path: str | None = None
+    source_override_joint: bool = False
+    source_override_segment_scale_compensate: bool = True
     sub_control_path: str | None = None
     sub_control_name: str | None = None
     extra_path: str | None = None
@@ -80,6 +82,9 @@ class BodyLimbFkControlState:
     icon_template: str | None = None
     icon_mirrored: bool | None = None
     local_scale: Vector3 | None = None
+    source_node_type: str | None = None
+    source_inverse_scale: str | None = None
+    source_segment_scale_compensate: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,6 +326,16 @@ def audit_body_limb_fk_controls(
             issues.append(BodyLimbControlIssue(
                 "constraint_wiring_mismatch", "FK 约束连接不一致", path
             ))
+        if spec.source_override_joint:
+            expected_inverse = spec.control_name + ".scale"
+            actual_inverse = (state.source_inverse_scale.rsplit("|", 1)[-1]
+                              if state.source_inverse_scale else None)
+            if (state.source_node_type != "joint"
+                    or state.source_segment_scale_compensate
+                       != spec.source_override_segment_scale_compensate
+                    or actual_inverse != expected_inverse):
+                issues.append(BodyLimbControlIssue(
+                    "fkx_joint_mismatch", "FKX 关节或缩放补偿连接不一致", path))
         if state.shape_type != "nurbsCurve":
             issues.append(BodyLimbControlIssue(
                 "control_shape_mismatch", "FK 控制缺少 NURBS 曲线", path
