@@ -76,6 +76,9 @@ class MayaBodyFitFollowSpacesMixin:
         if (c.connectionInfo(plug, sourceFromDestination=True) or None
                 ) != state.opm_source:
             raise ValueError("Follow Spaces FK Offset 原矩阵来源已变化")
+        if (bool(c.getAttr(spec.fk_offset + ".inheritsTransform"))
+                != state.inherits_transform):
+            raise ValueError("Follow Spaces FK Offset 继承状态已变化")
         offset_world = om.MMatrix(state.offset_world)
         parent_world = (om.MMatrix(state.parent_world)
                         if state.inherits_transform else om.MMatrix())

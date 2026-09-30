@@ -115,6 +115,9 @@ class MayaBodyFitGeoAttachMixin:
         if (c.connectionInfo(plug, sourceFromDestination=True) or None
                 ) != state.opm_source:
             raise ValueError("Geo Attach FK Offset 原矩阵来源已变化")
+        if (bool(c.getAttr(spec.fk_offset + ".inheritsTransform"))
+                != state.inherits_transform):
+            raise ValueError("Geo Attach FK Offset 继承状态已变化")
         self._transaction_changed = True
         sampler = c.createNode("closestPointOnMesh")
         try:
