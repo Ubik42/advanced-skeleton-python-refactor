@@ -289,6 +289,8 @@ class MayaBodyFkScaleCompensationMixin:
             c.setAttr(spec.parent_control_path
                       + ".segmentScaleCompensate", 0)
             return
+        if not spec.mel_non_opm_fkps_enabled:
+            return
         ps1 = c.createNode("transform", name=spec.fkps1_name,
                            parent=spec.scale_source_path,
                            skipSelect=True)
@@ -326,6 +328,8 @@ class MayaBodyFkScaleCompensationMixin:
                     spec.driven_joint_path + ".segmentScaleCompensate"))
                 and (spec.body_joint_path is None or not bool(c.getAttr(
                     spec.body_joint_path + ".segmentScaleCompensate"))))
+        if not spec.mel_non_opm_fkps_enabled:
+            return True
         ps1 = c.ls(spec.fkps1_name, long=True,
                    type="transform") or []
         ps2 = c.ls(spec.fkps2_name, long=True,
