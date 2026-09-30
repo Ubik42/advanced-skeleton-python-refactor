@@ -721,7 +721,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise FitSkeletonValidationError(
                     "Geometry 子树存在无法识别的节点：" + root)
             result.append((root, identities,
-                           tuple(float(value) for value in c.xform(
+                           tuple(round(float(value), 8) for value in c.xform(
                                root, query=True, worldSpace=True,
                                matrix=True)),
                            bool(c.getAttr(root + ".visibility"))))
@@ -5739,6 +5739,20 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             if (self._cmds.ls(plan.skin_name, type="skinCluster") or []) != [plan.skin_name]:
                 raise FitSkeletonValidationError(
                     "Geodesic 种子 Skin 缺失：" + plan.skin_name)
+            shapes = self._cmds.skinCluster(plan.skin_name, query=True,
+                                            geometry=True) or []
+            parents = (self._cmds.listRelatives(shapes[0], parent=True,
+                                                fullPath=True) or []) if len(shapes)==1 else []
+            influences = self._cmds.skinCluster(plan.skin_name, query=True,
+                                                influence=True) or []
+            resolved = tuple((self._cmds.ls(joint, long=True,
+                                            type="joint") or [None])[0]
+                             for joint in influences)
+            if (parents != [plan.mesh_path]
+                    or None in resolved
+                    or set(resolved) != set(plan.influence_paths)):
+                raise FitSkeletonValidationError(
+                    "Geodesic 种子 Skin 网格或影响关节变化：" + plan.skin_name)
         options = preferences[0]
         self._transaction_changed = True
         self._cmds.geomBind(*(p.skin_name for p in plans), bindMethod=3,
@@ -5846,6 +5860,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             2: SkinBindMethod.HEAT_MAP,
             3: SkinBindMethod.GEODESIC_VOXEL,
         }.get(int(c.getAttr(f"{skin}.bindMethod")))
+        if c.listConnections(skin + ".geomBind", source=True,
+                             destination=True, type="geomBind"):
+            bind_method = SkinBindMethod.GEODESIC_VOXEL
         normalization = {
             0: SkinWeightNormalization.NONE,
             1: SkinWeightNormalization.INTERACTIVE,
@@ -6014,7 +6031,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         c = self._cmds
         manager = None
         members = ()
-        if int(c.getAttr(skin + ".bindMethod")) == 3:
+        if (int(c.getAttr(skin + ".bindMethod")) == 3
+                or c.listConnections(skin + ".geomBind", source=True,
+                                     destination=True, type="geomBind")):
             manager, _, members = self._skin_geodesic_state(skin)
         self._transaction_changed = True
         c.delete(skin)
@@ -6071,6 +6090,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         }.get(
             int(self._cmds.getAttr(f"{skin}.bindMethod"))
         )
+        if self._cmds.listConnections(skin + ".geomBind", source=True,
+                                      destination=True, type="geomBind"):
+            bind_method = SkinBindMethod.GEODESIC_VOXEL
         normalization = {
             0: SkinWeightNormalization.NONE,
             1: SkinWeightNormalization.INTERACTIVE,

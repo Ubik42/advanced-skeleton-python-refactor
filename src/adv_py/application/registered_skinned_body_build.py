@@ -149,6 +149,9 @@ class BuildRegisteredSkinnedBodyCharacter:
                             + "；".join(issue.message for issue in issues))
                     results.append(SkinBindBuildResult(item, snapshot))
                 skins = tuple(results)
+                if len({item.snapshot.geodesic_source.split('.', 1)[0]
+                        for item in skins}) != 1:
+                    raise RuntimeError("多网格 Geodesic 没有共享体素求解节点")
             else:
                 skins = tuple(binder.apply(mesh, influences, **options(name))
                     for mesh, name in zip(geometry_meshes, plan.skin_names))
