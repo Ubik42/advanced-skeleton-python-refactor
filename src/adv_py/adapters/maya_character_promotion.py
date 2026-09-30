@@ -31,6 +31,9 @@ def promote(host,staged):
     retained_mesh_paths={
         node for skin in staged.original.skins for shape,_,_ in skin.meshes
         for node in (shape,shape.rsplit('|',1)[0])}
+    retained_mesh_paths.update(row[0] for row in (
+        *staged.geometry_container_conversions,
+        *staged.geometry_output_conversions))
     retained_mesh_paths.update(
         root+suffix for root, identities, _, _ in (staged.authored_geometry or ())
         for suffix, _, _ in identities)

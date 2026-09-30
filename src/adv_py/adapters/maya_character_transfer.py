@@ -213,6 +213,33 @@ def transfer(host,staged):
                 c.disconnectAttr(a,b)
                 c.connectAttr(x,y)
             connected_geometry_drivers.append((x,y))
+        connected_geometry_outputs=[]
+        for source,destination in staged.geometry_container_outputs:
+            a=host.scene_address(source);b=host.scene_address(destination)
+            x=target.scene_address(source)
+            y=geometry_source(b)
+            if c.isConnected(a,b):
+                with _writable_connection(c,b,y):
+                    c.disconnectAttr(a,b)
+                    if not c.isConnected(x,y):
+                        c.connectAttr(x,y)
+            elif not c.isConnected(x,y):
+                raise CharacterRegistryError(
+                    'Geometry 原生输出在交接前变化：'+source)
+            connected_geometry_outputs.append((x,y))
+        connected_output_conversions=[]
+        for converter,destination in staged.geometry_output_conversions:
+            a=host.scene_address(converter+'.output')
+            b=host.scene_address(destination)
+            y=geometry_source(b)
+            if y!=b:
+                if not c.isConnected(a,b):
+                    raise CharacterRegistryError(
+                        'Geometry 输出单位转换在交接前变化：'+converter)
+                with _writable_connection(c,b,y):
+                    c.disconnectAttr(a,b)
+                    c.connectAttr(a,y)
+            connected_output_conversions.append((a,y))
         for source,destination in sorted({pair for row in (*old.extensions,*staged.custom_properties) for pair in row.connections}):
             a,b=host.scene_address(source),host.scene_address(destination)
             x,y=live_redirect(a),live_redirect(b)
@@ -238,6 +265,10 @@ def transfer(host,staged):
         _refresh_skin_inputs(c,host,old.skins)
         lock_and_verify(target,staged.custom_properties,apply_locks=True)
         if (any(not c.isConnected(x,y) for x,y in connected_geometry_drivers)
+                or any(not c.isConnected(x,y)
+                       for x,y in connected_geometry_outputs)
+                or any(not c.isConnected(x,y)
+                       for x,y in connected_output_conversions)
                 or {destination for _,destination in
                     target.capture_body_geometry_container_drivers()}
                     != {destination for _,destination in

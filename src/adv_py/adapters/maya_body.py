@@ -346,6 +346,12 @@ _GEOMETRY_COMPOUND_ATTRIBUTES = (
     'rotatePivotTranslate', 'scalePivotTranslate', 'rotateAxis',
     'shear', 'overrideColorRGB',
 )
+_GEOMETRY_OUTPUT_ATTRIBUTES = frozenset((
+    *_GEOMETRY_CONTAINER_ATTRIBUTES,
+    *_GEOMETRY_COMPOUND_ATTRIBUTES,
+    'worldMatrix', 'worldInverseMatrix', 'parentMatrix',
+    'parentInverseMatrix', 'matrix', 'inverseMatrix',
+))
 
 
 class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBodyDeleteMixin, MayaFaceDeleteMixin, MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, MayaBodyFkScaleCompensationMixin, MayaBodyFitFollowMixin, MayaBodyFitNamedFollowMixin, MayaBodyFitFollowSpacesMixin, MayaBodyFitAimAtMixin, MayaBodyFitGeoAttachMixin, MayaBodyFitProximityPinMixin, MayaBodyCenterBetweenFeetMixin, MayaBodyFitAdvancedConstraintMixin, MayaBodyParentConstraintMixin, MayaBodyGameRootMotionMixin, MayaBodyGameScalingMixin, MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitBendyMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyFitAimMixin, MayaBodyPoleAimMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
@@ -814,6 +820,39 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise FitSkeletonValidationError(
                     'Geometry 单位转换存在共享输出或缺少输入：' + node)
             rows.append((node, _plug(self, upstream)))
+        return tuple(sorted(set(rows)))
+
+    def capture_body_geometry_container_outputs(self):
+        """Capture authored outgoing native Geometry graph boundaries."""
+        from .maya_character_preservation import connections
+        node = '|Group|Geometry'
+        if not self._cmds.objExists(node):
+            return ()
+        return tuple(sorted((source, destination)
+            for source, destination in connections(self, node)
+            if source.split('.', 1)[0] == node
+            and source.split('.', 1)[1].split('[', 1)[0]
+                in _GEOMETRY_OUTPUT_ATTRIBUTES))
+
+    def capture_body_geometry_output_conversions(self):
+        """Retain exclusive conversion outputs driven by Geometry."""
+        from .maya_character_preservation import _plug
+        c = self._cmds
+        rows = []
+        for source, destination in self.capture_body_geometry_container_outputs():
+            node = destination.split('.', 1)[0]
+            if c.nodeType(node) != 'unitConversion':
+                continue
+            input_source = c.connectionInfo(node + '.input',
+                                            sourceFromDestination=True)
+            outputs = c.listConnections(node + '.output', source=False,
+                                        destination=True, plugs=True) or []
+            normalized = tuple(sorted(_plug(self, plug) for plug in outputs))
+            if (not input_source or _plug(self, input_source) != source
+                    or len(normalized) != 1):
+                raise FitSkeletonValidationError(
+                    'Geometry 输出单位转换不是独占连接：' + node)
+            rows.append((node, normalized[0]))
         return tuple(sorted(set(rows)))
 
     def apply_body_geometry_container_state(self, namespace, state):

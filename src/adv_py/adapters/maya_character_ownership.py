@@ -61,7 +61,9 @@ def audit(host,staged):
             raise CharacterRegistryError('所有权审计需要尚未交接动画的暂存角色')
         if not host._cmds.objExists(node):
             raise CharacterRegistryError('原 Rig 缺少暂存结构节点：'+node)
-    external_conversions={row[0] for row in staged.geometry_container_conversions}
+    external_conversions={row[0] for row in (
+        *staged.geometry_container_conversions,
+        *staged.geometry_output_conversions)}
     if external_conversions & set(names):
         raise CharacterRegistryError('Geometry 保留单位转换与新 Rig 同名')
     old_nodes,old_edges=_graph(host,names,
@@ -116,6 +118,9 @@ def audit(host,staged):
         rows.append((role,a.ls(old,uuid=True)[0],b.ls(new,uuid=True)[0],kind))
     permitted={pair for row in (*original.skins,*original.extensions,*staged.custom_properties) for pair in row.connections}
     permitted.update(staged.geometry_container_drivers)
+    permitted.update(staged.geometry_container_outputs)
+    permitted.update((converter+'.output',destination)
+        for converter,destination in staged.geometry_output_conversions)
     permitted.update((upstream,converter+'.input')
         for converter,upstream in staged.geometry_container_conversions)
     for curve in original.curves:
@@ -135,6 +140,7 @@ def audit(host,staged):
     retained_mesh_nodes.update(
         root+suffix for root, identities, _, _ in (staged.authored_geometry or ())
         for suffix, _, _ in identities)
+    retained_mesh_nodes.update(external_conversions)
     permitted.update(
         edge for edge in old_edges
         if any(plug.split('.', 1)[0] == 'AllSet' for plug in edge)
