@@ -158,29 +158,46 @@ def with_spine_ik(body, torso, build_options: BodyBuildOptions = BodyBuildOption
             ))
             parent = specs[-1].path
     pelvis, waist, chest, *upper = torso.controls.controls
-    base_offset = pelvis.control_path + "|AdvPy_SpineBaseFKOffset"
+    pelvis_parent = (pelvis.source_override_path
+                     if pelvis.source_override_joint
+                     and not torso.use_offset_parent_matrix
+                     else pelvis.control_path)
+    base_offset = pelvis_parent + "|AdvPy_SpineBaseFKOffset"
     base_extra_name = "AdvPy_SpineBaseFKExtra"
     base_extra = base_offset + "|" + base_extra_name
     base_control = base_extra + "|AdvPy_SpineBaseFK"
     base_sub_name = ("AdvPy_SpineBaseFKSub"
                      if pelvis.sub_control_path is not None else None)
+    base_sub_path = (base_control + "|" + base_sub_name
+                     if base_sub_name else None)
+    use_fkx = pelvis.source_override_joint
+    base_fkx = ((base_sub_path or base_control) + "|AdvPy_SpineBaseFKX"
+                if use_fkx else None)
     base = BodyLimbFkControlSpec(
         side=source[0].side, driven_joint=specs[0].path,
         offset_path=base_offset, offset_name="AdvPy_SpineBaseFKOffset",
         control_path=base_control, control_name="AdvPy_SpineBaseFK",
-        parent_path=pelvis.control_path, constraint_name="AdvPy_SpineBaseFKOrient",
+        parent_path=pelvis_parent, constraint_name="AdvPy_SpineBaseFKOrient",
         world_position=source[0].world_position, world_axes=source[0].world_axes, radius=waist.radius,
         extra_path=base_extra, extra_name=base_extra_name,
         extra_curve=pelvis.extra_curve,
-        sub_control_path=(base_control + "|" + base_sub_name
-                          if base_sub_name else None),
+        sub_control_path=base_sub_path,
         sub_control_name=base_sub_name,
+        source_override_path=base_fkx,
+        source_override_joint=use_fkx,
+        source_override_segment_scale_compensate=(
+            not torso.use_offset_parent_matrix),
         fit_joint_names=(source[0].name.rsplit("_", 1)[0],),
     )
+    def child_parent(control: BodyLimbFkControlSpec) -> str:
+        return (control.source_override_path
+                if control.source_override_joint
+                and not torso.use_offset_parent_matrix
+                else control.control_path)
     waist = reparent_body_fk_control(
-        waist, base.control_path, driven_joint=specs[1].path)
+        waist, child_parent(base), driven_joint=specs[1].path)
     chest = reparent_body_fk_control(
-        chest, waist.control_path, driven_joint=specs[2].path)
+        chest, child_parent(waist), driven_joint=specs[2].path)
     space = torso.controls.root_path + "|AdvPy_SpineChestSpace"
     updated_upper = []
     old_to_new = {}
@@ -188,6 +205,8 @@ def with_spine_ik(body, torso, build_options: BodyBuildOptions = BodyBuildOption
         parent = old_to_new.get(control.parent_path, space)
         updated = reparent_body_fk_control(control, parent)
         old_to_new[control.control_path] = updated.control_path
+        if control.source_override_path is not None:
+            old_to_new[control.source_override_path] = child_parent(updated)
         updated_upper.append(updated)
     ik_offset = torso.controls.root_path + "|AdvPy_SpineIKOffset"
     ik_extra = ik_offset + "|AdvPy_SpineIKExtra"

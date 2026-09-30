@@ -292,35 +292,56 @@ def with_spline_ik(body,torso,description,
             specs.append(BodyLimbMechanismJointSpec(role,joint.side,joint.path,parent+'|'+name,name,parent,joint.world_position,ik_axes(index) if curved and role==BodyLimbMechanismRole.IK else joint.world_axes))
             parent=specs[-1].path
     pelvis=torso.controls.controls[0]
-    offset=pelvis.control_path+'|AdvPy_SplineBaseFKOffset'
+    pelvis_parent=(pelvis.source_override_path
+                   if pelvis.source_override_joint
+                   and not torso.use_offset_parent_matrix
+                   else pelvis.control_path)
+    offset=pelvis_parent+'|AdvPy_SplineBaseFKOffset'
     extra_name='AdvPy_SplineBaseFKExtra'
     extra=offset+'|'+extra_name
     base_control=extra+'|AdvPy_SplineBaseFK'
     sub_name=('AdvPy_SplineBaseFKSub'
               if pelvis.sub_control_path is not None else None)
+    sub_path=(base_control+'|'+sub_name if sub_name else None)
+    use_fkx=pelvis.source_override_joint
+    base_fkx=((sub_path or base_control)+'|AdvPy_SplineBaseFKX'
+              if use_fkx else None)
     base=BodyLimbFkControlSpec(
         source[0].side,specs[0].path,offset,'AdvPy_SplineBaseFKOffset',
-        base_control,'AdvPy_SplineBaseFK',pelvis.control_path,
+        base_control,'AdvPy_SplineBaseFK',pelvis_parent,
         'AdvPy_SplineBaseFKOrient',source[0].world_position,axes,
         pelvis.radius,
         extra_path=extra,extra_name=extra_name,
         extra_curve=pelvis.extra_curve,
-        sub_control_path=(base_control+'|'+sub_name if sub_name else None),
+        sub_control_path=sub_path,
         sub_control_name=sub_name,
+        source_override_path=base_fkx,
+        source_override_joint=use_fkx,
+        source_override_segment_scale_compensate=(
+            not torso.use_offset_parent_matrix),
         fit_joint_names=(source[0].name.rsplit("_", 1)[0],))
-    updated=[pelvis,base];parent=base.control_path;fk=[parent]
+    def child_parent(control):
+        return (control.source_override_path
+                if control.source_override_joint
+                and not torso.use_offset_parent_matrix
+                else control.control_path)
+    updated=[pelvis,base];parent=child_parent(base);fk=[base.control_path]
     by_joint={c.driven_joint:c for c in torso.controls.controls}
     for index,joint in enumerate(source[1:],1):
         old=by_joint[joint.path]
         control=reparent_body_fk_control(
             old,parent,driven_joint=specs[index].path)
-        updated.append(control);parent=control.control_path;fk.append(parent)
+        updated.append(control);parent=child_parent(control)
+        fk.append(control.control_path)
     space=torso.controls.root_path+'|AdvPy_SplineChestSpace';mapping={}
     for old in torso.controls.controls:
         if old.driven_joint in {j.path for j in source}:continue
         parent=mapping.get(old.parent_path,space)
         control=reparent_body_fk_control(old,parent)
-        mapping[old.control_path]=control.control_path;updated.append(control)
+        mapping[old.control_path]=control.control_path
+        if old.source_override_path is not None:
+            mapping[old.source_override_path]=child_parent(control)
+        updated.append(control)
     positions=(fit_spline_controls(tuple(j.world_position for j in source)) if curved else
                tuple(tuple(a+(b-a)*i/3 for a,b in zip(source[0].world_position,source[-1].world_position)) for i in range(4)))
     isolated_follow=len(source)>2
