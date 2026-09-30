@@ -976,6 +976,19 @@ class MayaCharacterRegistryMixin:
                 rows.append((node,normalized))
         return tuple(sorted(set(rows)))
 
+    def capture_character_deformer_animation_frames(self,deformers,skins=()):
+        """Include native Skin and deformer keys in rebuild sampling."""
+        c=self._cmds
+        frames=set()
+        for node in (row.node for row in (*skins,*deformers)):
+            curves=c.listConnections(node,source=True,
+                destination=False,type='animCurve',
+                skipConversionNodes=True) or []
+            for curve in curves:
+                frames.update(float(value) for value in (
+                    c.keyframe(curve,query=True,timeChange=True) or ()))
+        return tuple(sorted(frames))
+
     def plan_character_property_transfer(self,original,namespace):
         from .maya_character_properties import plan
         return plan(self,original,namespace)

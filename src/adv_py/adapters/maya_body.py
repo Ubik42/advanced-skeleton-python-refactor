@@ -4239,6 +4239,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                             raise FitSkeletonValidationError(
                                 "FBX 有界曲线简化超过世界矩阵误差上限："
                                 f"{max_matrix_error:g} > {profile.matrix_tolerance:g}")
+                    if copied_meshes:
+                        self._verify_fbx_skinned_meshes(
+                            skin_sources, copied_meshes, selection,
+                            namespace_free=namespace_free)
                     published_cmds.select(
                         (*published_paths, *copied_meshes),
                         replace=True,

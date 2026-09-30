@@ -348,6 +348,9 @@ def verify_retained(host,staged):
             destination for _,destination in staged.geometry_container_drivers}:
         raise RuntimeError('暂存 Geometry 原生驱动连接变化')
     old=staged.original
+    if host.capture_character_deformer_animation_frames(
+            old.deformers,old.skins)!=staged.deformer_sample_frames:
+        raise RuntimeError('交接改变了 Skin 或生产变形器的动画采样帧')
     from .maya_character_ownership import verify_shapes
     verify_shapes(target,staged.ownership)
     registered={n.path for n in old.registration.nodes if n.path!=old.registration.container and not n.path.startswith(old.registration.container+'|')}
