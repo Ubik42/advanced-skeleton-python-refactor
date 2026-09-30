@@ -83,6 +83,45 @@ class MayaCharacterRegistryMixin:
         hand_points = set()
         standard_points = set()
         torso_points = set()
+        def point_matches_orient(point_name, orient_name):
+            points = c.ls(point_name, long=True,
+                          type='pointConstraint') or []
+            if len(points) > 1:
+                raise CharacterRegistryError(
+                    'FK 位置约束名称不唯一：' + point_name)
+            if not points:
+                return False
+            orients = c.ls(orient_name, long=True,
+                           type='orientConstraint') or []
+            if len(orients) != 1:
+                raise CharacterRegistryError(
+                    'FK 朝向约束缺失或不唯一：' + orient_name)
+            point_targets = c.pointConstraint(
+                points[0], query=True, targetList=True) or []
+            orient_targets = c.orientConstraint(
+                orients[0], query=True, targetList=True) or []
+            point_outputs = c.listConnections(
+                points[0] + '.constraintTranslateX',
+                source=False, destination=True, plugs=True) or []
+            orient_outputs = c.listConnections(
+                orients[0] + '.constraintRotateX',
+                source=False, destination=True, plugs=True) or []
+            def resolved_target(targets):
+                return (c.ls(targets[0], long=True) or []
+                        if len(targets) == 1 else [])
+            def resolved_output(outputs, suffix):
+                if len(outputs) != 1 or not outputs[0].endswith(suffix):
+                    return []
+                return c.ls(outputs[0].rsplit('.', 1)[0], long=True) or []
+            if (len(resolved_target(point_targets)) != 1
+                    or resolved_target(point_targets)
+                    != resolved_target(orient_targets)
+                    or len(resolved_output(point_outputs, '.translateX')) != 1
+                    or resolved_output(point_outputs, '.translateX')
+                    != resolved_output(orient_outputs, '.rotateX')):
+                raise CharacterRegistryError(
+                    'FK 位置约束与朝向约束驱动链不一致：' + point_name)
+            return True
         root_leaf = registration.body_root.rsplit('|', 1)[-1]
         root_namespace = (root_leaf.rsplit(':', 1)[0] + ':'
                           if ':' in root_leaf else '')
@@ -114,22 +153,8 @@ class MayaCharacterRegistryMixin:
             namespace = (leaf.rsplit(':', 1)[0] + ':'
                          if ':' in leaf else '')
             point_name = namespace + short.removesuffix('FK') + 'Point'
-            points = c.ls(point_name, long=True,
-                          type='pointConstraint') or []
-            if len(points) > 1:
-                raise CharacterRegistryError(
-                    'Torso FK 位置约束名称不唯一：' + point_name)
-            if points:
-                outputs = c.listConnections(
-                    points[0] + '.constraintTranslateX',
-                    source=False, destination=True,
-                    plugs=True) or []
-                if (len(outputs) != 1
-                        or not outputs[0].endswith('.translateX')
-                        or c.nodeType(outputs[0].rsplit('.', 1)[0])
-                        != 'joint'):
-                    raise CharacterRegistryError(
-                        'Torso FK 位置约束接线无效：' + point_name)
+            orient_name = namespace + short.removesuffix('FK') + 'Orient'
+            if point_matches_orient(point_name, orient_name):
                 torso_points.add(short)
         for side in ('R', 'L'):
             for joint in ('Shoulder', 'Elbow', 'Wrist', 'Hip', 'Knee',
@@ -145,22 +170,8 @@ class MayaCharacterRegistryMixin:
                 namespace = (control_name.rsplit(':', 1)[0] + ':'
                              if ':' in control_name else '')
                 point_name = namespace + f'AdvPy_{joint}FKPoint_{side}'
-                points = c.ls(point_name, long=True,
-                              type='pointConstraint') or []
-                if len(points) > 1:
-                    raise CharacterRegistryError(
-                        '标准 FK 位置约束名称不唯一：' + point_name)
-                if points:
-                    outputs = c.listConnections(
-                        points[0] + '.constraintTranslateX',
-                        source=False, destination=True,
-                        plugs=True) or []
-                    if (len(outputs) != 1
-                            or not outputs[0].endswith('.translateX')
-                            or c.nodeType(
-                                outputs[0].rsplit('.', 1)[0]) != 'joint'):
-                        raise CharacterRegistryError(
-                            '标准 FK 位置约束接线无效：' + point_name)
+                orient_name = (namespace + f'AdvPy_{joint}FKOrient_{side}')
+                if point_matches_orient(point_name, orient_name):
                     standard_points.add(control_leaf)
         for side in ('R', 'L'):
             for digit in ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky'):
@@ -177,23 +188,9 @@ class MayaCharacterRegistryMixin:
                                  if ':' in control_name else '')
                     point_name = (namespace + f'AdvPy_{digit}{index}'
                                   f'FKPoint_{side}')
-                    points = c.ls(point_name, long=True,
-                                  type='pointConstraint') or []
-                    if len(points) > 1:
-                        raise CharacterRegistryError(
-                            'Hand FK 位置约束名称不唯一：' + point_name)
-                    if points:
-                        outputs = c.listConnections(
-                            points[0] + '.constraintTranslateX',
-                            source=False, destination=True,
-                            plugs=True) or []
-                        if (len(outputs) != 1
-                                or not outputs[0].endswith('.translateX')
-                                or (c.ls(outputs[0].rsplit('.', 1)[0],
-                                         long=True) or [None])[0]
-                                not in body_by_leaf.values()):
-                            raise CharacterRegistryError(
-                                'Hand FK 位置约束接线无效：' + point_name)
+                    orient_name = (namespace + f'AdvPy_{digit}{index}'
+                                   f'FKOrient_{side}')
+                    if point_matches_orient(point_name, orient_name):
                         hand_points.add(control_leaf)
         scale = set()
         compensated = set()
