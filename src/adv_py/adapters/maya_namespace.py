@@ -58,6 +58,10 @@ _CREATE |= {'extrude'}
 _NODE_ARGS |= {'transformLimits'}
 _NODE_RESULTS |= {'sphere'}
 _CREATE |= {'sphere'}
+_NODE_RESULTS |= {'polyPlane'}
+_CREATE |= {'polyPlane'}
+_NODE_RESULTS |= {'polySphere'}
+_CREATE |= {'polySphere'}
 
 # Component editing for original Face Inner fitting area previews.
 _NODE_ARGS |= {'polyDelFacet', 'polyExtrudeFacet'}

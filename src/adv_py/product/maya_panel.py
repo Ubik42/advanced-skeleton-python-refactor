@@ -1767,9 +1767,11 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("完成 Face 关节绑定",lambda: self._face_expression("finish")))
             stack.addWidget(group)
             group, form = self._group("03O · 原版眼部绑定与修形", [])
+            form.addRow(self._button("原版 Face 首次准备",lambda:self._face_expression("prep_first")))
             form.addRow(self._button("按原版准备双侧 Fit",lambda:self._face_expression("prepare_fit_sides")))
             form.addRow(self._button("建立原版 EyeBall 绑定",lambda:self._face_expression("eye_ball")))
             form.addRow(self._button("建立原版 Pupil／Iris",lambda:self._face_expression("pupil_iris")))
+            form.addRow(self._button("建立原版 EyeLid 绑定",lambda:self._face_expression("eye_lid")))
             for stage,label in (("blink","Blink"),("wide","Wide")):
                 row=QtWidgets.QHBoxLayout()
                 row.addWidget(self._button(label+" 修形",lambda stage=stage:self._face_expression(stage)))

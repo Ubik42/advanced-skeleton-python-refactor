@@ -1,7 +1,7 @@
-"""asFaceEyeLid curve/control/point-joint graph, source 33220–33525.
+"""asFaceEyeLid curve/control/point-joint and Fleshy graph, 33220–33640.
 
-The preparation, blink attribute graph and production topology weights belong
-to separate source-shaped stages. This graph is not a complete EyeLid build.
+Preparation, blink attributes and mesh weights are assembled with this graph
+by MayaFaceEyeLidOriginalMixin in the source order.
 """
 from math import dist
 

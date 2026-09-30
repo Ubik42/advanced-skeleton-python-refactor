@@ -22,6 +22,9 @@ _BELOW = ("FaceFitLipOuter", "FaceFitLipMain", "FaceFitLipInner",
           "FaceFitNostril")
 _ABOVE = ("FaceFitEyeBrowInner", "FaceFitEyeBrowOuter",
           "FaceFitEyeBrowCenter", "FaceFitForeHead")
+_CENTER = frozenset(("FaceFitLipOuter", "FaceFitLipMain", "FaceFitLipInner",
+                     "FaceFitEyeBrowCenter", "FaceFitJaw", "FaceFitChinCrease",
+                     "FaceFitThroat", "FaceFitNose", "FaceFitNoseUnder", "FaceFitNoseBridge"))
 
 
 def required_face_fit_nodes(include: FaceInclude,
@@ -34,5 +37,9 @@ def required_face_fit_nodes(include: FaceInclude,
     if include in (FaceInclude.ALL, FaceInclude.SKIP_BELOW):
         required.extend(_ABOVE)
     if non_symmetrical:
-        required.extend(name + "Left" for name in tuple(required))
+        # asFacePrep reads the Fit UI's mid flag (1753–1782), rather than
+        # requiring duplicate center fittings. FitEyeBall has no matching
+        # asFaceFitTextFitEyeBall widget in the source preflight.
+        required.extend(name + "Left" for name in tuple(required)
+                        if name not in _CENTER and name != "FitEyeBall")
     return tuple(required)
