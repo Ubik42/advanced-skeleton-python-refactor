@@ -67,9 +67,11 @@ def audit(host,staged):
     rows=[];shapes=[]
     original=staged.original
     extensions={row.path for row in original.extensions}
+    geometry_roots={row[0] for row in (staged.authored_geometry or ())}
     retained_children = {fit, *extensions, *(
         shape.rsplit('|', 1)[0]
         for skin in original.skins for shape, _, _ in skin.meshes)}
+    retained_children.update(geometry_roots)
     properties={row.path:{a[0] for a in row.attributes} for row in original.properties}
     for role in sorted(old_nodes):
         old,new=old_nodes[role],new_nodes[role]
@@ -122,6 +124,9 @@ def audit(host,staged):
         node for skin in original.skins for shape, _, _ in skin.meshes
         for node in (shape, shape.rsplit('|', 1)[0])
     }
+    retained_mesh_nodes.update(
+        root+suffix for root, identities, _, _ in (staged.authored_geometry or ())
+        for suffix, _, _ in identities)
     permitted.update(
         edge for edge in old_edges
         if any(plug.split('.', 1)[0] == 'AllSet' for plug in edge)

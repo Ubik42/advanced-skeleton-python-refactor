@@ -78,6 +78,8 @@ class BuildRegisteredSkinnedBodyCharacter:
               _scene_before=None) -> RegisteredSkinnedBodyBuildResult:
         plan = self.plan(meshes, skin_prefix=skin_prefix,
                          maximum_influences=maximum_influences)
+        mesh_ids = tuple(self._host.capture_body_mesh_identity(mesh)
+                         for mesh in plan.meshes)
         scene_before = (_scene_before if _scene_before is not None
                         else self._host.capture_body_scene_nodes())
         with self._host.transaction("从 Fit 构建完整蒙皮角色"):
@@ -104,8 +106,9 @@ class BuildRegisteredSkinnedBodyCharacter:
                 raise FitSkeletonValidationError(
                     "DeformSet 没有可用于 Skin 的影响关节")
             geometry_meshes = tuple(
-                joined.parent_body_mesh_under_geometry(mesh)
-                for mesh in plan.meshes)
+                joined.parent_body_mesh_under_geometry(
+                    joined.resolve_body_mesh_identity(identifier))
+                for identifier in mesh_ids)
             skins = tuple(BindSkin(joined).apply(mesh, influences,
                 skin_name=name, maximum_influences=plan.maximum_influences,
                 maintain_maximum_influences=(

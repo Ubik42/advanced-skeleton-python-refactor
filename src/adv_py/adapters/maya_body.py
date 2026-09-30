@@ -379,6 +379,26 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             raise FitSkeletonValidationError("网格没有顶点：" + mesh_path)
         return vertices
 
+    def capture_body_mesh_identity(self, mesh_path: str) -> str:
+        self.preflight_body_mesh(mesh_path)
+        identifiers = self._cmds.ls(mesh_path, uuid=True) or []
+        if len(identifiers) != 1:
+            raise FitSkeletonValidationError(
+                "Skin 网格身份缺失或不唯一：" + mesh_path)
+        return identifiers[0]
+
+    def resolve_body_mesh_identity(self, identifier: str) -> str:
+        paths = self._cmds.raw.ls(identifier, long=True) or []
+        if len(paths) != 1:
+            raise FitSkeletonValidationError(
+                "Body 构建后 Skin 网格身份缺失或不唯一：" + identifier)
+        if not self._cmds.identity.owns(paths[0]):
+            raise FitSkeletonValidationError(
+                "Body 构建后 Skin 网格跨出当前角色：" + identifier)
+        path = self._cmds.identity.to_local(paths[0])
+        self.preflight_body_mesh(path)
+        return path
+
     def read_fit_deform_profile(self, joint: str) -> FitDeformProfile:
         c = self._cmds
         matches = c.ls(joint, long=True, type="joint") or []
@@ -548,6 +568,18 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                for name in BODY_SYSTEM_RESERVED_NAMES):
             raise FitSkeletonValidationError(
                 "角色系统层级名称已被占用")
+        authored_geo = self._cmds.ls("geo", long=True,
+                                     type="transform") or []
+        if len(authored_geo) > 1:
+            raise FitSkeletonValidationError(
+                "原版自动归档的 geo 模型组名称不唯一")
+        if authored_geo and (
+                self._cmds.referenceQuery(authored_geo[0],
+                                          isNodeReferenced=True)
+                or any(self._cmds.lockNode(authored_geo[0], query=True,
+                                           lock=True) or [])):
+            raise FitSkeletonValidationError(
+                "原版自动归档的 geo 模型组被引用或锁定")
         group = self._cmds.createNode(
             "transform", name="Group", skipSelect=True)
         deformation = self._cmds.createNode(
@@ -610,6 +642,20 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         self._cmds.setAttr(group + ".visibility", lock=False, keyable=True)
         self._cmds.setAttr(geometry + ".inheritsTransform", False)
         self._cmds.setAttr(geometry + ".inheritsTransform", lock=True)
+        if authored_geo:
+            before = tuple(float(value) for value in self._cmds.xform(
+                authored_geo[0], query=True, worldSpace=True,
+                matrix=True))
+            moved = self._cmds.parent(authored_geo[0], geometry,
+                                      absolute=True) or []
+            actual = (self._cmds.ls(moved[0], long=True,
+                                    type="transform") or []) if len(moved) == 1 else []
+            if actual != ["|Group|Geometry|geo"]:
+                raise RuntimeError("原版 geo 模型组没有进入 Geometry")
+            after = tuple(float(value) for value in self._cmds.xform(
+                actual[0], query=True, worldSpace=True, matrix=True))
+            if max(abs(a - b) for a, b in zip(before, after)) > 1e-5:
+                raise RuntimeError("原版 geo 模型组归档后世界变换变化")
         self._transaction_changed = True
         group_path = (self._cmds.ls(group, long=True) or [group])[0]
         deformation_path = (self._cmds.ls(deformation, long=True)
@@ -624,6 +670,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         geometry = "|Group|Geometry"
         if (self._cmds.ls(geometry, long=True, type="transform") or []) != [geometry]:
             raise FitSkeletonValidationError("角色 Geometry 层级不存在")
+        if mesh_path.startswith(geometry + "|"):
+            return mesh_path
         parents = self._cmds.listRelatives(
             mesh_path, parent=True, fullPath=True) or []
         if parents == [geometry]:
@@ -635,6 +683,40 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             raise RuntimeError("Skin 网格移入 Geometry 后路径漂移")
         self.preflight_body_mesh(path)
         return path
+
+    def capture_body_geometry_contents(self, roots=None):
+        """Identify every user DAG subtree beneath MEL's preserved Geometry."""
+        c = self._cmds
+        geometry = "|Group|Geometry"
+        if not c.objExists(geometry):
+            return ()
+        present = c.listRelatives(geometry, children=True,
+                                  fullPath=True) or []
+        if roots is not None:
+            missing = set(roots) - set(present)
+            if missing:
+                raise FitSkeletonValidationError(
+                    "Geometry 保留根缺失：" + repr(sorted(missing)))
+            present = [root for root in present if root in roots]
+        result = []
+        for root in sorted(present):
+            if c.nodeType(root) not in ("transform", "joint"):
+                raise FitSkeletonValidationError(
+                    "Geometry 直属非变换节点需要专门保留协议：" + root)
+            descendants = c.listRelatives(root, allDescendents=True,
+                                          fullPath=True) or []
+            identities = tuple(sorted((path[len(root):],
+                (c.ls(path, uuid=True) or [None])[0], c.nodeType(path))
+                for path in (root, *descendants)))
+            if any(identifier is None for _, identifier, _ in identities):
+                raise FitSkeletonValidationError(
+                    "Geometry 子树存在无法识别的节点：" + root)
+            result.append((root, identities,
+                           tuple(float(value) for value in c.xform(
+                               root, query=True, worldSpace=True,
+                               matrix=True)),
+                           bool(c.getAttr(root + ".visibility"))))
+        return tuple(result)
 
     def parent_fit_skeleton_under_group(self, container_name: str) -> str:
         self._require_transaction()

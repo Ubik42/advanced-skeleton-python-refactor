@@ -19,9 +19,11 @@ def promote(host,staged):
     old_paths={_by_uuid(c,uuid) for uuid in old_ids}
     fit=staged.original.registration.container
     old_fit=host.scene_address(fit)
+    geometry_roots={row[0] for row in (staged.authored_geometry or ())}
     retained_paths={fit,*[row.path for row in staged.original.extensions],*(
         shape.rsplit('|',1)[0]
         for skin in staged.original.skins for shape,_,_ in skin.meshes)}
+    retained_paths.update(geometry_roots)
     retained_physical={
         (c.ls(host.scene_address(path),long=True) or
          [host.scene_address(path)])[0]
@@ -29,6 +31,9 @@ def promote(host,staged):
     retained_mesh_paths={
         node for skin in staged.original.skins for shape,_,_ in skin.meshes
         for node in (shape,shape.rsplit('|',1)[0])}
+    retained_mesh_paths.update(
+        root+suffix for root, identities, _, _ in (staged.authored_geometry or ())
+        for suffix, _, _ in identities)
     retained_mesh_physical={
         (c.ls(host.scene_address(path),long=True) or
          [host.scene_address(path)])[0]
@@ -100,17 +105,24 @@ def promote(host,staged):
         if members:
             c.sets(tuple(members),add=new_allset)
     c.delete(target.scene_address(fit))
+    # Keep each old child under its own temporary parent. Two retained DAG
+    # branches may have the same leaf name, and parenting both to world would
+    # silently rename one before the old rig is removed.
+    holders=[]
     for uuid,_,_ in retained:
-        c.parent(_by_uuid(c,uuid),world=True)
+        holder=c.createNode('transform',name=':advPyRebuildHold#',skipSelect=True)
+        holders.append(holder)
+        c.parent(_by_uuid(c,uuid),holder,absolute=True)
     c.delete(sorted(old_paths,key=lambda node:node.count('|'),reverse=True))
     # Maya may rename child shapes with their transform. Explicit UUID-based
     # renaming with ignoreShape keeps every shape role under our control.
     for uuid,name in rename:
         c.rename(_by_uuid(c,uuid),':'+name.lstrip(':'),ignoreShape=True)
-    for uuid,role,logical in retained:
+    for (uuid,role,logical),holder in zip(retained,holders):
         c.parent(_by_uuid(c,uuid),_by_uuid(c,replacement_by_role[role]))
         if host._cmds.identity.to_local(_by_uuid(c,uuid))!=logical:
             raise CharacterRegistryError('保留 DAG 节点挂回后路径漂移：'+logical)
+        c.delete(holder)
     original_fit={n.path:n for n in staged.original.registration.nodes
                   if n.path==fit or n.path.startswith(fit+'|')}
     def redirect(plug):

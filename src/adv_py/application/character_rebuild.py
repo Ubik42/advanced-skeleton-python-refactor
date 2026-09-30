@@ -29,6 +29,7 @@ class StagedCharacterRebuild:
     registration: CharacterRegistration
     custom_properties: tuple = ()
     ownership: RebuildOwnership | None = None
+    authored_geometry: tuple | None = None
 
 
 def _rebuild_axial_description(
@@ -116,6 +117,7 @@ class StageBodyCharacterRebuild:
         host=self._host
         host.preflight_character_rebuild_namespace(namespace)
         original=CaptureBodyCharacterPreservation(host).execute(extensions=extensions)
+        authored_geometry = host.capture_body_geometry_contents()
         # Older Python builds retained MEL's temporary Foot pivot markers in
         # the registered Body. Preserve that saved topology during a rebuild;
         # new characters remove those joints before Skin and registration.
@@ -137,7 +139,8 @@ class StageBodyCharacterRebuild:
                 if (host.capture_body_rebuild_selection_mode() != selection_mode
                         or _rebuild_segment_mode(host,
                             original.registration.body_root) != segment_mode
-                        or host.has_body_dynamic_system() != include_dynamic):
+                        or host.has_body_dynamic_system() != include_dynamic
+                        or host.capture_body_geometry_contents() != authored_geometry):
                     raise RuntimeError('重建暂存前原角色系统层级、分段或选择集发生变化')
                 stage=host.create_character_rebuild_host(namespace)
                 CreateAndImportFitSkeleton(stage).apply(fit)
@@ -181,8 +184,19 @@ class StageBodyCharacterRebuild:
                         populate_all=selection_mode == "populated")
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('暂存构建改写了原角色，已回滚')
+                if host.capture_body_geometry_contents() != authored_geometry:
+                    raise RuntimeError('暂存构建改写了 Geometry 模型层级')
+                stage_geometry_roots = {
+                    row[0] for row in stage.capture_body_geometry_contents()}
+                # A feature generated in both rigs belongs to the replacement;
+                # only old-only Geometry children are handed across intact.
+                preserved_geometry = tuple(
+                    row for row in authored_geometry
+                    if row[0] not in stage_geometry_roots)
                 properties=host.plan_character_property_transfer(original,namespace)
-                staged=StagedCharacterRebuild(original,namespace,registration,properties)
+                staged=StagedCharacterRebuild(original,namespace,registration,
+                                              properties,
+                                              authored_geometry=preserved_geometry)
                 staged=replace(staged,ownership=host.audit_character_rebuild_ownership(staged))
         return staged
 
@@ -196,6 +210,9 @@ class TransferStagedBodyCharacterData:
         extensions=tuple(row.path for row in original.extensions)
         if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
             raise CharacterRegistryError('原角色与暂存时的保留数据不同，请重新暂存')
+        geometry_roots = {row[0] for row in staged.authored_geometry or ()}
+        if host.capture_body_geometry_contents(geometry_roots) != staged.authored_geometry:
+            raise CharacterRegistryError('Geometry 模型层级在暂存后发生变化')
         host.preflight_character_transfer(staged)
         if staged.ownership is not None and host.audit_character_rebuild_ownership(staged)!=staged.ownership:
             raise CharacterRegistryError('暂存后的 Rig 归属或连接已变化，请重新暂存')
@@ -205,6 +222,8 @@ class TransferStagedBodyCharacterData:
             with host.character_rebuild_transaction('Transfer preserved data to replacement rig'):
                 host.transfer_character_data(staged)
                 host.verify_character_retained_data(staged)
+                if host.capture_body_geometry_contents(geometry_roots) != staged.authored_geometry:
+                    raise RuntimeError('交接改变了 Geometry 模型层级')
                 error=_compare_transfer_samples(host,staged,frames,baseline,
                                                 target=True)
                 if error>1e-4:
@@ -225,6 +244,9 @@ class RebuildBodyCharacter:
             with TemporaryFile(mode='w+b') as baseline:
                 _write_transfer_samples(host,staged,frames,baseline,target=True)
                 promoted=host.promote_character_rebuild(staged)
+                geometry_roots = {row[0] for row in staged.authored_geometry or ()}
+                if host.capture_body_geometry_contents(geometry_roots) != staged.authored_geometry:
+                    raise RuntimeError('重建后 Geometry 模型层级身份或姿态变化')
                 if _compare_transfer_samples(host,promoted,frames,baseline,
                                              target=True)>1e-4:
                     raise RuntimeError('原位替换改变身体、蒙皮或用户数据')
