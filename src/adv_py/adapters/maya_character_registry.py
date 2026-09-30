@@ -124,6 +124,21 @@ class MayaCharacterRegistryMixin:
                     or c.nodeType(point_driven[0]) != 'joint'):
                 raise CharacterRegistryError(
                     'FK 位置约束与朝向约束驱动链不一致：' + point_name)
+            for axis in 'YZ':
+                point_axis_outputs = c.listConnections(
+                    points[0] + '.constraintTranslate' + axis,
+                    source=False, destination=True, plugs=True) or []
+                orient_axis_outputs = c.listConnections(
+                    orients[0] + '.constraintRotate' + axis,
+                    source=False, destination=True, plugs=True) or []
+                if (resolved_output(
+                        point_axis_outputs, '.translate' + axis)
+                        != point_driven
+                        or resolved_output(
+                            orient_axis_outputs, '.rotate' + axis)
+                        != orient_driven):
+                    raise CharacterRegistryError(
+                        'FK 位置或朝向约束部分轴接线缺失：' + point_name)
             return True
         root_leaf = registration.body_root.rsplit('|', 1)[-1]
         root_namespace = (root_leaf.rsplit(':', 1)[0] + ':'
