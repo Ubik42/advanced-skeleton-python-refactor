@@ -1148,6 +1148,9 @@ class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
                             joint_names[(side, layer, arc, vertex)] = (
                                 c.ls(joint, long=True, type="joint") or [joint])[0]
             target_skin = self.capture_dense_skin(skin)
+            if target_skin.normalization_mode != original.normalization_mode:
+                raise FitSkeletonValidationError(
+                    "添加眼睑影响关节时 Skin 归一化模式发生变化")
             old_width = len(original.influence_names)
             new_names = target_skin.influence_names
             new_width = len(new_names)
@@ -1159,6 +1162,10 @@ class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
             before = memoryview(original.values).cast("d")
             values = array("d", [0.] * (original.vertex_count * new_width))
             for vertex in range(original.vertex_count):
+                row_total = (sum(before[vertex * old_width + index]
+                                 for index in range(old_width))
+                             if original.normalization_mode in (0, 2)
+                             else 1.)
                 lid_weights = {}
                 for side in FaceSide:
                     for layer in layers[side]:
@@ -1184,7 +1191,7 @@ class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
                         before[vertex * old_width + source_index] * remaining)
                 for key, target_index in lid_indices.items():
                     values[vertex * new_width + target_index] = (
-                        lid_weights.get(key, 0.))
+                        lid_weights.get(key, 0.) * row_total)
             self.apply_dense_skin(DenseSkinWeights(skin,
                 original.vertex_count, new_names, values.tobytes(),
                 original.normalization_mode))

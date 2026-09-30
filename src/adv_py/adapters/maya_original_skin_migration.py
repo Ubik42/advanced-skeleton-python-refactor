@@ -88,6 +88,8 @@ def _skin_item(cmds, skin: str, target_mesh: str,
     host = MayaDenseSkinHost()
     source_data = source or host.capture_dense_skin(skin)
     method = int(cmds.getAttr(skin + ".bindMethod"))
+    if method == 3 and cmds.about(batch=True):
+        raise ValueError("Geodesic Voxel 原版 Skin 迁移需要 Maya 图形会话")
     geodesic = (host._skin_geodesic_state(skin)[1]
                 if method == 3 else None)
     return _SkinItem(source_data,

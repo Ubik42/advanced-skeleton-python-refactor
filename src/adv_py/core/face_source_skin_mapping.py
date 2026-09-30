@@ -90,6 +90,7 @@ def transfer_face_source_skin_weights(
     if (type(source_influence_count) is not int
             or source_influence_count < 1
             or before.vertex_count != target.vertex_count
+            or before.normalization_mode != target.normalization_mode
             or len(source_values) != before.vertex_count * source_influence_count
             or len(before.values) != before.vertex_count *
                 len(before.influence_names) * 8
@@ -129,6 +130,9 @@ def transfer_face_source_skin_weights(
     if head_index in lid_columns:
         raise ValueError("Head_M 不能用作眼睑影响关节")
     for vertex in range(before.vertex_count):
+        row_total = (sum(max(0., old[vertex * old_width + index])
+                         for index in range(old_width))
+                     if target.normalization_mode in (0, 2) else 1.)
         mass = 0.
         for source_index, name in source_to_target:
             raw_amount = source_values[
@@ -138,9 +142,10 @@ def transfer_face_source_skin_weights(
             amount = max(0., raw_amount)
             values[vertex * width + target_index[name]] += amount
             mass += amount
-        if mass > 1. + 1e-5:
-            raise ValueError(f"原版顶点 {vertex} 的眼睑权重超过 1")
-        remaining = max(0., 1. - mass)
+        if mass > row_total + 1e-5:
+            raise ValueError(
+                f"原版顶点 {vertex} 的眼睑权重超过目标权重总量")
+        remaining = max(0., row_total - mass)
         old_remaining = sum(max(0., old[vertex * old_width + index])
                             for _, index in non_lid)
         if old_remaining > 1e-8:
