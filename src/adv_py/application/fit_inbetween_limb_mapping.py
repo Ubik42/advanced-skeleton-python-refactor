@@ -213,7 +213,9 @@ def plan_inbetween_limb_bindings(
                     or start_control.sub_control_path
                     or start_control.control_path),
                 start_fk_point_constraint_name=(
-                    start_control.translation_constraint_name),
+                    start_control.translation_constraint_name
+                    or ('AdvPy_SplineFKRootPoint'
+                        if spline_index == 0 else None)),
             ))
             continue
         if spine_edge:
@@ -253,7 +255,9 @@ def plan_inbetween_limb_bindings(
                     or start_control.sub_control_path
                     or start_control.control_path),
                 start_fk_point_constraint_name=(
-                    start_control.translation_constraint_name),
+                    start_control.translation_constraint_name
+                    or ('AdvPy_SpineFKRootPoint'
+                        if fk_index == 0 else None)),
             ))
             continue
         module = rig.arm if branch == "arm" else rig.leg

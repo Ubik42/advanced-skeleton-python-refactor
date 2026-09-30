@@ -643,8 +643,16 @@ class MayaBodySpineMixin:
         targets("AdvPy_SpineIKChestOrient", c.orientConstraint, (plan.ik_driver,))
         for role, index in (("FK", 0), ("IK", 3)):
             name = f"AdvPy_Spine{role}RootPoint"
-            source = ((plan.fk_sources or plan.fk_controls)[0]
-                      if role == "FK" else plan.pelvis_control)
+            if role == "FK":
+                fk_targets = c.orientConstraint(
+                    'AdvPy_SpineBaseFKOrient', query=True,
+                    targetList=True) or []
+                if len(fk_targets) != 1:
+                    raise FitSkeletonValidationError(
+                        'Spine Base FK 朝向来源不唯一')
+                source = self._resolve_connected_node(fk_targets[0])
+            else:
+                source = plan.pelvis_control
             targets(name, c.pointConstraint, (source,))
             for axis in "XYZ":
                 if not c.isConnected(name + ".constraintTranslate" + axis, plan.joints[index].path + ".translate" + axis):

@@ -25,9 +25,18 @@ def _fk_root_source(host, plan):
         constraints[0], query=True, targetList=True) or []
     sources = (c.ls(targets[0], long=True) or []
                if len(targets) == 1 else [])
-    if (len(sources) != 1
-            or not (sources[0] == plan.fk_controls[0]
-                    or sources[0].startswith(plan.fk_controls[0] + '|'))):
+    if len(sources) != 1:
+        raise FitSkeletonValidationError('Spline FK 起点接收层不唯一')
+    proxy_name = 'AdvPy_Root_M_InbetweenFKX'
+    proxy = c.ls(proxy_name, long=True, type='joint') or []
+    owned_proxy = (sources == proxy
+                   and len(proxy) == 1
+                   and c.objExists(proxy_name + '.advPyInbetweenFkOwner')
+                   and c.getAttr(proxy_name + '.advPyInbetweenFkOwner')
+                   == 'adv_py.inbetween_fk.v1')
+    if not (sources[0] == plan.fk_controls[0]
+            or sources[0].startswith(plan.fk_controls[0] + '|')
+            or owned_proxy):
         raise FitSkeletonValidationError('Spline FK 起点接收层不属于 Base FK 控制')
     return sources[0]
 
