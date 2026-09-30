@@ -1,5 +1,6 @@
 """Atomic FK animation and Skin transfer between registered spine topologies."""
 from dataclasses import dataclass
+from array import array
 from math import isfinite
 
 from adv_py.core.character_registry import CharacterRegistryError
@@ -66,6 +67,11 @@ class MigrateRegisteredSpineCharacter:
             if (host.read_source_character_registration(source_namespace) != source_reg
                     or host.read_character_registration() != target_reg
                     or host.capture_all_skin_weights(source_skin, source_mesh) != source_state
+                    or host.capture_all_skin_weights(target_skin, target_mesh) != target_state
+                    or (plan.source_blend_weights is not None and
+                        tuple(float(value) for value in
+                            host.capture_skin_blend_weights(source_skin))
+                        != plan.source_blend_weights)
                     or host.capture_face_mesh(source_mesh) != plan.source_mesh
                     or host.capture_face_triangles(source_mesh) != plan.source_triangles
                     or host.capture_face_mesh(target_mesh) != plan.target_mesh):
@@ -82,11 +88,26 @@ class MigrateRegisteredSpineCharacter:
                 host.apply_raw_skin_document(document)
                 written = host.capture_all_skin_weights(target_skin,
                                                         target_mesh)
+            projected_blend = plan.transfer.blend_weights
+            if projected_blend is not None:
+                host.apply_skin_blend_weights(target_skin,
+                                              array('d', projected_blend))
+                actual_blend = host.capture_skin_blend_weights(target_skin)
+                if (len(actual_blend) != len(projected_blend)
+                        or any(abs(actual - expected) > 1e-6
+                               for actual, expected in zip(
+                                   actual_blend, projected_blend))):
+                    raise RuntimeError('跨段数迁移的 Skin 混合权重未完整写回')
             roots, groups = RetargetCharacterSpineFk(host).apply_in_transaction(
                 source_namespace, start_frame=start_frame, end_frame=end_frame,
                 sample_by=sample_by, reference_frame=reference_frame)
             if host.capture_all_skin_weights(source_skin, source_mesh) != source_state:
                 raise RuntimeError('跨段数迁移改写了来源 Skin 权重')
+            if (plan.source_blend_weights is not None and
+                    tuple(float(value) for value in
+                        host.capture_skin_blend_weights(source_skin))
+                    != plan.source_blend_weights):
+                raise RuntimeError('跨段数迁移改写了来源 Skin 混合权重')
             if host.capture_all_skin_weights(target_skin, target_mesh) != written:
                 raise RuntimeError('跨段数迁移后的目标 Skin 权重变化')
         return RegisteredSpineMigrationResult(len(roots), len(groups),
