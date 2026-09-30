@@ -148,6 +148,8 @@ class BuildBodyArmFkMechanismControls:
         names = [controls.root_name]
         for spec in controls.controls:
             names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
+            if spec.translation_constraint_name is not None:
+                names.append(spec.translation_constraint_name)
             if spec.sub_control_name is not None:
                 names.append(spec.sub_control_name)
             if spec.extra_name is not None:

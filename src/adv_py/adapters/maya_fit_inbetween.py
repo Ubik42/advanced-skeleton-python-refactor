@@ -479,6 +479,7 @@ class MayaFitInbetweenMixin:
             source = c.connectionInfo(driver + ".rotate" + axis,
                                       sourceFromDestination=True)
             if (not source or source.split(".", 1)[0].rsplit("|", 1)[-1]
+                    .rsplit(":", 1)[-1]
                     != plan.start_fk_constraint_name):
                 raise ValueError("Inbetween 起点 FK 机制输入已变化")
         if plan.start_fk_point_constraint_name is not None:
@@ -498,7 +499,7 @@ class MayaFitInbetweenMixin:
                     driver + ".translate" + axis,
                     sourceFromDestination=True)
                 if (not source or source.split(".", 1)[0]
-                        .rsplit("|", 1)[-1]
+                        .rsplit("|", 1)[-1].rsplit(":", 1)[-1]
                         != plan.start_fk_point_constraint_name):
                     raise ValueError("Inbetween 起点 FK 位置输入已变化")
         if plan.follow_constraint_name is not None:
@@ -576,16 +577,19 @@ class MayaFitInbetweenMixin:
                 points[0], query=True, targetList=True) or []
             if (len(point_targets) != 1
                     or point_targets[0].rsplit("|", 1)[-1]
+                    .rsplit(":", 1)[-1]
                     != plan.start_fkx_name):
                 return False
         if plan.follow_constraint_name is None:
             return (len(orient_targets) == 1
                     and orient_targets[0].rsplit("|", 1)[-1]
+                    .rsplit(":", 1)[-1]
                     == plan.start_fkx_name)
         if plan.use_offset_parent_matrix:
             matrix_plan = self._inbetween_follow_matrix_plan(plan)
             return (len(orient_targets) == 1
                     and orient_targets[0].rsplit("|", 1)[-1]
+                    .rsplit(":", 1)[-1]
                     == plan.start_fkx_name
                     and not audit_body_parent_constraint(
                         matrix_plan,
@@ -599,9 +603,11 @@ class MayaFitInbetweenMixin:
         return (
             len(orient_targets) == 1
             and orient_targets[0].rsplit("|", 1)[-1]
+            .rsplit(":", 1)[-1]
             == plan.start_fkx_name
             and len(follow_targets) == 1
             and follow_targets[0].rsplit("|", 1)[-1]
+            .rsplit(":", 1)[-1]
             == plan.last_part_fkx_name
         )
 
