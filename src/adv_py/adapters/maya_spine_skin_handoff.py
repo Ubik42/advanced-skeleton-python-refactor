@@ -7,6 +7,29 @@ from .maya_face import MayaFaceHost
 
 
 class MayaSpineSkinHandoffHost(MayaFaceHost):
+    def capture_skin_handoff_locked_influences(self, paths):
+        from maya import cmds
+        return tuple(path for path in paths if bool(cmds.getAttr(
+            path + '.lockInfluenceWeights')))
+
+    def preflight_skin_handoff_influence_locks(self, paths):
+        from maya import cmds
+        for path in paths:
+            plug = path + '.lockInfluenceWeights'
+            if not cmds.objExists(plug) or not cmds.getAttr(plug, settable=True):
+                raise CharacterRegistryError(
+                    '原位 Skin 交接无法临时解除影响关节锁定：' + path)
+
+    def set_skin_handoff_influence_locks(self, paths, locked):
+        from maya import cmds
+        self._require_transaction()
+        for path in paths:
+            self._transaction_changed = True
+            cmds.setAttr(path + '.lockInfluenceWeights', bool(locked))
+        if any(bool(cmds.getAttr(path + '.lockInfluenceWeights')) != locked
+               for path in paths):
+            raise RuntimeError('原位 Skin 交接未能切换影响关节锁定状态')
+
     def read_registration_in_namespace(self, namespace):
         return MayaBodyBuildHost(namespace=namespace).read_character_registration()
 

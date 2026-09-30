@@ -34,6 +34,7 @@ class SpineSkinHandoffPlan:
     mesh: object
     boundary: tuple
     target_document: object
+    target_locked_influences: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +60,7 @@ class HandoffRegisteredSpineSkinCluster:
         state = host.capture_all_skin_weights(skin_name, mesh_path)
         if state.skin_name is None or state.geometry_path != mesh_path:
             raise CharacterRegistryError('原位 Skin 交接的网格与 skinCluster 不一致')
+        host.preflight_skin_handoff_influence_locks(state.locked_influences)
         source_bind = host.capture_registered_body_matrices(source, source_namespace)
         target_bind = host.capture_registered_body_matrices(target, target_namespace)
         _require_bind_pose(source, source_bind)
@@ -78,6 +80,9 @@ class HandoffRegisteredSpineSkinCluster:
             target_skin_name=state.skin_name, target_mesh_path=state.geometry_path)
         document = redistribute_skin_weight_document(
             skin_weight_document_from_state(state), redistribution)
+        target_locked = host.capture_skin_handoff_locked_influences(
+            document.influence_paths)
+        host.preflight_skin_handoff_influence_locks(target_locked)
         if (state.maintain_maximum_influences and
                 any(len(row.weights) > state.maximum_influences
                     for row in document.vertices)):
@@ -85,7 +90,8 @@ class HandoffRegisteredSpineSkinCluster:
         mesh = host.capture_face_mesh(mesh_path)
         boundary = host.capture_skin_handoff_boundary(skin_name, mesh_path)
         return SpineSkinHandoffPlan(source, target, state, source_bind,
-                                    target_bind, mesh, boundary, document)
+                                    target_bind, mesh, boundary, document,
+                                    target_locked)
 
     def apply(self, source_namespace, target_namespace, skin_name, mesh_path):
         host = self._host
@@ -112,12 +118,19 @@ class HandoffRegisteredSpineSkinCluster:
                     plan.source_registration, source_namespace) != plan.source_bind_pose
                 or host.capture_registered_body_matrices(
                     plan.target_registration, target_namespace) != plan.target_bind_pose
+                or host.capture_skin_handoff_locked_influences(
+                    plan.target_document.influence_paths)
+                    != plan.target_locked_influences
                 or host.capture_face_mesh(mesh_path) != plan.mesh
                 or host.capture_skin_handoff_boundary(skin_name, mesh_path)
                 != plan.boundary):
             raise CharacterRegistryError('原位 Skin 交接输入在写入前发生变化')
         if before_mutation is not None:
             before_mutation()
+        locked = tuple(dict.fromkeys((
+            *plan.source_state.locked_influences,
+            *plan.target_locked_influences)))
+        host.set_skin_handoff_influence_locks(locked, False)
         host.add_skin_handoff_influences(skin_name,
             plan.target_document.influence_paths)
         host.verify_skin_handoff_bind_matrices(skin_name,
@@ -142,6 +155,7 @@ class HandoffRegisteredSpineSkinCluster:
             host.apply_raw_skin_document(plan.target_document)
         host.remove_skin_handoff_influences(skin_name,
                                             plan.source_state.influence_paths)
+        host.set_skin_handoff_influence_locks(locked, True)
         if release_bind_pose:
             host.release_old_bind_pose_members(skin_name, source_namespace)
         final = host.capture_all_skin_weights(skin_name, mesh_path)
