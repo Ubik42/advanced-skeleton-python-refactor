@@ -869,6 +869,11 @@ class MayaCharacterRegistryMixin:
             self.capture_control_space_mode(spec)
         container = rig.plan.arm.safety.symmetry.source.hierarchy.container
         paths = {body.root,container,*(j.path for j in body.joints),*(ch.node for ch in channels)}
+        paths.update(
+            control.source_override_path
+            for module in (rig.plan.arm, rig.plan.leg)
+            for control in module.fk_controls.controls
+            if control.source_override_path is not None)
         paths.update((spine.root_path,spine.pelvis_control,*spine.fk_controls,*spine.body_joints,
                       spine.chest_space,*(j.path for j in spine.joints)))
         from adv_py.core.body_spline import BodySplinePlan
