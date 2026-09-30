@@ -3530,29 +3530,32 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         filter_fn = oma.MFnGeometryFilter(skin_fn.object())
         members = om.MFnSet(filter_fn.deformerSet).getMembers(True)
         vertices = set()
+        whole_mesh = False
         for index in range(members.length()):
             dag, component = members.getComponent(index)
             member_path = dag.fullPathName()
             if (member_path not in (shape, mesh)
                     and member_path.rsplit('|', 1)[0] != mesh):
                 raise FitSkeletonValidationError(
-                    'FBX Skin 变形集含其他网格：' + skin_fn.name())
+                    'Skin 变形集含其他网格：' + skin_fn.name())
             if component.isNull():
-                return tuple(range(vertex_count))
+                whole_mesh = True
+                continue
             if not component.hasFn(om.MFn.kMeshVertComponent):
                 raise FitSkeletonValidationError(
-                    'FBX Skin 变形集不是网格顶点：' + skin_fn.name())
+                    'Skin 变形集不是网格顶点：' + skin_fn.name())
             selection = om.MFnSingleIndexedComponent(component)
             if selection.isComplete:
                 if selection.getCompleteData() != vertex_count:
                     raise FitSkeletonValidationError(
-                        'FBX Skin 变形集顶点数不一致：' + skin_fn.name())
-                return tuple(range(vertex_count))
-            vertices.update(int(value) for value in selection.getElements())
+                        'Skin 变形集顶点数不一致：' + skin_fn.name())
+                whole_mesh = True
+            else:
+                vertices.update(int(value) for value in selection.getElements())
         if any(value < 0 or value >= vertex_count for value in vertices):
             raise FitSkeletonValidationError(
-                'FBX Skin 变形集顶点索引越界：' + skin_fn.name())
-        return tuple(sorted(vertices))
+                'Skin 变形集顶点索引越界：' + skin_fn.name())
+        return tuple(range(vertex_count)) if whole_mesh else tuple(sorted(vertices))
 
     def _capture_fbx_skin_sources(self, influence_map, published_names):
         from .maya_dense_skin import MayaDenseSkinHost
@@ -3603,6 +3606,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise RuntimeError("FBX Skin 影响关节顺序在捕获期间变化：" + skin)
             vertex_members = self._skin_vertex_members(
                 skin_fn, shape[0], mesh[0], data.vertex_count)
+            if not vertex_members:
+                raise FitSkeletonValidationError(
+                    'FBX Skin 没有受影响顶点，无法发布有效蒙皮：' + skin)
             bind_matrices = []
             bind_matrix_drivers = []
             for influence in skin_fn.influenceObjects():
@@ -3986,7 +3992,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 if vertex_members:
                     member_fn = om.MFnSingleIndexedComponent()
                     member = member_fn.create(om.MFn.kMeshVertComponent)
-                    member_fn.addElements(vertex_members)
+                    member_fn.addElements(list(vertex_members))
                     deformer_set.addMember((dag, member))
             if self._skin_vertex_members(skin_fn, shape, clone,
                     data.vertex_count) != vertex_members:
