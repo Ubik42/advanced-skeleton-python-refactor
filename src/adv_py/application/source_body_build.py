@@ -10,9 +10,12 @@ from dataclasses import dataclass, replace
 from adv_py.core.body_arm_ik import BodyArmIkPlan, plan_body_arm_ik
 from adv_py.core.body_limb_mechanisms import (
     BodyLimbMechanismPlan, BodyLimbMechanismRole, plan_body_limb_mechanisms,
+    body_limb_parent_matches,
 )
 from adv_py.core.body_limb_blend import BodyLimbBlendPlan, plan_body_limb_blend
 from adv_py.core.body_generic_fk import BodyGenericFkPlan, plan_body_generic_fk
+from adv_py.core.body_spline import BodySplinePlan
+from adv_py.core.source_body_spline import plan_source_body_spline
 from adv_py.core.body_character_global import (
     BodyCharacterGlobalPlan, BodyRootFkScaleSpec, plan_body_character_global,
 )
@@ -23,7 +26,9 @@ from adv_py.core.body_control_spaces import BodyControlSpacesPlan
 from adv_py.core.character_registry import CharacterChannel
 from adv_py.core.fit_container import FitUpAxis
 from adv_py.core.fit_hierarchy import fit_build_scale
-from adv_py.core.body_skeleton import BodySkeletonSnapshot, plan_body_non_deform_markers
+from adv_py.core.body_skeleton import (
+    BodySkeletonSnapshot, plan_body_non_deform_markers, oriented_body_provenance,
+)
 from adv_py.core.body_fk_global import BodyFkGlobalSpec, plan_body_fk_global
 from adv_py.core.body_fit_aim import BodyFitAimSpec, plan_body_fit_aim
 from adv_py.core.body_fk_channel_locks import (
@@ -40,6 +45,9 @@ from adv_py.core.joint_labels import JointLabel
 from .oriented_body_skeleton import BuildOrientedBodySkeleton
 from .character_registry import RegisterBodyCharacter
 from .body_selection_sets import finalize_body_character_sets
+from .fit_part import BuildFitPartHierarchy
+from .source_body_parts import build_source_body_part_drivers
+from adv_py.core.fit_part import rebase_plan_paths_after_parts
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +71,7 @@ class SourceBodyRigPlan:
     fk_globals: tuple[BodyFkGlobalSpec, ...] = ()
     fit_aim: tuple[BodyFitAimSpec, ...] = ()
     fk_scale_compensations: tuple[BodyFkScaleCompensationSpec, ...] = ()
+    spline: BodySplinePlan | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +112,8 @@ def source_body_limb_chains(body, labels, hierarchy):
             chain = tuple(by_name.get(name + "_" + suffix) for name in names)
             if any(joint is None for joint in chain):
                 raise FitSkeletonValidationError("来源 IK 标签缺少对应侧：" + info.name)
-            if any(child.parent_path != parent.path
+            if any(not body_limb_parent_matches(child.parent_path, parent.path,
+                    allow_part_parents=True)
                    for parent, child in zip(chain, chain[1:])):
                 raise FitSkeletonValidationError("来源 IK 标签父链不完整：" + info.name)
             paths.update(joint.path for joint in chain)
@@ -141,6 +151,26 @@ def source_character_channels(rig):
             if control.extra_curve:
                 add(key, control.control_path, ("extraControl",))
             add(key + ".extra", control.extra_path, trs)
+    if p.spline is not None:
+        spline = p.spline
+        for index, target in enumerate(spline.targets):
+            attributes = (() if index == 0 else tuple("translate" + axis for axis in "XYZ"))
+            if index in (0, len(spline.targets) - 1) or spline.twist_ramp_graph:
+                attributes += tuple("rotate" + axis for axis in "XYZ")
+            attributes += tuple("scale" + axis for axis in "XYZ")
+            if spline.mid_follow_graph and 0 < index < len(spline.targets) - 1:
+                attributes += ("followEnd",)
+            key = f"source.spline.{index}"
+            add(key, target, attributes)
+            if spline.extra_targets:
+                add(key + ".extra", spline.extra_targets[index], trs)
+                if spline.extra_curve:
+                    add(key, target, ("extraControl",))
+            if spline.sub_targets:
+                add(key, target, ("subControl",))
+                add(key + ".sub", spline.sub_targets[index], trs)
+        add("source.spline", spline.settings,
+            ("spineIkFk", "stretchy", "volume", "stretchEven", "noFlipAxis"))
     for spec in p.fk_globals:
         key = "generic.global." + spec.control.rsplit("|", 1)[-1]
         add(key, spec.control, ("Global",) + (("GlobalTranslate",) if spec.translate else ()))
@@ -173,22 +203,30 @@ def source_character_channels(rig):
 
 def build_source_body_character(host, container, *, labels=(), scene_before=None,
                                 include_dynamic=True, defer_selection_sets=False,
-                                defer_all_set=False, retain_markers=False, defer_registration=False):
+                                defer_all_set=False, retain_markers=False, defer_registration=False,
+                                generic_fk_policy=None, use_fit_part_hierarchy=True):
     """Internal branch of BuildRegisteredBodyCharacter, in its transaction."""
     from .registered_body_build import RegisteredBodyBuildResult
     deformation = host.create_body_system_hierarchy(include_dynamic=include_dynamic)
     fit = host.parent_fit_skeleton_under_group(container)
     skeleton = BuildOrientedBodySkeleton(host).apply(
         fit, root_parent_path=deformation)
-    body = skeleton.snapshot
     build = skeleton.plan.build
+    part_result = None
+    if use_fit_part_hierarchy and build.fit_parts:
+        host.prepare_fit_part_twist_runtime()
+        part_result = BuildFitPartHierarchy(host).apply(build)
+        body = part_result.body
+        skeleton = replace(skeleton, snapshot=body)
+    else:
+        body = skeleton.snapshot
     options = build.build_options
     metadata = build.symmetry.source.metadata
     scale = fit_build_scale(build.symmetry.source.hierarchy)
     limbs = []
     for label, names in source_body_limb_chains(body, labels, build.symmetry.source.hierarchy):
         mechanisms = plan_body_limb_mechanisms(
-            body, limb_label=label, joint_names=names)
+            body, limb_label=label, joint_names=names, allow_part_parents=True)
         ik = plan_body_arm_ik(body, mechanisms, joint_names=names,
             limb_label=label, radius=scale * 1.5,
             sub_controllers=options.sub_controllers,
@@ -199,21 +237,48 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     driver_by_body = {joint.source_joint: joint.path for limb in limbs
                       for joint in limb.mechanisms.joints
                       if joint.role is BodyLimbMechanismRole.FK}
-    fk = plan_body_generic_fk(body, build.specs, metadata, (),
+    labels_by_name = dict(labels)
+    labels_by_path = {node.path: (JointLabel.parse(labels_by_name[name])
+                                if name in labels_by_name else None)
+                      for node in build.symmetry.source.hierarchy.joints
+                      for name in (node.short_name.rsplit(":", 1)[-1],)}
+    ik_end_paths = set()
+    for node in build.symmetry.source.hierarchy.joints:
+        info = fit_joint_ik_info(build.symmetry.source.hierarchy,
+                                labels_by_path, node.path)
+        if info is not None and info.start == node.path:
+            ik_end_paths.add(info.end)
+    fk_metadata = tuple(replace(item, control=True)
+                        if item.joint in ik_end_paths else item
+                        for item in metadata)
+    fk = plan_body_generic_fk(body, build.specs, fk_metadata, (),
         sub_controllers=options.sub_controllers,
         extra_controllers=options.extra_controllers,
         radius=scale * 1.5,
+        aim_sources=(generic_fk_policy.aim_sources if generic_fk_policy else None),
+        follower_sources=(generic_fk_policy.follower_sources if generic_fk_policy else None),
+        fkx_joint_controls=(generic_fk_policy.fkx_joint_controls if generic_fk_policy else None),
+        point_controls=(generic_fk_policy.point_controls if generic_fk_policy else None),
+        remapped_body_paths=(dict(part_result.final_paths.body_rewrites)
+                            if part_result is not None else None),
         use_offset_parent_matrix=options.use_offset_parent_matrix)
     fk = replace(fk, controls=tuple(replace(control,
         driven_joint=driver_by_body.get(control.driven_joint, control.driven_joint))
         for control in fk.controls))
+    fk, spline = plan_source_body_spline(body, build.symmetry.source.hierarchy,
+        labels, fk, options)
+    if spline is not None:
+        root_parent, root_name = fk.root_path.rsplit("|", 1)
+        if host.create_body_control_root(root_name, parent_path=root_parent) != fk.root_path:
+            raise RuntimeError("来源 Spline 的 FK 根路径漂移")
+        host.prepare_source_body_spline(spline)
     for limb in limbs:
         if host.create_body_arm_mechanism_root(limb.mechanisms.root_name) != limb.mechanisms.root_path:
             raise RuntimeError("来源机制链根路径漂移")
         for joint in limb.mechanisms.joints:
             if host.create_body_arm_mechanism_joint(joint) != joint.path:
                 raise RuntimeError("来源机制关节路径漂移：" + joint.name)
-    host.create_body_generic_fk(fk)
+    host.create_body_generic_fk(fk, root_prepared=spline is not None)
     for limb in limbs:
         if host.create_body_arm_ik_root(limb.ik.root_name) != limb.ik.root_path:
             raise RuntimeError("来源 IK 控制根路径漂移")
@@ -240,20 +305,42 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         global_follow_main_path="|Group|MotionSystem|GlobalSystem|GlobalFollowMain",
         global_follow_use_opm=options.use_offset_parent_matrix)
     host.create_body_character_global(global_control)
+    if spline is not None:
+        host.create_source_body_spline(spline)
     scales = list(plan_body_direct_fk_scales(body, fk.controls))
     scales.extend(BodyDirectFkScaleSpec(control.driven_joint,
                   control.control_path + ".scale") for control in fk.controls
                   if control.driven_joint in driver_by_body.values())
+    if generic_fk_policy is not None and generic_fk_policy.scale_controls is not None:
+        scales = [spec for spec in scales
+                  if spec.source_scale.removesuffix(".scale") in generic_fk_policy.scale_controls]
     for spec in scales:
         host.preflight_body_direct_fk_scale(spec)
         host.connect_body_direct_fk_scale(spec)
+    generated_sources = tuple((driver, source) for source, driver in driver_by_body.items())
+    if spline is not None:
+        generated_sources += tuple((joint.path, joint.source_joint)
+                                   for joint in spline.joints
+                                   if joint.role is BodyLimbMechanismRole.FK)
+    if part_result is not None:
+        original_by_current = {after: before for before, after
+                               in part_result.final_paths.body_rewrites}
+        generated_sources = tuple((driver, original_by_current.get(source, source))
+                                  for driver, source in generated_sources)
     compensation = plan_body_fk_scale_compensation(
         fk.controls, build.symmetry.instances, metadata,
         use_offset_parent_matrix=options.use_offset_parent_matrix,
-        generated_joint_sources=tuple((driver, source)
-                                     for source, driver in driver_by_body.items()))
+        generated_joint_sources=generated_sources)
+    if part_result is not None:
+        compensation = rebase_plan_paths_after_parts(compensation, part_result.final_paths)
+    if generic_fk_policy is not None and generic_fk_policy.compensated_controls is not None:
+        compensation = tuple(spec for spec in compensation
+                             if spec.control_path in generic_fk_policy.compensated_controls)
     BuildBodyFkScaleCompensation(host).apply(compensation)
     fk_globals = plan_body_fk_global(metadata, fk.controls)
+    if generic_fk_policy is not None and generic_fk_policy.global_controls is not None:
+        fk_globals = tuple(spec for spec in fk_globals
+                           if spec.control in generic_fk_policy.global_controls)
     for spec in fk_globals:
         host.create_body_fk_global(spec)
     aim_controls = tuple(control for control in fk.controls if control.aim_path is not None)
@@ -270,6 +357,11 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         if markers:
             body = host.remove_body_non_deform_markers(body.root, markers)
             skeleton = replace(skeleton, snapshot=body)
+    build_source_body_part_drivers(host, build, part_result, fk, limbs, spline)
+    provenance = oriented_body_provenance(fit, len(body.joints))
+    host.write_body_provenance(body.root, provenance)
+    body = replace(body, provenance=provenance)
+    skeleton = replace(skeleton, snapshot=body)
     lock_specs = plan_body_fk_channel_locks(
         build.symmetry.source.hierarchy, fk.controls,
         tuple((node.path, host.read_fit_fk_lock_channels(node.path))
@@ -278,7 +370,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         host.apply_body_fk_channel_locks(spec)
     rig_plan = SourceBodyRigPlan(fit, fk, global_control, tuple(limbs),
         BodyControlSpacesPlan(body.root, ()), fk.hidden_controls, lock_specs,
-        fk_globals, fit_aim, compensation)
+        fk_globals, fit_aim, compensation, spline)
     rig = SourceBodyRigResult(rig_plan, body)
     registration = (host.describe_character_registration(
         rig, source_character_channels(rig)) if defer_registration
@@ -286,4 +378,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     finalize_body_character_sets(host, registration, rig_plan,
         scene_before=scene_before, fit_container=fit,
         create_sets=not defer_selection_sets, populate_all=not defer_all_set)
-    return RegisteredBodyBuildResult(skeleton, rig, registration)
+    return RegisteredBodyBuildResult(skeleton, rig, registration,
+        segment_influences=(tuple(part.name for part in build.fit_parts)
+                            if part_result is not None else ()),
+        fit_part_hierarchy=part_result)

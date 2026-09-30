@@ -14,10 +14,13 @@ def channels(registration):
     if not isinstance(plan, BodySplinePlan):
         raise CharacterRegistryError('曲线脊柱匹配扩展要求 Spline 角色')
     result = []
+    existing = {(channel.node, channel.attribute) for channel in registration.channels
+                if not channel.key.startswith(PREFIX)}
     for index, control in enumerate(plan.fk_controls):
         if not index:continue
         if index:
-            result.extend(CharacterChannel(f'{PREFIX}{index}.translate{axis}', control, 'translate'+axis) for axis in 'XYZ')
+            result.extend(CharacterChannel(f'{PREFIX}{index}.translate{axis}', control, 'translate'+axis) for axis in 'XYZ'
+                          if (control, 'translate'+axis) not in existing)
         result.extend(CharacterChannel(f'{PREFIX}{index}.scale{axis}', control, 'matchScale'+axis, .001, None) for axis in 'XYZ')
     return tuple(result)
 
@@ -57,13 +60,46 @@ def install(host, registration):
         for axis in 'XYZ':
             if c.objExists(control+'.matchScale'+axis):
                 raise CharacterRegistryError('曲线脊柱匹配属性被占用')
+    # Fresh generic source FK already owns position and local scale links.
+    # Replace only those declared links, rather than adding a second point
+    # constraint or force-overwriting a user-authored input.
+    native_points = {}
+    for index, control in enumerate(plan.fk_controls[1:], 1):
+        joint = plan.joints[index].path
+        source = c.connectionInfo(joint + '.scale', sourceFromDestination=True)
+        if source and source != control + '.scale':
+            raise CharacterRegistryError('曲线 FK 缩放输入不是声明的控制器：' + joint)
+        if not source and any(c.connectionInfo(joint + '.scale' + axis,
+                sourceFromDestination=True) for axis in 'XYZ'):
+            raise CharacterRegistryError('曲线 FK 缩放输入存在额外轴连接：' + joint)
+        point_name = control.rsplit('|', 1)[-1].removesuffix('FK') + 'FKPoint'
+        points = c.ls(point_name, long=True, type='pointConstraint') or []
+        incoming = tuple(c.connectionInfo(joint + '.translate' + axis,
+                          sourceFromDestination=True) for axis in 'XYZ')
+        if points:
+            if len(points) != 1 or any(
+                    not plug or host._resolve_connected_node(plug.split('.', 1)[0]) != points[0]
+                    for plug in incoming):
+                raise CharacterRegistryError('曲线 FK 位置输入不是声明的约束：' + joint)
+            native_points[index] = points[0]
+        elif any(incoming):
+            raise CharacterRegistryError('曲线 FK 位置输入有外部连接：' + joint)
     before = tuple(host._spine_world_frame(j.path)[0] for j in registration.body)
     host._transaction_changed = True
     for index, (control, joint) in enumerate(zip(plan.fk_controls, plan.joints[:count])):
         if not index:continue
-        for axis in 'XYZ':
+        initial_scale = tuple(float(c.getAttr(joint.path + '.scale' + axis))
+                              for axis in 'XYZ')
+        if any(value < .001 for value in initial_scale):
+            raise CharacterRegistryError('曲线 FK 匹配要求正的截面缩放：' + joint.path)
+        source = c.connectionInfo(joint.path + '.scale', sourceFromDestination=True)
+        if source:
+            c.disconnectAttr(source, joint.path + '.scale')
+        if index in native_points:
+            c.delete(native_points[index])
+        for axis, value in zip('XYZ', initial_scale):
             c.addAttr(control, longName='matchScale'+axis, niceName='匹配缩放 '+axis,
-                      attributeType='double', minValue=.001, defaultValue=1., keyable=True)
+                      attributeType='double', minValue=.001, defaultValue=value, keyable=True)
             c.connectAttr(control+'.matchScale'+axis, joint.path+'.scale'+axis)
             if index:
                 c.setAttr(control+'.translate'+axis, lock=False, keyable=True)

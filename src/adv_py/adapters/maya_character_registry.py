@@ -13,6 +13,10 @@ class MayaCharacterRegistryMixin:
     def capture_body_generic_fk_feature_policy(self, registration):
         """Keep a rebuild's generic FK graph aligned with the saved rig."""
         from adv_py.core.body_generic_fk import GenericFkFeaturePolicy
+        from adv_py.core.character_registry import is_source_body_registration
+        if is_source_body_registration(registration):
+            from .maya_source_body_rebuild import capture_fk_policy
+            return capture_fk_policy(self, registration)
         c = self._cmds
         stems = {
             channel.key[len('generic.fk.'):].split('.', 1)[0]
@@ -1328,6 +1332,11 @@ class MayaCharacterRegistryMixin:
                  *(channel.node for channel in channels)}
         paths.update(control.source_override_path for control in p.fk.controls
                      if control.source_override_path is not None)
+        if p.spline is not None:
+            spline = p.spline
+            paths.update((spline.root_path, spline.chest_space, spline.curve,
+                          *spline.targets, *spline.ik_outputs))
+            paths.update(joint.path for joint in spline.joints)
         for path in (p.global_control.root_follow_main_path,
                      p.global_control.global_follow_main_path):
             if path is not None:
@@ -1350,7 +1359,7 @@ class MayaCharacterRegistryMixin:
             paths.update(spec.wrist_align_path for spec in limb.ik.limbs
                          if spec.wrist_align_path is not None)
         return self._describe_body_registration_nodes(
-            body, p.container, channels, paths, None, p.control_spaces,
+            body, p.container, channels, paths, p.spline, p.control_spaces,
             allow_animation=True)
 
     def _describe_body_registration_nodes(self, body, container, channels,

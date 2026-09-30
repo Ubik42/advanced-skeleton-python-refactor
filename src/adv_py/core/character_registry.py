@@ -140,11 +140,19 @@ def safe_json(text, *, max_bytes=2_000_000):
         raise CharacterRegistryError("无效登记 JSON") from exc
 
 
+def is_source_body_registration(registration):
+    """Source Root uses the generic FK identity through save and rebuild."""
+    return (any(channel.key.startswith("generic.fk.Root_MFK.")
+                for channel in registration.channels)
+            or any(node.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                   == "AdvPy_Root_MFK" for node in registration.nodes))
+
+
 def encode_registration(registration):
     payload = asdict(registration)
     version = VERSION
     if isinstance(registration.spine, BodySplinePlan):
-        version = 2
+        version = 4 if is_source_body_registration(registration) else 2
         payload["spine_kind"] = "spline"
     if registration.spine is None:
         version = 3
@@ -157,9 +165,10 @@ def encode_registration(registration):
 
 def decode_registration(text):
     doc = exact(safe_json(text), ("format","version","payload","digest"))
-    if doc["format"] != FORMAT or type(doc["version"]) is not int or doc["version"] not in (1, 2, 3):
+    if doc["format"] != FORMAT or type(doc["version"]) is not int or doc["version"] not in (1, 2, 3, 4):
         raise CharacterRegistryError("不支持的角色登记版本")
-    spline_document = doc["version"] == 2
+    source_spline_document = doc["version"] == 4
+    spline_document = doc["version"] in (2, 4)
     fk_document = doc["version"] == 3
     data = exact(doc["payload"], ("body_root","container","channels","body","nodes","spine","spaces") + (("spine_kind",) if spline_document or fk_document else ()))
     if spline_document and data["spine_kind"] != "spline":
@@ -318,8 +327,16 @@ def decode_registration(text):
             if target_sources and len(target_sources) != len(targets):
                 raise CharacterRegistryError("控制空间目标来源数量不一致")
             spaces.append(BodyControlSpaceSpec(key,targets,path(row["body_source"]),path(row["global_source"]),row["rotation_only"],row["initial_mode"],target_sources))
-        if len(spaces)!=5 or len({s.key for s in spaces})!=5 or raw_spaces["body_root"] != root or (spine is not None and spine.body_joints[0] != root):
+        complete_spaces = len(spaces) == 5 and len({s.key for s in spaces}) == 5
+        source_fk_spaces = (fk_document or source_spline_document) and not spaces
+        if (not (complete_spaces or source_fk_spaces)
+                or raw_spaces["body_root"] != root
+                or (spine is not None and not source_spline_document
+                    and spine.body_joints[0] != root)):
             raise CharacterRegistryError("空间或脊柱角色根不一致")
+        if source_spline_document and not any(
+                node.path.rsplit("|", 1)[-1] == "AdvPy_Root_MFK" for node in nodes):
+            raise CharacterRegistryError("来源 Spline 登记缺少来源 Root FK 身份")
         required = {root,container,*(c.node for c in channels),*paths,*values["fk_controls"],*values["body_joints"],*(j.path for j in joints)}
         required.update(v for v in values.values() if isinstance(v,str))
         if spline_document:

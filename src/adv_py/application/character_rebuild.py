@@ -8,7 +8,7 @@ from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.body_spline import BodySplinePlan
 from adv_py.core.body_skeleton import plan_body_non_deform_markers
 from adv_py.core.character_registry import (
-    CharacterRegistration, CharacterRegistryError,
+    CharacterRegistration, CharacterRegistryError, is_source_body_registration,
 )
 from adv_py.core.character_preservation import (
     CharacterPreservation, RebuildOwnership, character_transfer_error,
@@ -182,14 +182,21 @@ class StageBodyCharacterRebuild:
                 CreateAndImportFitSkeleton(stage).apply(fit)
                 scene_before = stage.capture_body_scene_nodes()
                 keys={channel.key for channel in original.registration.channels}
-                description = _rebuild_axial_description(
-                    original.registration)
+                source_build = is_source_body_registration(original.registration)
+                source_labels = (tuple(
+                    (node.short_name.rsplit(":", 1)[-1], label.text)
+                    for node in stage.capture_fit_hierarchy("FitSkeleton").joints
+                    if (label := stage.read_joint_label(node.path)) is not None)
+                    if source_build else None)
+                description = (None if source_build else
+                    _rebuild_axial_description(original.registration))
                 # Rebuild the same Body/Part/control graph as a fresh
                 # character. Selection sets wait until legacy channel
                 # compatibility and animation registration are resolved.
                 built = BuildRegisteredBodyCharacter(stage).apply(
                     'FitSkeleton',
                     axial_description=description,
+                    _source_limb_labels=source_labels,
                     include_head_aim='head.aim.headAim' in keys,
                     use_fit_part_hierarchy=segment_mode == 'fit_part',
                     _include_dynamic=include_dynamic,

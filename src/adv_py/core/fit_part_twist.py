@@ -216,7 +216,8 @@ def plan_standard_fit_part_rotation_inputs(
                 static_parent_body=(start if not (child_matrix or child_blend)
                                     else None),
                 reference_parent_body=semantic_parent_by_body.get(child))
-        if stem in ("Shoulder", "Elbow", "Hip", "Knee"):
+        if (stem in ("Shoulder", "Elbow", "Hip", "Knee")
+                and start not in independent_world_matrices):
             limb = "Arm" if stem in ("Shoulder", "Elbow") else "Leg"
             blend = blended_world_matrices.get(start)
             result.append(FitPartRotationInput(

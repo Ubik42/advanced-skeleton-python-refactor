@@ -50,8 +50,11 @@ def decode_spline(raw, body):
     if raw['mid_follow_graph'] and count<=2:
         raise CharacterRegistryError('两关节 Spline 不使用中间跟随图')
     by_path = {joint.path: joint for joint in body}
+    from .body_limb_mechanisms import body_limb_parent_matches
     if any(p not in by_path for p in body_paths) or any(
-        by_path[p].parent != parent for parent, p in zip(body_paths, body_paths[1:])
+        not body_limb_parent_matches(by_path[p].parent, parent,
+                                    allow_part_parents=True)
+        for parent, p in zip(body_paths, body_paths[1:])
     ):
         raise CharacterRegistryError('曲线脊柱必须对应实际 Body 父链')
     root = path(raw['root_path'])

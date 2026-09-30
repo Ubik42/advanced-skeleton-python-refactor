@@ -1,0 +1,63 @@
+"""Attach existing Part twist and scale drivers to real source rig outputs."""
+from __future__ import annotations
+
+from dataclasses import replace
+
+from adv_py.core.fit_part_twist import plan_standard_fit_part_rotation_inputs
+from .fit_part_twist import PrepareFitPartTwistSources, BuildFitPartTwistDrivers
+from .fit_part_scale import BuildFitPartScaleDrivers
+
+
+def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline):
+    if part_result is None:
+        return (), None
+    paths = part_result.final_paths
+    parts = tuple(replace(part,
+        start_body=paths.remap_body_reference(part.start_body),
+        end_body=paths.remap_body_reference(part.end_body))
+        for part in build.fit_parts if part.kind == "twist")
+    independent = {}
+    constraints = {}
+    blended = {}
+    body_paths = {path for _, path in paths.body_paths}
+    for control in fk.controls:
+        if control.driven_joint in body_paths:
+            independent[control.driven_joint] = (
+                control.source_override_path or control.sub_control_path
+                or control.control_path) + ".worldMatrix[0]"
+            constraints[control.driven_joint] = control.constraint_name
+    for limb in limbs:
+        for side in limb.blend.sides:
+            for joint in side.joints:
+                blended[joint.body_joint] = (
+                    joint.fk_driver + ".worldMatrix[0]",
+                    joint.ik_driver + ".worldMatrix[0]",
+                    limb.blend.settings_path + "." + side.attribute,
+                    joint.constraint_name)
+    if spline is not None:
+        count = len(spline.body_joints)
+        for index in range(1, count):
+            blended[spline.body_joints[index]] = (
+                spline.joints[index].path + ".worldMatrix[0]",
+                spline.ik_outputs[index] + ".worldMatrix[0]",
+                spline.settings + ".spineIkFk",
+                f"AdvPy_SplineOrient{index}")
+    for path in blended:
+        independent.pop(path, None)
+        constraints.pop(path, None)
+    inputs = plan_standard_fit_part_rotation_inputs(parts,
+        independent_world_matrices=independent,
+        independent_body_constraints=constraints,
+        blended_world_matrices=blended,
+        semantic_parent_by_body={paths.remap_body_reference(spec.path):
+            paths.remap_body_reference(spec.parent_path)
+            for spec in build.specs if spec.parent_path is not None})
+    sources = PrepareFitPartTwistSources(host).apply(inputs)
+    steps = BuildFitPartTwistDrivers(host).apply(parts, sources)
+    # Body output already contains this source rig's FK/IK scale selection.
+    # Reuse that output for compensated Parts; OPM Parts inherit the parent.
+    scale_plan = BuildFitPartScaleDrivers(host).apply(build.fit_parts,
+        resolved_segment_scale_plugs={part.start_body_name:
+            paths.remap_body_reference(part.start_body) + ".scale"
+            for part in build.fit_parts})
+    return steps, scale_plan

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
 from .body_skeleton import BodyJointSpec
 from .fit_part import FitPartJointSpec
@@ -88,6 +89,7 @@ def plan_fit_part_scale(
     body_joints: tuple[BodyJointSpec, ...] = (),
     ik_local_sources: frozenset[str] = frozenset(),
     leg_fk_control_names: frozenset[str] = frozenset(),
+    *, resolved_segment_scale_plugs: Mapping[str, str] | None = None,
 ) -> FitPartScalePlan:
     """Use FK/IK scale on limb Body even when a segment has no Parts.
 
@@ -126,6 +128,17 @@ def plan_fit_part_scale(
         if any(part.segment_scale_compensate
                != chain[0].segment_scale_compensate for part in chain):
             raise ValueError("Fit Part 链的缩放补偿模式不一致：" + start)
+        resolved = (resolved_segment_scale_plugs or {}).get(start)
+        if resolved is not None:
+            if not isinstance(resolved, str) or not resolved.endswith(".scale"):
+                raise ValueError("来源 Part 的实际缩放通道无效：" + start)
+            if use_opm:
+                inherited.append(FitPartInheritedScaleChain(
+                    start, tuple(part.name for part in chain)))
+            else:
+                direct.extend(FitPartScaleStep(part.name, start, resolved,
+                    part.name + ".scale") for part in chain)
+            continue
         if stem in limb_stems:
             module = "Arm" if stem in ("Shoulder", "Elbow") else "Leg"
             prefix = f"AdvPy_{stem}_FitPart_{side}"

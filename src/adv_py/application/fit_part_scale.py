@@ -61,9 +61,11 @@ class BuildFitPartScaleDrivers:
         body_joints: tuple[BodyJointSpec, ...] = (),
         ik_local_sources: frozenset[str] = frozenset(),
         leg_fk_control_names: frozenset[str] = frozenset(),
+        *, resolved_segment_scale_plugs=None,
     ) -> FitPartScalePlan:
         plan = plan_fit_part_scale(parts, body_joints, ik_local_sources,
-                                   leg_fk_control_names)
+            leg_fk_control_names,
+            resolved_segment_scale_plugs=resolved_segment_scale_plugs)
         for step in plan.direct:
             self._host.preflight_fit_part_scale(step)
         for chain in plan.limbs:

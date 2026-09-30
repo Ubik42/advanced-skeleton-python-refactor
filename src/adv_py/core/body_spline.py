@@ -5,7 +5,9 @@ from math import sqrt,isfinite
 from .body_limb_controls import (
     BodyLimbFkControlSpec, reparent_body_fk_control,
 )
-from .body_limb_mechanisms import BodyLimbMechanismJointSpec,BodyLimbMechanismRole
+from .body_limb_mechanisms import (
+    BodyLimbMechanismJointSpec, BodyLimbMechanismRole, body_limb_parent_matches,
+)
 from .fit_settings import FitSkeletonValidationError
 from .body_build_options import BodyBuildOptions
 
@@ -253,13 +255,33 @@ def fit_spline_controls(points):
     return (points[0],)+tuple(tuple(coordinates[axis][i] for axis in range(3)) for i in range(interior))+(points[-1],)
 
 
-def with_spline_ik(body,torso,description,
+def with_spline_ik(body, torso, description,
                    build_options: BodyBuildOptions = BodyBuildOptions(),
                    *, fk_root_point_from_receiver: bool = True):
+    states = description.validate(body)
+    source = tuple(states[name] for name in description.spine)
+    controls, plan = plan_body_spline_fk_chain(
+        source, torso.controls,
+        use_offset_parent_matrix=torso.use_offset_parent_matrix,
+        build_options=build_options,
+        fk_root_point_from_receiver=fk_root_point_from_receiver)
+    return replace(torso, controls=controls, spline=plan)
+
+
+def plan_body_spline_fk_chain(source, controls, *,
+                             use_offset_parent_matrix: bool,
+                             build_options: BodyBuildOptions = BodyBuildOptions(),
+                             fk_root_point_from_receiver: bool = True):
+    """Shared original spline graph for a resolved Fit start/end chain."""
     if type(fk_root_point_from_receiver) is not bool:
         raise FitSkeletonValidationError('Spline FK 起点位置来源开关无效')
-    states=description.validate(body)
-    source=tuple(states[name] for name in description.spine)
+    if len(source) < 2 or len({joint.path for joint in source}) != len(source):
+        raise FitSkeletonValidationError('Spline 来源链必须至少包含两个唯一关节')
+    if any(not body_limb_parent_matches(child.parent_path, parent.path,
+            allow_part_parents=True) for parent, child in zip(source, source[1:])):
+        raise FitSkeletonValidationError('Spline 来源关节父链不连续')
+    if not controls.controls or controls.controls[0].driven_joint != source[0].path:
+        raise FitSkeletonValidationError('Spline 基部控制必须对应来源起点')
     delta=tuple(b-a for a,b in zip(source[0].world_position,source[-1].world_position))
     total=sqrt(sum(v*v for v in delta))
     if not isfinite(total) or total<1e-5:raise FitSkeletonValidationError('Spline 脊柱首尾距离必须为非零有限值')
@@ -288,17 +310,17 @@ def with_spline_ik(body,torso,description,
         second=tuple(value/magnitude for value in second)
         third=(direction[1]*second[2]-direction[2]*second[1],direction[2]*second[0]-direction[0]*second[2],direction[0]*second[1]-direction[1]*second[0])
         return (direction,second,third)
-    root=torso.controls.root_path+'|AdvPy_SplineMechanisms';specs=[]
+    root=controls.root_path+'|AdvPy_SplineMechanisms';specs=[]
     for role in (BodyLimbMechanismRole.FK,BodyLimbMechanismRole.IK):
         parent=root
         for index,joint in enumerate(source):
             name=f'AdvPy_Spline{role.value.upper()}Joint{index}'
             specs.append(BodyLimbMechanismJointSpec(role,joint.side,joint.path,parent+'|'+name,name,parent,joint.world_position,ik_axes(index) if curved and role==BodyLimbMechanismRole.IK else joint.world_axes))
             parent=specs[-1].path
-    pelvis=torso.controls.controls[0]
+    pelvis=controls.controls[0]
     pelvis_parent=(pelvis.source_override_path
                    if pelvis.source_override_joint
-                   and not torso.use_offset_parent_matrix
+                   and not use_offset_parent_matrix
                    else pelvis.control_path)
     offset=pelvis_parent+'|AdvPy_SplineBaseFKOffset'
     extra_name='AdvPy_SplineBaseFKExtra'
@@ -322,23 +344,23 @@ def with_spline_ik(body,torso,description,
         source_override_path=base_fkx,
         source_override_joint=use_fkx,
         source_override_segment_scale_compensate=(
-            not torso.use_offset_parent_matrix),
+            not use_offset_parent_matrix),
         fit_joint_names=(source[0].name.rsplit("_", 1)[0],))
     def child_parent(control):
         return (control.source_override_path
                 if control.source_override_joint
-                and not torso.use_offset_parent_matrix
+                and not use_offset_parent_matrix
                 else control.control_path)
     updated=[pelvis,base];parent=child_parent(base);fk=[base.control_path]
-    by_joint={c.driven_joint:c for c in torso.controls.controls}
+    by_joint={c.driven_joint:c for c in controls.controls}
     for index,joint in enumerate(source[1:],1):
         old=by_joint[joint.path]
         control=reparent_body_fk_control(
             old,parent,driven_joint=specs[index].path)
         updated.append(control);parent=child_parent(control)
         fk.append(control.control_path)
-    space=torso.controls.root_path+'|AdvPy_SplineChestSpace';mapping={}
-    for old in torso.controls.controls:
+    space=controls.root_path+'|AdvPy_SplineChestSpace';mapping={}
+    for old in controls.controls:
         if old.driven_joint in {j.path for j in source}:continue
         parent=mapping.get(old.parent_path,space)
         control=reparent_body_fk_control(old,parent)
@@ -355,6 +377,6 @@ def with_spline_ik(body,torso,description,
                   for i in range(len(positions)))
     subs=tuple(target+f'|AdvPy_SplineIK{i}Sub'
                for i,target in enumerate(targets)) if build_options.sub_controllers else ()
-    plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths),torso.use_offset_parent_matrix,True,isolated_follow,isolated_follow,isolated_follow,subs,build_options.extra_controllers,
+    plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths),use_offset_parent_matrix,True,isolated_follow,isolated_follow,isolated_follow,subs,build_options.extra_controllers,
                         fk_root_point_from_receiver=fk_root_point_from_receiver)
-    return replace(torso,controls=replace(torso.controls,controls=tuple(updated)),spline=plan)
+    return replace(controls, controls=tuple(updated)), plan

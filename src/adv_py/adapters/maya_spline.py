@@ -431,8 +431,17 @@ def audit(host,plan):
             (plan.curve+'.worldInverseMatrix[0]',f'AdvPy_SplineIK{i}Matrix.matrixIn[1]'),
             (f'AdvPy_SplineIK{i}Matrix.matrixSum',f'AdvPy_SplineIK{i}Position.inputMatrix'),
             (f'AdvPy_SplineIK{i}Position.outputTranslate',shape+f'.controlPoints[{i}]')]
-    edges += [(control+'.scale',joint.path+'.scale')
-              for control,joint in zip(plan.fk_controls,plan.joints[:n])]
+    for index, (control, joint) in enumerate(zip(plan.fk_controls, plan.joints[:n])):
+        matching = index > 0 and all(c.attributeQuery('matchScale' + axis,
+                     node=control, exists=True) for axis in 'XYZ')
+        if matching:
+            edges.extend((control + '.matchScale' + axis, joint.path + '.scale' + axis)
+                         for axis in 'XYZ')
+            point = f'AdvPy_SplineFKMatchPoint{index}'
+            if not c.objExists(point) or c.nodeType(point) != 'pointConstraint':
+                raise FitSkeletonValidationError('Spline 匹配缩放缺少位置驱动')
+        else:
+            edges.append((control + '.scale', joint.path + '.scale'))
     for i,joint in enumerate(plan.joints[n:]):
         if new_scaling:
             blend=f'AdvPy_SplineIKScaleBlend{i}'

@@ -10023,6 +10023,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
     def create_body_leg_fk_control(self, spec: BodyLegFkControlSpec) -> None:
         self._create_body_limb_fk_control(spec, "Leg")
 
+    def prepare_source_body_spline(self, plan) -> None:
+        from .maya_spline import prepare
+        prepare(self, plan)
+
+    def create_source_body_spline(self, plan) -> None:
+        from .maya_spline import create
+        create(self, plan)
+
     def connect_source_body_limb_follow(self, body, mechanisms) -> None:
         """Follow the real parent of an imported IK start, outside its blend."""
         from adv_py.core.body_limb_mechanisms import BodyLimbMechanismRole
@@ -10113,14 +10121,21 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                               node + ".visibility")
         self._transaction_changed = True
 
-    def create_body_generic_fk(self, plan) -> None:
+    def create_body_generic_fk(self, plan, *, root_prepared: bool = False) -> None:
         if not plan.controls and not plan.endpoints:
             return
         self._require_transaction()
         if plan.controls or plan.followers:
             parent = plan.root_path.rsplit("|", 1)[0]
             name = plan.root_path.rsplit("|", 1)[-1]
-            if self.create_body_control_root(
+            if root_prepared:
+                c = self._cmds
+                if ((c.ls(plan.root_path, long=True, type="transform") or [])
+                        != [plan.root_path]
+                        or (c.listRelatives(plan.root_path, parent=True,
+                                            fullPath=True) or []) != [parent]):
+                    raise RuntimeError("预创建的通用 FK 控制根路径漂移")
+            elif self.create_body_control_root(
                     name, parent_path=parent) != plan.root_path:
                 raise RuntimeError("通用 FK 控制根路径漂移")
         c = self._cmds

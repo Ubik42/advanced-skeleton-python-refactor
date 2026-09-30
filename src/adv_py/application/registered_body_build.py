@@ -565,7 +565,9 @@ class BuildRegisteredBodyCharacter:
                             defer_selection_sets=_defer_selection_sets,
                             defer_all_set=_defer_all_set,
                             retain_markers=_retain_non_deform_markers,
-                            defer_registration=_defer_source_registration)
+                            defer_registration=_defer_source_registration,
+                            generic_fk_policy=_generic_fk_policy,
+                            use_fit_part_hierarchy=use_fit_part_hierarchy)
                         if original_up_axis == "z":
                             joined.flip_character_scene_up_axis("|Group", "z")
                             if _defer_source_registration:
