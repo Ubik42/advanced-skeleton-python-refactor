@@ -3383,6 +3383,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
 
         export = plan.export_skeleton
         root = export.root.output_path
+        def offset_matrix(path):
+            value=self._cmds.getAttr(path+'.offsetParentMatrix')
+            if len(value)==1 and isinstance(value[0],(tuple,list)):
+                value=value[0]
+            return tuple(float(item) for item in value)
         joints = tuple(
             BodyExportBakedJointState(
                 output_path=spec.output_path,
@@ -3393,6 +3398,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     channel(spec.output_path, attribute)
                     for attribute in BODY_EXPORT_CHANNEL_ATTRIBUTES
                 ),
+                offset_parent_matrix_source=(self._cmds.connectionInfo(
+                    spec.output_path+'.offsetParentMatrix',
+                    sourceFromDestination=True) or None),
+                offset_parent_matrix=offset_matrix(spec.output_path),
             )
             for spec in export.joints
         )

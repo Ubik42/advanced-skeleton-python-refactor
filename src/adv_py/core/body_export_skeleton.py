@@ -185,6 +185,8 @@ class BodyExportBakedJointState:
     output_path: str
     source_message_exists: bool
     channels: tuple[BodyRootMotionBakedChannelState, ...]
+    offset_parent_matrix_source: str | None = None
+    offset_parent_matrix: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -416,6 +418,19 @@ def audit_baked_body_export_skeleton(
     }
     for spec in export.joints:
         state = actual[spec.output_path]
+        identity=(1.,0.,0.,0.,0.,1.,0.,0.,
+                  0.,0.,1.,0.,0.,0.,0.,1.)
+        if (state.offset_parent_matrix_source is not None
+                or (state.offset_parent_matrix is not None and (
+                    len(state.offset_parent_matrix)!=16 or any(
+                        not isfinite(float(a)) or abs(a-b)>tolerance
+                        for a,b in zip(
+                            state.offset_parent_matrix,identity))))):
+            issues.append(BodyExportSkeletonIssue(
+                "baked_offset_matrix_remains",
+                "Export Skeleton bake 后仍依赖偏移父矩阵",
+                spec.output_path,
+            ))
         if state.source_message_exists:
             issues.append(BodyExportSkeletonIssue(
                 "source_message_remains",
