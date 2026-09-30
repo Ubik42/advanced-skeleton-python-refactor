@@ -3360,7 +3360,12 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                  for name in data.influence_names)
             source_envelope = data.skin_name + ".envelope"
             envelope_at_bind = float(c.getAttr(source_envelope))
-            for frame in range(bind_frame, end_frame + 1, sample_by):
+            sampled_frames = tuple(range(bind_frame, end_frame + 1, sample_by))
+            envelope_times = (*sampled_frames,
+                *(0.5 * (left + right) for left, right in zip(
+                    sampled_frames, sampled_frames[1:])),
+                float(end_frame))
+            for frame in envelope_times:
                 c.currentTime(frame, edit=True, update=True)
                 if abs(float(c.getAttr(source_envelope)) - envelope_at_bind) > 1e-6:
                     raise FitSkeletonValidationError(
