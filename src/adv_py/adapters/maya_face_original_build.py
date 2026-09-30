@@ -10,12 +10,16 @@ from .maya_face_regions import MayaFaceRegionsHost
 from .maya_face_head_squash import MayaFaceHeadSquashHost
 from .maya_face_tweak_controls import MayaFaceTweakControlsHost
 from .maya_face_restore import MayaFaceRestoreMixin
+from .maya_face_fit_upgrade import MayaFaceFitUpgradeMixin
+from .maya_face_wrinkle_curves import MayaFaceWrinkleCurvesMixin
+from .maya_face_wrinkle_uv import MayaFaceWrinkleUVMixin
+from .maya_face_wrinkle_graph import MayaFaceWrinkleGraphMixin
 from adv_py.core.face_original_build import ORIGINAL_FACE_BUILD_STEPS, OriginalFaceKeepOptions
 from adv_py.core.face_cage import FaceCageOptions
 from adv_py.core.face_lip_falloff import LipFalloffOptions
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
-class MayaOriginalFaceBuildHost(MayaFaceSoftModEditMixin, MayaFaceRestoreMixin, MayaFaceExpressionHost,
+class MayaOriginalFaceBuildHost(MayaFaceWrinkleGraphMixin, MayaFaceWrinkleCurvesMixin, MayaFaceWrinkleUVMixin, MayaFaceFitUpgradeMixin, MayaFaceSoftModEditMixin, MayaFaceRestoreMixin, MayaFaceExpressionHost,
                                 MayaFaceRegionsHost, MayaFaceHeadSquashHost,
                                 MayaFaceTweakControlsHost):
     def face_skin_cluster(self, mesh):

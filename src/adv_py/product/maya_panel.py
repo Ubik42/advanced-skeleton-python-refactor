@@ -315,11 +315,11 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('Skin Layers', ('03a · Face Skin Layers',)),
                     ('Tweaks', ('03A · Face Tweaks',)),
                     ('DeltaMush', ('03B · Face DeltaMush',)),
-                    ('HeadSquash', ('03C · Face HeadSquash',)), ('WrinkleMap', ()),
+                    ('HeadSquash', ('03C · Face HeadSquash',)), ('WrinkleMap', ('03T · 原版 WrinkleMap',)),
                     ('BlendShapes', ('03P · 原版驱动转 BlendShape', '03Q · ARKit 接线', '04 · 表情与口型动画',
                                      '05 · 面部资产版本',
                                      '06 · 合并同一目标的三个版本')),
-                    ('EditBlendShapes', ()), ('NewBlendShapes', ()),
+                    ('EditBlendShapes', ('03R · 原版 BlendShape 编辑',)), ('NewBlendShapes', ('03S · 原版新建 BlendShape',)),
                     ('Custom Controllers', ('07 · 自定义控制器',)))),
                 ('Pose', (
                     ('Driving Systems', ('03 · 动画通道',
@@ -1504,6 +1504,7 @@ def create_panel(controller: MayaPanelController | None = None):
             for label,part in (("记录所选上牙","UpperTeeth"),("记录所选下牙","LowerTeeth"),
                                ("记录所选眉毛","Eyebrow"),("记录所选睫毛","EyeLash")):
                 form.addRow(self._button(label,lambda part=part: self._face_teeth_record(part)))
+            form.addRow(self._button("升级旧版 Face Fit", self._face_upgrade_original_fit))
             self.face_fit_side_status = QtWidgets.QLabel("Fit 编辑侧：右侧")
             row = QtWidgets.QHBoxLayout()
             row.addWidget(self._button("编辑右侧", lambda: self._face_fit_switch_side("Right")))
@@ -1878,6 +1879,83 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self.face_arkit_mouth_close)
             form.addRow(self._button("连接 ARKit", self._face_original_arkit_connect))
             form.addRow(self._button("断开 ARKit", self._face_original_arkit_disconnect))
+            stack.addWidget(group)
+
+            self.face_wrinkle_shader = QtWidgets.QLineEdit()
+            self.face_wrinkle_shader.setPlaceholderText("Face 多材质时指定 Shader")
+            self.face_wrinkle_image_path = QtWidgets.QLineEdit()
+            self.face_wrinkle_dimensions = []
+            for value in (1024,1024,512,512):
+                box = QtWidgets.QSpinBox()
+                box.setRange(1,32768)
+                box.setValue(value)
+                self.face_wrinkle_dimensions.append(box)
+            self.face_wrinkle_format = QtWidgets.QComboBox()
+            self.face_wrinkle_format.addItems(("png","tga"))
+            self.face_wrinkle_group = QtWidgets.QComboBox()
+            self.face_wrinkle_group.addItems(("All","ForeHead","Frown","CrowsFeet","BunnyLines","SmileLine"))
+            self.face_wrinkle_element = QtWidgets.QComboBox()
+            self.face_wrinkle_element.addItems(("Curves","Mask","Test"))
+            group, form = self._group("03T · 原版 WrinkleMap", [("Shader",self.face_wrinkle_shader)])
+            form.addRow(self._button("创建／移除皱纹曲线",lambda:self._face_wrinkles("curves")))
+            form.addRow(self._button("创建／移除 WrinkleMap",lambda:self._face_wrinkles("map")))
+            form.addRow(self._button("重新投影 Wrinkle UV",lambda:self._face_wrinkles("uv")))
+            form.addRow("皱纹组",self.face_wrinkle_group)
+            form.addRow("编辑类型",self.face_wrinkle_element)
+            form.addRow(self._button("编辑皱纹",lambda:self._face_wrinkles("edit")))
+            form.addRow(self._button("应用并重新烘焙",lambda:self._face_wrinkles("apply")))
+            form.addRow(self._button("取消皱纹编辑",lambda:self._face_wrinkles("cancel")))
+            form.addRow(self._button("读取 Wrinkle 设置",lambda:self._face_wrinkles("settings")))
+            form.addRow("贴图目录",self.face_wrinkle_image_path)
+            for label,box in zip(("凹凸宽度","凹凸高度","遮罩宽度","遮罩高度"),self.face_wrinkle_dimensions):
+                form.addRow(label,box)
+            form.addRow("贴图格式",self.face_wrinkle_format)
+            form.addRow(self._button("保存 Wrinkle 设置",lambda:self._face_wrinkles("save_settings")))
+            for label,action in (("正常材质","view_normal"),("查看凹凸","view_bump"),("查看遮罩","view_masks"),("查看凹凸文件","view_file")):
+                form.addRow(self._button(label,lambda checked=False,action=action:self._face_wrinkles(action)))
+            stack.addWidget(group)
+
+            self.face_bs_auto_mirror = QtWidgets.QCheckBox("自动镜像")
+            self.face_bs_auto_mirror.setChecked(True)
+            self.face_bs_targets = QtWidgets.QComboBox()
+            self.face_bs_targets.addItem("当前控制器姿态", None)
+            self.face_bs_weight = QtWidgets.QDoubleSpinBox()
+            self.face_bs_weight.setRange(0,1)
+            self.face_bs_weight.setSingleStep(.01)
+            self.face_bs_weight.setDecimals(3)
+            self.face_bs_weight.setValue(1)
+            self.face_bs_wizard_step = 0
+            self.face_bs_wizard_status = QtWidgets.QLabel("向导尚未开始")
+            self.face_bs_delta_multiplier = QtWidgets.QDoubleSpinBox()
+            self.face_bs_delta_multiplier.setRange(.01, 100)
+            self.face_bs_delta_multiplier.setValue(1.3)
+            group, form = self._group("03R · 原版 BlendShape 编辑", [])
+            form.addRow(self.face_bs_auto_mirror)
+            form.addRow("编辑目标", self.face_bs_targets)
+            form.addRow("目标权重", self.face_bs_weight)
+            form.addRow(self._button("设置目标权重", lambda: self._face_bs_edit("weight")))
+            form.addRow(self._button("刷新 BlendShape 目标", self._face_bs_targets_refresh))
+            form.addRow(self._button("提取 BlendShape 目标", lambda: self._face_bs_edit("extract")))
+            form.addRow(self._button("重置编辑目标", lambda: self._face_bs_edit("reset")))
+            form.addRow(self._button("完成并删除编辑目标", lambda: self._face_bs_edit("delete")))
+            form.addRow(self._button("开始 BlendShape 向导", lambda: self._face_bs_edit("wizard_start")))
+            form.addRow(self._button("下一个 BlendShape 目标", lambda: self._face_bs_edit("wizard_next")))
+            form.addRow(self.face_bs_wizard_status)
+            form.addRow(self._button("停止 BlendShape 向导", lambda: self._face_bs_edit("wizard_stop")))
+            form.addRow(self._button("提取所有 BlendShape 目标", lambda: self._face_bs_edit("extract_all")))
+            form.addRow("DeltaMush 倍率", self.face_bs_delta_multiplier)
+            form.addRow(self._button("DeltaMush 平滑所有目标", lambda: self._face_bs_edit("delta_mush_all")))
+            stack.addWidget(group)
+            self.face_bs_new_attribute = QtWidgets.QLineEdit()
+            self.face_bs_new_attribute.setPlaceholderText("默认 Untitled")
+            self.face_bs_new_control = QtWidgets.QLineEdit()
+            self.face_bs_new_control.setPlaceholderText("已有控制器或新名称；默认 ctrlUntitled")
+            self.face_bs_new_mirror = QtWidgets.QCheckBox("镜像创建左右目标")
+            self.face_bs_new_mirror.setChecked(True)
+            group, form = self._group("03S · 原版新建 BlendShape", [
+                ("驱动属性", self.face_bs_new_attribute), ("驱动控制器", self.face_bs_new_control)])
+            form.addRow(self.face_bs_new_mirror)
+            form.addRow(self._button("新建 BlendShape 目标", lambda: self._face_bs_edit("new")))
             stack.addWidget(group)
 
             performance, self.face_performance_document = self._file_field("面部动画文档")
@@ -3898,6 +3976,42 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.face_cage_smooth.setValue(result["smooth_passes"])
             return "Face Cage 操作完成："+action
 
+        def _face_bs_targets_refresh(self):
+            targets = self.controller.face_original_blendshape_targets(self._namespace())
+            self.face_bs_targets.clear()
+            self.face_bs_targets.addItem("当前控制器姿态", None)
+            for target in targets:
+                self.face_bs_targets.addItem(target, target)
+            return "已读取 " + str(len(targets)) + " 个原版驱动目标"
+
+        def _face_wrinkles(self, action):
+            options = dict(wrinkle=self.face_wrinkle_group.currentText(),element=self.face_wrinkle_element.currentText(),
+                shader=self.face_wrinkle_shader.text().strip() or None)
+            if action == "save_settings":
+                values = [box.value() for box in self.face_wrinkle_dimensions]
+                options.update(image_path=self.face_wrinkle_image_path.text().strip() or None,
+                    map_width=values[0],map_height=values[1],mask_width=values[2],mask_height=values[3],
+                    format=self.face_wrinkle_format.currentText())
+            result = self.controller.face_original_wrinkles(self._namespace(),action,**options)
+            if action in ("settings","save_settings"):
+                self.face_wrinkle_image_path.setText(result["imagePath"])
+                for box,attr in zip(self.face_wrinkle_dimensions,("mapWidth","mapHeight","maskWidth","maskHeight")):
+                    box.setValue(result[attr])
+                self.face_wrinkle_format.setCurrentText(result["format"])
+            return "原版 WrinkleMap 操作完成：" + action
+
+        def _face_bs_edit(self, action):
+            result = self.controller.face_edit_original_blendshapes(self._namespace(), action,
+                target=self.face_bs_targets.currentData(), step=self.face_bs_wizard_step,
+                auto_mirror=self.face_bs_auto_mirror.isChecked(), multiplier=self.face_bs_delta_multiplier.value(),
+                attribute=self.face_bs_new_attribute.text().strip(), control=self.face_bs_new_control.text().strip(),
+                mirror=self.face_bs_new_mirror.isChecked(), weight=self.face_bs_weight.value())
+            if isinstance(result, dict) and "step" in result:
+                self.face_bs_wizard_step = result["step"]
+                self.face_bs_wizard_status.setText(str(result["step"]) + "/" + str(result["total"]) +
+                    ("，全部完成" if result["finished"] else "，" + result["driver"] + " = " + str(result["value"])))
+            return "原版 BlendShape 操作完成：" + action
+
         def _face_original_bs_convert(self):
             result = self.controller.face_convert_original_blendshapes(self._namespace(),
                 keep_joints=self.face_bs_keep_joints.isChecked(),
@@ -3913,6 +4027,10 @@ def create_panel(controller: MayaPanelController | None = None):
         def _face_original_arkit_disconnect(self):
             self.controller.face_disconnect_original_arkit(self._namespace())
             return "已断开 ARKit 并返回 Face 构建姿态"
+
+        def _face_upgrade_original_fit(self):
+            result = self.controller.face_upgrade_original_fit(self._namespace())
+            return "旧 Face Fit 已升级，请重新完成 Pre 和 Fit" if result["upgraded"] else "Face Fit 无需升级"
 
         def _face_original_build(self):
             from adv_py.core.face_lip_falloff import LipFalloffOptions

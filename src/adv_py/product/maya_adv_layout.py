@@ -117,6 +117,7 @@ ADV_OPERATIONS = {
         ("创建 Multi Partial Joints", 0, "12 · Partial Joints"),
         ("删除 Multi Partial Joints", 0, "12 · Partial Joints")),
     ("Face", "Pre"): (
+        ("升级旧版 Face Fit", 3, "00 · 面部输入"),
         ("Mask", 3, "00 · 面部输入"),
         ("Face", 3, "00 · 面部输入"),
         ("All Head", 3, "00 · 面部输入"),
@@ -176,6 +177,23 @@ ADV_OPERATIONS = {
         ("刷新版本", 3, "05 · 面部资产版本"),
         ("导出所选版本", 3, "05 · 面部资产版本"),
         ("合并资产版本", 3, "06 · 合并同一目标的三个版本")),
+    ("Face", "WrinkleMap"): tuple((label,3,"03T · 原版 WrinkleMap") for label in (
+        "创建／移除皱纹曲线","创建／移除 WrinkleMap","重新投影 Wrinkle UV","编辑皱纹",
+        "应用并重新烘焙","取消皱纹编辑","读取 Wrinkle 设置","保存 Wrinkle 设置",
+        "正常材质","查看凹凸","查看遮罩","查看凹凸文件")),
+    ("Face", "EditBlendShapes"): (
+        ("设置目标权重",3,"03R · 原版 BlendShape 编辑"),
+        ("刷新 BlendShape 目标", 3, "03R · 原版 BlendShape 编辑"),
+        ("提取 BlendShape 目标", 3, "03R · 原版 BlendShape 编辑"),
+        ("重置编辑目标", 3, "03R · 原版 BlendShape 编辑"),
+        ("完成并删除编辑目标", 3, "03R · 原版 BlendShape 编辑"),
+        ("开始 BlendShape 向导", 3, "03R · 原版 BlendShape 编辑"),
+        ("下一个 BlendShape 目标", 3, "03R · 原版 BlendShape 编辑"),
+        ("停止 BlendShape 向导", 3, "03R · 原版 BlendShape 编辑"),
+        ("提取所有 BlendShape 目标", 3, "03R · 原版 BlendShape 编辑"),
+        ("DeltaMush 平滑所有目标", 3, "03R · 原版 BlendShape 编辑")),
+    ("Face", "NewBlendShapes"): (
+        ("新建 BlendShape 目标", 3, "03S · 原版新建 BlendShape"),),
     ("Face", "Custom Controllers"): (
         ("SoftMod Tool", 0, "06 · Custom Controllers"),
         ("Create Skin Control", 0, "06 · Custom Controllers"),

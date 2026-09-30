@@ -133,9 +133,10 @@ class MayaFacePreHost(MayaFaceHost):
         fit = self._fit()
         if fit and c.referenceQuery(fit, isNodeReferenced=True):
             raise FitSkeletonValidationError("不能改写引用中的 FaceFitSkeleton")
-        if fit and not c.attributeQuery("advPyMaskFaces", node=fit, exists=True):
+        upgrading = bool(fit and c.objExists(fit + ".advPyFitUpgradePending") and c.getAttr(fit + ".advPyFitUpgradePending"))
+        if fit and not upgrading and not c.attributeQuery("advPyMaskFaces", node=fit, exists=True):
             raise FitSkeletonValidationError("已有原版 FaceFitSkeleton，拒绝覆盖其引导曲线")
-        if (c.ls("FitEyeBall", long=True, type="transform")
+        if not upgrading and (c.ls("FitEyeBall", long=True, type="transform")
                 or c.ls("FitEyeBallLeft", long=True, type="transform")):
             raise FitSkeletonValidationError("眼球 Fit 已建立，不能重置 Mask")
         for name in ("FaceGroup", "FaceFitSkeleton"):
@@ -198,6 +199,8 @@ class MayaFacePreHost(MayaFaceHost):
             if not c.attributeQuery("advPyMaskFaces", node=fit, exists=True):
                 c.addAttr(fit, longName="advPyMaskFaces", dataType="string")
             c.setAttr(fit + ".advPyMaskFaces", payload, type="string")
+            if upgrading:
+                c.setAttr(fit + ".advPyFitUpgradePending", False)
             if c.attributeQuery("Face", node=fit, exists=True):
                 existing = c.getAttr(fit + ".Face") or ""
                 if existing and (c.ls(existing, long=True,

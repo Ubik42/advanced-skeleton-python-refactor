@@ -7,9 +7,11 @@ from .maya_face_bs_layers import MayaFaceBSLayersMixin
 from .maya_face_bs_cleanup import MayaFaceBSCleanupMixin
 from .maya_face_bs_mixed import MayaFaceBSMixedMixin
 from .maya_face_bs_attachers import MayaFaceBSAttachersMixin
+from .maya_face_bs_edit import MayaFaceBSEditMixin
+from .maya_face_bs_targets import MayaFaceBSTargetsMixin
 
 
-class MayaFaceBSConversionMixin(MayaFaceBSSamplingMixin, MayaFaceBSLayersMixin,
+class MayaFaceBSConversionMixin(MayaFaceBSEditMixin, MayaFaceBSTargetsMixin, MayaFaceBSSamplingMixin, MayaFaceBSLayersMixin,
                                 MayaFaceBSCleanupMixin, MayaFaceBSMixedMixin, MayaFaceBSAttachersMixin):
     @staticmethod
     def _original_restore_leaf(node):

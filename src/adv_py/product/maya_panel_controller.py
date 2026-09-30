@@ -2176,6 +2176,18 @@ class MayaPanelController:
         if action=="brow": return BuildFaceBrow(host).apply()
         return EditFaceCage(host).apply(action,smooth_passes or 0)
 
+    def face_original_wrinkles(self, namespace: str, action: str, **options):
+        from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
+        from adv_py.application.face_wrinkles import EditOriginalFaceWrinkles
+        return EditOriginalFaceWrinkles(MayaOriginalFaceBuildHost(
+            namespace=None if namespace == ":" else namespace)).apply(action, **options)
+
+    def face_upgrade_original_fit(self, namespace: str):
+        from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
+        from adv_py.application.face_original_build import UpgradeOriginalFaceFit
+        return UpgradeOriginalFaceFit(MayaOriginalFaceBuildHost(
+            namespace=None if namespace == ":" else namespace)).apply()
+
     def face_original_build(self, namespace: str, *, step=None, keep=None,
                             manually_restore=False, cage_smooth=None, jaw_smooth=50,
                             lip_falloff=None):
@@ -2511,6 +2523,18 @@ class MayaPanelController:
         return BuildFaceEyeRig(MayaFaceEyeHost(
             namespace=None if namespace == ":" else namespace)).apply(
             head_joint, right_eye, left_eye)
+
+    def face_original_blendshape_targets(self, namespace: str):
+        from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
+        from adv_py.application.face_conversion import EditOriginalFaceBlendShapes
+        return EditOriginalFaceBlendShapes(MayaOriginalFaceBuildHost(
+            namespace=None if namespace == ":" else namespace)).targets()
+
+    def face_edit_original_blendshapes(self, namespace: str, action: str, **options):
+        from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
+        from adv_py.application.face_conversion import EditOriginalFaceBlendShapes
+        return EditOriginalFaceBlendShapes(MayaOriginalFaceBuildHost(
+            namespace=None if namespace == ":" else namespace)).apply(action, **options)
 
     def face_convert_original_blendshapes(self, namespace: str, *, keep_joints=False, keep_targets=False):
         from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost

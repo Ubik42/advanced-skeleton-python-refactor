@@ -90,6 +90,11 @@ _NODE_ARGS |= {'polyMergeVertex', 'polyNormal', 'loft'}
 _NODE_RESULTS |= {'polyCreateFacet', 'polyMergeVertex', 'polyNormal', 'loft', 'createDisplayLayer'}
 _CREATE |= {'polyCreateFacet', 'polyMergeVertex', 'polyNormal', 'loft', 'createDisplayLayer'}
 
+# Original Wrinkle UV-space ribbons and rendering geometry.
+_NODE_ARGS |= {'polyProjection','polyCopyUV','offsetCurve','nurbsToPoly','extendSurface'}
+_NODE_RESULTS |= {'polyProjection','polyCopyUV','offsetCurve','nurbsToPoly','extendSurface'}
+_CREATE |= {'polyProjection','polyCopyUV','offsetCurve','nurbsToPoly','extendSurface'}
+
 class MayaCharacterCommands:
     def __init__(self,commands,namespace):
         self.identity=CharacterIdentity(namespace)

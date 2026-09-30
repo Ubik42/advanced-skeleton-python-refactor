@@ -40,3 +40,15 @@ class BuildOriginalFaceStep:
                 cage_smooth=cage_smooth, jaw_smooth=jaw_smooth, lip_falloff=lip_falloff)
             self.host.complete_original_face_build_step(step)
         return result
+
+
+class UpgradeOriginalFaceFit:
+    def __init__(self, host):
+        self.host = host
+
+    def apply(self):
+        source = self.host.capture_original_face_fit_upgrade()
+        if source is None:
+            return {"upgraded": False, "requires_pre_fit": False}
+        with self.host.transaction("升级旧版原版 Face Fit"):
+            return self.host.upgrade_original_face_fit(source)
