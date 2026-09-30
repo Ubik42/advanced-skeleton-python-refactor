@@ -346,9 +346,9 @@ def plan_fit_part_joints(
             raise FitPartValidationError("Fit 关节缺少 twistJoints 元数据："
                                          + start.source_joint)
         count = source.twist_joints or 0
-        if count < 0 or count > 10:
-            raise FitPartValidationError("Fit twistJoints 必须在 0 到 10 之间："
-                                         + start.source_joint)
+        if count < 0:
+            raise FitPartValidationError("Fit twistJoints 不能小于 0："
+                                     + start.source_joint)
         if count == 0:
             continue
         profile_child = _source_rla_child(

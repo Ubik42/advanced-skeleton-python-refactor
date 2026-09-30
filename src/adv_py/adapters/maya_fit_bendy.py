@@ -465,14 +465,14 @@ class MayaFitBendyMixin:
         self._require_transaction()
         c = self._cmds
         poses = {}
-        for (name, output, offset, constraint, scale_pick,
-             scale_mult_name, micro_scale_names) in zip(
+        for index, (name, output, offset, constraint, scale_pick,
+             scale_mult_name, micro_scale_names) in enumerate(zip(
                 spec.deform_names, spec.micro_output_names,
                 spec.micro_offset_names,
                 spec.deform_constraint_names,
                 spec.deform_scale_pick_names,
                 spec.deform_scale_mult_names,
-                spec.deform_micro_scale_names):
+                spec.deform_micro_scale_names)):
             joint = (c.ls(name, long=True, type="joint") or [])[0]
             poses[name] = tuple(float(value) for value in c.xform(
                 joint, query=True, worldSpace=True, matrix=True))
@@ -524,11 +524,18 @@ class MayaFitBendyMixin:
                               scale_mult + ".input2")
             elif spec.non_opm_additive_micro_scale:
                 c.setAttr(scale_mult + ".input2X", 1.0)
+                scale_add = spec.micro_scale_names[index][0]
                 for axis in "YZ":
-                    c.connectAttr(offset + ".scale" + axis,
+                    old_source = c.connectionInfo(
+                        offset + ".scale" + axis,
+                        sourceFromDestination=True)
+                    if old_source:
+                        c.disconnectAttr(old_source,
+                                         offset + ".scale" + axis)
+                    c.connectAttr(scale_add + ".output3D" + axis.lower(),
                                   scale_mult + ".input2" + axis)
-                c.connectAttr(scale_mult + ".outputX",
-                              offset + ".scaleX")
+                c.connectAttr(scale_mult + ".output",
+                              offset + ".scale")
             else:
                 c.connectAttr(offset + ".scale",
                               scale_mult + ".input2")
@@ -574,14 +581,14 @@ class MayaFitBendyMixin:
 
     def capture_fit_bendy_deform(self, spec: FitBendyChainSpec) -> bool:
         c = self._cmds
-        for (name, output, offset, constraint, scale_pick,
-             scale_mult, micro_scale_names) in zip(
+        for index, (name, output, offset, constraint, scale_pick,
+             scale_mult, micro_scale_names) in enumerate(zip(
                 spec.deform_names, spec.micro_output_names,
                 spec.micro_offset_names,
                 spec.deform_constraint_names,
                 spec.deform_scale_pick_names,
                 spec.deform_scale_mult_names,
-                spec.deform_micro_scale_names):
+                spec.deform_micro_scale_names)):
             joints = c.ls(name, long=True, type="joint") or []
             drivers = c.ls(output, long=True, type="transform") or []
             if (len(joints) != 1 or len(drivers) != 1
@@ -606,9 +613,10 @@ class MayaFitBendyMixin:
                             offset + ".scale"))):
                 return False
             if spec.non_opm_additive_micro_scale:
-                if (c.connectionInfo(offset + ".scaleX",
+                scale_add = spec.micro_scale_names[index][0]
+                if (c.connectionInfo(offset + ".scale",
                                      sourceFromDestination=True)
-                        != scale_mult + ".outputX"
+                        != scale_mult + ".output"
                         or c.connectionInfo(scale_mult + ".input2X",
                                             sourceFromDestination=True)
                         or abs(float(c.getAttr(scale_mult + ".input2X"))
@@ -616,7 +624,7 @@ class MayaFitBendyMixin:
                         or any(c.connectionInfo(
                             scale_mult + ".input2" + axis,
                             sourceFromDestination=True)
-                            != offset + ".scale" + axis
+                            != scale_add + ".output3D" + axis.lower()
                             for axis in "YZ")):
                     return False
             if (spec.micro_local_scale
@@ -2072,13 +2080,20 @@ class MayaFitBendyMixin:
                     != master + ".microVis"):
                 return False
             if spec.micro_yz_scale_only:
-                if (c.connectionInfo(offset + ".scaleX",
-                                     sourceFromDestination=True)
-                        or any(c.connectionInfo(
-                            offset + ".scale" + axis.upper(),
-                            sourceFromDestination=True)
-                            != scale_add + ".output3D" + axis
-                            for axis in "yz")):
+                if spec.non_opm_additive_micro_scale and c.objExists(
+                        spec.deform_scale_mult_names[index]):
+                    if (c.connectionInfo(offset + ".scale",
+                                         sourceFromDestination=True)
+                            != (spec.deform_scale_mult_names[index]
+                                + ".output")):
+                        return False
+                elif (c.connectionInfo(offset + ".scaleX",
+                                       sourceFromDestination=True)
+                      or any(c.connectionInfo(
+                          offset + ".scale" + axis.upper(),
+                          sourceFromDestination=True)
+                          != scale_add + ".output3D" + axis
+                          for axis in "yz")):
                     return False
             if spec.micro_matrix_aim:
                 if (c.connectionInfo(second + ".inputRotateX",
