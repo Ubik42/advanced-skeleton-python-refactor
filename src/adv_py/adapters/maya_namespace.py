@@ -64,6 +64,9 @@ _NODE_ARGS |= {'polyDelFacet', 'polyExtrudeFacet'}
 _NODE_RESULTS |= {'polyExtrudeFacet'}
 _CREATE |= {'polyExtrudeFacet'}
 
+_NODE_ARGS |= {'mute'}
+_NODE_RESULTS |= {'mute'}
+_CREATE |= {'mute'}
 _NODE_ARGS |= {'softMod'}
 _NODE_RESULTS |= {'softMod', 'polyDelFacet'}
 _CREATE |= {'softMod', 'polyDelFacet'}
@@ -72,8 +75,8 @@ _CREATE |= {'softMod', 'polyDelFacet'}
 _NODE_ARGS |= {'polyProjectCurve', 'attachCurve', 'reverseCurve', 'rebuildSurface', 'setDrivenKeyframe'}
 _NODE_RESULTS |= {'polyProjectCurve', 'attachCurve', 'reverseCurve', 'rebuildCurve', 'rebuildSurface'}
 _CREATE |= {'polyProjectCurve', 'attachCurve', 'reverseCurve', 'rebuildCurve', 'rebuildSurface', 'setDrivenKeyframe'}
-_NODE_RESULTS |= {'nurbsPlane'}
-_CREATE |= {'nurbsPlane'}
+_NODE_RESULTS |= {'nurbsPlane', 'cylinder'}
+_CREATE |= {'nurbsPlane', 'cylinder'}
 
 class MayaCharacterCommands:
     def __init__(self,commands,namespace):

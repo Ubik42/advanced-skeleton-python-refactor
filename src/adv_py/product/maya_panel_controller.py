@@ -2166,6 +2166,19 @@ class MayaPanelController:
         return BuildFaceLip(MayaFaceLipHost(
             namespace=None if namespace == ":" else namespace)).apply()
 
+    def face_jaw(self,namespace: str,action: str,smooth_iterations: int=50):
+        from adv_py.adapters.maya_face_jaw import MayaFaceJawHost
+        from adv_py.application.face_jaw import BuildFaceJaw,UpdateFaceJawWeights,FinishFaceJaw,FitFaceJawPose
+        host=MayaFaceJawHost(namespace=None if namespace==":" else namespace)
+        operations={"build":BuildFaceJaw,"update":UpdateFaceJawWeights,"finish":FinishFaceJaw}
+        if action in operations: return operations[action](host).apply(smooth_iterations)
+        return FitFaceJawPose(host).apply(action,smooth_iterations)
+
+    def face_teeth_record(self,namespace: str,part: str):
+        from adv_py.adapters.maya_face_jaw import MayaFaceJawHost
+        from adv_py.application.face_jaw import RecordFaceTeeth
+        return RecordFaceTeeth(MayaFaceJawHost(namespace=None if namespace==":" else namespace)).apply(part)
+
     def face_mouth_open_design(self, namespace: str):
         from adv_py.adapters.maya_face_mouth_open import MayaFaceMouthOpenHost
         from adv_py.application.face_mouth_open import CreateFaceMouthOpenDesign

@@ -3,8 +3,9 @@ from adv_py.core.face_fit_markers import MARKER_SHADERS, CENTER_MARKERS
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from .maya_face_base import MayaFaceBaseMixin
 from .maya_face_pre import MayaFacePreHost
+from .maya_face_body_jaw import MayaFaceBodyJawMixin
 
-class MayaFaceFitMarkersHost(MayaFaceBaseMixin,MayaFacePreHost):
+class MayaFaceFitMarkersHost(MayaFaceBodyJawMixin,MayaFaceBaseMixin,MayaFacePreHost):
     def _marker_context(self,section):
         c=self._cmds
         fit=self._fit(required=True)
@@ -35,10 +36,11 @@ class MayaFaceFitMarkersHost(MayaFaceBaseMixin,MayaFacePreHost):
         self._require_transaction()
         if section not in MARKER_SHADERS: raise ValueError("原版球形 Fit 类型无效")
         c=self._cmds
-        fit,scale,suffix,holder=self._marker_context(section)
         if section=="Jaw" and c.objExists("FKJaw_M"):
-            # Original first removes the body Jaw module. Never leave two Jaw drivers.
-            raise FitSkeletonValidationError("先移除 Body Jaw 模块，再创建 Face Jaw Fit")
+            previous=tuple(c.ls(selection=True,long=True,flatten=True) or [])
+            self.remove_original_body_jaw_for_face()
+            c.select(previous,replace=True) if previous else c.select(clear=True)
+        fit,scale,suffix,holder=self._marker_context(section)
         selected=tuple(c.ls(selection=True,long=True,flatten=True) or [])
         if not selected or any("." not in item for item in selected):
             raise FitSkeletonValidationError("请选择面部网格边或顶点")

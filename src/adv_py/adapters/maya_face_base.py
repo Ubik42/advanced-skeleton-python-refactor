@@ -157,6 +157,15 @@ class MayaFaceBaseMixin:
         self._require_transaction()
         c=self._cmds
         self.ensure_face_shaders()
+        # asFaceBuild source 31155: Multi Skin Clusters enables OPM before building.
+        fit=self._fit(required=True)
+        if c.objExists(fit+".MultiSkinClusters") and c.getAttr(fit+".MultiSkinClusters"):
+            plug=fit+".useOffsetParentMatrix"
+            if not c.objExists(plug): c.addAttr(fit,longName="useOffsetParentMatrix",attributeType="bool")
+            locked=c.getAttr(plug,lock=True)
+            c.setAttr(plug,lock=False)
+            c.setAttr(plug,True)
+            c.setAttr(plug,lock=locked)
         group=self._face_base_transform("FaceGroup")
         motions=c.ls("FaceMotionSystem",long=True,type="transform") or []
         if motions:
@@ -209,4 +218,33 @@ class MayaFaceBaseMixin:
         c.sets("FaceBuildingSets",add="FaceAllSet")
         if c.objExists("Sets"):
             c.sets(("FaceAllSet","FaceControlSet","FaceAreas"),add="Sets")
+        self.ensure_original_face_orientation()
         return self._face_base_transform("FaceMotionSystem")
+
+    def ensure_original_face_orientation(self):
+        """Original preparation cylinder, source 31596–31617."""
+        self._require_transaction()
+        c=self._cmds
+        if not c.objExists("FaceBuildInProgressHidden"):
+            raise FitSkeletonValidationError("Face 定向面缺少构建隐藏分组")
+        if not c.objExists("FaceControlOrient"):
+            for shape in ("FaceFitSkeletonCircleShape","FaceFitSkeletonHeightShape"):
+                if not c.objExists(shape): raise FitSkeletonValidationError("Face 定向面缺少 Fit 引导曲线："+shape)
+            self.ensure_face_fit_shaders()
+            c.cylinder(name="FaceControlOrient",pivot=(0,0,0),axis=(0,1,0),startSweep=0,endSweep=180,
+                radius=1,heightRatio=2,degree=3,useTolerance=False,tolerance=.01,sections=8,spans=1,
+                constructionHistory=False)
+            c.sets("FaceControlOrient",edit=True,forceElement="asRedSG")
+            c.scale(.5,.5,.5,"FaceControlOrient.cv[*][*]",relative=True,pivot=(0,0,0))
+            c.move(0,.5,0,"FaceControlOrient.cv[*][*]",relative=True,objectSpace=True,worldSpaceDistance=True)
+            def position(node): return c.xform(node,query=True,worldSpace=True,translation=True)
+            bottom=position("FaceFitSkeletonCircleShape.cv[0]")
+            top=position("FaceFitSkeletonHeightShape.cv[0]")
+            jaw=position("JawPivot") if c.objExists("JawPivot") else position("FaceFitSkeletonCircleShape.cv[5]")
+            nose=position("NoseUnder") if c.objExists("NoseUnder") else position("FaceFitSkeletonCircleShape.cv[6]")
+            c.xform("FaceControlOrient",worldSpace=True,translation=(0,bottom[1],jaw[2]))
+            c.scale(jaw[0]*2,top[1]-bottom[1],(nose[2]-jaw[2])*2,"FaceControlOrient",relative=True)
+        elif c.listRelatives("FaceControlOrient",parent=True): c.parent("FaceControlOrient",world=True)
+        c.parent("FaceControlOrient","FaceBuildInProgressHidden",absolute=True)
+        self._transaction_changed=True
+        return "FaceControlOrient"

@@ -311,7 +311,7 @@ def create_panel(controller: MayaPanelController | None = None):
                              '01 · 目标网格', '02 · 可移植目标资产')),
                     ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit', '03 · Lip Fit', '04 · Face 定位点', '05 · Tongue Fit')),
                     ('Build', ('03 · 控制与变形器',)),
-                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03I · Lip 绑定', '03F · Tongue 绑定', '03G · Lip Falloff', '03H · Regions')),
+                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03I · Lip 绑定', '03J · Jaw 绑定与修形', '03F · Tongue 绑定', '03G · Lip Falloff', '03H · Regions')),
                     ('Skin Layers', ('03a · Face Skin Layers',)),
                     ('Tweaks', ('03A · Face Tweaks',)),
                     ('DeltaMush', ('03B · Face DeltaMush',)),
@@ -1501,6 +1501,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 row.addWidget(self._button(label, record))
                 row.addWidget(self._button("重选 " + label, reselect))
                 form.addRow(row)
+            for label,part in (("记录所选上牙","UpperTeeth"),("记录所选下牙","LowerTeeth")):
+                form.addRow(self._button(label,lambda part=part: self._face_teeth_record(part)))
             self.face_fit_side_status = QtWidgets.QLabel("Fit 编辑侧：右侧")
             row = QtWidgets.QHBoxLayout()
             row.addWidget(self._button("编辑右侧", lambda: self._face_fit_switch_side("Right")))
@@ -1694,7 +1696,18 @@ def create_panel(controller: MayaPanelController | None = None):
 
             group, form = self._group("03I · Lip 绑定", [])
             form.addRow(self._button("建立 Lip Ribbon 与控制驱动",self._face_build_lip))
-            form.addRow(self._button("建立 Mouth Open 修形",self._face_mouth_open_design))
+
+            stack.addWidget(group)
+            self.face_jaw_smooth=QtWidgets.QSpinBox()
+            self.face_jaw_smooth.setRange(0,9999); self.face_jaw_smooth.setValue(50)
+            group, form = self._group("03J · Jaw 绑定与修形", [("平滑迭代",self.face_jaw_smooth)])
+            for label,action in (("建立 Jaw 权重层与 Teeth","build"),("更新 Jaw 曲线边界权重","update"),
+                                 ("完成 Jaw 权重与跟随","finish"),("Jaw Open 修形","open"),
+                                 ("完成 Jaw Open","open_finish"),("Lip Up 修形","lip_up"),
+                                 ("完成 Lip Up","lip_up_finish"),("Lip Down 修形","lip_down"),
+                                 ("完成 Lip Down","lip_down_finish"),("Lip Side 修形","lip_side"),
+                                 ("完成 Lip Side","lip_side_finish")):
+                form.addRow(self._button(label,lambda action=action: self._face_jaw(action)))
             form.addRow(self._button("更新 JawOpenLayer 嘴唇权重",self._face_jaw_lip_weights))
             stack.addWidget(group)
             group, form = self._group("03F · Tongue 绑定", [])
@@ -3808,6 +3821,14 @@ def create_panel(controller: MayaPanelController | None = None):
             result=self.controller.face_lip_build(self._namespace())
             if result is None: return "按原版条件跳过 Lip：缺少 Lip Main Fit"
             return f"已建立 Lip Ribbon、Sticky 与表情驱动：{len(result['controls'])} 个控制器"
+
+        def _face_jaw(self,action):
+            result=self.controller.face_jaw(self._namespace(),action,self.face_jaw_smooth.value())
+            return "Jaw 操作完成："+action if result is not None else "当前没有 Lip 输入，Jaw 阶段已跳过"
+
+        def _face_teeth_record(self,part):
+            values=self.controller.face_teeth_record(self._namespace(),part)
+            return "已记录牙齿输入："+str(len(values))
 
         def _face_mouth_open_design(self):
             self.controller.face_mouth_open_design(self._namespace())
