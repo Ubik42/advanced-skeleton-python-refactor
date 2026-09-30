@@ -102,6 +102,8 @@ class BodyExportJointState:
     scale_sources: tuple[str | None, str | None, str | None]
     segment_scale_compensate: bool | None = None
     inverse_scale_source: str | None = None
+    offset_parent_matrix_source: str | None = None
+    offset_parent_matrix_observed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -583,6 +585,9 @@ def audit_body_export_skeleton(
             state.translation_sources != expected_translate
             or state.rotation_sources != expected_rotate
             or state.scale_sources != expected_scale
+            or (state.offset_parent_matrix_observed
+                and state.offset_parent_matrix_source !=
+                    spec.source_path+'.offsetParentMatrix')
         ):
             issues.append(BodyExportSkeletonIssue(
                 "joint_wiring_mismatch",

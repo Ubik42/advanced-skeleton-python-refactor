@@ -3044,6 +3044,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 inverse_scale_source=(self._cmds.connectionInfo(
                     output + ".inverseScale",
                     sourceFromDestination=True) or None),
+                offset_parent_matrix_source=source(
+                    output+'.offsetParentMatrix'),
+                offset_parent_matrix_observed=True,
             ))
 
         root = plan.root.output_path
@@ -3149,9 +3152,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                       0.,0.,1.,0.,0.,0.,0.,1.)
             for spec in plan.export_skeleton.joints:
                 plug=spec.output_path+'.offsetParentMatrix'
-                if self._cmds.connectionInfo(plug,
-                        sourceFromDestination=True) != (
-                        spec.source_path+'.offsetParentMatrix'):
+                driver=self._cmds.connectionInfo(plug,
+                    sourceFromDestination=True)
+                if driver:
+                    node,attribute=driver.split('.',1)
+                    resolved=self._cmds.ls(node,long=True) or []
+                    if len(resolved)==1:
+                        driver=resolved[0]+'.'+attribute
+                if driver!=spec.source_path+'.offsetParentMatrix':
                     raise FitSkeletonValidationError(
                         'Export Skeleton 的偏移矩阵来源已变化：'
                         + spec.output_path)
