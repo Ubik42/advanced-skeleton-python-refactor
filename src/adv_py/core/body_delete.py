@@ -20,3 +20,4 @@ class BodyDeletePlan:
     face_fit_group_id: str | None = None
     retained_nested_geometry_paths: tuple[str, ...] = ()
     retained_nested_geometry_ids: tuple[str, ...] = ()
+    retained_nested_geometry_world: tuple[tuple[float, ...], ...] = ()

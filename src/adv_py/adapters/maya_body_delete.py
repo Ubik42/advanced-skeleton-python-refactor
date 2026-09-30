@@ -132,7 +132,10 @@ class MayaBodyDeleteMixin:
             tuple(self._delete_uuid(path) for path in owned), sets,
             c.upAxis(query=True, axis=True), face,
             self._delete_uuid(face) if face else None,
-            tuple(nested),tuple(self._delete_uuid(path) for path in nested))
+            tuple(nested),tuple(self._delete_uuid(path) for path in nested),
+            tuple(tuple(float(value) for value in c.xform(
+                path,query=True,worldSpace=True,matrix=True))
+                for path in nested))
 
     def delete_body_advanced(self, plan: BodyDeletePlan) -> None:
         """Port asDeleteAdvanced's unparent, Z-up and Sets removal sequence."""
@@ -150,7 +153,9 @@ class MayaBodyDeleteMixin:
                 plan.face_fit_group_id):
             raise RuntimeError("Delete Adv 执行前 Face Fit 已变化")
         if (len(plan.retained_nested_geometry_paths)
-                != len(plan.retained_nested_geometry_ids)):
+                != len(plan.retained_nested_geometry_ids)
+                or len(plan.retained_nested_geometry_paths)
+                != len(plan.retained_nested_geometry_world)):
             raise RuntimeError('Delete Adv Geometry 用户子树记录不完整')
         for path,identifier in zip(plan.retained_nested_geometry_paths,
                                    plan.retained_nested_geometry_ids):
@@ -163,8 +168,15 @@ class MayaBodyDeleteMixin:
         fit = c.parent(plan.fit, world=True, absolute=True)[0]
         if plan.scene_up_axis == "z":
             self.flip_character_scene_up_axis(fit, "z")
-        for path in plan.retained_nested_geometry_paths:
-            c.parent(path,world=True,absolute=True)
+        for path,matrix in zip(plan.retained_nested_geometry_paths,
+                               plan.retained_nested_geometry_world):
+            moved=c.parent(path,world=True,absolute=True) or []
+            if len(moved)!=1:
+                raise RuntimeError('Delete Adv Geometry 用户子树移动失败：'+path)
+            current=c.xform(moved[0],query=True,worldSpace=True,matrix=True)
+            if (len(current)!=len(matrix) or any(abs(a-b)>1e-5
+                    for a,b in zip(current,matrix))):
+                raise RuntimeError('Delete Adv 改变了用户模型的世界姿态：'+path)
         if plan.geometry_children:
             c.parent(*plan.geometry_children, world=True, absolute=True)
         # AllSet is the build's authoritative ownership list. Query it again
