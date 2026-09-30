@@ -3599,10 +3599,25 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             for source, target in created:
                 matrix = self._cmds.xform(source, query=True,
                                           worldSpace=True, matrix=True)
+                if len(matrix) != 16:
+                    raise FitSkeletonValidationError(
+                        'FBX 额外影响关节世界矩阵不完整：' + source)
                 c.xform(target, worldSpace=True, matrix=matrix)
                 for kind in ("translate", "rotate", "scale"):
                     c.setKeyframe(target, attribute=kind, time=frame,
                                   inTangentType="linear", outTangentType="linear")
+        for frame in frames:
+            c.currentTime(frame, edit=True, update=True)
+            for source, target in created:
+                before = self._cmds.xform(source, query=True,
+                                           worldSpace=True, matrix=True)
+                after = c.xform(target, query=True,
+                                worldSpace=True, matrix=True)
+                if (len(before) != 16 or len(after) != 16
+                        or any(abs(a-b) > 1e-5 for a,b in zip(before,after))):
+                    raise FitSkeletonValidationError(
+                        'FBX 额外影响关节动画与来源不一致：'
+                        + source + ' @ ' + str(frame))
         return tuple(target for _, target in created)
 
     def _copy_fbx_skinned_meshes(self, sources, bind_frame, *,
@@ -3711,15 +3726,69 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 compound_driver = c.connectionInfo(compound,
                     sourceFromDestination=True)
                 if compound_driver:
+                    compound_value = c.getAttr(compound)[0]
+                    if c.getAttr(compound, lock=True):
+                        c.setAttr(compound, lock=False)
                     c.disconnectAttr(compound_driver, compound)
+                    c.setAttr(compound, *compound_value)
                 for axis in 'XYZ':
                     plug = clone + '.' + channel + axis
+                    value = c.getAttr(plug)
                     if c.getAttr(plug, lock=True):
                         c.setAttr(plug, lock=False)
                     driver = c.connectionInfo(plug,
                         sourceFromDestination=True)
                     if driver:
                         c.disconnectAttr(driver, plug)
+                        c.setAttr(plug, value)
+            for channel in ('offsetParentMatrix', 'rotateAxis',
+                            'rotatePivot', 'scalePivot',
+                            'rotatePivotTranslate', 'scalePivotTranslate',
+                            'shear'):
+                plug = clone + '.' + channel
+                if not c.objExists(plug):
+                    continue
+                driver = c.connectionInfo(plug,
+                    sourceFromDestination=True)
+                if driver:
+                    value = c.getAttr(plug)
+                    if c.getAttr(plug, lock=True):
+                        c.setAttr(plug, lock=False)
+                    c.disconnectAttr(driver, plug)
+                    if channel == 'offsetParentMatrix':
+                        if len(value) == 1 and isinstance(value[0],
+                                (tuple, list)):
+                            value = value[0]
+                        if len(value) != 16:
+                            raise FitSkeletonValidationError(
+                                'FBX 临时网格偏移矩阵不完整：' + mesh_name)
+                        c.setAttr(plug, *value, type='matrix')
+                    else:
+                        c.setAttr(plug, *value[0])
+                if channel == 'offsetParentMatrix':
+                    continue
+                for component in ('XY', 'XZ', 'YZ') if channel == 'shear' else 'XYZ':
+                    child = plug + component
+                    if not c.objExists(child):
+                        continue
+                    value = c.getAttr(child)
+                    if c.getAttr(child, lock=True):
+                        c.setAttr(child, lock=False)
+                    child_driver = c.connectionInfo(child,
+                        sourceFromDestination=True)
+                    if child_driver:
+                        c.disconnectAttr(child_driver, child)
+                        c.setAttr(child, value)
+            for channel in ('rotateOrder', 'inheritsTransform'):
+                plug = clone + '.' + channel
+                value = c.getAttr(plug)
+                if c.getAttr(plug, lock=True):
+                    c.setAttr(plug, lock=False)
+                driver = c.connectionInfo(plug,
+                    sourceFromDestination=True)
+                if driver:
+                    c.disconnectAttr(driver, plug)
+                    c.setAttr(plug, value)
             c.delete(clone, constructionHistory=True)
             clone_shapes = c.listRelatives(clone, shapes=True,
                 noIntermediate=True, fullPath=True, type="mesh") or []
