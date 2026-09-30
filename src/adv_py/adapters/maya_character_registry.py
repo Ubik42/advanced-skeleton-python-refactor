@@ -372,27 +372,38 @@ class MayaCharacterRegistryMixin:
             if center_x < -1e-6:
                 bendy_negative_right.add(control)
         return GenericFkFeaturePolicy(
-            frozenset(scale), frozenset(compensated),
-            frozenset(globally_driven), aim_sources,
-            follower_sources, frozenset(independent),
-            frozenset(twist_rewired), frozenset(bendy_scales),
-            bendy_aim_follow, frozenset(bendy_start_control),
-            frozenset(bendy_child_control), frozenset(bendy_untwist),
-            frozenset(bendy_end_matrix), frozenset(bendy_oriented),
-            frozenset(bendy_negative_right),
-            frozenset(bendy_micro_matrix),
-            frozenset(bendy_base_twist),
-            frozenset(bendy_micro_scale),
-            tuple(bendy_counts),
-            frozenset(bendy_yz_scale),
-            frozenset(bendy_up_twist),
-            frozenset(bendy_blended_up),
-            frozenset(bendy_legacy_simple),
-            frozenset(bendy_legacy_twist_outputs),
-            frozenset(bendy_master_circular),
-            frozenset(bendy_legacy_start_icon),
-            frozenset(bendy_parented_end),
-            frozenset(bendy_legacy_circular))
+            scale_controls=frozenset(scale),
+            compensated_controls=frozenset(compensated),
+            global_controls=frozenset(globally_driven),
+            aim_sources=aim_sources,
+            follower_sources=follower_sources,
+            independent_controls=frozenset(independent),
+            twist_rewired_sources=frozenset(twist_rewired),
+            bendy_scale_controls=frozenset(bendy_scales),
+            bendy_aim_follow_controls=bendy_aim_follow,
+            bendy_start_control_sources=frozenset(bendy_start_control),
+            bendy_child_control_sources=frozenset(bendy_child_control),
+            bendy_untwist_controls=frozenset(bendy_untwist),
+            bendy_end_matrix_controls=frozenset(bendy_end_matrix),
+            bendy_oriented_controls=frozenset(bendy_oriented),
+            bendy_negative_right_axes=frozenset(bendy_negative_right),
+            bendy_micro_matrix_controls=frozenset(bendy_micro_matrix),
+            bendy_base_twist_controls=frozenset(bendy_base_twist),
+            bendy_micro_scale_controls=frozenset(bendy_micro_scale),
+            bendy_control_counts=tuple(bendy_counts),
+            bendy_yz_scale_controls=frozenset(bendy_yz_scale),
+            bendy_up_twist_controls=frozenset(bendy_up_twist),
+            bendy_blended_up_controls=frozenset(bendy_blended_up),
+            bendy_legacy_simple_controls=frozenset(bendy_legacy_simple),
+            bendy_legacy_twist_outputs=frozenset(
+                bendy_legacy_twist_outputs),
+            bendy_master_circular_controls=frozenset(
+                bendy_master_circular),
+            bendy_legacy_start_icon_controls=frozenset(
+                bendy_legacy_start_icon),
+            bendy_parented_end_controls=frozenset(bendy_parented_end),
+            bendy_legacy_circular_controls=frozenset(
+                bendy_legacy_circular))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext
