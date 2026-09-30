@@ -113,12 +113,15 @@ class MayaCharacterRegistryMixin:
                 if len(outputs) != 1 or not outputs[0].endswith(suffix):
                     return []
                 return c.ls(outputs[0].rsplit('.', 1)[0], long=True) or []
-            if (len(resolved_target(point_targets)) != 1
-                    or resolved_target(point_targets)
-                    != resolved_target(orient_targets)
-                    or len(resolved_output(point_outputs, '.translateX')) != 1
-                    or resolved_output(point_outputs, '.translateX')
-                    != resolved_output(orient_outputs, '.rotateX')):
+            point_sources = resolved_target(point_targets)
+            orient_sources = resolved_target(orient_targets)
+            point_driven = resolved_output(point_outputs, '.translateX')
+            orient_driven = resolved_output(orient_outputs, '.rotateX')
+            if (len(point_sources) != 1
+                    or point_sources != orient_sources
+                    or len(point_driven) != 1
+                    or point_driven != orient_driven
+                    or c.nodeType(point_driven[0]) != 'joint'):
                 raise CharacterRegistryError(
                     'FK 位置约束与朝向约束驱动链不一致：' + point_name)
             return True
@@ -134,6 +137,14 @@ class MayaCharacterRegistryMixin:
             pelvis_point[0], query=True, targetList=True) or []
         if len(pelvis_targets) != 1:
             raise CharacterRegistryError('Torso Root 位置来源不唯一')
+        pelvis_outputs = c.listConnections(
+            pelvis_point[0] + '.constraintTranslateX',
+            source=False, destination=True, plugs=True) or []
+        if (len(pelvis_outputs) != 1
+                or not pelvis_outputs[0].endswith('.translateX')
+                or (c.ls(pelvis_outputs[0].rsplit('.', 1)[0],
+                         long=True) or []) != [registration.body_root]):
+            raise CharacterRegistryError('Torso Root 位置目标不是 Body 根')
         pelvis_source = c.ls(pelvis_targets[0], long=True) or []
         root_fkx = by_leaf.get('AdvPy_RootFKX', ())
         root_control = by_leaf.get('AdvPy_TorsoRoot_MFK', ())

@@ -11,7 +11,7 @@ from .body_limb_controls import (
 )
 from .body_skeleton import BodySkeletonSnapshot
 from .body_spine import BodySpinePlan, with_spine_ik
-from .body_limb_mechanisms import BodyLimbMechanismPlan
+from .body_limb_mechanisms import BodyLimbMechanismPlan, BodyLimbMechanismRole
 from .body_limb_stretch import BodyLimbStretchPlan
 from .fit_settings import FitSkeletonValidationError
 from .body_description import BodyAxialDescription
@@ -380,7 +380,7 @@ def plan_body_torso(
                 # suppress the controller's positional animation. The FK
                 # offset follows the torso frame above; only the IK receiver
                 # needs a separate origin attachment.
-                if (spec.role.value == "fk"
+                if (spec.role is BodyLimbMechanismRole.FK
                         and offsets[0].translation_constraint_name is not None):
                     continue
                 attachments.append(BodySpaceAttachment(
