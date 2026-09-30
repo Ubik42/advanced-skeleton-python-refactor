@@ -30,6 +30,7 @@ from adv_py.core.fit_part_twist import (
     plan_standard_fit_part_rotation_inputs,
 )
 from adv_py.core.body_torso import audit_body_torso
+from adv_py.core.body_spine import BodySpinePlan
 from adv_py.core.body_limb_controls import audit_body_limb_fk_controls
 from adv_py.core.body_leg_controls import terminal_toes_end_control_enabled
 from adv_py.core.body_leg_blend import audit_body_leg_blend
@@ -301,7 +302,7 @@ def _with_inbetween_fk_sources(
     if plan.torso is not None:
         torso_controls = update(plan.torso.torso.controls)
         spine = plan.torso.torso.spine
-        if spine is not None:
+        if isinstance(spine, BodySpinePlan):
             by_control = {control.control_path:
                           (control.source_override_path
                            or control.sub_control_path
@@ -356,7 +357,7 @@ def _with_wheel_fk_sources(
     if plan.torso is not None:
         torso_controls = update(plan.torso.torso.controls)
         spine = plan.torso.torso.spine
-        if spine is not None:
+        if isinstance(spine, BodySpinePlan):
             by_control = {control.control_path:
                           (control.source_override_path
                            or control.sub_control_path
