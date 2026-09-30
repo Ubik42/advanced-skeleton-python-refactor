@@ -3397,8 +3397,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             mesh_name = mesh.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
             clone = c.rename(clone, (":" if namespace_free else "")
                              + mesh_name)
-            if c.getAttr(clone + ".visibility", settable=True):
-                c.setAttr(clone + ".visibility", True)
+            visible = clone + ".visibility"
+            if c.getAttr(visible, lock=True):
+                c.setAttr(visible, lock=False)
+            visibility_input = c.connectionInfo(
+                visible, sourceFromDestination=True)
+            if visibility_input:
+                c.disconnectAttr(visibility_input, visible)
+            c.setAttr(visible, True)
             if clone.rsplit("|", 1)[-1].rsplit(":", 1)[-1] != mesh_name:
                 raise FitSkeletonValidationError(
                     "FBX 临时网格未能保留源名称：" + mesh_name)
