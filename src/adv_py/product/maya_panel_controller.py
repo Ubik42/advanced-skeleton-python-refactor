@@ -1544,17 +1544,12 @@ class MayaPanelController:
 
     def skin_bind(self, namespace: str, mesh: str,
                   influences: tuple[str, ...], skin: str) -> int:
+        from adv_py.application.skin_bind import smooth_bind_arguments
+
         host = self._host(namespace)
         options = host.read_body_smooth_bind_options()
         result = BindSkin(host).apply(mesh, influences,
-            skin_name=skin,
-            maximum_influences=options.maximum_influences,
-            maintain_maximum_influences=options.maintain_maximum_influences,
-            bind_method=options.bind_method,
-            normalization=options.normalization,
-            skinning_method=options.skinning_method,
-            remove_unused_influences=options.remove_unused_influences,
-            weight_distribution=options.weight_distribution)
+            skin_name=skin, **smooth_bind_arguments(options))
         return result.plan.input_state.vertex_count
 
     def skinning_select_deform_joints(self, namespace: str) -> int:

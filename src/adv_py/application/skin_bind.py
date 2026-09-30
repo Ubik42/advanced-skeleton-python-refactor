@@ -173,16 +173,8 @@ def bind_mesh_batch_in_transaction(
             or not isinstance(preferences, SmoothBindPreferences)):
         raise FitSkeletonValidationError("批量 Skin Bind 输入无效")
     binder = BindSkin(host)
-    options = dict(
-        maximum_influences=(preferences.maximum_influences
-            if maximum_influences is None else maximum_influences),
-        maintain_maximum_influences=preferences.maintain_maximum_influences,
-        bind_method=preferences.bind_method,
-        normalization=preferences.normalization,
-        skinning_method=preferences.skinning_method,
-        remove_unused_influences=preferences.remove_unused_influences,
-        weight_distribution=preferences.weight_distribution,
-    )
+    options = smooth_bind_arguments(preferences,
+        maximum_influences=maximum_influences)
     plans = tuple(binder.plan(mesh, influences, skin_name=name, **options)
         for mesh, name in zip(meshes, skin_names))
     for item in plans:
@@ -221,3 +213,23 @@ def bind_mesh_batch_in_transaction(
         if len(sources) != 1:
             raise RuntimeError("多网格 Geodesic 没有共享体素求解节点")
     return tuple(results)
+
+
+def smooth_bind_arguments(
+    preferences: SmoothBindPreferences,
+    *,
+    maximum_influences: int | None = None,
+) -> dict[str, object]:
+    """Translate Maya's current bind choices for every Python bind entry."""
+    if not isinstance(preferences, SmoothBindPreferences):
+        raise FitSkeletonValidationError("Maya Smooth Bind 选项快照无效")
+    return dict(
+        maximum_influences=(preferences.maximum_influences
+            if maximum_influences is None else maximum_influences),
+        maintain_maximum_influences=preferences.maintain_maximum_influences,
+        bind_method=preferences.bind_method,
+        normalization=preferences.normalization,
+        skinning_method=preferences.skinning_method,
+        remove_unused_influences=preferences.remove_unused_influences,
+        weight_distribution=preferences.weight_distribution,
+    )
