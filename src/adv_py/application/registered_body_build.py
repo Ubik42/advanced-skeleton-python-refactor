@@ -820,6 +820,9 @@ class BuildRegisteredBodyCharacter:
                     if _generic_fk_policy is not None else None),
                 hand_fkx_joint_names=(
                     _generic_fk_policy.hand_fkx_joint_names
+                    if _generic_fk_policy is not None else None),
+                standard_fk_independent_controls=(
+                    _generic_fk_policy.standard_fk_independent_controls
                     if _generic_fk_policy is not None else None))
             if not use_fit_part_hierarchy:
                 BuildFitPartScaleDrivers(joined).apply_terminal_only(

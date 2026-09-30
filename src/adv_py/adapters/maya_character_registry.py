@@ -24,6 +24,15 @@ class MayaCharacterRegistryMixin:
                                .rsplit(':', 1)[-1], []).append(node.path)
         standard_fkx_joints = set()
         hand_fkx_joints = set()
+        standard_independent = set()
+        for leaf, offsets in by_leaf.items():
+            if (not leaf.startswith('AdvPy_')
+                    or 'FKOffset' not in leaf):
+                continue
+            controls = by_leaf.get(leaf.replace('FKOffset', 'FK'), ())
+            if len(offsets) == 1 and len(controls) == 1:
+                if not bool(c.getAttr(offsets[0] + '.inheritsTransform')):
+                    standard_independent.add(controls[0])
         for side in ('R', 'L'):
             for joint in ('Shoulder', 'Elbow', 'Wrist', 'Hip', 'Knee',
                           'Ankle', 'Toes', 'ToesEnd'):
@@ -528,6 +537,8 @@ class MayaCharacterRegistryMixin:
             fkx_joint_controls=frozenset(fkx_joints),
             standard_fkx_joint_names=frozenset(standard_fkx_joints),
             hand_fkx_joint_names=frozenset(hand_fkx_joints),
+            standard_fk_independent_controls=frozenset(
+                standard_independent),
             bendy_aim_follow_controls=bendy_aim_follow,
             bendy_start_control_sources=frozenset(bendy_start_control),
             bendy_child_control_sources=frozenset(bendy_child_control),

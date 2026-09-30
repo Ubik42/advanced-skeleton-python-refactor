@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from adv_py.core.body_character_global import (
@@ -233,6 +233,7 @@ class BuildBodyCharacterRig:
         part_paths: FitPartFinalPaths | None = None,
         standard_fkx_joint_names: frozenset[str] | None = None,
         hand_fkx_joint_names: frozenset[str] | None = None,
+        standard_fk_independent_controls: frozenset[str] | None = None,
     ) -> BodyCharacterRigBuildPlan:
         if type(defer_fit_tweakers) is not bool:
             raise FitSkeletonValidationError("Tweaker 延后构建选项必须是布尔值")
@@ -511,6 +512,20 @@ class BuildBodyCharacterRig:
                 for joint in torso.torso.spline.joints[
                     :len(torso.torso.spline.body_joints)])
             if torso and torso.torso.spline else ())
+        if BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).use_offset_parent_matrix:
+            fk_scale_compensations = tuple(replace(
+                spec,
+                independent_parent=(
+                    standard_fk_independent_controls is None
+                    or spec.control_path in
+                    standard_fk_independent_controls),
+                main_scale_source_path=(
+                    global_control.control_path
+                    if (standard_fk_independent_controls is None
+                        or spec.control_path in
+                        standard_fk_independent_controls)
+                    else None)) for spec in fk_scale_compensations)
         fk_controls = (
             arm.fk_controls.controls + leg.fk_controls.controls
             + (hand.controls.controls if hand else ())
@@ -598,6 +613,7 @@ class BuildBodyCharacterRig:
         part_paths: FitPartFinalPaths | None = None,
         standard_fkx_joint_names: frozenset[str] | None = None,
         hand_fkx_joint_names: frozenset[str] | None = None,
+        standard_fk_independent_controls: frozenset[str] | None = None,
     ) -> BodyCharacterRigBuildResult:
         plan = self.plan(
             container_name,
@@ -618,6 +634,8 @@ class BuildBodyCharacterRig:
             part_paths=part_paths,
             standard_fkx_joint_names=standard_fkx_joint_names,
             hand_fkx_joint_names=hand_fkx_joint_names,
+            standard_fk_independent_controls=(
+                standard_fk_independent_controls),
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
             center_tolerance=center_tolerance,
@@ -648,6 +666,7 @@ class BuildBodyCharacterRig:
                 if plan.hand is not None else None
             )
             torso = self._torso.build_in_transaction(plan.torso) if plan.torso else None
+            self._host.create_body_character_global(plan.global_control)
             BuildBodyFkScaleCompensation(self._host).apply(
                 plan.fk_scale_compensations)
             for control in plan.no_control_paths:
@@ -655,7 +674,6 @@ class BuildBodyCharacterRig:
             if any(not self._host.capture_hidden_body_fk_control(control)
                    for control in plan.no_control_paths):
                 raise RuntimeError("Fit noControl 曲线隐藏状态不一致")
-            self._host.create_body_character_global(plan.global_control)
             for spec in plan.fk_globals:
                 self._host.create_body_fk_global(spec)
             fk_global_states = tuple(
