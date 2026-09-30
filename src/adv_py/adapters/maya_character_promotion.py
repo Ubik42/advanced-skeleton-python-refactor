@@ -33,7 +33,8 @@ def promote(host,staged):
         for node in (shape,shape.rsplit('|',1)[0])}
     retained_mesh_paths.update(row[0] for row in (
         *staged.geometry_container_conversions,
-        *staged.geometry_output_conversions))
+        *staged.geometry_output_conversions,
+        *staged.deformer_input_conversions))
     retained_mesh_paths.update(
         root+suffix for root, identities, _, _ in (staged.authored_geometry or ())
         for suffix, _, _ in identities)

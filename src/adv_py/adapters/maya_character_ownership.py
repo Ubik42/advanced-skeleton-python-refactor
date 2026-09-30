@@ -63,7 +63,8 @@ def audit(host,staged):
             raise CharacterRegistryError('原 Rig 缺少暂存结构节点：'+node)
     external_conversions={row[0] for row in (
         *staged.geometry_container_conversions,
-        *staged.geometry_output_conversions)}
+        *staged.geometry_output_conversions,
+        *staged.deformer_input_conversions)}
     if external_conversions & set(names):
         raise CharacterRegistryError('Geometry 保留单位转换与新 Rig 同名')
     old_nodes,old_edges=_graph(host,names,
@@ -116,13 +117,17 @@ def audit(host,staged):
             if children-set(old_nodes.values())-retained_children:
                 raise CharacterRegistryError('旧 Rig 存在未声明保留的子节点：'+old)
         rows.append((role,a.ls(old,uuid=True)[0],b.ls(new,uuid=True)[0],kind))
-    permitted={pair for row in (*original.skins,*original.extensions,*staged.custom_properties) for pair in row.connections}
+    permitted={pair for row in (*original.skins,*original.deformers,
+        *original.extensions,*staged.custom_properties)
+        for pair in row.connections}
     permitted.update(staged.geometry_container_drivers)
     permitted.update(staged.geometry_container_outputs)
     permitted.update((converter+'.output',destination)
         for converter,destination in staged.geometry_output_conversions)
     permitted.update((upstream,converter+'.input')
         for converter,upstream in staged.geometry_container_conversions)
+    permitted.update((upstream,converter+'.input')
+        for converter,upstream,_ in staged.deformer_input_conversions)
     for curve in original.curves:
         permitted.update((curve.node+'.output',plug) for plug in curve.outputs)
     # Bind-pose records belong to retained skin, not to the rig being deleted.

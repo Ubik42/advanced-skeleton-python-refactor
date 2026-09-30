@@ -203,6 +203,34 @@ def transfer(host,staged):
             if len(paths)==1:
                 node=owned_replacements.get(paths[0],paths[0])
             return live_redirect(node+'.'+attribute)
+        for converter,upstream,_ in staged.deformer_input_conversions:
+            a=host.scene_address(upstream)
+            b=host.scene_address(converter+'.input')
+            x=geometry_source(a)
+            if x!=a:
+                if not c.isConnected(a,b):
+                    raise CharacterRegistryError(
+                        '生产变形器单位转换输入在交接前变化：'+converter)
+                with _writable_connection(c,b):
+                    c.disconnectAttr(a,b)
+                    c.connectAttr(x,b)
+            if not c.isConnected(x,b):
+                raise RuntimeError(
+                    '生产变形器单位转换输入没有完整交接：'+converter)
+        for deformer in old.deformers:
+            for source,destination in deformer.connections:
+                a=host.scene_address(source)
+                b=host.scene_address(destination)
+                x=geometry_source(a)
+                y=geometry_source(b)
+                if (a,b)==(x,y) or c.isConnected(x,y):
+                    continue
+                if not c.isConnected(a,b):
+                    raise CharacterRegistryError(
+                        '生产变形器接线在交接前变化：'+deformer.node)
+                with _writable_connection(c,b,y):
+                    c.disconnectAttr(a,b)
+                    c.connectAttr(x,y)
         for converter,upstream in staged.geometry_container_conversions:
             a=host.scene_address(upstream)
             b=host.scene_address(converter+'.input')
@@ -312,12 +340,22 @@ def verify_retained(host,staged):
         registered.add('|Group|Geometry')
     retained={row.path:row.uuid for row in old.extensions}
     retained.update({row.node:row.uuid for row in old.curves})
+    ownership_replacements={}
+    for role,old_id,new_id,_ in (staged.ownership.nodes
+                                  if staged.ownership is not None else ()):
+        old_paths=c.ls(old_id,long=True) or []
+        if not old_paths and not role.startswith('@'):
+            old_paths=[host.scene_address(role)]
+        if old_paths:
+            ownership_replacements[old_paths[0]]=_by_uuid(c,new_id)
     def physical(plug):
         if not plug:return ''
         node,separator,attr=plug.partition('.')
         if node in registered:node=target.scene_address(node)
         elif node in retained:node=_by_uuid(c,retained[node])
-        else:node=host.scene_address(node)
+        else:
+            source=host.scene_address(node)
+            node=ownership_replacements.get(source,source)
         return node+separator+attr
     def local(plug):return host._cmds.identity.to_local(physical(plug)) if plug else ''
     for curve in staged.original.curves:
@@ -338,6 +376,12 @@ def verify_retained(host,staged):
         for row in staged.original.deformers)
     if captured_deformers!=expected_deformers:
         raise RuntimeError('交接改变了生产变形器参数、连接或网格顺序')
+    actual_conversions=host.capture_character_deformer_conversions(
+        staged.original.deformers)
+    expected_conversions=tuple(sorted((converter,local(upstream),destination)
+        for converter,upstream,destination in staged.deformer_input_conversions))
+    if actual_conversions!=expected_conversions:
+        raise RuntimeError('交接改变了生产变形器单位转换输入')
     for row in staged.original.extensions:
         actual=capture_extension(host,_by_uuid(c,row.uuid))
         expected_parent=(row.parent if row.path.startswith('|Group|Geometry|')

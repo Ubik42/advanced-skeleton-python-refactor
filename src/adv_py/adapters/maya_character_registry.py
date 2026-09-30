@@ -922,6 +922,30 @@ class MayaCharacterRegistryMixin:
         from .maya_character_ownership import audit
         return audit(self,staged)
 
+    def capture_character_deformer_conversions(self,deformers):
+        """Retain exclusive unit conversions on production deformer inputs."""
+        from .maya_character_preservation import _plug
+        c=self._cmds
+        rows=[]
+        for deformer in deformers:
+            for source,destination in deformer.connections:
+                node,attribute=source.split('.',1)
+                if c.nodeType(node)!='unitConversion':
+                    continue
+                if attribute!='output':
+                    raise CharacterRegistryError(
+                        '生产变形器单位转换输出类型不受支持：'+source)
+                upstream=c.connectionInfo(node+'.input',
+                    sourceFromDestination=True)
+                outgoing=c.listConnections(node+'.output',source=False,
+                    destination=True,plugs=True) or []
+                normalized=tuple(sorted(_plug(self,plug) for plug in outgoing))
+                if not upstream or normalized!=(destination,):
+                    raise CharacterRegistryError(
+                        '生产变形器单位转换存在共享输出或缺少输入：'+node)
+                rows.append((node,_plug(self,upstream),destination))
+        return tuple(sorted(set(rows)))
+
     def plan_character_property_transfer(self,original,namespace):
         from .maya_character_properties import plan
         return plan(self,original,namespace)
