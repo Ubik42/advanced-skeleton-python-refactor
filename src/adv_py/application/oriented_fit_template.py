@@ -163,9 +163,12 @@ class BuildOrientedFitTemplate:
         request: FitOrientationRequest,
     ) -> tuple[FitOrientationChange, ...]:
         hierarchy = predict_fit_template_hierarchy(template, container_path)
+        labels = {joint.name: joint.label for joint in template.joints}
         snapshot = FitOrientationSnapshot(
             hierarchy=hierarchy,
             up_axis=up_axis,
+            labels=tuple((node.path, labels[node.short_name])
+                         for node in hierarchy.joints),
             joints=tuple(
                 FitJointOrientationState(
                     joint=node.path,

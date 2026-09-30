@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 from adv_py.core.fit_orientation import FitOrientationSnapshot
+from adv_py.core.fit_hierarchy import fit_build_scale
 from adv_py.core.fit_settings import (
     FitSkeletonSettings,
     FitSkeletonValidationError,
@@ -64,7 +65,7 @@ class PlanFitSymmetry:
         settings = self._host.read_fit_skeleton_settings(
             source.hierarchy.container
         )
-        setting_issues = audit_fit_skeleton_settings(settings, require_complete=True)
+        setting_issues = audit_fit_skeleton_settings(settings, require_complete=False)
         if setting_issues:
             raise FitSkeletonValidationError(
                 "FitSkeleton 镜像分析前设置无效："
@@ -73,7 +74,7 @@ class PlanFitSymmetry:
         instances = expand_fit_symmetry(
             source.hierarchy,
             source.metadata,
-            center_tolerance=center_tolerance * source.fit_scale,
+            center_tolerance=center_tolerance * fit_build_scale(source.hierarchy),
             world_axes_by_joint={
                 state.joint: state.world_axes for state in source.joints
             },

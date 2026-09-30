@@ -258,22 +258,19 @@ class FitOrientationTests(unittest.TestCase):
             ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
         )
 
-    def test_world_plan_rejects_world_match_and_non_y_up_scene(self) -> None:
-        with self.assertRaisesRegex(FitOrientationValidationError, "World Match"):
-            plan_world_fit_orientations(
-                replace(
-                    world_orientation_snapshot(),
-                    axis_configuration=FitOrientationAxisConfiguration(
-                        world_match=True
-                    ),
-                ),
-                FitOrientationRequest(("Root",)),
-            )
-        with self.assertRaisesRegex(FitOrientationValidationError, "Y-Up"):
-            plan_world_fit_orientations(
-                replace(world_orientation_snapshot(), up_axis=FitUpAxis.Z),
-                FitOrientationRequest(("Root",)),
-            )
+    def test_world_plan_preserves_literal_world_axes_in_z_up(self) -> None:
+        request = FitOrientationRequest(("Root",))
+        source = world_orientation_snapshot()
+        y_plan = plan_world_fit_orientations(source, request)
+        z_plan = plan_world_fit_orientations(
+            replace(source, up_axis=FitUpAxis.Z), request)
+        self.assertEqual(z_plan, y_plan)
+        world_match = plan_world_fit_orientations(
+            replace(source, axis_configuration=FitOrientationAxisConfiguration(
+                world_match=True)), request)
+        self.assertEqual(world_match[0].world_match_axes,
+                         (FitLocalDirection.NEGATIVE_Y,
+                          FitLocalDirection.POSITIVE_Z))
 
     def test_applies_fixed_world_orientation_in_one_transaction(self) -> None:
         host = FakeFitOrientationHost(world_orientation_snapshot())

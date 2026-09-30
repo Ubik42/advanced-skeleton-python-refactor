@@ -277,7 +277,9 @@ class FakeBodySkeletonHost:
 
     def capture_fit_orientation(self, container_name):
         del container_name
-        return self.fit_snapshot
+        return replace(self.fit_snapshot, labels=tuple(
+            (node.path, self.labels.get(node.path))
+            for node in self.fit_snapshot.hierarchy.joints))
 
     def read_fit_skeleton_settings(self, container_name):
         del container_name

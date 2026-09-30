@@ -111,6 +111,8 @@ class FakeUpperBodyFitHost:
                 )
                 for node in hierarchy.joints
             ),
+            labels=tuple((node.path, self.labels.get(node.path))
+                         for node in hierarchy.joints),
         )
 
     def read_fit_skeleton_settings(self, container_name):

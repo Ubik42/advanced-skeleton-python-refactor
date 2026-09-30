@@ -182,57 +182,59 @@ class MayaCharacterRegistryMixin:
             raise CharacterRegistryError(
                 'Torso Root 位置来源不属于原控制链')
         root_point_from_fkx = pelvis_source == list(root_fkx)
-        from adv_py.core.body_spline import BodySplinePlan
-        spline_axis = isinstance(registration.spine, BodySplinePlan)
-        axial_point_name = root_namespace + (
-            'AdvPy_SplineFKRootPoint' if spline_axis
-            else 'AdvPy_SpineFKRootPoint')
-        axial_orient_name = root_namespace + (
-            'AdvPy_SplineBaseFKOrient' if spline_axis
-            else 'AdvPy_SpineBaseFKOrient')
-        axial_points = c.ls(axial_point_name, long=True,
-                            type='pointConstraint') or []
-        axial_orients = c.ls(axial_orient_name, long=True,
-                             type='orientConstraint') or []
-        if len(axial_points) != 1 or len(axial_orients) != 1:
-            raise CharacterRegistryError('轴向 FK 起点约束缺失或不唯一')
-        axial_targets = c.pointConstraint(
-            axial_points[0], query=True, targetList=True) or []
-        axial_orient_targets = c.orientConstraint(
-            axial_orients[0], query=True, targetList=True) or []
-        if len(axial_targets) != 1 or len(axial_orient_targets) != 1:
-            raise CharacterRegistryError('轴向 FK 起点来源不唯一')
-        axial_source = c.ls(axial_targets[0], long=True) or []
-        axial_receiver = c.ls(axial_orient_targets[0], long=True) or []
-        axial_control = registration.spine.fk_controls[0]
-        axial_proxy_name = root_namespace + 'AdvPy_Root_M_InbetweenFKX'
-        axial_proxy = c.ls(axial_proxy_name, long=True,
-                           type='joint') or []
-        owned_axial_proxy = (
-            axial_receiver == axial_proxy and len(axial_proxy) == 1
-            and c.objExists(axial_proxy_name + '.advPyInbetweenFkOwner')
-            and c.getAttr(axial_proxy_name + '.advPyInbetweenFkOwner')
-            == 'adv_py.inbetween_fk.v1')
-        if (len(axial_source) != 1 or len(axial_receiver) != 1
-                or not (axial_receiver[0] == axial_control
-                        or axial_receiver[0].startswith(axial_control + '|')
-                        or owned_axial_proxy)
-                or axial_source not in (
-                    [registration.spine.pelvis_control],
-                    axial_receiver)):
-            raise CharacterRegistryError('轴向 FK 起点位置来源不属于原控制链')
-        axial_point_from_receiver = axial_source == axial_receiver
-        for axis in 'XYZ':
-            outputs = c.listConnections(
-                axial_points[0] + '.constraintTranslate' + axis,
-                source=False, destination=True, plugs=True) or []
-            if (len(outputs) != 1
-                    or not outputs[0].endswith('.translate' + axis)
-                    or (c.ls(outputs[0].rsplit('.', 1)[0],
-                             long=True) or [])
-                    != [registration.spine.joints[0].path]):
-                raise CharacterRegistryError(
-                    '轴向 FK 起点位置目标不是 FK 根关节')
+        axial_point_from_receiver = False
+        if registration.spine is not None:
+            from adv_py.core.body_spline import BodySplinePlan
+            spline_axis = isinstance(registration.spine, BodySplinePlan)
+            axial_point_name = root_namespace + (
+                'AdvPy_SplineFKRootPoint' if spline_axis
+                else 'AdvPy_SpineFKRootPoint')
+            axial_orient_name = root_namespace + (
+                'AdvPy_SplineBaseFKOrient' if spline_axis
+                else 'AdvPy_SpineBaseFKOrient')
+            axial_points = c.ls(axial_point_name, long=True,
+                                type='pointConstraint') or []
+            axial_orients = c.ls(axial_orient_name, long=True,
+                                 type='orientConstraint') or []
+            if len(axial_points) != 1 or len(axial_orients) != 1:
+                raise CharacterRegistryError('轴向 FK 起点约束缺失或不唯一')
+            axial_targets = c.pointConstraint(
+                axial_points[0], query=True, targetList=True) or []
+            axial_orient_targets = c.orientConstraint(
+                axial_orients[0], query=True, targetList=True) or []
+            if len(axial_targets) != 1 or len(axial_orient_targets) != 1:
+                raise CharacterRegistryError('轴向 FK 起点来源不唯一')
+            axial_source = c.ls(axial_targets[0], long=True) or []
+            axial_receiver = c.ls(axial_orient_targets[0], long=True) or []
+            axial_control = registration.spine.fk_controls[0]
+            axial_proxy_name = root_namespace + 'AdvPy_Root_M_InbetweenFKX'
+            axial_proxy = c.ls(axial_proxy_name, long=True,
+                               type='joint') or []
+            owned_axial_proxy = (
+                axial_receiver == axial_proxy and len(axial_proxy) == 1
+                and c.objExists(axial_proxy_name + '.advPyInbetweenFkOwner')
+                and c.getAttr(axial_proxy_name + '.advPyInbetweenFkOwner')
+                == 'adv_py.inbetween_fk.v1')
+            if (len(axial_source) != 1 or len(axial_receiver) != 1
+                    or not (axial_receiver[0] == axial_control
+                            or axial_receiver[0].startswith(axial_control + '|')
+                            or owned_axial_proxy)
+                    or axial_source not in (
+                        [registration.spine.pelvis_control],
+                        axial_receiver)):
+                raise CharacterRegistryError('轴向 FK 起点位置来源不属于原控制链')
+            axial_point_from_receiver = axial_source == axial_receiver
+            for axis in 'XYZ':
+                outputs = c.listConnections(
+                    axial_points[0] + '.constraintTranslate' + axis,
+                    source=False, destination=True, plugs=True) or []
+                if (len(outputs) != 1
+                        or not outputs[0].endswith('.translate' + axis)
+                        or (c.ls(outputs[0].rsplit('.', 1)[0],
+                                 long=True) or [])
+                        != [registration.spine.joints[0].path]):
+                    raise CharacterRegistryError(
+                        '轴向 FK 起点位置目标不是 FK 根关节')
         for node in registration.nodes:
             leaf = node.path.rsplit('|', 1)[-1]
             short = leaf.rsplit(':', 1)[-1]
@@ -848,7 +850,7 @@ class MayaCharacterRegistryMixin:
         return promote(self,staged)
 
     def match_character_rebuild_solver(self,stage,registration):
-        if self._cmds.objExists('AdvPy_SpineIKHandle') and self._cmds.ikHandle('AdvPy_SpineIKHandle',q=True,solver=True)=='AdvPy_SpineRPSolver':
+        if registration.spine is not None and self._cmds.objExists('AdvPy_SpineIKHandle') and self._cmds.ikHandle('AdvPy_SpineIKHandle',q=True,solver=True)=='AdvPy_SpineRPSolver':
             with stage.transaction('Match replacement spine solver'):
                 stage.ensure_precise_body_spine_solver(registration.spine)
 
@@ -908,14 +910,16 @@ class MayaCharacterRegistryMixin:
             replacement=replace(replacement,channels=tuple(by_key[channel.key] for channel in original.channels))
         validate_rebuild_layout(original,replacement)
         if (type(original.spine) is not type(replacement.spine)
-                or len(original.spine.lengths)!=len(replacement.spine.lengths)
-                or any(abs(a-b)>1e-6 for a,b in zip(original.spine.lengths,replacement.spine.lengths))):
+                or (original.spine is not None and (
+                    len(original.spine.lengths)!=len(replacement.spine.lengths)
+                    or any(abs(a-b)>1e-6 for a,b in zip(original.spine.lengths,replacement.spine.lengths))))):
             raise CharacterRegistryError('重建改变脊柱求解类型或绑定长度')
         # Same-layout rebuilding keeps the original binding definition exactly.
         # Re-evaluating matrices after Fit import can add sub-ulp noise, which
         # must not invalidate the character's previously saved animation files.
         retained=replace(replacement,body=original.body,
-                         spine=replace(replacement.spine,lengths=original.spine.lengths))
+                         spine=(replace(replacement.spine,lengths=original.spine.lengths)
+                                if original.spine is not None else None))
         with stage.transaction('Preserve original binding identity'):
             stage.write_character_registration_extension(generated,retained)
         return retained
@@ -1254,6 +1258,8 @@ class MayaCharacterRegistryMixin:
         return install(self, registration)
 
     def validate_character_spine(self, plan):
+        if plan is None:
+            return
         from adv_py.core.body_spline import BodySplinePlan
         if isinstance(plan, BodySplinePlan):
             from .maya_spline import audit
@@ -1292,13 +1298,14 @@ class MayaCharacterRegistryMixin:
             if scale.mel_non_opm_fkx and not scale.inherit_scale:
                 ps1 = scale.parent_control_path + "|" + scale.fkps1_name
                 paths.update((ps1, ps1 + "|" + scale.fkps2_name))
-        paths.update((spine.root_path,spine.pelvis_control,*spine.fk_controls,*spine.body_joints,
-                      spine.chest_space,*(j.path for j in spine.joints)))
-        from adv_py.core.body_spline import BodySplinePlan
-        if isinstance(spine, BodySplinePlan):
-            paths.update((*spine.targets, spine.curve, *spine.ik_outputs[1:]))
-        else:
-            paths.update((spine.ik_offset,spine.ik_control,spine.pole_offset,spine.pole_control,spine.waist_output))
+        if spine is not None:
+            paths.update((spine.root_path,spine.pelvis_control,*spine.fk_controls,*spine.body_joints,
+                          spine.chest_space,*(j.path for j in spine.joints)))
+            from adv_py.core.body_spline import BodySplinePlan
+            if isinstance(spine, BodySplinePlan):
+                paths.update((*spine.targets, spine.curve, *spine.ik_outputs[1:]))
+            else:
+                paths.update((spine.ik_offset,spine.ik_control,spine.pole_offset,spine.pole_control,spine.waist_output))
         paths.update(p for spec in spaces.spaces for p in (*spec.targets,*spec.sources))
         paths.update(p for spec in rig.plan.pole_aim
                      for p in (spec.frame_path, spec.aligned_path,

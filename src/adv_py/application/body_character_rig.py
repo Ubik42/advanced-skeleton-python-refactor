@@ -499,7 +499,8 @@ class BuildBodyCharacterRig:
             else ())
         spaces = (plan_body_control_spaces(
             safety.body, torso.torso, arm, leg, global_control,
-            pole_aim=pole_aim) if include_control_spaces else None)
+            pole_aim=pole_aim, description=axial_description)
+            if include_control_spaces else None)
         direct_controls = (
             (torso.torso.controls.controls if torso else ())
             + (hand.controls.controls if hand else ()))

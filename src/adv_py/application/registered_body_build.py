@@ -1,13 +1,16 @@
 """Build and register a complete Body character in one host transaction."""
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, replace
 import re
 
 from adv_py.core.character_registry import CharacterRegistration
 from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from adv_py.core.fit_hierarchy import fit_build_scale
+from adv_py.core.fit_ik import fit_joint_ik_info
+from adv_py.core.variable_body_fit import axial_description_from_fit
 from adv_py.core.fit_orientation import (
     FitOrientationRequest, select_fit_orientation_child,
 )
@@ -411,41 +414,54 @@ def _refresh_fit_orientations_before_body(host, container_name: str) -> None:
             editor.apply_plan_in_transaction(plan)
 
 
-def _preflight_centered_root_spine(host, hierarchy) -> None:
-    """Match the Root spline-IK center check in asBuildAdvancedSkeleton."""
-    nodes = {node.path: node for node in hierarchy.joints}
+def _root_spine_ik_info(host, hierarchy):
     roots = [node for node in hierarchy.joints
              if node.dag_parent == hierarchy.container]
     if len(roots) != 1:
+        return None
+    info = fit_joint_ik_info(hierarchy, {
+        node.path: host.read_joint_label(node.path)
+        for node in hierarchy.joints}, roots[0].path)
+    # The original centered-spine check is specifically for Spine, not
+    # another Root-labelled spline such as Spine1 or a generic Spline.
+    return info if info is not None and info.solver == "ikSplineSolver" else None
+
+
+def _preflight_centered_root_spine(host, hierarchy) -> None:
+    """Match the Root spline-IK center check in asBuildAdvancedSkeleton."""
+    nodes = {node.path: node for node in hierarchy.joints}
+    info = _root_spine_ik_info(host, hierarchy)
+    if info is None or info.name != "Spine":
         return
-    root = roots[0]
-    root_label = host.read_joint_label(root.path)
-    if root_label is None or not root_label.text.startswith("Root"):
-        return
-    chest = [node for node in hierarchy.joints
-             if node.path.startswith(root.path + "|")
-             and (label := host.read_joint_label(node.path)) is not None
-             and "Chest" in label.text]
-    if len(chest) != 1:
-        return
-    chain = []
-    current = chest[0]
-    while current.path != root.path:
-        chain.append(current)
-        if current.dag_parent not in nodes:
-            return
-        current = nodes[current.dag_parent]
-    chain.append(root)
-    maximum_y = max((node.world_position[1] for node in hierarchy.joints),
-                    default=0.0)
-    scale = max(0.01, maximum_y / 17.176163) if maximum_y > 0 else 1.0
-    tolerance = 0.01 * scale
-    off_center = [node.path for node in chain
-                  if abs(node.world_position[0]) > tolerance]
+    tolerance = 0.01 * fit_build_scale(hierarchy)
+    off_center = [path for path in info.joints
+                  if abs(nodes[path].world_position[0]) > tolerance]
     if off_center:
         raise FitSkeletonValidationError(
             "Root→Chest 脊柱 IK 链关节不在中线：" + "、".join(off_center)
         )
+
+
+def _prepare_fit_for_body(host, container_name: str, original_up_axis: str):
+    """The shared manual-update/prebuild sequence of asBuildAdvancedSkeleton."""
+    edit_channels = getattr(host, "fit_manual_update_channels", None)
+    scope = (edit_channels(container_name) if edit_channels is not None
+             else nullcontext())
+    with scope:
+        host.prepare_fit_root(container_name)
+        host.normalize_fit_joint_names(container_name)
+        host.normalize_fit_ik_labels(container_name)
+        host.bake_fit_container_scale(container_name)
+        snap_centers = getattr(host, "snap_fit_ik_chain_centers", None)
+        if snap_centers is not None:
+            snap_centers(container_name)
+        _refresh_fit_orientations_before_body(host, container_name)
+    hierarchy = host.capture_fit_hierarchy(container_name)
+    _preflight_centered_root_spine(host, hierarchy)
+    if original_up_axis == "z":
+        host.flip_character_scene_up_axis(container_name, "y")
+        hierarchy = host.capture_fit_hierarchy(container_name)
+    return hierarchy
 
 
 @dataclass(frozen=True, slots=True)
@@ -473,6 +489,7 @@ class BuildRegisteredBodyCharacter:
 
     def apply(self, container_name: str = "FitSkeleton", *,
               axial_description=None, include_head_aim: bool = False,
+              spine_segments: int | None = None,
               include_segment_influences: bool = True,
               use_fit_part_hierarchy: bool = True,
               fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
@@ -512,28 +529,25 @@ class BuildRegisteredBodyCharacter:
                 joined = _JoinedTransactionHost(self._host)
                 original_up_axis = joined.scene_up_axis().value
                 try:
-                    joined.collapse_fit_generated_transforms(container_name)
-                    joined.prepare_fit_root(container_name)
-                    joined.normalize_fit_joint_names(container_name)
-                    joined.normalize_fit_ik_labels(container_name)
-                    joined.bake_fit_container_scale(container_name)
-                    if original_up_axis == "y":
-                        _refresh_fit_orientations_before_body(
-                            joined, container_name)
-                    fit_hierarchy = joined.capture_fit_hierarchy(container_name)
-                    _preflight_centered_root_spine(joined, fit_hierarchy)
-                    if original_up_axis == "z":
-                        # MEL builds in Y-up, then rotates the finished Group
-                        # back into the original Z-up scene.
-                        joined.flip_character_scene_up_axis(container_name, "y")
-                        _refresh_fit_orientations_before_body(
-                            joined, container_name)
-                        fit_hierarchy = joined.capture_fit_hierarchy(
-                            container_name)
+                    prepare_scene = getattr(joined, "prepare_body_build_scene", None)
+                    if prepare_scene is not None:
+                        prepare_scene()
+                    fit_hierarchy = _prepare_fit_for_body(
+                        joined, container_name, original_up_axis)
                     joined.write_missing_fit_deform_profiles(
                         container_name,
                         tuple(node.path for node in fit_hierarchy.joints),
                     )
+                    if axial_description is None:
+                        spine_info = _root_spine_ik_info(joined, fit_hierarchy)
+                        axial_description = axial_description_from_fit(
+                            fit_hierarchy, spine_segments,
+                            spine_chain=(spine_info.joints
+                                         if spine_info is not None else None))
+                    elif (spine_segments is not None
+                          and len(axial_description.spine) - 1 != spine_segments):
+                        raise FitSkeletonValidationError(
+                            "脊柱段数与提供的身体描述不一致")
                     preflight_registered_fit_parts(
                         joined, container_name,
                         include_segment_influences=include_segment_influences,
@@ -546,6 +560,7 @@ class BuildRegisteredBodyCharacter:
                         container_name)
                     result = BuildRegisteredBodyCharacter(joined).apply(
                         fit_path, axial_description=axial_description,
+                        spine_segments=spine_segments,
                         include_head_aim=include_head_aim,
                         include_segment_influences=include_segment_influences,
                         use_fit_part_hierarchy=use_fit_part_hierarchy,
@@ -834,7 +849,10 @@ class BuildRegisteredBodyCharacter:
             rig_host = (_PartAwareRigHost(joined, final_paths)
                         if final_paths is not None else joined)
             rig = BuildBodyCharacterRig(rig_host).apply(container_name,
-                include_torso=True, include_spine_ik=True,
+                include_torso=True,
+                include_spine_ik=(
+                    _root_spine_ik_info(joined, fit_source.hierarchy)
+                    is not None),
                 include_control_spaces=True, axial_description=axial_description,
                 include_head_aim=include_head_aim,
                 defer_fit_tweakers=True,

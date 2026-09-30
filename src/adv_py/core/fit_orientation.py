@@ -9,9 +9,12 @@ from .fit_hierarchy import (
     TRANSLATION_AXES,
     FitHierarchyNode,
     FitHierarchySnapshot,
+    FitHierarchyPolicy,
     audit_fit_hierarchy,
 )
 from .fit_metadata import FitJointMetadata
+from .fit_ik import fit_joint_ik_info
+from .joint_labels import JointLabel
 
 
 Vector3 = tuple[float, float, float]
@@ -157,6 +160,7 @@ class FitOrientationSnapshot:
         FitOrientationAxisConfiguration()
     )
     fit_scale: float = 1.0
+    labels: tuple[tuple[str, JointLabel | None], ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -166,6 +170,13 @@ class FitOrientationSnapshot:
             or self.fit_scale <= 0
         ):
             raise FitOrientationValidationError("FitSkeleton 缩放必须是正有限数值")
+        if self.labels:
+            paths = {node.path for node in self.hierarchy.joints}
+            if (len(dict(self.labels)) != len(self.labels)
+                    or set(dict(self.labels)) != paths
+                    or any(value is not None and not isinstance(value, JointLabel)
+                           for _, value in self.labels)):
+                raise FitOrientationValidationError("Fit 朝向标签状态与关节层级不一致")
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,10 +291,8 @@ def plan_world_fit_orientations(
         raise FitOrientationValidationError(
             "worldOrient 写入器当前不接受分支子级选择"
         )
-    if snapshot.up_axis is not FitUpAxis.Y:
-        raise FitOrientationValidationError(
-            "worldOrient 当前只支持 Maya Y-Up 场景"
-        )
+    # MEL's worldOrient helper uses literal world +Y and +Z even in a
+    # Z-Up scene. Scene-axis conversion belongs to the later build pass.
     hierarchy = {node.path: node for node in snapshot.hierarchy.joints}
     orientations = {state.joint: state for state in snapshot.joints}
     metadata = {item.joint: item for item in snapshot.metadata}
@@ -421,7 +430,7 @@ def plan_simple_fit_orientations(
         or tolerance <= 0
     ):
         raise FitOrientationValidationError("朝向比较容差必须是正有限数值")
-    hierarchy_issues = audit_fit_hierarchy(snapshot.hierarchy)
+    hierarchy_issues = audit_fit_orientation_hierarchy(snapshot)
     if hierarchy_issues:
         raise FitOrientationValidationError(
             "FitSkeleton 层级无效："
@@ -457,7 +466,7 @@ def plan_simple_fit_orientations(
         request,
         frozenset(resolved),
     )
-    rp_chains = _rp_fit_chains(hierarchy)
+    rp_chains = _rp_fit_chains(snapshot)
     planned_world_axes: dict[str, tuple[Vector3, Vector3, Vector3]] = {}
     planned_axis_configs: dict[str, FitOrientationAxisConfiguration] = {}
 
@@ -547,7 +556,8 @@ def plan_simple_fit_orientations(
                 reference = _subtract(
                     hierarchy[end].world_position, hierarchy[start].world_position
                 )
-                if "Hip" in hierarchy[start].short_name:
+                start_label = dict(snapshot.labels).get(start)
+                if start_label is not None and "Hip" in start_label.text:
                     reference = _scale(reference, -1.0)
             else:
                 start_axes = planned_world_axes.get(start, orientations[start].world_axes)
@@ -644,6 +654,13 @@ def world_orientation_matches(
     ) and all(abs(value) <= tolerance for value in state.rotation)
 
 
+def audit_fit_orientation_hierarchy(snapshot: FitOrientationSnapshot):
+    """Manual Fit update works before Build renames/inserts a centered Root."""
+    return audit_fit_hierarchy(snapshot.hierarchy, FitHierarchyPolicy(
+        expected_root_name=None, require_single_root=False,
+        require_centered_root=False))
+
+
 def _validate_orientation_snapshot(
     snapshot: FitOrientationSnapshot,
     tolerance: float,
@@ -655,7 +672,7 @@ def _validate_orientation_snapshot(
         or tolerance <= 0
     ):
         raise FitOrientationValidationError("朝向比较容差必须是正有限数值")
-    issues = audit_fit_hierarchy(snapshot.hierarchy)
+    issues = audit_fit_orientation_hierarchy(snapshot)
     if issues:
         raise FitOrientationValidationError(
             "FitSkeleton 层级无效：" + "；".join(item.message for item in issues)
@@ -716,37 +733,22 @@ def select_fit_orientation_child(
 
 
 def _rp_fit_chains(
-    hierarchy: dict[str, FitHierarchyNode],
+    snapshot: FitOrientationSnapshot,
 ) -> dict[str, tuple[str, str, str]]:
     """Identify the RP start and intermediate joints from MEL IK labels."""
     result: dict[str, tuple[str, str, str]] = {}
-    for start, node in hierarchy.items():
-        label = node.short_name
-        if "Shoulder" in label:
-            end_labels = ("Hand",)
-        elif "Hip" in label:
-            end_labels = ("Foot", "Toes")
-        else:
+    labels = dict(snapshot.labels)
+    if not labels:
+        return result
+    for node in snapshot.hierarchy.joints:
+        info = fit_joint_ik_info(snapshot.hierarchy, labels, node.path)
+        if info is None or info.solver != "ikRPsolver" or node.path == info.end:
             continue
-        endpoints = [
-            path for path, candidate in hierarchy.items()
-            if path.startswith(start + "|")
-            and any(word in candidate.short_name for word in end_labels)
-            and not any(
-                "Chest" in hierarchy[ancestor].short_name
-                or "Hand" in hierarchy[ancestor].short_name
-                for ancestor in _path_between(start, path, hierarchy)[1:-1]
-            )
-        ]
-        if not endpoints:
+        label = labels[node.path]
+        if label is not None and "Toes" in label.text:
             continue
-        end = min(endpoints, key=lambda path: (path.count("|"), path))
-        chain = _path_between(start, end, hierarchy)
-        if len(chain) < 3:
-            continue
-        result[start] = (start, end, "start")
-        for intermediate in chain[1:-1]:
-            result[intermediate] = (start, end, "middle")
+        result[node.path] = (info.start, info.end,
+                             "start" if node.path == info.start else "middle")
     return result
 
 

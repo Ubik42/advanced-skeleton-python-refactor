@@ -5,9 +5,9 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass, replace
 from typing import Protocol
 
-from adv_py.core.fit_hierarchy import audit_fit_hierarchy
 from adv_py.core.fit_metadata import FitJointField
 from adv_py.core.fit_orientation import (
+    audit_fit_orientation_hierarchy,
     FitOrientationChange,
     FitOrientationRequest,
     FitOrientationSnapshot,
@@ -60,7 +60,7 @@ class OrientFitJoints:
     ) -> FitOrientationAutoPlan:
         before = self._host.capture_fit_orientation(container_name)
         settings = self._host.read_fit_skeleton_settings(before.hierarchy.container)
-        issues = audit_fit_skeleton_settings(settings, require_complete=True)
+        issues = audit_fit_skeleton_settings(settings, require_complete=False)
         if issues:
             raise FitOrientationValidationError(
                 "FitSkeleton 容器设置无效："
@@ -175,7 +175,7 @@ class OrientFitJoints:
         verified: FitOrientationSnapshot,
         settings: FitSkeletonSettings,
     ) -> None:
-        issues = audit_fit_hierarchy(verified.hierarchy)
+        issues = audit_fit_orientation_hierarchy(verified)
         if issues:
             raise RuntimeError(
                 "Fit 朝向更新后层级无效："
@@ -185,6 +185,7 @@ class OrientFitJoints:
         if settings != plan.before_settings or (
             verified.axis_configuration != before.axis_configuration
             or verified.fit_scale != before.fit_scale
+            or verified.labels != before.labels
         ):
             raise RuntimeError("Fit 朝向更新后容器设置发生变化")
         corrections = {

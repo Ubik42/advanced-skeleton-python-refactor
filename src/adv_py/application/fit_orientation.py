@@ -4,8 +4,8 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass, replace
 from typing import Protocol
 
-from adv_py.core.fit_hierarchy import audit_fit_hierarchy
 from adv_py.core.fit_orientation import (
+    audit_fit_orientation_hierarchy,
     FitJointOrientationState,
     FitOrientationChange,
     FitOrientationRequest,
@@ -92,7 +92,7 @@ class OrientSimpleFitChain:
         settings = self._host.read_fit_skeleton_settings(
             before.hierarchy.container
         )
-        setting_issues = audit_fit_skeleton_settings(settings, require_complete=True)
+        setting_issues = audit_fit_skeleton_settings(settings, require_complete=False)
         if setting_issues:
             raise FitOrientationValidationError(
                 "FitSkeleton 容器设置无效："
@@ -141,7 +141,7 @@ class OrientSimpleFitChain:
         verified: FitOrientationSnapshot,
         settings: FitSkeletonSettings,
     ) -> None:
-        issues = audit_fit_hierarchy(verified.hierarchy)
+        issues = audit_fit_orientation_hierarchy(verified)
         if issues:
             raise RuntimeError(
                 "Fit joint 朝向修改后复检失败："
@@ -151,6 +151,8 @@ class OrientSimpleFitChain:
             raise RuntimeError("Fit joint 朝向修改后复检失败：容器设置被改写")
         if verified.metadata != plan.before.metadata:
             raise RuntimeError("Fit joint 朝向修改后复检失败：元数据被改写")
+        if verified.labels != plan.before.labels:
+            raise RuntimeError("Fit joint 朝向修改后复检失败：标签被改写")
         if verified.axis_configuration != plan.before.axis_configuration:
             raise RuntimeError("Fit joint 朝向修改后复检失败：全局轴配置被改写")
 
@@ -212,7 +214,7 @@ class OrientWorldFitJoints:
         settings = self._host.read_fit_skeleton_settings(
             before.hierarchy.container
         )
-        setting_issues = audit_fit_skeleton_settings(settings, require_complete=True)
+        setting_issues = audit_fit_skeleton_settings(settings, require_complete=False)
         if setting_issues:
             raise FitOrientationValidationError(
                 "FitSkeleton 容器设置无效："
@@ -250,7 +252,7 @@ class OrientWorldFitJoints:
         verified: FitOrientationSnapshot,
         settings: FitSkeletonSettings,
     ) -> None:
-        issues = audit_fit_hierarchy(verified.hierarchy)
+        issues = audit_fit_orientation_hierarchy(verified)
         if issues:
             raise RuntimeError(
                 "worldOrient 修改后复检失败："
@@ -270,6 +272,8 @@ class OrientWorldFitJoints:
         )
         if verified.metadata != expected_metadata:
             raise RuntimeError("worldOrient 修改后复检失败：元数据与原版修正规则不符")
+        if verified.labels != plan.before.labels:
+            raise RuntimeError("worldOrient 修改后复检失败：标签被改写")
         if verified.axis_configuration != plan.before.axis_configuration:
             raise RuntimeError("worldOrient 修改后复检失败：全局轴配置被改写")
 

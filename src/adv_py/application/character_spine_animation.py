@@ -12,6 +12,8 @@ class BakeBodyCharacterSpineMode:
             raise CharacterRegistryError("脊柱动画目标模式必须为 fk 或 ik")
         frames=character_sample_frames(start,end,step)
         reg=self._host.read_character_registration()
+        if reg.spine is None:
+            raise CharacterRegistryError("当前躯干只有 FK，没有可切换的脊柱 IK")
         self._host.preflight_character_keyframe(reg)
         original=self._host.capture_character_key_state(reg)
         unit=self._host.character_time_unit()

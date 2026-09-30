@@ -82,7 +82,7 @@ class CharacterRegistration:
     channels: tuple[CharacterChannel, ...]
     body: tuple[CharacterBindJoint, ...]
     nodes: tuple[CharacterNode, ...]
-    spine: BodySpinePlan | BodySplinePlan
+    spine: BodySpinePlan | BodySplinePlan | None
     spaces: BodyControlSpacesPlan
 
     def _compatibility_value(self, *, portable: bool):
@@ -101,7 +101,7 @@ class CharacterRegistration:
                 scalar(c.minimum) if c.minimum is not None else None,
                 scalar(c.maximum) if c.maximum is not None else None)
                 for c in self.channels],
-            "lengths": tuple(scalar(v) for v in self.spine.lengths),
+            "lengths": tuple(scalar(v) for v in self.spine.lengths) if self.spine is not None else (),
             "spaces": [s.key for s in self.spaces.spaces]}
 
     @property
@@ -146,6 +146,9 @@ def encode_registration(registration):
     if isinstance(registration.spine, BodySplinePlan):
         version = 2
         payload["spine_kind"] = "spline"
+    if registration.spine is None:
+        version = 3
+        payload["spine_kind"] = "none"
     value = {"format":FORMAT,"version":version,"payload":payload,"digest":digest(payload)}
     text = canonical(value)
     decode_registration(text)
@@ -154,12 +157,15 @@ def encode_registration(registration):
 
 def decode_registration(text):
     doc = exact(safe_json(text), ("format","version","payload","digest"))
-    if doc["format"] != FORMAT or type(doc["version"]) is not int or doc["version"] not in (1, 2):
+    if doc["format"] != FORMAT or type(doc["version"]) is not int or doc["version"] not in (1, 2, 3):
         raise CharacterRegistryError("不支持的角色登记版本")
     spline_document = doc["version"] == 2
-    data = exact(doc["payload"], ("body_root","container","channels","body","nodes","spine","spaces") + (("spine_kind",) if spline_document else ()))
+    fk_document = doc["version"] == 3
+    data = exact(doc["payload"], ("body_root","container","channels","body","nodes","spine","spaces") + (("spine_kind",) if spline_document or fk_document else ()))
     if spline_document and data["spine_kind"] != "spline":
         raise CharacterRegistryError("不支持的脊柱求解类型")
+    if fk_document and (data["spine_kind"] != "none" or data["spine"] is not None):
+        raise CharacterRegistryError("FK 躯干登记不能包含脊柱 IK")
     if digest(data) != doc["digest"]:
         raise CharacterRegistryError("角色登记摘要不匹配")
     try:
@@ -220,7 +226,11 @@ def decode_registration(text):
                     external_parent_node.parent ==
                     external_parent.rsplit("|", 1)[0]))):
             raise CharacterRegistryError("Body 根关节外部父级未登记")
-        if spline_document:
+        if fk_document:
+            spine = None
+            joints = ()
+            values = {"fk_controls": (), "body_joints": ()}
+        elif spline_document:
             from .spline_registration import decode_spline
             spine = decode_spline(data["spine"], tuple(body))
             joints = spine.joints
@@ -308,7 +318,7 @@ def decode_registration(text):
             if target_sources and len(target_sources) != len(targets):
                 raise CharacterRegistryError("控制空间目标来源数量不一致")
             spaces.append(BodyControlSpaceSpec(key,targets,path(row["body_source"]),path(row["global_source"]),row["rotation_only"],row["initial_mode"],target_sources))
-        if len(spaces)!=5 or len({s.key for s in spaces})!=5 or raw_spaces["body_root"] != root or spine.body_joints[0] != root:
+        if len(spaces)!=5 or len({s.key for s in spaces})!=5 or raw_spaces["body_root"] != root or (spine is not None and spine.body_joints[0] != root):
             raise CharacterRegistryError("空间或脊柱角色根不一致")
         required = {root,container,*(c.node for c in channels),*paths,*values["fk_controls"],*values["body_joints"],*(j.path for j in joints)}
         required.update(v for v in values.values() if isinstance(v,str))

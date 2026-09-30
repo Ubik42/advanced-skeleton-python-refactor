@@ -147,6 +147,8 @@ class MayaCharacterPoseMixin:
             seek(c.currentTime(q=True))
 
     def match_character_spine_samples(self,registration,frames,mode):
+        if registration.spine is None:
+            raise ValueError("当前躯干只有 FK，没有可匹配的脊柱 IK")
         from adv_py.core.body_spline import BodySplinePlan
         spline = isinstance(registration.spine, BodySplinePlan)
         self._require_transaction()

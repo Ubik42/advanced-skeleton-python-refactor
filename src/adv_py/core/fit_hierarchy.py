@@ -31,15 +31,24 @@ class FitHierarchySnapshot:
     joints: tuple[FitHierarchyNode, ...]
 
 
+def fit_build_scale(snapshot: FitHierarchySnapshot) -> float:
+    """ADV 6.925 asGetScale, distinct from FitSkeleton.sx for orientation."""
+    maximum_y = max((joint.world_position[1] for joint in snapshot.joints),
+                    default=0.0)
+    return max(0.01, maximum_y / 17.176163) if maximum_y > 0 else 1.0
+
+
 @dataclass(frozen=True, slots=True)
 class FitHierarchyPolicy:
-    expected_root_name: str = "Root"
+    expected_root_name: str | None = "Root"
     center_tolerance: float = 0.01
     reject_underscores: bool = False
     reject_leading_digits: bool = True
+    require_single_root: bool = True
+    require_centered_root: bool = True
 
     def __post_init__(self) -> None:
-        if not self.expected_root_name:
+        if self.expected_root_name is not None and not self.expected_root_name:
             raise ValueError("期望根关节名称不能为空")
         if self.center_tolerance < 0:
             raise ValueError("中心容差不能小于 0")
@@ -80,7 +89,7 @@ def audit_fit_hierarchy(
     roots = tuple(
         node for node in snapshot.joints if node.dag_parent == snapshot.container
     )
-    if len(roots) != 1:
+    if active_policy.require_single_root and len(roots) != 1:
         issues.append(
             FitHierarchyIssue(
                 "root_count",
@@ -89,23 +98,25 @@ def audit_fit_hierarchy(
             )
         )
     else:
-        root = roots[0]
-        if root.short_name != active_policy.expected_root_name:
-            issues.append(
-                FitHierarchyIssue(
-                    "unexpected_root_name",
-                    f"根关节应命名为 {active_policy.expected_root_name}",
-                    (root.path,),
+        for root in roots:
+            if (active_policy.expected_root_name is not None
+                    and root.short_name != active_policy.expected_root_name):
+                issues.append(
+                    FitHierarchyIssue(
+                        "unexpected_root_name",
+                        f"根关节应命名为 {active_policy.expected_root_name}",
+                        (root.path,),
+                    )
                 )
-            )
-        if abs(root.world_position[0]) > active_policy.center_tolerance:
-            issues.append(
-                FitHierarchyIssue(
-                    "root_off_center",
-                    "根关节世界 X 位置超出中心容差",
-                    (root.path,),
+            if (active_policy.require_centered_root
+                    and abs(root.world_position[0]) > active_policy.center_tolerance):
+                issues.append(
+                    FitHierarchyIssue(
+                        "root_off_center",
+                        "根关节世界 X 位置超出中心容差",
+                        (root.path,),
+                    )
                 )
-            )
 
     names: dict[str, list[str]] = {}
     for node in snapshot.joints:

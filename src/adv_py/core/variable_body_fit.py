@@ -2,7 +2,7 @@ from .body_description import BodyAxialDescription
 from .fit_template import FitJointSpec,FitTemplateSpec,synthetic_body_source_fit_template
 from .fit_settings import FitSkeletonValidationError
 from .fit_hierarchy import FitHierarchySnapshot
-import re
+from .fit_ik import fit_joint_chain
 
 
 def variable_axial_description(spine_segments=2):
@@ -12,21 +12,40 @@ def variable_axial_description(spine_segments=2):
 
 
 def axial_description_from_fit(snapshot: FitHierarchySnapshot,
-                               requested_segments: int | None = None):
-    """Resolve the Body axial chain from a Fit snapshot before scene writes."""
-    names = {joint.short_name for joint in snapshot.joints}
-    indices = sorted(int(name[5:]) for name in names
-                     if re.fullmatch(r'Spine[1-9]\d*', name))
-    if 'Chest' not in names or indices != list(range(1, len(indices) + 1)):
-        raise FitSkeletonValidationError(
-            'Fit 脊柱关节须为连续 Spine1…SpineN，末端为 Chest')
-    actual = len(indices) + 1
+                               requested_segments: int | None = None, *,
+                               spine_chain: tuple[str, ...] | None = None):
+    """Resolve the prepared torso by its DAG chain, not global name counts.
+
+    MEL obtains its spline joints from the start/end ancestry. A Spine-like
+    name elsewhere in the skeleton must not change this chain, and intermediate
+    joints do not have to use consecutive numeric suffixes.
+    """
+    by_path = {joint.path: joint for joint in snapshot.joints}
+    by_name = {joint.short_name: joint for joint in snapshot.joints}
+    if len(by_path) != len(snapshot.joints) or len(by_name) != len(by_path):
+        raise FitSkeletonValidationError('准备后的 Fit 关节路径和名称必须唯一')
+    root = by_name.get('Root')
+    chest = (by_path.get(spine_chain[-1]) if spine_chain
+             else by_name.get('Chest'))
+    if root is None or chest is None:
+        raise FitSkeletonValidationError('身体主构建需要准备后的 Root 和 Chest')
+
+    def ancestors_to(start, end):
+        return tuple(by_path[path].short_name + '_M'
+                     for path in fit_joint_chain(snapshot, start.path, end.path))
+
+    spine = ancestors_to(root, chest)
+    head = by_name.get('Head')
+    neck = (ancestors_to(chest, head)[1:] if head is not None
+            else BodyAxialDescription().neck)
+    actual = len(spine) - 1
     if requested_segments is not None:
         variable_axial_description(requested_segments)
         if requested_segments != actual:
             raise FitSkeletonValidationError(
                 f'Fit 实际脊柱为 {actual} 段，输入为 {requested_segments} 段')
-    return None if actual == 2 else variable_axial_description(actual)
+    description = BodyAxialDescription(spine=spine, neck=neck)
+    return None if description == BodyAxialDescription() else description
 
 
 def variable_body_fit_template(up_axis,*,spine_segments=2,scale=1.,with_hand=True):

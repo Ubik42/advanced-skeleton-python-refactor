@@ -200,6 +200,8 @@ class FakeFitSkeletonDocumentHost:
             tuple(states),
             tuple(metadata),
             self.axis_configuration,
+            labels=tuple((paths[joint.name], joint.label)
+                         for joint in self.joints),
         )
 
     def read_fit_skeleton_settings(self, container_name):

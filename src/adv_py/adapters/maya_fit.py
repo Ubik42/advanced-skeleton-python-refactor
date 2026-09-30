@@ -16,6 +16,7 @@ from adv_py.core.fit_hierarchy import (
     FitHierarchyNode,
     FitHierarchySnapshot,
     FitHierarchyValidationError,
+    fit_build_scale,
 )
 from adv_py.core.fit_metadata import (
     FitJointField,
@@ -547,6 +548,14 @@ class MayaFitJointHost:
         roots = self._cmds.listRelatives(
             container, children=True, type="joint", fullPath=True
         ) or []
+        if not roots:
+            # The original retries after manual update when generated Maya
+            # transforms hide the direct joint children of FitSkeleton.
+            self.normalize_fit_joint_names(container)
+            self.normalize_fit_ik_labels(container)
+            self.bake_fit_container_scale(container)
+            roots = self._cmds.listRelatives(
+                container, children=True, type="joint", fullPath=True) or []
         if len(roots) != 1:
             raise FitSkeletonValidationError(
                 "FitSkeleton 必须恰有一个顶层 joint 才能准备 Root"
@@ -556,14 +565,9 @@ class MayaFitJointHost:
         position = tuple(float(value) for value in self._cmds.xform(
             first, query=True, worldSpace=True, translation=True
         ))
-        descendants = self._cmds.listRelatives(
-            container, allDescendents=True, type="joint", fullPath=True
-        ) or []
-        maximum_y = max((float(self._cmds.xform(
-            joint, query=True, worldSpace=True, translation=True
-        )[1]) for joint in descendants), default=0.0)
-        scale = max(0.01, maximum_y / 17.176163) if maximum_y > 0 else 1.0
-        if abs(position[0]) <= 0.01 * scale:
+        scale = fit_build_scale(self.capture_fit_hierarchy(container))
+        centered = abs(position[0]) < 0.01 * scale
+        if centered or name == "Root" and abs(position[0]) <= 0.01 * scale:
             if name == "Root":
                 if any(path != first and not path.startswith(container + "|")
                        for path in self.find_name_collisions("Root")):
@@ -596,7 +600,6 @@ class MayaFitJointHost:
             root, worldSpace=True,
             translation=(0.0, position[1], position[2]),
         )
-        self.set_joint_label(root, JointLabel.parse("Root"))
         self._cmds.parent(first, root, absolute=True)
         return root
 
@@ -676,8 +679,64 @@ class MayaFitJointHost:
                     "Fit 重名关节没有可用的数字后缀：" + short
                 )
 
+    def _fit_node_uuid(self, path: str) -> str:
+        values = self._cmds.ls(path, uuid=True) or []
+        if len(values) != 1:
+            raise FitSkeletonValidationError("Fit 节点身份不唯一：" + path)
+        return values[0]
+
+    def _fit_node_from_uuid(self, identifier: str) -> str:
+        c = getattr(self._cmds, "raw", self._cmds)
+        values = c.ls(identifier, long=True) or []
+        if len(values) != 1:
+            raise FitSkeletonValidationError("Fit 节点身份已失效：" + identifier)
+        identity = getattr(self._cmds, "identity", None)
+        return identity.to_local(values[0]) if identity is not None else values[0]
+
+    @contextmanager
+    def fit_manual_update_channels(self, container_name: str):
+        """Temporarily release Fit TRS locks/drivers as manual update does."""
+        self._require_transaction()
+        c = self._cmds
+        container = self._resolve_transform(container_name, FitHierarchyValidationError)
+        joints = c.listRelatives(container, allDescendents=True,
+                                 type="joint", fullPath=True) or []
+        states = []
+        try:
+            for joint in joints:
+                identifier = self._fit_node_uuid(joint)
+                for channel in ("tx", "ty", "tz", "rx", "ry", "rz",
+                                "sx", "sy", "sz"):
+                    plug = joint + "." + channel
+                    locked = bool(c.getAttr(plug, lock=True))
+                    source = c.connectionInfo(plug, sourceFromDestination=True)
+                    value = c.getAttr(plug)
+                    source_identity = None
+                    if source:
+                        source_node, source_attribute = source.split(".", 1)
+                        source_identity = (self._fit_node_uuid(source_node),
+                                           source_attribute)
+                    states.append((identifier, channel, locked, source_identity))
+                    if locked:
+                        self._transaction_changed = True
+                        c.setAttr(plug, lock=False)
+                    if source:
+                        self._transaction_changed = True
+                        c.disconnectAttr(source, plug)
+                        c.setAttr(plug, value)
+            yield
+        finally:
+            for identifier, channel, locked, source in states:
+                plug = self._fit_node_from_uuid(identifier) + "." + channel
+                if source is not None:
+                    source_plug = self._fit_node_from_uuid(source[0]) + "." + source[1]
+                    if not c.isConnected(source_plug, plug):
+                        c.connectAttr(source_plug, plug, force=True)
+                if bool(c.getAttr(plug, lock=True)) != locked:
+                    c.setAttr(plug, lock=locked)
+
     def bake_fit_container_scale(self, container_name: str) -> None:
-        """Freeze Fit scale into its shape and joints before Body is copied."""
+        """Port asFitModeUpdateScale's detach/reset/reparent build pass."""
         self._require_transaction()
         container = self._resolve_transform(
             container_name, FitHierarchyValidationError
@@ -685,56 +744,115 @@ class MayaFitJointHost:
         scale = tuple(float(value) for value in self._cmds.getAttr(
             container + ".scale"
         )[0])
-        joints = self._cmds.listRelatives(
+        c = self._cmds
+        joints = c.listRelatives(
             container, allDescendents=True, type="joint", fullPath=True
         ) or []
-        container_scaled = any(abs(value - 1.0) > 1e-8 for value in scale)
-        joint_scaled = any(any(abs(float(value) - 1.0) > 1e-8
-                               for value in self._cmds.getAttr(
-                                   joint + ".scale")[0]) for joint in joints)
-        if not container_scaled and not joint_scaled:
-            return
-        positions = {joint: tuple(float(value) for value in self._cmds.xform(
-            joint, query=True, worldSpace=True, translation=True
-        )) for joint in joints}
+        records = []
+        for joint in joints:
+            parent = (c.listRelatives(joint, parent=True, fullPath=True) or [None])[0]
+            wrapper = None
+            if parent != container and parent is not None and c.nodeType(parent) == "transform":
+                wrapper = self._fit_node_uuid(parent)
+                parent = (c.listRelatives(parent, parent=True, fullPath=True) or [None])[0]
+            locks = tuple(bool(c.getAttr(joint + ".t" + axis, lock=True))
+                          for axis in "xyz")
+            records.append((self._fit_node_uuid(joint),
+                            self._fit_node_uuid(parent) if parent else None,
+                            wrapper, locks))
         self._transaction_changed = True
-        if container_scaled:
-            self._cmds.makeIdentity(
-                container, apply=True, translate=False, rotate=False,
-                scale=True, normal=False,
-            )
-        # Scale may be pushed from the Fit container into its joint children.
-        # Walk parent-first so it is carried down the chain to the end joints.
-        for joint in reversed(joints):
-            current = self._cmds.ls(joint, long=True, type="joint") or []
-            if len(current) != 1:
-                raise RuntimeError("Fit 缩放烘焙改变了关节层级：" + joint)
-            if any(abs(float(value) - 1.0) > 1e-8 for value in self._cmds.getAttr(
-                    current[0] + ".scale")[0]):
-                self._cmds.makeIdentity(
-                    current[0], apply=True, translate=False, rotate=False,
-                    scale=True, normal=False,
-                )
-        if any(abs(float(value) - 1.0) > 1e-6 for value in self._cmds.getAttr(
-                container + ".scale")[0]):
-            raise RuntimeError("Fit 缩放烘焙后容器未恢复单位缩放")
-        for joint, expected in positions.items():
-            actual = self._cmds.ls(joint, long=True, type="joint") or []
-            if len(actual) != 1:
-                raise RuntimeError("Fit 缩放烘焙改变了关节层级：" + joint)
-            location = self._cmds.xform(
-                actual[0], query=True, worldSpace=True, translation=True
-            )
-            if any(abs(float(value) - target) > 1e-5 * max(1.0, abs(target))
-                   for value, target in zip(location, expected)):
-                raise RuntimeError("Fit 缩放烘焙改变了关节世界位置：" + joint)
-            if any(abs(float(value) - 1.0) > 1e-6 for value in self._cmds.getAttr(
-                    actual[0] + ".scale")[0]):
-                raise RuntimeError("Fit 缩放烘焙后关节未恢复单位缩放：" + joint)
-            if container_scaled and self._cmds.attributeQuery(
-                    "fat", node=actual[0], exists=True):
-                plug = actual[0] + ".fat"
-                self._cmds.setAttr(plug, float(self._cmds.getAttr(plug)) * scale[1])
+        c.setAttr(container + ".scale", 1.0, 1.0, 1.0)
+        expected_positions = {}
+        try:
+            for identifier, _, _, _ in records:
+                joint = self._fit_node_from_uuid(identifier)
+                for axis in "xyz":
+                    c.setAttr(joint + ".t" + axis, lock=False)
+            for identifier, _, wrapper, _ in records:
+                joint = self._fit_node_from_uuid(identifier)
+                c.parent(joint, world=True, absolute=True)
+                if wrapper is not None:
+                    old_wrapper = self._fit_node_from_uuid(wrapper)
+                    if c.listRelatives(old_wrapper, children=True, fullPath=True):
+                        raise FitSkeletonValidationError("Fit 中间层含其他对象，不能移除")
+                    c.delete(old_wrapper)
+                joint = self._fit_node_from_uuid(identifier)
+                generated = c.listRelatives(joint, parent=True, fullPath=True) or []
+                if generated:
+                    position = c.xform(joint, query=True, worldSpace=True, translation=True)
+                    c.setAttr(generated[0] + ".scale", 1.0, 1.0, 1.0)
+                    c.parent(joint, world=True, absolute=True)
+                    c.xform(self._fit_node_from_uuid(identifier), worldSpace=True,
+                            translation=position)
+                    if c.listRelatives(generated[0], children=True, fullPath=True):
+                        raise FitSkeletonValidationError("Fit 新生成中间层仍有对象")
+                    c.delete(generated[0])
+            for identifier, _, _, _ in records:
+                joint = self._fit_node_from_uuid(identifier)
+                position = c.xform(joint, query=True, worldSpace=True, translation=True)
+                expected = tuple(float(value) * factor for value, factor in zip(position, scale))
+                c.xform(joint, worldSpace=True, translation=expected)
+                c.setAttr(joint + ".scale", 1.0, 1.0, 1.0)
+                c.setAttr(joint + ".inverseScale", 1.0, 1.0, 1.0)
+                expected_positions[identifier] = expected
+                if c.attributeQuery("fat", node=joint, exists=True):
+                    c.setAttr(joint + ".fat", float(c.getAttr(joint + ".fat")) * scale[1])
+            for identifier, parent, _, _ in records:
+                if parent is not None:
+                    c.parent(self._fit_node_from_uuid(identifier),
+                             self._fit_node_from_uuid(parent), absolute=True)
+            if any(value != 1.0 for value in scale):
+                shapes = c.listRelatives(container, shapes=True, type="nurbsCurve",
+                                         noIntermediate=True, fullPath=True) or []
+                for shape in shapes:
+                    c.scale(scale[1], scale[1], scale[1], shape + ".cv[0:7]",
+                            relative=True, pivot=(0.0, 0.0, 0.0))
+            for identifier, expected in expected_positions.items():
+                joint = self._fit_node_from_uuid(identifier)
+                actual = c.xform(joint, query=True, worldSpace=True, translation=True)
+                if any(abs(float(value) - target) > 1e-5 * max(1.0, abs(target))
+                       for value, target in zip(actual, expected)):
+                    raise RuntimeError("Fit 缩放准备后关节世界位置不一致：" + joint)
+                if any(abs(float(value) - 1.0) > 1e-6
+                       for value in c.getAttr(joint + ".scale")[0]):
+                    raise RuntimeError("Fit 缩放准备后关节未恢复单位缩放：" + joint)
+        finally:
+            for identifier, _, _, locks in records:
+                joint = self._fit_node_from_uuid(identifier)
+                for axis, locked in zip("xyz", locks):
+                    c.setAttr(joint + ".t" + axis, lock=locked)
+
+    def snap_fit_ik_chain_centers(self, container_name: str) -> None:
+        """Port the center-start snap in asFitModeUpdateJoints before aiming.
+
+        This intentionally moves authored joints, so it runs before the
+        orientation snapshot whose writer preserves descendant positions.
+        """
+        from adv_py.core.fit_ik import fit_joint_ik_info
+        self._require_transaction()
+        snapshot = self.capture_fit_orientation(container_name)
+        hierarchy = snapshot.hierarchy
+        labels = dict(snapshot.labels)
+        children = {node.dag_parent for node in hierarchy.joints}
+        tolerance = 0.01 * snapshot.fit_scale
+        c = self._cmds
+        # The recursive MEL pass follows parents before their children. Read
+        # current positions each time because snapping a parent moves its tree.
+        for node in sorted(hierarchy.joints,
+                           key=lambda item: (item.path.count("|"), item.path)):
+            if node.path not in children:
+                continue
+            info = fit_joint_ik_info(hierarchy, labels, node.path)
+            if info is None:
+                continue
+            start = c.xform(info.start, query=True, worldSpace=True,
+                            translation=True)
+            position = c.xform(node.path, query=True, worldSpace=True,
+                               translation=True)
+            if abs(float(start[0])) < tolerance and abs(float(position[0])) >= tolerance:
+                self._transaction_changed = True
+                c.xform(node.path, worldSpace=True,
+                        translation=(0.0, float(position[1]), float(position[2])))
 
     def set_fit_joint_local_position(
         self,
@@ -804,6 +922,8 @@ class MayaFitJointHost:
             up_axis=self.scene_up_axis(),
             joints=tuple(states),
             fit_scale=float(self._cmds.getAttr(f"{hierarchy.container}.scaleX")),
+            labels=tuple((node.path, self.read_joint_label(node.path))
+                         for node in hierarchy.joints),
             metadata=tuple(
                 self.read_fit_joint_metadata(node.path) for node in hierarchy.joints
             ),
@@ -1752,9 +1872,7 @@ class MayaFitJointHost:
         positions = {joint: tuple(float(value) for value in c.xform(
             joint, query=True, worldSpace=True, translation=True))
             for joint in joints}
-        maximum_y = max((position[1] for position in positions.values()),
-                        default=0.0)
-        scale = max(0.01, maximum_y / 17.176163) if maximum_y > 0 else 1.0
+        scale = fit_build_scale(self.capture_fit_hierarchy(fit[0]))
         child_tolerance = 0.01 * float(c.getAttr(fit[0] + ".scaleX"))
         center_tolerance = 0.01 * scale
 

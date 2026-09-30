@@ -42,10 +42,13 @@ class BodyBuildOptions:
 
     @classmethod
     def from_fit_settings(cls, settings: FitSkeletonSettings) -> "BodyBuildOptions":
-        values = {field.value: settings.value(field)
+        # asGetOpm/asGetSub/asGetExtra return zero for older Fit containers
+        # without the attribute. Reading a build must not rewrite the Fit.
+        values = {field.value: (settings.value(field)
+                               if field in settings.present_fields else False)
                   for field in BODY_BUILD_OPTION_FIELDS}
         if any(type(value) is not bool for value in values.values()):
-            raise FitSkeletonValidationError("FitSkeleton 缺少 Body 构建选项")
+            raise FitSkeletonValidationError("FitSkeleton Body 构建选项类型无效")
         return cls(**values)
 
 

@@ -5,9 +5,8 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
-from adv_py.core.body_description import BodyAxialDescription
 from adv_py.core.fit_hierarchy import FitHierarchySnapshot
-from adv_py.core.variable_body_fit import axial_description_from_fit
+from adv_py.core.variable_body_fit import variable_axial_description
 
 from .axial_part_deform import AxialPartHost
 from .body_character_rig import BodyCharacterRigHost
@@ -44,7 +43,7 @@ class CharacterFromFitHost(OrientedBodySkeletonHost, BodyCharacterRigHost,
 class CharacterFromFitPlan:
     container: str
     meshes: tuple[str, ...]
-    axial_description: BodyAxialDescription | None
+    spine_segments: int | None
     maximum_influences: int | None
     include_head_aim: bool
     include_segment_influences: bool
@@ -80,18 +79,13 @@ class BuildCharacterFromFit:
                 type(maximum_influences) is not int
                 or not 1 <= maximum_influences <= 256)):
             raise ValueError("最大影响关节数须为 1..256 的整数")
-        hierarchy = self._host.capture_fit_hierarchy(container)
-        joint_paths = {node.path for node in hierarchy.joints}
-        roots = [node for node in hierarchy.joints
-                 if node.dag_parent not in joint_paths]
-        if len(roots) != 1:
-            raise ValueError("FitSkeleton 必须恰有一条顶层 joint 链")
+        if spine_segments is not None:
+            variable_axial_description(spine_segments)
         if use_fit_part_hierarchy and not include_segment_influences:
             raise ValueError("通用 Fit Part 构建需要启用分段 Skin 影响")
         # The main build checks Parts after Root, names and scale have been
         # prepared in its rollback-capable transaction.
-        description = axial_description_from_fit(hierarchy, spine_segments)
-        return CharacterFromFitPlan(container, meshes, description,
+        return CharacterFromFitPlan(container, meshes, spine_segments,
             maximum_influences, include_head_aim,
             include_segment_influences, use_fit_part_hierarchy)
 
@@ -111,7 +105,7 @@ class BuildCharacterFromFit:
             use_fit_part_hierarchy=use_fit_part_hierarchy)
         if not plan.meshes:
             character = BuildRegisteredBodyCharacter(self._host).apply(
-                plan.container, axial_description=plan.axial_description,
+                plan.container, spine_segments=plan.spine_segments,
                 include_head_aim=plan.include_head_aim,
                 include_segment_influences=plan.include_segment_influences,
                 use_fit_part_hierarchy=plan.use_fit_part_hierarchy)
@@ -125,7 +119,7 @@ class BuildCharacterFromFit:
             built = BuildRegisteredSkinnedBodyCharacter(joined).apply(
                 local_meshes, container_name=plan.container,
                 maximum_influences=plan.maximum_influences,
-                axial_description=plan.axial_description,
+                spine_segments=plan.spine_segments,
                 include_head_aim=plan.include_head_aim,
                 include_segment_influences=plan.include_segment_influences,
                 use_fit_part_hierarchy=plan.use_fit_part_hierarchy,

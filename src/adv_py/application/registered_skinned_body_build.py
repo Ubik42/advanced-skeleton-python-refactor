@@ -69,6 +69,7 @@ class BuildRegisteredSkinnedBodyCharacter:
               skin_prefix: str = "AdvPy_BodySkin",
               maximum_influences: int | None = None,
               axial_description=None,
+              spine_segments: int | None = None,
               include_head_aim: bool = False,
               include_segment_influences: bool = True,
               use_fit_part_hierarchy: bool = True,
@@ -89,6 +90,7 @@ class BuildRegisteredSkinnedBodyCharacter:
             joined = _JoinedTransactionHost(self._host)
             character = BuildRegisteredBodyCharacter(joined).apply(
                 container_name, axial_description=axial_description,
+                spine_segments=spine_segments,
                 include_head_aim=include_head_aim,
                 include_segment_influences=include_segment_influences,
                 use_fit_part_hierarchy=use_fit_part_hierarchy,

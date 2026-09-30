@@ -65,7 +65,7 @@ class PrepareFitInbetween:
                   for path in paths}
         plan = plan_fit_inbetween(
             source.hierarchy, source.metadata, profiles, orders,
-            center_tolerance=center_tolerance)
+            center_tolerance=center_tolerance * source.fit_scale)
         for guide in plan.guides:
             if self._host.find_name_collisions(guide.name):
                 raise ValueError("Inbetween 临时导向名称已占用：" + guide.name)

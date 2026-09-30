@@ -385,6 +385,19 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise FitSkeletonValidationError("已取消构建：Fit 关节名含下划线")
             return
 
+    def prepare_body_build_scene(self) -> None:
+        """The original prebuild disables editing modes before scene writes."""
+        self._require_transaction()
+        c = getattr(self._cmds, "raw", self._cmds)
+        c.softSelect(edit=True, softSelectEnabled=False)
+        if c.symmetricModelling(query=True, symmetry=True):
+            c.symmetricModelling(edit=True, symmetry=False)
+        try:
+            c.editDisplayLayerGlobals(useCurrent=False)
+        except RuntimeError:
+            # MEL uses catchQuiet for this older-Maya preference.
+            pass
+
     def parent_selected_joint_under_fit(self, joint: str,
                                         container_name: str) -> str:
         """Port the selected-joint adoption branch of asBuildAdvancedSkeleton."""

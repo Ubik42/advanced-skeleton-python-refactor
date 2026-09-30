@@ -16,8 +16,8 @@ class CharacterRegistryHost(Protocol):
 def character_channels(rig):
     """Declare user channels from the actual build plans, never scene selection."""
     p = rig.plan
-    if not p.torso or not (p.torso.torso.spine or p.torso.torso.spline) or not p.control_spaces:
-        raise ValueError("角色登记要求完整 Torso、Spine IK 和控制空间")
+    if not p.torso or not p.control_spaces:
+        raise ValueError("角色登记要求完整 Torso 和控制空间")
     rows = []
     locked = {spec.control: frozenset(spec.attributes)
               for spec in getattr(p, "fk_channel_locks", ())}
@@ -67,7 +67,7 @@ def character_channels(rig):
         add("spine.pole",spine.pole_control,translation+("lock",))
         if spine.pole_extra_path:
             add("spine.pole.extra", spine.pole_extra_path, transform)
-    else:
+    elif p.torso.torso.spline is not None:
         spline = p.torso.torso.spline
         for index, target in enumerate(spline.targets):
             add(f"spine.spline.{index}", target,
