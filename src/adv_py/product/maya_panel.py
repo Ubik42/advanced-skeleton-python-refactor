@@ -2306,7 +2306,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 side_underscore=self.name_matcher_underscore.isChecked())
             return (f'NameMatcher 已在 {namespace} 创建 Fit：'
                     f'{result.placed} 个关节已放置；'
-                    f'{len(result.missing)} 个映射未找到来源。')
+                    + (('未找到：' + '、'.join(result.missing))
+                       if result.missing else '全部映射均找到来源。'))
 
         def _load_body_build_options(self):
             options = self.controller.body_build_options(
