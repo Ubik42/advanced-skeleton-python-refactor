@@ -45,10 +45,15 @@ class MayaCharacterRegistryMixin:
             torso_fkx_joints.add(control)
         standard_independent = set()
         for leaf, offsets in by_leaf.items():
-            if (not leaf.startswith('AdvPy_')
-                    or 'FKOffset' not in leaf):
+            if not leaf.startswith('AdvPy_'):
                 continue
-            controls = by_leaf.get(leaf.replace('FKOffset', 'FK'), ())
+            if 'FKOffset' in leaf:
+                control_leaf = leaf.replace('FKOffset', 'FK')
+            elif leaf.startswith('AdvPy_Torso') and leaf.endswith('Offset'):
+                control_leaf = leaf[:-len('Offset')] + 'FK'
+            else:
+                continue
+            controls = by_leaf.get(control_leaf, ())
             if len(offsets) == 1 and len(controls) == 1:
                 if not bool(c.getAttr(offsets[0] + '.inheritsTransform')):
                     standard_independent.add(controls[0])
