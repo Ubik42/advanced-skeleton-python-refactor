@@ -134,6 +134,7 @@ class GenericFkFeaturePolicy:
     standard_point_control_names: frozenset[str] | None = None
     torso_point_control_names: frozenset[str] | None = None
     torso_root_point_from_fkx: bool | None = None
+    axial_fk_root_point_from_receiver: bool | None = None
 
 
 def plan_body_generic_fk(

@@ -107,7 +107,9 @@ class MayaBodySpineMixin:
                   defaultValue=0, keyable=True)
         c.createNode("transform", name=plan.waist_output.rsplit("|", 1)[-1], parent=plan.joints[4].path, skipSelect=True)
         c.connectAttr(plan.roll_plug, plan.waist_output + ".rotateX")
-        c.pointConstraint((plan.fk_sources or plan.fk_controls)[0],
+        c.pointConstraint(((plan.fk_sources or plan.fk_controls)[0]
+                           if plan.fk_root_point_from_receiver
+                           else plan.pelvis_control),
                           plan.joints[0].path, maintainOffset=False,
                           name="AdvPy_SpineFKRootPoint")
         c.pointConstraint(plan.pelvis_control, plan.joints[3].path, maintainOffset=False, name="AdvPy_SpineIKRootPoint")
@@ -643,7 +645,7 @@ class MayaBodySpineMixin:
         targets("AdvPy_SpineIKChestOrient", c.orientConstraint, (plan.ik_driver,))
         for role, index in (("FK", 0), ("IK", 3)):
             name = f"AdvPy_Spine{role}RootPoint"
-            if role == "FK":
+            if role == "FK" and plan.fk_root_point_from_receiver:
                 fk_targets = c.orientConstraint(
                     'AdvPy_SpineBaseFKOrient', query=True,
                     targetList=True) or []

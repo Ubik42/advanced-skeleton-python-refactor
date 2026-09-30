@@ -16,6 +16,8 @@ from . import maya_spline_follow
 
 
 def _fk_root_source(host, plan):
+    if not plan.fk_root_point_from_receiver:
+        return plan.pelvis_control
     c = host._cmds
     constraints = c.ls('AdvPy_SplineBaseFKOrient',
                        type='orientConstraint') or []

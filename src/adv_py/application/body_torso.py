@@ -41,7 +41,7 @@ class BuildBodyTorso:
 
     def plan_from_safety(
         self, safety: BodyRebuildSafetyAudit,
-        arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan, *, radius: float = 1.5, spine_ik: bool = False, description=None, head_aim=False, aim_joint_names: frozenset[str] = frozenset(), fkx_joint_names: frozenset[str] | None = None, point_control_names: frozenset[str] | None = None, root_point_from_fkx: bool = True,
+        arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan, *, radius: float = 1.5, spine_ik: bool = False, description=None, head_aim=False, aim_joint_names: frozenset[str] = frozenset(), fkx_joint_names: frozenset[str] | None = None, point_control_names: frozenset[str] | None = None, root_point_from_fkx: bool = True, axial_fk_root_point_from_receiver: bool = True,
     ) -> BodyTorsoBuildPlan:
         options={'up_axis':self._host.scene_up_axis()} if head_aim else {}
         metadata = {item.joint: item
@@ -64,6 +64,8 @@ class BuildBodyTorso:
             fkx_joint_names=fkx_joint_names,
             point_control_names=point_control_names,
             root_point_from_fkx=root_point_from_fkx,
+            axial_fk_root_point_from_receiver=(
+                axial_fk_root_point_from_receiver),
             leg_lock_enabled=root_metadata[0].leg_lock is not False,
             **options)
         collisions = tuple(sorted({path for name in torso.node_names for path in self._host.find_name_collisions(name)}))

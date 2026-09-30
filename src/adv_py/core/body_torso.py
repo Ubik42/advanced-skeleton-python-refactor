@@ -215,7 +215,7 @@ class BodyTorsoSnapshot:
 
 def plan_body_torso(
     body: BodySkeletonSnapshot, arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan,
-    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (), aim_joint_names: frozenset[str] = frozenset(), leg_lock_enabled: bool = True, fkx_joint_names: frozenset[str] | None = None, point_control_names: frozenset[str] | None = None, root_point_from_fkx: bool = True,
+    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (), aim_joint_names: frozenset[str] = frozenset(), leg_lock_enabled: bool = True, fkx_joint_names: frozenset[str] | None = None, point_control_names: frozenset[str] | None = None, root_point_from_fkx: bool = True, axial_fk_root_point_from_receiver: bool = True,
 ) -> BodyTorsoPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise FitSkeletonValidationError("Torso 构建选项类型无效")
@@ -224,6 +224,8 @@ def plan_body_torso(
         raise FitSkeletonValidationError("Torso FK 位置约束集合无效")
     if type(root_point_from_fkx) is not bool:
         raise FitSkeletonValidationError("Torso Root 位置来源选项无效")
+    if type(axial_fk_root_point_from_receiver) is not bool:
+        raise FitSkeletonValidationError("轴向 FK 起点位置来源选项无效")
     if not isinstance(aim_joint_names, frozenset):
         raise FitSkeletonValidationError("Torso Aim 来源集合无效")
     if fkx_joint_names is not None and not isinstance(fkx_joint_names, frozenset):
@@ -399,7 +401,12 @@ def plan_body_torso(
                          use_offset_parent_matrix=build_options.use_offset_parent_matrix,
                          root_x=root_x, cogs=tuple(cogs))
     if spine_ik:
-        plan=with_spine_ik(body,plan,build_options) if description==BodyAxialDescription() else with_spline_ik(body,plan,description,build_options)
+        plan=(with_spine_ik(
+            body, plan, build_options,
+            fk_root_point_from_receiver=axial_fk_root_point_from_receiver)
+            if description == BodyAxialDescription() else with_spline_ik(
+                body, plan, description, build_options,
+                fk_root_point_from_receiver=axial_fk_root_point_from_receiver))
     return with_head_aim(plan,body,description,up_axis) if head_aim else plan
 
 

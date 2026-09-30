@@ -179,6 +179,57 @@ class MayaCharacterRegistryMixin:
             raise CharacterRegistryError(
                 'Torso Root 位置来源不属于原控制链')
         root_point_from_fkx = pelvis_source == list(root_fkx)
+        from adv_py.core.body_spline import BodySplinePlan
+        spline_axis = isinstance(registration.spine, BodySplinePlan)
+        axial_point_name = root_namespace + (
+            'AdvPy_SplineFKRootPoint' if spline_axis
+            else 'AdvPy_SpineFKRootPoint')
+        axial_orient_name = root_namespace + (
+            'AdvPy_SplineBaseFKOrient' if spline_axis
+            else 'AdvPy_SpineBaseFKOrient')
+        axial_points = c.ls(axial_point_name, long=True,
+                            type='pointConstraint') or []
+        axial_orients = c.ls(axial_orient_name, long=True,
+                             type='orientConstraint') or []
+        if len(axial_points) != 1 or len(axial_orients) != 1:
+            raise CharacterRegistryError('轴向 FK 起点约束缺失或不唯一')
+        axial_targets = c.pointConstraint(
+            axial_points[0], query=True, targetList=True) or []
+        axial_orient_targets = c.orientConstraint(
+            axial_orients[0], query=True, targetList=True) or []
+        if len(axial_targets) != 1 or len(axial_orient_targets) != 1:
+            raise CharacterRegistryError('轴向 FK 起点来源不唯一')
+        axial_source = c.ls(axial_targets[0], long=True) or []
+        axial_receiver = c.ls(axial_orient_targets[0], long=True) or []
+        axial_control = registration.spine.fk_controls[0]
+        axial_proxy_name = root_namespace + 'AdvPy_Root_M_InbetweenFKX'
+        axial_proxy = c.ls(axial_proxy_name, long=True,
+                           type='joint') or []
+        owned_axial_proxy = (
+            axial_receiver == axial_proxy and len(axial_proxy) == 1
+            and c.objExists(axial_proxy_name + '.advPyInbetweenFkOwner')
+            and c.getAttr(axial_proxy_name + '.advPyInbetweenFkOwner')
+            == 'adv_py.inbetween_fk.v1')
+        if (len(axial_source) != 1 or len(axial_receiver) != 1
+                or not (axial_receiver[0] == axial_control
+                        or axial_receiver[0].startswith(axial_control + '|')
+                        or owned_axial_proxy)
+                or axial_source not in (
+                    [registration.spine.pelvis_control],
+                    axial_receiver)):
+            raise CharacterRegistryError('轴向 FK 起点位置来源不属于原控制链')
+        axial_point_from_receiver = axial_source == axial_receiver
+        for axis in 'XYZ':
+            outputs = c.listConnections(
+                axial_points[0] + '.constraintTranslate' + axis,
+                source=False, destination=True, plugs=True) or []
+            if (len(outputs) != 1
+                    or not outputs[0].endswith('.translate' + axis)
+                    or (c.ls(outputs[0].rsplit('.', 1)[0],
+                             long=True) or [])
+                    != [registration.spine.joints[0].path]):
+                raise CharacterRegistryError(
+                    '轴向 FK 起点位置目标不是 FK 根关节')
         for node in registration.nodes:
             leaf = node.path.rsplit('|', 1)[-1]
             short = leaf.rsplit(':', 1)[-1]
@@ -736,6 +787,7 @@ class MayaCharacterRegistryMixin:
             standard_point_control_names=frozenset(standard_points),
             torso_point_control_names=frozenset(torso_points),
             torso_root_point_from_fkx=root_point_from_fkx,
+            axial_fk_root_point_from_receiver=axial_point_from_receiver,
             standard_fkx_joint_names=frozenset(standard_fkx_joints),
             hand_fkx_joint_names=frozenset(hand_fkx_joints),
             standard_fk_independent_controls=frozenset(

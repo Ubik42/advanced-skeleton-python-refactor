@@ -861,6 +861,11 @@ class BuildRegisteredBodyCharacter:
                     _generic_fk_policy.torso_root_point_from_fkx
                     if _generic_fk_policy is not None
                     and _generic_fk_policy.torso_root_point_from_fkx
+                    is not None else True),
+                axial_fk_root_point_from_receiver=(
+                    _generic_fk_policy.axial_fk_root_point_from_receiver
+                    if _generic_fk_policy is not None
+                    and _generic_fk_policy.axial_fk_root_point_from_receiver
                     is not None else True))
             if not use_fit_part_hierarchy:
                 BuildFitPartScaleDrivers(joined).apply_terminal_only(

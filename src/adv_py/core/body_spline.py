@@ -61,6 +61,7 @@ class BodySplinePlan:
     isolated_mid_follow_graph: bool = False
     sub_targets: tuple[str, ...] = ()
     extra_curve: bool = False
+    fk_root_point_from_receiver: bool = True
 
     @property
     def extra_targets(self) -> tuple[str, ...]:
@@ -253,7 +254,10 @@ def fit_spline_controls(points):
 
 
 def with_spline_ik(body,torso,description,
-                   build_options: BodyBuildOptions = BodyBuildOptions()):
+                   build_options: BodyBuildOptions = BodyBuildOptions(),
+                   *, fk_root_point_from_receiver: bool = True):
+    if type(fk_root_point_from_receiver) is not bool:
+        raise FitSkeletonValidationError('Spline FK 起点位置来源开关无效')
     states=description.validate(body)
     source=tuple(states[name] for name in description.spine)
     delta=tuple(b-a for a,b in zip(source[0].world_position,source[-1].world_position))
@@ -351,5 +355,6 @@ def with_spline_ik(body,torso,description,
                   for i in range(len(positions)))
     subs=tuple(target+f'|AdvPy_SplineIK{i}Sub'
                for i,target in enumerate(targets)) if build_options.sub_controllers else ()
-    plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths),torso.use_offset_parent_matrix,True,isolated_follow,isolated_follow,isolated_follow,subs,build_options.extra_controllers)
+    plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths),torso.use_offset_parent_matrix,True,isolated_follow,isolated_follow,isolated_follow,subs,build_options.extra_controllers,
+                        fk_root_point_from_receiver=fk_root_point_from_receiver)
     return replace(torso,controls=replace(torso.controls,controls=tuple(updated)),spline=plan)

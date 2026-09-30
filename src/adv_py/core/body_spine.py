@@ -43,6 +43,7 @@ class BodySpinePlan:
     ik_sub_path: str | None = None
     ik_extra_curve: bool = False
     fk_sources: tuple[str, str, str] | None = None
+    fk_root_point_from_receiver: bool = True
 
     @property
     def ik_extra_path(self) -> str | None:
@@ -120,8 +121,11 @@ class BodySpinePlan:
              ("AdvPy_SpineChestSpaceParent",))
 
 
-def with_spine_ik(body, torso, build_options: BodyBuildOptions = BodyBuildOptions()):
+def with_spine_ik(body, torso, build_options: BodyBuildOptions = BodyBuildOptions(),
+                  *, fk_root_point_from_receiver: bool = True):
     """Extend the fixed torso topology with a separate two-segment spine mechanism."""
+    if type(fk_root_point_from_receiver) is not bool:
+        raise FitSkeletonValidationError('Spine FK 起点位置来源开关无效')
     states = {j.name: j for j in body.joints}
     source = tuple(states[name] for name in ("Root_M", "Spine1_M", "Chest_M"))
     # The pelvis frame also serves the legs. Give the independent spine base its
@@ -229,6 +233,7 @@ def with_spine_ik(body, torso, build_options: BodyBuildOptions = BodyBuildOption
         fk_sources=tuple(
             control.source_override_path or control.sub_control_path
             or control.control_path for control in (base, waist, chest)),
+        fk_root_point_from_receiver=fk_root_point_from_receiver,
     )
     return replace(torso, controls=replace(torso.controls, controls=(pelvis, base, waist, chest, *updated_upper)), spine=plan)
 

@@ -21,6 +21,8 @@ def decode_spline(raw, body):
         raw = {**raw, 'isolated_mid_follow_graph': False}
     if isinstance(raw, dict) and 'sub_targets' not in raw:
         raw = {**raw, 'sub_targets': [], 'extra_curve': False}
+    if isinstance(raw, dict) and 'fk_root_point_from_receiver' not in raw:
+        raw = {**raw, 'fk_root_point_from_receiver': False}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
     if type(raw['use_offset_parent_matrix']) is not bool:
         raise CharacterRegistryError('Spline OPM 开关无效')
@@ -37,6 +39,8 @@ def decode_spline(raw, body):
         raise CharacterRegistryError('Spline 独立跟随层标记无效')
     if type(raw['extra_curve']) is not bool:
         raise CharacterRegistryError('Spline IK Extra 曲线标记无效')
+    if type(raw['fk_root_point_from_receiver']) is not bool:
+        raise CharacterRegistryError('Spline FK 位置来源开关无效')
     body_paths = tuple(path(p) for p in raw['body_joints'])
     count = len(body_paths)
     if not 2 <= count <= 64 or len(set(body_paths)) != count:
@@ -111,4 +115,5 @@ def decode_spline(raw, body):
                           lengths, raw['use_offset_parent_matrix'],
                           raw['even_stretch_graph'], raw['twist_ramp_graph'],
                           raw['mid_follow_graph'], raw['isolated_mid_follow_graph'],
-                          subs, raw['extra_curve'])
+                          subs, raw['extra_curve'],
+                          raw['fk_root_point_from_receiver'])
