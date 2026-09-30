@@ -56,6 +56,14 @@ class MayaBodyFkScaleCompensationMixin:
                     != [spec.driven_joint_path]):
                 raise ValueError("非 OPM FKX 缩放补偿来源无效："
                                  + spec.offset_path)
+            if spec.body_joint_path is not None and (
+                    (c.ls(spec.body_joint_path, long=True,
+                          type="joint") or []) != [spec.body_joint_path]
+                    or not c.getAttr(spec.body_joint_path
+                                     + ".segmentScaleCompensate",
+                                     settable=True)):
+                raise ValueError("FKX 对应 Body 关节缩放补偿属性不可写："
+                                 + spec.offset_path)
             if any(self.find_name_collisions(name)
                    for name in spec.node_names):
                 raise ValueError("FKPS 节点名称冲突：" + spec.offset_path)
@@ -274,6 +282,10 @@ class MayaBodyFkScaleCompensationMixin:
         if spec.inherit_scale:
             # MEL's non-OPM branch lets this segment inherit parent scale.
             c.setAttr(spec.driven_joint_path + ".segmentScaleCompensate", 0)
+            if (spec.body_joint_path is not None
+                    and spec.body_joint_path != spec.driven_joint_path):
+                c.setAttr(spec.body_joint_path
+                          + ".segmentScaleCompensate", 0)
             c.setAttr(spec.parent_control_path
                       + ".segmentScaleCompensate", 0)
             return
@@ -311,7 +323,9 @@ class MayaBodyFkScaleCompensationMixin:
             return (not bool(c.getAttr(
                 spec.parent_control_path + ".segmentScaleCompensate"))
                 and not bool(c.getAttr(
-                    spec.driven_joint_path + ".segmentScaleCompensate")))
+                    spec.driven_joint_path + ".segmentScaleCompensate"))
+                and (spec.body_joint_path is None or not bool(c.getAttr(
+                    spec.body_joint_path + ".segmentScaleCompensate"))))
         ps1 = c.ls(spec.fkps1_name, long=True,
                    type="transform") or []
         ps2 = c.ls(spec.fkps2_name, long=True,

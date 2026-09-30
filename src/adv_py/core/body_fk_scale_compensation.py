@@ -27,6 +27,7 @@ class BodyFkScaleCompensationSpec:
     main_scale_source_path: str | None = None
     mel_non_opm_fkx: bool = False
     driven_joint_path: str | None = None
+    body_joint_path: str | None = None
 
     @property
     def fkps1_name(self) -> str:
@@ -81,9 +82,13 @@ def plan_body_fk_scale_compensation(
         raise ValueError("FK 缩放补偿需要明确的 OPM 构建选项")
     source_by_output = {item.output_path: item.source_joint
                         for item in instances}
+    output_by_source_side = {
+        (item.source_joint, item.side): item.output_path
+        for item in instances}
     generated_source_by_output = dict(generated_joint_sources)
     metadata_by_source = {item.joint: item for item in metadata}
     if (len(source_by_output) != len(instances)
+            or len(output_by_source_side) != len(instances)
             or len(metadata_by_source) != len(metadata)
             or len(generated_source_by_output) != len(generated_joint_sources)
             or any(source not in source_by_output
@@ -155,7 +160,9 @@ def plan_body_fk_scale_compensation(
                 not use_offset_parent_matrix
                 and parent_control.source_override_joint
                 and parent_control.source_override_path == control.parent_path),
-            driven_joint_path=control.driven_joint)
+            driven_joint_path=control.driven_joint,
+            body_joint_path=output_by_source_side.get(
+                (source, control.side)))
         if any(name in names for name in spec.node_names):
             raise ValueError("FK 缩放补偿节点名称重复：" + leaf)
         names.update(spec.node_names)
