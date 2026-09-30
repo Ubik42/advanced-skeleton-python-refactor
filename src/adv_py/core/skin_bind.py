@@ -156,9 +156,9 @@ def plan_skin_bind(
     if (
         isinstance(maximum_influences, bool)
         or not isinstance(maximum_influences, int)
-        or maximum_influences < 1
+        or not 1 <= maximum_influences <= 256
     ):
-        raise SkinBindValidationError("Skin Bind 最大影响数必须是正整数")
+        raise SkinBindValidationError("Skin Bind 最大影响数须为 1 至 256 的整数")
     if not isinstance(maintain_maximum_influences, bool):
         raise SkinBindValidationError("Skin Bind 最大影响数开关必须是布尔值")
     if not isinstance(bind_method, SkinBindMethod):
