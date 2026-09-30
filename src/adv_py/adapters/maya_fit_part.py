@@ -1,6 +1,8 @@
 """Maya node boundary for the generic Fit-driven Part hierarchy."""
 from __future__ import annotations
 
+from math import isfinite
+
 from adv_py.core.fit_part import (
     FitPartChildState,
     FitPartJointSpec,
@@ -476,7 +478,11 @@ class MayaFitPartMixin:
             if spec.kind not in ("twist", "inbetween"):
                 raise ValueError("Fit Part 类型无效：" + spec.name)
             self._unique_fit_part_joint(spec.start_body_name)
-            self._unique_fit_part_joint(spec.end_body_name)
+            end = self._unique_fit_part_joint(spec.end_body_name)
+            if spec.kind == "twist" and not isfinite(float(c.getAttr(
+                    end + ".translateX"))):
+                raise ValueError("Fit Part 下游局部长度无效："
+                                 + spec.end_body_name)
             if (spec.parent_name not in planned_names
                     and spec.parent_name != spec.start_body_name):
                 raise ValueError("Fit Part 父关节不在构建计划中：" + spec.name)
@@ -528,7 +534,22 @@ class MayaFitPartMixin:
         }[spec.side])
         c.setAttr(joint + ".segmentScaleCompensate",
                   spec.segment_scale_compensate)
-        c.xform(joint, worldSpace=True, translation=spec.world_position)
+        if spec.kind == "twist":
+            # The MEL Part pass places every segment at the downstream
+            # Body's pre-reparent local X distance divided by N + 1.
+            end = self._unique_fit_part_joint(spec.end_body_name)
+            distance = float(c.getAttr(end + ".translateX"))
+            if not isfinite(distance):
+                raise ValueError("Fit Part 下游局部长度无效：" + spec.end_body_name)
+            c.setAttr(joint + ".translateX", distance / (spec.count + 1))
+            position = c.xform(joint, query=True, worldSpace=True,
+                               translation=True)
+            if any(abs(float(actual) - planned) > 1e-4
+                   for actual, planned in zip(position, spec.world_position)):
+                raise RuntimeError("Fit Part 局部段长与 Body 朝向不一致："
+                                   + spec.name)
+        else:
+            c.xform(joint, worldSpace=True, translation=spec.world_position)
         c.addAttr(joint, longName="advPyAuxiliaryInfluenceKind",
                   dataType="string")
         marker = (_FIT_INBETWEEN_KIND if spec.kind == "inbetween"
