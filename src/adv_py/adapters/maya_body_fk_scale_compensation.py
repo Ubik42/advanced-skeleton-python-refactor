@@ -65,16 +65,17 @@ class MayaBodyFkScaleCompensationMixin:
             if spec.body_joint_path is not None and (
                     (c.ls(spec.body_joint_path, long=True,
                           type="joint") or []) != [spec.body_joint_path]
-                    or not c.getAttr(spec.body_joint_path
-                                     + ".segmentScaleCompensate",
-                                     settable=True)):
+                    or (spec.inherit_scale and not c.getAttr(
+                        spec.body_joint_path
+                        + ".segmentScaleCompensate", settable=True))):
                 raise ValueError("FKX 对应 Body 关节缩放补偿属性不可写："
                                  + spec.offset_path)
             if any(self.find_name_collisions(name)
                    for name in spec.node_names):
                 raise ValueError("FKPS 节点名称冲突：" + spec.offset_path)
-            if (not c.getAttr(spec.parent_control_path
-                              + ".segmentScaleCompensate", settable=True)
+            if spec.inherit_scale and (
+                    not c.getAttr(spec.parent_control_path
+                                  + ".segmentScaleCompensate", settable=True)
                     or not c.getAttr(spec.driven_joint_path
                                      + ".segmentScaleCompensate",
                                      settable=True)):
