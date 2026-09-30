@@ -76,6 +76,11 @@ class RebindSkinFromSurfaceSource:
                 and source.blend_weights is None):
             raise FitSkeletonValidationError(
                 "Weight Blended 重绑需要含逐顶点混合权重的新版来源资产")
+        if source.member_vertices is None:
+            raise FitSkeletonValidationError(
+                "拓扑重绑需要记录 Skin 变形集成员的新版来源资产")
+        if not source.member_vertices:
+            raise FitSkeletonValidationError("源 Skin 变形集没有受影响顶点")
         bind = plan_skin_bind(mesh, state.influences, skin_name=skin,
             maximum_influences=state.maximum_influences,
             maintain_maximum_influences=state.maintain_maximum_influences,
@@ -101,7 +106,8 @@ class RebindSkinFromSurfaceSource:
                 source.weights, source.geometry, skin, mesh,
                 max_distance=max_distance,
                 max_discarded_weight=max_discarded_weight,
-                source_blend_weights=source.blend_weights)
+                source_blend_weights=source.blend_weights,
+                source_member_vertices=source.member_vertices)
             projected_weights = transfer.transfer.document
             if projected_weights.normalized:
                 editor = EditSkinWeights(self._host)
@@ -127,6 +133,12 @@ class RebindSkinFromSurfaceSource:
                                    restored, projected))):
                     raise RuntimeError(
                         "Weight Blended 重绑混合权重未完整写回")
+            projected_members = transfer.transfer.member_vertices
+            if projected_members is None or not projected_members:
+                raise FitSkeletonValidationError(
+                    "表面投射没有生成可用的 Skin 变形集")
+            self._host.apply_skin_vertex_membership(
+                skin, mesh, projected_members)
             self._host.restore_skin_rebind_influences(state)
             return SkinRebindResult(transfer.transfer.document.vertex_count,
                 changed_vertices,

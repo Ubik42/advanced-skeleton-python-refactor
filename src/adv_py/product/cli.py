@@ -843,6 +843,7 @@ def _run(args, gateway) -> dict:
                 max_distance=args.max_distance,
                 max_discarded_weight=args.max_discarded_weight, mapping=mapping,
                 source_blend_weights=source.blend_weights,
+                source_member_vertices=source.member_vertices,
                 redistribution=redistribution,
                 alignment=alignment,
                 allow_target_extra_influences=args.allow_target_extra_influences,

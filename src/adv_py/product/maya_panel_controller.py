@@ -1778,6 +1778,7 @@ class MayaPanelController:
                 max_distance=max_distance,
                 max_discarded_weight=max_discarded_weight,
                 source_blend_weights=source.blend_weights,
+                source_member_vertices=source.member_vertices,
                 mapping=mapping, redistribution=redistribution,
                 alignment=alignment,
                 allow_target_extra_influences=allow_target_extra_influences,

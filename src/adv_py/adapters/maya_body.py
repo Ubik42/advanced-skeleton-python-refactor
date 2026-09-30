@@ -6265,8 +6265,6 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         return manager, preferences, members
 
     def capture_skin_rebind_state(self, skin: str, mesh: str):
-        from maya.api import OpenMaya as om
-        from maya.api import OpenMayaAnim as oma
         from adv_py.application.skin_rebind import SkinRebindState
         from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
 
@@ -6294,17 +6292,6 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         parents = c.listRelatives(bound[0], parent=True, fullPath=True) if bound else []
         if parents != [mesh]:
             raise FitSkeletonValidationError("Skin 与重绑目标网格不匹配")
-        selection = om.MSelectionList()
-        selection.add(self.scene_address(skin))
-        skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
-        current_vertices = int(c.polyEvaluate(shapes[0], vertex=True))
-        affected = self._skin_vertex_members(skin_fn,
-            self.scene_address(shapes[0]), self.scene_address(mesh),
-            current_vertices)
-        if len(affected) != current_vertices:
-            raise FitSkeletonValidationError(
-                '局部 Skin 变形集需要随拓扑映射的顶点成员资产；'
-                '当前来源仅含权重，不能安全重绑：' + skin)
         history = c.listHistory(shapes[0], pruneDagObjects=True) or []
         skin_history = {node for node in history if c.nodeType(node) == "skinCluster"}
         if skin_history != {skin}:
@@ -6390,6 +6377,68 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             raise FitSkeletonValidationError(
                 "源 Skin 绑定拓扑与当前网格不同，不能作为转移来源")
         return recorded
+
+    def capture_skin_vertex_membership(self, skin: str,
+                                       mesh: str) -> tuple[int, ...]:
+        from maya.api import OpenMaya as om
+        from maya.api import OpenMayaAnim as oma
+
+        c = self._cmds
+        clusters = c.ls(skin, type='skinCluster') or []
+        meshes = c.ls(mesh, long=True, type='transform') or []
+        if clusters != [skin] or meshes != [mesh]:
+            raise FitSkeletonValidationError(
+                'Skin 变形集目标不存在或名称不唯一')
+        shapes = c.skinCluster(skin, query=True, geometry=True) or []
+        paths = c.ls(shapes[0], long=True, type='mesh') if len(shapes)==1 else []
+        parents = (c.listRelatives(paths[0], parent=True,
+            fullPath=True) or []) if len(paths)==1 else []
+        if parents != [mesh]:
+            raise FitSkeletonValidationError('Skin 变形集网格与目标不一致')
+        selection = om.MSelectionList()
+        selection.add(self.scene_address(skin))
+        skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
+        count = int(c.polyEvaluate(paths[0], vertex=True))
+        return self._skin_vertex_members(skin_fn,
+            self.scene_address(paths[0]), self.scene_address(mesh), count)
+
+    def apply_skin_vertex_membership(self, skin: str, mesh: str,
+                                     members: tuple[int, ...]) -> None:
+        from maya.api import OpenMaya as om
+        from maya.api import OpenMayaAnim as oma
+
+        self._require_transaction()
+        if (not isinstance(members, tuple)
+                or any(type(index) is not int for index in members)
+                or tuple(sorted(set(members))) != members):
+            raise FitSkeletonValidationError('目标 Skin 变形集成员无效')
+        current = self.capture_skin_vertex_membership(skin, mesh)
+        count = int(self._cmds.polyEvaluate(mesh, vertex=True))
+        if not members or any(index < 0 or index >= count for index in members):
+            raise FitSkeletonValidationError('目标 Skin 变形集为空或索引越界')
+        if current == members:
+            return
+        self._transaction_changed = True
+        selection = om.MSelectionList()
+        selection.add(self.scene_address(skin))
+        skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
+        deformer_set = om.MFnSet(
+            oma.MFnGeometryFilter(skin_fn.object()).deformerSet)
+        shapes = self._cmds.skinCluster(skin, query=True, geometry=True) or []
+        paths = self._cmds.ls(shapes[0], long=True, type='mesh') if len(shapes)==1 else []
+        if len(paths)!=1:
+            raise FitSkeletonValidationError('目标 Skin 变形集网格缺失')
+        dag = om.MSelectionList().add(self.scene_address(paths[0])).getDagPath(0)
+        deformer_set.clear()
+        if len(members)==count:
+            deformer_set.addMember(dag)
+        else:
+            component_fn = om.MFnSingleIndexedComponent()
+            component = component_fn.create(om.MFn.kMeshVertComponent)
+            component_fn.addElements(list(members))
+            deformer_set.addMember((dag, component))
+        if self.capture_skin_vertex_membership(skin, mesh) != members:
+            raise RuntimeError('目标 Skin 变形集顶点成员未完整写回')
 
     def _skin_api(self, skin_name: str):
         from .maya_dense_skin import MayaDenseSkinHost

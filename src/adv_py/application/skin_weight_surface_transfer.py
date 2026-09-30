@@ -38,6 +38,11 @@ class SkinWeightSurfaceHost(SkinWeightDocumentHost, Protocol):
     def scene_linear_unit(self) -> BodyFbxLinearUnit: ...
     def capture_skin_blend_weights(self, skin_name: str): ...
     def apply_skin_blend_weights(self, skin_name: str, values) -> None: ...
+    def capture_skin_vertex_membership(self, skin_name: str,
+                                       mesh_path: str) -> tuple[int, ...]: ...
+    def apply_skin_vertex_membership(self, skin_name: str,
+                                     mesh_path: str,
+                                     members: tuple[int, ...]) -> None: ...
     def preflight_raw_skin_document(self, document: SkinWeightDocument) -> None: ...
     def apply_raw_skin_document(self, document: SkinWeightDocument) -> None: ...
 
@@ -51,6 +56,8 @@ class SkinWeightSurfacePlan:
     source_triangles: tuple[Triangle, ...]
     transfer: SkinWeightSurfaceTransferResult
     source_blend_weights: tuple[float, ...] | None = None
+    source_member_vertices: tuple[int, ...] | None = None
+    target_member_vertices: tuple[int, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +73,7 @@ class SkinWeightDocumentSurfacePlan:
     target_state: SkinWeightInputState
     target_mesh: FaceMeshSnapshot
     transfer: SkinWeightSurfaceTransferResult
+    target_member_vertices: tuple[int, ...] | None = None
 
 
 class TransferSkinWeightsBySurface:
@@ -90,6 +98,12 @@ class TransferSkinWeightsBySurface:
                                 "capture_skin_blend_weights", None)
         blend_weights = (tuple(float(value) for value in
             capture_blend(source_skin)) if capture_blend is not None else None)
+        capture_members = getattr(self._host,
+                                  "capture_skin_vertex_membership", None)
+        source_members = (capture_members(source_skin, source_mesh)
+                          if capture_members is not None else None)
+        target_members = (capture_members(target_skin, target_mesh)
+                          if capture_members is not None else None)
         target_state = self._host.capture_all_skin_weights(target_skin, target_mesh)
         source_geometry = self._host.capture_face_mesh(source_mesh)
         target_geometry = self._host.capture_face_mesh(target_mesh)
@@ -114,12 +128,14 @@ class TransferSkinWeightsBySurface:
             target_geometry, triangles, target_state, max_distance=max_distance,
             max_discarded_weight=max_discarded_weight, alignment=alignment,
             allow_target_extra_influences=allow_target_extra_influences,
-            source_blend_weights=blend_weights)
+            source_blend_weights=blend_weights,
+            source_member_vertices=source_members)
         self._preflight_transfer_document(transfer.document,
             target_skin, target_mesh)
         return SkinWeightSurfacePlan(source_state, target_state, source_geometry,
                                      target_geometry, triangles, transfer,
-                                     blend_weights)
+                                     blend_weights, source_members,
+                                     target_members)
 
     def apply(self, source_skin: str, source_mesh: str, target_skin: str,
               target_mesh: str, *, max_distance: float,
@@ -142,13 +158,28 @@ class TransferSkinWeightsBySurface:
             or (plan.source_blend_weights is not None and
                 tuple(float(value) for value in
                     self._host.capture_skin_blend_weights(source_skin))
-                    != plan.source_blend_weights)):
+                    != plan.source_blend_weights)
+            or (plan.source_member_vertices is not None and
+                self._host.capture_skin_vertex_membership(
+                    source_skin,source_mesh)!=plan.source_member_vertices)
+            or (plan.target_member_vertices is not None and
+                self._host.capture_skin_vertex_membership(
+                    target_skin,target_mesh)!=plan.target_member_vertices)):
             raise FitSkeletonValidationError("表面权重转移输入在执行前发生变化")
         with self._host.transaction("表面投射 Skin 权重与混合权重"):
+            if (plan.transfer.member_vertices is not None
+                    and plan.target_member_vertices is not None
+                    and len(plan.target_member_vertices)
+                    != plan.target_state.vertex_count):
+                self._host.apply_skin_vertex_membership(target_skin,
+                    target_mesh,tuple(range(plan.target_state.vertex_count)))
             edit = self._apply_transfer_document(
                 plan.transfer.document, target_skin, target_mesh)
             self._apply_projected_blend_weights(target_skin,
                 plan.transfer.blend_weights)
+            if plan.transfer.member_vertices is not None:
+                self._host.apply_skin_vertex_membership(
+                    target_skin,target_mesh,plan.transfer.member_vertices)
             if (self._host.capture_all_skin_weights(source_skin, source_mesh)
                     != plan.source_state):
                 raise RuntimeError("表面权重转移后源权重发生变化")
@@ -157,6 +188,10 @@ class TransferSkinWeightsBySurface:
                         self._host.capture_skin_blend_weights(source_skin))
                     != plan.source_blend_weights):
                 raise RuntimeError("表面权重转移后源混合权重发生变化")
+            if (plan.source_member_vertices is not None and
+                    self._host.capture_skin_vertex_membership(
+                        source_skin,source_mesh)!=plan.source_member_vertices):
+                raise RuntimeError("表面权重转移后源 Skin 变形集发生变化")
         return SkinWeightSurfaceResult(plan, edit)
 
     def _preflight_transfer_document(self, document: SkinWeightDocument,
@@ -204,6 +239,7 @@ class TransferSkinWeightsBySurface:
             geometry: FaceNeutralGeometry, target_skin: str, target_mesh: str,
             *, max_distance: float, max_discarded_weight: float = 0.,
             source_blend_weights: tuple[float, ...] | None = None,
+            source_member_vertices: tuple[int, ...] | None = None,
             mapping: SkinWeightPathMapping | None = None,
             redistribution: SkinWeightRedistribution | None = None,
             alignment: FaceSurfaceAlignment | None = None,
@@ -234,21 +270,28 @@ class TransferSkinWeightsBySurface:
             mapped = weights
         target_state = self._host.capture_all_skin_weights(target_skin, target_mesh)
         target_geometry = self._host.capture_face_mesh(target_mesh)
+        capture_members = getattr(self._host,
+                                  "capture_skin_vertex_membership", None)
+        target_members = (capture_members(target_skin,target_mesh)
+                          if capture_members is not None else None)
         transfer = transfer_skin_weights_by_surface(mapped, geometry.mesh,
             target_geometry, geometry.triangles, target_state,
             max_distance=max_distance, max_discarded_weight=max_discarded_weight,
             source_blend_weights=source_blend_weights,
+            source_member_vertices=source_member_vertices,
             alignment=alignment,
             allow_target_extra_influences=allow_target_extra_influences)
         self._preflight_transfer_document(transfer.document,
             target_skin, target_mesh)
         return SkinWeightDocumentSurfacePlan(weights, geometry, target_state,
-                                              target_geometry, transfer)
+                                              target_geometry, transfer,
+                                              target_members)
 
     def apply_from_documents(self, weights: SkinWeightDocument,
             geometry: FaceNeutralGeometry, target_skin: str, target_mesh: str,
             *, max_distance: float, max_discarded_weight: float = 0.,
             source_blend_weights: tuple[float, ...] | None = None,
+            source_member_vertices: tuple[int, ...] | None = None,
             mapping: SkinWeightPathMapping | None = None,
             redistribution: SkinWeightRedistribution | None = None,
             alignment: FaceSurfaceAlignment | None = None,
@@ -259,19 +302,32 @@ class TransferSkinWeightsBySurface:
         plan = self.plan_from_documents(weights, geometry, target_skin, target_mesh,
             max_distance=max_distance, max_discarded_weight=max_discarded_weight,
             source_blend_weights=source_blend_weights,
+            source_member_vertices=source_member_vertices,
             mapping=mapping, redistribution=redistribution, alignment=alignment,
             allow_target_extra_influences=allow_target_extra_influences,
             allow_unweighted_missing=allow_unweighted_missing)
         if (self._host.capture_all_skin_weights(target_skin, target_mesh) != plan.target_state
                 or self._host.capture_face_mesh(target_mesh) != plan.target_mesh
                 or self._host.scene_up_axis().value != geometry.up_axis
-                or self._host.scene_linear_unit().value != geometry.linear_unit):
+                or self._host.scene_linear_unit().value != geometry.linear_unit
+                or (plan.target_member_vertices is not None and
+                    self._host.capture_skin_vertex_membership(
+                        target_skin,target_mesh)!=plan.target_member_vertices)):
             raise FitSkeletonValidationError("表面权重转移目标在执行前发生变化")
         with self._host.transaction("从资产投射 Skin 权重与混合权重"):
+            if (plan.transfer.member_vertices is not None
+                    and plan.target_member_vertices is not None
+                    and len(plan.target_member_vertices)
+                    != plan.target_state.vertex_count):
+                self._host.apply_skin_vertex_membership(target_skin,
+                    target_mesh,tuple(range(plan.target_state.vertex_count)))
             edit = self._apply_transfer_document(
                 plan.transfer.document, target_skin, target_mesh)
             self._apply_projected_blend_weights(target_skin,
                 plan.transfer.blend_weights)
+            if plan.transfer.member_vertices is not None:
+                self._host.apply_skin_vertex_membership(
+                    target_skin,target_mesh,plan.transfer.member_vertices)
         return plan, edit
 
 
@@ -298,6 +354,10 @@ class CaptureSkinWeightSurfaceSource:
                                 "capture_skin_blend_weights", None)
         blend_weights = (tuple(float(value) for value in
             capture_blend(skin_name)) if capture_blend is not None else None)
+        capture_members = getattr(self._host,
+                                  "capture_skin_vertex_membership", None)
+        member_vertices = (capture_members(skin_name, mesh_path)
+                           if capture_members is not None else None)
         if (self._host.capture_all_skin_weights(skin_name, mesh_path) != state
                 or self._host.capture_face_mesh(mesh_path) != mesh
                 or self._host.capture_face_triangles(mesh_path) != triangles
@@ -312,8 +372,12 @@ class CaptureSkinWeightSurfaceSource:
                 capture_blend(skin_name)) != blend_weights):
             raise FitSkeletonValidationError(
                 "源 Skin 逐顶点混合权重在捕获期间发生变化")
+        if (capture_members is not None
+                and capture_members(skin_name, mesh_path) != member_vertices):
+            raise FitSkeletonValidationError(
+                "源 Skin 变形集成员在捕获期间发生变化")
         source = SkinWeightSurfaceSource(document, geometry, bind_topology,
-                                         blend_weights)
+                                         blend_weights, member_vertices)
         skin_weight_surface_source_to_json(source)
         return source
 
