@@ -153,3 +153,321 @@ class MayaFaceControllersMixin:
             for node in c.listRelatives(box,children=True,fullPath=True,type="transform") or []:
                 c.setAttr(node+".visibility",not hide)
         self._transaction_changed=True
+
+    def constrain_original_face(self,driver,driven,maintain_offset=False,*,opm=None,pick=False):
+        """Shared asParentConstraint -FMM path, including explicit DM mode."""
+        from dataclasses import replace
+        from adv_py.core.body_parent_constraint import plan_body_parent_constraint
+        c=self._cmds
+        driver_path=(c.ls(driver,long=True) or [None])[0]
+        driven_path=(c.ls(driven,long=True) or [None])[0]
+        if not driver_path or not driven_path: raise ValueError("Face 约束节点缺失")
+        plan=plan_body_parent_constraint(replace(self.capture_parent_constraint_input(
+            driver_path,driven_path,maintain_offset),force_mult_matrix=True,
+            include_pick_matrix=pick,use_offset_parent_matrix=(
+                self.face_use_offset_parent_matrix() if opm is None else opm)))
+        self.preflight_parent_constraint(plan)
+        self.create_parent_constraint(plan)
+        return plan
+
+    def project_original_face_control(self,control):
+        """asFacePlaceCtrlByProjection, source 46224–46272."""
+        from math import sin,cos,radians
+        c=self._cmds
+        stem,side=control.rsplit("_",1)
+        angle=radians(float(c.getAttr(stem+"Offset_"+side+".ry")))
+        direction=(sin(angle)*(-1 if side=="R" else 1),0,cos(angle))
+        projected=c.polyProjectCurve(control,"allHeadCombinedLayer",constructionHistory=True,
+            direction=direction,pointsOnEdges=False,tolerance=.01)
+        temp=c.createNode("transform",name="faceProjectionCVTemp#",parent=control)
+        maximum=-999.
+        try:
+            for curve in c.listRelatives(projected[0],children=True,type="transform") or []:
+                count=int(c.getAttr(curve+".spans"))+int(c.getAttr(curve+".degree"))
+                for index in range(count):
+                    position=c.xform(curve+f".cv[{index}]",query=True,worldSpace=True,translation=True)
+                    c.xform(temp,worldSpace=True,translation=position)
+                    maximum=max(maximum,float(c.getAttr(temp+".tz")))
+        finally:
+            c.delete(temp,projected[0])
+        scale=c.xform(control,query=True,worldSpace=True,scale=True)[0]
+        c.move(0,0,maximum*scale,control+".cv[*]",relative=True,
+               objectSpace=True,worldSpaceDistance=True)
+
+    def create_original_face_pp(self,position,name,side,kind,*,create_joint=False,
+                                bind_skin=None,attach=False,legacy_orient=False):
+        """asCreatePP: projected control, matrix joint, subtracter and attacher."""
+        self._require_transaction()
+        c=self._cmds
+        if isinstance(position,str): position=c.xform(position,query=True,worldSpace=True,translation=True)
+        control=self.create_original_face_controller(name,side,kind)
+        offset=name+"Offset"+side; sdk="SDK"+control
+        joint=name+"Joint"+side; joint_offset=name+"JointOffset"+side
+        c.xform(offset,worldSpace=True,translation=position)
+        if create_joint:
+            c.createNode("transform",name=joint_offset,parent="FaceJoint_M")
+            c.createNode("joint",name=joint,parent=joint_offset)
+            c.setAttr(joint+".segmentScaleCompensate",False)
+            c.xform(joint_offset,worldSpace=True,translation=position)
+            self.constrain_original_face(control,joint,True)
+        if bind_skin:
+            raw=getattr(c,"raw",c)
+            raw.skinCluster(self.scene_address(bind_skin),edit=True,
+                addInfluence=self.scene_address(joint),lockWeights=False,weight=0)
+        c.parent(offset,"SideReverse"+side,absolute=True)
+        c.xform(offset,objectSpace=True,rotation=(0,0,0),scale=(1,1,1))
+        fit=self._fit(required=True)
+        skip=c.objExists(fit+".SkipFaceJointOrient") and c.getAttr(fit+".SkipFaceJointOrient")
+        if side!="_M" and c.objExists("FaceControlOrient") and not skip:
+            c.delete(c.normalConstraint("FaceControlOrient",offset,aimVector=(0,0,1),
+                upVector=(0,1,0),worldUpType="vector",worldUpVector=(0,1,0)))
+        self.project_original_face_control(control)
+        if create_joint:
+            c.parent(joint,"FaceJoint_M",absolute=True)
+            c.connectAttr("FaceJoint_M.worldInverseMatrix[0]",name+"JointMM"+side+".matrixIn[2]",force=True)
+            c.xform(joint,objectSpace=True,translation=(0,0,0))
+            c.delete(joint_offset)
+            temp=c.createNode("transform",name="facePPMatrixTemp#",parent=control)
+            c.xform(temp,objectSpace=True,translation=(0,0,0),rotation=(0,0,180 if legacy_orient else 0))
+            matrix=c.xform(temp,query=True,objectSpace=True,matrix=True)
+            c.delete(temp)
+            c.setAttr(name+"JointMM"+side+".matrixIn[0]",*matrix,type="matrix")
+        if attach:
+            attacher=c.createNode("transform",name=name+"Attach"+side,parent=offset)
+            c.parent(sdk,attacher,absolute=True)
+            plus=c.createNode("plusMinusAverage",name=name+"PMA"+side)
+            c.connectAttr(control+".translate",plus+".input3D[0]")
+            c.connectAttr(sdk+".translate",plus+".input3D[1]")
+            subtract=c.createNode("transform",name=name+"Subtract"+side,parent=sdk)
+            multiply=c.createNode("multiplyDivide",name=name+"SubtractMPD"+side)
+            c.setAttr(multiply+".input1",-1,-1,-1)
+            c.connectAttr(plus+".output3D",multiply+".input2")
+            c.connectAttr(multiply+".output",subtract+".translate")
+            c.parent(control,subtract,absolute=True)
+        if attach and create_joint:
+            c.delete(name+"JointMM"+side)
+            # DM mode leaves its decomposer connected after deleting the MM.
+            # Remove its transform inputs before installing the original PMA.
+            dm=name+"JointDM"+side
+            if c.objExists(dm): c.delete(dm)
+            c.setAttr(joint+".offsetParentMatrix",1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,type="matrix")
+            c.createNode("transform",name=joint_offset,parent=offset)
+            if side=="_R": c.setAttr(joint_offset+".sx",-1)
+            c.parent(joint_offset,world=True)
+            if side=="_R": c.setAttr(joint_offset+".sx",-c.getAttr(joint_offset+".sx"))
+            c.parent(joint,joint_offset,relative=True)
+            c.setAttr(joint+".rotate",0,0,0)
+            plus=c.createNode("plusMinusAverage",name=name+"JointPMAt"+side)
+            c.connectAttr(control+".translate",plus+".input3D[0]")
+            c.connectAttr(sdk+".translate",plus+".input3D[1]")
+            if c.objExists(name+"Follow"+side):
+                c.connectAttr(name+"Follow"+side+".translate",plus+".input3D[2]")
+            c.connectAttr(plus+".output3D",joint+".translate",force=True)
+        return control
+
+    def shape_original_face_half_moon(self,control,rotation=0,outer_lid=False):
+        """asFaceHalfMoonCurve CV deformation; no replacement icon geometry."""
+        c=self._cmds
+        def point(index): return c.xform(control+f".cv[{index}]",query=True,worldSpace=True,translation=True)
+        for source,target,factor in ((7,3,8),(0,2,4),(6,4,4)):
+            a,b=point(source),point(target)
+            c.xform(control+f".cv[{target}]",worldSpace=True,translation=(
+                (a[0]*factor+b[0])/(factor+1),(a[1]*3+b[1])/4,(a[2]*3+b[2])/4))
+        for index in (1,5):
+            a,b=point(index),point(3)
+            c.xform(control+f".cv[{index}]",worldSpace=True,translation=((a[0]*4+b[0])/5,a[1],a[2]))
+        pivot=c.xform(control,query=True,worldSpace=True,translation=True)
+        c.scale(.8,1,1,control+".cv[*]",relative=True,pivot=pivot)
+        if outer_lid: c.scale(.75,1.5,1,control+".cv[*]",relative=True,pivot=pivot)
+        c.rotate(0,0,rotation,control+".cv[*]",relative=True,objectSpace=True,pivot=pivot)
+
+    def original_face_output_bw(self,plug):
+        c=self._cmds
+        node,attr=plug.split(".",1)
+        attr=c.attributeQuery(attr,node=node,longName=True)
+        plug=node+"."+attr
+        bw="bw"+node+"_"+attr
+        if not c.objExists(bw):
+            c.createNode("blendWeighted",name=bw)
+            c.connectAttr(plug,bw+".input[0]")
+        return bw+".output"
+
+    def add_original_face_sdk(self,driver,driven,driver_value,driven_value):
+        """asDsSdk additive keys, scale baseline, output BW and cycle infinity."""
+        c=self._cmds
+        start=1. if driven.rsplit(".",1)[-1] in ("sx","sy","sz","scaleX","scaleY","scaleZ") else 0.
+        value=round(float(driven_value),3)
+        if value==start or not c.objExists(driven): return
+        node,attr=driven.split(".",1)
+        driver_node,driver_attr=driver.split(".",1)
+        driver_attr=c.attributeQuery(driver_attr,node=driver_node,longName=True)
+        attr=c.attributeQuery(attr,node=node,longName=True)
+        driver=driver_node+"."+driver_attr
+        driver_bw="bw"+driver_node+"_"+driver_attr
+        if c.objExists(driver_bw): driver=driver_bw+".output"
+        bw="bw"+node+"_"+attr
+        if not c.objExists(bw):
+            incoming=c.listConnections(driven,source=True,destination=False,plugs=True) or []
+            c.createNode("blendWeighted",name=bw)
+            if incoming:
+                c.disconnectAttr(incoming[0],driven)
+                c.connectAttr(incoming[0],bw+".input[0]")
+            c.connectAttr(bw+".output",driven,force=True)
+        indices=c.getAttr(bw+".input",multiIndices=True) or []
+        curves=c.listConnections(bw+".input",source=True,destination=False,type="animCurve",skipConversionNodes=True) or []
+        existing=None
+        for curve in curves:
+            sources=c.listConnections(curve+".input",source=True,destination=False,plugs=True,skipConversionNodes=True) or []
+            if driver in sources: existing=curve; break
+        if existing:
+            destination=(c.listConnections(existing+".output",source=False,destination=True,plugs=True) or [None])[0]
+        else:
+            destination=bw+f".input[{max(indices,default=-1)+1}]"
+            if start and indices: value-=1; start-=1
+        before=set(c.listConnections(destination,source=True,destination=False,type="animCurve") or [])
+        for dv,v in ((0,start),(driver_value,value)):
+            c.setDrivenKeyframe(destination,currentDriver=driver,driverValue=dv,value=v,
+                                inTangentType="linear",outTangentType="linear")
+        after=c.listConnections(destination,source=True,destination=False,type="animCurve") or []
+        for curve in after:
+            if curve not in before:
+                c.setAttr(curve+".preInfinity",4); c.setAttr(curve+".postInfinity",4)
+        self._transaction_changed=True
+
+    def original_face_fit_animation(self,object_attr,value=0):
+        """asFaceFitAnim neutral/full pose keys at 0 and 30."""
+        c=self._cmds
+        if not c.objExists(object_attr): return
+        node=object_attr.split(".",1)[0]
+        raw=getattr(c,"raw",c)
+        raw.showHidden(self.scene_address(node),above=True)
+        if "." in object_attr:
+            attr=object_attr.rsplit(".",1)[1]
+            default=1 if attr in ("sx","sy","sz","scaleX","scaleY","scaleZ") else 0
+            for frame,target in ((0,default),(30,value)):
+                c.setKeyframe(object_attr,shape=False,time=frame,value=target)
+        else:
+            for channel in ("t","r","s"):
+                for axis in "xyz":
+                    for frame in (0,30):
+                        c.setKeyframe(node+"."+channel+axis,shape=False,time=frame,value=1 if channel=="s" else 0)
+
+    def remove_original_face_fit_animations(self):
+        """asFaceRemoveFitAnimationsFromOnFaceCtrls, including Values helpers."""
+        c=self._cmds
+        nodes=c.listRelatives("OnFacecontrols",allDescendents=True,type="transform") or []
+        for offset in nodes:
+            name=offset.rsplit("|",1)[-1]
+            if "Offset_" not in name: continue
+            control=name.replace("Offset","")
+            if not c.objExists(control): continue
+            curves=c.listConnections(control,source=True,destination=False,type="animCurve") or []
+            if curves: c.delete(tuple(dict.fromkeys(curves)))
+            c.xform(control,objectSpace=True,translation=(0,0,0),rotation=(0,0,0),scale=(1,1,1))
+        values=[node for node in c.listRelatives("OnFacecontrols",allDescendents=True,type="transform") or []
+                if re.search(r"Values_[A-Z]$",node)]
+        if values: c.delete(values)
+
+    def finish_original_face_sdk(self,driver_name,driver_side,driver_attr,driver_value):
+        """asFaceDsFinish + asFaceStoreAsDsSdk, source 40868–41015.
+
+        Capture right/center fitting channels at frame 30, mirror the source
+        rules into SDK transforms or custom-attribute BWs, then remove fitting
+        animation. This is shared by subsequent original Face stages.
+        """
+        self._require_transaction()
+        c=self._cmds; raw=getattr(c,"raw",c)
+        auto=bool(raw.autoKeyframe(query=True,state=True))
+        groups={"_RL":[],"_M":[]}
+        for shape in c.listRelatives("OnFacecontrols",allDescendents=True,type="nurbsCurve") or []:
+            parents=c.listRelatives(shape,parent=True) or []
+            if not parents: continue
+            control=parents[0].rsplit("|",1)[-1]
+            if control.endswith("_L"): continue
+            if not c.listConnections(control,source=True,destination=False,type="animCurve"): continue
+            group="_RL" if control.endswith("_R") else "_M"
+            stem=control[:-2]
+            if stem not in groups[group]: groups[group].append(stem)
+        if auto: raw.autoKeyframe(state=False)
+        try:
+            for group,stems in groups.items():
+                for stem in stems:
+                    sides=("_R","_L") if group=="_RL" else (("_M",) if driver_side=="_M" else ("_R","_L"))
+                    value_node=stem+"Values"+("_R" if group=="_RL" else "_M")
+                    c.currentTime(30)
+                    for side in sides:
+                        control=stem+(side if group=="_RL" else "_M")
+                        if not c.objExists(control): continue
+                        if not c.objExists(value_node):
+                            self_parent=(c.listRelatives(control,parent=True) or [None])[0]
+                            c.createNode("transform",name=value_node,parent=control)
+                            c.parent(value_node,self_parent,absolute=True)
+                    c.currentTime(0)
+                    first_control=stem+("_R" if group=="_RL" else "_M")
+                    if not c.objExists(first_control): continue
+                    c.delete(first_control,staticChannels=True)
+                    channels=[]
+                    for attr in c.listAttr(first_control,keyable=True) or []:
+                        animated=bool(c.listConnections(first_control+"."+attr,source=True,destination=False,type="animCurve"))
+                        if not animated: continue
+                        standard=c.attributeQuery(attr,node=value_node,exists=True)
+                        value=c.getAttr(value_node+"."+attr) if standard else c.getAttr(first_control+"."+attr,time=30)
+                        channels.append((attr,standard,value))
+                    for side in sides:
+                        control=stem+(side if group=="_RL" else "_M")
+                        if not c.objExists(control): continue
+                        driven_driver=driver_name+("_M" if driver_side=="_M" else side)+"."+driver_attr
+                        drive_value=1 if driver_name=="ctrlLips" and driver_side=="_M" and driver_attr=="tx" and side=="_L" else driver_value
+                        for attr,standard,value in channels:
+                            current=value
+                            if group=="_M" and side=="_L" and attr in ("translateX","rotateY","rotateZ"): current=-current
+                            c.setAttr(control+"."+attr,1 if attr in ("scaleX","scaleY","scaleZ") else 0)
+                            if driver_name.startswith("ctrlMouth") and driver_name+"_M."+driver_attr!="ctrlMouth_M.ty":
+                                vertical=attr in ("translateY","rotateZ")
+                                if driver_attr=="tx" and vertical or driver_attr=="ty" and not vertical: continue
+                            if standard:
+                                self.add_original_face_sdk(driven_driver,"SDK"+control+"."+attr,drive_value,current)
+                            else:
+                                bw="bw"+control+"_"+attr
+                                if c.objExists(bw):
+                                    self.add_original_face_sdk(driven_driver,control+"."+attr,drive_value,current)
+            self.remove_original_face_fit_animations()
+        finally:
+            if auto: raw.autoKeyframe(state=True)
+        self._transaction_changed=True
+
+    def mirror_original_face_controls(self,connect):
+        """asFaceMirrorConnectCtrls copies channels directly in mirrored spaces."""
+        c=self._cmds
+        for offset in c.listRelatives("OnFacecontrols",allDescendents=True,type="transform") or []:
+            leaf=offset.rsplit("|",1)[-1]
+            if not leaf.endswith("Offset_R"): continue
+            right=leaf.replace("Offset",""); left=right[:-2]+"_L"
+            if not c.objExists(left): continue
+            for attr in c.listAttr(right,keyable=True) or []:
+                if not c.attributeQuery(attr,node=left,exists=True): continue
+                source=right+"."+attr; dest=left+"."+attr
+                if connect: c.connectAttr(source,dest)
+                elif c.isConnected(source,dest): c.disconnectAttr(source,dest)
+
+    def remove_original_face_ctrl_box_fit_animation(self):
+        """asFaceRemoveFitAnimFromCtrlBox resets each unlocked keyable channel."""
+        c=self._cmds
+        for control in c.listRelatives("ctrlBox",allDescendents=True,type="transform") or []:
+            if control.rsplit("|",1)[-1].startswith("ctrlBox"): continue
+            curves=c.listConnections(control,source=True,destination=False,type="animCurve") or []
+            if curves: c.delete(tuple(dict.fromkeys(curves)))
+            for attr in c.listAttr(control,keyable=True) or []:
+                if not c.getAttr(control+"."+attr,lock=True): c.setAttr(control+"."+attr,0)
+
+    def finish_original_face_fit_stage(self,stage,driver,side,attribute,value,visible_boxes=()):
+        """Original idempotent stage-finish order, without executing any MEL."""
+        c=self._cmds; marker="FaceBuildInProgress."+stage+"Finish"
+        if c.objExists(marker): return False
+        c.addAttr("FaceBuildInProgress",longName=stage+"Finish",attributeType="bool",defaultValue=True)
+        self.mirror_original_face_controls(False)
+        self.remove_original_face_ctrl_box_fit_animation()
+        self.finish_original_face_sdk(driver,side,attribute,value)
+        self.hide_original_face_controllers(True)
+        for box in visible_boxes: c.setAttr(box+".visibility",True)
+        return True

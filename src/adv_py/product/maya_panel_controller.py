@@ -2160,6 +2160,24 @@ class MayaPanelController:
         return BuildFaceRegions(MayaFaceRegionsHost(
             namespace=None if namespace == ":" else namespace)).apply()
 
+    def face_lip_build(self, namespace: str):
+        from adv_py.adapters.maya_face_lip import MayaFaceLipHost
+        from adv_py.application.face_lip import BuildFaceLip
+        return BuildFaceLip(MayaFaceLipHost(
+            namespace=None if namespace == ":" else namespace)).apply()
+
+    def face_mouth_open_design(self, namespace: str):
+        from adv_py.adapters.maya_face_mouth_open import MayaFaceMouthOpenHost
+        from adv_py.application.face_mouth_open import CreateFaceMouthOpenDesign
+        return CreateFaceMouthOpenDesign(MayaFaceMouthOpenHost(
+            namespace=None if namespace == ":" else namespace)).apply()
+
+    def face_jaw_lip_weights(self, namespace: str):
+        from adv_py.adapters.maya_face_jaw_lip_weights import MayaFaceJawLipWeightsHost
+        from adv_py.application.face_jaw_lip_weights import UpdateFaceJawLipWeights
+        return UpdateFaceJawLipWeights(MayaFaceJawLipWeightsHost(
+            namespace=None if namespace == ":" else namespace)).apply()
+
     def face_lip_falloff(self, namespace: str, *, outer: int = 3, inner: int = 2,
                          iterations: int = 5, preview: bool = False, update: bool = False,
                          multi_skin_clusters: bool = False):

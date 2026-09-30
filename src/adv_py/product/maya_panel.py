@@ -311,7 +311,7 @@ def create_panel(controller: MayaPanelController | None = None):
                              '01 · 目标网格', '02 · 可移植目标资产')),
                     ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit', '03 · Lip Fit', '04 · Face 定位点', '05 · Tongue Fit')),
                     ('Build', ('03 · 控制与变形器',)),
-                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03F · Tongue 绑定', '03G · Lip Falloff', '03H · Regions')),
+                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03I · Lip 绑定', '03F · Tongue 绑定', '03G · Lip Falloff', '03H · Regions')),
                     ('Skin Layers', ('03a · Face Skin Layers',)),
                     ('Tweaks', ('03A · Face Tweaks',)),
                     ('DeltaMush', ('03B · Face DeltaMush',)),
@@ -1692,6 +1692,11 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._face_build_jaw_fit_curves))
             stack.addWidget(group)
 
+            group, form = self._group("03I · Lip 绑定", [])
+            form.addRow(self._button("建立 Lip Ribbon 与控制驱动",self._face_build_lip))
+            form.addRow(self._button("建立 Mouth Open 修形",self._face_mouth_open_design))
+            form.addRow(self._button("更新 JawOpenLayer 嘴唇权重",self._face_jaw_lip_weights))
+            stack.addWidget(group)
             group, form = self._group("03F · Tongue 绑定", [])
             form.addRow(self._button("建立 Tongue 控制链与蒙皮",
                 lambda: self._face_tongue("build")))
@@ -3798,6 +3803,19 @@ def create_panel(controller: MayaPanelController | None = None):
             result=self.controller.face_regions(self._namespace())
             if result is None: return "按原版条件跳过 Regions：缺少 Lip Main Fit"
             return f"已接入 {len(result)} 个第二控制盒区域图标"
+
+        def _face_build_lip(self):
+            result=self.controller.face_lip_build(self._namespace())
+            if result is None: return "按原版条件跳过 Lip：缺少 Lip Main Fit"
+            return f"已建立 Lip Ribbon、Sticky 与表情驱动：{len(result['controls'])} 个控制器"
+
+        def _face_mouth_open_design(self):
+            self.controller.face_mouth_open_design(self._namespace())
+            return "已建立 Mouth Open SoftMod、衰减曲线与原版张嘴修形关键帧"
+
+        def _face_jaw_lip_weights(self):
+            count=self.controller.face_jaw_lip_weights(self._namespace())
+            return f"已更新 JawOpenLayer 嘴唇权重：{count} 个顶点"
 
         def _face_lip_falloff(self,action):
             result=self.controller.face_lip_falloff(self._namespace(),

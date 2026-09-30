@@ -24,6 +24,8 @@ FACE_BASE_PARENTS = (
     *((f"SideReverse_{side}","OnFacecontrols") for side in ("R","L","M")),
     ("Regionscontrols","ControlsSetup"),
     ("Customcontrols","ControlsSetup"),
+    ("FaceBuildInProgress",None),
+    ("FaceBuildInProgressHidden","FaceBuildInProgress"),
     ("DeformationLayers","FaceDeformationSystem"))
 FACE_BASE_NAMES = tuple(name for name,_ in FACE_BASE_PARENTS) + (
     "templateLayer","allHeadCombinedLayer","MainAndHeadScaleMultiplyDivide",
@@ -166,11 +168,12 @@ class MayaFaceBaseMixin:
             raise FitSkeletonValidationError("Face 基础节点名称已被占用："+"、".join(collisions))
         self._transaction_changed=True
         for name,parent in FACE_BASE_PARENTS:
-            c.createNode("transform",name=name,parent=parent)
+            c.createNode("transform",name=name,**({"parent":parent} if parent else {}))
         position=c.xform(head,query=True,worldSpace=True,translation=True)
         for node in ("FaceMotionSystem","FaceDeformationFollowHead"):
             c.xform(node,worldSpace=True,translation=position)
         c.setAttr("FaceDeformationSystem.visibility",False,lock=True)
+        c.setAttr("FaceBuildInProgressHidden.visibility",False)
         if c.objExists("JawPivot"):
             jaw=c.xform("JawPivot",query=True,worldSpace=True,translation=True)
             c.xform("JawSetup",worldSpace=True,translation=(0,jaw[1],jaw[2]))

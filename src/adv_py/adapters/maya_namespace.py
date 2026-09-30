@@ -64,6 +64,16 @@ _NODE_ARGS |= {'polyDelFacet', 'polyExtrudeFacet'}
 _NODE_RESULTS |= {'polyExtrudeFacet'}
 _CREATE |= {'polyExtrudeFacet'}
 
+_NODE_ARGS |= {'softMod'}
+_NODE_RESULTS |= {'softMod', 'polyDelFacet'}
+_CREATE |= {'softMod', 'polyDelFacet'}
+
+# Original Face projected controls, Ribbon geometry and driven keys.
+_NODE_ARGS |= {'polyProjectCurve', 'attachCurve', 'reverseCurve', 'rebuildSurface', 'setDrivenKeyframe'}
+_NODE_RESULTS |= {'polyProjectCurve', 'attachCurve', 'reverseCurve', 'rebuildCurve', 'rebuildSurface'}
+_CREATE |= {'polyProjectCurve', 'attachCurve', 'reverseCurve', 'rebuildCurve', 'rebuildSurface', 'setDrivenKeyframe'}
+_NODE_RESULTS |= {'nurbsPlane'}
+_CREATE |= {'nurbsPlane'}
 
 class MayaCharacterCommands:
     def __init__(self,commands,namespace):
@@ -136,6 +146,9 @@ class MayaCharacterCommands:
                         kwargs[flag]=address(kwargs[flag])
             if name=='skinCluster' and 'addInfluence' in kwargs:
                 kwargs['addInfluence']=address(kwargs['addInfluence'])
+            if name=='setDrivenKeyframe':
+                for flag in ('currentDriver','cd'):
+                    if isinstance(kwargs.get(flag),str): kwargs[flag]=address(kwargs[flag])
             if name=='expression' and isinstance(kwargs.get('object'),str):
                 kwargs['object']=address(kwargs['object'])
             if name=='ikHandle' and isinstance(kwargs.get('solver'),str) and kwargs['solver'] not in SHARED_NODES:
