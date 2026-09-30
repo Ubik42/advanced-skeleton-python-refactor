@@ -160,7 +160,10 @@ def plan_fit_bendy_follow(
                      in child_control_sources)):
             child = child_chains[chain.end_body]
             end = FitBendyWorldSource(
-                child.control_names[1] + ".worldMatrix[0]")
+                (child.control_names[1]
+                 if child.legacy_twist_outputs else
+                 child.twist_projection_names[1][0])
+                + ".worldMatrix[0]")
         if start is None or end is None:
             raise ValueError("Bendy 端点缺少独立 Rig 来源："
                              + chain.start_body + " → " + chain.end_body)
@@ -262,8 +265,10 @@ class BuildFitBendyGuides:
             used.update(names)
             self._host.preflight_fit_bendy_guides(chain)
         planned_sources = frozenset(
-            chain.control_names[1] + ".worldMatrix[0]"
-            for chain in chains)
+            name + ".worldMatrix[0]"
+            for chain in chains for name in (
+                chain.control_names[1],
+                chain.twist_projection_names[1][0]))
         for follow in follows:
             if follow.chain.micro_base_twist and not follow.untwist_plug:
                 raise ValueError("Bendy 微控制缺少独立基础扭转来源："

@@ -38,6 +38,7 @@ class FitBendyChainSpec:
     micro_up_twist: bool = False
     micro_blended_up: bool = False
     legacy_simple_control: bool = False
+    legacy_twist_outputs: bool = False
 
     def __post_init__(self) -> None:
         if (type(self.control_count) is not int
@@ -77,6 +78,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 微控制朝向兼容策略无效")
         if type(self.legacy_simple_control) is not bool:
             raise ValueError("Bendy 单控制器布局策略无效")
+        if type(self.legacy_twist_outputs) is not bool:
+            raise ValueError("Bendy 扭转输出层策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -270,6 +273,7 @@ class FitBendyChainSpec:
         return (self.curve_name, self.curve_name + "Shape",
                 self.skin_name, *self.influence_names,
                 *self.control_names,
+                *(row[0] for row in self.twist_projection_names),
                 *((self.simple_proxy_name,) if self.simple_proxy_layout
                   else ()),
                 *(name + "Shape" for name in self.control_names),
@@ -334,7 +338,7 @@ class FitBendyChainSpec:
                 *(node for add, deltas, weights in self.micro_scale_names
                   for node in (add, *deltas, *weights)),
                 *(node for row in self.twist_projection_names
-                  for node in row),
+                  for node in row[1:]),
                 *(self.micro_end_twist_names if self.child_start_control
                   else ()),
                 *((node for row in self.micro_end_scale_names
@@ -435,11 +439,15 @@ class FitBendyChainSpec:
     def twist_projection_names(self) -> tuple[
         tuple[str, str, str, str], ...
     ]:
-        return tuple(("AdvPy_" + name + "TwistX",
+        return tuple((("AdvPy_" + name + "TwistX")
+                     if self.legacy_twist_outputs else
+                     (f"BendX{self.stem}" +
+                      ("" if index == 0 else str(index - 1))
+                      + f"_{self.side}"),
                       "AdvPy_" + name + "TwistMatrix",
                       "AdvPy_" + name + "TwistDecompose",
                       "AdvPy_" + name + "TwistQTE")
-                     for name in self.control_names)
+                     for index, name in enumerate(self.control_names))
 
     @property
     def micro_scale_names(self) -> tuple[

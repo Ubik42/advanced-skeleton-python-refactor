@@ -134,8 +134,23 @@ class MayaCharacterRegistryMixin:
             and channel.key.endswith('.microVis')}
         bendy_counts = []
         bendy_legacy_simple = set()
+        bendy_legacy_twist_outputs = set()
         for control in bendy_master_paths:
             stem, side = control.rsplit('_', 1)
+            master_leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
+            namespace = (master_leaf.rsplit(':', 1)[0] + ':'
+                         if ':' in master_leaf else '')
+            old_output = namespace + 'AdvPy_' + control + 'TwistX'
+            new_output = (namespace + 'BendX'
+                          + stem.removeprefix('Bend') + '_' + side)
+            if c.objExists(old_output):
+                if c.objExists(new_output):
+                    raise CharacterRegistryError(
+                        'Bendy 扭转输出层新旧命名冲突：' + control)
+                bendy_legacy_twist_outputs.add(control)
+            elif not c.objExists(new_output):
+                raise CharacterRegistryError(
+                    'Bendy 主控缺少扭转输出层：' + control)
             pattern = re.compile(
                 r'bendy\.' + re.escape(stem)
                 + r'(\d+)_' + re.escape(side) + r'\.rotateX')
@@ -176,6 +191,9 @@ class MayaCharacterRegistryMixin:
         bendy_start_names = frozenset(
             key.split('.', 2)[1] for key in keys
             if re.fullmatch(r'bendy\.Bend.+0_[RLM]\.rotateX', key))
+        bendy_start_output_names = frozenset(
+            name.replace('Bend', 'BendX', 1)
+            for name in bendy_start_names)
         bendy_start_control = set()
         bendy_child_control = set()
         bendy_untwist = set()
@@ -213,8 +231,10 @@ class MayaCharacterRegistryMixin:
             source = c.connectionInfo(blend + '.inputMatrix',
                                       sourceFromDestination=True)
             start = stem + '0_' + side
+            start_output = ('BendX' + stem.removeprefix('Bend')
+                            + '0_' + side)
             if (source and source.split('.', 1)[0].rsplit('|', 1)[-1]
-                    .rsplit(':', 1)[-1] == start):
+                    .rsplit(':', 1)[-1] in (start, start_output)):
                 bendy_start_control.add(control)
             end_world = (namespace + 'AdvPy_' + stem
                          + 'EndWorld_' + side)
@@ -223,7 +243,7 @@ class MayaCharacterRegistryMixin:
             end_leaf = (end_source.split('.', 1)[0].rsplit('|', 1)[-1]
                         .rsplit(':', 1)[-1]
                         if end_source else '')
-            if end_leaf in bendy_start_names:
+            if end_leaf in bendy_start_names | bendy_start_output_names:
                 bendy_child_control.add(control)
         for control in bendy_master_paths:
             stem, side = control.rsplit('_', 1)
@@ -322,7 +342,8 @@ class MayaCharacterRegistryMixin:
             frozenset(bendy_yz_scale),
             frozenset(bendy_up_twist),
             frozenset(bendy_blended_up),
-            frozenset(bendy_legacy_simple))
+            frozenset(bendy_legacy_simple),
+            frozenset(bendy_legacy_twist_outputs))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

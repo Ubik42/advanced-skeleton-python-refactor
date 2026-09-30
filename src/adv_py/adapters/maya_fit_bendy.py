@@ -172,8 +172,20 @@ class MayaFitBendyMixin:
                                  fullPath=True) or []
         if len(shapes) != 1:
             raise RuntimeError("Bendy 第二曲线形状数量不正确")
-        drivers = (spec.control_names[1], spec.control_names[0],
-                   spec.child_start_control or spec.end_proxy_name)
+        child_output = (spec.child_start_control.replace(
+            "Bend", "BendX", 1) if spec.child_start_control else None)
+        child_driver = (child_output
+                        if child_output and c.objExists(child_output)
+                        and _bendy_parent_name(c, child_output)
+                        == spec.child_start_control else
+                        spec.child_start_control)
+        drivers = ((spec.control_names[1]
+                    if spec.legacy_twist_outputs else
+                    spec.twist_projection_names[1][0]),
+                   (spec.control_names[0]
+                    if spec.legacy_twist_outputs else
+                    spec.twist_projection_names[0][0]),
+                   child_driver or spec.end_proxy_name)
         positions = (spec.start_position, spec.master_position,
                      spec.end_position)
         influences = []
@@ -258,7 +270,10 @@ class MayaFitBendyMixin:
                                      worldSpace=True, translation=True))
             self._set_bendy_motion_parameter(path,
                 self._bendy_bind_parameter(shapes[0], position))
-            c.connectAttr(spec.control_names[0] + ".worldMatrix[0]",
+            up_control = (spec.control_names[0]
+                          if spec.legacy_twist_outputs else
+                          spec.twist_projection_names[0][0])
+            c.connectAttr(up_control + ".worldMatrix[0]",
                           path + ".worldUpMatrix")
             c.connectAttr(shapes[0] + ".worldSpace[0]",
                           path + ".geometryPath")
@@ -291,9 +306,30 @@ class MayaFitBendyMixin:
         if {name.rsplit("|", 1)[-1] for name in influences} != set(
                 spec.secondary_influence_names):
             return False
+        drivers = ((spec.control_names[1]
+                    if spec.legacy_twist_outputs else
+                    spec.twist_projection_names[1][0]),
+                   (spec.control_names[0]
+                    if spec.legacy_twist_outputs else
+                    spec.twist_projection_names[0][0]))
+        for name, driver in zip(spec.secondary_influence_names[:2], drivers):
+            constraint = "AdvPy_Bend2Guide" + name
+            targets = (c.parentConstraint(
+                constraint, query=True, targetList=True) or []
+                if c.objExists(constraint) else [])
+            if (len(targets) != 1
+                    or _bendy_dag_name(targets[0]) != driver):
+                return False
         end = spec.secondary_influence_names[-1]
         if spec.child_start_control:
             translation, rotation, world = spec.secondary_end_matrix_names
+            child_output = spec.child_start_control.replace(
+                "Bend", "BendX", 1)
+            child_driver = (child_output
+                            if c.objExists(child_output)
+                            and _bendy_parent_name(c, child_output)
+                            == spec.child_start_control else
+                            spec.child_start_control)
             if (not c.objExists(translation)
                     or c.nodeType(translation) != "pickMatrix"
                     or not c.objExists(rotation)
@@ -302,7 +338,7 @@ class MayaFitBendyMixin:
                     or c.nodeType(world) != "multMatrix"
                     or c.connectionInfo(translation + ".inputMatrix",
                                         sourceFromDestination=True)
-                    != spec.child_start_control + ".worldMatrix[0]"
+                    != child_driver + ".worldMatrix[0]"
                     or c.connectionInfo(rotation + ".inputMatrix",
                                         sourceFromDestination=True)
                     != ((spec.parent_untwist_names[3]
@@ -329,8 +365,15 @@ class MayaFitBendyMixin:
                 if any(c.getAttr(node + "." + attribute)
                        for attribute in disabled):
                     return False
-        elif not c.objExists("AdvPy_Bend2Guide" + end):
-            return False
+        else:
+            constraint = "AdvPy_Bend2Guide" + end
+            targets = (c.parentConstraint(
+                constraint, query=True, targetList=True) or []
+                if c.objExists(constraint) else [])
+            if (len(targets) != 1
+                    or _bendy_dag_name(targets[0])
+                    != spec.end_proxy_name):
+                return False
         for index, (path, transform, control) in enumerate(zip(
                 spec.secondary_motion_path_names,
                 spec.secondary_motion_transform_names,
@@ -350,6 +393,12 @@ class MayaFitBendyMixin:
                     or c.connectionInfo(path + ".fractionMode",
                                         sourceFromDestination=True)
                     != spec.control_names[0] + ".parametric"
+                    or c.connectionInfo(path + ".worldUpMatrix",
+                                        sourceFromDestination=True)
+                    != ((spec.control_names[0]
+                         if spec.legacy_twist_outputs else
+                         spec.twist_projection_names[0][0])
+                        + ".worldMatrix[0]")
                     or not c.objExists(follow)
                     or c.nodeType(follow) != "parentConstraint"
                     or not self._bendy_motion_parameter_matches(path)):
@@ -740,6 +789,10 @@ class MayaFitBendyMixin:
                           keyable=False)
                 c.setAttr(control + ".parametric", channelBox=True)
             controls.append((c.ls(control, long=True) or [control])[0])
+        for control, projection in zip(
+                controls, spec.twist_projection_names):
+            c.createNode("transform", name=projection[0],
+                         parent=control, skipSelect=True)
         if spec.simple_proxy_layout:
             middle = c.createNode(
                 "transform", name=spec.simple_proxy_name,
@@ -779,10 +832,13 @@ class MayaFitBendyMixin:
                                  parent=_GROUPS[0], skipSelect=True)
         self._align_bendy_control(
             end_proxy, end, spec.start_world_axes)
+        bend_drivers = (controls if spec.legacy_twist_outputs else
+                        tuple(row[0] for row in
+                              spec.twist_projection_names))
         drivers = ((spec.junction_output_name if spec.parent_bendy
-                    else controls[1]),
+                    else bend_drivers[1]),
                    *((spec.simple_proxy_name,) if spec.simple_proxy_layout
-                     else controls[2:]),
+                     else bend_drivers[2:]),
                    end_proxy)
         influences = []
         for name, position, driver in zip(
@@ -1000,7 +1056,9 @@ class MayaFitBendyMixin:
          bind_name, world_name, pick_name) = chain.master_follow_matrix_names
         blend = c.createNode("blendMatrix", name=blend_name,
                              skipSelect=True)
-        bend_start = (chain.control_names[1]
+        bend_start = ((chain.control_names[1]
+                       if chain.legacy_twist_outputs else
+                       chain.twist_projection_names[1][0])
                       if start_control_blend else start_proxy)
         c.connectAttr(bend_start + ".worldMatrix[0]",
                       blend + ".inputMatrix")
@@ -1338,7 +1396,9 @@ class MayaFitBendyMixin:
         if any(not c.objExists(name) or c.nodeType(name) != kind
                for name, kind in nodes):
             return False
-        bend_start = (chain.control_names[1]
+        bend_start = ((chain.control_names[1]
+                       if chain.legacy_twist_outputs else
+                       chain.twist_projection_names[1][0])
                       if start_control_blend else start_proxy)
         connections = (
             (blend + ".inputMatrix", bend_start + ".worldMatrix[0]"),
@@ -1398,8 +1458,9 @@ class MayaFitBendyMixin:
                       project_name) in zip(spec.control_names,
                                            spec.twist_projection_names):
             offset = control + "Offset"
-            child = c.createNode("transform", name=output,
-                                 parent=control, skipSelect=True)
+            if (_bendy_parent_name(c, output) != control
+                    or c.nodeType(output) != "transform"):
+                raise ValueError("Bendy 控制器输出层不存在：" + output)
             matrix = c.createNode("multMatrix", name=matrix_name,
                                   skipSelect=True)
             decompose = c.createNode("decomposeMatrix",
@@ -1409,7 +1470,7 @@ class MayaFitBendyMixin:
                       spec.rotation_order)
             project = c.createNode("quatToEuler", name=project_name,
                                    skipSelect=True)
-            c.connectAttr(child + ".worldMatrix[0]",
+            c.connectAttr(output + ".worldMatrix[0]",
                           matrix + ".matrixIn[0]")
             c.connectAttr(offset + ".worldInverseMatrix[0]",
                           matrix + ".matrixIn[1]")
@@ -2075,11 +2136,14 @@ class MayaFitBendyMixin:
         if {name.rsplit("|", 1)[-1] for name in influences} != set(
                 spec.influence_names):
             return False
+        bend_drivers = (spec.control_names if spec.legacy_twist_outputs
+                        else tuple(row[0] for row in
+                                   spec.twist_projection_names))
         expected_drivers = (
             spec.junction_output_name if spec.parent_bendy
-            else spec.control_names[1],
+            else bend_drivers[1],
             *((spec.simple_proxy_name,) if spec.simple_proxy_layout
-              else spec.control_names[2:]),
+              else bend_drivers[2:]),
             spec.end_proxy_name)
         for name, driver in zip(spec.influence_names, expected_drivers):
             constraint = "AdvPy_BendGuide" + name
@@ -2094,6 +2158,13 @@ class MayaFitBendyMixin:
                 return False
         for name in (*spec.control_names, spec.end_proxy_name):
             if not c.objExists(name) or c.nodeType(name) != "transform":
+                return False
+        for control, projection in zip(
+                spec.control_names, spec.twist_projection_names):
+            output = projection[0]
+            if (not c.objExists(output)
+                    or c.nodeType(output) != "transform"
+                    or _bendy_parent_name(c, output) != control):
                 return False
         if spec.simple_proxy_layout:
             proxy = spec.simple_proxy_name
