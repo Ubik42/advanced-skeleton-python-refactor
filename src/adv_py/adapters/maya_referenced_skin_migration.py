@@ -250,6 +250,9 @@ class MayaReferencedSkinMigration:
                     c.setAttr(item.target_skin + ".maintainMaxInfluences",
                               item.maintain_maximum)
                     c.setAttr(item.target_skin + ".envelope", item.envelope)
+                    for name in item.locked_influences:
+                        c.setAttr(paths[_base_name(name)][0]
+                                  + ".lockInfluenceWeights", True)
                     result = MayaDenseSkinHost().capture_dense_skin(
                         item.target_skin)
                     if (result.vertex_count != data.vertex_count

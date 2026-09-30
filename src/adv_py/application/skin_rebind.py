@@ -37,6 +37,7 @@ class SkinRebindState:
     geom_bind_node: str | None = None
     geodesic: GeodesicBindPreferences | None = None
     geom_bind_members: tuple[str, ...] = ()
+    locked_influences: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +88,7 @@ class RebindSkinFromSurfaceSource:
             if self._host.capture_skin_rebind_state(skin, mesh) != state:
                 raise FitSkeletonValidationError("目标 Skin 或模型在执行前发生变化")
             self._host.remove_skin_bind_for_rebind(skin)
+            self._host.unlock_skin_rebind_influences(state)
             self._host.create_skin_bind(bind)
             bind_issues = audit_skin_bind_result(
                 bind, self._host.capture_skin_bind(bind))
@@ -125,6 +127,7 @@ class RebindSkinFromSurfaceSource:
                                    restored, projected))):
                     raise RuntimeError(
                         "Weight Blended 重绑混合权重未完整写回")
+            self._host.restore_skin_rebind_influences(state)
             return SkinRebindResult(transfer.transfer.document.vertex_count,
                 changed_vertices,
                 transfer.transfer.max_surface_distance)

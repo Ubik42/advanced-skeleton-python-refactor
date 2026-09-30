@@ -65,6 +65,7 @@ class _SkinItem:
     geodesic: GeodesicBindPreferences | None
     envelope: float
     blend_weights: array
+    locked_influences: tuple[str, ...]
 
 
 def _skin_item(cmds, skin: str, target_mesh: str,
@@ -80,11 +81,16 @@ def _skin_item(cmds, skin: str, target_mesh: str,
                                fullPath=True) or [None])[0]
     if not mesh:
         raise ValueError("源网格 Transform 缺失：" + skin)
+    if cmds.connectionInfo(skin + ".envelope",
+                           sourceFromDestination=True):
+        raise ValueError("源 Skin 的 Envelope 有外部驱动，不能静默丢失："
+                         + skin)
     host = MayaDenseSkinHost()
+    source_data = source or host.capture_dense_skin(skin)
     method = int(cmds.getAttr(skin + ".bindMethod"))
     geodesic = (host._skin_geodesic_state(skin)[1]
                 if method == 3 else None)
-    return _SkinItem(source or host.capture_dense_skin(skin),
+    return _SkinItem(source_data,
         mesh, target_mesh, target_skin,
         int(cmds.getAttr(skin + ".maxInfluences")),
         bool(cmds.getAttr(skin + ".maintainMaxInfluences")),
@@ -101,7 +107,10 @@ def _skin_item(cmds, skin: str, target_mesh: str,
              skin + ".weightDistribution"))],
         geodesic,
         float(cmds.getAttr(skin + ".envelope")),
-        host.capture_skin_blend_weights(skin))
+        host.capture_skin_blend_weights(skin),
+        tuple(name for name in source_data.influence_names
+              if bool(cmds.getAttr(
+                name + ".lockInfluenceWeights"))))
 
 
 @contextmanager
@@ -403,6 +412,8 @@ class MayaOriginalSkinMigration:
                 c.setAttr(item.target_skin + ".maintainMaxInfluences",
                           item.maintain_maximum)
                 c.setAttr(item.target_skin + ".envelope", item.envelope)
+                for name in item.locked_influences:
+                    c.setAttr(paths[name][0] + ".lockInfluenceWeights", True)
                 result = MayaDenseSkinHost().capture_dense_skin(
                     item.target_skin)
                 if (result.vertex_count != item.source.vertex_count

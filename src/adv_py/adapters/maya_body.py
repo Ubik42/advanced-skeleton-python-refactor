@@ -5680,7 +5680,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             set_memberships,
             c.getAttr(f"{skin}.{TOPOLOGY_ATTRIBUTE}"),
             mesh_topology_digest(shapes[0]),
-            manager, geodesic, manager_members)
+            manager, geodesic, manager_members,
+            tuple(path for path in influences if bool(c.getAttr(
+                path + ".lockInfluenceWeights"))))
 
     def capture_skin_bind_topology(self, skin: str, mesh: str) -> str | None:
         from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
@@ -5815,6 +5817,21 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         c.delete(skin)
         if manager is not None and len(members) == 1 and c.objExists(manager):
             c.delete(manager)
+
+    def unlock_skin_rebind_influences(self, state) -> None:
+        self._require_transaction()
+        for path in state.locked_influences:
+            self._transaction_changed = True
+            self._cmds.setAttr(path + ".lockInfluenceWeights", False)
+
+    def restore_skin_rebind_influences(self, state) -> None:
+        self._require_transaction()
+        for path in state.locked_influences:
+            self._transaction_changed = True
+            self._cmds.setAttr(path + ".lockInfluenceWeights", True)
+        if any(not self._cmds.getAttr(path + ".lockInfluenceWeights")
+               for path in state.locked_influences):
+            raise RuntimeError("Skin 重绑没有恢复影响关节锁定状态")
 
     def capture_skin_bind(self, plan: SkinBindPlan) -> SkinBindSnapshot:
         clusters = self._cmds.ls(plan.skin_name, type="skinCluster") or []
