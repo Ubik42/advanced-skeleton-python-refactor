@@ -978,8 +978,9 @@ class MayaCharacterRegistryMixin:
 
     def capture_character_deformer_animation_state(self,deformers,skins=()):
         """Snapshot native Skin/deformer keys before replacing their drivers."""
+        from .maya_character_preservation import capture_curve
+
         c=self._cmds
-        rows=[]
         seen=set()
         curves=set()
         upstream=list(row.node for row in (*skins,*deformers))
@@ -1005,33 +1006,11 @@ class MayaCharacterRegistryMixin:
                 elif (kind in transparent
                         or kind.startswith('animBlendNode')):
                     upstream.append(source)
-        for curve in sorted(curves):
-            times=tuple(float(value) for value in (
-                c.keyframe(curve,query=True,timeChange=True) or ()))
-            values=tuple(float(value) for value in (
-                c.keyframe(curve,query=True,valueChange=True) or ()))
-            if len(times)!=len(values):
-                raise CharacterRegistryError(
-                    '生产变形器动画曲线关键帧数据不完整：'+curve)
-            tangent_types=(
-                tuple(c.keyTangent(curve,query=True,
-                    inTangentType=True) or ()),
-                tuple(c.keyTangent(curve,query=True,
-                    outTangentType=True) or ()))
-            tangent_shape=tuple(tuple(float(value) for value in (
-                c.keyTangent(curve,query=True,**{flag:True}) or ()))
-                for flag in ('inAngle','outAngle','inWeight','outWeight'))
-            if any(len(row)!=len(times) for row in
-                   (*tangent_types,*tangent_shape)):
-                raise CharacterRegistryError(
-                    '生产变形器动画曲线切线数据不完整：'+curve)
-            infinity=(c.getAttr(curve+'.preInfinity'),
-                      c.getAttr(curve+'.postInfinity'),
-                      tuple(c.keyTangent(curve,query=True,
-                          weightedTangents=True) or ()))
-            rows.append((curve,times,values,tangent_types,
-                         tangent_shape,infinity))
-        return tuple(sorted(rows))
+        # Driver edges can intentionally move from the old Rig to the
+        # replacement. Compare the complete authored key state while the
+        # connection handoff is audited by the deformer ownership snapshot.
+        return tuple(replace(capture_curve(self,curve),input='',outputs=())
+                     for curve in sorted(curves))
 
     def plan_character_property_transfer(self,original,namespace):
         from .maya_character_properties import plan

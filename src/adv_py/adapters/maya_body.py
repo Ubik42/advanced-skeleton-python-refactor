@@ -3522,7 +3522,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         return tuple(sorted(collisions))
 
     @staticmethod
-    def _fbx_skin_vertex_members(skin_fn, shape, mesh, vertex_count):
+    def _skin_vertex_members(skin_fn, shape, mesh, vertex_count):
         """Read the affected vertex subset from the native deformer set."""
         from maya.api import OpenMaya as om
         from maya.api import OpenMayaAnim as oma
@@ -3532,7 +3532,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         vertices = set()
         for index in range(members.length()):
             dag, component = members.getComponent(index)
-            if dag.fullPathName() not in (shape, mesh):
+            member_path = dag.fullPathName()
+            if (member_path not in (shape, mesh)
+                    and member_path.rsplit('|', 1)[0] != mesh):
                 raise FitSkeletonValidationError(
                     'FBX Skin 变形集含其他网格：' + skin_fn.name())
             if component.isNull():
@@ -3599,7 +3601,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             skin_fn, _, _, api_names, _ = host._skin_api(skin)
             if api_names != data.influence_names:
                 raise RuntimeError("FBX Skin 影响关节顺序在捕获期间变化：" + skin)
-            vertex_members = self._fbx_skin_vertex_members(
+            vertex_members = self._skin_vertex_members(
                 skin_fn, shape[0], mesh[0], data.vertex_count)
             bind_matrices = []
             bind_matrix_drivers = []
@@ -3986,7 +3988,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     member = member_fn.create(om.MFn.kMeshVertComponent)
                     member_fn.addElements(vertex_members)
                     deformer_set.addMember((dag, member))
-            if self._fbx_skin_vertex_members(skin_fn, shape, clone,
+            if self._skin_vertex_members(skin_fn, shape, clone,
                     data.vertex_count) != vertex_members:
                 raise FitSkeletonValidationError(
                     'FBX 临时 Skin 变形集与来源不一致：' + data.skin_name)

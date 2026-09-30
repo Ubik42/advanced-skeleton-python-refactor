@@ -141,7 +141,7 @@ class StageBodyCharacterRebuild:
         deformer_animation_state = host.capture_character_deformer_animation_state(
             original.deformers,original.skins)
         deformer_sample_frames = tuple(sorted({time
-            for row in deformer_animation_state for time in row[1]}))
+            for row in deformer_animation_state for time in row.times}))
         # Older Python builds retained MEL's temporary Foot pivot markers in
         # the registered Body. Preserve that saved topology during a rebuild;
         # new characters remove those joints before Skin and registration.

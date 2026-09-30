@@ -37,6 +37,7 @@ class PreservedSkin:
     weights: tuple[tuple[int, tuple[tuple[int, float], ...]], ...]
     blend_weights: tuple[tuple[int, float], ...]
     connections: tuple[tuple[str, str], ...]
+    component_memberships: tuple[tuple[str, tuple[int, ...] | None], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,19 @@ def validate_preservation(snapshot):
         for _,weights in skin.weights:
             if any(i not in indices or value<0 for i,value in weights):
                 raise CharacterRegistryError('蒙皮权重引用未知影响或包含负值')
+        if skin.component_memberships:
+            counts={path:count for path,_,count in skin.meshes}
+            if (len(skin.component_memberships)!=len(counts)
+                    or {path for path,_ in skin.component_memberships}
+                    != set(counts)):
+                raise CharacterRegistryError('蒙皮变形集与几何体不一致')
+            for path,members in skin.component_memberships:
+                if members is not None and (
+                        any(type(index) is not int
+                            or index<0 or index>=counts[path]
+                            for index in members)
+                        or tuple(sorted(set(members)))!=members):
+                    raise CharacterRegistryError('蒙皮变形集顶点索引无效')
     for deformer in snapshot.deformers:
         if (deformer.node_type not in ('blendShape','deltaMush','wrap')
                 or not deformer.mesh_stack

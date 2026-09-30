@@ -37,12 +37,26 @@ def capture_curve(host,node):
 
 
 def capture_skin(host,node):
+    from maya.api import OpenMaya as om
+    from maya.api import OpenMayaAnim as oma
+
     c=host._cmds
     geometries=[]
     for shape in c.skinCluster(node,q=True,geometry=True) or []:
         path=host._resolve_connected_node(shape)
         if c.nodeType(path)!='mesh':raise CharacterRegistryError('重建保留仅接受 mesh 蒙皮几何')
         geometries.append((path,c.ls(path,uuid=True)[0],int(c.polyEvaluate(path,vertex=True))))
+    selection=om.MSelectionList()
+    selection.add(host.scene_address(node))
+    skin_fn=oma.MFnSkinCluster(selection.getDependNode(0))
+    component_memberships=[]
+    for shape,_,count in geometries:
+        scene_shape=host.scene_address(shape)
+        parents=c.listRelatives(scene_shape,parent=True,fullPath=True) or []
+        if len(parents)!=1:
+            raise CharacterRegistryError('蒙皮网格父级不唯一：'+shape)
+        members=host._skin_vertex_members(skin_fn,scene_shape,parents[0],count)
+        component_memberships.append((shape,None if len(members)==count else members))
     influences=[]
     for index in c.getAttr(node+'.matrix',multiIndices=True) or []:
         source=_plug(host,c.connectionInfo(node+f'.matrix[{index}]',sourceFromDestination=True))
@@ -57,7 +71,7 @@ def capture_skin(host,node):
         'envelope','skinningMethod','normalizeWeights','maxInfluences','maintainMaxInfluences',
         'weightDistribution','bindMethod','useComponents','deformUserNormals','dqsSupportNonRigid') if c.objExists(node+'.'+attr))
     blend=tuple((i,float(c.getAttr(node+f'.blendWeights[{i}]'))) for i in c.getAttr(node+'.blendWeights',multiIndices=True) or [])
-    return PreservedSkin(node,c.ls(node,uuid=True)[0],tuple(geometries),settings,tuple(influences),tuple(weights),blend,connections(host,node))
+    return PreservedSkin(node,c.ls(node,uuid=True)[0],tuple(geometries),settings,tuple(influences),tuple(weights),blend,connections(host,node),tuple(component_memberships))
 
 
 def capture_deformer(host,node,mesh_stack):
