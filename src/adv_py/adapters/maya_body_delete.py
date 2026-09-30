@@ -155,7 +155,9 @@ class MayaBodyDeleteMixin:
         if (len(plan.retained_nested_geometry_paths)
                 != len(plan.retained_nested_geometry_ids)
                 or len(plan.retained_nested_geometry_paths)
-                != len(plan.retained_nested_geometry_world)):
+                != len(plan.retained_nested_geometry_world)
+                or any(len(matrix)!=16 for matrix in
+                       plan.retained_nested_geometry_world)):
             raise RuntimeError('Delete Adv Geometry 用户子树记录不完整')
         for path,identifier in zip(plan.retained_nested_geometry_paths,
                                    plan.retained_nested_geometry_ids):

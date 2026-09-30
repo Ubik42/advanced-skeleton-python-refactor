@@ -390,7 +390,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
     def resolve_body_mesh_identity(self, identifier: str) -> str:
         raw = getattr(self._cmds, "raw", self._cmds)
         paths = raw.ls(identifier, long=True) or []
-        if len(paths) != 1:
+        if (len(paths) != 1
+                or (raw.ls(paths[0], uuid=True) or []) != [identifier]):
             raise FitSkeletonValidationError(
                 "Body 构建后 Skin 网格身份缺失或不唯一：" + identifier)
         if self.namespace is not None and not self._cmds.identity.owns(paths[0]):

@@ -82,6 +82,9 @@ class BuildRegisteredSkinnedBodyCharacter:
                          maximum_influences=maximum_influences)
         mesh_ids = tuple(self._host.capture_body_mesh_identity(mesh)
                          for mesh in plan.meshes)
+        if len(set(mesh_ids)) != len(mesh_ids):
+            raise FitSkeletonValidationError(
+                "同一网格被多个路径重复提交给 Body Skin")
         scene_before = (_scene_before if _scene_before is not None
                         else self._host.capture_body_scene_nodes())
         with self._host.transaction("从 Fit 构建完整蒙皮角色"):
