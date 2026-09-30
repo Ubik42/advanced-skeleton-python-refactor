@@ -110,6 +110,8 @@ def skin_weight_request(
         ):
             raise SkinWeightValidationError(
                 "Influence 权重必须是有限正数；归一化权重不能超过 1")
+        if not isfinite(sum(values)):
+            raise SkinWeightValidationError("顶点 Influence 权重总量无效")
         if normalized and abs(sum(values) - 1.0) > tolerance:
             raise SkinWeightValidationError("每个顶点的 influence 权重和必须为 1")
         weights = tuple(
