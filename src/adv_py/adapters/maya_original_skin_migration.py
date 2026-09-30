@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from adv_py.core.dense_skin_transfer import DenseSkinWeights
+from adv_py.core.skin_bind import SkinWeightNormalization
 from adv_py.application.angle_sampler_deform import BuildAngleSamplers
 from adv_py.application.angle_volume_deform import BuildAngleVolumeDeform
 from adv_py.application.axial_part_deform import BuildAxialPartDeform
@@ -351,7 +352,10 @@ class MayaOriginalSkinMigration:
                           item.source.influence_names),
                     skin_name=item.target_skin,
                     maximum_influences=item.maximum_influences,
-                    maintain_maximum_influences=False)
+                    maintain_maximum_influences=False,
+                    normalization=SkinWeightNormalization(
+                        ("none", "interactive", "post")
+                        [item.source.normalization_mode]))
                 TransferDenseSkinWeights(MayaDenseSkinHost()).apply(
                     item.source, item.target_skin)
                 c.setAttr(item.target_skin + ".maintainMaxInfluences",

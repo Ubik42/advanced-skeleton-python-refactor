@@ -1186,7 +1186,8 @@ class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
                     values[vertex * new_width + target_index] = (
                         lid_weights.get(key, 0.))
             self.apply_dense_skin(DenseSkinWeights(skin,
-                original.vertex_count, new_names, values.tobytes()))
+                original.vertex_count, new_names, values.tobytes(),
+                original.normalization_mode))
             for side in FaceSide:
                 area_vertices = set(factors[side][EyeLidLayer.MAIN])
                 smooth = area_vertices - fit_ring_vertices[side]

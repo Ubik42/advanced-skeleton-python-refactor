@@ -12,6 +12,7 @@ class DenseSkinWeights:
     vertex_count: int
     influence_names: tuple[str, ...]
     values: bytes
+    normalization_mode: int = 1
 
 
 def validate_dense_skin(data: DenseSkinWeights) -> None:
@@ -20,15 +21,20 @@ def validate_dense_skin(data: DenseSkinWeights) -> None:
             or len(data.influence_names) != len(set(data.influence_names))
             or any(not name for name in data.influence_names)):
         raise ValueError("Skin 权重来源或维度无效")
+    if type(data.normalization_mode) is not int or data.normalization_mode not in (0, 1, 2):
+        raise ValueError("Skin 权重归一化模式无效")
     width = len(data.influence_names)
     if len(data.values) != data.vertex_count * width * 8:
         raise ValueError("Skin 权重字节数与矩阵维度不符")
     values = memoryview(data.values).cast("d")
     for vertex in range(data.vertex_count):
         row = values[vertex * width:(vertex + 1) * width]
-        if (any(not isfinite(value) or value < -1e-6 or value > 1.0 + 1e-6
-                for value in row) or abs(sum(row) - 1.0) > 1e-6):
-            raise ValueError("Skin 顶点权重不是有效归一化分布："
+        if (any(not isfinite(value) or value < -1e-6 or
+                data.normalization_mode == 1 and value > 1.0 + 1e-6
+                for value in row)
+                or data.normalization_mode == 1
+                and abs(sum(row) - 1.0) > 1e-6):
+            raise ValueError("Skin 顶点权重不符合归一化模式："
                              f"{vertex} sum={sum(row)} min={min(row)} max={max(row)}")
 
 
@@ -46,4 +52,5 @@ def reorder_dense_skin(data: DenseSkinWeights, target_skin: str,
                          for vertex in range(data.vertex_count)
                          for index in order))
     return DenseSkinWeights(target_skin, data.vertex_count,
-                            target_names, values.tobytes())
+                            target_names, values.tobytes(),
+                            data.normalization_mode)

@@ -44,7 +44,9 @@ class MayaDenseSkinHost(MayaBodyBuildHost):
         if width != len(names):
             raise RuntimeError("Skin API 返回的影响关节维度不符")
         data = DenseSkinWeights(skin_name, count, names,
-                                array("d", values).tobytes())
+                                array("d", values).tobytes(),
+                                int(self._cmds.getAttr(
+                                    skin_name + ".normalizeWeights")))
         validate_dense_skin(data)
         return data
 
@@ -52,7 +54,9 @@ class MayaDenseSkinHost(MayaBodyBuildHost):
         self._require_transaction()
         validate_dense_skin(data)
         _, dag, _, names, count = self._skin_api(data.skin_name)
-        if count != data.vertex_count or names != data.influence_names:
+        if (count != data.vertex_count or names != data.influence_names
+                or int(self._cmds.getAttr(data.skin_name + ".normalizeWeights"))
+                != data.normalization_mode):
             raise ValueError("Skin 目标在批量写入前发生变化")
         plugin = (Path(__file__).resolve().parents[1] / "maya_plugins"
                   / "skin_bulk.py")

@@ -151,4 +151,5 @@ def transfer_face_source_skin_weights(
         else:
             values[vertex * width + head_index] += remaining
     return DenseSkinWeights(target.skin_name, before.vertex_count,
-                            target.influence_names, values.tobytes())
+                            target.influence_names, values.tobytes(),
+                            target.normalization_mode)

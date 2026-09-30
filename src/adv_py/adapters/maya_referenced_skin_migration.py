@@ -20,6 +20,7 @@ from adv_py.application.skin_bind import BindSkin
 from adv_py.application.volume_half_parent import BuildVolumeHalfParents
 from adv_py.application.external_fit_export import ExportExternalFitSkeleton
 from adv_py.core.dense_skin_transfer import DenseSkinWeights
+from adv_py.core.skin_bind import SkinWeightNormalization
 
 from .maya_angle_sampler import MayaAngleSamplerHost
 from .maya_axial_part import MayaAxialPartHost
@@ -122,7 +123,8 @@ class MayaReferencedSkinMigration:
         sources = tuple(DenseSkinWeights(item.source.skin_name,
             item.source.vertex_count,
             tuple(_base_name(name) for name in
-                  item.source.influence_names), item.source.values)
+                  item.source.influence_names), item.source.values,
+                  item.source.normalization_mode)
             for item in items)
         source = sources[0]
         if len(source.influence_names) != 121 or len(set(
@@ -225,7 +227,10 @@ class MayaReferencedSkinMigration:
                               data.influence_names),
                         skin_name=item.target_skin,
                         maximum_influences=item.maximum_influences,
-                        maintain_maximum_influences=False)
+                        maintain_maximum_influences=False,
+                        normalization=SkinWeightNormalization(
+                            ("none", "interactive", "post")
+                            [data.normalization_mode]))
                     TransferDenseSkinWeights(MayaDenseSkinHost()).apply(
                         data, item.target_skin)
                     c.setAttr(item.target_skin + ".maintainMaxInfluences",
