@@ -62,7 +62,14 @@ def capture_skin(host,node):
         source=_plug(host,c.connectionInfo(node+f'.matrix[{index}]',sourceFromDestination=True))
         if not source:raise CharacterRegistryError('蒙皮影响矩阵缺少来源')
         pre=node+f'.bindPreMatrix[{index}]'
-        influences.append((index,source,tuple(c.getAttr(pre)),_plug(host,c.connectionInfo(pre,sourceFromDestination=True))))
+        matrix=c.getAttr(pre)
+        if len(matrix)==1 and isinstance(matrix[0],(tuple,list)):
+            matrix=matrix[0]
+        matrix=tuple(float(value) for value in matrix)
+        if len(matrix)!=16:
+            raise CharacterRegistryError('蒙皮绑定逆矩阵不完整：'+pre)
+        influences.append((index,source,matrix,
+            _plug(host,c.connectionInfo(pre,sourceFromDestination=True))))
     weights=[]
     for vertex in c.getAttr(node+'.weightList',multiIndices=True) or []:
         plug=node+f'.weightList[{vertex}].weights'

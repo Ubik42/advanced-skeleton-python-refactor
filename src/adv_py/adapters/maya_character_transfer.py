@@ -130,7 +130,29 @@ def transfer(host,staged):
     from maya import cmds as c
     target=preflight(host,staged)
     old=staged.original
+    if staged.ownership is None:
+        raise CharacterRegistryError('角色重建缺少完整生成图归属审计')
     old_nodes={host.scene_address(n.path):target.scene_address(n.path) for n in old.registration.nodes}
+    # The registry records animator-facing controls and Body ancestors. Skin
+    # may also use generated Part or volume helpers without user channels.
+    # The ownership audit pairs the entire replacement graph by UUID, so all
+    # retained external edges must use that complete mapping before deletion.
+    audited=set()
+    for _role,old_id,new_id,_kind in staged.ownership.nodes:
+        source=_by_uuid(c,old_id)
+        replacement=_by_uuid(c,new_id)
+        audited.add(source)
+        known=old_nodes.get(source)
+        if known is not None and (c.ls(known,long=True) or [known])[0] != replacement:
+            raise CharacterRegistryError('登记节点与完整生成图的替换目标不一致：'+source)
+        old_nodes[source]=replacement
+    fit=host.scene_address(old.registration.container)
+    for node in old.registration.nodes:
+        source=host.scene_address(node.path)
+        if source!=fit and not source.startswith(fit+'|'):
+            paths=c.ls(source,long=True) or []
+            if len(paths)!=1 or paths[0] not in audited:
+                raise CharacterRegistryError('登记节点没有进入完整生成图归属审计：'+source)
     geometry='|Group|Geometry'
     old_nodes[host.scene_address(geometry)]=target.scene_address(geometry)
     # Do not replace the original Fit tree: it remains the editable source.

@@ -858,8 +858,7 @@ class MayaCharacterRegistryMixin:
         by_key = {channel.key:channel for channel in replacement.channels}
         old_keys = {channel.key for channel in original.channels}
         follow_key = 'head.aim.target.follow'
-        if (follow_key in by_key and follow_key not in old_keys
-                and set(by_key) - old_keys == {follow_key}):
+        if follow_key in by_key and follow_key not in old_keys:
             # Older registered rigs used the AimSystem/Main frame only.
             # Keep that motion when rebuilding their existing animation.
             with stage.transaction('Preserve legacy Head Aim follow mode'):
@@ -895,7 +894,10 @@ class MayaCharacterRegistryMixin:
         additions = set(by_key) - old_keys
         def additive_controller_channel(key):
             channel = by_key[key]
-            return (key.startswith(("torso.", "arm.fk.", "leg.fk.",
+            return (key.startswith(("global.extra.", "root.x.",
+                                    "root.cog.", "torso.",
+                                    "spine.ik.", "spine.pole.",
+                                    "spine.spline.", "arm.fk.", "leg.fk.",
                                     "hand.fk.", "arm.ik.", "leg.ik.",
                                     "arm.pole.extra.", "leg.pole.extra.",
                                     "foot.toe."))
