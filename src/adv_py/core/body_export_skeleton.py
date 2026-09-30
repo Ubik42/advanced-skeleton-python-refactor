@@ -349,6 +349,21 @@ def audit_body_export_skeleton_samples(
                 "Export Skeleton joint 样本集合或顺序不一致",
                 str(sample.frame),
             ))
+        if (any(joint.source_world_matrix is None
+                for joint in sample.joints)
+                and any(joint.source_world_matrix is not None
+                        for joint in sample.joints)):
+            issues.append(BodyExportSkeletonIssue(
+                "source_matrix_sample_incomplete",
+                "Export Skeleton 来源世界矩阵采样不完整",
+                str(sample.frame),
+            ))
+    if len({joint.source_world_matrix is not None
+            for sample in samples for joint in sample.joints})>1:
+        issues.append(BodyExportSkeletonIssue(
+            "source_matrix_sample_mode_mismatch",
+            "Export Skeleton 各帧的世界矩阵采样模式不一致",
+        ))
     return tuple(issues)
 
 
