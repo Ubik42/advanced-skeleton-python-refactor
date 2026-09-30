@@ -46,6 +46,7 @@ class BuildNameMatchedFit:
             raise FitSkeletonValidationError(
                 'NameMatcher 目标 FitSkeleton 已存在，请先明确处理旧 Fit')
         before = host.capture_source_skeleton(source_root)
+        skin_boundary = host.capture_name_matcher_skin_boundary(source_root)
         plan = self.plan(source_root, rows, rules)
         template = synthetic_body_with_hand_source_fit_template(
             host.scene_up_axis(), scale=plan.scale)
@@ -64,6 +65,9 @@ class BuildNameMatchedFit:
                       (joint.name.rsplit(':', 1)[-1],
                        joint.world_position) for joint in before):
                 raise RuntimeError('NameMatcher 来源改名改变了骨架位置')
+            if (host.capture_name_matcher_skin_boundary(current_root)
+                    != skin_boundary):
+                raise RuntimeError('NameMatcher 来源改名改变了 Skin 连接')
             joined = _JoinedTransactionHost(host)
             CreateFitSkeleton(joined).apply(container)
             built = BuildSyntheticBodyWithHandSourceFit(joined).apply(
@@ -86,5 +90,8 @@ class BuildNameMatchedFit:
                                        + placement.fit_joint)
             if host.capture_source_skeleton(current_root) != current_source:
                 raise RuntimeError('NameMatcher 修改了来源骨架')
+            if (host.capture_name_matcher_skin_boundary(current_root)
+                    != skin_boundary):
+                raise RuntimeError('NameMatcher Fit 创建改变了来源 Skin')
         return NameMatcherFitResult(len(plan.placements),
                                     plan.missing, plan.scale)

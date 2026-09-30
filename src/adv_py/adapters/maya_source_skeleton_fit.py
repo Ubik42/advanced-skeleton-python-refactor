@@ -9,6 +9,32 @@ from .maya_face import MayaFaceHost
 
 
 class MayaSourceSkeletonFitHost(MayaFaceHost):
+    def capture_name_matcher_skin_boundary(self, root: str) -> tuple:
+        """Track source skins by UUID so DAG renames cannot disguise a break."""
+        from maya import cmds as c
+
+        paths = c.ls(root, long=True, type='joint') or []
+        if len(paths) != 1:
+            raise ValueError('NameMatcher 来源骨架不唯一')
+        joints = [paths[0], *(c.listRelatives(paths[0],
+            allDescendents=True, fullPath=True, type='joint') or ())]
+        ids = {item for joint in joints
+            for item in (c.ls(joint, uuid=True) or ())}
+        rows = []
+        for skin in c.ls(type='skinCluster') or ():
+            influences = c.skinCluster(skin, query=True,
+                                       influence=True) or ()
+            influence_ids = tuple(sorted(item for joint in influences
+                for item in (c.ls(joint, uuid=True) or ())))
+            if not ids.intersection(influence_ids):
+                continue
+            shapes = c.skinCluster(skin, query=True, geometry=True) or ()
+            shape_ids = tuple(sorted(item for shape in shapes
+                for item in (c.ls(shape, uuid=True) or ())))
+            rows.append(((c.ls(skin, uuid=True) or [None])[0],
+                         influence_ids, shape_ids))
+        return tuple(sorted(rows))
+
     def namespace_name_matcher_source(self, root: str) -> str:
         """Move a clashing imported hierarchy into MEL's NameMatcher namespace."""
         from maya import cmds as c
