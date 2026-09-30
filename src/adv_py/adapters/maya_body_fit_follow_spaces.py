@@ -19,9 +19,15 @@ class MayaBodyFitFollowSpacesMixin:
         self, spec: BodyFitFollowSpacesSpec,
     ) -> BodyFitFollowSpacesState:
         c = self._cmds
-        for path in (spec.fk_control, spec.fk_offset, spec.offset_parent):
+        for path in (spec.fk_control, spec.fk_offset):
             if (c.ls(path, long=True, type="transform") or []) != [path]:
                 raise ValueError("Follow Spaces 控制层缺失：" + path)
+        if ((c.ls(spec.offset_parent, long=True) or [])
+                != [spec.offset_parent]
+                or c.nodeType(spec.offset_parent)
+                not in ("transform", "joint")):
+            raise ValueError("Follow Spaces FK Offset 父级缺失："
+                             + spec.offset_parent)
         if (c.listRelatives(spec.fk_offset, parent=True,
                             fullPath=True) or []) != [spec.offset_parent]:
             raise ValueError("Follow Spaces FK Offset 父级已变化")
