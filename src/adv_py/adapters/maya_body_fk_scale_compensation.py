@@ -44,8 +44,10 @@ class MayaBodyFkScaleCompensationMixin:
         if (c.ls(spec.control_path, long=True, type="transform") or []) != [
                 spec.control_path]:
             raise ValueError("FK 缩放补偿控制器无效：" + spec.control_path)
-        if (c.ls(spec.scale_source_path, long=True,
-                 type="transform") or []) != [spec.scale_source_path]:
+        if ((c.ls(spec.scale_source_path, long=True) or [])
+                != [spec.scale_source_path]
+                or c.nodeType(spec.scale_source_path)
+                not in ("transform", "joint")):
             raise ValueError("FK 缩放来源无效：" + spec.scale_source_path)
         if spec.mel_non_opm_fkx:
             if (spec.use_offset_parent_matrix
@@ -133,8 +135,11 @@ class MayaBodyFkScaleCompensationMixin:
                   keyable=False)
         c.connectAttr(spec.control_path + ".inheritScale",
                       pick + ".useScale")
-        c.connectAttr(spec.control_path + ".inheritScale",
-                      pick + ".useShear")
+        if spec.use_fkx_world_source:
+            c.setAttr(pick + ".useShear", False)
+        else:
+            c.connectAttr(spec.control_path + ".inheritScale",
+                          pick + ".useShear")
         if spec.independent_parent:
             main_scale = c.createNode("pickMatrix",
                                       name=spec.main_scale_pick_name)
@@ -207,8 +212,15 @@ class MayaBodyFkScaleCompensationMixin:
              world + ".matrixIn[1]"),
             (world + ".matrixSum", pick + ".inputMatrix"),
             (spec.control_path + ".inheritScale", pick + ".useScale"),
-            (spec.control_path + ".inheritScale", pick + ".useShear"),
         )
+        if spec.use_fkx_world_source:
+            if (bool(c.getAttr(pick + ".useShear"))
+                    or c.connectionInfo(pick + ".useShear",
+                                        sourceFromDestination=True)):
+                return False
+        else:
+            links += ((spec.control_path + ".inheritScale",
+                       pick + ".useShear"),)
         if spec.independent_parent:
             links += (
                 (spec.main_scale_source_path + ".worldMatrix[0]",

@@ -30,6 +30,7 @@ class BodyFkScaleCompensationSpec:
     body_joint_path: str | None = None
     mel_non_opm_fkps_enabled: bool = True
     parent_fk_control_path: str | None = None
+    use_fkx_world_source: bool = False
 
     @property
     def fkps1_name(self) -> str:
@@ -156,7 +157,12 @@ def plan_body_fk_scale_compensation(
         prefix = "AdvPy_" + leaf + "_FkScaleComp"
         spec = BodyFkScaleCompensationSpec(
             control.offset_path, control.parent_path,
-            parent_control.sub_control_path or parent_control.control_path,
+            (parent_control.source_override_path
+             if use_offset_parent_matrix
+             and parent_control.source_override_joint
+             and parent_control.source_override_path is not None
+             else parent_control.sub_control_path
+             or parent_control.control_path),
             control.control_path, not enabled, use_offset_parent_matrix,
             control.world_position, control.world_axes,
             prefix + "World", prefix + "Pick",
@@ -171,7 +177,11 @@ def plan_body_fk_scale_compensation(
             mel_non_opm_fkps_enabled=(
                 output_by_source_side.get((source, control.side))
                 in parent_outputs),
-            parent_fk_control_path=parent_control.control_path)
+            parent_fk_control_path=parent_control.control_path,
+            use_fkx_world_source=(
+                use_offset_parent_matrix
+                and parent_control.source_override_joint
+                and parent_control.source_override_path is not None))
         if any(name in names for name in spec.node_names):
             raise ValueError("FK 缩放补偿节点名称重复：" + leaf)
         names.update(spec.node_names)
