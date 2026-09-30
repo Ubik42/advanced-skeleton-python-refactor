@@ -39,6 +39,7 @@ class BodyFitFollowSpacesState:
     target_worlds: tuple[tuple[float, ...], ...]
     opm_source: str | None
     opm_value: tuple[float, ...]
+    inherits_transform: bool = True
 
 
 def plan_body_fit_follow_spaces(

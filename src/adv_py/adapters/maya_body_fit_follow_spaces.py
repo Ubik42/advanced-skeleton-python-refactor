@@ -56,7 +56,8 @@ class MayaBodyFitFollowSpacesMixin:
             tuple(_matrix(c.xform(target.source, query=True,
                                   worldSpace=True, matrix=True))
                   for target in spec.targets),
-            upstream, _matrix(c.getAttr(plug)))
+            upstream, _matrix(c.getAttr(plug)),
+            bool(c.getAttr(spec.fk_offset + ".inheritsTransform")))
         if any(len(matrix) != 16 or not all(isfinite(value) for value in matrix)
                for matrix in (state.offset_world, state.parent_world,
                               state.opm_value, *state.target_worlds)):
@@ -76,7 +77,8 @@ class MayaBodyFitFollowSpacesMixin:
                 ) != state.opm_source:
             raise ValueError("Follow Spaces FK Offset 原矩阵来源已变化")
         offset_world = om.MMatrix(state.offset_world)
-        parent_world = om.MMatrix(state.parent_world)
+        parent_world = (om.MMatrix(state.parent_world)
+                        if state.inherits_transform else om.MMatrix())
         opm = om.MMatrix(state.opm_value)
         local_inverse = (offset_world * parent_world.inverse()
                          * opm.inverse()).inverse()
@@ -108,8 +110,9 @@ class MayaBodyFitFollowSpacesMixin:
                   type="matrix")
         c.connectAttr(blend + ".outputMatrix",
                       output + ".matrixIn[1]")
-        c.connectAttr(spec.offset_parent + ".worldInverseMatrix[0]",
-                      output + ".matrixIn[2]")
+        if state.inherits_transform:
+            c.connectAttr(spec.offset_parent + ".worldInverseMatrix[0]",
+                          output + ".matrixIn[2]")
         if state.opm_source is not None:
             c.disconnectAttr(state.opm_source, plug)
         c.connectAttr(output + ".matrixSum", plug)
@@ -129,7 +132,8 @@ class MayaBodyFitFollowSpacesMixin:
                 or c.nodeType(spec.output_node) != "multMatrix"):
             return False
         offset_world = om.MMatrix(state.offset_world)
-        parent_world = om.MMatrix(state.parent_world)
+        parent_world = (om.MMatrix(state.parent_world)
+                        if state.inherits_transform else om.MMatrix())
         opm = om.MMatrix(state.opm_value)
         expected_local_inverse = tuple((offset_world
             * parent_world.inverse() * opm.inverse()).inverse())
@@ -145,11 +149,15 @@ class MayaBodyFitFollowSpacesMixin:
         links = [
             (spec.blend_node + ".outputMatrix",
              spec.output_node + ".matrixIn[1]"),
-            (spec.offset_parent + ".worldInverseMatrix[0]",
-             spec.output_node + ".matrixIn[2]"),
             (spec.output_node + ".matrixSum",
              spec.fk_offset + ".offsetParentMatrix"),
         ]
+        if state.inherits_transform:
+            links.append((spec.offset_parent + ".worldInverseMatrix[0]",
+                          spec.output_node + ".matrixIn[2]"))
+        elif c.connectionInfo(spec.output_node + ".matrixIn[2]",
+                              sourceFromDestination=True):
+            return False
         for index, (target, world) in enumerate(zip(
                 spec.targets, state.target_worlds)):
             if (c.nodeType(target.matrix_node) != "multMatrix"
@@ -177,7 +185,9 @@ class MayaBodyFitFollowSpacesMixin:
                 (target.weight_node + ".output",
                  spec.blend_node + f".target[{index}].weight"),
             ))
-        return (all(c.connectionInfo(destination,
+        return (bool(c.getAttr(spec.fk_offset + ".inheritsTransform"))
+                == state.inherits_transform
+                and all(c.connectionInfo(destination,
                                      sourceFromDestination=True) == source
                     for source, destination in links)
                 and all(abs(a - b) <= 1e-4 for a, b in zip(
