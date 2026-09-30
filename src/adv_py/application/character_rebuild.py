@@ -31,6 +31,8 @@ class StagedCharacterRebuild:
     ownership: RebuildOwnership | None = None
     authored_geometry: tuple | None = None
     geometry_container_state: tuple | None = None
+    geometry_container_drivers: tuple = ()
+    geometry_container_conversions: tuple = ()
 
 
 def _rebuild_axial_description(
@@ -120,6 +122,8 @@ class StageBodyCharacterRebuild:
         original=CaptureBodyCharacterPreservation(host).execute(extensions=extensions)
         authored_geometry = host.capture_body_geometry_contents()
         geometry_container_state = host.capture_body_geometry_container_state()
+        geometry_container_drivers = host.capture_body_geometry_container_drivers()
+        geometry_container_conversions = host.capture_body_geometry_container_conversions()
         # Older Python builds retained MEL's temporary Foot pivot markers in
         # the registered Body. Preserve that saved topology during a rebuild;
         # new characters remove those joints before Skin and registration.
@@ -143,7 +147,9 @@ class StageBodyCharacterRebuild:
                             original.registration.body_root) != segment_mode
                         or host.has_body_dynamic_system() != include_dynamic
                         or host.capture_body_geometry_contents() != authored_geometry
-                        or host.capture_body_geometry_container_state() != geometry_container_state):
+                        or host.capture_body_geometry_container_state() != geometry_container_state
+                        or host.capture_body_geometry_container_drivers() != geometry_container_drivers
+                        or host.capture_body_geometry_container_conversions() != geometry_container_conversions):
                     raise RuntimeError('重建暂存前原角色系统层级、分段或选择集发生变化')
                 stage=host.create_character_rebuild_host(namespace)
                 CreateAndImportFitSkeleton(stage).apply(fit)
@@ -191,6 +197,10 @@ class StageBodyCharacterRebuild:
                     raise RuntimeError('暂存构建改写了 Geometry 模型层级')
                 if host.capture_body_geometry_container_state() != geometry_container_state:
                     raise RuntimeError('暂存构建改写了 Geometry 容器状态')
+                if host.capture_body_geometry_container_drivers() != geometry_container_drivers:
+                    raise RuntimeError('暂存构建改写了 Geometry 驱动连接')
+                if host.capture_body_geometry_container_conversions() != geometry_container_conversions:
+                    raise RuntimeError('暂存构建改写了 Geometry 单位转换输入')
                 host.apply_body_geometry_container_state(
                     namespace, geometry_container_state)
                 stage_geometry = stage.capture_body_geometry_contents()
@@ -244,7 +254,9 @@ class StageBodyCharacterRebuild:
                 staged=StagedCharacterRebuild(original,namespace,registration,
                                               properties,
                                               authored_geometry=preserved_geometry,
-                                              geometry_container_state=geometry_container_state)
+                                              geometry_container_state=geometry_container_state,
+                                              geometry_container_drivers=geometry_container_drivers,
+                                              geometry_container_conversions=geometry_container_conversions)
                 staged=replace(staged,ownership=host.audit_character_rebuild_ownership(staged))
         return staged
 
@@ -263,6 +275,10 @@ class TransferStagedBodyCharacterData:
             raise CharacterRegistryError('Geometry 模型层级在暂存后发生变化')
         if host.capture_body_geometry_container_state() != staged.geometry_container_state:
             raise CharacterRegistryError('Geometry 容器状态在暂存后发生变化')
+        if host.capture_body_geometry_container_drivers() != staged.geometry_container_drivers:
+            raise CharacterRegistryError('Geometry 驱动连接在暂存后发生变化')
+        if host.capture_body_geometry_container_conversions() != staged.geometry_container_conversions:
+            raise CharacterRegistryError('Geometry 单位转换在暂存后发生变化')
         host.preflight_character_transfer(staged)
         if staged.ownership is not None and host.audit_character_rebuild_ownership(staged)!=staged.ownership:
             raise CharacterRegistryError('暂存后的 Rig 归属或连接已变化，请重新暂存')
@@ -274,7 +290,9 @@ class TransferStagedBodyCharacterData:
                 host.verify_character_retained_data(staged)
                 if host.capture_body_geometry_contents(geometry_roots) != staged.authored_geometry:
                     raise RuntimeError('交接改变了 Geometry 模型层级')
-                if host.capture_body_geometry_container_state() != staged.geometry_container_state:
+                from adv_py.adapters.maya_body import MayaBodyBuildHost
+                target = MayaBodyBuildHost(namespace=staged.namespace)
+                if target.capture_body_geometry_container_state() != staged.geometry_container_state:
                     raise RuntimeError('交接改变了 Geometry 容器状态')
                 error=_compare_transfer_samples(host,staged,frames,baseline,
                                                 target=True)
@@ -301,6 +319,10 @@ class RebuildBodyCharacter:
                     raise RuntimeError('重建后 Geometry 模型层级身份或姿态变化')
                 if host.capture_body_geometry_container_state() != staged.geometry_container_state:
                     raise RuntimeError('重建后 Geometry 容器状态变化')
+                if host.capture_body_geometry_container_drivers() != staged.geometry_container_drivers:
+                    raise RuntimeError('重建后 Geometry 驱动连接变化')
+                if host.capture_body_geometry_container_conversions() != staged.geometry_container_conversions:
+                    raise RuntimeError('重建后 Geometry 单位转换输入变化')
                 if _compare_transfer_samples(host,promoted,frames,baseline,
                                              target=True)>1e-4:
                     raise RuntimeError('原位替换改变身体、蒙皮或用户数据')

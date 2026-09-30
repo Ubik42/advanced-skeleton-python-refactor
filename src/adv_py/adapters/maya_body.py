@@ -331,6 +331,22 @@ _BODY_EXPORT_BAKE_ATTRIBUTES = {
     "sample_by": "advPyBakeSampleBy",
 }
 
+_GEOMETRY_CONTAINER_ATTRIBUTES = (
+    "inheritsTransform", "visibility", "rotateOrder",
+    *(axis + suffix for axis in ("translate", "rotate", "scale",
+        "rotatePivot", "scalePivot", "rotatePivotTranslate",
+        "scalePivotTranslate", "rotateAxis") for suffix in "XYZ"),
+    "shearXY", "shearXZ", "shearYZ", "overrideEnabled",
+    "overrideDisplayType", "overrideVisibility", "overrideColor",
+    "overrideRGBColors", "overrideColorR", "overrideColorG",
+    "overrideColorB",
+)
+_GEOMETRY_COMPOUND_ATTRIBUTES = (
+    'translate', 'rotate', 'scale', 'rotatePivot', 'scalePivot',
+    'rotatePivotTranslate', 'scalePivotTranslate', 'rotateAxis',
+    'shear', 'overrideColorRGB',
+)
+
 
 class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBodyDeleteMixin, MayaFaceDeleteMixin, MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, MayaBodyFkScaleCompensationMixin, MayaBodyFitFollowMixin, MayaBodyFitNamedFollowMixin, MayaBodyFitFollowSpacesMixin, MayaBodyFitAimAtMixin, MayaBodyFitGeoAttachMixin, MayaBodyFitProximityPinMixin, MayaBodyCenterBetweenFeetMixin, MayaBodyFitAdvancedConstraintMixin, MayaBodyParentConstraintMixin, MayaBodyGameRootMotionMixin, MayaBodyGameScalingMixin, MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitBendyMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyFitAimMixin, MayaBodyPoleAimMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
     """Maya scene adapter for the first materialized Body skeleton stage."""
@@ -734,29 +750,71 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         node = "|Group|Geometry"
         if not c.objExists(node):
             return None
-        attributes = (
-            "inheritsTransform", "visibility", "rotateOrder",
-            *(axis + suffix for axis in ("translate", "rotate", "scale",
-                "rotatePivot", "scalePivot", "rotatePivotTranslate",
-                "scalePivotTranslate", "rotateAxis") for suffix in "XYZ"),
-            "shearXY", "shearXZ", "shearYZ", "overrideEnabled",
-            "overrideDisplayType", "overrideVisibility", "overrideColor",
-            "overrideRGBColors", "overrideColorR", "overrideColorG",
-            "overrideColorB",
-        )
         rows = []
-        for attr in attributes:
+        for attr in _GEOMETRY_CONTAINER_ATTRIBUTES:
             plug = node + "." + attr
             if not c.objExists(plug):
                 continue
-            if c.connectionInfo(plug, sourceFromDestination=True):
-                raise FitSkeletonValidationError(
-                    "Geometry 容器受驱动属性需要专门迁移：" + plug)
             rows.append((attr, c.getAttr(plug),
                          bool(c.getAttr(plug, lock=True)),
                          bool(c.getAttr(plug, keyable=True)),
                          bool(c.getAttr(plug, channelBox=True))))
         return tuple(rows)
+
+    def capture_body_geometry_container_drivers(self):
+        """Read explicit incoming native Geometry channels for rebuild."""
+        from .maya_character_preservation import _plug
+        c = self._cmds
+        node = "|Group|Geometry"
+        if not c.objExists(node):
+            return ()
+        rows = []
+        connected_compounds = {
+            attr for attr in _GEOMETRY_COMPOUND_ATTRIBUTES
+            if c.objExists(node + '.' + attr)
+            and c.connectionInfo(node + '.' + attr,
+                                 sourceFromDestination=True)}
+        for attr in (*_GEOMETRY_COMPOUND_ATTRIBUTES,
+                     *_GEOMETRY_CONTAINER_ATTRIBUTES):
+            if (attr not in connected_compounds
+                    and any((attr.startswith(parent) and
+                        attr[len(parent):] in ('X','Y','Z','XY','XZ','YZ'))
+                        or (parent == 'overrideColorRGB' and
+                            attr in ('overrideColorR','overrideColorG','overrideColorB'))
+                        for parent in connected_compounds)):
+                continue
+            target = node + "." + attr
+            if not c.objExists(target):
+                continue
+            source = c.connectionInfo(target, sourceFromDestination=True)
+            if source:
+                source_node = source.split('.', 1)[0]
+                if len(c.ls(source_node, long=True) or []) != 1:
+                    raise FitSkeletonValidationError(
+                        'Geometry 驱动来源不存在或名称不唯一：' + source)
+                rows.append((_plug(self, source), target))
+        return tuple(sorted(rows))
+
+    def capture_body_geometry_container_conversions(self):
+        """Retain exclusive Maya unit conversions feeding Geometry channels."""
+        from .maya_character_preservation import _plug
+        c = self._cmds
+        rows = []
+        for source, target in self.capture_body_geometry_container_drivers():
+            node = source.split('.', 1)[0]
+            if c.nodeType(node) != 'unitConversion':
+                continue
+            input_plug = node + '.input'
+            upstream = c.connectionInfo(input_plug,
+                                        sourceFromDestination=True)
+            outgoing = c.listConnections(node + '.output',
+                source=False, destination=True, plugs=True) or []
+            normalized = tuple(sorted(_plug(self, plug) for plug in outgoing))
+            if not upstream or normalized != (target,):
+                raise FitSkeletonValidationError(
+                    'Geometry 单位转换存在共享输出或缺少输入：' + node)
+            rows.append((node, _plug(self, upstream)))
+        return tuple(sorted(set(rows)))
 
     def apply_body_geometry_container_state(self, namespace, state):
         """Copy the old container's native state to a staged replacement."""

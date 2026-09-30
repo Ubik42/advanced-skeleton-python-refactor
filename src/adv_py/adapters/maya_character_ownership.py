@@ -19,13 +19,14 @@ def _curve_topology(host,node):
     return tuple(curve.knots())
 
 
-def _graph(host,names):
+def _graph(host,names,*,external_conversions=()):
     c=host._cmds
     nodes={name:name for name in names}
     edges=set()
     for name in names:edges.update(connections(host,name))
     outside={p.split('.',1)[0] for edge in edges for p in edge}-set(names)
     for node in sorted(outside):
+        if node in external_conversions:continue
         if c.nodeType(node)!='unitConversion':continue
         links=connections(host,node)
         # Only a conversion entirely between known rig nodes is owned. A
@@ -60,7 +61,11 @@ def audit(host,staged):
             raise CharacterRegistryError('所有权审计需要尚未交接动画的暂存角色')
         if not host._cmds.objExists(node):
             raise CharacterRegistryError('原 Rig 缺少暂存结构节点：'+node)
-    old_nodes,old_edges=_graph(host,names)
+    external_conversions={row[0] for row in staged.geometry_container_conversions}
+    if external_conversions & set(names):
+        raise CharacterRegistryError('Geometry 保留单位转换与新 Rig 同名')
+    old_nodes,old_edges=_graph(host,names,
+        external_conversions=external_conversions)
     new_nodes,new_edges=_graph(target,names)
     if set(old_nodes)!=set(new_nodes):
         raise CharacterRegistryError('新旧 Rig 的独占单位转换边界不一致')
@@ -110,6 +115,9 @@ def audit(host,staged):
                 raise CharacterRegistryError('旧 Rig 存在未声明保留的子节点：'+old)
         rows.append((role,a.ls(old,uuid=True)[0],b.ls(new,uuid=True)[0],kind))
     permitted={pair for row in (*original.skins,*original.extensions,*staged.custom_properties) for pair in row.connections}
+    permitted.update(staged.geometry_container_drivers)
+    permitted.update((upstream,converter+'.input')
+        for converter,upstream in staged.geometry_container_conversions)
     for curve in original.curves:
         permitted.update((curve.node+'.output',plug) for plug in curve.outputs)
     # Bind-pose records belong to retained skin, not to the rig being deleted.

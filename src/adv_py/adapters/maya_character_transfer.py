@@ -100,6 +100,10 @@ def sample(host,staged,frames,target=False):
                         value=c.getAttr(node+'.'+attribute,time=frame)
                         values=tuple(value) if isinstance(value,(tuple,list)) else (float(value),)
                         attachments+=((row.uuid+'.'+attribute,values),)
+            for attribute,*_ in staged.geometry_container_state or ():
+                plug=active.scene_address('|Group|Geometry.'+attribute)
+                value=c.getAttr(plug,time=frame)
+                attachments+=(('Geometry.'+attribute,(float(value),)),)
             result.append((frame,pose.body_frames,pose.space_frames,meshes,attachments))
         return tuple(result)
 
@@ -111,8 +115,7 @@ def transfer(host,staged):
     old=staged.original
     old_nodes={host.scene_address(n.path):target.scene_address(n.path) for n in old.registration.nodes}
     geometry='|Group|Geometry'
-    if any(row.path==geometry for row in old.properties):
-        old_nodes[host.scene_address(geometry)]=target.scene_address(geometry)
+    old_nodes[host.scene_address(geometry)]=target.scene_address(geometry)
     # Do not replace the original Fit tree: it remains the editable source.
     old_nodes={p:q for p,q in old_nodes.items() if not (p==host.scene_address(old.registration.container) or p.startswith(host.scene_address(old.registration.container)+'|'))}
     def redirect(plug):
@@ -174,6 +177,42 @@ def transfer(host,staged):
         def live_redirect(plug):
             node,attr=plug.split('.',1)
             return curve_redirect.get(node,old_nodes.get(node,node))+'.'+attr
+        owned_replacements={_by_uuid(c,old_id):_by_uuid(c,new_id)
+            for _,old_id,new_id,_ in (staged.ownership.nodes
+                                       if staged.ownership is not None else ())}
+        def geometry_source(plug):
+            node,attribute=plug.split('.',1)
+            paths=c.ls(node,long=True) or []
+            if len(paths)==1:
+                node=owned_replacements.get(paths[0],paths[0])
+            return live_redirect(node+'.'+attribute)
+        for converter,upstream in staged.geometry_container_conversions:
+            a=host.scene_address(upstream)
+            b=host.scene_address(converter+'.input')
+            x=geometry_source(a)
+            if x!=a:
+                if not c.isConnected(a,b):
+                    raise CharacterRegistryError(
+                        'Geometry 单位转换输入在交接前变化：'+converter)
+                with _writable_connection(c,b):
+                    c.disconnectAttr(a,b)
+                    c.connectAttr(x,b)
+            if not c.isConnected(x,b):
+                raise RuntimeError('Geometry 单位转换输入没有完整交接：'+converter)
+        connected_geometry_drivers=[]
+        for source,destination in staged.geometry_container_drivers:
+            a=host.scene_address(source);b=host.scene_address(destination)
+            x=geometry_source(a)
+            y=target.scene_address(destination)
+            if c.isConnected(x,y):
+                connected_geometry_drivers.append((x,y))
+                continue
+            if not c.isConnected(a,b):
+                raise CharacterRegistryError('Geometry 原生驱动在交接前变化：'+destination)
+            with _writable_connection(c,b,y):
+                c.disconnectAttr(a,b)
+                c.connectAttr(x,y)
+            connected_geometry_drivers.append((x,y))
         for source,destination in sorted({pair for row in (*old.extensions,*staged.custom_properties) for pair in row.connections}):
             a,b=host.scene_address(source),host.scene_address(destination)
             x,y=live_redirect(a),live_redirect(b)
@@ -198,6 +237,12 @@ def transfer(host,staged):
         # from the identical scene evaluated after reopening.
         _refresh_skin_inputs(c,host,old.skins)
         lock_and_verify(target,staged.custom_properties,apply_locks=True)
+        if (any(not c.isConnected(x,y) for x,y in connected_geometry_drivers)
+                or {destination for _,destination in
+                    target.capture_body_geometry_container_drivers()}
+                    != {destination for _,destination in
+                        staged.geometry_container_drivers}):
+            raise RuntimeError('Geometry 原生驱动没有完整交接')
         target.read_character_registration()
     finally:
         c.select([_by_uuid(c,uuid)+component for uuid,component in selection],replace=True) if selection else c.select(clear=True)
@@ -208,6 +253,9 @@ def verify_retained(host,staged):
     from maya import cmds as c
     from .maya_body import MayaBodyBuildHost
     target=MayaBodyBuildHost(namespace=staged.namespace)
+    if {destination for _,destination in target.capture_body_geometry_container_drivers()} != {
+            destination for _,destination in staged.geometry_container_drivers}:
+        raise RuntimeError('暂存 Geometry 原生驱动连接变化')
     old=staged.original
     from .maya_character_ownership import verify_shapes
     verify_shapes(target,staged.ownership)
