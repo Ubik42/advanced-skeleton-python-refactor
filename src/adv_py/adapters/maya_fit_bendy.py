@@ -527,6 +527,8 @@ class MayaFitBendyMixin:
                               scale_mult + ".input2")
             elif (spec.non_opm_additive_micro_scale
                   or spec.opm_offset_only_scale):
+                # MEL feeds BendMPX.scale into ScaleBlendMult, then drives
+                # MicroOffset.scale; the OPM branch leaves joint.scale intact.
                 c.setAttr(scale_mult + ".input2X", 1.0)
                 guide = spec.motion_transform_names[index]
                 for axis in "YZ":
