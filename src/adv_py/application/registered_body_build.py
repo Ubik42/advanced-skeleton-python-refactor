@@ -352,9 +352,20 @@ def _with_wheel_fk_sources(
     leg = replace(plan.leg, fk_controls=update(plan.leg.fk_controls))
     hand = (replace(plan.hand, controls=update(plan.hand.controls))
             if plan.hand is not None else None)
-    torso = (replace(plan.torso, torso=replace(
-        plan.torso.torso, controls=update(plan.torso.torso.controls)))
-        if plan.torso is not None else None)
+    torso = None
+    if plan.torso is not None:
+        torso_controls = update(plan.torso.torso.controls)
+        spine = plan.torso.torso.spine
+        if spine is not None:
+            by_control = {control.control_path:
+                          (control.source_override_path
+                           or control.sub_control_path
+                           or control.control_path)
+                          for control in torso_controls.controls}
+            spine = replace(spine, fk_sources=tuple(
+                by_control.get(path, path) for path in spine.fk_controls))
+        torso = replace(plan.torso, torso=replace(
+            plan.torso.torso, controls=torso_controls, spine=spine))
     if matched != set(sources):
         raise ValueError("Wheel FK 改接缺少原控制计划："
                          + "、".join(sorted(set(sources) - matched)))
