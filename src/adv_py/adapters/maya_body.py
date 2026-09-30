@@ -3489,12 +3489,16 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             if api_names != data.influence_names:
                 raise RuntimeError("FBX Skin 影响关节顺序在捕获期间变化：" + skin)
             bind_matrices = []
+            bind_matrix_drivers = []
             for influence in skin_fn.influenceObjects():
                 logical = skin_fn.indexForInfluenceObject(influence)
-                values = c.getAttr(f"{skin}.bindPreMatrix[{logical}]")
+                plug = f"{skin}.bindPreMatrix[{logical}]"
+                values = c.getAttr(plug)
                 if len(values) == 1 and isinstance(values[0], (tuple, list)):
                     values = values[0]
                 bind_matrices.append(tuple(float(value) for value in values))
+                bind_matrix_drivers.append((logical,
+                    c.connectionInfo(plug,sourceFromDestination=True) or ''))
             bind_matrices = tuple(bind_matrices)
             if any(len(matrix) != 16 for matrix in bind_matrices):
                 raise FitSkeletonValidationError(
@@ -3512,7 +3516,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                          int(c.getAttr(skin + ".normalizeWeights")),
                          int(c.getAttr(skin + ".weightDistribution")),
                          host.capture_skin_blend_weights(skin),
-                         bind_matrices, deformer_settings,
+                         bind_matrices, tuple(bind_matrix_drivers),
+                         deformer_settings,
                          source_names))
         if not rows:
             raise FitSkeletonValidationError("当前角色没有可发布的 Skin 网格")
@@ -3604,12 +3609,19 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_mesh_topology import mesh_topology_digest
         for index, (mesh, data, source_topology, maximum, maintain, method,
                     normalization, distribution, blend_weights,
-                    bind_matrices, deformer_settings, mapping) in enumerate(
+                    bind_matrices, bind_matrix_drivers,
+                    deformer_settings, mapping) in enumerate(
                 sources, 1):
             target_paths = tuple(mapping[name.rsplit(":", 1)[-1]]
                                  for name in data.influence_names)
             source_envelope = data.skin_name + ".envelope"
             envelope_at_bind = float(c.getAttr(source_envelope))
+            stable_settings = (*deformer_settings,
+                ('skinningMethod',method),
+                ('normalizeWeights',normalization),
+                ('weightDistribution',distribution),
+                ('maxInfluences',maximum),
+                ('maintainMaxInfluences',maintain))
             sampled_frames = tuple(range(bind_frame, end_frame + 1, sample_by))
             envelope_times = (*sampled_frames,
                 *(0.5 * (left + right) for left, right in zip(
@@ -3620,12 +3632,25 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 if abs(float(c.getAttr(source_envelope)) - envelope_at_bind) > 1e-6:
                     raise FitSkeletonValidationError(
                         "FBX 不支持变化中的 Skin envelope：" + data.skin_name)
-                for attribute,value in deformer_settings:
+                for attribute,value in stable_settings:
                     if abs(float(c.getAttr(data.skin_name + '.' + attribute))
                            - value) > 1e-6:
                         raise FitSkeletonValidationError(
                             'FBX 不支持变化中的 Skin 计算选项：'
                             + data.skin_name + '.' + attribute)
+                for offset,(logical,driver) in enumerate(bind_matrix_drivers):
+                    if not driver:
+                        continue
+                    values=c.getAttr(
+                        f'{data.skin_name}.bindPreMatrix[{logical}]')
+                    if len(values)==1 and isinstance(values[0],(tuple,list)):
+                        values=values[0]
+                    if (len(values)!=16 or any(abs(float(actual)-expected)>1e-6
+                            for actual,expected in zip(values,
+                                                       bind_matrices[offset]))):
+                        raise FitSkeletonValidationError(
+                            'FBX 不支持变化中的 Skin 绑定逆矩阵：'
+                            + data.skin_name)
             c.currentTime(bind_frame, edit=True, update=True)
             envelope_locked = bool(c.getAttr(source_envelope, lock=True))
             envelope_inputs = c.listConnections(source_envelope,
@@ -3753,6 +3778,28 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             copied.append((c.ls(clone, long=True,
                                  type="transform") or [])[0])
         return tuple(copied)
+
+    def _verify_fbx_skinned_meshes(self, sources, copied, selection, *,
+                                   namespace_free=False):
+        """Reject an FBX clone that does not reproduce source deformation."""
+        c = self._cmds.raw if namespace_free else self._cmds
+        if len(sources) != len(copied):
+            raise RuntimeError('FBX 临时 Skin 网格数量不一致')
+        for frame in range(selection.start_frame, selection.end_frame + 1,
+                           selection.sample_by):
+            c.currentTime(frame, edit=True, update=True)
+            for source, clone in zip(sources, copied):
+                mesh = (self.scene_address(source[0]) if namespace_free
+                        else source[0])
+                before = c.xform(mesh + '.vtx[*]', query=True,
+                                 worldSpace=True, translation=True) or []
+                after = c.xform(clone + '.vtx[*]', query=True,
+                                worldSpace=True, translation=True) or []
+                if (len(before) != len(after) or any(abs(a-b) > 1e-4
+                        for a,b in zip(before,after))):
+                    raise FitSkeletonValidationError(
+                        'FBX 临时 Skin 与原角色变形不一致：'
+                        + source[0] + ' @ ' + str(frame))
 
     def export_fbx_selection(
         self,
@@ -3882,6 +3929,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         end_frame=selection.end_frame,
                         sample_by=selection.sample_by,
                         namespace_free=namespace_free)
+                    if copied_meshes:
+                        self._verify_fbx_skinned_meshes(
+                            skin_sources, copied_meshes, selection,
+                            namespace_free=namespace_free)
                     if any(
                         (published_cmds.ls(path, long=True,
                                              type="joint") or [])
