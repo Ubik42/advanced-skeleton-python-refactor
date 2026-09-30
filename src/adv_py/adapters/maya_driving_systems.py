@@ -3,9 +3,14 @@ from fnmatch import fnmatchcase
 from adv_py.core.driving_systems import DrivingAttribute,original_sdk_control,original_sdk_attribute
 from adv_py.core.corrective_shapes import corrective_round
 from .maya_corrective_shapes import MayaCorrectiveShapesHost
+from .maya_driving_curves import MayaDrivingCurvesMixin
+from .maya_driving_create import MayaDrivingCreateMixin
+from .maya_driving_optimize import MayaDrivingOptimizeMixin
+from .maya_driving_edit import MayaDrivingEditMixin
+from .maya_original_pose_functions import MayaOriginalPoseFunctionsMixin
 
 
-class MayaDrivingSystemsHost(MayaCorrectiveShapesHost):
+class MayaDrivingSystemsHost(MayaOriginalPoseFunctionsMixin,MayaDrivingEditMixin,MayaDrivingCreateMixin,MayaDrivingCurvesMixin,MayaDrivingOptimizeMixin,MayaCorrectiveShapesHost):
     def original_driving_attributes(self, control):
         c=self._cmds
         face=c.objExists("FaceControlSet") and c.sets(control,isMember="FaceControlSet")
@@ -29,6 +34,7 @@ class MayaDrivingSystemsHost(MayaCorrectiveShapesHost):
     def original_driving_curves(self, control, attribute):
         c=self._cmds
         if control.startswith("FK") and c.objExists(control[2:]+"."+attribute):control=control[2:]
+        if c.objExists(control+"."+attribute):attribute=c.attributeQuery(attribute,node=control,longName=True)
         bw="bw"+control+"_"+attribute
         plug=bw+".output" if c.objExists(bw) else control+"."+attribute
         return tuple(curve for curve in c.listConnections(plug,source=False,destination=True,skipConversionNodes=True,type="animCurve") or []

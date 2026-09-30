@@ -290,6 +290,9 @@ class MayaFaceControllersMixin:
         bw="bw"+node+"_"+attr
         if not c.objExists(bw):
             c.createNode("blendWeighted",name=bw)
+            face=(c.objExists("FaceAllSet") and c.sets(node,isMember="FaceAllSet")) or c.objExists("FaceBuildingSets")
+            group="FaceAllSet" if face else "AllSet"
+            if c.objExists(group) and c.sets(node,isMember=group):c.sets(bw,add=group)
         if not c.isConnected(plug,bw+".input[0]",ignoreUnitConversion=True):
             c.connectAttr(plug,bw+".input[0]",force=True)
         return bw+".output"

@@ -2188,6 +2188,12 @@ class MayaPanelController:
         return EditOriginalDrivingSystems(MayaDrivingSystemsHost(
             namespace=None if namespace==":" else namespace)).apply(action,**options)
 
+    def original_pose_functions(self, namespace: str, action: str, **options):
+        from adv_py.adapters.maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.application.driving_systems import EditOriginalPoseFunctions
+        use_case=EditOriginalPoseFunctions(MayaDrivingSystemsHost(namespace=None if namespace==":" else namespace))
+        return use_case.catalog() if action=="catalog" else use_case.apply(action,**options)
+
     def original_corrective_targets(self, namespace: str, *, edit=False):
         from adv_py.adapters.maya_corrective_shapes import MayaCorrectiveShapesHost
         from adv_py.application.corrective_shapes import EditOriginalCorrectiveShapes

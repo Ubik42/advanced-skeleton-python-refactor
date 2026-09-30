@@ -1464,11 +1464,37 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
 
             group, form = self._group("08 · 原版 Driving Systems", [])
+            self.original_driving_mode = QtWidgets.QComboBox()
+            self.original_driving_mode.addItems(["创建新控制器","使用已有控制器","从所选对象驱动"])
+            self.original_driving_control = QtWidgets.QComboBox()
+            self.original_driving_control.setEditable(True)
+            self.original_driving_attribute = QtWidgets.QLineEdit()
+            self.original_driving_attribute.setPlaceholderText("留空时自动命名 driver1、driver2…")
+            self.original_driving_mirror = QtWidgets.QCheckBox("镜像")
+            self.original_driving_mirror.setChecked(True)
+            self.original_driving_q_rotations = QtWidgets.QCheckBox("QRotations")
+            self.original_driving_q_rotations.setChecked(True)
+            self.original_driving_mode.currentIndexChanged.connect(self._original_driving_mode_changed)
+            self.original_driving_test_symmetry = QtWidgets.QCheckBox("编辑时预览对称")
+            self.original_driving_test_symmetry.setChecked(True)
+            self.original_driving_affected = QtWidgets.QCheckBox("仅显示受影响控制器")
+            form.addRow("驱动方式",self.original_driving_mode)
+            form.addRow("控制器名称",self.original_driving_control)
+            form.addRow("属性名称",self.original_driving_attribute)
+            form.addRow(self.original_driving_mirror)
+            form.addRow(self.original_driving_q_rotations)
+            form.addRow(self._button("创建 Driving System",lambda:self._original_driving_action("create")))
             self.original_driving_targets = QtWidgets.QComboBox()
             form.addRow("驱动属性",self.original_driving_targets)
             form.addRow(self._button("刷新原版驱动属性",self._original_driving_refresh))
             for label,action in (("查看驱动 SDK 曲线","graph"),("更新驱动软范围","range"),("镜像右侧 SDK 到左侧","mirror"),
                                  ("静音所选 SDK","mute"),("恢复 SDK 驱动","unmute"),("退出驱动预览","remove_preview")):
+                form.addRow(self._button(label,lambda action=action:self._original_driving_action(action)))
+            form.addRow(self.original_driving_test_symmetry)
+            form.addRow(self.original_driving_affected)
+            for label,action in (("自动查找并编辑驱动","auto_edit"),("编辑所选驱动属性","edit"),("删除所选驱动属性","delete"),
+                                 ("应用 Driving System 编辑","apply_edit"),("取消 Driving System 编辑","cancel_edit"),
+                                 ("优化驱动控制器位置","optimize"),("升级旧 SDK 曲线","upgrade_curves")):
                 form.addRow(self._button(label,lambda action=action:self._original_driving_action(action)))
             self.original_driving_driver = QtWidgets.QLineEdit()
             self.original_driving_driven = QtWidgets.QLineEdit()
@@ -1486,6 +1512,20 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow("目标值",self.original_driving_driven_value)
             form.addRow(self._button("建立原版 SDK 控制层",lambda:self._original_driving_action("sdk_layer")))
             form.addRow(self._button("写入原版 SDK 键",lambda:self._original_driving_action("sdk_key")))
+            self._original_driving_mode_changed()
+            stack.addWidget(group)
+
+            group, form = self._group("09 · 原版 Pose Functions", [])
+            self.original_pose_name = QtWidgets.QComboBox()
+            self.original_pose_name.setEditable(True)
+            self.original_pose_name.setEditText("pose1")
+            self.original_pose_overwrite = QtWidgets.QCheckBox("覆盖同名姿态")
+            form.addRow("姿态名称",self.original_pose_name)
+            form.addRow(self.original_pose_overwrite)
+            for label,action in (("刷新原版保存姿态","catalog"),("保存原版命名姿态","store"),("应用原版命名姿态","apply"),
+                                 ("删除原版命名姿态","delete"),("所选通道加入原版构建姿态","add_build_pose"),
+                                 ("返回原版构建姿态","neutral"),("禁用原版自定义朝向","disable_orients"),("启用原版自定义朝向","enable_orients")):
+                form.addRow(self._button(label,lambda action=action:self._original_pose_functions(action)))
             stack.addWidget(group)
 
             self.corrective_q_rotations = QtWidgets.QCheckBox("QRotations")
@@ -4069,9 +4109,20 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.face_bs_targets.addItem(target, target)
             return "已读取 " + str(len(targets)) + " 个原版驱动目标"
 
+        def _original_driving_mode_changed(self, index=None):
+            mode=self.original_driving_mode.currentIndex()
+            self.original_driving_control.setEditable(mode!=1)
+            self.original_driving_control.setEnabled(mode!=2)
+            self.original_driving_attribute.setReadOnly(mode==2)
+            self.original_driving_q_rotations.setVisible(mode==2)
+
         def _original_driving_refresh(self):
             targets=self.controller.original_driving_catalog(self._namespace())
             self.original_driving_targets.clear()
+            current=self.original_driving_control.currentText()
+            self.original_driving_control.clear()
+            self.original_driving_control.addItems(list(dict.fromkeys(target.control for target in targets if not target.control.endswith("_L"))))
+            self.original_driving_control.setEditText(current)
             for target in targets:
                 self.original_driving_targets.addItem(target.control+"."+target.attribute+" / "+str(len(target.curves))+" SDK",target)
             return "已读取 "+str(len(targets))+" 个原版驱动属性"
@@ -4090,7 +4141,7 @@ def create_panel(controller: MayaPanelController | None = None):
             target=self.original_driving_targets.currentData()
             control=target.control if target else ""
             attribute=target.attribute if target else ""
-            if action in ("graph","range","mirror","mute") and not target:raise ValueError("请先刷新并选择驱动属性")
+            if action in ("graph","range","mirror","mute","edit","delete") and not target:raise ValueError("请先刷新并选择驱动属性")
             driver=self.original_driving_driver.text().strip()
             driven=self.original_driving_driven.text().strip()
             namespace=self._namespace()
@@ -4099,11 +4150,42 @@ def create_panel(controller: MayaPanelController | None = None):
             if action=="sdk_layer":
                 control=local(driven.split(".",1)[0])
                 if not control:raise ValueError("请记录被驱动控制器")
+            if action=="create":
+                mode=self.original_driving_mode.currentIndex()
+                control=local(self.original_driving_control.currentText().strip())
+                attribute=self.original_driving_attribute.text().strip()
+                if mode==1 and not control:raise ValueError("请先刷新并选择已有驱动控制器")
+                if mode==2:
+                    if "." not in driver:raise ValueError("请先记录所选对象的驱动通道")
+                    control,attribute=local(driver).rsplit(".",1)
+                    from maya import cmds
+                    attribute=cmds.attributeQuery(attribute,node=driver.rsplit(".",1)[0],longName=True)
             if action=="mirror" and control.endswith("_R"):control=control[:-2]+"_L"
             result=self.controller.original_driving_systems(namespace,action,control=control,attribute=attribute,
                 driver=local(driver),driven=local(driven),driver_value=self.original_driving_driver_value.value(),
-                driven_value=self.original_driving_driven_value.value())
+                driven_value=self.original_driving_driven_value.value(),mirror=self.original_driving_mirror.isChecked(),
+                q_rotations=self.original_driving_q_rotations.isChecked(),test_symmetry=self.original_driving_test_symmetry.isChecked(),
+                show_only_affected=self.original_driving_affected.isChecked(),
+                drive_from_selected=action=="create" and self.original_driving_mode.currentIndex()==2)
+            if action in ("create","apply_edit","delete"):
+                self._original_driving_refresh()
             return "原版 Driving Systems 操作完成："+action
+
+        def _original_pose_functions(self, action):
+            options={"name":self.original_pose_name.currentText().strip(),"overwrite":self.original_pose_overwrite.isChecked()}
+            if action=="add_build_pose":
+                from maya import cmds,mel
+                selected=cmds.ls(selection=True,long=True,type="transform") or []
+                namespace=self._namespace()
+                options["objects"]=tuple(node.rsplit("|",1)[-1].removeprefix(namespace+":") if namespace!=":" else node.rsplit("|",1)[-1] for node in selected)
+                channelbox=mel.eval("global string $gChannelBoxName; $gChannelBoxName;")
+                options["attributes"]=tuple(cmds.channelBox(channelbox,query=True,selectedMainAttributes=True) or [])
+            result=self.controller.original_pose_functions(self._namespace(),action,**options)
+            if action in ("catalog","store","delete"):
+                current=self.original_pose_name.currentText()
+                names=result if action=="catalog" else self.controller.original_pose_functions(self._namespace(),"catalog")
+                self.original_pose_name.clear();self.original_pose_name.addItems(list(names));self.original_pose_name.setEditText(current)
+            return "原版 Pose Functions 操作完成："+action
 
         def _corrective_curve_record(self, role):
             if role=="mesh":

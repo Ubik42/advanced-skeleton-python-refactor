@@ -62,22 +62,32 @@ class MayaOriginalDriverAttributesMixin:
                 c.xform(tokens[-1],**options)
 
     def go_to_original_corrective_build_pose(self):
-        self._require_transaction()
-        c=self._cmds
+        """asGoToBuildPose catches each failed channel and continues the pose."""
+        self._require_transaction();self._transaction_changed=True
+        c=self._cmds;failed=[]
+        def apply(text):
+            for statement in (text or "").split(";"):
+                try:self._original_apply_pose_commands(statement)
+                except RuntimeError:failed.append(statement)
         for node,reader in (("buildPose",self.read_body_build_pose),("faceBuildPose",self.read_face_build_pose)):
-            if not c.objExists(node):
-                continue
+            if not c.objExists(node):continue
             if c.objExists(node+".advPyPoseData"):
                 for item in reader().values:
-                    c.setAttr(item.node+"."+item.attribute,item.value)
-            elif c.objExists(node+".udAttr"):
-                self._original_apply_pose_commands(c.getAttr(node+".udAttr"))
-            if c.objExists(node+".udExtraAttr"):
-                self._original_apply_pose_commands(c.getAttr(node+".udExtraAttr"))
+                    plug=item.node+"."+item.attribute
+                    try:c.setAttr(plug,item.value)
+                    except RuntimeError:failed.append(plug)
+            elif c.objExists(node+".udAttr"):apply(c.getAttr(node+".udAttr"))
+            if c.objExists(node+".udExtraAttr"):apply(c.getAttr(node+".udExtraAttr"))
         for fit in ("FitSkeleton","FaceFitSkeleton"):
-            if c.objExists(fit+".run"):
-                self._original_apply_pose_commands(c.getAttr(fit+".run"))
-        self._transaction_changed=True
+            if c.objExists(fit+".run"):apply(c.getAttr(fit+".run"))
+        if c.objExists("GRP_faceGUI"):
+            for control in c.listRelatives("GRP_faceGUI",allDescendents=True,type="transform") or []:
+                leaf=self._original_restore_leaf(control)
+                if not leaf.startswith("CTRL_") or leaf in ("CTRL_faceTweakersGUI","CTRL_expressions","CTRL_GUIswitch"):continue
+                for attr in c.listAttr(control,keyable=True) or []:
+                    plug=control+"."+attr
+                    if c.getAttr(plug,settable=True):c.setAttr(plug,1 if attr.startswith("scale") or attr=="visibility" else 0)
+        return tuple(failed)
 
     def original_driver_uses_opm(self):
         c=self._cmds
@@ -145,6 +155,10 @@ class MayaOriginalDriverAttributesMixin:
         self.restore_original_control_pose(pose)
         c.select(selection,replace=True) if selection else c.select(clear=True)
 
+    def original_blended_driver_name(self, drivers):
+        c=self._cmds
+        return "_".join(plug.rsplit(".",1)[1]+("Pos" if c.getAttr(plug)>=0 else "Neg") for plug in drivers)
+
     def create_original_blended_attribute(self, drivers, attribute=""):
         self._require_transaction()
         c=self._cmds
@@ -152,7 +166,7 @@ class MayaOriginalDriverAttributesMixin:
         node=drivers[0].rsplit(".",1)[0]
         values=[c.getAttr(plug) for plug in drivers]
         if not attribute:
-            attribute="_".join(plug.rsplit(".",1)[1]+("Pos" if value>=0 else "Neg") for plug,value in zip(drivers,values))
+            attribute=self.original_blended_driver_name(drivers)
         if c.objExists(node+"."+attribute):
             return attribute
         c.addAttr(node,longName=attribute,attributeType="double")
@@ -287,8 +301,12 @@ class MayaOriginalDriverAttributesMixin:
         if raw.headsUpDisplay("HUDEDSMode",query=True,exists=True):
             raw.headsUpDisplay("HUDEDSMode",remove=True)
             raw.displayColor("headsUpDisplayLabels",16)
-        for node in ("EditingDrivingSystem","TestSymmetry"):
-            if c.objExists(node):c.delete(node)
+        if c.objExists("TestSymmetry"):
+            temporary=[node for node in c.listConnections("TestSymmetry",source=True,destination=False,type="multiplyDivide") or []
+                       if self._original_restore_leaf(node).startswith("TestSymmetry_")]
+            c.delete("TestSymmetry")
+            if temporary:c.delete(list(dict.fromkeys(temporary)))
+        if c.objExists("EditingDrivingSystem"):c.delete("EditingDrivingSystem")
         self.show_original_driving_affected_controls((),affected_only=False)
         for node in ("SmilePullOffset_R","SmilePullOffset_L"):
             if c.objExists(node):c.setAttr(node+".v",1)
