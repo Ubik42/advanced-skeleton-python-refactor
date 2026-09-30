@@ -17,11 +17,11 @@ class MayaBodyFkScaleCompensationMixin:
         self, spec: BodyFkScaleCompensationSpec,
     ) -> None:
         c = self._cmds
-        parent = c.ls(spec.parent_control_path, long=True,
-                      type="transform") or []
+        parent = c.ls(spec.parent_control_path, long=True) or []
         offset = c.ls(spec.offset_path, long=True,
                       type="transform") or []
         if (parent != [spec.parent_control_path]
+                or c.nodeType(parent[0]) not in ("transform", "joint")
                 or offset != [spec.offset_path]
                 or (c.listRelatives(spec.offset_path, parent=True,
                                     fullPath=True) or []) != parent):
@@ -47,6 +47,26 @@ class MayaBodyFkScaleCompensationMixin:
         if (c.ls(spec.scale_source_path, long=True,
                  type="transform") or []) != [spec.scale_source_path]:
             raise ValueError("FK 缩放来源无效：" + spec.scale_source_path)
+        if spec.mel_non_opm_fkx:
+            if (spec.use_offset_parent_matrix
+                    or c.nodeType(spec.parent_control_path) != "joint"
+                    or spec.driven_joint_path is None
+                    or (c.ls(spec.driven_joint_path, long=True,
+                             type="joint") or [])
+                    != [spec.driven_joint_path]):
+                raise ValueError("非 OPM FKX 缩放补偿来源无效："
+                                 + spec.offset_path)
+            if any(self.find_name_collisions(name)
+                   for name in spec.node_names):
+                raise ValueError("FKPS 节点名称冲突：" + spec.offset_path)
+            if (not c.getAttr(spec.parent_control_path
+                              + ".segmentScaleCompensate", settable=True)
+                    or not c.getAttr(spec.driven_joint_path
+                                     + ".segmentScaleCompensate",
+                                     settable=True)):
+                raise ValueError("FKX 或被驱动关节缩放补偿属性不可写："
+                                 + spec.offset_path)
+            return
         if c.attributeQuery("inheritScale", node=spec.control_path,
                             exists=True):
             raise ValueError("FK 控制器已有 inheritScale 属性："
@@ -78,6 +98,9 @@ class MayaBodyFkScaleCompensationMixin:
         self, spec: BodyFkScaleCompensationSpec,
     ) -> None:
         self._require_transaction()
+        if spec.mel_non_opm_fkx:
+            self._connect_mel_non_opm_fk_scale_compensation(spec)
+            return
         c = self._cmds
         offset = spec.offset_path
         parent = spec.parent_control_path
@@ -149,6 +172,8 @@ class MayaBodyFkScaleCompensationMixin:
     def capture_body_fk_scale_compensation(
         self, spec: BodyFkScaleCompensationSpec,
     ) -> bool:
+        if spec.mel_non_opm_fkx:
+            return self._capture_mel_non_opm_fk_scale_compensation(spec)
         c = self._cmds
         world = spec.world_matrix_name
         pick = spec.pick_matrix_name
@@ -240,3 +265,72 @@ class MayaBodyFkScaleCompensationMixin:
         return (len(actual) == 16
                 and all(abs(a - b) <= 1e-4
                         for a, b in zip(actual, expected)))
+
+    def _connect_mel_non_opm_fk_scale_compensation(
+        self, spec: BodyFkScaleCompensationSpec,
+    ) -> None:
+        c = self._cmds
+        self._transaction_changed = True
+        if spec.inherit_scale:
+            # MEL's non-OPM branch lets this segment inherit parent scale.
+            c.setAttr(spec.driven_joint_path + ".segmentScaleCompensate", 0)
+            c.setAttr(spec.parent_control_path
+                      + ".segmentScaleCompensate", 0)
+            return
+        ps1 = c.createNode("transform", name=spec.fkps1_name,
+                           parent=spec.scale_source_path,
+                           skipSelect=True)
+        ps2 = c.createNode("transform", name=spec.fkps2_name,
+                           parent=spec.control_path,
+                           skipSelect=True)
+        order = int(c.getAttr(spec.offset_path + ".rotateOrder"))
+        c.setAttr(ps1 + ".rotateOrder", order)
+        c.setAttr(ps2 + ".rotateOrder", order)
+        c.delete(c.pointConstraint(spec.control_path, ps2,
+                                   maintainOffset=False))
+        c.parent(ps2, ps1)
+        c.parent(ps1, spec.parent_control_path)
+        ps1 = (c.ls(spec.fkps1_name, long=True,
+                    type="transform") or [])[0]
+        ps2 = ps1 + "|" + spec.fkps2_name
+        c.scaleConstraint(spec.scale_source_path, ps1,
+                          maintainOffset=False,
+                          name=spec.fkps_scale_constraint_name)
+        c.pointConstraint(ps2, spec.offset_path,
+                          maintainOffset=True,
+                          name=spec.fkps_point_constraint_name)
+
+    def _capture_mel_non_opm_fk_scale_compensation(
+        self, spec: BodyFkScaleCompensationSpec,
+    ) -> bool:
+        c = self._cmds
+        if (c.ls(spec.parent_control_path, long=True,
+                 type="joint") or []) != [spec.parent_control_path]:
+            return False
+        if spec.inherit_scale:
+            return (not bool(c.getAttr(
+                spec.parent_control_path + ".segmentScaleCompensate"))
+                and not bool(c.getAttr(
+                    spec.driven_joint_path + ".segmentScaleCompensate")))
+        ps1 = c.ls(spec.fkps1_name, long=True,
+                   type="transform") or []
+        ps2 = c.ls(spec.fkps2_name, long=True,
+                   type="transform") or []
+        if (len(ps1) != 1 or len(ps2) != 1
+                or (c.listRelatives(ps1[0], parent=True,
+                                    fullPath=True) or [])
+                != [spec.parent_control_path]
+                or (c.listRelatives(ps2[0], parent=True,
+                                    fullPath=True) or []) != ps1):
+            return False
+        scale = c.ls(spec.fkps_scale_constraint_name,
+                     type="scaleConstraint") or []
+        point = c.ls(spec.fkps_point_constraint_name,
+                     type="pointConstraint") or []
+        return (len(scale) == 1 and len(point) == 1
+                and scale[0] in (c.listConnections(
+                    ps1[0], source=True, destination=False,
+                    type="scaleConstraint") or [])
+                and point[0] in (c.listConnections(
+                    spec.offset_path, source=True, destination=False,
+                    type="pointConstraint") or []))

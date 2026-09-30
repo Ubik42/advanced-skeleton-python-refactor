@@ -25,6 +25,24 @@ class BodyFkScaleCompensationSpec:
     decompose_matrix_name: str
     independent_parent: bool = False
     main_scale_source_path: str | None = None
+    mel_non_opm_fkx: bool = False
+    driven_joint_path: str | None = None
+
+    @property
+    def fkps1_name(self) -> str:
+        return self.world_matrix_name + "FKPS1"
+
+    @property
+    def fkps2_name(self) -> str:
+        return self.world_matrix_name + "FKPS2"
+
+    @property
+    def fkps_scale_constraint_name(self) -> str:
+        return self.world_matrix_name + "FKPSScale"
+
+    @property
+    def fkps_point_constraint_name(self) -> str:
+        return self.world_matrix_name + "FKPSPoint"
 
     @property
     def main_scale_pick_name(self) -> str:
@@ -36,6 +54,11 @@ class BodyFkScaleCompensationSpec:
 
     @property
     def node_names(self) -> tuple[str, ...]:
+        if self.mel_non_opm_fkx:
+            return (() if self.inherit_scale else
+                    (self.fkps1_name, self.fkps2_name,
+                     self.fkps_scale_constraint_name,
+                     self.fkps_point_constraint_name))
         names = (self.world_matrix_name, self.pick_matrix_name,
                  self.relative_matrix_name)
         if self.independent_parent:
@@ -73,23 +96,48 @@ def plan_body_fk_scale_compensation(
         raise ValueError("FK 缩放补偿控制器路径重复")
     if not finger_control_paths <= controls_by_path.keys():
         raise ValueError("FK 缩放补偿手指控制器不在当前构建计划中")
-    result = []
-    names = set()
-    for control in controls:
-        parent_control = controls_by_path.get(control.parent_path)
-        if parent_control is None:
-            continue
+    parent_controls = dict(controls_by_path)
+    if not use_offset_parent_matrix:
+        for item in controls:
+            if item.source_override_joint and item.source_override_path:
+                if item.source_override_path in parent_controls:
+                    raise ValueError("FKX 父级路径与控制器重复："
+                                     + item.source_override_path)
+                parent_controls[item.source_override_path] = item
+    metadata_by_name: dict[str, set[str]] = {}
+    for item in metadata:
+        metadata_by_name.setdefault(
+            item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1],
+            set()).add(item.joint)
+
+    def fit_source(control: BodyLimbFkControlSpec) -> str | None:
         source = source_by_output.get(
             generated_source_by_output.get(control.driven_joint,
                                            control.driven_joint))
+        if source is not None:
+            return source
+        # Arm/Leg FK mechanism joints are generated after Body symmetry;
+        # their original Fit identity is carried by the control spec.
+        candidates = set().union(*(
+            metadata_by_name.get(name, set())
+            for name in control.fit_joint_names))
+        if len(candidates) > 1:
+            raise ValueError("FK 缩放补偿来源 Fit 名称不唯一："
+                             + control.control_path)
+        return next(iter(candidates)) if candidates else None
+    result = []
+    names = set()
+    for control in controls:
+        parent_control = parent_controls.get(control.parent_path)
+        if parent_control is None:
+            continue
+        source = fit_source(control)
         fit = metadata_by_source.get(source)
         if fit is None:
             raise ValueError("FK 缩放补偿缺少 Fit 元数据："
                              + control.driven_joint)
         leaf = control.driven_joint.rsplit("|", 1)[-1]
-        parent_source = source_by_output.get(
-            generated_source_by_output.get(parent_control.driven_joint,
-                                           parent_control.driven_joint))
+        parent_source = fit_source(parent_control)
         enabled = fit_segment_scale_compensate(
             fit, source.rsplit("|", 1)[-1],
             parent_source.rsplit("|", 1)[-1] if parent_source else "",
@@ -102,7 +150,12 @@ def plan_body_fk_scale_compensation(
             control.control_path, not enabled, use_offset_parent_matrix,
             control.world_position, control.world_axes,
             prefix + "World", prefix + "Pick",
-            prefix + "Relative", prefix + "Decompose")
+            prefix + "Relative", prefix + "Decompose",
+            mel_non_opm_fkx=(
+                not use_offset_parent_matrix
+                and parent_control.source_override_joint
+                and parent_control.source_override_path == control.parent_path),
+            driven_joint_path=control.driven_joint)
         if any(name in names for name in spec.node_names):
             raise ValueError("FK 缩放补偿节点名称重复：" + leaf)
         names.update(spec.node_names)

@@ -116,6 +116,32 @@ class MayaCharacterRegistryMixin:
                         '旧通用 FK 补偿层无法唯一定位：' + stem)
                 if not bool(c.getAttr(offsets[0] + '.inheritsTransform')):
                     independent.add(control)
+            else:
+                # New non-OPM rigs use MEL's FKPS/SSC branch rather than an
+                # inheritScale matrix graph. Retain it across rebuilds.
+                prefix = ('AdvPy_' + stem.removesuffix('FK')
+                          + '_FkScaleCompWorld')
+                ps1 = by_leaf.get(prefix + 'FKPS1', ())
+                if len(ps1) > 1:
+                    raise CharacterRegistryError(
+                        '旧通用 FKPS 节点名称不唯一：' + stem)
+                if ps1:
+                    if c.nodeType(ps1[0]) != 'transform':
+                        raise CharacterRegistryError(
+                            '旧通用 FKPS 节点类型无效：' + stem)
+                    compensated.add(control)
+                else:
+                    offsets = by_leaf.get('AdvPy_' + stem + 'Offset', ())
+                    if len(offsets) == 1:
+                        parent = c.listRelatives(
+                            offsets[0], parent=True, fullPath=True) or []
+                        if (len(parent) == 1
+                                and c.nodeType(parent[0]) == 'joint'
+                                and not bool(c.getAttr(
+                                    parent[0] + '.segmentScaleCompensate'))
+                                and not bool(c.getAttr(
+                                    body + '.segmentScaleCompensate'))):
+                            compensated.add(control)
             body_leaf = stem.removesuffix('FK')
             control_leaf = control.rsplit('|', 1)[-1]
             namespace = (control_leaf.rsplit(':', 1)[0] + ':'
@@ -891,6 +917,10 @@ class MayaCharacterRegistryMixin:
                 control.source_override_path
                 for control in rig.plan.hand.controls.controls
                 if control.source_override_path is not None)
+        for scale in rig.plan.fk_scale_compensations:
+            if scale.mel_non_opm_fkx and not scale.inherit_scale:
+                ps1 = scale.parent_control_path + "|" + scale.fkps1_name
+                paths.update((ps1, ps1 + "|" + scale.fkps2_name))
         paths.update((spine.root_path,spine.pelvis_control,*spine.fk_controls,*spine.body_joints,
                       spine.chest_space,*(j.path for j in spine.joints)))
         from adv_py.core.body_spline import BodySplinePlan
