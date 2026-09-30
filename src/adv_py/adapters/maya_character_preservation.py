@@ -132,7 +132,14 @@ def capture_extension(host,node):
             # Request the explicit time context: after sampling other frames,
             # Maya can leave non-transform custom attributes with a stale cache.
             value=c.getAttr(plug,time=c.currentTime(q=True))
-            if isinstance(value,list):value=tuple(value)
+            if datatype=='matrix':
+                if len(value)==1 and isinstance(value[0],(tuple,list)):
+                    value=value[0]
+                value=tuple(float(item) for item in value)
+                if len(value)!=16:
+                    raise CharacterRegistryError(
+                        '用户扩展矩阵值不完整：'+plug)
+            elif isinstance(value,list):value=tuple(value)
         else:raise CharacterRegistryError('用户扩展属性类型尚无保留协议：'+plug+' '+datatype)
         metadata=[]
         for exists,flag in (('minExists','minimum'),('maxExists','maximum'),('softMinExists','softMin'),('softMaxExists','softMax')):

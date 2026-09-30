@@ -17,6 +17,21 @@ def _curve_name(curve):
     return curve.node.rsplit(':',1)[-1]
 
 
+def _sample_numeric_attribute(c,plug,datatype,frame):
+    value=c.getAttr(plug,time=frame)
+    if datatype=='matrix':
+        if len(value)==1 and isinstance(value[0],(tuple,list)):
+            value=value[0]
+        if len(value)!=16:
+            raise CharacterRegistryError('重建采样矩阵不完整：'+plug)
+        return tuple(float(item) for item in value)
+    if isinstance(value,(tuple,list)):
+        if len(value)==1 and isinstance(value[0],(tuple,list)):
+            value=value[0]
+        return tuple(float(item) for item in value)
+    return (float(value),)
+
+
 def _refresh_skin_inputs(c,host,skins):
     for skin in skins:
         node=host.scene_address(skin.node)
@@ -88,8 +103,8 @@ def sample(host,staged,frames,target=False):
                     if datatype in ('bool','byte','char','short','long',
                                     'float','double','doubleAngle',
                                     'doubleLinear','enum','time','matrix'):
-                        value=c.getAttr(node+'.'+attribute,time=frame)
-                        values=tuple(value) if isinstance(value,(tuple,list)) else (float(value),)
+                        values=_sample_numeric_attribute(c,
+                            node+'.'+attribute,datatype,frame)
                         attachments+=((row.uuid+'.'+attribute,values),)
             for row in staged.custom_properties:
                 node=active.scene_address(row.path)
@@ -97,18 +112,14 @@ def sample(host,staged,frames,target=False):
                     if datatype in ('bool','byte','char','short','long',
                                     'float','double','doubleAngle',
                                     'doubleLinear','enum','time','matrix'):
-                        value=c.getAttr(node+'.'+attribute,time=frame)
-                        values=tuple(value) if isinstance(value,(tuple,list)) else (float(value),)
+                        values=_sample_numeric_attribute(c,
+                            node+'.'+attribute,datatype,frame)
                         attachments+=((row.uuid+'.'+attribute,values),)
             for attribute,*_ in staged.geometry_container_state or ():
                 plug=active.scene_address('|Group|Geometry.'+attribute)
-                value=c.getAttr(plug,time=frame)
-                if attribute=='offsetParentMatrix':
-                    if len(value)==1 and isinstance(value[0],(tuple,list)):
-                        value=value[0]
-                    values=tuple(float(item) for item in value)
-                else:
-                    values=(float(value),)
+                values=_sample_numeric_attribute(c,plug,
+                    'matrix' if attribute=='offsetParentMatrix' else
+                    'double',frame)
                 attachments+=(('Geometry.'+attribute,values),)
             result.append((frame,pose.body_frames,pose.space_frames,meshes,attachments))
         return tuple(result)
