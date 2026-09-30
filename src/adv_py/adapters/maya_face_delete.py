@@ -84,19 +84,14 @@ class MayaFaceDeleteMixin:
                     "FaceAllSet 错误包含必须保留的节点：" + protected)
         skin_plans = []
         geometry_paths = set()
-        # HeadSquash owns a Skin on its generated lattice. It is part of the
-        # disposable Face graph, rather than a production mesh Skin to retain.
-        squash_set = self._face_delete_one("SquashSet", "objectSet")
-        squash_members = set()
-        if squash_set is not None:
-            squash_members = {(c.ls(member, long=True) or [None])[0]
-                              for member in c.sets(squash_set, query=True) or ()}
+        # Generated lattice/cube Skin belongs to the disposable Face graph.
+        # Production Skin is never registered as module-owned by the builders.
         transient_skins = set()
         for skin in c.ls(type="skinCluster") or ():
             skin_path = (c.ls(skin, long=True) or [None])[0]
             if skin_path is None:
                 continue
-            if skin_path in squash_members and skin_path in owned:
+            if skin_path in owned:
                 geometry = c.skinCluster(skin_path, query=True, geometry=True) or ()
                 paths = tuple((c.ls(shape, long=True) or [None])[0]
                               for shape in geometry)

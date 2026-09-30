@@ -30,6 +30,23 @@ FACE_BASE_NAMES = tuple(name for name,_ in FACE_BASE_PARENTS) + (
     "FaceMotionSystemMM","FaceDeformationFollowHeadMM")
 
 class MayaFaceBaseMixin:
+    def ensure_face_fit_shaders(self):
+        """asFitModeEnsureShaders: recreate incomplete material/SG pairs."""
+        from adv_py.core.face_fit_markers import FIT_MATERIALS
+        self._require_transaction()
+        c=self._cmds
+        for name,color in FIT_MATERIALS:
+            group=name+"SG"
+            if c.objExists(name) and c.objExists(group): continue
+            self._transaction_changed=True
+            for node in (name,group):
+                if c.objExists(node): c.delete(node)
+            surface=name=="asRedSS"
+            shader=c.shadingNode("surfaceShader" if surface else "lambert",name=name,asShader=True)
+            c.sets(renderable=True,noSurfaceShader=True,empty=True,name=group)
+            c.connectAttr(shader+".outColor",group+".surfaceShader",force=True)
+            c.setAttr(shader+(".outColor" if surface else ".color"),*color,type="float3")
+
     def _face_base_transform(self,name):
         rows=self._cmds.ls(name,long=True,type="transform") or []
         if len(rows)!=1:
@@ -63,6 +80,30 @@ class MayaFaceBaseMixin:
         raw.sets(self.scene_address(node),edit=True,forceElement=":initialShadingGroup")
         c.setAttr(node+".visibility",False)
         return node
+
+    def register_face_module_nodes(self, before, module_set, *, production_skins=()):
+        """Append a completed module without replacing existing Face ownership."""
+        self._require_transaction()
+        c=self._cmds
+        raw=getattr(c,"raw",c)
+        if c.objExists(module_set): raise ValueError("Face 模块选择集名称已占用："+module_set)
+        production_ids=set()
+        for skin in production_skins:
+            production_ids.update(raw.ls(self.scene_address(skin),uuid=True) or [])
+            for group in raw.listConnections(self.scene_address(skin),type="objectSet") or []:
+                production_ids.update(raw.ls(group,uuid=True) or [])
+        created=[]
+        for node in c.ls(long=True) or []:
+            ids=c.ls(node,uuid=True) or []
+            if len(ids)!=1 or ids[0] in before or ids[0] in production_ids: continue
+            if c.nodeType(node)=="partition": continue
+            if node.rsplit("|",1)[-1].rsplit(":",1)[-1]=="FaceAllSet": continue
+            created.append(node)
+        group=c.sets(empty=True,name=module_set)
+        if created: c.sets(tuple(created),add=group)
+        c.sets((*created,group),add="FaceAllSet")
+        self._transaction_changed=True
+        return group
 
     def ensure_face_shaders(self):
         """Original five Lambert fit/controller materials and shading groups."""

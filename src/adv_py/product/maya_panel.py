@@ -309,9 +309,9 @@ def create_panel(controller: MayaPanelController | None = None):
                 ('Face', (
                     ('Pre', ('00 · 面部输入', '00 · 眼球输入与控制',
                              '01 · 目标网格', '02 · 可移植目标资产')),
-                    ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit')),
+                    ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit', '02A · Tongue Fit', '02B · Face 定位点')),
                     ('Build', ('03 · 控制与变形器',)),
-                    ('Build ...', ('03D · Jaw 权重参考曲线',)),
+                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03F · Tongue 绑定')),
                     ('Skin Layers', ('03a · Face Skin Layers',)),
                     ('Tweaks', ('03A · Face Tweaks',)),
                     ('DeltaMush', ('03B · Face DeltaMush',)),
@@ -1556,6 +1556,20 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("对称角色：右侧 Fit 镜像到左侧",
                                      self._face_fit_mirror_right_to_left))
             stack.addWidget(group)
+            group, form = self._group("02A · Tongue Fit", [])
+            form.addRow(self._button("记录所选 Tongue 网格或组件",
+                lambda: self._face_tongue("record")))
+            form.addRow(self._button("创建 Tongue Fit",
+                lambda: self._face_tongue("fit")))
+            stack.addWidget(group)
+            group, form = self._group("02B · Face 定位点", [])
+            from adv_py.core.face_fit_markers import MARKER_SHADERS
+            for section in MARKER_SHADERS:
+                form.addRow(section, self._button("创建所选组件的 Fit",
+                    lambda section=section: self._face_fit_marker(section)))
+            form.addRow(self._button("创建 UpMidLo 分区定位器",
+                lambda: self._face_fit_marker("UpMidLo")))
+            stack.addWidget(group)
             self.face_neutral = QtWidgets.QLineEdit()
             self.face_neutral.setPlaceholderText("|FaceNeutral")
             self.face_target = QtWidgets.QLineEdit()
@@ -1655,6 +1669,9 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("构建面部控制", self._face_build, primary=True))
             stack.addWidget(group)
 
+            group, form = self._group("03E · 原版 Face ctrlBox", [])
+            form.addRow(self._button("建立原版 Face 控制面板",self._face_build_ctrl_box))
+            stack.addWidget(group)
             group, form = self._group("03D · Jaw 权重参考曲线", [])
             form.addRow(QtWidgets.QLabel(
                 "使用 Jaw、Cheek、Nose、Throat Fit 标记与 upperLipOuterCurve，生成四条 Jaw 权重参考曲线。"))
@@ -1662,6 +1679,12 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._face_build_jaw_fit_curves))
             stack.addWidget(group)
 
+            group, form = self._group("03F · Tongue 绑定", [])
+            form.addRow(self._button("建立 Tongue 控制链与蒙皮",
+                lambda: self._face_tongue("build")))
+            form.addRow(self._button("完成 Tongue，恢复模型显示",
+                lambda: self._face_tongue("finish")))
+            stack.addWidget(group)
             group, form = self._group("03a · Face Skin Layers", [])
             self.face_skin_layers_group = group
             form.addRow(self._button("Normal",
@@ -3729,6 +3752,22 @@ def create_panel(controller: MayaPanelController | None = None):
                     f"损坏引用 {len(invalid)} 个。"
                     + ("\n" + "\n".join(f"{item.name}/{item.release}：{item.reason}"
                         for item in invalid[:3]) if invalid else ""))
+
+        def _face_fit_marker(self,section):
+            result=self.controller.face_fit_marker(self._namespace(),section)
+            return "已创建原版 "+section+" Fit："+("、".join(result) if isinstance(result,tuple) else result)
+
+        def _face_build_ctrl_box(self):
+            controls=self.controller.face_build_ctrl_box(self._namespace())
+            return f"已建立原版 Face 控制面板：{len(controls)} 个控制器"
+
+        def _face_tongue(self,action):
+            result=self.controller.face_tongue(self._namespace(),action)
+            if action=="record": return f"已记录 {len(result)} 项 Tongue 输入"
+            if action=="fit": return f"已创建 {len(result)} 个 Tongue Fit 定位器"
+            if action=="finish": return "已完成 Tongue，恢复模型显示" if result else "当前没有 Tongue Fit"
+            if result is None: return "按原版条件跳过 Tongue：缺少 Lip Main、Tongue Fit 或 Tongue 输入"
+            return f"已建立 {len(result['controls'])} 个 Tongue 控制器，处理 {result['vertices']} 个顶点"
 
         def _face_build_jaw_fit_curves(self):
             curves = self.controller.face_build_jaw_fit_curves(self._namespace())

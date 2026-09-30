@@ -52,6 +52,12 @@ _NODE_ARGS |= {'geometryConstraint', 'normalConstraint'}
 _NODE_RESULTS |= {'geometryConstraint', 'normalConstraint'}
 _CREATE |= {'geometryConstraint', 'normalConstraint', 'shadingNode'}
 _NODE_RESULTS |= {'shadingNode'}
+_NODE_ARGS |= {'extrude', 'reverseSurface'}
+_NODE_RESULTS |= {'extrude', 'reverseSurface'}
+_CREATE |= {'extrude'}
+_NODE_ARGS |= {'transformLimits'}
+_NODE_RESULTS |= {'sphere'}
+_CREATE |= {'sphere'}
 
 
 class MayaCharacterCommands:

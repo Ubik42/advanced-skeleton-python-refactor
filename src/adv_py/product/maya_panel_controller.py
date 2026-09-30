@@ -2298,6 +2298,28 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)).execute(
                 simpler_eyelid=simpler_eyelid)
 
+    def face_fit_marker(self, namespace: str, section: str):
+        from adv_py.adapters.maya_face_fit_markers import MayaFaceFitMarkersHost
+        from adv_py.application.face_fit_markers import CreateFaceFitMarker
+        return CreateFaceFitMarker(MayaFaceFitMarkersHost(
+            namespace=None if namespace == ":" else namespace)).apply(section)
+
+    def face_build_ctrl_box(self, namespace: str):
+        from adv_py.adapters.maya_face_ctrl_box import MayaFaceCtrlBoxHost
+        from adv_py.application.face_ctrl_box import BuildFaceCtrlBox
+        return BuildFaceCtrlBox(MayaFaceCtrlBoxHost(
+            namespace=None if namespace == ":" else namespace)).apply()
+
+    def face_tongue(self, namespace: str, action: str):
+        from adv_py.adapters.maya_face_tongue import MayaFaceTongueHost
+        from adv_py.application.face_tongue import (
+            RecordFaceTongue, CreateFaceTongueFit, BuildFaceTongue, FinishFaceTongue)
+        services={"record":RecordFaceTongue,"fit":CreateFaceTongueFit,
+                  "build":BuildFaceTongue,"finish":FinishFaceTongue}
+        if action not in services: raise ValueError("Tongue 操作无效")
+        return services[action](MayaFaceTongueHost(
+            namespace=None if namespace == ":" else namespace)).apply()
+
     def face_build_jaw_fit_curves(self, namespace: str):
         from adv_py.adapters.maya_face_jaw_fit import MayaFaceJawFitHost
         from adv_py.application.face_jaw_fit import BuildFaceJawFitCurves
