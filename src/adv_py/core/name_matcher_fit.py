@@ -61,10 +61,14 @@ def plan_name_matcher_fit(template: FitTemplateSpec,
             or up_axis not in ("y", "z")
             or any(not isinstance(side, str) for side in
                 (rules.right, rules.left, rules.middle))
+            or any('|' in side or ':' in side for side in
+                (rules.right, rules.left, rules.middle))
             or type(rules.side_before_name) is not bool
             or type(rules.side_underscore) is not bool
             or not rows or any(not isinstance(row, NameMatcherRow)
-                or not row.fit_joint or not row.source_base for row in rows)):
+                or not row.fit_joint or not row.source_base
+                or any(character in row.source_base for character in '|:')
+                for row in rows)):
         raise FitSkeletonValidationError("NameMatcher 映射或场景 Up Axis 无效")
     if len({_fit_template_name(row.fit_joint) for row in rows}) != len(rows):
         raise FitSkeletonValidationError("NameMatcher Fit 名称重复")
