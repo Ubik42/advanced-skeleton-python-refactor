@@ -174,8 +174,10 @@ class BodyTorsoPlan:
             cog.control_name + "Shape"))
         return cog_names + root_x_names + (self.controls.root_name,) + tuple(
             name for control in self.controls.controls
-            for name in (control.offset_name, control.control_name,
+                         for name in (control.offset_name, control.control_name,
                          control.control_name + "Shape", control.constraint_name,
+                         *((control.translation_constraint_name,)
+                           if control.translation_constraint_name else ()),
                          *((control.extra_name,) if control.extra_name else ()),
                          *((control.aim_name,) if control.aim_name else ()),
                          *((control.extra_name + "Shape",)
@@ -213,10 +215,13 @@ class BodyTorsoSnapshot:
 
 def plan_body_torso(
     body: BodySkeletonSnapshot, arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan,
-    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (), aim_joint_names: frozenset[str] = frozenset(), leg_lock_enabled: bool = True, fkx_joint_names: frozenset[str] | None = None,
+    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (), aim_joint_names: frozenset[str] = frozenset(), leg_lock_enabled: bool = True, fkx_joint_names: frozenset[str] | None = None, point_control_names: frozenset[str] | None = None,
 ) -> BodyTorsoPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise FitSkeletonValidationError("Torso 构建选项类型无效")
+    if (point_control_names is not None
+            and not isinstance(point_control_names, frozenset)):
+        raise FitSkeletonValidationError("Torso FK 位置约束集合无效")
     if not isinstance(aim_joint_names, frozenset):
         raise FitSkeletonValidationError("Torso Aim 来源集合无效")
     if fkx_joint_names is not None and not isinstance(fkx_joint_names, frozenset):
@@ -324,6 +329,12 @@ def plan_body_torso(
             aim_path=aim_path,
             aim_name=aim_name,
             fit_joint_names=(name.rsplit("_", 1)[0],),
+            translation_constraint_name=(
+                f"AdvPy_Torso{name}Point"
+                if name != "Root_M" and (
+                    point_control_names is None
+                    or control_name in point_control_names)
+                else None),
         )
         by_joint[name] = spec
         controls.append(spec)

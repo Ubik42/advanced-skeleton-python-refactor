@@ -237,6 +237,7 @@ class BuildBodyCharacterRig:
         hand_point_control_names: frozenset[str] | None = None,
         standard_fk_independent_controls: frozenset[str] | None = None,
         torso_fkx_joint_names: frozenset[str] | None = None,
+        torso_point_control_names: frozenset[str] | None = None,
     ) -> BodyCharacterRigBuildPlan:
         if type(defer_fit_tweakers) is not bool:
             raise FitSkeletonValidationError("Tweaker 延后构建选项必须是布尔值")
@@ -368,7 +369,7 @@ class BuildBodyCharacterRig:
             # MEL permits one-to-four fingers and asymmetric optional digits.
             # The full character pipeline builds them in its generic FK pass.
         torso = (
-            self._torso.plan_from_safety(safety, arm, leg, radius=torso_control_radius, spine_ik=include_spine_ik,description=axial_description,head_aim=include_head_aim,aim_joint_names=aim_source_names,fkx_joint_names=torso_fkx_joint_names)
+            self._torso.plan_from_safety(safety, arm, leg, radius=torso_control_radius, spine_ik=include_spine_ik,description=axial_description,head_aim=include_head_aim,aim_joint_names=aim_source_names,fkx_joint_names=torso_fkx_joint_names,point_control_names=torso_point_control_names)
             if include_torso else None
         )
         root_follow_main_path = (
@@ -623,6 +624,7 @@ class BuildBodyCharacterRig:
         hand_point_control_names: frozenset[str] | None = None,
         standard_fk_independent_controls: frozenset[str] | None = None,
         torso_fkx_joint_names: frozenset[str] | None = None,
+        torso_point_control_names: frozenset[str] | None = None,
     ) -> BodyCharacterRigBuildResult:
         plan = self.plan(
             container_name,
@@ -648,6 +650,7 @@ class BuildBodyCharacterRig:
             standard_fk_independent_controls=(
                 standard_fk_independent_controls),
             torso_fkx_joint_names=torso_fkx_joint_names,
+            torso_point_control_names=torso_point_control_names,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
             center_tolerance=center_tolerance,

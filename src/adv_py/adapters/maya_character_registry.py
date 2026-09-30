@@ -82,6 +82,34 @@ class MayaCharacterRegistryMixin:
                         for joint in registration.body}
         hand_points = set()
         standard_points = set()
+        torso_points = set()
+        for node in registration.nodes:
+            leaf = node.path.rsplit('|', 1)[-1]
+            short = leaf.rsplit(':', 1)[-1]
+            if (not short.startswith('AdvPy_Torso')
+                    or not short.endswith('FK')
+                    or short == 'AdvPy_TorsoRoot_MFK'):
+                continue
+            namespace = (leaf.rsplit(':', 1)[0] + ':'
+                         if ':' in leaf else '')
+            point_name = namespace + short.removesuffix('FK') + 'Point'
+            points = c.ls(point_name, long=True,
+                          type='pointConstraint') or []
+            if len(points) > 1:
+                raise CharacterRegistryError(
+                    'Torso FK 位置约束名称不唯一：' + point_name)
+            if points:
+                outputs = c.listConnections(
+                    points[0] + '.constraintTranslateX',
+                    source=False, destination=True,
+                    plugs=True) or []
+                if (len(outputs) != 1
+                        or not outputs[0].endswith('.translateX')
+                        or c.nodeType(outputs[0].rsplit('.', 1)[0])
+                        != 'joint'):
+                    raise CharacterRegistryError(
+                        'Torso FK 位置约束接线无效：' + point_name)
+                torso_points.add(short)
         for side in ('R', 'L'):
             for joint in ('Shoulder', 'Elbow', 'Wrist', 'Hip', 'Knee',
                           'Ankle', 'Toes', 'ToesEnd'):
@@ -652,6 +680,7 @@ class MayaCharacterRegistryMixin:
             point_controls=frozenset(point_controls),
             hand_point_control_names=frozenset(hand_points),
             standard_point_control_names=frozenset(standard_points),
+            torso_point_control_names=frozenset(torso_points),
             standard_fkx_joint_names=frozenset(standard_fkx_joints),
             hand_fkx_joint_names=frozenset(hand_fkx_joints),
             standard_fk_independent_controls=frozenset(

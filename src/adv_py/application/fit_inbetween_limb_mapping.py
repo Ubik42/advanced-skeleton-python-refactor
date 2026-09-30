@@ -179,6 +179,8 @@ def plan_inbetween_limb_bindings(
                     start_control.source_override_path
                     or start_control.sub_control_path
                     or start_control.control_path),
+                start_fk_point_constraint_name=(
+                    start_control.translation_constraint_name),
             ))
             continue
         if spline_index is not None:
@@ -210,6 +212,8 @@ def plan_inbetween_limb_bindings(
                     start_control.source_override_path
                     or start_control.sub_control_path
                     or start_control.control_path),
+                start_fk_point_constraint_name=(
+                    start_control.translation_constraint_name),
             ))
             continue
         if spine_edge:
@@ -248,6 +252,8 @@ def plan_inbetween_limb_bindings(
                     start_control.source_override_path
                     or start_control.sub_control_path
                     or start_control.control_path),
+                start_fk_point_constraint_name=(
+                    start_control.translation_constraint_name),
             ))
             continue
         module = rig.arm if branch == "arm" else rig.leg
