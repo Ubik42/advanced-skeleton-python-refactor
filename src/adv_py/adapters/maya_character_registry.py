@@ -146,6 +146,7 @@ class MayaCharacterRegistryMixin:
         bendy_legacy_circular = set()
         bendy_legacy_full_span = set()
         bendy_scaled_guides = set()
+        bendy_additive_micro = set()
         for control in bendy_master_paths:
             stem, side = control.rsplit('_', 1)
             master_leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
@@ -174,6 +175,14 @@ class MayaCharacterRegistryMixin:
                                  + '.advPyBendyPartSpanIcon')
             falloff_marker = (bendy_master_paths[control]
                               + '.advPyBendyResidualFalloff')
+            additive_marker = (bendy_master_paths[control]
+                               + '.advPyBendyAdditiveMicroScale')
+            if c.objExists(additive_marker):
+                if (not bool(c.getAttr(additive_marker))
+                        or not c.getAttr(additive_marker, lock=True)):
+                    raise CharacterRegistryError(
+                        'Bendy Micro 加法缩放标记已损坏：' + control)
+                bendy_additive_micro.add(control)
             if not c.objExists(falloff_marker):
                 bendy_legacy_full_span.add(control)
             elif (not bool(c.getAttr(falloff_marker))
@@ -455,7 +464,9 @@ class MayaCharacterRegistryMixin:
             bendy_legacy_full_span_controls=frozenset(
                 bendy_legacy_full_span),
             bendy_scaled_guide_controls=frozenset(
-                bendy_scaled_guides))
+                bendy_scaled_guides),
+            bendy_additive_micro_scale_controls=frozenset(
+                bendy_additive_micro))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

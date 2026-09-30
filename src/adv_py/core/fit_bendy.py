@@ -46,6 +46,7 @@ class FitBendyChainSpec:
     falloff_span: float | None = None
     legacy_full_span_weights: bool = False
     scale_guide_group: bool = True
+    non_opm_additive_micro_scale: bool = False
 
     def __post_init__(self) -> None:
         if (not self.part_names
@@ -115,6 +116,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 控制权重跨度策略无效")
         if type(self.scale_guide_group) is not bool:
             raise ValueError("Bendy 导向关节组缩放策略无效")
+        if type(self.non_opm_additive_micro_scale) is not bool:
+            raise ValueError("Bendy Micro 非 OPM 缩放策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:

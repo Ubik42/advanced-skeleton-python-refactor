@@ -454,7 +454,8 @@ class MayaFitBendyMixin:
                 raise ValueError("Bendy 需要 Twist Part 关节：" + name)
             if (c.objExists(constraint) or c.objExists(scale_pick)
                     or c.objExists(scale_mult)
-                    or (spec.micro_local_scale and any(
+                    or (spec.micro_local_scale
+                        and not spec.non_opm_additive_micro_scale and any(
                         c.objExists(node) for node in micro_scale_names))):
                 raise ValueError("Bendy 变形节点名称已占用：" + name)
             if c.listConnections(joints[0], type="skinCluster"):
@@ -496,7 +497,8 @@ class MayaFitBendyMixin:
                     else:
                         c.setAttr(scale_mult + ".input1" + axis,
                                   float(value))
-            if spec.micro_local_scale:
+            if (spec.micro_local_scale
+                    and not spec.non_opm_additive_micro_scale):
                 relative_name, decompose_name, combine_name = (
                     micro_scale_names)
                 relative = c.createNode(
@@ -591,10 +593,12 @@ class MayaFitBendyMixin:
                     or c.connectionInfo(scale_mult + ".input2",
                                         sourceFromDestination=True)
                     != ((micro_scale_names[2] + ".output")
-                        if spec.micro_local_scale else
+                        if spec.micro_local_scale
+                        and not spec.non_opm_additive_micro_scale else
                         offset + ".scale")):
                 return False
-            if spec.micro_local_scale:
+            if (spec.micro_local_scale
+                    and not spec.non_opm_additive_micro_scale):
                 relative, decompose, combine = micro_scale_names
                 if (not c.objExists(relative)
                         or c.nodeType(relative) != "multMatrix"
@@ -839,6 +843,11 @@ class MayaFitBendyMixin:
             c.addAttr(controls[0], longName="advPyBendyResidualFalloff",
                       attributeType="bool", defaultValue=True)
             c.setAttr(controls[0] + ".advPyBendyResidualFalloff",
+                      lock=True)
+        if spec.non_opm_additive_micro_scale:
+            c.addAttr(controls[0], longName="advPyBendyAdditiveMicroScale",
+                      attributeType="bool", defaultValue=True)
+            c.setAttr(controls[0] + ".advPyBendyAdditiveMicroScale",
                       lock=True)
         for control, projection in zip(
                 controls, spec.twist_projection_names):
@@ -1802,8 +1811,12 @@ class MayaFitBendyMixin:
             scale_add = c.createNode("plusMinusAverage",
                                      name=scale_add_name,
                                      skipSelect=True)
-            c.setAttr(scale_add + ".input3D[0]", 1.0, 1.0, 1.0,
-                      type="float3")
+            if spec.non_opm_additive_micro_scale:
+                c.connectAttr(control_name + ".scale",
+                              scale_add + ".input3D[0]")
+            else:
+                c.setAttr(scale_add + ".input3D[0]", 1.0, 1.0, 1.0,
+                          type="float3")
             for control_index, (bend_control, delta_name,
                                 weight_name, weight) in enumerate(zip(
                                     spec.control_names, delta_names,
@@ -2016,9 +2029,13 @@ class MayaFitBendyMixin:
                         else twist_add + ".output1D")
                     or not c.objExists(scale_add)
                     or c.nodeType(scale_add) != "plusMinusAverage"
-                    or any(abs(float(value) - 1.0) > 1e-8
-                           for value in c.getAttr(
-                               scale_add + ".input3D[0]")[0])
+                    or (c.connectionInfo(scale_add + ".input3D[0]",
+                                         sourceFromDestination=True)
+                        != control + ".scale"
+                        if spec.non_opm_additive_micro_scale else
+                        any(abs(float(value) - 1.0) > 1e-8
+                            for value in c.getAttr(
+                                scale_add + ".input3D[0]")[0]))
                     or (not spec.micro_yz_scale_only
                         and c.connectionInfo(offset + ".scale",
                                              sourceFromDestination=True)
@@ -2311,6 +2328,12 @@ class MayaFitBendyMixin:
             return False
         if not spec.legacy_full_span_weights:
             marker = spec.control_names[0] + ".advPyBendyResidualFalloff"
+            if (not c.objExists(marker) or not c.getAttr(marker)
+                    or not c.getAttr(marker, lock=True)):
+                return False
+        if spec.non_opm_additive_micro_scale:
+            marker = (spec.control_names[0]
+                      + ".advPyBendyAdditiveMicroScale")
             if (not c.objExists(marker) or not c.getAttr(marker)
                     or not c.getAttr(marker, lock=True)):
                 return False
