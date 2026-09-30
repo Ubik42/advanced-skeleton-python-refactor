@@ -568,6 +568,11 @@ class MayaFitInbetweenMixin:
             return False
         orient_targets = c.orientConstraint(
             orient[0], query=True, targetList=True) or []
+        if any(not c.isConnected(
+                orient[0] + '.constraintRotate' + axis,
+                plan.start_fk_driver_path + '.rotate' + axis)
+                for axis in 'XYZ'):
+            return False
         if plan.start_fk_point_constraint_name is not None:
             points = c.ls(plan.start_fk_point_constraint_name,
                           type="pointConstraint") or []
@@ -579,6 +584,11 @@ class MayaFitInbetweenMixin:
                     or point_targets[0].rsplit("|", 1)[-1]
                     .rsplit(":", 1)[-1]
                     != plan.start_fkx_name):
+                return False
+            if any(not c.isConnected(
+                    points[0] + '.constraintTranslate' + axis,
+                    plan.start_fk_driver_path + '.translate' + axis)
+                    for axis in 'XYZ'):
                 return False
         if plan.follow_constraint_name is None:
             return (len(orient_targets) == 1
