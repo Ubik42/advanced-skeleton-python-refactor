@@ -38,6 +38,7 @@ class BodyFitGeoAttachState:
     parent_world: tuple[float, ...]
     opm_source: str | None
     opm_value: tuple[float, ...]
+    inherits_transform: bool = True
 
 
 def plan_body_fit_geo_attach(

@@ -92,7 +92,8 @@ class MayaBodyFitGeoAttachMixin:
                             worldSpace=True, matrix=True)),
             _matrix(c.xform(spec.offset_parent, query=True,
                             worldSpace=True, matrix=True)),
-            upstream, _matrix(c.getAttr(plug)))
+            upstream, _matrix(c.getAttr(plug)),
+            bool(c.getAttr(spec.fk_offset + ".inheritsTransform")))
         if (len(state.source_position) != 3
                 or not all(isfinite(v) for v in state.source_position)
                 or any(len(m) != 16 or not all(isfinite(v) for v in m)
@@ -145,7 +146,8 @@ class MayaBodyFitGeoAttachMixin:
         surface_world = om.MMatrix(_matrix(c.xform(
             surface, query=True, worldSpace=True, matrix=True)))
         offset_world = om.MMatrix(state.offset_world)
-        parent_world = om.MMatrix(state.parent_world)
+        parent_world = (om.MMatrix(state.parent_world)
+                        if state.inherits_transform else om.MMatrix())
         opm = om.MMatrix(state.opm_value)
         local = offset_world * parent_world.inverse() * opm.inverse()
         static = c.createNode("multMatrix", name=spec.static_matrix)
@@ -155,8 +157,9 @@ class MayaBodyFitGeoAttachMixin:
                       *state.opm_value, type="matrix")
         else:
             c.connectAttr(state.opm_source, static + ".matrixIn[1]")
-        c.connectAttr(spec.offset_parent + ".worldMatrix[0]",
-                      static + ".matrixIn[2]")
+        if state.inherits_transform:
+            c.connectAttr(spec.offset_parent + ".worldMatrix[0]",
+                          static + ".matrixIn[2]")
         attached = c.createNode("multMatrix", name=spec.attached_matrix)
         correction = tuple(offset_world * surface_world.inverse())
         c.setAttr(attached + ".matrixIn[0]", *correction, type="matrix")
@@ -182,8 +185,9 @@ class MayaBodyFitGeoAttachMixin:
         c.setAttr(output + ".matrixIn[0]", *tuple(local.inverse()),
                   type="matrix")
         c.connectAttr(blend + ".outputMatrix", output + ".matrixIn[1]")
-        c.connectAttr(spec.offset_parent + ".worldInverseMatrix[0]",
-                      output + ".matrixIn[2]")
+        if state.inherits_transform:
+            c.connectAttr(spec.offset_parent + ".worldInverseMatrix[0]",
+                          output + ".matrixIn[2]")
         if state.opm_source is not None:
             c.disconnectAttr(state.opm_source, plug)
         c.connectAttr(output + ".matrixSum", plug)
@@ -222,10 +226,19 @@ class MayaBodyFitGeoAttachMixin:
              spec.blend_matrix + ".target[0].weight"),
             (spec.blend_matrix + ".outputMatrix",
              spec.output_matrix + ".matrixIn[1]"),
-            (spec.offset_parent + ".worldInverseMatrix[0]",
-             spec.output_matrix + ".matrixIn[2]"),
             (spec.output_matrix + ".matrixSum",
              spec.fk_offset + ".offsetParentMatrix")]
+        if state.inherits_transform:
+            links.extend((
+                (spec.offset_parent + ".worldMatrix[0]",
+                 spec.static_matrix + ".matrixIn[2]"),
+                (spec.offset_parent + ".worldInverseMatrix[0]",
+                 spec.output_matrix + ".matrixIn[2]")))
+        elif (c.connectionInfo(spec.static_matrix + ".matrixIn[2]",
+                               sourceFromDestination=True)
+              or c.connectionInfo(spec.output_matrix + ".matrixIn[2]",
+                                  sourceFromDestination=True)):
+            return False
         if state.opm_source is not None:
             links.append((state.opm_source,
                           spec.static_matrix + ".matrixIn[1]"))
@@ -241,7 +254,9 @@ class MayaBodyFitGeoAttachMixin:
             destination=False, type="mesh") or []
         connected_shapes = {path for source in constraint_sources
                             for path in (raw.ls(source, long=True) or [])}
-        return (state.mesh_shape in connected_shapes
+        return (bool(c.getAttr(spec.fk_offset + ".inheritsTransform"))
+                == state.inherits_transform
+                and state.mesh_shape in connected_shapes
                 and all(c.connectionInfo(dst, sourceFromDestination=True) == src
                     for src, dst in links)
                 and abs(float(c.getAttr(spec.fk_control + ".attach")) - 10)
