@@ -38,6 +38,7 @@ class StagedCharacterRebuild:
     deformer_input_conversions: tuple = ()
     deformer_output_conversions: tuple = ()
     deformer_sample_frames: tuple[float, ...] = ()
+    deformer_animation_state: tuple = ()
 
 
 def _rebuild_axial_description(
@@ -137,8 +138,10 @@ class StageBodyCharacterRebuild:
             original.deformers)
         deformer_output_conversions = host.capture_character_deformer_output_conversions(
             original.deformers)
-        deformer_sample_frames = host.capture_character_deformer_animation_frames(
+        deformer_animation_state = host.capture_character_deformer_animation_state(
             original.deformers,original.skins)
+        deformer_sample_frames = tuple(sorted({time
+            for row in deformer_animation_state for time in row[1]}))
         # Older Python builds retained MEL's temporary Foot pivot markers in
         # the registered Body. Preserve that saved topology during a rebuild;
         # new characters remove those joints before Skin and registration.
@@ -171,9 +174,9 @@ class StageBodyCharacterRebuild:
                             original.deformers) != deformer_input_conversions
                         or host.capture_character_deformer_output_conversions(
                             original.deformers) != deformer_output_conversions
-                        or host.capture_character_deformer_animation_frames(
+                        or host.capture_character_deformer_animation_state(
                             original.deformers,original.skins)
-                            != deformer_sample_frames):
+                            != deformer_animation_state):
                     raise RuntimeError('重建暂存前原角色系统层级、分段或选择集发生变化')
                 stage=host.create_character_rebuild_host(namespace)
                 CreateAndImportFitSkeleton(stage).apply(fit)
@@ -235,9 +238,9 @@ class StageBodyCharacterRebuild:
                 if host.capture_character_deformer_output_conversions(
                         original.deformers) != deformer_output_conversions:
                     raise RuntimeError('暂存构建改写了生产变形器输出单位转换')
-                if (host.capture_character_deformer_animation_frames(
+                if (host.capture_character_deformer_animation_state(
                         original.deformers,original.skins)
-                        != deformer_sample_frames):
+                        != deformer_animation_state):
                     raise RuntimeError('暂存构建改写了生产变形器动画曲线')
                 host.apply_body_geometry_container_state(
                     namespace, geometry_container_state)
@@ -299,7 +302,8 @@ class StageBodyCharacterRebuild:
                                               geometry_output_conversions=geometry_output_conversions,
                                               deformer_input_conversions=deformer_input_conversions,
                                               deformer_output_conversions=deformer_output_conversions,
-                                              deformer_sample_frames=deformer_sample_frames)
+                                              deformer_sample_frames=deformer_sample_frames,
+                                              deformer_animation_state=deformer_animation_state)
                 staged=replace(staged,ownership=host.audit_character_rebuild_ownership(staged))
         return staged
 
@@ -332,9 +336,9 @@ class TransferStagedBodyCharacterData:
         if host.capture_character_deformer_output_conversions(
                 original.deformers) != staged.deformer_output_conversions:
             raise CharacterRegistryError('生产变形器输出单位转换在暂存后发生变化')
-        if (host.capture_character_deformer_animation_frames(
+        if (host.capture_character_deformer_animation_state(
                 original.deformers,original.skins)
-                != staged.deformer_sample_frames):
+                != staged.deformer_animation_state):
             raise CharacterRegistryError('生产变形器动画曲线在暂存后发生变化')
         host.preflight_character_transfer(staged)
         if staged.ownership is not None and host.audit_character_rebuild_ownership(staged)!=staged.ownership:

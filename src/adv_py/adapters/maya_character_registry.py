@@ -976,18 +976,45 @@ class MayaCharacterRegistryMixin:
                 rows.append((node,normalized))
         return tuple(sorted(set(rows)))
 
-    def capture_character_deformer_animation_frames(self,deformers,skins=()):
-        """Include native Skin and deformer keys in rebuild sampling."""
+    def capture_character_deformer_animation_state(self,deformers,skins=()):
+        """Snapshot native Skin/deformer keys before replacing their drivers."""
         c=self._cmds
-        frames=set()
+        rows=[]
+        seen=set()
         for node in (row.node for row in (*skins,*deformers)):
             curves=c.listConnections(node,source=True,
                 destination=False,type='animCurve',
                 skipConversionNodes=True) or []
             for curve in curves:
-                frames.update(float(value) for value in (
+                if curve in seen:
+                    continue
+                seen.add(curve)
+                times=tuple(float(value) for value in (
                     c.keyframe(curve,query=True,timeChange=True) or ()))
-        return tuple(sorted(frames))
+                values=tuple(float(value) for value in (
+                    c.keyframe(curve,query=True,valueChange=True) or ()))
+                if len(times)!=len(values):
+                    raise CharacterRegistryError(
+                        '生产变形器动画曲线关键帧数据不完整：'+curve)
+                tangent_types=(
+                    tuple(c.keyTangent(curve,query=True,
+                        inTangentType=True) or ()),
+                    tuple(c.keyTangent(curve,query=True,
+                        outTangentType=True) or ()))
+                tangent_shape=tuple(tuple(float(value) for value in (
+                    c.keyTangent(curve,query=True,**{flag:True}) or ()))
+                    for flag in ('inAngle','outAngle','inWeight','outWeight'))
+                if any(len(row)!=len(times) for row in
+                       (*tangent_types,*tangent_shape)):
+                    raise CharacterRegistryError(
+                        '生产变形器动画曲线切线数据不完整：'+curve)
+                infinity=(c.getAttr(curve+'.preInfinity'),
+                          c.getAttr(curve+'.postInfinity'),
+                          tuple(c.keyTangent(curve,query=True,
+                              weightedTangents=True) or ()))
+                rows.append((curve,times,values,tangent_types,
+                             tangent_shape,infinity))
+        return tuple(sorted(rows))
 
     def plan_character_property_transfer(self,original,namespace):
         from .maya_character_properties import plan
