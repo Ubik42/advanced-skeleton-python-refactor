@@ -8,11 +8,302 @@ from adv_py.core.name_matcher_fit import (
 from adv_py.core.name_matcher_mocap import NameMatcherMocapPlan
 from adv_py.core.name_matcher_mocap_session import (
     NameMatcherMocapConstraint, NameMatcherMocapSession)
+from adv_py.core.name_matcher_animation import NameMatcherAnimationBakePlan
 
 from .maya_source_skeleton_fit import MayaSourceSkeletonFitHost
 
 
 class MayaNameMatcherHost(MayaSourceSkeletonFitHost):
+    def capture_name_matcher_source_animation(self,
+            source_root: str) -> tuple[tuple[str, str], ...]:
+        from maya import cmds as c
+
+        source = self.capture_source_skeleton(source_root)
+        root = source[0].path
+        transforms = [root, *(path for path in (c.listRelatives(root,
+            allDescendents=True, fullPath=True) or [])
+            if c.nodeType(path) in ('joint', 'transform'))]
+        driven = []
+        for node in transforms:
+            for kind in ('translate', 'rotate', 'scale'):
+                for axis in 'XYZ':
+                    plug = node + '.' + kind + axis
+                    driver = c.connectionInfo(plug,
+                        sourceFromDestination=True) or ''
+                    if driver:
+                        driven.append((plug, driver))
+        return tuple(sorted(driven))
+
+    def keep_name_matcher_source_animation(self, source_root: str,
+            inputs: tuple[tuple[str, str], ...]) -> tuple[str, int]:
+        """MEL's KeepAnimation clone with direct anim curves kept alive."""
+        from maya import cmds as c
+
+        self._require_transaction()
+        if not inputs or self.capture_name_matcher_source_animation(
+                source_root) != inputs:
+            raise FitSkeletonValidationError(
+                'NameMatcher 来源动画在保留前变化或不存在')
+        if c.namespace(exists=':NameMatcherKeepAnimation'):
+            raise FitSkeletonValidationError(
+                'NameMatcherKeepAnimation 命名空间已存在')
+        root_matches = c.ls(source_root, long=True, type='joint') or []
+        if len(root_matches) != 1:
+            raise FitSkeletonValidationError('NameMatcher 动画来源根不唯一')
+        root = root_matches[0]
+        if (c.referenceQuery(root, isNodeReferenced=True)
+                or any(c.lockNode(root, query=True, lock=True) or ())):
+            raise FitSkeletonValidationError(
+                'NameMatcher 动画来源根被引用或锁定')
+        if c.listRelatives(root, allDescendents=True,
+                           fullPath=True, type='mesh'):
+            raise FitSkeletonValidationError(
+                'NameMatcher 动画来源骨架下有模型，不能复制其历史网络')
+        original_ids = c.ls(root, uuid=True) or []
+        if len(original_ids) != 1:
+            raise FitSkeletonValidationError('NameMatcher 动画来源身份不唯一')
+        source_nodes = {root, *(path for path in (c.listRelatives(root,
+            allDescendents=True, fullPath=True) or [])
+            if c.nodeType(path) in ('joint', 'transform'))}
+        for plug, driver in inputs:
+            node = driver.split('.', 1)[0]
+            if (not c.nodeType(node).startswith('animCurve')
+                    or (c.ls(plug.split('.', 1)[0], long=True) or [None])[0]
+                    not in source_nodes):
+                raise FitSkeletonValidationError(
+                    'NameMatcher 目前只可保留来源关节直接动画曲线：'
+                    + plug)
+        values = {plug: c.getAttr(plug) for plug, _ in inputs}
+        selection = c.ls(selection=True, long=True) or []
+        self._transaction_changed = True
+        duplicate = c.duplicate(root, inputConnections=True,
+                                returnRootsOnly=True)[0]
+        duplicates = c.ls(duplicate, long=True, type='joint') or []
+        if len(duplicates) != 1:
+            raise RuntimeError('NameMatcher 动画骨架复制失败')
+        duplicate = duplicates[0]
+        paired = [(root, duplicate)]
+        def transform_children(node):
+            return [path for path in (c.listRelatives(node,
+                children=True, fullPath=True) or [])
+                if c.nodeType(path) in ('joint', 'transform')]
+        for original, copied in paired:
+            left = transform_children(original)
+            right = transform_children(copied)
+            if (len(left) != len(right)
+                    or any(c.nodeType(a) != c.nodeType(b)
+                           for a, b in zip(left, right))):
+                raise RuntimeError('NameMatcher 动画骨架复制层级不一致')
+            paired.extend(zip(left, right))
+        copy_ids = {}
+        for original, copied in paired:
+            ids = c.ls(copied, uuid=True) or []
+            if len(ids) != 1:
+                raise RuntimeError('NameMatcher 复制节点身份不唯一')
+            copy_ids[original] = ids[0]
+        c.namespace(addNamespace=':NameMatcherKeepAnimation')
+        for original, _ in sorted(paired,
+                key=lambda item: item[0].count('|'), reverse=True):
+            copied = c.ls(copy_ids[original], long=True) or []
+            if len(copied) != 1:
+                raise RuntimeError('NameMatcher 复制节点改名前丢失')
+            leaf = original.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
+            c.rename(copied[0], ':NameMatcherKeepAnimation:' + leaf)
+        clone = (c.ls(copy_ids[root], long=True) or [None])[0]
+        if not clone:
+            raise RuntimeError('NameMatcher 动画骨架根改名失败')
+        c.parent(clone, world=True, absolute=True)
+        clone = (c.ls(copy_ids[root], long=True) or [None])[0]
+        for original, _ in paired:
+            copied = (c.ls(copy_ids[original], long=True) or [None])[0]
+            if (not copied or any(abs(float(a)-float(b)) > 1e-4
+                    for a, b in zip(c.xform(original, query=True,
+                        worldSpace=True, matrix=True),
+                        c.xform(copied, query=True,
+                            worldSpace=True, matrix=True)))):
+                raise RuntimeError(
+                    'NameMatcher 动画复制改变了骨架当前姿态：'
+                    + original)
+        c.addAttr(clone, longName='advPyKeepAnimation',
+                  attributeType='bool', defaultValue=True)
+        c.addAttr(clone, longName='advPySourceUUID',
+                  dataType='string')
+        c.setAttr(clone + '.advPySourceUUID', original_ids[0],
+                  type='string')
+        for plug, driver in inputs:
+            copied = (c.ls(copy_ids[plug.split('.', 1)[0]],
+                           long=True) or [None])[0]
+            if not copied:
+                raise RuntimeError('NameMatcher 动画关节复制后丢失')
+            clone_plug = copied + '.' + plug.split('.', 1)[1]
+            clone_driver = c.connectionInfo(clone_plug,
+                sourceFromDestination=True)
+            if not clone_driver or not c.nodeType(
+                    clone_driver.split('.', 1)[0]).startswith('animCurve'):
+                raise RuntimeError('NameMatcher 复制骨架动画曲线未保留')
+            original_times = c.keyframe(driver.split('.', 1)[0],
+                query=True, timeChange=True) or []
+            copied_times = c.keyframe(clone_driver.split('.', 1)[0],
+                query=True, timeChange=True) or []
+            if tuple(original_times) != tuple(copied_times):
+                raise RuntimeError('NameMatcher 复制骨架关键帧范围不一致')
+            c.disconnectAttr(driver, plug)
+            c.setAttr(plug, values[plug])
+            if c.connectionInfo(plug, sourceFromDestination=True):
+                raise RuntimeError('NameMatcher 原骨架动画输入未断开')
+        if selection:
+            c.select([node for node in selection if c.objExists(node)],
+                     replace=True)
+        else:
+            c.select(clear=True)
+        return clone, len(inputs)
+
+    def capture_name_matcher_kept_animation(self) -> tuple:
+        from maya import cmds as c
+
+        candidates = c.ls(':NameMatcherKeepAnimation:*',
+                          long=True, type='joint') or []
+        roots = [joint for joint in candidates
+            if c.attributeQuery('advPyKeepAnimation',
+                node=joint, exists=True)
+            and c.getAttr(joint + '.advPyKeepAnimation')]
+        if len(roots) != 1:
+            raise FitSkeletonValidationError(
+                'NameMatcher 保留动画骨架根不存在或不唯一')
+        root = roots[0]
+        source_uuid = c.getAttr(root + '.advPySourceUUID')
+        source = c.ls(source_uuid, long=True, type='joint') or []
+        if len(source) != 1:
+            raise FitSkeletonValidationError(
+                'NameMatcher 原骨架身份已丢失')
+        joints = tuple(sorted([root, *(c.listRelatives(root,
+            allDescendents=True, fullPath=True, type='joint') or [])]))
+        source_joints = self.capture_source_skeleton(source[0])
+        source_names = sorted(joint.name.rsplit(':', 1)[-1]
+                              for joint in source_joints)
+        clone_names = sorted(path.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
+                             for path in joints)
+        if source_names != clone_names:
+            raise FitSkeletonValidationError(
+                'NameMatcher 保留动画骨架与原来源关节集合不一致')
+        animated_nodes = (root, *(path for path in (c.listRelatives(root,
+            allDescendents=True, fullPath=True) or [])
+            if c.nodeType(path) in ('joint', 'transform')))
+        curves = tuple(sorted(set(curve for node in animated_nodes
+            for curve in (c.listConnections(node, source=True,
+                destination=False, type='animCurve') or []))))
+        times = tuple(sorted(set(float(time) for curve in curves
+            for time in (c.keyframe(curve, query=True,
+                                    timeChange=True) or []))))
+        return root, source[0], source_uuid, joints, curves, times
+
+    def bake_name_matcher_kept_animation(self,
+            plan: NameMatcherAnimationBakePlan,
+            session: tuple) -> tuple[float, float]:
+        from maya import cmds as c
+
+        self._require_transaction()
+        if self.capture_name_matcher_kept_animation() != session:
+            raise FitSkeletonValidationError(
+                'NameMatcher 保留动画骨架在烘焙前变化')
+        root, _, _, _, curves, times = session
+        if not times:
+            raise FitSkeletonValidationError(
+                'NameMatcher 保留动画骨架没有关键帧')
+        first, last = min(-1.0, times[0]), times[-1]
+        if last < first:
+            raise FitSkeletonValidationError(
+                'NameMatcher 来源动画范围无效')
+        controls = tuple(self.scene_address(link.control)
+                         for link in plan.links)
+        for link, control in zip(plan.links, controls):
+            if ((c.ls(link.cloned_joint, long=True,
+                      type='joint') or []) != [link.cloned_joint]
+                    or len(c.ls(control, long=True,
+                                type='transform') or []) != 1):
+                raise FitSkeletonValidationError(
+                    'NameMatcher 动画烘焙来源或 FK 控制缺失')
+            for axis in 'XYZ':
+                plug = control + '.rotate' + axis
+                if (not c.getAttr(plug, settable=True)
+                        or c.connectionInfo(plug,
+                            sourceFromDestination=True)):
+                    raise FitSkeletonValidationError(
+                        'NameMatcher FK 控制旋转不可烘焙：' + plug)
+        for plug in plan.fk_mode_plugs:
+            scene_plug = self.scene_address(plug)
+            if not c.getAttr(scene_plug, settable=True):
+                raise FitSkeletonValidationError(
+                    'NameMatcher IK/FK 模式不可切到 FK：' + scene_plug)
+        auto_key = bool(c.autoKeyframe(query=True, state=True))
+        selection = c.ls(selection=True, long=True) or []
+        previous_time = c.currentTime(query=True)
+        constraints = []
+        try:
+            self._transaction_changed = True
+            c.autoKeyframe(state=False)
+            for plug in plan.fk_mode_plugs:
+                c.setAttr(self.scene_address(plug), 0)
+            for link, control in zip(plan.links, controls):
+                skipped = tuple(axis.lower() for axis in 'XYZ'
+                    if (not c.getAttr(control + '.translate' + axis,
+                                      settable=True)
+                        or c.connectionInfo(control + '.translate' + axis,
+                            sourceFromDestination=True)))
+                constraints.append(c.parentConstraint(
+                    link.cloned_joint, control,
+                    maintainOffset=True,
+                    **({'skipTranslate': skipped} if skipped else {}))[0])
+            c.playbackOptions(minTime=first, animationStartTime=first,
+                              maxTime=last, animationEndTime=last)
+            c.bakeResults(controls, simulation=True,
+                time=(first, last), sampleBy=1,
+                disableImplicitControl=True, preserveOutsideKeys=False,
+                sparseAnimCurveBake=False,
+                removeBakedAttributeFromLayer=False,
+                bakeOnOverrideLayer=False, controlPoints=False,
+                shape=False)
+            if not any((c.keyframe(control, query=True,
+                    keyframeCount=True, time=(first, last)) or 0) > 0
+                    for control in controls):
+                raise RuntimeError(
+                    'NameMatcher 来源动画没有烘焙到 FK 控制器')
+            c.delete(constraints)
+            c.currentTime(-1)
+            c.delete(controls, staticChannels=True,
+                     unitlessAnimationCurves=False,
+                     hierarchy='none', controlPoints=False,
+                     shape=True)
+            c.delete(root)
+            for curve in curves:
+                if (c.objExists(curve)
+                        and not c.referenceQuery(curve,
+                            isNodeReferenced=True)
+                        and not c.listConnections(curve + '.output',
+                            source=False, destination=True)):
+                    c.delete(curve)
+            if c.namespace(exists=':NameMatcherKeepAnimation'):
+                remaining = c.namespaceInfo(':NameMatcherKeepAnimation',
+                    listOnlyDependencyNodes=True, recurse=True) or []
+                if remaining:
+                    raise RuntimeError(
+                        'NameMatcher 保留动画命名空间仍有外部节点')
+                c.namespace(removeNamespace=':NameMatcherKeepAnimation')
+            if c.objExists(root):
+                raise RuntimeError('NameMatcher 保留动画骨架未清理')
+            c.select(clear=True)
+        except Exception:
+            c.currentTime(previous_time)
+            if selection:
+                c.select([node for node in selection if c.objExists(node)],
+                         replace=True)
+            else:
+                c.select(clear=True)
+            raise
+        finally:
+            c.autoKeyframe(state=auto_key)
+        return first, last
+
     def preflight_name_matcher_zero_out(
             self, plan: NameMatcherConstraintPlan) -> None:
         from maya import cmds as c

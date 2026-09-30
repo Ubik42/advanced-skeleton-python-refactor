@@ -467,6 +467,49 @@ class MayaPanelController:
             raise
         return result, target_namespace
 
+    def preparation_name_matcher_character(self, namespace: str,
+            rows: tuple[tuple[str, str], ...], *,
+            right: str = 'R', left: str = 'L', middle: str = '',
+            side_before_name: bool = False,
+            side_underscore: bool = True):
+        from maya import cmds
+        from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
+        from adv_py.application.name_matcher_character import (
+            BuildNameMatchedCharacter)
+        from adv_py.core.name_matcher_fit import NameMatcherRow, NameMatcherRules
+
+        selection = cmds.ls(selection=True, long=True, type='joint') or []
+        if len(selection) != 1:
+            raise ValueError('NameMatcher 请只选中来源骨架根关节')
+        target_namespace, created = _target_for_source_skeleton(
+            cmds, namespace, selection[0])
+        matcher_namespace_existed = cmds.namespace(exists=':NameMatcher')
+        animation_namespace_existed = cmds.namespace(
+            exists=':NameMatcherKeepAnimation')
+        try:
+            host = MayaNameMatcherHost(
+                namespace=None if target_namespace == ':'
+                else target_namespace)
+            result = BuildNameMatchedCharacter(host).apply(
+                selection[0], tuple(NameMatcherRow(*row) for row in rows),
+                NameMatcherRules(right, left, middle,
+                                 side_before_name, side_underscore))
+        except Exception:
+            _remove_empty_source_target(cmds, created)
+            if (not matcher_namespace_existed
+                    and cmds.namespace(exists=':NameMatcher')
+                    and not (cmds.namespaceInfo(':NameMatcher',
+                        listOnlyDependencyNodes=True, recurse=True) or [])):
+                cmds.namespace(removeNamespace=':NameMatcher')
+            if (not animation_namespace_existed
+                    and cmds.namespace(exists=':NameMatcherKeepAnimation')
+                    and not (cmds.namespaceInfo(
+                        ':NameMatcherKeepAnimation',
+                        listOnlyDependencyNodes=True, recurse=True) or [])):
+                cmds.namespace(removeNamespace=':NameMatcherKeepAnimation')
+            raise
+        return result, target_namespace
+
     def tools_name_matcher_connect(self, namespace: str,
             source_root: str, rows: tuple[tuple[str, str], ...], *,
             right: str = 'R', left: str = 'L', middle: str = '',
@@ -518,6 +561,33 @@ class MayaPanelController:
             NameMatcherRules(right, left, middle,
                              side_before_name, side_underscore),
             use_extra=use_extra)
+
+    def tools_name_matcher_keep_animation(self, namespace: str,
+            source_root: str):
+        from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
+        from adv_py.application.name_matcher_animation import (
+            KeepNameMatchedAnimation)
+
+        host = MayaNameMatcherHost(
+            namespace=None if namespace == ':' else namespace)
+        return KeepNameMatchedAnimation(host).apply(source_root)
+
+    def tools_name_matcher_bake_kept_animation(self, namespace: str,
+            source_root: str, rows: tuple[tuple[str, str], ...], *,
+            right: str = 'R', left: str = 'L', middle: str = '',
+            side_before_name: bool = False,
+            side_underscore: bool = True):
+        from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
+        from adv_py.application.name_matcher_animation import (
+            BakeNameMatchedAnimation)
+        from adv_py.core.name_matcher_fit import NameMatcherRow, NameMatcherRules
+
+        host = MayaNameMatcherHost(
+            namespace=None if namespace == ':' else namespace)
+        return BakeNameMatchedAnimation(host).apply(source_root,
+            tuple(NameMatcherRow(*row) for row in rows),
+            NameMatcherRules(right, left, middle,
+                             side_before_name, side_underscore))
 
     def tools_name_matcher_zero_out(self, namespace: str,
             source_root: str, rows: tuple[tuple[str, str], ...], *,

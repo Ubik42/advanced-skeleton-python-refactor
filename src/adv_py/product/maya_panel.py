@@ -600,8 +600,14 @@ def create_panel(controller: MayaPanelController | None = None):
                 ('外部骨架根', self.name_matcher_source_root)])
             form.addRow(self._button('创建并放置 FitSkeleton',
                                      self._build_name_matcher_fit))
+            form.addRow(self._button('一键创建角色并连接原 Skin／动画',
+                                     self._build_name_matcher_character))
+            form.addRow(self._button('保留来源动画骨架',
+                                     self._keep_name_matcher_animation))
             form.addRow(self._button('将 Body 约束到外部骨架',
                                      self._connect_name_matcher_skeleton))
+            form.addRow(self._button('保留动画烘焙到 FK',
+                                     self._bake_name_matcher_animation))
             form.addRow(self._button('原 Skin 转接至 Body 关节',
                                      self._transfer_name_matcher_skin))
             form.addRow(self._button('动捕来源关节旋转归零',
@@ -2339,6 +2345,26 @@ def create_panel(controller: MayaPanelController | None = None):
                     + (('未找到：' + '、'.join(result.missing))
                        if result.missing else '全部映射均找到来源。'))
 
+        def _build_name_matcher_character(self):
+            selected_namespace = self._namespace()
+            result, namespace = (
+                self.controller.preparation_name_matcher_character(
+                    selected_namespace, self._name_matcher_mapping_rows(),
+                    **self._name_matcher_rule_kwargs()))
+            if namespace != selected_namespace:
+                self._next_role = namespace
+            self.name_matcher_source_root.setText(result.fit.source_root)
+            return (f'NameMatcher 已在 {namespace} 创建 Body 与控制器；'
+                    f'{result.attachment.connected} 个外部骨架关节已连接，'
+                    + (f'{result.skins_preserved} 套原 Skin 保留；'
+                       if result.skins_preserved else '来源未带 Skin；')
+                    + (f'动画已烘焙到 {result.animation.controls} 个 FK 控制器。'
+                       if result.animation else '来源骨架无动画。')
+                    + ((' 未匹配：' + '、'.join(sorted(set(
+                        result.fit.missing + result.attachment.missing))))
+                       if result.fit.missing or result.attachment.missing
+                       else ''))
+
         def _connect_name_matcher_skeleton(self):
             root = self.name_matcher_source_root.text().strip()
             if not root:
@@ -2349,6 +2375,28 @@ def create_panel(controller: MayaPanelController | None = None):
             return (f'NameMatcher 已连接 {result.connected} 个外部关节；'
                     + (('未找到：' + '、'.join(result.missing))
                        if result.missing else '全部映射目标均已连接。'))
+
+        def _keep_name_matcher_animation(self):
+            root = self.name_matcher_source_root.text().strip()
+            if not root:
+                raise ValueError('请填写 NameMatcher 外部骨架根路径')
+            result = self.controller.tools_name_matcher_keep_animation(
+                self._namespace(), root)
+            return (f'NameMatcher 已保留动画骨架：'
+                    f'{result.animated_channels} 条关节通道。')
+
+        def _bake_name_matcher_animation(self):
+            root = self.name_matcher_source_root.text().strip()
+            if not root:
+                raise ValueError('请填写 NameMatcher 外部骨架根路径')
+            result = self.controller.tools_name_matcher_bake_kept_animation(
+                self._namespace(), root, self._name_matcher_mapping_rows(),
+                **self._name_matcher_rule_kwargs())
+            return (f'NameMatcher 已将保留动画烘焙到 '
+                    f'{result.controls} 个 FK 控制器，'
+                    f'{result.first_frame:g}–{result.last_frame:g} 帧；'
+                    + (('未匹配：' + '、'.join(result.missing))
+                       if result.missing else '映射完成。'))
 
         def _transfer_name_matcher_skin(self):
             root = self.name_matcher_source_root.text().strip()
