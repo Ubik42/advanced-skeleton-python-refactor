@@ -88,6 +88,8 @@ class BodyHandFkControlPlan:
                 control.control_name,
                 control.constraint_name,
             ))
+            if control.translation_constraint_name is not None:
+                values.append(control.translation_constraint_name)
             if control.extra_name is not None:
                 values.append(control.extra_name)
                 if control.extra_curve:
@@ -251,6 +253,7 @@ def plan_body_hand_fk_controls(
     fit_metadata: tuple[FitJointMetadata, ...] = (),
     aim_joint_names: frozenset[str] = frozenset(),
     fkx_joint_names: frozenset[str] | None = None,
+    point_control_names: frozenset[str] | None = None,
 ) -> BodyHandFkControlPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise BodyHandControlValidationError("Hand 构建选项类型无效")
@@ -260,6 +263,9 @@ def plan_body_hand_fk_controls(
         raise BodyHandControlValidationError("Hand Aim 来源集合无效")
     if fkx_joint_names is not None and not isinstance(fkx_joint_names, frozenset):
         raise BodyHandControlValidationError("Hand FKX 关节集合无效")
+    if (point_control_names is not None
+            and not isinstance(point_control_names, frozenset)):
+        raise BodyHandControlValidationError("Hand FK 位置约束集合无效")
     if (not isinstance(fit_metadata, tuple)
             or any(not isinstance(item, FitJointMetadata)
                    for item in fit_metadata)):
@@ -367,8 +373,9 @@ def plan_body_hand_fk_controls(
                 offset_path = f"{parent_path}|{offset_name}"
                 extra_name = (
                     f"{prefix}AdvPy_{digit.value}{index}FKExtra_{suffix}")
+                source_name = state.name.rsplit("_", 1)[0]
                 aim_name = (f"{prefix}AdvPy_{digit.value}{index}FKAim_{suffix}"
-                            if name in aim_joint_names else None)
+                            if source_name in aim_joint_names else None)
                 aim_path = (f"{offset_path}|{aim_name}"
                             if aim_name is not None else None)
                 extra_path = f"{aim_path or offset_path}|{extra_name}"
@@ -397,6 +404,11 @@ def plan_body_hand_fk_controls(
                     constraint_name=(
                         f"{prefix}AdvPy_{digit.value}{index}FKOrient_{suffix}"
                     ),
+                    translation_constraint_name=(
+                        f"{prefix}AdvPy_{digit.value}{index}FKPoint_{suffix}"
+                        if point_control_names is None
+                        or control_name.rsplit(':', 1)[-1]
+                        in point_control_names else None),
                     world_position=state.world_position,
                     world_axes=state.world_axes,
                     radius=(body_fk_curve_radius(

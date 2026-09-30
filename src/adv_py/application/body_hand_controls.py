@@ -120,6 +120,7 @@ class BuildBodyHandFkControls:
         control_radius: float = 1.5,
         aim_joint_names: frozenset[str] = frozenset(),
         fkx_joint_names: frozenset[str] | None = None,
+        point_control_names: frozenset[str] | None = None,
     ) -> BodyHandFkBuildPlan:
         """Plan Hand FK from an already captured shared Character input."""
 
@@ -131,6 +132,7 @@ class BuildBodyHandFkControls:
             fit_metadata=safety.symmetry.source.metadata,
             aim_joint_names=aim_joint_names,
             fkx_joint_names=fkx_joint_names,
+            point_control_names=point_control_names,
         )
         pose = plan_body_hand_pose_controls(controls)
         input_snapshot = self._host.capture_body_hand_fk_input(controls)

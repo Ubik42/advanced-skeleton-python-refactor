@@ -151,6 +151,8 @@ def plan_inbetween_limb_bindings(
                     remap(start_control.source_override_path
                           or start_control.sub_control_path
                           or start_control.control_path)),
+                start_fk_point_constraint_name=(
+                    start_control.translation_constraint_name),
             ))
             continue
         if neck_edge:

@@ -80,6 +80,40 @@ class MayaCharacterRegistryMixin:
         body_by_leaf = {joint.path.rsplit('|', 1)[-1]
                         .rsplit(':', 1)[-1]: joint.path
                         for joint in registration.body}
+        hand_points = set()
+        for side in ('R', 'L'):
+            for digit in ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky'):
+                for index in range(1, 5):
+                    control_leaf = f'AdvPy_{digit}{index}FK_{side}'
+                    controls = by_leaf.get(control_leaf, ())
+                    if len(controls) > 1:
+                        raise CharacterRegistryError(
+                            'Hand FK 控制器名称不唯一：' + control_leaf)
+                    if not controls:
+                        continue
+                    control_name = controls[0].rsplit('|', 1)[-1]
+                    namespace = (control_name.rsplit(':', 1)[0] + ':'
+                                 if ':' in control_name else '')
+                    point_name = (namespace + f'AdvPy_{digit}{index}'
+                                  f'FKPoint_{side}')
+                    points = c.ls(point_name, long=True,
+                                  type='pointConstraint') or []
+                    if len(points) > 1:
+                        raise CharacterRegistryError(
+                            'Hand FK 位置约束名称不唯一：' + point_name)
+                    if points:
+                        outputs = c.listConnections(
+                            points[0] + '.constraintTranslateX',
+                            source=False, destination=True,
+                            plugs=True) or []
+                        if (len(outputs) != 1
+                                or not outputs[0].endswith('.translateX')
+                                or (c.ls(outputs[0].rsplit('.', 1)[0],
+                                         long=True) or [None])[0]
+                                not in body_by_leaf.values()):
+                            raise CharacterRegistryError(
+                                'Hand FK 位置约束接线无效：' + point_name)
+                        hand_points.add(control_leaf)
         scale = set()
         compensated = set()
         independent = set()
@@ -584,6 +618,7 @@ class MayaCharacterRegistryMixin:
             bendy_scale_controls=frozenset(bendy_scales),
             fkx_joint_controls=frozenset(fkx_joints),
             point_controls=frozenset(point_controls),
+            hand_point_control_names=frozenset(hand_points),
             standard_fkx_joint_names=frozenset(standard_fkx_joints),
             hand_fkx_joint_names=frozenset(hand_fkx_joints),
             standard_fk_independent_controls=frozenset(

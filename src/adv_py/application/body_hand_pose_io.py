@@ -187,6 +187,10 @@ class InspectBodyHandPoseRig:
             fit_metadata=fit_metadata,
         )
         hand_snapshot = self._host.capture_body_hand_fk_controls(hand)
+        point_control_names = frozenset(
+            state.control_path.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
+            for state in hand_snapshot.controls
+            if state.translation_constraint_name is not None)
         if hand_snapshot.roots and all(
             not root.source_icon_size for root in hand_snapshot.roots
         ):
@@ -197,7 +201,15 @@ class InspectBodyHandPoseRig:
                 build_options=build_options,
                 source_icon_size=False,
                 fit_metadata=fit_metadata,
+                point_control_names=point_control_names,
             )
+        else:
+            hand = plan_body_hand_fk_controls(
+                body, radius=1.5 if control_radius is None
+                else control_radius,
+                namespace=namespace, build_options=build_options,
+                fit_metadata=fit_metadata,
+                point_control_names=point_control_names)
         pose = plan_body_hand_pose_controls(hand)
         hand_issues = audit_body_hand_fk_controls(
             hand,

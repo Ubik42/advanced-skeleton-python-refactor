@@ -233,6 +233,7 @@ class BuildBodyCharacterRig:
         part_paths: FitPartFinalPaths | None = None,
         standard_fkx_joint_names: frozenset[str] | None = None,
         hand_fkx_joint_names: frozenset[str] | None = None,
+        hand_point_control_names: frozenset[str] | None = None,
         standard_fk_independent_controls: frozenset[str] | None = None,
         torso_fkx_joint_names: frozenset[str] | None = None,
     ) -> BodyCharacterRigBuildPlan:
@@ -347,6 +348,7 @@ class BuildBodyCharacterRig:
                 fkx_joint_names=(hand_fkx_joint_names
                                  if hand_fkx_joint_names is not None
                                  else fresh_hand_fkx_names),
+                point_control_names=hand_point_control_names,
             )
         elif present_hand_names or present_original_names:
             if not defer_partial_hand_to_generic:
@@ -614,6 +616,7 @@ class BuildBodyCharacterRig:
         part_paths: FitPartFinalPaths | None = None,
         standard_fkx_joint_names: frozenset[str] | None = None,
         hand_fkx_joint_names: frozenset[str] | None = None,
+        hand_point_control_names: frozenset[str] | None = None,
         standard_fk_independent_controls: frozenset[str] | None = None,
         torso_fkx_joint_names: frozenset[str] | None = None,
     ) -> BodyCharacterRigBuildResult:
@@ -636,6 +639,7 @@ class BuildBodyCharacterRig:
             part_paths=part_paths,
             standard_fkx_joint_names=standard_fkx_joint_names,
             hand_fkx_joint_names=hand_fkx_joint_names,
+            hand_point_control_names=hand_point_control_names,
             standard_fk_independent_controls=(
                 standard_fk_independent_controls),
             torso_fkx_joint_names=torso_fkx_joint_names,

@@ -130,6 +130,7 @@ class GenericFkFeaturePolicy:
     bendy_main_influence_controls: frozenset[str] | None = None
     fkx_joint_controls: frozenset[str] | None = None
     point_controls: frozenset[str] | None = None
+    hand_point_control_names: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(
