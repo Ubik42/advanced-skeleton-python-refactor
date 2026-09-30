@@ -133,6 +133,7 @@ class GenericFkFeaturePolicy:
     hand_point_control_names: frozenset[str] | None = None
     standard_point_control_names: frozenset[str] | None = None
     torso_point_control_names: frozenset[str] | None = None
+    torso_root_point_from_fkx: bool | None = None
 
 
 def plan_body_generic_fk(

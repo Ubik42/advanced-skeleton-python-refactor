@@ -856,7 +856,12 @@ class BuildRegisteredBodyCharacter:
                     if _generic_fk_policy is not None else None),
                 torso_point_control_names=(
                     _generic_fk_policy.torso_point_control_names
-                    if _generic_fk_policy is not None else None))
+                    if _generic_fk_policy is not None else None),
+                torso_root_point_from_fkx=(
+                    _generic_fk_policy.torso_root_point_from_fkx
+                    if _generic_fk_policy is not None
+                    and _generic_fk_policy.torso_root_point_from_fkx
+                    is not None else True))
             if not use_fit_part_hierarchy:
                 BuildFitPartScaleDrivers(joined).apply_terminal_only(
                     part_plan.specs,

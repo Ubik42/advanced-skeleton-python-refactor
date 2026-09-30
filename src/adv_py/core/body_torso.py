@@ -215,13 +215,15 @@ class BodyTorsoSnapshot:
 
 def plan_body_torso(
     body: BodySkeletonSnapshot, arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan,
-    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (), aim_joint_names: frozenset[str] = frozenset(), leg_lock_enabled: bool = True, fkx_joint_names: frozenset[str] | None = None, point_control_names: frozenset[str] | None = None,
+    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (), aim_joint_names: frozenset[str] = frozenset(), leg_lock_enabled: bool = True, fkx_joint_names: frozenset[str] | None = None, point_control_names: frozenset[str] | None = None, root_point_from_fkx: bool = True,
 ) -> BodyTorsoPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise FitSkeletonValidationError("Torso 构建选项类型无效")
     if (point_control_names is not None
             and not isinstance(point_control_names, frozenset)):
         raise FitSkeletonValidationError("Torso FK 位置约束集合无效")
+    if type(root_point_from_fkx) is not bool:
+        raise FitSkeletonValidationError("Torso Root 位置来源选项无效")
     if not isinstance(aim_joint_names, frozenset):
         raise FitSkeletonValidationError("Torso Aim 来源集合无效")
     if fkx_joint_names is not None and not isinstance(fkx_joint_names, frozenset):
@@ -338,7 +340,12 @@ def plan_body_torso(
         )
         by_joint[name] = spec
         controls.append(spec)
-    pelvis = BodySpaceAttachment("AdvPy_TorsoPelvisPoint", controls[0].control_path, body.root, "pointConstraint")
+    pelvis = BodySpaceAttachment(
+        "AdvPy_TorsoPelvisPoint",
+        (controls[0].source_override_path
+         if root_point_from_fkx and controls[0].source_override_path
+         else controls[0].control_path),
+        body.root, "pointConstraint")
     leg_lock = BodyLegLockSpace(
         (("|Group|MotionSystem|RootSystem" if nested else root_path)
          + "|AdvPy_LegLockConstrained"),

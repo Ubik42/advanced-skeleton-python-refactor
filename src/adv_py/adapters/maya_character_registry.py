@@ -83,6 +83,27 @@ class MayaCharacterRegistryMixin:
         hand_points = set()
         standard_points = set()
         torso_points = set()
+        root_leaf = registration.body_root.rsplit('|', 1)[-1]
+        root_namespace = (root_leaf.rsplit(':', 1)[0] + ':'
+                          if ':' in root_leaf else '')
+        pelvis_point = c.ls(root_namespace + 'AdvPy_TorsoPelvisPoint', long=True,
+                            type='pointConstraint') or []
+        if len(pelvis_point) != 1:
+            raise CharacterRegistryError(
+                'Torso Root 位置约束缺失或不唯一')
+        pelvis_targets = c.pointConstraint(
+            pelvis_point[0], query=True, targetList=True) or []
+        if len(pelvis_targets) != 1:
+            raise CharacterRegistryError('Torso Root 位置来源不唯一')
+        pelvis_source = c.ls(pelvis_targets[0], long=True) or []
+        root_fkx = by_leaf.get('AdvPy_RootFKX', ())
+        root_control = by_leaf.get('AdvPy_TorsoRoot_MFK', ())
+        if (len(pelvis_source) != 1
+                or (pelvis_source != list(root_fkx)
+                    and pelvis_source != list(root_control))):
+            raise CharacterRegistryError(
+                'Torso Root 位置来源不属于原控制链')
+        root_point_from_fkx = pelvis_source == list(root_fkx)
         for node in registration.nodes:
             leaf = node.path.rsplit('|', 1)[-1]
             short = leaf.rsplit(':', 1)[-1]
@@ -681,6 +702,7 @@ class MayaCharacterRegistryMixin:
             hand_point_control_names=frozenset(hand_points),
             standard_point_control_names=frozenset(standard_points),
             torso_point_control_names=frozenset(torso_points),
+            torso_root_point_from_fkx=root_point_from_fkx,
             standard_fkx_joint_names=frozenset(standard_fkx_joints),
             hand_fkx_joint_names=frozenset(hand_fkx_joints),
             standard_fk_independent_controls=frozenset(
