@@ -375,6 +375,14 @@ def plan_body_torso(
                 f"AdvPy_Torso{label}FKSpace_{suffix}", source, offsets[0].offset_path, "parentConstraint",
             ))
             for spec in roots:
+                # The FK receiver already gets its translation from FKX.
+                # Constraining that same channel to the torso frame would
+                # suppress the controller's positional animation. The FK
+                # offset follows the torso frame above; only the IK receiver
+                # needs a separate origin attachment.
+                if (spec.role.value == "fk"
+                        and offsets[0].translation_constraint_name is not None):
+                    continue
                 attachments.append(BodySpaceAttachment(
                     f"AdvPy_Torso{label}{spec.role.value.upper()}Origin_{suffix}", source, spec.path, "parentConstraint", True,
                 ))

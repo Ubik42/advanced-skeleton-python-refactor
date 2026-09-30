@@ -21,14 +21,14 @@ class BodyTorsoTests(unittest.TestCase):
     def test_hierarchy_and_limb_origins_are_explicit(self):
         plan = self.plan()
         self.assertEqual(len(plan.controls.controls), 7)
-        self.assertEqual(len(plan.attachments), 16)
+        self.assertEqual(len(plan.attachments), 12)
         self.assertEqual(len(plan.node_names), len(set(plan.node_names)))
         controls = {spec.driven_joint.rsplit("|", 1)[-1]: spec for spec in plan.controls.controls}
         self.assertEqual(controls["Head_M"].parent_path, controls["Neck_M"].control_path)
         self.assertEqual(controls["Scapula_L"].parent_path, controls["Chest_M"].control_path)
         self.assertEqual(plan.pelvis_translation.target, self.body.root)
         origins = [spec for spec in plan.attachments if spec.translation_only]
-        self.assertEqual(len(origins), 12)
+        self.assertEqual(len(origins), 8)
         self.assertTrue(all(spec.kind == "parentConstraint" for spec in origins))
         self.assertFalse(any("IKControls" in spec.target for spec in plan.attachments))
 
