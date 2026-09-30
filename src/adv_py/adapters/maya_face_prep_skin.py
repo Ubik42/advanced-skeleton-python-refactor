@@ -7,7 +7,7 @@ from contextlib import nullcontext
 
 
 class MayaFacePrepSkinMixin:
-    def prepare_original_face_skin(self, source):
+    def prepare_original_face_skin_environment(self, source):
         self._require_transaction()
         c = self._cmds
         raw = getattr(c, "raw", c)
@@ -28,6 +28,12 @@ class MayaFacePrepSkinMixin:
             except RuntimeError:
                 pass  # MEL catchQuiet for Maya versions without cache support.
         raw.setAttr(skin + ".skinningMethod", 0)
+    def prepare_original_face_skin(self, source, *, environment_prepared=False):
+        self._require_transaction()
+        c = self._cmds
+        raw = getattr(c, "raw", c)
+        if not environment_prepared:
+            self.prepare_original_face_skin_environment(source)
         for node in ("upperTempSoftModHandle1", "lowerTempSoftModHandle1",
                      "upperTempSoftModHandle2", "lowerTempSoftModHandle2"):
             if c.objExists(node):
@@ -87,6 +93,10 @@ class MayaFacePrepSkinMixin:
         c = self._cmds
         raw = getattr(c, "raw", c)
         self.ensure_face_advanced_base(source["head"], source["geometry"], source["all_head"])
+        if (source.get("keep_all") or source.get("keep_custom")) and c.objExists("FaceCustomSystem"):
+            parents = c.listRelatives("FaceCustomSystem", parent=True) or []
+            if not parents:
+                c.parent("FaceCustomSystem", "FaceMotionSystem")
         scale = source["scale"] / 14.4300
         for node in ("OnFacecontrols", "ConstrainedSetup"):
             c.setAttr(node + ".s", scale, scale, scale, type="float3")

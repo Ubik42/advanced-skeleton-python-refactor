@@ -2176,6 +2176,27 @@ class MayaPanelController:
         if action=="brow": return BuildFaceBrow(host).apply()
         return EditFaceCage(host).apply(action,smooth_passes or 0)
 
+    def face_original_build(self, namespace: str, *, step=None, keep=None,
+                            manually_restore=False, cage_smooth=None, jaw_smooth=50,
+                            lip_falloff=None):
+        from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
+        from adv_py.application.face_original_build import BuildOriginalFace, BuildOriginalFaceStep
+        host = MayaOriginalFaceBuildHost(namespace=None if namespace == ":" else namespace)
+        arguments = dict(keep=keep, cage_smooth=cage_smooth, jaw_smooth=jaw_smooth,
+                         lip_falloff=lip_falloff)
+        if step is not None:
+            return BuildOriginalFaceStep(host).apply(step, **arguments)
+        return BuildOriginalFace(host).apply(manually_restore=manually_restore, **arguments)
+
+    def face_original_restore(self, namespace: str, *, keep=None):
+        from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
+        host = MayaOriginalFaceBuildHost(namespace=None if namespace == ":" else namespace)
+        with host.transaction("恢复原版 Face 重建"):
+            result = host.restore_original_face(keep)
+            if result is not None:
+                host.complete_original_face_build_step(30)
+            return result
+
     def face_expression(self,namespace: str,stage: str):
         from adv_py.adapters.maya_face_expressions import MayaFaceExpressionHost
         from adv_py.application.face_expressions import FitFaceExpression

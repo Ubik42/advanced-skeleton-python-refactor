@@ -1,4 +1,4 @@
-"""Original first-build branch of asFacePrep; rebuild prefix branch separate."""
+"""Shared first-build and rebuild preparation of original asFacePrep."""
 from adv_py.application.face_pre import FacePreRole
 from adv_py.core.face_build_requirements import FaceInclude, required_face_fit_nodes
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -15,13 +15,17 @@ class MayaFacePrepFirstMixin(MayaFaceForeHeadFitMixin):
         return MayaFaceFitMarkersHost._marker_containers(self, fit, section, suffix, holder)
 
     def capture_original_face_first_prep(self):
+        return self.capture_original_face_prep(allow_rebuild=False)
+
+    def capture_original_face_prep(self, *, allow_rebuild=True):
         c = self._cmds
         raw = getattr(c, "raw", c)
         fit = self._fit(required=True)
         if c.objExists("prefix_FaceGroup"):
             raise FitSkeletonValidationError("prefix_FaceGroup 表示前次重建未完成，请先恢复该次重建")
-        if c.objExists("FaceMotionSystem"):
-            raise FitSkeletonValidationError("当前已有 Face 系统；此入口用于首次准备，完整重建恢复仍待接入")
+        rebuild = bool(c.objExists("FaceMotionSystem"))
+        if rebuild and not allow_rebuild:
+            raise FitSkeletonValidationError("当前已有 Face 系统，请使用完整重建入口")
         if not c.objExists(fit + ".faceScale"):
             raise FitSkeletonValidationError("请先选择 Mask")
         geometry = self.read_face_objects(FacePreRole.FACE)
@@ -52,18 +56,25 @@ class MayaFacePrepFirstMixin(MayaFaceForeHeadFitMixin):
             if not raw.objExists(self.scene_address(mesh)) or not self._original_pupil_skin(self.scene_address(mesh), exclude_prefix=False):
                 raise FitSkeletonValidationError("All Head 缺少网格或 Skin：" + mesh)
         for name in ("Nose_M", "Eye_R", "Eye1_R", "Eye_L", "Eye1_L"):
-            if c.objExists(name):
+            if not rebuild and c.objExists(name):
                 raise FitSkeletonValidationError("Face 构建名称已占用：" + name)
         return {"geometry": geometry[0], "all_head": all_head, "head": head,
                 "skin": self.original_face_production_skin(geometry[0], head),
-                "scale": float(c.getAttr(fit + ".faceScale")), "non_sym": non_sym,
+                "scale": float(c.getAttr(fit + ".faceScale")), "non_sym": non_sym, "rebuild": rebuild,
                 "game": bool(c.objExists(fit + ".GameEngine") and c.getAttr(fit + ".GameEngine"))}
 
     def prepare_original_face_first_build(self, source):
+        return self.prepare_original_face_build(source)
+
+    def prepare_original_face_build(self, source, options=None):
         self._require_transaction()
         c = self._cmds
         raw = getattr(c, "raw", c)
         fit = self._fit(required=True)
+        from .maya_face_restore import OriginalFaceKeepOptions
+        options = options or OriginalFaceKeepOptions()
+        source["keep_all"] = options.all
+        source["keep_custom"] = options.custom_controls
         self._transaction_changed = True
         if c.objExists("FaceFitNoseCenter"):
             for node in c.ls("*NoseCenter*", type="transform") or []:
@@ -85,7 +96,7 @@ class MayaFacePrepFirstMixin(MayaFaceForeHeadFitMixin):
                 from maya import mel
                 mel.eval(script)  # User-provided hook, never the ADV procedure.
         self._original_face_prep_forehead_direction(source)
-        if c.objExists(fit + ".run"):
+        if not source.get("rebuild") and c.objExists(fit + ".run"):
             c.setAttr(fit + ".run", "", type="string")
         for name in ("upperTempSoftModHandle", "lowerTempSoftModHandle"):
             if c.objExists(name):
@@ -102,6 +113,9 @@ class MayaFacePrepFirstMixin(MayaFaceForeHeadFitMixin):
             completed = False
         if not completed:
             self._original_face_first_cleanup(source)
+        # The source decides first-build versus prefix capture after removing
+        # incomplete prior builds, not from the initial preflight snapshot.
+        source["rebuild"] = bool(c.objExists("FaceMotionSystem"))
         skin = self.scene_address(source["skin"])
         if raw.getAttr(skin + ".maintainMaxInfluences"):
             raw.setAttr(skin + ".maintainMaxInfluences", False)
@@ -110,11 +124,14 @@ class MayaFacePrepFirstMixin(MayaFaceForeHeadFitMixin):
         if c.objExists("Main.jointVis"):
             c.setAttr("Main.jointVis", False)
         self.prepare_original_face_fit_sides()
+        self.prepare_original_face_skin_environment(source)
+        if source.get("rebuild"):
+            self.capture_original_face_previous_rig(source)
         before = self.capture_face_build_node_ids()
-        self.prepare_original_face_skin(source)
+        self.prepare_original_face_skin(source, environment_prepared=True)
         self.finish_original_face_preparation(source)
         self.register_face_module_nodes(before, "FacePrepSet", production_skins=(source["skin"],))
-        return {"skin": source["skin"], "original_stage": "asFacePrep first build"}
+        return {"skin": source["skin"], "original_stage": "asFacePrep", "rebuild": source.get("rebuild", False)}
 
     def _original_face_prep_forehead_direction(self, source):
         """Refresh legacy ForeHead curve direction before Fit duplication."""

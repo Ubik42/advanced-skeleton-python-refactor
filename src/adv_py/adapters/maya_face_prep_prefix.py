@@ -1,7 +1,8 @@
 """Original asFacePrep previous-rig capture, MEL 31357–31500.
 
 This internal stage preserves the source prefix graph and weight holders.
-It is not an exposed rebuild operation until restoration is connected.
+The full native Face build calls this stage before regenerating Skin, then
+restores the captured graph through asFaceRebuildRestore's Python port.
 """
 
 
@@ -101,6 +102,11 @@ class MayaFacePrepPrefixMixin:
             if node is None:
                 continue
             leaf = node.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            if leaf.startswith("prefix_"):
+                # Renaming a transform may already rename its Shape. The MEL
+                # walk then skips that Shape because its old name is gone.
+                renamed.append(node)
+                continue
             renamed.append(c.rename(node, "prefix_" + leaf))
         c.parent("prefix_FaceMotionSystem", "prefix_FaceDeformationSystem", prefix)
         for node in c.listRelatives(prefix, allDescendents=True, type="transform") or []:

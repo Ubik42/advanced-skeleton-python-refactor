@@ -1635,6 +1635,11 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._face_build_toggle_fit_advanced))
             form.addRow(self._button("检查 FaceSetup 输入",
                                      self._face_build_inspect_inputs))
+            form.addRow(self._button("Build Advanced Face", self._face_original_build, primary=True))
+            self.face_original_manual_restore = QtWidgets.QCheckBox("手动运行 RebuildRestore")
+            form.addRow(self.face_original_manual_restore)
+            form.addRow(self._button("RebuildRestore", self._face_original_restore))
+
             form.addRow(self._button("建立双侧眼睑关节与蒙皮",
                                      self._face_build_eye_lids))
             form.addRow(self._button("返回 Face 构建姿态",
@@ -3875,6 +3880,19 @@ def create_panel(controller: MayaPanelController | None = None):
             if isinstance(result,dict) and "smooth_passes" in result:
                 self.face_cage_smooth.setValue(result["smooth_passes"])
             return "Face Cage 操作完成："+action
+
+        def _face_original_build(self):
+            from adv_py.core.face_lip_falloff import LipFalloffOptions
+            options = LipFalloffOptions(outer=self.face_lip_falloff_outer.value(),
+                inner=self.face_lip_falloff_inner.value(), iterations=self.face_lip_falloff_iterations.value())
+            result = self.controller.face_original_build(self._namespace(),
+                manually_restore=self.face_original_manual_restore.isChecked(),
+                cage_smooth=None, jaw_smooth=self.face_jaw_smooth.value(), lip_falloff=options)
+            return "Face 构建结束，等待手动恢复" if result["restore_pending"] else "原版 Face 构建步骤执行完成"
+
+        def _face_original_restore(self):
+            result = self.controller.face_original_restore(self._namespace())
+            return "Face 重建恢复完成" if result is not None else "没有待恢复的 Face 重建"
 
         def _face_expression(self,stage):
             result=self.controller.face_expression(self._namespace(),stage)
