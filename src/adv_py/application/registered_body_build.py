@@ -790,6 +790,12 @@ class BuildRegisteredBodyCharacter:
                         if _generic_fk_policy is not None
                         and _generic_fk_policy.bendy_secondary_matrix_controls
                         is not None else True),
+                    mel_main_influence_follow=(
+                        chain.control_names[0] in
+                        _generic_fk_policy.bendy_main_influence_controls
+                        if _generic_fk_policy is not None
+                        and _generic_fk_policy.bendy_main_influence_controls
+                        is not None else True),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None

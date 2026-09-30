@@ -149,6 +149,7 @@ class MayaCharacterRegistryMixin:
         bendy_additive_micro = set()
         bendy_opm_offset_scale = set()
         bendy_secondary_matrix = set()
+        bendy_main_influence = set()
         for control in bendy_master_paths:
             stem, side = control.rsplit('_', 1)
             master_leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
@@ -183,6 +184,15 @@ class MayaCharacterRegistryMixin:
                           + '.advPyBendyOpmOffsetScale')
             secondary_marker = (bendy_master_paths[control]
                                 + '.advPyBendySecondaryMatrixFollow')
+            main_influence_marker = (bendy_master_paths[control]
+                                     + '.advPyBendyMainInfluenceFollow')
+            if c.objExists(main_influence_marker):
+                if (not bool(c.getAttr(main_influence_marker))
+                        or not c.getAttr(main_influence_marker,
+                                         lock=True)):
+                    raise CharacterRegistryError(
+                        'Bendy 主导向关节标记已损坏：' + control)
+                bendy_main_influence.add(control)
             if c.objExists(secondary_marker):
                 if (not bool(c.getAttr(secondary_marker))
                         or not c.getAttr(secondary_marker, lock=True)):
@@ -492,7 +502,9 @@ class MayaCharacterRegistryMixin:
             bendy_opm_offset_scale_controls=frozenset(
                 bendy_opm_offset_scale),
             bendy_secondary_matrix_controls=frozenset(
-                bendy_secondary_matrix))
+                bendy_secondary_matrix),
+            bendy_main_influence_controls=frozenset(
+                bendy_main_influence))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

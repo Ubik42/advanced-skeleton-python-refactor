@@ -49,6 +49,7 @@ class FitBendyChainSpec:
     non_opm_additive_micro_scale: bool = False
     opm_offset_only_scale: bool = False
     secondary_matrix_follow: bool = False
+    mel_main_influence_follow: bool = False
 
     def __post_init__(self) -> None:
         if (not self.part_names
@@ -124,6 +125,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy OPM 缩放策略无效")
         if type(self.secondary_matrix_follow) is not bool:
             raise ValueError("Bendy 第二曲线矩阵跟随策略无效")
+        if type(self.mel_main_influence_follow) is not bool:
+            raise ValueError("Bendy 主曲线导向关节策略无效")
         if self.opm_offset_only_scale and self.non_opm_additive_micro_scale:
             raise ValueError("Bendy OPM 与非 OPM 缩放策略不能同时启用")
         if (self.opm_offset_only_scale
@@ -362,8 +365,14 @@ class FitBendyChainSpec:
                 *((self.simple_proxy_name,) if self.simple_proxy_layout
                   else ()),
                 *(name + "Shape" for name in self.control_names),
-                *("AdvPy_BendGuide" + name
+                *(("AdvPy_BendGuide" + name
+                    + ("MM" if self.mel_main_influence_follow
+                       and self.opm_offset_only_scale else ""))
                   for name in self.influence_names),
+                *("AdvPy_BendGuide" + name + "Scale"
+                  for name in self.influence_names
+                  if self.mel_main_influence_follow
+                  and not self.opm_offset_only_scale),
                 self.end_proxy_name, *self.motion_path_names,
                 *self.motion_transform_names,
                 *((self.junction_name, self.junction_name + "Shape",

@@ -123,6 +123,7 @@ class GenericFkFeaturePolicy:
     bendy_additive_micro_scale_controls: frozenset[str] | None = None
     bendy_opm_offset_scale_controls: frozenset[str] | None = None
     bendy_secondary_matrix_controls: frozenset[str] | None = None
+    bendy_main_influence_controls: frozenset[str] | None = None
 
 
 def plan_body_generic_fk(
