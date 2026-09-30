@@ -207,6 +207,17 @@ class MayaCharacterRegistryMixin:
                 bendy_counts.append((control, indices[-1]))
                 if indices == [0, 1] and not proxy_paths:
                     bendy_legacy_simple.add(control)
+            for index in indices:
+                child = stem + str(index) + '_' + side
+                output = (namespace + 'AdvPy_' + child + 'TwistX'
+                          if control in bendy_legacy_twist_outputs else
+                          namespace + 'BendX'
+                          + stem.removeprefix('Bend')
+                          + str(index) + '_' + side)
+                if (not c.objExists(output)
+                        or c.nodeType(output) != 'transform'):
+                    raise CharacterRegistryError(
+                        'Bendy 子控缺少扭转输出层：' + child)
             end_proxy = (namespace + 'BendX'
                          + stem.removeprefix('Bend')
                          + str(bendy_counts[-1][1] + 1)
