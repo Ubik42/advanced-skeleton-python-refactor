@@ -233,6 +233,7 @@ from adv_py.core.skin_bind import (
     SmoothBindPreferences,
     SkinWeightNormalization,
     SkinningMethod,
+    SkinWeightDistribution,
 )
 from adv_py.core.skin_weights import (
     SKIN_WEIGHT_VISIBLE_THRESHOLD,
@@ -5433,11 +5434,18 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             raise FitSkeletonValidationError(
                 "Geodesic Voxel 绑定需要 Maya 图形会话")
         remove = option("removeUnusedInfluences", 0)
+        distribution = {
+            0: SkinWeightDistribution.DISTANCE,
+            1: SkinWeightDistribution.NEIGHBORS,
+        }.get(option("weightDistribution", 0))
         if remove not in (0, 1):
             raise FitSkeletonValidationError(
                 "Maya Smooth Bind 未使用影响关节选项无效")
+        if distribution is None:
+            raise FitSkeletonValidationError(
+                "Maya Smooth Bind 权重分布选项无效")
         return SmoothBindPreferences(bind, normalization, skinning,
-                                     bool(obey), bool(remove))
+                                     bool(obey), bool(remove), distribution)
 
     def create_skin_bind(self, plan: SkinBindPlan) -> None:
         self._require_transaction()
@@ -5474,8 +5482,13 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     SkinWeightNormalization.POST: 2,
                 }[plan.normalization],
                 maximumInfluences=plan.maximum_influences,
+                dropoffRate=4.0,
                 obeyMaxInfluences=plan.maintain_maximum_influences,
                 removeUnusedInfluence=plan.remove_unused_influences,
+                weightDistribution={
+                    SkinWeightDistribution.DISTANCE: 0,
+                    SkinWeightDistribution.NEIGHBORS: 1,
+                }[plan.weight_distribution],
                 name=plan.skin_name,
             )
             if not created or created[0] != plan.skin_name:
@@ -5550,9 +5563,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         skinning_method = {
             0: SkinningMethod.CLASSIC_LINEAR,
             1: SkinningMethod.DUAL_QUATERNION,
+            2: SkinningMethod.WEIGHT_BLENDED,
         }.get(int(c.getAttr(f"{skin}.skinningMethod")))
+        weight_distribution = {
+            0: SkinWeightDistribution.DISTANCE,
+            1: SkinWeightDistribution.NEIGHBORS,
+        }.get(int(c.getAttr(f"{skin}.weightDistribution")))
         if (bind_method is None or normalization is None
-                or skinning_method is None):
+                or skinning_method is None or weight_distribution is None):
             raise FitSkeletonValidationError(
                 "旧 Skin 的绑定、归一化或蒙皮算法无法安全重建")
         if bind_method is SkinBindMethod.GEODESIC_VOXEL:
@@ -5572,6 +5590,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             int(c.getAttr(f"{skin}.maxInfluences")),
             bool(c.getAttr(f"{skin}.maintainMaxInfluences")),
             bind_method, normalization, skinning_method,
+            weight_distribution,
             float(c.getAttr(f"{skin}.envelope")), envelope_source,
             set_memberships,
             c.getAttr(f"{skin}.{TOPOLOGY_ATTRIBUTE}"),
@@ -5676,6 +5695,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             1: SkinningMethod.DUAL_QUATERNION,
             2: SkinningMethod.WEIGHT_BLENDED,
         }.get(int(self._cmds.getAttr(f"{skin}.skinningMethod")))
+        weight_distribution = {
+            0: SkinWeightDistribution.DISTANCE,
+            1: SkinWeightDistribution.NEIGHBORS,
+        }.get(int(self._cmds.getAttr(f"{skin}.weightDistribution")))
         return SkinBindSnapshot(
             skin,
             tuple(geometry),
@@ -5685,8 +5708,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             bind_method,
             normalization,
             skinning_method,
-            self._cmds.connectionInfo(
-                skin + ".geomBind", sourceFromDestination=True) or None,
+            ((self._cmds.listConnections(
+                skin + ".geomBind", source=True, destination=True,
+                plugs=True) or [None])[0]),
+            weight_distribution,
         )
 
     def capture_skin_weight_input(

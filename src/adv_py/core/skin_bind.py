@@ -23,6 +23,11 @@ class SkinningMethod(str, Enum):
     WEIGHT_BLENDED = "weight_blended"
 
 
+class SkinWeightDistribution(str, Enum):
+    DISTANCE = "distance"
+    NEIGHBORS = "neighbors"
+
+
 class SkinBindValidationError(ValueError):
     pass
 
@@ -34,11 +39,14 @@ class SmoothBindPreferences:
     skinning_method: SkinningMethod = SkinningMethod.DUAL_QUATERNION
     maintain_maximum_influences: bool = False
     remove_unused_influences: bool = False
+    weight_distribution: SkinWeightDistribution = SkinWeightDistribution.DISTANCE
 
     def __post_init__(self) -> None:
         if (not isinstance(self.bind_method, SkinBindMethod)
                 or not isinstance(self.normalization, SkinWeightNormalization)
                 or not isinstance(self.skinning_method, SkinningMethod)
+                or not isinstance(self.weight_distribution,
+                                  SkinWeightDistribution)
                 or type(self.maintain_maximum_influences) is not bool
                 or type(self.remove_unused_influences) is not bool):
             raise SkinBindValidationError("Smooth Bind 选项无效")
@@ -55,6 +63,7 @@ class SkinBindPlan:
     normalization: SkinWeightNormalization
     skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR
     remove_unused_influences: bool = False
+    weight_distribution: SkinWeightDistribution = SkinWeightDistribution.DISTANCE
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +86,7 @@ class SkinBindSnapshot:
     normalization: SkinWeightNormalization | None
     skinning_method: SkinningMethod | None = SkinningMethod.CLASSIC_LINEAR
     geodesic_source: str | None = None
+    weight_distribution: SkinWeightDistribution | None = SkinWeightDistribution.DISTANCE
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +107,7 @@ def plan_skin_bind(
     normalization: SkinWeightNormalization = SkinWeightNormalization.INTERACTIVE,
     skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR,
     remove_unused_influences: bool = False,
+    weight_distribution: SkinWeightDistribution = SkinWeightDistribution.DISTANCE,
 ) -> SkinBindPlan:
     if not isinstance(mesh_path, str) or not mesh_path.strip():
         raise SkinBindValidationError("Skin Bind 需要显式 mesh 路径")
@@ -129,6 +140,8 @@ def plan_skin_bind(
         raise SkinBindValidationError("Skin Bind 蒙皮计算方法无效")
     if type(remove_unused_influences) is not bool:
         raise SkinBindValidationError("Skin Bind 未使用影响关节选项无效")
+    if not isinstance(weight_distribution, SkinWeightDistribution):
+        raise SkinBindValidationError("Skin Bind 权重分布方法无效")
     return SkinBindPlan(
         mesh_path.strip(),
         tuple(path.strip() for path in influence_paths),
@@ -139,6 +152,7 @@ def plan_skin_bind(
         normalization,
         skinning_method,
         remove_unused_influences,
+        weight_distribution,
     )
 
 
@@ -233,6 +247,11 @@ def audit_skin_bind_result(
             snapshot.skinning_method is plan.skinning_method,
             "skinning_method_mismatch",
             "蒙皮计算方法不一致",
+        ),
+        (
+            snapshot.weight_distribution is plan.weight_distribution,
+            "weight_distribution_mismatch",
+            "权重分布方法不一致",
         ),
         (
             plan.bind_method is not SkinBindMethod.GEODESIC_VOXEL

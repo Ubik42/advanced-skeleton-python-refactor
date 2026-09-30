@@ -9,6 +9,7 @@ from adv_py.core.skin_bind import (
     SkinBindMethod,
     SkinWeightNormalization,
     SkinningMethod,
+    SkinWeightDistribution,
     SkinBindInputState,
     SkinBindIssue,
     SkinBindPlan,
@@ -76,6 +77,7 @@ class BindSkin:
         normalization: SkinWeightNormalization = SkinWeightNormalization.INTERACTIVE,
         skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR,
         remove_unused_influences: bool = False,
+        weight_distribution: SkinWeightDistribution = SkinWeightDistribution.DISTANCE,
     ) -> SkinBindBuildPlan:
         bind = plan_skin_bind(
             mesh_path,
@@ -87,6 +89,7 @@ class BindSkin:
             normalization=normalization,
             skinning_method=skinning_method,
             remove_unused_influences=remove_unused_influences,
+            weight_distribution=weight_distribution,
         )
         state = self._host.capture_skin_bind_input(bind)
         return SkinBindBuildPlan(
@@ -108,6 +111,7 @@ class BindSkin:
         normalization: SkinWeightNormalization = SkinWeightNormalization.INTERACTIVE,
         skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR,
         remove_unused_influences: bool = False,
+        weight_distribution: SkinWeightDistribution = SkinWeightDistribution.DISTANCE,
     ) -> SkinBindBuildResult:
         plan = self.plan(
             mesh_path,
@@ -119,6 +123,7 @@ class BindSkin:
             normalization=normalization,
             skinning_method=skinning_method,
             remove_unused_influences=remove_unused_influences,
+            weight_distribution=weight_distribution,
         )
         if not plan.ready:
             raise FitSkeletonValidationError(

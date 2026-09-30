@@ -41,7 +41,10 @@ class MayaOneJointPropHost(MayaBodyBuildHost):
                                constructionHistory=False)[0]
             c.parent(control, group, absolute=True)
             c.xform(control, worldSpace=True, translation=center)
-            c.parentConstraint(control, joint, maintainOffset=True)
+            c.parentConstraint(control, joint, maintainOffset=True,
+                               name="AdvPy_PropMainParent")
+            c.scaleConstraint(control, joint, maintainOffset=True,
+                              name="AdvPy_PropMainScale")
             if not c.objExists("Hi"):
                 c.createDisplayLayer(name="Hi", number=1, empty=True)
             c.setAttr("Hi.displayType", 1)

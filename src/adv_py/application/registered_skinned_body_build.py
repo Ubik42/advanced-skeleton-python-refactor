@@ -112,7 +112,9 @@ class BuildRegisteredSkinnedBodyCharacter:
                 normalization=plan.smooth_bind.normalization,
                 skinning_method=plan.smooth_bind.skinning_method,
                 remove_unused_influences=(
-                    plan.smooth_bind.remove_unused_influences))
+                    plan.smooth_bind.remove_unused_influences),
+                weight_distribution=(
+                    plan.smooth_bind.weight_distribution))
                 for mesh, name in zip(geometry_meshes, plan.skin_names))
             finalize_body_character_sets(
                 joined, character.registration, character.rig.plan,

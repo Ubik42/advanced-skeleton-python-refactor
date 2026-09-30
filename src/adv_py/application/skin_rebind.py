@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.skin_bind import (
     SkinBindMethod, SkinWeightNormalization, SkinningMethod,
+    SkinWeightDistribution,
     audit_skin_bind_result, plan_skin_bind,
 )
 from adv_py.core.skin_weight_surface_source import SkinWeightSurfaceSource
@@ -24,6 +25,7 @@ class SkinRebindState:
     bind_method: SkinBindMethod
     normalization: SkinWeightNormalization
     skinning_method: SkinningMethod
+    weight_distribution: SkinWeightDistribution
     envelope: float
     envelope_source: str | None
     set_memberships: tuple[str, ...]
@@ -64,7 +66,8 @@ class RebindSkinFromSurfaceSource:
             maintain_maximum_influences=state.maintain_maximum_influences,
             bind_method=state.bind_method,
             normalization=state.normalization,
-            skinning_method=state.skinning_method)
+            skinning_method=state.skinning_method,
+            weight_distribution=state.weight_distribution)
         with self._host.transaction("引用模型拓扑更新后重绑 Skin 并转移权重"):
             if self._host.capture_skin_rebind_state(skin, mesh) != state:
                 raise FitSkeletonValidationError("目标 Skin 或模型在执行前发生变化")
