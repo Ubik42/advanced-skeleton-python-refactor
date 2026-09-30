@@ -1,5 +1,6 @@
 """Original facial fitting stages and combined mouth-corner driver graph."""
 from math import dist
+from .maya_original_driver_attributes import MayaOriginalDriverAttributesMixin
 from .maya_face_cage import MayaFaceCageHost
 from .maya_face_smile import MayaFaceSmileMixin
 from .maya_face_brow import MayaFaceBrowMixin
@@ -18,38 +19,9 @@ from .maya_face_prep_prefix import MayaFacePrepPrefixMixin
 from .maya_face_arkit import MayaFaceARKitMixin
 from .maya_face_bs_conversion import MayaFaceBSConversionMixin
 
-class MayaFaceExpressionHost(MayaFaceBSConversionMixin,MayaFaceARKitMixin,MayaFacePrepPrefixMixin,MayaFacePrepFirstMixin,MayaFacePrepSkinMixin,MayaFaceEyeLidOriginalMixin,MayaFacePrepFitsMixin,MayaFacePupilIrisMixin,MayaFaceEyeBallMixin,MayaFaceRobloxMixin,MayaFaceEyePosesMixin,MayaFaceFinishMixin,MayaFaceSpeechMixin,MayaFaceSmileMixin,MayaFaceBrowMixin,MayaFaceUpMidLoMixin,MayaFaceCageHost):
+class MayaFaceExpressionHost(MayaOriginalDriverAttributesMixin,MayaFaceBSConversionMixin,MayaFaceARKitMixin,MayaFacePrepPrefixMixin,MayaFacePrepFirstMixin,MayaFacePrepSkinMixin,MayaFaceEyeLidOriginalMixin,MayaFacePrepFitsMixin,MayaFacePupilIrisMixin,MayaFaceEyeBallMixin,MayaFaceRobloxMixin,MayaFaceEyePosesMixin,MayaFaceFinishMixin,MayaFaceSpeechMixin,MayaFaceSmileMixin,MayaFaceBrowMixin,MayaFaceUpMidLoMixin,MayaFaceCageHost):
     def create_original_face_blended_attribute(self,drivers,attribute):
-        """asCreateCustomBlendedAttribute's two-axis combination, source 66118."""
-        c=self._cmds
-        node=drivers[0].split(".",1)[0]
-        if c.objExists(node+"."+attribute): return attribute
-        values=[c.getAttr(plug) for plug in drivers]
-        c.addAttr(node,longName=attribute,attributeType="double",keyable=False)
-        c.setAttr(node+"."+attribute,channelBox=True)
-        if not node.startswith("FK") and c.objExists("FK"+node):
-            c.addAttr("FK"+node,longName=attribute,attributeType="double",keyable=False)
-            c.setAttr("FK"+node+"."+attribute,channelBox=True)
-            c.connectAttr(node+"."+attribute,"FK"+node+"."+attribute)
-        multiply=self._lip_node("multiplyDivide",node+attribute+"MPD")
-        for plug,axis,value in zip(drivers,"XY",values):
-            c.connectAttr(self.original_face_output_bw(plug),multiply+".input1"+axis)
-            if value==-1: c.setAttr(multiply+".input2"+axis,-1)
-        plus=self._lip_node("plusMinusAverage",node+attribute+"PlusMinusAverage")
-        for index,axis in enumerate("XY"): c.connectAttr(multiply+".output"+axis,plus+f".input1D[{index}]")
-        scale=self._lip_node("setRange",node+attribute+"SetRange")
-        c.connectAttr(plus+".output1D",scale+".valueX",force=True)
-        c.setAttr(scale+".max",100,100,100); c.setAttr(scale+".oldMax",200,200,200)
-        for axis,value in zip("XY",values): c.addAttr(scale,longName="dv"+axis,attributeType="double",defaultValue=value,keyable=True)
-        c.addAttr(scale,longName="setQRotatesCmd",dataType="string")
-        c.setAttr(scale+".setQRotatesCmd","",type="string")
-        clamp=self._lip_node("clamp",node+attribute+"Clamp")
-        c.connectAttr(scale+".outValueX",clamp+".inputR")
-        c.addAttr(node,longName=attribute+"MaxValue",attributeType="double",defaultValue=10)
-        c.connectAttr(node+"."+attribute+"MaxValue",clamp+".maxR")
-        c.connectAttr(clamp+".outputR",node+"."+attribute)
-        self.original_face_output_bw(node+"."+attribute)
-        return attribute
+        return self.create_original_blended_attribute(drivers,attribute)
 
     def fit_original_face_squint(self):
         c=self._cmds; fit=self._fit(required=True)

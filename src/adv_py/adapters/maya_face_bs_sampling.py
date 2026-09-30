@@ -1,6 +1,5 @@
 """Actual native geometry samples and SDK targets, source 43050–43280."""
 from contextlib import nullcontext
-from math import sqrt
 from adv_py.core.face_blendshape_conversion import (original_face_bs_target_name,
     original_face_bs_driving_value)
 
@@ -13,32 +12,7 @@ class MayaFaceBSSamplingMixin:
             attr in ("smile", "frown", "narrowSmile", "narrowFrown"))
 
     def set_original_face_blended_attribute(self, control, attr, value):
-        """asSetBlendedAttribute's native Face two-axis graph traversal."""
-        c = self._cmds
-        plug = control + "." + attr
-        drivers, dvs = [], []
-        while True:
-            upstream = c.listConnections(plug, source=True, destination=False, skipConversionNodes=True) or []
-            if not upstream:
-                break
-            node = upstream[0]
-            if c.nodeType(node) == "multiplyDivide":
-                plug = node + ".input1.input1X"
-                continue
-            if c.nodeType(node) == "setRange":
-                dvs.extend((c.getAttr(node + ".dvX"), c.getAttr(node + ".dvY")))
-                pma = c.listConnections(node + ".valueX", source=True, destination=False, skipConversionNodes=True)[0]
-                mpd = c.listConnections(pma + ".input1D[0]", source=True, destination=False, skipConversionNodes=True)[0]
-                for axis in "XY":
-                    source = c.listConnections(mpd + ".input1" + axis, source=True, destination=False, skipConversionNodes=True)[0]
-                    source_plug = source + ".input[0]" if c.nodeType(source) == "blendWeighted" else mpd + ".input1" + axis
-                    drivers.append(c.listConnections(source_plug, source=True, destination=False, plugs=True, skipConversionNodes=True)[0])
-            break
-        for driver, dv in zip(drivers, dvs):
-            fk = "FK" + driver
-            target = fk if c.objExists(fk) else driver
-            c.setAttr(target, sqrt(dv * dv * value) if value < 1 else dv)
-        return tuple(sorted(drivers))
+        return self.set_original_blended_attribute(control,attr,value)
 
     def _original_face_bs_front(self, geometry, name):
         c = self._cmds

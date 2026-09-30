@@ -325,7 +325,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('Driving Systems', ('03 · 动画通道',
                                          '04 · 区间模式转换',
                                          '05 · 控制空间事件')),
-                    ('Corrective Shapes', ()),
+                    ('Corrective Shapes', ('07 · 原版 Corrective Shapes',)),
                     ('Pose Functions', ('01 · 当前姿态',
                                         '02 · 全身动画',
                                         '06 · 角色预设')))),
@@ -1461,6 +1461,91 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("控制位置", self.space_key), ("目标空间", self.space_mode),
                 ("切换帧", self.space_frame)])
             form.addRow(self._button("在指定帧切换空间", self._switch_animation_space))
+            stack.addWidget(group)
+
+            group, form = self._group("08 · 原版 Driving Systems", [])
+            self.original_driving_targets = QtWidgets.QComboBox()
+            form.addRow("驱动属性",self.original_driving_targets)
+            form.addRow(self._button("刷新原版驱动属性",self._original_driving_refresh))
+            for label,action in (("查看驱动 SDK 曲线","graph"),("更新驱动软范围","range"),("镜像右侧 SDK 到左侧","mirror"),
+                                 ("静音所选 SDK","mute"),("恢复 SDK 驱动","unmute"),("退出驱动预览","remove_preview")):
+                form.addRow(self._button(label,lambda action=action:self._original_driving_action(action)))
+            self.original_driving_driver = QtWidgets.QLineEdit()
+            self.original_driving_driven = QtWidgets.QLineEdit()
+            self.original_driving_driver_value = QtWidgets.QDoubleSpinBox()
+            self.original_driving_driven_value = QtWidgets.QDoubleSpinBox()
+            for box in (self.original_driving_driver_value,self.original_driving_driven_value):
+                box.setDecimals(3);box.setRange(-100000,100000)
+            self.original_driving_driver_value.setValue(10)
+            self.original_driving_driven_value.setValue(1)
+            form.addRow("驱动通道",self.original_driving_driver)
+            form.addRow(self._button("记录所选驱动通道",lambda:self._original_driving_record("driver")))
+            form.addRow("被驱动通道",self.original_driving_driven)
+            form.addRow(self._button("记录所选被驱动通道",lambda:self._original_driving_record("driven")))
+            form.addRow("驱动值",self.original_driving_driver_value)
+            form.addRow("目标值",self.original_driving_driven_value)
+            form.addRow(self._button("建立原版 SDK 控制层",lambda:self._original_driving_action("sdk_layer")))
+            form.addRow(self._button("写入原版 SDK 键",lambda:self._original_driving_action("sdk_key")))
+            stack.addWidget(group)
+
+            self.corrective_q_rotations = QtWidgets.QCheckBox("QRotations")
+            self.corrective_q_rotations.setChecked(True)
+            self.corrective_use_softmods = QtWidgets.QCheckBox("使用 SoftMods")
+            self.corrective_mirror = QtWidgets.QCheckBox("镜像")
+            self.corrective_mirror.setChecked(True)
+            group, form = self._group("07 · 原版 Corrective Shapes", [])
+            form.addRow(QtWidgets.QLabel("先摆出需要修正的姿态，再选择角色网格。"))
+            form.addRow(self.corrective_q_rotations)
+            form.addRow(self.corrective_use_softmods)
+            form.addRow(self._button("创建 Corrective 形状",lambda:self._corrective_shapes("create")))
+            self.corrective_softmod_button = self._button("Corrective SoftMod 工具",lambda:self._corrective_shapes("softmod"))
+            self.corrective_softmod_button.setVisible(False)
+            self.corrective_use_softmods.toggled.connect(self.corrective_softmod_button.setVisible)
+            form.addRow(self.corrective_softmod_button)
+            form.addRow(QtWidgets.QLabel("右键点击编辑、删除或曲线按钮，选择已有 Corrective 目标。"))
+            row = QtWidgets.QHBoxLayout()
+            for label,action in (("编辑 Corrective","edit"),("删除 Corrective","delete"),("Corrective 曲线","graph")):
+                button = self._button(label,lambda action=action:self._corrective_select_action(action))
+                button.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+                button.customContextMenuRequested.connect(lambda point,button=button,action=action:self._corrective_popup(button,action,point))
+                row.addWidget(button)
+            form.addRow(row)
+            form.addRow(self.corrective_mirror)
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("应用 Corrective",lambda:self._corrective_shapes("apply")))
+            row.addWidget(self._button("取消 Corrective",lambda:self._corrective_shapes("cancel")))
+            form.addRow(row)
+            self.corrective_targets = QtWidgets.QComboBox()
+            form.addRow("已有目标",self.corrective_targets)
+            form.addRow(self._button("刷新 Corrective 目标",self._corrective_refresh))
+            self.corrective_source = QtWidgets.QLineEdit()
+            self.corrective_destination = QtWidgets.QLineEdit()
+            form.addRow("烘焙来源网格",self.corrective_source)
+            form.addRow(self._button("记录 Corrective 烘焙来源",lambda:self._corrective_record_mesh("source")))
+            form.addRow("烘焙目标网格",self.corrective_destination)
+            form.addRow(self._button("记录 Corrective 烘焙目标",lambda:self._corrective_record_mesh("destination")))
+            self.corrective_axes = {}
+            row = QtWidgets.QHBoxLayout()
+            for label in ("+x","+y","+z","-x","-y","-z"):
+                box = QtWidgets.QCheckBox(label)
+                box.setChecked(True)
+                self.corrective_axes[label] = box
+                row.addWidget(box)
+            form.addRow("烘焙旋转方向",row)
+            form.addRow(self._button("烘焙到 Corrective",lambda:self._corrective_shapes("bake")))
+            form.addRow(self._button("批量编辑全部 Corrective",lambda:self._corrective_shapes("batch")))
+            form.addRow(QtWidgets.QLabel("Curve-Based Deformations"))
+            self.corrective_curve_mesh = QtWidgets.QLineEdit()
+            self.corrective_curve_control = QtWidgets.QLineEdit()
+            form.addRow("曲线变形网格",self.corrective_curve_mesh)
+            form.addRow(self._button("记录曲线变形网格",lambda:self._corrective_curve_record("mesh")))
+            form.addRow("FK 控制器",self.corrective_curve_control)
+            form.addRow(self._button("记录曲线变形控制器",lambda:self._corrective_curve_record("control")))
+            for label,action in (("隐藏曲线变形来源","hide"),("创建变形曲线","create"),("解除曲线绑定","unbind"),
+                                 ("重新绑定曲线","rebind"),("创建曲线测试动画","animate"),("创建局部变形网格","mesh"),
+                                 ("显示原始网格","original"),("显示变形网格","new"),("烘焙曲线变形为 Corrective","bake"),
+                                 ("清理曲线变形设置","cleanup")):
+                form.addRow(self._button(label,lambda action=action:self._corrective_curve_shapes(action)))
             stack.addWidget(group)
 
             self.preset_directory = QtWidgets.QLineEdit()
@@ -3983,6 +4068,110 @@ def create_panel(controller: MayaPanelController | None = None):
             for target in targets:
                 self.face_bs_targets.addItem(target, target)
             return "已读取 " + str(len(targets)) + " 个原版驱动目标"
+
+        def _original_driving_refresh(self):
+            targets=self.controller.original_driving_catalog(self._namespace())
+            self.original_driving_targets.clear()
+            for target in targets:
+                self.original_driving_targets.addItem(target.control+"."+target.attribute+" / "+str(len(target.curves))+" SDK",target)
+            return "已读取 "+str(len(targets))+" 个原版驱动属性"
+
+        def _original_driving_record(self, role):
+            from maya import cmds,mel
+            selected=cmds.ls(selection=True,long=True,type="transform") or []
+            channelbox=mel.eval("global string $gChannelBoxName; $gChannelBoxName;")
+            attributes=cmds.channelBox(channelbox,query=True,selectedMainAttributes=True) or []
+            if len(selected)!=1 or len(attributes)!=1:raise ValueError("请选择一个控制器，并在 Channel Box 选择一个通道")
+            field=self.original_driving_driver if role=="driver" else self.original_driving_driven
+            field.setText(selected[0]+"."+attributes[0])
+            return "已记录驱动通道"
+
+        def _original_driving_action(self, action):
+            target=self.original_driving_targets.currentData()
+            control=target.control if target else ""
+            attribute=target.attribute if target else ""
+            if action in ("graph","range","mirror","mute") and not target:raise ValueError("请先刷新并选择驱动属性")
+            driver=self.original_driving_driver.text().strip()
+            driven=self.original_driving_driven.text().strip()
+            namespace=self._namespace()
+            def local(value):
+                return value.rsplit("|",1)[-1].removeprefix(namespace+":") if namespace!=":" else value.rsplit("|",1)[-1]
+            if action=="sdk_layer":
+                control=local(driven.split(".",1)[0])
+                if not control:raise ValueError("请记录被驱动控制器")
+            if action=="mirror" and control.endswith("_R"):control=control[:-2]+"_L"
+            result=self.controller.original_driving_systems(namespace,action,control=control,attribute=attribute,
+                driver=local(driver),driven=local(driven),driver_value=self.original_driving_driver_value.value(),
+                driven_value=self.original_driving_driven_value.value())
+            return "原版 Driving Systems 操作完成："+action
+
+        def _corrective_curve_record(self, role):
+            if role=="mesh":
+                nodes=self.controller.selected_meshes()
+            else:
+                from maya import cmds
+                nodes=cmds.ls(selection=True,long=True,type="transform") or []
+            if len(nodes)!=1:raise ValueError("请选择一个网格或 FK 控制器")
+            field=self.corrective_curve_mesh if role=="mesh" else self.corrective_curve_control
+            field.setText(nodes[0])
+            return "已记录曲线变形来源"
+
+        def _corrective_curve_shapes(self, action):
+            result=self.controller.original_corrective_shapes(self._namespace(),"curve_"+action,
+                source=self.corrective_curve_mesh.text().strip(),fk_control=self.corrective_curve_control.text().strip(),
+                use_soft_mods=self.corrective_use_softmods.isChecked(),mirror=self.corrective_mirror.isChecked())
+            return "原版曲线变形操作完成："+action
+
+        def _corrective_refresh(self):
+            targets = self.controller.original_corrective_targets(self._namespace())
+            self.corrective_targets.clear()
+            for target in targets:
+                label = target.deform_object+" / "+target.driver_object+" / "+target.driver_attribute+" / "+str(target.value)
+                self.corrective_targets.addItem(label+("（过渡）" if target.inbetween else ""),target)
+            return "已读取 " + str(len(targets)) + " 个 Corrective 目标"
+
+        def _corrective_record_mesh(self, role):
+            meshes = self.controller.selected_meshes()
+            if len(meshes) != 1:
+                raise ValueError("请选择一个网格对象")
+            field = self.corrective_source if role == "source" else self.corrective_destination
+            field.setText(meshes[0])
+            return "已记录 Corrective 烘焙网格"
+
+        def _corrective_select_action(self, action):
+            target = self.corrective_targets.currentData()
+            if target is None and action != "graph":
+                raise ValueError("请刷新目标后选择，或右键打开 Corrective 目标菜单")
+            return self._corrective_shapes(action,target)
+
+        def _corrective_popup(self, button, action, point):
+            def show_menu():
+                targets = self.controller.original_corrective_targets(self._namespace(),edit=action=="edit")
+                menu = QtWidgets.QMenu(button)
+                levels = {():menu}
+                for target in targets:
+                    path = (target.deform_object,target.driver_object,target.driver_attribute,
+                            "pos" if target.value>=0 else "neg")
+                    for index in range(1,len(path)+1):
+                        prefix = path[:index]
+                        if prefix not in levels:
+                            levels[prefix] = levels[prefix[:-1]].addMenu(prefix[-1])
+                    item = levels[path].addAction(str(target.value)+("（过渡）" if target.inbetween else ""))
+                    item.setEnabled(action!="delete" or target.deletable)
+                    item.setData(target)
+                chosen = menu.exec_(button.mapToGlobal(point))
+                return self._corrective_shapes(action,chosen.data()) if chosen else "Corrective 目标选择已取消"
+            self._run("读取 Corrective 目标",show_menu)
+
+        def _corrective_shapes(self, action, target=None):
+            result = self.controller.original_corrective_shapes(self._namespace(),action,target=target,
+                q_rotations=self.corrective_q_rotations.isChecked(),use_soft_mods=self.corrective_use_softmods.isChecked(),
+                mirror=self.corrective_mirror.isChecked(),source=self.corrective_source.text().strip(),
+                destination=self.corrective_destination.text().strip(),
+                axes=tuple(self.corrective_axes[label].isChecked() for label in ("+x","-x","+y","-y","+z","-z")))
+            if action == "create" and result["q_rotations"]:
+                self.corrective_q_rotations.setChecked(True)
+            return "原版 Corrective 操作完成：" + action
 
         def _face_wrinkles(self, action):
             options = dict(wrinkle=self.face_wrinkle_group.currentText(),element=self.face_wrinkle_element.currentText(),

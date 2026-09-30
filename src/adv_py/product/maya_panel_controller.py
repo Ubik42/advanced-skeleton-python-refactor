@@ -2176,6 +2176,30 @@ class MayaPanelController:
         if action=="brow": return BuildFaceBrow(host).apply()
         return EditFaceCage(host).apply(action,smooth_passes or 0)
 
+    def original_driving_catalog(self, namespace: str):
+        from adv_py.adapters.maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.application.driving_systems import EditOriginalDrivingSystems
+        return EditOriginalDrivingSystems(MayaDrivingSystemsHost(
+            namespace=None if namespace==":" else namespace)).catalog()
+
+    def original_driving_systems(self, namespace: str, action: str, **options):
+        from adv_py.adapters.maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.application.driving_systems import EditOriginalDrivingSystems
+        return EditOriginalDrivingSystems(MayaDrivingSystemsHost(
+            namespace=None if namespace==":" else namespace)).apply(action,**options)
+
+    def original_corrective_targets(self, namespace: str, *, edit=False):
+        from adv_py.adapters.maya_corrective_shapes import MayaCorrectiveShapesHost
+        from adv_py.application.corrective_shapes import EditOriginalCorrectiveShapes
+        return EditOriginalCorrectiveShapes(MayaCorrectiveShapesHost(
+            namespace=None if namespace == ":" else namespace)).targets(edit=edit)
+
+    def original_corrective_shapes(self, namespace: str, action: str, **options):
+        from adv_py.adapters.maya_corrective_shapes import MayaCorrectiveShapesHost
+        from adv_py.application.corrective_shapes import EditOriginalCorrectiveShapes
+        return EditOriginalCorrectiveShapes(MayaCorrectiveShapesHost(
+            namespace=None if namespace == ":" else namespace)).apply(action, **options)
+
     def face_original_wrinkles(self, namespace: str, action: str, **options):
         from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
         from adv_py.application.face_wrinkles import EditOriginalFaceWrinkles

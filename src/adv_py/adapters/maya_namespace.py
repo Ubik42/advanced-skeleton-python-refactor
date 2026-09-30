@@ -62,7 +62,7 @@ _NODE_RESULTS |= {'polyPlane'}
 _CREATE |= {'polyPlane'}
 _NODE_RESULTS |= {'polySphere'}
 _CREATE |= {'polySphere'}
-_NODE_ARGS |= {'reorderDeformers'}
+_NODE_ARGS |= {'reorderDeformers', 'cutKey'}
 _NODE_ARGS |= {'nodeCast'}
 _NODE_RESULTS |= {'nodeCast'}
 
