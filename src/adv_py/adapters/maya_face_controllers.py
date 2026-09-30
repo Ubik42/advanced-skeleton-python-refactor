@@ -316,6 +316,12 @@ class MayaFaceControllersMixin:
                 c.disconnectAttr(incoming[0],driven)
                 c.connectAttr(incoming[0],bw+".input[0]")
             c.connectAttr(bw+".output",driven,force=True)
+        # Source asDsSdk redirects a non-SDK control through its output BW
+        # and allocates a fresh input on each call. SDK transforms retain
+        # same-driver curve updates on their driven channel.
+        if not direct_bw and not node.rsplit("|",1)[-1].rsplit(":",1)[-1].startswith("SDK"):
+            direct_bw=True
+            attr="input"
         indices=c.getAttr(bw+".input",multiIndices=True) or []
         curves=c.listConnections(bw+".input",source=True,destination=False,type="animCurve",skipConversionNodes=True) or []
         existing=None

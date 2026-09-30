@@ -311,7 +311,7 @@ def create_panel(controller: MayaPanelController | None = None):
                              '01 · 目标网格', '02 · 可移植目标资产')),
                     ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit', '03 · Lip Fit', '04 · Face 定位点', '05 · Tongue Fit')),
                     ('Build', ('03 · 控制与变形器',)),
-                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03I · Lip 绑定', '03G · Lip Falloff', '03K · Face Cage', '03L · Face 表情修形', '03J · Jaw 绑定与修形', '03F · Tongue 绑定', '03H · Regions', '03M · Eye Aim 与 UpMidLo')),
+                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03O · Blink 与 Wide', '03I · Lip 绑定', '03G · Lip Falloff', '03K · Face Cage', '03L · Face 表情修形', '03J · Jaw 绑定与修形', '03F · Tongue 绑定', '03H · Regions', '03M · Eye Aim 与 UpMidLo', '03N · Phonemes 与 Emotions')),
                     ('Skin Layers', ('03a · Face Skin Layers',)),
                     ('Tweaks', ('03A · Face Tweaks',)),
                     ('DeltaMush', ('03B · Face DeltaMush',)),
@@ -1579,6 +1579,8 @@ def create_panel(controller: MayaPanelController | None = None):
                     lambda section=section: self._face_fit_marker(section)))
             form.addRow(self._button("创建 UpMidLo 分区定位器",
                 lambda: self._face_fit_marker("UpMidLo")))
+            form.addRow(self._button("创建 ForeHead 边界与区域 Fit",
+                lambda: self._face_fit_marker("ForeHead")))
             stack.addWidget(group)
             group, form = self._group("05 · Tongue Fit", [])
             form.addRow(self._button("记录所选 Tongue 网格或组件",
@@ -1754,6 +1756,20 @@ def create_panel(controller: MayaPanelController | None = None):
             group, form = self._group("03M · Eye Aim 与 UpMidLo", [])
             form.addRow(self._button("显示 Eye Aim 控制",lambda: self._face_expression("eye_aim")))
             form.addRow(self._button("建立 UpMidLo 控制与权重",lambda: self._face_expression("up_mid_lo")))
+            stack.addWidget(group)
+            group, form = self._group("03N · Phonemes 与 Emotions", [])
+            form.addRow(self._button("建立音素驱动 Phonemes",lambda: self._face_expression("phonemes")))
+            form.addRow(self._button("建立情绪驱动 Emotions",lambda: self._face_expression("emotions")))
+            form.addRow(self._button("记录所选 Extras 模型",lambda: self._face_teeth_record("Extras")))
+            form.addRow(self._button("传递 Extras 权重",lambda: self._face_expression("extras")))
+            form.addRow(self._button("完成 Face 关节绑定",lambda: self._face_expression("finish")))
+            stack.addWidget(group)
+            group, form = self._group("03O · Blink 与 Wide", [])
+            for stage,label in (("blink","Blink"),("wide","Wide")):
+                row=QtWidgets.QHBoxLayout()
+                row.addWidget(self._button(label+" 修形",lambda stage=stage:self._face_expression(stage)))
+                row.addWidget(self._button("完成 "+label,lambda stage=stage:self._face_expression(stage+"_finish")))
+                form.addRow(row)
             stack.addWidget(group)
             group, form = self._group("03H · Regions", [])
             form.addRow(self._button("建立第二控制盒区域投影",self._face_regions))
@@ -3863,7 +3879,7 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _face_teeth_record(self,part):
             values=self.controller.face_teeth_record(self._namespace(),part)
-            return "已记录牙齿输入："+str(len(values))
+            return "已记录 "+part+" 输入："+str(len(values))
 
         def _face_mouth_open_design(self):
             self.controller.face_mouth_open_design(self._namespace())

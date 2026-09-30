@@ -149,7 +149,7 @@ class MayaCharacterCommands:
                     continue
                 if flag in kwargs and isinstance(kwargs[flag],str):kwargs[flag]=address(kwargs[flag])
             if name=='sets':
-                for flag in ('add', 'isMember', 'remove', 'rm', 'forceElement'):
+                for flag in ('add', 'isMember', 'remove', 'rm', 'forceElement', 'clear'):
                     if flag in kwargs and isinstance(kwargs[flag], str):
                         kwargs[flag]=address(kwargs[flag])
             if name=='skinCluster' and 'addInfluence' in kwargs:

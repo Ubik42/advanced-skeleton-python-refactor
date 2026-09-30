@@ -4,8 +4,9 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 from .maya_face_base import MayaFaceBaseMixin
 from .maya_face_pre import MayaFacePreHost
 from .maya_face_body_jaw import MayaFaceBodyJawMixin
+from .maya_face_forehead_fit import MayaFaceForeHeadFitMixin
 
-class MayaFaceFitMarkersHost(MayaFaceBodyJawMixin,MayaFaceBaseMixin,MayaFacePreHost):
+class MayaFaceFitMarkersHost(MayaFaceForeHeadFitMixin,MayaFaceBodyJawMixin,MayaFaceBaseMixin,MayaFacePreHost):
     def _marker_context(self,section):
         c=self._cmds
         fit=self._fit(required=True)

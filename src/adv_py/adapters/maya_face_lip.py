@@ -380,23 +380,10 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
 
     def _lip_least_path(self,geometry,start,end):
         """asSelectLeastEdgesPath: loop/ring preference, shortest-edge fallback."""
-        c=self._cmds; raw=getattr(c,"raw",c); mesh=self.scene_address(geometry)
-        a,b=mesh+f".vtx[{start}]",mesh+f".vtx[{end}]"
-        raw.select(a,replace=True); raw.polySelectConstraint(propagate=1,type=1)
-        neighbors=raw.ls(selection=True,long=True,flatten=True) or []
-        target=(raw.ls(b,long=True,flatten=True) or [b])[0]
-        shortest=raw.polySelect(mesh,query=True,asSelectString=True,shortestEdgePath=(start,end)) or []
-        if target not in neighbors:
-            for mode in ("loop","ring"):
-                raw.select((a,b),replace=True)
-                candidate=raw.polySelectSp(query=True,**{mode:True}) or []
-                vertices=raw.ls(raw.polyListComponentConversion(candidate,toVertex=True),long=True,flatten=True) or []
-                start_path=(raw.ls(a,long=True,flatten=True) or [a])[0]
-                shortest_count=len(raw.ls(shortest,flatten=True) or [])
-                if start_path in vertices and target in vertices and len(vertices)<=shortest_count+3:
-                    edges=raw.polyListComponentConversion(vertices,toEdge=True,internal=True)
-                    return tuple(raw.ls(raw.polyListComponentConversion(edges,toVertex=True),long=True,flatten=True) or [])
-        return tuple(raw.ls(raw.polyListComponentConversion(shortest,toVertex=True),long=True,flatten=True) or [])
+        from .maya_face_topology import original_face_least_edges
+        raw=getattr(self._cmds,"raw",self._cmds)
+        edges=original_face_least_edges(self,geometry,start,end)
+        return tuple(raw.ls(raw.polyListComponentConversion(edges,toVertex=True),long=True,flatten=True) or []) if edges else ()
 
     def _lip_topology_weights(self,source,skin,head,counts,area):
         c=self._cmds; raw=getattr(c,"raw",c); skin_path=self.scene_address(skin)

@@ -156,6 +156,10 @@ class MayaFaceBaseMixin:
         """Build once, before face modules; generated nodes share Face ownership."""
         self._require_transaction()
         c=self._cmds
+        if not c.objExists("FaceMotionSystem") and not c.objExists("allBeforeFaceBuild"):
+            existing=tuple(node for node in c.ls(objectsOnly=True) or [] if c.nodeType(node) not in ("objectSet","partition"))
+            snapshot=c.sets(empty=True,name="allBeforeFaceBuild")
+            if existing: c.sets(existing,add=snapshot)
         self.ensure_face_shaders()
         # asFaceBuild source 31155: Multi Skin Clusters enables OPM before building.
         fit=self._fit(required=True)
@@ -215,6 +219,7 @@ class MayaFaceBaseMixin:
             c.setAttr(pose+"."+attribute,value,type="string")
         for name in ("FaceAllSet","FaceControlSet","FaceAreas","FaceBuildingSets"):
             c.sets(empty=True,name=name)
+        c.sets("allBeforeFaceBuild",add="FaceBuildingSets")
         c.sets("FaceBuildingSets",add="FaceAllSet")
         if c.objExists("Sets"):
             c.sets(("FaceAllSet","FaceControlSet","FaceAreas"),add="Sets")

@@ -4,8 +4,12 @@ from .maya_face_cage import MayaFaceCageHost
 from .maya_face_smile import MayaFaceSmileMixin
 from .maya_face_brow import MayaFaceBrowMixin
 from .maya_face_up_mid_lo import MayaFaceUpMidLoMixin
+from .maya_face_speech import MayaFaceSpeechMixin
+from .maya_face_finish import MayaFaceFinishMixin
+from .maya_face_eye_poses import MayaFaceEyePosesMixin
+from .maya_face_roblox import MayaFaceRobloxMixin
 
-class MayaFaceExpressionHost(MayaFaceSmileMixin,MayaFaceBrowMixin,MayaFaceUpMidLoMixin,MayaFaceCageHost):
+class MayaFaceExpressionHost(MayaFaceRobloxMixin,MayaFaceEyePosesMixin,MayaFaceFinishMixin,MayaFaceSpeechMixin,MayaFaceSmileMixin,MayaFaceBrowMixin,MayaFaceUpMidLoMixin,MayaFaceCageHost):
     def create_original_face_blended_attribute(self,drivers,attribute):
         """asCreateCustomBlendedAttribute's two-axis combination, source 66118."""
         c=self._cmds
