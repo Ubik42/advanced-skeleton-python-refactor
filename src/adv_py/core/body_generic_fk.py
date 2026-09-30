@@ -348,7 +348,13 @@ def plan_body_generic_fk(
             aim_name=aim_name,
         )
         controls.append(control)
-        control_by_name[spec.name] = control_path
+        # The MEL non-OPM FK pass parents ordinary child offsets below the
+        # previous FKX joint, so inverseScale participates in the chain.
+        control_by_name[spec.name] = (
+            control.source_override_path
+            if (control.source_override_joint
+                and not use_offset_parent_matrix)
+            else control_path)
         if item.no_control:
             hidden.append(control_path)
     if follower_sources is not None:

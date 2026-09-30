@@ -9393,9 +9393,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise FitSkeletonValidationError(
                     f"{limb_label} FK 控制名称冲突：{name}"
                 )
-        parent = self._cmds.ls(spec.parent_path, long=True, type="transform") or []
+        parent = self._cmds.ls(spec.parent_path, long=True) or []
         driven = self._cmds.ls(spec.driven_joint, long=True, type="joint") or []
-        if len(parent) != 1 or len(driven) != 1:
+        if (len(parent) != 1 or self._cmds.nodeType(parent[0])
+                not in ("transform", "joint") or len(driven) != 1):
             raise FitSkeletonValidationError(
                 f"{limb_label} FK 控制父级或驱动关节失效：{spec.control_name}"
             )
