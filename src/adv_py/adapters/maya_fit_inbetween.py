@@ -441,11 +441,13 @@ class MayaFitInbetweenMixin:
             return False
         targets = c.orientConstraint(constraints[0], query=True,
                                      targetList=True) or []
+        source = c.ls(part.fkx_name, long=True,
+                      type="joint") or []
         body = c.ls(part.body_part_name, long=True,
                     type="joint") or []
         return (len(targets) == 1
-                and targets[0].rsplit("|", 1)[-1]
-                .rsplit(":", 1)[-1] == part.fkx_name
+                and len(source) == 1
+                and (c.ls(targets[0], long=True) or []) == source
                 and len(body) == 1
                 and all(c.isConnected(
                     constraints[0] + ".constraintRotate" + axis,
@@ -710,12 +712,14 @@ class MayaFitInbetweenMixin:
                                      weightAliasList=True) or []
         if len(targets) != 2 or len(aliases) != 2:
             return False
+        sources = tuple(c.ls(name, long=True, type="joint") or []
+                        for name in (part.fkx_name, part.ikx_name))
         body = c.ls(part.body_part_name, long=True,
                     type="joint") or []
         return (
-            tuple(name.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-                  for name in targets)
-            == (part.fkx_name, part.ikx_name)
+            all(len(source) == 1 for source in sources)
+            and tuple(c.ls(name, long=True) or [] for name in targets)
+            == sources
             and c.connectionInfo(constraint + "." + aliases[0],
                                  sourceFromDestination=True)
             == plan.fk_weight_plug
