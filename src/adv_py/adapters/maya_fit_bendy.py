@@ -1405,6 +1405,8 @@ class MayaFitBendyMixin:
             decompose = c.createNode("decomposeMatrix",
                                      name=decompose_name,
                                      skipSelect=True)
+            c.setAttr(decompose + ".inputRotateOrder",
+                      spec.rotation_order)
             project = c.createNode("quatToEuler", name=project_name,
                                    skipSelect=True)
             c.connectAttr(child + ".worldMatrix[0]",
