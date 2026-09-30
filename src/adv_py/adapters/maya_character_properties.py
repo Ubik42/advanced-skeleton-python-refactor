@@ -70,7 +70,11 @@ def install(target,rows):
             c.addAttr(row.path,**options)
             if datatype=='string':
                 if value is not None:c.setAttr(plug,value,type='string')
-            elif datatype=='matrix':c.setAttr(plug,*value,type='matrix')
+            elif datatype=='matrix':
+                if value is None or len(value)!=16:
+                    raise CharacterRegistryError(
+                        '控制器用户矩阵属性值不完整：'+plug)
+                c.setAttr(plug,*value,type='matrix')
             elif datatype!='message' and not meta.get('children'):
                 c.setAttr(plug,value)
             if not keyable:c.setAttr(plug,channelBox=meta['channelBox'])

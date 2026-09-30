@@ -768,7 +768,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 if len(value) == 1 and isinstance(value[0], (tuple, list)):
                     value = value[0]
                 value = tuple(float(item) for item in value)
-                if len(value) != 16:
+                if len(value) != 16 or not all(isfinite(item)
+                                               for item in value):
                     raise FitSkeletonValidationError(
                         'Geometry offsetParentMatrix 值不完整')
             rows.append((attr, value,
