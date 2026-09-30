@@ -2538,6 +2538,13 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         f"{spec.source_path}.segmentScaleCompensate"
                     )),
                 )
+                if (self._cmds.getAttr(output + ".segmentScaleCompensate")
+                        and not self._cmds.connectionInfo(
+                            output + ".inverseScale",
+                            sourceFromDestination=True)):
+                    self._cmds.connectAttr(
+                        spec.output_parent_path + ".scale",
+                        output + ".inverseScale")
                 if spec.label is None:
                     self.clear_joint_label(output)
                 else:
