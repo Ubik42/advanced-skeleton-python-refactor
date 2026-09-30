@@ -137,6 +137,7 @@ class MayaCharacterRegistryMixin:
         bendy_legacy_twist_outputs = set()
         bendy_master_circular = set()
         bendy_legacy_start_icon = set()
+        bendy_parented_end = set()
         for control in bendy_master_paths:
             stem, side = control.rsplit('_', 1)
             master_leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
@@ -194,6 +195,21 @@ class MayaCharacterRegistryMixin:
                 bendy_counts.append((control, indices[-1]))
                 if indices == [0, 1] and not proxy_paths:
                     bendy_legacy_simple.add(control)
+            end_proxy = (namespace + 'BendX'
+                         + stem.removeprefix('Bend')
+                         + str(bendy_counts[-1][1] + 1)
+                         + '_' + side)
+            end_parents = (c.listRelatives(
+                end_proxy, parent=True, fullPath=True) or []
+                if c.objExists(end_proxy) else [])
+            if len(end_parents) == 1:
+                parent_leaf = (end_parents[0].rsplit('|', 1)[-1]
+                               .rsplit(':', 1)[-1])
+                if parent_leaf in (
+                        'AdvPy_' + stem + 'ParentUntwist_'
+                        + side + 'Frame',
+                        'AdvPy_' + stem + 'StartSource_' + side):
+                    bendy_parented_end.add(control)
         def bendy_namespace(control):
             leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
             return (leaf.rsplit(':', 1)[0] + ':'
@@ -362,7 +378,8 @@ class MayaCharacterRegistryMixin:
             frozenset(bendy_legacy_simple),
             frozenset(bendy_legacy_twist_outputs),
             frozenset(bendy_master_circular),
-            frozenset(bendy_legacy_start_icon))
+            frozenset(bendy_legacy_start_icon),
+            frozenset(bendy_parented_end))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

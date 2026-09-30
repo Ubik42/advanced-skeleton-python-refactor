@@ -41,6 +41,7 @@ class FitBendyChainSpec:
     legacy_twist_outputs: bool = False
     master_circular: bool = True
     legacy_start_icon_offset: bool = False
+    end_proxy_parented: bool = True
 
     def __post_init__(self) -> None:
         if (type(self.control_count) is not int
@@ -86,6 +87,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 主控 Circular 层策略无效")
         if type(self.legacy_start_icon_offset) is not bool:
             raise ValueError("Bendy 起点图标偏移策略无效")
+        if type(self.end_proxy_parented) is not bool:
+            raise ValueError("Bendy 末端代理父层策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:

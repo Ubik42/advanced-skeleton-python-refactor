@@ -736,6 +736,12 @@ class BuildRegisteredBodyCharacter:
                         is not None
                         and chain.control_names[0] in
                         _generic_fk_policy.bendy_legacy_start_icon_controls),
+                    end_proxy_parented=(
+                        _generic_fk_policy is None
+                        or _generic_fk_policy.bendy_parented_end_controls
+                        is None
+                        or chain.control_names[0] in
+                        _generic_fk_policy.bendy_parented_end_controls),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None

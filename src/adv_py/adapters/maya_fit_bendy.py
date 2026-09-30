@@ -934,6 +934,8 @@ class MayaFitBendyMixin:
         parent_proxy = (self._create_fit_bendy_parent_untwist(
             chain, start_proxy, spec.untwist_plug)
             if spec.untwist_plug else start_proxy)
+        if chain.end_proxy_parented:
+            c.parent(chain.end_proxy_name, parent_proxy, absolute=True)
         for index, control in enumerate(chain.control_names):
             position = (chain.master_position if index == 0
                         else chain.control_positions[index - 1])
@@ -1265,6 +1267,10 @@ class MayaFitBendyMixin:
         if (spec.untwist_plug
                 and not self._capture_fit_bendy_parent_untwist(
                     spec.chain, names[0], spec.untwist_plug)):
+            return False
+        if (_bendy_parent_name(c, spec.chain.end_proxy_name)
+                != (parent_proxy if spec.chain.end_proxy_parented
+                    else _GROUPS[0])):
             return False
         for index, control in enumerate(spec.chain.control_names):
             offset = control + "Offset"
