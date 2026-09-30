@@ -21,6 +21,7 @@ class NameMatcherFitResult:
     placed: int
     missing: tuple[str, ...]
     scale: float
+    source_root: str
 
 
 class BuildNameMatchedFit:
@@ -94,4 +95,5 @@ class BuildNameMatchedFit:
                     != skin_boundary):
                 raise RuntimeError('NameMatcher Fit 创建改变了来源 Skin')
         return NameMatcherFitResult(len(plan.placements),
-                                    plan.missing, plan.scale)
+                                    plan.missing, plan.scale,
+                                    current_root)

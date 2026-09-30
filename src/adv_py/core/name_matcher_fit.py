@@ -38,6 +38,29 @@ class NameMatcherFitPlan:
     scale: float
 
 
+@dataclass(frozen=True, slots=True)
+class NameMatcherConstraintPair:
+    advanced_joint: str
+    external_joint: str
+
+
+@dataclass(frozen=True, slots=True)
+class NameMatcherConstraintPlan:
+    pairs: tuple[NameMatcherConstraintPair, ...]
+    missing: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class NameMatcherSkinMatrixLink:
+    advanced_joint: str
+    external_joint: str
+    destination: str
+    original_source: str
+    bind_pre_matrix: tuple[float, ...]
+    bind_pre_source: str | None
+    skin_uuid: str
+
+
 def _external_name(base: str, side: str, rules: NameMatcherRules) -> str:
     divider = "_" if rules.side_underscore and side else ""
     return (side + divider + base if rules.side_before_name
@@ -114,3 +137,49 @@ def plan_name_matcher_fit(template: FitTemplateSpec,
     if len({row.source_path for row in placements}) != len(placements):
         raise FitSkeletonValidationError("NameMatcher 一个来源关节被重复映射")
     return NameMatcherFitPlan(tuple(placements), tuple(missing), height / 17.)
+
+
+def plan_name_matcher_constraints(
+        advanced_joints: tuple[str, ...],
+        external_joints: tuple[tuple[str, str], ...],
+        rows: tuple[NameMatcherRow, ...], rules: NameMatcherRules,
+        ) -> NameMatcherConstraintPlan:
+    """Map DeformationSystem's _R/_L/_M joints like AutoRigConstraint."""
+    if not advanced_joints or not rows or not isinstance(rules, NameMatcherRules):
+        raise FitSkeletonValidationError('NameMatcher 约束缺少骨架或映射')
+    by_fit = {_fit_template_name(row.fit_joint): row.source_base
+              for row in rows}
+    if len(by_fit) != len(rows):
+        raise FitSkeletonValidationError('NameMatcher 约束 Fit 映射重复')
+    by_external: dict[str, list[str]] = {}
+    for path, name in external_joints:
+        if not path or not name:
+            raise FitSkeletonValidationError('NameMatcher 外部关节无效')
+        by_external.setdefault(name.rsplit(':', 1)[-1], []).append(path)
+    pairs = []
+    missing = []
+    for advanced in advanced_joints:
+        leaf = advanced.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
+        base, separator, side = leaf.rpartition('_')
+        if separator != '_' or side not in ('R', 'L', 'M'):
+            continue
+        mapped = by_fit.get(_fit_template_name(base))
+        if mapped is None:
+            continue
+        marker = {'R': rules.right, 'L': rules.left,
+                  'M': rules.middle}[side]
+        external_name = _external_name(mapped, marker, rules)
+        candidates = by_external.get(external_name, ())
+        if len(candidates) > 1:
+            raise FitSkeletonValidationError(
+                'NameMatcher 外部关节名称不唯一：' + external_name)
+        if not candidates:
+            missing.append(external_name)
+            continue
+        pairs.append(NameMatcherConstraintPair(advanced, candidates[0]))
+    if not pairs:
+        raise FitSkeletonValidationError('NameMatcher 没有可连接的变形关节')
+    if (len({row.advanced_joint for row in pairs}) != len(pairs)
+            or len({row.external_joint for row in pairs}) != len(pairs)):
+        raise FitSkeletonValidationError('NameMatcher 约束关节映射不是一对一')
+    return NameMatcherConstraintPlan(tuple(pairs), tuple(sorted(set(missing))))

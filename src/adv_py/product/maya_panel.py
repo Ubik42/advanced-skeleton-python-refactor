@@ -581,6 +581,9 @@ def create_panel(controller: MayaPanelController | None = None):
             self.name_matcher_right = QtWidgets.QLineEdit('R')
             self.name_matcher_left = QtWidgets.QLineEdit('L')
             self.name_matcher_middle = QtWidgets.QLineEdit('')
+            self.name_matcher_source_root = QtWidgets.QLineEdit()
+            self.name_matcher_source_root.setPlaceholderText(
+                '创建 Fit 后自动填入；也可填写外部骨架根路径')
             self.name_matcher_prefix = QtWidgets.QCheckBox('侧别在名称前')
             self.name_matcher_underscore = QtWidgets.QCheckBox('侧别用下划线分隔')
             self.name_matcher_underscore.setChecked(True)
@@ -590,9 +593,14 @@ def create_panel(controller: MayaPanelController | None = None):
                 ('左侧标记', self.name_matcher_left),
                 ('中间标记', self.name_matcher_middle),
                 ('命名位置', self.name_matcher_prefix),
-                ('分隔符', self.name_matcher_underscore)])
+                ('分隔符', self.name_matcher_underscore),
+                ('外部骨架根', self.name_matcher_source_root)])
             form.addRow(self._button('创建并放置 FitSkeleton',
                                      self._build_name_matcher_fit))
+            form.addRow(self._button('将 Body 约束到外部骨架',
+                                     self._connect_name_matcher_skeleton))
+            form.addRow(self._button('原 Skin 转接至 Body 关节',
+                                     self._transfer_name_matcher_skin))
             stack.addWidget(group)
 
             self.body_option_fields = {}
@@ -2288,7 +2296,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     f"{result.ik_limb_count} 条可切换 IK/FK 的手脚链；"
                     "原 Skin 已保留。")
 
-        def _build_name_matcher_fit(self):
+        def _name_matcher_mapping_rows(self):
             rows = []
             for line in self.name_matcher_rows.toPlainText().splitlines():
                 parts = line.strip().split()
@@ -2297,17 +2305,51 @@ def create_panel(controller: MayaPanelController | None = None):
                 if len(parts) != 2:
                     raise ValueError('NameMatcher 每行必须是 Fit关节 来源基础名')
                 rows.append((parts[0], parts[1]))
-            result, namespace = self.controller.preparation_name_matcher_fit(
-                self._namespace(), tuple(rows),
+            return tuple(rows)
+
+        def _name_matcher_rule_kwargs(self):
+            return dict(
                 right=self.name_matcher_right.text().strip(),
                 left=self.name_matcher_left.text().strip(),
                 middle=self.name_matcher_middle.text().strip(),
                 side_before_name=self.name_matcher_prefix.isChecked(),
                 side_underscore=self.name_matcher_underscore.isChecked())
+
+        def _build_name_matcher_fit(self):
+            selected_namespace = self._namespace()
+            result, namespace = self.controller.preparation_name_matcher_fit(
+                selected_namespace, self._name_matcher_mapping_rows(),
+                **self._name_matcher_rule_kwargs())
+            if namespace != selected_namespace:
+                self._next_role = namespace
+            self.name_matcher_source_root.setText(result.source_root)
             return (f'NameMatcher 已在 {namespace} 创建 Fit：'
                     f'{result.placed} 个关节已放置；'
                     + (('未找到：' + '、'.join(result.missing))
                        if result.missing else '全部映射均找到来源。'))
+
+        def _connect_name_matcher_skeleton(self):
+            root = self.name_matcher_source_root.text().strip()
+            if not root:
+                raise ValueError('请填写 NameMatcher 外部骨架根路径')
+            result = self.controller.tools_name_matcher_connect(
+                self._namespace(), root, self._name_matcher_mapping_rows(),
+                **self._name_matcher_rule_kwargs())
+            return (f'NameMatcher 已连接 {result.connected} 个外部关节；'
+                    + (('未找到：' + '、'.join(result.missing))
+                       if result.missing else '全部映射目标均已连接。'))
+
+        def _transfer_name_matcher_skin(self):
+            root = self.name_matcher_source_root.text().strip()
+            if not root:
+                raise ValueError('请填写 NameMatcher 外部骨架根路径')
+            result = self.controller.tools_name_matcher_transfer_skin(
+                self._namespace(), root, self._name_matcher_mapping_rows(),
+                **self._name_matcher_rule_kwargs())
+            return (f'NameMatcher 已将 {result.skins} 套 Skin 的'
+                    f'{result.matrix_links} 条影响矩阵转接到 Body；'
+                    + (('未找到：' + '、'.join(result.missing))
+                       if result.missing else '全部映射目标均已找到。'))
 
         def _load_body_build_options(self):
             options = self.controller.body_build_options(
