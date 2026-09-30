@@ -101,6 +101,7 @@ class GenericFkFeaturePolicy:
     standard_fkx_joint_names: frozenset[str] | None = None
     hand_fkx_joint_names: frozenset[str] | None = None
     standard_fk_independent_controls: frozenset[str] | None = None
+    torso_fkx_joint_names: frozenset[str] | None = None
     bendy_aim_follow_controls: frozenset[str] | None = None
     bendy_start_control_sources: frozenset[str] | None = None
     bendy_child_control_sources: frozenset[str] | None = None

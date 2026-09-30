@@ -213,12 +213,14 @@ class BodyTorsoSnapshot:
 
 def plan_body_torso(
     body: BodySkeletonSnapshot, arm: BodyTorsoLimbPlan, leg: BodyTorsoLimbPlan,
-    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (), aim_joint_names: frozenset[str] = frozenset(), leg_lock_enabled: bool = True,
+    *, radius: float = 1.5, spine_ik: bool = False, description: BodyAxialDescription | None = None, head_aim: bool = False, up_axis: FitUpAxis = FitUpAxis.Z, build_options: BodyBuildOptions = BodyBuildOptions(), cog_names: tuple[str, ...] = (), aim_joint_names: frozenset[str] = frozenset(), leg_lock_enabled: bool = True, fkx_joint_names: frozenset[str] | None = None,
 ) -> BodyTorsoPlan:
     if not isinstance(build_options, BodyBuildOptions):
         raise FitSkeletonValidationError("Torso 构建选项类型无效")
     if not isinstance(aim_joint_names, frozenset):
         raise FitSkeletonValidationError("Torso Aim 来源集合无效")
+    if fkx_joint_names is not None and not isinstance(fkx_joint_names, frozenset):
+        raise FitSkeletonValidationError("Torso FKX 关节集合无效")
     if type(leg_lock_enabled) is not bool:
         raise FitSkeletonValidationError("Root Leg Lock 开关必须是布尔值")
     if isinstance(radius, bool) or not isinstance(radius, (int, float)) or not isfinite(radius) or radius <= 0:
@@ -272,7 +274,13 @@ def plan_body_torso(
         expected_parent = joints[parent_name].path if parent_name else None
         if joint.parent_path != expected_parent:
             raise FitSkeletonValidationError(f"Torso 父链不匹配：{name}")
-        parent = by_joint[parent_name].control_path if parent_name else root_path
+        parent_control = by_joint.get(parent_name) if parent_name else None
+        parent = (parent_control.source_override_path
+                  if (parent_control is not None
+                      and parent_control.source_override_joint
+                      and not build_options.use_offset_parent_matrix)
+                  else parent_control.control_path
+                  if parent_control is not None else root_path)
         offset_name = f"AdvPy_Torso{name}Offset"
         extra_name = f"AdvPy_Torso{name}FKExtra"
         control_name = f"AdvPy_Torso{name}FK"
@@ -287,6 +295,12 @@ def plan_body_torso(
                     if build_options.sub_controllers else None)
         sub_path = (f"{control_path}|{sub_name}"
                     if sub_name is not None else None)
+        fkx_joint = (fkx_joint_names is None
+                     or control_name in fkx_joint_names)
+        fkx_path = ((sub_path or control_path) + "|" +
+                    ("AdvPy_RootFKX" if name == "Root_M" else
+                     f"AdvPy_Torso{name}FKX")
+                    if fkx_joint or name == "Root_M" else None)
         torso_child = next((joints[child_name]
                             for child_name, parent in parents.items()
                             if parent == name), None)
@@ -298,9 +312,10 @@ def plan_body_torso(
             world_position=joint.world_position, world_axes=joint.world_axes,
             radius=body_fk_curve_radius(
                 body, joint, radius, preferred_child=torso_child),
-            source_override_path=(
-                f"{sub_path or control_path}|AdvPy_RootFKX"
-                if name == "Root_M" else None),
+            source_override_path=fkx_path,
+            source_override_joint=fkx_joint,
+            source_override_segment_scale_compensate=(
+                not build_options.use_offset_parent_matrix),
             sub_control_path=sub_path,
             sub_control_name=sub_name,
             extra_path=extra_path,

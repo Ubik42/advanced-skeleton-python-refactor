@@ -24,6 +24,25 @@ class MayaCharacterRegistryMixin:
                                .rsplit(':', 1)[-1], []).append(node.path)
         standard_fkx_joints = set()
         hand_fkx_joints = set()
+        torso_fkx_joints = set()
+        for node in registration.nodes:
+            leaf = node.path.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
+            if (node.node_type != 'joint'
+                    or not (leaf == 'AdvPy_RootFKX'
+                            or (leaf.startswith('AdvPy_Torso')
+                                and leaf.endswith('FKX')))):
+                continue
+            parent = node.parent
+            if parent is None:
+                raise CharacterRegistryError('Torso FKX 缺少控制器父级：' + leaf)
+            control = parent.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
+            if control.endswith('FKSub'):
+                parent = parent.rsplit('|', 1)[0]
+                control = parent.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
+            if not control.endswith('FK') or parent not in by_leaf.get(
+                    control, ()):
+                raise CharacterRegistryError('Torso FKX 父级不是 FK 控制：' + leaf)
+            torso_fkx_joints.add(control)
         standard_independent = set()
         for leaf, offsets in by_leaf.items():
             if (not leaf.startswith('AdvPy_')
@@ -539,6 +558,7 @@ class MayaCharacterRegistryMixin:
             hand_fkx_joint_names=frozenset(hand_fkx_joints),
             standard_fk_independent_controls=frozenset(
                 standard_independent),
+            torso_fkx_joint_names=frozenset(torso_fkx_joints),
             bendy_aim_follow_controls=bendy_aim_follow,
             bendy_start_control_sources=frozenset(bendy_start_control),
             bendy_child_control_sources=frozenset(bendy_child_control),
@@ -927,6 +947,11 @@ class MayaCharacterRegistryMixin:
             paths.update(
                 control.source_override_path
                 for control in rig.plan.hand.controls.controls
+                if control.source_override_path is not None)
+        if rig.plan.torso is not None:
+            paths.update(
+                control.source_override_path
+                for control in rig.plan.torso.torso.controls.controls
                 if control.source_override_path is not None)
         for scale in rig.plan.fk_scale_compensations:
             if scale.mel_non_opm_fkx and not scale.inherit_scale:
