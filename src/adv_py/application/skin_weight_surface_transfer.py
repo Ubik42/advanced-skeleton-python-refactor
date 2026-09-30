@@ -151,6 +151,11 @@ class TransferSkinWeightsBySurface:
             if (self._host.capture_all_skin_weights(source_skin, source_mesh)
                     != plan.source_state):
                 raise RuntimeError("表面权重转移后源权重发生变化")
+            if (plan.source_blend_weights is not None and
+                    tuple(float(value) for value in
+                        self._host.capture_skin_blend_weights(source_skin))
+                    != plan.source_blend_weights):
+                raise RuntimeError("表面权重转移后源混合权重发生变化")
         return SkinWeightSurfaceResult(plan, edit)
 
     def _apply_projected_blend_weights(self, skin_name: str,
