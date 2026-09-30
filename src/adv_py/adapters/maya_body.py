@@ -333,6 +333,7 @@ _BODY_EXPORT_BAKE_ATTRIBUTES = {
 
 _GEOMETRY_CONTAINER_ATTRIBUTES = (
     "inheritsTransform", "visibility", "rotateOrder",
+    "offsetParentMatrix",
     *(axis + suffix for axis in ("translate", "rotate", "scale",
         "rotatePivot", "scalePivot", "rotatePivotTranslate",
         "scalePivotTranslate", "rotateAxis") for suffix in "XYZ"),
@@ -761,7 +762,15 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             plug = node + "." + attr
             if not c.objExists(plug):
                 continue
-            rows.append((attr, c.getAttr(plug),
+            value = c.getAttr(plug)
+            if attr == 'offsetParentMatrix':
+                if len(value) == 1 and isinstance(value[0], (tuple, list)):
+                    value = value[0]
+                value = tuple(float(item) for item in value)
+                if len(value) != 16:
+                    raise FitSkeletonValidationError(
+                        'Geometry offsetParentMatrix 值不完整')
+            rows.append((attr, value,
                          bool(c.getAttr(plug, lock=True)),
                          bool(c.getAttr(plug, keyable=True)),
                          bool(c.getAttr(plug, channelBox=True))))
@@ -873,7 +882,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise FitSkeletonValidationError(
                     "暂存 Geometry 属性缺失或受驱动：" + plug)
             c.setAttr(plug, lock=False)
-            c.setAttr(plug, value)
+            if attr == 'offsetParentMatrix':
+                c.setAttr(plug, *value, type='matrix')
+            else:
+                c.setAttr(plug, value)
             c.setAttr(plug, keyable=keyable)
             c.setAttr(plug, channelBox=channel_box)
             c.setAttr(plug, lock=locked)
@@ -3694,6 +3706,20 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             if clone.rsplit("|", 1)[-1].rsplit(":", 1)[-1] != mesh_name:
                 raise FitSkeletonValidationError(
                     "FBX 临时网格未能保留源名称：" + mesh_name)
+            for channel in ('translate', 'rotate', 'scale'):
+                compound = clone + '.' + channel
+                compound_driver = c.connectionInfo(compound,
+                    sourceFromDestination=True)
+                if compound_driver:
+                    c.disconnectAttr(compound_driver, compound)
+                for axis in 'XYZ':
+                    plug = clone + '.' + channel + axis
+                    if c.getAttr(plug, lock=True):
+                        c.setAttr(plug, lock=False)
+                    driver = c.connectionInfo(plug,
+                        sourceFromDestination=True)
+                    if driver:
+                        c.disconnectAttr(driver, plug)
             c.delete(clone, constructionHistory=True)
             clone_shapes = c.listRelatives(clone, shapes=True,
                 noIntermediate=True, fullPath=True, type="mesh") or []
@@ -3777,6 +3803,27 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             c.setAttr(skin + ".maintainMaxInfluences", maintain)
             copied.append((c.ls(clone, long=True,
                                  type="transform") or [])[0])
+        for frame in range(bind_frame, end_frame + 1, sample_by):
+            c.currentTime(frame, edit=True, update=True)
+            for source, clone in zip(sources, copied):
+                source_mesh = (self.scene_address(source[0])
+                               if namespace_free else source[0])
+                world = c.xform(source_mesh, query=True,
+                                worldSpace=True, matrix=True)
+                if len(world) != 16:
+                    raise FitSkeletonValidationError(
+                        'FBX 来源网格世界矩阵不完整：' + source[0])
+                c.xform(clone, worldSpace=True, matrix=world)
+                actual = c.xform(clone, query=True,
+                                 worldSpace=True, matrix=True)
+                if (len(actual) != 16 or any(abs(a-b) > 1e-5
+                        for a,b in zip(world, actual))):
+                    raise FitSkeletonValidationError(
+                        'FBX 临时网格无法保持来源世界变换：' + source[0])
+                for channel in ('translate', 'rotate', 'scale'):
+                    c.setKeyframe(clone, attribute=channel, time=frame,
+                                  inTangentType='linear',
+                                  outTangentType='linear')
         return tuple(copied)
 
     def _verify_fbx_skinned_meshes(self, sources, copied, selection, *,

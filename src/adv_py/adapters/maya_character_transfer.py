@@ -103,7 +103,13 @@ def sample(host,staged,frames,target=False):
             for attribute,*_ in staged.geometry_container_state or ():
                 plug=active.scene_address('|Group|Geometry.'+attribute)
                 value=c.getAttr(plug,time=frame)
-                attachments+=(('Geometry.'+attribute,(float(value),)),)
+                if attribute=='offsetParentMatrix':
+                    if len(value)==1 and isinstance(value[0],(tuple,list)):
+                        value=value[0]
+                    values=tuple(float(item) for item in value)
+                else:
+                    values=(float(value),)
+                attachments+=(('Geometry.'+attribute,values),)
             result.append((frame,pose.body_frames,pose.space_frames,meshes,attachments))
         return tuple(result)
 
