@@ -24,6 +24,8 @@ class SkinRebindState:
     bind_method: SkinBindMethod
     normalization: SkinWeightNormalization
     skinning_method: SkinningMethod
+    envelope: float
+    envelope_source: str | None
     old_topology: str
     current_topology: str
 
@@ -70,6 +72,7 @@ class RebindSkinFromSurfaceSource:
                 raise FitSkeletonValidationError(
                     "重绑 Skin 参数读回不一致："
                     + "；".join(issue.message for issue in bind_issues))
+            self._host.restore_skin_rebind_deformer_state(state)
             transfer = TransferSkinWeightsBySurface(self._host).plan_from_documents(
                 source.weights, source.geometry, skin, mesh,
                 max_distance=max_distance,

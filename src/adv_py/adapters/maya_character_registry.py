@@ -306,12 +306,12 @@ class MayaCharacterRegistryMixin:
                 raise CharacterRegistryError(
                     '旧通用 FK 位置约束名称不唯一：' + stem)
             if points:
-                targets = c.pointConstraint(
-                    points[0], query=True, targetList=True) or []
+                orient_name = namespace + 'AdvPy_' + stem + 'Orient'
+                point_matches_orient(point_name, orient_name)
                 outputs = c.listConnections(
                     points[0] + '.constraintTranslateX',
                     source=False, destination=True, plugs=True) or []
-                if (len(targets) != 1 or len(outputs) != 1
+                if (len(outputs) != 1
                         or not outputs[0].endswith('.translateX')
                         or (c.ls(outputs[0].rsplit('.', 1)[0],
                                  long=True) or []) != [body]):
