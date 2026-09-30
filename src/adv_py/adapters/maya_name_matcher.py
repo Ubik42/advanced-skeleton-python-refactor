@@ -4,11 +4,192 @@ from __future__ import annotations
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.name_matcher_fit import (
     NameMatcherConstraintPlan, NameMatcherSkinMatrixLink)
+from adv_py.core.name_matcher_mocap import NameMatcherMocapPlan
 
 from .maya_source_skeleton_fit import MayaSourceSkeletonFitHost
 
 
 class MayaNameMatcherHost(MayaSourceSkeletonFitHost):
+    def preflight_name_matcher_mocap(self,
+            plan: NameMatcherMocapPlan) -> None:
+        from maya import cmds as c
+
+        group = self.scene_address('MoCapConstraints')
+        if c.objExists(group):
+            raise FitSkeletonValidationError(
+                'NameMatcher 动捕约束已存在，请先解除旧连接')
+        if plan.poles and (not plan.root_control or not c.objExists(
+                self.scene_address(plan.root_control))):
+            raise FitSkeletonValidationError(
+                'NameMatcher Pole Vector 缺少已登记 RootX 控制器')
+        for link in plan.links:
+            control = self.scene_address(link.control)
+            if (len(c.ls(control, long=True, type='transform') or ()) != 1
+                    or (c.ls(link.external_joint, long=True,
+                             type='joint') or []) != [link.external_joint]):
+                raise FitSkeletonValidationError(
+                    'NameMatcher 动捕来源或控制器缺失：' + control)
+            for channel, enabled in (('translate', link.point),
+                                     ('rotate', link.orient)):
+                if not enabled:
+                    continue
+                for axis in 'XYZ':
+                    plug = control + '.' + channel + axis
+                    if (not c.getAttr(plug, settable=True)
+                            or c.connectionInfo(plug,
+                                sourceFromDestination=True)):
+                        raise FitSkeletonValidationError(
+                            'NameMatcher 动捕控制器通道不可接线：' + plug)
+            for channel in ('translate', 'rotate'):
+                source = c.connectionInfo(
+                    link.external_joint + '.' + channel + 'X',
+                    sourceFromDestination=True)
+                if source and c.nodeType(source.split('.', 1)[0]) in (
+                        'pointConstraint', 'orientConstraint',
+                        'parentConstraint'):
+                    raise FitSkeletonValidationError(
+                        'NameMatcher 动捕来源已被约束，可能形成回路：'
+                        + link.external_joint)
+        for pole in plan.poles:
+            control = self.scene_address(pole.control)
+            parents = c.listRelatives(pole.middle_joint, parent=True,
+                                      fullPath=True) or []
+            children = c.listRelatives(pole.middle_joint, children=True,
+                                       type='joint', fullPath=True) or []
+            if (len(parents) != 1 or len(children) != 1
+                    or not c.objExists(control)):
+                raise FitSkeletonValidationError(
+                    'NameMatcher Pole Vector 缺少连续三关节或控制器：'
+                    + pole.middle_joint)
+            for axis in 'XYZ':
+                plug = control + '.translate' + axis
+                if (not c.getAttr(plug, settable=True)
+                        or c.connectionInfo(plug,
+                            sourceFromDestination=True)):
+                    raise FitSkeletonValidationError(
+                        'NameMatcher Pole Vector 通道不可接线：' + plug)
+
+    def apply_name_matcher_mocap(self, plan: NameMatcherMocapPlan
+            ) -> tuple[tuple[str, str | None, str | None], ...]:
+        from maya import cmds as c
+
+        self._require_transaction()
+        self.preflight_name_matcher_mocap(plan)
+        group = self.scene_address('MoCapConstraints')
+        controls = tuple(link.control for link in plan.links) + tuple(
+            pole.control for pole in plan.poles)
+        before = tuple(tuple(float(value) for value in c.xform(
+            self.scene_address(control), query=True,
+            worldSpace=True, matrix=True)) for control in controls)
+        self._transaction_changed = True
+        c.createNode('transform', name=group, skipSelect=True)
+        c.addAttr(group, longName='disableConstraints',
+                  attributeType='bool', keyable=True)
+        created = []
+        for link in plan.links:
+            control = self.scene_address(link.control)
+            point = (c.pointConstraint(link.external_joint, control,
+                maintainOffset=True)[0] if link.point else None)
+            orient = (c.orientConstraint(link.external_joint, control,
+                maintainOffset=True)[0] if link.orient else None)
+            for node in (point, orient):
+                if node:
+                    c.connectAttr(group + '.disableConstraints',
+                                  node + '.nodeState')
+            created.append((control, point, orient))
+        for index, pole in enumerate(plan.poles):
+            parents = c.listRelatives(pole.middle_joint, parent=True,
+                                      fullPath=True) or []
+            children = c.listRelatives(pole.middle_joint, children=True,
+                                       type='joint', fullPath=True) or []
+            hip, ankle = parents[0], children[0]
+            positions = [c.xform(node, query=True, worldSpace=True,
+                                 translation=True)
+                         for node in (hip, pole.middle_joint, ankle)]
+            def distance(a, b):
+                return sum((float(x)-float(y))**2
+                           for x, y in zip(a, b))**0.5
+            dist_a = distance(positions[0], positions[1])
+            dist_b = distance(positions[1], positions[2])
+            if min(dist_a, dist_b) < 1e-6:
+                raise FitSkeletonValidationError(
+                    'NameMatcher Pole Vector 关节段长度为零：'
+                    + pole.middle_joint)
+            a = c.createNode('transform', parent=group,
+                             name='AdvPy_MoCapPoleA_' + str(index))
+            b = c.createNode('transform', parent=a,
+                             name='AdvPy_MoCapPoleB_' + str(index))
+            locator = c.createNode('transform', parent=b,
+                             name='AdvPy_MoCapPole_' + str(index))
+            center_constraint = c.pointConstraint(
+                hip, ankle, a, weight=dist_b)[0]
+            weights = c.pointConstraint(center_constraint, query=True,
+                                        weightAliasList=True) or []
+            if len(weights) == 2:
+                c.setAttr(center_constraint + '.' + weights[1], dist_a)
+            else:
+                raise RuntimeError('NameMatcher Pole Vector 中点权重不完整')
+            c.orientConstraint(self.scene_address(plan.root_control), a)
+            c.setAttr(b + '.translateZ',
+                      (dist_a+dist_b) / (10.0 if pole.limb == 'arm'
+                                          else -10.0))
+            c.aimConstraint(pole.middle_joint, b,
+                            aimVector=(1, 0, 0), upVector=(0, 1, 0),
+                            worldUpType='vector', worldUpVector=(0, 1, 0))
+            c.setAttr(locator + '.translateX', dist_a+dist_b)
+            control = self.scene_address(pole.control)
+            point = c.pointConstraint(locator, control,
+                                      maintainOffset=True)[0]
+            c.connectAttr(group + '.disableConstraints',
+                          point + '.nodeState')
+            created.append((control, point, None))
+        result = tuple(created)
+        self.verify_name_matcher_mocap(plan, result)
+        for control_path, old in zip(controls, before):
+            current = tuple(float(value) for value in c.xform(
+                self.scene_address(control_path), query=True,
+                worldSpace=True, matrix=True))
+            if len(current) != len(old) or any(abs(a-b)>1e-4
+                    for a,b in zip(old,current)):
+                raise RuntimeError('NameMatcher 动捕连接改变控制器当前姿态：'
+                                   +control_path)
+        return result
+
+    def verify_name_matcher_mocap(self, plan: NameMatcherMocapPlan,
+            created: tuple[tuple[str, str | None, str | None], ...]) -> None:
+        from maya import cmds as c
+
+        group = self.scene_address('MoCapConstraints')
+        if (len(created) != len(plan.links) + len(plan.poles)
+                or not c.objExists(group)):
+            raise RuntimeError('NameMatcher 动捕约束节点不完整')
+        for link, (control, point, orient) in zip(plan.links, created):
+            if control != self.scene_address(link.control):
+                raise RuntimeError('NameMatcher 动捕约束控制器漂移')
+            for node, kind in ((point, 'pointConstraint'),
+                               (orient, 'orientConstraint')):
+                if node is None:
+                    continue
+                if (c.nodeType(node) != kind
+                        or c.connectionInfo(node + '.nodeState',
+                            sourceFromDestination=True)
+                        != group + '.disableConstraints'):
+                    raise RuntimeError('NameMatcher 动捕禁用开关未接线')
+                targets = getattr(c, kind)(node, query=True,
+                                            targetList=True) or []
+                resolved = [c.ls(item, long=True) or [] for item in targets]
+                if resolved != [[link.external_joint]]:
+                    raise RuntimeError('NameMatcher 动捕约束来源不一致')
+        for pole, (control, point, orient) in zip(
+                plan.poles, created[len(plan.links):]):
+            if (control != self.scene_address(pole.control)
+                    or orient is not None or not point
+                    or c.nodeType(point) != 'pointConstraint'
+                    or c.connectionInfo(point + '.nodeState',
+                        sourceFromDestination=True)
+                    != group + '.disableConstraints'):
+                raise RuntimeError('NameMatcher Pole Vector 输出约束不完整')
+
     def capture_name_matcher_skin_links(self,
             plan: NameMatcherConstraintPlan
             ) -> tuple[NameMatcherSkinMatrixLink, ...]:

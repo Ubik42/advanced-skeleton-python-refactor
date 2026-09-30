@@ -601,6 +601,8 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._connect_name_matcher_skeleton))
             form.addRow(self._button('原 Skin 转接至 Body 关节',
                                      self._transfer_name_matcher_skin))
+            form.addRow(self._button('连接外部动捕到角色控制器',
+                                     self._connect_name_matcher_mocap))
             stack.addWidget(group)
 
             self.body_option_fields = {}
@@ -2350,6 +2352,17 @@ def create_panel(controller: MayaPanelController | None = None):
                     f'{result.matrix_links} 条影响矩阵转接到 Body；'
                     + (('未找到：' + '、'.join(result.missing))
                        if result.missing else '全部映射目标均已找到。'))
+
+        def _connect_name_matcher_mocap(self):
+            root = self.name_matcher_source_root.text().strip()
+            if not root:
+                raise ValueError('请填写 NameMatcher 动捕骨架根路径')
+            result = self.controller.tools_name_matcher_mocap(
+                self._namespace(), root, self._name_matcher_mapping_rows(),
+                **self._name_matcher_rule_kwargs())
+            return (f'NameMatcher 已连接 {result.connected_controls} 个控制器；'
+                    + (('未匹配：' + '、'.join(result.missing))
+                       if result.missing else '全部可用映射已连接。'))
 
         def _load_body_build_options(self):
             options = self.controller.body_build_options(

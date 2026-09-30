@@ -501,6 +501,22 @@ class MayaPanelController:
             NameMatcherRules(right, left, middle,
                              side_before_name, side_underscore))
 
+    def tools_name_matcher_mocap(self, namespace: str,
+            source_root: str, rows: tuple[tuple[str, str], ...], *,
+            right: str = 'R', left: str = 'L', middle: str = '',
+            side_before_name: bool = False,
+            side_underscore: bool = True):
+        from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
+        from adv_py.application.name_matcher_mocap import ConnectNameMatchedMocap
+        from adv_py.core.name_matcher_fit import NameMatcherRow, NameMatcherRules
+
+        host = MayaNameMatcherHost(
+            namespace=None if namespace == ':' else namespace)
+        return ConnectNameMatchedMocap(host).apply(source_root,
+            tuple(NameMatcherRow(*row) for row in rows),
+            NameMatcherRules(right, left, middle,
+                             side_before_name, side_underscore))
+
     def characters(self) -> tuple[PanelCharacter, ...]:
         from adv_py.adapters.maya_scene_gateway import MayaSceneGateway
         from maya import cmds
