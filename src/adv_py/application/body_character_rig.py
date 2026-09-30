@@ -271,6 +271,22 @@ class BuildBodyCharacterRig:
         arm_aim = aim_source_names & frozenset(("Shoulder", "Elbow", "Wrist"))
         leg_aim = aim_source_names & frozenset(("Hip", "Knee", "Ankle",
                                                 "Toes", "ToesEnd"))
+        # The MEL moves an Inbetween start's FKX under FKOffset and drives it
+        # with its Inbetween matrix. That final receiver is built by the
+        # Inbetween stage, so the ordinary FK receiver must not compete.
+        inbetween_starts = frozenset(
+            item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            for item in safety.symmetry.source.metadata
+            if (item.inbetween_joints or 0) > 0)
+        fkx_joint_names = (standard_fkx_joint_names
+                           if standard_fkx_joint_names is not None else
+                           frozenset(
+                               f"AdvPy_{joint}FK_{side}"
+                               for joint in ("Shoulder", "Elbow", "Wrist",
+                                             "Hip", "Knee", "Ankle",
+                                             "Toes", "ToesEnd")
+                               for side in ("R", "L")
+                               if joint not in inbetween_starts))
         fit_height = fit_character_height(tuple(
             node.world_position for node in
             safety.symmetry.source.hierarchy.joints))
@@ -284,7 +300,7 @@ class BuildBodyCharacterRig:
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
             aim_joint_names=arm_aim,
-            fkx_joint_names=standard_fkx_joint_names,
+            fkx_joint_names=fkx_joint_names,
         )
         leg = self._leg.plan_from_safety(
             safety,
@@ -293,7 +309,7 @@ class BuildBodyCharacterRig:
             twist_joints_per_segment=twist_joints_per_segment,
             defer_pole_aim=include_control_spaces,
             aim_joint_names=leg_aim,
-            fkx_joint_names=standard_fkx_joint_names,
+            fkx_joint_names=fkx_joint_names,
         )
         expected_hand_names = {
             f"{source_name}_{suffix}"
