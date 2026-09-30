@@ -1204,6 +1204,28 @@ class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
                     c.skinCluster(skin, edit=True, smoothWeights=0,
                                   smoothWeightsMaxIterations=5,
                                   obeyMaxInfluences=False)
+            if original.normalization_mode in (0, 2):
+                smoothed = self.capture_dense_skin(skin)
+                current = array("d")
+                current.frombytes(smoothed.values)
+                for vertex in range(original.vertex_count):
+                    expected = sum(before[vertex * old_width + index]
+                                   for index in range(old_width))
+                    start = vertex * new_width
+                    total = sum(current[start:start + new_width])
+                    if expected <= 0.:
+                        current[start:start + new_width] = array(
+                            "d", [0.] * new_width)
+                    elif total > 0.:
+                        factor = expected / total
+                        for index in range(start, start + new_width):
+                            current[index] *= factor
+                    else:
+                        current[start:start + new_width] = values[
+                            start:start + new_width]
+                self.apply_dense_skin(DenseSkinWeights(skin,
+                    original.vertex_count, new_names, current.tobytes(),
+                    original.normalization_mode))
             method = int(c.getAttr(skin + ".skinningMethod"))
             if method == 0:
                 blend = array("d", [0.] * original.vertex_count)

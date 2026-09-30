@@ -133,13 +133,21 @@ def transfer_face_source_skin_weights(
         row_total = (sum(max(0., old[vertex * old_width + index])
                          for index in range(old_width))
                      if target.normalization_mode in (0, 2) else 1.)
+        source_row = source_values[
+            vertex * source_influence_count:
+            (vertex + 1) * source_influence_count]
+        if any(not isfinite(value) or value < -1e-8
+               for value in source_row):
+            raise ValueError(f"原版顶点 {vertex} 的 Skin 权重无效")
+        source_total = sum(max(0., value) for value in source_row)
+        source_scale = row_total / source_total if source_total > 1e-12 else 0.
         mass = 0.
         for source_index, name in source_to_target:
             raw_amount = source_values[
                 vertex * source_influence_count + source_index]
             if not isfinite(raw_amount):
                 raise ValueError(f"原版顶点 {vertex} 的眼睑权重非有限数值")
-            amount = max(0., raw_amount)
+            amount = max(0., raw_amount) * source_scale
             values[vertex * width + target_index[name]] += amount
             mass += amount
         if mass > row_total + 1e-5:
