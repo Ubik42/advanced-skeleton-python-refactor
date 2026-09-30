@@ -695,6 +695,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         present = c.listRelatives(geometry, children=True,
                                   fullPath=True) or []
         if roots is not None:
+            present = c.listRelatives(geometry, allDescendents=True,
+                                      fullPath=True) or []
             missing = set(roots) - set(present)
             if missing:
                 raise FitSkeletonValidationError(
@@ -704,7 +706,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         for root in sorted(present):
             if c.nodeType(root) not in ("transform", "joint"):
                 raise FitSkeletonValidationError(
-                    "Geometry 直属非变换节点需要专门保留协议：" + root)
+                    "Geometry 非变换节点需要专门保留协议：" + root)
             if (roots is not None
                     and (c.referenceQuery(root, isNodeReferenced=True)
                     or any(c.lockNode(root, query=True, lock=True) or []))):

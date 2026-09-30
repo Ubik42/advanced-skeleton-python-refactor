@@ -193,8 +193,8 @@ class StageBodyCharacterRebuild:
                     raise RuntimeError('暂存构建改写了 Geometry 容器状态')
                 host.apply_body_geometry_container_state(
                     namespace, geometry_container_state)
-                stage_geometry_roots = {
-                    row[0] for row in stage.capture_body_geometry_contents()}
+                stage_geometry = stage.capture_body_geometry_contents()
+                stage_geometry_roots = {row[0] for row in stage_geometry}
                 existing_roots = {row[0] for row in authored_geometry}
                 overlapping_roots = existing_roots & stage_geometry_roots
                 old_owned = (set(host.capture_body_all_set_members())
@@ -205,9 +205,39 @@ class StageBodyCharacterRebuild:
                         + repr(sorted(overlapping_roots - old_owned)))
                 # A feature generated in both rigs belongs to the replacement;
                 # only old-only Geometry children are handed across intact.
-                preserved_geometry = tuple(
+                preserved_direct = tuple(
                     row for row in authored_geometry
                     if row[0] not in stage_geometry_roots)
+                old_members = {
+                    root + suffix: kind
+                    for root, identities, _, _ in authored_geometry
+                    for suffix, _, kind in identities}
+                stage_members = {
+                    root + suffix
+                    for root, identities, _, _ in stage_geometry
+                    for suffix, _, _ in identities}
+                old_owned.update(node.path for node in original.registration.nodes)
+                ambiguous_descendants = {
+                    path for path in set(old_members) & stage_members
+                    if path not in old_owned and path not in overlapping_roots
+                    and any(path.startswith(root + '|')
+                            for root in overlapping_roots)}
+                if ambiguous_descendants:
+                    raise RuntimeError(
+                        'Geometry 用户子节点与新构建同名，不能静默覆盖：'
+                        + repr(sorted(ambiguous_descendants)))
+                old_only = {
+                    path for path in old_members
+                    if path not in stage_members and path not in old_owned
+                    and any(path.startswith(root + '|')
+                            for root in overlapping_roots)}
+                nested_roots = tuple(sorted(path for path in old_only
+                    if not any(path.startswith(parent + '|')
+                               for parent in old_only if parent != path)))
+                nested = host.capture_body_geometry_contents(
+                    set(nested_roots)) if nested_roots else ()
+                preserved_geometry = tuple(sorted(
+                    (*preserved_direct, *nested), key=lambda row: row[0]))
                 host.capture_body_geometry_contents(
                     {row[0] for row in preserved_geometry})
                 properties=host.plan_character_property_transfer(original,namespace)

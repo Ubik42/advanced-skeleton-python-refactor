@@ -185,6 +185,10 @@ def transfer(host,staged):
         # intact; descendants follow their retained parent without renaming.
         for row in old.extensions:
             node=_by_uuid(c,row.uuid)
+            if row.path.startswith('|Group|Geometry|'):
+                # Geometry branches remain on the original container until
+                # promotion detaches them as one authored subtree.
+                continue
             if row.parent and host.scene_address(row.parent) in old_nodes:
                 c.parent(node,old_nodes[host.scene_address(row.parent)],relative=True)
         c.currentTime(c.currentTime(q=True),edit=True,update=True)
@@ -240,7 +244,9 @@ def verify_retained(host,staged):
         raise RuntimeError('交接改变了生产变形器参数、连接或网格顺序')
     for row in staged.original.extensions:
         actual=capture_extension(host,_by_uuid(c,row.uuid))
-        expected=replace(row,path=local(row.path),parent=local(row.parent) if row.parent else None,
+        expected_parent=(row.parent if row.path.startswith('|Group|Geometry|')
+                         else local(row.parent) if row.parent else None)
+        expected=replace(row,path=local(row.path),parent=expected_parent,
             connections=tuple(sorted((local(a),local(b)) for a,b in row.connections)))
         if actual!=expected:
             changed=[field.name for field in fields(row) if getattr(actual,field.name)!=getattr(expected,field.name)]
