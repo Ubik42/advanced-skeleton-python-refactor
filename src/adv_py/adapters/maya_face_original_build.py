@@ -27,11 +27,6 @@ class MayaOriginalFaceBuildHost(MayaFaceSoftModEditMixin, MayaFaceRestoreMixin, 
     def preflight_original_face_build(self):
         c = self._cmds
         fit = self._fit(required=True)
-        missing = [name for name in ("ARKit", "SnapChat") if c.objExists(fit + "." + name) and c.getAttr(fit + "." + name)]
-        if c.objExists(fit + ".RigType") and c.getAttr(fit + ".RigType") > 0:
-            missing.append("RigType blendshape 转换")
-        if missing:
-            raise FitSkeletonValidationError("这些原版转换分支尚未完成：" + "、".join(missing))
         return self.capture_original_face_prep()
 
     def prepare_original_face_build_step(self, step):

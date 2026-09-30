@@ -168,6 +168,9 @@ ADV_OPERATIONS = {
         ("select lipFalloffArea", 3, "03A · Face Tweaks"),
         ("WeightHammerVerts", 3, "03A · Face Tweaks")),
     ("Face", "BlendShapes"): (
+        ("转换", 3, "03P · 原版驱动转 BlendShape"),
+        ("连接 ARKit", 3, "03Q · ARKit 接线"),
+        ("断开 ARKit", 3, "03Q · ARKit 接线"),
         ("应用面部动画", 3, "04 · 表情与口型动画"),
         ("登记资产版本", 3, "05 · 面部资产版本"),
         ("刷新版本", 3, "05 · 面部资产版本"),

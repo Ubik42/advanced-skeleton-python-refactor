@@ -73,12 +73,6 @@ class MayaFaceFinishMixin:
         c=self._cmds; fit=self._fit(required=True)
         for name in ("FaceJoint_M","FaceGroup","FaceControlSet","FaceAllSet","FaceAreas","FaceBuildingSets","allBeforeFaceBuild","faceBuildPose"):
             if not c.objExists(name): raise FitSkeletonValidationError("Face Finish 缺少前置节点："+name)
-        # These source branches require their own genuine conversion modules;
-        # reject before changing the scene rather than silently omitting them.
-        unsupported=[name for name in ("ARKit","SnapChat") if c.objExists(fit+"."+name) and c.getAttr(fit+"."+name)]
-        if c.objExists(fit+".RigType") and c.getAttr(fit+".RigType")>0 and not c.objExists("asFaceBS"):
-            unsupported.append("RigType blendshape 转换")
-        if unsupported: raise FitSkeletonValidationError("这些原版收尾分支尚未完成："+"、".join(unsupported))
         geometry=self.read_face_objects(FacePreRole.FACE)
         if len(geometry)!=1: raise FitSkeletonValidationError("Face Finish 需要唯一 Face 网格")
         head=c.getAttr(fit+".HeadJoint")
@@ -114,6 +108,9 @@ class MayaFaceFinishMixin:
             c.delete("eyeLidAreaLeft")
         if c.objExists(fit+".RobloxHead") and c.getAttr(fit+".RobloxHead"):
             self.create_original_face_roblox_head()
+        for option in ("ARKit", "SnapChat"):
+            if c.objExists(fit+"."+option) and c.getAttr(fit+"."+option):
+                self.connect_original_face_arkit()
         if c.objExists(fit+".MultiSkinClusters") and c.getAttr(fit+".MultiSkinClusters"):
             for before,after in (("EyeLidSC","JawSC"),("JawSC","CageSC")):
                 if c.objExists(before) and c.objExists(after):
@@ -147,6 +144,10 @@ class MayaFaceFinishMixin:
         for node in raw.listHistory(self.scene_address(geometry)) or []:
             if raw.nodeType(node)=="deltaMush": raw.setAttr(node+".envelope",1)
         self._finish_original_face_history()
+        if c.objExists(fit+".RigType") and int(c.getAttr(fit+".RigType")) > 0 and not c.objExists("asFaceBS"):
+            from adv_py.core.face_blendshape_conversion import FaceBlendShapeConversionOptions
+            self.convert_original_face_to_blendshapes(FaceBlendShapeConversionOptions(
+                keep_joints=int(c.getAttr(fit+".RigType")) == 2, keep_targets=False))
         if c.objExists(fit+".postRebuildScript"):
             script=c.getAttr(fit+".postRebuildScript")
             if script:

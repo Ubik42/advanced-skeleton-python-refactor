@@ -15,8 +15,10 @@ from .maya_face_eye_lid_original import MayaFaceEyeLidOriginalMixin
 from .maya_face_prep_skin import MayaFacePrepSkinMixin
 from .maya_face_prep_first import MayaFacePrepFirstMixin
 from .maya_face_prep_prefix import MayaFacePrepPrefixMixin
+from .maya_face_arkit import MayaFaceARKitMixin
+from .maya_face_bs_conversion import MayaFaceBSConversionMixin
 
-class MayaFaceExpressionHost(MayaFacePrepPrefixMixin,MayaFacePrepFirstMixin,MayaFacePrepSkinMixin,MayaFaceEyeLidOriginalMixin,MayaFacePrepFitsMixin,MayaFacePupilIrisMixin,MayaFaceEyeBallMixin,MayaFaceRobloxMixin,MayaFaceEyePosesMixin,MayaFaceFinishMixin,MayaFaceSpeechMixin,MayaFaceSmileMixin,MayaFaceBrowMixin,MayaFaceUpMidLoMixin,MayaFaceCageHost):
+class MayaFaceExpressionHost(MayaFaceBSConversionMixin,MayaFaceARKitMixin,MayaFacePrepPrefixMixin,MayaFacePrepFirstMixin,MayaFacePrepSkinMixin,MayaFaceEyeLidOriginalMixin,MayaFacePrepFitsMixin,MayaFacePupilIrisMixin,MayaFaceEyeBallMixin,MayaFaceRobloxMixin,MayaFaceEyePosesMixin,MayaFaceFinishMixin,MayaFaceSpeechMixin,MayaFaceSmileMixin,MayaFaceBrowMixin,MayaFaceUpMidLoMixin,MayaFaceCageHost):
     def create_original_face_blended_attribute(self,drivers,attribute):
         """asCreateCustomBlendedAttribute's two-axis combination, source 66118."""
         c=self._cmds

@@ -11,7 +11,7 @@ from adv_py.core.character_registry import CharacterRegistryError
 _NODE_ARGS = frozenset('ls objExists nodeType listRelatives listConnections listHistory aliasAttr referenceQuery lockNode xform delete deleteAttr rename parent connectAttr disconnectAttr isConnected connectionInfo getAttr addAttr attributeQuery joint circle makeIdentity exactWorldBoundingBox pointPosition polyEvaluate keyframe keyTangent setKeyframe skinCluster skinPercent orientConstraint parentConstraint pointConstraint scaleConstraint poleVectorConstraint ikHandle polyUnite'.split())
 _NODE_RESULTS = frozenset('listRelatives listConnections listHistory rename parent createNode joint circle skinCluster orientConstraint parentConstraint pointConstraint scaleConstraint poleVectorConstraint ikHandle polyCylinder polyCube polyUnite'.split())
 _GLOBAL = frozenset('currentTime currentUnit upAxis undoInfo undo file pluginInfo loadPlugin allNodeTypes'.split())
-_READ = frozenset('ls listAttr objExists nodeType listRelatives listConnections listHistory aliasAttr referenceQuery connectionInfo getAttr attributeQuery isConnected exactWorldBoundingBox pointPosition polyEvaluate'.split())
+_READ = frozenset('ls listAttr objExists nodeType listRelatives listConnections listHistory referenceQuery connectionInfo getAttr attributeQuery isConnected exactWorldBoundingBox pointPosition polyEvaluate'.split())
 _CREATE = frozenset('createNode joint circle ikHandle skinCluster orientConstraint parentConstraint pointConstraint scaleConstraint poleVectorConstraint polyCylinder polyCube polyUnite setKeyframe'.split())
 _NODE_ARGS |= {'aimConstraint'}
 _NODE_RESULTS |= {'aimConstraint'}
@@ -62,6 +62,7 @@ _NODE_RESULTS |= {'polyPlane'}
 _CREATE |= {'polyPlane'}
 _NODE_RESULTS |= {'polySphere'}
 _CREATE |= {'polySphere'}
+_NODE_ARGS |= {'reorderDeformers'}
 _NODE_ARGS |= {'nodeCast'}
 _NODE_RESULTS |= {'nodeCast'}
 
@@ -142,6 +143,9 @@ class MayaCharacterCommands:
                 # The first argument identifies a polygon face target;
                 # constrained objects and named new nodes remain owned.
                 args=[args[0]]+[address(a) for a in args[1:]]
+            elif name=='aliasAttr' and not query:
+                # The alias is a literal identifier; only its destination is a node plug.
+                args=[args[0]]+[address(a) for a in args[1:]]
             elif name in ('lattice', 'duplicate'):
                 # Face / Pre explicitly chooses production geometry, which may
                 # sit in a model namespace. New lattice nodes stay in the rig.
@@ -158,11 +162,16 @@ class MayaCharacterCommands:
                 for flag in ('add', 'isMember', 'remove', 'rm', 'forceElement', 'clear'):
                     if flag in kwargs and isinstance(kwargs[flag], str):
                         kwargs[flag]=address(kwargs[flag])
-            if name=='skinCluster' and 'addInfluence' in kwargs:
-                kwargs['addInfluence']=address(kwargs['addInfluence'])
+            if name=='skinCluster':
+                for flag in ('addInfluence','removeInfluence','selectInfluenceVerts'):
+                    if isinstance(kwargs.get(flag),(str,tuple,list)):
+                        kwargs[flag]=address(kwargs[flag])
             if name=='setDrivenKeyframe':
                 for flag in ('currentDriver','cd'):
-                    if isinstance(kwargs.get(flag),str): kwargs[flag]=address(kwargs[flag])
+                    if isinstance(kwargs.get(flag),str):
+                        # SDK reads its driver; only the driven destination is
+                        # mutated. External ARKit sources may be read here.
+                        kwargs[flag]=self._map(kwargs[flag],identity.to_scene)
             if name=='expression' and isinstance(kwargs.get('object'),str):
                 kwargs['object']=address(kwargs['object'])
             if name=='ikHandle' and isinstance(kwargs.get('solver'),str) and kwargs['solver'] not in SHARED_NODES:
@@ -179,7 +188,7 @@ class MayaCharacterCommands:
                     if isinstance(kwargs.get(flag),str):kwargs[flag]=address(kwargs[flag])
                 for flag in ('transformValue','tv'):
                     if flag in kwargs:kwargs[flag]=[(address(p),v) for p,v in kwargs[flag]]
-            readonly=query or name in _READ or (name=='lockNode' and kwargs.get('query',kwargs.get('q')))
+            readonly=query or name in _READ or (name=='sets' and ('isMember' in kwargs or 'im' in kwargs)) or (name=='lockNode' and kwargs.get('query',kwargs.get('q')))
             if not readonly and name!='select':
                 for item in addresses:
                     node=item.split('.',1)[0]

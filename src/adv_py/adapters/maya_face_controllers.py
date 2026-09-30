@@ -338,6 +338,8 @@ class MayaFaceControllersMixin:
         else:
             destination=bw+f".input[{max(indices,default=-1)+1}]"
             if start and indices: value-=1; start-=1
+        if c.objExists("ARKitQuickConnecting"):
+            destination=driven
         before=set(c.listConnections(destination,source=True,destination=False,type="animCurve") or [])
         for dv,v in ((0,start),(driver_value,value)):
             c.setDrivenKeyframe(destination,currentDriver=driver,driverValue=dv,value=v,

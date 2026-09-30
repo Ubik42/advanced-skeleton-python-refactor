@@ -2512,6 +2512,24 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)).apply(
             head_joint, right_eye, left_eye)
 
+    def face_convert_original_blendshapes(self, namespace: str, *, keep_joints=False, keep_targets=False):
+        from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
+        from adv_py.application.face_conversion import ConvertOriginalFaceToBlendShapes
+        host = MayaOriginalFaceBuildHost(namespace=None if namespace == ":" else namespace)
+        return ConvertOriginalFaceToBlendShapes(host).apply(keep_joints=keep_joints, keep_targets=keep_targets)
+
+    def face_connect_original_arkit(self, namespace: str, blendshape=None, *, mouth_close_includes_open=False):
+        from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
+        from adv_py.application.face_conversion import ConnectOriginalFaceARKit
+        host = MayaOriginalFaceBuildHost(namespace=None if namespace == ":" else namespace)
+        return ConnectOriginalFaceARKit(host).apply(blendshape, mouth_close_includes_open=mouth_close_includes_open)
+
+    def face_disconnect_original_arkit(self, namespace: str):
+        from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
+        from adv_py.application.face_conversion import ConnectOriginalFaceARKit
+        host = MayaOriginalFaceBuildHost(namespace=None if namespace == ":" else namespace)
+        return ConnectOriginalFaceARKit(host).disconnect()
+
     def face_asset_export(self, namespace: str, neutral: str, name: str,
                           kind: str, target_mesh: str, destination: Path) -> int:
         target = FaceTarget(name, FaceShapeKind(kind), target_mesh)

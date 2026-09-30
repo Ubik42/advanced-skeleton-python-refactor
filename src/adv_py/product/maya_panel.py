@@ -316,7 +316,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('Tweaks', ('03A · Face Tweaks',)),
                     ('DeltaMush', ('03B · Face DeltaMush',)),
                     ('HeadSquash', ('03C · Face HeadSquash',)), ('WrinkleMap', ()),
-                    ('BlendShapes', ('04 · 表情与口型动画',
+                    ('BlendShapes', ('03P · 原版驱动转 BlendShape', '03Q · ARKit 接线', '04 · 表情与口型动画',
                                      '05 · 面部资产版本',
                                      '06 · 合并同一目标的三个版本')),
                     ('EditBlendShapes', ()), ('NewBlendShapes', ()),
@@ -1861,6 +1861,23 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(QtWidgets.QLabel("选择头发等对象后，将它加入头部压缩变形"))
             form.addRow(self._button("加入所选对象",
                 lambda: self._face_head_squash("include")))
+            stack.addWidget(group)
+
+            self.face_bs_keep_joints = QtWidgets.QCheckBox("保留关节")
+            self.face_bs_keep_targets = QtWidgets.QCheckBox("保留 BlendShape 目标对象")
+            group, form = self._group("03P · 原版驱动转 BlendShape", [])
+            form.addRow(QtWidgets.QLabel("将 DrivingSystems 转换为 BlendShape"))
+            form.addRow(self.face_bs_keep_joints)
+            form.addRow(self.face_bs_keep_targets)
+            form.addRow(self._button("转换", self._face_original_bs_convert))
+            stack.addWidget(group)
+            self.face_arkit_source = QtWidgets.QLineEdit()
+            self.face_arkit_source.setPlaceholderText("外部 ARKit BlendShape 节点；创建原版控制器时留空")
+            self.face_arkit_mouth_close = QtWidgets.QCheckBox("mouthClose 包含张嘴运动")
+            group, form = self._group("03Q · ARKit 接线", [("BlendShape 节点", self.face_arkit_source)])
+            form.addRow(self.face_arkit_mouth_close)
+            form.addRow(self._button("连接 ARKit", self._face_original_arkit_connect))
+            form.addRow(self._button("断开 ARKit", self._face_original_arkit_disconnect))
             stack.addWidget(group)
 
             performance, self.face_performance_document = self._file_field("面部动画文档")
@@ -3880,6 +3897,22 @@ def create_panel(controller: MayaPanelController | None = None):
             if isinstance(result,dict) and "smooth_passes" in result:
                 self.face_cage_smooth.setValue(result["smooth_passes"])
             return "Face Cage 操作完成："+action
+
+        def _face_original_bs_convert(self):
+            result = self.controller.face_convert_original_blendshapes(self._namespace(),
+                keep_joints=self.face_bs_keep_joints.isChecked(),
+                keep_targets=self.face_bs_keep_targets.isChecked())
+            return "Face 转换完成，共生成 " + str(len(result["targets"])) + " 个驱动目标"
+
+        def _face_original_arkit_connect(self):
+            result = self.controller.face_connect_original_arkit(self._namespace(),
+                self.face_arkit_source.text().strip() or None,
+                mouth_close_includes_open=self.face_arkit_mouth_close.isChecked())
+            return "已连接 " + str(len(result["channels"])) + " 个通道，缺少 " + str(len(result["missing_channels"])) + " 个来源通道"
+
+        def _face_original_arkit_disconnect(self):
+            self.controller.face_disconnect_original_arkit(self._namespace())
+            return "已断开 ARKit 并返回 Face 构建姿态"
 
         def _face_original_build(self):
             from adv_py.core.face_lip_falloff import LipFalloffOptions
