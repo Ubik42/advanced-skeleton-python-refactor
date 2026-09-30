@@ -1,4 +1,6 @@
 """Capture original curves, sparse skin storage and explicit extension objects."""
+from math import isfinite
+
 from adv_py.core.character_registry import CharacterRegistryError
 from dataclasses import replace
 from adv_py.core.character_preservation import PreservedCurve, PreservedSkin, PreservedDeformer, PreservedExtension, CharacterPreservation, validate_preservation
@@ -136,7 +138,8 @@ def capture_extension(host,node):
                 if len(value)==1 and isinstance(value[0],(tuple,list)):
                     value=value[0]
                 value=tuple(float(item) for item in value)
-                if len(value)!=16:
+                if len(value)!=16 or not all(isfinite(item)
+                                             for item in value):
                     raise CharacterRegistryError(
                         '用户扩展矩阵值不完整：'+plug)
             elif isinstance(value,list):value=tuple(value)
