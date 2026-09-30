@@ -160,6 +160,16 @@ class MayaCharacterRegistryMixin:
                 or (c.ls(pelvis_outputs[0].rsplit('.', 1)[0],
                          long=True) or []) != [registration.body_root]):
             raise CharacterRegistryError('Torso Root 位置目标不是 Body 根')
+        for axis in 'YZ':
+            outputs = c.listConnections(
+                pelvis_point[0] + '.constraintTranslate' + axis,
+                source=False, destination=True, plugs=True) or []
+            if (len(outputs) != 1
+                    or not outputs[0].endswith('.translate' + axis)
+                    or (c.ls(outputs[0].rsplit('.', 1)[0],
+                             long=True) or []) != [registration.body_root]):
+                raise CharacterRegistryError(
+                    'Torso Root 位置约束部分轴接线缺失')
         pelvis_source = c.ls(pelvis_targets[0], long=True) or []
         root_fkx = by_leaf.get('AdvPy_RootFKX', ())
         root_control = by_leaf.get('AdvPy_TorsoRoot_MFK', ())
