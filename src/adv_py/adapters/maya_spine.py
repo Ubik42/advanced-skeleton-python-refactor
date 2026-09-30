@@ -653,6 +653,7 @@ class MayaBodySpineMixin:
             source = base_source
             start = {"AdvPy_SpineBaseFKOrient": "Root_M",
                      "AdvPy_TorsoSpine1_MOrient": "Spine1_M"}.get(name)
+            inbetween_redirect = False
             if start:
                 proxy_name = "AdvPy_" + start + "_InbetweenFKX"
                 marker = proxy_name + ".advPyInbetweenFkOwner"
@@ -668,9 +669,10 @@ class MayaBodySpineMixin:
                         raise FitSkeletonValidationError(
                             "脊柱 Inbetween FKX 不唯一：" + proxy_name)
                     source = proxy[0]
+                    inbetween_redirect = True
             if name == "AdvPy_TorsoSpine1_MOrient" and c.objExists(
                     "AdvPy_AxialFKXSpine1_M.advPyAxialBodyOwner"):
-                if source != base_source:
+                if inbetween_redirect:
                     raise FitSkeletonValidationError(
                         "脊柱存在两个轴向 FKX 来源")
                 marker = "AdvPy_AxialFKXSpine1_M.advPyAxialBodyOwner"
