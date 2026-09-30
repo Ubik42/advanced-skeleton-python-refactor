@@ -9653,10 +9653,15 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         if (c.ls(joint, long=True, type="joint") or []) != [joint]:
             raise FitSkeletonValidationError(
                 "FK 锁定来源 Fit 关节缺失：" + joint)
-        return tuple(attribute for attribute in (
-            kind + axis for kind in ("translate", "rotate", "scale")
-            for axis in "XYZ")
-            if c.getAttr(joint + "." + attribute, lock=True))
+        # 6.925 reads each locked Fit translation axis into fitJointLockTx.
+        # FK ty/tz are never set by that MEL pass, even when Fit ty/tz are.
+        translation = (("translateX",) if any(c.getAttr(
+            joint + ".translate" + axis, lock=True) for axis in "XYZ")
+                       else ())
+        rotation_scale = tuple(
+            kind + axis for kind in ("rotate", "scale") for axis in "XYZ"
+            if c.getAttr(joint + "." + kind + axis, lock=True))
+        return translation + rotation_scale
 
     def apply_body_fk_channel_locks(
         self, spec: BodyFkChannelLockSpec,
