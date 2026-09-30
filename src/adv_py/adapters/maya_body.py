@@ -5596,6 +5596,13 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         if scene_skin not in members and skin not in members:
             raise FitSkeletonValidationError(
                 "Geodesic Skin 不属于捕获的 geomBind 管理节点：" + skin)
+        if (len(members) == 1 and (
+                c.referenceQuery(manager, isNodeReferenced=True)
+                or any(c.lockNode(manager, query=True,
+                                  lock=True) or []))):
+            raise FitSkeletonValidationError(
+                "独占的 geomBind 管理节点被引用或锁定，不能自动重绑："
+                + manager)
         return manager, preferences, members
 
     def capture_skin_rebind_state(self, skin: str, mesh: str):
@@ -5638,6 +5645,12 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             influences.append(paths[0])
         if not influences:
             raise FitSkeletonValidationError("Skin 没有影响关节")
+        locked_influences = tuple(path for path in influences
+            if bool(c.getAttr(path + ".lockInfluenceWeights")))
+        if any(not c.getAttr(path + ".lockInfluenceWeights",
+                             settable=True) for path in locked_influences):
+            raise FitSkeletonValidationError(
+                "锁定的 Skin 影响关节不可写，无法临时解锁重绑")
         bind_method = {
             0: SkinBindMethod.CLOSEST_DISTANCE,
             1: SkinBindMethod.CLOSEST_IN_HIERARCHY,
@@ -5683,8 +5696,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             c.getAttr(f"{skin}.{TOPOLOGY_ATTRIBUTE}"),
             mesh_topology_digest(shapes[0]),
             manager, geodesic, manager_members,
-            tuple(path for path in influences if bool(c.getAttr(
-                path + ".lockInfluenceWeights"))))
+            locked_influences)
 
     def capture_skin_bind_topology(self, skin: str, mesh: str) -> str | None:
         from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
