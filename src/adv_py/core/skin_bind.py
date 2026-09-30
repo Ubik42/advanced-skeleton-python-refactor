@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from math import isfinite
 
 
 class SkinBindMethod(str, Enum):
@@ -30,6 +31,28 @@ class SkinWeightDistribution(str, Enum):
 
 class SkinBindValidationError(ValueError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class GeodesicBindPreferences:
+    falloff: float = 0.2
+    resolution: int = 256
+    post_voxel_check: bool = True
+    maximum_influences: int = -1
+
+    def __post_init__(self) -> None:
+        if (isinstance(self.falloff, bool)
+                or not isinstance(self.falloff, (int, float))
+                or not isfinite(self.falloff)
+                or not 0.0 <= self.falloff <= 1.0
+                or type(self.resolution) is not int
+                or self.resolution < 2
+                or self.resolution & (self.resolution - 1)
+                or type(self.post_voxel_check) is not bool
+                or type(self.maximum_influences) is not int
+                or self.maximum_influences != -1
+                and self.maximum_influences < 1):
+            raise SkinBindValidationError("Geodesic Voxel 参数无效")
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +87,7 @@ class SkinBindPlan:
     skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR
     remove_unused_influences: bool = False
     weight_distribution: SkinWeightDistribution = SkinWeightDistribution.DISTANCE
+    geodesic: GeodesicBindPreferences | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +111,7 @@ class SkinBindSnapshot:
     skinning_method: SkinningMethod | None = SkinningMethod.CLASSIC_LINEAR
     geodesic_source: str | None = None
     weight_distribution: SkinWeightDistribution | None = SkinWeightDistribution.DISTANCE
+    geodesic: GeodesicBindPreferences | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +133,7 @@ def plan_skin_bind(
     skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR,
     remove_unused_influences: bool = False,
     weight_distribution: SkinWeightDistribution = SkinWeightDistribution.DISTANCE,
+    geodesic: GeodesicBindPreferences | None = None,
 ) -> SkinBindPlan:
     if not isinstance(mesh_path, str) or not mesh_path.strip():
         raise SkinBindValidationError("Skin Bind 需要显式 mesh 路径")
@@ -142,6 +168,11 @@ def plan_skin_bind(
         raise SkinBindValidationError("Skin Bind 未使用影响关节选项无效")
     if not isinstance(weight_distribution, SkinWeightDistribution):
         raise SkinBindValidationError("Skin Bind 权重分布方法无效")
+    if geodesic is not None and not isinstance(geodesic,
+                                              GeodesicBindPreferences):
+        raise SkinBindValidationError("Geodesic Voxel 参数类型无效")
+    if bind_method is not SkinBindMethod.GEODESIC_VOXEL and geodesic is not None:
+        raise SkinBindValidationError("非 Geodesic Skin 不接受体素参数")
     return SkinBindPlan(
         mesh_path.strip(),
         tuple(path.strip() for path in influence_paths),
@@ -153,6 +184,7 @@ def plan_skin_bind(
         skinning_method,
         remove_unused_influences,
         weight_distribution,
+        geodesic,
     )
 
 
@@ -258,6 +290,14 @@ def audit_skin_bind_result(
             or snapshot.geodesic_source is not None,
             "geodesic_bind_missing",
             "Geodesic Voxel 权重求解节点缺失",
+        ),
+        (
+            plan.bind_method is not SkinBindMethod.GEODESIC_VOXEL
+            or snapshot.geodesic == (plan.geodesic or
+                GeodesicBindPreferences(
+                    maximum_influences=plan.maximum_influences)),
+            "geodesic_settings_mismatch",
+            "Geodesic Voxel 参数不一致",
         ),
     )
     for passed, code, message in checks:

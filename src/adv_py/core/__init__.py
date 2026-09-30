@@ -458,6 +458,7 @@ from .body_leg_volume import (
     plan_body_leg_volume,
 )
 from .skin_bind import (
+    GeodesicBindPreferences,
     SkinBindInputState,
     SkinBindIssue,
     SkinBindMethod,
@@ -1013,6 +1014,7 @@ __all__ = [
     "BodyLegVolumeSideState",
     "BodyLegVolumeSnapshot",
     "BodyLegVolumeValidationError",
+    "GeodesicBindPreferences",
     "SkinBindInputState",
     "SkinBindIssue",
     "SkinBindMethod",

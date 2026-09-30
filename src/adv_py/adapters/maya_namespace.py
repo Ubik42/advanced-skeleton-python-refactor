@@ -43,6 +43,8 @@ _NODE_ARGS |= {'reorder'}
 _NODE_ARGS |= {'tangentConstraint', 'expression'}
 _NODE_RESULTS |= {'tangentConstraint', 'expression'}
 _CREATE |= {'tangentConstraint', 'expression'}
+_NODE_ARGS |= {'geomBind'}
+_CREATE |= {'geomBind'}
 
 
 class MayaCharacterCommands:

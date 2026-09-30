@@ -6,6 +6,7 @@ from typing import Protocol
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.skin_bind import (
+    GeodesicBindPreferences,
     SkinBindMethod,
     SkinWeightNormalization,
     SkinningMethod,
@@ -78,6 +79,7 @@ class BindSkin:
         skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR,
         remove_unused_influences: bool = False,
         weight_distribution: SkinWeightDistribution = SkinWeightDistribution.DISTANCE,
+        geodesic: GeodesicBindPreferences | None = None,
     ) -> SkinBindBuildPlan:
         bind = plan_skin_bind(
             mesh_path,
@@ -90,6 +92,7 @@ class BindSkin:
             skinning_method=skinning_method,
             remove_unused_influences=remove_unused_influences,
             weight_distribution=weight_distribution,
+            geodesic=geodesic,
         )
         state = self._host.capture_skin_bind_input(bind)
         return SkinBindBuildPlan(
@@ -112,6 +115,7 @@ class BindSkin:
         skinning_method: SkinningMethod = SkinningMethod.CLASSIC_LINEAR,
         remove_unused_influences: bool = False,
         weight_distribution: SkinWeightDistribution = SkinWeightDistribution.DISTANCE,
+        geodesic: GeodesicBindPreferences | None = None,
     ) -> SkinBindBuildResult:
         plan = self.plan(
             mesh_path,
@@ -124,6 +128,7 @@ class BindSkin:
             skinning_method=skinning_method,
             remove_unused_influences=remove_unused_influences,
             weight_distribution=weight_distribution,
+            geodesic=geodesic,
         )
         if not plan.ready:
             raise FitSkeletonValidationError(

@@ -8,6 +8,7 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.skin_bind import (
     SkinBindMethod, SkinWeightNormalization, SkinningMethod,
     SkinWeightDistribution,
+    GeodesicBindPreferences,
     audit_skin_bind_result, plan_skin_bind,
 )
 from adv_py.core.skin_weight_surface_source import SkinWeightSurfaceSource
@@ -33,6 +34,9 @@ class SkinRebindState:
     set_memberships: tuple[str, ...]
     old_topology: str
     current_topology: str
+    geom_bind_node: str | None = None
+    geodesic: GeodesicBindPreferences | None = None
+    geom_bind_members: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +67,10 @@ class RebindSkinFromSurfaceSource:
                 or source.weights.maintain_maximum_influences
                 != state.maintain_maximum_influences):
             raise FitSkeletonValidationError("源资产的最大影响数设置与当前 Skin 不一致")
+        if (not source.weights.normalized
+                and state.normalization is SkinWeightNormalization.INTERACTIVE):
+            raise FitSkeletonValidationError(
+                "原始非归一化权重不能重绑到 Interactive Normalize Skin")
         if (state.skinning_method is SkinningMethod.WEIGHT_BLENDED
                 and source.blend_weights is None):
             raise FitSkeletonValidationError(
@@ -73,7 +81,8 @@ class RebindSkinFromSurfaceSource:
             bind_method=state.bind_method,
             normalization=state.normalization,
             skinning_method=state.skinning_method,
-            weight_distribution=state.weight_distribution)
+            weight_distribution=state.weight_distribution,
+            geodesic=state.geodesic)
         with self._host.transaction("引用模型拓扑更新后重绑 Skin 并转移权重"):
             if self._host.capture_skin_rebind_state(skin, mesh) != state:
                 raise FitSkeletonValidationError("目标 Skin 或模型在执行前发生变化")

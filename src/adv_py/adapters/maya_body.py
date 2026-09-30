@@ -234,6 +234,7 @@ from adv_py.core.skin_bind import (
     SkinWeightNormalization,
     SkinningMethod,
     SkinWeightDistribution,
+    GeodesicBindPreferences,
 )
 from adv_py.core.skin_weights import (
     SKIN_WEIGHT_VISIBLE_THRESHOLD,
@@ -5548,9 +5549,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             if not created or created[0] != plan.skin_name:
                 raise RuntimeError("Maya 未按计划创建 skinCluster")
             if plan.bind_method is SkinBindMethod.GEODESIC_VOXEL:
+                geodesic = (plan.geodesic or GeodesicBindPreferences(
+                    maximum_influences=plan.maximum_influences))
                 self._cmds.geomBind(
                     created[0], bindMethod=3,
-                    maxInfluences=plan.maximum_influences)
+                    falloff=geodesic.falloff,
+                    geodesicVoxelParams=(geodesic.resolution,
+                                         geodesic.post_voxel_check),
+                    maxInfluences=geodesic.maximum_influences)
             self._cmds.setAttr(
                 created[0] + ".skinningMethod",
                 {SkinningMethod.CLASSIC_LINEAR: 0,
@@ -5562,6 +5568,33 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                topology, type="string")
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
+
+    def _skin_geodesic_state(self, skin: str):
+        """Read a geomBind manager and every Skin sharing its message link."""
+        c = getattr(self._cmds, "raw", self._cmds)
+        scene_skin = self.scene_address(skin)
+        managers = c.listConnections(scene_skin + ".geomBind",
+            source=True, destination=True, type="geomBind") or []
+        if len(set(managers)) != 1:
+            raise FitSkeletonValidationError(
+                "Geodesic Skin 的 geomBind 管理节点不唯一：" + skin)
+        manager = managers[0]
+        custom = c.listAttr(manager, userDefined=True) or []
+        if custom:
+            raise FitSkeletonValidationError(
+                "geomBind 含自定义属性，自动重绑会丢失：" + manager)
+        preferences = GeodesicBindPreferences(
+            float(c.getAttr(manager + ".falloff")),
+            int(c.getAttr(manager + ".gvResolution")),
+            bool(c.getAttr(manager + ".gvPostVoxelCheck")),
+            int(c.getAttr(manager + ".maxInfluences")))
+        members = tuple(sorted(node for node in c.ls(type="skinCluster") or []
+            if manager in (c.listConnections(node + ".geomBind",
+                source=True, destination=True, type="geomBind") or [])))
+        if scene_skin not in members and skin not in members:
+            raise FitSkeletonValidationError(
+                "Geodesic Skin 不属于捕获的 geomBind 管理节点：" + skin)
+        return manager, preferences, members
 
     def capture_skin_rebind_state(self, skin: str, mesh: str):
         from adv_py.application.skin_rebind import SkinRebindState
@@ -5627,9 +5660,13 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 or skinning_method is None or weight_distribution is None):
             raise FitSkeletonValidationError(
                 "旧 Skin 的绑定、归一化或蒙皮算法无法安全重建")
+        manager = geodesic = None
+        manager_members = ()
         if bind_method is SkinBindMethod.GEODESIC_VOXEL:
-            raise FitSkeletonValidationError(
-                "Geodesic Voxel Skin 带独立 geomBind 节点，当前不能安全自动重绑")
+            if c.about(batch=True):
+                raise FitSkeletonValidationError(
+                    "Geodesic Voxel 需要 Maya 图形环境，不能在批处理模式重绑")
+            manager, geodesic, manager_members = self._skin_geodesic_state(skin)
         envelope_source = c.connectionInfo(
             f"{skin}.envelope", sourceFromDestination=True) or None
         set_memberships = tuple(sorted(set(
@@ -5642,7 +5679,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             float(c.getAttr(f"{skin}.envelope")), envelope_source,
             set_memberships,
             c.getAttr(f"{skin}.{TOPOLOGY_ATTRIBUTE}"),
-            mesh_topology_digest(shapes[0]))
+            mesh_topology_digest(shapes[0]),
+            manager, geodesic, manager_members)
 
     def capture_skin_bind_topology(self, skin: str, mesh: str) -> str | None:
         from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
@@ -5768,8 +5806,15 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
 
     def remove_skin_bind_for_rebind(self, skin: str) -> None:
         self._require_transaction()
+        c = self._cmds
+        manager = None
+        members = ()
+        if int(c.getAttr(skin + ".bindMethod")) == 3:
+            manager, _, members = self._skin_geodesic_state(skin)
         self._transaction_changed = True
-        self._cmds.delete(skin)
+        c.delete(skin)
+        if manager is not None and len(members) == 1 and c.objExists(manager):
+            c.delete(manager)
 
     def capture_skin_bind(self, plan: SkinBindPlan) -> SkinBindSnapshot:
         clusters = self._cmds.ls(plan.skin_name, type="skinCluster") or []
@@ -5822,6 +5867,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             0: SkinWeightDistribution.DISTANCE,
             1: SkinWeightDistribution.NEIGHBORS,
         }.get(int(self._cmds.getAttr(f"{skin}.weightDistribution")))
+        geodesic = None
+        if bind_method is SkinBindMethod.GEODESIC_VOXEL:
+            _, geodesic, _ = self._skin_geodesic_state(skin)
         return SkinBindSnapshot(
             skin,
             tuple(geometry),
@@ -5835,6 +5883,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 skin + ".geomBind", source=True, destination=True,
                 plugs=True) or [None])[0]),
             weight_distribution,
+            geodesic,
         )
 
     def capture_skin_weight_input(
