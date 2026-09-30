@@ -143,7 +143,7 @@ class MayaFBXRigTransferMixin:
             source = self._only_fbx_node(
                 source_paths[link.source_joint], "joint")
             driver = self._only_fbx_node(link.deform_driver_name,
-                "transform" if link.deform_driver_name == "FKRoot_M"
+                "transform" if link.deform_driver_name == link.control_name
                 else "joint")
             name = "AdvPy_FBX_Source_" + link.control_name
             if c.objExists(name):

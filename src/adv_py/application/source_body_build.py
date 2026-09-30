@@ -1,0 +1,289 @@
+"""Build source-named Fit skeletons through the shared Body graph primitives.
+
+asFBXRig creates and labels Fit joints, then calls asReBuildAdvancedSkeleton.
+The import layer must not own a second implementation of FK, IK or Main.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+
+from adv_py.core.body_arm_ik import BodyArmIkPlan, plan_body_arm_ik
+from adv_py.core.body_limb_mechanisms import (
+    BodyLimbMechanismPlan, BodyLimbMechanismRole, plan_body_limb_mechanisms,
+)
+from adv_py.core.body_limb_blend import BodyLimbBlendPlan, plan_body_limb_blend
+from adv_py.core.body_generic_fk import BodyGenericFkPlan, plan_body_generic_fk
+from adv_py.core.body_character_global import (
+    BodyCharacterGlobalPlan, BodyRootFkScaleSpec, plan_body_character_global,
+)
+from adv_py.core.body_direct_fk_scale import (
+    BodyDirectFkScaleSpec, plan_body_direct_fk_scales,
+)
+from adv_py.core.body_control_spaces import BodyControlSpacesPlan
+from adv_py.core.character_registry import CharacterChannel
+from adv_py.core.fit_container import FitUpAxis
+from adv_py.core.fit_hierarchy import fit_build_scale
+from adv_py.core.body_skeleton import BodySkeletonSnapshot, plan_body_non_deform_markers
+from adv_py.core.body_fk_global import BodyFkGlobalSpec, plan_body_fk_global
+from adv_py.core.body_fit_aim import BodyFitAimSpec, plan_body_fit_aim
+from adv_py.core.body_fk_channel_locks import (
+    BodyFkChannelLockSpec, plan_body_fk_channel_locks,
+)
+from adv_py.core.body_fk_scale_compensation import (
+    BodyFkScaleCompensationSpec, plan_body_fk_scale_compensation,
+)
+from .body_fk_scale_compensation import BuildBodyFkScaleCompensation
+from adv_py.core.fit_settings import FitSkeletonValidationError
+from adv_py.core.fit_ik import fit_joint_ik_info
+from adv_py.core.joint_labels import JointLabel
+
+from .oriented_body_skeleton import BuildOrientedBodySkeleton
+from .character_registry import RegisterBodyCharacter
+from .body_selection_sets import finalize_body_character_sets
+
+
+@dataclass(frozen=True, slots=True)
+class SourceBodyLimbPlan:
+    label: str
+    joint_names: tuple[str, ...]
+    mechanisms: BodyLimbMechanismPlan
+    ik: BodyArmIkPlan
+    blend: BodyLimbBlendPlan
+
+
+@dataclass(frozen=True, slots=True)
+class SourceBodyRigPlan:
+    container: str
+    fk: BodyGenericFkPlan
+    global_control: BodyCharacterGlobalPlan
+    limbs: tuple[SourceBodyLimbPlan, ...]
+    control_spaces: BodyControlSpacesPlan
+    no_control_paths: tuple[str, ...] = ()
+    fk_channel_locks: tuple[BodyFkChannelLockSpec, ...] = ()
+    fk_globals: tuple[BodyFkGlobalSpec, ...] = ()
+    fit_aim: tuple[BodyFitAimSpec, ...] = ()
+    fk_scale_compensations: tuple[BodyFkScaleCompensationSpec, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SourceBodyRigResult:
+    plan: SourceBodyRigPlan
+    body: BodySkeletonSnapshot
+
+
+def source_body_limb_chains(body, labels, hierarchy):
+    """Use the original Fit label query and its ancestor/descendant order."""
+    by_name = {joint.name: joint for joint in body.joints}
+    by_fit_path = {node.path: node for node in hierarchy.joints}
+    label_by_name = dict(labels)
+    if len(label_by_name) != len(labels):
+        raise FitSkeletonValidationError("来源 Fit 标签名称重复")
+    fit_labels = {node.path: (JointLabel.parse(label_by_name[name])
+                             if name in label_by_name else None)
+                  for node in hierarchy.joints
+                  for name in (node.short_name.rsplit(":", 1)[-1],)}
+    chains = []
+    used = set()
+    labels_seen = set()
+    for node in hierarchy.joints:
+        label = fit_labels[node.path]
+        if label is None or not ("Shoulder" in label.text or "Hip" in label.text):
+            continue
+        info = fit_joint_ik_info(hierarchy, fit_labels, node.path)
+        if info is None or info.start != node.path:
+            continue
+        names = tuple(by_fit_path[path].short_name.rsplit(":", 1)[-1]
+                      for path in info.joints)
+        if len(names) < 3:
+            continue
+        if info.name in labels_seen:
+            raise FitSkeletonValidationError("来源 IK 系统名称重复：" + info.name)
+        paths = set()
+        for suffix in ("R", "L"):
+            chain = tuple(by_name.get(name + "_" + suffix) for name in names)
+            if any(joint is None for joint in chain):
+                raise FitSkeletonValidationError("来源 IK 标签缺少对应侧：" + info.name)
+            if any(child.parent_path != parent.path
+                   for parent, child in zip(chain, chain[1:])):
+                raise FitSkeletonValidationError("来源 IK 标签父链不完整：" + info.name)
+            paths.update(joint.path for joint in chain)
+        if paths & used:
+            raise FitSkeletonValidationError("来源 IK 链共享关节：" + info.name)
+        used.update(paths)
+        labels_seen.add(info.name)
+        chains.append((info.name, names))
+    return tuple(chains)
+
+
+def source_character_channels(rig):
+    p = rig.plan
+    rows = []
+    locked = {spec.control: frozenset(spec.attributes)
+              for spec in p.fk_channel_locks}
+    trs = tuple(kind + axis for kind in ("translate", "rotate", "scale")
+                for axis in "XYZ")
+    def add(key, node, attributes):
+        rows.extend(CharacterChannel(key + "." + attribute, node, attribute)
+                    for attribute in attributes
+                    if attribute not in locked.get(node, ()))
+    add("global", p.global_control.control_path,
+        tuple(kind + axis for kind in ("translate", "rotate") for axis in "XYZ")
+        + (p.global_control.scale_attribute,))
+    for index, node in enumerate(p.global_control.extra_control_paths, 1):
+        add(f"global.extra.{index}", node, trs)
+    for control in p.fk.controls:
+        key = "generic.fk." + control.control_name.removeprefix("AdvPy_")
+        add(key, control.control_path, trs)
+        if control.sub_control_path:
+            add(key, control.control_path, ("subControl",))
+            add(key + ".sub", control.sub_control_path, trs)
+        if control.extra_path:
+            if control.extra_curve:
+                add(key, control.control_path, ("extraControl",))
+            add(key + ".extra", control.extra_path, trs)
+    for spec in p.fk_globals:
+        key = "generic.global." + spec.control.rsplit("|", 1)[-1]
+        add(key, spec.control, ("Global",) + (("GlobalTranslate",) if spec.translate else ()))
+    for spec in p.fit_aim:
+        key = "generic.aim." + spec.stem
+        add(key, spec.center_control, trs + ("follow",))
+        for side in spec.sides:
+            if side.target_control != spec.center_control:
+                add(key + "." + side.suffix, side.target_control, trs)
+    for limb in p.limbs:
+        for spec in limb.ik.limbs:
+            key = limb.label.lower() + "." + spec.side.value
+            add(key + ".ik", spec.wrist_control_path, trs)
+            add(key + ".pole", spec.pole_control_path,
+                tuple("translate" + axis for axis in "XYZ"))
+            if spec.wrist_sub_path:
+                add(key + ".ik", spec.wrist_control_path, ("subControl",))
+                add(key + ".ik.sub", spec.wrist_sub_path, trs)
+            if spec.wrist_extra_curve:
+                add(key + ".ik", spec.wrist_control_path, ("extraControl",))
+            for layer, node in (("ik.extra", spec.wrist_extra_path),
+                                ("pole.extra", spec.pole_extra_path)):
+                if node:
+                    add(key + "." + layer, node, trs)
+        for side in limb.blend.sides:
+            add(limb.label.lower() + "." + side.side.value,
+                limb.blend.settings_path, (side.attribute,))
+    return tuple(rows)
+
+
+def build_source_body_character(host, container, *, labels=(), scene_before=None,
+                                include_dynamic=True, defer_selection_sets=False,
+                                defer_all_set=False, retain_markers=False, defer_registration=False):
+    """Internal branch of BuildRegisteredBodyCharacter, in its transaction."""
+    from .registered_body_build import RegisteredBodyBuildResult
+    deformation = host.create_body_system_hierarchy(include_dynamic=include_dynamic)
+    fit = host.parent_fit_skeleton_under_group(container)
+    skeleton = BuildOrientedBodySkeleton(host).apply(
+        fit, root_parent_path=deformation)
+    body = skeleton.snapshot
+    build = skeleton.plan.build
+    options = build.build_options
+    metadata = build.symmetry.source.metadata
+    scale = fit_build_scale(build.symmetry.source.hierarchy)
+    limbs = []
+    for label, names in source_body_limb_chains(body, labels, build.symmetry.source.hierarchy):
+        mechanisms = plan_body_limb_mechanisms(
+            body, limb_label=label, joint_names=names)
+        ik = plan_body_arm_ik(body, mechanisms, joint_names=names,
+            limb_label=label, radius=scale * 1.5,
+            sub_controllers=options.sub_controllers,
+            extra_controllers=options.extra_controllers)
+        blend = plan_body_limb_blend(body, mechanisms, limb_label=label,
+            joint_names=names, translated_joint_names=names)
+        limbs.append(SourceBodyLimbPlan(label, names, mechanisms, ik, blend))
+    driver_by_body = {joint.source_joint: joint.path for limb in limbs
+                      for joint in limb.mechanisms.joints
+                      if joint.role is BodyLimbMechanismRole.FK}
+    fk = plan_body_generic_fk(body, build.specs, metadata, (),
+        sub_controllers=options.sub_controllers,
+        extra_controllers=options.extra_controllers,
+        radius=scale * 1.5,
+        use_offset_parent_matrix=options.use_offset_parent_matrix)
+    fk = replace(fk, controls=tuple(replace(control,
+        driven_joint=driver_by_body.get(control.driven_joint, control.driven_joint))
+        for control in fk.controls))
+    for limb in limbs:
+        if host.create_body_arm_mechanism_root(limb.mechanisms.root_name) != limb.mechanisms.root_path:
+            raise RuntimeError("来源机制链根路径漂移")
+        for joint in limb.mechanisms.joints:
+            if host.create_body_arm_mechanism_joint(joint) != joint.path:
+                raise RuntimeError("来源机制关节路径漂移：" + joint.name)
+    host.create_body_generic_fk(fk)
+    for limb in limbs:
+        if host.create_body_arm_ik_root(limb.ik.root_name) != limb.ik.root_path:
+            raise RuntimeError("来源 IK 控制根路径漂移")
+        for spec in limb.ik.limbs:
+            host.create_body_arm_ik(spec)
+        host.create_body_arm_blend(limb.blend)
+        host.connect_source_body_limb_follow(body, limb.mechanisms)
+        host.connect_source_body_limb_visibility(limb, fk)
+        host.connect_source_body_limb_scales(limb)
+    roots = (fk.root_path,) + tuple(limb.ik.root_path for limb in limbs)
+    roots += tuple(limb.mechanisms.root_path for limb in limbs)
+    root_metadata = next(item for item in metadata
+                         if item.joint == build.specs[0].source_joint)
+    root_control = next(control for control in fk.controls
+                        if control.driven_joint == body.root)
+    global_control = plan_body_character_global(
+        up_axis=FitUpAxis.Y, body_root=body.root, driven_roots=roots,
+        scale_destinations=tuple(body.root + ".scale" + axis for axis in "XYZ"),
+        radius=scale * 12, body_root_via_controls=True,
+        root_fk_scale=BodyRootFkScaleSpec(body.root, root_control.control_path + ".scale"),
+        num_main_extras=root_metadata.num_main_extras or 0,
+        root_follow_main_path="|Group|MotionSystem|RootSystem|RootFollowMain",
+        root_follow_use_opm=options.use_offset_parent_matrix,
+        global_follow_main_path="|Group|MotionSystem|GlobalSystem|GlobalFollowMain",
+        global_follow_use_opm=options.use_offset_parent_matrix)
+    host.create_body_character_global(global_control)
+    scales = list(plan_body_direct_fk_scales(body, fk.controls))
+    scales.extend(BodyDirectFkScaleSpec(control.driven_joint,
+                  control.control_path + ".scale") for control in fk.controls
+                  if control.driven_joint in driver_by_body.values())
+    for spec in scales:
+        host.preflight_body_direct_fk_scale(spec)
+        host.connect_body_direct_fk_scale(spec)
+    compensation = plan_body_fk_scale_compensation(
+        fk.controls, build.symmetry.instances, metadata,
+        use_offset_parent_matrix=options.use_offset_parent_matrix,
+        generated_joint_sources=tuple((driver, source)
+                                     for source, driver in driver_by_body.items()))
+    BuildBodyFkScaleCompensation(host).apply(compensation)
+    fk_globals = plan_body_fk_global(metadata, fk.controls)
+    for spec in fk_globals:
+        host.create_body_fk_global(spec)
+    aim_controls = tuple(control for control in fk.controls if control.aim_path is not None)
+    aim_names = {name for control in aim_controls for name in control.fit_joint_names}
+    fit_aim = plan_body_fit_aim(build.symmetry.source.hierarchy,
+        tuple(item for item in metadata
+              if item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1] in aim_names),
+        body, aim_controls)
+    for spec in fit_aim:
+        host.create_body_fit_aim(spec, global_control=global_control.control_path,
+            use_offset_parent_matrix=options.use_offset_parent_matrix)
+    if not retain_markers:
+        markers = plan_body_non_deform_markers(body)
+        if markers:
+            body = host.remove_body_non_deform_markers(body.root, markers)
+            skeleton = replace(skeleton, snapshot=body)
+    lock_specs = plan_body_fk_channel_locks(
+        build.symmetry.source.hierarchy, fk.controls,
+        tuple((node.path, host.read_fit_fk_lock_channels(node.path))
+              for node in build.symmetry.source.hierarchy.joints))
+    for spec in lock_specs:
+        host.apply_body_fk_channel_locks(spec)
+    rig_plan = SourceBodyRigPlan(fit, fk, global_control, tuple(limbs),
+        BodyControlSpacesPlan(body.root, ()), fk.hidden_controls, lock_specs,
+        fk_globals, fit_aim, compensation)
+    rig = SourceBodyRigResult(rig_plan, body)
+    registration = (host.describe_character_registration(
+        rig, source_character_channels(rig)) if defer_registration
+        else RegisterBodyCharacter(host).apply(rig))
+    finalize_body_character_sets(host, registration, rig_plan,
+        scene_before=scene_before, fit_container=fit,
+        create_sets=not defer_selection_sets, populate_all=not defer_all_set)
+    return RegisteredBodyBuildResult(skeleton, rig, registration)

@@ -41,7 +41,8 @@ def _best_bound_mesh(cmds, meshes: tuple[str, ...]) -> str:
     return max(candidates, key=lambda item: item[0])[1]
 
 
-def _project_curve(cmds, control: str, shape: str, mesh: str) -> int:
+def _project_curve(cmds, control: str, shape: str, mesh: str, *,
+                   source_control_name: str | None = None) -> int:
     """Use the MEL orbital ray and nearest positive projected curve hit."""
     origin = _world_position(cmds, control)
     aim = cmds.createNode("transform", name="AdvPy_FBX_ProjectAim#",
@@ -60,7 +61,7 @@ def _project_curve(cmds, control: str, shape: str, mesh: str) -> int:
         for index, cv in enumerate(_cvs(cmds, shape)):
             local = tuple(float(cmds.getAttr(cv + "." + axis + "Value"))
                           for axis in "xyz")
-            factor = fbx_fk_projection_factor(control, index, local)
+            factor = fbx_fk_projection_factor(source_control_name or control, index, local)
             if factor is None:
                 continue
             cv_world = _world_position(cmds, cv)
@@ -116,9 +117,15 @@ def _project_curve(cmds, control: str, shape: str, mesh: str) -> int:
 
 def project_fbx_fk_controls(
     cmds, control_names: tuple[str, ...], bound_meshes: tuple[str, ...],
+    *, control_aliases: tuple[tuple[str, str], ...] = (),
 ) -> int:
     """Project center/right curves, then mirror right CVs into left curves."""
-    shapes = {name: _curve_shape(cmds, name) for name in control_names}
+    aliases = dict(control_aliases)
+    if (len(aliases) != len(control_aliases)
+            or len(set(aliases.values())) != len(aliases)):
+        raise ValueError("FBX rig 曲线投射映射不唯一")
+    shapes = {name: _curve_shape(cmds, aliases.get(name, name))
+              for name in control_names}
     eligible = tuple(name for name in control_names
                      if name.startswith("FK") and not name.startswith("FKIK")
                      and not name.endswith("_L"))
@@ -127,7 +134,8 @@ def project_fbx_fk_controls(
     mesh = _best_bound_mesh(cmds, bound_meshes)
     selection = tuple(cmds.ls(selection=True, long=True) or ())
     try:
-        changed = sum(_project_curve(cmds, name, shapes[name], mesh)
+        changed = sum(_project_curve(cmds, aliases.get(name, name),
+                      shapes[name], mesh, source_control_name=name)
                       for name in eligible)
         for right in eligible:
             if not right.endswith("_R"):

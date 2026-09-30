@@ -115,6 +115,8 @@ def plan_body_arm_ik(
     sub_controllers: bool = False,
     extra_controllers: bool = False,
     align_helpers: bool = True,
+    joint_names: tuple[str, ...] = ("Shoulder", "Elbow", "Wrist"),
+    limb_label: str = "Arm",
 ) -> BodyArmIkPlan:
     if (type(sub_controllers) is not bool or type(extra_controllers) is not bool
             or type(align_helpers) is not bool):
@@ -127,28 +129,35 @@ def plan_body_arm_ik(
         for value in (radius, pole_distance_scale)
     ):
         raise BodyArmIkValidationError("IK 控制尺寸参数必须是正有限数值")
+    if (len(joint_names) < 3 or len(set(joint_names)) != len(joint_names)
+            or any(not name or not name[0].isalpha() or not name.isalnum()
+                   for name in joint_names) or (not limb_label or not limb_label[0].isalpha() or not limb_label.isalnum())):
+        raise BodyArmIkValidationError("IK 关节链或系统名称无效")
     body_by_name = {joint.name: joint for joint in body.joints}
     fk_by_source = {joint.source_joint: joint.path
                     for joint in mechanisms.joints
                     if joint.role is BodyArmMechanismRole.FK}
-    root_name = "AdvPy_ArmIKControls"
+    root_name = f"AdvPy_{limb_label}IKControls"
     root_parent = ("|Group|MotionSystem|IKSystem"
                    if body.root.startswith("|Group|DeformationSystem|")
                    else "")
     root_path = root_parent + "|" + root_name
     limbs = []
     for side_name, side in (("R", FitBuildSide.RIGHT), ("L", FitBuildSide.LEFT)):
-        sources = tuple(body_by_name[f"{name}_{side_name}"] for name in ("Shoulder", "Elbow", "Wrist"))
+        source_chain = tuple(body_by_name[f"{name}_{side_name}"] for name in joint_names)
+        middle_index = len(source_chain) - 1 - len(source_chain) // 2
+        sources = (source_chain[0], source_chain[middle_index], source_chain[-1])
         if align_helpers and sources[2].path not in fk_by_source:
             raise BodyArmIkValidationError("Wrist AlignIKTo 缺少 FK 驱动关节")
-        drivers = tuple(
+        full_drivers = tuple(
             spec.path
             for spec in mechanisms.joints
             if spec.side is side and spec.role is BodyArmMechanismRole.IK
         )
-        if len(drivers) != 3:
-            raise BodyArmIkValidationError("IK mechanism 必须为每侧提供三关节链")
-        solver_chain = expanded_ik_solver_chain(mechanisms, drivers)
+        if len(full_drivers) != len(joint_names):
+            raise BodyArmIkValidationError("IK mechanism 与来源关节链不一致")
+        drivers = (full_drivers[0], full_drivers[middle_index], full_drivers[-1])
+        solver_chain = expanded_ik_solver_chain(mechanisms, full_drivers)
         shoulder, elbow, wrist = (joint.world_position for joint in sources)
         pole = solve_arm_pole_position(
             shoulder,
@@ -157,14 +166,14 @@ def plan_body_arm_ik(
             sources[1].world_axes[2],
             distance_scale=float(pole_distance_scale),
         )
-        wrist_offset_name = f"AdvPy_ArmIKOffset_{side_name}"
-        wrist_control_name = f"AdvPy_ArmIK_{side_name}"
-        pole_offset_name = f"AdvPy_ArmPVOffset_{side_name}"
-        pole_control_name = f"AdvPy_ArmPV_{side_name}"
+        wrist_offset_name = f"AdvPy_{limb_label}IKOffset_{side_name}"
+        wrist_control_name = f"AdvPy_{limb_label}IK_{side_name}"
+        pole_offset_name = f"AdvPy_{limb_label}PVOffset_{side_name}"
+        pole_control_name = f"AdvPy_{limb_label}PV_{side_name}"
         wrist_offset_path = f"{root_path}|{wrist_offset_name}"
         pole_offset_path = f"{root_path}|{pole_offset_name}"
-        wrist_extra_name = f"AdvPy_ArmIKExtra_{side_name}"
-        pole_extra_name = f"AdvPy_ArmPVExtra_{side_name}"
+        wrist_extra_name = f"AdvPy_{limb_label}IKExtra_{side_name}"
+        pole_extra_name = f"AdvPy_{limb_label}PVExtra_{side_name}"
         wrist_extra_path = f"{wrist_offset_path}|{wrist_extra_name}"
         pole_extra_path = f"{pole_offset_path}|{pole_extra_name}"
         limbs.append(BodyArmIkSpec(
@@ -173,26 +182,26 @@ def plan_body_arm_ik(
             f"{wrist_extra_path}|{wrist_control_name}", wrist_control_name,
             pole_offset_path, pole_offset_name,
             f"{pole_extra_path}|{pole_control_name}", pole_control_name,
-            f"AdvPy_ArmIKHandle_{side_name}", f"AdvPy_ArmPVConstraint_{side_name}",
+            f"AdvPy_{limb_label}IKHandle_{side_name}", f"AdvPy_{limb_label}PVConstraint_{side_name}",
             wrist, sources[2].world_axes, pole,
             body_fk_curve_radius(body, sources[2], float(radius)),
-            f"AdvPy_ArmIKWristOrient_{side_name}",
+            f"AdvPy_{limb_label}IKWristOrient_{side_name}",
             solver_joint_list=(solver_chain[:-1]
                                if len(solver_chain) > len(drivers) else None),
             wrist_sub_path=(
-                f"{wrist_extra_path}|{wrist_control_name}|AdvPy_ArmIKSub_{side_name}"
+                f"{wrist_extra_path}|{wrist_control_name}|AdvPy_{limb_label}IKSub_{side_name}"
                 if sub_controllers else None),
-            wrist_sub_name=(f"AdvPy_ArmIKSub_{side_name}"
+            wrist_sub_name=(f"AdvPy_{limb_label}IKSub_{side_name}"
                             if sub_controllers else None),
             wrist_extra_path=wrist_extra_path,
             wrist_extra_name=wrist_extra_name,
             pole_extra_path=pole_extra_path,
             pole_extra_name=pole_extra_name,
             wrist_extra_curve=extra_controllers,
-            wrist_align_name=(f"AdvPy_AlignIKToWrist_{side_name}"
+            wrist_align_name=(f"AdvPy_AlignIKTo{joint_names[-1]}_{side_name}"
                               if align_helpers else None),
             wrist_align_path=(f"{fk_by_source[sources[2].path]}|"
-                              f"AdvPy_AlignIKToWrist_{side_name}"
+                              f"AdvPy_AlignIKTo{joint_names[-1]}_{side_name}"
                               if align_helpers else None),
             wrist_align_parent_path=(fk_by_source[sources[2].path]
                                      if align_helpers else None),

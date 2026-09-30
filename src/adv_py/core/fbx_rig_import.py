@@ -249,25 +249,33 @@ def plan_fbx_control_transfer(
     plan: FBXRigImportPlan,
     control_names: tuple[str, ...],
     deform_joint_names: tuple[str, ...],
+    *, control_aliases: tuple[tuple[str, str], ...] = (),
 ) -> FBXRigControlTransferPlan:
     """Resolve the controls actually built before making either constraint set."""
     if (len(set(control_names)) != len(control_names)
             or len(set(deform_joint_names)) != len(deform_joint_names)):
         raise ValueError("FBX rig 构建结果包含重复控制器或变形关节")
     controls = set(control_names)
+    aliases = dict(control_aliases)
+    if (len(aliases) != len(control_aliases)
+            or len(set(aliases.values())) != len(aliases)
+            or any(actual not in controls for actual in aliases.values())):
+        raise ValueError("FBX rig 控制器映射不唯一或目标缺失")
+    root_control = aliases.get("FKRoot_M", "FKRoot_M")
     deform = set(deform_joint_names)
-    if "FKRoot_M" not in controls:
+    if root_control not in controls:
         raise ValueError("FBX rig 缺少 Root FK 控制器")
     links = []
     for candidate in plan.candidate_control_links:
-        if candidate.control_name not in controls:
+        control = aliases.get(candidate.control_name, candidate.control_name)
+        if control not in controls:
             continue
-        driver = ("FKRoot_M" if candidate.control_name == "FKRoot_M"
+        driver = (root_control if candidate.control_name == "FKRoot_M"
                   else candidate.control_name.removeprefix("FK"))
         if candidate.control_name != "FKRoot_M" and driver not in deform:
             raise ValueError("FBX rig 控制器缺少同名变形关节：" + driver)
         links.append(FBXRigResolvedControlLink(
-            candidate.control_name, candidate.source_joint, driver))
+            control, candidate.source_joint, driver))
     if len({link.source_joint for link in links}) != len(links):
         raise ValueError("FBX rig 多个控制器指向同一来源关节")
     return FBXRigControlTransferPlan(tuple(links))

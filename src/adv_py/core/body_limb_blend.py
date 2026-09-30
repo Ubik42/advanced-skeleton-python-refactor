@@ -81,7 +81,7 @@ def plan_body_limb_blend(
     translated_joint_names: tuple[str, ...],
 ) -> BodyLimbBlendPlan:
     if (
-        not limb_label.isalpha()
+        (not limb_label or not limb_label[0].isalpha() or not limb_label.isalnum())
         or len(joint_names) < 2
         or len(set(joint_names)) != len(joint_names)
         or any(not name or not name[0].isalpha() or not name.isalnum()

@@ -15,6 +15,9 @@ class CharacterRegistryHost(Protocol):
 
 def character_channels(rig):
     """Declare user channels from the actual build plans, never scene selection."""
+    from .source_body_build import SourceBodyRigResult, source_character_channels
+    if isinstance(rig, SourceBodyRigResult):
+        return source_character_channels(rig)
     p = rig.plan
     if not p.torso or not p.control_spaces:
         raise ValueError("角色登记要求完整 Torso 和控制空间")

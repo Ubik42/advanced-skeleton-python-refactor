@@ -59,6 +59,11 @@ def unregistered_fk_selection_extras(
     registration: CharacterRegistration, rig_plan,
 ) -> tuple[str, ...]:
     """Keep locked FK curves selectable even without registered channels."""
+    from .source_body_build import SourceBodyRigPlan
+    if isinstance(rig_plan, SourceBodyRigPlan):
+        return tuple(spec.extra_path or spec.control_path
+                     for spec in rig_plan.fk.controls
+                     if spec.control_path not in {ch.node for ch in registration.channels})
     controls = (
         rig_plan.arm.fk_controls.controls
         + rig_plan.leg.fk_controls.controls

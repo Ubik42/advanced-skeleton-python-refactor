@@ -69,6 +69,7 @@ class FBXRigGeneratedTargets:
 
     control_names: tuple[str, ...]
     deform_joint_names: tuple[str, ...]
+    control_aliases: tuple[tuple[str, str], ...] = ()
 
 
 class FBXRigHost(Protocol):
@@ -214,7 +215,8 @@ class BuildFBXRig:
                     plan, source.bound_meshes)
                 targets = self._host.capture_fbx_generated_targets(plan)
                 transfer = plan_fbx_control_transfer(
-                    plan, targets.control_names, targets.deform_joint_names)
+                    plan, targets.control_names, targets.deform_joint_names,
+                    control_aliases=targets.control_aliases)
                 if plan.last_bake_frame is not None:
                     self._host.connect_fbx_source_animation_to_controls(
                         transfer, source_paths)

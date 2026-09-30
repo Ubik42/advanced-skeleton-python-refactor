@@ -1920,6 +1920,16 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         name=plan.global_follow_scale_constraint_name)
                     if len(scale_constraint) != 1:
                         raise RuntimeError("GlobalFollowMain 缩放约束创建失败")
+            root_fk = plan.root_fk_scale
+            if root_fk is not None:
+                multiply = self._cmds.createNode("multiplyDivide",
+                    name=root_fk.multiply_name, skipSelect=True)
+                self._cmds.setAttr(multiply + ".operation", 1)
+                for axis in "XYZ":
+                    self._cmds.connectAttr(plan.effective_scale_source(axis),
+                                          multiply + ".input1" + axis)
+                    self._cmds.connectAttr(root_fk.fk_scale_plug + axis,
+                                          multiply + ".input2" + axis)
             for plug in plan.scale_destinations:
                 if (plan.spine_root_scale is not None
                         and plug in tuple(
@@ -2404,6 +2414,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 (plug, source(plug))
                 for plug in plan.scale_destinations
             ),
+            root_fk_scale_state=(
+                (self._cmds.nodeType(plan.root_fk_scale.multiply_name),
+                 tuple(source(plan.root_fk_scale.multiply_name + ".input1" + axis)
+                       for axis in "XYZ"),
+                 tuple(source(plan.root_fk_scale.multiply_name + ".input2" + axis)
+                       for axis in "XYZ"),
+                 int(self._cmds.getAttr(plan.root_fk_scale.multiply_name + ".operation")))
+                if plan.root_fk_scale is not None else None),
             spine_root_scale_state=(
                 (
                     self._cmds.nodeType(plan.spine_root_scale.blend_name),
@@ -10004,6 +10022,96 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
 
     def create_body_leg_fk_control(self, spec: BodyLegFkControlSpec) -> None:
         self._create_body_limb_fk_control(spec, "Leg")
+
+    def connect_source_body_limb_follow(self, body, mechanisms) -> None:
+        """Follow the real parent of an imported IK start, outside its blend."""
+        from adv_py.core.body_limb_mechanisms import BodyLimbMechanismRole
+        self._require_transaction()
+        c = self._cmds
+        by_path = {joint.path: joint for joint in body.joints}
+        for joint in mechanisms.joints:
+            if (joint.role is not BodyLimbMechanismRole.IK
+                    or joint.parent_path != mechanisms.root_path):
+                continue
+            parent = by_path[joint.source_joint].parent_path
+            if parent is None:
+                continue
+            name = joint.name + "ParentPoint"
+            if self.find_name_collisions(name):
+                raise FitSkeletonValidationError("来源 IK 随动名称冲突：" + name)
+            # Parent-space offset follows position and orientation;
+            # the IK solver continues to own the root rotation.
+            created = c.parentConstraint(parent, joint.path,
+                maintainOffset=True, skipRotate=("x", "y", "z"), name=name)
+            if len(created) != 1:
+                raise RuntimeError("来源 IK 起点随动创建失败：" + joint.name)
+        self._transaction_changed = True
+
+    def connect_source_body_limb_scales(self, limb) -> None:
+        """Use the same FK/IK switch for deformation scale outputs."""
+        self._require_transaction()
+        c = self._cmds
+        for side in limb.blend.sides:
+            ik = next(spec for spec in limb.ik.limbs if spec.side is side.side)
+            receiver = ik.wrist_sub_path or ik.wrist_control_path
+            for axis in "XYZ":
+                c.connectAttr(receiver + ".scale" + axis,
+                              ik.chain[-1] + ".scale" + axis)
+            for joint in side.joints:
+                name = joint.constraint_name + "Scale"
+                if self.find_name_collisions(name):
+                    raise FitSkeletonValidationError("来源缩放混合名称冲突：" + name)
+                node = c.createNode("blendColors", name=name, skipSelect=True)
+                c.connectAttr(joint.ik_driver + ".scale", node + ".color1")
+                c.connectAttr(joint.fk_driver + ".scale", node + ".color2")
+                c.connectAttr(limb.blend.settings_path + "." + side.attribute,
+                              node + ".blender")
+                c.connectAttr(node + ".output", joint.body_joint + ".scale")
+        self._transaction_changed = True
+
+    def connect_source_body_limb_visibility(self, limb, fk) -> None:
+        """Switch FK shapes without hiding non-limb child control transforms."""
+        self._require_transaction()
+        c = self._cmds
+        for side in limb.blend.sides:
+            fk_drivers = {joint.fk_driver for joint in side.joints}
+            controls = tuple(control for control in fk.controls
+                             if control.driven_joint in fk_drivers)
+            for control in controls:
+                if control.control_path in fk.hidden_controls:
+                    continue
+                for node in (control.control_path, control.sub_control_path,
+                             control.extra_path if control.extra_curve else None):
+                    if node is None:
+                        continue
+                    shapes = c.listRelatives(node, shapes=True,
+                        noIntermediate=True, fullPath=True,
+                        type="nurbsCurve") or ()
+                    if not shapes:
+                        raise RuntimeError("来源 FK 控制曲线缺失：" + node)
+                    for shape in shapes:
+                        destination = shape + ".visibility"
+                        source = c.connectionInfo(destination,
+                                                  sourceFromDestination=True)
+                        if source:
+                            name = shape.rsplit("|", 1)[-1] + "IKFKVisibility"
+                            if self.find_name_collisions(name):
+                                raise FitSkeletonValidationError("来源曲线显隐名称冲突：" + name)
+                            node = c.createNode("multDoubleLinear", name=name,
+                                                skipSelect=True)
+                            c.connectAttr(source, node + ".input1")
+                            c.connectAttr(side.reverse_name + ".outputX",
+                                          node + ".input2")
+                            c.disconnectAttr(source, destination)
+                            c.connectAttr(node + ".output", destination)
+                        else:
+                            c.connectAttr(side.reverse_name + ".outputX", destination)
+            ik = next(spec for spec in limb.ik.limbs
+                      if spec.side is side.side)
+            for node in (ik.wrist_offset_path, ik.pole_offset_path):
+                c.connectAttr(limb.blend.settings_path + "." + side.attribute,
+                              node + ".visibility")
+        self._transaction_changed = True
 
     def create_body_generic_fk(self, plan) -> None:
         if not plan.controls and not plan.endpoints:

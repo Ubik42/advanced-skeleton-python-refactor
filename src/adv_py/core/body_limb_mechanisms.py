@@ -93,7 +93,7 @@ def plan_body_limb_mechanisms(
 ) -> BodyLimbMechanismPlan:
     if type(allow_part_parents) is not bool:
         raise BodyLimbMechanismValidationError("Part 父级开关无效")
-    if not limb_label.isalpha() or len(joint_names) < 2 or len(set(joint_names)) != len(joint_names) or any(
+    if (not limb_label or not limb_label[0].isalpha() or not limb_label.isalnum()) or len(joint_names) < 2 or len(set(joint_names)) != len(joint_names) or any(
         not name or not name[0].isalpha() or not name.isalnum()
         for name in joint_names
     ):

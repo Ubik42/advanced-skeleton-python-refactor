@@ -1268,6 +1268,9 @@ class MayaCharacterRegistryMixin:
             self.validate_body_spine(plan)
 
     def describe_character_registration(self, rig, channels):
+        from adv_py.application.source_body_build import SourceBodyRigResult
+        if isinstance(rig, SourceBodyRigResult):
+            return self._describe_source_body_registration(rig, channels)
         c = self._cmds
         body = self.capture_body_skeleton(rig.body.root)
         if not body_bind_pose_matches(rig.body,body):
@@ -1313,16 +1316,66 @@ class MayaCharacterRegistryMixin:
         if rig.plan.torso.torso.head_aim:
             aim=rig.plan.torso.torso.head_aim
             paths.update((aim.rest,aim.solved,aim.pivot,aim.target,aim.target_offset))
+        return self._describe_body_registration_nodes(
+            body, container, channels, paths, spine, spaces)
+
+    def _describe_source_body_registration(self, rig, channels):
+        p = rig.plan
+        body = self.capture_body_skeleton(rig.body.root)
+        if not body_bind_pose_matches(rig.body, body):
+            raise CharacterRegistryError("来源角色必须在绑定姿态登记")
+        paths = {body.root, p.container, *(j.path for j in body.joints),
+                 *(channel.node for channel in channels)}
+        paths.update(control.source_override_path for control in p.fk.controls
+                     if control.source_override_path is not None)
+        for path in (p.global_control.root_follow_main_path,
+                     p.global_control.global_follow_main_path):
+            if path is not None:
+                paths.add(path)
+        for follower in p.fk.followers:
+            paths.add(follower.path)
+        for endpoint in p.fk.endpoints:
+            paths.add(endpoint.path)
+        for scale in p.fk_scale_compensations:
+            if scale.mel_non_opm_fkx and not scale.inherit_scale:
+                if scale.mel_non_opm_fkps_enabled:
+                    ps1 = scale.parent_control_path + "|" + scale.fkps1_name
+                    paths.update((ps1, ps1 + "|" + scale.fkps2_name))
+        for aim in p.fit_aim:
+            paths.update((aim.root, aim.offset, aim.follow, aim.center_control))
+            paths.update(side.target_offset for side in aim.sides if side.target_offset)
+            paths.update(side.target_control for side in aim.sides)
+        for limb in p.limbs:
+            paths.update(joint.path for joint in limb.mechanisms.joints)
+            paths.update(spec.wrist_align_path for spec in limb.ik.limbs
+                         if spec.wrist_align_path is not None)
+        return self._describe_body_registration_nodes(
+            body, p.container, channels, paths, None, p.control_spaces,
+            allow_animation=True)
+
+    def _describe_body_registration_nodes(self, body, container, channels,
+                                          paths, spine, spaces, *, allow_animation=False):
+        c = self._cmds
         for node in tuple(paths):
             parent = node.rsplit("|",1)[0]
             while parent:
                 paths.add(parent)
                 parent = parent.rsplit("|",1)[0]
+        user_plugs = {channel.node + "." + channel.attribute for channel in channels}
         nodes = tuple(self._registry_node(p) for p in sorted(paths))
+        if allow_animation:
+            nodes = tuple(replace(node, inputs=tuple(
+                (attribute, source) for attribute, source in node.inputs
+                if not (node.path + "." + attribute in user_plugs
+                        and self._character_direct_animation(source))))
+                for node in nodes)
         resolved = []
         for ch in channels:
             plug = ch.node+"."+ch.attribute
-            if not c.objExists(plug) or c.getAttr(plug,lock=True) or c.listConnections(plug,s=True,d=False):
+            incoming = c.connectionInfo(plug, sourceFromDestination=True) if c.objExists(plug) else None
+            if (not c.objExists(plug) or c.getAttr(plug, lock=True)
+                    or (incoming and not (allow_animation
+                        and self._character_direct_animation(incoming)))):
                 raise CharacterRegistryError("登记控制通道被占用："+plug)
             minimum = c.attributeQuery(ch.attribute,node=ch.node,minimum=True) if c.attributeQuery(ch.attribute,node=ch.node,minExists=True) else None
             maximum = c.attributeQuery(ch.attribute,node=ch.node,maximum=True) if c.attributeQuery(ch.attribute,node=ch.node,maxExists=True) else None

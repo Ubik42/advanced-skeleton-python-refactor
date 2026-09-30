@@ -99,6 +99,13 @@ class BodySpineRootScaleSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyRootFkScaleSpec:
+    body_root: str
+    fk_scale_plug: str
+    multiply_name: str = "AdvPy_RootFKScaleMultiply"
+
+
+@dataclass(frozen=True, slots=True)
 class BodyCharacterGlobalPlan:
     root_name: str
     root_path: str
@@ -127,6 +134,7 @@ class BodyCharacterGlobalPlan:
     global_follow_use_opm: bool = False
     fit_height: float | None = None
     spine_root_scale: BodySpineRootScaleSpec | None = None
+    root_fk_scale: BodyRootFkScaleSpec | None = None
 
     @property
     def root_follow_constraint_name(self) -> str | None:
@@ -173,6 +181,8 @@ class BodyCharacterGlobalPlan:
             self.control_name,
             self.shape_name,
             self.scale_node_name,
+            *((self.root_fk_scale.multiply_name,)
+              if self.root_fk_scale is not None else ()),
             *((self.spine_root_scale.blend_name,
                self.spine_root_scale.multiply_name)
               if self.spine_root_scale is not None else ()),
@@ -231,6 +241,9 @@ class BodyCharacterGlobalPlan:
         if (self.spine_root_scale is not None
                 and plug == self.spine_root_scale.body_root + ".scale" + axis):
             return f"{self.spine_root_scale.multiply_name}.output{axis}"
+        if (self.root_fk_scale is not None
+                and plug == self.root_fk_scale.body_root + ".scale" + axis):
+            return f"{self.root_fk_scale.multiply_name}.output{axis}"
         return self.effective_scale_source(axis)
 
     @property
@@ -355,6 +368,7 @@ class BodyCharacterGlobalSnapshot:
         None, None, None)
     control_shape_visibility_source: str | None = None
     spine_root_scale_state: tuple | None = None
+    root_fk_scale_state: tuple | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -397,6 +411,7 @@ def plan_body_character_global(
     global_follow_use_opm: bool = False,
     num_main_extras: int = 0,
     spine_root_scale: BodySpineRootScaleSpec | None = None,
+    root_fk_scale: BodyRootFkScaleSpec | None = None,
 ) -> BodyCharacterGlobalPlan:
     if (
         not isinstance(up_axis, FitUpAxis)
@@ -405,6 +420,14 @@ def plan_body_character_global(
         or not isinstance(driven_roots, tuple)
         or not driven_roots
         or not isinstance(scale_destinations, tuple)
+        or (root_fk_scale is not None and (
+            not isinstance(root_fk_scale, BodyRootFkScaleSpec)
+            or spine_root_scale is not None
+            or root_fk_scale.body_root != body_root
+            or not isinstance(root_fk_scale.fk_scale_plug, str)
+            or not root_fk_scale.fk_scale_plug.endswith(".scale")
+            or any(body_root + ".scale" + axis not in scale_destinations
+                   for axis in "XYZ")))
         or (spine_root_scale is not None
             and (not isinstance(spine_root_scale, BodySpineRootScaleSpec)
                  or spine_root_scale.body_root != body_root
@@ -552,6 +575,7 @@ def plan_body_character_global(
         head_aim_follow=head_aim_follow,
         extra_control_paths=tuple(extra_paths),
         spine_root_scale=spine_root_scale,
+        root_fk_scale=root_fk_scale,
         root_follow_main_path=root_follow_main_path,
         root_follow_use_opm=root_follow_use_opm,
         global_follow_main_path=global_follow_main_path,
@@ -783,6 +807,15 @@ def audit_body_character_global(
             "Spine Root FK／IK 缩放与总控比例接线不一致",
             spine.body_root if spine else None,
         ))
+    root_fk = plan.root_fk_scale
+    expected_root_fk = (("multiplyDivide",
+        tuple(plan.effective_scale_source(axis) for axis in "XYZ"),
+        tuple(root_fk.fk_scale_plug + axis for axis in "XYZ"), 1)
+        if root_fk is not None else None)
+    if snapshot.root_fk_scale_state != expected_root_fk:
+        issues.append(BodyCharacterGlobalIssue("root_fk_scale_mismatch",
+            "Root FK 缩放与总控比例接线不一致",
+            root_fk.body_root if root_fk else None))
     expected_inputs = tuple(
         (f"MainScaleMultiplyDivide{len(plan.extra_control_paths)}.output{axis}"
          if plan.extra_control_paths else f"{plan.control_path}.scale{axis}")

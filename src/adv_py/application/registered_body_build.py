@@ -4,6 +4,10 @@ from __future__ import annotations
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, replace
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .source_body_build import SourceBodyRigResult
 
 from adv_py.core.character_registry import CharacterRegistration
 from adv_py.core.body_description import BodyAxialDescription
@@ -467,7 +471,7 @@ def _prepare_fit_for_body(host, container_name: str, original_up_axis: str):
 @dataclass(frozen=True, slots=True)
 class RegisteredBodyBuildResult:
     skeleton: OrientedBodySkeletonBuildResult
-    rig: BodyCharacterRigBuildResult
+    rig: BodyCharacterRigBuildResult | SourceBodyRigResult
     registration: CharacterRegistration
     segment_influences: tuple[str, ...] = ()
     fit_part_hierarchy: FitPartHierarchyResult | None = None
@@ -493,6 +497,8 @@ class BuildRegisteredBodyCharacter:
               include_segment_influences: bool = True,
               use_fit_part_hierarchy: bool = True,
               fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
+              _source_limb_labels: tuple[tuple[str, str], ...] | None = None,
+              _defer_source_registration: bool = False,
               _hierarchy_prepared: bool = False,
               _scene_before=None,
               _include_dynamic: bool = True,
@@ -538,6 +544,43 @@ class BuildRegisteredBodyCharacter:
                         container_name,
                         tuple(node.path for node in fit_hierarchy.joints),
                     )
+                    # Standard modules require the original biped names.
+                    # Other labeled Fit skeletons use the same Body primitives
+                    # through the source-chain branch, including direct builds.
+                    standard_names = {"Root", "Chest"}
+                    fit_names = {node.short_name.rsplit(":", 1)[-1]
+                                 for node in fit_hierarchy.joints}
+                    if (_source_limb_labels is None and axial_description is None
+                            and not standard_names <= fit_names):
+                        _source_limb_labels = tuple(
+                            (node.short_name.rsplit(":", 1)[-1], label.text)
+                            for node in fit_hierarchy.joints
+                            if (label := joined.read_joint_label(node.path)) is not None)
+                    if _source_limb_labels is not None:
+                        from .source_body_build import build_source_body_character
+                        result = build_source_body_character(
+                            joined, container_name, labels=_source_limb_labels,
+                            scene_before=_scene_before,
+                            include_dynamic=_include_dynamic,
+                            defer_selection_sets=_defer_selection_sets,
+                            defer_all_set=_defer_all_set,
+                            retain_markers=_retain_non_deform_markers,
+                            defer_registration=_defer_source_registration)
+                        if original_up_axis == "z":
+                            joined.flip_character_scene_up_axis("|Group", "z")
+                            if _defer_source_registration:
+                                from .source_body_build import source_character_channels
+                                body = joined.capture_body_skeleton(result.skeleton.snapshot.root)
+                                rig = replace(result.rig, body=body)
+                                result = replace(result, rig=rig,
+                                    skeleton=replace(result.skeleton, snapshot=body),
+                                    registration=joined.describe_character_registration(
+                                        rig, source_character_channels(rig)))
+                            else:
+                                result = replace(result,
+                                    registration=joined.rebase_character_registration_bind_pose(
+                                        result.registration))
+                        return result
                     if axial_description is None:
                         spine_info = _root_spine_ik_info(joined, fit_hierarchy)
                         axial_description = axial_description_from_fit(
