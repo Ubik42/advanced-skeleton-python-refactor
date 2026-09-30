@@ -49,6 +49,8 @@ class SetSkinWeights(ompx.MPxCommand):
             raise ValueError("Skin 权重目标顶点数在执行前发生变化")
         if len(actual_influences) != influence_count:
             raise ValueError("Skin 影响关节数量发生变化")
+        # getWeights is in influenceObjects order; setWeights addresses the
+        # matrix array's logical indices, which can have gaps after edits.
         self._indices = om.MIntArray(
             [self._skin.indexForInfluenceObject(path)
              for path in actual_influences])
