@@ -946,6 +946,32 @@ class MayaCharacterRegistryMixin:
                 rows.append((node,_plug(self,upstream),destination))
         return tuple(sorted(set(rows)))
 
+    def capture_character_deformer_output_conversions(self,deformers):
+        """Retain exclusive conversions carrying deformer outputs to Rig."""
+        from .maya_character_preservation import _plug
+        c=self._cmds
+        rows=[]
+        for deformer in deformers:
+            for source,destination in deformer.connections:
+                node=destination.split('.',1)[0]
+                if c.nodeType(node)!='unitConversion':
+                    continue
+                if destination!=node+'.input':
+                    raise CharacterRegistryError(
+                        '生产变形器输出单位转换输入类型不受支持：'
+                        + destination)
+                incoming=c.connectionInfo(node+'.input',
+                    sourceFromDestination=True)
+                outputs=c.listConnections(node+'.output',source=False,
+                    destination=True,plugs=True) or []
+                normalized=tuple(sorted(_plug(self,plug) for plug in outputs))
+                if (not incoming or _plug(self,incoming)!=source
+                        or len(normalized)!=1):
+                    raise CharacterRegistryError(
+                        '生产变形器输出单位转换不是独占连接：'+node)
+                rows.append((node,normalized[0]))
+        return tuple(sorted(set(rows)))
+
     def plan_character_property_transfer(self,original,namespace):
         from .maya_character_properties import plan
         return plan(self,original,namespace)

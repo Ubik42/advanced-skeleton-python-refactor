@@ -231,6 +231,20 @@ def transfer(host,staged):
                 with _writable_connection(c,b,y):
                     c.disconnectAttr(a,b)
                     c.connectAttr(x,y)
+        for converter,destination in staged.deformer_output_conversions:
+            a=host.scene_address(converter+'.output')
+            b=host.scene_address(destination)
+            y=geometry_source(b)
+            if y!=b:
+                if not c.isConnected(a,b):
+                    raise CharacterRegistryError(
+                        '生产变形器输出单位转换在交接前变化：'+converter)
+                with _writable_connection(c,b,y):
+                    c.disconnectAttr(a,b)
+                    c.connectAttr(a,y)
+            if not c.isConnected(a,y):
+                raise RuntimeError(
+                    '生产变形器输出单位转换没有完整交接：'+converter)
         for converter,upstream in staged.geometry_container_conversions:
             a=host.scene_address(upstream)
             b=host.scene_address(converter+'.input')
@@ -382,6 +396,12 @@ def verify_retained(host,staged):
         for converter,upstream,destination in staged.deformer_input_conversions))
     if actual_conversions!=expected_conversions:
         raise RuntimeError('交接改变了生产变形器单位转换输入')
+    actual_outputs=host.capture_character_deformer_output_conversions(
+        staged.original.deformers)
+    expected_outputs=tuple(sorted((converter,local(destination))
+        for converter,destination in staged.deformer_output_conversions))
+    if actual_outputs!=expected_outputs:
+        raise RuntimeError('交接改变了生产变形器单位转换输出')
     for row in staged.original.extensions:
         actual=capture_extension(host,_by_uuid(c,row.uuid))
         expected_parent=(row.parent if row.path.startswith('|Group|Geometry|')

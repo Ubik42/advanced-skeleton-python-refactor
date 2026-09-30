@@ -64,7 +64,8 @@ def audit(host,staged):
     external_conversions={row[0] for row in (
         *staged.geometry_container_conversions,
         *staged.geometry_output_conversions,
-        *staged.deformer_input_conversions)}
+        *staged.deformer_input_conversions,
+        *staged.deformer_output_conversions)}
     if external_conversions & set(names):
         raise CharacterRegistryError('Geometry 保留单位转换与新 Rig 同名')
     old_nodes,old_edges=_graph(host,names,
@@ -128,6 +129,8 @@ def audit(host,staged):
         for converter,upstream in staged.geometry_container_conversions)
     permitted.update((upstream,converter+'.input')
         for converter,upstream,_ in staged.deformer_input_conversions)
+    permitted.update((converter+'.output',destination)
+        for converter,destination in staged.deformer_output_conversions)
     for curve in original.curves:
         permitted.update((curve.node+'.output',plug) for plug in curve.outputs)
     # Bind-pose records belong to retained skin, not to the rig being deleted.
