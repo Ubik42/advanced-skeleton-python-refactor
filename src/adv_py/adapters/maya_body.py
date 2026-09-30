@@ -3560,6 +3560,36 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 'Skin 变形集顶点索引越界：' + skin_fn.name())
         return tuple(range(vertex_count)) if whole_mesh else tuple(sorted(vertices))
 
+    @staticmethod
+    def _write_skin_vertex_members(c, skin_fn, shape,
+                                   members, vertex_count):
+        """Replace native deformer-set members through undoable Maya commands."""
+        from maya.api import OpenMaya as om
+        from maya.api import OpenMayaAnim as oma
+
+        if (not members or any(type(index) is not int or index<0
+                               or index>=vertex_count for index in members)
+                or tuple(sorted(set(members)))!=tuple(members)):
+            raise FitSkeletonValidationError(
+                'Skin 变形集写入成员为空、重复或越界')
+        deformer_set = om.MFnDependencyNode(
+            oma.MFnGeometryFilter(skin_fn.object()).deformerSet).name()
+        c.sets(clear=deformer_set)
+        if len(members)==vertex_count:
+            c.sets(shape, addElement=deformer_set)
+            return
+        ranges=[]
+        start=stop=members[0]
+        for index in members[1:]:
+            if index==stop+1:
+                stop=index
+                continue
+            ranges.append(f'{shape}.vtx[{start}:{stop}]')
+            start=stop=index
+        ranges.append(f'{shape}.vtx[{start}:{stop}]')
+        for offset in range(0,len(ranges),256):
+            c.sets(*ranges[offset:offset+256],addElement=deformer_set)
+
     def _capture_fbx_skin_sources(self, influence_map, published_names):
         from .maya_dense_skin import MayaDenseSkinHost
         from .maya_mesh_topology import mesh_topology_digest
@@ -3989,14 +4019,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 # A freshly bound Skin affects the entire clone. The source
                 # may be restricted to painted components, even though its
                 # dense weight array still contains every mesh vertex.
-                deformer_set = om.MFnSet(
-                    oma.MFnGeometryFilter(skin_fn.object()).deformerSet)
-                deformer_set.clear()
-                if vertex_members:
-                    member_fn = om.MFnSingleIndexedComponent()
-                    member = member_fn.create(om.MFn.kMeshVertComponent)
-                    member_fn.addElements(list(vertex_members))
-                    deformer_set.addMember((dag, member))
+                self._write_skin_vertex_members(c,skin_fn,shape,
+                    vertex_members,data.vertex_count)
             if self._skin_vertex_members(skin_fn, shape, clone,
                     data.vertex_count) != vertex_members:
                 raise FitSkeletonValidationError(
@@ -6422,21 +6446,13 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         selection = om.MSelectionList()
         selection.add(self.scene_address(skin))
         skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
-        deformer_set = om.MFnSet(
-            oma.MFnGeometryFilter(skin_fn.object()).deformerSet)
         shapes = self._cmds.skinCluster(skin, query=True, geometry=True) or []
         paths = self._cmds.ls(shapes[0], long=True, type='mesh') if len(shapes)==1 else []
         if len(paths)!=1:
             raise FitSkeletonValidationError('目标 Skin 变形集网格缺失')
-        dag = om.MSelectionList().add(self.scene_address(paths[0])).getDagPath(0)
-        deformer_set.clear()
-        if len(members)==count:
-            deformer_set.addMember(dag)
-        else:
-            component_fn = om.MFnSingleIndexedComponent()
-            component = component_fn.create(om.MFn.kMeshVertComponent)
-            component_fn.addElements(list(members))
-            deformer_set.addMember((dag, component))
+        self._write_skin_vertex_members(
+            getattr(self._cmds,'raw',self._cmds),skin_fn,
+            self.scene_address(paths[0]),members,count)
         if self.capture_skin_vertex_membership(skin, mesh) != members:
             raise RuntimeError('目标 Skin 变形集顶点成员未完整写回')
 
