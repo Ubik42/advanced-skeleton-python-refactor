@@ -39,6 +39,7 @@ class FitBendyChainSpec:
     micro_blended_up: bool = False
     legacy_simple_control: bool = False
     legacy_twist_outputs: bool = False
+    master_circular: bool = True
 
     def __post_init__(self) -> None:
         if (type(self.control_count) is not int
@@ -80,6 +81,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 单控制器布局策略无效")
         if type(self.legacy_twist_outputs) is not bool:
             raise ValueError("Bendy 扭转输出层策略无效")
+        if type(self.master_circular) is not bool:
+            raise ValueError("Bendy 主控 Circular 层策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -184,7 +187,9 @@ class FitBendyChainSpec:
                 *self.control_extra_names,
                 *(self.end_follow_matrix_names if self.child_start_influence
                   else (f"AdvPy_{self.end_proxy_name}Follow",)),
-                *((self.circular_name, *self.circular_graph_names)
+                *((self.circular_name,) if self.has_master_circular
+                  else ()),
+                *(self.circular_graph_names
                   if self.child_junction_control else ()))
 
     @property
@@ -204,6 +209,10 @@ class FitBendyChainSpec:
     @property
     def circular_name(self) -> str:
         return f"BendCircular{self.stem}_{self.side}"
+
+    @property
+    def has_master_circular(self) -> bool:
+        return self.master_circular or bool(self.child_junction_control)
 
     @property
     def end_follow_matrix_names(self) -> tuple[str, str, str]:

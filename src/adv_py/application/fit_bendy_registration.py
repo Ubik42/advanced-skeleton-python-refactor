@@ -83,7 +83,7 @@ class RegisterBendyControls:
             for control in chain.control_names:
                 ancestors = (control + "Offset", "AdvPy_BendSystem")
                 if (control == chain.control_names[0]
-                        and chain.child_junction_control):
+                        and chain.has_master_circular):
                     ancestors = (chain.circular_name, *ancestors)
                 extra = control + "Extra"
                 extra_path = self._host.capture_bendy_control_path(

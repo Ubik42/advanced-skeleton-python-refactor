@@ -724,6 +724,12 @@ class BuildRegisteredBodyCharacter:
                         is not None
                         and chain.control_names[0] in
                         _generic_fk_policy.bendy_legacy_twist_outputs),
+                    master_circular=(
+                        _generic_fk_policy is None
+                        or _generic_fk_policy.bendy_master_circular_controls
+                        is None
+                        or chain.control_names[0] in
+                        _generic_fk_policy.bendy_master_circular_controls),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None

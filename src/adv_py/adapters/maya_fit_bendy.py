@@ -1132,7 +1132,7 @@ class MayaFitBendyMixin:
 
     def create_fit_bendy_circular(self,
                                    spec: FitBendyChainSpec) -> None:
-        if not spec.child_junction_control:
+        if not spec.has_master_circular:
             return
         self._require_transaction()
         c = self._cmds
@@ -1140,6 +1140,9 @@ class MayaFitBendyMixin:
         circular = c.createNode("transform", name=spec.circular_name,
                                 parent=master + "Offset", skipSelect=True)
         c.parent(master + "Extra", circular, absolute=True)
+        if not spec.child_junction_control:
+            self._transaction_changed = True
+            return
         relative_name, angle_name, length_name, amount_name = (
             spec.circular_graph_names)
         relative = c.createNode("multMatrix", name=relative_name,
@@ -1172,11 +1175,18 @@ class MayaFitBendyMixin:
 
     def capture_fit_bendy_circular(self,
                                     spec: FitBendyChainSpec) -> bool:
-        if not spec.child_junction_control:
+        if not spec.has_master_circular:
             return True
         c = self._cmds
-        relative, angle, length, amount = spec.circular_graph_names
         circular = spec.circular_name
+        if not spec.child_junction_control:
+            return (c.objExists(circular)
+                    and c.nodeType(circular) == "transform"
+                    and _bendy_parent_name(c, circular)
+                    == spec.control_names[0] + "Offset"
+                    and _bendy_parent_name(
+                        c, spec.control_names[0] + "Extra") == circular)
+        relative, angle, length, amount = spec.circular_graph_names
         return (c.objExists(circular)
                 and c.nodeType(circular) == "transform"
                 and _bendy_parent_name(c, circular)
@@ -1255,7 +1265,7 @@ class MayaFitBendyMixin:
             follow = f"AdvPy_{control}Follow"
             extra_parent = (spec.chain.circular_name
                             if control == spec.chain.control_names[0]
-                            and spec.chain.child_junction_control else offset)
+                            and spec.chain.has_master_circular else offset)
             if (not c.objExists(offset) or not c.objExists(extra)
                     or int(c.getAttr(offset + ".rotateOrder"))
                     != spec.chain.rotation_order

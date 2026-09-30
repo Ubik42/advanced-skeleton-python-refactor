@@ -135,6 +135,7 @@ class MayaCharacterRegistryMixin:
         bendy_counts = []
         bendy_legacy_simple = set()
         bendy_legacy_twist_outputs = set()
+        bendy_master_circular = set()
         for control in bendy_master_paths:
             stem, side = control.rsplit('_', 1)
             master_leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
@@ -143,6 +144,13 @@ class MayaCharacterRegistryMixin:
             old_output = namespace + 'AdvPy_' + control + 'TwistX'
             new_output = (namespace + 'BendX'
                           + stem.removeprefix('Bend') + '_' + side)
+            circular = (namespace + 'BendCircular'
+                        + stem.removeprefix('Bend') + '_' + side)
+            if c.objExists(circular):
+                if c.nodeType(circular) != 'transform':
+                    raise CharacterRegistryError(
+                        'Bendy Circular 节点类型错误：' + control)
+                bendy_master_circular.add(control)
             if c.objExists(old_output):
                 if c.objExists(new_output):
                     raise CharacterRegistryError(
@@ -343,7 +351,8 @@ class MayaCharacterRegistryMixin:
             frozenset(bendy_up_twist),
             frozenset(bendy_blended_up),
             frozenset(bendy_legacy_simple),
-            frozenset(bendy_legacy_twist_outputs))
+            frozenset(bendy_legacy_twist_outputs),
+            frozenset(bendy_master_circular))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext
