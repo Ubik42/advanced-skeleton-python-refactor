@@ -6193,11 +6193,15 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
 
     def read_body_smooth_bind_options(self) -> SmoothBindPreferences:
         """Read the native Smooth Bind choices used by the original panel."""
-        c = getattr(self._cmds, "raw", self._cmds)
+        from .maya_deform_skinning import SMOOTH_BIND_OPTIONS
 
-        def option(name: str, default: int) -> int:
+        c = getattr(self._cmds, "raw", self._cmds)
+        original_defaults = dict(SMOOTH_BIND_OPTIONS)
+
+        def option(name: str, fallback: int | None = None) -> int:
             if not c.optionVar(exists=name):
-                return default
+                return int(original_defaults[name] if fallback is None
+                           else fallback)
             value = c.optionVar(query=name)
             if (isinstance(value, bool)
                     or not isinstance(value, (int, float))
@@ -6211,19 +6215,19 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             1: SkinBindMethod.CLOSEST_IN_HIERARCHY,
             2: SkinBindMethod.HEAT_MAP,
             3: SkinBindMethod.GEODESIC_VOXEL,
-        }.get(option("bindMethod", 1))
+        }.get(option("bindMethod"))
         normalization = {
             0: SkinWeightNormalization.NONE,
             1: SkinWeightNormalization.INTERACTIVE,
             2: SkinWeightNormalization.POST,
-        }.get(option("normalizeWeights", 2))
+        }.get(option("normalizeWeights"))
         skinning = {
             0: SkinningMethod.CLASSIC_LINEAR,
             1: SkinningMethod.DUAL_QUATERNION,
             2: SkinningMethod.WEIGHT_BLENDED,
-        }.get(option("skinMethod", 1))
-        obey = option("obeyMaxInfl", 0)
-        bind_to = option("bindTo", 2)
+        }.get(option("skinMethod"))
+        obey = option("obeyMaxInfl")
+        bind_to = option("bindTo")
         if bind is None or normalization is None or skinning is None or obey not in (0, 1):
             raise FitSkeletonValidationError(
                 "Maya Smooth Bind 选项超出当前支持范围")
@@ -6233,7 +6237,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         if bind is SkinBindMethod.GEODESIC_VOXEL and c.about(batch=True):
             raise FitSkeletonValidationError(
                 "Geodesic Voxel 绑定需要 Maya 图形会话")
-        remove = option("removeUnusedInfluences", 0)
+        remove = option("removeUnusedInfluences")
         distribution = {
             0: SkinWeightDistribution.DISTANCE,
             1: SkinWeightDistribution.NEIGHBORS,
@@ -6244,7 +6248,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         if distribution is None:
             raise FitSkeletonValidationError(
                 "Maya Smooth Bind 权重分布选项无效")
-        maximum = option("maxInfl", 3)
+        maximum = option("maxInfl")
         return SmoothBindPreferences(bind, normalization, skinning,
                                      bool(obey), bool(remove), distribution,
                                      maximum)
