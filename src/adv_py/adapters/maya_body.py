@@ -5494,6 +5494,24 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             c.getAttr(f"{skin}.{TOPOLOGY_ATTRIBUTE}"),
             mesh_topology_digest(shapes[0]))
 
+    def capture_skin_bind_topology(self, skin: str, mesh: str) -> str | None:
+        from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
+
+        c = self._cmds
+        skins = c.ls(skin, type="skinCluster") or []
+        shapes = c.listRelatives(mesh, shapes=True, noIntermediate=True,
+                                 fullPath=True, type="mesh") or []
+        if len(skins) != 1 or len(shapes) != 1:
+            raise FitSkeletonValidationError("源 Skin 或网格不唯一")
+        if not c.attributeQuery(TOPOLOGY_ATTRIBUTE, node=skin,
+                                exists=True):
+            return None
+        recorded = c.getAttr(f"{skin}.{TOPOLOGY_ATTRIBUTE}")
+        if recorded != mesh_topology_digest(shapes[0]):
+            raise FitSkeletonValidationError(
+                "源 Skin 绑定拓扑与当前网格不同，不能作为转移来源")
+        return recorded
+
     def restore_skin_rebind_deformer_state(self, state) -> None:
         self._require_transaction()
         c = self._cmds

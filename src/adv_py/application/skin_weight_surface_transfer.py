@@ -216,13 +216,21 @@ class CaptureSkinWeightSurfaceSource:
         triangles = self._host.capture_face_triangles(mesh_path)
         geometry = FaceNeutralGeometry(mesh, triangles,
             self._host.scene_up_axis().value, self._host.scene_linear_unit().value)
+        capture_topology = getattr(
+            self._host, "capture_skin_bind_topology", None)
+        bind_topology = (capture_topology(skin_name, mesh_path)
+                         if capture_topology is not None else None)
         if (self._host.capture_all_skin_weights(skin_name, mesh_path) != state
                 or self._host.capture_face_mesh(mesh_path) != mesh
                 or self._host.capture_face_triangles(mesh_path) != triangles
                 or self._host.scene_up_axis().value != geometry.up_axis
                 or self._host.scene_linear_unit().value != geometry.linear_unit):
             raise FitSkeletonValidationError("源权重或几何在捕获期间发生变化")
-        source = SkinWeightSurfaceSource(document, geometry)
+        if (capture_topology is not None
+                and capture_topology(skin_name, mesh_path) != bind_topology):
+            raise FitSkeletonValidationError(
+                "源 Skin 绑定拓扑在捕获期间发生变化")
+        source = SkinWeightSurfaceSource(document, geometry, bind_topology)
         skin_weight_surface_source_to_json(source)
         return source
 

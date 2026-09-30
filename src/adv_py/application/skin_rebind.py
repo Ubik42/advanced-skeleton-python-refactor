@@ -47,6 +47,9 @@ class RebindSkinFromSurfaceSource:
         state = self._host.capture_skin_rebind_state(skin, mesh)
         if state.old_topology == state.current_topology:
             raise FitSkeletonValidationError("目标 Skin 的拓扑没有变化，无需重绑")
+        if source.bind_topology != state.old_topology:
+            raise FitSkeletonValidationError(
+                "源资产的绑定拓扑与旧 Skin 不一致；请从原拓扑重新导出来源")
         if (source.weights.skin_name != skin or source.weights.mesh_path != mesh):
             raise FitSkeletonValidationError("源资产的 Skin 或网格路径与目标不一致")
         if set(source.weights.influence_paths) != set(state.influences):
