@@ -107,7 +107,9 @@ class MayaBodySpineMixin:
                   defaultValue=0, keyable=True)
         c.createNode("transform", name=plan.waist_output.rsplit("|", 1)[-1], parent=plan.joints[4].path, skipSelect=True)
         c.connectAttr(plan.roll_plug, plan.waist_output + ".rotateX")
-        c.pointConstraint(plan.pelvis_control, plan.joints[0].path, maintainOffset=False, name="AdvPy_SpineFKRootPoint")
+        c.pointConstraint((plan.fk_sources or plan.fk_controls)[0],
+                          plan.joints[0].path, maintainOffset=False,
+                          name="AdvPy_SpineFKRootPoint")
         c.pointConstraint(plan.pelvis_control, plan.joints[3].path, maintainOffset=False, name="AdvPy_SpineIKRootPoint")
         # Preferred bend disambiguates the fully straight synthetic bind chain.
         c.setAttr(plan.joints[4].path + ".preferredAngleZ", -0.1)
@@ -641,7 +643,9 @@ class MayaBodySpineMixin:
         targets("AdvPy_SpineIKChestOrient", c.orientConstraint, (plan.ik_driver,))
         for role, index in (("FK", 0), ("IK", 3)):
             name = f"AdvPy_Spine{role}RootPoint"
-            targets(name, c.pointConstraint, (plan.pelvis_control,))
+            source = ((plan.fk_sources or plan.fk_controls)[0]
+                      if role == "FK" else plan.pelvis_control)
+            targets(name, c.pointConstraint, (source,))
             for axis in "XYZ":
                 if not c.isConnected(name + ".constraintTranslate" + axis, plan.joints[index].path + ".translate" + axis):
                     raise FitSkeletonValidationError("Spine 起点约束输出改变")

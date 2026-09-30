@@ -15,6 +15,23 @@ from . import maya_spline_twist
 from . import maya_spline_follow
 
 
+def _fk_root_source(host, plan):
+    c = host._cmds
+    constraints = c.ls('AdvPy_SplineBaseFKOrient',
+                       type='orientConstraint') or []
+    if len(constraints) != 1:
+        raise FitSkeletonValidationError('Spline FK 起点朝向约束不唯一')
+    targets = c.orientConstraint(
+        constraints[0], query=True, targetList=True) or []
+    sources = (c.ls(targets[0], long=True) or []
+               if len(targets) == 1 else [])
+    if (len(sources) != 1
+            or not (sources[0] == plan.fk_controls[0]
+                    or sources[0].startswith(plan.fk_controls[0] + '|'))):
+        raise FitSkeletonValidationError('Spline FK 起点接收层不属于 Base FK 控制')
+    return sources[0]
+
+
 def prepare(host,plan):
     host._require_transaction();host._transaction_changed=True
     c=host._cmds
@@ -106,7 +123,8 @@ def create(host,plan):
         c.connectAttr(plan.curve+'.worldInverseMatrix[0]',matrix+'.matrixIn[1]')
         c.connectAttr(matrix+'.matrixSum',position+'.inputMatrix')
         c.connectAttr(position+'.outputTranslate',shape+f'.controlPoints[{i}]')
-    c.pointConstraint(plan.pelvis_control,fk[0].path,maintainOffset=False,name='AdvPy_SplineFKRootPoint')
+    c.pointConstraint(_fk_root_source(host, plan),fk[0].path,
+                      maintainOffset=False,name='AdvPy_SplineFKRootPoint')
     c.pointConstraint(plan.driver_targets[0],ik[0].path,maintainOffset=False,name='AdvPy_SplineIKRootPoint')
     handle,effector=c.ikHandle(name='AdvPy_SplineIKHandle',startJoint=ik[0].path,endEffector=ik[-1].path,
         solver='ikSplineSolver',curve=plan.curve,createCurve=False,parentCurve=False)
@@ -266,6 +284,7 @@ def create(host,plan):
 
 def audit(host,plan):
     c=host._cmds;n=len(plan.body_joints)
+    fk=plan.joints[:n];ik=plan.joints[n:]
     maya_chest_space.audit(host, plan.body_joints[-1], plan.chest_space,
                           'AdvPy_SplineChestSpaceParent',
                           plan.use_offset_parent_matrix)
@@ -325,6 +344,8 @@ def audit(host,plan):
         if (c.listRelatives(target, parent=True, fullPath=True) or []) != [expected_parent]:
             raise FitSkeletonValidationError('Spline IK 主控父层改变')
     for name, command, source in (
+            ('AdvPy_SplineFKRootPoint', c.pointConstraint,
+             _fk_root_source(host, plan)),
             ('AdvPy_SplineIKRootPoint', c.pointConstraint,
              plan.driver_targets[0]),
             ('AdvPy_SplineChestOrient', c.orientConstraint,
@@ -334,6 +355,14 @@ def audit(host,plan):
                                            targetList=True) or [])
         if actual != (source,):
             raise FitSkeletonValidationError('Spline IK 端点约束来源改变：'+name)
+    for name, joint in (('AdvPy_SplineFKRootPoint', fk[0].path),
+                        ('AdvPy_SplineIKRootPoint', ik[0].path)):
+        for axis in 'XYZ':
+            if not c.isConnected(
+                    name + '.constraintTranslate' + axis,
+                    joint + '.translate' + axis):
+                raise FitSkeletonValidationError(
+                    'Spline 根关节位置约束输出改变：' + name)
     if c.ikHandle('AdvPy_SplineIKHandle',q=True,solver=True)!='ikSplineSolver':raise FitSkeletonValidationError('Spline 求解器被替换')
     shape=plan.curve+'|AdvPy_SplineCurveShape'
     edges=[(shape+'.worldSpace[0]','AdvPy_SplineIKHandle.inCurve'),(shape+'.local','AdvPy_SplineArc.inputCurve'),

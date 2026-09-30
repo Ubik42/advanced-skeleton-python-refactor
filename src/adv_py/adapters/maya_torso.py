@@ -50,6 +50,8 @@ class MayaBodyTorsoMixin:
             if spec.driven_joint in planned_joints:
                 continue
             attributes = tuple(f"rotate{axis}" for axis in "XYZ")
+            if spec.translation_constraint_name is not None:
+                attributes += tuple(f"translate{axis}" for axis in "XYZ")
             if spec.driven_joint == plan.pelvis_translation.target:
                 attributes += tuple(f"{kind}{axis}" for kind in ("translate", "scale") for axis in "XYZ")
             self._preflight_torso_channels(spec.driven_joint, attributes)

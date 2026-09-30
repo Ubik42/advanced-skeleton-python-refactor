@@ -9402,6 +9402,16 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             raise FitSkeletonValidationError(
                 f"{limb_label} FK 控制父级或驱动关节失效：{spec.control_name}"
             )
+        channels = ("rotate", "translate") if (
+            spec.translation_constraint_name is not None) else ("rotate",)
+        for kind in channels:
+            for axis in "XYZ":
+                plug = driven[0] + "." + kind + axis
+                if (not self._cmds.getAttr(plug, settable=True)
+                        or self._cmds.listConnections(
+                            plug, source=True, destination=False)):
+                    raise FitSkeletonValidationError(
+                        f"{limb_label} FK 驱动通道已占用：{plug}")
         self._transaction_changed = True
         try:
             offset = self._cmds.createNode(
