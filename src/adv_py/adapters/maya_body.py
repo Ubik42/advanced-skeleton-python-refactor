@@ -3527,6 +3527,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from maya.api import OpenMaya as om
         from maya.api import OpenMayaAnim as oma
 
+        if type(vertex_count) is not int or vertex_count <= 0:
+            raise FitSkeletonValidationError(
+                'Skin 变形集要求有效的网格顶点数')
         filter_fn = oma.MFnGeometryFilter(skin_fn.object())
         members = om.MFnSet(filter_fn.deformerSet).getMembers(True)
         vertices = set()
