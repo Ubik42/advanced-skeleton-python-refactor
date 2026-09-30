@@ -784,6 +784,12 @@ class BuildRegisteredBodyCharacter:
                         and _generic_fk_policy.bendy_opm_offset_scale_controls
                         is not None else
                         preview.build.build_options.use_offset_parent_matrix),
+                    secondary_matrix_follow=(
+                        chain.control_names[0] in
+                        _generic_fk_policy.bendy_secondary_matrix_controls
+                        if _generic_fk_policy is not None
+                        and _generic_fk_policy.bendy_secondary_matrix_controls
+                        is not None else True),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None

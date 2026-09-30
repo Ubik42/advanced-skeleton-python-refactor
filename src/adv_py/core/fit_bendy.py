@@ -48,6 +48,7 @@ class FitBendyChainSpec:
     scale_guide_group: bool = True
     non_opm_additive_micro_scale: bool = False
     opm_offset_only_scale: bool = False
+    secondary_matrix_follow: bool = False
 
     def __post_init__(self) -> None:
         if (not self.part_names
@@ -121,6 +122,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy Micro 非 OPM 缩放策略无效")
         if type(self.opm_offset_only_scale) is not bool:
             raise ValueError("Bendy OPM 缩放策略无效")
+        if type(self.secondary_matrix_follow) is not bool:
+            raise ValueError("Bendy 第二曲线矩阵跟随策略无效")
         if self.opm_offset_only_scale and self.non_opm_additive_micro_scale:
             raise ValueError("Bendy OPM 与非 OPM 缩放策略不能同时启用")
         if (self.opm_offset_only_scale
@@ -305,6 +308,21 @@ class FitBendyChainSpec:
                 prefix + "World")
 
     @property
+    def secondary_end_decompose_name(self) -> str:
+        return f"AdvPy_Bend2{self.stem}End_{self.side}Decompose"
+
+    @property
+    def secondary_influence_follow_names(self) -> tuple[str, ...]:
+        return tuple("AdvPy_Bend2Guide" + name
+                     for name in self.secondary_influence_names)
+
+    @property
+    def secondary_interior_follow_names(self) -> tuple[tuple[str, str], ...]:
+        return tuple((f"AdvPy_{control}FollowMM",
+                      f"AdvPy_{control}FollowPM")
+                     for control in self.control_names[2:])
+
+    @property
     def secondary_node_names(self) -> tuple[str, ...]:
         if self.control_count == 1:
             return ()
@@ -315,10 +333,23 @@ class FitBendyChainSpec:
                 self.secondary_curve_name + "Shape",
                 self.secondary_skin_name,
                 *self.secondary_influence_names,
-                *("AdvPy_Bend2Guide" + name
-                  for name in constrained),
+                *((name + "MM" if self.secondary_matrix_follow
+                    and self.opm_offset_only_scale else name)
+                  for name in self.secondary_influence_follow_names[
+                      :len(constrained)]),
+                *(name + "Scale" for name in
+                  self.secondary_influence_follow_names[:len(constrained)]
+                  if self.secondary_matrix_follow
+                  and not self.opm_offset_only_scale),
                 *(self.secondary_end_matrix_names
                   if self.child_start_control else ()),
+                *((self.secondary_end_decompose_name,)
+                  if self.child_start_control
+                  and self.secondary_matrix_follow
+                  and not self.opm_offset_only_scale else ()),
+                *(name for pair in self.secondary_interior_follow_names
+                  for name in pair
+                  if self.secondary_matrix_follow),
                 *self.secondary_motion_path_names,
                 *self.secondary_motion_transform_names)
 
