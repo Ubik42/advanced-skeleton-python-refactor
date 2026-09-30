@@ -86,6 +86,7 @@ def plan_body_limb_blend(
         or len(set(joint_names)) != len(joint_names)
         or any(not name or not name[0].isalpha() or not name.isalnum()
                for name in joint_names)
+        or len(set(translated_joint_names)) != len(translated_joint_names)
         or not set(translated_joint_names).issubset(joint_names)
     ):
         raise BodyLimbBlendValidationError("Limb IK/FK blend 定义无效")
