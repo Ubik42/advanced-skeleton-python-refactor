@@ -5,7 +5,9 @@ from dataclasses import dataclass
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_part_twist import FitPartTwistSource
-from adv_py.core.skin_bind import SmoothBindPreferences
+from adv_py.core.skin_bind import (
+    SmoothBindPreferences, SkinBindMethod, audit_skin_bind_result,
+)
 
 from .registered_body_build import (BuildRegisteredBodyCharacter,
                                     RegisteredBodyBuildResult,
@@ -109,18 +111,47 @@ class BuildRegisteredSkinnedBodyCharacter:
                 joined.parent_body_mesh_under_geometry(
                     joined.resolve_body_mesh_identity(identifier))
                 for identifier in mesh_ids)
-            skins = tuple(BindSkin(joined).apply(mesh, influences,
-                skin_name=name, maximum_influences=plan.maximum_influences,
-                maintain_maximum_influences=(
-                    plan.smooth_bind.maintain_maximum_influences),
-                bind_method=plan.smooth_bind.bind_method,
-                normalization=plan.smooth_bind.normalization,
-                skinning_method=plan.smooth_bind.skinning_method,
-                remove_unused_influences=(
-                    plan.smooth_bind.remove_unused_influences),
-                weight_distribution=(
-                    plan.smooth_bind.weight_distribution))
-                for mesh, name in zip(geometry_meshes, plan.skin_names))
+            binder = BindSkin(joined)
+            def options(name):
+                return dict(
+                    skin_name=name,
+                    maximum_influences=plan.maximum_influences,
+                    maintain_maximum_influences=(
+                        plan.smooth_bind.maintain_maximum_influences),
+                    bind_method=plan.smooth_bind.bind_method,
+                    normalization=plan.smooth_bind.normalization,
+                    skinning_method=plan.smooth_bind.skinning_method,
+                    remove_unused_influences=(
+                        plan.smooth_bind.remove_unused_influences),
+                    weight_distribution=(
+                        plan.smooth_bind.weight_distribution))
+            if (plan.smooth_bind.bind_method is SkinBindMethod.GEODESIC_VOXEL
+                    and len(geometry_meshes) > 1):
+                # Voxel binding sees the entire volume at once. Solving each
+                # mesh independently produces different seam weights.
+                bind_plans = tuple(binder.plan(mesh, influences, **options(name))
+                    for mesh, name in zip(geometry_meshes, plan.skin_names))
+                for item in bind_plans:
+                    if not item.ready:
+                        raise FitSkeletonValidationError(
+                            "Skin Bind 预检失败：" + "；".join(item.blockers))
+                    if joined.capture_skin_bind_input(item.bind) != item.input_state:
+                        raise FitSkeletonValidationError("Skin Bind 输入在执行前发生变化")
+                    joined.create_skin_bind(item.bind, defer_geodesic=True)
+                joined.solve_geodesic_skin_binds(
+                    tuple(item.bind for item in bind_plans))
+                results = []
+                for item in bind_plans:
+                    snapshot = joined.capture_skin_bind(item.bind)
+                    issues = audit_skin_bind_result(item.bind, snapshot)
+                    if issues:
+                        raise RuntimeError("批量 Geodesic Skin 结果不符："
+                            + "；".join(issue.message for issue in issues))
+                    results.append(SkinBindBuildResult(item, snapshot))
+                skins = tuple(results)
+            else:
+                skins = tuple(binder.apply(mesh, influences, **options(name))
+                    for mesh, name in zip(geometry_meshes, plan.skin_names))
             finalize_body_character_sets(
                 joined, character.registration, character.rig.plan,
                 scene_before=scene_before, fit_container=container_name,

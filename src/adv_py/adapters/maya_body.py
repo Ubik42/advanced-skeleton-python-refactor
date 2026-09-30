@@ -5648,7 +5648,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                      bool(obey), bool(remove), distribution,
                                      maximum)
 
-    def create_skin_bind(self, plan: SkinBindPlan) -> None:
+    def create_skin_bind(self, plan: SkinBindPlan, *,
+                         defer_geodesic: bool = False) -> None:
         self._require_transaction()
         from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
 
@@ -5675,7 +5676,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     SkinBindMethod.CLOSEST_DISTANCE: 0,
                     SkinBindMethod.CLOSEST_IN_HIERARCHY: 1,
                     SkinBindMethod.HEAT_MAP: 2,
-                    SkinBindMethod.GEODESIC_VOXEL: 3,
+                    # Native createSkinCluster seeds distance weights before
+                    # geomBind replaces them with voxel weights.
+                    SkinBindMethod.GEODESIC_VOXEL: 0,
                 }[plan.bind_method],
                 normalizeWeights={
                     SkinWeightNormalization.NONE: 0,
@@ -5685,7 +5688,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 maximumInfluences=plan.maximum_influences,
                 dropoffRate=4.0,
                 obeyMaxInfluences=plan.maintain_maximum_influences,
-                removeUnusedInfluence=plan.remove_unused_influences,
+                removeUnusedInfluence=(plan.remove_unused_influences
+                    and plan.bind_method is not SkinBindMethod.GEODESIC_VOXEL),
                 weightDistribution={
                     SkinWeightDistribution.DISTANCE: 0,
                     SkinWeightDistribution.NEIGHBORS: 1,
@@ -5694,7 +5698,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             )
             if not created or created[0] != plan.skin_name:
                 raise RuntimeError("Maya 未按计划创建 skinCluster")
-            if plan.bind_method is SkinBindMethod.GEODESIC_VOXEL:
+            if (plan.bind_method is SkinBindMethod.GEODESIC_VOXEL
+                    and not defer_geodesic):
                 geodesic = (plan.geodesic or GeodesicBindPreferences(
                     maximum_influences=plan.maximum_influences))
                 self._cmds.geomBind(
@@ -5703,6 +5708,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     geodesicVoxelParams=(geodesic.resolution,
                                          geodesic.post_voxel_check),
                     maxInfluences=geodesic.maximum_influences)
+                if plan.remove_unused_influences:
+                    self._cmds.skinCluster(created[0], edit=True,
+                                           removeUnusedInfluence=True)
             self._cmds.setAttr(
                 created[0] + ".skinningMethod",
                 {SkinningMethod.CLASSIC_LINEAR: 0,
@@ -5714,6 +5722,32 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                topology, type="string")
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
+
+    def solve_geodesic_skin_binds(self, plans: tuple[SkinBindPlan, ...]) -> None:
+        """Run one volume solve for all meshes, like native createSkinCluster."""
+        self._require_transaction()
+        if not plans or any(p.bind_method is not SkinBindMethod.GEODESIC_VOXEL
+                            for p in plans):
+            raise FitSkeletonValidationError("Geodesic 批量绑定计划无效")
+        preferences = tuple(p.geodesic or GeodesicBindPreferences(
+            maximum_influences=p.maximum_influences) for p in plans)
+        if len(set(preferences)) != 1:
+            raise FitSkeletonValidationError("批量体素求解的参数不一致")
+        for plan in plans:
+            if (self._cmds.ls(plan.skin_name, type="skinCluster") or []) != [plan.skin_name]:
+                raise FitSkeletonValidationError(
+                    "Geodesic 种子 Skin 缺失：" + plan.skin_name)
+        options = preferences[0]
+        self._transaction_changed = True
+        self._cmds.geomBind(*(p.skin_name for p in plans), bindMethod=3,
+            falloff=options.falloff,
+            geodesicVoxelParams=(options.resolution,
+                                 options.post_voxel_check),
+            maxInfluences=options.maximum_influences)
+        for plan in plans:
+            if plan.remove_unused_influences:
+                self._cmds.skinCluster(plan.skin_name, edit=True,
+                                       removeUnusedInfluence=True)
 
     def _skin_geodesic_state(self, skin: str):
         """Read a geomBind manager and every Skin sharing its message link."""
