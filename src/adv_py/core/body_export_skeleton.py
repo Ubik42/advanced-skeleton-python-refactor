@@ -128,6 +128,7 @@ class BodyExportJointSample:
     translation: Vector3
     rotation: Vector3
     scale: Vector3
+    source_world_matrix: tuple[float, ...] | None = None
 
     def __post_init__(self) -> None:
         values = self.translation + self.rotation + self.scale
@@ -140,6 +141,10 @@ class BodyExportJointSample:
                 self.scale,
             ))
             or not all(isfinite(float(value)) for value in values)
+            or (self.source_world_matrix is not None and (
+                len(self.source_world_matrix) != 16
+                or not all(isfinite(float(value))
+                    for value in self.source_world_matrix)))
         ):
             raise BodyExportSkeletonValidationError(
                 "Export Skeleton joint 样本无效"

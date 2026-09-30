@@ -341,17 +341,42 @@ class BakeBodyExportSkeleton:
                 != plan.export_snapshot
             ):
                 raise RuntimeError("Export Skeleton bake 前实时层级发生变化")
-            samples = self._host.sample_body_export_skeleton(plan.bake)
+            source_samples = self._host.sample_body_export_skeleton(plan.bake)
             sample_issues = audit_body_export_skeleton_samples(
                 plan.bake,
-                samples,
+                source_samples,
             )
             if sample_issues:
                 raise RuntimeError(
                     "Export Skeleton 采样复检失败："
                     + "；".join(issue.message for issue in sample_issues)
                 )
-            self._host.bake_body_export_skeleton(plan.bake, samples)
+            self._host.bake_body_export_skeleton(plan.bake, source_samples)
+            samples = self._host.sample_body_export_skeleton(plan.bake)
+            if audit_body_export_skeleton_samples(plan.bake,samples):
+                raise RuntimeError('Export Skeleton bake 后样本结构变化')
+            if any(before.frame!=after.frame
+                    or any(abs(a-b)>1e-5 for a,b in zip(
+                        before.root_motion.translation
+                        +before.root_motion.rotation,
+                        after.root_motion.translation
+                        +after.root_motion.rotation))
+                    or any(
+                    left.output_path!=right.output_path
+                    or (left.source_world_matrix is None)
+                       != (right.source_world_matrix is None)
+                    or (left.source_world_matrix is not None and any(
+                        abs(a-b)>1e-5 for a,b in zip(
+                            left.source_world_matrix,
+                            right.source_world_matrix)))
+                    or (left.source_world_matrix is None and any(
+                        abs(a-b)>1e-5 for a,b in zip(
+                            left.translation+left.rotation+left.scale,
+                            right.translation+right.rotation+right.scale)))
+                    for left,right in zip(before.joints,after.joints))
+                    for before,after in zip(source_samples,samples)):
+                raise RuntimeError(
+                    'Export Skeleton bake 改变了来源关节世界姿态')
             verified = self._host.capture_baked_body_export_skeleton(plan.bake)
             issues = audit_baked_body_export_skeleton(
                 plan.bake,

@@ -2843,6 +2843,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         f"{spec.source_path}.scale{axis}",
                         f"{output}.scale{axis}",
                     )
+                self._cmds.connectAttr(
+                    f"{spec.source_path}.offsetParentMatrix",
+                    f"{output}.offsetParentMatrix",
+                )
                 if spec.is_root:
                     self._cmds.parentConstraint(
                         spec.source_path,
@@ -3091,6 +3095,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         translation=vector(spec.output_path, "translate"),
                         rotation=vector(spec.output_path, "rotate"),
                         scale=vector(spec.output_path, "scale"),
+                        source_world_matrix=tuple(float(value)
+                            for value in self._cmds.xform(spec.source_path,
+                                query=True, worldSpace=True, matrix=True)),
                     )
                     for spec in plan.export_skeleton.joints
                 )
@@ -3135,11 +3142,27 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 )
             constraints.append(values[0])
         selection = self._cmds.ls(selection=True, long=True) or []
+        original_time = float(self._cmds.currentTime(query=True))
         try:
             self._transaction_changed = True
+            identity=(1.,0.,0.,0.,0.,1.,0.,0.,
+                      0.,0.,1.,0.,0.,0.,0.,1.)
+            for spec in plan.export_skeleton.joints:
+                plug=spec.output_path+'.offsetParentMatrix'
+                if self._cmds.connectionInfo(plug,
+                        sourceFromDestination=True) != (
+                        spec.source_path+'.offsetParentMatrix'):
+                    raise FitSkeletonValidationError(
+                        'Export Skeleton 的偏移矩阵来源已变化：'
+                        + spec.output_path)
             self._cmds.delete(constraints)
             for spec in plan.export_skeleton.joints:
                 output = spec.output_path
+                self._cmds.disconnectAttr(
+                    spec.source_path+'.offsetParentMatrix',
+                    output+'.offsetParentMatrix')
+                self._cmds.setAttr(output+'.offsetParentMatrix',
+                                   *identity,type='matrix')
                 for attribute in BODY_EXPORT_CHANNEL_ATTRIBUTES:
                     destination = f"{output}.{attribute}"
                     sources = self._cmds.listConnections(
@@ -3169,17 +3192,6 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             root_rotate_attribute = (
                 f"rotate{plan.root_motion.root_motion.rotation_axis.upper()}"
             )
-            joint_samples = {
-                spec.output_path: tuple(
-                    next(
-                        joint
-                        for joint in sample.joints
-                        if joint.output_path == spec.output_path
-                    )
-                    for sample in samples
-                )
-                for spec in plan.export_skeleton.joints
-            }
             for sample in samples:
                 for attribute, index in root_translate_indices.items():
                     self._cmds.setKeyframe(
@@ -3198,22 +3210,43 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         )
                     ],
                 )
-            for spec in plan.export_skeleton.joints:
-                for sample, joint in zip(samples, joint_samples[spec.output_path]):
-                    values = {
-                        **{
-                            f"translate{axis}": joint.translation[index]
-                            for index, axis in enumerate("XYZ")
-                        },
-                        **{
-                            f"rotate{axis}": joint.rotation[index]
-                            for index, axis in enumerate("XYZ")
-                        },
-                        **{
-                            f"scale{axis}": joint.scale[index]
-                            for index, axis in enumerate("XYZ")
-                        },
-                    }
+            for sample in samples:
+                self._cmds.currentTime(sample.frame, edit=True, update=True)
+                for spec,joint in zip(plan.export_skeleton.joints,
+                                      sample.joints):
+                    if joint.output_path != spec.output_path:
+                        raise FitSkeletonValidationError(
+                            'Export Skeleton bake 关节样本顺序变化')
+                    if joint.source_world_matrix is not None:
+                        self._cmds.xform(spec.output_path,worldSpace=True,
+                            matrix=joint.source_world_matrix)
+                        actual=self._cmds.xform(spec.output_path,query=True,
+                            worldSpace=True,matrix=True)
+                        if (len(actual)!=16 or any(abs(a-b)>1e-5
+                                for a,b in zip(actual,
+                                               joint.source_world_matrix))):
+                            raise FitSkeletonValidationError(
+                                'Export Skeleton 无法复制来源世界姿态：'
+                                + spec.source_path + ' @ '
+                                + str(sample.frame))
+                        values={attribute:float(self._cmds.getAttr(
+                            spec.output_path+'.'+attribute))
+                            for attribute in BODY_EXPORT_CHANNEL_ATTRIBUTES}
+                    else:
+                        values = {
+                            **{
+                                f"translate{axis}": joint.translation[index]
+                                for index, axis in enumerate("XYZ")
+                            },
+                            **{
+                                f"rotate{axis}": joint.rotation[index]
+                                for index, axis in enumerate("XYZ")
+                            },
+                            **{
+                                f"scale{axis}": joint.scale[index]
+                                for index, axis in enumerate("XYZ")
+                            },
+                        }
                     for attribute, value in values.items():
                         self._cmds.setKeyframe(
                             spec.output_path,
@@ -3221,6 +3254,21 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                             time=sample.frame,
                             value=value,
                         )
+            for sample in samples:
+                self._cmds.currentTime(sample.frame,edit=True,update=True)
+                for spec,joint in zip(plan.export_skeleton.joints,
+                                      sample.joints):
+                    wanted=joint.source_world_matrix
+                    if wanted is None:
+                        continue
+                    actual=self._cmds.xform(spec.output_path,query=True,
+                        worldSpace=True,matrix=True)
+                    if (len(actual)!=16 or any(abs(a-b)>1e-5
+                            for a,b in zip(actual,wanted))):
+                        raise FitSkeletonValidationError(
+                            'Export Skeleton 关键帧世界姿态与来源不一致：'
+                            + spec.source_path + ' @ '
+                            + str(sample.frame))
             for attribute in plan.root_motion.channel_attributes:
                 self._cmds.keyTangent(
                     root_motion_output,
@@ -3260,6 +3308,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 self._cmds.setAttr(f"{export_root}.{attribute}", metadata[field])
                 self._cmds.setAttr(f"{export_root}.{attribute}", lock=True)
         finally:
+            self._cmds.currentTime(original_time, edit=True, update=True)
             if selection:
                 self._cmds.select(selection, replace=True)
             else:
