@@ -18,6 +18,7 @@ class SkinWeightSurfaceTransferResult:
     source_triangle_count: int
     max_surface_distance: float
     max_discarded_weight: float
+    blend_weights: tuple[float, ...] | None = None
 
 
 def transfer_skin_weights_by_surface(
@@ -31,6 +32,7 @@ def transfer_skin_weights_by_surface(
     max_discarded_weight: float = 0.0,
     alignment: FaceSurfaceAlignment | None = None,
     allow_target_extra_influences: bool = False,
+    source_blend_weights: tuple[float, ...] | None = None,
 ) -> SkinWeightSurfaceTransferResult:
     """Build a complete target document without modifying either mesh."""
     skin_weight_document_to_json(source)
@@ -51,6 +53,14 @@ def transfer_skin_weights_by_surface(
         raise SkinWeightValidationError("源权重与目标 skinCluster 的 influence 集合不同")
     if target_state.locked_influences:
         raise SkinWeightValidationError("目标 skinCluster 有锁定的 influence")
+    if (source_blend_weights is not None
+            and (not isinstance(source_blend_weights, tuple)
+                 or len(source_blend_weights) != source.vertex_count
+                 or any(isinstance(value, bool)
+                        or not isinstance(value, (int, float))
+                        or not isfinite(value) or not 0.0 <= value <= 1.0
+                        for value in source_blend_weights))):
+        raise SkinWeightValidationError("来源逐顶点混合权重无效")
     if (isinstance(max_discarded_weight, bool)
             or not isinstance(max_discarded_weight, (int, float))
             or not isfinite(max_discarded_weight)
@@ -64,8 +74,14 @@ def transfer_skin_weights_by_surface(
                                       max_distance=max_distance, alignment=alignment)
     source_rows = {row.vertex_index: row.weights for row in source.vertices}
     vertices = []
+    blend_weights = [] if source_blend_weights is not None else None
     greatest_discard = 0.0
     for target_index, projected in enumerate(projection.rows):
+        if blend_weights is not None:
+            blend_weights.append(sum(source_blend_weights[source_index]
+                * coefficient for source_index, coefficient in zip(
+                    source_triangles[projected.triangle_index],
+                    projected.barycentric)))
         values: dict[str, float] = {}
         for source_index, coefficient in zip(source_triangles[projected.triangle_index],
                                              projected.barycentric):
@@ -93,4 +109,6 @@ def transfer_skin_weights_by_surface(
         tuple(vertices))
     document = skin_weight_document_from_state(state)
     return SkinWeightSurfaceTransferResult(document, len(source_triangles),
-                                           projection.max_distance, greatest_discard)
+                                           projection.max_distance, greatest_discard,
+                                           tuple(blend_weights)
+                                           if blend_weights is not None else None)

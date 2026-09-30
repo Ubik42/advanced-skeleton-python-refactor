@@ -33,6 +33,7 @@ class SkinWeightSurfaceHost(SkinWeightDocumentHost, Protocol):
     def capture_face_triangles(self, path: str) -> tuple[Triangle, ...]: ...
     def scene_up_axis(self) -> FitUpAxis: ...
     def scene_linear_unit(self) -> BodyFbxLinearUnit: ...
+    def capture_skin_blend_weights(self, skin_name: str): ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +137,7 @@ class TransferSkinWeightsBySurface:
     def plan_from_documents(self, weights: SkinWeightDocument,
             geometry: FaceNeutralGeometry, target_skin: str, target_mesh: str,
             *, max_distance: float, max_discarded_weight: float = 0.,
+            source_blend_weights: tuple[float, ...] | None = None,
             mapping: SkinWeightPathMapping | None = None,
             redistribution: SkinWeightRedistribution | None = None,
             alignment: FaceSurfaceAlignment | None = None,
@@ -169,6 +171,7 @@ class TransferSkinWeightsBySurface:
         transfer = transfer_skin_weights_by_surface(mapped, geometry.mesh,
             target_geometry, geometry.triangles, target_state,
             max_distance=max_distance, max_discarded_weight=max_discarded_weight,
+            source_blend_weights=source_blend_weights,
             alignment=alignment,
             allow_target_extra_influences=allow_target_extra_influences)
         edit_plan = self._editor.plan(target_skin, target_mesh, transfer.document.vertices)
@@ -220,6 +223,10 @@ class CaptureSkinWeightSurfaceSource:
             self._host, "capture_skin_bind_topology", None)
         bind_topology = (capture_topology(skin_name, mesh_path)
                          if capture_topology is not None else None)
+        capture_blend = getattr(self._host,
+                                "capture_skin_blend_weights", None)
+        blend_weights = (tuple(float(value) for value in
+            capture_blend(skin_name)) if capture_blend is not None else None)
         if (self._host.capture_all_skin_weights(skin_name, mesh_path) != state
                 or self._host.capture_face_mesh(mesh_path) != mesh
                 or self._host.capture_face_triangles(mesh_path) != triangles
@@ -230,7 +237,12 @@ class CaptureSkinWeightSurfaceSource:
                 and capture_topology(skin_name, mesh_path) != bind_topology):
             raise FitSkeletonValidationError(
                 "源 Skin 绑定拓扑在捕获期间发生变化")
-        source = SkinWeightSurfaceSource(document, geometry, bind_topology)
+        if (capture_blend is not None and tuple(float(value) for value in
+                capture_blend(skin_name)) != blend_weights):
+            raise FitSkeletonValidationError(
+                "源 Skin 逐顶点混合权重在捕获期间发生变化")
+        source = SkinWeightSurfaceSource(document, geometry, bind_topology,
+                                         blend_weights)
         skin_weight_surface_source_to_json(source)
         return source
 

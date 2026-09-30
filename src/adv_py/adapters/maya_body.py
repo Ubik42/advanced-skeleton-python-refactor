@@ -3257,7 +3257,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                          bool(c.getAttr(skin + ".maintainMaxInfluences")),
                          int(c.getAttr(skin + ".skinningMethod")),
                          int(c.getAttr(skin + ".normalizeWeights")),
-                         float(c.getAttr(skin + ".envelope")),
+                         int(c.getAttr(skin + ".weightDistribution")),
                          host.capture_skin_blend_weights(skin),
                          bind_matrices,
                          source_names))
@@ -3336,6 +3336,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         return tuple(target for _, target in created)
 
     def _copy_fbx_skinned_meshes(self, sources, bind_frame, *,
+                                 end_frame, sample_by,
                                  namespace_free=False):
         from array import array
         from maya.api import OpenMaya as om
@@ -3348,27 +3349,52 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             name=(":AdvPy_FBXTemporaryMeshGroup" if namespace_free
                   else "AdvPy_FBXTemporaryMeshGroup")) if sources else None
         for index, (mesh, data, maximum, maintain, method,
-                    normalization, envelope, blend_weights,
+                    normalization, distribution, blend_weights,
                     bind_matrices, mapping) in enumerate(
                 sources, 1):
             target_paths = tuple(mapping[name.rsplit(":", 1)[-1]]
                                  for name in data.influence_names)
             source_envelope = data.skin_name + ".envelope"
-            if not c.getAttr(source_envelope, settable=True):
+            envelope_at_bind = float(c.getAttr(source_envelope))
+            for frame in range(bind_frame, end_frame + 1, sample_by):
+                c.currentTime(frame, edit=True, update=True)
+                if abs(float(c.getAttr(source_envelope)) - envelope_at_bind) > 1e-6:
+                    raise FitSkeletonValidationError(
+                        "FBX 不支持变化中的 Skin envelope：" + data.skin_name)
+            c.currentTime(bind_frame, edit=True, update=True)
+            envelope_locked = bool(c.getAttr(source_envelope, lock=True))
+            envelope_inputs = c.listConnections(source_envelope,
+                source=True, destination=False, plugs=True) or []
+            if len(envelope_inputs) > 1:
                 raise FitSkeletonValidationError(
-                    "FBX Skin 的 envelope 被外部输入占用，无法取得原始网格："
-                    + data.skin_name)
-            c.setAttr(source_envelope, 0.0)
+                    "FBX Skin 的 envelope 输入不唯一：" + data.skin_name)
+            disconnected = False
             try:
+                if envelope_locked:
+                    c.setAttr(source_envelope, lock=False)
+                if envelope_inputs:
+                    c.disconnectAttr(envelope_inputs[0], source_envelope)
+                    disconnected = True
+                c.setAttr(source_envelope, 0.0)
                 clone = c.duplicate(self.scene_address(mesh)
                     if namespace_free else mesh, returnRootsOnly=True,
                     renameChildren=True)[0]
             finally:
-                c.setAttr(source_envelope, envelope)
+                try:
+                    if disconnected:
+                        c.setAttr(source_envelope, envelope_at_bind)
+                        c.connectAttr(envelope_inputs[0], source_envelope)
+                    elif c.getAttr(source_envelope, settable=True):
+                        c.setAttr(source_envelope, envelope_at_bind)
+                finally:
+                    if envelope_locked:
+                        c.setAttr(source_envelope, lock=True)
             clone = c.parent(clone, group)[0]
             mesh_name = mesh.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
             clone = c.rename(clone, (":" if namespace_free else "")
                              + mesh_name)
+            if c.getAttr(clone + ".visibility", settable=True):
+                c.setAttr(clone + ".visibility", True)
             if clone.rsplit("|", 1)[-1].rsplit(":", 1)[-1] != mesh_name:
                 raise FitSkeletonValidationError(
                     "FBX 临时网格未能保留源名称：" + mesh_name)
@@ -3407,6 +3433,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             published_to_source = {target.rsplit("|", 1)[-1]: source
                 for source, target in mapping.items()}
             target_influences = skin_fn.influenceObjects()
+            logical_indices = tuple(skin_fn.indexForInfluenceObject(path)
+                                    for path in target_influences)
             target_names = tuple(path.fullPathName().rsplit("|", 1)[-1]
                 .rsplit(":", 1)[-1] for path in target_influences)
             if set(target_names) != {
@@ -3416,8 +3444,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     "FBX 临时 Skin 未保留全部原始影响关节：" + data.skin_name)
             order = tuple(source_indices[published_to_source[name]]
                           for name in target_names)
-            for influence, source_index in zip(target_influences, order):
-                logical = skin_fn.indexForInfluenceObject(influence)
+            for logical, source_index in zip(logical_indices, order):
                 c.setAttr(f"{skin}.bindPreMatrix[{logical}]",
                           *bind_matrices[source_index], type="matrix")
             original = array("d")
@@ -3427,13 +3454,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 for vertex in range(data.vertex_count)
                 for offset in order))
             skin_fn.setWeights(dag, component,
-                om.MIntArray(range(width)),
+                om.MIntArray(logical_indices),
                 om.MDoubleArray(values.tolist()), normalize=False)
             skin_fn.setBlendWeights(
                 dag, component, om.MDoubleArray(blend_weights.tolist()))
             c.setAttr(skin + ".skinningMethod", method)
             c.setAttr(skin + ".normalizeWeights", normalization)
-            c.setAttr(skin + ".envelope", envelope)
+            c.setAttr(skin + ".weightDistribution", distribution)
+            c.setAttr(skin + ".envelope", envelope_at_bind)
             c.setAttr(skin + ".maintainMaxInfluences", maintain)
             copied.append((c.ls(clone, long=True,
                                  type="transform") or [])[0])
@@ -3564,6 +3592,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                        *published_extra)
                     copied_meshes = self._copy_fbx_skinned_meshes(
                         skin_sources, selection.start_frame,
+                        end_frame=selection.end_frame,
+                        sample_by=selection.sample_by,
                         namespace_free=namespace_free)
                     if any(
                         (published_cmds.ls(path, long=True,
@@ -5576,9 +5606,6 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         if bind_method is SkinBindMethod.GEODESIC_VOXEL:
             raise FitSkeletonValidationError(
                 "Geodesic Voxel Skin 带独立 geomBind 节点，当前不能安全自动重绑")
-        if skinning_method is SkinningMethod.WEIGHT_BLENDED:
-            raise FitSkeletonValidationError(
-                "Weight Blended Skin 的逐顶点 blendWeights 尚不能安全跨拓扑转移")
         if normalization is SkinWeightNormalization.NONE:
             raise FitSkeletonValidationError(
                 "非归一化 Skin 权重尚不能安全跨拓扑转移")
@@ -5613,6 +5640,18 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             raise FitSkeletonValidationError(
                 "源 Skin 绑定拓扑与当前网格不同，不能作为转移来源")
         return recorded
+
+    def _skin_api(self, skin_name: str):
+        from .maya_dense_skin import MayaDenseSkinHost
+        return MayaDenseSkinHost._skin_api(self, skin_name)
+
+    def capture_skin_blend_weights(self, skin_name: str):
+        from .maya_dense_skin import MayaDenseSkinHost
+        return MayaDenseSkinHost.capture_skin_blend_weights(self, skin_name)
+
+    def apply_skin_blend_weights(self, skin_name: str, values) -> None:
+        from .maya_dense_skin import MayaDenseSkinHost
+        MayaDenseSkinHost.apply_skin_blend_weights(self, skin_name, values)
 
     def restore_skin_rebind_deformer_state(self, state) -> None:
         self._require_transaction()

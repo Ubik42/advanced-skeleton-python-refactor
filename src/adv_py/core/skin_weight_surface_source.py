@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 import re
+from math import isfinite
 
 from .face_neutral_geometry import (FaceNeutralGeometry,
     face_neutral_geometry_from_json, face_neutral_geometry_to_json)
@@ -35,6 +36,7 @@ class SkinWeightSurfaceSource:
     weights: SkinWeightDocument
     geometry: FaceNeutralGeometry
     bind_topology: str | None = None
+    blend_weights: tuple[float, ...] | None = None
 
     def __post_init__(self):
         if (self.weights.mesh_path != self.geometry.mesh.path
@@ -47,6 +49,15 @@ class SkinWeightSurfaceSource:
                      or re.fullmatch(r"[0-9a-f]{64}",
                                      self.bind_topology) is None)):
             raise SkinWeightValidationError("源 Skin 绑定拓扑摘要无效")
+        if (self.blend_weights is not None
+                and (not isinstance(self.blend_weights, tuple)
+                     or len(self.blend_weights) != self.weights.vertex_count
+                     or any(isinstance(value, bool)
+                            or not isinstance(value, (int, float))
+                            or not isfinite(value)
+                            or not 0.0 <= value <= 1.0
+                            for value in self.blend_weights))):
+            raise SkinWeightValidationError("源 Skin 逐顶点混合权重无效")
 
 
 def skin_weight_surface_source_to_json(source: SkinWeightSurfaceSource) -> str:
@@ -57,10 +68,13 @@ def skin_weight_surface_source_to_json(source: SkinWeightSurfaceSource) -> str:
     payload = {"weights": weights, "geometry": geometry}
     if source.bind_topology is not None:
         payload["bind_topology"] = source.bind_topology
+    if source.blend_weights is not None:
+        payload["blend_weights"] = source.blend_weights
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"),
                            ensure_ascii=False)
     document = {"format": SKIN_WEIGHT_SURFACE_SOURCE_FORMAT,
-                "version": 2 if source.bind_topology is not None else 1,
+                "version": (3 if source.blend_weights is not None else
+                            2 if source.bind_topology is not None else 1),
                 "payload": payload,
                 "content_sha256": sha256(canonical.encode("utf-8")).hexdigest()}
     result = json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
@@ -79,12 +93,15 @@ def skin_weight_surface_source_from_json(text: str) -> SkinWeightSurfaceSource:
                 or set(document) != {"format", "version", "payload", "content_sha256"}
                 or document["format"] != SKIN_WEIGHT_SURFACE_SOURCE_FORMAT
                 or type(document["version"]) is not int
-                or document["version"] not in (1, 2)
+                or document["version"] not in (1, 2, 3)
                 or not isinstance(document["payload"], dict)
-                or set(document["payload"]) != (
-                    {"weights", "geometry", "bind_topology"}
-                    if document["version"] == 2
-                    else {"weights", "geometry"})):
+                or set(document["payload"]) not in (
+                    ({"weights", "geometry", "blend_weights"},
+                     {"weights", "geometry", "bind_topology", "blend_weights"})
+                    if document["version"] == 3 else
+                    ({"weights", "geometry", "bind_topology"},)
+                    if document["version"] == 2 else
+                    ({"weights", "geometry"},))):
             raise ValueError("结构不匹配")
         payload = document["payload"]
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"),
@@ -94,6 +111,10 @@ def skin_weight_surface_source_from_json(text: str) -> SkinWeightSurfaceSource:
         weights = skin_weight_document_from_json(json.dumps(payload["weights"], ensure_ascii=False))
         geometry = face_neutral_geometry_from_json(json.dumps(payload["geometry"], ensure_ascii=False))
         return SkinWeightSurfaceSource(
-            weights, geometry, payload.get("bind_topology"))
+            weights, geometry, payload.get("bind_topology"),
+            tuple(payload["blend_weights"])
+            if "blend_weights" in payload and
+            isinstance(payload["blend_weights"], list) else
+            payload.get("blend_weights"))
     except (TypeError, ValueError, KeyError, OverflowError) as error:
         raise SkinWeightValidationError("表面权重源资产格式无效：" + str(error)) from error
