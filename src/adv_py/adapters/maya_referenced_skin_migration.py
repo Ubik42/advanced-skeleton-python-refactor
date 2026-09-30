@@ -228,17 +228,34 @@ class MayaReferencedSkinMigration:
                         skin_name=item.target_skin,
                         maximum_influences=item.maximum_influences,
                         maintain_maximum_influences=False,
+                        bind_method=item.bind_method,
                         normalization=SkinWeightNormalization(
                             ("none", "interactive", "post")
-                            [data.normalization_mode]))
+                            [data.normalization_mode]),
+                        skinning_method=item.skinning_method,
+                        weight_distribution=item.weight_distribution,
+                        geodesic=item.geodesic)
                     TransferDenseSkinWeights(MayaDenseSkinHost()).apply(
                         data, item.target_skin)
+                    blend_host = MayaDenseSkinHost()
+                    with blend_host.transaction("迁移引用 Skin 混合权重"):
+                        blend_host.apply_skin_blend_weights(
+                            item.target_skin, item.blend_weights)
+                    if any(abs(actual - expected) > 1e-7
+                           for actual, expected in zip(
+                               blend_host.capture_skin_blend_weights(
+                                   item.target_skin), item.blend_weights)):
+                        raise RuntimeError("引用 Skin 混合权重迁移后变化："
+                                           + item.target_skin)
                     c.setAttr(item.target_skin + ".maintainMaxInfluences",
                               item.maintain_maximum)
+                    c.setAttr(item.target_skin + ".envelope", item.envelope)
                     result = MayaDenseSkinHost().capture_dense_skin(
                         item.target_skin)
-                    if result.vertex_count != data.vertex_count:
-                        raise RuntimeError("引用迁移后网格顶点数变化："
+                    if (result.vertex_count != data.vertex_count
+                            or result.normalization_mode
+                            != data.normalization_mode):
+                        raise RuntimeError("引用迁移后 Skin 维度或归一化模式变化："
                                            + item.target_skin)
                     results.append(result)
                 connect_original_control_animation(c, animation_clones)

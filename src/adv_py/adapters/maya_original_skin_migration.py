@@ -4,9 +4,13 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from array import array
 
 from adv_py.core.dense_skin_transfer import DenseSkinWeights
-from adv_py.core.skin_bind import SkinWeightNormalization
+from adv_py.core.skin_bind import (
+    GeodesicBindPreferences, SkinBindMethod, SkinningMethod,
+    SkinWeightDistribution, SkinWeightNormalization,
+)
 from adv_py.application.angle_sampler_deform import BuildAngleSamplers
 from adv_py.application.angle_volume_deform import BuildAngleVolumeDeform
 from adv_py.application.axial_part_deform import BuildAxialPartDeform
@@ -55,6 +59,12 @@ class _SkinItem:
     target_skin: str
     maximum_influences: int
     maintain_maximum: bool
+    bind_method: SkinBindMethod
+    skinning_method: SkinningMethod
+    weight_distribution: SkinWeightDistribution
+    geodesic: GeodesicBindPreferences | None
+    envelope: float
+    blend_weights: array
 
 
 def _skin_item(cmds, skin: str, target_mesh: str,
@@ -70,10 +80,28 @@ def _skin_item(cmds, skin: str, target_mesh: str,
                                fullPath=True) or [None])[0]
     if not mesh:
         raise ValueError("源网格 Transform 缺失：" + skin)
-    return _SkinItem(source or MayaDenseSkinHost().capture_dense_skin(skin),
+    host = MayaDenseSkinHost()
+    method = int(cmds.getAttr(skin + ".bindMethod"))
+    geodesic = (host._skin_geodesic_state(skin)[1]
+                if method == 3 else None)
+    return _SkinItem(source or host.capture_dense_skin(skin),
         mesh, target_mesh, target_skin,
         int(cmds.getAttr(skin + ".maxInfluences")),
-        bool(cmds.getAttr(skin + ".maintainMaxInfluences")))
+        bool(cmds.getAttr(skin + ".maintainMaxInfluences")),
+        (SkinBindMethod.CLOSEST_DISTANCE,
+         SkinBindMethod.CLOSEST_IN_HIERARCHY,
+         SkinBindMethod.HEAT_MAP,
+         SkinBindMethod.GEODESIC_VOXEL)[method],
+        (SkinningMethod.CLASSIC_LINEAR,
+         SkinningMethod.DUAL_QUATERNION,
+         SkinningMethod.WEIGHT_BLENDED)[int(cmds.getAttr(
+             skin + ".skinningMethod"))],
+        (SkinWeightDistribution.DISTANCE,
+         SkinWeightDistribution.NEIGHBORS)[int(cmds.getAttr(
+             skin + ".weightDistribution"))],
+        geodesic,
+        float(cmds.getAttr(skin + ".envelope")),
+        host.capture_skin_blend_weights(skin))
 
 
 @contextmanager
@@ -353,17 +381,35 @@ class MayaOriginalSkinMigration:
                     skin_name=item.target_skin,
                     maximum_influences=item.maximum_influences,
                     maintain_maximum_influences=False,
+                    bind_method=item.bind_method,
                     normalization=SkinWeightNormalization(
                         ("none", "interactive", "post")
-                        [item.source.normalization_mode]))
+                        [item.source.normalization_mode]),
+                    skinning_method=item.skinning_method,
+                    weight_distribution=item.weight_distribution,
+                    geodesic=item.geodesic)
                 TransferDenseSkinWeights(MayaDenseSkinHost()).apply(
                     item.source, item.target_skin)
+                blend_host = MayaDenseSkinHost()
+                with blend_host.transaction("迁移原版 Skin 混合权重"):
+                    blend_host.apply_skin_blend_weights(
+                        item.target_skin, item.blend_weights)
+                if any(abs(actual - expected) > 1e-7
+                       for actual, expected in zip(
+                           blend_host.capture_skin_blend_weights(
+                               item.target_skin), item.blend_weights)):
+                    raise RuntimeError("迁移后的 Skin 混合权重变化："
+                                       + item.target_skin)
                 c.setAttr(item.target_skin + ".maintainMaxInfluences",
                           item.maintain_maximum)
+                c.setAttr(item.target_skin + ".envelope", item.envelope)
                 result = MayaDenseSkinHost().capture_dense_skin(
                     item.target_skin)
-                if result.vertex_count != item.source.vertex_count:
-                    raise RuntimeError("迁移后的顶点数变化：" + item.target_skin)
+                if (result.vertex_count != item.source.vertex_count
+                        or result.normalization_mode
+                        != item.source.normalization_mode):
+                    raise RuntimeError("迁移后的 Skin 维度或归一化模式变化："
+                                       + item.target_skin)
                 results.append(result)
             connect_original_control_animation(c, animation_clones)
             if on_stage:
