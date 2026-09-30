@@ -4,7 +4,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
-from adv_py.core.skin_bind import plan_skin_bind
+from adv_py.core.skin_bind import (
+    SkinBindMethod, SkinWeightNormalization, SkinningMethod,
+    audit_skin_bind_result, plan_skin_bind,
+)
 from adv_py.core.skin_weight_surface_source import SkinWeightSurfaceSource
 
 from .skin_weight_surface_transfer import TransferSkinWeightsBySurface
@@ -18,6 +21,9 @@ class SkinRebindState:
     influences: tuple[str, ...]
     maximum_influences: int
     maintain_maximum_influences: bool
+    bind_method: SkinBindMethod
+    normalization: SkinWeightNormalization
+    skinning_method: SkinningMethod
     old_topology: str
     current_topology: str
 
@@ -49,13 +55,21 @@ class RebindSkinFromSurfaceSource:
             raise FitSkeletonValidationError("源资产的最大影响数设置与当前 Skin 不一致")
         bind = plan_skin_bind(mesh, state.influences, skin_name=skin,
             maximum_influences=state.maximum_influences,
-            maintain_maximum_influences=state.maintain_maximum_influences)
+            maintain_maximum_influences=state.maintain_maximum_influences,
+            bind_method=state.bind_method,
+            normalization=state.normalization,
+            skinning_method=state.skinning_method)
         with self._host.transaction("引用模型拓扑更新后重绑 Skin 并转移权重"):
             if self._host.capture_skin_rebind_state(skin, mesh) != state:
                 raise FitSkeletonValidationError("目标 Skin 或模型在执行前发生变化")
             self._host.remove_skin_bind_for_rebind(skin)
             self._host.create_skin_bind(bind)
-            self._host.capture_skin_bind(bind)
+            bind_issues = audit_skin_bind_result(
+                bind, self._host.capture_skin_bind(bind))
+            if bind_issues:
+                raise FitSkeletonValidationError(
+                    "重绑 Skin 参数读回不一致："
+                    + "；".join(issue.message for issue in bind_issues))
             transfer = TransferSkinWeightsBySurface(self._host).plan_from_documents(
                 source.weights, source.geometry, skin, mesh,
                 max_distance=max_distance,

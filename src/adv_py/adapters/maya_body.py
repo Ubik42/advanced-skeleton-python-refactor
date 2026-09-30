@@ -5468,9 +5468,26 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             influences.append(paths[0])
         if not influences:
             raise FitSkeletonValidationError("Skin 没有影响关节")
+        bind_method = {
+            0: SkinBindMethod.CLOSEST_DISTANCE,
+            1: SkinBindMethod.CLOSEST_IN_HIERARCHY,
+        }.get(int(c.getAttr(f"{skin}.bindMethod")))
+        normalization = {
+            1: SkinWeightNormalization.INTERACTIVE,
+            2: SkinWeightNormalization.POST,
+        }.get(int(c.getAttr(f"{skin}.normalizeWeights")))
+        skinning_method = {
+            0: SkinningMethod.CLASSIC_LINEAR,
+            1: SkinningMethod.DUAL_QUATERNION,
+        }.get(int(c.getAttr(f"{skin}.skinningMethod")))
+        if (bind_method is None or normalization is None
+                or skinning_method is None):
+            raise FitSkeletonValidationError(
+                "旧 Skin 的绑定、归一化或蒙皮算法无法安全重建")
         return SkinRebindState(skin, mesh, tuple(influences),
             int(c.getAttr(f"{skin}.maxInfluences")),
             bool(c.getAttr(f"{skin}.maintainMaxInfluences")),
+            bind_method, normalization, skinning_method,
             c.getAttr(f"{skin}.{TOPOLOGY_ATTRIBUTE}"),
             mesh_topology_digest(shapes[0]))
 
