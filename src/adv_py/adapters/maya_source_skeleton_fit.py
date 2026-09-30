@@ -9,6 +9,53 @@ from .maya_face import MayaFaceHost
 
 
 class MayaSourceSkeletonFitHost(MayaFaceHost):
+    def namespace_name_matcher_source(self, root: str) -> str:
+        """Move a clashing imported hierarchy into MEL's NameMatcher namespace."""
+        from maya import cmds as c
+
+        self._require_transaction()
+        matches = c.ls(root, long=True, type='joint') or []
+        if len(matches) != 1:
+            raise ValueError('NameMatcher 来源根关节不存在或名称不唯一')
+        root = matches[0]
+        if c.namespace(exists=':NameMatcher'):
+            raise ValueError('NameMatcher 命名空间已存在，拒绝覆盖来源骨架')
+        nodes = c.listRelatives(root, allDescendents=True,
+            fullPath=True) or []
+        nodes = [path for path in nodes
+                 if c.nodeType(path) in ('transform', 'joint')]
+        nodes.append(root)
+        if any(c.referenceQuery(path, isNodeReferenced=True)
+                or any(c.lockNode(path, query=True, lock=True) or ())
+                for path in nodes):
+            raise ValueError('NameMatcher 来源层级被引用或锁定，不能改名')
+        root_id = (c.ls(root, uuid=True) or [None])[0]
+        self._transaction_changed = True
+        c.namespace(addNamespace=':NameMatcher')
+        for path in sorted(nodes, key=lambda item: item.count('|'),
+                           reverse=True):
+            leaf = path.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
+            c.rename(path, ':NameMatcher:' + leaf)
+        resolved = c.ls(root_id, long=True) or []
+        if len(resolved) != 1 or c.nodeType(resolved[0]) != 'joint':
+            raise RuntimeError('NameMatcher 来源骨架改名后身份丢失')
+        return resolved[0]
+
+    def set_name_matcher_fit_world_position(self, joint: str,
+            position: tuple[float, float, float]) -> None:
+        self._require_transaction()
+        if (self._cmds.ls(joint, long=True, type='joint') or []) != [joint]:
+            raise ValueError('NameMatcher Fit 关节不存在或名称不唯一：' + joint)
+        self._transaction_changed = True
+        self._cmds.xform(joint, worldSpace=True, translation=position)
+
+    def capture_name_matcher_fit_world_position(self, joint: str
+            ) -> tuple[float, float, float]:
+        if (self._cmds.ls(joint, long=True, type='joint') or []) != [joint]:
+            raise ValueError('NameMatcher Fit 关节不存在或名称不唯一：' + joint)
+        return tuple(float(value) for value in self._cmds.xform(
+            joint, query=True, worldSpace=True, translation=True))
+
     def capture_source_skeleton(self, root: str) -> tuple[SourceSkeletonJoint, ...]:
         from maya import cmds
 

@@ -13,6 +13,7 @@ _HELP_PAGES = {
     '00 · 模型检查': 'asPreModelChecker.html',
     '02 · One Joint Prop': 'asOneJointProp.html',
     '02B · FBX rig': 'asFBXRig.html',
+    '02 · NameMatcher': 'asNameMatcher.html',
     '01 · Fit 数据': 'asFitSkeletons.html',
     '02 · Fit 编辑': 'asFitAttributes.html',
 }
@@ -328,7 +329,8 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('Pose Functions', ('01 · 当前姿态',
                                         '02 · 全身动画',
                                         '06 · 角色预设')))),
-                ('Tools', (('Tools', ('01 · 外部 FBX 驱动角色',)),)),
+                ('Tools', (('Tools', ('01 · 外部 FBX 驱动角色',
+                                     '02 · NameMatcher')),)),
                 ('Display', (('Display', ('00 · Display',)),)),
                 ('Optimize', (('Optimize', ('00 · Optimize',)),)),
                 ('Updates', (('Updates', ()),)),
@@ -565,6 +567,32 @@ def create_panel(controller: MayaPanelController | None = None):
 
             group, form = self._group("02B · FBX rig", [])
             form.addRow(self._button("FBX rig", self._build_fbx_rig))
+            stack.addWidget(group)
+
+            self.name_matcher_rows = QtWidgets.QPlainTextEdit()
+            self.name_matcher_rows.setPlaceholderText(
+                '每行：Fit关节 来源关节基础名，例如 Root Hips')
+            self.name_matcher_rows.setPlainText(
+                'Root Hips\nSpine1 Spine\nChest Chest\nNeck Neck\n'
+                'Head Head\nScapula Clavicle\nShoulder Shoulder\n'
+                'Elbow Elbow\nWrist Hand\nHip Thigh\nKnee Calf\n'
+                'Ankle Foot\nToes Toe')
+            self.name_matcher_rows.setMaximumHeight(130)
+            self.name_matcher_right = QtWidgets.QLineEdit('R')
+            self.name_matcher_left = QtWidgets.QLineEdit('L')
+            self.name_matcher_middle = QtWidgets.QLineEdit('')
+            self.name_matcher_prefix = QtWidgets.QCheckBox('侧别在名称前')
+            self.name_matcher_underscore = QtWidgets.QCheckBox('侧别用下划线分隔')
+            self.name_matcher_underscore.setChecked(True)
+            group, form = self._group('02 · NameMatcher', [
+                ('Fit／来源名称映射', self.name_matcher_rows),
+                ('右侧标记', self.name_matcher_right),
+                ('左侧标记', self.name_matcher_left),
+                ('中间标记', self.name_matcher_middle),
+                ('命名位置', self.name_matcher_prefix),
+                ('分隔符', self.name_matcher_underscore)])
+            form.addRow(self._button('创建并放置 FitSkeleton',
+                                     self._build_name_matcher_fit))
             stack.addWidget(group)
 
             self.body_option_fields = {}
@@ -2259,6 +2287,26 @@ def create_panel(controller: MayaPanelController | None = None):
                     f"个 FK 控制器接回原骨架，"
                     f"{result.ik_limb_count} 条可切换 IK/FK 的手脚链；"
                     "原 Skin 已保留。")
+
+        def _build_name_matcher_fit(self):
+            rows = []
+            for line in self.name_matcher_rows.toPlainText().splitlines():
+                parts = line.strip().split()
+                if not parts:
+                    continue
+                if len(parts) != 2:
+                    raise ValueError('NameMatcher 每行必须是 Fit关节 来源基础名')
+                rows.append((parts[0], parts[1]))
+            result, namespace = self.controller.preparation_name_matcher_fit(
+                self._namespace(), tuple(rows),
+                right=self.name_matcher_right.text().strip(),
+                left=self.name_matcher_left.text().strip(),
+                middle=self.name_matcher_middle.text().strip(),
+                side_before_name=self.name_matcher_prefix.isChecked(),
+                side_underscore=self.name_matcher_underscore.isChecked())
+            return (f'NameMatcher 已在 {namespace} 创建 Fit：'
+                    f'{result.placed} 个关节已放置；'
+                    f'{len(result.missing)} 个映射未找到来源。')
 
         def _load_body_build_options(self):
             options = self.controller.body_build_options(

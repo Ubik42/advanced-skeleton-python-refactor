@@ -433,6 +433,40 @@ class MayaPanelController:
 
         return BuildFBXRig(MayaFBXRigPreparationHost()).execute()
 
+    def preparation_name_matcher_fit(self, namespace: str,
+            rows: tuple[tuple[str, str], ...], *,
+            right: str = 'R', left: str = 'L', middle: str = '',
+            side_before_name: bool = False,
+            side_underscore: bool = True):
+        from maya import cmds
+        from adv_py.adapters.maya_source_skeleton_fit import (
+            MayaSourceSkeletonFitHost)
+        from adv_py.application.name_matcher_fit import BuildNameMatchedFit
+        from adv_py.core.name_matcher_fit import NameMatcherRow, NameMatcherRules
+
+        selection = cmds.ls(selection=True, long=True, type='joint') or []
+        if len(selection) != 1:
+            raise ValueError('NameMatcher 请只选中来源骨架根关节')
+        target_namespace, created = _target_for_source_skeleton(
+            cmds, namespace, selection[0])
+        matcher_namespace_existed = cmds.namespace(exists=':NameMatcher')
+        try:
+            host = MayaSourceSkeletonFitHost(
+                namespace=None if target_namespace == ':' else target_namespace)
+            result = BuildNameMatchedFit(host).apply(selection[0],
+                tuple(NameMatcherRow(*row) for row in rows),
+                NameMatcherRules(right, left, middle,
+                                 side_before_name, side_underscore))
+        except Exception:
+            _remove_empty_source_target(cmds, created)
+            if (not matcher_namespace_existed
+                    and cmds.namespace(exists=':NameMatcher')
+                    and not (cmds.namespaceInfo(':NameMatcher',
+                        listOnlyDependencyNodes=True, recurse=True) or [])):
+                cmds.namespace(removeNamespace=':NameMatcher')
+            raise
+        return result, target_namespace
+
     def characters(self) -> tuple[PanelCharacter, ...]:
         from adv_py.adapters.maya_scene_gateway import MayaSceneGateway
         from maya import cmds
