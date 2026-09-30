@@ -30,6 +30,29 @@ FACE_BASE_NAMES = tuple(name for name,_ in FACE_BASE_PARENTS) + (
     "FaceMotionSystemMM","FaceDeformationFollowHeadMM")
 
 class MayaFaceBaseMixin:
+    def ensure_original_face_joint(self,head,scale):
+        """Original Face Build anchor: Head position plus faceScale * .1 in Z."""
+        self._require_transaction()
+        c=self._cmds
+        if c.objExists("FaceJoint_M"):
+            return (c.ls("FaceJoint_M",long=True,type="joint") or [None])[0]
+        self._transaction_changed=True
+        c.select(clear=True); joint=c.joint(name="FaceJoint_M")
+        point=c.xform(head,query=True,worldSpace=True,translation=True)
+        c.xform(joint,worldSpace=True,translation=(point[0],point[1],point[2]+scale*.1))
+        c.setAttr(joint+".drawStyle",2)
+        fit=self._fit(required=True)
+        multi=c.objExists(fit+".MultiSkinClusters") and c.getAttr(fit+".MultiSkinClusters")
+        if multi:
+            if not c.objExists("DeformationSystem"):
+                raise FitSkeletonValidationError("Multi Skin Clusters 缺少 Body DeformationSystem")
+            c.parent(joint,"DeformationSystem",absolute=True)
+            c.setAttr("FaceJoint_M.inheritsTransform",False,lock=True)
+            if c.objExists("Main.jointVis"): c.connectAttr("Main.jointVis","FaceJoint_M.visibility")
+        else: c.parent(joint,head,absolute=True)
+        c.setAttr("FaceJoint_M.segmentScaleCompensate",False)
+        return c.ls("FaceJoint_M",long=True,type="joint")[0]
+
     def ensure_face_fit_shaders(self):
         """asFitModeEnsureShaders: recreate incomplete material/SG pairs."""
         from adv_py.core.face_fit_markers import FIT_MATERIALS
@@ -81,12 +104,13 @@ class MayaFaceBaseMixin:
         c.setAttr(node+".visibility",False)
         return node
 
-    def register_face_module_nodes(self, before, module_set, *, production_skins=()):
+    def register_face_module_nodes(self, before, module_set, *, production_skins=(), reuse=False):
         """Append a completed module without replacing existing Face ownership."""
         self._require_transaction()
         c=self._cmds
         raw=getattr(c,"raw",c)
-        if c.objExists(module_set): raise ValueError("Face 模块选择集名称已占用："+module_set)
+        if c.objExists(module_set) and (not reuse or c.nodeType(module_set)!="objectSet"):
+            raise ValueError("Face 模块选择集名称已占用："+module_set)
         production_ids=set()
         for skin in production_skins:
             production_ids.update(raw.ls(self.scene_address(skin),uuid=True) or [])
@@ -99,7 +123,7 @@ class MayaFaceBaseMixin:
             if c.nodeType(node)=="partition": continue
             if node.rsplit("|",1)[-1].rsplit(":",1)[-1]=="FaceAllSet": continue
             created.append(node)
-        group=c.sets(empty=True,name=module_set)
+        group=module_set if c.objExists(module_set) else c.sets(empty=True,name=module_set)
         if created: c.sets(tuple(created),add=group)
         c.sets((*created,group),add="FaceAllSet")
         self._transaction_changed=True

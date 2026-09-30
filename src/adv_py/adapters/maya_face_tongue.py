@@ -6,10 +6,9 @@ from adv_py.application.face_pre import FacePreRole
 from adv_py.core.face_tongue import FaceTongueInput, TONGUE_FIT_NAMES, GNM_TONGUE_JAW_FACES
 from adv_py.core.body_parent_constraint import plan_body_parent_constraint
 from adv_py.core.fit_settings import FitSkeletonValidationError
-from .maya_face_controllers import MayaFaceControllersMixin
 from .maya_face_eyelid_rig import MayaFaceEyeLidRigHost
 
-class MayaFaceTongueHost(MayaFaceControllersMixin, MayaFaceEyeLidRigHost):
+class MayaFaceTongueHost(MayaFaceEyeLidRigHost):
     @property
     def _tongue_maya(self): return getattr(self._cmds,"raw",self._cmds)
 

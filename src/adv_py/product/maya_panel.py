@@ -309,9 +309,9 @@ def create_panel(controller: MayaPanelController | None = None):
                 ('Face', (
                     ('Pre', ('00 · 面部输入', '00 · 眼球输入与控制',
                              '01 · 目标网格', '02 · 可移植目标资产')),
-                    ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit', '02A · Tongue Fit', '02B · Face 定位点')),
+                    ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit', '03 · Lip Fit', '04 · Face 定位点', '05 · Tongue Fit')),
                     ('Build', ('03 · 控制与变形器',)),
-                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03F · Tongue 绑定')),
+                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03F · Tongue 绑定', '03G · Lip Falloff', '03H · Regions')),
                     ('Skin Layers', ('03a · Face Skin Layers',)),
                     ('Tweaks', ('03A · Face Tweaks',)),
                     ('DeltaMush', ('03B · Face DeltaMush',)),
@@ -1556,19 +1556,32 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("对称角色：右侧 Fit 镜像到左侧",
                                      self._face_fit_mirror_right_to_left))
             stack.addWidget(group)
-            group, form = self._group("02A · Tongue Fit", [])
-            form.addRow(self._button("记录所选 Tongue 网格或组件",
-                lambda: self._face_tongue("record")))
-            form.addRow(self._button("创建 Tongue Fit",
-                lambda: self._face_tongue("fit")))
+            group, form = self._group("03 · Lip Fit", [])
+            form.addRow(QtWidgets.QLabel(
+                "选择完整嘴唇边环，可加选三个顶点：上唇中心、下唇中心、右侧嘴角。按 Outer → Main → Inner 建立。"))
+            for part in ("Outer","Main","Inner"):
+                row=QtWidgets.QHBoxLayout()
+                row.addWidget(self._button("Lip "+part,
+                    lambda part=part: self._face_fit_lip(part)))
+                row.addWidget(self._button("重选 "+part,
+                    lambda part=part: self._face_fit_lip(part,reselect=True)))
+                row.addWidget(self._button("交换上下",
+                    lambda part=part: self._face_fit_lip_swap(part)))
+                form.addRow(row)
             stack.addWidget(group)
-            group, form = self._group("02B · Face 定位点", [])
+            group, form = self._group("04 · Face 定位点", [])
             from adv_py.core.face_fit_markers import MARKER_SHADERS
             for section in MARKER_SHADERS:
                 form.addRow(section, self._button("创建所选组件的 Fit",
                     lambda section=section: self._face_fit_marker(section)))
             form.addRow(self._button("创建 UpMidLo 分区定位器",
                 lambda: self._face_fit_marker("UpMidLo")))
+            stack.addWidget(group)
+            group, form = self._group("05 · Tongue Fit", [])
+            form.addRow(self._button("记录所选 Tongue 网格或组件",
+                lambda: self._face_tongue("record")))
+            form.addRow(self._button("创建 Tongue Fit",
+                lambda: self._face_tongue("fit")))
             stack.addWidget(group)
             self.face_neutral = QtWidgets.QLineEdit()
             self.face_neutral.setPlaceholderText("|FaceNeutral")
@@ -1684,6 +1697,25 @@ def create_panel(controller: MayaPanelController | None = None):
                 lambda: self._face_tongue("build")))
             form.addRow(self._button("完成 Tongue，恢复模型显示",
                 lambda: self._face_tongue("finish")))
+            stack.addWidget(group)
+            self.face_lip_falloff_outer=QtWidgets.QSpinBox()
+            self.face_lip_falloff_outer.setRange(0,9999); self.face_lip_falloff_outer.setValue(3)
+            self.face_lip_falloff_inner=QtWidgets.QSpinBox()
+            self.face_lip_falloff_inner.setRange(0,9999); self.face_lip_falloff_inner.setValue(2)
+            self.face_lip_falloff_iterations=QtWidgets.QSpinBox()
+            self.face_lip_falloff_iterations.setRange(0,9999); self.face_lip_falloff_iterations.setValue(5)
+            self.face_lip_falloff_multi=QtWidgets.QCheckBox("Multi Skin Clusters")
+            group, form = self._group("03G · Lip Falloff", [
+                ("外侧扩展",self.face_lip_falloff_outer),
+                ("内侧扩展",self.face_lip_falloff_inner),
+                ("平滑迭代",self.face_lip_falloff_iterations),
+                ("",self.face_lip_falloff_multi)])
+            form.addRow(self._button("建立 Lip Falloff 权重层",lambda: self._face_lip_falloff("build")))
+            form.addRow(self._button("预览范围",lambda: self._face_lip_falloff("preview")))
+            form.addRow(self._button("更新范围与权重",lambda: self._face_lip_falloff("update")))
+            stack.addWidget(group)
+            group, form = self._group("03H · Regions", [])
+            form.addRow(self._button("建立第二控制盒区域投影",self._face_regions))
             stack.addWidget(group)
             group, form = self._group("03a · Face Skin Layers", [])
             self.face_skin_layers_group = group
@@ -3752,6 +3784,29 @@ def create_panel(controller: MayaPanelController | None = None):
                     f"损坏引用 {len(invalid)} 个。"
                     + ("\n" + "\n".join(f"{item.name}/{item.release}：{item.reason}"
                         for item in invalid[:3]) if invalid else ""))
+
+        def _face_fit_lip(self,part,*,reselect=False):
+            result=self.controller.face_fit_lip(self._namespace(),part,reselect=reselect)
+            if reselect: return f"已重选 {result} 个 Lip {part} 组件"
+            return f"已建立 Lip {part} Fit，共 {len(result)} 侧上下曲线"
+
+        def _face_fit_lip_swap(self,part):
+            self.controller.face_fit_lip_swap(self._namespace(),part)
+            return "已按原版交换右侧 Lip "+part+" 上下曲线及预览管"
+
+        def _face_regions(self):
+            result=self.controller.face_regions(self._namespace())
+            if result is None: return "按原版条件跳过 Regions：缺少 Lip Main Fit"
+            return f"已接入 {len(result)} 个第二控制盒区域图标"
+
+        def _face_lip_falloff(self,action):
+            result=self.controller.face_lip_falloff(self._namespace(),
+                outer=self.face_lip_falloff_outer.value(),inner=self.face_lip_falloff_inner.value(),
+                iterations=self.face_lip_falloff_iterations.value(),preview=action=="preview",
+                update=action=="update",multi_skin_clusters=self.face_lip_falloff_multi.isChecked())
+            if result is None: return "按原版条件跳过 Lip Falloff：缺少 Lip Main Fit"
+            if result["preview"]: return f"已预览 Lip Falloff 范围：{result['vertices']} 个顶点"
+            return f"已更新 Lip Falloff：{result['vertices']} 个顶点，生成权重层"
 
         def _face_fit_marker(self,section):
             result=self.controller.face_fit_marker(self._namespace(),section)

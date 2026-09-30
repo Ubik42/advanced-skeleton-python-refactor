@@ -94,6 +94,54 @@ class MayaFaceControllersMixin:
         self.connect_original_face_matrix(bm+".outputMatrix",follow)
         self._transaction_changed=True
 
+    def add_original_ctrl_box_second_shape(self,control,icon):
+        """asAddCtrlBox2Shape: a projected icon driven through transformGeometry."""
+        from dataclasses import replace
+        from adv_py.core.body_parent_constraint import plan_body_parent_constraint
+        self._require_transaction()
+        c=self._cmds
+        for name in (control+"TG",control+"TGXformOffset",control+"TGXform"):
+            if c.objExists(name): raise ValueError("ctrlBox2 投影节点名称已占用："+name)
+        source_shapes=c.listRelatives(icon,shapes=True,noIntermediate=True,fullPath=True,type="nurbsCurve") or []
+        target_shapes=c.listRelatives(control,shapes=True,noIntermediate=True,fullPath=True,type="nurbsCurve") or []
+        if len(source_shapes)!=1 or not target_shapes:
+            raise ValueError("ctrlBox2 图标或目标控制器缺少曲线")
+        count=int(c.getAttr(source_shapes[0]+".spans"))+int(c.getAttr(source_shapes[0]+".degree"))
+        points=tuple(c.xform(source_shapes[0]+f".cv[{i}]",query=True,worldSpace=True,translation=True) for i in range(count))
+        color=c.getAttr(target_shapes[0]+".overrideColor")
+        temporary=c.duplicate(icon,name="ctrlBox2ShapeTemp#",returnRootsOnly=True)[0]
+        shape=c.listRelatives(temporary,shapes=True,fullPath=True,type="nurbsCurve")[0]
+        shape=c.parent(shape,control,add=True,shape=True)[0]
+        c.delete(temporary)
+        for index,point in enumerate(points): c.xform(shape+f".cv[{index}]",worldSpace=True,translation=point)
+        shape=c.rename(shape,icon+"Shape")
+        c.delete(icon)
+        c.setAttr(shape+".overrideEnabled",True); c.setAttr(shape+".overrideColor",color)
+        originals=c.listRelatives(control,shapes=True,fullPath=True,type="nurbsCurve") or []
+        icon_index=next(i for i,s in enumerate(originals) if s.rsplit("|",1)[-1]==shape.rsplit("|",1)[-1])
+        temporary=c.duplicate(control,name="ctrlBox2OrigShapeTemp#",returnRootsOnly=True)[0]
+        original=c.listRelatives(temporary,shapes=True,fullPath=True,type="nurbsCurve")[icon_index]
+        original=c.parent(original,control,add=True,shape=True)[0]
+        c.delete(temporary)
+        original=c.rename(original,icon+"OrigShape"); c.setAttr(original+".intermediateObject",True)
+        geometry=c.createNode("transformGeometry",name=control+"TG")
+        c.connectAttr(original+".worldSpace[0]",geometry+".inputGeometry",force=True)
+        c.connectAttr(geometry+".outputGeometry",shape+".create",force=True)
+        offset=c.createNode("transform",name=control+"TGXformOffset",parent=control)
+        offset=c.parent(offset,"ctrlBox2Constrained",absolute=True)[0]
+        transform=c.createNode("transform",name=control+"TGXform",parent=offset)
+        driver=c.ls(control,long=True,type="transform")[0]
+        driven=c.ls(transform,long=True,type="transform")[0]
+        source=self.capture_parent_constraint_input(driver,driven,False)
+        plan=plan_body_parent_constraint(replace(source,force_mult_matrix=True,
+            use_offset_parent_matrix=self.face_use_offset_parent_matrix()))
+        self.preflight_parent_constraint(plan); self.create_parent_constraint(plan)
+        c.connectAttr(transform+(".offsetParentMatrix" if self.face_use_offset_parent_matrix() else ".matrix"),
+                      geometry+".transform",force=True)
+        c.setAttr(geometry+".invertTransform",True)
+        self._transaction_changed=True
+        return geometry
+
     def hide_original_face_controllers(self,hide):
         self._require_transaction()
         c=self._cmds

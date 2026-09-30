@@ -59,6 +59,11 @@ _NODE_ARGS |= {'transformLimits'}
 _NODE_RESULTS |= {'sphere'}
 _CREATE |= {'sphere'}
 
+# Component editing for original Face Inner fitting area previews.
+_NODE_ARGS |= {'polyDelFacet', 'polyExtrudeFacet'}
+_NODE_RESULTS |= {'polyExtrudeFacet'}
+_CREATE |= {'polyExtrudeFacet'}
+
 
 class MayaCharacterCommands:
     def __init__(self,commands,namespace):

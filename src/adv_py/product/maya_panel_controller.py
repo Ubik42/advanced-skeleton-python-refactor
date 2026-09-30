@@ -2142,6 +2142,34 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)).execute(
                 EyeLidLayer(layer))
 
+    def face_fit_lip(self, namespace: str, part: str, *, reselect: bool = False):
+        from adv_py.adapters.maya_face_lip_fit import MayaFaceLipFitHost
+        from adv_py.application.face_lip_fit import CreateFaceLipFit
+        host=MayaFaceLipFitHost(namespace=None if namespace == ":" else namespace)
+        return host.select_lip_fit(part) if reselect else CreateFaceLipFit(host).apply(part)
+
+    def face_fit_lip_swap(self, namespace: str, part: str):
+        from adv_py.adapters.maya_face_lip_fit import MayaFaceLipFitHost
+        from adv_py.application.face_lip_fit import SwapFaceLipFit
+        return SwapFaceLipFit(MayaFaceLipFitHost(
+            namespace=None if namespace == ":" else namespace)).apply(part)
+
+    def face_regions(self, namespace: str):
+        from adv_py.adapters.maya_face_regions import MayaFaceRegionsHost
+        from adv_py.application.face_regions import BuildFaceRegions
+        return BuildFaceRegions(MayaFaceRegionsHost(
+            namespace=None if namespace == ":" else namespace)).apply()
+
+    def face_lip_falloff(self, namespace: str, *, outer: int = 3, inner: int = 2,
+                         iterations: int = 5, preview: bool = False, update: bool = False,
+                         multi_skin_clusters: bool = False):
+        from adv_py.adapters.maya_face_lip_falloff import MayaFaceLipFalloffHost
+        from adv_py.application.face_lip_falloff import BuildFaceLipFalloff
+        from adv_py.core.face_lip_falloff import LipFalloffOptions
+        return BuildFaceLipFalloff(MayaFaceLipFalloffHost(
+            namespace=None if namespace == ":" else namespace)).apply(
+                LipFalloffOptions(outer,inner,iterations,preview,update,multi_skin_clusters))
+
     def face_fit_eye_lid_reselect(self, namespace: str, layer: str) -> int:
         from adv_py.adapters.maya_face_pre import MayaFacePreHost
         from adv_py.application.face_pre import EyeLidLayer

@@ -28,15 +28,15 @@ from .maya_face_build import MayaFaceBuildHost
 from .maya_face_pre import MayaFacePreHost
 from .maya_face_lower_outer_auxiliary import MayaFaceLowerOuterAuxiliaryMixin
 from .maya_face_build_pose import MayaFaceBuildPoseMixin
-from .maya_face_delete import MayaFaceDeleteMixin
 from .maya_face_base import MayaFaceBaseMixin, FACE_BASE_NAMES
+from .maya_face_ctrl_box_layout import MayaFaceCtrlBoxMixin
 
 
 _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
 _CLOSED_LOWER_UPWARD_FOLLOW = .6
 
 
-class MayaFaceEyeLidRigHost(MayaFaceBaseMixin, MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
+class MayaFaceEyeLidRigHost(MayaFaceCtrlBoxMixin, MayaFaceBaseMixin, MayaFaceBuildPoseMixin,
                             MayaFaceLowerOuterAuxiliaryMixin,
                             MayaDenseSkinHost, MayaFacePreHost):
     def capture_face_build_node_ids(self) -> frozenset[str]:
@@ -59,6 +59,10 @@ class MayaFaceEyeLidRigHost(MayaFaceBaseMixin, MayaFaceDeleteMixin, MayaFaceBuil
                 raise FitSkeletonValidationError(
                     "Face 构建产生了引用节点：" + path)
             created.append(path)
+        existing = []
+        if c.objExists("FaceAllSet"):
+            existing = c.ls(c.sets("FaceAllSet",query=True) or [],long=True) or []
+        existing_set = set(existing)
         created_set = set(created)
         members = tuple(path for path in created if not (
             path.startswith("|") and any(
@@ -70,7 +74,7 @@ class MayaFaceEyeLidRigHost(MayaFaceBaseMixin, MayaFaceDeleteMixin, MayaFaceBuil
             if len(matches) != 1 or not any(
                     matches[0] == member or
                     matches[0].startswith(member + "|")
-                    for member in members):
+                    for member in (*members,*existing_set)):
                 raise RuntimeError("Face 构建所有权缺少关键节点：" + required)
         if len(c.ls("FaceControlSet", type="objectSet") or ()) != 1:
             raise RuntimeError("Face 构建缺少控制器选择集")
@@ -664,14 +668,36 @@ class MayaFaceEyeLidRigHost(MayaFaceBaseMixin, MayaFaceDeleteMixin, MayaFaceBuil
                 arcs[side][(EyeLidLayer.MAIN, "lower")], positions[side])
             vertical_follow_radii[side] = min(eye_radii[side],
                                                aperture_height)
+        existing_ctrl_box = c.objExists("ctrlBox")
+        shared_names = (*FACE_BASE_NAMES,"FaceJoint_M","FaceMotionSystem",
+                        "FaceControlSet","FaceAllSet","faceBuildPose")
+        reusable = set()
+        if existing_ctrl_box:
+            if not c.objExists("CtrlBoxSet") or not c.objExists("FaceAllSet"):
+                raise FitSkeletonValidationError("已有 ctrlBox 缺少 Python 模块归属，不能继续旧眼睑构建")
+            owned = c.ls(c.sets("FaceAllSet",query=True) or [],long=True) or []
+            for name in shared_names:
+                rows = c.ls(name,long=True) or []
+                if rows and len(rows)==1 and any(rows[0]==node or rows[0].startswith(node+"|") for node in owned):
+                    reusable.add(name)
+            for suffix in ("_R","_L"):
+                name="ctrlEye"+suffix
+                rows=c.ls(name,long=True,type="transform") or []
+                if len(rows)!=1 or not c.sets(name,isMember="FaceControlSet"):
+                    raise FitSkeletonValidationError("原版 ctrlBox 眼部滑块缺失或未登记")
+                for attr in ("translateX","translateY"):
+                    if not c.isConnected(name+"."+attr,"bw"+name+"_"+attr+".input[0]"):
+                        raise FitSkeletonValidationError("ctrlEye 不是原版控制盒滑块")
+                reusable.add(name)
         names = [*FACE_BASE_NAMES, "FaceJoint_M", "EyeLidJoints_M", "FaceMotionSystem",
                  "FaceControlSet", "FaceAllSet", "faceBuildPose"]
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
             names.extend(("ctrlEye" + suffix,
-                          "ctrlEye" + suffix + "_Offset",
                           "ctrlEye" + suffix + "BlinkFraction",
-                          "ctrlEye" + suffix + "BlinkReverse"))
+                          "ctrlEye" + suffix + "BlinkReverse",
+                          "bwctrlEye" + suffix + "_wide",
+                          "bwctrlEye" + suffix + "_blink"))
             if mobile_inners[side] and mode.include_outer_segments:
                 names.extend("AdvPy_EyeYawBlinkBack" + suffix + part
                              for part in ("Offset", "Limit", "Scale",
@@ -729,7 +755,7 @@ class MayaFaceEyeLidRigHost(MayaFaceBaseMixin, MayaFaceDeleteMixin, MayaFaceBuil
                                               name + "AimConstraint"))
                             else:
                                 names.append(name + "BlinkRoll")
-        if any(c.ls(name) for name in names):
+        if any(c.ls(name) for name in names if name not in reusable):
             raise FitSkeletonValidationError("眼睑绑定节点名称已被占用")
         original = self.capture_dense_skin(skin)
         selected = c.ls(selection=True, long=True) or []
@@ -740,37 +766,35 @@ class MayaFaceEyeLidRigHost(MayaFaceBaseMixin, MayaFaceDeleteMixin, MayaFaceBuil
         with (nullcontext() if self._transaction_active else
               self.transaction("建立双侧多关节眼睑与 Skin")):
             self._transaction_changed = True
-            c.select(clear=True)
-            face_joint = c.joint(name="FaceJoint_M")
-            face_joint = c.parent(face_joint, head, absolute=True)[0]
-            c.setAttr(face_joint + ".drawStyle", 2)
+            motion = self.ensure_face_advanced_base(
+                head, mesh, self.read_face_objects(FacePreRole.ALL_HEAD) or (mesh,))
+            face_joint = self.ensure_original_face_joint(head,float(c.getAttr(fit+".faceScale")))
+            if not existing_ctrl_box:
+                from adv_py.application.face_ctrl_box import BuildFaceCtrlBox
+                BuildFaceCtrlBox(self).apply_in_transaction()
             c.select(clear=True)
             root = c.joint(name="EyeLidJoints_M")
             root = c.parent(root, face_joint, absolute=True)[0]
             c.setAttr(root + ".drawStyle", 2)
-            motion = self.ensure_face_advanced_base(
-                head, mesh, self.read_face_objects(FacePreRole.ALL_HEAD) or (mesh,))
             c.addAttr(motion, longName="advPySimplerEyeLid",
                       attributeType="bool", defaultValue=mode.simpler_eyelid)
             c.setAttr(motion + ".advPySimplerEyeLid", lock=True)
             for side in FaceSide:
                 suffix = "_R" if side is FaceSide.RIGHT else "_L"
                 eye_name = "ctrlEye" + suffix
-                eye_control = c.circle(name=eye_name, normal=(0, 0, 1),
-                    radius=max(spans[side] / 5., .01),
-                    constructionHistory=False)[0]
-                eye_offset = c.createNode("transform",
-                    name=eye_name + "_Offset", parent=motion)
-                eye_center = c.xform(pre.read_eye_ball_fit(side), query=True,
-                                     worldSpace=True, translation=True)
-                c.xform(eye_offset, worldSpace=True, translation=eye_center)
-                eye_control = c.parent(eye_control, eye_offset, relative=True)[0]
-                c.addAttr(eye_control, longName="blink", attributeType="double",
-                          minValue=0, maxValue=10, defaultValue=0, keyable=True)
+                eye_control = c.ls(eye_name,long=True,type="transform")[0]
+                # asFaceEyeBlink adds wide before blink to the original slider.
+                for attribute in ("wide","blink"):
+                    if c.objExists(eye_control+"."+attribute):
+                        raise FitSkeletonValidationError("原版眼部属性已占用："+attribute)
+                    c.addAttr(eye_control,longName=attribute,attributeType="double",
+                              minValue=0,softMinValue=0,softMaxValue=10,keyable=True)
+                    bw=c.createNode("blendWeighted",name="bw"+eye_name+"_"+attribute)
+                    c.connectAttr(eye_control+"."+attribute,bw+".input[0]")
                 fraction = c.createNode("multiplyDivide",
                     name=eye_name + "BlinkFraction")
                 c.setAttr(fraction + ".input2X", .1)
-                c.connectAttr(eye_control + ".blink", fraction + ".input1X")
+                c.connectAttr("bw"+eye_name+"_blink.output", fraction + ".input1X")
                 reverse = c.createNode("reverse",
                     name=eye_name + "BlinkReverse")
                 c.connectAttr(fraction + ".outputX", reverse + ".inputX")
@@ -997,7 +1021,7 @@ class MayaFaceEyeLidRigHost(MayaFaceBaseMixin, MayaFaceDeleteMixin, MayaFaceBuil
                             fraction = c.createNode("multiplyDivide",
                                 name=control_name + "BlinkFraction")
                             c.setAttr(fraction + ".input2X", .1)
-                            c.connectAttr(eye_control + ".blink",
+                            c.connectAttr("bw"+eye_name+"_blink.output",
                                           fraction + ".input1X")
                             correction = c.createNode("multiplyDivide",
                                 name=control_name + "BlinkOffset")
@@ -1069,7 +1093,7 @@ class MayaFaceEyeLidRigHost(MayaFaceBaseMixin, MayaFaceDeleteMixin, MayaFaceBuil
                                 name=curve_name + str(index) + "Blink")
                             c.setAttr(blink + ".input2Y",
                                 blink_offsets[(side, layer)][arc][index] / 10.)
-                            c.connectAttr(eye_control + ".blink",
+                            c.connectAttr("bw"+eye_name+"_blink.output",
                                           blink + ".input1Y")
                             c.connectAttr(blink + ".outputY",
                                           addition + ".input3D[2].input3Dy")
@@ -1080,7 +1104,7 @@ class MayaFaceEyeLidRigHost(MayaFaceBaseMixin, MayaFaceDeleteMixin, MayaFaceBuil
                                     blink_offsets[(side, layer)][arc][index])
                                 c.setAttr(blink + ".input2Z",
                                           depth_offset / 10.)
-                                c.connectAttr(eye_control + ".blink",
+                                c.connectAttr("bw"+eye_name+"_blink.output",
                                               blink + ".input1Z")
                                 c.connectAttr(blink + ".outputZ",
                                               addition + ".input3D[2].input3Dz")
@@ -1132,7 +1156,7 @@ class MayaFaceEyeLidRigHost(MayaFaceBaseMixin, MayaFaceDeleteMixin, MayaFaceBuil
                                 roll = c.createNode("multiplyDivide",
                                     name=name + "BlinkRoll")
                                 c.setAttr(roll + ".input2X", angle / 10.)
-                                c.connectAttr(eye_control + ".blink",
+                                c.connectAttr("bw"+eye_name+"_blink.output",
                                               roll + ".input1X")
                                 c.connectAttr(roll + ".outputX",
                                               joint + ".rotateX")
