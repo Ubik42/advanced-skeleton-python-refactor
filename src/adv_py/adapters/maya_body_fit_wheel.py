@@ -40,14 +40,17 @@ class MayaBodyFitWheelMixin:
             if not c.objExists(control.constraint_name):
                 raise FitSkeletonValidationError(
                     "Wheel FK 朝向约束不存在：" + control.constraint_name)
-            if control.source_override_path is not None and (
-                    c.ls(control.source_override_path, long=True,
-                         type=("joint" if control.source_override_joint
-                               else "transform")) or []) != [
-                             control.source_override_path]:
-                raise FitSkeletonValidationError(
-                    "Wheel FKX 接收层不存在："
-                    + control.source_override_path)
+            if control.source_override_path is not None:
+                receiver = control.source_override_path
+                internal = receiver.startswith(control.control_path + "|")
+                expected_type = ("joint" if control.source_override_joint
+                                 else "transform")
+                if ((c.ls(receiver, long=True) or []) != [receiver]
+                        or c.nodeType(receiver)
+                        not in ((expected_type,) if internal else
+                                ("joint", "transform"))):
+                    raise FitSkeletonValidationError(
+                        "Wheel FKX 接收层不存在：" + receiver)
             for attr in ("diameter", "autoRoll", "reset",
                          "prevPosX", "prevPosY", "prevPosZ"):
                 if c.attributeQuery(attr, node=control.control_path,

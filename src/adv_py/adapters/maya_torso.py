@@ -261,11 +261,16 @@ class MayaBodyTorsoMixin:
                     owner = spec.name if resolved == nodes[0] else resolved
                 inputs.append((plug, owner))
             states.append(BodySpaceAttachmentState(spec.name, kind, sources, tuple(inputs)))
-        fkx = self._cmds.ls(plan.root_fkx_path, long=True,
-                            type=("joint" if plan.controls.controls[0]
-                                  .source_override_joint else
-                                  "transform")) or []
-        if fkx != [plan.root_fkx_path]:
+        root_control = plan.controls.controls[0]
+        fkx = self._cmds.ls(plan.root_fkx_path, long=True) or []
+        internal = plan.root_fkx_path.startswith(
+            root_control.control_path + "|")
+        expected_type = ("joint" if root_control.source_override_joint
+                         else "transform")
+        if (fkx != [plan.root_fkx_path]
+                or self._cmds.nodeType(fkx[0])
+                not in ((expected_type,) if internal else
+                        ("joint", "transform"))):
             raise FitSkeletonValidationError("Root FKX 接收层缺失或不唯一")
         fkx_parent = self._cmds.listRelatives(
             fkx[0], parent=True, fullPath=True) or []
