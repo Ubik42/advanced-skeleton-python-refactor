@@ -51,7 +51,7 @@ class GeodesicBindPreferences:
                 or type(self.post_voxel_check) is not bool
                 or type(self.maximum_influences) is not int
                 or self.maximum_influences != -1
-                and self.maximum_influences < 1):
+                and not 1 <= self.maximum_influences <= 256):
             raise SkinBindValidationError("Geodesic Voxel 参数无效")
 
 
