@@ -38,6 +38,7 @@ class PreservedSkin:
     blend_weights: tuple[tuple[int, float], ...]
     connections: tuple[tuple[str, str], ...]
     component_memberships: tuple[tuple[str, tuple[int, ...] | None], ...] = ()
+    influence_locks: tuple[tuple[int, str, bool, bool], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,14 @@ def validate_preservation(snapshot):
         indices=[i for i,_,_,_ in skin.influences]
         if not indices or len(set(indices))!=len(indices) or any(len(m)!=16 for _,_,m,_ in skin.influences):
             raise CharacterRegistryError('蒙皮影响索引或绑定矩阵不完整')
+        lock_indices=[index for index,_,_,_ in skin.influence_locks]
+        if (len(set(lock_indices))!=len(lock_indices)
+                or len({path for _,path,_,_ in skin.influence_locks})
+                != len(lock_indices)
+                or any(index not in indices or not path
+                       or type(value) is not bool or type(locked) is not bool
+                       for index,path,value,locked in skin.influence_locks)):
+            raise CharacterRegistryError('蒙皮影响关节锁定状态无效')
         for _,weights in skin.weights:
             if any(i not in indices or value<0 for i,value in weights):
                 raise CharacterRegistryError('蒙皮权重引用未知影响或包含负值')

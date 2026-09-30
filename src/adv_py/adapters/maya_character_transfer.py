@@ -182,6 +182,9 @@ def transfer(host,staged):
             if c.objExists(plug):
                 destination=target_node+'.lockInfluenceWeights'
                 if not c.objExists(destination):c.addAttr(target_node,longName='lockInfluenceWeights',attributeType='bool')
+                if c.connectionInfo(destination,sourceFromDestination=True):
+                    raise CharacterRegistryError('替换影响关节锁定状态有外部驱动：'+destination)
+                c.setAttr(destination,lock=False)
                 c.setAttr(destination,bool(c.getAttr(plug)))
                 c.setAttr(destination,lock=bool(c.getAttr(plug,lock=True)))
         for curve in old.curves:
@@ -406,7 +409,9 @@ def verify_retained(host,staged):
     for skin in staged.original.skins:
         actual=capture_skin(host,skin.node)
         expected=replace(skin,influences=tuple((i,local(source),m,local(pre)) for i,source,m,pre in skin.influences),
-            connections=tuple(sorted((local(a),local(b)) for a,b in skin.connections)))
+            connections=tuple(sorted((local(a),local(b)) for a,b in skin.connections)),
+            influence_locks=tuple(sorted((i,local(path+'.lockInfluenceWeights').rsplit('.',1)[0],value,locked)
+                for i,path,value,locked in skin.influence_locks)))
         if actual!=expected:
             raise RuntimeError('交接改变了原蒙皮数据')
     from .maya_character_preservation import capture_deformers

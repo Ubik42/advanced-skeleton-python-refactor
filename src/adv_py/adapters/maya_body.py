@@ -3675,7 +3675,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                   'dqsSupportNonRigid')
                 if c.objExists(skin + '.' + attribute))
             rows.append((mesh[0], data,
-                         mesh_topology_digest(shape[0]),
+                         mesh_topology_digest(self.scene_address(shape[0])),
                          int(c.getAttr(skin + ".maxInfluences")),
                          bool(c.getAttr(skin + ".maintainMaxInfluences")),
                          int(c.getAttr(skin + ".skinningMethod")),
@@ -3798,7 +3798,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 sources, 1):
             target_paths = tuple(mapping[name.rsplit(":", 1)[-1]]
                                  for name in data.influence_names)
-            source_envelope = data.skin_name + ".envelope"
+            source_skin = (self.scene_address(data.skin_name)
+                           if namespace_free else data.skin_name)
+            source_envelope = source_skin + ".envelope"
             envelope_at_bind = float(c.getAttr(source_envelope))
             stable_settings = (*deformer_settings,
                 ('skinningMethod',method),
@@ -3817,7 +3819,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     raise FitSkeletonValidationError(
                         "FBX 不支持变化中的 Skin envelope：" + data.skin_name)
                 for attribute,value in stable_settings:
-                    if abs(float(c.getAttr(data.skin_name + '.' + attribute))
+                    if abs(float(c.getAttr(source_skin + '.' + attribute))
                            - value) > 1e-6:
                         raise FitSkeletonValidationError(
                             'FBX 不支持变化中的 Skin 计算选项：'
@@ -3826,7 +3828,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     if not driver:
                         continue
                     values=c.getAttr(
-                        f'{data.skin_name}.bindPreMatrix[{logical}]')
+                        f'{source_skin}.bindPreMatrix[{logical}]')
                     if len(values)==1 and isinstance(values[0],(tuple,list)):
                         values=values[0]
                     if (len(values)!=16 or any(abs(float(actual)-expected)>1e-6
@@ -3952,7 +3954,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             if (len(clone_shapes) != 1
                     or int(c.polyEvaluate(clone_shapes[0], vertex=True))
                     != data.vertex_count
-                    or mesh_topology_digest(clone_shapes[0])
+                    or mesh_topology_digest(clone_shapes[0] if namespace_free
+                        else self.scene_address(clone_shapes[0]))
                     != source_topology):
                 raise FitSkeletonValidationError(
                     "FBX 临时网格拓扑与源 Skin 权重不一致：" + mesh_name)
@@ -6043,6 +6046,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         return BodyLimbVolumeSnapshot(settings[0], tuple(states))
 
     def capture_skin_bind_input(self, plan: SkinBindPlan) -> SkinBindInputState:
+        from hashlib import sha256
+        from struct import pack
+
         meshes = self._cmds.ls(plan.mesh_path, long=True, type="transform") or []
         mesh = meshes[0] if len(meshes) == 1 else None
         shapes = tuple(
@@ -6059,11 +6065,33 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             if mesh and len(shapes) == 1
             else 0
         )
+        points_digest = None
+        topology_digest = None
+        if vertex_count:
+            from maya.api import OpenMaya as om
+            from .maya_mesh_topology import mesh_topology_digest
+            selection = om.MSelectionList()
+            selection.add(self.scene_address(shapes[0]))
+            points = om.MFnMesh(selection.getDagPath(0)).getPoints(
+                om.MSpace.kWorld)
+            if len(points) != vertex_count:
+                raise FitSkeletonValidationError(
+                    "Skin Bind 网格顶点数量在读取期间变化")
+            digest = sha256()
+            for point in points:
+                digest.update(pack("<3d", point.x, point.y, point.z))
+            points_digest = digest.hexdigest()
+            topology_digest = mesh_topology_digest(
+                self.scene_address(shapes[0]))
         available = []
+        influence_matrices = []
         for path in plan.influence_paths:
             matches = self._cmds.ls(path, long=True, type="joint") or []
             if len(matches) == 1 and matches[0] == path:
                 available.append(path)
+                influence_matrices.append((path, tuple(float(value)
+                    for value in self._cmds.xform(path, query=True,
+                        worldSpace=True, matrix=True))))
         history = (
             self._cmds.listHistory(shapes[0], pruneDagObjects=True) or []
             if len(shapes) == 1
@@ -6076,12 +6104,22 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 if self._cmds.nodeType(node) == "skinCluster"
             )
         )
+        history_nodes = tuple(sorted(
+            (node, self._cmds.ls(node, uuid=True)[0])
+            for node in set(history)
+        ))
         return SkinBindInputState(
             mesh,
             shapes,
             vertex_count,
             tuple(available),
             skin_clusters,
+            (tuple(float(value) for value in self._cmds.xform(mesh,
+                query=True, worldSpace=True, matrix=True)) if mesh else None),
+            tuple(influence_matrices),
+            points_digest,
+            topology_digest,
+            history_nodes,
         )
 
     def read_body_smooth_bind_options(self) -> SmoothBindPreferences:
@@ -6158,7 +6196,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 and self._cmds.about(batch=True)):
             raise FitSkeletonValidationError(
                 "Geodesic Voxel 绑定需要 Maya 图形会话")
-        topology = mesh_topology_digest(mesh_shapes[0])
+        topology = mesh_topology_digest(self.scene_address(mesh_shapes[0]))
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self._transaction_changed = True
@@ -6450,7 +6488,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             float(c.getAttr(f"{skin}.envelope")), envelope_source,
             set_memberships,
             c.getAttr(f"{skin}.{TOPOLOGY_ATTRIBUTE}"),
-            mesh_topology_digest(shapes[0]),
+            mesh_topology_digest(self.scene_address(shapes[0])),
             manager, geodesic, manager_members,
             locked_influences,deformer_settings,
             tuple(bind_pre_matrices),parameter_drivers,parameter_outputs,
@@ -6469,7 +6507,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                 exists=True):
             return None
         recorded = c.getAttr(f"{skin}.{TOPOLOGY_ATTRIBUTE}")
-        if recorded != mesh_topology_digest(shapes[0]):
+        if recorded != mesh_topology_digest(self.scene_address(shapes[0])):
             raise FitSkeletonValidationError(
                 "源 Skin 绑定拓扑与当前网格不同，不能作为转移来源")
         return recorded

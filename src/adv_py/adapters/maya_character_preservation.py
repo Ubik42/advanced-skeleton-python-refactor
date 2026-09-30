@@ -70,6 +70,14 @@ def capture_skin(host,node):
             raise CharacterRegistryError('蒙皮绑定逆矩阵不完整：'+pre)
         influences.append((index,source,matrix,
             _plug(host,c.connectionInfo(pre,sourceFromDestination=True))))
+    influence_locks=[]
+    for dag in skin_fn.influenceObjects():
+        index=int(skin_fn.indexForInfluenceObject(dag))
+        path=host._resolve_connected_node(dag.fullPathName())
+        plug=path+'.lockInfluenceWeights'
+        if c.objExists(plug):
+            influence_locks.append((index,path,bool(c.getAttr(plug)),
+                                    bool(c.getAttr(plug,lock=True))))
     weights=[]
     for vertex in c.getAttr(node+'.weightList',multiIndices=True) or []:
         plug=node+f'.weightList[{vertex}].weights'
@@ -78,7 +86,7 @@ def capture_skin(host,node):
         'envelope','skinningMethod','normalizeWeights','maxInfluences','maintainMaxInfluences',
         'weightDistribution','bindMethod','useComponents','deformUserNormals','dqsSupportNonRigid') if c.objExists(node+'.'+attr))
     blend=tuple((i,float(c.getAttr(node+f'.blendWeights[{i}]'))) for i in c.getAttr(node+'.blendWeights',multiIndices=True) or [])
-    return PreservedSkin(node,c.ls(node,uuid=True)[0],tuple(geometries),settings,tuple(influences),tuple(weights),blend,connections(host,node),tuple(component_memberships))
+    return PreservedSkin(node,c.ls(node,uuid=True)[0],tuple(geometries),settings,tuple(influences),tuple(weights),blend,connections(host,node),tuple(component_memberships),tuple(sorted(influence_locks)))
 
 
 def capture_deformer(host,node,mesh_stack):

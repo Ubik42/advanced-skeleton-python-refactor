@@ -100,6 +100,11 @@ class SkinBindInputState:
     vertex_count: int
     available_influences: tuple[str, ...]
     existing_skin_clusters: tuple[str, ...]
+    mesh_world_matrix: tuple[float, ...] | None = None
+    influence_world_matrices: tuple[tuple[str, tuple[float, ...]], ...] = ()
+    mesh_points_digest: str | None = None
+    mesh_topology_digest: str | None = None
+    mesh_history_nodes: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
