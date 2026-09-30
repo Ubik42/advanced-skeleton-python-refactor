@@ -286,7 +286,8 @@ def _with_inbetween_fk_sources(
             if spec.control_path != source[0]:
                 raise ValueError("Inbetween FK 改接与控制计划不一致："
                                  + spec.constraint_name)
-            specs.append(replace(spec, source_override_path=source[1]))
+            specs.append(replace(spec, source_override_path=source[1],
+                                 source_override_joint=False))
             matched.add(spec.constraint_name)
         return replace(controls, controls=tuple(specs))
 
@@ -1394,7 +1395,11 @@ class BuildRegisteredBodyCharacter:
                 generic_fk = replace(generic_fk, controls=tuple(
                     replace(control, source_override_path=(
                         rewired.get(control.constraint_name,
-                                    control.source_override_path)))
+                                    control.source_override_path)),
+                        source_override_joint=(
+                            control.source_override_joint
+                            if control.constraint_name not in rewired
+                            else False))
                     for control in generic_fk.controls))
                 generic_fk_state = joined.capture_body_generic_fk_controls(
                     generic_fk)
