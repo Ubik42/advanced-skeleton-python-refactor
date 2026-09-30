@@ -315,7 +315,11 @@ class MayaFitBendyMixin:
         for index in (1, 3):
             c.skinPercent(skin, curve + f".cv[{index}]",
                           transformValue=[(influences[1], 0.4)])
-        c.setAttr(shapes[0] + ".visibility", False)
+        if spec.secondary_matrix_follow:
+            c.setAttr(shapes[0] + ".overrideEnabled", True)
+            c.setAttr(shapes[0] + ".overrideVisibility", False)
+        else:
+            c.setAttr(shapes[0] + ".visibility", False)
         for index, (path_name, transform_name, control) in enumerate(zip(
                 spec.secondary_motion_path_names,
                 spec.secondary_motion_transform_names,
@@ -365,6 +369,7 @@ class MayaFitBendyMixin:
                 c.setAttr(offset + ".translate", 0, 0, 0)
                 c.setAttr(offset + ".rotate", 0, 0, 0)
                 c.setAttr(offset + ".scale", 1, 1, 1)
+                c.setAttr(offset + ".shear", 0, 0, 0)
                 c.connectAttr(pick + ".outputMatrix",
                               offset + ".offsetParentMatrix")
             else:
@@ -386,6 +391,10 @@ class MayaFitBendyMixin:
         if (len(shapes) != 1 or c.nodeType(shapes[0]) != "nurbsCurve"
                 or not c.objExists(spec.secondary_skin_name)
                 or c.nodeType(spec.secondary_skin_name) != "skinCluster"):
+            return False
+        if (spec.secondary_matrix_follow
+                and (not c.getAttr(shapes[0] + ".overrideEnabled")
+                     or c.getAttr(shapes[0] + ".overrideVisibility"))):
             return False
         influences = c.skinCluster(spec.secondary_skin_name, query=True,
                                    influence=True) or []
@@ -472,11 +481,12 @@ class MayaFitBendyMixin:
                     or c.connectionInfo(world + ".matrixIn[2]",
                                         sourceFromDestination=True)
                     != end + ".parentInverseMatrix[0]"
-                    or (not spec.secondary_matrix_follow
-                        or spec.opm_offset_only_scale)
-                    and c.connectionInfo(end + ".offsetParentMatrix",
-                                         sourceFromDestination=True)
-                    != world + ".matrixSum"):
+                    or ((not spec.secondary_matrix_follow
+                         or spec.opm_offset_only_scale)
+                        and c.connectionInfo(
+                            end + ".offsetParentMatrix",
+                            sourceFromDestination=True)
+                        != world + ".matrixSum")):
                 return False
             if (spec.secondary_matrix_follow
                     and not spec.opm_offset_only_scale):
