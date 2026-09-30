@@ -38,6 +38,8 @@ class SkinRebindState:
     geodesic: GeodesicBindPreferences | None = None
     geom_bind_members: tuple[str, ...] = ()
     locked_influences: tuple[str, ...] = ()
+    deformer_settings: tuple[tuple[str, float, str | None], ...] = ()
+    bind_pre_matrices: tuple[tuple[str, tuple[float, ...], str | None], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

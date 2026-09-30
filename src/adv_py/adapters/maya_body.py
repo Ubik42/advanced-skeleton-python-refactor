@@ -3548,6 +3548,15 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise FitSkeletonValidationError(
                     'Skin 变形集不是网格顶点：' + skin_fn.name())
             selection = om.MFnSingleIndexedComponent(component)
+            if selection.hasWeights:
+                for offset in range(selection.elementCount):
+                    influence=selection.weight(offset).influence
+                    value=float(influence() if callable(influence)
+                                else influence)
+                    if abs(value-1.0)>1e-9:
+                        raise FitSkeletonValidationError(
+                            'Skin 变形集含软选择权重，当前顶点成员资产'
+                            '不能无损保存：'+skin_fn.name())
             if selection.isComplete:
                 if selection.getCompleteData() != vertex_count:
                     raise FitSkeletonValidationError(
@@ -3579,14 +3588,17 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             c.sets(shape, addElement=deformer_set)
             return
         ranges=[]
+        def component(first,last):
+            index = str(first) if first==last else f'{first}:{last}'
+            return f'{shape}.vtx[{index}]'
         start=stop=members[0]
         for index in members[1:]:
             if index==stop+1:
                 stop=index
                 continue
-            ranges.append(f'{shape}.vtx[{start}:{stop}]')
+            ranges.append(component(start,stop))
             start=stop=index
-        ranges.append(f'{shape}.vtx[{start}:{stop}]')
+        ranges.append(component(start,stop))
         for offset in range(0,len(ranges),256):
             c.sets(*ranges[offset:offset+256],addElement=deformer_set)
 
@@ -6372,6 +6384,34 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             f"{skin}.envelope", sourceFromDestination=True) or None
         set_memberships = tuple(sorted(set(
             c.listSets(object=skin) or [])))
+        deformer_settings = tuple((attribute,float(c.getAttr(
+            skin+'.'+attribute)),c.connectionInfo(
+            skin+'.'+attribute,sourceFromDestination=True) or None)
+            for attribute in (
+                'useComponents','deformUserNormals','dqsSupportNonRigid')
+            if c.objExists(skin+'.'+attribute))
+        bind_pre_matrices=[]
+        for logical in c.getAttr(skin+'.matrix',multiIndices=True) or []:
+            source=c.connectionInfo(
+                f'{skin}.matrix[{logical}]',sourceFromDestination=True)
+            joints=(c.ls(source.split('.',1)[0],long=True,type='joint')
+                    or []) if source else []
+            if len(joints)!=1:
+                raise FitSkeletonValidationError(
+                    'Skin 影响矩阵来源不唯一：'+skin)
+            plug=f'{skin}.bindPreMatrix[{logical}]'
+            value=c.getAttr(plug)
+            if len(value)==1 and isinstance(value[0],(tuple,list)):
+                value=value[0]
+            matrix=tuple(float(item) for item in value)
+            if len(matrix)!=16 or not all(isfinite(item) for item in matrix):
+                raise FitSkeletonValidationError(
+                    'Skin 绑定逆矩阵不完整：'+skin)
+            bind_pre_matrices.append((joints[0],matrix,
+                c.connectionInfo(plug,sourceFromDestination=True) or None))
+        if {joint for joint,_,_ in bind_pre_matrices}!=set(influences):
+            raise FitSkeletonValidationError(
+                'Skin 绑定逆矩阵与影响关节不一致：'+skin)
         return SkinRebindState(skin, mesh, tuple(influences),
             int(c.getAttr(f"{skin}.maxInfluences")),
             bool(c.getAttr(f"{skin}.maintainMaxInfluences")),
@@ -6382,7 +6422,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             c.getAttr(f"{skin}.{TOPOLOGY_ATTRIBUTE}"),
             mesh_topology_digest(shapes[0]),
             manager, geodesic, manager_members,
-            locked_influences)
+            locked_influences,deformer_settings,
+            tuple(bind_pre_matrices))
 
     def capture_skin_bind_topology(self, skin: str, mesh: str) -> str | None:
         from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
@@ -6532,6 +6573,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             raise RuntimeError("原始 Skin 权重未完整写回")
 
     def restore_skin_rebind_deformer_state(self, state) -> None:
+        from maya.api import OpenMaya as om
+        from maya.api import OpenMayaAnim as oma
+
         self._require_transaction()
         c = self._cmds
         skin = state.skin
@@ -6545,6 +6589,40 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                           force=True)
         else:
             c.setAttr(skin + ".envelope", state.envelope)
+        for attribute,value,driver in state.deformer_settings:
+            plug=skin+'.'+attribute
+            if not c.objExists(plug):
+                raise FitSkeletonValidationError(
+                    '重绑 Skin 缺少原有计算选项：'+attribute)
+            if driver:
+                if not c.objExists(driver):
+                    raise FitSkeletonValidationError(
+                        'Skin 计算选项驱动来源已不存在：'+driver)
+                c.connectAttr(driver,plug,force=True)
+            else:
+                c.setAttr(plug,value)
+        selection=om.MSelectionList()
+        selection.add(self.scene_address(skin))
+        skin_fn=oma.MFnSkinCluster(selection.getDependNode(0))
+        new_indices={path.fullPathName():skin_fn.indexForInfluenceObject(path)
+            for path in skin_fn.influenceObjects()}
+        if set(new_indices)!={self.scene_address(joint)
+                for joint,_,_ in state.bind_pre_matrices}:
+            raise FitSkeletonValidationError(
+                '重绑 Skin 影响关节与旧绑定逆矩阵不一致')
+        for joint,matrix,driver in state.bind_pre_matrices:
+            target=f'{skin}.bindPreMatrix[{new_indices[self.scene_address(joint)]}]'
+            incoming=c.connectionInfo(target,sourceFromDestination=True)
+            if incoming and incoming!=driver:
+                c.disconnectAttr(incoming,target)
+            if driver:
+                if not c.objExists(driver):
+                    raise FitSkeletonValidationError(
+                        'Skin 绑定逆矩阵驱动来源已不存在：'+driver)
+                if incoming!=driver:
+                    c.connectAttr(driver,target)
+            else:
+                c.setAttr(target,*matrix,type='matrix')
         for name in state.set_memberships:
             if not c.objExists(name):
                 raise FitSkeletonValidationError(
@@ -6556,6 +6634,25 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 or abs(float(c.getAttr(skin + ".envelope"))
                        - state.envelope) > 1e-6):
             raise FitSkeletonValidationError("重绑 Skin Envelope 没有保持原设置")
+        for attribute,value,driver in state.deformer_settings:
+            plug=skin+'.'+attribute
+            if (abs(float(c.getAttr(plug))-value)>1e-6
+                    or (c.connectionInfo(plug,
+                        sourceFromDestination=True) or None)!=driver):
+                raise FitSkeletonValidationError(
+                    '重绑 Skin 计算选项没有保持原状态：'+attribute)
+        for joint,matrix,driver in state.bind_pre_matrices:
+            plug=f'{skin}.bindPreMatrix[{new_indices[self.scene_address(joint)]}]'
+            values=c.getAttr(plug)
+            if len(values)==1 and isinstance(values[0],(tuple,list)):
+                values=values[0]
+            if (len(values)!=16
+                    or any(abs(float(a)-b)>1e-6
+                           for a,b in zip(values,matrix))
+                    or (c.connectionInfo(plug,
+                        sourceFromDestination=True) or None)!=driver):
+                raise FitSkeletonValidationError(
+                    '重绑 Skin 绑定逆矩阵没有保持原状态：'+joint)
         if not set(state.set_memberships).issubset(
                 set(c.listSets(object=skin) or [])):
             raise FitSkeletonValidationError("重绑 Skin 没有保持选择集归属")

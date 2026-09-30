@@ -92,23 +92,27 @@ def transfer_skin_weights_by_surface(
     greatest_discard = 0.0
     for target_index, projected in enumerate(projection.rows):
         triangle = source_triangles[projected.triangle_index]
+        contributors = tuple(zip(triangle,projected.barycentric))
         if target_members is not None:
             coverage = sum(coefficient for source_index, coefficient
-                in zip(triangle, projected.barycentric)
+                in contributors
                 if source_index in source_members)
             if coverage >= 0.5:
                 target_members.append(target_index)
+                # Weights on non-member source vertices do not participate
+                # in the source Skin. Exclude them at a projected boundary.
+                contributors = tuple((source_index,coefficient/coverage)
+                    for source_index,coefficient in contributors
+                    if source_index in source_members)
         if blend_weights is not None:
             value = sum(source_blend_weights[source_index]
-                * coefficient for source_index, coefficient in zip(
-                    triangle, projected.barycentric))
+                * coefficient for source_index, coefficient in contributors)
             if not -1e-8 <= value <= 1.0 + 1e-8:
                 raise SkinWeightValidationError(
                     f"目标顶点 {target_index} 的混合权重投射超出范围")
             blend_weights.append(min(1.0, max(0.0, value)))
         values: dict[str, float] = {}
-        for source_index, coefficient in zip(triangle,
-                                             projected.barycentric):
+        for source_index, coefficient in contributors:
             for entry in source_rows[source_index]:
                 values[entry.influence_path] = values.get(entry.influence_path, 0.0) + coefficient * entry.weight
         threshold = 1e-12 if source.normalized else 0.0
