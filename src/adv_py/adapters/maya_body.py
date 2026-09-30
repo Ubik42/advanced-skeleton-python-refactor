@@ -6651,6 +6651,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         self._require_transaction()
         c = self._cmds
         skin = state.skin
+        if (c.ls(skin, type='skinCluster') or []) != [skin]:
+            raise FitSkeletonValidationError(
+                '重绑 Skin 结果节点不存在或名称不唯一')
         selection = om.MSelectionList()
         selection.add(self.scene_address(skin))
         skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
