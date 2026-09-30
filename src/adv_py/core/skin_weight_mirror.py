@@ -194,4 +194,8 @@ def plan_skin_weight_mirror(
         request.skin_name,
         request.mesh_path,
         vertices,
+        normalized=(source.normalization_mode not in (0, 2)
+            and all(vertex.weights and abs(sum(weight.weight for weight in
+                vertex.weights) - 1.0) <= 1e-6
+                for vertex in source.vertices)),
     ).vertices
