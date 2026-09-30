@@ -6418,6 +6418,30 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 'weightDistribution','bindMethod')
             for driver in (c.connectionInfo(skin+'.'+attribute,
                 sourceFromDestination=True),) if driver)
+        output_attributes = (
+            'envelope', 'skinningMethod', 'normalizeWeights',
+            'maxInfluences', 'maintainMaxInfluences',
+            'weightDistribution', 'bindMethod', 'useComponents',
+            'deformUserNormals', 'dqsSupportNonRigid')
+        parameter_outputs = tuple(sorted({(attribute, destination)
+            for attribute in output_attributes
+            if c.objExists(skin + '.' + attribute)
+            for destination in (c.listConnections(
+                skin + '.' + attribute, source=False, destination=True,
+                plugs=True) or ())
+            if destination.split('.', 1)[0] != skin}))
+        bind_pose_source = (c.connectionInfo(skin + '.bindPose',
+            sourceFromDestination=True) or None)
+        shared_bind_pose_source = None
+        if bind_pose_source is not None:
+            pose_node = bind_pose_source.split('.', 1)[0]
+            if c.nodeType(pose_node) != 'dagPose':
+                raise FitSkeletonValidationError(
+                    'Skin bindPose 不是 Maya dagPose：' + bind_pose_source)
+            consumers = set(c.listConnections(bind_pose_source,
+                source=False, destination=True, plugs=True) or ())
+            if consumers - {skin + '.bindPose'}:
+                shared_bind_pose_source = bind_pose_source
         return SkinRebindState(skin, mesh, tuple(influences),
             int(c.getAttr(f"{skin}.maxInfluences")),
             bool(c.getAttr(f"{skin}.maintainMaxInfluences")),
@@ -6429,7 +6453,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             mesh_topology_digest(shapes[0]),
             manager, geodesic, manager_members,
             locked_influences,deformer_settings,
-            tuple(bind_pre_matrices),parameter_drivers)
+            tuple(bind_pre_matrices),parameter_drivers,parameter_outputs,
+            shared_bind_pose_source)
 
     def capture_skin_bind_topology(self, skin: str, mesh: str) -> str | None:
         from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
@@ -6634,6 +6659,25 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise FitSkeletonValidationError(
                     'Skin 核心参数驱动来源已不存在：'+driver)
             c.connectAttr(driver,skin+'.'+attribute,force=True)
+        for attribute, destination in state.parameter_outputs:
+            source = skin + '.' + attribute
+            if not c.objExists(destination):
+                raise FitSkeletonValidationError(
+                    'Skin 参数输出目标已不存在：' + destination)
+            incoming = c.connectionInfo(
+                destination, sourceFromDestination=True)
+            if incoming and incoming != source:
+                raise FitSkeletonValidationError(
+                    'Skin 参数输出目标已有其他驱动：' + destination)
+            if incoming != source:
+                c.connectAttr(source, destination)
+        if state.shared_bind_pose_source is not None:
+            if not c.objExists(state.shared_bind_pose_source):
+                raise FitSkeletonValidationError(
+                    '共享 bindPose 在重绑后已不存在：'
+                    + state.shared_bind_pose_source)
+            c.connectAttr(state.shared_bind_pose_source,
+                          skin + '.bindPose', force=True)
         for name in state.set_memberships:
             if not c.objExists(name):
                 raise FitSkeletonValidationError(
@@ -6718,6 +6762,17 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     sourceFromDestination=True)!=driver:
                 raise FitSkeletonValidationError(
                     '重绑 Skin 核心参数驱动未恢复：'+attribute)
+        for attribute, destination in state.parameter_outputs:
+            if c.connectionInfo(destination,
+                    sourceFromDestination=True) != skin + '.' + attribute:
+                raise FitSkeletonValidationError(
+                    '重绑 Skin 参数输出未恢复：' + destination)
+        if (state.shared_bind_pose_source is not None
+                and c.connectionInfo(skin + '.bindPose',
+                    sourceFromDestination=True)
+                != state.shared_bind_pose_source):
+            raise FitSkeletonValidationError(
+                '重绑 Skin 没有恢复共享 bindPose')
         if not set(state.set_memberships).issubset(
                 set(c.listSets(object=skin) or [])):
             raise FitSkeletonValidationError("重绑 Skin 没有保持选择集归属")

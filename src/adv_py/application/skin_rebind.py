@@ -41,6 +41,8 @@ class SkinRebindState:
     deformer_settings: tuple[tuple[str, float, str | None], ...] = ()
     bind_pre_matrices: tuple[tuple[str, tuple[float, ...], str | None], ...] = ()
     parameter_drivers: tuple[tuple[str, str], ...] = ()
+    parameter_outputs: tuple[tuple[str, str], ...] = ()
+    shared_bind_pose_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
