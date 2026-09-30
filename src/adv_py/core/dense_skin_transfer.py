@@ -29,13 +29,16 @@ def validate_dense_skin(data: DenseSkinWeights) -> None:
     values = memoryview(data.values).cast("d")
     for vertex in range(data.vertex_count):
         row = values[vertex * width:(vertex + 1) * width]
-        if (any(not isfinite(value) or value < -1e-6 or
+        total = sum(row)
+        if (not isfinite(total)
+                or any(not isfinite(value) or value < (
+                    -1e-6 if data.normalization_mode == 1 else 0.0) or
                 data.normalization_mode == 1 and value > 1.0 + 1e-6
                 for value in row)
                 or data.normalization_mode == 1
-                and abs(sum(row) - 1.0) > 1e-6):
+                and abs(total - 1.0) > 1e-6):
             raise ValueError("Skin 顶点权重不符合归一化模式："
-                             f"{vertex} sum={sum(row)} min={min(row)} max={max(row)}")
+                             f"{vertex} sum={total} min={min(row)} max={max(row)}")
 
 
 def reorder_dense_skin(data: DenseSkinWeights, target_skin: str,
