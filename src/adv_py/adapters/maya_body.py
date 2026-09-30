@@ -5492,11 +5492,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 "旧 Skin 的绑定、归一化或蒙皮算法无法安全重建")
         envelope_source = c.connectionInfo(
             f"{skin}.envelope", sourceFromDestination=True) or None
+        set_memberships = tuple(sorted(set(
+            c.listSets(object=skin) or [])))
         return SkinRebindState(skin, mesh, tuple(influences),
             int(c.getAttr(f"{skin}.maxInfluences")),
             bool(c.getAttr(f"{skin}.maintainMaxInfluences")),
             bind_method, normalization, skinning_method,
             float(c.getAttr(f"{skin}.envelope")), envelope_source,
+            set_memberships,
             c.getAttr(f"{skin}.{TOPOLOGY_ATTRIBUTE}"),
             mesh_topology_digest(shapes[0]))
 
@@ -5531,12 +5534,20 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                           force=True)
         else:
             c.setAttr(skin + ".envelope", state.envelope)
+        for name in state.set_memberships:
+            if not c.objExists(name):
+                raise FitSkeletonValidationError(
+                    "旧 Skin 所属选择集已不存在：" + name)
+            c.sets(skin, add=name)
         actual_source = c.connectionInfo(
             skin + ".envelope", sourceFromDestination=True) or None
         if (actual_source != state.envelope_source
                 or abs(float(c.getAttr(skin + ".envelope"))
                        - state.envelope) > 1e-6):
             raise FitSkeletonValidationError("重绑 Skin Envelope 没有保持原设置")
+        if not set(state.set_memberships).issubset(
+                set(c.listSets(object=skin) or [])):
+            raise FitSkeletonValidationError("重绑 Skin 没有保持选择集归属")
 
     def remove_skin_bind_for_rebind(self, skin: str) -> None:
         self._require_transaction()

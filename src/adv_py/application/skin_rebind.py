@@ -26,6 +26,7 @@ class SkinRebindState:
     skinning_method: SkinningMethod
     envelope: float
     envelope_source: str | None
+    set_memberships: tuple[str, ...]
     old_topology: str
     current_topology: str
 
