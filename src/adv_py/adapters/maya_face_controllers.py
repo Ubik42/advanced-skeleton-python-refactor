@@ -6,6 +6,7 @@ class MayaFaceControllersMixin:
     def face_use_offset_parent_matrix(self):
         c=self._cmds
         fit=c.ls("FitSkeleton",long=True,type="transform") or []
+        if not fit: fit=c.ls("FaceFitSkeleton",long=True,type="transform") or []
         return bool(len(fit)==1 and c.attributeQuery("useOffsetParentMatrix",node=fit[0],exists=True)
                     and c.getAttr(fit[0]+".useOffsetParentMatrix"))
 

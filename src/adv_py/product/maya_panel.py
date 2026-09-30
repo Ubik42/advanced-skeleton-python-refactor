@@ -311,7 +311,7 @@ def create_panel(controller: MayaPanelController | None = None):
                              '01 · 目标网格', '02 · 可移植目标资产')),
                     ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit', '03 · Lip Fit', '04 · Face 定位点', '05 · Tongue Fit')),
                     ('Build', ('03 · 控制与变形器',)),
-                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03O · Blink 与 Wide', '03I · Lip 绑定', '03G · Lip Falloff', '03K · Face Cage', '03L · Face 表情修形', '03J · Jaw 绑定与修形', '03F · Tongue 绑定', '03H · Regions', '03M · Eye Aim 与 UpMidLo', '03N · Phonemes 与 Emotions')),
+                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03O · 原版眼部绑定与修形', '03I · Lip 绑定', '03G · Lip Falloff', '03K · Face Cage', '03L · Face 表情修形', '03J · Jaw 绑定与修形', '03F · Tongue 绑定', '03H · Regions', '03M · Eye Aim 与 UpMidLo', '03N · Phonemes 与 Emotions')),
                     ('Skin Layers', ('03a · Face Skin Layers',)),
                     ('Tweaks', ('03A · Face Tweaks',)),
                     ('DeltaMush', ('03B · Face DeltaMush',)),
@@ -1545,6 +1545,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("Head 关节", self.face_fit_head)])
             form.addRow(self._button("建立 EyeBall Fit",
                                      self._face_fit_eye_ball, primary=True))
+            form.addRow(self._button("创建所选 Pupil 边环 Fit",lambda:self._face_fit_marker("Pupil")))
+            form.addRow(self._button("创建所选 Iris 边环 Fit",lambda:self._face_fit_marker("Iris")))
             stack.addWidget(group)
             group, form = self._group("02 · EyeLid Fit", [])
             form.addRow(QtWidgets.QLabel(
@@ -1764,7 +1766,10 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("传递 Extras 权重",lambda: self._face_expression("extras")))
             form.addRow(self._button("完成 Face 关节绑定",lambda: self._face_expression("finish")))
             stack.addWidget(group)
-            group, form = self._group("03O · Blink 与 Wide", [])
+            group, form = self._group("03O · 原版眼部绑定与修形", [])
+            form.addRow(self._button("按原版准备双侧 Fit",lambda:self._face_expression("prepare_fit_sides")))
+            form.addRow(self._button("建立原版 EyeBall 绑定",lambda:self._face_expression("eye_ball")))
+            form.addRow(self._button("建立原版 Pupil／Iris",lambda:self._face_expression("pupil_iris")))
             for stage,label in (("blink","Blink"),("wide","Wide")):
                 row=QtWidgets.QHBoxLayout()
                 row.addWidget(self._button(label+" 修形",lambda stage=stage:self._face_expression(stage)))

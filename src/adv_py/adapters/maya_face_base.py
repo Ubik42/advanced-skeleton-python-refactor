@@ -164,8 +164,9 @@ class MayaFaceBaseMixin:
         # asFaceBuild source 31155: Multi Skin Clusters enables OPM before building.
         fit=self._fit(required=True)
         if c.objExists(fit+".MultiSkinClusters") and c.getAttr(fit+".MultiSkinClusters"):
-            plug=fit+".useOffsetParentMatrix"
-            if not c.objExists(plug): c.addAttr(fit,longName="useOffsetParentMatrix",attributeType="bool")
+            target="FitSkeleton" if c.objExists("FitSkeleton") else fit
+            plug=target+".useOffsetParentMatrix"
+            if not c.objExists(plug): c.addAttr(target,longName="useOffsetParentMatrix",attributeType="bool")
             locked=c.getAttr(plug,lock=True)
             c.setAttr(plug,lock=False)
             c.setAttr(plug,True)

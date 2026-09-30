@@ -2,6 +2,8 @@
 
 EXPRESSION_STAGES={
     "blink":"fit_original_face_eye_blink","blink_finish":"finish_original_face_eye_blink",
+    "eye_ball":"create_original_face_eye_ball","pupil_iris":"create_original_face_pupil_iris",
+    "prepare_fit_sides":"prepare_original_face_fit_sides",
     "wide":"fit_original_face_eye_wide","wide_finish":"finish_original_face_eye_wide",
     "squint":"fit_original_face_squint","squint_finish":"finish_original_face_squint",
     "smile":"fit_original_face_smile_pull","smile_finish":"finish_original_face_smile_pull",
@@ -21,10 +23,12 @@ class FitFaceExpression:
         source=self.host.capture_face_cage_input() if stage in ("smile","snarl","up_mid_lo") else None
         if stage in ("smile","snarl","up_mid_lo") and source is None: return None
         if stage=="finish": source=self.host.preflight_original_face_finish()
+        if stage in ("eye_ball","pupil_iris"):
+            source=self.host.capture_original_face_eye_input() if stage=="eye_ball" else self.host.capture_original_face_pupil_input()
         with self.host.transaction("Face 表情修形："+stage):
             before=self.host.capture_face_build_node_ids()
             method=getattr(self.host,EXPRESSION_STAGES[stage])
-            result=method(source) if stage in ("smile","snarl","up_mid_lo","finish") else method()
+            result=method(source) if stage in ("smile","snarl","up_mid_lo","finish","eye_ball","pupil_iris") else method()
             if result:
                 # Narrow Smile/Frown introduces the two visible SmilePull
                 # controls; retain their neutral pose before later Face stages.
@@ -33,5 +37,5 @@ class FitFaceExpression:
                 if stage=="extras": skins=result
                 if stage=="extra_drivers": self.host.extend_face_build_pose(result)
                 if isinstance(result,dict) and result.get("controls"): self.host.extend_face_build_pose(result["controls"])
-                if stage!="finish": self.host.register_face_module_nodes(before,"FaceExpressionSet",reuse=True,production_skins=skins)
+                if stage not in ("finish","prepare_fit_sides"): self.host.register_face_module_nodes(before,"FaceExpressionSet",reuse=True,production_skins=skins)
             return result
