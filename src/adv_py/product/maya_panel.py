@@ -311,11 +311,11 @@ def create_panel(controller: MayaPanelController | None = None):
                              '01 · 目标网格', '02 · 可移植目标资产')),
                     ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit')),
                     ('Build', ('03 · 控制与变形器',)),
-                    ('Build ...', ()),
+                    ('Build ...', ('03D · Jaw 权重参考曲线',)),
                     ('Skin Layers', ('03a · Face Skin Layers',)),
                     ('Tweaks', ('03A · Face Tweaks',)),
                     ('DeltaMush', ('03B · Face DeltaMush',)),
-                    ('HeadSquash', ()), ('WrinkleMap', ()),
+                    ('HeadSquash', ('03C · Face HeadSquash',)), ('WrinkleMap', ()),
                     ('BlendShapes', ('04 · 表情与口型动画',
                                      '05 · 面部资产版本',
                                      '06 · 合并同一目标的三个版本')),
@@ -1655,6 +1655,13 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("构建面部控制", self._face_build, primary=True))
             stack.addWidget(group)
 
+            group, form = self._group("03D · Jaw 权重参考曲线", [])
+            form.addRow(QtWidgets.QLabel(
+                "使用 Jaw、Cheek、Nose、Throat Fit 标记与 upperLipOuterCurve，生成四条 Jaw 权重参考曲线。"))
+            form.addRow(self._button("生成 Jaw 权重参考曲线",
+                                     self._face_build_jaw_fit_curves))
+            stack.addWidget(group)
+
             group, form = self._group("03a · Face Skin Layers", [])
             self.face_skin_layers_group = group
             form.addRow(self._button("Normal",
@@ -1717,6 +1724,19 @@ def create_panel(controller: MayaPanelController | None = None):
                                      self._face_delta_mush_zero_selected))
             form.addRow(self._button("Paint DeltaMush",
                                      self._face_delta_mush_paint))
+            stack.addWidget(group)
+
+            group, form = self._group("03C · Face HeadSquash", [])
+            form.addRow(self._button("创建 HeadSquash",
+                lambda: self._face_head_squash("create")))
+            form.addRow(self._button("删除 HeadSquash",
+                lambda: self._face_head_squash("delete")))
+            form.addRow(QtWidgets.QLabel("限定头部影响，避免身体其他部位被压缩"))
+            form.addRow(self._button("优化 HeadSquash 影响范围",
+                lambda: self._face_head_squash("optimize")))
+            form.addRow(QtWidgets.QLabel("选择头发等对象后，将它加入头部压缩变形"))
+            form.addRow(self._button("加入所选对象",
+                lambda: self._face_head_squash("include")))
             stack.addWidget(group)
 
             performance, self.face_performance_document = self._file_field("面部动画文档")
@@ -3709,6 +3729,21 @@ def create_panel(controller: MayaPanelController | None = None):
                     f"损坏引用 {len(invalid)} 个。"
                     + ("\n" + "\n".join(f"{item.name}/{item.release}：{item.reason}"
                         for item in invalid[:3]) if invalid else ""))
+
+        def _face_build_jaw_fit_curves(self):
+            curves = self.controller.face_build_jaw_fit_curves(self._namespace())
+            return f"已建立 {len(curves)} 条 Jaw 权重参考曲线，保存在 Face Fit 中"
+
+        def _face_head_squash(self, action):
+            result = self.controller.face_head_squash(self._namespace(), action)
+            if action == "create":
+                return f"已创建 HeadSquash：{len(result.controls)} 个控制器、晶格、样条 IK 与体积补偿"
+            if action == "delete":
+                return "已删除 HeadSquash" if result else "当前角色没有 HeadSquash"
+            if action == "optimize":
+                return (f"HeadSquash 保留 {result['retained_vertices']} 个头部顶点，"
+                        f"移除 {result['removed_vertices']} 个其他顶点")
+            return f"已将 {result} 个所选对象或组件加入 HeadSquash"
 
         def _face_library_add(self):
             entry = self.controller.face_library_add(self._face_library_dir(),

@@ -29,7 +29,7 @@ _NODE_RESULTS |= {'duplicateCurve'}
 _CREATE |= {'duplicateCurve'}
 _NODE_ARGS |= {'polyNormalPerVertex', 'polySoftEdge'}
 _CREATE |= {'polySoftEdge'}
-_NODE_ARGS |= {'move', 'scale', 'rebuildCurve'}
+_NODE_ARGS |= {'move', 'scale', 'rotate', 'rebuildCurve'}
 _NODE_ARGS |= {'spaceLocator'}
 _NODE_RESULTS |= {'spaceLocator'}
 _CREATE |= {'spaceLocator'}
@@ -45,6 +45,13 @@ _NODE_RESULTS |= {'tangentConstraint', 'expression'}
 _CREATE |= {'tangentConstraint', 'expression'}
 _NODE_ARGS |= {'geomBind'}
 _CREATE |= {'geomBind'}
+_NODE_ARGS |= {'lattice', 'cluster'}
+_NODE_RESULTS |= {'lattice', 'cluster'}
+_CREATE |= {'lattice', 'cluster'}
+_NODE_ARGS |= {'geometryConstraint', 'normalConstraint'}
+_NODE_RESULTS |= {'geometryConstraint', 'normalConstraint'}
+_CREATE |= {'geometryConstraint', 'normalConstraint', 'shadingNode'}
+_NODE_RESULTS |= {'shadingNode'}
 
 
 class MayaCharacterCommands:
@@ -93,13 +100,17 @@ class MayaCharacterCommands:
                 if args:args[0]=address(args[0])
             elif name=='attributeQuery':
                 pass  # First positional argument is an attribute identifier.
-            elif name=='createNode':
+            elif name in ('createNode', 'shadingNode'):
                 pass  # First positional argument is a node type.
-            elif name=='pointOnPolyConstraint':
+            elif name in ('pointOnPolyConstraint', 'geometryConstraint', 'normalConstraint'):
                 # A selected mesh may live outside the character namespace.
                 # The first argument identifies a polygon face target;
                 # constrained objects and named new nodes remain owned.
                 args=[args[0]]+[address(a) for a in args[1:]]
+            elif name in ('lattice', 'duplicate'):
+                # Face / Pre explicitly chooses production geometry, which may
+                # sit in a model namespace. New lattice nodes stay in the rig.
+                args=[self._map(a,identity.to_scene) for a in args]
             elif name in _NODE_ARGS or name in ('select','listAttr'):
                 args=[address(a) for a in args]
             for flag in ('name','n','parent','p','node','startJoint','sj','endEffector','ee','worldUpObject','curve'):
@@ -109,7 +120,7 @@ class MayaCharacterCommands:
                     continue
                 if flag in kwargs and isinstance(kwargs[flag],str):kwargs[flag]=address(kwargs[flag])
             if name=='sets':
-                for flag in ('add', 'isMember'):
+                for flag in ('add', 'isMember', 'remove', 'rm', 'forceElement'):
                     if flag in kwargs and isinstance(kwargs[flag], str):
                         kwargs[flag]=address(kwargs[flag])
             if name=='skinCluster' and 'addInfluence' in kwargs:

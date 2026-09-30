@@ -2298,6 +2298,25 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)).execute(
                 simpler_eyelid=simpler_eyelid)
 
+    def face_build_jaw_fit_curves(self, namespace: str):
+        from adv_py.adapters.maya_face_jaw_fit import MayaFaceJawFitHost
+        from adv_py.application.face_jaw_fit import BuildFaceJawFitCurves
+        return BuildFaceJawFitCurves(MayaFaceJawFitHost(
+            namespace=None if namespace == ":" else namespace)).apply()
+
+    def face_head_squash(self, namespace: str, action: str):
+        from adv_py.adapters.maya_face_head_squash import MayaFaceHeadSquashHost
+        from adv_py.application.face_head_squash import (
+            BuildFaceHeadSquash, DeleteFaceHeadSquash,
+            OptimizeFaceHeadSquash, IncludeSelectedInHeadSquash)
+        services = {"create": BuildFaceHeadSquash, "delete": DeleteFaceHeadSquash,
+                    "optimize": OptimizeFaceHeadSquash,
+                    "include": IncludeSelectedInHeadSquash}
+        if action not in services:
+            raise ValueError("HeadSquash 操作无效")
+        host = MayaFaceHeadSquashHost(namespace=None if namespace == ":" else namespace)
+        return services[action](host).apply()
+
     def face_delete_advanced(self, namespace: str, *,
                              keep_build_pose: bool = False) -> bool:
         from adv_py.adapters.maya_face_eyelid_rig import MayaFaceEyeLidRigHost

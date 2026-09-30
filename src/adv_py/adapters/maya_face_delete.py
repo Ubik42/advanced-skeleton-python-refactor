@@ -84,10 +84,27 @@ class MayaFaceDeleteMixin:
                     "FaceAllSet 错误包含必须保留的节点：" + protected)
         skin_plans = []
         geometry_paths = set()
+        # HeadSquash owns a Skin on its generated lattice. It is part of the
+        # disposable Face graph, rather than a production mesh Skin to retain.
+        squash_set = self._face_delete_one("SquashSet", "objectSet")
+        squash_members = set()
+        if squash_set is not None:
+            squash_members = {(c.ls(member, long=True) or [None])[0]
+                              for member in c.sets(squash_set, query=True) or ()}
+        transient_skins = set()
         for skin in c.ls(type="skinCluster") or ():
             skin_path = (c.ls(skin, long=True) or [None])[0]
             if skin_path is None:
                 continue
+            if skin_path in squash_members and skin_path in owned:
+                geometry = c.skinCluster(skin_path, query=True, geometry=True) or ()
+                paths = tuple((c.ls(shape, long=True) or [None])[0]
+                              for shape in geometry)
+                if paths and all(shape is not None and any(
+                        shape == node or shape.startswith(node + "|")
+                        for node in owned) for shape in paths):
+                    transient_skins.add(skin_path)
+                    continue
             influences = []
             for influence in c.skinCluster(skin_path, query=True,
                                            influence=True) or ():
@@ -120,8 +137,9 @@ class MayaFaceDeleteMixin:
                 tuple(self._face_delete_id(path) for path in generated),
                 len(generated) == len(influences), tuple(geometry)))
         deletable = tuple(path for path in owned
-                          if c.nodeType(path) not in (
+                          if (c.nodeType(path) not in (
                               "skinCluster", "mesh", "objectSet")
+                              or path in transient_skins)
                           and path not in geometry_paths)
         if any(any(geometry.startswith(path + "|")
                    for geometry in geometry_paths)
@@ -129,8 +147,11 @@ class MayaFaceDeleteMixin:
             raise FitSkeletonValidationError(
                 "Face 删除范围包含蒙皮模型的父级")
         extra = tuple(node for name in ("asFaceBS", "asFaceDeltaMush",
-                                       "FaceControlSet")
+                                       "FaceControlSet", "SquashSet",
+                                       "FaceAreas", "FaceBuildingSets")
                       if (node := self._face_delete_one(name)) is not None)
+        extra = tuple(dict.fromkeys((*extra, *(path for path in owned
+            if c.nodeType(path) == "objectSet" and path != face_set))))
         for path in (*owned, *extra, face_set, fit, head):
             if c.referenceQuery(path, isNodeReferenced=True):
                 raise FitSkeletonValidationError(
@@ -195,6 +216,13 @@ class MayaFaceDeleteMixin:
             for geometry in skin.geometry:
                 if c.objExists(geometry):
                     c.skinPercent(skin.path, geometry, normalize=True)
+        squash_info = self._face_delete_one("squashIKCurveInfo")
+        if squash_info is not None and squash_info in plan.owned_paths:
+            c.delete(squash_info)
+        transient = tuple(path for path in plan.owned_paths
+                          if c.objExists(path) and c.nodeType(path) in ("skinCluster", "ffd", "cluster"))
+        if transient:
+            c.delete(transient)
         # Delete the independent DG nodes and only the outermost DAG roots.
         nodes = tuple(path for path in plan.owned_paths if c.objExists(path))
         node_set = set(nodes)

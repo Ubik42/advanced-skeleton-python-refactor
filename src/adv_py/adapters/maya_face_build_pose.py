@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from adv_py.core.body_build_pose import (
     BodyBuildPoseOverrides, BodyBuildPosePlan, BodyBuildPoseValue,
@@ -48,10 +49,16 @@ class MayaFaceBuildPoseMixin:
             raise ValueError("Face 构建姿态控制器路径无效")
         rows = self._face_pose_rows(controls)
         plan = plan_body_build_pose(rows)
-        control_set = c.sets(empty=True, name="FaceControlSet")
+        control_set = (c.ls("FaceControlSet", type="objectSet") or [None])[0]
+        if control_set is None:
+            control_set = c.sets(empty=True, name="FaceControlSet")
         c.sets(controls, add=control_set)
-        pose = c.createNode("transform", name="faceBuildPose",
-                            parent=motion[0], skipSelect=True)
+        pose = (c.ls("faceBuildPose", long=True, type="transform") or [None])[0]
+        if pose is not None and self._face_pose_numeric_rows():
+            return self.extend_face_build_pose(controls)
+        if pose is None:
+            pose = c.createNode("transform", name="faceBuildPose",
+                                parent=motion[0], skipSelect=True)
         for attribute in ("translateX", "translateY", "translateZ",
                           "rotateX", "rotateY", "rotateZ",
                           "scaleX", "scaleY", "scaleZ", "visibility"):
@@ -63,7 +70,8 @@ class MayaFaceBuildPoseMixin:
         for attribute, value in (("udAttr", mel_pose), ("udExtraAttr", ""),
                                  ("advPyPoseData", json.dumps(rows,
                                      separators=(",", ":")))):
-            c.addAttr(pose, longName=attribute, dataType="string")
+            if not c.objExists(pose + "." + attribute):
+                c.addAttr(pose, longName=attribute, dataType="string")
             c.setAttr(pose + "." + attribute, value, type="string")
         self._transaction_changed = True
         members = set(c.ls(c.sets(control_set, query=True) or [],
@@ -73,6 +81,103 @@ class MayaFaceBuildPoseMixin:
             raise RuntimeError("Face 构建姿态写后读回不一致")
         return len(plan.values)
 
+    def _face_pose_numeric_rows(self):
+        """Read Python data or original numeric setAttr pose statements."""
+        c = self._cmds
+        pose = "faceBuildPose"
+        if c.objExists(pose + ".advPyPoseData"):
+            rows = json.loads(c.getAttr(pose + ".advPyPoseData"))
+            if not isinstance(rows, list):
+                raise ValueError("Face 构建姿态数据不是通道列表")
+            return rows
+        # Legacy udAttr is data here; never evaluate an embedded MEL program.
+        source = c.getAttr(pose + ".udAttr") if c.objExists(pose + ".udAttr") else ""
+        rows = []
+        numeric = r"[-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?"
+        pattern = re.compile(r'setAttr\s+(?:"([^"\n]+)"|([^\s";]+))\s+(' + numeric + r')\s*')
+        for statement in (source or "").split(";"):
+            if not statement.strip():
+                continue
+            match = pattern.fullmatch(statement.strip())
+            if match is None:
+                raise ValueError("原版 Face 构建姿态包含非数值 setAttr 指令")
+            plug = match.group(1) or match.group(2)
+            node, attribute = plug.rsplit(".", 1)
+            paths = c.ls(node, long=True, type="transform") or []
+            if len(paths) != 1:
+                raise ValueError("Face 构建姿态节点不存在或不唯一：" + node)
+            long_attr = c.attributeQuery(attribute, node=paths[0], longName=True)
+            rows.append([paths[0], long_attr, float(match.group(3))])
+        return rows
+
+    def _write_face_pose_numeric_rows(self, rows):
+        self._require_transaction()
+        c = self._cmds
+        plan = plan_body_build_pose(tuple(tuple(row) for row in rows))
+        for attribute in ("advPyPoseData", "udAttr"):
+            if not c.objExists("faceBuildPose." + attribute):
+                c.addAttr("faceBuildPose", longName=attribute, dataType="string")
+        c.setAttr("faceBuildPose.advPyPoseData", json.dumps(rows, separators=(",", ":")), type="string")
+        statements = "".join(
+            f'setAttr "{self.scene_address(item.node)}.{item.attribute}" {item.value:.17g};'
+            for item in plan.values)
+        c.setAttr("faceBuildPose.udAttr", statements, type="string")
+        self._transaction_changed = True
+        return len(plan.values)
+
+    def extend_face_build_pose(self, controls):
+        """Append controls without replacing the original Face pose or set."""
+        self._require_transaction()
+        c = self._cmds
+        current = self._face_pose_numeric_rows()
+        additions = self._face_pose_rows(tuple(controls))
+        rows = {(node, attr): [node, attr, value] for node, attr, value in current}
+        for node, attr, value in additions:
+            rows.setdefault((node, attr), [node, attr, value])
+        count = self._write_face_pose_numeric_rows(list(rows.values()))
+        c.sets(tuple(controls), add="FaceControlSet")
+        return count
+
+    def remove_face_build_pose_controls(self, controls):
+        """Remove only deleted controls, retaining every other build value."""
+        self._require_transaction()
+        c = self._cmds
+        if not c.objExists("faceBuildPose"):
+            return
+        names = set(controls)
+        def kept(row):
+            return row[0].rsplit("|", 1)[-1].rsplit(":", 1)[-1] not in names
+        if c.objExists("faceBuildPose.advPyPoseData"):
+            rows = json.loads(c.getAttr("faceBuildPose.advPyPoseData"))
+        else:
+            # Filter before resolving legacy paths, since controls have already
+            # been removed from the scene by the deletion operation.
+            source = c.getAttr("faceBuildPose.udAttr") or ""
+            statements = []
+            for statement in source.split(";"):
+                parts = statement.strip().split()
+                if len(parts) >= 2:
+                    node = parts[1].strip('"').split(".", 1)[0]
+                    if node.rsplit("|", 1)[-1].rsplit(":", 1)[-1] in names:
+                        continue
+                if statement.strip(): statements.append(statement)
+            c.setAttr("faceBuildPose.udAttr", ";".join(statements) + ";", type="string")
+            rows = self._face_pose_numeric_rows()
+        retained = [row for row in rows if kept(row)]
+        if retained:
+            self._write_face_pose_numeric_rows(retained)
+        else:
+            if not c.objExists("faceBuildPose.advPyPoseData"):
+                c.addAttr("faceBuildPose", longName="advPyPoseData", dataType="string")
+            c.setAttr("faceBuildPose.advPyPoseData", "[]", type="string")
+            c.setAttr("faceBuildPose.udAttr", "", type="string")
+            self._transaction_changed = True
+        fit = "FaceFitSkeleton"
+        if c.objExists(fit + ".advPyBuildPoseOverrides"):
+            overrides = json.loads(c.getAttr(fit + ".advPyBuildPoseOverrides"))
+            c.setAttr(fit + ".advPyBuildPoseOverrides", json.dumps(
+                [row for row in overrides if kept(row)], separators=(",", ":")), type="string")
+
     def read_face_build_pose_base(self) -> BodyBuildPosePlan:
         c = self._cmds
         pose = self.scene_address("faceBuildPose")
@@ -80,16 +185,14 @@ class MayaFaceBuildPoseMixin:
         pose_paths = c.ls(pose, long=True, type="transform") or []
         motion_paths = c.ls("FaceMotionSystem", long=True,
                             type="transform") or []
-        if (not c.objExists(pose + ".advPyPoseData")
+        if (not c.objExists(pose)
                 or not c.objExists(control_set)
                 or c.nodeType(control_set) != "objectSet"
                 or len(pose_paths) != 1 or len(motion_paths) != 1
                 or (c.listRelatives(pose_paths[0], parent=True,
                                     fullPath=True) or []) != motion_paths):
             raise ValueError("当前角色缺少 Face 构建姿态记录")
-        rows = json.loads(c.getAttr(pose + ".advPyPoseData"))
-        if not isinstance(rows, list):
-            raise ValueError("Face 构建姿态数据不是通道列表")
+        rows = self._face_pose_numeric_rows()
         for member in c.sets(control_set, query=True) or []:
             matches = c.ls(member, long=True, type="transform") or []
             if len(matches) != 1:

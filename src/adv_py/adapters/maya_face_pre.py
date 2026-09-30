@@ -26,6 +26,25 @@ class MayaFacePreHost(MayaFaceHost):
             raise FitSkeletonValidationError("FaceFitSkeleton 缺失或不唯一；先记录 Mask")
         return matches[0] if matches else None
 
+    def face_skin_cluster(self, mesh):
+        """Find the Skin deforming this mesh, excluding upstream lattice Skin."""
+        c = self._cmds
+        shapes = c.listRelatives(mesh,shapes=True,noIntermediate=True,
+                                 fullPath=True,type="mesh") or []
+        if len(shapes) != 1:
+            raise FitSkeletonValidationError("Face 网格需要唯一可见 Shape")
+        mesh_ids = set(c.ls((mesh,shapes[0]),uuid=True) or [])
+        skins = []
+        for node in dict.fromkeys(c.listHistory(shapes[0],pruneDagObjects=True) or []):
+            if c.nodeType(node) != "skinCluster": continue
+            geometry = c.skinCluster(node,query=True,geometry=True) or []
+            geometry_ids = set(c.ls(geometry,uuid=True) or []) if geometry else set()
+            if mesh_ids & geometry_ids:
+                skins.append(node)
+        if len(skins) != 1:
+            raise FitSkeletonValidationError("Face 网格需要唯一直接蒙皮 Skin")
+        return skins[0]
+
     def active_face_side(self) -> FaceSide:
         fit = self._fit(required=True)
         c = self._cmds

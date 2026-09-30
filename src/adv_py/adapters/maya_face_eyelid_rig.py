@@ -29,13 +29,14 @@ from .maya_face_pre import MayaFacePreHost
 from .maya_face_lower_outer_auxiliary import MayaFaceLowerOuterAuxiliaryMixin
 from .maya_face_build_pose import MayaFaceBuildPoseMixin
 from .maya_face_delete import MayaFaceDeleteMixin
+from .maya_face_base import MayaFaceBaseMixin, FACE_BASE_NAMES
 
 
 _COMPONENT = re.compile(r"\.((?:e)|(?:f)|(?:vtx))\[(\d+)\]$")
 _CLOSED_LOWER_UPWARD_FOLLOW = .6
 
 
-class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
+class MayaFaceEyeLidRigHost(MayaFaceBaseMixin, MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
                             MayaFaceLowerOuterAuxiliaryMixin,
                             MayaDenseSkinHost, MayaFacePreHost):
     def capture_face_build_node_ids(self) -> frozenset[str]:
@@ -47,8 +48,6 @@ class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
         """Persist the actual Face graph so Delete Face has an exact boundary."""
         self._require_transaction()
         c = self._cmds
-        if c.objExists(self.scene_address("FaceAllSet")):
-            raise FitSkeletonValidationError("FaceAllSet 已存在，拒绝覆盖")
         created = []
         for path in c.ls(long=True) or ():
             ids = c.ls(path, uuid=True) or ()
@@ -75,7 +74,9 @@ class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
                 raise RuntimeError("Face 构建所有权缺少关键节点：" + required)
         if len(c.ls("FaceControlSet", type="objectSet") or ()) != 1:
             raise RuntimeError("Face 构建缺少控制器选择集")
-        face_set = c.sets(empty=True, name=self.scene_address("FaceAllSet"))
+        face_set = (c.ls("FaceAllSet", type="objectSet") or [None])[0]
+        if face_set is None:
+            face_set = c.sets(empty=True, name=self.scene_address("FaceAllSet"))
         c.sets(tuple(members), add=face_set)
         self._transaction_changed = True
         recorded = set()
@@ -86,7 +87,7 @@ class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
             recorded.update(c.ls(matches[0], uuid=True) or ())
         expected = {identifier for path in members
                     for identifier in (c.ls(path, uuid=True) or ())}
-        if recorded != expected:
+        if not expected <= recorded:
             raise RuntimeError("FaceAllSet 登记的节点身份不完整")
 
     def read_built_eye_lid_mode(self) -> bool | None:
@@ -663,7 +664,7 @@ class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
                 arcs[side][(EyeLidLayer.MAIN, "lower")], positions[side])
             vertical_follow_radii[side] = min(eye_radii[side],
                                                aperture_height)
-        names = ["FaceJoint_M", "EyeLidJoints_M", "FaceMotionSystem",
+        names = [*FACE_BASE_NAMES, "FaceJoint_M", "EyeLidJoints_M", "FaceMotionSystem",
                  "FaceControlSet", "FaceAllSet", "faceBuildPose"]
         for side in FaceSide:
             suffix = "_R" if side is FaceSide.RIGHT else "_L"
@@ -747,8 +748,8 @@ class MayaFaceEyeLidRigHost(MayaFaceDeleteMixin, MayaFaceBuildPoseMixin,
             root = c.joint(name="EyeLidJoints_M")
             root = c.parent(root, face_joint, absolute=True)[0]
             c.setAttr(root + ".drawStyle", 2)
-            motion = c.createNode("transform", name="FaceMotionSystem",
-                                  parent=head)
+            motion = self.ensure_face_advanced_base(
+                head, mesh, self.read_face_objects(FacePreRole.ALL_HEAD) or (mesh,))
             c.addAttr(motion, longName="advPySimplerEyeLid",
                       attributeType="bool", defaultValue=mode.simpler_eyelid)
             c.setAttr(motion + ".advPySimplerEyeLid", lock=True)

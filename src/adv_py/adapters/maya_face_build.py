@@ -113,14 +113,13 @@ class MayaFaceBuildHost(MayaFacePreHost):
         if len(heads or []) != 1:
             missing.append("HeadJoint")
         if len(face) == 1:
-            shapes = c.listRelatives(face[0], shapes=True,
-                                     noIntermediate=True, type="mesh") or []
-            history = c.listHistory(shapes[0], pruneDagObjects=True) if shapes else []
-            skins = [item for item in history or []
-                     if c.nodeType(item) == "skinCluster"]
-            if len(skins) != 1 or not heads or heads[0] not in [
-                    (c.ls(item, long=True) or [None])[0] for item in
-                    (c.skinCluster(skins[0], query=True, influence=True) or [])]:
+            try:
+                skin = self.face_skin_cluster(face[0])
+                influences = [(c.ls(item,long=True) or [None])[0] for item in
+                              (c.skinCluster(skin,query=True,influence=True) or [])]
+                if len(heads or []) != 1 or heads[0] not in influences:
+                    missing.append("Face Skin / HeadJoint")
+            except FitSkeletonValidationError:
                 missing.append("Face Skin / HeadJoint")
         for name in required_face_fit_nodes(include, non_symmetric):
             paths = c.ls(name, long=True, type="transform") or []
