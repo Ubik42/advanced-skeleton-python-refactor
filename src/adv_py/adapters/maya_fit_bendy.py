@@ -58,6 +58,38 @@ def _bendy_main_scale_source(source: str | None) -> bool:
 
 
 class MayaFitBendyMixin:
+    def _bendy_curve_skin_matches(
+            self, skin: str, curve: str,
+            influences: tuple[str, ...], cv_count: int) -> bool:
+        """Read the 6.925 start/middle/end CV weights, including 0.4 blends."""
+        if cv_count != len(influences) + 2:
+            return False
+        c = self._cmds
+        actual_influences = tuple(
+            _bendy_dag_name(path) for path in
+            (c.skinCluster(skin, query=True, influence=True) or ()))
+        if set(actual_influences) != set(influences):
+            return False
+        expected = [{influences[0]: 1.0} for _ in range(cv_count)]
+        for index in (cv_count - 2, cv_count - 1):
+            expected[index] = {influences[-1]: 1.0}
+        for index, joint in enumerate(influences[1:-1], start=1):
+            expected[index + 1] = {joint: 1.0}
+        expected[1] = {influences[0]: 0.6, influences[1]: 0.4}
+        expected[-2] = {influences[-1]: 0.6,
+                        influences[-2]: 0.4}
+        for index, weights in enumerate(expected):
+            actual = c.skinPercent(
+                skin, curve + f".cv[{index}]", query=True,
+                value=True) or ()
+            if (len(actual) != len(actual_influences)
+                    or any(abs(float(value)
+                               - weights.get(name, 0.0)) > 1e-4
+                           for name, value in zip(actual_influences,
+                                                  actual))):
+                return False
+        return True
+
     def capture_fit_bendy_end_local_length(self, end_body: str) -> float:
         c = self._cmds
         if (c.ls(end_body, long=True, type="joint") or []) != [end_body]:
@@ -400,6 +432,10 @@ class MayaFitBendyMixin:
                                    influence=True) or []
         if {name.rsplit("|", 1)[-1] for name in influences} != set(
                 spec.secondary_influence_names):
+            return False
+        if not self._bendy_curve_skin_matches(
+                spec.secondary_skin_name, curves[0],
+                spec.secondary_influence_names, 5):
             return False
         drivers = ((spec.control_names[1]
                     if spec.legacy_twist_outputs else
@@ -2506,6 +2542,10 @@ class MayaFitBendyMixin:
                                    influence=True) or []
         if {name.rsplit("|", 1)[-1] for name in influences} != set(
                 spec.influence_names):
+            return False
+        if not self._bendy_curve_skin_matches(
+                spec.skin_name, curve[0], spec.influence_names,
+                spec.control_count + 4):
             return False
         bend_drivers = (spec.control_names if spec.legacy_twist_outputs
                         else tuple(row[0] for row in
