@@ -742,6 +742,12 @@ class BuildRegisteredBodyCharacter:
                         is None
                         or chain.control_names[0] in
                         _generic_fk_policy.bendy_parented_end_controls),
+                    legacy_circular_factor=(
+                        _generic_fk_policy is not None
+                        and _generic_fk_policy.bendy_legacy_circular_controls
+                        is not None
+                        and chain.control_names[0] in
+                        _generic_fk_policy.bendy_legacy_circular_controls),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None

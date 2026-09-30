@@ -138,6 +138,7 @@ class MayaCharacterRegistryMixin:
         bendy_master_circular = set()
         bendy_legacy_start_icon = set()
         bendy_parented_end = set()
+        bendy_legacy_circular = set()
         for control in bendy_master_paths:
             stem, side = control.rsplit('_', 1)
             master_leaf = bendy_master_paths[control].rsplit('|', 1)[-1]
@@ -161,6 +162,17 @@ class MayaCharacterRegistryMixin:
                     raise CharacterRegistryError(
                         'Bendy Circular 节点类型错误：' + control)
                 bendy_master_circular.add(control)
+            circular_length = (namespace + 'AdvPy_' + stem
+                               + 'Circular_' + side + 'Length')
+            if c.objExists(circular_length):
+                marker = (circular_length
+                          + '.advPyBendyLocalChildFactor')
+                if not c.objExists(marker):
+                    bendy_legacy_circular.add(control)
+                elif (not bool(c.getAttr(marker))
+                      or not c.getAttr(marker, lock=True)):
+                    raise CharacterRegistryError(
+                        'Bendy Circular 系数标记已损坏：' + control)
             if c.objExists(old_output):
                 if c.objExists(new_output):
                     raise CharacterRegistryError(
@@ -379,7 +391,8 @@ class MayaCharacterRegistryMixin:
             frozenset(bendy_legacy_twist_outputs),
             frozenset(bendy_master_circular),
             frozenset(bendy_legacy_start_icon),
-            frozenset(bendy_parented_end))
+            frozenset(bendy_parented_end),
+            frozenset(bendy_legacy_circular))
 
     def character_rebuild_transaction(self,label):
         from contextlib import nullcontext

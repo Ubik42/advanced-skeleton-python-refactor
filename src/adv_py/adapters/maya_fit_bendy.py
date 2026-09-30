@@ -1172,8 +1172,20 @@ class MayaFitBendyMixin:
                       angle + ".inputMatrix")
         c.connectAttr(angle + ".outputRotateZ",
                       length + ".input1")
-        span = sum((a - b) ** 2 for a, b in zip(
-            spec.start_position, spec.end_position)) ** 0.5
+        if spec.legacy_circular_factor:
+            span = sum((a - b) ** 2 for a, b in zip(
+                spec.start_position, spec.end_position)) ** 0.5
+        else:
+            child = spec.part_names[0]
+            if not c.objExists(child + ".translateX"):
+                raise ValueError("Bendy Circular 缺少第一节 Part：" + child)
+            span = float(c.getAttr(child + ".translateX"))
+            if not isfinite(span):
+                raise ValueError("Bendy Circular 子关节位移无效：" + child)
+            c.addAttr(length, longName="advPyBendyLocalChildFactor",
+                      attributeType="bool", defaultValue=True)
+            c.setAttr(length + ".advPyBendyLocalChildFactor",
+                      lock=True)
         c.setAttr(length + ".input2",
                   -0.000375 * span * (-1 if spec.side == "L" else 1))
         c.connectAttr(length + ".output", amount + ".input1")
@@ -1196,6 +1208,12 @@ class MayaFitBendyMixin:
                     and _bendy_parent_name(
                         c, spec.control_names[0] + "Extra") == circular)
         relative, angle, length, amount = spec.circular_graph_names
+        if not spec.legacy_circular_factor:
+            marker = length + ".advPyBendyLocalChildFactor"
+            if (not c.objExists(marker)
+                    or not bool(c.getAttr(marker))
+                    or not c.getAttr(marker, lock=True)):
+                return False
         return (c.objExists(circular)
                 and c.nodeType(circular) == "transform"
                 and _bendy_parent_name(c, circular)
