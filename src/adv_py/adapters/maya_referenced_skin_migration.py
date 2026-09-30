@@ -198,7 +198,6 @@ class MayaReferencedSkinMigration:
                     c.createNode("hikSolver", name="hikSolver")
                 built = BuildRegisteredBodyCharacter(
                     MayaBodyBuildHost()).apply("FitSkeleton",
-                        infer_missing_labels=True,
                         include_segment_influences=False,
                         use_fit_part_hierarchy=False)
                 BuildAxialPartDeform(MayaAxialPartHost()).apply(guide=axial)

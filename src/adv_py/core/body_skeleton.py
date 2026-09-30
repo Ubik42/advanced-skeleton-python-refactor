@@ -55,7 +55,7 @@ class BodyJointSpec:
     parent_path: str | None
     side: FitBuildSide
     world_position: Vector3
-    label: JointLabel
+    label: JointLabel | None
     deform_profile: FitDeformProfile = FitDeformProfile()
     skin_enabled: bool = True
     rotation_order: int = 0
@@ -66,7 +66,7 @@ class BodyJointSpec:
     def from_symmetry(
         cls,
         instance: FitSymmetryInstance,
-        label: JointLabel,
+        label: JointLabel | None,
         deform_profile: FitDeformProfile = FitDeformProfile(),
         skin_enabled: bool = True,
         rotation_order: int = 0,

@@ -68,7 +68,6 @@ def schedule(scene: str, output_directory: str) -> None:
             panel.section_buttons[("Body", None)].click()
             panel.section_buttons[("Body", "Build")].click()
             panel.operation_buttons[("Body", "Build", "构建并登记角色")].click()
-            detail.infer_missing_fit_labels.setChecked(True)
             assert not detail.build_meshes.toPlainText().strip()
             assert detail.build_use_preparation_skin.isChecked()
             assert len(detail._build_mesh_paths()) == 2

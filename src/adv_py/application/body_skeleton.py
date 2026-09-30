@@ -59,24 +59,18 @@ class BodySkeletonHost(Protocol):
 class BodySkeletonBuildPlan:
     symmetry: FitSymmetryPlan
     specs: tuple[BodyJointSpec, ...]
-    missing_labels: tuple[str, ...]
     name_collisions: tuple[str, ...]
-    inferred_labels: tuple[str, ...] = ()
     fit_parts: tuple[FitPartJointSpec, ...] = ()
     fit_part_reparents: tuple[FitPartReparentSpec, ...] = ()
     build_options: BodyBuildOptions = BodyBuildOptions()
 
     @property
     def ready(self) -> bool:
-        return not self.missing_labels and not self.name_collisions
+        return not self.name_collisions
 
     @property
     def blockers(self) -> tuple[str, ...]:
         blockers: list[str] = []
-        if self.missing_labels:
-            blockers.append(
-                "Fit joints 缺少标签：" + "、".join(self.missing_labels)
-            )
         if self.name_collisions:
             blockers.append(
                 "场景中存在构建关节同名节点："
@@ -103,16 +97,13 @@ class BuildBodySkeleton:
         container_name: str = "FitSkeleton",
         *,
         center_tolerance: float = 0.01,
-        infer_missing_labels: bool = False,
         root_parent_path: str | None = None,
     ) -> BodySkeletonBuildPlan:
-        if not isinstance(infer_missing_labels, bool):
-            raise FitSkeletonValidationError("推断缺失关节标签必须是布尔值")
         symmetry = anchor_fit_symmetry(self._symmetry.execute(
             container_name,
             center_tolerance=center_tolerance,
         ), root_parent_path)
-        labels: dict[str, JointLabel] = {}
+        labels: dict[str, JointLabel | None] = {}
         profiles = {
             node.path: self._host.read_fit_deform_profile(node.path)
             for node in symmetry.source.hierarchy.joints
@@ -135,18 +126,12 @@ class BuildBodySkeleton:
             item.joint: item for item in symmetry.source.metadata}
         if len(metadata_by_joint) != len(symmetry.source.metadata):
             raise FitSkeletonValidationError("Fit 元数据关节路径重复")
-        missing_labels: list[str] = []
-        inferred_labels: list[str] = []
         for node in symmetry.source.hierarchy.joints:
             label = self._host.read_joint_label(node.path)
-            if label is None:
-                if infer_missing_labels:
-                    label = JointLabel.parse(node.short_name)
-                    inferred_labels.append(node.path)
-                else:
-                    missing_labels.append(node.path)
-            if label is not None:
-                labels[node.path] = label
+            # asLabel returns an empty string for ordinary unlabelled Fit
+            # joints. They still create Body/FK joints; labels mark IK and
+            # other special behaviour, not permission to build a joint.
+            labels[node.path] = label
         specs = tuple(
             BodyJointSpec.from_symmetry(
                 instance, labels[instance.source_joint],
@@ -165,32 +150,23 @@ class BuildBodySkeleton:
                                 in canonical_fingers))),
                 profile_presence[instance.source_joint])
             for instance in symmetry.instances
-            if instance.source_joint in labels
         )
         collisions = tuple(
             path
             for spec in specs
             for path in self._host.find_name_collisions(spec.name)
         )
-        fit_parts = (
-            plan_fit_part_joints(
-                symmetry.instances, symmetry.source.metadata, specs,
-                symmetry.source.hierarchy,
-                center_tolerance=0.01 * symmetry.source.fit_scale,
-                use_offset_parent_matrix=build_options.use_offset_parent_matrix)
-            if not missing_labels else ()
-        )
-        fit_part_reparents = (
-            plan_fit_part_reparents(
-                symmetry.instances, symmetry.source.metadata, fit_parts)
-            if not missing_labels else ()
-        )
+        fit_parts = plan_fit_part_joints(
+            symmetry.instances, symmetry.source.metadata, specs,
+            symmetry.source.hierarchy,
+            center_tolerance=0.01 * symmetry.source.fit_scale,
+            use_offset_parent_matrix=build_options.use_offset_parent_matrix)
+        fit_part_reparents = plan_fit_part_reparents(
+            symmetry.instances, symmetry.source.metadata, fit_parts)
         return BodySkeletonBuildPlan(
             symmetry,
             specs,
-            tuple(missing_labels),
             collisions,
-            tuple(inferred_labels),
             fit_parts,
             fit_part_reparents,
             build_options,
@@ -201,13 +177,11 @@ class BuildBodySkeleton:
         container_name: str = "FitSkeleton",
         *,
         center_tolerance: float = 0.01,
-        infer_missing_labels: bool = False,
         root_parent_path: str | None = None,
     ) -> BodySkeletonBuildResult:
         plan = self.plan(
             container_name,
             center_tolerance=center_tolerance,
-            infer_missing_labels=infer_missing_labels,
             root_parent_path=root_parent_path,
         )
         if not plan.ready:

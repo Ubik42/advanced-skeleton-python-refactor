@@ -37,7 +37,6 @@ def schedule(scene: str, output_directory: str) -> None:
             detail.roles.setCurrentItem(role)
             detail.build_meshes.setPlainText(
                 "|BodyMesh\n|GarmentMesh")
-            detail.infer_missing_fit_labels.setChecked(True)
             QtWidgets.QApplication.processEvents()
             data["build_entry_visible"] = (panel.isVisible()
                 and detail.isVisible() and detail.build_meshes.isVisible())

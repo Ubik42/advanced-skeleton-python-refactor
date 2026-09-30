@@ -35,7 +35,7 @@ class FitHierarchySnapshot:
 class FitHierarchyPolicy:
     expected_root_name: str = "Root"
     center_tolerance: float = 0.01
-    reject_underscores: bool = True
+    reject_underscores: bool = False
     reject_leading_digits: bool = True
 
     def __post_init__(self) -> None:
@@ -98,11 +98,11 @@ def audit_fit_hierarchy(
                     (root.path,),
                 )
             )
-        if abs(root.local_position[0]) > active_policy.center_tolerance:
+        if abs(root.world_position[0]) > active_policy.center_tolerance:
             issues.append(
                 FitHierarchyIssue(
                     "root_off_center",
-                    "根关节相对 FitSkeleton 的 X 位置超出中心容差",
+                    "根关节世界 X 位置超出中心容差",
                     (root.path,),
                 )
             )
@@ -122,8 +122,9 @@ def audit_fit_hierarchy(
                     (node.path,),
                 )
             )
-        # MEL's build-name check reserves this one suffix for its authored
-        # non-symmetry branch; all other underscores remain unsupported.
+        # The public MEL build warns about underscores and permits Continue
+        # Anyway. Name compatibility is therefore an explicit audit policy,
+        # not a structural failure for every Fit operation.
         if (active_policy.reject_underscores
                 and "_" in node.short_name.removesuffix("_NonSymmetry")):
             issues.append(

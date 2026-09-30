@@ -92,7 +92,7 @@ def main(scene: Path, volume_file: Path, angle_file: Path, axial_file: Path,
         cmds.delete(tuple(path for path in (cmds.listRelatives(
             fit_parent, children=True, fullPath=True) or ()) if path != fits[0]))
         BuildRegisteredBodyCharacter(MayaBodyBuildHost()).apply(
-            fits[0], infer_missing_labels=True)
+            fits[0])
         wrong_guide = deepcopy(axial)
         wrong_guide["nodes"]["FKRoot_M"]["world_matrix"][12] += 1.0
         try:

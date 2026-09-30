@@ -34,13 +34,12 @@ def main(scene: Path, report: Path) -> int:
             parent, children=True, fullPath=True) or ()) if path != fit)
         cmds.delete(siblings)
         result = BuildRegisteredBodyCharacter(host).apply(
-            fit, infer_missing_labels=True)
+            fit)
         built = tuple((node.short_name, node.world_position,
                        host.read_joint_label(node.path))
                       for node in host.capture_fit_hierarchy(fit).joints)
         report_data = {
             "source": scene.name,
-            "inferred_labels": len(result.skeleton.plan.build.inferred_labels),
             "body_count": len(result.skeleton.snapshot.joints),
             "registered_body_count": len(result.registration.body),
             "hand_control_count": (
@@ -66,8 +65,7 @@ def main(scene: Path, report: Path) -> int:
                 MayaBodyBuildHost().capture_body_skeleton("Root_M").joints)
             cmds.file(new=True, force=True)
         report_data["status"] = "passed" if (
-            report_data["inferred_labels"] == 30
-            and report_data["body_count"] == 74
+            report_data["body_count"] == 74
             and report_data["registered_body_count"] == 74
             and report_data["hand_control_count"] == 30
             and report_data["fit_unchanged"]

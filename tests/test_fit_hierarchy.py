@@ -73,7 +73,8 @@ class FitHierarchyTests(unittest.TestCase):
             ),
         )
 
-        issues = audit_fit_hierarchy(snapshot, FitHierarchyPolicy(center_tolerance=0.01))
+        issues = audit_fit_hierarchy(snapshot, FitHierarchyPolicy(
+            center_tolerance=0.01, reject_underscores=True))
 
         self.assertEqual(
             {issue.code for issue in issues},

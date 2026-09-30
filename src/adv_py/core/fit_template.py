@@ -15,8 +15,7 @@ from .joint_labels import JointLabel
 
 
 Vector3 = tuple[float, float, float]
-_SAFE_FIT_JOINT_NAME = re.compile(
-    r"^[A-Za-z][A-Za-z0-9]*(?:_NonSymmetry)?$")
+_SAFE_FIT_JOINT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,12 +23,12 @@ class FitJointSpec:
     name: str
     parent: str | None
     local_position: Vector3
-    label: JointLabel
+    label: JointLabel | None
 
     def __post_init__(self) -> None:
         if not _SAFE_FIT_JOINT_NAME.fullmatch(self.name):
             raise FitSkeletonValidationError(
-                "Fit joint 名称只能包含字母数字，或以原版 _NonSymmetry 结尾"
+                "Fit joint 名称须为不含路径或命名空间的有效 Maya 节点名"
             )
         if self.parent == self.name:
             raise FitSkeletonValidationError("Fit joint 不能以自身为父级")
@@ -37,8 +36,8 @@ class FitJointSpec:
             isfinite(float(value)) for value in self.local_position
         ):
             raise FitSkeletonValidationError("Fit joint 本地位置必须是有限三维向量")
-        if not isinstance(self.label, JointLabel):
-            raise FitSkeletonValidationError("Fit joint 必须提供有效标签")
+        if self.label is not None and not isinstance(self.label, JointLabel):
+            raise FitSkeletonValidationError("Fit joint 标签类型无效")
 
 
 @dataclass(frozen=True, slots=True)

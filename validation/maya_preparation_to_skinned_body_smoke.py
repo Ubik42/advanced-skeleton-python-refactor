@@ -50,7 +50,7 @@ def main(source: Path):
 
         try:
             BuildRegisteredSkinnedBodyCharacter(MayaBodyBuildHost()).apply(
-                meshes, infer_missing_labels=True, on_stage=fault)
+                meshes, on_stage=fault)
         except RuntimeError as error:
             assert str(error) == "injected failure", error
         else:
@@ -61,8 +61,7 @@ def main(source: Path):
                    for mesh in meshes)
         print("Referenced build rollback: OK", flush=True)
 
-        built = MayaPanelController().body_build(":", meshes=meshes,
-            infer_missing_labels=True)
+        built = MayaPanelController().body_build(":", meshes=meshes,)
         assert built.joint_count == 74
         skins = cmds.ls(type="skinCluster") or []
         assert len(skins) == 2, skins

@@ -772,7 +772,6 @@ class MayaPanelController:
     def body_build(self, namespace: str, container: str = "FitSkeleton", *,
                    spine_segments: int | None = None,
                    head_aim: bool = False,
-                   infer_missing_labels: bool = False,
                    meshes: tuple[str, ...] = (),
                    maximum_influences: int | None = None,
                    segment_influences: bool = True,
@@ -780,31 +779,35 @@ class MayaPanelController:
         from adv_py.application.character_from_fit import BuildCharacterFromFit
 
         host = self._host(namespace)
+        _ensure_body_build_centimeters()
+
+        def build(build_host):
+            return BuildCharacterFromFit(build_host).apply(
+                container, meshes=meshes, spine_segments=spine_segments,
+                maximum_influences=maximum_influences,
+                include_head_aim=head_aim,
+                include_segment_influences=segment_influences,
+                use_fit_part_hierarchy=fit_parts)
+
         if not host.find_name_collisions(container):
             from maya import cmds
+            from adv_py.application.fit_container import CreateFitSkeleton
+            from adv_py.application.registered_body_build import (
+                _JoinedTransactionHost)
 
             selected = cmds.ls(selection=True, long=True,
                                type="joint") or ()
-            if len(selected) == 1:
-                return self.body_build_from_source(
-                    namespace, selected[0], container,
-                    meshes=meshes,
-                    maximum_influences=maximum_influences,
-                    head_aim=head_aim,
-                    spine_segments=spine_segments,
-                    infer_missing_labels=infer_missing_labels,
-                    segment_influences=segment_influences,
-                    fit_parts=fit_parts)
-            raise ValueError(
-                "未找到 Fit 骨架；请只选中一个来源根关节后构建")
-        _ensure_body_build_centimeters()
-        result = BuildCharacterFromFit(host).apply(
-            container, meshes=meshes, spine_segments=spine_segments,
-            maximum_influences=maximum_influences,
-            include_head_aim=head_aim,
-            infer_missing_labels=infer_missing_labels,
-            include_segment_influences=segment_influences,
-            use_fit_part_hierarchy=fit_parts)
+            if not selected:
+                raise ValueError("未找到 FitSkeleton，也没有选中的来源关节")
+            # The original Build adopts the first selected chain directly.
+            # The separate source-conversion action remains an explicit tool.
+            with host.transaction("将选中骨架转为 Fit 并构建 Body"):
+                joined = _JoinedTransactionHost(host)
+                fit = CreateFitSkeleton(joined).apply(container)
+                joined.parent_selected_joint_under_fit(selected[0], fit.state.path)
+                result = build(joined)
+        else:
+            result = build(host)
         character = result.body
         return PanelCharacter(namespace, True, len(character.registration.body),
                               len(character.registration.channels),
@@ -827,7 +830,6 @@ class MayaPanelController:
                                maximum_influences: int | None = None,
                                head_aim: bool = False,
                                spine_segments: int | None = None,
-                               infer_missing_labels: bool = False,
                                segment_influences: bool = True,
                                fit_parts: bool = True) -> PanelCharacter:
         from adv_py.adapters.maya_source_skeleton_fit import (
@@ -849,7 +851,6 @@ class MayaPanelController:
                 maximum_influences=maximum_influences,
                 include_head_aim=head_aim,
                 spine_segments=spine_segments,
-                infer_missing_labels=infer_missing_labels,
                 include_segment_influences=segment_influences,
                 use_fit_part_hierarchy=fit_parts)
         except Exception:

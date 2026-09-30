@@ -88,10 +88,10 @@ class FakeController:
                     30 if self.built else 0, 157 if self.built else 0))
 
     def body_build(self, namespace, container, *, spine_segments, head_aim,
-                   infer_missing_labels, meshes=(), maximum_influences=4):
+                   meshes=(), maximum_influences=None):
         self.calls.append(("body_build", namespace, container,
                            spine_segments, head_aim,
-                           infer_missing_labels, meshes,
+                           meshes,
                            maximum_influences))
         self.built = True
         return PanelCharacter(namespace, True, 30, 157)
@@ -414,7 +414,6 @@ def main(report: Path) -> int:
     panel.external_fit_export.setChecked(True)
     buttons["导出当前 Fit"].click()
     buttons["构建并登记角色"].click()
-    panel.infer_missing_fit_labels.setChecked(True)
     buttons["构建并登记角色"].click()
     panel.build_meshes.setPlainText("|hero:BodyMesh\n|hero:GarmentMesh")
     panel.build_max_influences.setValue(6)
@@ -570,13 +569,10 @@ def main(report: Path) -> int:
             ("control_orient_custom_detach", "hero") in controller.calls
             and ("control_orient_custom_attach", "hero") in controller.calls,
         "role_selection_dispatches_application_action":
-            ("body_build", "hero", "FitSkeleton", None, False, False,
-             (), 4)
-            in controller.calls and
-            ("body_build", "hero", "FitSkeleton", None, False, True,
-             (), 4) in controller.calls and
-            ("body_build", "hero", "FitSkeleton", None, False, True,
-             ("|hero:BodyMesh", "|hero:GarmentMesh"), 6)
+            ("body_build", "hero", "FitSkeleton", None, False,
+             (), None) in controller.calls and
+            ("body_build", "hero", "FitSkeleton", None, False,
+             ("|hero:BodyMesh", "|hero:GarmentMesh"), None)
             in controller.calls,
         "external_fit_export_dispatches":
             ("fit_export", "hero", Path("C:/temp/sam.fit.json"),
@@ -612,11 +608,10 @@ def main(report: Path) -> int:
     panel.build_meshes.clear()
     panel.build_max_influences.setValue(4)
     panel.build_use_preparation_skin.setChecked(True)
-    panel.infer_missing_fit_labels.setChecked(True)
     message = panel._build_character()
     checks["preparation_skin_dispatches_build"] = (
-        "body_build", ":", "FitSkeleton", None, False, True,
-        ("|model:BodyMesh",), 4) in controller.calls and "1 套 Skin" in message
+        "body_build", ":", "FitSkeleton", None, False,
+        ("|model:BodyMesh",), None) in controller.calls and "1 套 Skin" in message
     payload = {**checks, "status": "passed" if all(checks.values()) else "failed",
                "image_size": [panel.width(), panel.height()],
                "animation_narrow_horizontal_overflow": animation_narrow_horizontal_overflow,

@@ -91,7 +91,7 @@ class FitSkeletonJointDocument:
     parent: str | None
     local_position: Vector3
     world_axes: AxisFrame
-    label: JointLabel
+    label: JointLabel | None
     metadata: tuple[FitSkeletonJointMetadataValue, ...] = ()
 
 
@@ -133,7 +133,7 @@ class FitSkeletonDocumentMergePlan:
 def fit_skeleton_document_from_snapshot(
     snapshot: FitOrientationSnapshot,
     settings: FitSkeletonSettings,
-    labels: tuple[tuple[str, JointLabel], ...],
+    labels: tuple[tuple[str, JointLabel | None], ...],
 ) -> FitSkeletonDocument:
     hierarchy_issues = audit_fit_hierarchy(snapshot.hierarchy)
     if hierarchy_issues:
@@ -161,7 +161,7 @@ def fit_skeleton_document_from_snapshot(
         )
     if len(label_map) != len(labels) or set(label_map) != set(hierarchy):
         raise FitSkeletonDocumentValidationError(
-            "FitSkeleton 导出需要每个关节的唯一标签"
+            "FitSkeleton 导出需要每个关节唯一的标签状态记录"
         )
     if settings.container != snapshot.hierarchy.container:
         raise FitSkeletonDocumentValidationError(
@@ -348,9 +348,8 @@ def fit_skeleton_document_from_json(text: str) -> FitSkeletonDocument:
         parent = item["parent"]
         if parent is not None:
             parent = _require_string(parent, "FitSkeleton joint parent")
-        label = JointLabel.parse(
-            _require_string(item["label"], "FitSkeleton joint label")
-        )
+        label = (None if item["label"] is None else JointLabel.parse(
+            _require_string(item["label"], "FitSkeleton joint label")))
         position = _vector3(
             item["local_position"],
             "FitSkeleton joint local_position",
@@ -775,7 +774,7 @@ def _document_payload(document: FitSkeletonDocument) -> dict[str, object]:
                 "parent": joint.parent,
                 "local_position": list(joint.local_position),
                 "world_axes": [list(axis) for axis in joint.world_axes],
-                "label": joint.label.text,
+                "label": joint.label.text if joint.label is not None else None,
                 "metadata": [
                     {"field": value.field.value, "value": value.value}
                     for value in joint.metadata

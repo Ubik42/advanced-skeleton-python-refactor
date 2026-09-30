@@ -473,7 +473,6 @@ class BuildRegisteredBodyCharacter:
 
     def apply(self, container_name: str = "FitSkeleton", *,
               axial_description=None, include_head_aim: bool = False,
-              infer_missing_labels: bool = False,
               include_segment_influences: bool = True,
               use_fit_part_hierarchy: bool = True,
               fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
@@ -498,6 +497,10 @@ class BuildRegisteredBodyCharacter:
         if not use_fit_part_hierarchy and fit_part_twist_sources:
             raise ValueError("扭转来源只能随通用 Fit Part 构建提供")
         if not _hierarchy_prepared:
+            confirm_names = getattr(self._host,
+                                    "confirm_body_fit_joint_names", None)
+            if confirm_names is not None:
+                confirm_names(container_name)
             hierarchy_collisions = tuple(
                 path for name in BODY_SYSTEM_RESERVED_NAMES
                 for path in self._host.find_name_collisions(name))
@@ -544,7 +547,6 @@ class BuildRegisteredBodyCharacter:
                     result = BuildRegisteredBodyCharacter(joined).apply(
                         fit_path, axial_description=axial_description,
                         include_head_aim=include_head_aim,
-                        infer_missing_labels=infer_missing_labels,
                         include_segment_influences=include_segment_influences,
                         use_fit_part_hierarchy=use_fit_part_hierarchy,
                         fit_part_twist_sources=fit_part_twist_sources,
@@ -568,7 +570,7 @@ class BuildRegisteredBodyCharacter:
                     if joined.scene_up_axis().value != original_up_axis:
                         joined.set_scene_up_axis(original_up_axis)
         preview = BuildOrientedBodySkeleton(self._host).plan(
-            container_name, infer_missing_labels=infer_missing_labels,
+            container_name,
             root_parent_path=_DEFORMATION_SYSTEM_PATH)
         if not preview.ready:
             raise FitSkeletonValidationError(
@@ -671,7 +673,7 @@ class BuildRegisteredBodyCharacter:
         with self._host.transaction("构建并登记完整 Body 角色"):
             joined = _JoinedTransactionHost(self._host)
             skeleton = BuildOrientedBodySkeleton(joined).apply(
-                container_name, infer_missing_labels=infer_missing_labels,
+                container_name,
                 root_parent_path=_DEFORMATION_SYSTEM_PATH)
             if use_fit_part_hierarchy and part_plan.fit_parts:
                 joined.prepare_fit_part_twist_runtime()

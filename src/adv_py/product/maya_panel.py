@@ -784,8 +784,6 @@ def create_panel(controller: MayaPanelController | None = None):
             self.spine_segments.setRange(0, 63)
             self.spine_segments.setSpecialValueText("自动读取 Fit")
             self.head_aim = QtWidgets.QCheckBox("包含头部瞄准控制")
-            self.infer_missing_fit_labels = QtWidgets.QCheckBox(
-                "按关节名补全缺失标签（原版 Fit 兼容）")
             self.build_meshes = QtWidgets.QPlainTextEdit()
             self.build_meshes.setPlaceholderText(
                 "每行一个未绑定网格的完整路径；留空时可使用 Preparation / Skin")
@@ -796,32 +794,11 @@ def create_panel(controller: MayaPanelController | None = None):
             self.build_use_preparation_skin = QtWidgets.QCheckBox(
                 "将 Preparation / Skin 模型同时绑定")
             self.build_use_preparation_skin.setChecked(False)
-            self.build_segment_influences = QtWidgets.QCheckBox(
-                "构建四肢及可用的标准躯干、手指分段关节")
-            self.build_segment_influences.setChecked(True)
-            self.build_fit_parts = QtWidgets.QCheckBox(
-                "按 Fit 的 Twist / Inbetween 设置构建分段")
-            self.build_fit_parts.setChecked(True)
-            self.build_fit_parts.setEnabled(
-                self.build_segment_influences.isChecked())
-            self.build_segment_influences.toggled.connect(
-                self.build_fit_parts.setEnabled)
-            self.build_source_fit_parts = QtWidgets.QCheckBox(
-                "来源骨架直建：按 ADV 标准 Fit 分段")
-            self.build_source_fit_parts.setChecked(True)
-            self.build_source_fit_parts.setEnabled(
-                self.build_segment_influences.isChecked())
-            self.build_segment_influences.toggled.connect(
-                self.build_source_fit_parts.setEnabled)
             group, form = self._group("03 · 完整角色", [
                 ("脊柱配置", self.spine_segments), ("附加控制", self.head_aim),
-                ("Fit 标签", self.infer_missing_fit_labels),
                 ("来源骨架", self.build_source_root),
                 ("待绑定网格", self.build_meshes),
-                ("准备输入", self.build_use_preparation_skin),
-                ("分段变形", self.build_segment_influences),
-                ("Fit 分段", self.build_fit_parts),
-                ("来源 Fit 分段", self.build_source_fit_parts)])
+                ("准备输入", self.build_use_preparation_skin)])
             form.addRow(self._button("使用当前选中的网格",
                                       self._fill_selected_build_meshes))
             form.addRow(self._button("记录当前选中的骨架根关节",
@@ -2632,11 +2609,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.fit_container.text().strip(),
                 spine_segments=value if value else None,
                 head_aim=self.head_aim.isChecked(),
-                infer_missing_labels=self.infer_missing_fit_labels.isChecked(),
-                meshes=meshes,
-                segment_influences=self.build_segment_influences.isChecked(),
-                fit_parts=(self.build_segment_influences.isChecked()
-                           and self.build_fit_parts.isChecked()))
+                meshes=meshes)
             if result.namespace != selected_namespace:
                 self._next_role = result.namespace
             destination = (f"；新角色 {result.namespace}"
@@ -2655,11 +2628,7 @@ def create_panel(controller: MayaPanelController | None = None):
                 selected_namespace, self.build_source_root.text().strip(),
                 self.fit_container.text().strip(), meshes=meshes,
                 head_aim=self.head_aim.isChecked(),
-                spine_segments=segments if segments else None,
-                infer_missing_labels=self.infer_missing_fit_labels.isChecked(),
-                segment_influences=self.build_segment_influences.isChecked(),
-                fit_parts=(self.build_segment_influences.isChecked()
-                           and self.build_source_fit_parts.isChecked()))
+                spine_segments=segments if segments else None)
             if result.namespace != selected_namespace:
                 self._next_role = result.namespace
             destination = (f"；新角色 {result.namespace}"

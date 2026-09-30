@@ -605,7 +605,8 @@ def plan_body_leg_foot(
                 f"{suffix} 侧 QToes 缺少 Ankle→QToes IK 机制关节")
         roll_intermediate = tuple(
             path for path in qtoes_topology.intermediate_paths
-            if not body_by_path[path].label.text
+            if body_by_path[path].label is None
+            or not body_by_path[path].label.text
             or ("Toes" in body_by_path[path].label.text
                 and "ToesEnd" not in body_by_path[path].label.text))
         marker_roles = tuple(row for row in all_marker_roles
@@ -749,6 +750,7 @@ def plan_body_leg_foot(
             marker_joint = body_by_name[f"{marker}_{suffix}"]
             above_qtoes = bool(qtoes_topology.qtoes_path) and any(
                 joint.path.startswith(marker_joint.path + "|")
+                and joint.label is not None
                 and "Toes" in joint.label.text
                 and "ToesEnd" not in joint.label.text
                 for joint in body.joints)

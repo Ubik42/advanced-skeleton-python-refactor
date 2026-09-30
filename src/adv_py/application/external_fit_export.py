@@ -27,11 +27,10 @@ class ExternalFitExportHost(Protocol):
 class ExternalFitExportPlan:
     destination: Path
     document: FitSkeletonDocument
-    inferred_labels: tuple[str, ...]
 
 
 class ExportExternalFitSkeleton:
-    """Accept a nested original container and infer missing labels in the file."""
+    """Save a nested original Fit without changing its authored labels."""
 
     def __init__(self, host: ExternalFitExportHost) -> None:
         self._host = host
@@ -50,16 +49,12 @@ class ExportExternalFitSkeleton:
         settings = self._host.read_fit_skeleton_settings(
             snapshot.hierarchy.container)
         labels = []
-        inferred = []
         for node in snapshot.hierarchy.joints:
             label = self._host.read_joint_label(node.path)
-            if label is None:
-                label = JointLabel.parse(node.short_name)
-                inferred.append(node.path)
             labels.append((node.path, label))
         document = fit_skeleton_document_from_snapshot(
             snapshot, settings, tuple(labels))
-        return ExternalFitExportPlan(path, document, tuple(inferred))
+        return ExternalFitExportPlan(path, document)
 
     def apply(self, destination: str | os.PathLike[str],
               container: str = "FitSkeleton") -> ExternalFitExportPlan:

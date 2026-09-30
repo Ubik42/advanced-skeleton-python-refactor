@@ -47,7 +47,6 @@ def main(scene: Path, report: Path) -> int:
             data = {
                 "source": scene.name,
                 "export_joint_count": len(exported.document.joints),
-                "inferred_label_count": len(exported.inferred_labels),
                 "import_joint_count": len(imported.joint_paths),
                 "document_matches": fit_skeleton_documents_match(
                     exported.document, roundtrip.document),
@@ -75,7 +74,6 @@ def main(scene: Path, report: Path) -> int:
             cmds.file(new=True, force=True)
         data["status"] = "passed" if (
             data["export_joint_count"] == 41
-            and data["inferred_label_count"] == 30
             and data["import_joint_count"] == 41
             and data["document_matches"]
             and data["root_offset_matches"]

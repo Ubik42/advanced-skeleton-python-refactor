@@ -359,6 +359,45 @@ _GEOMETRY_OUTPUT_ATTRIBUTES = frozenset((
 class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBodyDeleteMixin, MayaFaceDeleteMixin, MayaBodyFitCurveGuideMixin, MayaBodyFitWheelMixin, MayaBodyBuildPoseMixin, MayaBodySelectionSetsMixin, MayaBodyFkScaleCompensationMixin, MayaBodyFitFollowMixin, MayaBodyFitNamedFollowMixin, MayaBodyFitFollowSpacesMixin, MayaBodyFitAimAtMixin, MayaBodyFitGeoAttachMixin, MayaBodyFitProximityPinMixin, MayaBodyCenterBetweenFeetMixin, MayaBodyFitAdvancedConstraintMixin, MayaBodyParentConstraintMixin, MayaBodyGameRootMotionMixin, MayaBodyGameScalingMixin, MayaHipSwingNoPartsMixin, MayaHipSwingReverseMixin, MayaInbetweenSplineIkMixin, MayaFitInbetweenMixin, MayaFitBendyMixin, MayaFitPartMixin, MayaControlCurveMixin, MayaCharacterPoseMixin, MayaCharacterRegistryMixin, MayaBodyFitAimMixin, MayaBodyPoleAimMixin, MayaBodyControlSpacesMixin, MayaBodySpineMixin, MayaBodyTorsoMixin, MayaFitJointHost):
     """Maya scene adapter for the first materialized Body skeleton stage."""
 
+    def confirm_body_fit_joint_names(self, container_name: str) -> None:
+        """Keep MEL's one warning and Continue Anyway branch for underscores."""
+        container = self._resolve_transform(
+            container_name, FitSkeletonValidationError)
+        joints = self._cmds.listRelatives(container, allDescendents=True,
+            fullPath=True, type="joint") or []
+        for joint in joints:
+            name = joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            if "_" not in name or name.endswith("_NonSymmetry"):
+                continue
+            c = getattr(self._cmds, "raw", self._cmds)
+            if c.about(batch=True):
+                raise FitSkeletonValidationError(
+                    "Fit 关节名含下划线，请在 Maya 界面确认后继续：" + name)
+            self._cmds.select(joint, replace=True)
+            c.refresh()
+            answer = c.confirmDialog(title="确认关节名称",
+                message=(f"关节名含下划线：\n\n{name}\n\n"
+                    "这会影响 SelectorDesigner、CorrectiveShaper 和 "
+                    "DrivingSystems 的兼容性。可以继续，建议先删除下划线。"),
+                button=("仍然继续", "取消"), defaultButton="取消",
+                cancelButton="取消", dismissString="取消")
+            if answer != "仍然继续":
+                raise FitSkeletonValidationError("已取消构建：Fit 关节名含下划线")
+            return
+
+    def parent_selected_joint_under_fit(self, joint: str,
+                                        container_name: str) -> str:
+        """Port the selected-joint adoption branch of asBuildAdvancedSkeleton."""
+        self._require_transaction()
+        matches = self._cmds.ls(joint, long=True, type="joint") or []
+        if len(matches) != 1:
+            raise FitSkeletonValidationError("选中的来源关节不存在或名称不唯一")
+        container = self._resolve_transform(
+            container_name, FitSkeletonValidationError)
+        self._transaction_changed = True
+        result = self._cmds.parent(matches[0], container, absolute=True)
+        return (self._cmds.ls(result[0], long=True, type="joint") or result)[0]
+
     def copy_external_mesh_for_character(self, mesh_path: str) -> str:
         """Keep a source mesh intact when building a separate character."""
         from adv_py.core.character_identity import CharacterIdentity
@@ -556,7 +595,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         joint = self._cmds.createNode("joint", **options)
         self._transaction_changed = True
         path = (self._cmds.ls(joint, long=True) or [joint])[0]
-        self.set_joint_label(path, spec.label)
+        if spec.label is not None:
+            self.set_joint_label(path, spec.label)
         self._cmds.setAttr(f"{path}.side", _MAYA_SIDE_FROM_CORE[spec.side])
         self._cmds.setAttr(f"{path}.rotateOrder", spec.rotation_order)
         self._cmds.setAttr(f"{path}.segmentScaleCompensate",

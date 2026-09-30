@@ -409,7 +409,6 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
             _JoinedTransactionHost(self)).apply(
                 "FitSkeleton",
                 center_tolerance=plan.side_threshold_cm,
-                infer_missing_labels=False,
                 root_parent_path=deformation)
         names = {joint.name for joint in built.snapshot.joints}
         if "Root_M" not in names or len(names) != len(built.snapshot.joints):

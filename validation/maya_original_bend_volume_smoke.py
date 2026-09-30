@@ -55,7 +55,7 @@ def main(scene: Path, guide_file: Path, report: Path) -> int:
         cmds.delete(tuple(path for path in (cmds.listRelatives(
             fit_parent, children=True, fullPath=True) or ()) if path != fits[0]))
         built = BuildRegisteredBodyCharacter(MayaBodyBuildHost()).apply(
-            fits[0], infer_missing_labels=True)
+            fits[0])
         BuildLimbPartDeform(MayaLimbPartHost()).apply()
         BuildVolumeHalfParents(MayaVolumeHalfParentHost()).apply(guide)
 

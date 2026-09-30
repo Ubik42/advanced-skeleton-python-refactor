@@ -171,7 +171,7 @@ def main(scene: Path, volume_file: Path, angle_file: Path,
         cmds.delete(tuple(path for path in (cmds.listRelatives(
             fit_parent, children=True, fullPath=True) or ()) if path != fits[0]))
         BuildRegisteredBodyCharacter(MayaBodyBuildHost()).apply(
-            fits[0], infer_missing_labels=True)
+            fits[0])
         registration_before_axial = ResolveBodyCharacter(
             MayaBodyBuildHost()).execute()
         class FaultyAxialHost(MayaAxialPartHost):

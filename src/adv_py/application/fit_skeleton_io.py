@@ -107,7 +107,7 @@ class FitSkeletonSceneInspection:
     container: FitContainerState
     orientation: FitOrientationSnapshot
     settings: FitSkeletonSettings
-    labels: tuple[tuple[str, JointLabel], ...]
+    labels: tuple[tuple[str, JointLabel | None], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -754,7 +754,8 @@ def _materialize_fit_joints(
                 joint.label,
             ),
         )
-        host.set_joint_label(path, joint.label)
+        if joint.label is not None:
+            host.set_joint_label(path, joint.label)
         for value in joint.metadata:
             host.apply_fit_joint_edit(
                 path,
@@ -799,10 +800,6 @@ def _inspect_scene(
     labels = []
     for node in orientation.hierarchy.joints:
         label = host.read_joint_label(node.path)
-        if label is None:
-            raise FitSkeletonValidationError(
-                f"Fit joint 缺少可移植标签：{node.short_name}"
-            )
         labels.append((node.path, label))
     return FitSkeletonSceneInspection(
         container,

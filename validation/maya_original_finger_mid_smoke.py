@@ -54,7 +54,7 @@ def main(scene: Path, report: Path) -> int:
         cmds.delete(tuple(path for path in (cmds.listRelatives(
             parent, children=True, fullPath=True) or ()) if path != fits[0]))
         built = BuildRegisteredBodyCharacter(MayaBodyBuildHost()).apply(
-            fits[0], infer_missing_labels=True)
+            fits[0])
         body_frame_errors = {item.path.rsplit("|", 1)[-1]: max(
             abs(a - b) for a, b in zip(
                 original_body_frames[item.path.rsplit("|", 1)[-1]],

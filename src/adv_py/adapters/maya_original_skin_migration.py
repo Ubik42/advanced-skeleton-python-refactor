@@ -362,7 +362,7 @@ class MayaOriginalSkinMigration:
                 fit_parent, children=True, fullPath=True) or ())
                 if path != fits[0]))
             built = BuildRegisteredBodyCharacter(MayaBodyBuildHost()).apply(
-                fits[0], infer_missing_labels=True,
+                fits[0],
                 include_segment_influences=False,
                 use_fit_part_hierarchy=False)
             BuildAxialPartDeform(MayaAxialPartHost()).apply(guide=axial)

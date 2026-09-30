@@ -70,7 +70,6 @@ class BuildRegisteredSkinnedBodyCharacter:
               maximum_influences: int | None = None,
               axial_description=None,
               include_head_aim: bool = False,
-              infer_missing_labels: bool = False,
               include_segment_influences: bool = True,
               use_fit_part_hierarchy: bool = True,
               fit_part_twist_sources: tuple[FitPartTwistSource, ...] | None = None,
@@ -91,7 +90,6 @@ class BuildRegisteredSkinnedBodyCharacter:
             character = BuildRegisteredBodyCharacter(joined).apply(
                 container_name, axial_description=axial_description,
                 include_head_aim=include_head_aim,
-                infer_missing_labels=infer_missing_labels,
                 include_segment_influences=include_segment_influences,
                 use_fit_part_hierarchy=use_fit_part_hierarchy,
                 fit_part_twist_sources=fit_part_twist_sources,

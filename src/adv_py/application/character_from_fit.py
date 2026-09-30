@@ -47,7 +47,6 @@ class CharacterFromFitPlan:
     axial_description: BodyAxialDescription | None
     maximum_influences: int | None
     include_head_aim: bool
-    infer_missing_labels: bool
     include_segment_influences: bool
     use_fit_part_hierarchy: bool
 
@@ -69,7 +68,6 @@ class BuildCharacterFromFit:
              spine_segments: int | None = None,
              maximum_influences: int | None = None,
              include_head_aim: bool = False,
-             infer_missing_labels: bool = False,
              include_segment_influences: bool = True,
              use_fit_part_hierarchy: bool = True,
              ) -> CharacterFromFitPlan:
@@ -94,7 +92,7 @@ class BuildCharacterFromFit:
         # prepared in its rollback-capable transaction.
         description = axial_description_from_fit(hierarchy, spine_segments)
         return CharacterFromFitPlan(container, meshes, description,
-            maximum_influences, include_head_aim, infer_missing_labels,
+            maximum_influences, include_head_aim,
             include_segment_influences, use_fit_part_hierarchy)
 
     def apply(self, container: str = "FitSkeleton", *,
@@ -102,7 +100,6 @@ class BuildCharacterFromFit:
               spine_segments: int | None = None,
               maximum_influences: int | None = None,
               include_head_aim: bool = False,
-              infer_missing_labels: bool = False,
               include_segment_influences: bool = True,
               use_fit_part_hierarchy: bool = True,
               ) -> CharacterFromFitResult:
@@ -110,14 +107,12 @@ class BuildCharacterFromFit:
             spine_segments=spine_segments,
             maximum_influences=maximum_influences,
             include_head_aim=include_head_aim,
-            infer_missing_labels=infer_missing_labels,
             include_segment_influences=include_segment_influences,
             use_fit_part_hierarchy=use_fit_part_hierarchy)
         if not plan.meshes:
             character = BuildRegisteredBodyCharacter(self._host).apply(
                 plan.container, axial_description=plan.axial_description,
                 include_head_aim=plan.include_head_aim,
-                infer_missing_labels=plan.infer_missing_labels,
                 include_segment_influences=plan.include_segment_influences,
                 use_fit_part_hierarchy=plan.use_fit_part_hierarchy)
             return CharacterFromFitResult(character, ())
@@ -132,7 +127,6 @@ class BuildCharacterFromFit:
                 maximum_influences=plan.maximum_influences,
                 axial_description=plan.axial_description,
                 include_head_aim=plan.include_head_aim,
-                infer_missing_labels=plan.infer_missing_labels,
                 include_segment_influences=plan.include_segment_influences,
                 use_fit_part_hierarchy=plan.use_fit_part_hierarchy,
                 _scene_before=scene_before)

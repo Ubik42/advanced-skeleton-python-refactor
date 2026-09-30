@@ -37,7 +37,6 @@ class SourceCharacterBuildPlan:
     use_fit_part_hierarchy: bool
     fit: SourceSkeletonFitPlan
     spine_segments: int | None = None
-    infer_missing_labels: bool = False
 
 
 class BuildCharacterFromSourceSkeleton:
@@ -51,7 +50,6 @@ class BuildCharacterFromSourceSkeleton:
              maximum_influences: int | None = None,
              include_head_aim: bool = False,
              spine_segments: int | None = None,
-             infer_missing_labels: bool = False,
              include_segment_influences: bool = True,
              use_fit_part_hierarchy: bool = True,
              ) -> SourceCharacterBuildPlan:
@@ -68,8 +66,6 @@ class BuildCharacterFromSourceSkeleton:
             raise ValueError("Fit Part／Inbetween 需要启用分段 Skin 影响")
         if spine_segments is not None:
             variable_axial_description(spine_segments)
-        if type(infer_missing_labels) is not bool:
-            raise ValueError("自动推断 Fit 标签选项必须是布尔值")
         fit = BuildFitFromSourceSkeleton(self._host).plan(source_root)
         if (spine_segments is not None
                 and spine_segments != fit.spine_segments):
@@ -79,14 +75,13 @@ class BuildCharacterFromSourceSkeleton:
         return SourceCharacterBuildPlan(source_root, container, meshes,
             maximum_influences, include_head_aim,
             include_segment_influences, use_fit_part_hierarchy, fit,
-            spine_segments, infer_missing_labels)
+            spine_segments)
 
     def apply(self, source_root: str, container: str = "FitSkeleton", *,
               meshes: tuple[str, ...] = (),
               maximum_influences: int | None = None,
               include_head_aim: bool = False,
               spine_segments: int | None = None,
-              infer_missing_labels: bool = False,
               include_segment_influences: bool = True,
               use_fit_part_hierarchy: bool = True,
               ) -> SourceCharacterBuildResult:
@@ -94,7 +89,6 @@ class BuildCharacterFromSourceSkeleton:
             maximum_influences=maximum_influences,
             include_head_aim=include_head_aim,
             spine_segments=spine_segments,
-            infer_missing_labels=infer_missing_labels,
             include_segment_influences=include_segment_influences,
             use_fit_part_hierarchy=use_fit_part_hierarchy)
         with self._host.transaction("从标准骨架构建并蒙皮角色"):
@@ -108,7 +102,6 @@ class BuildCharacterFromSourceSkeleton:
                                 fit.spine_segments),
                 maximum_influences=plan.maximum_influences,
                 include_head_aim=plan.include_head_aim,
-                infer_missing_labels=plan.infer_missing_labels,
                 include_segment_influences=plan.include_segment_influences,
                 use_fit_part_hierarchy=plan.use_fit_part_hierarchy)
         return SourceCharacterBuildResult(fit, character)

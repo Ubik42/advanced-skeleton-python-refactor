@@ -72,7 +72,7 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
             try:
                 BuildRegisteredSkinnedBodyCharacter(
                     MayaBodyBuildHost()).apply(meshes,
-                        infer_missing_labels=True, on_stage=fault)
+                        on_stage=fault)
             except RuntimeError as error:
                 rolled_back = (str(error) == "injected skinned build fault"
                     and not cmds.objExists("Root_M")
@@ -84,8 +84,7 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
             if not rolled_back:
                 raise AssertionError("标准 Fit 蒙皮构建未整体回滚")
 
-            built = MayaPanelController().body_build(":", meshes=meshes,
-                infer_missing_labels=True)
+            built = MayaPanelController().body_build(":", meshes=meshes,)
             skins = tuple(sorted(cmds.ls(type="skinCluster") or []))
             influences = tuple(len(cmds.skinCluster(skin, query=True,
                 influence=True) or []) for skin in skins)
@@ -126,7 +125,7 @@ def main(scene: Path, report: Path, *, prepare_only: bool = False) -> int:
                 long=True, type="transform") or [])[0]
                 for name in ("BodyMesh", "GarmentMesh"))
             namespaced = MayaPanelController().body_build("Hero",
-                meshes=namespaced_meshes, infer_missing_labels=True)
+                meshes=namespaced_meshes)
             namespaced_skins = tuple(sorted(cmds.ls("Hero:*",
                 type="skinCluster") or []))
             namespaced_built = (namespaced.joint_count == 74

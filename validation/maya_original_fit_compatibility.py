@@ -82,8 +82,6 @@ def main(scene: Path, report: Path, isolated_build: bool = False,
                 build = BuildBodySkeleton(host).plan(fit[0])
                 result["body_build"] = {
                     "ready": build.ready,
-                    "missing_labels": [path.rsplit("|", 1)[-1]
-                                       for path in build.missing_labels],
                     "name_collisions": list(build.name_collisions),
                     "spec_count": len(build.specs),
                 }
@@ -121,13 +119,11 @@ def main(scene: Path, report: Path, isolated_build: bool = False,
                     node.path) for node in hierarchy.joints}
                 try:
                     built = BuildOrientedBodySkeleton(host).apply(
-                        fit[0], infer_missing_labels=True)
+                        fit[0])
                     current_fit = host.capture_fit_hierarchy(fit[0])
                     result["isolated_build"] = {
                         "status": "passed",
                         "body_count": len(built.snapshot.joints),
-                        "inferred_label_count": len(
-                            built.plan.build.inferred_labels),
                         "fit_unchanged": fit_before == {
                             node.short_name: node.world_position
                             for node in current_fit.joints},

@@ -142,7 +142,8 @@ class CreateFitTemplate:
             if spec.parent is not None:
                 parent = paths[spec.parent]
             path = self._host.create_fit_joint(parent, spec)
-            self._host.set_joint_label(path, spec.label)
+            if spec.label is not None:
+                self._host.set_joint_label(path, spec.label)
             paths[spec.name] = path
 
         hierarchy = self._host.capture_fit_hierarchy(

@@ -39,6 +39,7 @@ def plan_leg_qtoes_topology(body: BodySkeletonSnapshot) -> LegQToesTopology:
             raise ValueError("Leg QToes 需要双侧 Ankle／Toes／ToesEnd")
         marked = [joint for joint in body.joints
                   if joint.path.startswith(ankle.path + "|")
+                  and joint.label is not None
                   and "QToes" in joint.label.text]
         if len(marked) > 1:
             raise ValueError("同侧存在多个 QToes 标记：" + suffix)

@@ -258,7 +258,7 @@ def main(scene: Path, report: Path) -> int:
         cmds.delete(tuple(path for path in (cmds.listRelatives(
             rig_root, children=True, fullPath=True) or ()) if path != fits[0]))
         built = BuildRegisteredBodyCharacter(MayaBodyBuildHost()).apply(
-            fits[0], infer_missing_labels=True)
+            fits[0])
         class FaultyHost(MayaLimbPartHost):
             def __init__(self):
                 super().__init__()
