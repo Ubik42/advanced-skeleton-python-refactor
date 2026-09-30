@@ -130,7 +130,8 @@ def audit(host,staged):
     permitted.update((upstream,converter+'.input')
         for converter,upstream,_ in staged.deformer_input_conversions)
     permitted.update((converter+'.output',destination)
-        for converter,destination in staged.deformer_output_conversions)
+        for converter,destinations in staged.deformer_output_conversions
+        for destination in destinations)
     for curve in original.curves:
         permitted.update((curve.node+'.output',plug) for plug in curve.outputs)
     # Bind-pose records belong to retained skin, not to the rig being deleted.

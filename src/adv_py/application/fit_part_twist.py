@@ -13,6 +13,8 @@ from adv_py.core.fit_part_twist import (
 
 
 class FitPartTwistHost(Protocol):
+    def prepare_fit_part_twist_runtime(self) -> None: ...
+
     def find_name_collisions(self, name: str) -> tuple[str, ...]: ...
 
     def preflight_fit_part_twist_step(self, step: FitPartTwistStep) -> None: ...
@@ -81,6 +83,8 @@ class PrepareFitPartTwistSources:
     def apply(self, inputs: tuple[FitPartRotationInput, ...]
               ) -> tuple[FitPartTwistSource, ...]:
         projections = plan_fit_part_twist_projections(inputs)
+        if projections:
+            self._host.prepare_fit_part_twist_runtime()
         planned_outputs = frozenset(item.output_plug
                                     for item in projections)
         for projection in projections:
@@ -137,6 +141,8 @@ class BuildFitPartTwistDrivers:
         sources: tuple[FitPartTwistSource, ...],
     ) -> tuple[FitPartTwistStep, ...]:
         steps = plan_fit_part_twist(parts, sources)
+        if steps:
+            self._host.prepare_fit_part_twist_runtime()
         for step in steps:
             self._host.preflight_fit_part_twist_step(step)
             names = (step.amount_node, step.target_node,

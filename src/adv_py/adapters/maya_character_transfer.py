@@ -203,7 +203,7 @@ def transfer(host,staged):
             if len(paths)==1:
                 node=owned_replacements.get(paths[0],paths[0])
             return live_redirect(node+'.'+attribute)
-        for converter,upstream,_ in staged.deformer_input_conversions:
+        for converter,upstream,_destinations in staged.deformer_input_conversions:
             a=host.scene_address(upstream)
             b=host.scene_address(converter+'.input')
             x=geometry_source(a)
@@ -231,20 +231,21 @@ def transfer(host,staged):
                 with _writable_connection(c,b,y):
                     c.disconnectAttr(a,b)
                     c.connectAttr(x,y)
-        for converter,destination in staged.deformer_output_conversions:
+        for converter,destinations in staged.deformer_output_conversions:
             a=host.scene_address(converter+'.output')
-            b=host.scene_address(destination)
-            y=geometry_source(b)
-            if y!=b:
-                if not c.isConnected(a,b):
-                    raise CharacterRegistryError(
-                        '生产变形器输出单位转换在交接前变化：'+converter)
-                with _writable_connection(c,b,y):
-                    c.disconnectAttr(a,b)
-                    c.connectAttr(a,y)
-            if not c.isConnected(a,y):
-                raise RuntimeError(
-                    '生产变形器输出单位转换没有完整交接：'+converter)
+            for destination in destinations:
+                b=host.scene_address(destination)
+                y=geometry_source(b)
+                if y!=b:
+                    if not c.isConnected(a,b):
+                        raise CharacterRegistryError(
+                            '生产变形器输出单位转换在交接前变化：'+converter)
+                    with _writable_connection(c,b,y):
+                        c.disconnectAttr(a,b)
+                        c.connectAttr(a,y)
+                if not c.isConnected(a,y):
+                    raise RuntimeError(
+                        '生产变形器输出单位转换没有完整交接：'+converter)
         for converter,upstream in staged.geometry_container_conversions:
             a=host.scene_address(upstream)
             b=host.scene_address(converter+'.input')
@@ -392,14 +393,17 @@ def verify_retained(host,staged):
         raise RuntimeError('交接改变了生产变形器参数、连接或网格顺序')
     actual_conversions=host.capture_character_deformer_conversions(
         staged.original.deformers)
-    expected_conversions=tuple(sorted((converter,local(upstream),destination)
-        for converter,upstream,destination in staged.deformer_input_conversions))
+    expected_conversions=tuple(sorted((converter,local(upstream),
+        tuple(sorted(local(destination) for destination in destinations)))
+        for converter,upstream,destinations in
+        staged.deformer_input_conversions))
     if actual_conversions!=expected_conversions:
         raise RuntimeError('交接改变了生产变形器单位转换输入')
     actual_outputs=host.capture_character_deformer_output_conversions(
         staged.original.deformers)
-    expected_outputs=tuple(sorted((converter,local(destination))
-        for converter,destination in staged.deformer_output_conversions))
+    expected_outputs=tuple(sorted((converter,
+        tuple(sorted(local(destination) for destination in destinations)))
+        for converter,destinations in staged.deformer_output_conversions))
     if actual_outputs!=expected_outputs:
         raise RuntimeError('交接改变了生产变形器单位转换输出')
     for row in staged.original.extensions:

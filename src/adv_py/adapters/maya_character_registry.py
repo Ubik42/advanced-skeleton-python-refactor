@@ -923,10 +923,10 @@ class MayaCharacterRegistryMixin:
         return audit(self,staged)
 
     def capture_character_deformer_conversions(self,deformers):
-        """Retain exclusive unit conversions on production deformer inputs."""
+        """Retain converters whose entire output feeds preserved deformers."""
         from .maya_character_preservation import _plug
         c=self._cmds
-        rows=[]
+        destinations={}
         for deformer in deformers:
             for source,destination in deformer.connections:
                 node,attribute=source.split('.',1)
@@ -935,19 +935,23 @@ class MayaCharacterRegistryMixin:
                 if attribute!='output':
                     raise CharacterRegistryError(
                         '生产变形器单位转换输出类型不受支持：'+source)
-                upstream=c.connectionInfo(node+'.input',
-                    sourceFromDestination=True)
-                outgoing=c.listConnections(node+'.output',source=False,
-                    destination=True,plugs=True) or []
-                normalized=tuple(sorted(_plug(self,plug) for plug in outgoing))
-                if not upstream or normalized!=(destination,):
-                    raise CharacterRegistryError(
-                        '生产变形器单位转换存在共享输出或缺少输入：'+node)
-                rows.append((node,_plug(self,upstream),destination))
-        return tuple(sorted(set(rows)))
+                destinations.setdefault(node,set()).add(destination)
+        rows=[]
+        for node,retained in destinations.items():
+            upstream=c.connectionInfo(node+'.input',
+                sourceFromDestination=True)
+            outgoing=c.listConnections(node+'.output',source=False,
+                destination=True,plugs=True) or []
+            normalized=tuple(sorted(_plug(self,plug) for plug in outgoing))
+            if (not upstream or len(normalized)!=len(retained)
+                    or set(normalized)!=retained):
+                raise CharacterRegistryError(
+                    '生产变形器单位转换输出超出保留范围或缺少输入：'+node)
+            rows.append((node,_plug(self,upstream),normalized))
+        return tuple(sorted(rows))
 
     def capture_character_deformer_output_conversions(self,deformers):
-        """Retain exclusive conversions carrying deformer outputs to Rig."""
+        """Retain conversion fan-out carrying deformer outputs to Rig."""
         from .maya_character_preservation import _plug
         c=self._cmds
         rows=[]
@@ -966,10 +970,10 @@ class MayaCharacterRegistryMixin:
                     destination=True,plugs=True) or []
                 normalized=tuple(sorted(_plug(self,plug) for plug in outputs))
                 if (not incoming or _plug(self,incoming)!=source
-                        or len(normalized)!=1):
+                        or not normalized):
                     raise CharacterRegistryError(
-                        '生产变形器输出单位转换不是独占连接：'+node)
-                rows.append((node,normalized[0]))
+                        '生产变形器输出单位转换缺少输入或输出：'+node)
+                rows.append((node,normalized))
         return tuple(sorted(set(rows)))
 
     def plan_character_property_transfer(self,original,namespace):
