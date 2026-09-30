@@ -40,6 +40,7 @@ class SkinRebindState:
     locked_influences: tuple[str, ...] = ()
     deformer_settings: tuple[tuple[str, float, str | None], ...] = ()
     bind_pre_matrices: tuple[tuple[str, tuple[float, ...], str | None], ...] = ()
+    parameter_drivers: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

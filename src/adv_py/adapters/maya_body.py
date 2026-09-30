@@ -6412,6 +6412,12 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         if {joint for joint,_,_ in bind_pre_matrices}!=set(influences):
             raise FitSkeletonValidationError(
                 'Skin 绑定逆矩阵与影响关节不一致：'+skin)
+        parameter_drivers=tuple((attribute,driver)
+            for attribute in ('skinningMethod','normalizeWeights',
+                'maxInfluences','maintainMaxInfluences',
+                'weightDistribution','bindMethod')
+            for driver in (c.connectionInfo(skin+'.'+attribute,
+                sourceFromDestination=True),) if driver)
         return SkinRebindState(skin, mesh, tuple(influences),
             int(c.getAttr(f"{skin}.maxInfluences")),
             bool(c.getAttr(f"{skin}.maintainMaxInfluences")),
@@ -6423,7 +6429,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             mesh_topology_digest(shapes[0]),
             manager, geodesic, manager_members,
             locked_influences,deformer_settings,
-            tuple(bind_pre_matrices))
+            tuple(bind_pre_matrices),parameter_drivers)
 
     def capture_skin_bind_topology(self, skin: str, mesh: str) -> str | None:
         from .maya_mesh_topology import TOPOLOGY_ATTRIBUTE, mesh_topology_digest
@@ -6623,6 +6629,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     c.connectAttr(driver,target)
             else:
                 c.setAttr(target,*matrix,type='matrix')
+        for attribute,driver in state.parameter_drivers:
+            if not c.objExists(driver):
+                raise FitSkeletonValidationError(
+                    'Skin 核心参数驱动来源已不存在：'+driver)
+            c.connectAttr(driver,skin+'.'+attribute,force=True)
         for name in state.set_memberships:
             if not c.objExists(name):
                 raise FitSkeletonValidationError(
@@ -6653,6 +6664,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         sourceFromDestination=True) or None)!=driver):
                 raise FitSkeletonValidationError(
                     '重绑 Skin 绑定逆矩阵没有保持原状态：'+joint)
+        for attribute,driver in state.parameter_drivers:
+            if c.connectionInfo(skin+'.'+attribute,
+                    sourceFromDestination=True)!=driver:
+                raise FitSkeletonValidationError(
+                    '重绑 Skin 核心参数驱动未恢复：'+attribute)
         if not set(state.set_memberships).issubset(
                 set(c.listSets(object=skin) or [])):
             raise FitSkeletonValidationError("重绑 Skin 没有保持选择集归属")
