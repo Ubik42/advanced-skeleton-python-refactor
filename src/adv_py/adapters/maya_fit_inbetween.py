@@ -444,7 +444,8 @@ class MayaFitInbetweenMixin:
         body = c.ls(part.body_part_name, long=True,
                     type="joint") or []
         return (len(targets) == 1
-                and targets[0].rsplit("|", 1)[-1] == part.fkx_name
+                and targets[0].rsplit("|", 1)[-1]
+                .rsplit(":", 1)[-1] == part.fkx_name
                 and len(body) == 1
                 and all(c.isConnected(
                     constraints[0] + ".constraintRotate" + axis,
@@ -712,7 +713,8 @@ class MayaFitInbetweenMixin:
         body = c.ls(part.body_part_name, long=True,
                     type="joint") or []
         return (
-            tuple(name.rsplit("|", 1)[-1] for name in targets)
+            tuple(name.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+                  for name in targets)
             == (part.fkx_name, part.ikx_name)
             and c.connectionInfo(constraint + "." + aliases[0],
                                  sourceFromDestination=True)
