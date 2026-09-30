@@ -640,6 +640,24 @@ class MayaFitBendyMixin:
                             != scale_add + ".output3D" + axis.lower()
                             for axis in "YZ")):
                     return False
+                if spec.opm_offset_only_scale:
+                    joint_scale = joints[0] + ".scale"
+                    if (c.connectionInfo(joint_scale,
+                                         sourceFromDestination=True)
+                            != c.connectionInfo(scale_mult + ".input1",
+                                                sourceFromDestination=True)):
+                        return False
+                    for axis in "XYZ":
+                        joint_axis = joint_scale + axis
+                        input_axis = scale_mult + ".input1" + axis
+                        source = c.connectionInfo(
+                            joint_axis, sourceFromDestination=True)
+                        if (source != c.connectionInfo(
+                                input_axis, sourceFromDestination=True)
+                                or (not source and abs(float(c.getAttr(
+                                    joint_axis)) - float(c.getAttr(
+                                        input_axis))) > 1e-8)):
+                            return False
             if (spec.micro_local_scale
                     and not spec.opm_offset_only_scale
                     and not spec.non_opm_additive_micro_scale):
