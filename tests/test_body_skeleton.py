@@ -2226,7 +2226,8 @@ class BodySkeletonTests(unittest.TestCase):
             }
             self.assertEqual(
                 translated,
-                {f"Knee_{side.side.value}", f"Ankle_{side.side.value}"},
+                {f"{joint}_{side.side.value}"
+                 for joint in ("Hip", "Knee", "Ankle", "Toes")},
             )
             toes = next(
                 joint for joint in side.joints
@@ -2239,7 +2240,7 @@ class BodySkeletonTests(unittest.TestCase):
                 and toes.targets[1].endswith(
                     f"AdvPy_ToesIKDriver_{side.side.value}"
                 )
-                and toes.translation_constraint_name is None
+                and toes.translation_constraint_name is not None
             )
 
     def test_leg_blend_collision_blocks_before_transaction(self):
@@ -2432,7 +2433,7 @@ class BodySkeletonTests(unittest.TestCase):
         self.assertEqual(len(result.mechanisms.joints), 12)
         self.assertEqual(len(result.fk_controls.controls), 6)
         self.assertEqual(len(result.ik.limbs), 2)
-        self.assertEqual(sum(joint.translation_constraint_name is not None for side in result.blend.sides for joint in side.joints), 4)
+        self.assertEqual(sum(joint.translation_constraint_name is not None for side in result.blend.sides for joint in side.joints), 6)
         self.assertEqual(len(result.stretch.sides), 2)
         self.assertEqual(len(result.twist.segments), 4)
         self.assertEqual(len(result.twist.joints), 8)

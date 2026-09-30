@@ -40,7 +40,8 @@ def plan_body_leg_blend(
         limb_label="Leg",
         joint_names=(joint_names if terminal_toes_end_control else
                      joint_names[:-1]),
-        translated_joint_names=("Knee", "Ankle"),
+        translated_joint_names=(joint_names if terminal_toes_end_control
+                                else joint_names[:-1]),
     )
 
 

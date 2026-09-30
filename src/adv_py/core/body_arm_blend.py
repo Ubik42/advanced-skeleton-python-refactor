@@ -35,7 +35,7 @@ def plan_body_arm_blend(
         mechanisms,
         limb_label="Arm",
         joint_names=("Shoulder", "Elbow", "Wrist"),
-        translated_joint_names=("Elbow", "Wrist"),
+        translated_joint_names=("Shoulder", "Elbow", "Wrist"),
     )
 
 
