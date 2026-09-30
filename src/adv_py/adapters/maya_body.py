@@ -14,6 +14,7 @@ from .maya_body_fit_aim import MayaBodyFitAimMixin
 
 import json
 from dataclasses import replace
+from math import isfinite
 from pathlib import Path
 
 from adv_py.core.body_arm_mechanisms import (
@@ -3599,7 +3600,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             for source, target in created:
                 matrix = self._cmds.xform(source, query=True,
                                           worldSpace=True, matrix=True)
-                if len(matrix) != 16:
+                if len(matrix) != 16 or not all(isfinite(value)
+                                                for value in matrix):
                     raise FitSkeletonValidationError(
                         'FBX 额外影响关节世界矩阵不完整：' + source)
                 c.xform(target, worldSpace=True, matrix=matrix)
@@ -3614,6 +3616,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 after = c.xform(target, query=True,
                                 worldSpace=True, matrix=True)
                 if (len(before) != 16 or len(after) != 16
+                        or not all(isfinite(value)
+                            for row in (before, after) for value in row)
                         or any(abs(a-b) > 1e-5 for a,b in zip(before,after))):
                     raise FitSkeletonValidationError(
                         'FBX 额外影响关节动画与来源不一致：'
@@ -3879,13 +3883,16 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                if namespace_free else source[0])
                 world = c.xform(source_mesh, query=True,
                                 worldSpace=True, matrix=True)
-                if len(world) != 16:
+                if len(world) != 16 or not all(isfinite(value)
+                                               for value in world):
                     raise FitSkeletonValidationError(
                         'FBX 来源网格世界矩阵不完整：' + source[0])
                 c.xform(clone, worldSpace=True, matrix=world)
                 actual = c.xform(clone, query=True,
                                  worldSpace=True, matrix=True)
-                if (len(actual) != 16 or any(abs(a-b) > 1e-5
+                if (len(actual) != 16
+                        or not all(isfinite(value) for value in actual)
+                        or any(abs(a-b) > 1e-5
                         for a,b in zip(world, actual))):
                     raise FitSkeletonValidationError(
                         'FBX 临时网格无法保持来源世界变换：' + source[0])
@@ -3911,7 +3918,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                  worldSpace=True, translation=True) or []
                 after = c.xform(clone + '.vtx[*]', query=True,
                                 worldSpace=True, translation=True) or []
-                if (len(before) != len(after) or any(abs(a-b) > 1e-4
+                expected = 3 * source[1].vertex_count
+                if (len(before) != expected or len(after) != expected
+                        or not all(isfinite(float(value))
+                            for row in (before, after) for value in row)
+                        or any(abs(a-b) > 1e-4
                         for a,b in zip(before,after))):
                     raise FitSkeletonValidationError(
                         'FBX 临时 Skin 与原角色变形不一致：'
