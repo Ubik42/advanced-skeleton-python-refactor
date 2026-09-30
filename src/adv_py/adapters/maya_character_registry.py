@@ -83,7 +83,8 @@ class MayaCharacterRegistryMixin:
         hand_points = set()
         standard_points = set()
         torso_points = set()
-        def point_matches_orient(point_name, orient_name):
+        def point_matches_orient(point_name, orient_name,
+                                 expected_joint=None):
             points = c.ls(point_name, long=True,
                           type='pointConstraint') or []
             if len(points) > 1:
@@ -121,7 +122,9 @@ class MayaCharacterRegistryMixin:
                     or point_sources != orient_sources
                     or len(point_driven) != 1
                     or point_driven != orient_driven
-                    or c.nodeType(point_driven[0]) != 'joint'):
+                    or c.nodeType(point_driven[0]) != 'joint'
+                    or (expected_joint is not None
+                        and point_driven != [expected_joint])):
                 raise CharacterRegistryError(
                     'FK 位置约束与朝向约束驱动链不一致：' + point_name)
             for axis in 'YZ':
@@ -241,7 +244,9 @@ class MayaCharacterRegistryMixin:
                          if ':' in leaf else '')
             point_name = namespace + short.removesuffix('FK') + 'Point'
             orient_name = namespace + short.removesuffix('FK') + 'Orient'
-            if point_matches_orient(point_name, orient_name):
+            expected = body_by_leaf.get(
+                short.removesuffix('FK').removeprefix('AdvPy_Torso'))
+            if point_matches_orient(point_name, orient_name, expected):
                 torso_points.add(short)
         for side in ('R', 'L'):
             for joint in ('Shoulder', 'Elbow', 'Wrist', 'Hip', 'Knee',
@@ -258,7 +263,8 @@ class MayaCharacterRegistryMixin:
                              if ':' in control_name else '')
                 point_name = namespace + f'AdvPy_{joint}FKPoint_{side}'
                 orient_name = (namespace + f'AdvPy_{joint}FKOrient_{side}')
-                if point_matches_orient(point_name, orient_name):
+                expected = body_by_leaf.get(f'{joint}_{side}')
+                if point_matches_orient(point_name, orient_name, expected):
                     standard_points.add(control_leaf)
         for side in ('R', 'L'):
             for digit in ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky'):
@@ -277,7 +283,10 @@ class MayaCharacterRegistryMixin:
                                   f'FKPoint_{side}')
                     orient_name = (namespace + f'AdvPy_{digit}{index}'
                                    f'FKOrient_{side}')
-                    if point_matches_orient(point_name, orient_name):
+                    expected = body_by_leaf.get(
+                        f'{digit}{index}_{side}')
+                    if point_matches_orient(point_name, orient_name,
+                                            expected):
                         hand_points.add(control_leaf)
         scale = set()
         compensated = set()
@@ -307,7 +316,7 @@ class MayaCharacterRegistryMixin:
                     '旧通用 FK 位置约束名称不唯一：' + stem)
             if points:
                 orient_name = namespace + 'AdvPy_' + stem + 'Orient'
-                point_matches_orient(point_name, orient_name)
+                point_matches_orient(point_name, orient_name, body)
                 outputs = c.listConnections(
                     points[0] + '.constraintTranslateX',
                     source=False, destination=True, plugs=True) or []

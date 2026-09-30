@@ -441,8 +441,15 @@ class MayaFitInbetweenMixin:
             return False
         targets = c.orientConstraint(constraints[0], query=True,
                                      targetList=True) or []
+        body = c.ls(part.body_part_name, long=True,
+                    type="joint") or []
         return (len(targets) == 1
-                and targets[0].rsplit("|", 1)[-1] == part.fkx_name)
+                and targets[0].rsplit("|", 1)[-1] == part.fkx_name
+                and len(body) == 1
+                and all(c.isConnected(
+                    constraints[0] + ".constraintRotate" + axis,
+                    body[0] + ".rotate" + axis)
+                    for axis in "XYZ"))
 
     def capture_inbetween_registration_node(self, path: str):
         return self._registry_node(path)
@@ -610,6 +617,7 @@ class MayaFitInbetweenMixin:
             return False
         follow_targets = c.parentConstraint(
             follow[0], query=True, targetList=True) or []
+        offset = plan.downstream_fk_offset_path
         return (
             len(orient_targets) == 1
             and orient_targets[0].rsplit("|", 1)[-1]
@@ -619,6 +627,12 @@ class MayaFitInbetweenMixin:
             and follow_targets[0].rsplit("|", 1)[-1]
             .rsplit(":", 1)[-1]
             == plan.last_part_fkx_name
+            and offset is not None
+            and all(c.isConnected(
+                follow[0] + '.constraint' + channel + axis,
+                offset + '.' + channel.lower() + axis)
+                for channel in ('Translate', 'Rotate')
+                for axis in 'XYZ')
         )
 
     def preflight_inbetween_body_drivers(
@@ -695,6 +709,8 @@ class MayaFitInbetweenMixin:
                                      weightAliasList=True) or []
         if len(targets) != 2 or len(aliases) != 2:
             return False
+        body = c.ls(part.body_part_name, long=True,
+                    type="joint") or []
         return (
             tuple(name.rsplit("|", 1)[-1] for name in targets)
             == (part.fkx_name, part.ikx_name)
@@ -704,6 +720,12 @@ class MayaFitInbetweenMixin:
             and c.connectionInfo(constraint + "." + aliases[1],
                                  sourceFromDestination=True)
             == plan.ik_weight_plug
+            and int(c.getAttr(constraint + ".interpType")) == 2
+            and len(body) == 1
+            and all(c.isConnected(
+                constraint + ".constraintRotate" + axis,
+                body[0] + ".rotate" + axis)
+                for axis in "XYZ")
         )
 
     def preflight_inbetween_ik_parts(
