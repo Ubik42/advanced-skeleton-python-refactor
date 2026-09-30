@@ -6639,6 +6639,52 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise FitSkeletonValidationError(
                     "旧 Skin 所属选择集已不存在：" + name)
             c.sets(skin, add=name)
+        self.verify_skin_rebind_deformer_state(state)
+
+    def verify_skin_rebind_deformer_state(self, state) -> None:
+        from maya.api import OpenMaya as om
+        from maya.api import OpenMayaAnim as oma
+        from adv_py.core.skin_bind import (
+            SkinBindMethod, SkinWeightNormalization,
+            SkinningMethod, SkinWeightDistribution)
+
+        self._require_transaction()
+        c = self._cmds
+        skin = state.skin
+        selection = om.MSelectionList()
+        selection.add(self.scene_address(skin))
+        skin_fn = oma.MFnSkinCluster(selection.getDependNode(0))
+        new_indices = {path.fullPathName():
+            skin_fn.indexForInfluenceObject(path)
+            for path in skin_fn.influenceObjects()}
+        if set(new_indices) != {self.scene_address(joint)
+                for joint, _, _ in state.bind_pre_matrices}:
+            raise FitSkeletonValidationError(
+                '重绑 Skin 影响关节与旧绑定逆矩阵不一致')
+        expected_parameters = {
+            'bindMethod': {
+                SkinBindMethod.CLOSEST_DISTANCE: 0,
+                SkinBindMethod.CLOSEST_IN_HIERARCHY: 1,
+                SkinBindMethod.HEAT_MAP: 2,
+                SkinBindMethod.GEODESIC_VOXEL: 3}[state.bind_method],
+            'normalizeWeights': {
+                SkinWeightNormalization.NONE: 0,
+                SkinWeightNormalization.INTERACTIVE: 1,
+                SkinWeightNormalization.POST: 2}[state.normalization],
+            'skinningMethod': {
+                SkinningMethod.CLASSIC_LINEAR: 0,
+                SkinningMethod.DUAL_QUATERNION: 1,
+                SkinningMethod.WEIGHT_BLENDED: 2}[state.skinning_method],
+            'weightDistribution': {
+                SkinWeightDistribution.DISTANCE: 0,
+                SkinWeightDistribution.NEIGHBORS: 1}[state.weight_distribution],
+            'maxInfluences': state.maximum_influences,
+            'maintainMaxInfluences': int(state.maintain_maximum_influences),
+        }
+        for attribute, expected in expected_parameters.items():
+            if int(c.getAttr(skin + '.' + attribute)) != expected:
+                raise FitSkeletonValidationError(
+                    '重绑 Skin 核心参数没有保持原值：' + attribute)
         actual_source = c.connectionInfo(
             skin + ".envelope", sourceFromDestination=True) or None
         if (actual_source != state.envelope_source

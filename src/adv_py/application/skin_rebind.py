@@ -143,6 +143,7 @@ class RebindSkinFromSurfaceSource:
             self._host.apply_skin_vertex_membership(
                 skin, mesh, projected_members)
             self._host.restore_skin_rebind_influences(state)
+            self._host.verify_skin_rebind_deformer_state(state)
             return SkinRebindResult(transfer.transfer.document.vertex_count,
                 changed_vertices,
                 transfer.transfer.max_surface_distance)
