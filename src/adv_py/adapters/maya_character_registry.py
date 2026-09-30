@@ -132,6 +132,11 @@ class MayaCharacterRegistryMixin:
             for channel in registration.channels
             if channel.key.startswith('bendy.')
             and channel.key.endswith('.microVis')}
+        bendy_control_paths = {
+            channel.key: channel.node
+            for channel in registration.channels
+            if channel.key.startswith('bendy.')
+            and channel.key.endswith('.rotateX')}
         bendy_counts = []
         bendy_legacy_simple = set()
         bendy_legacy_twist_outputs = set()
@@ -218,6 +223,14 @@ class MayaCharacterRegistryMixin:
                         or c.nodeType(output) != 'transform'):
                     raise CharacterRegistryError(
                         'Bendy 子控缺少扭转输出层：' + child)
+                control_path = bendy_control_paths.get(
+                    'bendy.' + child + '.rotateX')
+                if (not control_path or
+                        (c.listRelatives(output, parent=True,
+                                         fullPath=True) or [])
+                        != [control_path]):
+                    raise CharacterRegistryError(
+                        'Bendy 子控扭转输出层父级错误：' + child)
             end_proxy = (namespace + 'BendX'
                          + stem.removeprefix('Bend')
                          + str(bendy_counts[-1][1] + 1)
