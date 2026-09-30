@@ -63,6 +63,7 @@ class SmoothBindPreferences:
     maintain_maximum_influences: bool = False
     remove_unused_influences: bool = False
     weight_distribution: SkinWeightDistribution = SkinWeightDistribution.DISTANCE
+    maximum_influences: int = 3
 
     def __post_init__(self) -> None:
         if (not isinstance(self.bind_method, SkinBindMethod)
@@ -71,7 +72,9 @@ class SmoothBindPreferences:
                 or not isinstance(self.weight_distribution,
                                   SkinWeightDistribution)
                 or type(self.maintain_maximum_influences) is not bool
-                or type(self.remove_unused_influences) is not bool):
+                or type(self.remove_unused_influences) is not bool
+                or type(self.maximum_influences) is not int
+                or not 1 <= self.maximum_influences <= 256):
             raise SkinBindValidationError("Smooth Bind 选项无效")
 
 

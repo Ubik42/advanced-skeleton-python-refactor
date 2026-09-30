@@ -45,7 +45,7 @@ class CharacterFromFitPlan:
     container: str
     meshes: tuple[str, ...]
     axial_description: BodyAxialDescription | None
-    maximum_influences: int
+    maximum_influences: int | None
     include_head_aim: bool
     infer_missing_labels: bool
     include_segment_influences: bool
@@ -67,7 +67,7 @@ class BuildCharacterFromFit:
     def plan(self, container: str = "FitSkeleton", *,
              meshes: tuple[str, ...] = (),
              spine_segments: int | None = None,
-             maximum_influences: int = 3,
+             maximum_influences: int | None = None,
              include_head_aim: bool = False,
              infer_missing_labels: bool = False,
              include_segment_influences: bool = True,
@@ -78,9 +78,9 @@ class BuildCharacterFromFit:
         if (len(meshes) != len(set(meshes)) or any(not mesh.strip()
                 for mesh in meshes)):
             raise ValueError("待绑定网格路径不能为空或重复")
-        if (isinstance(maximum_influences, bool)
-                or not isinstance(maximum_influences, int)
-                or not 1 <= maximum_influences <= 256):
+        if (maximum_influences is not None and (
+                type(maximum_influences) is not int
+                or not 1 <= maximum_influences <= 256)):
             raise ValueError("最大影响关节数须为 1..256 的整数")
         hierarchy = self._host.capture_fit_hierarchy(container)
         joint_paths = {node.path for node in hierarchy.joints}
@@ -100,7 +100,7 @@ class BuildCharacterFromFit:
     def apply(self, container: str = "FitSkeleton", *,
               meshes: tuple[str, ...] = (),
               spine_segments: int | None = None,
-              maximum_influences: int = 3,
+              maximum_influences: int | None = None,
               include_head_aim: bool = False,
               infer_missing_labels: bool = False,
               include_segment_influences: bool = True,

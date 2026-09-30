@@ -34,13 +34,13 @@ class BuildRegisteredSkinnedBodyCharacter:
 
     def plan(self, meshes: tuple[str, ...], *,
              skin_prefix: str = "AdvPy_BodySkin",
-             maximum_influences: int = 3) -> RegisteredSkinnedBodyBuildPlan:
+             maximum_influences: int | None = None) -> RegisteredSkinnedBodyBuildPlan:
         if (not meshes or any(not isinstance(mesh, str) or not mesh.strip()
                               for mesh in meshes)
                 or len(set(meshes)) != len(meshes)
-                or isinstance(maximum_influences, bool)
-                or not isinstance(maximum_influences, int)
-                or not 1 <= maximum_influences <= 256):
+                or maximum_influences is not None and (
+                    type(maximum_influences) is not int
+                    or not 1 <= maximum_influences <= 256)):
             raise ValueError("请提供不重复的网格和有效的最大影响关节数")
         if not isinstance(skin_prefix, str) or not skin_prefix.strip():
             raise ValueError("Skin 名称前缀不能为空")
@@ -60,12 +60,14 @@ class BuildRegisteredSkinnedBodyCharacter:
             raise FitSkeletonValidationError(
                 "Maya Smooth Bind 选项快照无效")
         return RegisteredSkinnedBodyBuildPlan(
-            meshes, skin_names, maximum_influences, options)
+            meshes, skin_names,
+            (options.maximum_influences if maximum_influences is None
+             else maximum_influences), options)
 
     def apply(self, meshes: tuple[str, ...], *,
               container_name: str = "FitSkeleton",
               skin_prefix: str = "AdvPy_BodySkin",
-              maximum_influences: int = 3,
+              maximum_influences: int | None = None,
               axial_description=None,
               include_head_aim: bool = False,
               infer_missing_labels: bool = False,

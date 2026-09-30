@@ -31,7 +31,7 @@ class SourceCharacterBuildPlan:
     source_root: str
     container: str
     meshes: tuple[str, ...]
-    maximum_influences: int
+    maximum_influences: int | None
     include_head_aim: bool
     include_segment_influences: bool
     use_fit_part_hierarchy: bool
@@ -48,7 +48,7 @@ class BuildCharacterFromSourceSkeleton:
 
     def plan(self, source_root: str, container: str = "FitSkeleton", *,
              meshes: tuple[str, ...] = (),
-             maximum_influences: int = 3,
+             maximum_influences: int | None = None,
              include_head_aim: bool = False,
              spine_segments: int | None = None,
              infer_missing_labels: bool = False,
@@ -60,9 +60,9 @@ class BuildCharacterFromSourceSkeleton:
         if (len(meshes) != len(set(meshes)) or any(not mesh.strip()
                 for mesh in meshes)):
             raise ValueError("待绑定网格路径不能为空或重复")
-        if (isinstance(maximum_influences, bool)
-                or not isinstance(maximum_influences, int)
-                or not 1 <= maximum_influences <= 256):
+        if (maximum_influences is not None and (
+                type(maximum_influences) is not int
+                or not 1 <= maximum_influences <= 256)):
             raise ValueError("最大影响关节数须为 1..256 的整数")
         if use_fit_part_hierarchy and not include_segment_influences:
             raise ValueError("Fit Part／Inbetween 需要启用分段 Skin 影响")
@@ -83,7 +83,7 @@ class BuildCharacterFromSourceSkeleton:
 
     def apply(self, source_root: str, container: str = "FitSkeleton", *,
               meshes: tuple[str, ...] = (),
-              maximum_influences: int = 3,
+              maximum_influences: int | None = None,
               include_head_aim: bool = False,
               spine_segments: int | None = None,
               infer_missing_labels: bool = False,

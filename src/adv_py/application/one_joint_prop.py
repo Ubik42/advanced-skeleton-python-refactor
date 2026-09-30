@@ -53,7 +53,8 @@ class BuildOneJointProp:
                 on_stage("rig-built")
             for mesh, skin_name in zip(meshes, skin_names):
                 bind = plan_skin_bind(mesh, (joint,), skin_name=skin_name,
-                                      maximum_influences=3,
+                                      maximum_influences=(
+                                          options.maximum_influences),
                                       maintain_maximum_influences=(
                                           options.maintain_maximum_influences),
                                       bind_method=options.bind_method,

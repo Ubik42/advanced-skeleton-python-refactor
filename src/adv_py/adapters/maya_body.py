@@ -5499,8 +5499,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         if distribution is None:
             raise FitSkeletonValidationError(
                 "Maya Smooth Bind 权重分布选项无效")
+        maximum = option("maxInfl", 3)
         return SmoothBindPreferences(bind, normalization, skinning,
-                                     bool(obey), bool(remove), distribution)
+                                     bool(obey), bool(remove), distribution,
+                                     maximum)
 
     def create_skin_bind(self, plan: SkinBindPlan) -> None:
         self._require_transaction()
