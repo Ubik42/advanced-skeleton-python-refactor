@@ -673,6 +673,8 @@ class BuildRegisteredBodyCharacter:
             skeleton = BuildOrientedBodySkeleton(joined).apply(
                 container_name, infer_missing_labels=infer_missing_labels,
                 root_parent_path=_DEFORMATION_SYSTEM_PATH)
+            if use_fit_part_hierarchy and part_plan.fit_parts:
+                joined.prepare_fit_part_twist_runtime()
             fit_part_hierarchy = (
                 BuildFitPartHierarchy(joined).apply(part_plan)
                 if use_fit_part_hierarchy else None)

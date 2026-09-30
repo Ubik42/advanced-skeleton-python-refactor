@@ -5387,6 +5387,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
     def prepare_body_leg_twist_runtime(self) -> None:
         self._prepare_body_limb_twist_runtime("Leg")
 
+    def prepare_fit_part_twist_runtime(self) -> None:
+        self._prepare_body_limb_twist_runtime("Fit Part")
+
     def _prepare_body_limb_twist_runtime(self, limb_label: str) -> None:
         try:
             if not self._cmds.pluginInfo("quatNodes", query=True, loaded=True):
