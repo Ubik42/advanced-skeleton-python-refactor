@@ -470,6 +470,15 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         self._cmds.setAttr(f"{path}.rotateOrder", spec.rotation_order)
         self._cmds.setAttr(f"{path}.segmentScaleCompensate",
                            spec.segment_scale_compensate)
+        if (parent is not None and spec.segment_scale_compensate
+                and self._cmds.nodeType(parent) == "joint"
+                and not self._cmds.connectionInfo(
+                    path + ".inverseScale",
+                    sourceFromDestination=True)):
+            # MEL creates Body joints with `joint`, which adds this link.
+            # createNode does not guarantee the joint-command side effect.
+            self._cmds.connectAttr(parent + ".scale",
+                                   path + ".inverseScale")
         for name, value in (
             ("fat", spec.deform_profile.fat),
             ("fatFront", spec.deform_profile.fat_front),

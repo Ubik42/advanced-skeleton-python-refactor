@@ -68,16 +68,22 @@ class MayaFitBendyMixin:
         actual_influences = tuple(
             _bendy_dag_name(path) for path in
             (c.skinCluster(skin, query=True, influence=True) or ()))
-        if set(actual_influences) != set(influences):
+        expected_influences = tuple(_bendy_dag_name(path)
+                                    for path in influences)
+        if (len(actual_influences) != len(expected_influences)
+                or len(set(actual_influences)) != len(actual_influences)
+                or set(actual_influences) != set(expected_influences)):
             return False
-        expected = [{influences[0]: 1.0} for _ in range(cv_count)]
+        expected = [{expected_influences[0]: 1.0}
+                    for _ in range(cv_count)]
         for index in (cv_count - 2, cv_count - 1):
-            expected[index] = {influences[-1]: 1.0}
-        for index, joint in enumerate(influences[1:-1], start=1):
+            expected[index] = {expected_influences[-1]: 1.0}
+        for index, joint in enumerate(expected_influences[1:-1], start=1):
             expected[index + 1] = {joint: 1.0}
-        expected[1] = {influences[0]: 0.6, influences[1]: 0.4}
-        expected[-2] = {influences[-1]: 0.6,
-                        influences[-2]: 0.4}
+        expected[1] = {expected_influences[0]: 0.6,
+                       expected_influences[1]: 0.4}
+        expected[-2] = {expected_influences[-1]: 0.6,
+                        expected_influences[-2]: 0.4}
         for index, weights in enumerate(expected):
             actual = c.skinPercent(
                 skin, curve + f".cv[{index}]", query=True,
@@ -427,11 +433,6 @@ class MayaFitBendyMixin:
         if (spec.secondary_matrix_follow
                 and (not c.getAttr(shapes[0] + ".overrideEnabled")
                      or c.getAttr(shapes[0] + ".overrideVisibility"))):
-            return False
-        influences = c.skinCluster(spec.secondary_skin_name, query=True,
-                                   influence=True) or []
-        if {name.rsplit("|", 1)[-1] for name in influences} != set(
-                spec.secondary_influence_names):
             return False
         if not self._bendy_curve_skin_matches(
                 spec.secondary_skin_name, curves[0],
@@ -2537,11 +2538,6 @@ class MayaFitBendyMixin:
         if (len(shapes) != 1 or c.nodeType(shapes[0]) != "nurbsCurve"
                 or not c.objExists(spec.skin_name)
                 or c.nodeType(spec.skin_name) != "skinCluster"):
-            return False
-        influences = c.skinCluster(spec.skin_name, query=True,
-                                   influence=True) or []
-        if {name.rsplit("|", 1)[-1] for name in influences} != set(
-                spec.influence_names):
             return False
         if not self._bendy_curve_skin_matches(
                 spec.skin_name, curve[0], spec.influence_names,

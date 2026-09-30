@@ -534,6 +534,13 @@ class MayaFitPartMixin:
         }[spec.side])
         c.setAttr(joint + ".segmentScaleCompensate",
                   spec.segment_scale_compensate)
+        if (spec.segment_scale_compensate
+                and not c.connectionInfo(joint + ".inverseScale",
+                                         sourceFromDestination=True)):
+            # MEL's `joint` command wires this automatically.  A joint
+            # created with createNode may otherwise inherit parent scale
+            # twice in the non-OPM Part chain.
+            c.connectAttr(parent + ".scale", joint + ".inverseScale")
         if spec.kind == "twist":
             # The MEL Part pass places every segment at the downstream
             # Body's pre-reparent local X distance divided by N + 1.
