@@ -1,4 +1,5 @@
 """ADV 6.925 asFaceJawWeighing / Finish, 37805–38316."""
+from contextlib import nullcontext
 from adv_py.application.face_pre import FacePreRole
 from adv_py.core.face_jaw import FaceJawInput
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -79,8 +80,9 @@ class MayaFaceJawHost(MayaFaceJawPosesMixin,MayaFaceTeethMixin,MayaFaceJawWeight
         c=self._cmds; raw=getattr(c,"raw",c)
         joint=self._lip_node("joint","MultiSkinClustersFace"+name+"Joint_M","FaceJoint_M")
         c.setAttr(joint+".drawStyle",2); c.setAttr(joint+".inheritsTransform",False,lock=True)
-        raw.skinCluster(self.scene_address(joint),self.scene_address(geometry),multi=True,
-            frontOfChain=True,toSelectedBones=True,name=self.scene_address(name+"SC"))
+        with c._creation_namespace() if hasattr(c,"_creation_namespace") else nullcontext():
+            raw.skinCluster(self.scene_address(joint),self.scene_address(geometry),multi=True,
+                frontOfChain=True,toSelectedBones=True,name=self.scene_address(name+"SC"))
         return name+"SC"
 
     def unlock_original_face_skin_influences(self,skins):

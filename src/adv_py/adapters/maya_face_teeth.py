@@ -11,7 +11,7 @@ class MayaFaceTeethMixin:
         return result
 
     def record_original_face_parts(self,attribute):
-        if attribute not in ("UpperTeeth","LowerTeeth","Tongue"): raise ValueError("Face 部件类型无效")
+        if attribute not in ("UpperTeeth","LowerTeeth","Tongue","Eyebrow","EyeLash"): raise ValueError("Face 部件类型无效")
         self._require_transaction()
         c=self._cmds; raw=getattr(c,"raw",c)
         selected=tuple(raw.ls(selection=True,long=True,flatten=True) or [])

@@ -78,6 +78,11 @@ _CREATE |= {'polyProjectCurve', 'attachCurve', 'reverseCurve', 'rebuildCurve', '
 _NODE_RESULTS |= {'nurbsPlane', 'cylinder'}
 _CREATE |= {'nurbsPlane', 'cylinder'}
 
+# Original Face Cage polygon and muscle surface operations.
+_NODE_ARGS |= {'polyMergeVertex', 'polyNormal', 'loft'}
+_NODE_RESULTS |= {'polyCreateFacet', 'polyMergeVertex', 'polyNormal', 'loft', 'createDisplayLayer'}
+_CREATE |= {'polyCreateFacet', 'polyMergeVertex', 'polyNormal', 'loft', 'createDisplayLayer'}
+
 class MayaCharacterCommands:
     def __init__(self,commands,namespace):
         self.identity=CharacterIdentity(namespace)

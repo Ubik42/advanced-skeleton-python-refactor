@@ -311,7 +311,7 @@ def create_panel(controller: MayaPanelController | None = None):
                              '01 · 目标网格', '02 · 可移植目标资产')),
                     ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit', '03 · Lip Fit', '04 · Face 定位点', '05 · Tongue Fit')),
                     ('Build', ('03 · 控制与变形器',)),
-                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03I · Lip 绑定', '03J · Jaw 绑定与修形', '03F · Tongue 绑定', '03G · Lip Falloff', '03H · Regions')),
+                    ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03I · Lip 绑定', '03G · Lip Falloff', '03K · Face Cage', '03L · Face 表情修形', '03J · Jaw 绑定与修形', '03F · Tongue 绑定', '03H · Regions', '03M · Eye Aim 与 UpMidLo')),
                     ('Skin Layers', ('03a · Face Skin Layers',)),
                     ('Tweaks', ('03A · Face Tweaks',)),
                     ('DeltaMush', ('03B · Face DeltaMush',)),
@@ -1501,7 +1501,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 row.addWidget(self._button(label, record))
                 row.addWidget(self._button("重选 " + label, reselect))
                 form.addRow(row)
-            for label,part in (("记录所选上牙","UpperTeeth"),("记录所选下牙","LowerTeeth")):
+            for label,part in (("记录所选上牙","UpperTeeth"),("记录所选下牙","LowerTeeth"),
+                               ("记录所选眉毛","Eyebrow"),("记录所选睫毛","EyeLash")):
                 form.addRow(self._button(label,lambda part=part: self._face_teeth_record(part)))
             self.face_fit_side_status = QtWidgets.QLabel("Fit 编辑侧：右侧")
             row = QtWidgets.QHBoxLayout()
@@ -1698,24 +1699,6 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("建立 Lip Ribbon 与控制驱动",self._face_build_lip))
 
             stack.addWidget(group)
-            self.face_jaw_smooth=QtWidgets.QSpinBox()
-            self.face_jaw_smooth.setRange(0,9999); self.face_jaw_smooth.setValue(50)
-            group, form = self._group("03J · Jaw 绑定与修形", [("平滑迭代",self.face_jaw_smooth)])
-            for label,action in (("建立 Jaw 权重层与 Teeth","build"),("更新 Jaw 曲线边界权重","update"),
-                                 ("完成 Jaw 权重与跟随","finish"),("Jaw Open 修形","open"),
-                                 ("完成 Jaw Open","open_finish"),("Lip Up 修形","lip_up"),
-                                 ("完成 Lip Up","lip_up_finish"),("Lip Down 修形","lip_down"),
-                                 ("完成 Lip Down","lip_down_finish"),("Lip Side 修形","lip_side"),
-                                 ("完成 Lip Side","lip_side_finish")):
-                form.addRow(self._button(label,lambda action=action: self._face_jaw(action)))
-            form.addRow(self._button("更新 JawOpenLayer 嘴唇权重",self._face_jaw_lip_weights))
-            stack.addWidget(group)
-            group, form = self._group("03F · Tongue 绑定", [])
-            form.addRow(self._button("建立 Tongue 控制链与蒙皮",
-                lambda: self._face_tongue("build")))
-            form.addRow(self._button("完成 Tongue，恢复模型显示",
-                lambda: self._face_tongue("finish")))
-            stack.addWidget(group)
             self.face_lip_falloff_outer=QtWidgets.QSpinBox()
             self.face_lip_falloff_outer.setRange(0,9999); self.face_lip_falloff_outer.setValue(3)
             self.face_lip_falloff_inner=QtWidgets.QSpinBox()
@@ -1731,6 +1714,46 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("建立 Lip Falloff 权重层",lambda: self._face_lip_falloff("build")))
             form.addRow(self._button("预览范围",lambda: self._face_lip_falloff("preview")))
             form.addRow(self._button("更新范围与权重",lambda: self._face_lip_falloff("update")))
+            stack.addWidget(group)
+            self.face_cage_smooth=QtWidgets.QSpinBox()
+            self.face_cage_smooth.setRange(0,9999); self.face_cage_smooth.setValue(0)
+            group, form = self._group("03K · Face Cage", [("平滑轮数",self.face_cage_smooth)])
+            for label,action in (("建立 Face Cage 与投射控制","build"),("Cage 权重转到模型","transfer"),
+                                 ("更新 Cage 平滑与权重","update"),("移除 Cage 权重，恢复备份","remove"),
+                                 ("完成 Face Cage","finish"),("建立 EyeBrow Region 与驱动","brow")):
+                form.addRow(self._button(label,lambda action=action: self._face_cage(action)))
+            stack.addWidget(group)
+            group, form = self._group("03L · Face 表情修形", [])
+            for label,stage in (("Squint","squint"),("Smile Pull","smile"),("Frown Pull","frown"),
+                                ("Cheek","cheek"),("Cheek Raiser","cheek_raiser")):
+                row=QtWidgets.QHBoxLayout()
+                row.addWidget(self._button(label+" 修形",lambda stage=stage: self._face_expression(stage)))
+                row.addWidget(self._button("完成 "+label,lambda stage=stage: self._face_expression(stage+"_finish")))
+                form.addRow(row)
+            stack.addWidget(group)
+            self.face_jaw_smooth=QtWidgets.QSpinBox()
+            self.face_jaw_smooth.setRange(0,9999); self.face_jaw_smooth.setValue(50)
+            group, form = self._group("03J · Jaw 绑定与修形", [("平滑迭代",self.face_jaw_smooth)])
+            for label,action in (("建立 Jaw 权重层与 Teeth","build"),("更新 Jaw 曲线边界权重","update"),
+                                 ("完成 Jaw 权重与跟随","finish"),("Jaw Open 修形","open"),
+                                 ("完成 Jaw Open","open_finish"),("Lip Up 修形","lip_up"),
+                                 ("完成 Lip Up","lip_up_finish"),("Lip Down 修形","lip_down"),
+                                 ("完成 Lip Down","lip_down_finish"),("Lip Side 修形","lip_side"),
+                                 ("完成 Lip Side","lip_side_finish")):
+                form.addRow(self._button(label,lambda action=action: self._face_jaw(action)))
+            form.addRow(self._button("更新 JawOpenLayer 嘴唇权重",self._face_jaw_lip_weights))
+            form.addRow(self._button("Snarl 修形",lambda: self._face_expression("snarl")))
+            form.addRow(self._button("完成 Snarl",lambda: self._face_expression("snarl_finish")))
+            stack.addWidget(group)
+            group, form = self._group("03F · Tongue 绑定", [])
+            form.addRow(self._button("建立 Tongue 控制链与蒙皮",
+                lambda: self._face_tongue("build")))
+            form.addRow(self._button("完成 Tongue，恢复模型显示",
+                lambda: self._face_tongue("finish")))
+            stack.addWidget(group)
+            group, form = self._group("03M · Eye Aim 与 UpMidLo", [])
+            form.addRow(self._button("显示 Eye Aim 控制",lambda: self._face_expression("eye_aim")))
+            form.addRow(self._button("建立 UpMidLo 控制与权重",lambda: self._face_expression("up_mid_lo")))
             stack.addWidget(group)
             group, form = self._group("03H · Regions", [])
             form.addRow(self._button("建立第二控制盒区域投影",self._face_regions))
@@ -3821,6 +3844,18 @@ def create_panel(controller: MayaPanelController | None = None):
             result=self.controller.face_lip_build(self._namespace())
             if result is None: return "按原版条件跳过 Lip：缺少 Lip Main Fit"
             return f"已建立 Lip Ribbon、Sticky 与表情驱动：{len(result['controls'])} 个控制器"
+
+        def _face_cage(self,action):
+            result=self.controller.face_cage(self._namespace(),action,
+                None if action=="build" else self.face_cage_smooth.value())
+            if result is None: return "按原版条件跳过 Face Cage 阶段"
+            if isinstance(result,dict) and "smooth_passes" in result:
+                self.face_cage_smooth.setValue(result["smooth_passes"])
+            return "Face Cage 操作完成："+action
+
+        def _face_expression(self,stage):
+            result=self.controller.face_expression(self._namespace(),stage)
+            return "Face 表情阶段完成："+stage if result else "当前阶段已完成或按原版条件跳过"
 
         def _face_jaw(self,action):
             result=self.controller.face_jaw(self._namespace(),action,self.face_jaw_smooth.value())

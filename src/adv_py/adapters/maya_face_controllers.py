@@ -289,7 +289,8 @@ class MayaFaceControllersMixin:
         bw="bw"+node+"_"+attr
         if not c.objExists(bw):
             c.createNode("blendWeighted",name=bw)
-            c.connectAttr(plug,bw+".input[0]")
+        if not c.isConnected(plug,bw+".input[0]",ignoreUnitConversion=True):
+            c.connectAttr(plug,bw+".input[0]",force=True)
         return bw+".output"
 
     def add_original_face_sdk(self,driver,driven,driver_value,driven_value):
@@ -301,12 +302,14 @@ class MayaFaceControllersMixin:
         node,attr=driven.split(".",1)
         driver_node,driver_attr=driver.split(".",1)
         driver_attr=c.attributeQuery(driver_attr,node=driver_node,longName=True)
-        attr=c.attributeQuery(attr,node=node,longName=True)
+        attr_root=attr.split("[",1)[0]
+        attr=c.attributeQuery(attr_root,node=node,longName=True)+attr[len(attr_root):]
         driver=driver_node+"."+driver_attr
         driver_bw="bw"+driver_node+"_"+driver_attr
         if c.objExists(driver_bw): driver=driver_bw+".output"
-        bw="bw"+node+"_"+attr
-        if not c.objExists(bw):
+        direct_bw=c.nodeType(node)=="blendWeighted"
+        bw=node if direct_bw else "bw"+node+"_"+attr
+        if not direct_bw and not c.objExists(bw):
             incoming=c.listConnections(driven,source=True,destination=False,plugs=True) or []
             c.createNode("blendWeighted",name=bw)
             if incoming:
@@ -319,7 +322,11 @@ class MayaFaceControllersMixin:
         for curve in curves:
             sources=c.listConnections(curve+".input",source=True,destination=False,plugs=True,skipConversionNodes=True) or []
             if driver in sources: existing=curve; break
-        if existing:
+        if direct_bw and "[" not in attr:
+            destination=bw+f".input[{int(c.getAttr(bw+'.input',size=True))}]"
+        elif direct_bw:
+            destination=driven
+        elif existing:
             destination=(c.listConnections(existing+".output",source=False,destination=True,plugs=True) or [None])[0]
         else:
             destination=bw+f".input[{max(indices,default=-1)+1}]"
@@ -331,6 +338,8 @@ class MayaFaceControllersMixin:
         after=c.listConnections(destination,source=True,destination=False,type="animCurve") or []
         for curve in after:
             if curve not in before:
+                if node.rsplit("|",1)[-1].startswith("SDK"):
+                    curve=c.rename(curve,node.rsplit("|",1)[-1]+"_"+attr)
                 c.setAttr(curve+".preInfinity",4); c.setAttr(curve+".postInfinity",4)
         self._transaction_changed=True
 

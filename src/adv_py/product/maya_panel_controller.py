@@ -2166,6 +2166,21 @@ class MayaPanelController:
         return BuildFaceLip(MayaFaceLipHost(
             namespace=None if namespace == ":" else namespace)).apply()
 
+    def face_cage(self,namespace: str,action: str,smooth_passes=None):
+        from adv_py.adapters.maya_face_expressions import MayaFaceExpressionHost
+        from adv_py.application.face_cage import BuildFaceCage,TransferFaceCage,EditFaceCage,BuildFaceBrow
+        from adv_py.core.face_cage import FaceCageOptions
+        host=MayaFaceExpressionHost(namespace=None if namespace==":" else namespace)
+        if action=="build": return BuildFaceCage(host).apply(FaceCageOptions(smooth_passes))
+        if action=="transfer": return TransferFaceCage(host).apply(smooth_passes or 0)
+        if action=="brow": return BuildFaceBrow(host).apply()
+        return EditFaceCage(host).apply(action,smooth_passes or 0)
+
+    def face_expression(self,namespace: str,stage: str):
+        from adv_py.adapters.maya_face_expressions import MayaFaceExpressionHost
+        from adv_py.application.face_expressions import FitFaceExpression
+        return FitFaceExpression(MayaFaceExpressionHost(namespace=None if namespace==":" else namespace)).apply(stage)
+
     def face_jaw(self,namespace: str,action: str,smooth_iterations: int=50):
         from adv_py.adapters.maya_face_jaw import MayaFaceJawHost
         from adv_py.application.face_jaw import BuildFaceJaw,UpdateFaceJawWeights,FinishFaceJaw,FitFaceJawPose
