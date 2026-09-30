@@ -371,6 +371,12 @@ def plan_body_torso(
             stretches = tuple(spec for spec in module.stretch.sides if spec.side == start_joint.side)
             if len(roots) != 2 or len(offsets) != 1 or len(stretches) != 1:
                 raise FitSkeletonValidationError(f"{label} 机制链或 FK / stretch 根定义不完整")
+            fk_roots = tuple(spec for spec in roots
+                             if spec.role is BodyLimbMechanismRole.FK)
+            if (len(fk_roots) != 1
+                    or offsets[0].driven_joint != fk_roots[0].path):
+                raise FitSkeletonValidationError(
+                    f"{label} FK 控制器未驱动 FK 起点")
             attachments.append(BodySpaceAttachment(
                 f"AdvPy_Torso{label}FKSpace_{suffix}", source, offsets[0].offset_path, "parentConstraint",
             ))
