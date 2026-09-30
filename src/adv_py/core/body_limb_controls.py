@@ -146,6 +146,8 @@ def plan_body_limb_fk_controls(
     root_parent_path: str | None = None,
     allow_part_parents: bool = False,
     aim_joint_names: frozenset[str] = frozenset(),
+    use_offset_parent_matrix: bool = False,
+    fkx_joint_names: frozenset[str] | None = None,
 ) -> BodyLimbFkControlPlan:
     if type(allow_part_parents) is not bool:
         raise BodyLimbControlValidationError("FK Part 父级开关无效")
@@ -154,6 +156,10 @@ def plan_body_limb_fk_controls(
         raise BodyLimbControlValidationError("FK Aim 关节集合无效")
     if type(sub_controllers) is not bool or type(extra_controllers) is not bool:
         raise BodyLimbControlValidationError("FK 控制器开关必须是布尔值")
+    if type(use_offset_parent_matrix) is not bool:
+        raise BodyLimbControlValidationError("FK OPM 开关必须是布尔值")
+    if fkx_joint_names is not None and not isinstance(fkx_joint_names, frozenset):
+        raise BodyLimbControlValidationError("FKX 关节集合无效")
     if (
         not limb_label.isalpha()
         or len(joint_names) < 2
@@ -242,6 +248,13 @@ def plan_body_limb_fk_controls(
                         if aim_name is not None else None)
             extra_path = f"{aim_path or offset_path}|{extra_name}"
             control_path = f"{extra_path}|{control_name}"
+            sub_path = (control_path + "|AdvPy_" + joint_name + "FKSub_" + suffix
+                        if sub_controllers else None)
+            fkx_joint = (fkx_joint_names is None
+                         or control_name in fkx_joint_names)
+            fkx_path = ((sub_path or control_path) + "|AdvPy_"
+                        + joint_name + "FKX_" + suffix
+                        if fkx_joint else None)
             controls.append(BodyLimbFkControlSpec(
                 side=side,
                 driven_joint=(
@@ -259,14 +272,15 @@ def plan_body_limb_fk_controls(
                 world_axes=state.world_axes,
                 radius=body_fk_curve_radius(body, state, radius),
                 rotate_order=state.rotation_order,
-                sub_control_path=(
-                    control_path + "|AdvPy_" + joint_name + "FKSub_" + suffix
-                    if sub_controllers else None
-                ),
+                sub_control_path=sub_path,
                 sub_control_name=(
                     "AdvPy_" + joint_name + "FKSub_" + suffix
                     if sub_controllers else None
                 ),
+                source_override_path=fkx_path,
+                source_override_joint=fkx_joint,
+                source_override_segment_scale_compensate=(
+                    not use_offset_parent_matrix),
                 extra_path=extra_path,
                 extra_name=extra_name,
                 extra_curve=extra_controllers,
@@ -274,7 +288,8 @@ def plan_body_limb_fk_controls(
                 aim_path=aim_path,
                 aim_name=aim_name,
             ))
-            parent_path = control_path
+            parent_path = (fkx_path if fkx_joint and not use_offset_parent_matrix
+                           else control_path)
             previous_joint = state.path
     return BodyLimbFkControlPlan(root_path, root_name, tuple(controls))
 

@@ -55,6 +55,8 @@ def plan_body_leg_fk_controls(
     terminal_toes_end_control: bool = False,
     allow_part_parents: bool = False,
     aim_joint_names: frozenset[str] = frozenset(),
+    use_offset_parent_matrix: bool = False,
+    fkx_joint_names: frozenset[str] | None = None,
     joint_names: tuple[str, ...] = ("Hip", "Knee", "Ankle", "Toes", "ToesEnd"),
 ) -> BodyLegFkControlPlan:
     if type(terminal_toes_end_control) is not bool:
@@ -73,6 +75,8 @@ def plan_body_leg_fk_controls(
                           else None),
         allow_part_parents=allow_part_parents,
         aim_joint_names=aim_joint_names,
+        use_offset_parent_matrix=use_offset_parent_matrix,
+        fkx_joint_names=fkx_joint_names,
     )
 
 

@@ -813,7 +813,10 @@ class BuildRegisteredBodyCharacter:
                 defer_fit_tweakers=True,
                 defer_curve_guides=True,
                 defer_partial_hand_to_generic=True,
-                part_paths=final_paths)
+                part_paths=final_paths,
+                standard_fkx_joint_names=(
+                    _generic_fk_policy.standard_fkx_joint_names
+                    if _generic_fk_policy is not None else None))
             if not use_fit_part_hierarchy:
                 BuildFitPartScaleDrivers(joined).apply_terminal_only(
                     part_plan.specs,

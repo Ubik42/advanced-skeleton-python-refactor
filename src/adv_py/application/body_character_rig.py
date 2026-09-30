@@ -231,6 +231,7 @@ class BuildBodyCharacterRig:
         defer_curve_guides: bool = False,
         defer_partial_hand_to_generic: bool = False,
         part_paths: FitPartFinalPaths | None = None,
+        standard_fkx_joint_names: frozenset[str] | None = None,
     ) -> BodyCharacterRigBuildPlan:
         if type(defer_fit_tweakers) is not bool:
             raise FitSkeletonValidationError("Tweaker 延后构建选项必须是布尔值")
@@ -283,6 +284,7 @@ class BuildBodyCharacterRig:
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
             aim_joint_names=arm_aim,
+            fkx_joint_names=standard_fkx_joint_names,
         )
         leg = self._leg.plan_from_safety(
             safety,
@@ -291,6 +293,7 @@ class BuildBodyCharacterRig:
             twist_joints_per_segment=twist_joints_per_segment,
             defer_pole_aim=include_control_spaces,
             aim_joint_names=leg_aim,
+            fkx_joint_names=standard_fkx_joint_names,
         )
         expected_hand_names = {
             f"{source_name}_{suffix}"
@@ -565,6 +568,7 @@ class BuildBodyCharacterRig:
         defer_curve_guides: bool = False,
         defer_partial_hand_to_generic: bool = False,
         part_paths: FitPartFinalPaths | None = None,
+        standard_fkx_joint_names: frozenset[str] | None = None,
     ) -> BodyCharacterRigBuildResult:
         plan = self.plan(
             container_name,
@@ -583,6 +587,7 @@ class BuildBodyCharacterRig:
             defer_curve_guides=defer_curve_guides,
             defer_partial_hand_to_generic=defer_partial_hand_to_generic,
             part_paths=part_paths,
+            standard_fkx_joint_names=standard_fkx_joint_names,
             pole_distance_scale=pole_distance_scale,
             twist_joints_per_segment=twist_joints_per_segment,
             center_tolerance=center_tolerance,

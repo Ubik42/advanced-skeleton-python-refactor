@@ -22,6 +22,17 @@ class MayaCharacterRegistryMixin:
         for node in registration.nodes:
             by_leaf.setdefault(node.path.rsplit('|', 1)[-1]
                                .rsplit(':', 1)[-1], []).append(node.path)
+        standard_fkx_joints = set()
+        for side in ('R', 'L'):
+            for joint in ('Shoulder', 'Elbow', 'Wrist', 'Hip', 'Knee',
+                          'Ankle', 'Toes', 'ToesEnd'):
+                leaf = 'AdvPy_' + joint + 'FKX_' + side
+                matches = by_leaf.get(leaf, ())
+                if len(matches) > 1:
+                    raise CharacterRegistryError(
+                        '旧标准 FKX 节点名称不唯一：' + leaf)
+                if matches and c.nodeType(matches[0]) == 'joint':
+                    standard_fkx_joints.add('AdvPy_' + joint + 'FK_' + side)
         body_by_leaf = {joint.path.rsplit('|', 1)[-1]
                         .rsplit(':', 1)[-1]: joint.path
                         for joint in registration.body}
@@ -478,6 +489,7 @@ class MayaCharacterRegistryMixin:
             twist_rewired_sources=frozenset(twist_rewired),
             bendy_scale_controls=frozenset(bendy_scales),
             fkx_joint_controls=frozenset(fkx_joints),
+            standard_fkx_joint_names=frozenset(standard_fkx_joints),
             bendy_aim_follow_controls=bendy_aim_follow,
             bendy_start_control_sources=frozenset(bendy_start_control),
             bendy_child_control_sources=frozenset(bendy_child_control),

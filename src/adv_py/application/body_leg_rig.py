@@ -210,6 +210,7 @@ class BuildBodyLegRig:
         pole_distance_scale: float = 0.75, twist_joints_per_segment: int = 2,
         defer_pole_aim: bool = False,
         aim_joint_names: frozenset[str] = frozenset(),
+        fkx_joint_names: frozenset[str] | None = None,
     ) -> BodyLegRigBuildPlan:
         """Plan this module from the character's shared immutable input."""
         from adv_py.core.body_leg_qtoes import plan_leg_joint_names
@@ -235,6 +236,9 @@ class BuildBodyLegRig:
                 safety.symmetry.settings).extra_controllers,
             terminal_toes_end_control=terminal_toes_end_control,
             aim_joint_names=aim_joint_names,
+            use_offset_parent_matrix=BodyBuildOptions.from_fit_settings(
+                safety.symmetry.settings).use_offset_parent_matrix,
+            fkx_joint_names=fkx_joint_names,
             joint_names=joint_names,
         )
         blend = plan_body_leg_blend(
@@ -296,6 +300,8 @@ class BuildBodyLegRig:
             names.extend((spec.offset_name, spec.control_name, spec.constraint_name))
             if spec.aim_name is not None:
                 names.append(spec.aim_name)
+            if spec.source_override_path is not None:
+                names.append(spec.source_override_path.rsplit('|', 1)[-1])
         for side in blend.sides:
             names.append(side.reverse_name)
             names.extend(joint.constraint_name for joint in side.joints)
