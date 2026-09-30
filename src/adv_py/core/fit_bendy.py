@@ -40,6 +40,7 @@ class FitBendyChainSpec:
     legacy_simple_control: bool = False
     legacy_twist_outputs: bool = False
     master_circular: bool = True
+    legacy_start_icon_offset: bool = False
 
     def __post_init__(self) -> None:
         if (type(self.control_count) is not int
@@ -83,6 +84,8 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 扭转输出层策略无效")
         if type(self.master_circular) is not bool:
             raise ValueError("Bendy 主控 Circular 层策略无效")
+        if type(self.legacy_start_icon_offset) is not bool:
+            raise ValueError("Bendy 起点图标偏移策略无效")
 
     @property
     def control_positions(self) -> tuple[tuple[float, float, float], ...]:
@@ -104,8 +107,10 @@ class FitBendyChainSpec:
 
     @property
     def start_icon_offset(self) -> float:
-        """ADV moves only Bend0's CVs by one fifth of the segment length."""
-        return (dist(self.start_position, self.end_position) / 5.0
+        """ADV offsets Bend0 by one fifth of its first child joint span."""
+        end = (self.end_position if self.legacy_start_icon_offset
+               else self.part_positions[0])
+        return (dist(self.start_position, end) / 5.0
                 * self.aim_axis_sign)
 
     @property

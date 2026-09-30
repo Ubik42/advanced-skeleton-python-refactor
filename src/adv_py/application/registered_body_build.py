@@ -730,6 +730,12 @@ class BuildRegisteredBodyCharacter:
                         is None
                         or chain.control_names[0] in
                         _generic_fk_policy.bendy_master_circular_controls),
+                    legacy_start_icon_offset=(
+                        _generic_fk_policy is not None
+                        and _generic_fk_policy.bendy_legacy_start_icon_controls
+                        is not None
+                        and chain.control_names[0] in
+                        _generic_fk_policy.bendy_legacy_start_icon_controls),
                     start_world_axes=oriented_body_axes.get(
                         chain.start_body)
                     if (_generic_fk_policy is None

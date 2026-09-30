@@ -778,6 +778,13 @@ class MayaFitBendyMixin:
                     c.move(spec.start_icon_offset, 0, 0,
                            control + ".cv[0:99]", relative=True,
                            objectSpace=True, worldSpaceDistance=True)
+                    if not spec.legacy_start_icon_offset:
+                        c.addAttr(control,
+                                  longName="advPyBendyPartSpanIcon",
+                                  attributeType="bool",
+                                  defaultValue=True)
+                        c.setAttr(control + ".advPyBendyPartSpanIcon",
+                                  lock=True)
             if index == 0:
                 control = c.parent(control, parent)[0]
             self._align_bendy_control(
@@ -2220,6 +2227,13 @@ class MayaFitBendyMixin:
             for index in range(count)) / count
         if abs(center_x - spec.start_icon_offset) > 1e-4:
             return False
+        if not spec.legacy_start_icon_offset:
+            marker = (spec.control_names[1]
+                      + ".advPyBendyPartSpanIcon")
+            if (not c.objExists(marker)
+                    or not c.getAttr(marker)
+                    or not c.getAttr(marker, lock=True)):
+                return False
         if not c.objExists(spec.control_names[0] + ".parametric"):
             return False
         if spec.parent_bendy and any(
