@@ -84,8 +84,9 @@ def character_channels(rig):
             if spline.sub_targets:
                 add(f"spine.spline.{index}.sub",
                     spline.sub_targets[index], transform)
+        add("spine.spline",spline.mode_control,(spline.mode_attribute,))
         add("spine.spline", spline.settings,
-            ("spineIkFk", "stretchy", "volume") +
+            ("stretchy", "volume") +
             (("stretchEven",) if spline.even_stretch_graph else ()))
         if spline.mid_follow_graph:
             for index, target in enumerate(spline.targets[1:-1], 1):

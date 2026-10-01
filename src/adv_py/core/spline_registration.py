@@ -39,11 +39,24 @@ def decode_spline(raw, body):
         raw={**raw,'source_first_translate':False}
     if isinstance(raw,dict) and 'source_world_controls' not in raw:
         raw={**raw,'source_world_controls':False}
+    if isinstance(raw,dict) and 'source_mode' not in raw:
+        raw={**raw,'source_mode':None}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
     if type(raw['source_first_translate']) is not bool or raw['source_first_translate'] and not raw['source_curve_points']:
         raise CharacterRegistryError('来源 Spline 首控制器位移标记无效')
     if type(raw['source_world_controls']) is not bool or raw['source_world_controls'] and not raw['source_curve_points']:
         raise CharacterRegistryError('来源 Spline 世界控制朝向标记无效')
+    source_mode=None
+    if raw['source_mode'] is not None:
+        from .source_spline_mode import SourceSplineModePlan
+        mode=raw['source_mode']
+        exact(mode,(field.name for field in fields(SourceSplineModePlan)))
+        if not raw['source_curve_points']:
+            raise CharacterRegistryError('只有来源 Spline 使用独立 FKIK 控制器')
+        try:
+            source_mode=SourceSplineModePlan(**{**mode,'parent_source':path(mode['parent_source'])})
+        except (TypeError,ValueError,AttributeError) as exc:
+            raise CharacterRegistryError('来源 Spline FKIK 控制器保存数据无效') from exc
     if type(raw['use_offset_parent_matrix']) is not bool:
         raise CharacterRegistryError('Spline OPM 开关无效')
     if type(raw['even_stretch_graph']) is not bool:
@@ -67,6 +80,14 @@ def decode_spline(raw, body):
     count = len(body_paths)
     if count<2 or (not raw['source_curve_points'] and count>64) or len(set(body_paths)) != count:
         raise CharacterRegistryError('曲线脊柱关节数量或身份无效')
+    if source_mode is not None:
+        identities=tuple(p.rsplit('|',1)[-1] for p in body_paths)
+        side=source_mode.name.rsplit('_',1)[-1]
+        if (any(not name.endswith('_'+side) for name in identities)
+                or identities[0]!=source_mode.start_joint+'_'+side
+                or identities[-1]!=source_mode.end_joint+'_'+side
+                or source_mode.middle_joint+'_'+side not in identities):
+            raise CharacterRegistryError('来源 Spline FKIK 骨链标记与实际 Body 身份不一致')
     matrix_indices=raw['source_body_matrix_indices']
     if (not isinstance(matrix_indices,(list,tuple))
             or any(type(index) is not int or not 0<=index<count for index in matrix_indices)
@@ -202,7 +223,7 @@ def decode_spline(raw, body):
                           source_bendy_matrix_indices=tuple(bendy_indices),
                           source_fixed_orient_unique=raw['source_fixed_orient_unique'],
                           source_first_translate=raw['source_first_translate'],
-                          source_world_controls=raw['source_world_controls'])
+                          source_world_controls=raw['source_world_controls'],source_mode=source_mode)
     if result.source_hybrid_graph and any(
             offset.rsplit('|',1)[0]!=result.target_parent(index)
             for index,offset in enumerate(result.offset_targets)):

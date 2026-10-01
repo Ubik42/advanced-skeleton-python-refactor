@@ -362,6 +362,9 @@ def decode_registration(text):
         required = {root,container,*(c.node for c in channels),*paths,*values["fk_controls"],*values["body_joints"],*(j.path for j in joints)}
         required.update(v for v in values.values() if isinstance(v,str))
         if spline_document:
+            if spine.source_mode is not None:
+                required.update((spine.source_mode.control,spine.source_mode.frame,
+                                 spine.source_mode.parent_source))
             required.update(spine.targets)
             required.update(spine.ik_outputs[1:])
             required.update(spine.cv_controls)
@@ -392,6 +395,9 @@ def decode_registration(text):
                         *plan.cv_controls,*plan.hybrid_controls,*plan.cv_extras,
                         *plan.hybrid_extras,*plan.source_matrix_targets,
                         *(joint.path for joint in plan.joints)}
+                if plan.source_mode is not None:
+                    needed.update((plan.source_mode.control,plan.source_mode.frame,
+                                   plan.source_mode.parent_source))
                 if plan.source_controller_layers:
                     needed.add(plan.source_controls_root)
                 if plan.source_follow_parent:
@@ -400,6 +406,14 @@ def decode_registration(text):
                     needed.update(path for _,path,_ in plan.source_follow_targets)
                 if not needed.issubset(node_paths):
                     raise CharacterRegistryError('多组来源 Spline 登记缺少操作节点身份')
+        mode_plans=tuple(plan for plan in (spine,*additional)
+                         if isinstance(plan,BodySplinePlan) and plan.source_mode is not None)
+        if len({plan.mode_control for plan in mode_plans})!=len(mode_plans):
+            raise CharacterRegistryError('来源 Spline FKIK 控制器身份重复')
+        for plan in mode_plans:
+            if sum(channel.node==plan.mode_control and channel.attribute==plan.mode_attribute
+                   for channel in channels)!=1:
+                raise CharacterRegistryError('来源 Spline FKIK 模式通道登记不唯一')
         source_limbs=()
         if doc['version'] in (6,7):
             from .source_limb_animation import decode_source_limb_bindings

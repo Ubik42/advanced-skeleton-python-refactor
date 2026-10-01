@@ -17,7 +17,7 @@ class SourceSplineAnimationBinding:
 
     @property
     def blend_plug(self):
-        return self.plan.settings+'.spineIkFk'
+        return self.plan.mode_plug
 
     @property
     def controls(self):
@@ -93,7 +93,7 @@ def resolve_source_spline(registration,system=None):
                        if node.path.startswith(control+'|') and node.path.rsplit('|',1)[-1]==sub_leaf)
             drivers.append((subs[0] if len(subs)==1 else control) if index==0 else plan.joints[index].path)
     modes=tuple(ch for ch in registration.channels
-                if ch.node==plan.settings and ch.attribute=='spineIkFk')
+                if ch.node==plan.mode_control and ch.attribute==plan.mode_attribute)
     if len(modes)!=1:
         raise CharacterRegistryError('来源 Spline 模式通道登记不唯一')
     first=(plan.root_path+'|'+plan.node_name('AdvPy_SplineFirstFixedOutput'))
@@ -106,7 +106,7 @@ def registered_spline_mode_channel(registration):
     if not isinstance(registration.spine,BodySplinePlan):
         raise CharacterRegistryError('当前角色没有 Spline 模式通道')
     matches=tuple(channel for channel in registration.channels
-                  if channel.node==registration.spine.settings and channel.attribute=='spineIkFk')
+                  if channel.node==registration.spine.mode_control and channel.attribute==registration.spine.mode_attribute)
     if len(matches)!=1:raise CharacterRegistryError('Spline 模式通道登记缺失或不唯一')
     return matches[0]
 

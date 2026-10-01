@@ -154,9 +154,14 @@ def create(host,plan):
             ('spineIkFk',0.,1.,'脊柱 IK 权重'),
             ('stretchy',10.,10.,'脊柱伸展'),
             ('volume',10.,10.,'体积保持')):
+        if attribute=='spineIkFk' and plan.source_mode:
+            continue
         c.addAttr(plan.settings,longName=attribute,niceName=label,
                   attributeType='double',minValue=0.,maxValue=maximum,
                   defaultValue=default,keyable=True)
+    if plan.source_mode:
+        from .maya_source_spline_mode import create as create_source_mode
+        create_source_mode(host,plan)
     if plan.source_hybrid_graph:
         maya_source_spline_hybrid.install_visibility(host,plan)
     curve=c.curve(name='AdvPy_SplineCurve',degree=plan.curve_degree,point=plan.curve_points)
@@ -300,12 +305,12 @@ def create(host,plan):
             for kind in ('translate','rotate','scale','shear'):
                 for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ')):
                     c.setAttr(rest+'.'+kind+axis,lock=True,keyable=False)
-    c.createNode('reverse',name='AdvPy_SplineReverse',skipSelect=True);c.connectAttr(plan.settings+'.spineIkFk','AdvPy_SplineReverse.inputX')
+    c.createNode('reverse',name='AdvPy_SplineReverse',skipSelect=True);c.connectAttr(plan.mode_weight,'AdvPy_SplineReverse.inputX')
     for i in range(1,n):
         for label,command in (('Point',c.pointConstraint),('Orient',c.orientConstraint),('Scale',c.scaleConstraint)):
             node=command(fk[i].path,plan.ik_outputs[i],plan.body_joints[i],name=f'AdvPy_Spline{label}{i}',maintainOffset=False)[0]
             aliases=command(node,q=True,weightAliasList=True)
-            c.connectAttr('AdvPy_SplineReverse.outputX',node+'.'+aliases[0]);c.connectAttr(plan.settings+'.spineIkFk',node+'.'+aliases[1])
+            c.connectAttr('AdvPy_SplineReverse.outputX',node+'.'+aliases[0]);c.connectAttr(plan.mode_weight,node+'.'+aliases[1])
             if label=='Orient':c.setAttr(node+'.interpType',2)
             if label=='Scale':
                 c.connectAttr(plan.body_joints[i-1]+'.scale',plan.body_joints[i]+'.inverseScale',force=True)
@@ -323,7 +328,7 @@ def create(host,plan):
                     source=c.connectionInfo(target_parent,sourceFromDestination=True)
                     if source:c.disconnectAttr(source,target_parent)
                     c.setAttr(target_parent,1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,type='matrix',lock=True)
-                    weight='AdvPy_SplineReverse.outputX' if target_index==0 else plan.settings+'.spineIkFk'
+                    weight='AdvPy_SplineReverse.outputX' if target_index==0 else plan.mode_weight
                     c.connectAttr(weight,node+f'.target[{target_index}].targetWeight',force=True)
     maya_chest_space.create(host, plan.body_joints[-1], plan.chest_space,
                            'AdvPy_SplineChestSpaceParent',
@@ -339,6 +344,9 @@ def audit(host,plan,*,source_visibility_ready=True):
         with spline_scope(host,plan) as local:
             return audit(host,local,source_visibility_ready=source_visibility_ready)
     c=host._cmds;n=len(plan.body_joints)
+    if plan.source_mode:
+        from .maya_source_spline_mode import audit as audit_source_mode
+        audit_source_mode(host,plan)
     fk=plan.joints[:n];ik=plan.joints[n:]
     maya_chest_space.audit(host, plan.body_joints[-1], plan.chest_space,
                           'AdvPy_SplineChestSpaceParent',
@@ -442,7 +450,7 @@ def audit(host,plan,*,source_visibility_ready=True):
     edges=[(shape+'.worldSpace[0]','AdvPy_SplineIKHandle.inCurve'),(shape+'.local','AdvPy_SplineArc.inputCurve'),
         ('AdvPy_SplineArc.arcLength','AdvPy_SplineRatio.input1X'),('AdvPy_SplineRatio.outputX','AdvPy_SplineStretchBlend.color1R'),
         ('AdvPy_SplineStretchBlend.outputR','AdvPy_SplineClamp.inputR'),
-        (plan.settings+'.spineIkFk','AdvPy_SplineReverse.inputX'),
+        (plan.mode_weight,'AdvPy_SplineReverse.inputX'),
         ]
     if end_local_start:
         edges += [(plan.driver_targets[0]+'|AdvPy_SplineIKLocalOrient0.worldMatrix[0]',
@@ -685,7 +693,7 @@ def audit(host,plan,*,source_visibility_ready=True):
                 sources=tuple(host._resolve_connected_node(p) for p in command(node,q=True,targetList=True))
                 if sources!=(plan.joints[i].path,plan.ik_outputs[i]):raise FitSkeletonValidationError('Spline FK/IK 输出目标被替换')
             aliases=("target[0].targetWeight","target[1].targetWeight") if label=="Scale" and version!=1 else command(node,q=True,weightAliasList=True)
-            if not c.isConnected('AdvPy_SplineReverse.outputX',node+'.'+aliases[0]) or not c.isConnected(plan.settings+'.spineIkFk',node+'.'+aliases[1]):
+            if not c.isConnected('AdvPy_SplineReverse.outputX',node+'.'+aliases[0]) or not c.isConnected(plan.mode_weight,node+'.'+aliases[1]):
                 raise FitSkeletonValidationError('Spline 混合权重连接无效')
             for axis in 'XYZ':
                 source = node + '.constraint' + kind.title() + axis

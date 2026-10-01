@@ -1366,6 +1366,9 @@ class MayaCharacterRegistryMixin:
                     paths.update(tuple(self._cmds.ls(part.name,long=True) or ())+
                                  tuple(self._cmds.ls(part.aligned_name,long=True) or ()))
         for spline in p.all_splines:
+            if spline.source_mode is not None:
+                paths.update((spline.source_mode.control,spline.source_mode.frame,
+                              spline.source_mode.parent_source))
             paths.add(spline.source_fixed_path)
             paths.add(spline.root_path+'|'+spline.node_name('AdvPy_SplineFirstFixedOutput'))
             paths.update((spline.root_path, spline.chest_space, spline.curve,

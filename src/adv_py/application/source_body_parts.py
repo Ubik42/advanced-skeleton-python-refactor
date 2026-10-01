@@ -45,7 +45,7 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
             blended[spline.body_joints[index]] = (
                 spline.joints[index].path + ".worldMatrix[0]",
                 spline.ik_outputs[index] + ".worldMatrix[0]",
-                spline.settings + ".spineIkFk",
+                spline.mode_weight,
                 spline.node_name(f"AdvPy_SplineOrient{index}"))
     for path in blended:
         independent.pop(path, None)

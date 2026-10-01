@@ -213,7 +213,7 @@ def match_fk(host, registration, before,*,_scoped=False):
     local = tuple(local_rotation_scale(host,j) if index in matrix_indices
                   else (tuple(c.getAttr(j+'.rotate')[0]),tuple(c.getAttr(j+'.scale')[0]))
                   for index,j in enumerate(plan.body_joints))
-    c.setAttr(plan.settings+'.spineIkFk', 0.)
+    c.setAttr(plan.mode_plug, 0.)
     if plan.source_first_translate:
         _match_source_first_fk(host,registration,wanted,global_scale)
     for index, control in enumerate(plan.fk_controls):

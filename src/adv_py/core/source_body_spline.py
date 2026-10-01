@@ -26,7 +26,7 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
             found.append(info)
     resolved=[]
     used=set()
-    from .source_fit_identity import source_fit_build_name,source_fit_reference
+    from .source_fit_identity import source_fit_build_name,source_fit_reference,source_fit_side_sign
     for info in found:
         for side in ('M','R','L'):
             source=tuple(by_name.get(source_fit_build_name(nodes[path].short_name)+'_'+side)
@@ -56,9 +56,27 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
         fk,spline=_plan_source_chain(fk,source,info,options,metadata,system,generated_sources)
         spline=replace(spline,source_fixed_orient_unique=True,source_first_translate=True,
                        source_world_controls=True)
+        from .source_spline_mode import SourceSplineModePlan,source_mode_icon_scale
+        # MEL asks for the immediate physical joint parent, including an
+        # inserted Part. A Body-only parent table omits those receivers.
+        parent=source[0].path.rsplit('|',1)[0]
+        if parent and parent.rsplit('|',1)[-1]=='Root_M':
+            parent='|Group|MotionSystem|RootSystem|AdvPy_LegLockConstrained'
+        elif not (parent==body.root or parent.startswith(body.root+'|')):
+            parent=source[0].path
+        build_name=lambda path:source_fit_build_name(nodes[path].short_name)
+        mode=SourceSplineModePlan('FKIK'+info.name+'_'+side,
+            nodes[info.start].short_name.rsplit(':',1)[-1],parent,
+            source_mode_icon_scale(hierarchy),sum(spline.lengths),
+            build_name(info.start),build_name(info.middle),build_name(info.end),
+            source_fit_side_sign(source[0].name,instances))
+        spline=replace(spline,source_mode=mode)
         plans.append(retain_source_spline_layout(spline,saved))
     if saved_layouts is not None and len(plans)!=len(saved_layouts):
         raise FitSkeletonValidationError('来源 Spline 重建不能静默增删已保存系统')
+    modes=tuple(plan.source_mode.name for plan in plans if plan.source_mode is not None)
+    if len(set(modes))!=len(modes):
+        raise FitSkeletonValidationError('来源 Spline FKIK 控制器名称重复')
     return fk,tuple(plans)
 
 

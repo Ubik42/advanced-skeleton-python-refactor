@@ -11,6 +11,7 @@ from .body_limb_mechanisms import (
 from .fit_settings import FitSkeletonValidationError
 from .body_build_options import BodyBuildOptions
 from .spline_names import scoped_spline_property,scoped_spline_method
+from .source_spline_mode import SourceSplineModePlan
 
 
 CURRENT_SPLINE_VERSION = 27
@@ -80,6 +81,32 @@ class BodySplinePlan:
     source_fixed_orient_unique: bool = False
     source_first_translate: bool = False
     source_world_controls: bool = False
+    source_mode: SourceSplineModePlan | None = None
+
+    @property
+    def mode_control(self):
+        return self.source_mode.control if self.source_mode else self.settings
+
+    @property
+    def mode_attribute(self):return 'FKIKBlend' if self.source_mode else 'spineIkFk'
+
+    @property
+    def mode_plug(self):return self.mode_control+'.'+self.mode_attribute
+
+    @property
+    def mode_maximum(self):return 10. if self.source_mode else 1.
+
+    @property
+    def mode_weight(self):
+        return self.source_mode.weight_unit+'.output' if self.source_mode else self.mode_plug
+
+    @property
+    def visibility_settings(self):return self.mode_control
+
+    @property
+    def visibility_reverse(self):
+        return (self.source_mode.visibility_range+'.outValueX' if self.source_mode
+                else self.node_name('AdvPy_SplineReverse.outputX'))
 
     @scoped_spline_property
     def source_fixed_orient_name(self):
@@ -315,7 +342,8 @@ class BodySplinePlan:
             hybrids += tuple('AdvPy_SplineHybridFollow'+label+suffix
                              for label,_,_ in self.source_follow_targets
                              for suffix in ('Matrix','Weight'))
-        return (fixed+chest+tuple(j.name for j in self.joints)+targets+cvs+hybrids+proxies+layers+outputs+
+        mode=self.source_mode.node_names if self.source_mode else ()
+        return (mode+fixed+chest+tuple(j.name for j in self.joints)+targets+cvs+hybrids+proxies+layers+outputs+
                 rests+scaling+orientations+(even if self.even_stretch_graph else ())+
                 (twist if self.twist_ramp_graph else ())+
                 (follow if self.mid_follow_graph else ())+

@@ -72,7 +72,7 @@ def build_source_body_inbetween(host, build, part_result, fk, limbs, spline, *,
                     raise ValueError("来源 Spline Inbetween 缺少 FK 起点")
                 binding = _source_ik_binding(tuple(chain), fk, start_control, end_control,
                     spline.ik_outputs[index], spline.ik_outputs[index + 1],
-                    spline.node_name("AdvPy_SplineReverse.outputX"), spline.settings + ".spineIkFk",
+                    spline.node_name("AdvPy_SplineReverse.outputX"), spline.mode_weight,
                     spline_root_path=spline.root_path)
                 if index == 0 and spline.fk_root_point_from_receiver and not root_start:
                     binding = replace(binding,

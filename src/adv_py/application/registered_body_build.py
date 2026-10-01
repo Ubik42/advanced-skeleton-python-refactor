@@ -239,7 +239,7 @@ def _independent_rig_twist_sources(
             blended_matrices[spline.body_joints[index]] = (
                 spline.joints[index].path + ".worldMatrix[0]",
                 spline.ik_outputs[index] + ".worldMatrix[0]",
-                spline.settings + ".spineIkFk",
+                spline.mode_weight,
                 f"AdvPy_SplineOrient{index}")
     for module in (plan.arm, plan.leg):
         for side in module.blend.sides:

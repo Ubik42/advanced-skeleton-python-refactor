@@ -584,7 +584,8 @@ def plan_simple_fit_orientations(
                 reference = _scale(reference, -1.0)
         secondary = _normalize(
             _subtract(reference, _scale(primary, _dot(reference, primary))),
-            "无法建立稳定的 secondary axis",
+            f"{hierarchy[path].short_name} 无法建立稳定的 secondary axis："
+            f"primary={primary}, reference={reference}",
         )
         desired_axes = _world_axes_from_aim_up(
             primary_axis, secondary_local_axis, primary, secondary

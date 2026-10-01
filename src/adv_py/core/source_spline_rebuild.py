@@ -39,5 +39,5 @@ def retain_source_spline_layout(plan,saved):
         'sub_targets','extra_curve','fk_root_point_from_receiver','source_curve_points',
         'fake_mid_control','source_hybrid_graph','source_control_axes','source_ik_local',
         'source_cv_axes','source_controller_layers','source_follow_parent','source_follow_targets',
-        'source_fixed_orient_unique','source_first_translate','source_world_controls')
+        'source_fixed_orient_unique','source_first_translate','source_world_controls','source_mode')
     return replace(plan,**{field:getattr(saved,field) for field in fields})

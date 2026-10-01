@@ -37,7 +37,7 @@ def create(host,plan,fk):
         with spline_scope(host,plan) as local:
             return create(host,local,remap_spline_value(fk,plan.system_name,canonical=True))
     c = host._cmds
-    settings = plan.settings
+    settings = plan.visibility_settings
     for attr in ('autoVis','FKVis','IKVis'):
         c.addAttr(settings,longName=attr,attributeType='bool',defaultValue=True)
         c.setAttr(settings+'.'+attr,keyable=attr!='autoVis',channelBox=True)
@@ -45,8 +45,8 @@ def create(host,plan,fk):
     c.connectAttr(settings+'.autoVis',condition+'.firstTerm')
     c.connectAttr(settings+'.IKVis',condition+'.colorIfTrueR')
     c.connectAttr(settings+'.FKVis',condition+'.colorIfTrueG')
-    c.connectAttr(settings+'.spineIkFk',condition+'.colorIfFalseR')
-    c.connectAttr('AdvPy_SplineReverse.outputX',condition+'.colorIfFalseG')
+    c.connectAttr(plan.mode_plug,condition+'.colorIfFalseR')
+    c.connectAttr(plan.visibility_reverse,condition+'.colorIfFalseG')
     hidden = set(fk.hidden_controls)
     fk_by_path = {control.control_path:control for control in fk.controls}
     def route(control,source):
@@ -83,12 +83,17 @@ def create(host,plan,fk):
     if plan.source_hybrid_graph:
         hybrid = c.createNode('plusMinusAverage',name='AdvPy_SplineHybridVisibility',skipSelect=True)
         c.setAttr(hybrid+'.operation',3)
-        c.connectAttr(condition+'.outColorR',hybrid+'.input1D[0]')
-        c.connectAttr(settings+'.ikHybridVis',hybrid+'.input1D[1]')
+        output=condition+'.outColorR'
+        if plan.source_mode is not None:
+            unit=plan.source_mode.hybrid_visibility_unit
+            c.connectAttr(output,unit+'.input')
+            output=unit+'.output'
+        c.connectAttr(output,hybrid+'.input1D[0]')
+        c.connectAttr(plan.settings+'.ikHybridVis',hybrid+'.input1D[1]')
         c.setAttr(hybrid+'.input1D[2]',-.5)
         for control in plan.hybrid_controls:
             for shape in c.listRelatives(control,shapes=True,fullPath=True) or []:
-                c.disconnectAttr(settings+'.ikHybridVis',shape+'.visibility')
+                c.disconnectAttr(plan.settings+'.ikHybridVis',shape+'.visibility')
                 c.connectAttr(hybrid+'.output1D',shape+'.visibility')
 
 
@@ -97,17 +102,26 @@ def audit(host,plan):
     condition = 'AdvPy_SplineVisibility'
     if not c.objExists(condition) or c.nodeType(condition)!='condition':
         raise FitSkeletonValidationError('来源 Spline 显示条件图缺失')
-    edges = tuple((plan.settings+'.'+attr,condition+'.'+destination)
+    edges = tuple((plan.visibility_settings+'.'+attr,condition+'.'+destination)
         for attr,destination in (('autoVis','firstTerm'),('IKVis','colorIfTrueR'),
-                                 ('FKVis','colorIfTrueG'),('spineIkFk','colorIfFalseR')))
-    edges += (('AdvPy_SplineReverse.outputX',condition+'.colorIfFalseG'),
+                                 ('FKVis','colorIfTrueG')))
+    edges += ((plan.mode_plug,condition+'.colorIfFalseR'),
+              (plan.visibility_reverse,condition+'.colorIfFalseG'),
               (condition+'.outColorR',plan.curve+'.visibility'))
     if plan.source_hybrid_graph:
         node='AdvPy_SplineHybridVisibility'
         if (not c.objExists(node) or c.nodeType(node)!='plusMinusAverage'
                 or c.getAttr(node+'.operation')!=3 or c.getAttr(node+'.input1D[2]')!=-.5):
             raise FitSkeletonValidationError('来源 Spline Hybrid 显示混合改变')
-        edges += ((condition+'.outColorR',node+'.input1D[0]'),
+        output=condition+'.outColorR'
+        if plan.source_mode is not None:
+            unit=plan.source_mode.hybrid_visibility_unit
+            if (not c.objExists(unit) or c.nodeType(unit)!='unitConversion'
+                    or abs(c.getAttr(unit+'.conversionFactor')-.1)>1e-8):
+                raise FitSkeletonValidationError('来源 Spline Hybrid 显示换算改变')
+            edges += ((output,unit+'.input'),)
+            output=unit+'.output'
+        edges += ((output,node+'.input1D[0]'),
                   (plan.settings+'.ikHybridVis',node+'.input1D[1]'))
     if c.getAttr(condition+'.operation')!=0 or c.getAttr(condition+'.secondTerm')!=0:
         raise FitSkeletonValidationError('来源 Spline 自动显示条件改变')

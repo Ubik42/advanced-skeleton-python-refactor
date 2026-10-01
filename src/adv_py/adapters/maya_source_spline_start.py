@@ -57,7 +57,7 @@ def create(host,plan,fk,generated_sources):
         if len(weights)!=2:
             raise FitSkeletonValidationError('来源 Spline 起点 FK／IK 输出目标不完整')
         c.connectAttr(plan.node_name('AdvPy_SplineReverse.outputX'),constraint+'.'+weights[0])
-        c.connectAttr(plan.settings+'.spineIkFk',constraint+'.'+weights[1])
+        c.connectAttr(plan.mode_weight,constraint+'.'+weights[1])
         if command==c.orientConstraint:
             c.setAttr(constraint+'.interpType',2)
     return fixed,output

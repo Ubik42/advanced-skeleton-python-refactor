@@ -70,7 +70,7 @@ def plan_name_matcher_animation_bake(
         for channel in registration.channels
         if (channel.key.startswith(('arm.settings.', 'leg.settings.'))
             and channel.attribute.startswith(('ArmIkFk_', 'LegIkFk_')))
-        or (channel.key.startswith(('spine.ik.', 'spine.spline.'))
-            and channel.attribute == 'spineIkFk')}))
+        or (channel.key.startswith(('spine.ik.', 'spine.spline.','source.spline.'))
+            and channel.attribute in ('spineIkFk','FKIKBlend'))}))
     return NameMatcherAnimationBakePlan(
         tuple(links), fk_plugs, tuple(sorted(set(missing))))

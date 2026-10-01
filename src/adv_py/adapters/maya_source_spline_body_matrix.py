@@ -77,12 +77,12 @@ def configure(host,body,fk,splines,*,excluded=frozenset(),saved_layouts=None):
                 if source!=scale_driver+'.output'+axis:
                     raise CharacterRegistryError('来源 Spline IK scaler 交接来源变化：'+ik_joint)
             plan=plan_source_body_matrix(stem,target,parent,
-                receiver+'.worldMatrix[0]',ik+'.worldMatrix[0]',spline.settings+'.spineIkFk',scale,
+                receiver+'.worldMatrix[0]',ik+'.worldMatrix[0]',spline.mode_weight,scale,
                 offset_sources=tuple((axis,source) for axis,source in offsets if source),
                 offset_values=values)
             scale_node=SourceRpNode(scale,'blendColors',tuple(
                 ('color2'+component,1.) for component in 'RGB'),
-                ((spline.settings+'.spineIkFk','blender'),)+tuple(
+                ((spline.mode_weight,'blender'),)+tuple(
                     (scale_driver+'.output'+axis,'color1'+component)
                     for axis,component in zip('XYZ','RGB')))
             plan=replace(plan,nodes=(scale_node,)+plan.nodes)
@@ -159,8 +159,8 @@ def audit(host,plan):
                     or abs(float(c.getAttr(scale+'.color2'+component))-1.)>1e-8):
                 raise CharacterRegistryError('来源 Spline IK scaler 与 Body OPM 交接变化')
         ik=(plan.root_path+'|AdvPy_SplineFirstFixedOutput' if index==0 else plan.ik_outputs[index])
-        if (not c.isConnected(plan.settings+'.spineIkFk',scale+'.blender')
-                or not c.isConnected(plan.settings+'.spineIkFk',stem+'BodyBM.target[0].weight')
+        if (not c.isConnected(plan.mode_weight,scale+'.blender')
+                or not c.isConnected(plan.mode_weight,stem+'BodyBM.target[0].weight')
                 or not c.isConnected(ik+'.worldMatrix[0]',stem+'BodyBM.target[0].targetMatrix')
                 or not c.isConnected(stem+'BodyMM.matrixSum',target+'.offsetParentMatrix')):
             raise CharacterRegistryError('来源 Spline Body FK／IK 矩阵混合变化')

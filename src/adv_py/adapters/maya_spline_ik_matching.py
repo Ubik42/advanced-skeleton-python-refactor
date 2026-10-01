@@ -61,7 +61,7 @@ def match_ik(host, registration, before,*,_scoped=False):
                       for attribute in settings_attributes)
     initial = tuple(c.getAttr(plug)/unit for plug,unit,_,_ in parameters)
     bounds = tuple((low,high) for _,_,low,high in parameters)
-    c.setAttr(plan.settings+'.spineIkFk',1.)
+    c.setAttr(plan.mode_plug,plan.mode_maximum)
     components = (0,1,2,4,5,6,8,9,10,12,13,14)
     def evaluate(values):
         for value,(plug,unit,_,_) in zip(values,parameters):c.setAttr(plug,value*unit)

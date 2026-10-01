@@ -111,7 +111,8 @@ class RetargetCharacterSpineIk:
         source_ik=registered_spline_control_keys(source)
         target_ik=registered_spline_control_keys(target)
         mode=registered_spline_mode_channel(source).key
-        if source_ik != target_ik or mode!=registered_spline_mode_channel(target).key:
+        if (source_ik != target_ik or mode!=registered_spline_mode_channel(target).key
+                or source.spine.mode_maximum!=target.spine.mode_maximum):
             raise CharacterRegistryError('来源与目标 Spline IK 通道不对应')
         schedule=host.capture_registered_spine_mode_curve(source_namespace,source) if allow_fk else None
         event_times=(tuple(right for left,right,a,b in
@@ -125,7 +126,7 @@ class RetargetCharacterSpineIk:
         channels, meshes, body = host.capture_registered_spine_ik_take(
             source_namespace, source, tuple(mesh for _,mesh in skins),
             body_names, all_frames)
-        modes = tuple(dict(row)[mode] for row in channels)
+        modes = tuple(dict(row)[mode]/source.spine.mode_maximum for row in channels)
         if any(min(abs(value),abs(value-1.)) > 1e-8 for value in modes):
             raise CharacterRegistryError('脊柱迁移不接受采样区间内的 FK/IK 混合权重')
         if not allow_fk and any(abs(value-1.) > 1e-8 for value in modes):
@@ -136,7 +137,8 @@ class RetargetCharacterSpineIk:
                 raise CharacterRegistryError('混合脊柱迁移要求同时包含 FK 和 IK 帧')
             if not schedule:
                 raise CharacterRegistryError('混合脊柱迁移要求原生模式事件曲线')
-            times,values,out_tangents=schedule
+            times,raw_values,out_tangents=schedule
+            values=tuple(value/source.spine.mode_maximum for value in raw_values)
             if (any(min(abs(value),abs(value-1.)) > 1e-8 for value in values)
                     or any(tangent != 'step'
                            for index,tangent in enumerate(out_tangents[:-1])

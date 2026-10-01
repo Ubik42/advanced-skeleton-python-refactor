@@ -19,6 +19,10 @@ class SplineCommands:
 
     def __getattr__(self,name):
         command=getattr(self.commands,name)
+        # Namespace identity is boundary data, not a Maya command. Parent
+        # constraint capture and scene_address need the original object.
+        if not callable(command):
+            return command
         def call(*args,**kwargs):
             args=list(args)
             kwargs=dict(kwargs)

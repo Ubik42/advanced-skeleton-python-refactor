@@ -423,7 +423,7 @@ class BuildBodyCharacterRig:
                     fk_scale_plug=spline.fk_controls[0] + ".scale",
                     ik_scale_plug=(spline.joints[len(spline.body_joints)].path
                                    + ".scale"),
-                    mode_plug=spline.settings + ".spineIkFk",
+                    mode_plug=spline.mode_weight,
                 )
         global_control = plan_body_character_global(
             up_axis=self._host.scene_up_axis(),

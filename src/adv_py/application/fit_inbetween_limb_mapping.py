@@ -205,7 +205,7 @@ def plan_inbetween_limb_bindings(
                 spline.ik_outputs[spline_index],
                 spline.ik_outputs[spline_index + 1],
                 "AdvPy_SplineReverse.outputX",
-                spline.settings + ".spineIkFk",
+                spline.mode_weight,
                 first.rotation_order, start_control.radius * 0.2,
                 spline.root_path,
                 start_fk_source_path=(

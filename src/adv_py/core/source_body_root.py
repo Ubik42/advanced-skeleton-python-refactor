@@ -105,7 +105,7 @@ def finalize_source_body_root(plan,fk,splines,inbetween_segments):
     spline=next((spline for spline in splines if spline.body_joints[0]==plan.body_root),None)
     return replace(plan,fk_receiver=receiver,relative_source=relative,
         spline_ik_source=spline.source_fixed_path if spline else None,
-        spline_mode=spline.settings+'.spineIkFk' if spline else None,
+        spline_mode=spline.mode_weight if spline else None,
         spline_reverse=spline.node_name('AdvPy_SplineReverse.outputX') if spline else None,
         spline_output=spline.root_path+'|'+spline.node_name('AdvPy_SplineFirstFixedOutput') if spline else None,
         spline_first_control=spline.targets[0] if spline else None)

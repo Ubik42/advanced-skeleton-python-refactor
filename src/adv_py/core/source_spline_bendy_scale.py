@@ -28,7 +28,7 @@ def plan_source_spline_bendy_scales(chains,fk,splines):
         name='AdvPy_BendySourceScale'+chain.start_body.rsplit('|',1)[-1]
         scaler=plan.node_name(f'AdvPy_SplineIKScaleVolume{index}')
         node=SourceRpNode(name,'blendColors',connections=(
-            (plan.settings+'.spineIkFk','blender'),)+tuple(
+            (plan.mode_weight,'blender'),)+tuple(
             (scaler+'.output'+axis,'color1'+component) for axis,component in zip('XYZ','RGB'))+tuple(
             (control.control_path+'.scale'+axis,'color2'+component) for axis,component in zip('XYZ','RGB')))
         result.append(SourceSplineBendyScale(chain.start_body,node,tuple(name+'.output'+component for component in 'RGB')))

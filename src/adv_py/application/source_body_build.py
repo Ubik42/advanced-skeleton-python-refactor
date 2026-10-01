@@ -243,11 +243,13 @@ def source_character_channels(rig):
             if spline.sub_targets:
                 add(key, target, ("subControl",))
                 add(key + ".sub", spline.sub_targets[index], trs)
+        add(spline_key,spline.mode_control,(spline.mode_attribute,))
         add(spline_key, spline.settings,
-            ("spineIkFk", "stretchy", "volume", "stretchEven", "noFlipAxis"))
+            ("stretchy", "volume", "stretchEven", "noFlipAxis"))
         add(spline_key+'.0',spline.targets[0],('firstJointFixed',))
         if spline.source_curve_points:
-            add(spline_key, spline.settings, ("ikCvVis","autoVis","FKVis","IKVis"))
+            add(spline_key, spline.settings, ("ikCvVis",))
+            add(spline_key,spline.visibility_settings,("autoVis","FKVis","IKVis"))
             for index, control in enumerate(spline.cv_controls, 1):
                 add(f"{spline_key}.cv.{index}", control,
                     tuple("translate"+axis for axis in "XYZ"))

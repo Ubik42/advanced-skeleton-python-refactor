@@ -184,8 +184,8 @@ def switch(host,registration,binding,mode,*,time_range=None):
     host._require_transaction()
     c=host._cmds
     if mode not in ('fk','ik'):raise CharacterRegistryError('来源 Spline 切换方向需要 fk / ik')
-    target=1. if mode=='ik' else 0.
-    inverse=1.-target
+    target=binding.plan.mode_maximum if mode=='ik' else 0.
+    inverse=binding.plan.mode_maximum-target
     current=float(c.currentTime(query=True))
     start,end=(current,current+1.) if time_range is None else time_range
     from math import isfinite
