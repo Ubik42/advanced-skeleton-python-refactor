@@ -438,8 +438,10 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         from dataclasses import replace
         result = self._fbx_built_body
         body = self.capture_body_skeleton("Root_M")
-        rig = replace(result.rig, body=body, plan=replace(result.rig.plan,
-            control_spaces=replace(result.rig.plan.control_spaces, body_root=body.root)))
+        from adv_py.core.fit_part import FitPartFinalPaths,rebase_plan_paths_after_parts
+        paths=FitPartFinalPaths((),(),((result.rig.body.root,body.root),))
+        rig=replace(result.rig,body=body,
+                    plan=rebase_plan_paths_after_parts(result.rig.plan,paths))
         from adv_py.application.source_body_build import source_character_channels
         from adv_py.core.character_registry import REGISTRY_NAME
         registration = self.describe_character_registration(

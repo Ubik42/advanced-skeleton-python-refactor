@@ -91,6 +91,7 @@ class GenericFkFeaturePolicy:
     """
 
     scale_controls: frozenset[str] | None = None
+    source_rp_dynamics: bool | None = None
     compensated_controls: frozenset[str] | None = None
     global_controls: frozenset[str] | None = None
     aim_sources: frozenset[str] | None = None

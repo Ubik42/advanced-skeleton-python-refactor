@@ -1129,7 +1129,7 @@ def plan_body_leg_foot(
         align_sources = (() if hybrid is None and (
                              legacy_roll_controls or legacy_toe_controls)
                          else (qtoes_topology.ankle_path,
-                               (hybrid.segments[-2].source_path
+                               (qtoes_topology.qtoes_path
                                 if hybrid is not None
                                 else qtoes_topology.toes_path)))
         if any(source not in fk_by_source for source in align_sources):

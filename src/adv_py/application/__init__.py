@@ -2,7 +2,7 @@ from .character_spline_animation import EnableBodyCharacterSplineAnimation
 from .character_keyframe import KeyBodyCharacterPose, CaptureAnimatedBodyCharacterPose
 from .character_animation import CaptureBodyCharacterAnimation, ApplyBodyCharacterAnimation, save_character_animation, load_character_animation
 from .character_spine_animation import BakeBodyCharacterSpineMode
-from .character_limb_animation import EnableBodyCharacterLimbAnimation, BakeBodyCharacterLimbMode
+from .character_limb_animation import EnableBodyCharacterLimbAnimation, BakeBodyCharacterLimbMode, MatchSourceBodyLimbMode
 from .character_stretch_matching import EnableBodyCharacterStretchMatching
 from .character_pose import CaptureBodyCharacterPose, ApplyBodyCharacterPose, save_character_pose, load_character_pose
 from .character_registry import RegisterBodyCharacter, ResolveBodyCharacter
@@ -411,6 +411,7 @@ __all__ = [
     "BakeBodyCharacterSpineMode",
     "EnableBodyCharacterLimbAnimation",
     "BakeBodyCharacterLimbMode",
+    "MatchSourceBodyLimbMode",
     "EnableBodyCharacterStretchMatching",
     "CaptureBodyCharacterPose", "ApplyBodyCharacterPose", "save_character_pose", "load_character_pose",
     "RegisterBodyCharacter",

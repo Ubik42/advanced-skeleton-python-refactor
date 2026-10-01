@@ -1429,6 +1429,7 @@ def create_panel(controller: MayaPanelController | None = None):
             self.limb_side = QtWidgets.QComboBox()
             self.limb_side.addItem("右侧", "R")
             self.limb_side.addItem("左侧", "L")
+            self.limb_side.addItem("中线", "M")
             self.limb_mode = QtWidgets.QComboBox()
             self.limb_mode.addItem("转为 IK", "ik")
             self.limb_mode.addItem("转为 FK", "fk")
@@ -1439,6 +1440,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("部位", self.limb_part), ("侧别", self.limb_side),
                 ("四肢目标模式", self.limb_mode),
                 ("脊柱目标模式", self.spine_mode)])
+            form.addRow(self._button("读取当前角色 IK 系统", self._load_limb_systems))
+            form.addRow(self._button("当前姿态切换来源 IK 系统", self._match_source_limb_mode))
             form.addRow(QtWidgets.QLabel("使用上方的起始帧、结束帧和采样步长。"))
             row = QtWidgets.QHBoxLayout()
             row.addWidget(self._button("转换四肢模式", self._bake_limb_mode))
@@ -3751,6 +3754,23 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.limb_part.currentData(), self.limb_side.currentData(),
                 self.limb_mode.currentData(), self.frame_step.value())
             return f"四肢模式已转换：{count} 个采样帧"
+
+        def _load_limb_systems(self):
+            rows=self.controller.animation_limb_systems(self._namespace())
+            previous=self.limb_part.currentData()
+            self.limb_part.clear()
+            for label in dict.fromkeys(label for label,_ in rows):
+                self.limb_part.addItem({'arm':'手臂','leg':'腿部'}.get(label,label),label)
+            index=self.limb_part.findData(previous)
+            if index>=0:
+                self.limb_part.setCurrentIndex(index)
+            return f"已读取 {len(rows)} 组 IK 系统与侧别"
+
+        def _match_source_limb_mode(self):
+            self.controller.animation_match_source_limb(self._namespace(),
+                self.limb_part.currentData(),self.limb_side.currentData(),
+                self.limb_mode.currentData())
+            return '当前来源 IK 系统已完成姿态切换'
 
         def _bake_spine_mode(self):
             count = self.controller.animation_bake_spine(self._namespace(),

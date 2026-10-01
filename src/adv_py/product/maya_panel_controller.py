@@ -2053,6 +2053,16 @@ class MayaPanelController:
             start, end, limb, side, mode, step)
         return len(animation.samples)
 
+    def animation_limb_systems(self,namespace: str):
+        registration=self._host(namespace).read_character_registration()
+        if registration.source_limbs:
+            return tuple((row.label,row.side) for row in registration.source_limbs)
+        return tuple((label,side) for label in ('arm','leg') for side in ('R','L'))
+
+    def animation_match_source_limb(self,namespace: str,limb: str,side: str,mode: str):
+        from adv_py.application.character_limb_animation import MatchSourceBodyLimbMode
+        return MatchSourceBodyLimbMode(self._host(namespace)).execute(limb,side,mode)
+
     def animation_bake_spine(self, namespace: str, start: int, end: int,
                              mode: str, step: int = 1) -> int:
         animation = BakeBodyCharacterSpineMode(self._host(namespace)).execute(

@@ -100,6 +100,7 @@ def capture_fk_policy(host, registration):
                            if channel.key.startswith("generic.aim.")
                            and channel.key.endswith(".follow"))
     return GenericFkFeaturePolicy(
+        source_rp_dynamics=any(key.startswith('source.rp.') for key in keys),
         scale_controls=frozenset(scale), compensated_controls=frozenset(compensated),
         global_controls=frozenset(global_controls), aim_sources=aim_sources,
         follower_sources=followers, independent_controls=frozenset(independent),

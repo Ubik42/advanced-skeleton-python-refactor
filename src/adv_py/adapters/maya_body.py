@@ -10067,6 +10067,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_internal_ik_local import create
         create(self,spec)
 
+    def create_source_rp_dynamics(self,body,limbs,global_control,internal_local=(),root_follow=None):
+        from .maya_source_rp_dynamics import create
+        return create(self,body,limbs,global_control,internal_local,root_follow)
+
     def connect_source_body_limb_follow(self, body, mechanisms, *,root_follow_path=None) -> None:
         """Follow the real parent of an imported IK start, outside its blend."""
         from adv_py.core.body_limb_mechanisms import BodyLimbMechanismRole

@@ -106,6 +106,7 @@ class SourceBodyRigPlan:
     center_between_feet: object | None = None
     internal_ik_local: tuple = ()
     hip_swing: object | None = None
+    rp_dynamics: tuple = ()
 
     @property
     def all_splines(self):
@@ -198,6 +199,12 @@ def source_character_channels(rig):
             tuple(kind+axis for kind in ('translate','rotate','scale') for axis in 'XYZ'))
         add('source.ik.local.'+spec.control_name+'.extra',spec.extra_path,
             tuple(kind+axis for kind in ('translate','rotate') for axis in 'XYZ'))
+    for spec in p.rp_dynamics:
+        key='source.rp.'+spec.label+'.'+spec.side
+        add(key,spec.control,('stretchy','antiPop','volume')+
+            tuple(segment.length_attribute for segment in spec.segments)+
+            tuple(segment.fatness_attribute for segment in spec.segments))
+        add(key+'.pole',spec.pole,('lock',))
     if p.hip_swing is not None:
         add('source.hipSwing',p.hip_swing.control_path,tuple('rotate'+axis for axis in 'XYZ'))
     for control in p.fk.controls:
@@ -560,6 +567,9 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     internal_ik_local=plan_source_internal_ik_local(body,fk,limbs,metadata)
     for spec in internal_ik_local:
         host.create_source_internal_ik_local(spec)
+    rp_dynamics=(host.create_source_rp_dynamics(body,limbs,global_control,
+        internal_ik_local,root.leg_lock_path) if generic_fk_policy is None
+        or generic_fk_policy.source_rp_dynamics is not False else ())
     center_between_feet = None
     if root.center_between_feet:
         from adv_py.core.body_center_between_feet import plan_source_center_between_feet
@@ -623,7 +633,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         twist_steps, part_scale, part_result.final_paths if part_result is not None else None,
         fit_follows, named_follows, follow_spaces, ik_follows,
         advanced_constraints, aim_at, geo_attach, proximity_pin,
-        wheels, curve_guides, tweakers, splines[1:],root,center_between_feet,internal_ik_local,hip_swing)
+        wheels, curve_guides, tweakers, splines[1:],root,center_between_feet,internal_ik_local,hip_swing,rp_dynamics)
     rig = SourceBodyRigResult(rig_plan, body)
     registration = (host.describe_character_registration(
         rig, source_character_channels(rig)) if defer_registration

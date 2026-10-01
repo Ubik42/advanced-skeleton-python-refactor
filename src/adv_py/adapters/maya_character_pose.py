@@ -206,6 +206,11 @@ class MayaCharacterPoseMixin:
                 c.connectAttr(source,plug)
 
     def match_character_limb_samples(self,registration,frames,limb,side,mode,pose_tolerance=1e-4):
+        if registration.source_limbs:
+            from .maya_source_limb_matching import samples
+            self._require_transaction()
+            self.preflight_character_keyframe(registration)
+            return samples(self,registration,frames,limb,side,mode,pose_tolerance)
         from adv_py.application.body_arm_fk_to_ik import MatchBodyArmFkToIk
         from adv_py.application.body_arm_ik_to_fk import MatchBodyArmIkToFk
         from adv_py.application.body_leg_fk_to_ik import MatchBodyLegFkToIk
@@ -238,3 +243,27 @@ class MayaCharacterPoseMixin:
                     result.append((float(frame),after))
                 seek(frame)
         return tuple(result)
+
+    def apply_source_character_limb_mode(self,registration,binding,mode):
+        from .maya_source_limb_matching import apply
+        apply(self,registration,binding,mode)
+
+    def write_source_character_limb_animation(self,registration,samples,binding,guard=None):
+        """Key the selected original RP controls, preserving other systems."""
+        self._require_transaction()
+        self.preflight_character_keyframe(registration)
+        self._transaction_changed=True
+        c=self._cmds
+        owned=binding.animation_keys(registration)
+        if guard is not None:
+            channel=next(ch for ch in registration.channels if ch.key==binding.blend_key)
+            c.setKeyframe(channel.node,attribute=channel.attribute,time=guard[0],value=guard[1],
+                          inTangentType='linear',outTangentType='step')
+        for frame,pose in samples:
+            for channel,(_,value) in zip(registration.channels,pose.channels):
+                if channel.key in owned:
+                    c.setKeyframe(channel.node,attribute=channel.attribute,time=frame,value=value,
+                        inTangentType='linear',outTangentType='step'
+                        if channel.key==binding.blend_key else 'linear')
+        with self._character_sampling_time() as seek:
+            seek(c.currentTime(query=True))

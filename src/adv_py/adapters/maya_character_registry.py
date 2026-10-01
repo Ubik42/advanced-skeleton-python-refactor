@@ -1126,6 +1126,9 @@ class MayaCharacterRegistryMixin:
         self.write_character_registration_extension(before,after)
 
     def sample_character_limb_helpers(self,registration,frames,limb,side):
+        if registration.source_limbs:
+            from .maya_source_limb_matching import sample_helpers
+            return sample_helpers(self,registration,frames,limb,side)
         from .maya_limb_shape import sample_helpers
         return sample_helpers(self,registration,frames,limb,side)
 
@@ -1136,6 +1139,9 @@ class MayaCharacterRegistryMixin:
         return tuple((p,self._spine_world_frame(p)[0]) for p in paths)
 
     def describe_character_limb_animation(self,registration):
+        if registration.source_limbs:
+            self._validate_character_registration(registration)
+            return registration
         from adv_py.application.body_arm_ik_to_fk import MatchBodyArmIkToFk
         from adv_py.application.body_leg_ik_to_fk import MatchBodyLegIkToFk
         from adv_py.core.character_registry import CharacterChannel
@@ -1186,7 +1192,8 @@ class MayaCharacterRegistryMixin:
         c=self._cmds
         self._transaction_changed=True
         from .maya_limb_orientation import install_orientation
-        install_orientation(self,before)
+        if not before.source_limbs:
+            install_orientation(self,before)
         self.write_character_registration_extension(before,after)
 
     def write_character_registration_extension(self,before,after):
@@ -1325,11 +1332,17 @@ class MayaCharacterRegistryMixin:
 
     def _describe_source_body_registration(self, rig, channels):
         p = rig.plan
+        from adv_py.core.source_limb_animation import describe_source_limb_bindings
+        source_limbs = describe_source_limb_bindings(p,rig.body)
         body = self.capture_body_skeleton(rig.body.root)
         if not body_bind_pose_matches(rig.body, body):
             raise CharacterRegistryError("来源角色必须在绑定姿态登记")
         paths = {body.root, p.container, *(j.path for j in body.joints),
                  *(channel.node for channel in channels)}
+        paths.update(path for binding in source_limbs for path in binding.paths)
+        paths.update(path for plan in p.rp_dynamics for path in
+                     (plan.start_anchor,plan.target_anchor,
+                      *(segment.joint for segment in plan.segments)))
         paths.update(control.source_override_path for control in p.fk.controls
                      if control.source_override_path is not None)
         if p.root is not None:
@@ -1406,7 +1419,8 @@ class MayaCharacterRegistryMixin:
         registration = self._describe_body_registration_nodes(
             body, p.container, channels, paths, p.spline, p.control_spaces,
             allow_animation=True)
-        registration = replace(registration,additional_spines=p.additional_splines)
+        registration = replace(registration,additional_spines=p.additional_splines,
+                               source_limbs=source_limbs)
         if p.part_paths is not None:
             from adv_py.application.fit_part_registration import RegisterFitPartChannels
             registration = RegisterFitPartChannels(self).describe(
@@ -1469,6 +1483,8 @@ class MayaCharacterRegistryMixin:
 
     def _validate_character_registration(self, plan):
         c = self._cmds
+        from .maya_source_rp_dynamics import audit as audit_source_rp
+        audit_source_rp(self,plan)
         from .maya_head_aim import audit_registered
         audit_registered(self,plan)
         from .maya_spline_matching import audit as audit_spline_matching

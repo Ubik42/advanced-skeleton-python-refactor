@@ -92,7 +92,8 @@ class MayaBodyGameRootMotionMixin:
         nodes = tuple(self._registry_node(path) for path in sorted(paths))
         updated = CharacterRegistration(
             new_root, before.container, channels, body, nodes,
-            rewrite(before.spine), rewrite(before.spaces))
+            rewrite(before.spine), rewrite(before.spaces),
+            rewrite(before.additional_spines),rewrite(before.source_limbs))
         document = encode_registration(updated)
         c = self._cmds
         member_plug = REGISTRY_NAME + ".members"
