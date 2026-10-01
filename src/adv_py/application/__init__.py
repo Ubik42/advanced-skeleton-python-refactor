@@ -773,3 +773,4 @@ from .bend_volume_deform import BuildBendVolumeDeform
 from .angle_sampler_deform import BuildAngleSamplers
 from .angle_volume_deform import BuildAngleVolumeDeform
 from .dense_skin_transfer import TransferDenseSkinWeights
+from .source_spline_mode_upgrade import UpgradeSourceSplineMode

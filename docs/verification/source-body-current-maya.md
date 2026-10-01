@@ -2,6 +2,8 @@
 
 2026-10-01，Maya 2024。本批沿原版 6.925 的 Fit → Body／Part → 控制器与驱动 → Skin → 保存重开 → FBX 主链集中修复。
 
+后续集中批次已完成[旧 Spline 模式显式升级与父矩阵修复](source-spline-mode-upgrade.md)。修正 Source Root／Spline OPM 父逆矩阵后，重新运行只读原版 biped 的新建、局部 Skin、姿态／动画文件、带 Skin FBX、原位重建、原生对象保留、单次撤销重做和保存重开，全部通过；最新主链结果为 `validation/results/biped-parent-matrix-final-20261001/original-biped-current.json`。旧 0–1 升级在根及独立角色命名空间另有两份真实 Maya 通过结果。
+
 ## 本批实现
 
 - 普通标准 Fit 也走真实标签驱动的来源构建器，不再因为 Root／Chest 名称而进入旧固定身体模块。

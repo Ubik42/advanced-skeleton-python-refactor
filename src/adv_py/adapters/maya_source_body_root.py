@@ -40,7 +40,7 @@ def connect_fk_root(host,plan):
     matrix=c.createNode('multMatrix',name='AdvPy_SourceRootFollowMM',skipSelect=True)
     c.setAttr(matrix+'.matrixIn[0]',*tuple(world*source.inverse()),type='matrix')
     c.connectAttr(plan.root_x.control_path+'.worldMatrix[0]',matrix+'.matrixIn[1]')
-    c.connectAttr(plan.fk_offset+'.parentInverseMatrix[0]',matrix+'.matrixIn[2]')
+    c.connectAttr(plan.fk_offset.rsplit('|',1)[0]+'.worldInverseMatrix[0]',matrix+'.matrixIn[2]')
     for kind,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):
         c.setAttr(plan.fk_offset+'.'+kind,value,value,value,type='double3')
     if plan.use_offset_parent_matrix:
@@ -79,7 +79,7 @@ def connect_branch_offsets(host,plan):
         matrix=c.createNode('multMatrix',name=name+'MM',skipSelect=True)
         c.setAttr(matrix+'.matrixIn[0]',*tuple(bind*source_bind.inverse()),type='matrix')
         c.connectAttr(source,matrix+'.matrixIn[1]')
-        c.connectAttr(offset+'.parentInverseMatrix[0]',matrix+'.matrixIn[2]')
+        c.connectAttr(offset.rsplit('|',1)[0]+'.worldInverseMatrix[0]',matrix+'.matrixIn[2]')
         # Offsets are owned by the source planner. Part follow graphs are
         # excluded from this list and keep their existing matrix input.
         for kind,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):
@@ -136,7 +136,7 @@ def connect_leg_lock(host,plan):
             source=blend+'.outputMatrix'
     local=c.createNode('multMatrix',name='AdvPy_SourceLegLockOutputMM',skipSelect=True)
     c.connectAttr(source,local+'.matrixIn[0]')
-    c.connectAttr(plan.leg_lock_path+'.parentInverseMatrix[0]',local+'.matrixIn[1]')
+    c.connectAttr(plan.leg_lock_path.rsplit('|',1)[0]+'.worldInverseMatrix[0]',local+'.matrixIn[1]')
     if plan.leg_lock_opm:
         for kind,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):
             c.setAttr(plan.leg_lock_path+'.'+kind,value,value,value,type='double3')
@@ -162,7 +162,8 @@ def audit_registered(host,registration):
                 or not c.getAttr(plug,lock=True)
                 or not c.objExists(matrix) or c.nodeType(matrix)!='multMatrix'
                 or not c.isConnected(matrix+'.matrixSum',node.path+'.offsetParentMatrix')
-                or not c.isConnected(node.path+'.parentInverseMatrix[0]',matrix+'.matrixIn[1]')
+                or not any(c.isConnected(source,matrix+'.matrixIn[1]') for source in
+                    (node.path.rsplit('|',1)[0]+'.worldInverseMatrix[0]',node.path+'.parentInverseMatrix[0]'))
                 or not c.connectionInfo(matrix+'.matrixIn[0]',sourceFromDestination=True)):
             raise CharacterRegistryError('来源 Root LegLock OPM 接收图变化')
         for attr,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):

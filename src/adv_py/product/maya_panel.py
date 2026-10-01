@@ -1421,6 +1421,7 @@ def create_panel(controller: MayaPanelController | None = None):
             row.addWidget(self._button("启用可变脊柱", self._enable_spline_animation))
             row.addWidget(self._button("启用空间动画", self._enable_space_animation))
             form.addRow(row)
+            form.addRow(self._button("升级旧 Spline FKIK", self._upgrade_source_spline_mode))
             stack.addWidget(group)
 
             self.limb_part = QtWidgets.QComboBox()
@@ -3751,6 +3752,11 @@ def create_panel(controller: MayaPanelController | None = None):
         def _enable_spline_animation(self):
             count = self.controller.animation_enable_spline(self._namespace())
             return f"可变脊柱动画已启用：{count} 个控制通道"
+
+        def _upgrade_source_spline_mode(self):
+            before = self.controller._host(self._namespace()).read_character_registration()
+            after = self.controller.animation_upgrade_source_spline(self._namespace())
+            return "旧 Spline 已升级为原版独立 FKIK 控制器（0–10）" if before != after else "当前 Spline 无需升级"
 
         def _enable_space_animation(self):
             count = self.controller.animation_enable_spaces(self._namespace())

@@ -43,6 +43,7 @@ _NODE_ARGS |= {'pointOnPolyConstraint'}
 _NODE_RESULTS |= {'pointOnPolyConstraint'}
 _CREATE |= {'pointOnPolyConstraint'}
 _NODE_ARGS |= {'reorder'}
+_NODE_ARGS |= {'scaleKey'}
 _NODE_ARGS |= {'tangentConstraint', 'expression'}
 _NODE_RESULTS |= {'tangentConstraint', 'expression'}
 _CREATE |= {'tangentConstraint', 'expression'}

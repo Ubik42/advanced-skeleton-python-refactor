@@ -736,12 +736,8 @@ class MayaFitInbetweenMixin:
             all(len(source) == 1 for source in sources)
             and tuple(c.ls(name, long=True) or [] for name in targets)
             == sources
-            and c.connectionInfo(constraint + "." + aliases[0],
-                                 sourceFromDestination=True)
-            == plan.fk_weight_plug
-            and c.connectionInfo(constraint + "." + aliases[1],
-                                 sourceFromDestination=True)
-            == plan.ik_weight_plug
+            and c.isConnected(plan.fk_weight_plug, constraint + "." + aliases[0])
+            and c.isConnected(plan.ik_weight_plug, constraint + "." + aliases[1])
             and int(c.getAttr(constraint + ".interpType")) == 2
             and len(body) == 1
             and all(c.isConnected(

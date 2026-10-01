@@ -32,7 +32,7 @@ def create(host,plan,fk,generated_sources):
     output=(c.ls(output,long=True) or [output])[0]
     matrix=c.createNode('multMatrix',name=name('FirstFixedMM'),skipSelect=True)
     c.connectAttr(blend+'.outputMatrix',matrix+'.matrixIn[0]')
-    c.connectAttr(output+'.parentInverseMatrix[0]',matrix+'.matrixIn[1]')
+    c.connectAttr(plan.root_path+'.worldInverseMatrix[0]',matrix+'.matrixIn[1]')
     c.connectAttr(matrix+'.matrixSum',output+'.offsetParentMatrix')
     source=control.source_override_path or control.sub_control_path or control.control_path
     if control.driven_joint!=plan.body_joints[0]:
@@ -83,9 +83,10 @@ def audit(host,plan):
            (fixed+'.worldMatrix[0]',name('FirstFixedBM')+'.target[0].targetMatrix'),
            (name('FirstFixedUnit')+'.output',name('FirstFixedBM')+'.target[0].weight'),
            (name('FirstFixedBM')+'.outputMatrix',name('FirstFixedMM')+'.matrixIn[0]'),
-           (output+'.parentInverseMatrix[0]',name('FirstFixedMM')+'.matrixIn[1]'),
            (name('FirstFixedMM')+'.matrixSum',output+'.offsetParentMatrix'))
-    if (any(not c.isConnected(source,target) for source,target in edges)
+    parent_inputs = (plan.root_path+'.worldInverseMatrix[0]', output+'.parentInverseMatrix[0]')
+    if (not any(c.isConnected(source, name('FirstFixedMM')+'.matrixIn[1]') for source in parent_inputs)
+            or any(not c.isConnected(source,target) for source,target in edges)
             or abs(float(c.getAttr(name('FirstFixedUnit')+'.conversionFactor'))-.1)>1e-8):
         raise FitSkeletonValidationError('来源 Spline firstJointFixed 矩阵混合变化')
     for attr,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):

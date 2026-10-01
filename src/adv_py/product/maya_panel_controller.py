@@ -2077,6 +2077,10 @@ class MayaPanelController:
         return tuple(plan.system_name for plan in (registration.spine,*registration.additional_spines)
                      if isinstance(plan,BodySplinePlan) and plan.source_curve_points)
 
+    def animation_upgrade_source_spline(self, namespace: str, systems=None):
+        from adv_py.application.source_spline_mode_upgrade import UpgradeSourceSplineMode
+        return UpgradeSourceSplineMode(self._host(namespace)).apply(systems)
+
     def animation_match_source_spline(self,namespace: str,mode: str,system=None,*,align_only=False):
         from adv_py.application.character_spine_animation import MatchSourceBodySplineMode
         return MatchSourceBodySplineMode(self._host(namespace)).execute(mode,system,align_only=align_only)

@@ -132,7 +132,7 @@ def _graph(host,names,*,external_conversions=(),roles=None,normalize_registry=Fa
             attr='instObjGroups[0]'
         if normalize_registry and node=='AdvPy_CharacterRegistry' and attr.startswith('members['):
             # Registration independently verifies the exact ordered members;
-            # count edits necessarily shift unrelated storage indices.
+            # count edits and appended extensions shift storage indices.
             attr='members[*]'
         if (node in ('AllSet','ControlSet','DeformSet','Sets')
                 and c.nodeType(node)=='objectSet'
@@ -226,8 +226,11 @@ def audit(host,staged):
     old_nodes,old_edges=_graph(host,old_names+tuple(sorted(removed_names)),
         external_conversions=external_conversions,
         roles={node:role for role,node in old_role_nodes.items()} if changing else None,
-        normalize_registry=changing)
-    new_nodes,new_edges=_graph(target,names,normalize_registry=changing)
+        normalize_registry=True)
+    # Extensions append members while fresh builds order the same identities
+    # differently. read_character_registration already verifies every native
+    # slot against its document; compare their message relationships here.
+    new_nodes,new_edges=_graph(target,names,normalize_registry=True)
     added_roles=set(new_nodes)-set(old_nodes)-created_names
     removed_roles=set(old_nodes)-set(new_nodes)
     if changing:

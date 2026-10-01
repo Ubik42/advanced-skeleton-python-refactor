@@ -418,6 +418,8 @@ class RebuildBodyCharacter:
     def apply(self,namespace,*,extensions=(),spline_counts=()):
         host=self._host
         with host.transaction('Rebuild character preserving user data'):
+            from adv_py.adapters.maya_source_parent_inverse import repair
+            repair(host, host.read_character_registration())
             staged=StageBodyCharacterRebuild(host).apply(namespace,extensions=extensions,
                 spline_counts=spline_counts)
             TransferStagedBodyCharacterData(host).apply(staged)
