@@ -1,6 +1,8 @@
 """Maya graph for AdvancedSkeleton 6.925 SkinCage Sliders."""
 from __future__ import annotations
 
+import re
+
 from adv_py.core.skin_cage_sliders import SkinCageSlider
 from .maya_adv_icons import create_adv_icon
 from .maya_skin_cage import MayaSkinCageHost
@@ -30,14 +32,18 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
             children = c.listRelatives(current, children=True,
                                        type="joint", fullPath=True) or []
             candidates = [child for child in children
-                          if "Slider" not in self._leaf(child)]
+                          if "Slider" not in self._leaf(child)
+                          and not (c.objExists(child+".partialJoint")
+                                   and c.getAttr(child+".partialJoint"))]
+            def is_part(child):
+                return bool(re.search(r"Part[0-9]+_[LRM]$",self._leaf(child)))
             ranked = sorted(candidates, key=lambda child: (
                 not c.objExists(self._name("FK" + self._leaf(child))),
-                "Part" not in self._leaf(child), self._leaf(child)))
+                not is_part(child), self._leaf(child)))
             if not ranked:
                 break
             current = ranked[0]
-            if "Part" not in self._leaf(current):
+            if not is_part(current):
                 return current
         raise ValueError("末段 Twist 截面缺少后继关节：" + joint)
 
@@ -80,7 +86,8 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
             else:
                 restore = self._parent_joint(joint)
             bend_axis = 0
-            if "Elbow" in parts[0] or "Knee" in parts[0]:
+            deform_name=self._leaf(joint)
+            if "Elbow" in deform_name or "Knee" in deform_name:
                 orient = c.getAttr(joint + ".jointOrient")[0]
                 if abs(orient[1]) > abs(orient[2]):
                     bend_axis = 1

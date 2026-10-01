@@ -65,6 +65,26 @@ class MayaCorrectiveIdentityMixin:
             controls.extend(channel.node for channel in registration.channels)
         return tuple(dict.fromkeys(controls))
 
+    def set_original_corrective_fk(self, control):
+        """asCBDCreateTestAnim switches only the selected FK's limb."""
+        c=self._cmds
+        switch=self.find_original_fkik_control(control)
+        if switch and c.objExists(switch+".FKIKBlend"):
+            c.setAttr(switch+".FKIKBlend",0)
+            return
+        registration=self.original_corrective_body_registration()
+        if registration is None:
+            return
+        leaf=self._original_restore_leaf(control)
+        joint=self.original_corrective_joint_for_fk(control)
+        channels={channel.key:channel for channel in registration.channels}
+        for limb in registration.source_limbs:
+            if any(self._original_restore_leaf(row.control)==leaf
+                   or self._original_restore_leaf(row.body)==joint for row in limb.joints):
+                channel=channels[limb.blend_key]
+                c.setAttr(channel.node+"."+channel.attribute,0)
+                return
+
     def set_original_corrective_all_fk(self):
         c=self._cmds
         for control in c.sets("ControlSet",query=True) or []:

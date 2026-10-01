@@ -106,12 +106,18 @@ class MayaCorrectiveShapesHost(MayaCorrectiveIdentityMixin,MayaCorrectiveCurvesM
         c=self._cmds
         self._transaction_changed=True
         options=source["options"]
+        raw=self._corrective_raw()
+        raw.dgdirty(allPlugs=True)
         self.prepare_original_corrective_softmods(options.use_soft_mods)
         drivers=[]
         for plug in source["drivers"]:
             control,channel=plug.rsplit(".",1)
             non_fk=self.original_corrective_joint_for_fk(control)+"."+channel
             if c.objExists(non_fk):
+                # Resolve the deformed Body receiver before sampling. Native
+                # Twist/Part constraints can otherwise leave a cached FK
+                # rotation in driver discovery during viewport-free baking.
+                c.getAttr(non_fk)
                 plug=non_fk
             node,attr=plug.rsplit(".",1)
             attr=self.original_opm_compatible_driver_attr(node,attr)
@@ -121,6 +127,8 @@ class MayaCorrectiveShapesHost(MayaCorrectiveIdentityMixin,MayaCorrectiveCurvesM
         value=c.getAttr(drivers[0]);indirect=0.
         if options.q_rotations and attribute.startswith("rotate"):
             self.create_original_q_rotate_attrs(node)
+            raw.dgdirty(allPlugs=True)
+            c.getAttr(node+".matrix")
             for index,plug in enumerate(drivers):
                 if ".rotate" in plug:
                     drivers[index]=plug.replace(".rotate",".qRotate",1)

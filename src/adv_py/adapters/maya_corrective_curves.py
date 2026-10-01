@@ -5,6 +5,7 @@ from adv_py.core.corrective_shapes import CorrectiveShapeOptions
 from adv_py.core.skin_cage import plan_skin_cage_build, plan_skin_cage_width
 from adv_py.core.skin_cage_sliders import SkinCageSlider, plan_skin_cage_sliders
 from .maya_skin_cage_sliders import MayaSkinCageSliderHost
+from .maya_face_deformer_sets import original_face_deformer_sets
 
 
 class MayaCorrectiveCurvesMixin:
@@ -15,13 +16,30 @@ class MayaCorrectiveCurvesMixin:
         if raw.objExists(mesh):raw.setAttr(mesh+".v",0)
 
     def _cbd_data(self, attribute):
-        return self._cmds.getAttr("curveDeformationSetup."+attribute)
+        c=self._cmds;raw=self._corrective_raw()
+        link={"mesh":"advPySourceMesh","fkControl":"advPySourceFKControl"}.get(attribute)
+        if link and c.objExists("curveDeformationSetup."+link):
+            nodes=raw.listConnections(self.scene_address("curveDeformationSetup."+link),
+                                     source=True,destination=False) or []
+            if len(nodes)==1:
+                paths=raw.ls(nodes[0],long=True) or []
+                if len(paths)==1:
+                    return paths[0] if attribute=="mesh" else self._original_restore_leaf(paths[0])
+        value=c.getAttr("curveDeformationSetup."+attribute)
+        if attribute=="mesh":
+            return self._original_bs_physical_address(value)
+        return value
 
     def _cbd_store(self, attribute, value, *, locked=False):
         c=self._cmds
         if isinstance(value,str):
             c.addAttr("curveDeformationSetup",longName=attribute,dataType="string")
             c.setAttr("curveDeformationSetup."+attribute,value,type="string",lock=locked)
+            link={"mesh":"advPySourceMesh","fkControl":"advPySourceFKControl"}.get(attribute)
+            if link:
+                c.addAttr("curveDeformationSetup",longName=link,attributeType="message")
+                self._corrective_raw().connectAttr(self.scene_address(value)+".message",
+                    self.scene_address("curveDeformationSetup."+link))
         else:
             c.addAttr("curveDeformationSetup",longName=attribute,attributeType="bool",defaultValue=bool(value),keyable=True)
 
@@ -32,11 +50,11 @@ class MayaCorrectiveCurvesMixin:
         self._require_transaction()
         c=self._cmds;raw=self._corrective_raw()
         fk_control=self._original_restore_leaf(fk_control)
-        if not fk_control.startswith("FK"):
+        if not self.original_corrective_primary_fk(fk_control):
             raise ValueError("请选择 FK 控制器")
         mesh=self._original_bs_physical_address(mesh)
         self._corrective_shape(mesh)
-        joint=fk_control.removeprefix("FK")
+        joint=self.original_corrective_joint_for_fk(fk_control)
         parents=c.listRelatives(joint,parent=True,type="joint") or []
         if not parents or "Part" not in parents[0] or "Part1_" in parents[0]:
             raise ValueError("曲线变形要求至少两个 Twist 关节")
@@ -212,8 +230,7 @@ class MayaCorrectiveCurvesMixin:
         if not self._cbd_data("curvesBound"):
             raise ValueError("请先重新绑定曲线")
         control=self._cbd_data("fkControl")
-        switch=self.find_original_fkik_control(control)
-        if switch and c.objExists(switch+".FKIKBlend"):c.setAttr(switch+".FKIKBlend",0)
+        self.set_original_corrective_fk(control)
         y_only=self._cbd_data("rotYonly");z_only=self._cbd_data("rotZonly")
         raw.currentTime(0)
         end=10 if y_only or z_only else 80
@@ -260,10 +277,10 @@ class MayaCorrectiveCurvesMixin:
                 for axis in "xyz":c.setAttr("Corrective."+kind+axis,lock=False,keyable=True)
             c.setAttr("Corrective.v",lock=False);c.setAttr("Corrective.v",1)
             c.parent("Corrective","curveDeformationSetup")
-            for shape in c.listRelatives("Corrective",shapes=True) or []:
+            for shape in c.listRelatives("Corrective",shapes=True,fullPath=True) or []:
                 if c.getAttr(shape+".intermediateObject"):c.delete(shape)
             influences=raw.listConnections(skins[0]+".matrix",source=True,destination=False) or []
-            with self._corrective_creation_context():
+            with self._corrective_creation_context(), original_face_deformer_sets(c):
                 skin=raw.skinCluster(*influences,self.scene_address("Corrective"),name=self.scene_address("CorrectiveSC"),toSelectedBones=True,maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False)[0]
             self._cbd_rename_deformer_set(skin,"CorrectiveSCSet")
             raw.copySkinWeights(sourceSkin=skins[0],destinationSkin=skin,noMirror=True,surfaceAssociation="closestPoint",influenceAssociation="closestJoint")
@@ -273,10 +290,11 @@ class MayaCorrectiveCurvesMixin:
             with self._corrective_creation_context():
                 raw.polySmooth(self.scene_address("deformationMesh"),mth=0,dv=2,bnr=1,c=1,kb=0,ksb=1,khe=0,kt=1,kmb=1,suv=1,peh=0,sl=1,dpe=1,ps=.1,ro=1,ch=1)
             c.sets([*curves,"deformationLoft","deformationMesh","Corrective"],add="curveDeformationObjects")
-            wrap=self._original_bs_native_wrap("Corrective","deformationMesh",exclusive=False,name="CorrectiveWrap")
+            with original_face_deformer_sets(c):
+                wrap=self._original_bs_native_wrap("Corrective","deformationMesh",exclusive=False,name="CorrectiveWrap")
             if not wrap:raise RuntimeError("局部变形网格没有生成 Wrap")
             self._cbd_rename_deformer_set(self.scene_address("CorrectiveWrap"),"CorrectiveWrapSet")
-            joint=control.removeprefix("FK")
+            joint=self.original_corrective_joint_for_fk(control)
             raw.select(self.scene_address("Corrective"),replace=True)
             if joint.endswith("_R"):
                 raw.polySelectConstraint(m=3,t=1,d=3,db=(0,999),da=(1,0,0),dp=(999,0,0))
@@ -304,7 +322,9 @@ class MayaCorrectiveCurvesMixin:
     def _cbd_rename_deformer_set(self, deformer, name):
         raw=self._corrective_raw()
         sets=raw.listConnections(deformer+".message",source=False,destination=True,type="objectSet") or []
-        if sets:self._cmds.rename(sets[0],name)
+        if not sets:
+            raise RuntimeError("原版变形器成员集合未创建："+deformer)
+        self._cmds.rename(sets[0],name)
 
     def bake_original_corrective_curve_mesh(self, options):
         self._require_transaction();self._transaction_changed=True

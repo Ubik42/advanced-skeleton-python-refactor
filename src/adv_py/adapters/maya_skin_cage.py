@@ -313,7 +313,7 @@ class MayaSkinCageHost:
                              name=self._name(leaf + hidden_tail),
                              parentOnly=False, returnRootsOnly=True)[0]
         for constraint in c.listRelatives(hidden, children=True,
-                                          type="constraint") or ():
+                                          type="constraint",fullPath=True) or ():
             c.delete(constraint)
         c.parent(hidden, profile)
         c.setAttr(hidden + ".visibility", 0)
