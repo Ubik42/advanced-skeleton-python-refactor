@@ -15,6 +15,7 @@ from adv_py.core.body_limb_mechanisms import (
 from adv_py.core.body_limb_blend import BodyLimbBlendPlan, plan_body_limb_blend
 from adv_py.core.body_generic_fk import BodyGenericFkPlan, plan_body_generic_fk
 from adv_py.core.body_spline import BodySplinePlan
+from adv_py.core.fit_bendy import FitBendyChainSpec, plan_fit_bendy_chains
 from adv_py.core.source_body_spline import plan_source_body_spline
 from adv_py.core.body_character_global import (
     BodyCharacterGlobalPlan, BodyRootFkScaleSpec, plan_body_character_global,
@@ -47,7 +48,10 @@ from .character_registry import RegisterBodyCharacter
 from .body_selection_sets import finalize_body_character_sets
 from .fit_part import BuildFitPartHierarchy
 from .source_body_parts import build_source_body_part_drivers
-from adv_py.core.fit_part import rebase_plan_paths_after_parts
+from .source_body_inbetween import build_source_body_inbetween
+from adv_py.core.fit_part import FitPartFinalPaths, rebase_plan_paths_after_parts
+from adv_py.core.fit_part_twist import FitPartTwistStep
+from adv_py.core.fit_part_scale import FitPartScalePlan
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +76,11 @@ class SourceBodyRigPlan:
     fit_aim: tuple[BodyFitAimSpec, ...] = ()
     fk_scale_compensations: tuple[BodyFkScaleCompensationSpec, ...] = ()
     spline: BodySplinePlan | None = None
+    bendy_chains: tuple[FitBendyChainSpec, ...] = ()
+    inbetween_segments: tuple = ()
+    twist_steps: tuple[FitPartTwistStep, ...] = ()
+    part_scale: FitPartScalePlan | None = None
+    part_paths: FitPartFinalPaths | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +222,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         fit, root_parent_path=deformation)
     build = skeleton.plan.build
     part_result = None
+    if not use_fit_part_hierarchy and build.fit_parts:
+        raise FitSkeletonValidationError("来源 Fit 已标记分段，不能关闭 Part 层级构建")
     if use_fit_part_hierarchy and build.fit_parts:
         host.prepare_fit_part_twist_runtime()
         part_result = BuildFitPartHierarchy(host).apply(build)
@@ -243,11 +254,27 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
                       for node in build.symmetry.source.hierarchy.joints
                       for name in (node.short_name.rsplit(":", 1)[-1],)}
     ik_end_paths = set()
+    ik_source_paths = set()
     for node in build.symmetry.source.hierarchy.joints:
         info = fit_joint_ik_info(build.symmetry.source.hierarchy,
                                 labels_by_path, node.path)
         if info is not None and info.start == node.path:
             ik_end_paths.add(info.end)
+            ik_source_paths.update(info.joints)
+    bendy_chains = (plan_fit_bendy_chains(
+        tuple(part for part in build.fit_parts if part.kind == "twist"),
+        metadata, build.specs) if part_result is not None else ())
+    if bendy_chains:
+        bendy_chains = rebase_plan_paths_after_parts(bendy_chains, part_result.final_paths)
+        axes = {joint.path: joint.world_axes for joint in body.joints}
+        bendy_chains = tuple(replace(chain,
+            start_world_axes=axes[chain.start_body],
+            falloff_span=host.capture_fit_bendy_end_local_length(chain.end_body),
+            scale_guide_group=not options.use_offset_parent_matrix,
+            non_opm_additive_micro_scale=not options.use_offset_parent_matrix,
+            opm_offset_only_scale=options.use_offset_parent_matrix,
+            secondary_matrix_follow=True, mel_main_influence_follow=True)
+            for chain in bendy_chains)
     fk_metadata = tuple(replace(item, control=True)
                         if item.joint in ik_end_paths else item
                         for item in metadata)
@@ -255,6 +282,9 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         sub_controllers=options.sub_controllers,
         extra_controllers=options.extra_controllers,
         radius=scale * 1.5,
+        bendy_end_paths=frozenset(chain.end_body for chain in bendy_chains),
+        inbetween_start_paths=frozenset(part.start_body for part in build.fit_parts
+            if part.kind == "inbetween" and part.source_joint not in ik_source_paths),
         aim_sources=(generic_fk_policy.aim_sources if generic_fk_policy else None),
         follower_sources=(generic_fk_policy.follower_sources if generic_fk_policy else None),
         fkx_joint_controls=(generic_fk_policy.fkx_joint_controls if generic_fk_policy else None),
@@ -337,6 +367,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         compensation = tuple(spec for spec in compensation
                              if spec.control_path in generic_fk_policy.compensated_controls)
     BuildBodyFkScaleCompensation(host).apply(compensation)
+    fk, inbetween_segments = build_source_body_inbetween(
+        host, build, part_result, fk, limbs, spline)
     fk_globals = plan_body_fk_global(metadata, fk.controls)
     if generic_fk_policy is not None and generic_fk_policy.global_controls is not None:
         fk_globals = tuple(spec for spec in fk_globals
@@ -357,7 +389,10 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         if markers:
             body = host.remove_body_non_deform_markers(body.root, markers)
             skeleton = replace(skeleton, snapshot=body)
-    build_source_body_part_drivers(host, build, part_result, fk, limbs, spline)
+    twist_steps, part_scale, bendy_chains = build_source_body_part_drivers(
+        host, build, part_result, fk, limbs, spline, bendy_chains, inbetween_segments)
+    if bendy_chains:
+        body = host.capture_body_skeleton(body.root)
     provenance = oriented_body_provenance(fit, len(body.joints))
     host.write_body_provenance(body.root, provenance)
     body = replace(body, provenance=provenance)
@@ -370,7 +405,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         host.apply_body_fk_channel_locks(spec)
     rig_plan = SourceBodyRigPlan(fit, fk, global_control, tuple(limbs),
         BodyControlSpacesPlan(body.root, ()), fk.hidden_controls, lock_specs,
-        fk_globals, fit_aim, compensation, spline)
+        fk_globals, fit_aim, compensation, spline, bendy_chains, inbetween_segments,
+        twist_steps, part_scale, part_result.final_paths if part_result is not None else None)
     rig = SourceBodyRigResult(rig_plan, body)
     registration = (host.describe_character_registration(
         rig, source_character_channels(rig)) if defer_registration
@@ -381,4 +417,4 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     return RegisteredBodyBuildResult(skeleton, rig, registration,
         segment_influences=(tuple(part.name for part in build.fit_parts)
                             if part_result is not None else ()),
-        fit_part_hierarchy=part_result)
+        fit_part_hierarchy=part_result, inbetween_segments=inbetween_segments)

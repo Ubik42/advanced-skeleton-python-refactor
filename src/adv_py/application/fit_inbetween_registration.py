@@ -45,6 +45,17 @@ class RegisterInbetweenControls:
             return before
         if self._host.read_character_registration() != before:
             raise ValueError("Inbetween 登记前角色文档已变化")
+        after = self.describe(before, segments, hip_swing=hip_swing)
+        with self._host.transaction("登记 Inbetween 控制器"):
+            self._host.write_character_registration_extension(before, after)
+            if self._host.read_character_registration() != after:
+                raise RuntimeError("Inbetween 控制器登记读回不一致")
+        return after
+
+    def describe(self, before: CharacterRegistration, segments, *, hip_swing=None):
+        """Capture generated controls before first character registration."""
+        if not segments and hip_swing is None:
+            return before
         channels = list(before.channels)
         nodes = list(before.nodes)
         keys = {channel.key for channel in channels}
@@ -100,8 +111,4 @@ class RegisterInbetweenControls:
         after = replace(before, channels=tuple(channels),
                         nodes=tuple(nodes))
         encode_registration(after)
-        with self._host.transaction("登记 Inbetween 控制器"):
-            self._host.write_character_registration_extension(before, after)
-            if self._host.read_character_registration() != after:
-                raise RuntimeError("Inbetween 控制器登记读回不一致")
         return after

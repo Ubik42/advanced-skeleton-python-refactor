@@ -6,11 +6,15 @@ from dataclasses import replace
 from adv_py.core.fit_part_twist import plan_standard_fit_part_rotation_inputs
 from .fit_part_twist import PrepareFitPartTwistSources, BuildFitPartTwistDrivers
 from .fit_part_scale import BuildFitPartScaleDrivers
+from .fit_bendy import (
+    FitBendyWorldSource, plan_fit_bendy_follow,
+    BuildFitBendyGuides, BuildFitBendyDeform,
+)
 
 
-def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline):
+def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, bendy_chains=(), inbetween_segments=()):
     if part_result is None:
-        return (), None
+        return (), None, ()
     paths = part_result.final_paths
     parts = tuple(replace(part,
         start_body=paths.remap_body_reference(part.start_body),
@@ -53,11 +57,33 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline):
             paths.remap_body_reference(spec.parent_path)
             for spec in build.specs if spec.parent_path is not None})
     sources = PrepareFitPartTwistSources(host).apply(inputs)
-    steps = BuildFitPartTwistDrivers(host).apply(parts, sources)
+    bendy_parts = {name for chain in bendy_chains for name in chain.part_names}
+    ordinary_parts = tuple(part for part in parts if part.name not in bendy_parts)
+    ordinary_starts = {part.start_body for part in ordinary_parts}
+    steps = BuildFitPartTwistDrivers(host).apply(ordinary_parts,
+        tuple(source for source in sources if source.start_body in ordinary_starts))
     # Body output already contains this source rig's FK/IK scale selection.
     # Reuse that output for compensated Parts; OPM Parts inherit the parent.
-    scale_plan = BuildFitPartScaleDrivers(host).apply(build.fit_parts,
+    inbetween_driven = {part.body_part_name for segment in inbetween_segments
+                        for part in segment.body.parts}
+    scale_parts = tuple(part for part in build.fit_parts if part.name not in inbetween_driven)
+    scale_plan = BuildFitPartScaleDrivers(host).apply(scale_parts,
         resolved_segment_scale_plugs={part.start_body_name:
             paths.remap_body_reference(part.start_body) + ".scale"
             for part in build.fit_parts})
-    return steps, scale_plan
+    if bendy_chains:
+        world_sources = {body: FitBendyWorldSource(matrix)
+                         for body, matrix in independent.items()}
+        world_sources.update({body: FitBendyWorldSource(fk_matrix, ik_matrix, mode)
+            for body, (fk_matrix, ik_matrix, mode, _) in blended.items()})
+        for endpoint in fk.endpoints:
+            world_sources[endpoint.driven_joint] = FitBendyWorldSource(
+                endpoint.path + ".worldMatrix[0]")
+        follows = plan_fit_bendy_follow(bendy_chains, None,
+            resolved_world_sources=world_sources,
+            untwist_plugs={source.start_body: source.down_twist_plug for source in sources},
+            up_twist_plugs={source.start_body: source.up_twist_plug for source in sources
+                            if source.up_twist_plug})
+        BuildFitBendyGuides(host).apply(bendy_chains, follows=follows)
+        BuildFitBendyDeform(host).apply(bendy_chains)
+    return steps, scale_plan, bendy_chains

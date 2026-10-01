@@ -44,6 +44,18 @@ class RegisterBendyControls:
             return before
         if self._host.read_character_registration() != before:
             raise ValueError("Bendy 登记前角色文档已变化")
+        after = self.describe(before, chains)
+        with self._host.transaction("登记 Bendy 控制器"):
+            self._host.write_character_registration_extension(before, after)
+            if self._host.read_character_registration() != after:
+                raise RuntimeError("Bendy 控制器登记读回不一致")
+        return after
+
+    def describe(self, before: CharacterRegistration,
+                 chains: tuple[FitBendyChainSpec, ...]) -> CharacterRegistration:
+        """Capture channels before first registration, including FBX builds."""
+        if not chains:
+            return before
         channels = list(before.channels)
         nodes = list(before.nodes)
         keys = {item.key for item in channels}
@@ -131,8 +143,4 @@ class RegisterBendyControls:
                         extra_path, attr)
         after = replace(before, channels=tuple(channels), nodes=tuple(nodes))
         encode_registration(after)
-        with self._host.transaction("登记 Bendy 控制器"):
-            self._host.write_character_registration_extension(before, after)
-            if self._host.read_character_registration() != after:
-                raise RuntimeError("Bendy 控制器登记读回不一致")
         return after

@@ -588,6 +588,7 @@ def audit(host,plan):
                         or c.listConnections(target_parent,s=True,d=False) or tuple(c.getAttr(target_parent))!=identity):
                     raise FitSkeletonValidationError('Spline 世界缩放读取网络被修改')
     for i in range(1,n):
+        bendy_handoff = host.validate_body_bendy_handoff(plan.body_joints[i])
         for label,command,kind in (('Point',c.pointConstraint,'translate'),('Orient',c.orientConstraint,'rotate'),('Scale',c.scaleConstraint,'scale')):
             node=f'AdvPy_Spline{label}{i}'
             if label!='Scale' or version==1:
@@ -597,8 +598,18 @@ def audit(host,plan):
             if not c.isConnected('AdvPy_SplineReverse.outputX',node+'.'+aliases[0]) or not c.isConnected(plan.settings+'.spineIkFk',node+'.'+aliases[1]):
                 raise FitSkeletonValidationError('Spline 混合权重连接无效')
             for axis in 'XYZ':
-                if not c.isConnected(node+'.constraint'+kind.title()+axis,plan.body_joints[i]+'.'+kind+axis):
-                    raise FitSkeletonValidationError('Spline Body 输出被替换')
+                source = node + '.constraint' + kind.title() + axis
+                destination = plan.body_joints[i] + '.' + kind + axis
+                if c.isConnected(source, destination):
+                    continue
+                if bendy_handoff:
+                    if label != 'Scale':
+                        continue
+                    mult = 'AdvPy_BendyDeformScale' + plan.body_joints[i].rsplit('|', 1)[-1]
+                    if c.objExists(mult) and (c.isConnected(source, mult + '.input1' + axis)
+                            or c.isConnected(node + '.constraintScale', mult + '.input1')):
+                        continue
+                raise FitSkeletonValidationError('Spline Body 输出被替换')
     if plan.curved:
         import json
         for i in range(1,n):

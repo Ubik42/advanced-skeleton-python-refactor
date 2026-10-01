@@ -35,17 +35,30 @@ def capture_fk_policy(host, registration):
             raise CharacterRegistryError("来源 FK 朝向驱动缺失或不唯一：" + short)
         outputs = c.listConnections(orients[0] + ".constraintRotateX",
                                    source=False, destination=True, plugs=True) or []
-        if len(outputs) != 1 or not outputs[0].endswith(".rotateX"):
-            raise CharacterRegistryError("来源 FK 朝向驱动输出不完整：" + short)
-        drivers = c.ls(outputs[0].rsplit(".", 1)[0], long=True) or []
+        bendy_constraint = namespace + "AdvPy_BendyDeform" + body_stem
+        if not outputs and c.objExists(bendy_constraint):
+            if c.nodeType(bendy_constraint) != "parentConstraint":
+                raise CharacterRegistryError("来源 Bendy 变形驱动身份无效：" + short)
+            drivers = [joint.path for joint in registration.body
+                       if joint.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1] == body_stem]
+        else:
+            if len(outputs) != 1 or not outputs[0].endswith(".rotateX"):
+                raise CharacterRegistryError("来源 FK 朝向驱动输出不完整：" + short)
+            drivers = c.ls(outputs[0].rsplit(".", 1)[0], long=True) or []
         if len(drivers) != 1 or c.nodeType(drivers[0]) != "joint":
             raise CharacterRegistryError("来源 FK 输出不是唯一机制关节：" + short)
         driver = drivers[0]
+        if not outputs:
+            host.validate_body_bendy_handoff(driver)
         compound = c.connectionInfo(driver + ".scale", sourceFromDestination=True)
         sources = tuple(c.connectionInfo(driver + ".scale" + axis,
                                          sourceFromDestination=True) for axis in "XYZ")
         if (compound == control + ".scale" or sources == tuple(
                 control + ".scale" + axis for axis in "XYZ")):
+            scale.add(control)
+        bendy_scale = namespace + "AdvPy_BendyDeformScale" + body_stem
+        if c.objExists(bendy_scale) and c.connectionInfo(
+                bendy_scale + ".input1", sourceFromDestination=True) == control + ".scale":
             scale.add(control)
         point = c.ls(namespace + prefix + "FKPoint", long=True,
                      type="pointConstraint") or []

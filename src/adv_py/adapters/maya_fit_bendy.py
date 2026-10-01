@@ -621,6 +621,30 @@ class MayaFitBendyMixin:
                 return False
         return True
 
+    def validate_body_bendy_handoff(self, joint: str) -> bool:
+        """Validate the Micro handoff when a spline still owns its source graph."""
+        c = self._cmds
+        leaf = joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        constraint = "AdvPy_BendyDeform" + leaf
+        if not c.objExists(constraint):
+            return False
+        marker = _MICRO_GROUP + ".advPyBendyGuideOwner"
+        if (c.nodeType(constraint) != "parentConstraint"
+                or not c.objExists(marker) or c.getAttr(marker) != _OWNER
+                or not c.getAttr(marker, lock=True)):
+            raise ValueError("Bendy 接管缺少 Micro 所有权：" + joint)
+        targets = c.parentConstraint(constraint, query=True, targetList=True) or []
+        expected = c.ls("MicroX" + leaf, long=True, type="transform") or []
+        actual = tuple(self._resolve_connected_node(target) for target in targets)
+        if len(expected) != 1 or actual != tuple(expected):
+            raise ValueError("Bendy 接管矩阵来源被替换：" + joint)
+        for kind in ("translate", "rotate"):
+            for axis in "XYZ":
+                if not c.isConnected(constraint + ".constraint" + kind.title() + axis,
+                                     joint + "." + kind + axis):
+                    raise ValueError("Bendy 接管输出不完整：" + joint)
+        return True
+
     def preflight_fit_bendy_deform(self, spec: FitBendyChainSpec) -> None:
         c = self._cmds
         for index, (name, output, constraint, scale_pick,

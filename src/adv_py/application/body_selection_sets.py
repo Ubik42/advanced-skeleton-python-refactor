@@ -63,7 +63,8 @@ def unregistered_fk_selection_extras(
     if isinstance(rig_plan, SourceBodyRigPlan):
         return tuple(spec.extra_path or spec.control_path
                      for spec in rig_plan.fk.controls
-                     if spec.control_path not in {ch.node for ch in registration.channels})
+                     if spec.control_path not in {ch.node for ch in registration.channels}
+                     and spec.control_path not in rig_plan.no_control_paths)
     controls = (
         rig_plan.arm.fk_controls.controls
         + rig_plan.leg.fk_controls.controls

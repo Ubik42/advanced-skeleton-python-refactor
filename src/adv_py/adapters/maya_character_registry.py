@@ -1358,9 +1358,21 @@ class MayaCharacterRegistryMixin:
             paths.update(joint.path for joint in limb.mechanisms.joints)
             paths.update(spec.wrist_align_path for spec in limb.ik.limbs
                          if spec.wrist_align_path is not None)
-        return self._describe_body_registration_nodes(
+        registration = self._describe_body_registration_nodes(
             body, p.container, channels, paths, p.spline, p.control_spaces,
             allow_animation=True)
+        if p.part_paths is not None:
+            from adv_py.application.fit_part_registration import RegisterFitPartChannels
+            registration = RegisterFitPartChannels(self).describe(
+                registration, p.twist_steps, p.part_paths, p.part_scale)
+        if p.inbetween_segments:
+            from adv_py.application.fit_inbetween_registration import RegisterInbetweenControls
+            registration = RegisterInbetweenControls(self).describe(
+                registration, p.inbetween_segments)
+        if p.bendy_chains:
+            from adv_py.application.fit_bendy_registration import RegisterBendyControls
+            registration = RegisterBendyControls(self).describe(registration, p.bendy_chains)
+        return registration
 
     def _describe_body_registration_nodes(self, body, container, channels,
                                           paths, spine, spaces, *, allow_animation=False):

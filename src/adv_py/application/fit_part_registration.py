@@ -48,6 +48,18 @@ class RegisterFitPartChannels:
             return before
         if self._host.read_character_registration() != before:
             raise ValueError("Fit Part 登记前角色文档已变化")
+        after = self.describe(before, steps, paths, scale, ik_control_paths)
+        with self._host.transaction("登记 Fit Part 动画通道"):
+            self._host.write_character_registration_extension(before, after)
+            if self._host.read_character_registration() != after:
+                raise RuntimeError("Fit Part 动画通道登记读回不一致")
+        return after
+
+    def describe(self, before, steps, paths, scale=None, ik_control_paths=None):
+        """Include Part settings before the source build's first registration."""
+        added = plan_fit_part_animation_channels(steps, paths, scale, ik_control_paths)
+        if not added:
+            return before
         keys = {channel.key for channel in before.channels}
         plugs = {(channel.node, channel.attribute)
                  for channel in before.channels}
@@ -71,8 +83,4 @@ class RegisterFitPartChannels:
                         channels=before.channels + added,
                         nodes=tuple(nodes))
         encode_registration(after)
-        with self._host.transaction("登记 Fit Part 动画通道"):
-            self._host.write_character_registration_extension(before, after)
-            if self._host.read_character_registration() != after:
-                raise RuntimeError("Fit Part 动画通道登记读回不一致")
         return after

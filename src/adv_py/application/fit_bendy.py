@@ -135,7 +135,7 @@ def split_fit_bendy_chains(
 
 def plan_fit_bendy_follow(
     chains: tuple[FitBendyChainSpec, ...],
-    rig: BodyCharacterRigBuildPlan,
+    rig: BodyCharacterRigBuildPlan | None,
     generic_controls: tuple[BodyLimbFkControlSpec, ...] = (),
     generic_endpoints: tuple[BodyGenericFkEndpointSpec, ...] = (),
     master_aim_sources: frozenset[str] | None = None,
@@ -145,10 +145,15 @@ def plan_fit_bendy_follow(
     child_control_sources: frozenset[str] | None = None,
     untwist_sources: frozenset[str] | None = None,
     end_matrix_sources: frozenset[str] | None = None,
+    resolved_world_sources: Mapping[str, FitBendyWorldSource] | None = None,
 ) -> tuple[FitBendyFollowSpec, ...]:
     """Resolve Bendy endpoints without depending on driven Body matrices."""
-    sources = fit_bendy_world_sources(
-        rig, generic_controls, generic_endpoints)
+    if resolved_world_sources is None:
+        if rig is None:
+            raise ValueError("Bendy 需要真实 Rig 或已解析的独立矩阵来源")
+        sources = fit_bendy_world_sources(rig, generic_controls, generic_endpoints)
+    else:
+        sources = dict(resolved_world_sources)
     child_chains = {chain.start_body: chain for chain in chains}
     result = []
     for chain in chains:
