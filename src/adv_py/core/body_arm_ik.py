@@ -58,6 +58,14 @@ class BodyArmIkSpec:
     source_middle_axes: AxisFrame | None = None
     source_rotation_order: int = 0
     source_foot_orientation: bool = False
+    source_foot_matrix: str | None = None
+    source_handle_parent: str | None = None
+
+    @property
+    def handle_parent(self):
+        return self.source_handle_parent or (
+            self.wrist_sub_path or self.wrist_control_path
+            if self.source_aligned_graph else self.wrist_control_path)
 
     @property
     def source_stem(self):
@@ -205,6 +213,7 @@ def plan_body_arm_ik(
             spec.path
             for spec in mechanisms.joints
             if spec.side is side and spec.role is BodyArmMechanismRole.IK
+            and spec.source_joint in {source.path for source in source_chain}
         )
         if len(full_drivers) != len(joint_names):
             raise BodyArmIkValidationError("IK mechanism 与来源关节链不一致")
@@ -274,7 +283,7 @@ def audit_body_arm_ik(plan: BodyArmIkPlan, snapshot: BodyArmIkSnapshot, *, toler
         checks = (
             (state.wrist_control_path == spec.wrist_control_path and state.wrist_parent_path == spec.wrist_extra_path, "ik_wrist_hierarchy", "Wrist IK 控制父链不一致"),
             (state.pole_control_path == spec.pole_control_path and state.pole_parent_path == spec.pole_extra_path, "ik_pole_hierarchy", "Pole Vector 控制父链不一致"),
-            (state.handle_name == spec.handle_name and state.handle_parent_path == (spec.wrist_sub_path or spec.wrist_control_path if spec.source_aligned_graph else spec.wrist_control_path), "ik_handle_mismatch", "IK Handle 或父级不一致"),
+            (state.handle_name == spec.handle_name and state.handle_parent_path == spec.handle_parent, "ik_handle_mismatch", "IK Handle 或父级不一致"),
             (state.pole_constraint_name == spec.pole_constraint_name, "ik_pole_constraint", "Pole Vector 约束名称不一致"),
             (state.wrist_constraint_name == spec.wrist_constraint_name and state.wrist_source == spec.orientation_source and state.wrist_driven_joint == spec.chain[2], "ik_wrist_orientation", "Wrist IK 朝向驱动不一致"),
             (state.joint_list == (spec.solver_joint_list or spec.chain[:2]), "ik_chain_mismatch", "RP IK 求解链不一致"),

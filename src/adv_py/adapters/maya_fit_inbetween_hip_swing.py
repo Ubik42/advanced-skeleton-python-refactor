@@ -117,7 +117,8 @@ class MayaHipSwingReverseMixin:
         reverse = c.createNode("transform", name=plan.reverse_name,
                                parent=plan.start_fk_offset_path,
                                skipSelect=True)
-        c.xform(reverse, worldSpace=True, matrix=end_matrix)
+        c.xform(reverse,worldSpace=True,matrix=root_matrix)
+        c.xform(reverse,worldSpace=True,translation=child_position)
         blend = c.createNode("blendMatrix", name=plan.blend_name)
         decompose = c.createNode("decomposeMatrix",
                                  name=plan.decompose_name)

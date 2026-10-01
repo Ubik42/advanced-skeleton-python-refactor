@@ -8477,7 +8477,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     attribute, node=side.ankle_control_path, exists=True
                 )
             )
-            ankle_constraints = self._cmds.ls(
+            if side.source_end_matrix:
+                from .maya_source_body_foot import validate_orientation
+                if not validate_orientation(self,side):
+                    invalid_ankle_constraints.append(side.ankle_constraint_name)
+            ankle_constraints = [] if side.source_end_matrix else self._cmds.ls(
                 side.ankle_constraint_name,
                 type="orientConstraint",
             ) or []
@@ -8504,7 +8508,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     or driven != side.ankle_driver_path
                 ):
                     invalid_ankle_constraints.append(side.ankle_constraint_name)
-            elif self._cmds.objExists(side.ankle_constraint_name):
+            elif not side.source_end_matrix and self._cmds.objExists(side.ankle_constraint_name):
                 invalid_ankle_constraints.append(side.ankle_constraint_name)
             rotation_drivers = (
                 tuple(dict.fromkeys((
@@ -8523,7 +8527,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                         plugs=True) or []
                     if sources:
                         occupied_rotations.append(plug)
-        missing = tuple(path for path in required if not self._cmds.objExists(path))
+        missing = tuple(path for path in required if path and not self._cmds.objExists(path))
         return BodyLegFootInputState(
             missing_required_paths=missing,
             name_collisions=tuple(collisions),
@@ -8834,7 +8838,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 radius=spec.toe_control_radius,
                 fallback_normal=(0.0, 1.0, 0.0),
                 axis_offset=(original_fit_icon_axis_offset(
-                    self._cmds, ("Toes",)) if spec.source_toe_icon
+                    self._cmds, (spec.source_toe_fit_name,)) if spec.source_toe_icon
                     else (0.0, 0.0, 0.0)),
                 mirror_left=spec.side is FitBuildSide.LEFT)
             toe_control = (
@@ -8883,19 +8887,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 self._cmds.connectAttr(
                     spec.ankle_control_path + ".swivel",
                     spec.handle_name + ".twist")
-            ankle_constraints = self._cmds.ls(
-                spec.ankle_constraint_name,
-                type="orientConstraint",
-            ) or []
-            if len(ankle_constraints) != 1:
-                raise FitSkeletonValidationError("Ankle IK 朝向约束在执行前失效")
-            self._cmds.delete(ankle_constraints[0])
-            self._cmds.orientConstraint(
-                spec.ankle_orientation_source_path,
-                spec.ankle_driver_path,
-                maintainOffset=False,
-                name=spec.ankle_constraint_name,
-            )
+            if spec.source_end_matrix:
+                from .maya_source_body_foot import connect_orientation
+                connect_orientation(self,spec)
+            else:
+                self._replace_body_leg_foot_orientation(spec)
             if spec.qtoes_driver_path:
                 qtoes_handle, qtoes_effector = self._cmds.ikHandle(
                     name=spec.qtoes_handle_name,
@@ -8938,24 +8934,28 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                               absolute=True)
             self._cmds.setAttr(spec.toe_handle_name + ".visibility", False)
             self._cmds.setAttr(spec.toe_effector_name + ".visibility", False)
-            toe_end_handle, toe_end_effector = self._cmds.ikHandle(
-                name=spec.toe_end_handle_name,
-                startJoint=spec.toe_driver_path,
-                endEffector=spec.toe_end_driver_path,
-                solver="ikSCsolver",
-                sticky="sticky",
-            )
-            self._cmds.rename(toe_end_effector, spec.toe_end_effector_name)
-            self._cmds.parent(toe_end_handle,
-                              spec.toe_end_handle_control_path,
-                              absolute=True)
-            self._cmds.setAttr(spec.toe_end_handle_name + ".visibility", False)
-            self._cmds.setAttr(spec.toe_end_effector_name + ".visibility", False)
+            if spec.toe_end_driver_path:
+                toe_end_handle, toe_end_effector = self._cmds.ikHandle(
+                    name=spec.toe_end_handle_name,startJoint=spec.toe_driver_path,
+                    endEffector=spec.toe_end_driver_path,solver="ikSCsolver",sticky="sticky")
+                self._cmds.rename(toe_end_effector,spec.toe_end_effector_name)
+                self._cmds.parent(toe_end_handle,spec.toe_end_handle_control_path,absolute=True)
+                self._cmds.setAttr(spec.toe_end_handle_name+'.visibility',False)
+                self._cmds.setAttr(spec.toe_end_effector_name+'.visibility',False)
         finally:
             if selection:
                 self._cmds.select(selection, replace=True)
             else:
                 self._cmds.select(clear=True)
+
+    def _replace_body_leg_foot_orientation(self, spec) -> None:
+        c=self._cmds
+        constraints=c.ls(spec.ankle_constraint_name,type='orientConstraint') or []
+        if len(constraints)!=1:
+            raise FitSkeletonValidationError('Ankle IK 朝向约束在执行前失效')
+        c.delete(constraints[0])
+        c.orientConstraint(spec.ankle_orientation_source_path,spec.ankle_driver_path,
+                           maintainOffset=False,name=spec.ankle_constraint_name)
 
     def _create_body_leg_foot_high_heel(
         self, spec: BodyLegFootSideSpec, final_handle_path: str,
@@ -9035,15 +9035,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         self._cmds.connectAttr(
             spec.ankle_control_path + ".swivel",
             spec.handle_name + ".twist")
-        constraints = self._cmds.ls(
-            spec.ankle_constraint_name, type="orientConstraint") or []
-        if len(constraints) != 1:
-            raise FitSkeletonValidationError("Ankle IK 朝向约束在执行前失效")
-        self._cmds.delete(constraints[0])
-        self._cmds.orientConstraint(
-            spec.ankle_orientation_source_path,
-            spec.ankle_driver_path,
-            maintainOffset=False, name=spec.ankle_constraint_name)
+        if spec.source_end_matrix:
+            from .maya_source_body_foot import connect_orientation
+            connect_orientation(self,spec)
+        else:
+            self._replace_body_leg_foot_orientation(spec)
 
         def create_at(name, path, parent, position, axes):
             node = self._cmds.createNode(
@@ -9359,7 +9355,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 )
                 return (constraint, source, driven)
 
-            ankle_orientation = orientation_state(spec.ankle_constraint_name)
+            if spec.source_end_matrix:
+                from .maya_source_body_foot import capture_orientation
+                ankle_orientation=capture_orientation(self,spec)
+            else:
+                ankle_orientation = orientation_state(spec.ankle_constraint_name)
             align_states = self._capture_body_leg_foot_align_helpers(spec)
             if spec.hybrid is not None:
                 sides.append(self._capture_body_leg_foot_hybrid_side(
@@ -9482,16 +9482,16 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 (self._cmds.ls(joint, long=True) or [joint])[0]
                 for joint in (self._cmds.ikHandle(
                     toe_handles[0], query=True, jointList=True) or []))
-            toe_end_handles = self._cmds.ls(
-                spec.toe_end_handle_name, long=True, type="ikHandle") or []
-            if len(toe_end_handles) != 1:
+            toe_end_handles = (self._cmds.ls(
+                spec.toe_end_handle_name,long=True,type='ikHandle') or []) if spec.toe_end_driver_path else []
+            if spec.toe_end_driver_path and len(toe_end_handles) != 1:
                 raise FitSkeletonValidationError("ToesEnd IK Handle 节点集合无效")
-            toe_end_parents = self._cmds.listRelatives(
-                toe_end_handles[0], parent=True, fullPath=True) or []
+            toe_end_parents = (self._cmds.listRelatives(
+                toe_end_handles[0],parent=True,fullPath=True) or []) if toe_end_handles else []
             toe_end_joint_list = tuple(
                 (self._cmds.ls(joint, long=True) or [joint])[0]
                 for joint in (self._cmds.ikHandle(
-                    toe_end_handles[0], query=True, jointList=True) or []))
+                    toe_end_handles[0], query=True, jointList=True) or [])) if toe_end_handles else ()
             intermediate_handles = []
             for step in spec.intermediate_handles:
                 matches = self._cmds.ls(
@@ -9589,7 +9589,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 toe_end_parents[0] if toe_end_parents else None,
                 toe_end_joint_list,
                 self._cmds.ikHandle(toe_end_handles[0], query=True,
-                                    solver=True),
+                                    solver=True) if toe_end_handles else None,
                 toe_extra_path=(toe_extras[0]
                                 if len(toe_extras) == 1 else None),
                 toe_extra_parent_path=(toe_extra_parent[0]
@@ -10051,7 +10051,23 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_spline_visibility import create
         create(self,plan,fk)
 
-    def connect_source_body_limb_follow(self, body, mechanisms) -> None:
+    def create_source_body_root_controls(self, plan) -> None:
+        from .maya_source_body_root import create_controls
+        create_controls(self,plan)
+
+    def connect_source_body_root_fk(self, plan) -> None:
+        from .maya_source_body_root import connect_fk_root
+        connect_fk_root(self,plan)
+
+    def connect_source_body_root_outputs(self, plan, body, fk, splines, generated_sources) -> None:
+        from .maya_source_body_root import connect_outputs
+        connect_outputs(self,plan,body,fk,splines,generated_sources)
+
+    def create_source_internal_ik_local(self, spec) -> None:
+        from .maya_source_internal_ik_local import create
+        create(self,spec)
+
+    def connect_source_body_limb_follow(self, body, mechanisms, *,root_follow_path=None) -> None:
         """Follow the real parent of an imported IK start, outside its blend."""
         from adv_py.core.body_limb_mechanisms import BodyLimbMechanismRole
         self._require_transaction()
@@ -10062,6 +10078,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     or joint.parent_path != mechanisms.root_path):
                 continue
             parent = by_path[joint.source_joint].parent_path
+            while parent in by_path and 'Part' in by_path[parent].name:
+                parent = by_path[parent].parent_path
+            if parent==body.root and root_follow_path:
+                parent=root_follow_path
             if parent is None:
                 continue
             name = joint.name + "ParentPoint"

@@ -24,18 +24,21 @@ class LegQToesTopology:
     sides: tuple[LegQToesSideTopology, ...]
 
 
-def plan_leg_qtoes_topology(body: BodySkeletonSnapshot) -> LegQToesTopology:
+def plan_leg_qtoes_topology(body: BodySkeletonSnapshot, *,suffixes=('R','L'),
+                           require_toes_end=True) -> LegQToesTopology:
     """Read bilateral toe chains once for mechanisms and Foot Roll planning."""
     by_name = {joint.name: joint for joint in body.joints}
     by_path = {joint.path: joint for joint in body.joints}
     if len(by_name) != len(body.joints) or len(by_path) != len(body.joints):
         raise ValueError("Leg QToes 来源关节名称或路径重复")
     sides = []
-    for suffix in ("R", "L"):
+    if not suffixes or len(set(suffixes))!=len(suffixes) or any(s not in ('R','L','M') for s in suffixes):
+        raise ValueError('Leg QToes 侧别定义无效')
+    for suffix in suffixes:
         ankle = by_name.get("Ankle_" + suffix)
         toes = by_name.get("Toes_" + suffix)
         toes_end = by_name.get("ToesEnd_" + suffix)
-        if ankle is None or toes is None or toes_end is None:
+        if ankle is None or toes is None or require_toes_end and toes_end is None:
             raise ValueError("Leg QToes 需要双侧 Ankle／Toes／ToesEnd")
         marked = [joint for joint in body.joints
                   if joint.path.startswith(ankle.path + "|")
@@ -52,32 +55,34 @@ def plan_leg_qtoes_topology(body: BodySkeletonSnapshot) -> LegQToesTopology:
             if current.path in visited or current.parent_path is None:
                 raise ValueError("脚趾主链存在循环或未连接到 Ankle：" + suffix)
             visited.add(current.path)
-            chain.append(current)
+            if 'Part' not in current.name:
+                chain.append(current)
             current = by_path.get(current.parent_path)
             if current is None:
                 raise ValueError("脚趾主链缺少 Body 父关节：" + suffix)
         chain.reverse()
         if qtoes is not None and qtoes not in chain:
             raise ValueError("QToes 标记不在 Ankle→Toes 主链：" + suffix)
-        if toes_end.parent_path != toes.path:
+        from .body_limb_mechanisms import body_limb_parent_matches
+        if toes_end is not None and not body_limb_parent_matches(toes_end.parent_path,toes.path,allow_part_parents=True):
             raise ValueError("脚趾主链要求 ToesEnd 紧接 Toes：" + suffix)
         intermediate = tuple(chain[:-1])
         names = tuple(joint.name.removesuffix("_" + suffix)
                       for joint in intermediate)
-        if any(not name or not name[0].isalpha() or not name.isalnum()
-               for name in names):
+        from .body_limb_mechanisms import body_limb_token_valid
+        if any(not body_limb_token_valid(name) for name in names):
             raise ValueError("脚趾中间关节名称不适合 Leg 机制链：" + suffix)
         sides.append(LegQToesSideTopology(
             suffix=suffix,
             ankle_path=ankle.path,
             toes_path=toes.path,
-            toes_end_path=toes_end.path,
+            toes_end_path=toes_end.path if toes_end else '',
             qtoes_path=qtoes.path if qtoes else None,
             intermediate_paths=tuple(joint.path for joint in intermediate),
             intermediate_names=names,
             hybrid=hybrid,
         ))
-    if sides[0].intermediate_names != sides[1].intermediate_names:
+    if any(side.intermediate_names!=sides[0].intermediate_names for side in sides[1:]):
         raise ValueError("左右 QToes 中间关节链名称或顺序不一致")
     return LegQToesTopology(
         joint_names=(("Hip", "Knee", "Ankle")

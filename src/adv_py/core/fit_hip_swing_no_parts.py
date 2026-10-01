@@ -25,6 +25,9 @@ class HipSwingNoPartsTopology:
     root_fk_weight: str | None = None
     root_body_matrix_source: str | None = None
     root_child_inverter_matrix_target: str | None = None
+    root_fkx_parent_inverse: str | None = None
+    leg_lock_enabled: bool = True
+    independent_child_receiver: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,7 +86,7 @@ class HipSwingNoPartsPlan:
         matrix = self.root_fkx_matrix_name
         links = ((self.reverse_root_path + ".worldMatrix[0]",
                   matrix + ".matrixIn[0]"),
-                 (self.frame_path + ".worldInverseMatrix[0]",
+                 (self.topology.root_fkx_parent_inverse or self.frame_path + ".worldInverseMatrix[0]",
                   matrix + ".matrixIn[1]"))
         if self.use_offset_parent_matrix:
             return links + ((matrix + ".matrixSum",
@@ -216,6 +219,7 @@ def plan_hip_swing_no_parts(
             or (topology.root_child_inverter_matrix_target is not None
                 and topology.root_body_matrix_source is None)
             or (topology.child_no_shear_input is None
+                and not topology.independent_child_receiver
                 and not topology.child_fk_offset_path.startswith(
                     topology.fk_root_path + "|"))
             or topology.child_body_path.rsplit("|", 1)[-1]

@@ -22,6 +22,11 @@ class BodyCenterBetweenFeetSpec:
     weight_node: str = "AdvPy_RootCenterWeight"
     state_condition: str = "AdvPy_RootCenterNodeState"
     output_matrix: str = "AdvPy_RootCenterOutputMM"
+    source_targets: tuple[str,...] = ()
+
+    @property
+    def targets(self):
+        return self.source_targets or (self.right_ik,self.left_ik)
 
     @property
     def node_names(self) -> tuple[str, ...]:
@@ -63,3 +68,13 @@ def plan_body_center_between_feet(
     return BodyCenterBetweenFeetSpec(
         root_x.offset_path, root_x.control_path, parent,
         by_side["R"], by_side["L"])
+
+
+def plan_source_center_between_feet(root_x,targets):
+    """MEL uses every IKLeg control; quadrupeds are not reduced to a pair."""
+    if not targets or len(set(targets))!=len(targets):
+        raise ValueError('来源 Center Between Feet 缺少唯一 IK Leg 控制')
+    if any(path.startswith(root_x.offset_path+'|') for path in targets):
+        raise ValueError('来源 Center Between Feet 的 RootX／IK Leg 层级形成循环')
+    return BodyCenterBetweenFeetSpec(root_x.offset_path,root_x.control_path,
+        root_x.offset_path.rsplit('|',1)[0],targets[0],targets[-1],source_targets=targets)

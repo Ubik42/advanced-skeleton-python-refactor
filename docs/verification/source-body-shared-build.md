@@ -35,7 +35,7 @@
 
 ## 尚未完成的范围
 
-来源分支不能据此等同于原版通用构建的全部功能。本批多组和侧向 Spline 的独立命名、版本 5 保存、共享重建入口及逐组动画扩展已接代码；CV／Hybrid 的 Extra 父层与独立 Follow 接收层已补。原版只有 FK／IK 创建可选 Extra／Sub 曲线，CV／Hybrid 不创建这些变体。来源 RP 的末端 ikLocal 三模式已接代码。仍需补齐来源 RootX／LegLock 的完整独立接收层、内部关节 ikLocal 特殊分支、脚部 pivots／Foot／IKhybrid 的通用接入；来源 RP 的通用区间动画匹配、发布与恢复。新旧 Spline 控制数量变化时的动画兼容也需要处理。源码覆盖矩阵里的其余主体差异仍然有效。
+来源分支不能据此等同于原版通用构建的全部功能。多组和侧向 Spline 的独立命名、版本 5 保存、共享重建入口及逐组动画扩展已接代码；CV／Hybrid 的 Extra 父层与独立 Follow 接收层已补。原版只有 FK／IK 创建可选 Extra／Sub 曲线，CV／Hybrid 不创建这些变体。来源 RP 的末端 ikLocal 三模式已接代码。来源 RootX／COG／LegLock、内部 IKLocal 与通用脚部的后续接入见下节；来源 RP 的通用区间动画匹配、发布与恢复，以及新旧 Spline 控制数量变化时的动画兼容仍需继续。源码覆盖矩阵里的其余主体差异仍然有效。
 
 本批是 Python 代码接入，没有启动 Maya，没有运行功能／场景测试，没有推送 GitHub。静态解析与方法声明检查不能证明运行绑定与原版等价。Goal 保持进行中，不能宣布全量复刻完成。
 
@@ -52,3 +52,17 @@
 - 多组角色保存版本 5 additional_spines；闭合解码校验各组身份、控制路径与登记节点。匹配通道按系统区分，扩展逐组构建后一次登记；FK／IK 匹配遍历各组。历史 1–4 版本保留读取和空追加组语义。
 
 以上均为代码接入，未运行 Maya、绑定流程或测试套件，也未推送 GitHub。不得据此宣称全部 ADV 分支完成或动画变形等价性已证明。
+
+## 2026-10-01 来源根部与脚部接入
+
+- 独立 RootX 与 COG 控制层、Root FK maintained follow、LegLock 两阶段相对旋转移除，及 Spline 根 IK 混合接入构建。Fit FirstAfterIK 与 Root 非首子节点建立 FK 父级跟随层。FollowRoot／Follow Spaces 接独立 RootX。
+- 每组 Spline 建 firstJointFixed（Root 默认 10，其余默认 0），保留局部朝向与原起点位置；来源普通起点的 FK／IK 输出保留约束名称，已有上游 Spline 的起点不改写其纯 FK 机制。
+- Center Between Feet 复用原权重／矩阵图，来源目标收集所有 IK Leg，兼容多腿与单侧。
+- 内部 IKLocal 按非末端、已有 FKParentConstraintTo 的原条件生成控制、Extra、局部朝向、完整父约束与显隐；进入角色通道和节点登记。
+- 来源 Foot 按标签解析 Heel／Toes／ToesEnd／BigToe／PinkyToe 和脚趾主链，复用共享 Roll、Rock、手动 Pivot、HighHeel、QToes 与 IKHybrid。实际 DAG 路径、位置、朝向和体积参数不改名；仅新生成脚部节点按系统区分。ToesEnd 缺省时保留开放脚趾链。
+- 脚趾机制和 Body FK／IK 混合进入构建；Foot 的 RP Handle 父级、末端朝向矩阵，以及 Toe／QToes／Hybrid SC 求解器进入 Inbetween 扩链、路径更新及登记。
+- 修复共享四肢混合规划把输入侧别覆盖为空列表的问题，恢复每个真实侧别的混合输出。
+
+- HipSwinger 的无分段与 Root Inbetween 分支接来源构建。无分段分支直接接 LegLock 的 FK 世界矩阵，使用实际 FKX 父逆矩阵，兼容 Sub 层且保持 DAG 路径。Root Inbetween 分支使用共享反向 Part 矩阵插入实现。Root Spline 的 Root 分段改使用原始 Root FK 控制，避免把根部分段归到 Spline Base FK 上。Reverse 保留 Root 朝向，仅对齐选中子关节的位置。
+
+静态解析和模块声明核对通过；未执行工程导入、功能测试、Maya 或 GitHub。本批源代码组合及历史角色的图迁移未做真实场景验收，RP 通用匹配、发布恢复及历史 Spline 动画兼容仍需继续。Goal 继续进行。

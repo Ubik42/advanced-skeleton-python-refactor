@@ -97,7 +97,8 @@ class MayaHipSwingNoPartsMixin:
             reverse = c.createNode("transform", name=plan.reverse_name,
                                    parent=plan.topology.fk_root_path,
                                    skipSelect=True)
-            c.xform(reverse, worldSpace=True, matrix=child_matrix)
+            c.xform(reverse,worldSpace=True,matrix=root_matrix)
+            c.xform(reverse,worldSpace=True,translation=child_position)
             reverse_root = c.createNode("transform",
                                         name=plan.reverse_root_name,
                                         parent=reverse, skipSelect=True)
@@ -138,7 +139,7 @@ class MayaHipSwingNoPartsMixin:
                 c.connectAttr(source, target)
             if plan.topology.leg_lock_weight is None:
                 c.setAttr(plan.remove_rotation_blend_name
-                          + ".target[0].weight", 1.0)
+                          + ".target[0].weight", 1.0 if plan.topology.leg_lock_enabled else 0.0)
             if plan.topology.root_fk_weight is None:
                 c.setAttr(plan.fk_weight_blend_name
                           + ".target[0].weight", 1.0)

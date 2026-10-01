@@ -156,6 +156,7 @@ def plan_body_generic_fk(
         str, tuple[str, str | None, str | None]] | None = None,
     fkx_joint_controls: frozenset[str] | None = None,
     point_controls: frozenset[str] | None = None,
+    first_after_ik_paths: frozenset[str] = frozenset(),
 ) -> BodyGenericFkPlan:
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
     state_by_name = {state.name.rsplit(":", 1)[-1]: state
@@ -223,7 +224,7 @@ def plan_body_generic_fk(
         child_of_part = (final_parent is not None
                          and final_path.rsplit("|", 1)[0] != final_parent)
         if (not needs_endpoint and spec.parent_path is not None
-                and (standard_parent or child_of_part
+                and (standard_parent or spec.path in first_after_ik_paths or child_of_part
                      or item.child_of_part not in (None, 0))):
             source_parent = spec.parent_path
             while (source_parent in removable_body_paths

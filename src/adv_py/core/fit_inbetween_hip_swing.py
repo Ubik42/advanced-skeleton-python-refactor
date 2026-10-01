@@ -30,7 +30,7 @@ def plan_hip_swing_fit_selection(
             or set(nodes) != set(metadata)):
         raise ValueError("HipSwinger 需要完整唯一的 Fit 元数据")
     roots = [node for node in nodes.values()
-             if node.short_name == "Root"
+             if node.short_name.rsplit(':',1)[-1] == "Root"
              and node.dag_parent == fit.hierarchy.container]
     if len(roots) != 1:
         raise ValueError("HipSwinger 需要唯一的 Fit Root")
@@ -49,7 +49,7 @@ def plan_hip_swing_fit_selection(
     if len(labelled) > 1:
         raise ValueError("Root 下有多个 HipSwinger 来源标记")
     child = (labelled[0] if labelled else next(
-        (node for node in children if node.short_name == "Spine1"),
+        (node for node in children if node.short_name.rsplit(':',1)[-1] == "Spine1"),
         None))
     if child is None:
         if allow_missing_child:
@@ -57,7 +57,7 @@ def plan_hip_swing_fit_selection(
         raise ValueError("HipSwinger 缺少 Spine1 或显式标记的 Root 子关节")
     return HipSwingFitSelection(
         metadata[root.path].hip_swinger is not False,
-        root.path, child.path, child.short_name,
+        root.path, child.path, child.short_name.rsplit(':',1)[-1],
         metadata[root.path].inbetween_joints or 0,
     )
 

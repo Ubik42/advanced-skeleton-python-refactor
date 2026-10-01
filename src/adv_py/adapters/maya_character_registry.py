@@ -1332,7 +1332,27 @@ class MayaCharacterRegistryMixin:
                  *(channel.node for channel in channels)}
         paths.update(control.source_override_path for control in p.fk.controls
                      if control.source_override_path is not None)
+        if p.root is not None:
+            paths.update((p.root.leg_lock_path,p.root.hs_path))
+            if p.root.spline_fixed_path:
+                paths.add(p.root.spline_fixed_path)
+                paths.add(p.root.spline_output)
+        if p.center_between_feet is not None:
+            paths.add('|Group|MotionSystem|RootSystem|'+p.center_between_feet.center)
+        paths.update(spec.control_path for spec in p.internal_ik_local)
+        if p.hip_swing is not None:
+            paths.add(p.hip_swing.control_path)
+            from adv_py.core.fit_hip_swing_no_parts import HipSwingNoPartsPlan
+            if isinstance(p.hip_swing,HipSwingNoPartsPlan):
+                paths.update((p.hip_swing.frame_path,p.hip_swing.reverse_root_path))
+            else:
+                for part in p.hip_swing.parts:
+                    paths.update(tuple(self._cmds.ls(part.name,long=True) or ())+
+                                 tuple(self._cmds.ls(part.aligned_name,long=True) or ()))
         for spline in p.all_splines:
+            paths.add(spline.driver_targets[0]+'|'+spline.node_name('AdvPy_SplineIKLocalOrient0')
+                      +'|'+spline.node_name('AdvPy_SplineIKLocalOrient3'))
+            paths.add(spline.root_path+'|'+spline.node_name('AdvPy_SplineFirstFixedOutput'))
             paths.update((spline.root_path, spline.chest_space, spline.curve,
                           *spline.targets, *spline.ik_outputs,
                           *spline.cv_controls,*spline.hybrid_controls))
@@ -1364,6 +1384,16 @@ class MayaCharacterRegistryMixin:
             paths.update(side.target_offset for side in aim.sides if side.target_offset)
             paths.update(side.target_control for side in aim.sides)
         for limb in p.limbs:
+            if limb.foot is not None:
+                for side in limb.foot.sides:
+                    paths.update(pivot.roll_roller_path for pivot in side.pivots if pivot.roll_roller_path)
+                    paths.update(helper.path for helper in side.align_helpers)
+                    if side.hybrid is None:
+                        paths.update((side.toe_offset_path,side.toe_control_path))
+                    else:
+                        for segment in side.hybrid.segments:
+                            paths.update((segment.control_path,segment.sampler1_offset_path,
+                                          segment.sampler1_path,segment.sampler2_path))
             paths.update(joint.path for joint in limb.mechanisms.joints)
             paths.update(spec.wrist_align_path for spec in limb.ik.limbs
                          if spec.wrist_align_path is not None)

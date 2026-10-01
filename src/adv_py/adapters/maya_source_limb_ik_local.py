@@ -83,7 +83,7 @@ def capture_orientation(host,spec):
             or c.nodeType(spec.wrist_constraint_name)!='decomposeMatrix'
             or c.getAttr(spec.wrist_constraint_name+'.inputRotateOrder')!=spec.source_rotation_order):
         raise FitSkeletonValidationError('来源 RP IK 末端矩阵朝向类型改变')
-    edges=((spec.orientation_source+'.worldMatrix[0]',spec.source_orientation_matrix+'.matrixIn[0]'),
+    edges=((spec.source_foot_matrix or spec.orientation_source+'.worldMatrix[0]',spec.source_orientation_matrix+'.matrixIn[0]'),
            (spec.chain[-1]+'.parentInverseMatrix[0]',spec.source_orientation_matrix+'.matrixIn[1]'),
            (spec.source_orientation_matrix+'.matrixSum',spec.wrist_constraint_name+'.inputMatrix'),
            (spec.wrist_constraint_name+'.outputRotate',spec.chain[-1]+'.rotate'))

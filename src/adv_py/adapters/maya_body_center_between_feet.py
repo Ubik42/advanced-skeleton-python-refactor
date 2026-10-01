@@ -20,7 +20,7 @@ class MayaBodyCenterBetweenFeetMixin:
     ) -> BodyCenterBetweenFeetState:
         c = self._cmds
         for path in (spec.root_offset, spec.root_control,
-                     spec.offset_parent, spec.right_ik, spec.left_ik):
+                     spec.offset_parent, *spec.targets):
             if (c.ls(path, long=True, type="transform") or []) != [path]:
                 raise ValueError("Center Between Feet 控制层缺失：" + path)
         if (c.listRelatives(spec.root_offset, parent=True,
@@ -66,7 +66,7 @@ class MayaBodyCenterBetweenFeetMixin:
             "transform", name=spec.center,
             parent="|Group|MotionSystem|RootSystem")
         c.xform(center, worldSpace=True, matrix=state.offset_world)
-        targets = (spec.right_ik, spec.left_ik)
+        targets = spec.targets
         point = c.pointConstraint(
             *targets, center, skip="y", maintainOffset=False,
             name=spec.point_constraint)
@@ -163,7 +163,7 @@ class MayaBodyCenterBetweenFeetMixin:
             targets = command(node, query=True, targetList=True) or []
             resolved = tuple((c.ls(target, long=True) or [target])[0]
                              for target in targets)
-            if resolved != (spec.right_ik, spec.left_ik):
+            if resolved != spec.targets:
                 return False
         links = [
             (spec.offset_parent + ".worldMatrix[0]",

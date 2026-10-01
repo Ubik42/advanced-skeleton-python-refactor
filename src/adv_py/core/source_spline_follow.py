@@ -4,16 +4,18 @@ from dataclasses import replace
 from .fit_settings import FitSkeletonValidationError
 
 
-def configure_source_spline_follow(plan, body, fk, global_control):
+def configure_source_spline_follow(plan, body, fk, global_control, *,
+                                    root_control_path=None, root_follow_path=None):
     if plan.system_name:
         from .spline_names import scope_spline_plan,remap_spline_value
         result=configure_source_spline_follow(scope_spline_plan(plan,''),body,
-            remap_spline_value(fk,plan.system_name,canonical=True),global_control)
+            remap_spline_value(fk,plan.system_name,canonical=True),global_control,
+            root_control_path=root_control_path,root_follow_path=root_follow_path)
         return scope_spline_plan(result,plan.system_name)
     by_path = {joint.path: joint for joint in body.joints}
     root_control = next(control for control in fk.controls
                         if control.driven_joint == body.root)
-    root_source = root_control.source_override_path or root_control.control_path
+    root_source = root_control_path or root_control.source_override_path or root_control.control_path
     start = by_path[plan.body_joints[0]]
     parent = start.parent_path
     # Part receivers are not an additional Follow level in the MEL query.
@@ -21,7 +23,7 @@ def configure_source_spline_follow(plan, body, fk, global_control):
         parent = by_path[parent].parent_path
     source = parent if parent in by_path else root_source
     if parent == body.root:
-        source = root_source
+        source = root_follow_path or root_source
     targets = [('MainExtra'+str(index),path,0.) for index,path in
                reversed(tuple(enumerate(global_control.extra_control_paths,1)))]
     targets += [('Main',global_control.control_path,10.),('Root',root_source,10.)]

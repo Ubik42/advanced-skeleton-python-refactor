@@ -41,19 +41,21 @@ def source_fk_body_controls(body, fk, limbs, spline):
     return tuple(controls)
 
 
-def build_source_body_follow(host, metadata, body, fk, limbs, spline, global_control):
+def build_source_body_follow(host, metadata, body, fk, limbs, spline, global_control,*,root_control_path=None):
     controls = source_fk_body_controls(body, fk, limbs, spline)
     root = next(control for control in controls if control.driven_joint==body.root)
+    root_path=root_control_path or root.control_path
     driver_sources = tuple((joint.path,joint.source_joint) for limb in limbs
         for joint in limb.mechanisms.joints if joint.role is BodyLimbMechanismRole.IK)
     ik_controls = tuple(spec for limb in limbs for spec in limb.ik.limbs)
     named_plan = plan_body_fit_named_follow(metadata, controls, body.joints)
     spaces_plan = plan_body_fit_follow_spaces(metadata, controls, body.joints,
-        main_path=global_control.control_path, root_path=root.control_path,
+        main_path=global_control.control_path, root_path=root_path,
         main_extra_paths=global_control.extra_control_paths)
     body_by_control = {path:control.driven_joint for control in controls
                        for path in (control.control_path,control.source_override_path)
                        if path is not None}
+    body_by_control[root_path]=body.root
     aim_plan = plan_body_fit_aim_at(metadata, controls, body.joints)
     validate_fit_control_dependencies(
         plan_body_fit_advanced_constraints(metadata, controls, body.joints),
@@ -69,7 +71,7 @@ def build_source_body_follow(host, metadata, body, fk, limbs, spline, global_con
     follows = BuildFitFollow(host).apply(metadata, controls, body.joints)
     named = BuildFitNamedFollow(host).apply(metadata, controls, body.joints)
     spaces = BuildFitFollowSpaces(host).apply(metadata, controls, body.joints,
-        main_path=global_control.control_path, root_path=root.control_path,
+        main_path=global_control.control_path, root_path=root_path,
         main_extra_paths=global_control.extra_control_paths)
     ik = BuildFitIkFollow(host).apply(metadata,
         ik_controls, (), body.joints,

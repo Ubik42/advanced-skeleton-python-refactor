@@ -108,7 +108,7 @@ def plan_body_limb_blend(
         for spec in mechanisms.joints
     }
 
-    sides = []
+    planned_sides = []
     token = limb_label[0].lower() + limb_label[1:]
     for side in sides:
         suffix = side.value
@@ -133,7 +133,7 @@ def plan_body_limb_blend(
                     else None
                 ),
             ))
-        sides.append(BodyLimbBlendSideSpec(
+        planned_sides.append(BodyLimbBlendSideSpec(
             side=side,
             attribute=f"{token}IkFk_{suffix}",
             reverse_name=f"AdvPy_{limb_label}IKFKReverse_{suffix}",
@@ -143,7 +143,7 @@ def plan_body_limb_blend(
     return BodyLimbBlendPlan(
         f"|{settings_name}",
         settings_name,
-        tuple(sides),
+        tuple(planned_sides),
     )
 
 
