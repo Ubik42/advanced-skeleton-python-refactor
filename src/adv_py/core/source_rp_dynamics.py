@@ -44,12 +44,17 @@ class SourceRpDynamicsPlan:
 
 def plan_source_rp_dynamics(label,side,control,pole,start_anchor,target_anchor,
                             global_inverse,global_scale,chain,translations, *,
-                            source_pole_targets=False,pole_end_anchor=None):
-    if (len(chain)<3 or len(translations)!=len(chain)-1
+                            source_pole_targets=False,pole_end_anchor=None,
+                            source_x_translation=False,pole_sign=None,allow_shortening=False):
+    if (len(chain)<2 or len(translations)!=len(chain)-1
             or len(set(chain))!=len(chain)
             or any(len(vector)!=3 or any(not isfinite(v) for v in vector)
                    or sqrt(sum(v*v for v in vector))<=1e-8 for vector in translations)):
         raise ValueError('来源 RP 拉伸要求最终非退化 solver 链')
+    if (type(source_x_translation) is not bool or type(allow_shortening) is not bool
+            or pole_sign not in (None,-1,1)):
+        raise ValueError('来源 RP 位移布局或侧别符号无效')
+    sign=pole_sign if pole_sign is not None else (-1 if side=='L' else 1)
     stem='AdvPy_'+label+'_RP_'+side
     nodes=[]
     def node(suffix,kind,values=(),edges=()):
@@ -58,10 +63,20 @@ def plan_source_rp_dynamics(label,side,control,pole,start_anchor,target_anchor,
         return name
     def edge(source,target): return (source,target)
     rest=sum(sqrt(sum(v*v for v in vector)) for vector in translations)
-    stretch=node('StretchUnit','unitConversion',(('conversionFactor',.1),),
-                 (edge(control+'.stretchy','input'),))
-    anti=node('AntiPopUnit','unitConversion',(('conversionFactor',.1),),
-              (edge(control+'.antiPop','input'),))
+    if source_x_translation:
+        stretch=node('StretchUnit','setRange',(('maxX',1.),('oldMaxX',10.)),
+                     (edge(control+'.stretchy','valueX'),))
+        anti=node('AntiPopUnit','setRange',(('maxX',1.),('oldMaxX',10.)),
+                  (edge(control+'.antiPop','valueX'),))
+        stretch_output=stretch+'.outValueX'
+        anti_output=anti+'.outValueX'
+    else:
+        stretch=node('StretchUnit','unitConversion',(('conversionFactor',.1),),
+                     (edge(control+'.stretchy','input'),))
+        anti=node('AntiPopUnit','unitConversion',(('conversionFactor',.1),),
+                  (edge(control+'.antiPop','input'),))
+        stretch_output=stretch+'.output'
+        anti_output=anti+'.output'
     lock=node('PoleLockUnit','unitConversion',(('conversionFactor',.1),),
               (edge(pole+'.lock','input'),))
     start=node('StartMatrix','multMatrix',edges=(
@@ -72,16 +87,17 @@ def plan_source_rp_dynamics(label,side,control,pole,start_anchor,target_anchor,
         edge(start+'.matrixSum','inMatrix1'),edge(target+'.matrixSum','inMatrix2')))
     normal=stem+'_Normal'
     anti_curve=stem+'_AntiPop'
-    nodes.extend((SourceRpNode(normal,'animCurveUU',connections=((distance+'.distance','input'),)),
-                  SourceRpNode(anti_curve,'animCurveUU',connections=((distance+'.distance','input'),))))
+    curve_values=(('preInfinity',1.),) if allow_shortening else ()
+    nodes.extend((SourceRpNode(normal,'animCurveUU',values=curve_values,connections=((distance+'.distance','input'),)),
+                  SourceRpNode(anti_curve,'animCurveUU',values=curve_values,connections=((distance+'.distance','input'),))))
     anti_blend=node('AntiPopBlend','blendTwoAttr',edges=(
         edge(normal+'.output','input[0]'),edge(anti_curve+'.output','input[1]'),
-        edge(anti+'.output','attributesBlender')))
+        edge(anti_output,'attributesBlender')))
     clamp=node('DistanceClamp','clamp',(('minR',0.),('maxR',rest)),
                (edge(anti_blend+'.output','inputR'),))
     stretch_blend=node('StretchBlend','blendTwoAttr',edges=(
         edge(clamp+'.outputR','input[0]'),edge(anti_blend+'.output','input[1]'),
-        edge(stretch+'.output','attributesBlender')))
+        edge(stretch_output,'attributesBlender')))
     ratio=node('Ratio','multiplyDivide',(('operation',2),('input2X',rest)),
                (edge(stretch_blend+'.output','input1X'),))
     volume_unit=node('VolumeUnit','unitConversion',(('conversionFactor',.1),),
@@ -97,8 +113,12 @@ def plan_source_rp_dynamics(label,side,control,pole,start_anchor,target_anchor,
         length_attribute='Lenght'+str(index)
         fatness_attribute='Fatness'+str(index)
         segments.append(SourceRpSegment(joint,previous,tuple(vector),length_attribute,fatness_attribute))
-        length=node('Length'+str(index),'multDoubleLinear',edges=(
-            edge(control+'.'+length_attribute,'input1'),edge(ratio+'.outputX','input2')))
+        if source_x_translation:
+            length=node('Length'+str(index),'multiplyDivide',(('input2X',vector[0]),),
+                        (edge(control+'.'+length_attribute,'input1X'),))
+        else:
+            length=node('Length'+str(index),'multDoubleLinear',edges=(
+                edge(control+'.'+length_attribute,'input1'),edge(ratio+'.outputX','input2')))
         # MEL measures start→Pole first, then Pole→main IK; its final
         # segment uses IKmessureConstrainToLeg when that scene node exists.
         lock_target=(start_anchor if index==1 else
@@ -109,20 +129,37 @@ def plan_source_rp_dynamics(label,side,control,pole,start_anchor,target_anchor,
         lock_scale=node('PoleDistanceScale'+str(index),'multiplyDivide',(('operation',2),),
                         (edge(pole_distance+'.distance','input1X'),edge(global_scale,'input2X')))
         magnitude=sqrt(sum(v*v for v in vector))
-        lock_ratio=node('PoleDistanceRatio'+str(index),'multiplyDivide',
-                        (('operation',2),('input2X',magnitude)),
-                        (edge(lock_scale+'.outputX','input1X'),))
+        if source_x_translation:
+            # MEL 82975–83045: stretch and Lenght multiply the authored tx;
+            # Pole.lock blends signed distance in scene units, not a ratio.
+            measured=node('Segment'+str(index),'multiplyDivide',
+                          edges=(edge(ratio+'.outputX','input1X'),
+                                 edge(length+'.outputX','input2X')))
+            lock_ratio=node('PoleDistanceSign'+str(index),'unitConversion',
+                            (('conversionFactor',float(sign)),),
+                            (edge(lock_scale+'.outputX','input'),))
+            normal_input=measured+'.outputX'
+            lock_input=lock_ratio+'.output'
+        else:
+            lock_ratio=node('PoleDistanceRatio'+str(index),'multiplyDivide',
+                            (('operation',2),('input2X',magnitude)),
+                            (edge(lock_scale+'.outputX','input1X'),))
+            normal_input=length+'.output'
+            lock_input=lock_ratio+'.outputX'
         blend=node('PoleLockBlend'+str(index),'blendTwoAttr',edges=(
-            edge(length+'.output','input[0]'),edge(lock_ratio+'.outputX','input[1]'),
+            edge(normal_input,'input[0]'),edge(lock_input,'input[1]'),
             edge(lock+'.output','attributesBlender')))
-        node('Segment'+str(index),'multiplyDivide',tuple(
-            ('input2'+axis,v) for axis,v in zip('XYZ',vector)),tuple(
-            edge(blend+'.output','input1'+axis) for axis in 'XYZ'))
+        if not source_x_translation:
+            node('Segment'+str(index),'multiplyDivide',tuple(
+                ('input2'+axis,v) for axis,v in zip('XYZ',vector)),tuple(
+                edge(blend+'.output','input1'+axis) for axis in 'XYZ'))
         node('Fatness'+str(index),'plusMinusAverage',edges=(
             edge(control+'.'+fatness_attribute,'input1D[0]'),edge(volume+'.output','input1D[1]')))
     return SourceRpDynamicsPlan(label,side,control,pole,start_anchor,target_anchor,rest,
         tuple(segments),tuple(nodes),ratio+'.outputX',volume+'.output',normal,anti_curve,
-        tuple((stem+'_Segment'+str(index)+'.output',segment.joint+'.translate')
+        tuple((stem+('_PoleLockBlend' if source_x_translation else '_Segment')+
+               str(index)+'.output',segment.joint+
+               ('.translateX' if source_x_translation else '.translate'))
               for index,segment in enumerate(segments,1)))
 
 
@@ -133,7 +170,8 @@ def decode_source_rp_dynamics(text):
     raw=exact(safe_json(text),(field.name for field in fields(SourceRpDynamicsPlan)))
     nodes=[]
     kinds={'unitConversion','multMatrix','distanceBetween','animCurveUU',
-           'blendTwoAttr','clamp','multiplyDivide','multDoubleLinear','plusMinusAverage'}
+           'blendTwoAttr','clamp','multiplyDivide','multDoubleLinear','plusMinusAverage',
+           'blendColors','composeMatrix','blendMatrix','setRange'}
     def attribute(value):
         if not isinstance(value,str) or re.fullmatch(r'[A-Za-z][A-Za-z0-9]*(?:\[\d+\])?(?:\.[A-Za-z][A-Za-z0-9]*(?:\[\d+\])?)*',value) is None:
             raise CharacterRegistryError('来源 RP 图属性地址无效')
@@ -161,7 +199,7 @@ def decode_source_rp_dynamics(text):
         segments.append(SourceRpSegment(path(row['joint']),path(row['previous']),
             vector(row['translation'],3),identifier(row['length_attribute']),
             identifier(row['fatness_attribute'])))
-    if (not 2<=len(segments)<=255 or not nodes or len(nodes)>4096
+    if (not 1<=len(segments)<=255 or not nodes or len(nodes)>4096
             or len({node.name for node in nodes})!=len(nodes)
             or raw['side'] not in ('R','L','M')):
         raise CharacterRegistryError('来源 RP 图骨段、节点或侧别无效')

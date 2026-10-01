@@ -27,6 +27,11 @@ class InbetweenUnTwisterPlan:
     decompose_name: str
     quaternion_name: str
     steps: tuple[InbetweenUnTwisterStep, ...]
+    end_fk_receiver_path: str | None = None
+
+    @property
+    def rotation_source(self) -> str:
+        return self.end_fk_receiver_path or self.end_fk_control_path
 
     @property
     def twist_plug(self) -> str:
@@ -38,18 +43,22 @@ def plan_inbetween_untwister(
     constraint_names: tuple[str, ...], *,
     end_fk_control_path: str,
     end_fk_offset_path: str,
+    end_fk_receiver_path: str | None = None,
 ) -> InbetweenUnTwisterPlan:
-    """Use the end FK controller's local twist as the distributed source.
+    """MEL 80607: downstream FKX world relative to its FKOffset.
 
-    The MEL OPM branch inserts each weighted X rotation into the Part
-    matrix. This rig uses an orientConstraint for the final FK/IK rotation;
-    its offsetX is the equivalent insertion point used by the MEL fallback.
+    The receiver includes FKSub and the Part rewiring. Saved older rigs can
+    retain their controller source by omitting the receiver. Weighted output
+    first drives offsetX; the OPM stage transfers it to the Part matrix.
     """
     if (not parts or len(parts) != len(constraint_names)
             or not end_fk_offset_path.startswith("|")
             or not end_fk_control_path.startswith(
                 end_fk_offset_path + "|")):
         raise ValueError("Inbetween UnTwister 需要完整的末端 FK 控制层")
+    if end_fk_receiver_path is not None and not end_fk_receiver_path.startswith(
+            end_fk_offset_path + "|"):
+        raise ValueError("Inbetween UnTwister FKX 不在末端 FKOffset 层级中")
     ordered = tuple(sorted(zip(parts, constraint_names),
                            key=lambda pair: pair[0].index))
     first = ordered[0][0]
@@ -70,5 +79,5 @@ def plan_inbetween_untwister(
         tuple(InbetweenUnTwisterStep(
             part.name, constraint, part.index, part.count,
             "AdvPy_" + part.name + "_UnTwisterAmount",
-        ) for part, constraint in ordered),
+        ) for part, constraint in ordered), end_fk_receiver_path,
     )

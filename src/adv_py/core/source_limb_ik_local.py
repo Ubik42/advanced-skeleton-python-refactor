@@ -59,7 +59,7 @@ def plan_source_internal_ik_local(body,fk,limbs,metadata, *,instances=()):
     return tuple(rows)
 
 
-def configure_source_limb_ik(ik,mechanisms,body,metadata,end_name, *,instances=()):
+def configure_source_limb_ik(ik,mechanisms,body,metadata,end_name, *,instances=(),source_pole_placement=True):
     by_name={joint.name:joint for joint in body.joints}
     from .source_fit_identity import source_fit_metadata
     specs=[]
@@ -67,9 +67,18 @@ def configure_source_limb_ik(ik,mechanisms,body,metadata,end_name, *,instances=(
         end=by_name[end_name+'_'+spec.side.value]
         item=source_fit_metadata(end.name,metadata,instances)
         middle=next(joint for joint in mechanisms.joints if joint.path==spec.chain[1])
+        start=next(joint for joint in mechanisms.joints if joint.path==spec.chain[0])
+        chain=tuple(joint for joint in mechanisms.joints
+                    if joint.side is spec.side and joint.role.value=='ik'
+                    and joint.path in (spec.solver_joint_list or spec.chain[:2])+(spec.chain[-1],))
+        from .source_limb_pole import source_limb_build_pole
+        index=next(index for index,joint in enumerate(chain) if joint.path==middle.path)
+        pole,straight=(source_limb_build_pole(tuple(joint.world_position for joint in chain),index,start.world_axes)
+                       if source_pole_placement else (spec.pole_position,False))
         # The original query takes the middle of the full source chain;
         # the mechanism plan already carries the corresponding bind point.
         specs.append(replace(spec,source_aligned_graph=True,
+            pole_position=pole,source_straight_chain=straight,source_original_pole=source_pole_placement,
             ik_local_mode=item.ik_local_mode if item else None,
             source_middle_position=middle.world_position,
             source_middle_axes=middle.world_axes,

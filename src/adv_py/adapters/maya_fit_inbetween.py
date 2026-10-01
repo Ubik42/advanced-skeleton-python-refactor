@@ -150,6 +150,11 @@ class MayaFitInbetweenMixin:
             tuple(c.xform(joint, query=True, worldSpace=True,
                           matrix=True))
             for joint in plan.original_chain)
+        if not hasattr(self, "_inbetween_solver_twist"):
+            self._inbetween_solver_twist = {}
+        self._inbetween_solver_twist[plan.handle_name] = (
+            float(c.getAttr(plan.handle_name + ".twist"))
+            if plan.solver_name == "ikRPsolver" else None)
         self._transaction_changed = True
         if plan.pole_constraint_name is not None:
             c.delete(plan.pole_constraint_name)
@@ -238,6 +243,11 @@ class MayaFitInbetweenMixin:
         if plan.pole_constraint_name is not None:
             c.poleVectorConstraint(plan.pole_control_path, handle,
                                    name=plan.pole_constraint_name)
+        twist=self._inbetween_solver_twist[plan.handle_name]
+        if twist is not None:
+            # The original RP build's zigzag correction survives the handle
+            # replacement required to insert Part joints into the solver.
+            c.setAttr(handle + ".twist", twist)
         self._transaction_changed = True
 
     def capture_inbetween_ik_solver(
@@ -270,6 +280,9 @@ class MayaFitInbetweenMixin:
             pole_matches = pole_sources == (plan.pole_control_path,)
         pose = self._inbetween_solver_rest_pose.pop(
             plan.handle_name, None)
+        twist=self._inbetween_solver_twist.pop(plan.handle_name,None)
+        if twist is not None and abs(float(c.getAttr(handles[0]+".twist"))-twist)>1e-8:
+            return False
         rewrites = dict(plan.path_rewrites)
         pose_matches = (pose is not None and all(
             max(abs(a - b) for a, b in zip(
@@ -291,8 +304,9 @@ class MayaFitInbetweenMixin:
         self, plan: InbetweenUnTwisterPlan,
     ) -> None:
         c = self._cmds
-        for path in (plan.end_fk_control_path, plan.end_fk_offset_path):
-            if (c.ls(path, long=True, type="transform") or []) != [path]:
+        for path in (plan.rotation_source, plan.end_fk_offset_path):
+            matches=c.ls(path,long=True) or []
+            if matches!=[path] or c.nodeType(path) not in ("joint","transform"):
                 raise ValueError("UnTwister 末端 FK 控制层不存在：" + path)
         names = (plan.relative_matrix_name, plan.decompose_name,
                  plan.quaternion_name) + tuple(
@@ -320,13 +334,16 @@ class MayaFitInbetweenMixin:
         quaternion = c.createNode("quatToEuler",
                                   name=plan.quaternion_name)
         self._transaction_changed = True
-        c.connectAttr(plan.end_fk_control_path + ".worldMatrix[0]",
+        if plan.end_fk_receiver_path is not None:
+            c.addAttr(matrix, longName="advPySourceUnTwisterReceiver", attributeType="bool")
+            c.setAttr(matrix + ".advPySourceUnTwisterReceiver", True, lock=True)
+        c.connectAttr(plan.rotation_source + ".worldMatrix[0]",
                       matrix + ".matrixIn[0]")
         c.connectAttr(plan.end_fk_offset_path + ".worldInverseMatrix[0]",
                       matrix + ".matrixIn[1]")
         c.connectAttr(matrix + ".matrixSum",
                       decompose + ".inputMatrix")
-        c.connectAttr(plan.end_fk_control_path + ".rotateOrder",
+        c.connectAttr(plan.rotation_source + ".rotateOrder",
                       decompose + ".inputRotateOrder")
         c.connectAttr(decompose + ".outputQuatX",
                       quaternion + ".inputQuatX")
@@ -339,13 +356,13 @@ class MayaFitInbetweenMixin:
         c = self._cmds
         connections = (
             (plan.relative_matrix_name + ".matrixIn[0]",
-             plan.end_fk_control_path + ".worldMatrix[0]"),
+             plan.rotation_source + ".worldMatrix[0]"),
             (plan.relative_matrix_name + ".matrixIn[1]",
              plan.end_fk_offset_path + ".worldInverseMatrix[0]"),
             (plan.decompose_name + ".inputMatrix",
              plan.relative_matrix_name + ".matrixSum"),
             (plan.decompose_name + ".inputRotateOrder",
-             plan.end_fk_control_path + ".rotateOrder"),
+             plan.rotation_source + ".rotateOrder"),
             (plan.quaternion_name + ".inputQuatX",
              plan.decompose_name + ".outputQuatX"),
             (plan.quaternion_name + ".inputQuatW",
@@ -364,10 +381,11 @@ class MayaFitInbetweenMixin:
         amount = c.createNode("multDoubleLinear",
                               name=step.amount_name)
         self._transaction_changed = True
-        c.connectAttr(plan.twist_plug, amount + ".input1")
+        from .maya_source_graph_connections import SourceGraphConnections
+        connections=SourceGraphConnections(self,step.amount_name)
+        connections.connect(plan.twist_plug, amount + ".input1")
         c.setAttr(amount + ".input2", step.fraction)
-        c.connectAttr(amount + ".output",
-                      step.constraint_name + ".offsetX")
+        connections.connect(amount + ".output",step.constraint_name + ".offsetX")
 
     def capture_inbetween_untwister_step(
         self, plan: InbetweenUnTwisterPlan,
@@ -375,13 +393,12 @@ class MayaFitInbetweenMixin:
     ) -> bool:
         c = self._cmds
         return (
-            c.connectionInfo(step.amount_name + ".input1",
-                             sourceFromDestination=True) == plan.twist_plug
+            c.isConnected(plan.twist_plug,step.amount_name + ".input1",
+                          ignoreUnitConversion=True)
             and abs(float(c.getAttr(step.amount_name + ".input2"))
                     - step.fraction) < 1e-8
-            and c.connectionInfo(step.constraint_name + ".offsetX",
-                                 sourceFromDestination=True)
-            == step.amount_name + ".output"
+            and c.isConnected(step.amount_name + ".output",
+                              step.constraint_name + ".offsetX",ignoreUnitConversion=True)
         )
 
     def preflight_inbetween_fk_body_drivers(

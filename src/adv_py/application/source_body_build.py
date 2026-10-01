@@ -146,7 +146,7 @@ def source_body_limb_chains(body, labels, hierarchy):
         from adv_py.core.source_fit_identity import source_fit_build_name
         names = tuple(source_fit_build_name(by_fit_path[path].short_name)
                       for path in info.joints)
-        if len(names) < 3:
+        if len(names) < 2:
             continue
         if info.name in labels_seen:
             if labels_seen[info.name]==names:
@@ -388,9 +388,12 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         ik = plan_body_arm_ik(body, mechanisms, joint_names=names,
             limb_label=label, radius=scale * 1.5,
             sub_controllers=options.sub_controllers,
-            extra_controllers=options.extra_controllers,sides=sides)
+            extra_controllers=options.extra_controllers,sides=sides,allow_two_joint=True,
+            source_pole_placement=generic_fk_policy is None
+            or generic_fk_policy.source_rp_build_pole is not False)
         ik = configure_source_limb_ik(ik,mechanisms,body,metadata,names[-1],
-                                      instances=build.symmetry.instances)
+            instances=build.symmetry.instances,source_pole_placement=generic_fk_policy is None
+            or generic_fk_policy.source_rp_build_pole is not False)
         blend = plan_body_limb_blend(body, mechanisms, limb_label=label,
             joint_names=mechanism_names, translated_joint_names=mechanism_names,sides=sides)
         limb=SourceBodyLimbPlan(label,names,mechanisms,ik,blend)
@@ -572,7 +575,9 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
                              if spec.control_path in generic_fk_policy.compensated_controls)
     BuildBodyFkScaleCompensation(host).apply(compensation)
     fk, limbs, inbetween_segments, solver_mapping = build_source_body_inbetween(
-        host, build, part_result, fk, limbs, splines)
+        host, build, part_result, fk, limbs, splines,
+        source_untwister_receiver=generic_fk_policy is None
+        or generic_fk_policy.source_untwister_receiver is not False)
     root = finalize_source_body_root(root,fk,splines,inbetween_segments)
     host.connect_source_body_root_outputs(root,body,fk,splines,generated_sources)
     from .source_body_hip_swing import build_source_hip_swing
@@ -584,7 +589,10 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         host.create_source_internal_ik_local(spec)
     rp_dynamics=(host.create_source_rp_dynamics(body,limbs,global_control,
         internal_ik_local,root.leg_lock_path,source_pole_targets=generic_fk_policy is None
-        or generic_fk_policy.source_rp_pole_sources is not False) if generic_fk_policy is None
+        or generic_fk_policy.source_rp_pole_sources is not False,
+        source_x_translation=generic_fk_policy is None or generic_fk_policy.source_rp_x_translation is not False,
+        source_part_scale=generic_fk_policy is None or generic_fk_policy.source_rp_part_scale is not False,
+        instances=build.symmetry.instances,inbetween_segments=inbetween_segments) if generic_fk_policy is None
         or generic_fk_policy.source_rp_dynamics is not False else ())
     center_between_feet = None
     if root.center_between_feet:

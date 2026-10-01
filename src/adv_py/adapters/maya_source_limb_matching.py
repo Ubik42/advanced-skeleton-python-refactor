@@ -88,6 +88,8 @@ def apply(host,registration,binding,mode):
         return
     if value not in (0.,1.):
         raise CharacterRegistryError('来源 RP 对齐要求处于 FK 或 IK 端点')
+    if mode=='ik' and any(abs(length.rest_length)<=1e-8 for length in binding.lengths):
+        raise CharacterRegistryError('来源 RP Lenght 匹配的原版 tx 分母为零；该 FreeOrient 骨段无法执行长度匹配')
     host._transaction_changed=True
     auto=bool(c.autoKeyframe(query=True,state=True))
     selection=c.ls(selection=True,long=True) or []
@@ -117,6 +119,9 @@ def apply(host,registration,binding,mode):
             line=tuple(a-b for a,b in zip(sources[end][0][12:15],sources[0][0][12:15]))
             fallback=min(sources[binding.middle_index][1],
                          key=lambda axis:abs(sum(a*b for a,b in zip(axis,line))))
+            if binding.middle_index==0:
+                pole_weights=(0.,1.)
+                fallback=(0.,0.,1.)
             pole=source_pole_position(sources[0][0][12:15],
                 sources[binding.middle_index][0][12:15],sources[end][0][12:15],
                 binding.height*global_scale,fallback,weights=pole_weights)

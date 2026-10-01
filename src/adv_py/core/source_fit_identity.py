@@ -27,3 +27,12 @@ def source_fit_metadata(body_name, metadata, instances=()):
 
 def source_fit_build_name(name):
     return name.rsplit(':',1)[-1].removesuffix('_NonSymmetry')
+
+
+def source_fit_side_sign(body_name, instances=()):
+    """MEL's b2: mirrored L and authored NonSymmetry both use -1."""
+    reference=source_fit_reference(body_name,instances)
+    under_non_symmetry=reference is not None and any(
+        component.rsplit(':',1)[-1].endswith('_NonSymmetry')
+        for component in reference.split('|'))
+    return -1 if body_name.endswith('_L') or under_non_symmetry else 1

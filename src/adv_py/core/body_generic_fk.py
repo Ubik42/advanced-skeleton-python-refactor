@@ -96,6 +96,10 @@ class GenericFkFeaturePolicy:
     source_leg_aim: bool | None = None
     source_rp_scale_axes: bool | None = None
     source_rp_pole_sources: bool | None = None
+    source_rp_x_translation: bool | None = None
+    source_rp_part_scale: bool | None = None
+    source_rp_build_pole: bool | None = None
+    source_untwister_receiver: bool | None = None
     compensated_controls: frozenset[str] | None = None
     global_controls: frozenset[str] | None = None
     aim_sources: frozenset[str] | None = None

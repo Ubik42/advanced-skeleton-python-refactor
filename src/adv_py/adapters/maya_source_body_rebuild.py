@@ -108,6 +108,17 @@ def capture_fk_policy(host, registration):
         source_rp_pole_sources=any(binding.dynamics_root and
             c.objExists(binding.dynamics_root+'.advPySourceRpPoleSources')
             for binding in registration.source_limbs),
+        source_rp_x_translation=any(binding.dynamics_root and
+            c.objExists(binding.dynamics_root+'.advPySourceRpXTranslation')
+            for binding in registration.source_limbs),
+        source_rp_part_scale=any(binding.dynamics_root and
+            c.objExists(binding.dynamics_root+'.advPySourceRpPartScale')
+            for binding in registration.source_limbs),
+        source_rp_build_pole=any(c.objExists(binding.pole_control+'.advPySourceRpPolePlacement')
+                               for binding in registration.source_limbs),
+        source_untwister_receiver=any(
+            c.objExists(node.path+'.advPySourceUnTwisterReceiver')
+            for node in registration.nodes),
         scale_controls=_pre_aim_controls(scale), compensated_controls=_pre_aim_controls(compensated),
         global_controls=_pre_aim_controls(global_controls), aim_sources=aim_sources,
         follower_sources=followers, independent_controls=_pre_aim_controls(independent),

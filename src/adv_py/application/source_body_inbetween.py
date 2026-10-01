@@ -20,7 +20,8 @@ from .fit_inbetween_fk_segment import BuildInbetweenFkSegment
 from .fit_inbetween_untwister import BuildInbetweenUnTwister
 
 
-def build_source_body_inbetween(host, build, part_result, fk, limbs, spline):
+def build_source_body_inbetween(host, build, part_result, fk, limbs, spline, *,
+                                source_untwister_receiver=True):
     if part_result is None:
         return fk, limbs, (), InbetweenIkSolverMapping(())
     paths = part_result.final_paths
@@ -154,15 +155,13 @@ def build_source_body_inbetween(host, build, part_result, fk, limbs, spline):
     untwister_sources = {item.joint for item in build.symmetry.source.metadata
                         if item.untwister}
     segments = list(ik_built.segments) if ik_built is not None else []
+    untwisters = []
     for binding, segment in zip(ik_bindings, segments):
         if binding.parts[0].source_joint in untwister_sources:
             if (binding.end_fk_control_path is None
                     or binding.downstream_fk_offset_path is None):
                 raise ValueError("来源 IK Inbetween UnTwister 缺少下游 FK 控制")
-            BuildInbetweenUnTwister(host).apply(binding.parts,
-                tuple(item.constraint_name for item in segment.body.parts),
-                end_fk_control_path=binding.end_fk_control_path,
-                end_fk_offset_path=binding.downstream_fk_offset_path)
+            untwisters.append((binding, segment))
     rewired = {segment.rewire.start_fk_constraint_name:
         segment.fk.anchor.fk_offset_path + "|" + segment.fk.anchor.fkx_name
         for segment in segments}
@@ -184,10 +183,7 @@ def build_source_body_inbetween(host, build, part_result, fk, limbs, spline):
             if (binding.end_fk_control_path is None
                     or binding.downstream_fk_offset_path is None):
                 raise ValueError("来源 Inbetween UnTwister 缺少下游 FK 控制")
-            BuildInbetweenUnTwister(host).apply(binding.parts,
-                tuple(item.constraint_name for item in segment.body.parts),
-                end_fk_control_path=binding.end_fk_control_path,
-                end_fk_offset_path=binding.downstream_fk_offset_path)
+            untwisters.append((binding, segment))
         rewired[binding.start_fk_constraint_name] = (
             segment.fk.anchor.fk_offset_path + "|" + segment.fk.anchor.fkx_name)
         segments.append(segment)
@@ -197,6 +193,20 @@ def build_source_body_inbetween(host, build, part_result, fk, limbs, spline):
             source_override_joint=(False if control.constraint_name in rewired
                                    else control.source_override_joint))
             for control in fk.controls))
+    # All Part anchors must exist before resolving the downstream FKX. A
+    # downstream joint can itself start another Inbetween segment.
+    for binding, segment in untwisters:
+        receiver = None
+        if source_untwister_receiver:
+            control = next(item for item in fk.controls
+                           if item.control_path == binding.end_fk_control_path)
+            receiver = (control.source_override_path or control.sub_control_path
+                        or control.control_path)
+        BuildInbetweenUnTwister(host).apply(binding.parts,
+            tuple(item.constraint_name for item in segment.body.parts),
+            end_fk_control_path=binding.end_fk_control_path,
+            end_fk_offset_path=binding.downstream_fk_offset_path,
+            end_fk_receiver_path=receiver)
     solvers = tuple(request.plan for request in mapping.requests)
     if solvers:
         fk = rebase_inbetween_ik_reference(fk, solvers)

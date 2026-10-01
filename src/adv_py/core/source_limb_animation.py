@@ -120,7 +120,8 @@ def describe_source_limb_bindings(plan, body):
             toe = toe_align = toe_source = reverse_roll = reverse_handle = None
             hybrid_controls = ()
             position_source = primary[-1].source_joint
-            position_source = next(row.control for row in joints if row.body == position_source)
+            # asAlignFKIK positions from FKX, including the end Sub layer.
+            position_source = next(row.receiver for row in joints if row.body == position_source)
             align = ik.wrist_align_path
             attributes = ()
             if foot:
@@ -168,6 +169,11 @@ def describe_source_limb_bindings(plan, body):
                            if spec.label==limb.label and spec.side==ik.side.value),None)
             lengths=[]
             if dynamics:
+                source_tx = any(node.kind=='multiplyDivide' and
+                    node.name=='AdvPy_'+limb.label+'_RP_'+ik.side.value+'_Length1'
+                    for node in dynamics.nodes)
+                tx_sign=next((dict(node.values)['conversionFactor'] for node in dynamics.nodes
+                    if node.name=='AdvPy_'+limb.label+'_RP_'+ik.side.value+'_PoleDistanceSign1'),1.)
                 attributes+= (('stretchy',0.),('antiPop',0.),('volume',10.))
                 attributes+=tuple((segment.length_attribute,1.) for segment in dynamics.segments)
                 attributes+=tuple((segment.fatness_attribute,0.) for segment in dynamics.segments)
@@ -175,12 +181,23 @@ def describe_source_limb_bindings(plan, body):
                 for left,right in zip(primary,primary[1:]):
                     first,last=full.index(left.path),full.index(right.path)
                     segments=dynamics.segments[first:last]
-                    rest=sum(sqrt(sum(v*v for v in segment.translation)) for segment in segments)
-                    for segment in segments:
-                        segment_length=sqrt(sum(v*v for v in segment.translation))
+                    measures=tuple(segment.translation[0]*tx_sign if source_tx else
+                        sqrt(sum(v*v for v in segment.translation)) for segment in segments)
+                    rest=sum(abs(value) for value in measures)
+                    # Source FreeOrient keeps ty/tz fixed. Its Lenght graph
+                    # still divides by authored tx (MEL 10934–10942), never
+                    # by the vector magnitude. Preserve a zero tx in the
+                    # record so matching can report that actual limitation.
+                    weights=tuple(abs(value) for value in measures) if rest>1e-8 else tuple(
+                        sqrt(sum(v*v for v in segment.translation)) for segment in segments)
+                    weight_total=sum(weights)
+                    start=(next(row.control for row in joints if row.body==left.source_joint)
+                           if source_tx else fk[left.source_joint])
+                    end=(next(row.control for row in joints if row.body==right.source_joint)
+                         if source_tx else fk[right.source_joint])
+                    for segment,segment_length,weight in zip(segments,measures,weights):
                         lengths.append(SourceLimbLengthBinding(segment.length_attribute,
-                            fk[left.source_joint],fk[right.source_joint],segment_length,
-                            segment_length/rest))
+                            start,end,segment_length,weight/weight_total))
             rows.append(SourceLimbAnimationBinding(limb.label, ik.side.value,
                 limb.label.lower()+'.'+ik.side.value+'.'+blend.attribute,
                 ik.wrist_control_path, ik.pole_control_path, align,
@@ -215,8 +232,8 @@ def decode_source_limb_bindings(raw, channels, body, nodes, *, legacy=False):
             for item in row['joints'])
         primary, middle = row['primary_count'], row['middle_index']
         if (type(primary) is not int or type(middle) is not int
-                or not 3 <= primary <= len(joints) <= 256
-                or not 0 < middle < primary-1
+                or not 2 <= primary <= len(joints) <= 256
+                or not (middle==0 if primary==2 else 0 < middle < primary-1)
                 or row['side'] not in ('R', 'L', 'M')
                 or len({j.body for j in joints}) != len(joints)
                 or any(j.body not in body_paths for j in joints)):
@@ -265,7 +282,7 @@ def decode_source_limb_bindings(raw, channels, body, nodes, *, legacy=False):
                 or bool(binding.lengths)!=bool(binding.dynamics_root)
                 or binding.ik_scale_axes is not None and (
                     len(binding.ik_scale_axes)!=3 or set(binding.ik_scale_axes)!=set('XYZ'))
-                or any(item.rest_length<=0 or not 0<item.fraction<=1
+                or any(not 0<=item.fraction<=1
                        or '.' in item.attribute for item in binding.lengths)):
             raise CharacterRegistryError('来源 RP 动画缺少已登记的节点或模式通道')
         required={(binding.ik_control,kind+axis) for kind in ('translate','rotate','scale') for axis in 'XYZ'}
@@ -281,13 +298,16 @@ def decode_source_limb_bindings(raw, channels, body, nodes, *, legacy=False):
         if binding.lengths:
             wanted={(left.fk_driver,right.fk_driver) for left,right in
                     zip(binding.joints[:primary],binding.joints[1:primary])}
-            if (set(length_groups)!=wanted
+            source_wanted={(left.control,right.control) for left,right in
+                    zip(binding.joints[:primary],binding.joints[1:primary])}
+            if (set(length_groups) not in (wanted,source_wanted)
                     or len({item.attribute for item in binding.lengths})!=len(binding.lengths)):
                 raise CharacterRegistryError('来源 RP 长度通道没有覆盖实际主链')
             for items in length_groups.values():
-                total=sum(item.rest_length for item in items)
+                total=sum(abs(item.rest_length) for item in items)
                 if (abs(sum(item.fraction for item in items)-1.)>1e-8
-                        or any(abs(item.fraction-item.rest_length/total)>1e-8 for item in items)):
+                        or total>1e-8 and any(
+                            abs(item.fraction-abs(item.rest_length)/total)>1e-8 for item in items)):
                     raise CharacterRegistryError('来源 RP Part 长度分配不一致')
         result.append(binding)
     if len({(r.label.lower(), r.side) for r in result}) != len(result):
@@ -302,6 +322,8 @@ def _source_scale_axes(plan,limb,ik):
 
 
 def _source_pole_offsets(plan,joints,primary,ik):
+    if len(primary)==2:
+        return None
     middle = next(index for index,joint in enumerate(primary) if joint.path==ik.chain[1])
     drivers = (joints[middle].fk_driver,joints[len(primary)-1].fk_driver)
     offsets = tuple(next((control.offset_path for control in plan.fk.controls

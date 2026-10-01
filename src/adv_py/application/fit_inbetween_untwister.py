@@ -41,11 +41,13 @@ class BuildInbetweenUnTwister:
         constraint_names: tuple[str, ...], *,
         end_fk_control_path: str,
         end_fk_offset_path: str,
+        end_fk_receiver_path: str | None = None,
     ) -> InbetweenUnTwisterPlan:
         plan = plan_inbetween_untwister(
             parts, constraint_names,
             end_fk_control_path=end_fk_control_path,
-            end_fk_offset_path=end_fk_offset_path)
+            end_fk_offset_path=end_fk_offset_path,
+            end_fk_receiver_path=end_fk_receiver_path)
         self._host.preflight_inbetween_untwister(plan)
         with self._host.transaction("构建 Inbetween UnTwister"):
             self._host.create_inbetween_untwister_source(plan)

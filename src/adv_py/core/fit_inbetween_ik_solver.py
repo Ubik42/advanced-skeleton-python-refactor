@@ -60,7 +60,7 @@ def plan_inbetween_ik_solver(
     exposes the new DAG identities before any host operation occurs.
     """
     rp_solver = solver_name != "ikSCsolver"
-    if (len(original_chain) < (3 if rp_solver else 2)
+    if (len(original_chain) < 2
             or len(set(original_chain)) != len(original_chain)
             or any(not path.startswith("|") for path in original_chain)
             or any(not value for value in (

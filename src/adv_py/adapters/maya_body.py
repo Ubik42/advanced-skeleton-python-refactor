@@ -7950,6 +7950,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 fallback_normal=(0.0, 0.0, 1.0),
                 mirror_left=spec.side is FitBuildSide.LEFT)
             pole = (self._cmds.ls(pole, long=True) or [pole])[0]
+            if spec.source_original_pole:
+                self._cmds.addAttr(pole,longName='advPySourceRpPolePlacement',attributeType='bool',defaultValue=True)
+                self._cmds.setAttr(pole+'.advPySourceRpPolePlacement',True,lock=True)
             if wrist != spec.wrist_control_path or pole != spec.pole_control_path:
                 raise RuntimeError("Arm IK 控制路径漂移")
             if spec.wrist_extra_curve:
@@ -7968,9 +7971,15 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 if aligned != spec.wrist_align_path:
                     raise RuntimeError("Wrist AlignIKTo 路径漂移")
                 self._cmds.xform(aligned, worldSpace=True, matrix=matrix)
+            if spec.source_aligned_graph and spec.source_straight_chain:
+                self._cmds.setAttr(spec.chain[1]+'.preferredAngle',0.,0.,-90.,type='double3')
             handle, _ = self._cmds.ikHandle(name=spec.handle_name, startJoint=spec.chain[0], endEffector=spec.chain[2], solver="ikRPsolver")
             self._cmds.parent(handle, wrist, absolute=True)
             self._cmds.poleVectorConstraint(pole, handle, name=spec.pole_constraint_name)
+            if spec.source_original_pole and len(spec.solver_joint_list or spec.chain[:2])>2:
+                position=self._cmds.xform(spec.chain[1],query=True,worldSpace=True,translation=True)
+                if sum((a-b)**2 for a,b in zip(position,spec.source_middle_position))**.5>.01:
+                    self._cmds.setAttr(handle+'.twist',180.)
             if spec.source_aligned_graph:
                 from .maya_source_limb_ik_local import create
                 create(self,spec)
@@ -10067,9 +10076,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_internal_ik_local import create
         create(self,spec)
 
-    def create_source_rp_dynamics(self,body,limbs,global_control,internal_local=(),root_follow=None, *,source_pole_targets=True):
+    def create_source_rp_dynamics(self,body,limbs,global_control,internal_local=(),root_follow=None, *,source_pole_targets=True,source_x_translation=True,source_part_scale=True,instances=(),inbetween_segments=()):
         from .maya_source_rp_dynamics import create
-        return create(self,body,limbs,global_control,internal_local,root_follow,source_pole_targets=source_pole_targets)
+        return create(self,body,limbs,global_control,internal_local,root_follow,
+            source_pole_targets=source_pole_targets,source_x_translation=source_x_translation,
+            source_part_scale=source_part_scale,instances=instances,inbetween_segments=inbetween_segments)
 
     def create_source_limb_aim(self,body,fk,limbs,root,splines,global_control,policy=None,instances=(),use_offset_parent_matrix=True):
         from .maya_source_limb_aim import create

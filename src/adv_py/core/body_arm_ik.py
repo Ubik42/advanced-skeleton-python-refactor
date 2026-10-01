@@ -60,6 +60,8 @@ class BodyArmIkSpec:
     source_foot_orientation: bool = False
     source_foot_matrix: str | None = None
     source_handle_parent: str | None = None
+    source_straight_chain: bool = False
+    source_original_pole: bool = False
 
     @property
     def handle_parent(self):
@@ -176,9 +178,12 @@ def plan_body_arm_ik(
     joint_names: tuple[str, ...] = ("Shoulder", "Elbow", "Wrist"),
     limb_label: str = "Arm",
     sides: tuple[FitBuildSide, ...] = (FitBuildSide.RIGHT,FitBuildSide.LEFT),
+    allow_two_joint: bool = False,
+    source_pole_placement: bool = False,
 ) -> BodyArmIkPlan:
     if (type(sub_controllers) is not bool or type(extra_controllers) is not bool
-            or type(align_helpers) is not bool):
+            or type(align_helpers) is not bool or type(allow_two_joint) is not bool
+            or type(source_pole_placement) is not bool):
         raise BodyArmIkValidationError("IK 控制器开关必须是布尔值")
     if any(
         isinstance(value, bool)
@@ -188,7 +193,7 @@ def plan_body_arm_ik(
         for value in (radius, pole_distance_scale)
     ):
         raise BodyArmIkValidationError("IK 控制尺寸参数必须是正有限数值")
-    if (not body_limb_sides_valid(sides) or len(joint_names) < 3 or len(set(joint_names)) != len(joint_names)
+    if (not body_limb_sides_valid(sides) or len(joint_names) < (2 if allow_two_joint else 3) or len(set(joint_names)) != len(joint_names)
             or any(not body_limb_token_valid(name)
                    for name in joint_names) or not body_limb_token_valid(limb_label)):
         raise BodyArmIkValidationError("IK 关节链或系统名称无效")
@@ -220,13 +225,20 @@ def plan_body_arm_ik(
         drivers = (full_drivers[0], full_drivers[middle_index], full_drivers[-1])
         solver_chain = expanded_ik_solver_chain(mechanisms, full_drivers)
         shoulder, elbow, wrist = (joint.world_position for joint in sources)
-        pole = solve_arm_pole_position(
-            shoulder,
-            elbow,
-            wrist,
-            sources[1].world_axes[2],
-            distance_scale=float(pole_distance_scale),
-        )
+        straight=False
+        if source_pole_placement:
+            from .source_limb_pole import source_limb_build_pole
+            pole,straight=source_limb_build_pole(tuple(joint.world_position for joint in source_chain),
+                middle_index,sources[0].world_axes)
+        elif len(source_chain)==2:
+            # MEL 80865: the no-knee placer remains in the world frame and
+            # offsets Z by the full chain length from its start.
+            length=sum((a-b)**2 for a,b in zip(shoulder,wrist))**.5
+            pole=(shoulder[0],shoulder[1],shoulder[2]+length)
+        else:
+            pole = solve_arm_pole_position(
+                shoulder,elbow,wrist,sources[1].world_axes[2],
+                distance_scale=float(pole_distance_scale))
         wrist_offset_name = f"AdvPy_{limb_label}IKOffset_{side_name}"
         wrist_control_name = f"AdvPy_{limb_label}IK_{side_name}"
         pole_offset_name = f"AdvPy_{limb_label}PVOffset_{side_name}"
@@ -248,7 +260,7 @@ def plan_body_arm_ik(
             body_fk_curve_radius(body, sources[2], float(radius)),
             f"AdvPy_{limb_label}IKWristOrient_{side_name}",
             solver_joint_list=(solver_chain[:-1]
-                               if len(solver_chain) > len(drivers) else None),
+                               if len(solver_chain) != len(drivers) else None),
             wrist_sub_path=(
                 f"{wrist_extra_path}|{wrist_control_name}|AdvPy_{limb_label}IKSub_{side_name}"
                 if sub_controllers else None),
@@ -266,6 +278,8 @@ def plan_body_arm_ik(
                               if align_helpers else None),
             wrist_align_parent_path=(fk_by_source[sources[2].path]
                                      if align_helpers else None),
+            source_straight_chain=straight,
+            source_original_pole=source_pole_placement,
         ))
     return BodyArmIkPlan(root_path, root_name, tuple(limbs))
 
