@@ -29,7 +29,7 @@ class MayaFaceRestoreMixin(MayaFaceRestoreControlsMixin, MayaFaceRestoreDriversM
                 continue
             old_skin = self._original_pupil_skin(self.scene_address(holder), exclude_prefix=False)
             skin=(self.original_face_production_skin(geometry,head) if geometry==face
-                  else self._original_pupil_skin(mesh, exclude_prefix=False))
+                  else self.original_face_head_part_skin(geometry,head))
             layer=c.getAttr(holder+".sourceSkin") if c.objExists(holder+".sourceSkin") else None
             if layer:
                 if not c.objExists(layer): continue
@@ -59,7 +59,7 @@ class MayaFaceRestoreMixin(MayaFaceRestoreControlsMixin, MayaFaceRestoreDriversM
         return tuple(restored)
 
     def _restore_original_face_layer_weights(self,holder,old_skin,geometry,skin):
-        """Restore same-topology native layers by original joint identity.
+        """Restore same-topology native Skin by original joint identity.
 
         Many lip joints share a position. closestJoint can merge their weights
         after prefix renaming; map the original names to the rebuilt joints.
@@ -77,8 +77,14 @@ class MayaFaceRestoreMixin(MayaFaceRestoreControlsMixin, MayaFaceRestoreDriversM
         component=om.MFnSingleIndexedComponent()
         vertices=component.create(om.MFn.kMeshVertComponent); component.addElements(range(count))
         weights,width=fn.getWeights(path,vertices)
-        mapped=[self.scene_address(self._original_restore_leaf(p.fullPathName()).removeprefix("prefix_"))
-                for p in fn.influenceObjects()]
+        mapped=[]
+        for influence in fn.influenceObjects():
+            leaf=influence.fullPathName().rsplit("|",1)[-1]
+            namespace,separator,stem=leaf.rpartition(":")
+            # Body Head may live outside the Face character namespace. Keep
+            # its physical namespace; remove prefix only from the joint stem.
+            mapped.append(namespace+":"+stem.removeprefix("prefix_") if separator
+                          else self.scene_address(leaf.removeprefix("prefix_")))
         if any(not raw.objExists(joint) for joint in mapped):
             # Changed fitting topology may generate a different Lip joint
             # count. Retain the source's spatial remapping rule in that case;

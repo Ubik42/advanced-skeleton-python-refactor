@@ -51,7 +51,7 @@ def create_face(cmds, om):
     return mesh, ring, vertex_index
 
 
-def fit_input(cmds, om, controller, *, multi=False, opm=False, lip_controls=12):
+def fit_input(cmds, om, controller, *, multi=False, opm=False, lip_controls=12, complete=False, attachments=False):
     if multi: cmds.createNode('transform', name='DeformationSystem')
     cmds.select(clear=True)
     head = cmds.joint(name='Head_M', position=(0, 3, 0))
@@ -60,6 +60,7 @@ def fit_input(cmds, om, controller, *, multi=False, opm=False, lip_controls=12):
         eye = cmds.polySphere(name='Eye'+side, radius=.31, subdivisionsX=16,
                               subdivisionsY=12, constructionHistory=False)[0]
         cmds.xform(eye, translation=(x, 4, 1.05), worldSpace=True)
+        cmds.makeIdentity(eye,apply=True,translate=True,rotate=True,scale=True)
         cmds.skinCluster(head, eye, toSelectedBones=True, name=eye+'HeadSkin')
     cmds.skinCluster(head, mesh, toSelectedBones=True, name='HeadSkin')
     cmds.select(mesh+'.f[*]', replace=True); controller.face_pre_record_mask(':')
@@ -103,10 +104,48 @@ def fit_input(cmds, om, controller, *, multi=False, opm=False, lip_controls=12):
         cmds.select(f'{mesh}.vtx[{index}]', replace=True)
         controller.face_fit_marker(':', section)
     controller.face_build_jaw_fit_curves(':')
+    if complete:
+        for section, x, y in (('EyeBrowInner', -.4, 4.6), ('EyeBrowOuter', -1.2, 4.6),
+                              ('EyeBrowCenter', 0, 4.5), ('EyeBrowMid1', -.8, 4.7)):
+            index=vertex_index[round((y-1)*10)*41+round((x+2)*10)]
+            cmds.select(f'{mesh}.vtx[{index}]',replace=True)
+            controller.face_fit_marker(':',section)
+        corners=[vertex_index[iy*41+ix] for ix,iy in ((20,27),(20,40),(2,33))]
+        cmds.select([f'{mesh}.vtx[{v}]' for v in corners],replace=True)
+        controller.face_fit_marker(':','ForeHead')
+        controller.face_fit_marker(':','UpMidLo')
+        parts=[]
+        for name,y,width,depth in (('UpperTeethMesh',2.65,.6,.3),
+                                   ('LowerTeethMesh',2.35,.6,.3),('TongueMesh',2.45,.35,.7)):
+            part=cmds.polyCube(name=name,width=width,height=.1,depth=depth,
+                subdivisionsWidth=4,subdivisionsHeight=2,subdivisionsDepth=8,
+                constructionHistory=False)[0]
+            cmds.xform(part,translation=(0,y,.6),worldSpace=True)
+            cmds.makeIdentity(part,apply=True,translate=True,rotate=True,scale=True)
+            cmds.skinCluster(head,part,toSelectedBones=True,name=name+'HeadSkin')
+            parts.append(part)
+        if attachments:
+            for role,y,height in (('Eyebrow',4.65,.16),('EyeLash',4.32,.06)):
+                fitted=[]
+                for side,x in (('Right',-.8),('Left',.8)):
+                    part=cmds.polyPlane(name=role+side,width=.8,height=height,
+                        subdivisionsX=8,subdivisionsY=2,axis=(0,0,1),constructionHistory=False)[0]
+                    cmds.xform(part,translation=(x,y,1.16),worldSpace=True)
+                    cmds.makeIdentity(part,apply=True,translate=True,rotate=True,scale=True)
+                    cmds.skinCluster(head,part,toSelectedBones=True,name=part+'HeadSkin')
+                    parts.append(part); fitted.append(part)
+                cmds.select(fitted,replace=True); controller.face_teeth_record(':',role)
+        cmds.select([mesh,'EyeRight','EyeLeft',*parts],replace=True)
+        controller.face_pre_record_objects(':','AllHead',head)
+        for role,node in (('UpperTeeth','UpperTeethMesh'),('LowerTeeth','LowerTeethMesh')):
+            cmds.select(node,replace=True); controller.face_teeth_record(':',role)
+        cmds.select('TongueMesh',replace=True); controller.face_tongue(':','record')
+        controller.face_tongue(':','fit')
+        cmds.setAttr(fit+'.Include',0)
     return fit
 
 
-def validate_lower_motion(cmds):
+def validate_lower_motion(cmds, *, complete=False, attachments=False):
     def points():
         values = tuple(cmds.xform('FaceMesh.vtx[*]', query=True, worldSpace=True, translation=True))
         assert values and all(isfinite(v) for v in values)
@@ -137,10 +176,52 @@ def validate_lower_motion(cmds):
     assert max(abs(moved[i]-baseline[i]-2) for i in range(0, len(moved), 3)) < 1e-4
     cmds.setAttr('Head_M.tx', 0)
     report['head_follow'] = True
+    if complete:
+        report.update(validate_complete_motion(cmds, attachments=attachments))
     return report
 
 
-def main(output, full=False, resume=None, rebuild=False, multi=False, opm=False, lip_controls=12):
+def validate_complete_motion(cmds, *, attachments=False):
+    """Read actual production meshes, including all fitted oral parts."""
+    def points(mesh):
+        values=tuple(cmds.xform(mesh+'.vtx[*]',query=True,worldSpace=True,translation=True))
+        assert values and all(isfinite(v) for v in values), mesh
+        return values
+    report={}
+    cases=(('ctrlBrow_R.ty',1,'FaceMesh'),('ctrlBrow_R.tx',1,'FaceMesh'),
+           ('ctrlBrow_R.squeeze',10,'FaceMesh'),('ctrlBrow_L.outerUpDown',10,'FaceMesh'),
+           ('ctrlEye_R.blink',10,'FaceMesh'),('ctrlEye_R.squint',10,'FaceMesh'),
+           ('upperFace_M.ty',.15,'FaceMesh'),('middleFace_M.tx',.15,'FaceMesh'),
+           ('lowerFace_M.ty',.15,'FaceMesh'),('upperTeeth_M.ty',.15,'UpperTeethMesh'),
+           ('lowerTeeth_M.ty',.15,'LowerTeethMesh'),('Tongue1_M.rz',15,'TongueMesh'),
+           ('Tongue3_M.ty',.15,'TongueMesh'),('ctrlMouth_M.ty',-1,'LowerTeethMesh'),
+           ('ctrlMouth_M.ty',-1,'TongueMesh'),('ctrlPhonemes_M.rrr',10,'TongueMesh'),
+           ('ctrlPhonemes_M.lntd',10,'TongueMesh'))
+    if attachments:
+        cases+= (('ctrlBrow_R.ty',1,'EyebrowRight'),('ctrlBrow_L.squeeze',10,'EyebrowLeft'),
+                 ('ctrlEye_R.blink',10,'EyeLashRight'),('ctrlEye_L.squint',10,'EyeLashLeft'))
+    for plug,value,mesh in cases:
+        assert cmds.objExists(plug),plug
+        baseline=points(mesh)
+        cmds.setAttr(plug,value)
+        moved=points(mesh)
+        delta=max(abs(a-b) for a,b in zip(baseline,moved))
+        assert delta>1e-5,(plug,value,mesh,'production mesh did not deform')
+        report[f'{plug}={value}/{mesh}']=delta
+        cmds.setAttr(plug,0)
+        reset=max(abs(a-b) for a,b in zip(baseline,points(mesh)))
+        assert reset<1e-4,(plug,mesh,'neutral pose changed',reset)
+    for mesh in ('UpperTeethMesh','LowerTeethMesh','TongueMesh','EyeRight','EyeLeft'):
+        baseline=points(mesh)
+        cmds.setAttr('Head_M.tx',2)
+        moved=points(mesh)
+        assert max(abs(moved[i]-baseline[i]-2) for i in range(0,len(moved),3))<1e-4,mesh
+        cmds.setAttr('Head_M.tx',0)
+        report['head_follow/'+mesh]=True
+    return report
+
+
+def main(output, full=False, resume=None, rebuild=False, multi=False, opm=False, lip_controls=12, complete=False, attachments=False):
     import maya.standalone
     maya.standalone.initialize(name='python')
     from maya import cmds
@@ -151,14 +232,14 @@ def main(output, full=False, resume=None, rebuild=False, multi=False, opm=False,
     cmds.file(new=True, force=True); cmds.undoInfo(state=True)
     controller = MayaPanelController()
     report = {'status': 'running', 'input': 'connected curved three-hole face proxy',
-              'include': 'Skip Above Eyes', 'stages': [], 'multi': multi, 'opm': opm,
-              'lip_controls': lip_controls, 'full_entry': full}
+              'include': 'Complete' if complete else 'Skip Above Eyes', 'stages': [], 'multi': multi, 'opm': opm,
+              'lip_controls': lip_controls, 'full_entry': full, 'attachments': attachments}
     try:
         if resume:
             cmds.file(str(resume), open=True, force=True, executeScriptNodes=False)
             fit = 'FaceFitSkeleton'
         else:
-            fit = fit_input(cmds, om, controller, multi=multi, opm=opm, lip_controls=lip_controls)
+            fit = fit_input(cmds, om, controller, multi=multi, opm=opm, lip_controls=lip_controls,complete=complete,attachments=attachments)
             cmds.file(rename=str(output/'face-fit-input.mb'))
             cmds.file(save=True, type='mayaBinary', force=True)
         if full:
@@ -186,31 +267,50 @@ def main(output, full=False, resume=None, rebuild=False, multi=False, opm=False,
                 zeroRemainingInfluences=True)
             report['authored_layer_weight'] = cmds.skinPercent('LipSC', 'FaceMesh.vtx[100]',
                 query=True, transform='upperLipJoint0_M')
-        report['motion'] = validate_lower_motion(cmds)
+            if complete:
+                part_skin=next(node for node in cmds.listHistory('TongueMesh') or []
+                    if cmds.nodeType(node)=='skinCluster' and node.startswith('UpMidLocSC'))
+                cmds.skinPercent(part_skin,'TongueMesh.vtx[1]',
+                    transformValue=[('upperFaceJoint_M',.31),('middleFaceJoint_M',.69)],
+                    zeroRemainingInfluences=True)
+                report['authored_part_layer']={'skin':part_skin,'weight':cmds.skinPercent(part_skin,
+                    'TongueMesh.vtx[1]',query=True,transform='upperFaceJoint_M')}
+
+        report['motion'] = validate_lower_motion(cmds, complete=complete, attachments=attachments)
         scene = output/'face-completed.mb'
         cmds.file(rename=str(scene)); cmds.file(save=True, type='mayaBinary', force=True)
         cmds.file(str(scene), open=True, force=True, executeScriptNodes=False)
-        reopened = validate_lower_motion(cmds)
+        reopened = validate_lower_motion(cmds, complete=complete, attachments=attachments)
         assert max(abs(reopened[k]-v) for k, v in report['motion'].items()) < 1e-5
         report['saved_reopened'] = True
         if rebuild:
             cmds.addAttr('ctrlLips_M', longName='authoredLipStrength', attributeType='double',
                          minValue=0, maxValue=1, defaultValue=.37, keyable=True)
             old_skin_id = cmds.ls('LipSC' if multi else 'HeadSkin', uuid=True)[0]
-            controller.face_original_build(':', cage_smooth=1, jaw_smooth=1)
+            rebuilt=controller.face_original_build(':', cage_smooth=1, jaw_smooth=1)
+            report['restore_result']=rebuilt['stages']['RebuildRestore']
+            report['prefix_before_undo']=cmds.ls('prefix_FaceGroup*',long=True) or []
+            assert not cmds.objExists('prefix_FaceGroup'), ('before Undo',report['restore_result'])
             cmds.undo()
             assert cmds.ls('LipSC' if multi else 'HeadSkin', uuid=True)[0] == old_skin_id
             assert abs(cmds.getAttr('ctrlLips_M.authoredLipStrength')-.37) < 1e-8
             cmds.redo()
             report['rebuild_undo_redo'] = True
             assert not cmds.objExists('prefix_FaceGroup')
-            report['rebuilt_motion'] = validate_lower_motion(cmds)
+            report['rebuilt_motion'] = validate_lower_motion(cmds, complete=complete, attachments=attachments)
             assert max(abs(report['rebuilt_motion'][k]-v) for k, v in report['motion'].items()) < 1e-5
             assert abs(cmds.getAttr('ctrlLips_M.authoredLipStrength')-.37) < 1e-8
             if multi:
                 value = cmds.skinPercent('LipSC', 'FaceMesh.vtx[100]',query=True,transform='upperLipJoint0_M')
                 assert abs(value-report['authored_layer_weight']) < 1e-8
                 report['authored_layer_weight_preserved'] = True
+                if complete:
+                    authored=report['authored_part_layer']
+                    value=cmds.skinPercent(authored['skin'],'TongueMesh.vtx[1]',
+                        query=True,transform='upperFaceJoint_M')
+                    assert abs(value-authored['weight'])<1e-8,(authored,value)
+                    report['authored_part_layer_preserved']=True
+
             report['rebuilt'] = True
         report['status'] = 'passed'
     except Exception:
@@ -226,4 +326,4 @@ if __name__ == '__main__':
     lip_controls = int(sys.argv[sys.argv.index('--lip-controls')+1]) if '--lip-controls' in sys.argv else 12
     main(Path(sys.argv[1]).resolve(), full='--full' in sys.argv, resume=resume,
          rebuild='--rebuild' in sys.argv, multi='--multi' in sys.argv, opm='--opm' in sys.argv,
-         lip_controls=lip_controls)
+         lip_controls=lip_controls,complete='--complete' in sys.argv,attachments='--attachments' in sys.argv)

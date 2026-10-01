@@ -23,57 +23,40 @@ class MayaFacePrepPrefixMixin:
         c.setAttr(prefix + ".version", c.getAttr("FaceGroup.version"), lock=True)
         holders = []
         number = 1
+        primary_ids=set()
         for geometry in source["all_head"]:
             if geometry == source["geometry"]:
                 name = "asFaceSkinWeightsHolder"
                 skin = source["skin"]
             else:
                 name = "asFaceSkinWeightsHolder" + str(number)
-                skin = self._original_pupil_skin(self.scene_address(geometry), exclude_prefix=False)
-            c.polySphere(name=name, radius=1, subdivisionsX=20, subdivisionsY=20,
-                         axis=(0, 1, 0), createUVs=2, constructionHistory=False)
-            mesh = self.scene_address(geometry)
-            shape = c.listRelatives(name, shapes=True, noIntermediate=True, fullPath=True)[0]
-            raw.connectAttr(mesh + ".outMesh", self.scene_address(shape) + ".inMesh")
-            c.polyEvaluate(name, vertex=True)
-            raw.disconnectAttr(mesh + ".outMesh", self.scene_address(shape) + ".inMesh")
-            influences = raw.listConnections(self.scene_address(skin) + ".matrix",
-                                             source=True, destination=False, type="joint") or []
-            c.skinCluster(influences, name, toSelectedBones=True, maximumInfluences=3,
-                          dropoffRate=4, removeUnusedInfluence=False, name=name + "SC")
-            c.parent(name, prefix)
-            self._cage_copy_selected((geometry,), (name,),
-                source_skin=skin,target_skin=name+"SC")
-            c.addAttr(name, longName="sourceObject", dataType="string")
-            c.setAttr(name + ".sourceObject", geometry, type="string")
+                skin = self.original_face_head_part_skin(geometry,source["head"])
+            self._capture_original_face_weight_holder(geometry,skin,name,prefix)
+            primary_ids.update(raw.ls(self.scene_address(skin),uuid=True) or [])
             holders.append(name)
             number += 1
-        # Each native multi-Skin layer owns independent authored weights.
-        # The single primary holder cannot preserve Lip/Cage/Jaw data.
-        history=set(raw.listHistory(self.scene_address(source["geometry"])) or [])
+        # Every production mesh may have native Face layers: besides the main
+        # head's Lip/Cage/Jaw, original multi-Skin adds EyeBall, EyeBrow,
+        # EyeLash and UpMidLo layers to separate head parts. Preserve and detach
+        # all those layers before sampling the new graph, not just FaceMesh.
         captured_layers=[]
-        for layer in ("EyeLidSC","LipSC","CageSC","JawSC","UpMidLocSC"):
-            address=self.scene_address(layer)
-            if not raw.objExists(address) or address.lstrip(":") not in {n.lstrip(":") for n in history}:
-                continue
-            name="asFaceSkinWeightsHolderLayer"+str(number)
-            c.polySphere(name=name,constructionHistory=False)
-            shape=c.listRelatives(name,shapes=True,noIntermediate=True,fullPath=True)[0]
-            mesh=self.scene_address(source["geometry"])
-            raw.connectAttr(mesh+".outMesh",self.scene_address(shape)+".inMesh")
-            c.polyEvaluate(name,vertex=True)
-            raw.disconnectAttr(mesh+".outMesh",self.scene_address(shape)+".inMesh")
-            influences=raw.skinCluster(address,query=True,influence=True) or []
-            c.skinCluster(influences,name,toSelectedBones=True,maximumInfluences=3,
-                          dropoffRate=4,removeUnusedInfluence=False,name=name+"SC")
-            c.parent(name,prefix)
-            raw.copySkinWeights(sourceSkin=address,destinationSkin=self.scene_address(name+"SC"),
-                noMirror=True,surfaceAssociation="closestPoint",influenceAssociation="name")
-            for attr,value in (("sourceObject",source["geometry"]),("sourceSkin",layer)):
-                c.addAttr(name,longName=attr,dataType="string")
-                c.setAttr(name+"."+attr,value,type="string")
-            holders.append(name); number+=1
-            captured_layers.append(address)
+        captured_ids=set(primary_ids)
+        for geometry in source["all_head"]:
+            mesh=self.scene_address(geometry)
+            for skin in raw.listHistory(mesh,pruneDagObjects=True) or []:
+                if raw.nodeType(skin)!="skinCluster": continue
+                identities=set(raw.ls(skin,uuid=True) or [])
+                if identities & captured_ids: continue
+                influences=raw.skinCluster(skin,query=True,influence=True) or []
+                paths=raw.ls(influences,long=True) or []
+                if not any("FaceJoint_M" in tuple(part.rsplit(":",1)[-1]
+                    for part in path.split("|")[:-1]) for path in paths):
+                    continue
+                layer=skin.rsplit("|",1)[-1].rsplit(":",1)[-1]
+                name="asFaceSkinWeightsHolderLayer"+str(number)
+                self._capture_original_face_weight_holder(geometry,skin,name,prefix,layer=layer)
+                holders.append(name); number+=1
+                captured_layers.append(skin); captured_ids.update(identities)
         # Old layers must not deform the mesh while the new graph samples Fit
         # curves and creates its own layers. Their weights now live on holders;
         # retain the old controllers/SDKs for the normal prefix restoration.
@@ -106,7 +89,7 @@ class MayaFacePrepPrefixMixin:
         for geometry in source["all_head"]:
             if geometry == source["geometry"]:
                 continue
-            skin = self._original_pupil_skin(self.scene_address(geometry), exclude_prefix=False)
+            skin = self.original_face_head_part_skin(geometry,source["head"])
             try:
                 raw.skinPercent(skin, self.scene_address(geometry), transformValue=((head, 1),))
             except RuntimeError:
@@ -146,6 +129,29 @@ class MayaFacePrepPrefixMixin:
                 c.rename(node, "prefix_" + leaf)
         self._transaction_changed = True
         return {"prefix_group": prefix, "weight_holders": tuple(holders), "renamed_nodes": tuple(renamed)}
+
+    def _capture_original_face_weight_holder(self,geometry,skin,name,prefix,*,layer=None):
+        """Native holder for one production Skin, retaining source joint names."""
+        c=self._cmds; raw=getattr(c,"raw",c)
+        c.polySphere(name=name,radius=1,subdivisionsX=20,subdivisionsY=20,
+                     axis=(0,1,0),createUVs=2,constructionHistory=False)
+        shape=c.listRelatives(name,shapes=True,noIntermediate=True,fullPath=True)[0]
+        mesh=self.scene_address(geometry); address=self.scene_address(skin)
+        raw.connectAttr(mesh+".outMesh",self.scene_address(shape)+".inMesh")
+        c.polyEvaluate(name,vertex=True)
+        raw.disconnectAttr(mesh+".outMesh",self.scene_address(shape)+".inMesh")
+        influences=raw.skinCluster(address,query=True,influence=True) or []
+        c.skinCluster(influences,name,toSelectedBones=True,maximumInfluences=3,
+                      dropoffRate=4,removeUnusedInfluence=False,name=name+"SC")
+        c.parent(name,prefix)
+        raw.copySkinWeights(sourceSkin=address,destinationSkin=self.scene_address(name+"SC"),
+            noMirror=True,surfaceAssociation="closestPoint",
+            influenceAssociation="name" if layer else "closestJoint")
+        c.addAttr(name,longName="sourceObject",dataType="string")
+        c.setAttr(name+".sourceObject",geometry,type="string")
+        if layer:
+            c.addAttr(name,longName="sourceSkin",dataType="string")
+            c.setAttr(name+".sourceSkin",layer,type="string")
 
     def _original_prefix_node_by_uuid(self, identity):
         c = self._cmds

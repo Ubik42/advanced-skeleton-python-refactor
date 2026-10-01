@@ -151,9 +151,13 @@ class MayaFaceUpMidLoMixin:
                         name=self.scene_address("UpMidLocSC"))[0]
                 history=[n for n in raw.listHistory(physical,pruneDagObjects=True,interestLevel=2) or [] if raw.nodeType(n)=="skinCluster"]
                 if len(history)>2:
-                    shapes=raw.listRelatives(physical,shapes=True,noIntermediate=True,fullPath=True) or []
-                    chain=raw.skinClusterChain(shapes[0]) or []
-                    if chain: raw.reorderDeformers(chain[0],target,physical)
+                    # skinClusterChain is a MEL-only command in Maya 2024.
+                    # findRelatedSkinCluster returns the first downstream Skin;
+                    # listHistory preserves that same order for this mesh.
+                    chain=[node for node in raw.listHistory(physical,pruneDagObjects=True) or []
+                           if raw.nodeType(node)=="skinCluster"]
+                    if chain and chain[0]!=target:
+                        raw.reorderDeformers(chain[0],target,physical)
                 self._cage_copy_selected(("UpMidLoLayer",),(physical,),source_skin=skin,target_skin=target)
             else:
                 if physical in defined or physical in objects: continue

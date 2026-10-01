@@ -55,6 +55,19 @@ class MayaFaceJawHost(MayaFaceJawPosesMixin,MayaFaceTeethMixin,MayaFaceJawWeight
         if len(set(matches))!=1: raise FitSkeletonValidationError("原版 Face 生产 Skin 缺失或不唯一")
         return matches[0]
 
+    def original_face_head_part_skin(self,geometry,head):
+        """Resolve the permanent Head Skin underneath native Face layers."""
+        raw=getattr(self._cmds,"raw",self._cmds)
+        ids=set(raw.ls(self.scene_address(head),uuid=True) or [])
+        skins=[node for node in raw.listHistory(self.scene_address(geometry),pruneDagObjects=True) or []
+               if raw.nodeType(node)=="skinCluster" and not node.rsplit("|",1)[-1].rsplit(":",1)[-1].startswith("prefix_")]
+        for skin in skins:
+            influences=raw.skinCluster(skin,query=True,influence=True) or []
+            if any(ids.intersection(raw.ls(joint,uuid=True) or []) for joint in influences):
+                return skin
+        if len(skins)==1: return skins[0]
+        raise FitSkeletonValidationError("All Head 的原始 Head Skin 缺失或不唯一："+geometry)
+
     def show_original_face_layer_in_transaction(self,layer):
         """asShowLayer; no interactive RigType gate on internal build stages."""
         self._require_transaction()

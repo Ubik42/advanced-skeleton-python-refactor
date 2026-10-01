@@ -124,7 +124,7 @@ class MayaFaceTongueHost(MayaFaceEyeLidRigHost):
             and node.rsplit(":",1)[-1]!="squashIKSC"),None)
         return FaceTongueInput(geometry,face,self.read_face_objects(FacePreRole.ALL_HEAD),
             tuple(positions),self.face_use_offset_parent_matrix(),skin,
-            self.face_skin_cluster(face),int(self._tongue_maya.getModifiers()))
+            self.face_skin_cluster(face),int(self._tongue_maya.getModifiers() or 0))
 
     @contextmanager
     def _tongue_deformer_sets(self):
