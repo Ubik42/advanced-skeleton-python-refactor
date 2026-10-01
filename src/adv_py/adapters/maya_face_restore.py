@@ -144,6 +144,10 @@ class MayaFaceRestoreMixin(MayaFaceRestoreControlsMixin, MayaFaceRestoreDriversM
         # Original deliberately deletes members before their parent group to
         # avoid invalid transformGeometry evaluation during hierarchy deletion.
         if c.objExists("prefix_FaceAllSet"):
+            # Native Skin edits during the new build may create another root
+            # dagPose on the retained old set. Resolve ownership immediately
+            # before deleting that set's graph, as well as before capture.
+            self.normalize_original_face_bind_pose_ownership("prefix_FaceAllSet")
             members = c.sets("prefix_FaceAllSet", query=True) or []
             if members:
                 c.delete(members)

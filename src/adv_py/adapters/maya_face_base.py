@@ -107,6 +107,34 @@ class MayaFaceBaseMixin:
         c.setAttr(node+".visibility",False)
         return node
 
+    def normalize_original_face_bind_pose_ownership(self, owner_set="FaceAllSet"):
+        """Keep native bind poses in their actual character after Maya redo.
+
+        Maya can replay a generated dagPose at scene root. Adopt it only when
+        every connected member belongs to this character. Shared/external poses
+        remain in place and are removed from this Face's disposable-node set.
+        """
+        c=self._cmds
+        identity=getattr(c,"identity",None)
+        if identity is None or not c.objExists(owner_set):
+            return ()
+        raw=getattr(c,"raw",c)
+        owner=self.scene_address(owner_set)
+        adopted=[]
+        for member in c.sets(owner_set,query=True) or []:
+            node=self.scene_address(member)
+            if identity.owns(node) or not raw.objExists(node) or raw.nodeType(node)!="dagPose":
+                continue
+            connected=raw.listConnections(node+".members",source=True,destination=False) or []
+            members=raw.ls(connected,long=True) or []
+            if members and all(identity.owns(path) for path in members):
+                leaf=node.rsplit("|",1)[-1].rsplit(":",1)[-1]
+                renamed=raw.rename(node,":"+identity.to_scene(leaf))
+                adopted.append(renamed)
+            else:
+                raw.sets(node,remove=owner)
+        return tuple(adopted)
+
     def register_face_module_nodes(self, before, module_set, *, production_skins=(), reuse=False):
         """Append a completed module without replacing existing Face ownership."""
         self._require_transaction()

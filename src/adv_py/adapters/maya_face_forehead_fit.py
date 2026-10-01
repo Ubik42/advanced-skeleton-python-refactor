@@ -118,7 +118,8 @@ class MayaFaceForeHeadFitMixin:
     def _original_forehead_area(self,geometry,edges,suffix,scale):
         c=self._cmds; raw=getattr(c,"raw",c); mesh=self.scene_address(geometry)
         lid_holder="FaceFitEyeLidOuter"+suffix
-        record=(c.getAttr(lid_holder+".selection") or "").split()
+        record=tuple(self.scene_address(token) for token in
+                     (c.getAttr(lid_holder+".selection") or "").split())
         boundary=raw.ls(raw.polyListComponentConversion((*record,*edges),toVertex=True),long=True,flatten=True) or []
         sampler=c.createNode("closestPointOnMesh",name="closestSampler")
         raw.connectAttr(mesh+".outMesh",self.scene_address(sampler)+".inMesh")

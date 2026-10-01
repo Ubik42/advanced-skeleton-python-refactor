@@ -143,7 +143,7 @@ class MayaCorrectiveApplyMixin(MayaCorrectiveLegacyMixin):
         deform,driver,attribute,_=self._original_restore_leaf(corrective).split("__")
         self._transaction_changed=True
         attribute=self.original_opm_compatible_driver_attr(driver,attribute)
-        geometry=c.getAttr(corrective+".advPyOriginalDeformObject") if c.objExists(corrective+".advPyOriginalDeformObject") else self._corrective_mesh(deform)
+        geometry=self.original_corrective_wip_geometry(corrective,deform)
         original=self._corrective_source_object(deform) if deform=="FaceCorrective" else geometry
         value=c.getAttr(corrective+".driverValue")
         inbetween=c.getAttr(corrective+".inbetweenValue")
@@ -207,7 +207,12 @@ class MayaCorrectiveApplyMixin(MayaCorrectiveLegacyMixin):
             raw.dgdirty(allPlugs=True)
             envelopes=self._corrective_history_envelopes(geometry,blendshapes_only=True)
             history=raw.listHistory(geometry,pruneDagObjects=True) or []
-            skin=next((node for node in history if raw.nodeType(node)=="skinCluster"),None)
+            skins=[node for node in history if raw.nodeType(node)=="skinCluster"]
+            # listHistory is downstream-first. Keep the source's front-of-chain
+            # corrective before the upstream-most skin, including native multi-
+            # Skin stacks; choosing the last applied layer cancels earlier
+            # layer deformation when invertShape computes the delta.
+            skin=skins[-1] if skins else None
             for before in (skin,self.scene_address("asFaceBS") if c.objExists("asFaceBS") else None):
                 if before:
                     try:raw.reorderDeformers(before,self.scene_address(bs),geometry)

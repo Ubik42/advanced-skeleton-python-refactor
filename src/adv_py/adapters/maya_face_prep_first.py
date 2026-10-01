@@ -149,8 +149,9 @@ class MayaFacePrepFirstMixin(MayaFaceForeHeadFitMixin):
             holder = "FaceFitForeHead" + suffix
             if not c.objExists(holder + ".selection"):
                 raise FitSkeletonValidationError("旧 ForeHead Fit 缺少原始选择记录：" + holder)
-            selections[suffix] = tuple(raw.ls(c.getAttr(holder + ".selection").split(),
-                                               long=True, flatten=True) or [])
+            recorded = tuple(self.scene_address(token) for token in
+                             c.getAttr(holder + ".selection").split())
+            selections[suffix] = tuple(raw.ls(recorded, long=True, flatten=True) or [])
             if not selections[suffix]:
                 raise FitSkeletonValidationError("旧 ForeHead Fit 的原始组件已不存在：" + holder)
         if source["non_sym"] and not c.objExists(fit + ".NonSymSide"):

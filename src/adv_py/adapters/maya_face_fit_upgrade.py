@@ -78,7 +78,7 @@ class MayaFaceFitUpgradeMixin:
         c.addAttr(fit, longName="faceScale", attributeType="double", defaultValue=source["scale"])
         for section, selection in (("Pupil", source["pupil"]), ("Iris", source["iris"])):
             if selection and not c.objExists("FaceFit" + section):
-                selected = raw.ls(selection.split(), long=True, flatten=True) or []
+                selected = raw.ls(tuple(self.scene_address(token) for token in selection.split()), long=True, flatten=True) or []
                 if selected:
                     raw.select(selected, replace=True)
                     MayaFaceEyeLoopFitMixin.create_original_eye_loop_fit(self, section)

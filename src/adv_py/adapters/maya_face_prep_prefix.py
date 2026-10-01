@@ -11,6 +11,7 @@ class MayaFacePrepPrefixMixin:
         self._require_transaction()
         c = self._cmds
         raw = getattr(c, "raw", c)
+        self.normalize_original_face_bind_pose_ownership()
         if c.objExists("prefix_FaceGroup"):
             raise ValueError("旧 Face 捕获尚未恢复，prefix_FaceGroup 已存在")
         try:

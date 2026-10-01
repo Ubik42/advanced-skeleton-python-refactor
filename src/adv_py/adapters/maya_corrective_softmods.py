@@ -46,7 +46,7 @@ class MayaCorrectiveSoftModsMixin:
             if not c.objExists(group):
                 c.createNode("transform",name=group,parent="CorrectiveSoftMods")
             c.parent(handle,group)
-        shape=c.listRelatives(target,shapes=True,noIntermediate=True)[0]
+        shape=c.listRelatives(target,shapes=True,noIntermediate=True,fullPath=True)[0]
         incoming=c.listConnections(shape+".inMesh",source=True,destination=False,plugs=True) or []
         if incoming:
             c.disconnectAttr(incoming[0],shape+".inMesh")
@@ -85,10 +85,16 @@ class MayaCorrectiveSoftModsMixin:
     def exit_original_corrective_mode(self):
         c=self._cmds;raw=self._corrective_raw()
         group="Group" if c.objExists("Group") else "FaceGroup"
-        if c.objExists(group+".correctiveShapeModeHidden"):
+        hidden=""
+        if c.objExists(group+".advPyCorrectiveHiddenSource"):
+            nodes=raw.listConnections(self.scene_address(group)+".advPyCorrectiveHiddenSource",
+                                     source=True,destination=False) or []
+            if len(nodes)==1:
+                hidden=nodes[0]
+        if not hidden and c.objExists(group+".correctiveShapeModeHidden"):
             hidden=c.getAttr(group+".correctiveShapeModeHidden")
-            if hidden and self._original_restore_leaf(hidden)!="FaceCorrective" and raw.objExists(hidden):
-                raw.setAttr(hidden+".v",1)
+        if hidden and self._original_restore_leaf(hidden)!="FaceCorrective" and raw.objExists(hidden):
+            raw.setAttr(hidden+".v",1)
         if raw.headsUpDisplay("HUDCSMMode",query=True,exists=True):
             raw.headsUpDisplay("HUDCSMMode",remove=True)
         if c.objExists("perspCorrective"):

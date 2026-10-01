@@ -73,7 +73,8 @@ class MayaFaceCageWeightsMixin:
         fit=self._fit(required=True)
         lash=c.getAttr(fit+".EyeLash") if c.objExists(fit+".EyeLash") else ""
         if lash:
-            raw.select(selected,replace=True); raw.select(lash.split(),deselect=True)
+            raw.select(selected,replace=True)
+            raw.select(tuple(self.scene_address(token) for token in lash.split()),deselect=True)
             selected=raw.ls(selection=True,long=True,flatten=True) or []
             vertices=set(raw.ls(raw.polyListComponentConversion(selected,toVertex=True),long=True,flatten=True) or [])
         # Native sequence used by ConvertSelectionToVertexPerimeter.
@@ -132,7 +133,7 @@ class MayaFaceCageWeightsMixin:
             eyes=[]
             for attribute in ("RightEye","LeftEye"):
                 text=c.getAttr(fit+"."+attribute) if c.objExists(fit+"."+attribute) else ""
-                if text: eyes.extend(text.split())
+                if text: eyes.extend(self.scene_address(token) for token in text.split())
             eye_vertices=set(raw.ls(raw.polyListComponentConversion(eyes,toVertex=True),long=True,flatten=True) or []) if eyes else set()
             excluded=set(eye_vertices)
             for area in ("lipArea","eyeLidArea","eyeLidAreaLeft","eyeSocketArea","eyeSocketAreaLeft"):

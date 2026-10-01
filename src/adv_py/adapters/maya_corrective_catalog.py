@@ -94,7 +94,7 @@ class MayaCorrectiveCatalogMixin:
                     source_plan=self.capture_original_corrective_create(options)
                     result=self.create_original_corrective_shape(source_plan)
                     target=result["target"]
-                    target_shape=c.listRelatives(target,shapes=True,noIntermediate=True)[0]
+                    target_shape=c.listRelatives(target,shapes=True,noIntermediate=True,fullPath=True)[0]
                     raw.connectAttr(shape+".outMesh",self.scene_address(target_shape+".inMesh"),force=True)
                     baked.append(self.connect_original_corrective_shape(options))
                     c.setAttr(control+".r"+axis,0)

@@ -24,8 +24,17 @@ class MayaCorrectiveShapesHost(MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixi
         if name=="FaceCorrective" and c.objExists(name):
             return self.scene_address(name)
         bs=name+"Corrective"
-        if c.objExists(bs+".advPyOriginalDeformObject"):
-            return c.getAttr(bs+".advPyOriginalDeformObject")
+        if c.objExists(bs):
+            # Query the actual deformer attachment: Maya updates this graph on
+            # import, reference and rename, unlike a stored string path.
+            raw=self._corrective_raw()
+            shapes=raw.blendShape(self.scene_address(bs),query=True,geometry=True) or []
+            if len(shapes)==1:
+                parents=raw.listRelatives(shapes[0],parent=True,fullPath=True) or []
+                if len(parents)==1:
+                    return self._original_bs_physical_address(parents[0])
+            if c.objExists(bs+".advPyOriginalDeformObject"):
+                return c.getAttr(bs+".advPyOriginalDeformObject")
         paths=raw.ls(self.scene_address(name),long=True,type="transform") or []
         if len(paths)!=1:
             raise FitSkeletonValidationError("Corrective 来源网格不存在或不唯一："+name)
@@ -142,6 +151,29 @@ class MayaCorrectiveShapesHost(MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixi
             c.addAttr(name,longName=attr,attributeType="double",defaultValue=amount,keyable=True)
         c.addAttr(name,longName="advPyOriginalDeformObject",dataType="string")
         c.setAttr(name+".advPyOriginalDeformObject",geometry,type="string")
+        c.addAttr(name,longName="advPyOriginalDeformNode",attributeType="message")
+        self._corrective_raw().connectAttr(geometry+".message",
+            self.scene_address(name)+".advPyOriginalDeformNode")
+
+    def original_corrective_wip_geometry(self, corrective, deform):
+        c=self._cmds
+        raw=self._corrective_raw()
+        if c.objExists(corrective+".advPyOriginalDeformNode"):
+            nodes=raw.listConnections(self.scene_address(corrective)+".advPyOriginalDeformNode",
+                                     source=True,destination=False) or []
+            if len(nodes)==1:
+                paths=raw.ls(nodes[0],long=True,type="transform") or []
+                if len(paths)==1:
+                    return self._original_bs_physical_address(paths[0])
+        # Existing saved Python WIPs used only a string path. A bound native
+        # corrective deformer provides the authoritative mesh for those scenes.
+        if c.objExists(deform+"Corrective"):
+            return self._corrective_mesh(deform)
+        if c.objExists(corrective+".advPyOriginalDeformObject"):
+            stored=c.getAttr(corrective+".advPyOriginalDeformObject")
+            if raw.objExists(stored):
+                return stored
+        return self._corrective_mesh(deform)
 
     def duplicate_original_corrective(self, name, source):
         c=self._cmds
@@ -166,7 +198,10 @@ class MayaCorrectiveShapesHost(MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixi
         for shape in c.listRelatives(name,shapes=True,fullPath=True) or []:
             if c.nodeType(shape)=="mesh" and c.getAttr(shape+".intermediateObject"):
                 c.delete(shape)
-        shape=c.listRelatives(name,shapes=True)[0]
+        # Duplicated meshes initially share the original Shape's short name.
+        # Resolve through the new transform so rename cannot address another
+        # model (or fail on the ambiguous polySurfaceShape1 default name).
+        shape=c.listRelatives(name,shapes=True,noIntermediate=True,fullPath=True)[0]
         c.rename(shape,name+"Shape")
         group="Group" if c.objExists("Group") else "FaceGroup"
         c.setAttr(group+".v",0)
@@ -178,6 +213,10 @@ class MayaCorrectiveShapesHost(MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixi
             if not c.objExists(group+".correctiveShapeModeHidden"):
                 c.addAttr(group,longName="correctiveShapeModeHidden",dataType="string")
             c.setAttr(group+".correctiveShapeModeHidden",copied,type="string")
+            if not c.objExists(group+".advPyCorrectiveHiddenSource"):
+                c.addAttr(group,longName="advPyCorrectiveHiddenSource",attributeType="message")
+            raw.connectAttr(copied+".message",
+                self.scene_address(group)+".advPyCorrectiveHiddenSource",force=True)
         c.select(name,replace=True)
         if soft:
             self.restore_original_corrective_softmod_chain(name)
