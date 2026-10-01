@@ -1,10 +1,37 @@
 """Original Spline automatic/manual FK, IK and Hybrid visibility routing."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 
+def normalize_layer_state(host,state,flag,output):
+    """Accept only our exact flag × Spline visibility route."""
+    c=host._cmds
+    source=state.visibility_source
+    if source is None or source==flag:
+        return state
+    node=source.rsplit('.',1)[0]
+    shape=getattr(state,'shape_path',None)
+    if shape is None:
+        shapes=c.listRelatives(state.path,shapes=True,noIntermediate=True,fullPath=True) or []
+        shape=shapes[0] if len(shapes)==1 else None
+    expected=shape.rsplit('|',1)[-1]+'SplineVis' if shape else None
+    if (node!=expected or source!=node+'.output' or c.nodeType(node)!='multDoubleLinear'
+            or not c.isConnected(flag,node+'.input1')
+            or not c.isConnected('AdvPy_SplineVisibility.'+output,node+'.input2')
+            or not c.isConnected(source,shape+'.visibility')):
+        return state
+    return replace(state,visibility_source=flag)
+
+
 def create(host,plan,fk):
+    if plan.system_name:
+        from .maya_spline_scope import spline_scope
+        from adv_py.core.spline_names import remap_spline_value
+        with spline_scope(host,plan) as local:
+            return create(host,local,remap_spline_value(fk,plan.system_name,canonical=True))
     c = host._cmds
     settings = plan.settings
     for attr in ('autoVis','FKVis','IKVis'):

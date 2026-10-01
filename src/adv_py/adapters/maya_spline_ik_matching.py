@@ -1,5 +1,6 @@
 """Fit the native variable-control spline to a representable body pose."""
 from math import pi,sqrt
+from dataclasses import replace
 
 from adv_py.core.character_registry import CharacterRegistryError
 from adv_py.core.body_spline import spline_owner_version
@@ -7,7 +8,15 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.least_squares import least_squares
 
 
-def match_ik(host, registration, before):
+def match_ik(host, registration, before,*,_scoped=False):
+    if registration.additional_spines:
+        for plan in (registration.spine,)+registration.additional_spines:
+            match_ik(host,replace(registration,spine=plan,additional_spines=()),before)
+        return
+    if getattr(registration.spine,'system_name','') and not _scoped:
+        from .maya_spline_scope import spline_scope
+        with spline_scope(host,registration.spine,localize=False):
+            return match_ik(host,registration,before,_scoped=True)
     from .maya_spline_matching import enabled
     if not enabled(registration):
         raise CharacterRegistryError('先启用曲线脊柱动画匹配通道')

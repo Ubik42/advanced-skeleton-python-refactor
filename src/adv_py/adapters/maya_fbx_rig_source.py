@@ -408,8 +408,7 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         for limb in result.rig.plan.limbs:
             by_driver.update({joint.path: joint.source_joint.rsplit("|", 1)[-1]
                 for joint in limb.mechanisms.joints})
-        spline = result.rig.plan.spline
-        if spline is not None:
+        for spline in result.rig.plan.all_splines:
             # The base layer shares the Root source; the original Root FK
             # remains the transfer receiver for root translation/rotation.
             by_driver.update({joint.path: joint.source_joint.rsplit("|", 1)[-1]

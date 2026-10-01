@@ -53,7 +53,7 @@ def build_source_body_inbetween(host, build, part_result, fk, limbs, spline):
                     side.reverse_name + ".outputX",
                     limb.blend.settings_path + "." + side.attribute))
                 handled.add(before)
-    if spline is not None:
+    for spline in (spline if isinstance(spline,tuple) else (spline,) if spline is not None else ()):
         for index, (start_body, end_body) in enumerate(zip(
                 spline.body_joints, spline.body_joints[1:])):
             for before, chain in grouped.items():
@@ -68,11 +68,11 @@ def build_source_body_inbetween(host, build, part_result, fk, limbs, spline):
                     raise ValueError("来源 Spline Inbetween 缺少 FK 起点")
                 binding = _source_ik_binding(tuple(chain), fk, start_control, end_control,
                     spline.ik_outputs[index], spline.ik_outputs[index + 1],
-                    "AdvPy_SplineReverse.outputX", spline.settings + ".spineIkFk",
+                    spline.node_name("AdvPy_SplineReverse.outputX"), spline.settings + ".spineIkFk",
                     spline_root_path=spline.root_path)
                 if index == 0 and spline.fk_root_point_from_receiver:
                     binding = replace(binding,
-                        start_fk_point_constraint_name="AdvPy_SplineFKRootPoint")
+                        start_fk_point_constraint_name=spline.node_name("AdvPy_SplineFKRootPoint"))
                 ik_bindings.append(binding)
                 handled.add(before)
     requests = []
@@ -92,7 +92,8 @@ def build_source_body_inbetween(host, build, part_result, fk, limbs, spline):
                 solver = plan_inbetween_ik_solver(chain, segments,
                     handle_name=spec.handle_name,
                     effector_name=spec.handle_name.replace("Handle", "Effector"),
-                    solver_name="ikRPsolver", handle_parent_path=spec.wrist_control_path,
+                    solver_name="ikRPsolver", handle_parent_path=(spec.wrist_sub_path or spec.wrist_control_path
+                        if spec.source_aligned_graph else spec.wrist_control_path),
                     pole_control_path=spec.pole_control_path,
                     pole_constraint_name=spec.pole_constraint_name)
                 requests.append(InbetweenIkSolverRequest(solver, segments))

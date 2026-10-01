@@ -35,8 +35,20 @@
 
 ## 尚未完成的范围
 
-来源分支不能据此等同于原版通用构建的全部功能。仍需补齐多组和侧向 Spline 的独立命名、曲线系统保存与重建；Spline CV／Hybrid 的完整 Extra／Sub 与 Follow 层级；来源 RP 的 ikLocal 三模式、脚部 pivots／Foot／IKhybrid 的通用接入；来源 RP 的通用区间动画匹配、发布与恢复。新旧 Spline 控制数量变化时的动画兼容也需要处理。源码覆盖矩阵里的其余主体差异仍然有效。
+来源分支不能据此等同于原版通用构建的全部功能。本批多组和侧向 Spline 的独立命名、版本 5 保存、共享重建入口及逐组动画扩展已接代码；CV／Hybrid 的 Extra 父层与独立 Follow 接收层已补。原版只有 FK／IK 创建可选 Extra／Sub 曲线，CV／Hybrid 不创建这些变体。来源 RP 的末端 ikLocal 三模式已接代码。仍需补齐来源 RootX／LegLock 的完整独立接收层、内部关节 ikLocal 特殊分支、脚部 pivots／Foot／IKhybrid 的通用接入；来源 RP 的通用区间动画匹配、发布与恢复。新旧 Spline 控制数量变化时的动画兼容也需要处理。源码覆盖矩阵里的其余主体差异仍然有效。
 
 本批是 Python 代码接入，没有启动 Maya，没有运行功能／场景测试，没有推送 GitHub。静态解析与方法声明检查不能证明运行绑定与原版等价。Goal 保持进行中，不能宣布全量复刻完成。
 
 集中静态核对：699 个源文件可解析；来源主体与新增阶段直接调用的 33 个宿主方法均有实现声明；新增模块的仓库导入声明可解析；差异格式检查通过。未执行导入、Python 功能测试或 Maya 场景。
+
+
+## 2026-10-01 连续核心补写
+
+- Spline CV／Hybrid 增加原版 Offset／Extra／Main 层；Extra 的可编辑平移、旋转进入登记。独立 Controls 组避免被隐藏的 Mechanisms 父组遮蔽。
+- Hybrid 第一 Extra 改挂独立 Follow 接收层，起点 IK Offset 保留在另一条 Constrained 分支；Main／MainExtra／Root／Chest／非 Root/Chest 父关节层按原版顺序生成 0–10 权重、0.1 单位和顺序 blendMatrix。当前来源 Root 跟随仍使用已存在的 Root FK／FKX，原版独立 RootX／LegLock 接入尚需继续。
+- 来源 RP 增加 IKFKAligned 末端矩阵图与 addCtrl、nonZero、localOrient 分支；附加 IKLocal 控制、Extra、原版非零 Aim 朝向、Foot 特殊 Aim、局部朝向标记和旋转顺序接入。原版内部关节的 IKLocal 特殊分支仍待补。
+- 来源 Spline 解析遍历 M／R／L 真实完整骨链。各组以标签和侧别生成独立名称；命名映射只改节点地址，不改属性值、文件名或登记 JSON。中线单组保留旧名称。
+- Part、Inbetween、Fit Follow、CurveGuide、FBX 控制映射遍历全部曲线系统；左右 motionPath 的 inverseFront 和 Hybrid 图标位移符号接原版。
+- 多组角色保存版本 5 additional_spines；闭合解码校验各组身份、控制路径与登记节点。匹配通道按系统区分，扩展逐组构建后一次登记；FK／IK 匹配遍历各组。历史 1–4 版本保留读取和空追加组语义。
+
+以上均为代码接入，未运行 Maya、绑定流程或测试套件，也未推送 GitHub。不得据此宣称全部 ADV 分支完成或动画变形等价性已证明。

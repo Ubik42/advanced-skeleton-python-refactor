@@ -84,6 +84,7 @@ class CharacterRegistration:
     nodes: tuple[CharacterNode, ...]
     spine: BodySpinePlan | BodySplinePlan | None
     spaces: BodyControlSpacesPlan
+    additional_spines: tuple[BodySplinePlan,...] = ()
 
     def _compatibility_value(self, *, portable: bool):
         # UUIDs and absolute paths identify scene objects, not pose semantics.
@@ -102,6 +103,9 @@ class CharacterRegistration:
                 scalar(c.maximum) if c.maximum is not None else None)
                 for c in self.channels],
             "lengths": tuple(scalar(v) for v in self.spine.lengths) if self.spine is not None else (),
+            **({'additional_lengths':tuple(tuple(scalar(v) for v in spline.lengths)
+                                            for spline in self.additional_spines)}
+               if self.additional_spines else {}),
             "spaces": [s.key for s in self.spaces.spaces]}
 
     @property
@@ -150,6 +154,7 @@ def is_source_body_registration(registration):
 
 def encode_registration(registration):
     payload = asdict(registration)
+    additional=payload.pop('additional_spines')
     version = VERSION
     if isinstance(registration.spine, BodySplinePlan):
         version = 4 if is_source_body_registration(registration) else 2
@@ -157,6 +162,9 @@ def encode_registration(registration):
     if registration.spine is None:
         version = 3
         payload["spine_kind"] = "none"
+    if additional:
+        version=5
+        payload['additional_spines']=additional
     value = {"format":FORMAT,"version":version,"payload":payload,"digest":digest(payload)}
     text = canonical(value)
     decode_registration(text)
@@ -165,12 +173,13 @@ def encode_registration(registration):
 
 def decode_registration(text):
     doc = exact(safe_json(text), ("format","version","payload","digest"))
-    if doc["format"] != FORMAT or type(doc["version"]) is not int or doc["version"] not in (1, 2, 3, 4):
+    if doc["format"] != FORMAT or type(doc["version"]) is not int or doc["version"] not in (1, 2, 3, 4, 5):
         raise CharacterRegistryError("不支持的角色登记版本")
-    source_spline_document = doc["version"] == 4
-    spline_document = doc["version"] in (2, 4)
+    source_spline_document = doc["version"] in (4,5)
+    spline_document = doc["version"] in (2, 4,5)
     fk_document = doc["version"] == 3
-    data = exact(doc["payload"], ("body_root","container","channels","body","nodes","spine","spaces") + (("spine_kind",) if spline_document or fk_document else ()))
+    data = exact(doc["payload"], ("body_root","container","channels","body","nodes","spine","spaces") + (("spine_kind",) if spline_document or fk_document else ())
+                 + (('additional_spines',) if doc['version']==5 else ()))
     if spline_document and data["spine_kind"] != "spline":
         raise CharacterRegistryError("不支持的脊柱求解类型")
     if fk_document and (data["spine_kind"] != "none" or data["spine"] is not None):
@@ -344,9 +353,38 @@ def decode_registration(text):
             required.update(spine.ik_outputs[1:])
             required.update(spine.cv_controls)
             required.update(spine.hybrid_controls)
+            required.update((*spine.cv_extras,*spine.hybrid_extras))
+            if spine.source_controller_layers:
+                required.add(spine.source_controls_root)
+            if spine.source_follow_parent:
+                required.update((spine.hybrid_follow,spine.hybrid_constrained,
+                                 spine.source_follow_parent))
+                required.update(path for _,path,_ in spine.source_follow_targets)
         required.update(p for s in spaces for p in (*s.targets,*s.sources))
         if not required.issubset({n.path for n in nodes}):
             raise CharacterRegistryError("登记缺少操作节点身份")
-        return CharacterRegistration(root,container,tuple(channels),tuple(body),tuple(nodes),spine,BodyControlSpacesPlan(root,tuple(spaces)))
+        additional=()
+        if doc['version']==5:
+            additional=tuple(decode_spline(raw,tuple(body)) for raw in data['additional_spines'])
+            all_splines=(spine,)+additional
+            if (not additional or len({plan.system_name for plan in all_splines})!=len(all_splines)
+                    or any(not plan.system_name for plan in all_splines)):
+                raise CharacterRegistryError('多组来源 Spline 系统身份不唯一')
+            node_paths={node.path for node in nodes}
+            for plan in additional:
+                needed={plan.root_path,plan.chest_space,plan.curve,*plan.body_joints,
+                        *plan.fk_controls,*plan.targets,*plan.ik_outputs,
+                        *plan.cv_controls,*plan.hybrid_controls,*plan.cv_extras,
+                        *plan.hybrid_extras,*plan.source_matrix_targets,
+                        *(joint.path for joint in plan.joints)}
+                if plan.source_controller_layers:
+                    needed.add(plan.source_controls_root)
+                if plan.source_follow_parent:
+                    needed.update((plan.hybrid_follow,plan.hybrid_constrained,
+                                   plan.source_follow_parent))
+                    needed.update(path for _,path,_ in plan.source_follow_targets)
+                if not needed.issubset(node_paths):
+                    raise CharacterRegistryError('多组来源 Spline 登记缺少操作节点身份')
+        return CharacterRegistration(root,container,tuple(channels),tuple(body),tuple(nodes),spine,BodyControlSpacesPlan(root,tuple(spaces)),additional)
     except (TypeError, KeyError, ValueError) as exc:
         raise CharacterRegistryError(str(exc)) from exc

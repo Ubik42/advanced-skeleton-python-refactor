@@ -16,7 +16,9 @@ from adv_py.core.body_limb_blend import BodyLimbBlendPlan, plan_body_limb_blend
 from adv_py.core.body_generic_fk import BodyGenericFkPlan, plan_body_generic_fk
 from adv_py.core.body_spline import BodySplinePlan
 from adv_py.core.fit_bendy import FitBendyChainSpec, plan_fit_bendy_chains
-from adv_py.core.source_body_spline import plan_source_body_spline
+from adv_py.core.source_body_spline import plan_source_body_splines
+from adv_py.core.source_spline_follow import configure_source_spline_follow
+from adv_py.core.source_limb_ik_local import configure_source_limb_ik
 from adv_py.core.body_character_global import (
     BodyCharacterGlobalPlan, BodyRootFkScaleSpec, plan_body_character_global,
 )
@@ -95,6 +97,11 @@ class SourceBodyRigPlan:
     wheels: tuple = ()
     curve_guides: tuple = ()
     tweakers: object | None = None
+    additional_splines: tuple[BodySplinePlan,...] = ()
+
+    @property
+    def all_splines(self):
+        return ((self.spline,) if self.spline is not None else ()) + self.additional_splines
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,8 +185,8 @@ def source_character_channels(rig):
             if control.extra_curve:
                 add(key, control.control_path, ("extraControl",))
             add(key + ".extra", control.extra_path, trs)
-    if p.spline is not None:
-        spline = p.spline
+    for spline in p.all_splines:
+        spline_key='source.spline'+('.'+spline.system_name if spline.system_name else '')
         for index, target in enumerate(spline.targets):
             attributes = (() if index == 0 else tuple("translate" + axis for axis in "XYZ"))
             if index in (0, len(spline.targets) - 1) or spline.twist_ramp_graph:
@@ -187,7 +194,7 @@ def source_character_channels(rig):
             attributes += tuple("scale" + axis for axis in "XYZ")
             if spline.mid_follow_graph and 0 < index < len(spline.targets) - 1:
                 attributes += ("followEnd",)
-            key = f"source.spline.{index}"
+            key = f"{spline_key}.{index}"
             add(key, target, attributes)
             if spline.extra_targets:
                 add(key + ".extra", spline.extra_targets[index], trs)
@@ -196,21 +203,28 @@ def source_character_channels(rig):
             if spline.sub_targets:
                 add(key, target, ("subControl",))
                 add(key + ".sub", spline.sub_targets[index], trs)
-        add("source.spline", spline.settings,
+        add(spline_key, spline.settings,
             ("spineIkFk", "stretchy", "volume", "stretchEven", "noFlipAxis"))
         if spline.source_curve_points:
-            add("source.spline", spline.settings, ("ikCvVis","autoVis","FKVis","IKVis"))
+            add(spline_key, spline.settings, ("ikCvVis","autoVis","FKVis","IKVis"))
             for index, control in enumerate(spline.cv_controls, 1):
-                add(f"source.spline.cv.{index}", control,
+                add(f"{spline_key}.cv.{index}", control,
                     tuple("translate"+axis for axis in "XYZ"))
             if len(spline.source_curve_points)>3:
                 for index in (0,len(spline.targets)-1):
-                    add(f"source.spline.{index}", spline.targets[index], ("stiff",))
+                    add(f"{spline_key}.{index}", spline.targets[index], ("stiff",))
         if spline.source_hybrid_graph:
-            add("source.spline",spline.settings,("ikHybridVis",))
+            add(spline_key,spline.settings,("ikHybridVis",))
             for index,control in enumerate(spline.hybrid_controls):
-                add(f"source.spline.hybrid.{index}",control,
+                add(f"{spline_key}.hybrid.{index}",control,
                     tuple(kind+axis for kind in ("translate","rotate") for axis in "XYZ"))
+        for layer_kind,paths in (("cv",spline.cv_extras),("hybrid",spline.hybrid_extras)):
+            for index,path in enumerate(paths):
+                add(f"{spline_key}.{layer_kind}.extra.{index}",path,
+                    tuple(kind+axis for kind in ("translate","rotate") for axis in "XYZ"))
+        if spline.source_follow_parent:
+            add(spline_key,spline.settings,
+                tuple('follow'+label for label,_,_ in spline.source_follow_targets))
     for spec in p.fk_globals:
         key = "generic.global." + spec.control.rsplit("|", 1)[-1]
         add(key, spec.control, ("Global",) + (("GlobalTranslate",) if spec.translate else ()))
@@ -231,10 +245,17 @@ def source_character_channels(rig):
                 add(key + ".ik.sub", spec.wrist_sub_path, trs)
             if spec.wrist_extra_curve:
                 add(key + ".ik", spec.wrist_control_path, ("extraControl",))
+            if spec.ik_local_mode=='addCtrl':
+                add(key+'.ik.local',spec.source_local_control,
+                    tuple('rotate'+axis for axis in 'XYZ'))
+                add(key+'.ik.local.extra',spec.source_local_extra,
+                    tuple(kind+axis for kind in ('translate','rotate') for axis in 'XYZ'))
             for layer, node in (("ik.extra", spec.wrist_extra_path),
                                 ("pole.extra", spec.pole_extra_path)):
                 if node:
-                    add(key + "." + layer, node, trs)
+                    add(key + "." + layer, node,
+                        tuple(kind+axis for kind in ('translate','rotate') for axis in 'XYZ')
+                        if spec.source_aligned_graph else trs)
         for side in limb.blend.sides:
             add(limb.label.lower() + "." + side.side.value,
                 limb.blend.settings_path, (side.attribute,))
@@ -298,6 +319,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             limb_label=label, radius=scale * 1.5,
             sub_controllers=options.sub_controllers,
             extra_controllers=options.extra_controllers,sides=sides)
+        ik = configure_source_limb_ik(ik,mechanisms,body,metadata,names[-1])
         blend = plan_body_limb_blend(body, mechanisms, limb_label=label,
             joint_names=names, translated_joint_names=names,sides=sides)
         limbs.append(SourceBodyLimbPlan(label, names, mechanisms, ik, blend))
@@ -349,21 +371,22 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     fk = replace(fk, controls=tuple(replace(control,
         driven_joint=driver_by_body.get(control.driven_joint, control.driven_joint))
         for control in fk.controls))
-    fk, spline = plan_source_body_spline(body, build.symmetry.source.hierarchy,
+    fk, splines = plan_source_body_splines(body, build.symmetry.source.hierarchy,
         labels, fk, options, metadata)
-    if spline is not None:
-        spline = host.capture_source_body_spline_positions(spline)
+    splines=tuple(host.capture_source_body_spline_positions(spline) for spline in splines)
+    if splines:
         root_parent, root_name = fk.root_path.rsplit("|", 1)
         if host.create_body_control_root(root_name, parent_path=root_parent) != fk.root_path:
             raise RuntimeError("来源 Spline 的 FK 根路径漂移")
-        host.prepare_source_body_spline(spline)
+        for spline in splines:
+            host.prepare_source_body_spline(spline)
     for limb in limbs:
         if host.create_body_arm_mechanism_root(limb.mechanisms.root_name) != limb.mechanisms.root_path:
             raise RuntimeError("来源机制链根路径漂移")
         for joint in limb.mechanisms.joints:
             if host.create_body_arm_mechanism_joint(joint) != joint.path:
                 raise RuntimeError("来源机制关节路径漂移：" + joint.name)
-    host.create_body_generic_fk(fk, root_prepared=spline is not None)
+    host.create_body_generic_fk(fk, root_prepared=bool(splines))
     for limb in limbs:
         if host.create_body_arm_ik_root(limb.ik.root_name) != limb.ik.root_path:
             raise RuntimeError("来源 IK 控制根路径漂移")
@@ -390,7 +413,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         global_follow_main_path="|Group|MotionSystem|GlobalSystem|GlobalFollowMain",
         global_follow_use_opm=options.use_offset_parent_matrix)
     host.create_body_character_global(global_control)
-    if spline is not None:
+    splines=tuple(configure_source_spline_follow(spline,body,fk,global_control) for spline in splines)
+    for spline in splines:
         host.create_source_body_spline(spline)
         host.connect_source_body_spline_visibility(spline,fk)
     scales = list(plan_body_direct_fk_scales(body, fk.controls))
@@ -404,7 +428,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         host.preflight_body_direct_fk_scale(spec)
         host.connect_body_direct_fk_scale(spec)
     generated_sources = tuple((driver, source) for source, driver in driver_by_body.items())
-    if spline is not None:
+    for spline in splines:
         generated_sources += tuple((joint.path, joint.source_joint)
                                    for joint in spline.joints
                                    if joint.role is BodyLimbMechanismRole.FK)
@@ -424,7 +448,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
                              if spec.control_path in generic_fk_policy.compensated_controls)
     BuildBodyFkScaleCompensation(host).apply(compensation)
     fk, limbs, inbetween_segments, solver_mapping = build_source_body_inbetween(
-        host, build, part_result, fk, limbs, spline)
+        host, build, part_result, fk, limbs, splines)
     fk_globals = plan_body_fk_global(metadata, fk.controls)
     if generic_fk_policy is not None and generic_fk_policy.global_controls is not None:
         fk_globals = tuple(spec for spec in fk_globals
@@ -446,12 +470,12 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             body = host.remove_body_non_deform_markers(body.root, markers)
             skeleton = replace(skeleton, snapshot=body)
     twist_steps, part_scale, bendy_chains = build_source_body_part_drivers(
-        host, build, part_result, fk, limbs, spline, bendy_chains, inbetween_segments)
+        host, build, part_result, fk, limbs, splines, bendy_chains, inbetween_segments)
     (fit_follows, named_follows, follow_spaces, ik_follows,
      advanced_constraints, aim_at, geo_attach, proximity_pin) = build_source_body_follow(
-        host, metadata, body, fk, limbs, spline, global_control)
+        host, metadata, body, fk, limbs, splines, global_control)
     fk, wheels, curve_guides, tweakers = build_source_body_options(
-        host, build, body, fk, limbs, spline, global_control, part_result)
+        host, build, body, fk, limbs, splines, global_control, part_result)
     # MEL selects initial IK by the actual end label containing Foot;
     # a Hip/Leg system ending in Toes alone keeps its default FK mode.
     initial_ik = tuple(limb for limb in limbs
@@ -474,11 +498,11 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         host.apply_body_fk_channel_locks(spec)
     rig_plan = SourceBodyRigPlan(fit, fk, global_control, tuple(limbs),
         BodyControlSpacesPlan(body.root, ()), fk.hidden_controls, lock_specs,
-        fk_globals, fit_aim, compensation, spline, bendy_chains, inbetween_segments,
+        fk_globals, fit_aim, compensation, splines[0] if splines else None, bendy_chains, inbetween_segments,
         twist_steps, part_scale, part_result.final_paths if part_result is not None else None,
         fit_follows, named_follows, follow_spaces, ik_follows,
         advanced_constraints, aim_at, geo_attach, proximity_pin,
-        wheels, curve_guides, tweakers)
+        wheels, curve_guides, tweakers, splines[1:])
     rig = SourceBodyRigResult(rig_plan, body)
     registration = (host.describe_character_registration(
         rig, source_character_channels(rig)) if defer_registration

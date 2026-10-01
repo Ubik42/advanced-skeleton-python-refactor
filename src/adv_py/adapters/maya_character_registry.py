@@ -1332,11 +1332,17 @@ class MayaCharacterRegistryMixin:
                  *(channel.node for channel in channels)}
         paths.update(control.source_override_path for control in p.fk.controls
                      if control.source_override_path is not None)
-        if p.spline is not None:
-            spline = p.spline
+        for spline in p.all_splines:
             paths.update((spline.root_path, spline.chest_space, spline.curve,
                           *spline.targets, *spline.ik_outputs,
                           *spline.cv_controls,*spline.hybrid_controls))
+            paths.update((*spline.cv_extras,*spline.hybrid_extras))
+            if spline.source_controller_layers:
+                paths.add(spline.source_controls_root)
+            if spline.source_follow_parent:
+                paths.update((spline.hybrid_follow,spline.hybrid_constrained,
+                              spline.source_follow_parent))
+                paths.update(path for _,path,_ in spline.source_follow_targets)
             if spline.source_curve_points:
                 paths.update(spline.source_matrix_targets)
             paths.update(joint.path for joint in spline.joints)
@@ -1361,9 +1367,16 @@ class MayaCharacterRegistryMixin:
             paths.update(joint.path for joint in limb.mechanisms.joints)
             paths.update(spec.wrist_align_path for spec in limb.ik.limbs
                          if spec.wrist_align_path is not None)
+            for spec in limb.ik.limbs:
+                if spec.source_aligned_graph:
+                    paths.update((spec.source_aligned_offset,spec.orientation_source))
+                    if spec.ik_local_mode=='addCtrl':
+                        paths.update((spec.source_local_offset,spec.source_local_extra,
+                                      spec.source_local_control))
         registration = self._describe_body_registration_nodes(
             body, p.container, channels, paths, p.spline, p.control_spaces,
             allow_animation=True)
+        registration = replace(registration,additional_spines=p.additional_splines)
         if p.part_paths is not None:
             from adv_py.application.fit_part_registration import RegisterFitPartChannels
             registration = RegisterFitPartChannels(self).describe(
@@ -1458,6 +1471,8 @@ class MayaCharacterRegistryMixin:
         from .maya_animated_spaces import audit as audit_spaces
         audit_spaces(self,plan)
         self.validate_character_spine(plan.spine)
+        for spline in plan.additional_spines:
+            self.validate_character_spine(spline)
         for spec in plan.spaces.spaces:
             self.capture_control_space_mode(spec)
         from .maya_body_pole_aim import audit_registered_pole_aim

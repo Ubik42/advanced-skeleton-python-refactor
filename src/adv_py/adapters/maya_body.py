@@ -7907,6 +7907,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     spec.handle_name, spec.pole_constraint_name,
                     spec.wrist_constraint_name, spec.wrist_extra_name,
                     spec.pole_extra_name,
+                    *spec.source_graph_names,
                     *((spec.wrist_sub_name,) if spec.wrist_sub_name else ()),
                     *((spec.wrist_align_name,) if spec.wrist_align_name else ())):
                 if self.find_name_collisions(name):
@@ -7921,6 +7922,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             wrist_offset = self._cmds.createNode("transform", name=spec.wrist_offset_name, parent=spec.root_path, skipSelect=True)
             wrist_offset = (self._cmds.ls(wrist_offset, long=True) or [wrist_offset])[0]
             x_axis, y_axis, z_axis = spec.wrist_axes
+            if spec.source_aligned_graph and spec.ik_local_mode!='localOrient':
+                x_axis,y_axis,z_axis=(1.,0.,0.),(0.,1.,0.),(0.,0.,1.)
             matrix = (*x_axis, 0.0, *y_axis, 0.0, *z_axis, 0.0, *spec.wrist_position, 1.0)
             self._cmds.xform(wrist_offset, worldSpace=True, matrix=matrix)
             if spec.wrist_extra_name is None or spec.wrist_extra_path is None:
@@ -7968,12 +7971,16 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             handle, _ = self._cmds.ikHandle(name=spec.handle_name, startJoint=spec.chain[0], endEffector=spec.chain[2], solver="ikRPsolver")
             self._cmds.parent(handle, wrist, absolute=True)
             self._cmds.poleVectorConstraint(pole, handle, name=spec.pole_constraint_name)
-            self._cmds.orientConstraint(
-                wrist,
-                spec.chain[2],
-                maintainOffset=False,
-                name=spec.wrist_constraint_name,
-            )
+            if spec.source_aligned_graph:
+                from .maya_source_limb_ik_local import create
+                create(self,spec)
+            else:
+                self._cmds.orientConstraint(
+                    wrist,
+                    spec.chain[2],
+                    maintainOffset=False,
+                    name=spec.wrist_constraint_name,
+                )
         finally:
             self._cmds.select(selection, replace=True) if selection else self._cmds.select(clear=True)
 
@@ -7997,7 +8004,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             pole = (self._cmds.ls(spec.pole_control_path, long=True, type="transform") or [None])[0]
             handles = self._cmds.ls(spec.handle_name, long=True, type="ikHandle") or []
             constraints = self._cmds.ls(spec.pole_constraint_name, type="poleVectorConstraint") or []
-            wrist_constraints = self._cmds.ls(spec.wrist_constraint_name, type="orientConstraint") or []
+            wrist_constraints = self._cmds.ls(spec.wrist_constraint_name,
+                type="decomposeMatrix" if spec.source_aligned_graph else "orientConstraint") or []
             if wrist is None or pole is None or len(handles) != 1 or len(constraints) != 1 or len(wrist_constraints) != 1:
                 raise FitSkeletonValidationError("Arm IK 节点集合无效")
             handle = handles[0]
@@ -8007,10 +8015,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             joint_list = tuple((self._cmds.ls(value, long=True) or [value])[0] for value in (self._cmds.ikHandle(handle, query=True, jointList=True) or []))
             targets = self._cmds.poleVectorConstraint(constraints[0], query=True, targetList=True) or []
             pole_source = (self._cmds.ls(targets[0], long=True) or [targets[0]])[0] if len(targets) == 1 else None
-            wrist_targets = self._cmds.orientConstraint(wrist_constraints[0], query=True, targetList=True) or []
-            wrist_source = (self._cmds.ls(wrist_targets[0], long=True) or [wrist_targets[0]])[0] if len(wrist_targets) == 1 else None
-            wrist_outputs = self._cmds.listConnections(f"{wrist_constraints[0]}.constraintRotateX", source=False, destination=True, plugs=True) or []
-            wrist_driven = self._resolve_connected_node(wrist_outputs[0]) if len(wrist_outputs) == 1 else None
+            if spec.source_aligned_graph:
+                from .maya_source_limb_ik_local import capture_orientation
+                _,wrist_source,wrist_driven=capture_orientation(self,spec)
+            else:
+                wrist_targets = self._cmds.orientConstraint(wrist_constraints[0], query=True, targetList=True) or []
+                wrist_source = (self._cmds.ls(wrist_targets[0], long=True) or [wrist_targets[0]])[0] if len(wrist_targets) == 1 else None
+                wrist_outputs = self._cmds.listConnections(f"{wrist_constraints[0]}.constraintRotateX", source=False, destination=True, plugs=True) or []
+                wrist_driven = self._resolve_connected_node(wrist_outputs[0]) if len(wrist_outputs) == 1 else None
             align_nodes = (self._cmds.ls(
                 spec.wrist_align_path, long=True, type="transform") or []
                 if spec.wrist_align_path else [])

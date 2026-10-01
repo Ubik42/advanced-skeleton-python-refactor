@@ -38,14 +38,14 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
                     joint.ik_driver + ".worldMatrix[0]",
                     limb.blend.settings_path + "." + side.attribute,
                     joint.constraint_name)
-    if spline is not None:
+    for spline in (spline if isinstance(spline,tuple) else (spline,) if spline is not None else ()):
         count = len(spline.body_joints)
         for index in range(1, count):
             blended[spline.body_joints[index]] = (
                 spline.joints[index].path + ".worldMatrix[0]",
                 spline.ik_outputs[index] + ".worldMatrix[0]",
                 spline.settings + ".spineIkFk",
-                f"AdvPy_SplineOrient{index}")
+                spline.node_name(f"AdvPy_SplineOrient{index}"))
     for path in blended:
         independent.pop(path, None)
         constraints.pop(path, None)

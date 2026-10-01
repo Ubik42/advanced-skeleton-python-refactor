@@ -5,12 +5,19 @@ from dataclasses import replace
 
 from adv_py.core.source_spline_cv import source_spline_cv_bindings
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from adv_py.core.body_controller_layers import audit_body_extra_controller
 from .maya_adv_icons import create_adv_icon
 
 
 def capture_control_positions(host, plan):
     """Use the original fractionMode motionPath at the DCC boundary."""
     host._require_transaction()
+    if plan.system_name:
+        from .maya_spline_scope import spline_scope
+        from adv_py.core.spline_names import scope_spline_plan
+        with spline_scope(host,plan) as local:
+            result=capture_control_positions(host,local)
+        return scope_spline_plan(result,plan.system_name)
     c = host._cmds
     curve = c.curve(degree=plan.curve_degree, point=plan.curve_points)
     path = None
@@ -23,6 +30,8 @@ def capture_control_positions(host, plan):
         c.setAttr(path+'.follow', True)
         c.setAttr(path+'.frontAxis', 0)
         c.setAttr(path+'.upAxis', 1)
+        if plan.joints[0].side.value=='L':
+            c.setAttr(path+'.inverseFront',True)
         c.setAttr(path+'.worldUpType', 2)
         c.setAttr(path+'.worldUpVector', 0.,1.,0., type='double3')
         c.connectAttr(plan.joints[0].source_joint+'.worldMatrix[0]',path+'.worldUpMatrix')
@@ -65,9 +74,14 @@ def create(host, plan, shape):
             driver = plan.driver_targets[0 if index == 0 else -1]
         else:
             cv_axes = ((1.,0.,0.),(0.,1.,0.),(0.,0.,1.))
-            offset = host._spine_frame(prefix+'Offset', plan.root_path, point, cv_axes)
+            offset = host._spine_frame(prefix+'Offset', plan.cv_offsets[index-1].rsplit('|',1)[0], point, cv_axes)
             driver = plan.cv_controls[index-1]
-            create_adv_icon(c, name=prefix, parent=offset, template='IKcv_icon',
+            extra = plan.cv_extras[index-1] if plan.cv_extras else None
+            if extra:
+                host._create_body_extra_layer(offset,extra.rsplit('|',1)[-1],extra)
+                for attribute in ('scaleX','scaleY','scaleZ','visibility'):
+                    c.setAttr(extra+'.'+attribute,lock=True,keyable=False)
+            create_adv_icon(c, name=prefix, parent=extra or offset, template='IKcv_icon',
                             radius=.75, fallback_normal=(1.,0.,0.))
             if plan.source_cv_axes:
                 frame = host._spine_frame(prefix+'ShapeOrient',plan.root_path,
@@ -147,7 +161,14 @@ def audit(host, plan, shape):
                       (prefix+'Position.outputTranslate', shape+f'.controlPoints[{index}]')))
     for binding in source_spline_cv_bindings(plan.source_curve_points, plan.positions):
         prefix = f'AdvPy_SplineCV{binding.index}'
-        offset = plan.cv_controls[binding.index-1].rsplit('|',1)[0]
+        offset = plan.cv_offsets[binding.index-1]
+        if plan.cv_extras:
+            extra=plan.cv_extras[binding.index-1]
+            control=plan.cv_controls[binding.index-1]
+            issues=audit_body_extra_controller(offset,control,extra,
+                host._capture_body_extra_layer(extra,control),extra_curve=False)
+            if issues:
+                raise FitSkeletonValidationError('来源 Spline CV Extra 层改变：'+'；'.join(issues))
         edges.extend(((plan.settings+'.ikCvVis', offset+'.visibility'),
                       (plan.source_matrix_targets[binding.first]+'.worldMatrix[0]', prefix+'Follow1.matrixIn[1]'),
                       (plan.source_matrix_targets[binding.second]+'.worldMatrix[0]', prefix+'Follow2.matrixIn[1]'),

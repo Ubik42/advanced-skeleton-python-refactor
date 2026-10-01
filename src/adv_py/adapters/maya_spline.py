@@ -16,6 +16,8 @@ from . import maya_spline_follow
 from . import maya_source_spline_cv
 from . import maya_source_spline_hybrid
 from . import maya_source_spline_visibility
+from . import maya_source_spline_follow
+from .maya_spline_scope import spline_scope
 
 
 def _fk_root_source(host, plan):
@@ -48,6 +50,9 @@ def _fk_root_source(host, plan):
 
 
 def prepare(host,plan):
+    if plan.system_name:
+        with spline_scope(host,plan) as local:
+            return prepare(host,local)
     host._require_transaction();host._transaction_changed=True
     c=host._cmds
     c.createNode('transform',name='AdvPy_SplineMechanisms',parent=plan.root_path.rsplit('|',1)[0],skipSelect=True)
@@ -64,8 +69,14 @@ def prepare(host,plan):
 
 
 def create(host,plan):
+    if plan.system_name:
+        with spline_scope(host,plan) as local:
+            return create(host,local)
     host._require_transaction();host._transaction_changed=True
     c=host._cmds;n=len(plan.body_joints);fk=plan.joints[:n];ik=plan.joints[n:]
+    if plan.source_controller_layers:
+        c.createNode('transform',name='AdvPy_SplineControls',
+                     parent=plan.source_controls_root.rsplit('|',1)[0],skipSelect=True)
     for control,joint in zip(plan.fk_controls,fk):
         c.connectAttr(control+'.scale',joint.path+'.scale')
     if plan.source_hybrid_graph:
@@ -314,10 +325,15 @@ def create(host,plan):
                            'AdvPy_SplineChestSpaceParent',
                            plan.use_offset_parent_matrix)
     c.setAttr(plan.root_path+'.visibility',False)
+    if plan.source_follow_parent:
+        maya_source_spline_follow.create(host,plan)
     audit(host,plan,source_visibility_ready=False)
 
 
 def audit(host,plan,*,source_visibility_ready=True):
+    if plan.system_name:
+        with spline_scope(host,plan) as local:
+            return audit(host,local,source_visibility_ready=source_visibility_ready)
     c=host._cmds;n=len(plan.body_joints)
     fk=plan.joints[:n];ik=plan.joints[n:]
     maya_chest_space.audit(host, plan.body_joints[-1], plan.chest_space,
@@ -362,16 +378,24 @@ def audit(host,plan,*,source_visibility_ready=True):
     for index, target in enumerate(plan.targets):
         extra = plan.extra_targets[index] if plan.extra_targets else None
         if extra:
+            state = host._capture_body_extra_layer(extra, target)
+            if state is not None and plan.source_curve_points and source_visibility_ready:
+                state = maya_source_spline_visibility.normalize_layer_state(
+                    host,state,target+'.extraControl','outColorR')
             issues = audit_body_extra_controller(
                 plan.offset_targets[index], target, extra,
-                host._capture_body_extra_layer(extra, target),
+                state,
                 extra_curve=plan.extra_curve)
             if issues:
                 raise FitSkeletonValidationError(
                     'Spline IK Extra 层复检失败：'+'；'.join(issues))
         sub = plan.sub_targets[index] if plan.sub_targets else None
+        state = host._capture_body_ik_sub_control(target, sub)
+        if state is not None and plan.source_curve_points and source_visibility_ready:
+            state = maya_source_spline_visibility.normalize_layer_state(
+                host,state,target+'.subControl','outColorR')
         issues = audit_body_sub_controller(
-            target, sub, host._capture_body_ik_sub_control(target, sub))
+            target, sub, state)
         if issues:
             raise FitSkeletonValidationError(
                 'Spline IK Sub 层复检失败：'+'；'.join(issues))
@@ -467,6 +491,8 @@ def audit(host,plan,*,source_visibility_ready=True):
         maya_source_spline_hybrid.audit(host,plan,visibility_ready=source_visibility_ready)
     if plan.source_curve_points and source_visibility_ready:
         maya_source_spline_visibility.audit(host,plan)
+    if plan.source_follow_parent:
+        maya_source_spline_follow.audit(host,plan)
     for i,target in enumerate(() if plan.source_curve_points else plan.targets):
         edges += [(plan.driver_targets[i]+'.worldMatrix[0]',f'AdvPy_SplineIK{i}Matrix.matrixIn[0]'),
             (plan.curve+'.worldInverseMatrix[0]',f'AdvPy_SplineIK{i}Matrix.matrixIn[1]'),

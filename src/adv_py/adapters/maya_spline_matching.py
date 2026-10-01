@@ -9,27 +9,49 @@ from adv_py.core.character_registry import CharacterChannel, CharacterRegistryEr
 PREFIX = 'spine.fkMatch.'
 
 
+def _prefix(registration):
+    name=getattr(registration.spine,'system_name','')
+    return PREFIX+name+'.' if name else PREFIX
+
+
 def channels(registration):
     plan = registration.spine
     if not isinstance(plan, BodySplinePlan):
         raise CharacterRegistryError('曲线脊柱匹配扩展要求 Spline 角色')
     result = []
+    prefix=_prefix(registration)
     existing = {(channel.node, channel.attribute) for channel in registration.channels
-                if not channel.key.startswith(PREFIX)}
+                if not channel.key.startswith(prefix)}
     for index, control in enumerate(plan.fk_controls):
         if not index:continue
         if index:
-            result.extend(CharacterChannel(f'{PREFIX}{index}.translate{axis}', control, 'translate'+axis) for axis in 'XYZ'
+            result.extend(CharacterChannel(f'{prefix}{index}.translate{axis}', control, 'translate'+axis) for axis in 'XYZ'
                           if (control, 'translate'+axis) not in existing)
-        result.extend(CharacterChannel(f'{PREFIX}{index}.scale{axis}', control, 'matchScale'+axis, .001, None) for axis in 'XYZ')
+        result.extend(CharacterChannel(f'{prefix}{index}.scale{axis}', control, 'matchScale'+axis, .001, None) for axis in 'XYZ')
     return tuple(result)
 
 
 def enabled(registration):
-    return any(ch.key.startswith(PREFIX) for ch in registration.channels)
+    if registration.additional_spines:
+        return all(enabled(replace(registration,spine=plan,additional_spines=()))
+                   for plan in (registration.spine,)+registration.additional_spines)
+    return any(ch.key.startswith(_prefix(registration)) for ch in registration.channels)
 
 
-def install(host, registration):
+def install(host, registration,*,_persist=True,_scoped=False):
+    if registration.additional_spines:
+        result=registration
+        for plan in (registration.spine,)+registration.additional_spines:
+            view=replace(result,spine=plan,additional_spines=())
+            built=install(host,view,_persist=False)
+            result=replace(result,channels=built.channels,nodes=built.nodes)
+        if _persist:
+            host.write_character_registration_extension(registration,result)
+        return result
+    if getattr(registration.spine,'system_name','') and not _scoped:
+        from .maya_spline_scope import spline_scope
+        with spline_scope(host,registration.spine,localize=False):
+            return install(host,registration,_persist=_persist,_scoped=True)
     host._require_transaction()
     extra = channels(registration)
     c = host._cmds
@@ -110,7 +132,8 @@ def install(host, registration):
     fk_paths = {joint.path for joint in plan.joints[:count]}
     result = replace(registration, channels=registration.channels+extra,
                      nodes=tuple(host._registry_node(node.path) if node.path in fk_paths else node for node in registration.nodes))
-    host.write_character_registration_extension(registration, result)
+    if _persist:
+        host.write_character_registration_extension(registration, result)
     after = tuple(host._spine_world_frame(j.path)[0] for j in registration.body)
     if max(abs(a-b) for left,right in zip(before,after) for a,b in zip(left,right)) > 1e-4:
         raise RuntimeError('启用曲线脊柱匹配改变当前身体姿态')
@@ -118,10 +141,18 @@ def install(host, registration):
     return result
 
 
-def audit(host, registration):
+def audit(host, registration,*,_scoped=False):
+    if registration.additional_spines:
+        for plan in (registration.spine,)+registration.additional_spines:
+            audit(host,replace(registration,spine=plan,additional_spines=()))
+        return
+    if getattr(registration.spine,'system_name','') and not _scoped:
+        from .maya_spline_scope import spline_scope
+        with spline_scope(host,registration.spine,localize=False):
+            return audit(host,registration,_scoped=True)
     if not enabled(registration):
         return
-    if tuple(ch for ch in registration.channels if ch.key.startswith(PREFIX)) != channels(registration):
+    if tuple(ch for ch in registration.channels if ch.key.startswith(_prefix(registration))) != channels(registration):
         raise CharacterRegistryError('曲线脊柱匹配通道不完整')
     c = host._cmds
     plan = registration.spine
@@ -148,7 +179,15 @@ def audit(host, registration):
                 raise CharacterRegistryError('曲线脊柱 FK 缩放补偿被替换')
 
 
-def match_fk(host, registration, before):
+def match_fk(host, registration, before,*,_scoped=False):
+    if registration.additional_spines:
+        for plan in (registration.spine,)+registration.additional_spines:
+            match_fk(host,replace(registration,spine=plan,additional_spines=()),before)
+        return
+    if getattr(registration.spine,'system_name','') and not _scoped:
+        from .maya_spline_scope import spline_scope
+        with spline_scope(host,registration.spine,localize=False):
+            return match_fk(host,registration,before,_scoped=True)
     if not enabled(registration):
         raise CharacterRegistryError('先启用曲线脊柱动画匹配通道')
     c = host._cmds

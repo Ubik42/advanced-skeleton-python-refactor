@@ -37,10 +37,10 @@ def plan_body_fit_ik_follow(
             limb.ankle_offset_path, limb.side.value)
     if spine is not None:
         add(spine.body_joints[-1], spine.ik_control, spine.ik_offset, "M")
-    if spline is not None:
+    for spline in (spline if isinstance(spline,tuple) else (spline,) if spline is not None else ()):
         control = spline.targets[-1]
         add(spline.body_joints[-1], control,
-            spline.offset_targets[-1], "M")
+            spline.offset_targets[-1],spline.joints[0].side.value)
     result = []
     used = set()
     for item in metadata:

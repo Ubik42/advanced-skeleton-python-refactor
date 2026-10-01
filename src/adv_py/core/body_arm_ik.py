@@ -52,6 +52,56 @@ class BodyArmIkSpec:
     wrist_align_name: str | None = None
     wrist_align_path: str | None = None
     wrist_align_parent_path: str | None = None
+    source_aligned_graph: bool = False
+    ik_local_mode: str | None = None
+    source_middle_position: Vector3 | None = None
+    source_middle_axes: AxisFrame | None = None
+    source_rotation_order: int = 0
+    source_foot_orientation: bool = False
+
+    @property
+    def source_stem(self):
+        return self.wrist_control_name.removesuffix('_'+self.side.value)
+
+    @property
+    def source_aligned_offset(self):
+        return (self.wrist_sub_path or self.wrist_control_path)+'|'+self.source_stem+'FKAlignedOffset_'+self.side.value
+
+    @property
+    def source_local_offset(self):
+        return (self.wrist_sub_path or self.wrist_control_path)+'|'+self.source_stem+'LocalOffset_'+self.side.value
+
+    @property
+    def source_local_extra(self):
+        return self.source_local_offset+'|'+self.source_stem+'LocalExtra_'+self.side.value
+
+    @property
+    def source_local_control(self):
+        return self.source_local_extra+'|'+self.source_stem+'Local_'+self.side.value
+
+    @property
+    def orientation_source(self):
+        if not self.source_aligned_graph:
+            return self.wrist_control_path
+        parent=self.source_local_control if self.ik_local_mode=='addCtrl' else self.source_aligned_offset
+        return parent+'|'+self.source_stem+'FKAligned_'+self.side.value
+
+    @property
+    def source_orientation_matrix(self):
+        return self.source_stem+'EndOrientMatrix_'+self.side.value
+
+    @property
+    def source_graph_names(self):
+        if not self.source_aligned_graph:
+            return ()
+        names=(self.source_aligned_offset.rsplit('|',1)[-1],
+               self.orientation_source.rsplit('|',1)[-1],self.source_orientation_matrix)
+        if self.ik_local_mode=='addCtrl':
+            names += (self.source_local_offset.rsplit('|',1)[-1],
+                      self.source_local_extra.rsplit('|',1)[-1],
+                      self.source_local_control.rsplit('|',1)[-1],
+                      self.source_local_control.rsplit('|',1)[-1]+'Shape')
+        return names
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,9 +274,9 @@ def audit_body_arm_ik(plan: BodyArmIkPlan, snapshot: BodyArmIkSnapshot, *, toler
         checks = (
             (state.wrist_control_path == spec.wrist_control_path and state.wrist_parent_path == spec.wrist_extra_path, "ik_wrist_hierarchy", "Wrist IK 控制父链不一致"),
             (state.pole_control_path == spec.pole_control_path and state.pole_parent_path == spec.pole_extra_path, "ik_pole_hierarchy", "Pole Vector 控制父链不一致"),
-            (state.handle_name == spec.handle_name and state.handle_parent_path == spec.wrist_control_path, "ik_handle_mismatch", "IK Handle 或父级不一致"),
+            (state.handle_name == spec.handle_name and state.handle_parent_path == (spec.wrist_sub_path or spec.wrist_control_path if spec.source_aligned_graph else spec.wrist_control_path), "ik_handle_mismatch", "IK Handle 或父级不一致"),
             (state.pole_constraint_name == spec.pole_constraint_name, "ik_pole_constraint", "Pole Vector 约束名称不一致"),
-            (state.wrist_constraint_name == spec.wrist_constraint_name and state.wrist_source == spec.wrist_control_path and state.wrist_driven_joint == spec.chain[2], "ik_wrist_orientation", "Wrist IK 朝向驱动不一致"),
+            (state.wrist_constraint_name == spec.wrist_constraint_name and state.wrist_source == spec.orientation_source and state.wrist_driven_joint == spec.chain[2], "ik_wrist_orientation", "Wrist IK 朝向驱动不一致"),
             (state.joint_list == (spec.solver_joint_list or spec.chain[:2]), "ik_chain_mismatch", "RP IK 求解链不一致"),
             (state.pole_source == spec.pole_control_path, "ik_pole_wiring", "Pole Vector 连线不一致"),
             (state.wrist_shape == "nurbsCurve" and state.pole_shape == "nurbsCurve", "ik_shape_mismatch", "IK 控制缺少 NURBS 曲线"),
@@ -237,9 +287,12 @@ def audit_body_arm_ik(plan: BodyArmIkPlan, snapshot: BodyArmIkSnapshot, *, toler
         if check_initial_pose:
             checks += (
                 (_close(state.wrist_position, spec.wrist_position, tolerance) and _close(state.pole_position, spec.pole_position, tolerance), "ik_position_mismatch", "IK 控制初始位置不一致"),
-                (all(_close(value, (0.0, 0.0, 0.0), tolerance) for value in (state.wrist_translation, state.wrist_rotation, state.pole_translation, state.pole_rotation)), "ik_channels_nonzero", "IK 控制本地通道未归零"),
+                (all(_close(value, (0.0, 0.0, 0.0), tolerance) for value in
+                     ((state.wrist_translation,state.pole_translation,state.pole_rotation)
+                      if spec.ik_local_mode=='nonZero' else
+                      (state.wrist_translation,state.wrist_rotation,state.pole_translation,state.pole_rotation))), "ik_channels_nonzero", "IK 控制本地通道未归零"),
             )
-            if spec.wrist_align_path is not None:
+            if spec.wrist_align_path is not None and not spec.source_aligned_graph:
                 checks += ((state.wrist_align_position is not None
                             and state.wrist_align_axes is not None
                             and _close(state.wrist_align_position,

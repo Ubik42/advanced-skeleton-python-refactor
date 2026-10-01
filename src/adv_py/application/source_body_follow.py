@@ -25,7 +25,7 @@ def source_fk_body_controls(body, fk, limbs, spline):
     sources = {joint.path: joint.source_joint for limb in limbs
                for joint in limb.mechanisms.joints
                if joint.role is BodyLimbMechanismRole.FK}
-    if spline is not None:
+    for spline in (spline if isinstance(spline,tuple) else (spline,) if spline is not None else ()):
         sources.update((joint.path,joint.source_joint) for joint in spline.joints
                        if joint.role is BodyLimbMechanismRole.FK)
     controls = []
