@@ -140,7 +140,7 @@ def decode_spline(raw, body):
             if target != expected:
                 raise CharacterRegistryError('曲线脊柱 IK 控制器层级与跟随模式不一致')
     controls = tuple(path(control) for control in raw['fk_controls'])
-    valid_count = (3 <= len(targets) <= 64 if source_points
+    valid_count = (3 <= len(targets) if source_points
                    else len(targets) in (4,max(4,count+1)))
     if (not valid_count or len(positions)!=len(targets)
             or len(set(targets)) != len(targets) or len(controls) != count or len(set(controls)) != count):

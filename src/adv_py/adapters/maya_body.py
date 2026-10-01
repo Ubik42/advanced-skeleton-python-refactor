@@ -10082,6 +10082,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             source_pole_targets=source_pole_targets,source_x_translation=source_x_translation,
             source_part_scale=source_part_scale,instances=instances,inbetween_segments=inbetween_segments)
 
+    def create_source_body_matrices(self,body,fk,limbs,dynamics, *,excluded=frozenset()):
+        from .maya_source_body_matrix import configure
+        return configure(self,body,fk,limbs,dynamics,excluded=excluded)
+
+    def create_source_fk_body_matrices(self,body,fk, *,excluded=frozenset()):
+        from .maya_source_body_matrix import configure_fk
+        configure_fk(self,body,fk,excluded=excluded)
+
     def create_source_limb_aim(self,body,fk,limbs,root,splines,global_control,policy=None,instances=(),use_offset_parent_matrix=True):
         from .maya_source_limb_aim import create
         return create(self,body,fk,limbs,root,splines,global_control,policy,instances,use_offset_parent_matrix)

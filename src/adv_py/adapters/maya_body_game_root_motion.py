@@ -40,6 +40,8 @@ class MayaBodyGameRootMotionMixin:
         from .maya_source_rp_dynamics import rebase_records
         rebase_records(self,(binding.dynamics_root for binding in before.source_limbs),
                        ((old_root,new_root),))
+        from .maya_source_body_matrix import rebase_fk_records
+        rebase_fk_records(self,before,((old_root,new_root),))
 
         def rewrite(value):
             if isinstance(value, str):

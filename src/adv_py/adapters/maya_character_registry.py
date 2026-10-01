@@ -1488,6 +1488,8 @@ class MayaCharacterRegistryMixin:
         c = self._cmds
         from .maya_source_rp_dynamics import audit as audit_source_rp
         audit_source_rp(self,plan)
+        from .maya_source_body_matrix import audit_fk
+        audit_fk(self,plan)
         from .maya_source_limb_aim import audit as audit_source_aim
         audit_source_aim(self,plan)
         from .maya_source_limb_scale import audit as audit_source_scale

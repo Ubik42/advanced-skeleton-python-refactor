@@ -444,6 +444,8 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         from .maya_source_rp_dynamics import rebase_records
         rebase_records(self,(plan.start_anchor for plan in result.rig.plan.rp_dynamics),
                        ((result.rig.body.root,body.root),))
+        from .maya_source_body_matrix import rebase_fk_records
+        rebase_fk_records(self,result.registration,((result.rig.body.root,body.root),))
         paths=FitPartFinalPaths((),(),((result.rig.body.root,body.root),))
         rig=replace(result.rig,body=body,
                     plan=rebase_plan_paths_after_parts(result.rig.plan,paths))

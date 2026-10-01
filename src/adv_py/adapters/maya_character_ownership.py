@@ -4,10 +4,35 @@ Namespace membership alone never establishes ownership. Automatic root-level
 unit conversions are paired by their exclusive input/output boundary.
 """
 from hashlib import sha256
+from math import isclose
 
 from adv_py.core.character_registry import CharacterRegistryError
 from adv_py.core.character_preservation import RebuildOwnership
 from .maya_character_preservation import connections
+
+
+def _driven_curve_state(commands,node):
+    """Unitless SDK curves are rig logic, including their interpolation."""
+    return (
+        tuple(commands.keyframe(node,q=True,floatChange=True) or []),
+        tuple(commands.keyframe(node,q=True,valueChange=True) or []),
+        *(tuple(commands.keyTangent(node,q=True,**{flag:True}) or [])
+          for flag in ('inTangentType','outTangentType','inAngle','outAngle',
+                       'inWeight','outWeight','lock','weightLock')),
+        tuple(commands.keyframe(node,q=True,breakdown=True) or []),
+        *(commands.getAttr(node+'.'+attr)
+          for attr in ('weightedTangents','preInfinity','postInfinity')),
+    )
+
+
+def _same_curve_state(left,right):
+    if isinstance(left,tuple) and isinstance(right,tuple):
+        return len(left)==len(right) and all(
+            _same_curve_state(a,b) for a,b in zip(left,right))
+    if isinstance(left,float) or isinstance(right,float):
+        return isinstance(left,(int,float)) and isinstance(right,(int,float)) and isclose(
+            left,right,rel_tol=1e-7,abs_tol=1e-8)
+    return type(left) is type(right) and left==right
 
 
 def _curve_topology(host,node):
@@ -57,7 +82,9 @@ def audit(host,staged):
                 if not (n==fit or n.startswith(fit+'|')))
     # Audit applies to the pristine stage, before preserved curves move there.
     for node in names:
-        if target._cmds.nodeType(node).startswith('animCurve'):
+        kind=target._cmds.nodeType(node)
+        if kind.startswith('animCurve') and kind not in (
+                'animCurveUA','animCurveUL','animCurveUT','animCurveUU'):
             raise CharacterRegistryError('所有权审计需要尚未交接动画的暂存角色')
         if not host._cmds.objExists(node):
             raise CharacterRegistryError('原 Rig 缺少暂存结构节点：'+node)
@@ -94,6 +121,9 @@ def audit(host,staged):
             raise CharacterRegistryError('旧 Rig 节点有未采集的附加属性：'+old)
         if kind=='unitConversion' and a.getAttr(old+'.conversionFactor')!=b.getAttr(new+'.conversionFactor'):
             raise CharacterRegistryError('单位转换系数被修改：'+old)
+        if kind in ('animCurveUA','animCurveUL','animCurveUT','animCurveUU'):
+            if not _same_curve_state(_driven_curve_state(a,old),_driven_curve_state(b,new)):
+                raise CharacterRegistryError('原 Rig 驱动曲线已修改，需要显式驱动曲线迁移：'+old)
         if kind=='nurbsCurve':
             shape_a=a.xform(old+'.cv[*]',q=True,objectSpace=True,t=True) or []
             shape_b=b.xform(new+'.cv[*]',q=True,objectSpace=True,t=True) or []

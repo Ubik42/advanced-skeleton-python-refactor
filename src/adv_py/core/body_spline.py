@@ -497,7 +497,7 @@ def plan_body_spline_fk_chain(source, controls, *,
     fake_mid = False
     if source_control_count is not None:
         from .source_spline_cv import source_spline_control_positions
-        if type(source_control_count) is not int or not 2 <= source_control_count <= 64:
+        if type(source_control_count) is not int or source_control_count < 2:
             raise FitSkeletonValidationError('来源 Spline 控制器数量无效')
         source_points = tuple(j.world_position for j in source)
         fake_mid = source_control_count == 2

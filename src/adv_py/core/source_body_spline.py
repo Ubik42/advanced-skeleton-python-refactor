@@ -11,7 +11,7 @@ from .fit_settings import FitSkeletonValidationError
 from .joint_labels import JointLabel
 
 
-def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), *,instances=()):
+def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), *,instances=(),saved_layouts=None):
     label_by_name = dict(labels)
     fit_labels = {node.path: (JointLabel.parse(label_by_name[name])
                              if name in label_by_name else None)
@@ -48,9 +48,15 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
     plans=[]
     for info,side,source in resolved:
         system='' if len(resolved)==1 and side=='M' else info.name+'_'+side
+        from .source_spline_rebuild import saved_source_spline_layout,retain_source_spline_layout
+        saved=saved_source_spline_layout(tuple(joint.path for joint in source),saved_layouts)
+        if saved is not None:
+            system=saved.system_name
         generated_sources={joint.path:joint.source_joint for plan in plans for joint in plan.joints}
         fk,spline=_plan_source_chain(fk,source,info,options,metadata,system,generated_sources)
-        plans.append(spline)
+        plans.append(retain_source_spline_layout(spline,saved))
+    if saved_layouts is not None and len(plans)!=len(saved_layouts):
+        raise FitSkeletonValidationError('来源 Spline 重建不能静默增删已保存系统')
     return fk,tuple(plans)
 
 

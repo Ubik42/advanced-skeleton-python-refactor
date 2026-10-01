@@ -464,8 +464,15 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     fk = replace(fk, controls=tuple(replace(control,
         driven_joint=driver_by_body.get(control.driven_joint, control.driven_joint))
         for control in fk.controls))
+    if (generic_fk_policy is not None and generic_fk_policy.source_spline_layouts is not None
+            and generic_fk_policy.source_spline_body_root is not None):
+        from adv_py.core.fit_part import FitPartFinalPaths
+        saved_paths=FitPartFinalPaths((),(),((generic_fk_policy.source_spline_body_root,body.root),))
+        generic_fk_policy=replace(generic_fk_policy,source_spline_layouts=rebase_plan_paths_after_parts(
+            generic_fk_policy.source_spline_layouts,saved_paths),source_spline_body_root=body.root)
     fk, splines = plan_source_body_splines(body, build.symmetry.source.hierarchy,
-        labels, fk, options, metadata,instances=build.symmetry.instances)
+        labels, fk, options, metadata,instances=build.symmetry.instances,
+        saved_layouts=generic_fk_policy.source_spline_layouts if generic_fk_policy else None)
     root = plan_source_body_root(body,fk,metadata,build.symmetry.instances,options,
                                  base_radius=scale*1.5)
     root=replace(root,hip_swing_no_parts=bool(hip_selection and hip_selection.enabled
@@ -541,6 +548,10 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     splines=tuple(configure_source_spline_follow(spline,body,fk,global_control,
         root_control_path=root.root_x.control_path,root_follow_path=root.leg_lock_path)
         for spline in splines)
+    if generic_fk_policy is not None and generic_fk_policy.source_spline_layouts is not None:
+        from adv_py.core.source_spline_rebuild import saved_source_spline_layout,retain_source_spline_layout
+        splines=tuple(retain_source_spline_layout(spline,saved_source_spline_layout(
+            spline.body_joints,generic_fk_policy.source_spline_layouts)) for spline in splines)
     for spline in splines:
         host.create_source_body_spline(spline)
         host.connect_source_body_spline_visibility(spline,fk)
@@ -630,6 +641,17 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         root_control_path=root.root_x.control_path)
     fk, wheels, curve_guides, tweakers = build_source_body_options(
         host, build, body, fk, limbs, splines, global_control, part_result)
+    # Wheel creates its final FKX receiver through the existing constraints.
+    # Convert Body matrices only after that handoff selects the actual driver.
+    if (options.use_offset_parent_matrix and
+            (generic_fk_policy is None or generic_fk_policy.source_body_matrix is not False)):
+        from adv_py.core.source_fit_identity import source_fit_metadata
+        excluded=frozenset(chain.start_body for chain in bendy_chains)
+        excluded|=frozenset(joint.path for joint in body.joints
+            if (item:=source_fit_metadata(joint.name,metadata,build.symmetry.instances)) is not None
+            and item.rolling_ball)
+        rp_dynamics=host.create_source_body_matrices(body,fk,limbs,rp_dynamics,excluded=excluded)
+        host.create_source_fk_body_matrices(body,fk,excluded=excluded)
     # MEL selects initial IK by the actual end label containing Foot;
     # a Hip/Leg system ending in Toes alone keeps its default FK mode.
     initial_ik = tuple(limb for limb in limbs
