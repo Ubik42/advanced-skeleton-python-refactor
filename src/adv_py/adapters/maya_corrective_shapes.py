@@ -8,9 +8,10 @@ from .maya_corrective_apply import MayaCorrectiveApplyMixin
 from .maya_corrective_softmods import MayaCorrectiveSoftModsMixin
 from .maya_corrective_catalog import MayaCorrectiveCatalogMixin
 from .maya_corrective_curves import MayaCorrectiveCurvesMixin
+from .maya_corrective_identity import MayaCorrectiveIdentityMixin
 
 
-class MayaCorrectiveShapesHost(MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixin,MayaCorrectiveSoftModsMixin,
+class MayaCorrectiveShapesHost(MayaCorrectiveIdentityMixin,MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixin,MayaCorrectiveSoftModsMixin,
                                MayaCorrectiveCatalogMixin,MayaOriginalFaceBuildHost):
     def _corrective_raw(self):
         return getattr(self._cmds,"raw",self._cmds)
@@ -92,7 +93,8 @@ class MayaCorrectiveShapesHost(MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixi
                     raise FitSkeletonValidationError("请先禁用控制器自定义朝向："+node)
         q_rotations=options.q_rotations
         if not q_rotations and (drivers[0].endswith(".rotateX") or len(drivers)>1):
-            fit_joint=drivers[0].split(".",1)[0][2:-2]
+            fit_control=drivers[0].split(".",1)[0]
+            fit_joint=self.original_corrective_joint_for_fk(fit_control)[:-2]
             if c.objExists(fit_joint+".twistJoints") or c.objExists(fit_joint+".inbetweenJoints"):
                 q_rotations=True
         key=self._original_restore_leaf(mesh)
@@ -107,7 +109,8 @@ class MayaCorrectiveShapesHost(MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixi
         self.prepare_original_corrective_softmods(options.use_soft_mods)
         drivers=[]
         for plug in source["drivers"]:
-            non_fk=plug.replace("FK","",1)
+            control,channel=plug.rsplit(".",1)
+            non_fk=self.original_corrective_joint_for_fk(control)+"."+channel
             if c.objExists(non_fk):
                 plug=non_fk
             node,attr=plug.rsplit(".",1)
@@ -136,6 +139,9 @@ class MayaCorrectiveShapesHost(MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixi
             attribute=self.create_original_blended_attribute(drivers,"")
             value=c.getAttr(node+"."+attribute)
         value=corrective_round(value)
+        if abs(value)<.001:
+            raise FitSkeletonValidationError("当前姿态的 Corrective 驱动为零："+node+"."+attribute+
+                "。请核对 Twist／FKIK 的原版驱动；未创建零范围 SDK。")
         name=corrective_object_name(source["deform"],node,attribute,value)
         if c.objExists(name):
             raise FitSkeletonValidationError("Corrective 目标已存在："+name)
@@ -185,6 +191,11 @@ class MayaCorrectiveShapesHost(MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixi
         copied=source
         if self._original_restore_leaf(source)=="FaceCorrective":
             copied=self._corrective_source_object("FaceCorrective")
+        # Source duplicates the currently evaluated mesh after posing and
+        # muting its corrective. Pull that graph before copying the output;
+        # native parentConstraint/skin caches can otherwise retain the pose
+        # used by the preceding batch target in standalone Maya.
+        raw.dgdirty(allPlugs=True)
         c.duplicate(copied,name=name)
         if soft and c.objExists(bs):
             c.setAttr(bs+".envelope",1)
@@ -242,12 +253,14 @@ class MayaCorrectiveShapesHost(MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixi
         for x,y in zip(xs,ys):
             if y==1:
                 maximum=x
+        if abs(maximum)<.001:
+            raise FitSkeletonValidationError("已有 Corrective SDK 的完整驱动范围为零："+bs+"."+alias)
         return corrective_round(value/maximum)
 
     def go_to_original_corrective_pose(self, driver, attribute, value):
         self._require_transaction()
         c=self._cmds
-        fk="FK"+driver if c.objExists("FK"+driver) and not driver.startswith("IK") else driver
+        fk=self.original_corrective_fk_for_joint(driver) if not driver.startswith("IK") else driver
         fit=driver[:-2]
         if c.objExists(fit+".inbetweenJoints"):
             value*=c.getAttr(fit+".inbetweenJoints")+1
@@ -259,7 +272,7 @@ class MayaCorrectiveShapesHost(MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixi
         elif not c.getAttr(driver+"."+attribute,settable=True):
             self.set_original_blended_attribute(driver,attribute,value)
             if attribute.startswith("qRotate") and "_" not in attribute:
-                controller=driver if c.objExists("ControlSet") and c.sets(driver,isMember="ControlSet") else "FK"+driver
+                controller=self.original_corrective_fk_for_joint(driver)
                 c.setAttr(controller+".rotate"+attribute.removeprefix("qRotate"),value)
         else:
             c.setAttr(fk+"."+attribute,value)

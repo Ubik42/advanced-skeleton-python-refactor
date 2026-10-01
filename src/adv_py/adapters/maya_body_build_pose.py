@@ -38,6 +38,25 @@ class MayaBodyBuildPoseMixin:
                 rows.extend(extra)
         if any(not isinstance(row, list) or len(row) != 3 for row in rows):
             raise ValueError("Body 构建姿态通道格式无效")
+        # Earlier Python scenes selected Extra in place of primary FK. Their
+        # pose record omits primary local TRS, whose source build values are
+        # the native defaults below the authored Offset/Extra transforms.
+        from adv_py.core.character_registry import decode_registration
+        registration=decode_registration(c.getAttr(
+            self._body_selection_set_address(REGISTRY_NAME)+".advPyRegistryDocument"))
+        known={(row[0],row[1]) for row in rows}
+        standard={kind+axis for kind in ("translate","rotate","scale") for axis in "XYZ"}
+        for channel in registration.channels:
+            if (not channel.key.startswith("generic.fk.") or ".extra." in channel.key
+                    or channel.attribute not in standard
+                    or (channel.node,channel.attribute) in known):
+                continue
+            node=self._body_selection_set_address(channel.node)
+            plug=node+"."+channel.attribute
+            if c.objExists(plug) and c.getAttr(plug,settable=True):
+                default=c.attributeQuery(channel.attribute,node=node,listDefault=True)
+                rows.append([channel.node,channel.attribute,float(default[0])])
+                known.add((channel.node,channel.attribute))
         return plan_body_build_pose(tuple(tuple(row) for row in rows))
 
     def _body_pose_fit_address(self) -> str:

@@ -47,6 +47,12 @@ class MayaCorrectiveSoftModsMixin:
                 c.createNode("transform",name=group,parent="CorrectiveSoftMods")
             c.parent(handle,group)
         shape=c.listRelatives(target,shapes=True,noIntermediate=True,fullPath=True)[0]
+        # asConnectCorrective detaches the chain then DeleteHistory bakes the
+        # sculpt. Source refresh evaluates it in the viewport. Standalone
+        # refresh does not pull mesh output, so evaluate before disconnecting
+        # inMesh or batch edits bake the unmodified cached input instead.
+        raw.dgdirty(allPlugs=True)
+        raw.pointPosition(self.scene_address(target)+".vtx[0]",local=True)
         incoming=c.listConnections(shape+".inMesh",source=True,destination=False,plugs=True) or []
         if incoming:
             c.disconnectAttr(incoming[0],shape+".inMesh")

@@ -8,16 +8,30 @@ class MayaOriginalDriverAttributesMixin:
     def capture_original_control_pose(self):
         c=self._cmds
         rows=[]
-        for name in ("ControlSet","FaceControlSet"):
-            if not c.objExists(name):
-                continue
-            for control in c.sets(name,query=True) or []:
-                for attr in c.listAttr(control,keyable=True) or []:
-                    plug=control+"."+attr
-                    if not c.getAttr(plug,lock=True) and c.getAttr(plug,settable=True):
-                        value=c.getAttr(plug)
-                        if isinstance(value,(int,float)):
-                            rows.append((plug,value))
+        controls=self.original_corrective_pose_controls() if hasattr(self,"original_corrective_pose_controls") else tuple(
+            control for name in ("ControlSet","FaceControlSet") if c.objExists(name)
+            for control in c.sets(name,query=True) or [])
+        seen=set()
+        for control in controls:
+            for attr in c.listAttr(control,keyable=True) or []:
+                plug=control+"."+attr
+                physical=self.scene_address(plug)
+                if physical in seen or c.getAttr(plug,lock=True) or not c.getAttr(plug,settable=True):
+                    continue
+                value=c.getAttr(plug)
+                if isinstance(value,(int,float)):
+                    rows.append((plug,value));seen.add(physical)
+        if hasattr(self,"original_corrective_body_registration"):
+            registration=self.original_corrective_body_registration()
+            if registration is not None:
+                for channel in registration.channels:
+                    plug=channel.node+"."+channel.attribute
+                    physical=self.scene_address(plug)
+                    if physical in seen or not c.objExists(plug) or not c.getAttr(plug,settable=True):
+                        continue
+                    value=c.getAttr(plug)
+                    if isinstance(value,(int,float)):
+                        rows.append((plug,value));seen.add(physical)
         return tuple(rows)
 
     def restore_original_control_pose(self, rows):
@@ -87,6 +101,8 @@ class MayaOriginalDriverAttributesMixin:
                 for attr in c.listAttr(control,keyable=True) or []:
                     plug=control+"."+attr
                     if c.getAttr(plug,settable=True):c.setAttr(plug,1 if attr.startswith("scale") or attr=="visibility" else 0)
+        raw=getattr(c,"raw",c)
+        raw.dgdirty(allPlugs=True)
         return tuple(failed)
 
     def original_driver_uses_opm(self):

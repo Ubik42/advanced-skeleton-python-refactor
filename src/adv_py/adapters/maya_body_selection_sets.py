@@ -336,6 +336,10 @@ class MayaBodySelectionSetsMixin:
             shapes = c.listRelatives(node, shapes=True,
                                      type="nurbsCurve") or []
             if shapes:
+                # Source iconsGroup contributes both the primary curve and Extra.
+                # Replacing the primary by Extra drops its build-pose channels
+                # and makes downstream source FK tools unable to find it.
+                controls.append(node)
                 controls.append(selection_layer(node))
         for path in extras:
             matches = c.ls(path, long=True, type="transform") or []
