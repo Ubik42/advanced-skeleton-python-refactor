@@ -56,6 +56,9 @@ class SourceLimbAnimationBinding:
     dynamics_root: str | None
     global_control: str
     height: float
+    leg_aim_control: str | None = None
+    ik_scale_axes: tuple[str,str,str] | None = None
+    pole_offsets: tuple[str,str] | None = None
 
     @property
     def paths(self):
@@ -68,13 +71,16 @@ class SourceLimbAnimationBinding:
             *(p for row in self.hybrid_controls for p in (row.control,row.fk_driver)),
             *(p for row in self.lengths for p in (row.start_fk,row.end_fk)),
             *((self.dynamics_root,) if self.dynamics_root else ()),
-            *((self.reverse_roll,) if self.reverse_roll else ())))
+            *((self.reverse_roll,) if self.reverse_roll else ()),
+            *(self.pole_offsets or ()),
+            *((self.leg_aim_control,) if self.leg_aim_control else ())))
 
     def animation_keys(self,registration):
         controls={self.ik_control,self.pole_control,*self.reset_controls,
                   *(row.control for row in self.joints),
                   *(row.control for row in self.hybrid_controls)}
         if self.toe_control:controls.add(self.toe_control)
+        if self.leg_aim_control:controls.add(self.leg_aim_control)
         return frozenset(channel.key for channel in registration.channels
                          if channel.node in controls or channel.key==self.blend_key)
 
@@ -97,12 +103,13 @@ def describe_source_limb_bindings(plan, body):
             ordered = primary + [joint for joint in drivers if joint not in primary]
             joints = []
             for driver in ordered:
-                control = next(control for control in plan.fk.controls
-                               if control.driven_joint == fk[driver.source_joint])
+                control = next((control for control in plan.fk.controls
+                                if control.driven_joint == fk[driver.source_joint]),None)
                 joints.append(SourceLimbJointBinding(driver.source_joint,
-                    fk[driver.source_joint], driver.path, control.control_path,
-                    control.source_override_path or control.sub_control_path
-                    or control.control_path))
+                    fk[driver.source_joint], driver.path,
+                    control.control_path if control else fk[driver.source_joint],
+                    (control.source_override_path or control.sub_control_path
+                     or control.control_path) if control else fk[driver.source_joint]))
             blend = next(side for side in limb.blend.sides if side.side is ik.side)
             foot = (next(side for side in limb.foot.sides if side.side is ik.side)
                     if limb.foot else None)
@@ -149,6 +156,14 @@ def describe_source_limb_bindings(plan, body):
                                       if helper.parent_path == fk.get(next(
                                           (j.source_joint for j in drivers
                                            if j.path == foot.toe_driver_path), ''))), None)
+                if foot.source_aim and qtoe:
+                    reverse_roll = next(pivot.roll_control_path for pivot in foot.pivots
+                        if getattr(pivot.role,'value',pivot.role)=='qtoes')
+                    reverse_handle = foot.handle_name
+            leg_aim = next((spec for spec in plan.leg_aim
+                            if spec.label==limb.label and spec.side==ik.side.value),None)
+            if leg_aim:
+                attributes += (('legAim',0.),)
             dynamics=next((spec for spec in plan.rp_dynamics
                            if spec.label==limb.label and spec.side==ik.side.value),None)
             lengths=[]
@@ -174,11 +189,12 @@ def describe_source_limb_bindings(plan, body):
                 attributes, toe, toe_align,toe_source,position_source,hybrid_controls,
                 reverse_roll,reverse_handle,tuple(lengths),dynamics.ratio if dynamics else None,
                 dynamics.start_anchor if dynamics else None,
-                plan.global_control.control_path,float(height)))
+                plan.global_control.control_path,float(height),leg_aim.fk_control if leg_aim else None,
+                _source_scale_axes(plan,limb,ik),_source_pole_offsets(plan,joints,primary,ik)))
     return tuple(rows)
 
 
-def decode_source_limb_bindings(raw, channels, body, nodes):
+def decode_source_limb_bindings(raw, channels, body, nodes, *, legacy=False):
     from .character_registry import exact, path, identifier, finite, CharacterRegistryError
     channel_map = {channel.key: channel for channel in channels}
     channel_pairs={(channel.node,channel.attribute) for channel in channels}
@@ -188,6 +204,10 @@ def decode_source_limb_bindings(raw, channels, body, nodes):
         raise CharacterRegistryError('来源 RP 动画系统数量无效')
     result = []
     for row in raw:
+        if legacy:
+            row = {**exact(row,(field.name for field in fields(SourceLimbAnimationBinding)
+                               if field.name not in ('leg_aim_control','ik_scale_axes','pole_offsets'))),
+                   'leg_aim_control':None,'ik_scale_axes':None,'pole_offsets':None}
         exact(row, (field.name for field in fields(SourceLimbAnimationBinding)))
         joints = tuple(SourceLimbJointBinding(**{
             key: path(value) for key, value in exact(item,
@@ -202,6 +222,11 @@ def decode_source_limb_bindings(raw, channels, body, nodes):
                 or any(j.body not in body_paths for j in joints)):
             raise CharacterRegistryError('来源 RP 动画关节对应关系无效')
         attributes = []
+        if row['ik_scale_axes'] is not None and not isinstance(row['ik_scale_axes'],list):
+            raise CharacterRegistryError('来源 RP 缩放轴向必须是数组')
+        if row['pole_offsets'] is not None and (
+                not isinstance(row['pole_offsets'],list) or len(row['pole_offsets'])!=2):
+            raise CharacterRegistryError('来源 RP Pole 权重 Offset 记录无效')
         for item in row['reset_attributes']:
             if not isinstance(item, list) or len(item) != 2:
                 raise CharacterRegistryError('来源 RP 动画复位属性无效')
@@ -228,7 +253,9 @@ def decode_source_limb_bindings(raw, channels, body, nodes):
             identifier(row['ratio_node']) if row['ratio_node'] else None,
             path(row['dynamics_root']) if row['dynamics_root'] else None,
             path(row['global_control']),
-            finite(row['height']))
+            finite(row['height']),path(row['leg_aim_control']) if row['leg_aim_control'] else None,
+            tuple(row['ik_scale_axes']) if row['ik_scale_axes'] is not None else None,
+            tuple(path(value) for value in row['pole_offsets']) if row['pole_offsets'] is not None else None)
         if (binding.height <= 0 or not binding.paths.issubset(node_paths)
                 or binding.blend_key not in channel_map
                 or len(set(binding.reset_controls)) != len(binding.reset_controls)
@@ -236,6 +263,8 @@ def decode_source_limb_bindings(raw, channels, body, nodes):
                 or bool(binding.reverse_roll)!=bool(binding.reverse_handle)
                 or bool(binding.lengths)!=bool(binding.ratio_node)
                 or bool(binding.lengths)!=bool(binding.dynamics_root)
+                or binding.ik_scale_axes is not None and (
+                    len(binding.ik_scale_axes)!=3 or set(binding.ik_scale_axes)!=set('XYZ'))
                 or any(item.rest_length<=0 or not 0<item.fraction<=1
                        or '.' in item.attribute for item in binding.lengths)):
             raise CharacterRegistryError('来源 RP 动画缺少已登记的节点或模式通道')
@@ -266,6 +295,20 @@ def decode_source_limb_bindings(raw, channels, body, nodes):
     return tuple(result)
 
 
+def _source_scale_axes(plan,limb,ik):
+    from .source_limb_scale import source_limb_scale_axes
+    return source_limb_scale_axes(limb.label,use_offset_parent_matrix=plan.source_use_offset_parent_matrix,
+        ik_local_mode=ik.ik_local_mode) if plan.source_rp_scale_axes else None
+
+
+def _source_pole_offsets(plan,joints,primary,ik):
+    middle = next(index for index,joint in enumerate(primary) if joint.path==ik.chain[1])
+    drivers = (joints[middle].fk_driver,joints[len(primary)-1].fk_driver)
+    offsets = tuple(next((control.offset_path for control in plan.fk.controls
+                          if control.driven_joint==driver),None) for driver in drivers)
+    return offsets if all(offsets) else None
+
+
 def resolve_source_limb(registration, label, side):
     from .character_registry import CharacterRegistryError
     aliases = {'arm': 'Arm', 'leg': 'Leg'}
@@ -279,12 +322,14 @@ def resolve_source_limb(registration, label, side):
     return candidates[0]
 
 
-def source_pole_position(start, middle, end, height, fallback_axis):
+def source_pole_position(start, middle, end, height, fallback_axis, *,weights=None):
     """asAlignFKIK: length-weighted baseline, middle aim, height/3.333 reach."""
     def length(vector):
         return sqrt(sum(v*v for v in vector))
-    first = length(tuple(a-b for a, b in zip(middle, start)))
-    second = length(tuple(a-b for a, b in zip(end, middle)))
+    first,second = (weights if weights is not None else (
+        length(tuple(a-b for a,b in zip(middle,start))),length(tuple(a-b for a,b in zip(end,middle)))))
+    if first<0 or second<0:
+        raise ValueError('来源 RP Pole 权重不能为负数')
     if first+second <= 1e-8:
         raise ValueError('来源 RP 匹配骨段长度退化')
     baseline = tuple((a*second+b*first)/(first+second) for a, b in zip(start, end))

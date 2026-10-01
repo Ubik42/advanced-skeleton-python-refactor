@@ -107,6 +107,9 @@ class SourceBodyRigPlan:
     internal_ik_local: tuple = ()
     hip_swing: object | None = None
     rp_dynamics: tuple = ()
+    leg_aim: tuple = ()
+    source_rp_scale_axes: bool = True
+    source_use_offset_parent_matrix: bool = True
 
     @property
     def all_splines(self):
@@ -132,7 +135,7 @@ def source_body_limb_chains(body, labels, hierarchy):
                   for name in (node.short_name.rsplit(":", 1)[-1],)}
     chains = []
     used = set()
-    labels_seen = set()
+    labels_seen = {}
     for node in hierarchy.joints:
         label = fit_labels[node.path]
         if label is None or not ("Shoulder" in label.text or "Hip" in label.text):
@@ -140,11 +143,14 @@ def source_body_limb_chains(body, labels, hierarchy):
         info = fit_joint_ik_info(hierarchy, fit_labels, node.path)
         if info is None or info.start != node.path:
             continue
-        names = tuple(by_fit_path[path].short_name.rsplit(":", 1)[-1]
+        from adv_py.core.source_fit_identity import source_fit_build_name
+        names = tuple(source_fit_build_name(by_fit_path[path].short_name)
                       for path in info.joints)
         if len(names) < 3:
             continue
         if info.name in labels_seen:
+            if labels_seen[info.name]==names:
+                continue  # Authored non-symmetry is the same source system.
             raise FitSkeletonValidationError("来源 IK 系统名称重复：" + info.name)
         paths = set()
         for suffix in ("R", "L", "M"):
@@ -163,7 +169,7 @@ def source_body_limb_chains(body, labels, hierarchy):
         if paths & used:
             raise FitSkeletonValidationError("来源 IK 链共享关节：" + info.name)
         used.update(paths)
-        labels_seen.add(info.name)
+        labels_seen[info.name]=names
         chains.append((info.name, names))
     return tuple(chains)
 
@@ -205,6 +211,8 @@ def source_character_channels(rig):
             tuple(segment.length_attribute for segment in spec.segments)+
             tuple(segment.fatness_attribute for segment in spec.segments))
         add(key+'.pole',spec.pole,('lock',))
+    for spec in p.leg_aim:
+        add('source.legAim.'+spec.label+'.'+spec.side,spec.control,('legAim',))
     if p.hip_swing is not None:
         add('source.hipSwing',p.hip_swing.control_path,tuple('rotate'+axis for axis in 'XYZ'))
     for control in p.fk.controls:
@@ -381,11 +389,13 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             limb_label=label, radius=scale * 1.5,
             sub_controllers=options.sub_controllers,
             extra_controllers=options.extra_controllers,sides=sides)
-        ik = configure_source_limb_ik(ik,mechanisms,body,metadata,names[-1])
+        ik = configure_source_limb_ik(ik,mechanisms,body,metadata,names[-1],
+                                      instances=build.symmetry.instances)
         blend = plan_body_limb_blend(body, mechanisms, limb_label=label,
             joint_names=mechanism_names, translated_joint_names=mechanism_names,sides=sides)
         limb=SourceBodyLimbPlan(label,names,mechanisms,ik,blend)
-        foot=plan_source_body_foot(body,limb,foot_roles,metadata,base_radius=scale*1.5)
+        foot=plan_source_body_foot(body,limb,foot_roles,metadata,base_radius=scale*1.5,
+                                  instances=build.symmetry.instances)
         limbs.append(replace(limb,foot=foot))
     driver_by_body = {joint.source_joint: joint.path for limb in limbs
                       for joint in limb.mechanisms.joints
@@ -452,7 +462,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         driven_joint=driver_by_body.get(control.driven_joint, control.driven_joint))
         for control in fk.controls))
     fk, splines = plan_source_body_splines(body, build.symmetry.source.hierarchy,
-        labels, fk, options, metadata)
+        labels, fk, options, metadata,instances=build.symmetry.instances)
     root = plan_source_body_root(body,fk,metadata,build.symmetry.instances,options,
                                  base_radius=scale*1.5)
     root=replace(root,hip_swing_no_parts=bool(hip_selection and hip_selection.enabled
@@ -492,7 +502,9 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         host.connect_source_body_limb_follow(body, limb.mechanisms,
                                             root_follow_path=root.leg_lock_path)
         host.connect_source_body_limb_visibility(limb, fk)
-        host.connect_source_body_limb_scales(limb)
+        host.connect_source_body_limb_scales(limb,
+            use_offset_parent_matrix=options.use_offset_parent_matrix,
+            source_scale_axes=generic_fk_policy is None or generic_fk_policy.source_rp_scale_axes is not False)
         if limb.foot is not None:
             for side in limb.foot.sides:
                 host.create_body_leg_foot_side(side)
@@ -520,6 +532,9 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         global_follow_main_path="|Group|MotionSystem|GlobalSystem|GlobalFollowMain",
         global_follow_use_opm=options.use_offset_parent_matrix)
     host.create_body_character_global(global_control)
+    fk,limbs,root,splines,global_control,generic_fk_policy,leg_aim = host.create_source_limb_aim(
+        body,fk,limbs,root,splines,global_control,generic_fk_policy,build.symmetry.instances,
+        options.use_offset_parent_matrix)
     splines=tuple(configure_source_spline_follow(spline,body,fk,global_control,
         root_control_path=root.root_x.control_path,root_follow_path=root.leg_lock_path)
         for spline in splines)
@@ -564,11 +579,12 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     hip_swing=build_source_hip_swing(host,hip_selection,root,body,fk,
                                    inbetween_segments,build.fit_parts)
     from adv_py.core.source_limb_ik_local import plan_source_internal_ik_local
-    internal_ik_local=plan_source_internal_ik_local(body,fk,limbs,metadata)
+    internal_ik_local=plan_source_internal_ik_local(body,fk,limbs,metadata,instances=build.symmetry.instances)
     for spec in internal_ik_local:
         host.create_source_internal_ik_local(spec)
     rp_dynamics=(host.create_source_rp_dynamics(body,limbs,global_control,
-        internal_ik_local,root.leg_lock_path) if generic_fk_policy is None
+        internal_ik_local,root.leg_lock_path,source_pole_targets=generic_fk_policy is None
+        or generic_fk_policy.source_rp_pole_sources is not False) if generic_fk_policy is None
         or generic_fk_policy.source_rp_dynamics is not False else ())
     center_between_feet = None
     if root.center_between_feet:
@@ -633,7 +649,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         twist_steps, part_scale, part_result.final_paths if part_result is not None else None,
         fit_follows, named_follows, follow_spaces, ik_follows,
         advanced_constraints, aim_at, geo_attach, proximity_pin,
-        wheels, curve_guides, tweakers, splines[1:],root,center_between_feet,internal_ik_local,hip_swing,rp_dynamics)
+        wheels, curve_guides, tweakers, splines[1:],root,center_between_feet,internal_ik_local,hip_swing,rp_dynamics,leg_aim,
+        generic_fk_policy is None or generic_fk_policy.source_rp_scale_axes is not False,options.use_offset_parent_matrix)
     rig = SourceBodyRigResult(rig_plan, body)
     registration = (host.describe_character_registration(
         rig, source_character_channels(rig)) if defer_registration

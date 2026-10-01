@@ -4,10 +4,15 @@ from adv_py.core.character_registry import CharacterRegistryError
 from dataclasses import asdict,replace
 
 
-def create(host,body,limbs,global_control,internal_local=(),root_follow=None):
+def create(host,body,limbs,global_control,internal_local=(),root_follow=None, *,source_pole_targets=True):
     host._require_transaction()
     c=host._cmds
     plans=[]
+    deferred=[]
+    # Preserve the MEL's explicit scene lookup for ...ConstrainToLeg_<side>.
+    # This is not inferred from arbitrary Foot labels or other RP systems.
+    leg_targets={ik.side.value:ik.handle_parent+'|AdvPy_Leg_RP_'+ik.side.value+'_Target'
+                 for limb in limbs if limb.label=='Leg' for ik in limb.ik.limbs}
     by_body={joint.path:joint for joint in body.joints}
     for limb in limbs:
         for ik in limb.ik.limbs:
@@ -27,7 +32,8 @@ def create(host,body,limbs,global_control,internal_local=(),root_follow=None):
             plan=plan_source_rp_dynamics(limb.label,ik.side.value,
                 ik.wrist_control_path,ik.pole_control_path,start_path,target_path,
                 global_control.control_path+'.worldInverseMatrix[0]',
-                global_control.effective_scale_source('Y'),chain,translations)
+                global_control.effective_scale_source('Y'),chain,translations,
+                source_pole_targets=source_pole_targets,pole_end_anchor=leg_targets.get(ik.side.value))
             if any(host.find_name_collisions(name) for name in
                    (start_name,target_name,*(node.name for node in plan.nodes))):
                 raise CharacterRegistryError('来源 RP 拉伸网络名称被占用：'+limb.label)
@@ -81,7 +87,10 @@ def create(host,body,limbs,global_control,internal_local=(),root_follow=None):
                 c.setAttr(curve+'.postInfinity',1)
             for node in plan.nodes:
                 for source,attribute in node.connections:
-                    c.connectAttr(source,node.name+'.'+attribute)
+                    target=node.name+'.'+attribute
+                    if source.split('.',1)[0] in leg_targets.values() and not c.objExists(source):
+                        deferred.append((source,target))
+                    else:c.connectAttr(source,target)
             for source,destination in plan.outputs:
                 c.connectAttr(source,destination)
             # Original volume goes to ScaleBlend, not solver joint scales:
@@ -94,6 +103,8 @@ def create(host,body,limbs,global_control,internal_local=(),root_follow=None):
                 blend_joint=next(row for side in limb.blend.sides if side.side is ik.side
                                  for row in side.joints if row.ik_driver==joint.path)
                 scale=blend_joint.constraint_name+'Scale'
+                compound=c.connectionInfo(scale+'.color1',sourceFromDestination=True)
+                if compound:c.disconnectAttr(compound,scale+'.color1')
                 fat_index=next((index for index,segment in enumerate(plan.segments,1)
                                 if segment.previous==joint.path),None)
                 for axis,component in zip('XYZ','RGB'):
@@ -108,7 +119,11 @@ def create(host,body,limbs,global_control,internal_local=(),root_follow=None):
             from adv_py.core.character_registry import canonical
             c.addAttr(start,longName='advPySourceRpDynamics',dataType='string')
             c.setAttr(start+'.advPySourceRpDynamics',canonical(asdict(plan)),type='string',lock=True)
+            if source_pole_targets:
+                c.addAttr(start,longName='advPySourceRpPoleSources',attributeType='bool',defaultValue=True)
+                c.setAttr(start+'.advPySourceRpPoleSources',True,lock=True)
             plans.append(plan)
+    for source,target in deferred:c.connectAttr(source,target)
     host._transaction_changed=True
     return tuple(plans)
 

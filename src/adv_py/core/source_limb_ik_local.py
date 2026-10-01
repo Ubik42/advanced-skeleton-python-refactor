@@ -19,9 +19,9 @@ class SourceInternalIkLocalSpec:
     visibility_source: str
 
 
-def plan_source_internal_ik_local(body,fk,limbs,metadata):
+def plan_source_internal_ik_local(body,fk,limbs,metadata, *,instances=()):
     by_path={joint.path:joint for joint in body.joints}
-    meta={item.joint.rsplit('|',1)[-1].rsplit(':',1)[-1]:item for item in metadata}
+    from .source_fit_identity import source_fit_metadata
     rows=[]
     for limb in limbs:
         for ik in limb.ik.limbs:
@@ -33,7 +33,7 @@ def plan_source_internal_ik_local(body,fk,limbs,metadata):
                 if joint.side is not ik.side or joint.path not in chain[:-1]:
                     continue
                 body_joint=by_path[joint.source_joint]
-                item=meta.get(body_joint.name.rsplit('_',1)[0])
+                item=source_fit_metadata(body_joint.name,metadata,instances)
                 if item is None or item.ik_local_mode is None:
                     continue
                 control=next((control for control in fk.controls if control.driven_joint in
@@ -59,13 +59,13 @@ def plan_source_internal_ik_local(body,fk,limbs,metadata):
     return tuple(rows)
 
 
-def configure_source_limb_ik(ik,mechanisms,body,metadata,end_name):
+def configure_source_limb_ik(ik,mechanisms,body,metadata,end_name, *,instances=()):
     by_name={joint.name:joint for joint in body.joints}
-    item=next((item for item in metadata
-               if item.joint.rsplit('|',1)[-1].rsplit(':',1)[-1]==end_name),None)
+    from .source_fit_identity import source_fit_metadata
     specs=[]
     for spec in ik.limbs:
         end=by_name[end_name+'_'+spec.side.value]
+        item=source_fit_metadata(end.name,metadata,instances)
         middle=next(joint for joint in mechanisms.joints if joint.path==spec.chain[1])
         # The original query takes the middle of the full source chain;
         # the mechanism plan already carries the corresponding bind point.

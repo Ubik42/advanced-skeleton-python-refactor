@@ -35,6 +35,8 @@ class MayaBodyGameRootMotionMixin:
         """Rebase owned Body identities after the root joint changes parent."""
         old_root = before.body_root
         new_root = self._root_motion_local(plan.body_path)
+        from .maya_source_limb_aim import rebase_registered_records
+        rebase_registered_records(self,before,((old_root,new_root),))
 
         def rewrite(value):
             if isinstance(value, str):

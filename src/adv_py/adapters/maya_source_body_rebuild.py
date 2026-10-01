@@ -101,7 +101,19 @@ def capture_fk_policy(host, registration):
                            and channel.key.endswith(".follow"))
     return GenericFkFeaturePolicy(
         source_rp_dynamics=any(key.startswith('source.rp.') for key in keys),
-        scale_controls=frozenset(scale), compensated_controls=frozenset(compensated),
-        global_controls=frozenset(global_controls), aim_sources=aim_sources,
-        follower_sources=followers, independent_controls=frozenset(independent),
+        source_foot_aim=any(key.startswith('source.foot.') and key.endswith('.toesAim') for key in keys),
+        source_leg_aim=any(key.startswith('source.legAim.') for key in keys),
+        source_rp_scale_axes=any(c.objExists(binding.ik_control+'.advPySourceRpScaleLayout')
+                                 for binding in registration.source_limbs),
+        source_rp_pole_sources=any(binding.dynamics_root and
+            c.objExists(binding.dynamics_root+'.advPySourceRpPoleSources')
+            for binding in registration.source_limbs),
+        scale_controls=_pre_aim_controls(scale), compensated_controls=_pre_aim_controls(compensated),
+        global_controls=_pre_aim_controls(global_controls), aim_sources=aim_sources,
+        follower_sources=followers, independent_controls=_pre_aim_controls(independent),
         fkx_joint_controls=frozenset(fkx), point_controls=frozenset(points))
+
+
+def _pre_aim_controls(controls):
+    from adv_py.core.source_limb_aim import pre_aim_control_path
+    return frozenset(pre_aim_control_path(control) for control in controls)

@@ -43,7 +43,8 @@ class SourceRpDynamicsPlan:
 
 
 def plan_source_rp_dynamics(label,side,control,pole,start_anchor,target_anchor,
-                            global_inverse,global_scale,chain,translations):
+                            global_inverse,global_scale,chain,translations, *,
+                            source_pole_targets=False,pole_end_anchor=None):
     if (len(chain)<3 or len(translations)!=len(chain)-1
             or len(set(chain))!=len(chain)
             or any(len(vector)!=3 or any(not isfinite(v) for v in vector)
@@ -98,8 +99,11 @@ def plan_source_rp_dynamics(label,side,control,pole,start_anchor,target_anchor,
         segments.append(SourceRpSegment(joint,previous,tuple(vector),length_attribute,fatness_attribute))
         length=node('Length'+str(index),'multDoubleLinear',edges=(
             edge(control+'.'+length_attribute,'input1'),edge(ratio+'.outputX','input2')))
-        # MEL measures start→Pole for the first bone, Pole→IK for the others.
-        lock_target=start_anchor if index==1 else target_anchor
+        # MEL measures start→Pole first, then Pole→main IK; its final
+        # segment uses IKmessureConstrainToLeg when that scene node exists.
+        lock_target=(start_anchor if index==1 else
+                     pole_end_anchor if source_pole_targets and index==len(translations) and pole_end_anchor else
+                     control if source_pole_targets else target_anchor)
         pole_distance=node('PoleDistance'+str(index),'distanceBetween',edges=(
             edge(pole+'.worldMatrix[0]','inMatrix1'),edge(lock_target+'.worldMatrix[0]','inMatrix2')))
         lock_scale=node('PoleDistanceScale'+str(index),'multiplyDivide',(('operation',2),),

@@ -54,7 +54,7 @@ def source_foot_joint_names(names,roles):
     return names+tails[0]
 
 
-def plan_source_body_foot(body,limb,roles,metadata,*,base_radius):
+def plan_source_body_foot(body,limb,roles,metadata,*,base_radius,instances=()):
     if not roles:
         return None
     # Canonical role names are an in-memory planner view. Every actual DAG
@@ -85,11 +85,12 @@ def plan_source_body_foot(body,limb,roles,metadata,*,base_radius):
             ankle_sub_path=source.wrist_sub_path,ankle_extra_path=source.wrist_extra_path,
             ankle_extra_curve=source.wrist_extra_curve,
             toe_solver_joint_list=(source.chain[-1],),toe_end_solver_joint_list=(toes,)))
-    meta=next((item for item in metadata if item.joint.rsplit('|',1)[-1].rsplit(':',1)[-1]
-               ==limb.joint_names[-1]),None)
+    from .source_fit_identity import source_fit_metadata,source_fit_reference
+    pivot_sides=frozenset(side for side,items in roles.items()
+        if (item:=source_fit_metadata(items['Ankle'].name,metadata,instances)) is not None and item.foot_pivots)
     plan=plan_body_leg_foot(view,BodyLegIkPlan(limb.ik.root_path,limb.ik.root_name,
         tuple(ik_specs),base_radius),limb.mechanisms,
-        foot_pivots_by_side=frozenset(roles) if meta and meta.foot_pivots else frozenset(),
+        foot_pivots_by_side=pivot_sides,
         qtoes_suffixes=tuple(side.value for side in roles),allow_open_toe_chain=True)
     protected={part.split('.',1)[0] for joint in limb.mechanisms.joints
                for part in joint.path.split('|')}
@@ -117,5 +118,6 @@ def plan_source_body_foot(body,limb,roles,metadata,*,base_radius):
             source_end_matrix=source.source_orientation_matrix,
             source_end_receiver=source.orientation_source,
             source_end_world_matrix='AdvPy_'+limb.label+'_Foot_EndOrientation_'+side.side.value,
-            source_toe_fit_name=roles[side.side]['Toes'].name.rsplit('_',1)[0]))
+            source_toe_fit_name=(source_fit_reference(roles[side.side]['Toes'].name,instances)
+                or roles[side.side]['Toes'].name.rsplit('_',1)[0]).rsplit('|',1)[-1].rsplit(':',1)[-1]))
     return replace(plan,sides=tuple(rows))

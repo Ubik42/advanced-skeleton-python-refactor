@@ -439,6 +439,8 @@ class MayaFBXRigPreparationHost(MayaFBXRigTransferMixin,
         result = self._fbx_built_body
         body = self.capture_body_skeleton("Root_M")
         from adv_py.core.fit_part import FitPartFinalPaths,rebase_plan_paths_after_parts
+        from .maya_source_limb_aim import rebase_plan_records
+        rebase_plan_records(self,result.rig.plan,((result.rig.body.root,body.root),))
         paths=FitPartFinalPaths((),(),((result.rig.body.root,body.root),))
         rig=replace(result.rig,body=body,
                     plan=rebase_plan_paths_after_parts(result.rig.plan,paths))

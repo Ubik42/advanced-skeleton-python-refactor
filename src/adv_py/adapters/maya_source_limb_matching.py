@@ -61,6 +61,23 @@ def _scale(host,registration,control,driver,target):
         _set(host,registration,control,'scale'+axis,value*desired/current)
 
 
+def _pole_weights(host,binding):
+    """MEL asGetAttrOPM chooses the largest-magnitude tx/OPM translation."""
+    if binding.pole_offsets is None:
+        return None
+    result=[]
+    c=host._cmds
+    for path in binding.pole_offsets:
+        value=float(c.getAttr(path+'.translateX'))
+        if c.objExists(path+'.offsetParentMatrix'):
+            matrix=c.getAttr(path+'.offsetParentMatrix')
+            if len(matrix)==1 and isinstance(matrix[0],(tuple,list)):matrix=matrix[0]
+            opm_value=float(matrix[12])
+            if abs(opm_value)>abs(value):value=opm_value
+        result.append(abs(value))
+    return tuple(result)
+
+
 def apply(host,registration,binding,mode):
     host._require_transaction()
     c=host._cmds
@@ -77,6 +94,7 @@ def apply(host,registration,binding,mode):
     try:
         c.autoKeyframe(state=False)
         if mode=='ik':
+            pole_weights=_pole_weights(host,binding)
             sources=[host._spine_world_frame(row.fk_driver) for row in binding.joints]
             length_frames={path:host._spine_world_frame(path)[0][12:15]
                            for length in binding.lengths for path in (length.start_fk,length.end_fk)}
@@ -101,7 +119,7 @@ def apply(host,registration,binding,mode):
                          key=lambda axis:abs(sum(a*b for a,b in zip(axis,line))))
             pole=source_pole_position(sources[0][0][12:15],
                 sources[binding.middle_index][0][12:15],sources[end][0][12:15],
-                binding.height*global_scale,fallback)
+                binding.height*global_scale,fallback,weights=pole_weights)
             c.xform(binding.pole_control,worldSpace=True,translation=pole)
             for axis,v in zip('XYZ',scale):
                 _set(host,registration,binding.ik_control,'scale'+axis,float(v))
@@ -137,9 +155,25 @@ def apply(host,registration,binding,mode):
             targets=tuple((host._spine_world_frame(row.ik_driver),
                            tuple(c.getAttr(row.body+'.scale')[0]))
                           for row in binding.joints)
+            leg_aim_frame = (host._spine_world_frame(binding.leg_aim_control)[0]
+                             if binding.leg_aim_control else None)
+            if leg_aim_frame is not None:
+                # Removing IK weight removes the LegAim layer. Preserve its
+                # evaluated parent orientation before solving child FK axes.
+                _set(host,registration,next(ch.node for ch in registration.channels
+                     if ch.key==binding.blend_key),blend.rsplit('.',1)[1],0.)
+                host._spine_set_world_rotation(binding.leg_aim_control,leg_aim_frame)
             # Parent first: every target is captured before writing controls.
             # FKX offset and Extra/Sub contributions remain intact.
             for row,((frame,axes),scale) in zip(binding.joints,targets):
+                if row.control==row.fk_driver:
+                    # MEL may omit a terminal FK control (control=off). Keep
+                    # it in graph identity without treating the solver joint
+                    # as an editable controller during conversion.
+                    actual = host._spine_world_frame(row.fk_driver)[0]
+                    if max(abs(a-b) for a,b in zip(actual,frame))>1e-4:
+                        raise CharacterRegistryError('来源无 FK 控制的末端无法表示该 IK 姿态：'+row.body)
+                    continue
                 host._match_limb_fk_driver_axes(row.control,row.fk_driver,axes)
                 _position(host,registration,row.control,row.fk_driver,frame[12:15])
                 _scale(host,registration,row.control,row.fk_driver,scale)

@@ -292,6 +292,7 @@ class BodyLegFootSideSpec:
     source_end_receiver: str | None = None
     source_end_world_matrix: str | None = None
     source_toe_fit_name: str = 'Toes'
+    source_aim: object | None = None
 
     @property
     def toe_handle_parent_path(self) -> str:
@@ -324,14 +325,15 @@ class BodyLegFootSideSpec:
                             "rollStartAngle", "rollEndAngle"))
         return (roll_attributes + (("rock",) if self.rock else ())
                 + (("footPivotsVis", "footPivotsHighHeel")
-                   if self.manual_pivots else ())) + tuple(
+                   if self.manual_pivots else ())
+                + (self.source_aim.attributes if self.source_aim else ())) + tuple(
             pivot.attribute for pivot in self.pivots if pivot.source_plug
         )
 
     def attribute_default(self, attribute: str) -> float:
         return {"rollStartAngle": 30.0,
                 "rollEndAngle": 60.0,
-                "footPivotsVis": 1.0}.get(attribute, 0.0)
+                "footPivotsVis": 1.0, "toesAim": 10., "liftRoll": 10.}.get(attribute, 0.0)
 
     @property
     def final_handle_parent_path(self) -> str:

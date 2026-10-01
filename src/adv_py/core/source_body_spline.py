@@ -11,7 +11,7 @@ from .fit_settings import FitSkeletonValidationError
 from .joint_labels import JointLabel
 
 
-def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=()):
+def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), *,instances=()):
     label_by_name = dict(labels)
     fit_labels = {node.path: (JointLabel.parse(label_by_name[name])
                              if name in label_by_name else None)
@@ -26,11 +26,15 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=()):
             found.append(info)
     resolved=[]
     used=set()
+    from .source_fit_identity import source_fit_build_name,source_fit_reference
     for info in found:
         for side in ('M','R','L'):
-            source=tuple(by_name.get(nodes[path].short_name.rsplit(':',1)[-1]+'_'+side)
+            source=tuple(by_name.get(source_fit_build_name(nodes[path].short_name)+'_'+side)
                          for path in info.joints)
             if source[0] is None:
+                continue
+            origin=source_fit_reference(source[0].name,instances)
+            if origin is not None and origin!=info.start:
                 continue
             if any(joint is None for joint in source):
                 raise FitSkeletonValidationError('来源 Spline 缺少对应侧完整骨链：'+info.name+'_'+side)

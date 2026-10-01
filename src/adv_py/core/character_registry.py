@@ -169,7 +169,7 @@ def encode_registration(registration):
         version=5
         payload['additional_spines']=additional
     if source_limbs:
-        version=6
+        version=7
         payload['additional_spines']=additional
         payload['source_limbs']=source_limbs
         payload['spine_kind']='none' if registration.spine is None else 'spline'
@@ -181,18 +181,18 @@ def encode_registration(registration):
 
 def decode_registration(text):
     doc = exact(safe_json(text), ("format","version","payload","digest"))
-    if doc["format"] != FORMAT or type(doc["version"]) is not int or doc["version"] not in (1, 2, 3, 4, 5, 6):
+    if doc["format"] != FORMAT or type(doc["version"]) is not int or doc["version"] not in (1, 2, 3, 4, 5, 6, 7):
         raise CharacterRegistryError("不支持的角色登记版本")
     if not isinstance(doc['payload'],dict):
         raise CharacterRegistryError('角色登记 payload 必须是对象')
-    source_spline_document = doc["version"] in (4,5,6)
+    source_spline_document = doc["version"] in (4,5,6,7)
     spline_document = doc["version"] in (2, 4,5) or (
-        doc['version']==6 and doc['payload'].get('spine_kind')=='spline')
+        doc['version'] in (6,7) and doc['payload'].get('spine_kind')=='spline')
     fk_document = doc["version"] == 3 or (
-        doc['version']==6 and doc['payload'].get('spine_kind')=='none')
+        doc['version'] in (6,7) and doc['payload'].get('spine_kind')=='none')
     data = exact(doc["payload"], ("body_root","container","channels","body","nodes","spine","spaces") + (("spine_kind",) if spline_document or fk_document else ())
-                 + (('additional_spines',) if doc['version'] in (5,6) else ())
-                 + (('source_limbs',) if doc['version']==6 else ()))
+                 + (('additional_spines',) if doc['version'] in (5,6,7) else ())
+                 + (('source_limbs',) if doc['version'] in (6,7) else ()))
     if spline_document and data["spine_kind"] != "spline":
         raise CharacterRegistryError("不支持的脊柱求解类型")
     if fk_document and (data["spine_kind"] != "none" or data["spine"] is not None):
@@ -377,7 +377,7 @@ def decode_registration(text):
         if not required.issubset({n.path for n in nodes}):
             raise CharacterRegistryError("登记缺少操作节点身份")
         additional=()
-        if doc['version'] in (5,6):
+        if doc['version'] in (5,6,7):
             from .spline_registration import decode_spline
             additional=tuple(decode_spline(raw,tuple(body)) for raw in data['additional_spines'])
             all_splines=(spine,)+additional
@@ -401,9 +401,10 @@ def decode_registration(text):
                 if not needed.issubset(node_paths):
                     raise CharacterRegistryError('多组来源 Spline 登记缺少操作节点身份')
         source_limbs=()
-        if doc['version']==6:
+        if doc['version'] in (6,7):
             from .source_limb_animation import decode_source_limb_bindings
-            source_limbs=decode_source_limb_bindings(data['source_limbs'],channels,body,nodes)
+            source_limbs=decode_source_limb_bindings(data['source_limbs'],channels,body,nodes,
+                                                    legacy=doc['version']==6)
         return CharacterRegistration(root,container,tuple(channels),tuple(body),tuple(nodes),spine,BodyControlSpacesPlan(root,tuple(spaces)),additional,source_limbs)
     except (TypeError, KeyError, ValueError) as exc:
         raise CharacterRegistryError(str(exc)) from exc

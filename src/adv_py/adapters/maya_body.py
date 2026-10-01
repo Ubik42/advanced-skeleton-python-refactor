@@ -10067,9 +10067,13 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_internal_ik_local import create
         create(self,spec)
 
-    def create_source_rp_dynamics(self,body,limbs,global_control,internal_local=(),root_follow=None):
+    def create_source_rp_dynamics(self,body,limbs,global_control,internal_local=(),root_follow=None, *,source_pole_targets=True):
         from .maya_source_rp_dynamics import create
-        return create(self,body,limbs,global_control,internal_local,root_follow)
+        return create(self,body,limbs,global_control,internal_local,root_follow,source_pole_targets=source_pole_targets)
+
+    def create_source_limb_aim(self,body,fk,limbs,root,splines,global_control,policy=None,instances=(),use_offset_parent_matrix=True):
+        from .maya_source_limb_aim import create
+        return create(self,body,fk,limbs,root,splines,global_control,policy,instances,use_offset_parent_matrix)
 
     def connect_source_body_limb_follow(self, body, mechanisms, *,root_follow_path=None) -> None:
         """Follow the real parent of an imported IK start, outside its blend."""
@@ -10099,16 +10103,17 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise RuntimeError("来源 IK 起点随动创建失败：" + joint.name)
         self._transaction_changed = True
 
-    def connect_source_body_limb_scales(self, limb) -> None:
+    def connect_source_body_limb_scales(self, limb, *,use_offset_parent_matrix=True,source_scale_axes=True) -> None:
         """Use the same FK/IK switch for deformation scale outputs."""
         self._require_transaction()
         c = self._cmds
         for side in limb.blend.sides:
             ik = next(spec for spec in limb.ik.limbs if spec.side is side.side)
-            receiver = ik.wrist_sub_path or ik.wrist_control_path
-            for axis in "XYZ":
-                c.connectAttr(receiver + ".scale" + axis,
-                              ik.chain[-1] + ".scale" + axis)
+            if not source_scale_axes:
+                receiver = ik.wrist_sub_path or ik.wrist_control_path
+                for axis in "XYZ":
+                    c.connectAttr(receiver + ".scale" + axis,
+                                  ik.chain[-1] + ".scale" + axis)
             for joint in side.joints:
                 name = joint.constraint_name + "Scale"
                 if self.find_name_collisions(name):
@@ -10119,6 +10124,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 c.connectAttr(limb.blend.settings_path + "." + side.attribute,
                               node + ".blender")
                 c.connectAttr(node + ".output", joint.body_joint + ".scale")
+            if source_scale_axes:
+                from .maya_source_limb_scale import configure
+                configure(self,limb,side,ik,use_offset_parent_matrix=use_offset_parent_matrix)
         self._transaction_changed = True
 
     def connect_source_body_limb_visibility(self, limb, fk) -> None:

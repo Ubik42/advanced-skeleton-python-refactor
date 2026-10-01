@@ -1343,6 +1343,9 @@ class MayaCharacterRegistryMixin:
         paths.update(path for plan in p.rp_dynamics for path in
                      (plan.start_anchor,plan.target_anchor,
                       *(segment.joint for segment in plan.segments)))
+        paths.update(path for spec in p.leg_aim for path in spec.paths)
+        paths.update(path for limb in p.limbs if limb.foot for side in limb.foot.sides
+                     if side.source_aim for path in side.source_aim.paths)
         paths.update(control.source_override_path for control in p.fk.controls
                      if control.source_override_path is not None)
         if p.root is not None:
@@ -1485,6 +1488,10 @@ class MayaCharacterRegistryMixin:
         c = self._cmds
         from .maya_source_rp_dynamics import audit as audit_source_rp
         audit_source_rp(self,plan)
+        from .maya_source_limb_aim import audit as audit_source_aim
+        audit_source_aim(self,plan)
+        from .maya_source_limb_scale import audit as audit_source_scale
+        audit_source_scale(self,plan)
         from .maya_head_aim import audit_registered
         audit_registered(self,plan)
         from .maya_spline_matching import audit as audit_spline_matching
