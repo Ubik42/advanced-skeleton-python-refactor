@@ -22,7 +22,10 @@ def build_source_hip_swing(host,selection,root,body,fk,segments,parts):
         segment=next((segment for segment in segments
             if segment.fk.anchor.start_body_name=='Root_M'),None)
         if segment is None or segment.fk.parts is None:
-            raise FitSkeletonValidationError('来源 HipSwinger 缺少 Root Inbetween 图')
+            raise FitSkeletonValidationError('来源 HipSwinger 缺少 Root Inbetween 图'
+                + f' count={selection.root_inbetween_count}'
+                + f' segments={[(item.fk.anchor.start_body_name, item.fk.parts is not None) for item in segments]}'
+                + f' parts={[(item.name, item.kind) for item in parts]}')
         root_parts=tuple(part for part in parts if part.kind=='inbetween'
                          and part.start_body_name=='Root_M')
         plan=plan_hip_swing_reverse(root_parts,

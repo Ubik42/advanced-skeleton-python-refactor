@@ -1056,6 +1056,42 @@ class MayaCharacterRegistryMixin:
         if ':' in namespace and not cmds.namespace(exists=namespace.rsplit(':',1)[0]):
             raise CharacterRegistryError('重建暂存的父命名空间不存在')
 
+    def capture_character_rebuild_fit_channels(self,container):
+        """Keep native Fit channel locks and sibling order during staging."""
+        c=self._cmds
+        rows=[]
+        for node in self.capture_fit_hierarchy(container).joints:
+            parent=node.dag_parent.rsplit('|',1)[-1].rsplit(':',1)[-1]
+            channels=tuple((kind+axis,bool(c.getAttr(node.path+'.'+kind+axis,lock=True)),
+                bool(c.getAttr(node.path+'.'+kind+axis,keyable=True)),
+                bool(c.getAttr(node.path+'.'+kind+axis,channelBox=True)))
+                for kind in ('translate','rotate','scale') for axis in 'XYZ')
+            rows.append((node.short_name.rsplit(':',1)[-1],parent,node.sibling_index,
+                int(c.getAttr(node.path+'.rotateOrder')),
+                bool(c.getAttr(node.path+'.segmentScaleCompensate')),channels))
+        return tuple(rows)
+
+    def restore_character_rebuild_fit_channels(self,rows,container='FitSkeleton'):
+        self._require_transaction()
+        c=self._cmds
+        nodes={node.short_name.rsplit(':',1)[-1]:node
+               for node in self.capture_fit_hierarchy(container).joints}
+        if len(nodes)!=len(rows) or set(nodes)!={row[0] for row in rows}:
+            raise CharacterRegistryError('重建 Fit 通道来源拓扑不一致')
+        for name,parent,index,rotate_order,compensate,channels in sorted(rows,key=lambda row:row[2],reverse=True):
+            node=nodes[name]
+            if node.dag_parent.rsplit('|',1)[-1].rsplit(':',1)[-1]!=parent:
+                raise CharacterRegistryError('重建 Fit 通道来源父级不一致：'+name)
+            self._transaction_changed=True
+            c.reorder(node.path,front=True)
+            c.setAttr(node.path+'.rotateOrder',rotate_order)
+            c.setAttr(node.path+'.segmentScaleCompensate',compensate)
+            for attr,locked,keyable,channel_box in channels:
+                c.setAttr(node.path+'.'+attr,lock=locked,keyable=keyable,
+                          channelBox=channel_box)
+        if self.capture_character_rebuild_fit_channels(container)!=rows:
+            raise CharacterRegistryError('重建 Fit 通道或兄弟顺序未完整恢复')
+
     def create_character_rebuild_host(self,namespace):
         self._require_transaction()
         self.preflight_character_rebuild_namespace(namespace)
@@ -1253,8 +1289,6 @@ class MayaCharacterRegistryMixin:
         """Only native time-input curves may replace an editable user input."""
         c=self._cmds
         node,attribute=source.rsplit(".",1)
-        if self.namespace is not None and not c.identity.owns(self.scene_address(node)):
-            return False
         if attribute!="output" or c.nodeType(node) not in ("animCurveTA","animCurveTL","animCurveTU"):
             return False
         driver=c.connectionInfo(node+".input",sourceFromDestination=True)
@@ -1262,6 +1296,18 @@ class MayaCharacterRegistryMixin:
         # including curves restored from its native scene format.
         if driver and (driver.rsplit(".",1)[1]!="outTime" or c.nodeType(driver.rsplit(".",1)[0])!="time"):
             return False
+        if self.namespace is not None and not c.identity.owns(self.scene_address(node)):
+            # Maya's ordinary setKeyframe can create a root-namespace curve
+            # for a namespaced control. Its native clock and exclusive output
+            # boundary establish ownership; another character's curve does not.
+            physical=self.scene_address(node).lstrip(':')
+            if ':' in physical.rsplit('|',1)[-1]:
+                return False
+            outputs=c.listConnections(node+'.output',source=False,
+                                      destination=True,plugs=True) or []
+            if not outputs or any(not c.identity.owns(self.scene_address(output))
+                                  for output in outputs):
+                return False
         return True
 
     def install_character_spline_animation(self, registration):
@@ -1336,7 +1382,15 @@ class MayaCharacterRegistryMixin:
         source_limbs = describe_source_limb_bindings(p,rig.body)
         body = self.capture_body_skeleton(rig.body.root)
         if not body_bind_pose_matches(rig.body, body):
-            raise CharacterRegistryError("来源角色必须在绑定姿态登记")
+            expected = {joint.path: joint for joint in rig.body.joints}
+            differences = tuple((joint.name, joint.rotation,
+                joint.world_position, expected[joint.path].world_position)
+                for joint in body.joints if joint.path in expected
+                and (any(abs(a-b)>1e-4 for a,b in zip(joint.rotation,
+                         expected[joint.path].rotation))
+                     or any(abs(a-b)>1e-4 for a,b in zip(joint.world_position,
+                         expected[joint.path].world_position))))
+            raise CharacterRegistryError("来源角色必须在绑定姿态登记：" + repr(differences))
         paths = {body.root, p.container, *(j.path for j in body.joints),
                  *(channel.node for channel in channels)}
         paths.update(path for binding in source_limbs for path in binding.paths)
@@ -1529,7 +1583,8 @@ class MayaCharacterRegistryMixin:
                     continue
                 retained.append((attribute,source))
             if replace(current,inputs=tuple(retained)) != node:
-                raise CharacterRegistryError("登记节点身份或父级变化："+node.path)
+                raise CharacterRegistryError("登记节点身份或父级变化："+node.path
+                    + ' expected=' + repr(node) + ' actual=' + repr(current))
         body = self.capture_body_skeleton(plan.body_root)
         if {(j.path,j.parent_path) for j in body.joints} != {(j.path,j.parent) for j in plan.body}:
             raise CharacterRegistryError("登记 Body 拓扑变化")

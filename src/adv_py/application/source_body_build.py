@@ -362,6 +362,14 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     skeleton = BuildOrientedBodySkeleton(host).apply(
         fit, root_parent_path=deformation)
     build = skeleton.plan.build
+    # Inbetween is a separate source expansion, not a twistJoints variant.
+    # Merge both original Part families before any physical reparenting.
+    from .fit_inbetween import PrepareFitInbetween
+    from .fit_inbetween_body import plan_combined_part_hierarchy
+    _, inbetween_plan = PrepareFitInbetween(host).plan(fit)
+    if inbetween_plan.guides:
+        build = plan_combined_part_hierarchy(build, inbetween_plan)
+        skeleton = replace(skeleton, plan=replace(skeleton.plan, build=build))
     part_result = None
     if not use_fit_part_hierarchy and build.fit_parts:
         raise FitSkeletonValidationError("来源 Fit 已标记分段，不能关闭 Part 层级构建")
@@ -420,10 +428,10 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             ik_end_paths.add(info.end)
     fit_hierarchy=build.symmetry.source.hierarchy
     fit_root_children=tuple(node.path for node in fit_hierarchy.joints
-        if node.parent_path is not None and node.parent_path.rsplit('|',1)[-1].rsplit(':',1)[-1]=='Root')
+        if node.dag_parent is not None and node.dag_parent.rsplit('|',1)[-1].rsplit(':',1)[-1]=='Root')
     first_after_ik_sources=set()
     for node in fit_hierarchy.joints:
-        parent_info=fit_ik_infos.get(node.parent_path)
+        parent_info=fit_ik_infos.get(node.dag_parent)
         own_info=fit_ik_infos.get(node.path)
         if (parent_info is not None and
                 (own_info is None or own_info.name!=parent_info.name)
@@ -522,6 +530,9 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             use_offset_parent_matrix=options.use_offset_parent_matrix,
             source_scale_axes=generic_fk_policy is None or generic_fk_policy.source_rp_scale_axes is not False)
         if limb.foot is not None:
+            limb=replace(limb,foot=replace(limb.foot,sides=tuple(
+                host.capture_source_body_foot_align_frames(side,limb.ik.limbs)
+                for side in limb.foot.sides)))
             for side in limb.foot.sides:
                 host.create_body_leg_foot_side(side)
             limb=replace(limb,ik=replace(limb.ik,limbs=tuple(replace(spec,
@@ -587,6 +598,15 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         generated_joint_sources=generated_sources)
     if part_result is not None:
         compensation = rebase_plan_paths_after_parts(compensation, part_result.final_paths)
+        # The next FK Offset is driven by the last Inbetween FKX. A second
+        # generic TRS/OPM compensation writer would occupy that same receiver.
+        inbetween_ends = {part_result.final_paths.remap_body_reference(part.end_body)
+                         for part in build.fit_parts if part.kind == "inbetween"}
+        part_follow_controls = {control.control_path for control in fk.controls
+            if original_by_driver.get(control.driven_joint, control.driven_joint)
+            in inbetween_ends}
+        compensation = tuple(spec for spec in compensation
+                             if spec.control_path not in part_follow_controls)
     if generic_fk_policy is not None and generic_fk_policy.compensated_controls is not None:
         compensation = tuple(spec for spec in compensation
                              if spec.control_path in generic_fk_policy.compensated_controls)
@@ -674,9 +694,15 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             or tweakers is not None and tweakers.controls):
         body = host.capture_body_skeleton(body.root)
     provenance = oriented_body_provenance(fit, len(body.joints))
-    host.write_body_provenance(body.root, provenance)
-    body = replace(body, provenance=provenance)
-    skeleton = replace(skeleton, snapshot=body)
+    from adv_py.core.body_skeleton import audit_body_provenance
+    issues = audit_body_provenance(provenance, body.provenance)
+    if issues:
+        raise FitSkeletonValidationError("来源 Body 最终归属记录不一致："
+            + "；".join(issue.message for issue in issues))
+    # The oriented skeleton owns this record already; removing temporary
+    # foot markers updates its locked count without recreating attributes.
+    skeleton = replace(skeleton, snapshot=body,
+                       plan=replace(skeleton.plan, provenance=provenance))
     lock_specs = plan_body_fk_channel_locks(
         build.symmetry.source.hierarchy, fk.controls,
         tuple((node.path, host.read_fit_fk_lock_channels(node.path))
@@ -692,12 +718,24 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         wheels, curve_guides, tweakers, splines[1:],root,center_between_feet,internal_ik_local,hip_swing,rp_dynamics,leg_aim,
         generic_fk_policy is None or generic_fk_policy.source_rp_scale_axes is not False,options.use_offset_parent_matrix)
     rig = SourceBodyRigResult(rig_plan, body)
+    # ADV gives implicitly created unit conversions their final names at
+    # the end of construction. Freeze those names before capturing registry
+    # input plugs, even when Skin/AllSet completion is deferred by the caller.
+    from adv_py.core.body_all_set import BodyAllSetPlan
+    previous_ids = {node.node_id for node in (scene_before or ()) if node.node_id}
+    previous_paths = {node.path for node in (scene_before or ())}
+    generated_units = tuple(node.path for node in host.capture_body_scene_nodes()
+        if node.node_type == 'unitConversion'
+        and (node.node_id not in previous_ids if node.node_id
+             else node.path not in previous_paths))
+    host.name_body_unit_conversions(BodyAllSetPlan(generated_units))
     registration = (host.describe_character_registration(
         rig, source_character_channels(rig)) if defer_registration
         else RegisterBodyCharacter(host).apply(rig))
     finalize_body_character_sets(host, registration, rig_plan,
         scene_before=scene_before, fit_container=fit,
-        create_sets=not defer_selection_sets, populate_all=not defer_all_set)
+        create_sets=not defer_selection_sets,
+        populate_all=not (defer_selection_sets or defer_all_set))
     return RegisteredBodyBuildResult(skeleton, rig, registration,
         segment_influences=(tuple(part.name for part in build.fit_parts)
                             if part_result is not None else ()),

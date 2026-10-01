@@ -25,7 +25,9 @@ def build_source_body_inbetween(host, build, part_result, fk, limbs, spline, *,
     if part_result is None:
         return fk, limbs, (), InbetweenIkSolverMapping(())
     paths = part_result.final_paths
-    parts = tuple(part for part in build.fit_parts if part.kind == "inbetween")
+    from adv_py.core.fit_part import rebase_plan_paths_after_parts
+    parts = rebase_plan_paths_after_parts(
+        tuple(part for part in build.fit_parts if part.kind == "inbetween"), paths)
     grouped = {}
     for part in parts:
         grouped.setdefault(part.start_body, []).append(part)

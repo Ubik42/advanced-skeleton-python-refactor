@@ -176,6 +176,12 @@ def create_adv_icon(commands, *, name: str, parent: str,
                                     type="nurbsCurve") or []
     if len(actual) != 1:
         raise RuntimeError("控制器曲线形态读回不一致：" + name)
+    # cmds.curve keeps its generated curveShape name when only the transform
+    # is named. All controller registries use the ADV transform+Shape pair.
+    renamed = commands.rename(actual[0], name + "Shape")
+    actual = commands.ls(renamed, long=True) or []
+    if len(actual) != 1:
+        raise RuntimeError("控制器曲线 Shape 名称不唯一：" + name)
     if source is None and mirror_left:
         # The circle fallback is symmetric, but mirror its CVs at the control
         # origin to keep the same local shape convention as the real icon.
@@ -187,12 +193,20 @@ def create_adv_icon(commands, *, name: str, parent: str,
                 or int(commands.getAttr(actual[0] + ".form"))
                 != (2 if spec["periodic"] else 0)):
             raise RuntimeError("原版图标曲线参数读回不一致：" + name)
-        for index in sorted({0, len(points) // 2, len(points) - 1}):
+        # A periodic .ma stores degree overlap CVs at the end. Maya exposes
+        # only independent CV components; requesting an overlap index clamps
+        # to the last independent CV rather than reading the stored overlap.
+        cv_count = len(points) - (spec["degree"] if spec["periodic"] else 0)
+        components = commands.ls(actual[0] + ".cv[*]", flatten=True) or []
+        if len(components) != cv_count:
+            raise RuntimeError("原版图标 CV 数量读回不一致：" + name)
+        for index in range(cv_count):
             position = commands.pointPosition(
                 actual[0] + f".cv[{index}]", local=True)
             if any(abs(float(value) - expected) > 1e-4
                    for value, expected in zip(position, points[index])):
-                raise RuntimeError("原版图标曲线轴向读回不一致：" + name)
+                raise RuntimeError("原版图标曲线轴向读回不一致：" + name
+                                   + f" cv={index} expected={points[index]} actual={position}")
         commands.setAttr(actual[0] + ".overrideEnabled",
                          spec["override_enabled"])
         commands.setAttr(actual[0] + ".overrideColor",
@@ -201,7 +215,9 @@ def create_adv_icon(commands, *, name: str, parent: str,
                 != spec["override_enabled"]
                 or int(commands.getAttr(actual[0] + ".overrideColor"))
                 != spec["override_color"]):
-            raise RuntimeError("原版图标颜色读回不一致：" + name)
+            raise RuntimeError("原版图标颜色读回不一致：" + name
+                               + f" expected={(spec['override_enabled'], spec['override_color'])}"
+                               + f" actual={(commands.getAttr(actual[0] + '.overrideEnabled'), commands.getAttr(actual[0] + '.overrideColor'))}")
     commands.addAttr(control, longName="advPyIconTemplate",
                      dataType="string")
     commands.setAttr(control + ".advPyIconTemplate",

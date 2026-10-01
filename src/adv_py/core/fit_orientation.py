@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from math import isfinite, sqrt
 
@@ -224,6 +224,8 @@ class FitOrientationChange:
     use_explicit_world_axes: bool = False
     desired_world_axes: tuple[Vector3, Vector3, Vector3] | None = None
     world_match_axes: tuple[FitLocalDirection, FitLocalDirection] | None = None
+    # Original zero-RP-rotation correction, applied before the live aim.
+    position_adjustments: tuple[tuple[str, Vector3], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -436,6 +438,8 @@ def plan_simple_fit_orientations(
             "FitSkeleton 层级无效："
             + "；".join(issue.message for issue in hierarchy_issues)
         )
+    position_adjustments=plan_fit_rp_plane_adjustments(snapshot,request)
+    snapshot=fit_snapshot_after_position_adjustments(snapshot,position_adjustments)
     hierarchy = {node.path: node for node in snapshot.hierarchy.joints}
     by_name = {node.short_name: node for node in snapshot.hierarchy.joints}
     orientations = {state.joint: state for state in snapshot.joints}
@@ -620,7 +624,55 @@ def plan_simple_fit_orientations(
                 if axis_config.world_match else None,
             )
         )
+    if position_adjustments:
+        if not changes:
+            raise FitOrientationValidationError('零弯曲 RP 调整缺少对应朝向写入')
+        changes[0]=replace(changes[0],position_adjustments=position_adjustments)
     return tuple(changes)
+
+
+def fit_snapshot_after_position_adjustments(snapshot, adjustments):
+    """A moved joint pivot also translates its physical descendant subtree."""
+    for path,delta in adjustments:
+        snapshot=replace(snapshot,hierarchy=replace(snapshot.hierarchy,joints=tuple(
+            replace(node,world_position=tuple(a+b for a,b in zip(node.world_position,delta)))
+            if node.path==path or node.path.startswith(path+'|') else node
+            for node in snapshot.hierarchy.joints)))
+    return snapshot
+
+
+def plan_fit_rp_plane_adjustments(snapshot, request):
+    """MEL 7110–7120: zero bend moves the IK middle pivot by -startY/100 in Z."""
+    from math import atan2,degrees
+    targets=set(_resolve_orientation_targets(snapshot.hierarchy,request))
+    metadata={item.joint:item for item in snapshot.metadata}
+    choices=_resolve_child_selections(snapshot.hierarchy,request,frozenset(targets))
+    roles=_rp_fit_chains(snapshot)
+    adjustments=[]
+    for start,(_,end,role) in sorted(roles.items(),key=lambda row:(row[0].count('|'),row[0])):
+        if role!='start' or start not in targets:continue
+        item=metadata.get(start)
+        if item is not None and (item.free_orient or parse_world_orientation_policy(
+                item.world_orient_up,item.world_orient_forward,joint=start) is not None):
+            continue
+        nodes={node.path:node for node in snapshot.hierarchy.joints}
+        info=fit_joint_ik_info(snapshot.hierarchy,dict(snapshot.labels),start)
+        if info is None or info.middle in (start,end):continue
+        child=choices.get(start) or select_fit_orientation_child(snapshot,start)
+        if child is None:continue
+        primary=_normalize(_subtract(nodes[child].world_position,nodes[start].world_position),
+                           nodes[start].short_name+' 与子级位置重合')
+        endpoint=_subtract(nodes[end].world_position,nodes[start].world_position)
+        cross=_cross(primary,endpoint)
+        bend=degrees(atan2(sqrt(_dot(cross,cross)),_dot(primary,endpoint)))
+        if abs(bend)>=.001:continue
+        delta=(0.,0.,nodes[start].world_position[1]/-100.)
+        if delta[2]==0.:continue
+        if nodes[info.middle].writable_translation_axes!=TRANSLATION_AXES:
+            raise FitOrientationValidationError('零弯曲 IK 中间关节位置不可写：'+info.middle)
+        adjustments.append((info.middle,delta))
+        snapshot=fit_snapshot_after_position_adjustments(snapshot,((info.middle,delta),))
+    return tuple(adjustments)
 
 
 def orientation_matches(

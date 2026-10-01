@@ -544,14 +544,10 @@ class BuildRegisteredBodyCharacter:
                         container_name,
                         tuple(node.path for node in fit_hierarchy.joints),
                     )
-                    # Standard modules require the original biped names.
-                    # Other labeled Fit skeletons use the same Body primitives
-                    # through the source-chain branch, including direct builds.
-                    standard_names = {"Root", "Chest"}
-                    fit_names = {node.short_name.rsplit(":", 1)[-1]
-                                 for node in fit_hierarchy.joints}
-                    if (_source_limb_labels is None and axial_description is None
-                            and not standard_names <= fit_names):
+                    # All ordinary Fit builds follow the original labels,
+                    # including standard biped names. An explicitly supplied
+                    # legacy axial description still selects its saved layout.
+                    if _source_limb_labels is None and axial_description is None:
                         _source_limb_labels = tuple(
                             (node.short_name.rsplit(":", 1)[-1], label.text)
                             for node in fit_hierarchy.joints

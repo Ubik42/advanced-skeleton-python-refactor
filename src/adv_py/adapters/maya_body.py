@@ -389,6 +389,16 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         """The original prebuild disables editing modes before scene writes."""
         self._require_transaction()
         c = getattr(self._cmds, "raw", self._cmds)
+        # ADV's startup loads these before any build (MEL 3372–3381).
+        # Standalone Maya does not inherit the interactive autoload state.
+        for plugin in ("quatNodes", "matrixNodes"):
+            if not c.pluginInfo(plugin, query=True, loaded=True):
+                c.loadPlugin(plugin, quiet=True)
+        required = {"inverseMatrix", "decomposeMatrix", "quatToEuler"}
+        missing = required - set(c.allNodeTypes() or [])
+        if missing:
+            raise FitSkeletonValidationError(
+                "原版构建所需节点未注册：" + "、".join(sorted(missing)))
         c.softSelect(edit=True, softSelectEnabled=False)
         if c.symmetricModelling(query=True, symmetry=True):
             c.symmetricModelling(edit=True, symmetry=False)
@@ -3639,7 +3649,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
 
     @staticmethod
     def _skin_vertex_members(skin_fn, shape, mesh, vertex_count):
-        """Read the affected vertex subset from the native deformer set."""
+        """Read evaluated native membership, including component-tag skins."""
         from maya.api import OpenMaya as om
         from maya.api import OpenMayaAnim as oma
 
@@ -3647,7 +3657,18 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             raise FitSkeletonValidationError(
                 'Skin 变形集要求有效的网格顶点数')
         filter_fn = oma.MFnGeometryFilter(skin_fn.object())
-        members = om.MFnSet(filter_fn.deformerSet).getMembers(True)
+        # Modern skinClusters may use component tags without an objectSet.
+        # The geometry-filter API resolves both legacy sets and native tags;
+        # querying deformerSet directly raises for the latter layout.
+        geometry = filter_fn.getOutputGeometry()
+        if len(geometry) != 1:
+            raise FitSkeletonValidationError(
+                'Skin 变形集要求唯一网格：' + skin_fn.name())
+        dag = om.MDagPath.getAPathTo(geometry[0])
+        index = filter_fn.indexForOutputShape(geometry[0])
+        component = filter_fn.getComponentAtIndex(index)
+        members = om.MSelectionList()
+        members.add((dag, component))
         vertices = set()
         whole_mesh = False
         for index in range(members.length()):
@@ -3766,7 +3787,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             if api_names != data.influence_names:
                 raise RuntimeError("FBX Skin 影响关节顺序在捕获期间变化：" + skin)
             vertex_members = self._skin_vertex_members(
-                skin_fn, shape[0], mesh[0], data.vertex_count)
+                skin_fn, self.scene_address(shape[0]),
+                self.scene_address(mesh[0]), data.vertex_count)
             if not vertex_members:
                 raise FitSkeletonValidationError(
                     'FBX Skin 没有受影响顶点，无法发布有效蒙皮：' + skin)
@@ -4152,7 +4174,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 # dense weight array still contains every mesh vertex.
                 self._write_skin_vertex_members(c,skin_fn,shape,
                     vertex_members,data.vertex_count)
-            if self._skin_vertex_members(skin_fn, shape, clone,
+            if self._skin_vertex_members(skin_fn,
+                    shape if namespace_free else self.scene_address(shape),
+                    clone if namespace_free else self.scene_address(clone),
                     data.vertex_count) != vertex_members:
                 raise FitSkeletonValidationError(
                     'FBX 临时 Skin 变形集与来源不一致：' + data.skin_name)
@@ -7981,6 +8005,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 if aligned != spec.wrist_align_path:
                     raise RuntimeError("Wrist AlignIKTo 路径漂移")
                 self._cmds.xform(aligned, worldSpace=True, matrix=matrix)
+                self._cmds.addAttr(aligned,longName='advPyIkAlignOwner',dataType='string')
+                self._cmds.setAttr(aligned+'.advPyIkAlignOwner',
+                    'adv_py.ik_align.v1',type='string',lock=True)
             if spec.source_aligned_graph and spec.source_straight_chain:
                 self._cmds.setAttr(spec.chain[1]+'.preferredAngle',0.,0.,-90.,type='double3')
             handle, _ = self._cmds.ikHandle(name=spec.handle_name, startJoint=spec.chain[0], endEffector=spec.chain[2], solver="ikRPsolver")
@@ -8449,7 +8476,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 names.extend((side.qtoes_handle_name,
                               side.qtoes_effector_name))
             names.extend(node.name for node in side.roll.nodes)
-            names.extend(helper.name for helper in side.align_helpers)
+            names.extend(helper.name for helper in side.align_helpers
+                         if not self._shared_body_leg_foot_align_helper(helper))
             required.extend(helper.parent_path for helper in side.align_helpers)
             for manual in side.manual_pivots:
                 names.extend((manual.offset_name, manual.control_name,
@@ -8556,6 +8584,44 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             invalid_ankle_constraints=tuple(invalid_ankle_constraints),
         )
 
+    def _shared_body_leg_foot_align_helper(self, helper) -> bool:
+        """The RP endpoint and reverse foot use the same original AlignIKTo."""
+        c=self._cmds
+        if ((c.ls(helper.name,long=True,type='transform') or []) != [helper.path]
+                or (c.listRelatives(helper.path,parent=True,fullPath=True) or [])
+                != [helper.parent_path]
+                or not c.objExists(helper.path+'.advPyIkAlignOwner')
+                or not c.getAttr(helper.path+'.advPyIkAlignOwner',lock=True)
+                or c.getAttr(helper.path+'.advPyIkAlignOwner')!='adv_py.ik_align.v1'):
+            return False
+        x,y,z=helper.world_axes
+        expected=(*x,0.,*y,0.,*z,0.,*helper.world_position,1.)
+        return all(abs(a-b)<1e-4 for a,b in zip(expected,
+            c.xform(helper.path,query=True,worldSpace=True,matrix=True)))
+
+    def capture_source_body_foot_align_frames(self, spec, ik_specs):
+        """Retain the RP writer's world/nonZero/localOrient AlignIKTo frame."""
+        from dataclasses import replace
+        c=self._cmds
+        shared={ik.wrist_align_path for ik in ik_specs if ik.side is spec.side}
+        helpers=[]
+        for helper in spec.align_helpers:
+            if helper.path in shared:
+                if ((c.ls(helper.name,long=True,type='transform') or []) != [helper.path]
+                        or (c.listRelatives(helper.path,parent=True,fullPath=True) or [])
+                        != [helper.parent_path]
+                        or not c.objExists(helper.path+'.advPyIkAlignOwner')
+                        or c.getAttr(helper.path+'.advPyIkAlignOwner')!='adv_py.ik_align.v1'
+                        or not c.getAttr(helper.path+'.advPyIkAlignOwner',lock=True)):
+                    raise FitSkeletonValidationError('Foot 共用 RP AlignIKTo 身份不一致')
+                matrix=c.xform(helper.path,query=True,worldSpace=True,matrix=True)
+                if any(abs(a-b)>1e-4 for a,b in zip(matrix[12:15],helper.world_position)):
+                    raise FitSkeletonValidationError('Foot 共用 RP AlignIKTo 位置发生变化')
+                helper=replace(helper,world_axes=tuple(tuple(matrix[offset:offset+3])
+                                                       for offset in (0,4,8)))
+            helpers.append(helper)
+        return replace(spec,align_helpers=tuple(helpers))
+
     def create_body_leg_foot_side(self, spec: BodyLegFootSideSpec) -> None:
         self._require_transaction()
         state = self.capture_body_leg_foot_input(BodyLegFootPlan((spec,)))
@@ -8567,11 +8633,13 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             state.occupied_rotation_plugs,
             state.invalid_ankle_constraints,
         )):
-            raise FitSkeletonValidationError("Foot pivot 输入在执行前失效")
+            raise FitSkeletonValidationError("Foot pivot 输入在执行前失效：" + repr(state))
         selection = self._cmds.ls(selection=True, long=True) or []
         try:
             self._transaction_changed = True
             for helper in spec.align_helpers:
+                if self._shared_body_leg_foot_align_helper(helper):
+                    continue
                 node = self._cmds.createNode(
                     "transform", name=helper.name,
                     parent=helper.parent_path, skipSelect=True)
@@ -8614,6 +8682,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 )
                 if created != node.name:
                     raise RuntimeError("自动 footRoll 节点名称漂移")
+            # Range outputs can feed an earlier-listed blend node. Create
+            # the entire original graph before assigning values and edges.
+            for node in spec.roll.nodes:
                 for plug, value in node.numeric_values:
                     self._cmds.setAttr(plug, value)
                 for source, target in node.input_connections:

@@ -8,7 +8,8 @@ import tempfile
 from typing import Protocol
 
 from adv_py.core.fit_orientation import FitOrientationSnapshot
-from adv_py.core.fit_settings import FitSkeletonSettings, FitSkeletonValidationError
+from adv_py.core.fit_settings import (FitSkeletonSettings,
+    FitSkeletonValidationError, default_fit_skeleton_settings)
 from adv_py.core.fit_skeleton_io import (
     FIT_SKELETON_DOCUMENT_SUFFIX, FitSkeletonDocument,
     fit_skeleton_document_from_json, fit_skeleton_document_from_snapshot,
@@ -48,6 +49,14 @@ class ExportExternalFitSkeleton:
         snapshot = self._host.capture_fit_orientation(container)
         settings = self._host.read_fit_skeleton_settings(
             snapshot.hierarchy.container)
+        # Original shipped Fits can predate optional container attributes.
+        # Complete the portable document with the original inactive defaults
+        # (including OPM/Sub/Extra=False), preserving every authored setting
+        # and leaving the live source container untouched.
+        defaults=default_fit_skeleton_settings(settings.container)
+        authored={item.field:item for item in settings.settings}
+        settings=FitSkeletonSettings(settings.container,tuple(
+            authored.get(item.field,item) for item in defaults.settings))
         labels = []
         for node in snapshot.hierarchy.joints:
             label = self._host.read_joint_label(node.path)

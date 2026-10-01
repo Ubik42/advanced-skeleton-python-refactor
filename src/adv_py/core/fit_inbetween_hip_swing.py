@@ -154,7 +154,7 @@ def plan_hip_swing_reverse(
     ) for index in range(n + 1))
     return HipSwingReversePlan(
         start_fk_offset_path, start_fk_control_path,
-        first.start_body, end_body_path, "AdvPy_Root_M_InbetweenMM",
+        first.start_body, end_body_path, "AdvPy_Root_M_InbetweenLocalMatrix",
         first.name, n, first.rotation_order, float(radius),
         -1.4 * root_profile.fat * root_profile.fat_width,
         "AdvPy_HipSwingerOffset", "AdvPy_HipSwinger",

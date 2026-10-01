@@ -62,7 +62,12 @@ def create(host,spec):
         for node in (spec.wrist_control_path,spec.wrist_extra_path,
                      spec.pole_control_path,spec.pole_extra_path):
             c.addAttr(node,longName='ikLocal',attributeType='bool',defaultValue=True)
-    c.parent(spec.handle_name,driver,absolute=True)
+    # The RP creator already parents the ordinary handle to this driver.
+    # Maya treats parenting it to its existing parent as a command error.
+    parent=c.listRelatives(spec.handle_name,parent=True,fullPath=True) or []
+    driver_path=(c.ls(driver,long=True) or [driver])[0]
+    if parent != [driver_path]:
+        c.parent(spec.handle_name,driver,absolute=True)
     c.setAttr(spec.chain[-1]+'.jointOrient',0.,0.,0.,type='double3')
     c.setAttr(spec.chain[-1]+'.rotateOrder',spec.source_rotation_order)
     if spec.ik_local_mode=='localOrient':

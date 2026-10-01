@@ -69,8 +69,8 @@ class MayaInbetweenSplineIkMixin:
                 (parent[0] + ".offsetParentMatrix",
                  frame.local_matrix_name + ".matrixSum"),
             )
-            if (any(c.connectionInfo(destination, sourceFromDestination=True)
-                    != source for destination, source in edges)
+            if (any(not c.isConnected(source, destination)
+                    for destination, source in edges)
                     or abs(c.getAttr(frame.blend_name + ".target[0].weight")
                            - frame.fraction) > 1e-8
                     or any(abs(a - b) > 1e-5 for a, b in zip(

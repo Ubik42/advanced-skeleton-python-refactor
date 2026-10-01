@@ -280,7 +280,8 @@ def plan_body_torso(
     by_joint = {}
     for name, parent_name in parents.items():
         joint = joints[name]
-        expected_parent = joints[parent_name].path if parent_name else None
+        expected_parent = (joints[parent_name].path if parent_name else
+                           body.root.rsplit('|',1)[0] or None)
         if joint.parent_path != expected_parent:
             raise FitSkeletonValidationError(f"Torso 父链不匹配：{name}")
         parent_control = by_joint.get(parent_name) if parent_name else None

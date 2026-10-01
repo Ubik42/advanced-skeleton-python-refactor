@@ -183,7 +183,7 @@ def synthetic_body_source_fit_template(
         joints=(
             FitJointSpec("Root", None, (0.0, 0.0, 0.0), label("Root")),
             FitJointSpec("Spine1", "Root", vertical(3.0), label("Spine")),
-            FitJointSpec("Chest", "Spine1", vertical(3.0), label("Spine")),
+            FitJointSpec("Chest", "Spine1", vertical(3.0), label("Chest")),
             FitJointSpec("Neck", "Chest", vertical(2.0), label("Neck")),
             FitJointSpec("Head", "Neck", vertical(2.0), label("Head")),
             FitJointSpec("HeadEnd", "Head", vertical(1.5), label("Head")),

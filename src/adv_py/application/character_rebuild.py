@@ -14,7 +14,7 @@ from adv_py.core.character_preservation import (
     CharacterPreservation, RebuildOwnership, character_transfer_error,
 )
 from .character_preservation import CaptureBodyCharacterPreservation
-from .fit_skeleton_io import ExportFitSkeleton,CreateAndImportFitSkeleton
+from .fit_skeleton_io import CreateAndImportFitSkeleton
 from .registered_body_build import BuildRegisteredBodyCharacter
 from .body_selection_sets import finalize_body_character_sets
 from .character_limb_animation import EnableBodyCharacterLimbAnimation
@@ -154,9 +154,13 @@ class StageBodyCharacterRebuild:
         segment_mode = _rebuild_segment_mode(host,
             original.registration.body_root)
         include_dynamic = host.has_body_dynamic_system()
+        fit_channels=host.capture_character_rebuild_fit_channels(original.registration.container)
         with TemporaryDirectory(prefix='adv-py-rebuild-') as directory:
             fit=Path(directory)/'source.fit.json'
-            ExportFitSkeleton(host).apply(fit,original.registration.container)
+            # Built ADV keeps Fit beneath Group. Export its authored data
+            # through the existing nested-Fit contract without detaching it.
+            from .external_fit_export import ExportExternalFitSkeleton
+            ExportExternalFitSkeleton(host).apply(fit,original.registration.container)
             with host.character_rebuild_transaction('Stage replacement character'):
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('重建暂存前原角色发生变化')
@@ -180,6 +184,8 @@ class StageBodyCharacterRebuild:
                     raise RuntimeError('重建暂存前原角色系统层级、分段或选择集发生变化')
                 stage=host.create_character_rebuild_host(namespace)
                 CreateAndImportFitSkeleton(stage).apply(fit)
+                with stage.transaction('Restore original Fit channel state'):
+                    stage.restore_character_rebuild_fit_channels(fit_channels)
                 scene_before = stage.capture_body_scene_nodes()
                 keys={channel.key for channel in original.registration.channels}
                 source_build = is_source_body_registration(original.registration)

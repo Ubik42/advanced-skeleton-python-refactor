@@ -942,6 +942,13 @@ class MayaFitJointHost:
 
     def orient_fit_joint(self, change: FitOrientationChange) -> None:
         self._require_transaction()
+        for path,delta in change.position_adjustments:
+            matches=self._cmds.ls(path,long=True,type='joint') or []
+            if len(matches)!=1 or any(not self._cmds.getAttr(path+'.t'+axis,settable=True)
+                                      for axis in 'xyz'):
+                raise FitSkeletonValidationError('零弯曲 IK 中间关节在执行前不可写：'+path)
+            self._transaction_changed=True
+            self._cmds.move(*delta,path+'.rotatePivot',worldSpace=True,relative=True)
         joint_matches = self._cmds.ls(change.joint, long=True, type="joint") or []
         child_matches = self._cmds.ls(change.child, long=True, type="joint") or []
         if len(joint_matches) != 1 or len(child_matches) != 1:
@@ -1783,15 +1790,21 @@ class MayaFitJointHost:
             float(position[2]),
             1.0,
         )
+        # Maya makeIdentity enables segmentScaleCompensate on the whole
+        # descendant joint tree, even for a rotation-only freeze. Retain the
+        # source/Body policy (Root and OPM Body explicitly disable it).
+        joints=(joint,*(self._cmds.listRelatives(joint,allDescendents=True,
+                                                type='joint',fullPath=True) or ()))
+        compensation=tuple((node,bool(self._cmds.getAttr(node+'.segmentScaleCompensate')))
+                           for node in joints)
         self._cmds.xform(joint, worldSpace=True, matrix=matrix)
-        self._cmds.makeIdentity(
-            joint,
-            apply=True,
-            translate=False,
-            rotate=True,
-            scale=False,
-            normal=False,
-        )
+        try:
+            self._cmds.makeIdentity(
+                joint,apply=True,translate=False,rotate=True,scale=False,normal=False)
+        finally:
+            for node,value in compensation:
+                if bool(self._cmds.getAttr(node+'.segmentScaleCompensate'))!=value:
+                    self._cmds.setAttr(node+'.segmentScaleCompensate',value)
 
     def write_fit_deform_profile(self, joint: str,
                                  profile: FitDeformProfile) -> None:

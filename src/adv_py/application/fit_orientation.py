@@ -16,6 +16,7 @@ from adv_py.core.fit_orientation import (
     plan_simple_fit_orientations,
     plan_world_fit_orientations,
     world_orientation_matches,
+    fit_snapshot_after_position_adjustments,
 )
 from adv_py.core.fit_settings import (
     FitSkeletonSettings,
@@ -156,7 +157,9 @@ class OrientSimpleFitChain:
         if verified.axis_configuration != plan.before.axis_configuration:
             raise RuntimeError("Fit joint 朝向修改后复检失败：全局轴配置被改写")
 
-        before_nodes = {node.path: node for node in plan.before.hierarchy.joints}
+        expected=fit_snapshot_after_position_adjustments(plan.before,tuple(
+            adjustment for change in plan.changes for adjustment in change.position_adjustments))
+        before_nodes = {node.path: node for node in expected.hierarchy.joints}
         after_nodes = {node.path: node for node in verified.hierarchy.joints}
         if set(before_nodes) != set(after_nodes):
             raise RuntimeError("Fit joint 朝向修改后复检失败：节点集合发生变化")

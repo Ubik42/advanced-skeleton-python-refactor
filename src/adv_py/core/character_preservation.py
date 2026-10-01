@@ -199,9 +199,23 @@ def validate_rebuild_layout(before, after, tolerance=1e-6):
             tuple((c.key,c.attribute,c.minimum,c.maximum) for c in after.channels)
             or tuple((j.path,j.parent) for j in before.body)!=tuple((j.path,j.parent) for j in after.body)
             or before.spaces!=after.spaces):
-        raise CharacterRegistryError('重建角色的拓扑或控制语义变化，需要明确迁移计划')
+        old_channels={ (c.key,c.attribute,c.minimum,c.maximum) for c in before.channels}
+        new_channels={ (c.key,c.attribute,c.minimum,c.maximum) for c in after.channels}
+        old_body={(j.path,j.parent) for j in before.body}
+        new_body={(j.path,j.parent) for j in after.body}
+        raise CharacterRegistryError('重建角色的拓扑或控制语义变化，需要明确迁移计划'
+            + ' removed_channels=' + repr(sorted(old_channels-new_channels)[:8])
+            + ' added_channels=' + repr(sorted(new_channels-old_channels)[:8])
+            + ' removed_body=' + repr(sorted(old_body-new_body)[:4])
+            + ' added_body=' + repr(sorted(new_body-old_body)[:4])
+            + ' spaces_equal=' + str(before.spaces==after.spaces)
+            + ' channel_order_equal=' + str(tuple(c.key for c in before.channels)==tuple(c.key for c in after.channels))
+            + ' body_order_equal=' + str(tuple(j.path for j in before.body)==tuple(j.path for j in after.body)))
     if any(abs(a-b)>tolerance for x,y in zip(before.body,after.body) for a,b in zip(x.matrix,y.matrix)):
-        raise CharacterRegistryError('重建绑定布局变化，需要蒙皮与动画迁移计划')
+        differences=tuple((x.path,max(abs(a-b) for a,b in zip(x.matrix,y.matrix)))
+                          for x,y in zip(before.body,after.body)
+                          if any(abs(a-b)>tolerance for a,b in zip(x.matrix,y.matrix)))
+        raise CharacterRegistryError('重建绑定布局变化，需要蒙皮与动画迁移计划：'+repr(differences))
 
 
 def character_transfer_error(before,after):

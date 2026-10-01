@@ -56,5 +56,7 @@ def variable_body_fit_template(up_axis,*,spine_segments=2,scale=1.,with_hand=Tru
     joints={j.name:j for j in base.joints}
     step=tuple((a+b)/spine_segments for a,b in zip(joints['Spine1'].local_position,joints['Chest'].local_position))
     names=tuple(n.removesuffix('_M') for n in description.spine)
-    chain=tuple(FitJointSpec(name,parent,step,joints['Chest'].label) for name,parent in zip(names[1:],names))
+    chain=tuple(FitJointSpec(name,parent,step,
+                joints['Chest'].label if name=='Chest' else joints['Spine1'].label)
+                for name,parent in zip(names[1:],names))
     return FitTemplateSpec('synthetic_variable_body',tuple(j for j in base.joints if j.name not in ('Spine1','Chest'))+chain)

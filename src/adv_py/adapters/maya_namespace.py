@@ -13,6 +13,9 @@ _NODE_RESULTS = frozenset('listRelatives listConnections listHistory rename pare
 _GLOBAL = frozenset('currentTime currentUnit upAxis undoInfo undo file pluginInfo loadPlugin allNodeTypes'.split())
 _READ = frozenset('ls listAttr objExists nodeType listRelatives listConnections listHistory referenceQuery connectionInfo getAttr attributeQuery isConnected exactWorldBoundingBox pointPosition polyEvaluate'.split())
 _CREATE = frozenset('createNode joint circle ikHandle skinCluster orientConstraint parentConstraint pointConstraint scaleConstraint poleVectorConstraint polyCylinder polyCube polyUnite setKeyframe'.split())
+# Connecting different native units can create unitConversion nodes. Scope
+# that implicit creation exactly like explicit graph-node creation.
+_CREATE |= {'connectAttr'}
 _NODE_ARGS |= {'aimConstraint'}
 _NODE_RESULTS |= {'aimConstraint'}
 _CREATE |= {'aimConstraint'}

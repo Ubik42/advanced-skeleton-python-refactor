@@ -368,8 +368,7 @@ class MayaFitInbetweenMixin:
             (plan.quaternion_name + ".inputQuatW",
              plan.decompose_name + ".outputQuatW"),
         )
-        return all(c.connectionInfo(destination,
-                       sourceFromDestination=True) == source
+        return all(c.isConnected(source, destination)
                    for destination, source in connections)
 
     def create_inbetween_untwister_step(
@@ -852,9 +851,8 @@ class MayaFitInbetweenMixin:
             shapes = c.listRelatives(part.control_name, shapes=True,
                                      fullPath=True,
                                      type="nurbsCurve") or []
-            if (len(shapes) != 1 or c.connectionInfo(
-                    shapes[0] + ".visibility",
-                    sourceFromDestination=True) != plug):
+            if (len(shapes) != 1 or not c.isConnected(
+                    plug, shapes[0] + ".visibility")):
                 return False
         return True
 
@@ -1022,8 +1020,7 @@ class MayaFitInbetweenMixin:
             (part.pick_matrix_name + ".useScale",
              part.control_name + ".inheritScale"),
         )
-        if any(c.connectionInfo(destination,
-                 sourceFromDestination=True) != source
+        if any(not c.isConnected(source, destination)
                for destination, source in expected):
             return None
         return part.receiver_plug
@@ -1220,15 +1217,13 @@ class MayaFitInbetweenMixin:
         modern = c.objExists(step.blend_name
                              + ".target[0].translateWeight")
         weight_destination = ("rotateWeight" if modern else "weight")
-        if c.connectionInfo(step.blend_name + ".target[0]."
-                            + weight_destination,
-                            sourceFromDestination=True) != step.weight_plug:
+        if not c.isConnected(step.weight_plug,
+                             step.blend_name + ".target[0]." + weight_destination):
             return None
         matrix_source = (step.legacy_compose_name + ".outputMatrix"
                          if step.index == 0 and not modern
                          else step.blend_name + ".outputMatrix")
-        if c.connectionInfo(step.local_matrix_name + ".matrixIn[0]",
-                            sourceFromDestination=True) != matrix_source:
+        if not c.isConnected(matrix_source, step.local_matrix_name + ".matrixIn[0]"):
             return None
         return step.output_plug
 
@@ -1277,14 +1272,12 @@ class MayaFitInbetweenMixin:
         self, plan: InbetweenBiasPlan
     ) -> tuple[str | None, ...]:
         c = self._cmds
-        if c.connectionInfo(plan.unit_name + ".input",
-                sourceFromDestination=True) != plan.control_plug:
+        if not c.isConnected(plan.control_plug, plan.unit_name + ".input"):
             return (None, None, None)
         outputs = []
         for curve in (plan.start_curve, plan.mid_curve,
                       plan.end_curve):
-            if c.connectionInfo(curve.name + ".inputValue",
-                    sourceFromDestination=True) != plan.unit_name + ".output":
+            if not c.isConnected(plan.unit_name + ".output", curve.name + ".inputValue"):
                 outputs.append(None)
             else:
                 outputs.append(curve.name + ".outValue")

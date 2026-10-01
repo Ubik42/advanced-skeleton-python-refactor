@@ -261,10 +261,11 @@ class MayaBodyFkScaleCompensationMixin:
                     and c.getAttr(spec.decompose_matrix_name
                                   + ".inputRotateOrder")
                     != c.getAttr(spec.offset_path + ".rotateOrder"))
-                or any(c.connectionInfo(target,
-                       sourceFromDestination=True) != source
+                or any(not c.isConnected(source, target)
                        for source, target in links)):
-            return False
+            raise RuntimeError(f"FK 缩放补偿连接或设置改变：{spec.offset_path}"
+                + f" inherit={c.getAttr(spec.control_path + '.inheritScale')} expected={spec.inherit_scale}"
+                + f" links={[(source, target, c.connectionInfo(target, sourceFromDestination=True)) for source, target in links if not c.isConnected(source, target)]}")
         if spec.independent_parent:
             if (bool(c.getAttr(spec.offset_path + ".inheritsTransform"))
                     or any(bool(c.getAttr(spec.main_scale_pick_name
@@ -272,7 +273,7 @@ class MayaBodyFkScaleCompensationMixin:
                            for attr in ("Translate", "Rotate", "Shear"))):
                 return False
         elif not bool(c.getAttr(spec.offset_path + ".inheritsTransform")):
-            return False
+            raise RuntimeError("FK 缩放补偿父级继承被关闭：" + spec.offset_path)
         if spec.use_offset_parent_matrix:
             for attr, expected in (("translate", (0.0, 0.0, 0.0)),
                                    ("rotate", (0.0, 0.0, 0.0)),
@@ -287,9 +288,11 @@ class MayaBodyFkScaleCompensationMixin:
         expected = tuple(value for axis in spec.world_axes
                          for value in (*axis, 0.0)) + (
                              *spec.world_position, 1.0)
-        return (len(actual) == 16
-                and all(abs(a - b) <= 1e-4
-                        for a, b in zip(actual, expected)))
+        if len(actual) != 16 or any(abs(a - b) > 1e-4
+                                  for a, b in zip(actual, expected)):
+            raise RuntimeError(f"FK 缩放补偿绑定矩阵改变：{spec.offset_path}"
+                               + f" expected={expected} actual={actual}")
+        return True
 
     def _connect_mel_non_opm_fk_scale_compensation(
         self, spec: BodyFkScaleCompensationSpec,

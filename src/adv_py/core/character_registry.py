@@ -227,7 +227,8 @@ def decode_registration(text):
         external_parent = root.rsplit("|", 1)[0] or None
         if roots[0].parent != external_parent or any(
                 joint.path != root and (
-                    joint.parent not in paths
+                    not joint.parent or not (joint.parent == root
+                        or joint.parent.startswith(root + '|'))
                     or joint.path.rsplit("|", 1)[0] != joint.parent)
                 for joint in body):
             raise CharacterRegistryError("Body 父链无效")
@@ -246,6 +247,21 @@ def decode_registration(text):
             nodes.append(CharacterNode(path(row["path"]),row["uuid"],row["node_type"],path(row["parent"]) if row["parent"] else None,tuple(inputs)))
         if len({n.path for n in nodes}) != len(nodes) or len({n.uuid for n in nodes}) != len(nodes):
             raise CharacterRegistryError("登记节点身份重复")
+        # Body snapshots omit auxiliary Part influences, while their physical
+        # parents remain in the registered node graph. Require every omitted
+        # ancestor to be an explicitly registered, continuous Part joint.
+        node_by_path = {node.path: node for node in nodes}
+        for joint in body:
+            if joint.path == root:
+                continue
+            parent = joint.parent
+            while parent not in paths:
+                receiver = node_by_path.get(parent)
+                if (receiver is None or receiver.node_type != "joint"
+                        or not re.fullmatch(r".+Part[1-9][0-9]*_[MRL]", parent.rsplit("|",1)[-1])
+                        or receiver.parent != parent.rsplit("|",1)[0]):
+                    raise CharacterRegistryError("Body Part 父链未完整登记")
+                parent = receiver.parent
         external_parent_node = next(
             (node for node in nodes if node.path == external_parent), None)
         if external_parent is not None and (

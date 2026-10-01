@@ -199,7 +199,15 @@ def audit(host,registration):
                 if not c.isConnected(source,node.name+'.'+attribute):
                     raise CharacterRegistryError('来源 RP 原生驱动连接变化：'+node.name+'.'+attribute)
             for attribute,value in node.values:
-                if abs(float(c.getAttr(node.name+'.'+attribute))-value)>1e-8:
+                plug=node.name+'.'+attribute
+                # Native clamp/setRange constants are float32; MEL setAttr
+                # rounds them too. Compare against the value Maya can store,
+                # while retaining the planned double in persisted metadata.
+                expected=value
+                if c.getAttr(plug,type=True)=='float':
+                    from struct import pack,unpack
+                    expected=unpack('f',pack('f',value))[0]
+                if abs(float(c.getAttr(plug))-expected)>1e-8:
                     raise CharacterRegistryError('来源 RP 原生驱动常量变化：'+node.name+'.'+attribute)
         for source,destination in plan.outputs:
             if not c.isConnected(source,destination):

@@ -267,7 +267,7 @@ class MayaFitPartMixin:
         c = self._cmds
         body = self._unique_fit_part_joint(
             spec.body_joint.rsplit("|", 1)[-1])
-        if not c.objExists(body + ".advPySourceJoint"):
+        if body != spec.body_joint or not self._is_owned_body_or_mechanism(body):
             raise ValueError("FK 缩放需要本工程 Body：" + spec.body_joint)
         for axis in "XYZ":
             source = spec.source_scale + axis
@@ -297,8 +297,8 @@ class MayaFitPartMixin:
         c = self._cmds
         body = self._unique_fit_part_joint(
             spec.body_joint.rsplit("|", 1)[-1])
-        return all(c.connectionInfo(body + ".scale" + axis,
-                   sourceFromDestination=True) == spec.source_scale + axis
+        return all(c.isConnected(spec.source_scale + axis,
+                   body + ".scale" + axis)
                    for axis in "XYZ")
 
     def preflight_fit_part_limb_scale(
@@ -457,15 +457,21 @@ class MayaFitPartMixin:
     def capture_fit_part_scale_source(
         self, step: FitPartScaleStep
     ) -> str | None:
-        source = self._cmds.connectionInfo(
-            step.target_plug, sourceFromDestination=True)
-        return source or None
+        return (step.source_plug if self._cmds.isConnected(
+            step.source_plug, step.target_plug) else None)
 
     def _unique_fit_part_joint(self, name: str) -> str:
         matches = self._cmds.ls(name, long=True, type="joint") or []
         if len(matches) != 1:
             raise ValueError("Fit Part 需要唯一关节名称：" + name)
         return matches[0]
+
+    def _is_owned_body_or_mechanism(self, path: str) -> bool:
+        """Body receivers and FK/IK mechanisms have distinct creator markers."""
+        c = self._cmds
+        return (c.objExists(path + ".advPySourceJoint")
+                or (c.objExists(path + ".advPySkinEnabled")
+                    and c.objExists(path + ".advPyFitHasDeformProfile")))
 
     def preflight_fit_part_hierarchy(
         self,
@@ -874,8 +880,7 @@ class MayaFitPartMixin:
                 (decompose + ".outputQuatW",
                  project + ".inputQuatW"),
             )
-            return all(c.connectionInfo(target,
-                       sourceFromDestination=True) == source
+            return all(c.isConnected(source, target)
                        for source, target in expected)
 
         source = projection.input
@@ -924,16 +929,14 @@ class MayaFitPartMixin:
                                     matrix=True),
                             c.xform(source.start_body, query=True,
                                     worldSpace=True, matrix=True))) > 1e-4))
-                    or any(c.connectionInfo(target,
-                           sourceFromDestination=True) != upstream
+                    or any(not c.isConnected(upstream, target)
                            for upstream, target in expected)):
                 return None
             if projection.matrix_blend_name:
                 blend = projection.matrix_blend_name
                 if (not c.objExists(blend)
                         or c.nodeType(blend) != "blendMatrix"
-                        or any(c.connectionInfo(target,
-                               sourceFromDestination=True) != upstream
+                        or any(not c.isConnected(upstream, target)
                                for upstream, target in (
                                    (source.fk_world_matrix_plug,
                                     blend + ".inputMatrix"),
@@ -986,8 +989,8 @@ class MayaFitPartMixin:
                 projection.blend_name + ".input[1]",
                 projection.blend_name + ".attributesBlender",
             )
-            if any(c.connectionInfo(destination,
-                    sourceFromDestination=True) != source
+            if any(not c.isConnected(source, destination,
+                                     ignoreUnitConversion=source.endswith('.outputRotateX'))
                    for destination, source in zip(destinations, expected)):
                 return None
         return output
@@ -1109,7 +1112,8 @@ class MayaFitPartMixin:
             bodies = c.ls(body_name, long=True, type="joint") or []
             constraint = step.body_constraint_name
             if (len(bodies) != 1
-                    or not c.objExists(bodies[0] + ".advPySourceJoint")
+                    or bodies[0] != step.start_body
+                    or not self._is_owned_body_or_mechanism(bodies[0])
                     or not c.objExists(constraint)
                     or c.nodeType(constraint) != "orientConstraint"
                     or not c.isConnected(
@@ -1265,8 +1269,7 @@ class MayaFitPartMixin:
                     or c.getAttr(offset_name + ".operation") != 1
                     or abs(float(c.getAttr(weight_name
                                         + ".input1D[1]")) + 1.0) > 1e-8
-                    or any(c.connectionInfo(target,
-                           sourceFromDestination=True) != upstream
+                    or any(not c.isConnected(upstream, target, ignoreUnitConversion=True)
                            for upstream, target in body_links)):
                 return None
         if (not c.objExists(part + ".twistAmount")
@@ -1304,8 +1307,7 @@ class MayaFitPartMixin:
                                + ".input1D[1]")) > 1e-8):
             return None
         if (c.getAttr(step.difference_node + ".operation") != 2
-                or any(c.connectionInfo(target,
-                       sourceFromDestination=True) != source
+                or any(not c.isConnected(source, target, ignoreUnitConversion=True)
                        for source, target in expected)):
             return None
         if step.use_offset_parent_matrix:
@@ -1319,8 +1321,8 @@ class MayaFitPartMixin:
                                       "translateZ", "rotateX", "rotateY",
                                       "rotateZ"))):
                 return None
-            return c.connectionInfo(
-                step.matrix_name + ".inputRotateX",
-                sourceFromDestination=True) or None
-        return c.connectionInfo(
-            part + ".rotateX", sourceFromDestination=True) or None
+            destination = step.matrix_name + ".inputRotateX"
+        else:
+            destination = part + ".rotateX"
+        return (step.output_plug if c.isConnected(step.output_plug, destination,
+                                                  ignoreUnitConversion=True) else None)

@@ -22,6 +22,9 @@ def _cross(cmds, name, parent, radius, color):
     curve = cmds.parent(curve, parent, relative=True)[0]
     curve = (cmds.ls(curve, long=True) or [curve])[0]
     shape = (cmds.listRelatives(curve, shapes=True, fullPath=True) or [])[0]
+    if shape.rsplit('|',1)[-1] != name+'Shape':
+        cmds.rename(shape,name+'Shape')
+        shape=(cmds.listRelatives(curve,shapes=True,fullPath=True) or [])[0]
     if shape != curve + "|" + name + "Shape":
         raise FitSkeletonValidationError("Aim 曲线 Shape 名称漂移：" + name)
     cmds.setAttr(shape + ".overrideEnabled", True)
@@ -144,11 +147,10 @@ class MayaBodyFitAimMixin:
                           side.local_matrix_name + ".matrixIn[1]")
             c.connectAttr(side.fk_offset + ".worldInverseMatrix[0]",
                           side.local_matrix_name + ".matrixIn[2]")
-            inverse = c.createNode("inverseMatrix", skipSelect=True)
-            c.connectAttr(side.local_matrix_name + ".matrixSum",
-                          inverse + ".inputMatrix")
-            correction = _matrix(c.getAttr(inverse + ".outputMatrix"))
-            c.delete(inverse)
+            # Evaluate the same native inverse without attaching and deleting
+            # a temporary DG sink: Maya can prune its otherwise unused input.
+            correction = tuple(om.MMatrix(_matrix(c.getAttr(
+                side.local_matrix_name + '.matrixSum'))).inverse())
             _set_matrix(c, side.local_matrix_name + ".matrixIn[0]", correction)
             if use_offset_parent_matrix:
                 c.connectAttr(side.local_matrix_name + ".matrixSum",

@@ -199,25 +199,16 @@ class MayaHipSwingReverseMixin:
                 or abs(float(c.getAttr(
                     plan.control_path.rsplit("|", 1)[0] + ".translateX"))
                     - plan.control_local_x_bias) > 1e-6
-                or c.connectionInfo(
-                    plan.blend_name + ".target[0].targetMatrix",
-                    sourceFromDestination=True)
-                != plan.control_path + ".matrix"
+                or not c.isConnected(plan.control_path + ".matrix",
+                    plan.blend_name + ".target[0].targetMatrix")
                 or abs(float(c.getAttr(
                     plan.blend_name + ".target[0].weight"))
                     - 1.0 / plan.count) > 1e-8
-                or c.connectionInfo(
-                    plan.root_inbetween_matrix_name + ".matrixIn[0]",
-                    sourceFromDestination=True)
-                != plan.reverse_root_name + ".worldMatrix[0]"
-                or c.connectionInfo(
-                    plan.root_inbetween_matrix_name + ".matrixIn[1]",
-                    sourceFromDestination=True)
-                != plan.start_fk_offset_path
-                + ".worldInverseMatrix[0]"):
+                or not c.isConnected(plan.reverse_root_name + ".worldMatrix[0]",
+                    plan.root_inbetween_matrix_name + ".matrixIn[0]")
+                or not c.isConnected(plan.start_fk_offset_path + ".worldInverseMatrix[0]",
+                    plan.root_inbetween_matrix_name + ".matrixIn[1]")):
             return False
-        return all(c.connectionInfo(
-            part.fk_matrix_name + ".matrixIn[0]",
-            sourceFromDestination=True)
-            == part.correction_name + ".matrixSum"
+        return all(c.isConnected(part.correction_name + ".matrixSum",
+            part.fk_matrix_name + ".matrixIn[0]")
             for part in plan.parts[1:])

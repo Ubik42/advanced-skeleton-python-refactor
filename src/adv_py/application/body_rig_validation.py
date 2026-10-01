@@ -30,13 +30,15 @@ def body_bind_pose_matches(
             after.label,
         ):
             return False
-        vectors = ((before.world_position, after.world_position),)
+        # Native IK/constraint receivers can have nonzero local rotations
+        # in their recorded bind pose. Compare that pose with the snapshot;
+        # pre-rig skeleton audits separately require frozen zero rotations.
+        vectors = ((before.world_position, after.world_position),
+                   (before.rotation, after.rotation))
         vectors += tuple(zip(before.world_axes, after.world_axes))
         if any(
             any(abs(a - b) > tolerance for a, b in zip(left, right))
             for left, right in vectors
         ):
-            return False
-        if any(abs(value) > tolerance for value in after.rotation):
             return False
     return True

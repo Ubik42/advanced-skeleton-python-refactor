@@ -91,7 +91,11 @@ class BuildFitPartHierarchy:
                     or state.rotation_order != spec.rotation_order
                     or state.segment_scale_compensate
                     != spec.segment_scale_compensate):
-                raise ValueError("Fit Part 构建前 Body 数据已变化：" + spec.name)
+                differences=tuple((field,getattr(spec,field),getattr(state,field))
+                    for field in ('name','parent_path','world_position','deform_profile',
+                                  'skin_enabled','rotation_order','segment_scale_compensate')
+                    if getattr(spec,field)!=getattr(state,field))
+                raise ValueError("Fit Part 构建前 Body 数据已变化：" + spec.name+' '+repr(differences))
         names = tuple(item.name for item in plan.fit_parts)
         if len(set(names)) != len(names):
             raise ValueError("Fit Part 计划存在重名关节")

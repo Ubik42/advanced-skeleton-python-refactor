@@ -72,7 +72,10 @@ def audit(host, plan):
                       (decompose+'.outputQuatX',quat+'.inputQuatX'),
                       (decompose+'.outputQuatW',quat+'.inputQuatW'),
                       (quat+'.outputRotateX',entry+'.colorR')))
+    # Angle output -> ramp float inserts Maya's native unitConversion.
+    # Other edges must remain direct.
     bad = [(source, destination) for source, destination in edges
-           if not c.isConnected(source, destination)]
+           if not c.isConnected(source, destination,
+                ignoreUnitConversion=source.endswith('.outputRotateX'))]
     if bad:
         raise FitSkeletonValidationError('Spline 中间扭转图连接被替换：'+repr(bad[:2]))

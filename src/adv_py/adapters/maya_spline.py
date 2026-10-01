@@ -292,7 +292,6 @@ def create(host,plan):
     if plan.even_stretch_graph:
         maya_spline_even.create(host, plan, shape, ik)
     if plan.curved:
-        import json
         for i in range(1,n):
             rest=c.createNode('transform',name=f'AdvPy_SplineIKRest{i}',
                               parent=plan.ik_outputs[i].rsplit('|',1)[0],
@@ -318,7 +317,10 @@ def create(host,plan):
                 source=c.connectionInfo(plug,sourceFromDestination=True)
                 if source:c.disconnectAttr(source,plug)
                 c.setAttr(plug,1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,type='matrix',lock=True)
-                c.setAttr(node+'.constraintScaleCompensate',False,lock=True)
+                compensation=node+'.constraintScaleCompensate'
+                source=c.connectionInfo(compensation,sourceFromDestination=True)
+                if source:c.disconnectAttr(source,compensation)
+                c.setAttr(compensation,False,lock=True)
                 for target_index,source_joint in enumerate((fk[i].path,plan.ik_outputs[i])):
                     world=f'AdvPy_Spline{("FK" if target_index==0 else "IK")}WorldScale{i}'
                     c.createNode('decomposeMatrix',name=world,skipSelect=True)
@@ -712,7 +714,6 @@ def audit(host,plan,*,source_visibility_ready=True):
         from .maya_source_spline_body_matrix import audit as audit_body_matrix
         audit_body_matrix(host,plan)
     if plan.curved:
-        import json
         for i in range(1,n):
             rest=plan.ik_outputs[i]
             if (c.nodeType(rest)!='transform' or (c.listRelatives(rest,parent=True,fullPath=True) or [])!=[rest.rsplit('|',1)[0]]
