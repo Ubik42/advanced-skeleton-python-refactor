@@ -78,7 +78,7 @@ def decode_source_body_matrix(text):
     raw=exact(safe_json(text),('body','nodes','outputs'))
     def attribute(value):
         if not isinstance(value,str) or not re.fullmatch(
-                r'[A-Za-z][A-Za-z0-9]*(?:\[\d+\])?(?:\.[A-Za-z][A-Za-z0-9]*(?:\[\d+\])?)*',value):
+                r'[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])?(?:\.[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])?)*',value):
             raise CharacterRegistryError('来源 Body 矩阵属性地址无效')
         return value
     def plug(value):

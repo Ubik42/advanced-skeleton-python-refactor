@@ -9,6 +9,10 @@ class SourceGraphConnections:
         self.host,self.c,self.stem=host,host._cmds,stem
         self.nodes=[]
         self.sources={}
+        # Maya may reuse a converter already serving another graph. Renaming
+        # it would invalidate that graph's persisted addresses. Only name
+        # converters created by this connection owner.
+        self.existing_conversions=frozenset(self.c.ls(type='unitConversion') or ())
 
     def connect(self,source,target):
         self.c.connectAttr(source,target)
@@ -18,7 +22,9 @@ class SourceGraphConnections:
         name,attr=actual.split('.',1)
         name=self.host._resolve_connected_node(name)
         actual=name+'.'+attr
-        if self.c.nodeType(name)=='unitConversion' and actual!=source:
+        if (self.c.nodeType(name)=='unitConversion' and actual!=source
+                and name not in self.existing_conversions
+                and name not in {node.name for node in self.nodes}):
             incoming=self.c.connectionInfo(name+'.input',sourceFromDestination=True)
             if incoming:
                 node,attribute=incoming.split('.',1)

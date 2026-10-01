@@ -472,7 +472,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         root_follow_transform='|Group|MotionSystem|RootSystem|AdvPy_LegLockConstrained',
         first_after_ik_paths=frozenset(spec.path for spec in build.specs
             if spec.source_joint in first_after_ik_sources),
-        use_offset_parent_matrix=options.use_offset_parent_matrix)
+        use_offset_parent_matrix=options.use_offset_parent_matrix,
+        follow_inserted_parts=False)
     fk = replace(fk, controls=tuple(replace(control,
         driven_joint=driver_by_body.get(control.driven_joint, control.driven_joint))
         for control in fk.controls))

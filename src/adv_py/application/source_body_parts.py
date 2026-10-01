@@ -57,6 +57,10 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
         semantic_parent_by_body={paths.remap_body_reference(spec.path):
             paths.remap_body_reference(spec.parent_path)
             for spec in build.specs if spec.parent_path is not None})
+    # The original XformInverter receives FKX/parent blend world matrices.
+    # Parenting references beneath a Bendy-driven Body introduces a loop
+    # between adjacent segments, even if the projected joint source is independent.
+    inputs = host.create_source_part_twist_references(inputs, independent, blended)
     sources = PrepareFitPartTwistSources(host).apply(inputs)
     bendy_parts = {name for chain in bendy_chains for name in chain.part_names}
     ordinary_parts = tuple(part for part in parts if part.name not in bendy_parts)

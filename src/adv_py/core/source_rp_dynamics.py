@@ -173,7 +173,7 @@ def decode_source_rp_dynamics(text):
            'blendTwoAttr','clamp','multiplyDivide','multDoubleLinear','plusMinusAverage',
            'blendColors','composeMatrix','blendMatrix','setRange'}
     def attribute(value):
-        if not isinstance(value,str) or re.fullmatch(r'[A-Za-z][A-Za-z0-9]*(?:\[\d+\])?(?:\.[A-Za-z][A-Za-z0-9]*(?:\[\d+\])?)*',value) is None:
+        if not isinstance(value,str) or re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])?(?:\.[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])?)*',value) is None:
             raise CharacterRegistryError('来源 RP 图属性地址无效')
         return value
     def plug(value):

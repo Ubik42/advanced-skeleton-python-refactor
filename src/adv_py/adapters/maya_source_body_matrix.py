@@ -27,7 +27,7 @@ def configure_fk(host,body,fk, *,excluded=frozenset(),include_root=False):
         target=control.driven_joint
         if target not in paths or target==body.root and not include_root or target in excluded:
             continue
-        if not c.objExists(target+'.advPySourceJoint'):
+        if not host._is_owned_body_or_mechanism(target):
             continue
         parent=(c.listRelatives(target,parent=True,fullPath=True) or [None])[0]
         orient=control.constraint_name
@@ -70,7 +70,7 @@ def configure_fk(host,body,fk, *,excluded=frozenset(),include_root=False):
         target=joint.path
         if target==body.root or target in parents or target in excluded:
             continue
-        if (not c.objExists(target+'.advPySourceJoint')
+        if (not host._is_owned_body_or_mechanism(target)
                 or c.connectionInfo(target+'.offsetParentMatrix',isDestination=True)
                 or any(c.listConnections(target+'.'+attr,source=True,destination=False)
                        for attr in ('translate','rotate','scale','jointOrient'))):
@@ -197,7 +197,7 @@ def configure(host,body,fk,limbs,dynamics, *,excluded=frozenset()):
             if joint.body_joint in excluded:
                 continue
             target=joint.body_joint
-            if not c.objExists(target+'.advPySourceJoint'):
+            if not host._is_owned_body_or_mechanism(target):
                 continue  # Source temporary Foot placement markers were removed.
             parent=(c.listRelatives(target,parent=True,fullPath=True) or [None])[0]
             control=controls.get(joint.fk_driver)

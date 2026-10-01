@@ -1571,6 +1571,8 @@ class MayaCharacterRegistryMixin:
         audit_source_rp(self,plan)
         from .maya_source_body_matrix import audit_fk
         audit_fk(self,plan)
+        from .maya_source_part_reference import audit_registered as audit_twist_references
+        audit_twist_references(self,plan)
         from .maya_source_bendy_body_matrix import audit_registered as audit_bendy_matrix
         audit_bendy_matrix(self,plan)
         from .maya_source_body_root import audit_registered as audit_root_matrix

@@ -25,6 +25,10 @@ _FIT_INBETWEEN_KIND = "fit-inbetween-v1"
 
 
 class MayaFitPartMixin:
+    def create_source_part_twist_references(self, inputs, independent, blended):
+        from .maya_source_part_reference import create
+        return create(self, inputs, independent, blended)
+
     def _has_fit_part_parent_chain(self, child: str,
                                    ancestor: str) -> bool:
         """Require every inserted joint between two Body nodes to be a Part."""
@@ -884,6 +888,9 @@ class MayaFitPartMixin:
                        for source, target in expected)
 
         source = projection.input
+        if source.reference_inverse_plug:
+            from .maya_source_part_reference import audit
+            audit(self, source.reference_inverse_plug.split('.', 1)[0])
         if (source.world_matrix_plug or projection.matrix_blend_name
                 or projection.static_source_name):
             reference = projection.reference_name

@@ -20,10 +20,16 @@ def main(scene,output):
             error=max(abs(a-b) for a,b in zip(source,target))
             if error>1e-5:
                 values={}
-                for attr in ('translate','rotate','scale','shear','jointOrient','rotateAxis','segmentScaleCompensate','inverseScale','inheritsTransform','rotatePivot','rotatePivotTranslate','scalePivot','scalePivotTranslate','offsetParentMatrix'):
+                for attr in ('translate','rotate','scale','shear','jointOrient','rotateAxis','segmentScaleCompensate','inverseScale','inheritsTransform','rotatePivot','rotatePivotTranslate','scalePivot','scalePivotTranslate','matrix','parentMatrix[0]','worldMatrix[0]','offsetParentMatrix'):
                     values[attr]={'source':cmds.getAttr(joint.source_path+'.'+attr),
                                   'export':cmds.getAttr(joint.output_path+'.'+attr)}
-                rows.append(dict(source=joint.source_path,target=joint.output_path,error=error,
+                parents=cmds.listRelatives(joint.source_path,parent=True,fullPath=True) or []
+                exported_parents=cmds.listRelatives(joint.output_path,parent=True,fullPath=True) or []
+                parent_world=cmds.getAttr(parents[0]+'.worldMatrix[0]') if parents else []
+                export_parent_world=cmds.getAttr(exported_parents[0]+'.worldMatrix[0]') if exported_parents else []
+                rows.append(dict(parent_world=parent_world,export_parent_world=export_parent_world,
+                                 parent=parents,export_parent=exported_parents,
+                                 source=joint.source_path,target=joint.output_path,error=error,
                                  source_world=source,export_world=target,attributes=values))
         if rows:
             (output/'bendy-export-difference.json').write_text(json.dumps(rows,indent=2),encoding='utf-8')
@@ -31,5 +37,7 @@ def main(scene,output):
     MayaBodyBuildHost.capture_body_export_skeleton=capture
     cmds.file(str(scene.resolve()),open=True,force=True,executeScriptNodes=False)
     cmds.undoInfo(state=True)
+    cycles=cmds.cycleCheck(all=True,dag=True,list=True) or []
+    (output/'bendy-cycles.json').write_text(json.dumps(cycles,indent=2),encoding='utf-8')
     MayaPanelController().publish_fbx(':',output/'bendy.fbx',start=1,end=5,include_skins=True)
 if __name__=='__main__':main(Path(sys.argv[1]),Path(sys.argv[2]))

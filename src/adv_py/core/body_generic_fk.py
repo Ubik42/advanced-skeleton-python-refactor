@@ -173,6 +173,7 @@ def plan_body_generic_fk(
     fkx_joint_controls: frozenset[str] | None = None,
     point_controls: frozenset[str] | None = None,
     first_after_ik_paths: frozenset[str] = frozenset(),
+    follow_inserted_parts: bool = True,
 ) -> BodyGenericFkPlan:
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
     state_by_name = {state.name.rsplit(":", 1)[-1]: state
@@ -237,7 +238,10 @@ def plan_body_generic_fk(
         final_parent = ((remapped_body_paths or {}).get(
             spec.parent_path, spec.parent_path)
             if spec.parent_path is not None else None)
-        child_of_part = (final_parent is not None
+        # Original source parenting uses the authored childOfPart option.
+        # A generated twist Part between Body joints does not imply that
+        # FK should follow deformation; that would feed Bendy back into FK.
+        child_of_part = (follow_inserted_parts and final_parent is not None
                          and final_path.rsplit("|", 1)[0] != final_parent)
         if (not needs_endpoint and spec.parent_path is not None
                 and (standard_parent or spec.path in first_after_ik_paths or child_of_part

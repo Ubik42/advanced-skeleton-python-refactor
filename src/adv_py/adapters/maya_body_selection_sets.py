@@ -97,6 +97,7 @@ class MayaBodySelectionSetsMixin:
     def name_body_unit_conversions(self, plan: BodyAllSetPlan) -> None:
         self._require_transaction()
         c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
+        renames = {}
         for path in plan.members:
             if not path.rsplit("|", 1)[-1].startswith("unitConversion"):
                 continue
@@ -121,6 +122,11 @@ class MayaBodySelectionSetsMixin:
             renamed = c.rename(node, target)
             if not c.objExists(renamed) or c.nodeType(renamed) != "unitConversion":
                 raise RuntimeError("自动生成的单位转换节点重命名失败：" + path)
+            # Source graph documents are frozen before the final ADV name
+            # pass. Preserve their plug identities together with the rename.
+            renames[path] = renamed.rsplit(":", 1)[-1]
+        from .maya_source_graph_records import rename_addresses
+        rename_addresses(self, renames)
 
     def populate_body_all_set(self, plan: BodyAllSetPlan) -> None:
         self._require_transaction()
