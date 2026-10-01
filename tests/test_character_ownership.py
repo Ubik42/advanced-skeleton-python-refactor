@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock,patch
 
-from adv_py.adapters.maya_character_ownership import _graph
+from adv_py.adapters.maya_character_ownership import _graph,_missing_fit_fat_connection
 
 
 class CharacterOwnershipTests(unittest.TestCase):
@@ -26,3 +26,29 @@ class CharacterOwnershipTests(unittest.TestCase):
         nodes,edges=self.graph(':unitConversion1',shared=True)
         self.assertEqual(set(nodes),{'driver','joint'})
         self.assertIn(('driver.output',':unitConversion1.input'),edges)
+
+    def test_only_unconnected_original_fit_fat_receiver_can_be_repaired(self):
+        commands=Mock()
+        commands.objExists.return_value=True
+        commands.nodeType.return_value='multiplyDivide'
+        commands.getAttr.return_value=1
+        commands.connectionInfo.return_value=''
+        host=SimpleNamespace(_cmds=commands)
+        edge=('HipFat.outputY','|Group|FitSkeleton|Root|Hip.fatFrontAbs')
+        self.assertTrue(_missing_fit_fat_connection(host,edge,'|Group|FitSkeleton'))
+        commands.connectionInfo.return_value='UserDriver.output'
+        self.assertFalse(_missing_fit_fat_connection(host,edge,'|Group|FitSkeleton'))
+        commands.connectionInfo.return_value=''
+        self.assertFalse(_missing_fit_fat_connection(host,
+            ('HipFat.outputX','|Group|FitSkeleton|Root|Hip.fatFrontAbs'),'|Group|FitSkeleton'))
+
+    def test_role_alias_maps_reparented_controller_edges(self):
+        commands=Mock()
+        commands.nodeType.return_value='transform'
+        host=SimpleNamespace(_cmds=commands)
+        edges=(('|old|control.message','AdvPy_CharacterRegistry.members[1]'),)
+        with patch('adv_py.adapters.maya_character_ownership.connections',return_value=edges):
+            nodes,links=_graph(host,('|old|control','AdvPy_CharacterRegistry'),
+                roles={'|old|control':'|new|control'},normalize_registry=True)
+        self.assertEqual(nodes['|new|control'],'|old|control')
+        self.assertEqual(links,(('|new|control.message','AdvPy_CharacterRegistry.members[*]'),))

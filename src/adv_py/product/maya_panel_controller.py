@@ -886,6 +886,7 @@ class MayaPanelController:
 
     def body_rebuild(self, namespace: str, replacement: str,
                      extensions: tuple[str, ...] = (), *,
+                     spline_counts: tuple[tuple[str,int], ...] = (),
                      progress: Callable[[str], None] | None = None) -> PanelCharacter:
         if not isinstance(replacement, str) or not replacement.strip():
             raise ValueError("请填写尚未占用的重建暂存命名空间")
@@ -894,7 +895,7 @@ class MayaPanelController:
         if progress:
             progress("暂存替换角色并核对需保留的数据")
         result = RebuildBodyCharacter(host).apply(replacement.strip(),
-            extensions=extensions)
+            extensions=extensions,spline_counts=spline_counts)
         if progress:
             progress("替换完成，原角色与保留数据已复核")
         return PanelCharacter(namespace, True, len(result.registration.body),

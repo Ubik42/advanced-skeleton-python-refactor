@@ -16,6 +16,7 @@ def promote(host,staged):
     host.verify_character_retained_data(staged)
     rows=staged.ownership.nodes
     old_ids={old for _,old,_,_ in rows}
+    old_ids.update(uuid for _,uuid,_ in staged.ownership.removed_nodes)
     old_paths={_by_uuid(c,uuid) for uuid in old_ids}
     fit=staged.original.registration.container
     old_fit=host.scene_address(fit)
@@ -81,7 +82,17 @@ def promote(host,staged):
     for role,old,new,kind in rows:
         old_node=_by_uuid(c,old)
         rename.append((new,old_node.rsplit('|',1)[-1]))
-        references[target._cmds.identity.to_local(_by_uuid(c,new))]=host._cmds.identity.to_local(old_node)
+        logical=target._cmds.identity.to_local(_by_uuid(c,new))
+        references[logical]=(logical if staged.spline_change is not None
+                             and staged.spline_change.systems else
+                             host._cmds.identity.to_local(old_node))
+    for role,uuid,_ in staged.ownership.created_nodes:
+        node=_by_uuid(c,uuid)
+        logical=target._cmds.identity.to_local(node)
+        name=logical.rsplit('|',1)[-1]
+        if role.startswith('@conversion:'):
+            name=node.rsplit('|',1)[-1].rsplit(':',1)[-1]
+        rename.append((uuid,name))
     for role,uuid in (*staged.ownership.created_shapes,
                       *((role,uuid) for role,uuid,_,_ in staged.ownership.retained_shapes)):
         name=host.scene_address(role).rsplit('|',1)[-1]
@@ -96,6 +107,7 @@ def promote(host,staged):
     for item in c.ls(sl=True,long=True) or []:
         node,separator,component=item.partition('.')
         uuid=c.ls(node,uuid=True)[0]
+        if uuid in {row[1] for row in staged.ownership.removed_nodes}:continue
         selection.append((replacement_by_old.get(uuid,uuid),separator+component))
     retained=[]
     for logical in sorted(retained_paths,key=lambda path:(path.count('|'),path)):
@@ -127,6 +139,30 @@ def promote(host,staged):
                 retained_allset_ids.add(c.ls(paths[0],uuid=True)[0])
         if members:
             c.sets(tuple(members),add=new_allset)
+    # Fit is retained by UUID, but its generated Fat/scale receivers belong
+    # to the new graph. Rehost their boundary before deleting the imported
+    # Fit copy; otherwise the first rebuild silently severs these drivers.
+    fit_links=[]
+    generated_ids={new for _,_,new,_ in rows}
+    generated_ids.update(uuid for _,uuid,_ in staged.ownership.created_nodes)
+    fit_nodes=[target.scene_address(fit),*(c.listRelatives(
+        target.scene_address(fit),allDescendents=True,fullPath=True) or [])]
+    fit_node_set=set(fit_nodes)
+    for node in fit_nodes:
+        pairs=c.listConnections(node,source=True,destination=True,
+                                plugs=True,connections=True) or []
+        for own,peer in zip(pairs[::2],pairs[1::2]):
+            peer_node=peer.split('.',1)[0]
+            peer_path=(c.ls(peer_node,long=True) or [peer_node])[0]
+            if peer_path in fit_node_set:continue
+            ids=c.ls(peer_path,uuid=True) or []
+            if len(ids)!=1 or ids[0] not in generated_ids:continue
+            if peer_path==target.scene_address(REGISTRY_NAME):continue
+            retained_plug=host.scene_address(target._cmds.identity.to_local(own))
+            if not c.objExists(retained_plug):
+                raise CharacterRegistryError('保留 Fit 缺少生成图连接属性：'+retained_plug)
+            incoming=c.isConnected(peer,own)
+            fit_links.append((retained_plug,ids[0],peer.split('.',1)[1],incoming))
     c.delete(target.scene_address(fit))
     # Keep each old child under its own temporary parent. Two retained DAG
     # branches may have the same leaf name, and parenting both to world would
@@ -141,6 +177,15 @@ def promote(host,staged):
     # renaming with ignoreShape keeps every shape role under our control.
     for uuid,name in rename:
         c.rename(_by_uuid(c,uuid),':'+name.lstrip(':'),ignoreShape=True)
+    for retained_plug,uuid,attribute,incoming in fit_links:
+        peer=_by_uuid(c,uuid)+'.'+attribute
+        source,destination=(peer,retained_plug) if incoming else (retained_plug,peer)
+        locked=bool(c.getAttr(destination,lock=True))
+        try:
+            if locked:c.setAttr(destination,lock=False)
+            c.connectAttr(source,destination,force=True)
+        finally:
+            if locked:c.setAttr(destination,lock=True)
     for (uuid,role,logical),holder in zip(retained,holders):
         c.parent(_by_uuid(c,uuid),_by_uuid(c,replacement_by_role[role]))
         if host._cmds.identity.to_local(_by_uuid(c,uuid))!=logical:

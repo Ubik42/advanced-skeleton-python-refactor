@@ -104,9 +104,9 @@ def _control_shape_changes(host,target,names,original,replacement):
     return tuple(retained),tuple(created)
 
 
-def _graph(host,names,*,external_conversions=()):
+def _graph(host,names,*,external_conversions=(),roles=None,normalize_registry=False):
     c=host._cmds
-    nodes={name:name for name in names}
+    nodes={(roles or {}).get(name,name):name for name in names}
     edges=set()
     for name in names:edges.update(connections(host,name))
     outside={p.split('.',1)[0] for edge in edges for p in edge}-set(names)
@@ -130,6 +130,10 @@ def _graph(host,names,*,external_conversions=()):
         node,attr=plug.split('.',1)
         if attr=='instObjGroups':
             attr='instObjGroups[0]'
+        if normalize_registry and node=='AdvPy_CharacterRegistry' and attr.startswith('members['):
+            # Registration independently verifies the exact ordered members;
+            # count edits necessarily shift unrelated storage indices.
+            attr='members[*]'
         if (node in ('AllSet','ControlSet','DeformSet','Sets')
                 and c.nodeType(node)=='objectSet'
                 and attr.startswith(('dagSetMembers[','dnSetMembers['))
@@ -142,6 +146,34 @@ def _graph(host,names,*,external_conversions=()):
     return nodes,tuple(sorted((normalize(a),normalize(b)) for a,b in edges))
 
 
+def _spline_conversion(host,node,change,owned):
+    """An implicit conversion belongs to the exact generating Spline edge."""
+    c=host._cmds
+    if c.nodeType(node)!='unitConversion':return False
+    links=connections(host,node)
+    inputs=[source for source,target in links if target==node+'.input']
+    peers={plug.split('.',1)[0] for edge in links for plug in edge}-{node}
+    return (len(inputs)==1 and change.affects(inputs[0].split('.',1)[0])
+            and peers<=owned)
+
+
+def _missing_fit_fat_connection(host,edge,container):
+    """Recover the six exact generated edges lost by older promotions."""
+    source,destination=edge
+    a,aa=source.split('.',1);b,ba=destination.split('.',1)
+    fit_node=(a if a.startswith(container+'|') else
+              b if b.startswith(container+'|') else None)
+    if fit_node is None:return False
+    fat=fit_node.rsplit('|',1)[-1]+'Fat'
+    expected={(fit_node+'.fat',fat+'.input1Y'),(fit_node+'.fat',fat+'.input1Z'),
+              (fit_node+'.fatFront',fat+'.input2Y'),(fit_node+'.fatWidth',fat+'.input2Z'),
+              (fat+'.outputY',fit_node+'.fatFrontAbs'),(fat+'.outputZ',fit_node+'.fatWidthAbs')}
+    c=host._cmds
+    return (edge in expected and c.objExists(source) and c.objExists(destination)
+            and c.nodeType(fat)=='multiplyDivide' and c.getAttr(fat+'.operation')==1
+            and not c.connectionInfo(destination,sourceFromDestination=True))
+
+
 def audit(host,staged):
     """Reject unhandled connections or children before any deletion is possible."""
     from .maya_body import MayaBodyBuildHost
@@ -150,6 +182,27 @@ def audit(host,staged):
     fit=reg.container
     names=tuple(n for n in target._cmds.ls(long=True)
                 if not (n==fit or n.startswith(fit+'|')))
+    change=staged.spline_change
+    changing=change is not None and bool(change.systems)
+    old_role_nodes={}
+    if changing:
+        for name in names:
+            if host._cmds.objExists(name):old_role_nodes[name]=name;continue
+            if not change.affects(name):continue
+            matches=host._cmds.ls(name.rsplit('|',1)[-1],long=True) or []
+            if len(matches)>1:raise CharacterRegistryError('Spline 同名旧节点身份不唯一：'+name)
+            if matches:old_role_nodes[name]=matches[0]
+    common_names=tuple(name for name in names if
+        (name in old_role_nodes if changing else host._cmds.objExists(name)))
+    added_names=set(names)-set(common_names) if changing else set()
+    removed_names=set()
+    if changing:
+        # AllSet supplies explicit old ownership; the selected Spline plan
+        # supplies the finite set of receivers allowed to disappear.
+        old_members=set(host.capture_body_all_set_members())
+        removed_names={name for name in old_members
+                       if (change.affects(name) or _spline_conversion(host,name,change,old_members))
+                       and name not in old_role_nodes.values()}
     # Audit applies to the pristine stage, before preserved curves move there.
     for node in names:
         kind=target._cmds.nodeType(node)
@@ -157,7 +210,8 @@ def audit(host,staged):
                 'animCurveUA','animCurveUL','animCurveUT','animCurveUU'):
             raise CharacterRegistryError('所有权审计需要尚未交接动画的暂存角色')
     retained_shapes,created_shapes=_control_shape_changes(
-        host,target,names,staged.original.registration,reg)
+        host,target,tuple(name for name in common_names if host._cmds.objExists(name))
+        if changing else names,staged.original.registration,reg)
     retained_names={row[0] for row in retained_shapes}
     created_names={row[0] for row in created_shapes}
     external_conversions={row[0] for row in (
@@ -167,10 +221,25 @@ def audit(host,staged):
         *staged.deformer_output_conversions)}
     if external_conversions & set(names):
         raise CharacterRegistryError('Geometry 保留单位转换与新 Rig 同名')
-    old_nodes,old_edges=_graph(host,tuple(n for n in names if n not in created_names),
-        external_conversions=external_conversions)
-    new_nodes,new_edges=_graph(target,names)
-    if set(old_nodes)!=set(new_nodes)-created_names:
+    old_names=tuple(old_role_nodes[name] for name in common_names) if changing else tuple(
+        name for name in names if name not in created_names)
+    old_nodes,old_edges=_graph(host,old_names+tuple(sorted(removed_names)),
+        external_conversions=external_conversions,
+        roles={node:role for role,node in old_role_nodes.items()} if changing else None,
+        normalize_registry=changing)
+    new_nodes,new_edges=_graph(target,names,normalize_registry=changing)
+    added_roles=set(new_nodes)-set(old_nodes)-created_names
+    removed_roles=set(old_nodes)-set(new_nodes)
+    if changing:
+        for role in added_roles:
+            if (not change.affects(new_nodes[role]) and not role.startswith('@conversion:')
+                    and not _spline_conversion(target,new_nodes[role],change,set(new_nodes.values()))):
+                raise CharacterRegistryError('Spline 数量变更新增了非所属生成节点：'+role)
+        for role in removed_roles:
+            if (not change.affects(old_nodes[role]) and not role.startswith('@conversion:')
+                    and not _spline_conversion(host,old_nodes[role],change,set(old_nodes.values()))):
+                raise CharacterRegistryError('Spline 数量变更删除了非所属生成节点：'+role)
+    elif set(old_nodes)!=set(new_nodes)-created_names:
         raise CharacterRegistryError('新旧 Rig 的独占单位转换边界不一致')
     rows=[];shapes=[];curve_geometry=[]
     original=staged.original
@@ -182,19 +251,23 @@ def audit(host,staged):
     retained_children.update(geometry_roots)
     retained_children.update(retained_names)
     properties={row.path:{a[0] for a in row.attributes} for row in original.properties}
-    for role in sorted(old_nodes):
+    for role in sorted(set(old_nodes)&set(new_nodes)):
         old,new=old_nodes[role],new_nodes[role]
         a,b=host._cmds,target._cmds
         kind=a.nodeType(old)
+        affected=changing and change.affects(old)
         if kind!=b.nodeType(new):raise CharacterRegistryError('新旧 Rig 节点类型不同：'+role)
         if a.referenceQuery(old,isNodeReferenced=True) or any(a.lockNode(old,q=True,lock=True) or []):
             raise CharacterRegistryError('旧 Rig 节点被引用或锁定：'+old)
         extra=set(a.listAttr(old,userDefined=True) or [])-set(b.listAttr(new,userDefined=True) or [])
+        if affected and kind in ('parentConstraint','orientConstraint','pointConstraint',
+                                 'scaleConstraint','aimConstraint'):
+            extra-=set(getattr(a,kind)(old,q=True,weightAliasList=True) or [])
         if extra-properties.get(old,set()):
             raise CharacterRegistryError('旧 Rig 节点有未采集的附加属性：'+old+' '+repr(sorted(extra-properties.get(old,set()))))
-        if kind=='unitConversion' and a.getAttr(old+'.conversionFactor')!=b.getAttr(new+'.conversionFactor'):
+        if kind=='unitConversion' and not affected and a.getAttr(old+'.conversionFactor')!=b.getAttr(new+'.conversionFactor'):
             raise CharacterRegistryError('单位转换系数被修改：'+old)
-        if kind in ('animCurveUA','animCurveUL','animCurveUT','animCurveUU'):
+        if kind in ('animCurveUA','animCurveUL','animCurveUT','animCurveUU') and not affected:
             if not _same_curve_state(_driven_curve_state(a,old),_driven_curve_state(b,new)):
                 raise CharacterRegistryError('原 Rig 驱动曲线已修改，需要显式驱动曲线迁移：'+old)
         if kind=='nurbsCurve':
@@ -202,7 +275,7 @@ def audit(host,staged):
             shape_b=b.xform(new+'.cv[*]',q=True,objectSpace=True,t=True) or []
             editable=(_editable_control_curve(host,old,original.registration)
                       and _editable_control_curve(target,new,reg))
-            if not editable and (len(shape_a)!=len(shape_b)
+            if not editable and not affected and (len(shape_a)!=len(shape_b)
                     or _curve_topology(host,old)!=_curve_topology(target,new)
                     or any(a.getAttr(old+'.'+attr)!=b.getAttr(new+'.'+attr) for attr in ('degree','form','spans'))):
                 raise CharacterRegistryError('控制形状拓扑不同，需要显式形状迁移：'+old)
@@ -212,13 +285,18 @@ def audit(host,staged):
             # Solver curves receive their CVs from owned graph connections.
             # Their evaluated animation is not an editable control shape.
             driven = a.listConnections(old+'.controlPoints',source=True,destination=False) or []
-            shapes.append((role,() if driven else tuple(shape_a),tuple(settings),_curve_topology(host,old)))
+            if not affected or editable:
+                shapes.append((role,() if driven else tuple(shape_a),tuple(settings),_curve_topology(host,old)))
         if 'dagNode' in (a.nodeType(old,inherited=True) or []):
             children=set(a.listRelatives(old,children=True,fullPath=True) or [])
             if children-set(old_nodes.values())-retained_children:
                 raise CharacterRegistryError('旧 Rig 存在未声明保留的子节点：'+old)
         rows.append((role,a.ls(old,uuid=True)[0],b.ls(new,uuid=True)[0],kind))
     old_owned=set(old_nodes.values())
+    if changing:
+        from .maya_spline_control_rebuild import validate_removed_node
+        for role in removed_roles:
+            validate_removed_node(host,old_nodes[role],old_owned,original)
     user_sets={row.node for row in original.selection_sets}
     new_owned=set(new_nodes.values())
     for shape,_,_,links in retained_shapes:
@@ -251,11 +329,20 @@ def audit(host,staged):
         for destination in destinations)
     for curve in original.curves:
         permitted.update((curve.node+'.output',plug) for plug in curve.outputs)
+    if changing:
+        aliases={node:role for role,node in old_nodes.items()}
+        def old_role_plug(plug):
+            node,attribute=plug.split('.',1)
+            return aliases.get(node,node)+'.'+attribute
+        permitted={(old_role_plug(a),old_role_plug(b)) for a,b in permitted}
     # Bind-pose records belong to retained skin, not to the rig being deleted.
     for skin in original.skins:
         for pose in host._cmds.listConnections(skin.node+'.bindPose',s=True,d=False) or []:
             if host._cmds.nodeType(pose)!='dagPose':raise CharacterRegistryError('蒙皮绑定姿态类型无效')
             permitted.update(connections(host,pose))
+    permitted={(source.rsplit('.',1)[0]+'.instObjGroups[0]'
+                if source.endswith('.instObjGroups') else source,destination)
+               for source,destination in permitted}
     # The replacement stage has no preserved mesh yet. A freshly built
     # AllSet may own a copied Geometry mesh, whose membership is restored
     # only when that mesh is handed over to the replacement character.
@@ -282,6 +369,19 @@ def audit(host,staged):
     )
     extra=set(old_edges)-set(new_edges)-permitted
     missing=set(new_edges)-set(old_edges)
+    missing={edge for edge in missing if not _missing_fit_fat_connection(
+        host,edge,original.registration.container)}
+    if changing:
+        # Only internal edges involving this explicitly regenerated Spline
+        # may differ. External user/skin connections still require capture.
+        from adv_py.core.character_identity import SHARED_NODES
+        def regenerated(edge,owned):
+            peers={plug.split('.',1)[0] for plug in edge}
+            return (peers<=owned|set(SHARED_NODES)
+                    and any(change.affects(node) or node.startswith('@conversion:')
+                            for node in peers))
+        extra={edge for edge in extra if not regenerated(edge,set(old_nodes))}
+        missing={edge for edge in missing if not regenerated(edge,set(new_nodes))}
     retained_edges={edge for _,_,_,links in retained_shapes for edge in links}
     extra-=retained_edges
     for edge in tuple(missing):
@@ -291,7 +391,11 @@ def audit(host,staged):
     if extra or missing:
         raise CharacterRegistryError('旧 Rig 连接不符合重建边界：'+repr((sorted(extra)[:3],sorted(missing)[:3])))
     result=RebuildOwnership(tuple(rows),old_edges,tuple(shapes),tuple(curve_geometry),
-                            retained_shapes,created_shapes)
+        retained_shapes,created_shapes,
+        tuple((role,target._cmds.ls(new_nodes[role],uuid=True)[0],
+               target._cmds.nodeType(new_nodes[role])) for role in sorted(added_roles)),
+        tuple((role,host._cmds.ls(old_nodes[role],uuid=True)[0],
+               host._cmds.nodeType(old_nodes[role])) for role in sorted(removed_roles)))
     if staged.ownership is not None and result!=staged.ownership:
         raise CharacterRegistryError('暂存后的节点归属、形状或连接发生变化')
     return result

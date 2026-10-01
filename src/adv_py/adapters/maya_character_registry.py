@@ -858,7 +858,7 @@ class MayaCharacterRegistryMixin:
             with stage.transaction('Match replacement spine solver'):
                 stage.ensure_precise_body_spine_solver(registration.spine)
 
-    def preserve_character_rebuild_binding(self,stage,original,replacement):
+    def preserve_character_rebuild_binding(self,stage,original,replacement,*,spline_change=None):
         from adv_py.core.character_preservation import validate_rebuild_layout
         generated = replacement
         by_key = {channel.key:channel for channel in replacement.channels}
@@ -912,7 +912,10 @@ class MayaCharacterRegistryMixin:
         if old_keys <= set(by_key) and all(
                 additive_controller_channel(key) for key in additions):
             replacement=replace(replacement,channels=tuple(by_key[channel.key] for channel in original.channels))
-        validate_rebuild_layout(original,replacement)
+        if spline_change is not None and spline_change.systems:
+            validate_rebuild_layout(original,replace(replacement,channels=original.channels))
+        else:
+            validate_rebuild_layout(original,replacement)
         if (type(original.spine) is not type(replacement.spine)
                 or (original.spine is not None and (
                     len(original.spine.lengths)!=len(replacement.spine.lengths)

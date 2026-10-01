@@ -24,7 +24,7 @@ def saved_source_spline_layout(source_paths,layouts):
     return matches[0]
 
 
-def retain_source_spline_layout(plan,saved):
+def retain_source_spline_layout(plan,saved,*,change_count=False):
     if saved is None:
         return plan
     if (source_spline_identity(plan.body_joints)!=source_spline_identity(saved.body_joints)
@@ -34,6 +34,11 @@ def retain_source_spline_layout(plan,saved):
         raise FitSkeletonValidationError('来源 Spline 保存布局与重建系统不一致')
     # Preserve every control-count-dependent graph branch, including older
     # graphs without fake-mid, Hybrid, controller layers or parent follow.
+    if change_count:
+        # Recreate every count-dependent receiver from the new Fit plan. The
+        # FKIK controller remains an independent, stable original identity.
+        return replace(plan,source_mode=saved.source_mode,
+                       use_offset_parent_matrix=saved.use_offset_parent_matrix)
     fields=('targets','positions','use_offset_parent_matrix','even_stretch_graph',
         'twist_ramp_graph','mid_follow_graph','isolated_mid_follow_graph',
         'sub_targets','extra_curve','fk_root_point_from_receiver','source_curve_points',

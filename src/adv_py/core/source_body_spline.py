@@ -11,7 +11,7 @@ from .fit_settings import FitSkeletonValidationError
 from .joint_labels import JointLabel
 
 
-def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), *,instances=(),saved_layouts=None):
+def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), *,instances=(),saved_layouts=None,control_counts=()):
     label_by_name = dict(labels)
     fit_labels = {node.path: (JointLabel.parse(label_by_name[name])
                              if name in label_by_name else None)
@@ -45,6 +45,10 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
             resolved.append((info,side,source))
     if found and not resolved:
         raise FitSkeletonValidationError('来源 Spline 没有实际 Body 骨链')
+    counts=dict(control_counts)
+    if (len(counts)!=len(control_counts)
+            or any(type(value) is not int or value<2 for value in counts.values())):
+        raise FitSkeletonValidationError('来源 Spline 控制数量须为至少 2 的整数，系统不可重复')
     plans=[]
     for info,side,source in resolved:
         system='' if len(resolved)==1 and side=='M' else info.name+'_'+side
@@ -52,10 +56,13 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
         saved=saved_source_spline_layout(tuple(joint.path for joint in source),saved_layouts)
         if saved is not None:
             system=saved.system_name
+        fit_control_count=info.control_count
+        if system in counts:
+            info=replace(info,control_count=counts[system])
         generated_sources={joint.path:joint.source_joint for plan in plans for joint in plan.joints}
         fk,spline=_plan_source_chain(fk,source,info,options,metadata,system,generated_sources)
         spline=replace(spline,source_fixed_orient_unique=True,source_first_translate=True,
-                       source_world_controls=True)
+                       source_world_controls=True,source_fit_control_count=fit_control_count)
         from .source_spline_mode import SourceSplineModePlan,source_mode_icon_scale
         # MEL asks for the immediate physical joint parent, including an
         # inserted Part. A Body-only parent table omits those receivers.
@@ -71,9 +78,12 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
             build_name(info.start),build_name(info.middle),build_name(info.end),
             source_fit_side_sign(source[0].name,instances))
         spline=replace(spline,source_mode=mode)
-        plans.append(retain_source_spline_layout(spline,saved))
+        plans.append(retain_source_spline_layout(spline,saved,
+            change_count=system in counts))
     if saved_layouts is not None and len(plans)!=len(saved_layouts):
         raise FitSkeletonValidationError('来源 Spline 重建不能静默增删已保存系统')
+    if counts.keys()-{plan.system_name for plan in plans}:
+        raise FitSkeletonValidationError('来源 Spline 控制数量指定了不存在的系统')
     modes=tuple(plan.source_mode.name for plan in plans if plan.source_mode is not None)
     if len(set(modes))!=len(modes):
         raise FitSkeletonValidationError('来源 Spline FKIK 控制器名称重复')

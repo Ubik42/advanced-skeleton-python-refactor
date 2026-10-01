@@ -41,7 +41,13 @@ def decode_spline(raw, body):
         raw={**raw,'source_world_controls':False}
     if isinstance(raw,dict) and 'source_mode' not in raw:
         raw={**raw,'source_mode':None}
+    if isinstance(raw,dict) and 'source_fit_control_count' not in raw:
+        raw={**raw,'source_fit_control_count':None}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
+    fit_count=raw['source_fit_control_count']
+    if fit_count is not None and (type(fit_count) is not int or fit_count<2
+                                 or not raw['source_curve_points']):
+        raise CharacterRegistryError('来源 Spline Fit 标签控制数量无效')
     if type(raw['source_first_translate']) is not bool or raw['source_first_translate'] and not raw['source_curve_points']:
         raise CharacterRegistryError('来源 Spline 首控制器位移标记无效')
     if type(raw['source_world_controls']) is not bool or raw['source_world_controls'] and not raw['source_curve_points']:
@@ -223,7 +229,8 @@ def decode_spline(raw, body):
                           source_bendy_matrix_indices=tuple(bendy_indices),
                           source_fixed_orient_unique=raw['source_fixed_orient_unique'],
                           source_first_translate=raw['source_first_translate'],
-                          source_world_controls=raw['source_world_controls'],source_mode=source_mode)
+                          source_world_controls=raw['source_world_controls'],source_mode=source_mode,
+                          source_fit_control_count=fit_count)
     if result.source_hybrid_graph and any(
             offset.rsplit('|',1)[0]!=result.target_parent(index)
             for index,offset in enumerate(result.offset_targets)):

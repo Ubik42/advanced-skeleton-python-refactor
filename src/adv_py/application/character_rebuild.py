@@ -40,6 +40,7 @@ class StagedCharacterRebuild:
     deformer_sample_frames: tuple[float, ...] = ()
     deformer_animation_state: tuple = ()
     segment_influences: tuple[str, ...] = ()
+    spline_change: object | None = None
 
 
 def _rebuild_axial_description(
@@ -125,7 +126,7 @@ def _compare_transfer_samples(host, staged, frames, stream, *, target):
 class StageBodyCharacterRebuild:
     def __init__(self,host):self._host=host
 
-    def apply(self,namespace,*,extensions=()):
+    def apply(self,namespace,*,extensions=(),spline_counts=()):
         host=self._host
         host.preflight_character_rebuild_namespace(namespace)
         original=CaptureBodyCharacterPreservation(host).execute(extensions=extensions)
@@ -153,6 +154,19 @@ class StageBodyCharacterRebuild:
         selection_members=host.capture_body_rebuild_selection_members()
         generic_fk_policy = host.capture_body_generic_fk_feature_policy(
             original.registration)
+        if is_source_body_registration(original.registration) and not spline_counts:
+            from adv_py.adapters.maya_spline_control_rebuild import authored_fit_count_changes
+            spline_counts=authored_fit_count_changes(host,original.registration)
+        if spline_counts:
+            from adv_py.core.spline_control_rebuild import splines,control_count
+            available={plan.system_name:control_count(plan) for plan in splines(original.registration)}
+            requested=dict(spline_counts)
+            if (len(requested)!=len(spline_counts) or requested.keys()-available
+                    or any(type(count) is not int or count<2 for count in requested.values())):
+                raise CharacterRegistryError('请指定现有 Spline 系统及至少 2 的控制数量')
+            spline_counts=tuple((system,count) for system,count in spline_counts
+                                if count!=available[system])
+            generic_fk_policy=replace(generic_fk_policy,source_spline_counts=spline_counts)
         segment_mode = _rebuild_segment_mode(host,
             original.registration.body_root)
         include_dynamic = host.has_body_dynamic_system()
@@ -225,7 +239,14 @@ class StageBodyCharacterRebuild:
                     SwitchGameRootMotion(stage).apply(create=True)
                     registration=stage.read_character_registration()
                 host.match_character_rebuild_solver(stage,registration)
-                registration=host.preserve_character_rebuild_binding(stage,original.registration,registration)
+                spline_change=None
+                if spline_counts:
+                    from adv_py.core.spline_control_rebuild import plan_spline_control_rebuild
+                    spline_change=plan_spline_control_rebuild(original.registration,registration,spline_counts)
+                    registration=host.preserve_character_rebuild_binding(stage,original.registration,
+                        registration,spline_change=spline_change)
+                else:
+                    registration=host.preserve_character_rebuild_binding(stage,original.registration,registration)
                 if selection_mode != "none":
                     finalize_body_character_sets(
                         stage, registration, built.rig.plan,
@@ -233,8 +254,9 @@ class StageBodyCharacterRebuild:
                         extras=built.selection_extras,
                         scene_before=scene_before, fit_container=fit_path,
                         populate_all=selection_mode == "populated")
-                    with stage.transaction('Preserve original selection membership'):
-                        stage.restore_body_rebuild_selection_members(selection_members)
+                    if spline_change is None or not spline_change.systems:
+                        with stage.transaction('Preserve original selection membership'):
+                            stage.restore_body_rebuild_selection_members(selection_members)
                 if host.capture_body_rebuild_selection_members()!=selection_members:
                     raise RuntimeError('暂存构建改写了原角色选择集成员')
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
@@ -310,7 +332,11 @@ class StageBodyCharacterRebuild:
                     (*preserved_direct, *nested), key=lambda row: row[0]))
                 host.capture_body_geometry_contents(
                     {row[0] for row in preserved_geometry})
-                properties=host.plan_character_property_transfer(original,namespace)
+                if spline_change is not None and spline_change.systems:
+                    from adv_py.adapters.maya_spline_control_rebuild import plan_properties
+                    properties=plan_properties(host,stage,original,registration,spline_change)
+                else:
+                    properties=host.plan_character_property_transfer(original,namespace)
                 staged=StagedCharacterRebuild(original,namespace,registration,
                                               properties,
                                               authored_geometry=preserved_geometry,
@@ -323,7 +349,8 @@ class StageBodyCharacterRebuild:
                                               deformer_output_conversions=deformer_output_conversions,
                                               deformer_sample_frames=deformer_sample_frames,
                                               deformer_animation_state=deformer_animation_state,
-                                              segment_influences=built.segment_influences)
+                                              segment_influences=built.segment_influences,
+                                              spline_change=spline_change)
                 staged=replace(staged,ownership=host.audit_character_rebuild_ownership(staged))
         return staged
 
@@ -365,7 +392,8 @@ class TransferStagedBodyCharacterData:
             raise CharacterRegistryError('暂存后的 Rig 归属或连接已变化，请重新暂存')
         frames=_transfer_sample_frames(original,staged.deformer_sample_frames)
         with TemporaryFile(mode='w+b') as baseline:
-            _write_transfer_samples(host,staged,frames,baseline,target=False)
+            if staged.spline_change is None or not staged.spline_change.systems:
+                _write_transfer_samples(host,staged,frames,baseline,target=False)
             with host.character_rebuild_transaction('Transfer preserved data to replacement rig'):
                 host.transfer_character_data(staged)
                 host.verify_character_retained_data(staged)
@@ -375,21 +403,23 @@ class TransferStagedBodyCharacterData:
                 target = MayaBodyBuildHost(namespace=staged.namespace)
                 if target.capture_body_geometry_container_state() != staged.geometry_container_state:
                     raise RuntimeError('交接改变了 Geometry 容器状态')
-                error=_compare_transfer_samples(host,staged,frames,baseline,
-                                                target=True)
-                if error>1e-4:
-                    raise RuntimeError('交接改变身体、控制空间、蒙皮或用户附件；最大误差：'+str(error))
+                if staged.spline_change is None or not staged.spline_change.systems:
+                    error=_compare_transfer_samples(host,staged,frames,baseline,
+                                                    target=True)
+                    if error>1e-4:
+                        raise RuntimeError('交接改变身体、控制空间、蒙皮或用户附件；最大误差：'+str(error))
         return staged
 
 
 class RebuildBodyCharacter:
-    """Same-layout replacement, including creation and cleanup in one Undo."""
+    """Original rebuild, including explicit/label-derived Spline count edits."""
     def __init__(self,host):self._host=host
 
-    def apply(self,namespace,*,extensions=()):
+    def apply(self,namespace,*,extensions=(),spline_counts=()):
         host=self._host
         with host.transaction('Rebuild character preserving user data'):
-            staged=StageBodyCharacterRebuild(host).apply(namespace,extensions=extensions)
+            staged=StageBodyCharacterRebuild(host).apply(namespace,extensions=extensions,
+                spline_counts=spline_counts)
             TransferStagedBodyCharacterData(host).apply(staged)
             frames=_transfer_sample_frames(staged.original,
                 staged.deformer_sample_frames)

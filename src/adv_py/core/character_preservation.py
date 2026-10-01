@@ -79,6 +79,10 @@ class RebuildOwnership:
     retained_shapes: tuple[tuple[str,str,str,tuple], ...] = ()
     # A newly generated default shape can be absent on the edited old control.
     created_shapes: tuple[tuple[str,str], ...] = ()
+    # Explicit Spline count edits can add/remove generated receivers. They
+    # remain UUID-audited; namespace membership is not a deletion boundary.
+    created_nodes: tuple[tuple[str,str,str], ...] = ()
+    removed_nodes: tuple[tuple[str,str,str], ...] = ()
 
 
 @dataclass(frozen=True)

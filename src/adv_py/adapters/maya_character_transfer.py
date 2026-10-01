@@ -91,7 +91,14 @@ def preflight(host,staged):
     target=MayaBodyBuildHost(namespace=staged.namespace)
     actual=target.read_character_registration()
     if actual!=staged.registration:raise CharacterRegistryError('暂存登记已变化')
-    validate_rebuild_layout(staged.original.registration,actual)
+    change=staged.spline_change
+    if change is not None and change.systems:
+        from adv_py.core.spline_control_rebuild import plan_spline_control_rebuild
+        if plan_spline_control_rebuild(staged.original.registration,actual,
+                tuple((name,count) for name,_,count in change.systems))!=change:
+            raise CharacterRegistryError('Spline 数量变更计划在交接前发生变化')
+    else:
+        validate_rebuild_layout(staged.original.registration,actual)
     for ch in actual.channels:
         plug=target.scene_address(ch.node+'.'+ch.attribute)
         if c.getAttr(plug,lock=True) or c.connectionInfo(plug,sourceFromDestination=True):
@@ -167,7 +174,10 @@ def transfer(host,staged):
     old=staged.original
     if staged.ownership is None:
         raise CharacterRegistryError('角色重建缺少完整生成图归属审计')
-    old_nodes={host.scene_address(n.path):target.scene_address(n.path) for n in old.registration.nodes}
+    change=staged.spline_change
+    changing=change is not None and bool(change.systems)
+    old_nodes={host.scene_address(n.path):target.scene_address(n.path) for n in old.registration.nodes
+               if not changing or c.objExists(target.scene_address(n.path))}
     # The registry records animator-facing controls and Body ancestors. Skin
     # may also use generated Part or volume helpers without user channels.
     # The ownership audit pairs the entire replacement graph by UUID, so all
@@ -186,13 +196,20 @@ def transfer(host,staged):
         source=host.scene_address(node.path)
         if source!=fit and not source.startswith(fit+'|'):
             paths=c.ls(source,long=True) or []
-            if len(paths)!=1 or paths[0] not in audited:
+            removed_ids={uuid for _,uuid,_ in staged.ownership.removed_nodes}
+            if len(paths)!=1 or (paths[0] not in audited
+                    and not (changing and c.ls(paths[0],uuid=True)[0] in removed_ids)):
                 raise CharacterRegistryError('登记节点没有进入完整生成图归属审计：'+source)
     geometry='|Group|Geometry'
     old_nodes[host.scene_address(geometry)]=target.scene_address(geometry)
     # Do not replace the original Fit tree: it remains the editable source.
     old_nodes={p:q for p,q in old_nodes.items() if not (p==host.scene_address(old.registration.container) or p.startswith(host.scene_address(old.registration.container)+'|'))}
     def redirect(plug):
+        if changing:
+            logical=host._cmds.identity.to_local(plug)
+            mapped=change.destination(logical)
+            if mapped is None:return None
+            if mapped!=logical:return target.scene_address(mapped)
         node,attr=plug.split('.',1)
         return old_nodes.get(node,node)+'.'+attr
     host._transaction_changed=True
@@ -213,8 +230,10 @@ def transfer(host,staged):
             target._transaction_active=True
             try:target.ensure_precise_body_spine_solver(staged.registration.spine)
             finally:target._transaction_active=False;target._transaction_changed=False
-        for ch,(_,value) in zip(staged.registration.channels,old.pose.channels):
-            c.setAttr(target.scene_address(ch.node+'.'+ch.attribute),value)
+        old_values=dict(old.pose.channels)
+        for ch in staged.registration.channels:
+            if ch.key in old_values:
+                c.setAttr(target.scene_address(ch.node+'.'+ch.attribute),old_values[ch.key])
         for source,target_node in old_nodes.items():
             plug=source+'.lockInfluenceWeights'
             if c.objExists(plug):
@@ -232,6 +251,9 @@ def transfer(host,staged):
                 path,attr=output.split('.',1)
                 destination=(c.ls(path,long=True) or [path])[0]+'.'+attr
                 replacement=redirect(destination)
+                if replacement is None:
+                    c.disconnectAttr(node+'.output',destination)
+                    continue
                 if destination!=replacement:
                     with _writable_connection(c,destination,replacement):
                         c.disconnectAttr(node+'.output',destination)
@@ -256,6 +278,10 @@ def transfer(host,staged):
                     if a!=replacement:c.disconnectAttr(source,dest);c.connectAttr(replacement,dest)
         curve_redirect={host.scene_address(row.node):_by_uuid(c,row.uuid) for row in old.curves}
         def live_redirect(plug):
+            if changing:
+                mapped=change.destination(host._cmds.identity.to_local(plug))
+                if mapped is None:return None
+                if mapped!=host._cmds.identity.to_local(plug):return target.scene_address(mapped)
             node,attr=plug.split('.',1)
             return curve_redirect.get(node,old_nodes.get(node,node))+'.'+attr
         owned_replacements={_by_uuid(c,old_id):_by_uuid(c,new_id)
@@ -366,6 +392,10 @@ def transfer(host,staged):
                     c.connectAttr(a,y)
             connected_output_conversions.append((a,y))
         for source,destination in sorted({pair for row in (*old.extensions,*staged.custom_properties) for pair in row.connections}):
+            if changing:
+                from .maya_spline_control_rebuild import original_plug
+                source=original_plug(change,source)
+                destination=original_plug(change,destination)
             a,b=host.scene_address(source),host.scene_address(destination)
             x,y=live_redirect(a),live_redirect(b)
             if (a,b)!=(x,y) and not c.isConnected(x,y):
@@ -391,7 +421,8 @@ def transfer(host,staged):
         _refresh_skin_inputs(c,host,old.skins)
         lock_and_verify(target,staged.custom_properties,apply_locks=True)
         from .maya_character_control_state import install as install_control_states
-        install_control_states(target,old.control_states)
+        from .maya_spline_control_rebuild import control_states
+        install_control_states(target,control_states(staged))
         if (any(not c.isConnected(x,y) for x,y in connected_geometry_drivers)
                 or any(not c.isConnected(x,y)
                        for x,y in connected_geometry_outputs)
@@ -417,7 +448,8 @@ def verify_retained(host,staged):
         raise RuntimeError('暂存 Geometry 原生驱动连接变化')
     old=staged.original
     from .maya_character_control_state import verify as verify_control_states
-    verify_control_states(target,old.control_states)
+    from .maya_spline_control_rebuild import control_states
+    verify_control_states(target,control_states(staged))
     from .maya_character_selection_preservation import verify as verify_selection_sets
     verify_selection_sets(staged)
     if host.capture_character_deformer_animation_state(
@@ -426,6 +458,8 @@ def verify_retained(host,staged):
     from .maya_character_ownership import verify_shapes
     verify_shapes(target,staged.ownership)
     registered={n.path for n in old.registration.nodes if n.path!=old.registration.container and not n.path.startswith(old.registration.container+'|')}
+    if staged.spline_change is not None and staged.spline_change.systems:
+        registered.update(n.path for n in staged.registration.nodes)
     if any(row.path=='|Group|Geometry' for row in old.properties):
         registered.add('|Group|Geometry')
     retained={row.path:row.uuid for row in old.extensions}
@@ -440,6 +474,10 @@ def verify_retained(host,staged):
             ownership_replacements[old_paths[0]]=_by_uuid(c,new_id)
     def physical(plug):
         if not plug:return ''
+        if staged.spline_change is not None and staged.spline_change.systems:
+            mapped=staged.spline_change.destination(plug)
+            if mapped is None:return ''
+            if mapped!=plug:return target.scene_address(mapped)
         node,separator,attr=plug.partition('.')
         if node in registered:node=target.scene_address(node)
         elif node in retained:node=_by_uuid(c,retained[node])
@@ -450,7 +488,8 @@ def verify_retained(host,staged):
     def local(plug):return host._cmds.identity.to_local(physical(plug)) if plug else ''
     for curve in staged.original.curves:
         actual=capture_curve(target,_curve_name(curve))
-        expected=replace(curve,node=_curve_name(curve),outputs=tuple(sorted(target._cmds.identity.to_local(physical(p)) for p in curve.outputs)))
+        expected=replace(curve,node=_curve_name(curve),outputs=tuple(sorted(
+            target._cmds.identity.to_local(physical(p)) for p in curve.outputs if physical(p))))
         if actual!=expected:
             raise RuntimeError('交接改变了原生动画曲线数据')
     for skin in staged.original.skins:
@@ -508,4 +547,14 @@ def verify_retained(host,staged):
         expected_edges=tuple(sorted((target._cmds.identity.to_local(physical(a)),target._cmds.identity.to_local(physical(b))) for a,b in row.connections))
         actual_edges=_set_connection_identity(target,actual_edges)
         expected_edges=_set_connection_identity(target,expected_edges)
-        if actual_edges!=expected_edges:raise RuntimeError('控制器用户属性连接复检失败：'+row.path)
+        if staged.spline_change is not None and staged.spline_change.systems:
+            animator={channel.node+'.'+channel.attribute for channel in staged.registration.channels}
+            def retained_edge(edge):
+                source,destination=edge
+                return not (source in animator and staged.spline_change.affects(
+                    destination.split('.',1)[0]))
+            actual_edges=tuple(edge for edge in actual_edges if retained_edge(edge))
+            expected_edges=tuple(edge for edge in expected_edges if retained_edge(edge))
+        if actual_edges!=expected_edges:
+            raise RuntimeError('控制器用户属性连接复检失败：'+row.path
+                +' '+repr((set(actual_edges)-set(expected_edges),set(expected_edges)-set(actual_edges))))

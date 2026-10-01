@@ -82,6 +82,9 @@ class BodySplinePlan:
     source_first_translate: bool = False
     source_world_controls: bool = False
     source_mode: SourceSplineModePlan | None = None
+    # Last authored Fit-label count. It distinguishes a later Mid-label edit
+    # from an explicit count override saved with this generated layout.
+    source_fit_control_count: int | None = None
 
     @property
     def mode_control(self):

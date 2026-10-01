@@ -104,9 +104,9 @@ class SplineRegistrationTests(unittest.TestCase):
                 parent = node
         spline = BodySplinePlan('|Mechanisms', tuple(joints), source,
             tuple(f'|FK{i}' for i in range(5)), '|Pelvis', '|Chest',
-            tuple(f'|SplineTarget{i}' for i in range(4)),
+            tuple(f'|Pelvis|AdvPy_SplineIK{i}Offset|AdvPy_SplineIK{i}' for i in range(4)),
             tuple((0.,0.,i*4/3) for i in range(4)), ((1.,0.,0.),(0.,1.,0.),(0.,0.,1.)), (1.,)*4)
-        paths = {n.path for n in old.nodes} | {j.path for j in joints} | set(spline.targets) | set(spline.fk_controls) | {spline.curve}
+        paths = {n.path for n in old.nodes} | {j.path for j in joints} | set(spline.targets) | set(spline.offset_targets) | set(spline.fk_controls) | {spline.curve}
         nodes = tuple(CharacterNode(p, str(i), 'transform', None) for i,p in enumerate(sorted(paths)))
         return replace(old, body=body, spine=spline, nodes=nodes)
 
@@ -133,6 +133,14 @@ class SplineRegistrationTests(unittest.TestCase):
             change(doc['payload']);doc['digest'] = digest(doc['payload'])
             with self.assertRaises(CharacterRegistryError):
                 decode_registration(json.dumps(doc))
+
+    def test_older_spline_payload_defaults_fit_count_metadata(self):
+        doc=json.loads(encode_registration(self.fixture()))
+        doc['payload']['spine'].pop('source_fit_control_count')
+        doc['digest']=digest(doc['payload'])
+        decoded=decode_registration(json.dumps(doc))
+        self.assertIsNone(decoded.spine.source_fit_control_count)
+        self.assertEqual(decoded.compatibility_digest,self.fixture().compatibility_digest)
 
 
 if __name__=="__main__": unittest.main()

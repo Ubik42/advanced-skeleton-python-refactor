@@ -484,7 +484,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             generic_fk_policy.source_spline_layouts,saved_paths),source_spline_body_root=body.root)
     fk, splines = plan_source_body_splines(body, build.symmetry.source.hierarchy,
         labels, fk, options, metadata,instances=build.symmetry.instances,
-        saved_layouts=generic_fk_policy.source_spline_layouts if generic_fk_policy else None)
+        saved_layouts=generic_fk_policy.source_spline_layouts if generic_fk_policy else None,
+        control_counts=generic_fk_policy.source_spline_counts if generic_fk_policy else ())
     root = plan_source_body_root(body,fk,metadata,build.symmetry.instances,options,
                                  base_radius=scale*1.5)
     if generic_fk_policy is not None and generic_fk_policy.source_leg_lock_opm is False:
@@ -568,7 +569,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     if generic_fk_policy is not None and generic_fk_policy.source_spline_layouts is not None:
         from adv_py.core.source_spline_rebuild import saved_source_spline_layout,retain_source_spline_layout
         splines=tuple(retain_source_spline_layout(spline,saved_source_spline_layout(
-            spline.body_joints,generic_fk_policy.source_spline_layouts)) for spline in splines)
+            spline.body_joints,generic_fk_policy.source_spline_layouts),
+            change_count=spline.system_name in dict(generic_fk_policy.source_spline_counts)) for spline in splines)
     for spline in splines:
         host.create_source_body_spline(spline)
         host.connect_source_body_spline_visibility(spline,fk)

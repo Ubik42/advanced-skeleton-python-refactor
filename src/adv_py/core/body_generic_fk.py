@@ -105,6 +105,7 @@ class GenericFkFeaturePolicy:
     source_leg_lock_opm: bool | None = None
     source_root_body_matrix: bool | None = None
     source_spline_layouts: tuple | None = None
+    source_spline_counts: tuple[tuple[str, int], ...] = ()
     source_spline_body_root: str | None = None
     compensated_controls: frozenset[str] | None = None
     global_controls: frozenset[str] | None = None
