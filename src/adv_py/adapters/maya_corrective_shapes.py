@@ -69,13 +69,14 @@ class MayaCorrectiveShapesHost(MayaCorrectiveIdentityMixin,MayaCorrectiveCurvesM
             raise FitSkeletonValidationError("选择的是 Corrective 目标，请选择角色网格")
         self._corrective_shape(mesh)
         drivers=[]
+        excluded=self.original_corrective_driver_exclusions()
         for plug,neutral in self.original_corrective_build_pose_rows():
             if not c.objExists(plug):
                 continue
             node,attr=plug.rsplit(".",1)
             attr=c.attributeQuery(attr,node=node,longName=True)
             node=self._original_restore_leaf(node)
-            if node.startswith(("FKExtra","FKIK")):
+            if node.startswith(("FKExtra","FKIK")) or node in excluded:
                 continue
             if abs(float(c.getAttr(plug))-neutral)>.001:
                 drivers.append(node+"."+attr)
@@ -284,10 +285,7 @@ class MayaCorrectiveShapesHost(MayaCorrectiveIdentityMixin,MayaCorrectiveCurvesM
                 c.setAttr(controller+".rotate"+attribute.removeprefix("qRotate"),value)
         else:
             c.setAttr(fk+"."+attribute,value)
-        if all(c.objExists(prefix+driver) for prefix in ("FK","FKX","IKX","FKOffset")):
-            control=self.find_original_fkik_control("FK"+driver)
-            if control and c.objExists(control+".FKIKBlend"):
-                c.setAttr(control+".FKIKBlend",0)
+        self.set_original_corrective_fk(fk)
         self._transaction_changed=True
 
     def edit_original_corrective_shape(self, target):

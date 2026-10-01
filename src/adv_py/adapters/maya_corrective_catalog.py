@@ -74,32 +74,33 @@ class MayaCorrectiveCatalogMixin:
         self._corrective_shape(destination)
         selected=c.ls(selection=True,long=True) or []
         pose=self.capture_original_control_pose()
-        self.go_to_original_corrective_build_pose()
-        self.set_original_corrective_all_fk()
-        baked=[]
-        rotations=(("x",90),("x",-90),("y",90),("y",-90),("z",90),("z",-90))
-        try:
-            for control in selected:
-                leaf=self._original_restore_leaf(control)
-                if not self.original_corrective_primary_fk(control):
-                    continue
-                for enabled,(axis,amount) in zip(axes,rotations):
-                    if not enabled:
+        with self.original_driver_animation_scope(pose):
+            self.go_to_original_corrective_build_pose()
+            self.set_original_corrective_all_fk()
+            baked=[]
+            rotations=(("x",90),("x",-90),("y",90),("y",-90),("z",90),("z",-90))
+            try:
+                for control in selected:
+                    leaf=self._original_restore_leaf(control)
+                    if not self.original_corrective_primary_fk(control):
                         continue
-                    c.setAttr(control+".r"+axis,amount)
-                    raw.refresh()
-                    raw.dgdirty(allPlugs=True)
-                    raw.select(destination,replace=True)
-                    source_plan=self.capture_original_corrective_create(options)
-                    result=self.create_original_corrective_shape(source_plan)
-                    target=result["target"]
-                    target_shape=c.listRelatives(target,shapes=True,noIntermediate=True,fullPath=True)[0]
-                    raw.connectAttr(shape+".outMesh",self.scene_address(target_shape+".inMesh"),force=True)
-                    raw.dgdirty(allPlugs=True)
-                    raw.pointPosition(self.scene_address(target)+".vtx[0]",local=True)
-                    baked.append(self.connect_original_corrective_shape(options))
-                    c.setAttr(control+".r"+axis,0)
-        finally:
-            self.restore_original_control_pose(pose)
-            c.select(selected,replace=True)
+                    for enabled,(axis,amount) in zip(axes,rotations):
+                        if not enabled:
+                            continue
+                        c.setAttr(control+".r"+axis,amount)
+                        raw.refresh()
+                        raw.dgdirty(allPlugs=True)
+                        raw.select(destination,replace=True)
+                        source_plan=self.capture_original_corrective_create(options)
+                        result=self.create_original_corrective_shape(source_plan)
+                        target=result["target"]
+                        target_shape=c.listRelatives(target,shapes=True,noIntermediate=True,fullPath=True)[0]
+                        raw.connectAttr(shape+".outMesh",self.scene_address(target_shape+".inMesh"),force=True)
+                        raw.dgdirty(allPlugs=True)
+                        raw.pointPosition(self.scene_address(target)+".vtx[0]",local=True)
+                        baked.append(self.connect_original_corrective_shape(options))
+                        c.setAttr(control+".r"+axis,0)
+            finally:
+                self.restore_original_control_pose(pose)
+                c.select(selected,replace=True)
         return tuple(baked)

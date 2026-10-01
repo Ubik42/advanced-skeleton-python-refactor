@@ -29,6 +29,17 @@ class MayaCorrectiveSoftModsMixin:
         if first is not None:
             created=c.softMod(target,falloffMode=1,falloffAroundSelection=False)
             upstream=c.listConnections(created[0]+".input[0].inputGeometry",source=True,destination=False,shapes=True)[0]
+            # Legacy deformer sets insert groupParts between the temporary
+            # SoftMod and the same undeformed mesh used by the source chain.
+            # Resolve that mesh rather than treating groupParts as a Shape.
+            visited=set()
+            while c.nodeType(upstream)=="groupParts" and upstream not in visited:
+                visited.add(upstream)
+                inputs=c.listConnections(upstream+".inputGeometry",source=True,destination=False,shapes=True) or []
+                if not inputs:break
+                upstream=inputs[0]
+            if c.nodeType(upstream)!="mesh":
+                raise FitSkeletonValidationError("SoftMod 链缺少原始网格输入："+upstream)
             c.connectAttr(upstream+".worldMesh[0]",first+".input[0].inputGeometry")
             c.connectAttr(last+".outputGeometry[0]",target+".inMesh",force=True)
             c.delete(created[0])

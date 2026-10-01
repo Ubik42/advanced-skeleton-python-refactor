@@ -5,7 +5,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
 
 
-def main(scene,output):
+def main(scene,output,bake=False):
     import maya.standalone
     maya.standalone.initialize(name='python')
     from maya import cmds
@@ -85,11 +85,51 @@ def main(scene,output):
         for name in names:assert max(abs(a-b) for a,b in zip(points(name),moved[name]))<.003
         assert max(abs(a-b) for a,b in zip(mesh_points(),saved_mesh_points))<.003
         report['stages'].append('save_reopen')
-        controller.original_corrective_shapes(':','curve_cleanup')
+        if bake:
+            # Sculpt actual skinned curves, then sample the complete local
+            # deformation mesh before the original four-direction bake.
+            cmds.move(0,.15,0,names[0]+'.cv[4]',relative=True)
+            if cmds.objExists('CorrectiveDeleteComponent'):cmds.delete('CorrectiveDeleteComponent')
+            expected_mesh={}
+            original_time=cmds.currentTime(q=True)
+            for frame in (10,30,50,70):
+                cmds.currentTime(frame);expected_mesh[frame]=mesh_points()
+            cmds.currentTime(original_time)
+            setup_uuid=cmds.ls('curveDeformationSetup',uuid=True)[0]
+            animation_uuids={node:cmds.ls(node,uuid=True)[0] for node in cmds.listConnections('AdvPy_Wrist_RFK',s=True,d=False,type='animCurveTA') or []}
+            result=controller.original_corrective_shapes(':','curve_bake',q_rotations=True,use_soft_mods=False,mirror=False)
+            assert len(result)==4,result
+            assert len(controller.original_corrective_targets(':'))==4
+            baked_uuid=cmds.ls(mesh+'Corrective',uuid=True)[0]
+            cmds.undo()
+            assert cmds.ls('curveDeformationSetup',uuid=True)==[setup_uuid]
+            assert not cmds.objExists(mesh+'Corrective')
+            assert all(cmds.ls(node,uuid=True)==[uuid] for node,uuid in animation_uuids.items())
+            cmds.redo()
+            assert not cmds.objExists('curveDeformationSetup')
+            assert cmds.ls(mesh+'Corrective',uuid=True)==[baked_uuid]
+            assert len(controller.original_corrective_targets(':'))==4
+            report['stages'].append('four_direction_curve_bake_single_undo_redo')
+        else:controller.original_corrective_shapes(':','curve_cleanup')
         assert not cmds.objExists('curveDeformationSetup')
         assert cmds.objExists(mesh) and cmds.getAttr(mesh+'.v')
         assert not cmds.objExists('SkinCage')
         assert not cmds.listConnections('AdvPy_Wrist_RFK',s=True,d=False,type='animCurveTA')
+        if bake:
+            for frame,pose in ((10,(0,90,0)),(30,(0,-90,0)),(50,(0,0,90)),(70,(0,0,-90))):
+                cmds.setAttr('AdvPy_Wrist_RFK.rotate',*pose,type='double3');cmds.dgdirty(allPlugs=True)
+                actual=cmds.xform(mesh+'.vtx[*]',q=True,ws=True,t=True)
+                assert len(actual)==len(expected_mesh[frame])
+                error=max(abs(a-b) for a,b in zip(actual,expected_mesh[frame]))
+                assert error<.003,(frame,'Baked curve geometry',error)
+            report['stages'].append('four_direction_actual_baked_geometry')
+            baked_saved=output/'curve-baked.mb';cmds.file(rename=str(baked_saved));cmds.file(save=True,type='mayaBinary',force=True)
+            cmds.file(str(baked_saved),open=True,force=True,executeScriptNodes=False)
+            for frame,pose in ((10,(0,90,0)),(30,(0,-90,0)),(50,(0,0,90)),(70,(0,0,-90))):
+                cmds.setAttr('AdvPy_Wrist_RFK.rotate',*pose,type='double3');cmds.dgdirty(allPlugs=True)
+                actual=cmds.xform(mesh+'.vtx[*]',q=True,ws=True,t=True)
+                assert max(abs(a-b) for a,b in zip(actual,expected_mesh[frame]))<.003
+            report['stages'].append('baked_geometry_save_reopen')
         report['stages'].append('cleanup_preserves_source')
         report['status']='passed'
     except Exception:
@@ -98,4 +138,4 @@ def main(scene,output):
         (output/'curves.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
         cmds.file(rename=str(output/'curve-current.mb'));cmds.file(save=True,type='mayaBinary',force=True)
 
-if __name__=='__main__':main(Path(sys.argv[1]).resolve(),Path(sys.argv[2]).resolve())
+if __name__=='__main__':main(Path(sys.argv[1]).resolve(),Path(sys.argv[2]).resolve(),'--bake' in sys.argv)

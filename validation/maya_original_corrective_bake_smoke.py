@@ -5,15 +5,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
 
 
-def main(scene,output):
-    import maya.standalone
-    maya.standalone.initialize(name='python')
-    from maya import cmds
-    from adv_py.product.maya_panel_controller import MayaPanelController
-    from adv_py.adapters.maya_corrective_shapes import MayaCorrectiveShapesHost
-    output.mkdir(parents=True,exist_ok=True)
-    cmds.file(str(scene),open=True,force=True,executeScriptNodes=False)
-    controller=MayaPanelController();host=MayaCorrectiveShapesHost()
+def create_bake_fixture(cmds,host):
     curves=cmds.listConnections('AdvPy_Global.tx',s=True,d=False,type='animCurve') or []
     if curves:cmds.delete(curves)
     cmds.setAttr('AdvPy_Global.tx',0)
@@ -39,6 +31,19 @@ def main(scene,output):
     cmds.connectAttr(node+'.outputX',scale+'.input1');cmds.connectAttr(scale+'.output',bs+'.w[0]')
     for name in ('BakeSource','BakeDestination'):
         cmds.skinCluster('Wrist_R',name,name=name+'Skin',toSelectedBones=True)
+    return control
+
+
+def main(scene,output):
+    import maya.standalone
+    maya.standalone.initialize(name='python')
+    from maya import cmds
+    from adv_py.product.maya_panel_controller import MayaPanelController
+    from adv_py.adapters.maya_corrective_shapes import MayaCorrectiveShapesHost
+    output.mkdir(parents=True,exist_ok=True)
+    cmds.file(str(scene),open=True,force=True,executeScriptNodes=False)
+    controller=MayaPanelController();host=MayaCorrectiveShapesHost()
+    control=create_bake_fixture(cmds,host)
     def points(name):
         cmds.dgdirty(allPlugs=True)
         return tuple(cmds.xform(name+'.vtx[*]',q=True,ws=True,t=True))

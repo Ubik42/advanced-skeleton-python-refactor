@@ -33,7 +33,7 @@ Python Body 的内部控制器名允许重组，但原版操作需要识别其 F
 
 原版创建 CorrectiveSC / CorrectiveWrap 使用 asDeformer（MEL 68328、68343），临时关闭 deformationUseComponentTags 以生成原生变形器成员集合。Python 现复用对应偏好范围，成功及异常均恢复原偏好，不用普通空集合替代真实成员集合。
 
-Maya 2024 当前 Body 的 Wrist_R 与局部代理网格通过：四条九点曲线创建、解除／重新绑定、测试动画真实 CV 变形、Loft／Skin／Wrap 局部网格、原版显示切换、保存重开、清理保留来源。局部网格保留 56 个顶点；编辑曲线使实际 Wrap 输出最大移动 0.3318414688，恢复编辑后回到原位置。来源模型在创建后改名仍可继续完整流程；Component Tags 偏好 1 在变形器创建后仍为 1。曲线与实际局部网格保存重开后均一致。验证入口为 validation/maya_original_corrective_curves_smoke.py，最终报告 corrective-curves-body-final/curves.json；此结果不包含 Curve Bake，亦不代表真实默认角色外观已验收。
+Maya 2024 当前 Body 的 Wrist_R 与局部代理网格通过：四条九点曲线创建、解除／重新绑定、测试动画真实 CV 变形、Loft／Skin／Wrap 局部网格、原版显示切换、保存重开、清理保留来源。局部网格保留 56 个顶点；编辑曲线使实际 Wrap 输出最大移动 0.3318414688，恢复编辑后回到原位置。来源模型在创建后改名仍可继续完整流程；Component Tags 偏好 1 在变形器创建后仍为 1。曲线与实际局部网格保存重开后均一致。验证入口为 validation/maya_original_corrective_curves_smoke.py，最终报告 corrective-curves-body-final/curves.json；曲线四方向 Bake 随后补通：临时隔离时间关键帧输入，避免后台全图求值覆盖采样姿态，并在结束或异常时恢复连接。四目标实际顶点比较通过，曲线清理后保存重开也继续比较。整次 Bake 的撤销重做与曲线／关键帧身份恢复列于最终报告。不代表真实默认角色外观已验收。
 
 ## QRotation 和 SDK 与原版图一致
 
@@ -43,10 +43,34 @@ validation/maya_original_qrotation_source_parity.py 在隔离场景加载未经�
 
 Wrist 主控制器 X=90 时，两套 Q 图均得到 (30.086361770953463, -2.474222437559329, 2.474222437559298)。Shoulder 纯 X=90 两套均得到零。应继续核对 Body Twist／Part 及完整烘焙链，不能用控制器角度替换已一致的关节 QRotation。
 
-## 六方向烘焙仍未完成
+## 六方向烘焙与原版完整输出一致
 
-validation/maya_original_corrective_bake_smoke.py 检验原版六方向实际来源／目标网格一致性，不只数目标。原版切全 FK 已映射到登记的真实 RP 模式通道；当前 Wrist 样例能创建六个 QRotation 目标，整体撤销重做也通过，但实际顶点比较失败，不能标为烘焙通过。
+本批用 Maya 2024 GUI 加载本地未经修改的 ADV 6.925 MEL 和真实原版面板，运行 asBakeIntoCorrectiveShapes。原版 MEL 与只读参考逐字节相同，SHA256 为 828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02。输入仍为同一 Python Body 与局部代理网格，验证准备将 Wrist 主 FK 改为原版识别名，并给旧式 buildPose.udAttr 填入该主 FK 的中立 TRS；其他肢体预先中立且全 FK。未替换任何原版过程，未把该对照宣称为原版 Body 构建对照。
 
-本批补充后台实际关节求值，修正首次采样可能读到的缓存角度。最终失败证据：corrective-bake-source-parity-final/bake.json。X=90 时实际 qRotateX 为 30.086361770953463，来源与目标首顶点 Y 分别为 15.706863403320312、15.712176322937012，差约 0.005313。已确认 Q 图和 SDK 单独与原版一致，尚未确认原版完整 Bake 是否也出现相同误差；不可把偏差直接判为原版算法限制或已通过。
+原版六方向完整烘焙生成六个目标，无过程异常。X=±90 的来源／目的网格最大偏差均为 0.005312919616699219；Y=±90 为 0；Z=±90 为 9.5367431640625e-7。之前的 0.0053 偏差在这个输入上也出现在原版全过程中，不能继续据此判定 Python 翻译错误。
 
-下一最高优先级是完整 Bake 的来源采样／反算／多目标叠加对照，其后 Curve Bake、混合旋转／镜像 SoftMods／取消及真实默认角色外观。Maya 原生权重及顺序提示仍存在，不宣称零警告。全量 Goal 活跃，不推送 GitHub。
+Python 六方向烘焙在六个姿态下、每个网格全部 42 个顶点（126 个坐标）与原版目的输出差异均为 0，来源输入差异也均为 0。六目标、起始姿态／选择恢复、单次撤销重做及保存重开通过。严格来源／目的一致性验证仍保持原标准、状态仍为失败，不改为宽容通过；当前通过的是完整原版输出一致性。
+
+| 范围 | validation/results 报告 | 状态 |
+| --- | --- | --- |
+| 未修改原版 GUI 完整六方向 Bake | corrective-bake-original-gui/source-bake.json | original_bake_measured |
+| Python 全顶点六姿态原版对照 | corrective-bake-full-native-parity/bake-parity.json | passed_source_parity |
+| 带已有关键帧的 Bake／连接恢复／异常回滚 | corrective-bake-animated-native-parity/bake-parity.json | passed_source_parity |
+| 时间曲线经 unitConversion 输入的 Bake | corrective-bake-converted-native-parity/bake-parity.json | passed_source_parity |
+| 严格来源／目的网格一致性 | corrective-bake-source-parity-final/bake.json | failed，原版同样有该残差 |
+
+验证入口为 maya_original_corrective_bake_source_parity.py（真实 GUI、延迟调用 main）、maya_original_corrective_bake_parity_smoke.py；原严格入口 maya_original_corrective_bake_smoke.py 保持独立。
+
+## 混合 QRotation／镜像／SoftMods
+
+修正原版 FK 身份映射在混合属性副本、setQRotatesCmd、混合镜像的临时摆姿态、重新编辑切 FK 中遗漏的接入。原版排除 FKExtra／FKIK 的规则扩展到已登记的对应角色。SoftMod 重编辑输入兼容 legacy groupParts，沿 inputGeometry 找到同一个原始网格再恢复既有链，不误用 groupParts.worldMesh。
+
+asCreateCustomBlendedAttribute 原版将两路图属性均取自 driverObjs[0]；旧 Python 在第二路使用第二个发现对象，已改回原版连接及 dv 值。独立原版对照覆盖不同对象、负值／-1 翻号、clamp、两路连接与 dv，三组各五个输出采样误差为 0。报告 corrective-blended-native-parity/blended-parity.json，状态 passed_source_graph_parity。
+
+当前 Body 混合 QRotation 的创建／实际雕刻／镜像／重新编辑／重新应用／批量应用／取消／保存重开由 maya_original_corrective_mixed_smoke.py 验证。普通雕刻及 SoftMod 均有运行记录；SoftMod 镜像实际最大移动 0.1999998093，按中立顶点对应关系比较世界 X 平面反射后的雕刻增量，误差为 0。最终报告 corrective-mixed-softmods/mixed.json。本项取消只验证已应用目标的几何保持，不宣称取消会保留已移到根层的 SoftMod Handle；原版取消也删除这类根层 Handle。
+
+## 当前剩余范围
+
+继续依据原版功能覆盖矩阵处理未验收分支，尤其真实默认角色外观、其余 Body／Preparation 差异和全部可选组合。Wrist 纯 X 重编辑、Inbetween／Twist 的更多组合、分层动画混合输入，以及单位换算输入下的交互雕刻／编辑仍未由本批覆盖。Bake 采样隔离支持直接时间曲线及 unitConversion 链，保留既有关键帧、UUID及实际连接边，驱动关键帧／约束继续参与计算；通过证据包括正常完成、撤销重做、保存重开和注入异常。
+
+全量 Goal 活跃，不推送 GitHub。原生权重、顺序及带历史曲线 tweak 提示仍存在，不宣称零警告。

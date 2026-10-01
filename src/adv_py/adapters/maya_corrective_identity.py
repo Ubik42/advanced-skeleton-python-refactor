@@ -52,6 +52,18 @@ class MayaCorrectiveIdentityMixin:
         bindings=self.original_corrective_fk_bindings()
         return any(fk==leaf and not joint.startswith("Root") for joint,fk in bindings.items())
 
+    def original_corrective_driver_exclusions(self):
+        """Apply MEL's FKExtra/FKIK exclusions to the registered role names."""
+        registration=self.original_corrective_body_registration()
+        if registration is None:
+            return frozenset()
+        channels={row.key:row for row in registration.channels}
+        nodes={self._original_restore_leaf(row.node) for row in registration.channels
+               if row.key.startswith("generic.fk.") and ".extra." in row.key}
+        nodes.update(self._original_restore_leaf(channels[limb.blend_key].node)
+                     for limb in registration.source_limbs)
+        return frozenset(nodes)
+
     def original_corrective_pose_controls(self):
         c=self._cmds
         controls=[]

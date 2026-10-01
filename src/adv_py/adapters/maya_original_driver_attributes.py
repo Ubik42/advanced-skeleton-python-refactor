@@ -1,10 +1,34 @@
 """Native QRotation, OPM and combined driver attributes, MEL 66017–66281."""
 from math import sqrt
+from contextlib import contextmanager
 import shlex
 from adv_py.core.corrective_shapes import corrective_pose_command_rows
 
 
 class MayaOriginalDriverAttributesMixin:
+    def _original_driver_time_input(self, destination):
+        """Find a time curve through scalar unit conversions only."""
+        raw=getattr(self._cmds,"raw",self._cmds)
+        inputs=raw.listConnections(destination,source=True,destination=False,plugs=True) or []
+        if len(inputs)!=1:
+            return None
+        physical_source=inputs[0]
+        plug=physical_source;visited=set()
+        while True:
+            node=plug.rsplit(".",1)[0]
+            if node in visited:
+                return None
+            visited.add(node)
+            kind=raw.nodeType(node)
+            if kind.startswith("animCurveT"):
+                return physical_source
+            if kind!="unitConversion":
+                return None
+            inputs=raw.listConnections(node+".input",source=True,destination=False,plugs=True) or []
+            if len(inputs)!=1:
+                return None
+            plug=inputs[0]
+
     def capture_original_control_pose(self):
         c=self._cmds
         rows=[]
@@ -16,7 +40,9 @@ class MayaOriginalDriverAttributesMixin:
             for attr in c.listAttr(control,keyable=True) or []:
                 plug=control+"."+attr
                 physical=self.scene_address(plug)
-                if physical in seen or c.getAttr(plug,lock=True) or not c.getAttr(plug,settable=True):
+                if physical in seen or c.getAttr(plug,lock=True):
+                    continue
+                if not c.getAttr(plug,settable=True) and not self._original_driver_time_input(physical):
                     continue
                 value=c.getAttr(plug)
                 if isinstance(value,(int,float)):
@@ -27,7 +53,9 @@ class MayaOriginalDriverAttributesMixin:
                 for channel in registration.channels:
                     plug=channel.node+"."+channel.attribute
                     physical=self.scene_address(plug)
-                    if physical in seen or not c.objExists(plug) or not c.getAttr(plug,settable=True):
+                    if physical in seen or not c.objExists(plug) or c.getAttr(plug,lock=True):
+                        continue
+                    if not c.getAttr(plug,settable=True) and not self._original_driver_time_input(physical):
                         continue
                     value=c.getAttr(plug)
                     if isinstance(value,(int,float)):
@@ -37,6 +65,29 @@ class MayaOriginalDriverAttributesMixin:
     def restore_original_control_pose(self, rows):
         for plug,value in rows:
             self._cmds.setAttr(plug,value)
+
+    @contextmanager
+    def original_driver_animation_scope(self, pose):
+        """Keep original pose sampling independent of time-driven key inputs.
+
+        A viewport-free dirty evaluation can restore keyed channel values after
+        setAttr. Hold only the time-curve input connections while sampling the
+        source build/corrective poses; keep keys, curves and UUIDs unchanged.
+        Driven-key inputs and rig constraints remain live.
+        """
+        c=self._cmds;raw=getattr(c,"raw",c)
+        disconnected=[]
+        try:
+            for plug,_ in pose:
+                destination=self.scene_address(plug)
+                source=self._original_driver_time_input(destination)
+                if source is not None:
+                    raw.disconnectAttr(source,destination)
+                    disconnected.append((source,destination))
+            yield
+        finally:
+            for source,destination in disconnected:
+                raw.connectAttr(source,destination,force=True)
 
     def original_corrective_build_pose_rows(self):
         c=self._cmds
@@ -131,9 +182,12 @@ class MayaOriginalDriverAttributesMixin:
         c.connectAttr(node+".offsetParentMatrix",mm+".matrixIn[0]")
         parent=c.listRelatives(node,parent=True)[0]
         c.setAttr(mm+".matrixIn[1]",*c.getAttr(parent+".worldMatrix[0]"),type="matrix")
-        self.go_to_original_corrective_build_pose()
-        inverse=c.getAttr(node+".worldInverseMatrix[0]")
-        self.restore_original_control_pose(pose)
+        with self.original_driver_animation_scope(pose):
+            try:
+                self.go_to_original_corrective_build_pose()
+                inverse=c.getAttr(node+".worldInverseMatrix[0]")
+            finally:
+                self.restore_original_control_pose(pose)
         c.setAttr(mm+".matrixIn[2]",*inverse,type="matrix")
         c.connectAttr(mm+".matrixSum",dm+".inputMatrix")
         if attribute.startswith("rotate"):
@@ -150,30 +204,40 @@ class MayaOriginalDriverAttributesMixin:
         from maya.api import OpenMaya as om
         pose=self.capture_original_control_pose()
         selection=c.ls(selection=True,long=True) or []
-        self.go_to_original_corrective_build_pose()
-        name,side=joint.rsplit("_",1)
-        side="_"+side
-        mm=c.createNode("multMatrix",name=name+"QRotateMMTwist"+side)
-        c.connectAttr(joint+".matrix",mm+".matrixIn[0]")
-        upstream=c.listConnections(joint+".offsetParentMatrix",source=True,destination=False,plugs=True) or []
-        if upstream:
-            c.connectAttr(upstream[0],mm+".matrixIn[0]",force=True)
-        matrix=c.getAttr(mm+".matrixIn[0]")
-        c.setAttr(mm+".matrixIn[2]",*tuple(om.MMatrix(matrix).inverse()),type="matrix")
-        dm=c.createNode("decomposeMatrix",name=name+"QRotateDMTwist"+side)
-        c.connectAttr(mm+".matrixSum",dm+".inputMatrix")
-        for axis in "XYZ":
-            c.addAttr(joint,longName="qRotate"+axis,attributeType="double",keyable=True)
-            qe=c.createNode("quatToEuler",name=name+"QRotate"+axis+"QTETwist"+side)
-            c.connectAttr(dm+".outputQuat"+axis,qe+".inputQuatX")
-            c.connectAttr(dm+".outputQuatW",qe+".inputQuatW")
-            c.connectAttr(qe+".outputRotateX",joint+".qRotate"+axis)
-        self.restore_original_control_pose(pose)
+        with self.original_driver_animation_scope(pose):
+            try:
+                self.go_to_original_corrective_build_pose()
+                name,side=joint.rsplit("_",1)
+                side="_"+side
+                mm=c.createNode("multMatrix",name=name+"QRotateMMTwist"+side)
+                c.connectAttr(joint+".matrix",mm+".matrixIn[0]")
+                upstream=c.listConnections(joint+".offsetParentMatrix",source=True,destination=False,plugs=True) or []
+                if upstream:
+                    c.connectAttr(upstream[0],mm+".matrixIn[0]",force=True)
+                matrix=c.getAttr(mm+".matrixIn[0]")
+                c.setAttr(mm+".matrixIn[2]",*tuple(om.MMatrix(matrix).inverse()),type="matrix")
+                dm=c.createNode("decomposeMatrix",name=name+"QRotateDMTwist"+side)
+                c.connectAttr(mm+".matrixSum",dm+".inputMatrix")
+                for axis in "XYZ":
+                    c.addAttr(joint,longName="qRotate"+axis,attributeType="double",keyable=True)
+                    qe=c.createNode("quatToEuler",name=name+"QRotate"+axis+"QTETwist"+side)
+                    c.connectAttr(dm+".outputQuat"+axis,qe+".inputQuatX")
+                    c.connectAttr(dm+".outputQuatW",qe+".inputQuatW")
+                    c.connectAttr(qe+".outputRotateX",joint+".qRotate"+axis)
+            finally:
+                self.restore_original_control_pose(pose)
         c.select(selection,replace=True) if selection else c.select(clear=True)
 
     def original_blended_driver_name(self, drivers):
         c=self._cmds
         return "_".join(plug.rsplit(".",1)[1]+("Pos" if c.getAttr(plug)>=0 else "Neg") for plug in drivers)
+
+    def _original_driver_fk(self, node):
+        resolver=getattr(self,"original_corrective_fk_for_joint",None)
+        if resolver is not None:
+            return resolver(node)
+        original="FK"+node
+        return original if self._cmds.objExists(original) else node
 
     def create_original_blended_attribute(self, drivers, attribute=""):
         self._require_transaction()
@@ -187,14 +251,18 @@ class MayaOriginalDriverAttributesMixin:
             return attribute
         c.addAttr(node,longName=attribute,attributeType="double")
         c.setAttr(node+"."+attribute,channelBox=True)
-        if not self._original_restore_leaf(node).startswith("FK") and c.objExists("FK"+node):
-            c.addAttr("FK"+node,longName=attribute,attributeType="double")
-            c.setAttr("FK"+node+"."+attribute,channelBox=True)
-            c.connectAttr(node+"."+attribute,"FK"+node+"."+attribute)
+        fk=self._original_driver_fk(node)
+        if fk!=node and c.objExists(fk):
+            c.addAttr(fk,longName=attribute,attributeType="double")
+            c.setAttr(fk+"."+attribute,channelBox=True)
+            c.connectAttr(node+"."+attribute,fk+"."+attribute)
         mpd=c.createNode("multiplyDivide",name=node+attribute+"MPD")
-        # The source constructs a two-input graph even if discovery names more
-        # rotation components. Preserve that graph and its stored two dv values.
-        for plug,axis,value in zip(drivers,"XY",values):
+        # asCreateCustomBlendedAttribute addresses both graph attributes on
+        # driverObjs[0], even when discovery lists other objects. Preserve that
+        # source addressing and its two-input graph; metadata still records
+        # the actual discovered controller poses below.
+        graph_drivers=tuple(node+"."+plug.rsplit(".",1)[1] for plug in drivers[:2])
+        for plug,axis,value in zip(graph_drivers,"XY",values):
             c.connectAttr(self.original_face_output_bw(plug),mpd+".input1"+axis)
             if value==-1:
                 c.setAttr(mpd+".input2"+axis,-1)
@@ -205,11 +273,12 @@ class MayaOriginalDriverAttributesMixin:
         c.connectAttr(pma+".output1D",sr+".valueX",force=True)
         c.setAttr(sr+".max",100,100,100,type="float3")
         c.setAttr(sr+".oldMax",200,200,200,type="float3")
-        for axis,value in zip("XY",values):
-            c.addAttr(sr,longName="dv"+axis,attributeType="double",defaultValue=value,keyable=True)
+        for axis,plug in zip("XY",graph_drivers):
+            c.addAttr(sr,longName="dv"+axis,attributeType="double",defaultValue=c.getAttr(plug),keyable=True)
         qrows=[]
         for plug in drivers:
-            fk="FK"+plug.replace("qRotate","rotate")
+            obj,channel=plug.rsplit(".",1)
+            fk=self._original_driver_fk(obj)+"."+channel.replace("qRotate","rotate")
             if c.objExists(fk):
                 qrows.append((fk,c.getAttr(fk)))
         c.addAttr(sr,longName="setQRotatesCmd",dataType="string")
@@ -258,7 +327,8 @@ class MayaOriginalDriverAttributesMixin:
                 if ".qRotate" in driver:
                     self.restore_original_control_pose(corrective_pose_command_rows(qcommands))
                 else:
-                    target="FK"+driver if c.objExists("FK"+driver) else driver
+                    obj,channel=driver.rsplit(".",1)
+                    target=self._original_driver_fk(obj)+"."+channel
                     c.setAttr(target,sqrt(dv*dv*value) if value<1 else dv)
         return tuple(sorted(drivers))
 

@@ -114,7 +114,7 @@ class MayaCorrectiveApplyMixin(MayaCorrectiveLegacyMixin):
                 amount=c.getAttr(plug)
                 if attribute.startswith("qRotate"):
                     obj=plug.rsplit(".",1)[0]
-                    fk="FK"+obj if c.objExists("FK"+obj) else obj
+                    fk=self.original_corrective_fk_for_joint(obj)
                     other=fk.replace(side,opposite,1)
                     if index==0:
                         rotation=c.getAttr(fk+".r")[0]
@@ -122,7 +122,7 @@ class MayaCorrectiveApplyMixin(MayaCorrectiveLegacyMixin):
                         c.setAttr(other+".r",*rotation,type="float3")
                 else:
                     c.setAttr(plug,0)
-                    if (mirror_plug.endswith(".translateX") and not joystick) or (c.objExists("FK"+driver) and ".translate" in mirror_plug):
+                    if (mirror_plug.endswith(".translateX") and not joystick) or (self.original_corrective_fk_for_joint(driver)!=driver and ".translate" in mirror_plug):
                         amount=-amount
                     c.setAttr(mirror_plug,amount)
                 mirrored.append(mirror_plug)
